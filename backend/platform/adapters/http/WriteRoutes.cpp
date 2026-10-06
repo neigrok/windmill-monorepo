@@ -39,17 +39,14 @@ const std::set<std::string> refusalCodes{
     "access_denied", "account-mismatch", "account-not-empty", "ask-attachment-invalid", "ask-busy",
     "ask-daily-limit", "ask-generation-active", "ask-image-busy", "ask-image-limit",
     "ask-not-configured", "ask-out-of-budget", "ask-request-conflict", "ask-request-malformed",
-    "ask-session-open", "ask-thread-taken", "authorization_pending", "bad-id", "bad_request",
-    "client-update-required", "clock-ahead", "cursor-invalid", "epoch-mismatch", "expired",
-    "gym-engine-busy", "gym-engine-unavailable", "id-retired", "id-taken",
-    "identity-taken", "invalid_client", "invalid_client_metadata",
-    "invalid_email", "invalid_grant", "invalid_redirect_uri", "invalid_request", "invalid_scope",
-    "login_required", "malformed", "rate_limited", "replica-foreign",
-    "replica-unknown", "request-too-large", "scope-forbidden", "scope-unknown", "server_error",
-    "session-deleted", "session-id-taken", "session-overlap", "set-id-taken", "share-id-taken",
-    "slow_down", "temporarily_unavailable", "unauthenticated", "unauthorized_client", "unavailable",
-    "unknown-exercise", "unreachable", "unsupported_grant_type", "unsupported_response_type",
-    "upgrade-required"
+    "ask-session-open", "ask-thread-taken", "bad-id", "bad_request", "client-update-required",
+    "clock-ahead", "expired", "gym-engine-busy", "gym-engine-unavailable", "id-retired", "id-taken",
+    "identity-taken", "invalid_client", "invalid_client_metadata", "invalid_email", "invalid_grant",
+    "invalid_redirect_uri", "invalid_request", "login_required", "malformed", "rate_limited",
+    "replica-foreign", "request-too-large", "session-deleted", "session-id-taken",
+    "session-overlap", "set-id-taken", "share-id-taken", "temporarily_unavailable",
+    "unauthenticated", "unavailable", "unknown-exercise", "unreachable", "unsupported_grant_type",
+    "unsupported_response_type", "upgrade-required"
 };
 
 std::string redirectCode(const std::string& location) {

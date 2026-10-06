@@ -361,8 +361,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                                            googleClient, appBaseUrl, appleClient, appleNativeVerifier, allowedOrigins);
   auto mcpKeyApi = std::make_shared<McpKeyApi>(authService, mcpKeyService);
 
-
-
   auto ogImages = std::make_shared<PgOgImageRepository>(pool);
 
   // Built before the share page, which advertises og:video only for a tree that carries one.
@@ -442,7 +440,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   auto eventRepo = std::make_shared<PgEventRepository>(pool);
   auto eventsApi = std::make_shared<EventsApi>(eventRepo, authService, amplitude, sentry);
-
 
   auto feedbackRepo = std::make_shared<PgFeedbackRepository>(pool);
   auto feedbackApi = std::make_shared<FeedbackApi>(feedbackRepo, authService);
@@ -595,7 +592,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto oauthApi = std::make_shared<OAuthApi>(oauthService, authService, apiBaseUrl, appBaseUrl,
                                              "/#/oauth/authorize", supportedScopes(mcpComposite->products()));
 
-
   WriteRoutes routes(app, "platform");
   WriteRoutes mcpRoutes(app, "platform", "mcp");
   app.registerSyncAdvice([](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
@@ -605,7 +601,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   // Registered first, so it wraps everything registered after it.
   installAccessLog(app);
-
 
   // Allow-Credentials only ever rides an allow-listed Origin, never a reflected one.
   auto writeCors = [allowedOrigins](const drogon::HttpRequestPtr& req, const drogon::HttpResponsePtr& resp) {
@@ -678,7 +673,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
         finishWriteRequest(req, resp);
         return resp;
       });
-
 
   app.registerPostHandlingAdvice(
       [writeCors, mcpPath](const drogon::HttpRequestPtr& req, const drogon::HttpResponsePtr& resp) {
@@ -867,21 +861,16 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
       },
       {drogon::Delete});
 
-
-
-
   routes.registerHandler(
       "/v1/events",
       [eventsApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { eventsApi->ingest(req, std::move(cb)); },
       {drogon::Post});
-
 
   // Anonymous allowed.
   routes.registerHandler(
       "/v1/feedback",
       [feedbackApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { feedbackApi->submit(req, std::move(cb)); },
       {drogon::Post});
-
 
   // Its own preflight, advertising the MCP headers the generic one skips.
   mcpRoutes.registerWriteHandler("mcp.transport",
@@ -955,10 +944,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   lifetime.watch(journalNudgeSweep, journalNudges, journalNudgeMail, tokens, systemClock, resendClient);
   journalNudgeSweep->start();
   // Any boundary unwired makes an echo pass a no-op: NullEmbedder and NullCurator answer
-  // configured() false. This used to add that the sidecar must run the same weights the browser
-  // downloads "or the vectors stop being interchangeable" — deleted rather than softened, because
-  // it was never true and would be read as a constraint on the model: nothing serves a vector to
-  // any client, the browser embeds page bodies on the device, and the two indexes never meet.
+  // configured() false. No vector reaches a client: the browser embeds page bodies on the device.
   const char* embedderUrlEnv = std::getenv("JOURNAL_EMBEDDER_URL");
   std::shared_ptr<Embedder> journalEmbedder;
   if (embedderUrlEnv && *embedderUrlEnv) {
@@ -968,18 +954,17 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   } else
     journalEmbedder = std::make_shared<NullEmbedder>();
 
-  const char* anthropicKeyEnv = std::getenv("ANTHROPIC_API_KEY");
   std::shared_ptr<Curator> journalCurator;
-  if (anthropicKeyEnv && *anthropicKeyEnv) {
-    auto transport = std::make_shared<AnthropicClient>(anthropicKeyEnv);
+  if (anthropicKey && *anthropicKey) {
+    auto transport = std::make_shared<AnthropicClient>(anthropicKey);
     lifetime.watch(transport);
     journalCurator = std::make_shared<AnthropicCurator>(transport, "claude-sonnet-5", "low", aiFuse, aiSpendSink);
   } else
     journalCurator = std::make_shared<NullCurator>();
   // Without an Anthropic key, the line-and-sentence rule cuts the page instead.
   std::shared_ptr<Segmenter> journalSegmenter;
-  if (anthropicKeyEnv && *anthropicKeyEnv) {
-    auto transport = std::make_shared<AnthropicClient>(anthropicKeyEnv);
+  if (anthropicKey && *anthropicKey) {
+    auto transport = std::make_shared<AnthropicClient>(anthropicKey);
     lifetime.watch(transport);
     journalSegmenter = std::make_shared<AnthropicSegmenter>(transport, "claude-sonnet-5", "low", aiFuse, aiSpendSink);
   } else
@@ -1092,7 +1077,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   app.setThreadNum(ioThreads).run();
   return 0;
 }
-
 
 int main() {
   using namespace wm;
