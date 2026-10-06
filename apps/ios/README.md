@@ -130,4 +130,5 @@ tests select `WindmillTests` on iPhone 17. Three UI shards select each `Windmill
 (`GymLogFlowTests`, `GymWorkoutFlowTests`, `AppleLinkingFlowTests`), routines/journal (`GymRoutinesFlowTests`,
 `JournalFlowTests`, `WorkoutActivityFlowTests`), and Coach/shell (`GymCoachFlowTests`, `GymIntegrationFlowTests`,
 `OnboardingFlowTests`, `ShellFlowTests`). Each test job builds its own App, and the packages job checks that the UI
-class partition stays complete. CI uses UTC; it does not run `e2e.sh`, which needs the local backend.
+class partition stays complete. Failed UI shards retain their xcresult bundles for three days. CI uses UTC; it does
+not run `e2e.sh`, which needs the local backend.

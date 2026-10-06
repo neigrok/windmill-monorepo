@@ -197,4 +197,13 @@ jobs:
           python3 Tools/generate_project.py
           xcodebuild test -project Windmill.xcodeproj -scheme Windmill \
             -destination 'platform=iOS Simulator,name=iPhone 17' \
+            -resultBundlePath "$RUNNER_TEMP/ios-ui-${{ matrix.shard }}.xcresult" \
             ${{ matrix.tests }}
+
+      - name: Retain failed UI test results
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ui-${{ matrix.shard }}-result
+          path: ${{ runner.temp }}/ios-ui-${{ matrix.shard }}.xcresult
+          retention-days: 3

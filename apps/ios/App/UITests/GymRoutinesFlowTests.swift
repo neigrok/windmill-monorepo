@@ -30,15 +30,28 @@ import UIKit
     let attachment = XCTAttachment(screenshot: app.screenshot())
     attachment.name = "routines-" + name; attachment.lifetime = .keepAlways; add(attachment)
   }
+  func waitForPrimaryButton(_ button: XCUIElement) -> Bool {
+    let deadline = ProcessInfo.processInfo.systemUptime + 5
+    var remaining: TimeInterval { max(0, deadline - ProcessInfo.processInfo.systemUptime) }
+    guard button.waitForExistence(timeout: remaining) else { return false }
+    let viewport = XCUIApplication().frame
+    let rendered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      let frame = button.frame
+      return frame.width > 100 && frame.height > 30 && viewport.contains(frame)
+    }, object: button)
+    guard XCTWaiter.wait(for: [rendered], timeout: remaining) == .completed else { return false }
+    return button.wait(for: \.isHittable, toEqual: true, timeout: remaining)
+  }
   func assertPrimaryLabelContrast(_ button: XCUIElement, appearance: String, file: StaticString = #filePath, line: UInt = #line) {
     let previous = continueAfterFailure
     continueAfterFailure = true
     defer { continueAfterFailure = previous }
-    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      button.exists && button.isEnabled && button.isHittable && button.frame.width > 100 && button.frame.height > 30
-    }, object: button)
-    guard XCTWaiter.wait(for: [ready], timeout: 5) == .completed else {
+    guard waitForPrimaryButton(button), button.isEnabled else {
       XCTFail("Primary button must be visible and enabled before measuring \(appearance) contrast", file: file, line: line); return
+    }
+    let frame = button.frame
+    guard frame.width > 100 && frame.height > 30 else {
+      XCTFail("Primary button must have rendered bounds before measuring \(appearance) contrast", file: file, line: line); return
     }
     let screenshot = button.screenshot()
     guard let image = screenshot.image.cgImage else { XCTFail("Primary button has no rendered image", file: file, line: line); return }
@@ -94,7 +107,7 @@ import UIKit
       field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count))
     }
     field.typeText(text)
-    if field.identifier == "routine-name" {
+    if ["routine-name", "gym-movement-name"].contains(field.identifier) {
       field.typeText("\n")
       XCTAssertTrue(XCUIApplication().keyboards.firstMatch.waitForNonExistence(timeout: 5))
       XCTAssertEqual(field.value as? String, text)
@@ -271,13 +284,24 @@ import UIKit
       app.buttons["add-movement"].tap()
       app.buttons["gym-movement-" + id].tap()
     }
-    app.buttons["reorder-movements"].tap()
-    let bench = app.cells.containing(.button, identifier: "builder-movement-bench-press").firstMatch
+    let reorder = app.buttons["reorder-movements"]
+    reorder.tap()
+    XCTAssertTrue(reorder.wait(for: \.label, toEqual: "Done reordering", timeout: 5))
+    let deadliftHandle = app.buttons["Reorder Deadlift"]
+    let benchHandle = app.buttons["Reorder Bench Press"]
+    XCTAssertTrue(deadliftHandle.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertTrue(benchHandle.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    deadliftHandle.press(forDuration: 0.5, thenDragTo: benchHandle)
+    let firstMovement = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "builder-movement-")).element(boundBy: 0)
+    XCTAssertTrue(firstMovement.wait(for: \.identifier, toEqual: "builder-movement-deadlift", timeout: 5))
+    reorder.tap()
+    XCTAssertTrue(reorder.wait(for: \.label, toEqual: "Reorder", timeout: 5))
+    XCTAssertTrue(deadliftHandle.waitForNonExistence(timeout: 5))
     let deadlift = app.cells.containing(.button, identifier: "builder-movement-deadlift").firstMatch
-    deadlift.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5))
-      .press(forDuration: 0.5, thenDragTo: bench.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.1)))
-    app.buttons["reorder-movements"].tap()
-    deadlift.swipeLeft(); app.buttons["Remove"].tap()
+    XCTAssertTrue(deadlift.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    deadlift.swipeLeft()
+    let remove = app.buttons["Remove"]
+    XCTAssertTrue(remove.wait(for: \.isHittable, toEqual: true, timeout: 5)); remove.tap()
     app.buttons["Undo movement removal"].tap()
     app.buttons["add-movement"].tap()
     XCTAssertFalse(app.buttons["gym-movement-bench-press"].isEnabled)
@@ -330,10 +354,11 @@ import UIKit
     XCTAssertEqual(app.buttons["gym-movement-targets"].label, "Targets, 1 × max")
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5), "Returning from Targets must keep the dismissed keyboard closed")
     let create = app.buttons["gym-movement-create-commit"]
-    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      create.exists && create.isEnabled && create.isHittable && create.frame.maxY <= app.frame.maxY
-    }, object: create)
-    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
+    XCTAssertTrue(waitForPrimaryButton(create))
+    XCTAssertTrue(create.isEnabled)
+    let createFrame = create.frame
+    XCTAssertFalse(createFrame.isEmpty)
+    XCTAssertTrue(app.frame.contains(createFrame))
     create.tap()
     XCTAssertTrue(app.buttons["save-routine"].waitForExistence(timeout: 5))
     XCTAssertEqual(app.textFields["routine-name"].value as? String, "Custom day")

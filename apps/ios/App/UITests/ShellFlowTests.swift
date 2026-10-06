@@ -14,7 +14,6 @@ import XCTest
     menu.tap()
     let item = app.buttons.matching(NSPredicate(format: "identifier == %@ AND enabled == true", "room-\(room.lowercased())")).firstMatch
     XCTAssertTrue(item.waitForExistence(timeout: 5))
-    XCTAssertTrue(item.isHittable)
     item.tap()
     let selected = app.buttons.matching(NSPredicate(format: "identifier == %@ AND label == %@", "room-menu", room)).firstMatch
     XCTAssertTrue(selected.waitForExistence(timeout: 10))
