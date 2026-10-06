@@ -1,7 +1,7 @@
 #include "products/gym/adapters/mcp/GymTools.h"
 #include "platform/application/WriteObservation.h"
 
-#include "products/gym/adapters/json/TrainingJson.h"
+#include "products/gym/adapters/json/GymJson.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 
 #include <algorithm>

@@ -1,4 +1,4 @@
-#include "products/gym/adapters/json/TrainingJson.h"
+#include "products/gym/adapters/json/GymJson.h"
 
 #include <string>
 #include <cmath>

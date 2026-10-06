@@ -3,7 +3,7 @@
 #include "test/testing.h"
 
 #include "platform/adapters/json/JsonText.h"
-#include "products/gym/adapters/json/TrainingJson.h"
+#include "products/gym/adapters/json/GymJson.h"
 
 #include <pqxx/pqxx>
 

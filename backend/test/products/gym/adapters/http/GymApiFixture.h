@@ -9,7 +9,7 @@
 #include "products/gym/adapters/http/TrainingApi.h"
 
 #include "platform/adapters/json/JsonText.h"
-#include "products/gym/adapters/json/TrainingJson.h"
+#include "products/gym/adapters/json/GymJson.h"
 #include "test/platform/Fakes.h"
 #include "test/products/gym/Fakes.h"
 #include "test/products/gym/sync/GymDoorFixture.h"

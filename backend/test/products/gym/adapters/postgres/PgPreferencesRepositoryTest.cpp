@@ -4,7 +4,7 @@
 #include "test/products/gym/adapters/postgres/PgGymFixture.h"
 #include "test/testing.h"
 
-#include "products/gym/adapters/json/TrainingJson.h"
+#include "products/gym/adapters/json/GymJson.h"
 
 #include <pqxx/pqxx>
 

@@ -420,7 +420,7 @@ target_sources(windmill_journal PRIVATE
 # They reach Drogon + libpqxx through windmill_platform (linked PUBLIC by the core lib above).
 target_sources(windmill_gym PRIVATE
   products/gym/adapters/json/HistoryJson.cpp
-  products/gym/adapters/json/TrainingJson.cpp
+  products/gym/adapters/json/GymJson.cpp
   products/gym/adapters/postgres/PgLogHistory.cpp
   products/gym/adapters/postgres/PgLogRepository.cpp
   products/gym/adapters/postgres/PgCatalogRepository.cpp

@@ -1,7 +1,7 @@
 #include "test/products/gym/sync/GymDoorFixture.h"
 #include "test/testing.h"
 
-#include "products/gym/adapters/json/TrainingJson.h"
+#include "products/gym/adapters/json/GymJson.h"
 
 #include <algorithm>
 #include <cstdint>

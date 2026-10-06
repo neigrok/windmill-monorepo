@@ -1,7 +1,7 @@
 #include "products/gym/adapters/postgres/PgAskThreadRepository.h"
 
 #include "platform/adapters/postgres/PgPool.h"
-#include "products/gym/adapters/json/TrainingJson.h"
+#include "products/gym/adapters/json/GymJson.h"
 #include "products/gym/adapters/postgres/PgGymRows.h"
 
 #include <pqxx/pqxx>

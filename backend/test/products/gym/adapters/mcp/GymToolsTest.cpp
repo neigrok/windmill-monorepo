@@ -2,7 +2,7 @@
 
 #include "platform/adapters/mcp/CompositeToolHost.h"
 #include "platform/domain/sync/FractionalIndex.h"
-#include "products/gym/adapters/json/TrainingJson.h"
+#include "products/gym/adapters/json/GymJson.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 #include "products/gym/application/AskService.h"
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"

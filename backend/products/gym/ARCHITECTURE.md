@@ -44,7 +44,7 @@ ports/        LogRepository (sessions · sets · the two shares) · CatalogRepos
               PreferencesRepository · NotesRepository · BodyweightRepository · AskAgent ·
               GymWriteDoor (every server write and its outcomes)
 application/  TrainingService · ThreadService · AskService
-adapters/     json/{TrainingJson,HistoryJson} · postgres/PgGymRows.h + seven Pg repositories ·
+adapters/     json/{GymJson,HistoryJson} · postgres/PgGymRows.h + seven Pg repositories ·
               http/{Training,TrainingHistory,Catalog,Program,Preferences,Threads,Notes,Bodyweight,Ask}Api ·
               mcp/{GymToolCatalog,GymTools} · llm/AnthropicAsk
 sync/         GymRules · GymProduct (registry + binding) · GymState · PgGym ·
@@ -182,7 +182,7 @@ admission that creates the session; no client sends a plan. A routine the accoun
 with no routine and no plan, so the server doors refuse it before admitting: `start_session` with
 its no-routine sentence, the import with `404 no such routine`. Mid-session changes are
 session-scoped; writing one back is an ordinary `entries` write through `/v1/sync`. In C++ the plan
-is a typed `PlanSnapshot`, read through `planFrom` in `adapters/json/TrainingJson`, which clamps
+is a typed `PlanSnapshot`, read through `planFrom` in `adapters/json/GymJson`, which clamps
 rather than throws: `routine` is a name only when it is a string, a plan that is not an object is no
 plan at all, a `sets` that is not an array drops its line, and a set that cannot be read opens its
 line — the whole scheme or none, never a ladder shifted by the one missing.
@@ -310,7 +310,7 @@ routine is deleted.
   as `changeCount`. It is what `noChange` is decided off.
 - **Each side is a scheme frozen as jsonb** — the same `sets` array the wire carries, null on an open
   line — beside its rest, with presence flags for the side and each of its fields. The REST read goes
-  through `TrainingJson`'s `setTargetsFrom`, and `kind` tells an absent side from an open line.
+  through `GymJson`'s `setTargetsFrom`, and `kind` tells an absent side from an open line.
   `setTargetsFrom` reads the whole scheme or none: one set it cannot make out (not an object, a
   wrong-typed value, a value outside the band) answers the open line, never a ladder short by one.
   **No CHECKs on the sides**, so a bound tightened on `gym_routine_entry_sets` later cannot make a
@@ -806,13 +806,13 @@ The last column of a Retire row names the `/v1/sync` write that does that job
 
 ### 8.2 Shapes
 
-`adapters/json/TrainingJson` is the REST and MCP codec: every REST read answers in it and the MCP
+`adapters/json/GymJson` is the REST and MCP codec: every REST read answers in it and the MCP
 tools parse their arguments and render their replies with it, so a document `list_routines` hands
 over goes straight back into `create_routine` or `propose_routine_change`. The engine's records
 travel in the shapes `gym.registry.json` declares.
 
 Instants are epoch-ms numbers and weights are numbers in kg. The codecs in
-[TrainingJson.cpp](adapters/json/TrainingJson.cpp) define field names, wrappers and omission rules;
+[GymJson.cpp](adapters/json/GymJson.cpp) define field names, wrappers and omission rules;
 HTTP contract tests live in `test/products/gym/adapters/http/`. Routine entry order becomes positions
 `1..n`; entries use the same set scheme in routines, frozen plans and proposal diffs.
 

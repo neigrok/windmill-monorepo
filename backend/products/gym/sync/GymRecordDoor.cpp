@@ -3,7 +3,7 @@
 #include "platform/adapters/postgres/PgSyncStore.h"
 #include "platform/domain/sync/FractionalIndex.h"
 #include "platform/domain/sync/Jcs.h"
-#include "products/gym/adapters/json/TrainingJson.h"
+#include "products/gym/adapters/json/GymJson.h"
 
 #include <algorithm>
 

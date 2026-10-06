@@ -2,7 +2,7 @@
 #include "products/gym/application/ThreadService.h"
 #include "platform/application/WriteObservation.h"
 
-#include "products/gym/adapters/json/TrainingJson.h"
+#include "products/gym/adapters/json/GymJson.h"
 #include "products/gym/adapters/llm/AnthropicAsk.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 #include "products/gym/adapters/mcp/GymTools.h"

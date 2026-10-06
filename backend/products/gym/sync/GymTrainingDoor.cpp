@@ -1,7 +1,7 @@
 #include "products/gym/sync/GymDoor.h"
 
 #include "platform/adapters/postgres/PgSyncStore.h"
-#include "products/gym/adapters/json/TrainingJson.h"
+#include "products/gym/adapters/json/GymJson.h"
 #include "products/gym/sync/GymDoorHash.h"
 
 #include <algorithm>

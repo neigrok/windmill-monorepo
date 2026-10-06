@@ -1,4 +1,4 @@
-#include "products/gym/adapters/json/TrainingJson.h"
+#include "products/gym/adapters/json/GymJson.h"
 #include "platform/adapters/json/JsonText.h"
 #include "platform/domain/sync/Jcs.h"
 #include "test/products/gym/sync/GymDoorFixture.h"

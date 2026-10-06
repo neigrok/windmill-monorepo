@@ -1,5 +1,5 @@
 #include "products/gym/adapters/postgres/PgAskThreadRepository.h"
-#include "products/gym/adapters/json/TrainingJson.h"
+#include "products/gym/adapters/json/GymJson.h"
 #include "products/gym/application/AskService.h"
 #include "test/platform/Fakes.h"
 

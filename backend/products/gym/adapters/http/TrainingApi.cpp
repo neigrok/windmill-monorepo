@@ -3,7 +3,7 @@
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
 #include "platform/adapters/json/JsonText.h"
-#include "products/gym/adapters/json/TrainingJson.h"
+#include "products/gym/adapters/json/GymJson.h"
 
 #include <algorithm>
 #include <charconv>
