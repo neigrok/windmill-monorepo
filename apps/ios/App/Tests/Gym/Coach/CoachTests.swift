@@ -114,12 +114,18 @@ import SyncModelServer
     await coach.activate(); coach.edit("  Private question  ")
     let photo = UIGraphicsImageRenderer(size: CGSize(width: 20, height: 20)).image { _ in }.pngData()!
     if change == "removed-photo" { try coach.addPhoto(photo) }
-    coach.send(); try await settle { !coach.asking }
+    coach.send()
+    let firstWork = try #require(coach.work)
+    await firstWork.value
+    #expect(!coach.asking)
     let first = try #require(coach.saved.request)
     if change == "text" { coach.edit("Another question") }
     if change == "photo" { try coach.addPhoto(photo) }
     if change == "removed-photo" { coach.removePhoto() }
-    coach.send(); try await settle { !coach.asking }
+    coach.send()
+    let secondWork = try #require(coach.work)
+    await secondWork.value
+    #expect(!coach.asking)
     let second = try #require(coach.saved.request)
     #expect((second.requestId == first.requestId) == (change == "unchanged"))
     #expect(second.thread == first.thread)
