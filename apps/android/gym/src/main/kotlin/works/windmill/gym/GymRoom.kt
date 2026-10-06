@@ -501,7 +501,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // Said for as long as a way back is open and never a moment longer: the span is the store's
     // `undoWindowMs` and never a snackbar default, and the store says how much is left — the room
     // reads no clock of its own. The key is everything that could change what is offered, so the
-    // instant a settle commits a delete to the wire, or a second delete joins the window, this effect
+    // instant a settle writes a delete, or a second delete joins the window, this effect
     // is cancelled and the transient is redrawn for what is left. An Undo offered over a delete
     // already sent is a lie.
     val takeable = store.holding
@@ -571,9 +571,9 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
-    // A double tap is a second session, so the door closes while the first is in flight. A log that
-    // could not be reached is not a refusal: the store composes the workout on the device and the
-    // claim lands it. A user-tapped start never silently joins.
+    // A double tap is a second session, so the door closes while the first is in flight. The start is
+    // written to this phone's replica at once, offline too, and the engine carries it to the account.
+    // A user-tapped start never silently joins.
     fun open(routineId: String?) {
         scope.launch {
             if (starting) return@launch

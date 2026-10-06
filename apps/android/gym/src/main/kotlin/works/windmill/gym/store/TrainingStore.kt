@@ -506,7 +506,7 @@ class TrainingStore(
     val firstSession: Boolean
         get() = allSessions.isEmpty() && program.isEmpty() && older == Older.End
 
-    // Called on launch and on every change of who is signed in. A re-read for the same owner
+    // Called on launch and on every change of who is signed in. A re-read with the same account
     // preserves open deletion windows.
     suspend fun connect(account: Account) {
         if (!account.resolved) return
@@ -559,9 +559,9 @@ class TrainingStore(
         older = Older.More
         // A withheld delete goes with the SEAT, UNWRITTEN: settling it now would take a row off the
         // log of the account that just arrived. Its clock goes with it, or it would settle a window
-        // the next seat never opened. A re-read for the seat already in hand takes nothing down: the
-        // shelf's own discard runs through here while other windows are open, and dropping them
-        // would leave a lifter told `Note deleted.` over a note that is never deleted.
+        // the next seat never opened. A re-read with the account already in hand takes nothing down:
+        // dropping its open windows would leave a lifter told `Note deleted.` over a note that is
+        // never deleted.
         if (arriving) {
             closedDetails = emptyMap()
             for (clock in clocks.values) clock.cancel()
