@@ -80,7 +80,6 @@
 #include "products/journal/adapters/postgres/PgJournalRepository.h"
 #include "products/journal/adapters/postgres/PgNudgeRepository.h"
 #include "products/journal/application/EchoDerivations.h"
-#include "products/journal/application/PageService.h"
 #include "products/journal/sync/application/JournalFeed.h"
 #include "products/journal/application/WarmEchoRepository.h"
 #include "products/journal/routes.h"
@@ -941,7 +940,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   registerRoutes(app, roadmapDeps);
 
   auto journalPages = std::make_shared<PgJournalRepository>(pool);
-  // PageService is built after the echo stack, because a save triggers a derivation.
   // JOURNAL_NUDGE_ENABLED must say so AND the user be named in JOURNAL_NUDGE_ALLOWLIST before any
   // mail leaves; both gates are read at send time.
   const char* journalNudgeEnabledEnv = std::getenv("JOURNAL_NUDGE_ENABLED");
@@ -1006,12 +1004,11 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   syncEngine->watcher = journalEchoDerivations;
   syncEngine->changes.target = std::make_shared<journal::engine::JournalFeed>(
       *journalEchoDerivations, *syncEngine->live);
-  auto pageService = std::make_shared<PageService>(*journalPages);
   // Writes nothing; holds the same corpus, embedder and curator the live path does.
   auto journalEchoExplainer = std::make_shared<EchoExplainer>(
-      *journalEchoes, *journalSegmenter, *journalEmbedder, *journalCurator, *pageService);
+      *journalEchoes, *journalSegmenter, *journalEmbedder, *journalCurator, *journalPages);
   lifetime.watch(journalEchoExplainer, journalEchoes, journalSegmenter, journalEmbedder, journalCurator,
-                 pageService, journalPages);
+                 journalPages);
   // Without OPENAI_API_KEY the transcriber is null and the endpoint answers 503.
   const char* openaiKeyEnv = std::getenv("OPENAI_API_KEY");
   std::shared_ptr<Transcriber> journalTranscriber;
@@ -1020,7 +1017,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
     lifetime.watch(transport);
     journalTranscriber = transport;
   } else journalTranscriber = std::make_shared<NullTranscriber>();
-  journal::JournalDeps journalDeps{.pageService = pageService, .authService = authService,
+  journal::JournalDeps journalDeps{.pages = journalPages, .authService = authService,
                                    .nudges = journalNudges, .nudgeSweep = journalNudgeSweep,
                                    .tokens = tokens, .clock = systemClock,
                                    .nudgeAdminToken = journalNudgeAdminEnv ? journalNudgeAdminEnv : "",

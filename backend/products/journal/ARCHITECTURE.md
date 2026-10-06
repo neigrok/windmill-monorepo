@@ -36,7 +36,7 @@ backend/products/journal/
                  Passage · SpanReconcile · EchoSelection          (pure, no I/O)
   ports/         JournalRepository · PageWatcher · NudgeRepository · NudgeMailSender
                  EchoRepository · Segmenter (+ RuleSegmenter) · Embedder · Curator · Transcriber
-  application/   PageService · NudgeSweep
+  application/   NudgeSweep
                  EchoSweep · EchoDerivations · WarmEchoRepository · EchoExplainer
   adapters/
     http/        JournalApi · NudgeApi · EchoApi · VoiceApi
@@ -84,9 +84,9 @@ tags in the model.
 
 ## Pages
 
-`PageService` holds `JournalRepository&` and only reads (`page`, `range`, `since`, `all`): the REST
-page reads and the echo explainer go through it. A page changes only when the engine admits one of
-the two commands below; an intent carrying a `page` delta is refused `invalid`.
+`JournalRepository` only reads (`load`, `range`, `since`, `all`): `JournalApi` serves the REST page
+reads from it and the echo explainer reads a page through it. A page changes only when the engine
+admits one of the two commands below; an intent carrying a `page` delta is refused `invalid`.
 
 Convergence is last-writer-wins per day on the document stamp `{ms, counter, actor}` the writing
 device mints, with no CRDT. `journal.savePage` compares the incoming stamp with the stored one under

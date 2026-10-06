@@ -1,6 +1,5 @@
 #include "products/journal/adapters/postgres/PgJournalRepository.h"
 
-#include "products/journal/application/PageService.h"
 #include "test/PgTestPool.h"
 #include "test/testing.h"
 
@@ -11,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <vector>
 
 // Opt-in integration test: needs a live local Postgres with the schema applied and WM_PG_TEST set; otherwise every case reports skip. It seeds its own user row.
 using namespace wm;
@@ -58,6 +58,20 @@ void stored(const Page& incoming) {
          "stamp_actor = excluded.stamp_actor",
          row);
   w.commit();
+}
+
+// What a read answers: each page's day and words, in the order the read gave them.
+std::vector<std::string> written(const std::vector<Page>& pages) {
+  std::vector<std::string> out;
+  for (const Page& held : pages) out.push_back(held.day.iso() + " " + held.body);
+  return out;
+}
+
+Page writtenOn(const std::string& day, const std::string& body, std::uint64_t stampMs) {
+  Page incoming{UserId{kUser}, LocalDate{day}};
+  incoming.body = body;
+  incoming.stamp = Hlc{stampMs, 0, "dev"};
+  return incoming;
 }
 }
 
@@ -224,32 +238,70 @@ TEST(pg_journal_narrows_an_out_of_range_stored_scale_to_unset) {
   CHECK_EQ(got->energy, std::optional<Score>{});
 }
 
-TEST(pg_journal_through_pageservice_reads_the_body) {
+TEST(pg_journal_load_is_absent_until_the_day_is_written) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgJournalRepository repo{pgTestPool()};
-  PageService service{repo};
 
-  stored(page("via the service", Score{5}, Score{5}, Source::typed, Hlc{300, 0, "devQ"}));
-  std::optional<Page> got = service.page(UserId{kUser}, LocalDate{"2026-07-27"});
+  CHECK_EQ(repo.load(UserId{kUser}, LocalDate{"2026-07-27"}), std::optional<Page>());
+  stored(writtenOn("2026-07-27", "here", 10));
+  const std::optional<Page> got = repo.load(UserId{kUser}, LocalDate{"2026-07-27"});
   REQUIRE(got.has_value());
-  CHECK_EQ(got->body, std::string("via the service"));
-  CHECK_EQ(got->day.iso(), std::string("2026-07-27"));
+  CHECK_EQ(written({*got}), std::vector<std::string>{"2026-07-27 here"});
+}
+
+TEST(pg_journal_range_is_the_inclusive_window_oldest_first) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgJournalRepository repo{pgTestPool()};
+  stored(writtenOn("2026-07-25", "mon", 10));
+  stored(writtenOn("2026-07-26", "tue", 20));
+  stored(writtenOn("2026-07-27", "wed", 30));
+  stored(writtenOn("2026-07-28", "thu", 40));
+
+  CHECK_EQ(written(repo.range(UserId{kUser}, LocalDate{"2026-07-26"}, LocalDate{"2026-07-27"})),
+           (std::vector<std::string>{"2026-07-26 tue", "2026-07-27 wed"}));
+}
+
+TEST(pg_journal_since_is_strictly_past_the_cursor_ascending_and_capped) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgJournalRepository repo{pgTestPool()};
+  stored(writtenOn("2026-07-25", "a", 10));
+  stored(writtenOn("2026-07-26", "b", 20));
+  stored(writtenOn("2026-07-27", "c", 30));
+  stored(writtenOn("2026-07-28", "d", 40));
+
+  CHECK_EQ(written(repo.since(UserId{kUser}, Hlc{20, 0, "dev"}, 10)),
+           (std::vector<std::string>{"2026-07-27 c", "2026-07-28 d"}));
+  CHECK_EQ(written(repo.since(UserId{kUser}, Hlc{0, 0, "dev"}, 2)),
+           (std::vector<std::string>{"2026-07-25 a", "2026-07-26 b"}));
+}
+
+TEST(pg_journal_all_is_every_page_oldest_first) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgJournalRepository repo{pgTestPool()};
+  stored(writtenOn("2026-07-27", "c", 30));
+  stored(writtenOn("2026-07-25", "a", 10));
+  stored(writtenOn("2026-07-26", "b", 20));
+
+  CHECK_EQ(written(repo.all(UserId{kUser})),
+           (std::vector<std::string>{"2026-07-25 a", "2026-07-26 b", "2026-07-27 c"}));
 }
 
 // The server serves every request on a drogon WORKER THREAD; this runs the same read on a fresh worker thread.
-TEST(pg_journal_through_pageservice_on_a_worker_thread) {
+TEST(pg_journal_reads_on_a_worker_thread) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgJournalRepository repo{pgTestPool()};
-  PageService service{repo};
   stored(page("off-thread", Score{3}, Score{2}, Source::spoken, Hlc{400, 0, "devW"}));
 
   std::optional<Page> got;
   std::vector<Page> listed;
   std::thread worker([&] {
-    got = service.page(UserId{kUser}, LocalDate{"2026-07-27"});
-    listed = service.all(UserId{kUser});
+    got = repo.load(UserId{kUser}, LocalDate{"2026-07-27"});
+    listed = repo.all(UserId{kUser});
   });
   worker.join();
 

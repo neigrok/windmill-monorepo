@@ -1,7 +1,7 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
-#include "products/journal/application/PageService.h"
+#include "products/journal/ports/JournalRepository.h"
 
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
@@ -18,14 +18,14 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // that caller. A page is addressed by its local date in the URL; pages are written through /v1/sync.
 class JournalApi {
 public:
-  JournalApi(std::shared_ptr<PageService> pages, std::shared_ptr<AuthService> auth);
+  JournalApi(std::shared_ptr<JournalRepository> pages, std::shared_ptr<AuthService> auth);
 
   void getPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& date);   // GET  /v1/journal/page/:date
   void listPages(const drogon::HttpRequestPtr& req, HttpCallback&& cb);                          // GET  /v1/journal/pages?since=|from=&to=
   void exportAll(const drogon::HttpRequestPtr& req, HttpCallback&& cb);                          // GET  /v1/journal/export
 
 private:
-  std::shared_ptr<PageService> pages_;
+  std::shared_ptr<JournalRepository> pages_;
   std::shared_ptr<AuthService> auth_;
 };
 

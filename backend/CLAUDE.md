@@ -87,7 +87,7 @@ proposal unlink a Coach conversation's delete makes — goes through `GymDoor`, 
 as a server-origin intent; it builds its own admission stack and four-thread worker pool beside the
 engine's. `TrainingService`, `CatalogService`, `ProgramService`, `NotesService` and `ThreadService`
 take the door; the gym repositories only read, but for shares and Coach threads. No server door writes
-a journal page: `PageService` only reads, and `JournalFeed` hands each committed page to the
+a journal page: `JournalRepository` only reads, and `JournalFeed` hands each committed page to the
 `PageWatcher` (echo derivation) after the live feed, reporting a failure of either after the commit.
 
 The admission corpus of both products runs over fakes and over Postgres, and so do journal's revision

@@ -1,11 +1,11 @@
 #pragma once
 
 #include "platform/application/Heartbeat.h"
-#include "products/journal/application/PageService.h"
 #include "products/journal/domain/EchoSelection.h"
 #include "products/journal/ports/Curator.h"
 #include "products/journal/ports/EchoRepository.h"
 #include "products/journal/ports/Embedder.h"
+#include "products/journal/ports/JournalRepository.h"
 #include "products/journal/ports/Segmenter.h"
 
 #include <cstdint>
@@ -58,7 +58,7 @@ struct ExplainRequest {
 class EchoExplainer {
 public:
   EchoExplainer(EchoRepository& echoes, Segmenter& segmenter, Embedder& embedder, Curator& curator,
-                PageService& pages);
+                JournalRepository& pages);
   void stop() { heartbeat_.stop(); }
 
   EchoExplanation explain(const UserId& user, const ExplainRequest& request);
@@ -72,7 +72,7 @@ private:
   Segmenter& segmenter_;
   Embedder& embedder_;
   Curator& curator_;
-  PageService& pages_;
+  JournalRepository& pages_;
   Heartbeat heartbeat_;   // declared last: destructs first, before the deps a running call holds
 };
 

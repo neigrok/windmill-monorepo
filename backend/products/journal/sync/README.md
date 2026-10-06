@@ -29,4 +29,4 @@ claim-edit vectors belong to the client role.
 `JournalFeed` wraps the engine's live feed: after each commit it publishes the change to the live
 sockets, then hands every changed page to the `PageWatcher` (`EchoDerivations`) with its body's byte
 length. A failure of either is reported under `sync.publish` and leaves the admission committed.
-No server door admits a journal command; `PageService` and the REST reads only read.
+No server door admits a journal command; `JournalRepository` and the REST reads only read.

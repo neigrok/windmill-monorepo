@@ -17,7 +17,7 @@ namespace wm::journal {
 
 void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
   WriteRoutes routes(app, "journal");
-  auto api = std::make_shared<JournalApi>(deps.pageService, deps.authService);
+  auto api = std::make_shared<JournalApi>(deps.pages, deps.authService);
 
   routes.registerHandler(
       "/v1/journal/page/{date}",

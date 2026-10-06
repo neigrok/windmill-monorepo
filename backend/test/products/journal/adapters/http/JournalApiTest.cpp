@@ -30,9 +30,8 @@ struct Harness {
   FakeSessionRevocations revocations;
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works");
-  FakeJournalRepository repo;
-  std::shared_ptr<PageService> pages = std::make_shared<PageService>(repo);
-  JournalApi api{pages, auth};
+  std::shared_ptr<FakeJournalRepository> repo = std::make_shared<FakeJournalRepository>();
+  JournalApi api{repo, auth};
 
   UserId signIn(const std::string& sessionSecret) {
     User user = authRepo.createUser(Email{"sam@example.com"}, "sam");
@@ -100,7 +99,7 @@ TEST(journal_get_without_a_session_is_401) {
 
   CHECK_EQ(response->getStatusCode(), drogon::k401Unauthorized);
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"sign in to open your journal"})"));
-  CHECK(h.repo.byKey.empty());
+  CHECK(h.repo->byKey.empty());
 }
 
 TEST(journal_get_of_a_malformed_date_is_400) {
@@ -135,7 +134,7 @@ TEST(journal_get_answers_the_stored_page_in_its_wire_shape) {
   page.source = Source::spoken;
   page.stamp = hlc(1'700'000'000'000, 3, "dev-a");
   page.updatedAtMs = 1'700'000'001'234;
-  h.repo.byKey.emplace(FakeJournalRepository::key(me, page.day), page);
+  h.repo->byKey.emplace(FakeJournalRepository::key(me, page.day), page);
 
   drogon::HttpResponsePtr read =
       sendGet(h.api, getRequest("/v1/journal/page/2026-07-27", "s-live"), "2026-07-27");
@@ -156,7 +155,7 @@ TEST(journal_routes_refuse_a_date_the_calendar_does_not_have) {
   CHECK_EQ(sendGet(h.api, getRequest("/v1/journal/page/0000-01-01", "s-live"), "0000-01-01")
                ->getStatusCode(),
            drogon::k400BadRequest);
-  CHECK(h.repo.byKey.empty());
+  CHECK(h.repo->byKey.empty());
 }
 
 TEST(journal_list_refuses_an_impossible_window) {

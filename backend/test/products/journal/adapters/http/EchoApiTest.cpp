@@ -39,7 +39,6 @@ struct Harness {
   FakeAiUsageRepository usage;
   Entitlements entitlements{subscriptions, usage};
   FakeJournalRepository pages;
-  PageService pageService{pages};
   std::shared_ptr<EchoSweep> sweep;
   std::shared_ptr<EchoExplainer> explainer;
   std::shared_ptr<EchoApi> api;
@@ -48,7 +47,7 @@ struct Harness {
       : sweep(std::make_shared<EchoSweep>(*echoes, segmenter, embedder, curator, *clock,
                                           entitlements, SelectionRules{}, SweepBudget{})),
         explainer(std::make_shared<EchoExplainer>(*echoes, segmenter, embedder, curator,
-                                                  pageService)),
+                                                  pages)),
         api(std::make_shared<EchoApi>(echoes, sweep, explainer, auth,
                                       std::shared_ptr<Entitlements>(&entitlements, [](Entitlements*) {}),
                                       std::move(adminToken))) {}

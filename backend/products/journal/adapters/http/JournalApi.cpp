@@ -22,7 +22,7 @@ std::optional<LocalDate> dayOf(const std::string& date) {
 }
 }
 
-JournalApi::JournalApi(std::shared_ptr<PageService> pages, std::shared_ptr<AuthService> auth)
+JournalApi::JournalApi(std::shared_ptr<JournalRepository> pages, std::shared_ptr<AuthService> auth)
     : pages_(std::move(pages)), auth_(std::move(auth)) {}
 
 void JournalApi::getPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
@@ -37,7 +37,7 @@ void JournalApi::getPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     cb(error(drogon::k400BadRequest, "bad date"));
     return;
   }
-  std::optional<Page> page = pages_->page(*caller, *day);
+  std::optional<Page> page = pages_->load(*caller, *day);
   if (!page) {
     cb(error(drogon::k404NotFound, "nothing written"));
     return;

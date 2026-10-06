@@ -16,7 +16,7 @@
 namespace wm {
 
 EchoExplainer::EchoExplainer(EchoRepository& echoes, Segmenter& segmenter, Embedder& embedder,
-                             Curator& curator, PageService& pages)
+                             Curator& curator, JournalRepository& pages)
     : echoes_(echoes), segmenter_(segmenter), embedder_(embedder), curator_(curator), pages_(pages),
       heartbeat_("journal-echo-explain", "journal") {}
 
@@ -52,7 +52,7 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
   explained.curatorVersion = curator_.version();
   explained.persisted = echoes_.echoesFor(user, request.day, request.day);
 
-  const std::optional<Page> page = pages_.page(user, request.day);
+  const std::optional<Page> page = pages_.load(user, request.day);
   if (!page) return explained;
   explained.pageFound = true;
   explained.body = page->body;
