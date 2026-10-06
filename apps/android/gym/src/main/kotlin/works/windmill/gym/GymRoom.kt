@@ -802,8 +802,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
 
     key(seat) {
         if (account.resolved && account.user?.id.orEmpty() == seat) {
-            // The origin comes from the account's own client.
-            val origin = account.api.baseUrl.toString()
+            val origin = account.origin
             val coach = remember(origin) { CoachDoors(origin, store::share, store::revokeShare) }
             val lookedAtIds = lookedAt.split(' ').filter { it.isNotEmpty() }.toSet()
             val clipboard = LocalClipboardManager.current

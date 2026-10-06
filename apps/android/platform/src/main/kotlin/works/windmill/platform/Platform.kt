@@ -7,7 +7,6 @@ import androidx.compose.runtime.setValue
 import works.windmill.platform.you.YouDestination
 import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.serialization.Serializable
-import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.telemetry.Telemetry
 
 // Product-neutral: nothing here may name a product.
@@ -26,7 +25,8 @@ interface ProductModule {
 }
 
 // An unresolved account is still restoring credentials; an unverified user stands on the device copy.
-class Account(val api: WindmillApi, val user: User?, val verified: Boolean = true, val resolved: Boolean = true, val locallyTrusted: Boolean = true, val identityRevision: Long = 0, val telemetry: Telemetry = Telemetry.None) {
+// `origin` is the backend the account signs in to, where the links it shares point.
+class Account(val origin: String, val user: User?, val verified: Boolean = true, val resolved: Boolean = true, val locallyTrusted: Boolean = true, val identityRevision: Long = 0) {
     val isSignedIn: Boolean
         get() = user != null
 }

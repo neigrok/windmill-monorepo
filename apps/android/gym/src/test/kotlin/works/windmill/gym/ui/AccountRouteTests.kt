@@ -285,7 +285,7 @@ private fun AccountRoot(auth: AuthStore, store: TrainingStore, onShell: (ShellAc
     }
     val module = remember(store) { GymModule(store) }
     val standing = auth.status
-    val account = Account(auth.api, standing.user,
+    val account = Account(auth.baseUrl.toString(), standing.user,
         verified = (standing as? AuthStatus.SignedIn)?.verified ?: true,
         resolved = standing != AuthStatus.Unknown)
     CompositionLocalProvider(LocalShellActions provides shell) {

@@ -13,7 +13,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -38,7 +37,6 @@ import works.windmill.gym.store.Withheld
 import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.net.Refusal
-import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
 
 // `13-gestures.md:214-215`: a window decides which ROWS are drawn; it never decides what state a
@@ -71,7 +69,7 @@ class StanceReadsTheAccountTests {
     // ONE seat for the whole test: the room re-connects on the way in, and a connect for a seat the
     // store does not already hold is an ARRIVAL, which abandons every open window.
     private val account = Account(
-        api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
+        origin = "https://windmill.works",
         user = User(id = "u1", email = "sam@example.com", name = "Sam"),
     )
 

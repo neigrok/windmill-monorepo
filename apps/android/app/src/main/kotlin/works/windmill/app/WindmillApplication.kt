@@ -129,9 +129,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
         syncRuntime.launch(engineStorage)
         gym = GymRuntime(store, cachedOwner = { sessions.localSession.user?.id },
             authorityAvailable = { sessions.localSession !is LocalSession.Unresolved },
-            cachedAccount = { val current = sessions.localSession
-                current.user?.let { works.windmill.platform.Account(auth.accountApi(it), it, verified = false,
-                    locallyTrusted = current is LocalSession.Owned, telemetry = telemetry) } }, authorityRevision = { auth.identityRevision })
+            authorityRevision = { auth.identityRevision })
         workoutNotifications = WorkoutNotifications(this, gym, scope,
             ComponentName(this, MainActivity::class.java),
             getSystemService(NotificationManager::class.java),

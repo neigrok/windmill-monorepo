@@ -2,12 +2,10 @@ package works.windmill.gym.store
 
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.*
 import works.windmill.gym.domain.*
 import works.windmill.platform.Account
 import works.windmill.platform.User
-import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.*
@@ -61,7 +59,7 @@ internal class EngineRoomFixture(
         mintSet = { "set${(++nextSet).toString().padStart(5, '0')}" }, mintRoutine = mintRoutine, mintExercise = mintExercise,
         undoWindowMs = undoWindowMs, workoutClock = workoutClock ?: WorkoutClock { val at = ++now; WorkoutMoment(at, at, "local") },
         workoutAuthority = workoutAuthority, telemetry = telemetry, elapsedNanos = elapsedNanos, localCoach = localCoach)
-    fun account(id: String? = selected) = Account(WindmillApi("https://windmill.works".toHttpUrl(), { null }),
+    fun account(id: String? = selected) = Account("https://windmill.works",
         id?.let { User(it, "$it@example.com") }, verified = true)
     suspend fun select(id: String?) {
         store.prepareEngineTransition()

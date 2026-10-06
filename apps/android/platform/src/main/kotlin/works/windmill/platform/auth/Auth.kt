@@ -29,7 +29,7 @@ sealed class AuthStatus {
 }
 
 class AuthStore(
-    private val baseUrl: HttpUrl,
+    val baseUrl: HttpUrl,
     private val sessions: SessionStore,
     private val client: OkHttpClient = OkHttpClient(),
     val telemetry: Telemetry = Telemetry.None,

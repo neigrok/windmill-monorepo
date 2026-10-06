@@ -132,11 +132,10 @@ class TrainingStore(
     private val workoutAuthorized: Boolean get() = localWorkoutAuthorized && workoutAuthority(owner) &&
         controls.engineReplica == training.engine.activeReplica()
 
-    fun restoreWorkout(cachedOwner: String?, authorized: Boolean, account: Account? = null) {
+    fun restoreWorkout(cachedOwner: String?, authorized: Boolean) {
         if (workoutReady) return
         localWorkoutAuthorized = authorized
         owner = cachedOwner
-        if (authorized && account?.user?.id == cachedOwner) seated = account
         try {
             controls.adopt(owner)
             projectEngineReplica()

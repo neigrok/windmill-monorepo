@@ -195,12 +195,10 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
     val aboutLabel = stringResource(works.windmill.gym.R.string.onboarding_about)
 
     val standing = auth.status
-    val accountApi = remember(auth.identityRevision, standing.user?.id) { auth.accountApi(standing.user) }
-    val account = Account(accountApi, standing.user,
+    val account = Account(auth.baseUrl.toString(), standing.user,
         verified = (standing as? AuthStatus.SignedIn)?.verified ?: true,
         resolved = standing != AuthStatus.Unknown && standing !is AuthStatus.Unresolved,
-        locallyTrusted = auth.localSession !is works.windmill.platform.auth.LocalSession.Unresolved, identityRevision = auth.identityRevision,
-        telemetry = runtime.telemetry)
+        locallyTrusted = auth.localSession !is works.windmill.platform.auth.LocalSession.Unresolved, identityRevision = auth.identityRevision)
 
     // WindmillMaterial wraps everything Material draws; the room's Skin wraps the room AND the
     // shell's sheet, so the sheet borrows the hosting room's colours — in gym the brand's gold
