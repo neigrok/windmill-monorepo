@@ -18,11 +18,13 @@ await engine.start();
 
 `commit` accepts either changes/options or the reference's synchronous read-and-commit callback.
 Its Promise resolves after the IndexedDB transaction commits; publication failures report separately and do not reject a durable save. The callback runs inside the
-transaction and must not return a Promise. A rejection is one of §7.1's three failures, a
+transaction and must not return a Promise; its views carry `drawn`, `stored`, `now`, `replica`, the
+product's `devices` rows and the scope's `firstPullComplete`. A rejection is one of §7.1's three failures, a
 `CommitError` of kind `not-writable`, `malformed` or `store`, or the callback's own throw, passed
-through unchanged. `observe` exposes drawn/stored records, notices, `undoOffers` (the scope's held
-gestures, each with its `id`, `releaseAt` and the records it changes) and `firstPullComplete`,
-retaining confirmed `seq`, `rc` and `ru` envelope metadata. `observeEngine` exposes replica/auth/upgrade state; `onEvent` delivers active
+through unchanged. `newGestureId()` mints the id a caller passes as `opts.gestureId` when it must know it
+before the commit; the domain kit's runner (`src/platform/domain-kit/runner.js`) does. `observe` exposes
+drawn/stored records, notices, `undoOffers` (the scope's held gestures, each with its `id`, `releaseAt` and
+the records it changes) and `firstPullComplete`, retaining confirmed `seq`, `rc` and `ru` envelope metadata. `observeEngine` exposes replica/auth/upgrade state; `onEvent` delivers active
 replica changes after durable commits and persisted-page suspension, restoration and restore failure.
 Persisted restores reopen IndexedDB and coordination with the same observations and listeners;
 the shell refreshes account state after restoration. Views and transport are injectable and product-neutral.

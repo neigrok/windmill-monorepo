@@ -98,7 +98,7 @@ export class BrowserSyncEngine {
     return { registry: this.registry, actor: this.actor, deviceNow: this.now(), appVersion: this.appVersion,
       device, ended: [], telemetry: [], events: [], limits: this.limits, draw: this.draw,
       newReplicaId: this.newReplicaId, newActor: this.newActor,
-      nextGestureId: () => crypto.randomUUID(), pendingDeviceWork: this.pendingDeviceWork };
+      nextGestureId: () => this.newGestureId(), pendingDeviceWork: this.pendingDeviceWork };
   }
 
   async write(operation, change, scopes = []) {
@@ -342,13 +342,25 @@ export class BrowserSyncEngine {
     return this.write(null, (device, ctx) => reconcile(device.activeReplica, ctx, this.scopes(device.activeReplica)));
   }
 
-  // A read-and-commit function's own throw is the caller's (§7.1), so it passes through unreported.
+  // A caller that must know its gesture id before the commit (the domain kit's runner) mints it here and
+  // passes it as `opts.gestureId`.
+  newGestureId() { return crypto.randomUUID(); }
+
+  // The read-and-commit body (§7.12) also reads, in its transaction, the product's device rows and the
+  // scope's first-pull state: `{drawn, stored, now, replica, devices, firstPullComplete}`. The body's own
+  // throw is the caller's (§7.1), so it passes through unreported.
   async commit(scope, changes, opts) {
     const result = await this.write('sync-commit', (device, ctx) => {
+      const replica = device.activeReplica;
       const read = typeof changes === 'function'
-        ? (views) => { try { return changes(views); } catch (error) { ctx.callerError = error; throw error; } }
+        ? (views) => {
+          const seen = { ...views,
+            devices: structuredClone(replica.deviceRows(this.registry.productOfRef(scope))),
+            firstPullComplete: firstPullComplete(replica, scope, this.scopes(replica)) };
+          try { return changes(seen); } catch (error) { ctx.callerError = error; throw error; }
+        }
         : changes;
-      return commit(device.activeReplica, ctx, scope, read, opts);
+      return commit(replica, ctx, scope, read, opts);
     }, [scope]);
     this.requestPersistence();
     this.kick();

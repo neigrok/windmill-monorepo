@@ -1,6 +1,6 @@
 ---
 name: domain-feature
-description: Build or change a gym or journal feature's domain logic on the Windmill domain kit, in Swift (apps/ios/Domain, GymDomain or JournalDomain) or Kotlin (apps/android/gym/domain) — entities, value specs, rules and the product refusal, reads, actions, drafts and their one save, keyed records saved whole, moves, held deletes and Undo, Coach executors, their harness tests and the shared vectors every implementation reproduces. Pure logic, no UI. Use when asked to add or change a gym or journal feature's entities, rules, actions, drafts or saves on iOS or Android, or to make another implementation claim a shared vector.
+description: Build or change a gym or journal feature's domain logic on the Windmill domain kit, in Swift (apps/ios/Domain, GymDomain or JournalDomain), Kotlin (apps/android/gym/domain) or JavaScript (web/src/platform/domain-kit, web/src/products/<p>/domain) — entities, value specs, rules and the product refusal, reads, actions, drafts and their one save, keyed records saved whole, moves, held deletes and Undo, Coach executors, their harness tests and the shared vectors every implementation reproduces. Pure logic, no UI. Use when asked to add or change a gym or journal feature's entities, rules, actions, drafts or saves on iOS, Android or web, or to make another implementation claim a shared vector.
 ---
 
 # A feature domain on the domain kit
@@ -11,19 +11,22 @@ carries the common path end to end; the kit's spec, `docs/foundation/domain-kit.
 `docs/foundation/engine.md` (engine §n), are normative for the rest. The reference shapes are gym **Notes** (minted,
 ordered, capped, guarded) and gym **Bodyweight** (keyed by day, one fact saved whole):
 
-| | Swift | Kotlin |
-|---|---|---|
-| domain | `apps/ios/Domain/Sources/GymDomain/{Notes,Bodyweight,GymRules}.swift` | `apps/android/gym/domain/src/main/kotlin/works/windmill/gym/domain/sync/{Notes,Bodyweight,GymRules}.kt` |
-| tests | `apps/ios/Domain/Tests/GymDomainTests/` | `apps/android/gym/domain/src/test/kotlin/works/windmill/gym/domain/sync/` |
-| vectors | `packages/api-contract/gym/` — shared, written once, claimed by every runner | |
+| | Swift | Kotlin | Web |
+|---|---|---|---|
+| kit | `apps/ios/Domain/Sources/DomainKit/` | `apps/android/domain-kit/` | `web/src/platform/domain-kit/` |
+| domain | `apps/ios/Domain/Sources/GymDomain/{Notes,Bodyweight,GymRules}.swift` | `apps/android/gym/domain/src/main/kotlin/works/windmill/gym/domain/sync/{Notes,Bodyweight,GymRules}.kt` | `web/src/products/<p>/domain/` — none yet |
+| tests | `apps/ios/Domain/Tests/GymDomainTests/` | `apps/android/gym/domain/src/test/kotlin/works/windmill/gym/domain/sync/` | `web/test/products/<p>/domain/` — none yet |
+| vectors | `packages/api-contract/gym/` — shared, written once, claimed by every runner | | |
 
-Gym is carried by Swift and Kotlin; journal by Swift only (`JournalDomain`). Web carries both products with no kit
-yet: see [Web](#web--no-kit-yet). The shared path below is written in Swift, the spec's own language, with the
-Kotlin name beside it where the two differ; each platform's section then gives its paths, commands and the layering
-rules it enforces.
+Gym is carried by Swift and Kotlin; journal by Swift only (`JournalDomain`). Web carries both products; its kit is
+built and claims the kit corpus, while gym and journal still hand-write their rules in `web/src/products/{gym,journal}/`
+and claim no product vector; see [Web](#web-web). The shared path below is written in Swift, the spec's own language,
+with the Kotlin name beside it where the two differ and the web's spellings in its own section; each platform's section
+then gives its paths, commands and the layering rules it enforces.
 
-**Not** for screens, view models or copy (the `Windmill<P>` UI modules, `:gym`), the engine or a registry
-(`apps/ios/Sync`, `apps/android/sync-*`, `packages/api-contract/sync`), or roadmap, which is web only.
+**Not** for screens, view models or copy (the `Windmill<P>` UI modules, `:gym`, anything under `web/src/products/<p>/`
+outside `domain/`), the engine or a registry (`apps/ios/Sync`, `apps/android/sync-*`, `web/src/platform/sync`,
+`packages/api-contract/sync`), or roadmap, which is web only and not a kit consumer.
 
 ## The rule every implementation enforces
 
@@ -261,7 +264,8 @@ result's form a test extension of the read. The corpus `README.md` states each a
 
 **One corpus, every runner.** A new vector file or case is claimed on every implementation that carries the product
 in the same change: Swift's `everySharedFileHasARunner` and Kotlin's `everyProductFileIsClaimedAndEveryVectorPasses`
-each list every file under `packages/api-contract/gym/` and fail on one they do not run. A case one implementation
+each list every file under `packages/api-contract/gym/` and fail on one they do not run; the web's product runner will
+claim the same way once its first domain lands (its kit runner already does for `packages/api-contract/domain-kit/`). A case one implementation
 cannot reproduce is a bug in that implementation or in the vector, settled by the spec — never a per-platform
 exception, and never a vector written to one language's quirk.
 
@@ -395,15 +399,89 @@ deterministic modules, as compiled and as shipped (`runtimeElements`):
 
 Both tests hold attack fixtures that must stay rejected; a new rule gets a fixture in each.
 
-## Web — no kit yet
+## Web (`web/`)
 
-<!-- PLACEHOLDER: fill when the web domain kit exists. -->
-Web gym and journal (`web/src/products/{gym,journal}/`) hand-write their rules on the browser engine
-(`web/src/platform/sync/`) and run none of the shared vectors. When the web kit lands, this section states, like
-the two above: where the kit, its test support and each product's domain live; the `npm` commands that run the
-kit corpus, the gym corpus and the layering check; what the layering check reads (imports, tokens, dependencies);
-and how a web draft, save and harness are spelled. Until then, a web change to a gym or journal rule is not a kit
-change, and this skill does not cover it.
+| Where | What |
+|---|---|
+| `src/platform/domain-kit/` | the kit, one file per spec part: `values`, `time`, `entities`, `validation`, `rules`, `reading`, `plans`, `translation`, `actions`, `drafts`, `standardActions`, `refusals`, and `runner` — the one impure file, holding `ActionRunner` and `EngineReplica`, the port over `platform/sync/engine.js`; its `README.md` maps files to spec sections |
+| `test/platform/domain-kit/` | `probe.js` (the kit corpus README's probe declarations), `vectors.js` (`Contract`, `vectorViews`, `VectorReplica`, the JSON forms), `corpus.test.js` (the kit corpus), `runner.test.js` (the runner over the real engine on fake IndexedDB) |
+| `src/products/<p>/domain/` | a product's domain, one file per feature plus `<p>Rules.js`; none exists yet |
+| `test/products/<p>/domain/` | its corpus runner and harness tests, arriving with its first domain, as do the product checks (`ProductCorpus`, `RegistryCheck`, `RuleBookCheck`, `RuleBookParity`) and the harness |
+| `test/domain-layering.test.js` | the layering check, one fixture per rule under `test/fixtures/domain-layering/` |
+| `tsconfig.domain.json` | `npm run check:domain`: `tsc` over the kit, the domains and their tests, strict, with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` |
+
+Plain JS ESM with JSDoc types; every kit and domain file starts with `// @ts-check`. Before handing back:
+
+```sh
+cd web
+node scripts/test.mjs test/platform/domain-kit && node --test test/domain-layering.test.js   # the kit corpus and the layering check
+npm run check:domain                                                                        # the types
+npm test && npm run build                                                                   # CI's gate (.github/workflows/web.yml): the suite, check:domain, then Vite
+```
+
+The first prints `kit corpus: 12/12 files, 475 vectors` and `13 kit files and 0 domain files scanned, 0 findings`.
+
+**Spellings.** An entity is a class with `id` (an `Id`) and `fields()`; its declaration is one `EntityType`, whose
+members are the protocols: `new EntityType({ type: 'weighin', scope: 'self/gym', decode, checks, heldRemoval: true,
+savesGuarded: false, timestampField: 'recordedAt' })` (`orderField: 'ord'` makes it Ordered; `checks` makes it Writable).
+Ids: `new Id(record, WeighIn)`, `Id.ofDay(day, WeighIn)`, `id.equals(other)`, `Id.compare`. Decoders read `Fields`:
+`f.id`, `f.optionalDouble('kg')`, `f.string('name', '')`, `f.text('body')`, `f.ref('exerciseId', Exercise)`,
+`f.list('entries', Entry.decode)`. Checks: `new Check('kg', (w, moment) => new WeighIn(w.id, WeighInRules.kg.apply(kg,
+new Path('kg'))))` returns the entity with its field normalised, `Check.key((w, moment) => { … throw new
+Violation('weighin.day', new Path('id'), { kind: 'custom', custom: 'future' }) })` reads only the id and the moment.
+Specs: `new TextSpec('note.title', { unit: 'chars', min: 1, max: 60, trim: true, nfc: true })`, `new
+NumberSpec('weighin.kg', { min: 20, max: 400, quantum: 0.01 })` (`integer: true` instead of a quantum), `new
+ChoiceSpec(path, values)`, `new CountSpec(path, { min, max })`; each has `apply(value, path)` and `applyOptional`. Rules:
+`Rule.localSpec(spec)`, `Rule.localCheck(name, subject, backstop)`, `Rule.serverDecided(name, codes, subject)`; `new
+RuleBook(registry, entities, rules)`, `book.json`. The product refusal is a tagged object (`{ kind: 'stale', subject, path
+}`) built by one `Refusals` object `{ ofViolation, ofRefused, isGeneric }` that every decider carries as `refusals`.
+
+Reads: `read.repository(WeighIn).find(id, 'drawn')`, `.all('stored')`, `.children(parent, 'runId', 'drawn')`,
+`.capacity()`, `.anchor(Placement.bottom)` (`Placement.top`, `Placement.below(id)`); views are the strings `'drawn'` and
+`'stored'`; `read.moment`, `read.device(key)`, `read.firstPullComplete()`. `runner.read(scope, (read) => …)` is
+synchronous. A decider is `{ scope, refusals, load(read), decide(loaded, ids) }`; `decide` returns `Decision.write(plan,
+result)`, `Decision.unchanged(result)` or `Decision.refuse(refusal)`, and a thrown `Violation` becomes `refuse` in
+`decision(decider, loaded, ids)`. Plans: `const plan = new Plan()` or `Plan.running(command, predictions)`;
+`plan.create(valid, { fields, from })`, `plan.insert(valid, below)`, `plan.update(valid, { fields, from, guarded })`,
+`plan.remove(id)`, `plan.move(id, below)`, `plan.guardRead(id, fields)`, `plan.device(key, value)`; a valid value is
+`new Valid(value, moment)` or `new Valid(value, moment, fields)`, and a plan takes nothing else (`isValid`). Standard
+actions: `new Remove(id, GymRefusals)`, `new Move(id, below, GymRefusals)`. `await runner.run(action)` answers `{ kind:
+'committed', result, receipt }`, `{ kind: 'unchanged', result }` or `{ kind: 'refused', refusal }`; the receipt is `{
+gestureId, localIds, retired, releaseAt }`.
+
+Drafts are immutable values: `Draft.new(blank, Placement.bottom)`, `Draft.opening(value)`, `runner.open(Note, id)` (null
+when `drawn` lacks it), `runner.openOrNew(WeighIn, id, blank)`, `draft.edit((w) => …)`, `draft.rebased(theirs)`,
+`draft.touched`, `draft.isDirty`. The save is `const { result, draft: after } = await runner.save(draft, GymRefusals)`:
+the result is `{ kind: 'saved', receipt }` (receipt null when nothing needed writing), `{ kind: 'refused', refusal }` or
+`{ kind: 'failed', error }`, and `after` is the draft to hold — on `saved` it holds the stored values, otherwise it is the
+draft as it was. An executor's own record is `SaveDraft.creating(value, refusals, placed)`, composed through
+`decision(save, loaded, ids)`. `runner.mint(Note)`, `runner.moment()` and `await runner.undo(gestureId)` follow §9.2.
+The app composes `new ActionRunner(new EngineReplica(engine), engine.registry, zone)` over the shell's engine.
+
+`run` and `save` are `async` only because the engine's commit resolves after its IndexedDB transaction; the body that
+loads, decides and translates runs synchronously inside it. Vectors run over `VectorReplica`, the commit double, and
+`vectorViews(records, { ids, firstPullComplete })` builds a vector's records as the engine's view records; the forms
+(`decisionForm`, `outcomeForm`, `draftForm`, `savedForm`, `receiptForm`) live in `vectors.js`.
+
+**Layering, as `domain-layering.test.js` reads it** (§2.3), part of `npm test` and so of `npm run build`. It parses
+every file under `src/platform/domain-kit/` and `src/products/*/domain/` with acorn (a parse failure, JSX included, is a
+finding) and checks:
+
+- **Imports.** A kit file imports only `../sync/core/<name>.js` and `./<name>.js`; a domain file only
+  `../../../platform/domain-kit/<name>.js`, `../../../platform/sync/core/<name>.js`, `../../../platform/sync/schema.js`
+  and `./<name>.js`. Static imports, `export … from` and `import('literal')` all count; a computed dynamic import, a bare
+  specifier (`react`, `@noble/hashes`), a `.jsx`, a `.json`, anything under `test/` or `packages/`, and a relative path
+  that does not exist are findings.
+- **Determinism.** No `Date`, `crypto`, `performance`, `setTimeout`, `setInterval`, `queueMicrotask`,
+  `requestAnimationFrame`, `Promise`, `fetch`, `indexedDB`, `window`, `document`, `globalThis`, `navigator`, `self`,
+  `localStorage`, `sessionStorage`, `console`, `Intl`, `eval`, `Function`, `localeCompare`, `toLocale*`, `Math.random`,
+  `import.meta`, `async`, `await`; no `toFixed`, `toPrecision` or `Math.round` outside the kit's `values.js` (rounding is
+  the quantum's, from the engine's `core/values.js`); no identifier beginning `_` (a bare `_` passes). The exemption is
+  exactly `runner.js: async, await, Promise`, asserted literally.
+- **Typed.** The first line is `// @ts-check`, so `check:domain` sees the file.
+
+One fixture per rule under `test/fixtures/domain-layering/` (`// layer:`, `// file:`, `// expect: <line>: <finding>`
+headers) keeps every rule firing; a new rule gets a fixture.
 
 ## Traps
 
@@ -425,6 +503,12 @@ change, and this skill does not cover it.
   declares a `Page` too: a Swift file importing both names journal's `JournalDomain.Page`.
 - **A vector claimed on one platform only**: both runners list every file under the product's corpus, so the other
   platform's test fails on the unclaimed file; land the runner for every implementation that carries the product.
+- **Web: an `await` inside `load` or `decide`.** The IndexedDB transaction has ended by the time it resumes; the runner
+  refuses a decider that returns a Promise with a `Fault`. Read everything through the reader, synchronously.
+- **Web: holding the draft you passed to `save`.** `runner.save` returns `{ result, draft }`; the returned draft holds
+  the stored values and the end of `isNew`. Keep that one, never the argument.
+- **Web: `localeCompare`, `toFixed`, `Date.now()`.** The layering test fails the build; compare by `compareText` and
+  `Id.compare`, round through a `NumberSpec`, take time from the moment.
 
 **Depth:** §2 layering · §3 entities, `RegistryCheck`'s steps · §4 specs, `Valid` · §5 time · §6 the book · §7 reads ·
 §8 plans · §9 actions · §10 drafts, `SaveDraft`'s steps · §11 `Remove`, `Move`, Undo · §12 refusals · §14–§15 tests.
