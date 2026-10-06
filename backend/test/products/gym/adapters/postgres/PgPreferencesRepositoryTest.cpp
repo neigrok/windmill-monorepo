@@ -1,42 +1,52 @@
 #include "products/gym/adapters/postgres/PgPreferencesRepository.h"
 
+#include "test/products/gym/sync/adapters/postgres/GymDoorFixture.h"
 #include "test/products/gym/adapters/postgres/PgGymFixture.h"
 #include "test/testing.h"
 
+#include "products/gym/adapters/json/TrainingJson.h"
+
 #include <pqxx/pqxx>
 
-#include <algorithm>
 #include <cstdlib>
 #include <optional>
 #include <string>
-#include <utility>
 #include <vector>
 
-// The settings row, against the real column checks.
+// The settings row against the real column checks, written as a phone's whole document through /v1/sync.
+using namespace wm;
 using namespace wm::gym;
 using namespace wm::gym::pgtest;
 
-// A lifter who has never opened the settings screen has no row; the upsert is the whole write and RETURNING answers with what is stored.
+namespace {
+
+Json::Value phonePreferences(doortest::Harness& h, const GymPreferences& incoming) {
+  Json::Value fields = toJson(incoming);
+  fields["restSeconds"] = incoming.restSeconds ? Json::Value(*incoming.restSeconds) : Json::Value();
+  return h.admit(incoming.user, {GymDoor::delta("prefs", "prefs", fields)});
+}
+
+}  // namespace
+
+// No row until the first write, the defaults meanwhile; each whole document replaces the one row.
 TEST(pg_gym_preferences_are_absent_until_written_then_upsert_in_place) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgPreferencesRepository repo{wm::pgTestPool()};
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  const GymPreferences saved{h.user, Unit::lb, 90, false, false, true};
+  const GymPreferences replaced{h.user, Unit::kg, std::nullopt, true, true, false};
 
-  const std::optional<GymPreferences> before = repo.preferences(wm::UserId{kUser});
-  const GymPreferences saved = repo.savePreferences(
-      GymPreferences{wm::UserId{kUser}, Unit::lb, 90, false, false, true});
-  const GymPreferences replaced = repo.savePreferences(
-      GymPreferences{wm::UserId{kUser}, Unit::kg, std::nullopt, true, true, false});
+  CHECK_EQ(h.repo.preferences.preferences(h.user), std::optional<GymPreferences>());
+  CHECK_EQ(h.preferences.preferences(h.user), GymPreferences{h.user});
+  CHECK_EQ(GymDoor::refusal(phonePreferences(h, saved)), "");
+  CHECK_EQ(h.repo.preferences.preferences(h.user), std::optional<GymPreferences>(saved));
+  CHECK_EQ(GymDoor::refusal(phonePreferences(h, replaced)), "");
 
-  CHECK_EQ(before, std::optional<GymPreferences>());
-  CHECK_EQ(saved, GymPreferences(wm::UserId{kUser}, Unit::lb, 90, false, false, true));
-  CHECK_EQ(replaced, GymPreferences(wm::UserId{kUser}, Unit::kg, std::nullopt, true, true, false));
-  CHECK_EQ(repo.preferences(wm::UserId{kUser}), std::optional<GymPreferences>(replaced));
+  CHECK_EQ(h.repo.preferences.preferences(h.user), std::optional<GymPreferences>(replaced));
+  CHECK_EQ(h.preferences.preferences(h.other), GymPreferences{h.other});
   // One row per account and not a row per write: the second document replaced the first.
-  wm::PgLease conn{*wm::pgTestPool()};
+  PgLease conn{*doortest::pool()};
   pqxx::work txn{*conn};
-  CHECK_EQ(txn.exec_params("SELECT count(*)::int FROM gym_preferences WHERE user_id = $1::uuid",
-                           kUser)[0][0]
+  CHECK_EQ(txn.exec("SELECT count(*)::int FROM gym_preferences WHERE user_id = $1::uuid", pqxx::params{h.user.str()})[0][0]
                .as<int>(),
            1);
 }
@@ -44,19 +54,27 @@ TEST(pg_gym_preferences_are_absent_until_written_then_upsert_in_place) {
 TEST(pg_gym_preferences_are_owner_scoped_and_cascade_with_the_account) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgPreferencesRepository repo{wm::pgTestPool()};
-  repo.savePreferences(GymPreferences{wm::UserId{kUser}, Unit::lb, 90, false, false, true});
-
-  CHECK_EQ(repo.preferences(wm::UserId{kOther}), std::optional<GymPreferences>());
-  CHECK_EQ(repo.preferences(wm::UserId{kUser})->units, Unit::lb);
-
+  PgPreferencesRepository repo{pgTestPool()};
   {
-    wm::PgLease conn{*wm::pgTestPool()};
+    PgLease conn{*pgTestPool()};
     pqxx::work txn{*conn};
-    txn.exec_params("DELETE FROM users WHERE id = $1::uuid", kUser);
+    txn.exec("INSERT INTO gym_preferences (user_id, units, rest_seconds, rest_sound, confirm_haptic, confirm_sound) "
+             "VALUES ($1::uuid, 'lb', 90, false, false, true)",
+             pqxx::params{kUser});
     txn.commit();
   }
-  CHECK_EQ(repo.preferences(wm::UserId{kUser}), std::optional<GymPreferences>());
+
+  CHECK_EQ(repo.preferences(UserId{kOther}), std::optional<GymPreferences>());
+  CHECK_EQ(repo.preferences(UserId{kUser}),
+           std::optional<GymPreferences>(GymPreferences{UserId{kUser}, Unit::lb, 90, false, false, true}));
+
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("DELETE FROM users WHERE id = $1::uuid", pqxx::params{kUser});
+    txn.commit();
+  }
+  CHECK_EQ(repo.preferences(UserId{kUser}), std::optional<GymPreferences>());
   reset();
 }
 
@@ -73,7 +91,7 @@ TEST(pg_gym_preferences_columns_refuse_what_the_domain_refuses) {
   for (const std::string& statement : refused) {
     bool stopped = false;
     try {
-      wm::PgLease conn{*wm::pgTestPool()};
+      PgLease conn{*pgTestPool()};
       pqxx::work txn{*conn};
       txn.exec(statement);
       txn.commit();
@@ -83,13 +101,12 @@ TEST(pg_gym_preferences_columns_refuse_what_the_domain_refuses) {
     CHECK(stopped);
   }
   {
-    wm::PgLease conn{*wm::pgTestPool()};
+    PgLease conn{*pgTestPool()};
     pqxx::work txn{*conn};
-    txn.exec_params("INSERT INTO gym_preferences (user_id) VALUES ($1::uuid)", kUser);
+    txn.exec("INSERT INTO gym_preferences (user_id) VALUES ($1::uuid)", pqxx::params{kUser});
     txn.commit();
   }
-  PgPreferencesRepository repo{wm::pgTestPool()};
-  CHECK_EQ(repo.preferences(wm::UserId{kUser}),
-           std::optional<GymPreferences>(GymPreferences{wm::UserId{kUser}}));
+  PgPreferencesRepository repo{pgTestPool()};
+  CHECK_EQ(repo.preferences(UserId{kUser}), std::optional<GymPreferences>(GymPreferences{UserId{kUser}}));
   reset();
 }

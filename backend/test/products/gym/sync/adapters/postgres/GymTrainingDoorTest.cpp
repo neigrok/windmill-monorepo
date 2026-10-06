@@ -2,9 +2,6 @@
 #include "test/testing.h"
 
 #include "products/gym/adapters/json/TrainingJson.h"
-#include "products/gym/application/GymSwitches.h"
-#include "products/gym/sync/adapters/postgres/GymDoorHash.h"
-#include "platform/domain/sync/Jcs.h"
 #include "platform/application/WorkerPool.h"
 #include "platform/adapters/postgres/PgSyncStore.h"
 #include "products/gym/sync/adapters/postgres/PgGym.h"
@@ -39,6 +36,31 @@ Json::Value rawAppend(Harness& h, const UserId& user, const SessionId& session, 
     value["d"].append(GymDoor::delta("set", incoming.id.str(), fields, true));
     return std::optional<Json::Value>{value};
   });
+}
+
+// A correction as a phone pushes it: the whole workout restated, each set by its id and number.
+Json::Value correctionOf(const char* session, const char* request, std::uint64_t startedAt, std::uint64_t finishedAt,
+                         const std::string& name, const std::vector<Json::Value>& sets) {
+  Json::Value args(Json::objectValue);
+  args["sessionId"] = session;
+  args["requestId"] = request;
+  args["startedAt"] = Json::UInt64(startedAt);
+  args["finishedAt"] = Json::UInt64(finishedAt);
+  args["routineName"] = name;
+  args["sets"] = Json::Value(Json::arrayValue);
+  for (const Json::Value& set : sets) args["sets"].append(set);
+  return args;
+}
+
+Json::Value lineOf(const char* id, const char* exercise, int setNumber, double weightKg, int reps, std::uint64_t completedAt) {
+  Json::Value set(Json::objectValue);
+  set["id"] = id;
+  set["exerciseId"] = exercise;
+  set["setNumber"] = setNumber;
+  set["weightKg"] = weightKg;
+  set["reps"] = reps;
+  set["completedAt"] = Json::UInt64(completedAt);
+  return set;
 }
 
 }
@@ -170,7 +192,7 @@ TEST(gym_training_engine_append_maps_missing_finished_unknown_taken_and_spent) {
   REQUIRE(h.door.append(h.other, SessionId{"session_other1"}, setAt("set_other001", at)).set);
   CHECK_EQ(GymDoor::refusal(rawAppend(h, h.user, session, setAt("set_other001", at))), "id-taken");
   CHECK_EQ(h.door.append(h.user, session, setAt("set_other001", at)).error, AppendError::idTaken);
-  h.door.deleteSet(h.user, session, SetId{"set_kept0001"});
+  h.kill(h.user, "set", "set_kept0001");
   CHECK_EQ(GymDoor::refusal(rawAppend(h, h.user, session, setAt("set_kept0001", at))), "id-spent");
   CHECK_EQ(h.door.append(h.user, session, setAt("set_kept0001", at)).error, AppendError::deleted);
   REQUIRE(h.door.finish(h.user, session, at + 1000).session);
@@ -213,7 +235,7 @@ TEST(gym_training_engine_batch_preserves_receipt_payload_and_deleted_replay) {
   auto conflict = h.door.appendSets(h.user, session, different);
   CHECK_EQ(conflict.error, BatchLogError::payloadConflict);
   CHECK_EQ(conflict.errorIndex, std::optional<std::size_t>{1});
-  h.door.deleteSet(h.user, session, sets[0].id);
+  h.kill(h.user, "set", sets[0].id.str());
   auto replayed = h.door.appendSets(h.user, session, sets);
   REQUIRE_EQ(replayed.error, BatchLogError::none);
   REQUIRE_EQ(replayed.sets.size(), 2u);
@@ -261,112 +283,71 @@ TEST(gym_training_engine_import_preserves_hash_overlap_and_deleted_receipt) {
   CHECK(h.failures.messages.empty());
 }
 
-TEST(gym_training_engine_correction_maps_open_payload_overlap_and_set_taken) {
+TEST(gym_training_engine_correction_command_refuses_an_unknown_movement_a_taken_set_and_an_overlap) {
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
   Harness h;
   const auto end = h.clock.now;
   const SessionId session{"session_correct"};
   REQUIRE(h.door.start(h.user, startAt("session_correct", end - 2000)).session);
-  auto inputSet = setAt("set_correct01", end - 1500);
-  Set set{inputSet.id, session, inputSet.exercise, 1, inputSet.weightKg, inputSet.reps,
-          inputSet.kind, inputSet.rpe, inputSet.note, inputSet.completedAtMs};
-  SessionCorrectionIn incoming{"correct_request1", end - 2000, end - 1000, "Renamed", {{set, true, true}}};
-  CHECK_EQ(h.door.correctSession(h.user, session, incoming).error, CorrectionError::open);
+  const auto kept = h.door.append(h.user, session, setAt("set_correct01", end - 1500)).set;
+  REQUIRE(kept);
   REQUIRE(h.door.finish(h.user, session, end - 1000).session);
-  const auto corrected = h.door.correctSession(h.user, session, incoming);
-  REQUIRE_EQ(corrected.error, CorrectionError::none);
-  REQUIRE_EQ(corrected.sets.size(), 1u);
-  CHECK(h.door.correctSession(h.user, session, incoming).replayed);
-  incoming.routineName = "Different";
-  auto changedArgs = toJson(incoming);
-  changedArgs["sessionId"] = session.str();
-  CHECK_EQ(GymDoor::refusal(h.door.command(h.user, "gym.correctSession", changedArgs)), "payload-conflict");
-  CHECK_EQ(h.door.correctSession(h.user, session, incoming).error, CorrectionError::payloadConflict);
-  incoming.requestId = "correct_request2";
-  incoming.sets[0].set.exercise = ExerciseId{"missing-movement"};
-  bool invalid = false;
-  try { h.door.correctSession(h.user, session, incoming); }
-  catch (const InvalidTraining&) { invalid = true; }
-  CHECK(invalid);
-  incoming.sets[0].set.id = SetId{"set_unknown2"};
-  CHECK_EQ(h.door.correctSession(h.user, session, incoming).error, CorrectionError::unknownExercise);
   SessionImport other{SessionId{"session_taken1"}, end - 5000, end - 4000, std::nullopt,
                       {setAt("set_taken001", end - 4500)}};
   REQUIRE_EQ(h.door.importSession(h.user, other).error, BatchLogError::none);
-  incoming.sets[0].set.exercise = ExerciseId{"dip"};
-  incoming.sets[0].set.id = SetId{"set_taken001"};
-  CHECK_EQ(h.door.correctSession(h.user, session, incoming).error, CorrectionError::idTaken);
-  incoming.sets[0].set.id = SetId{"set_correct01"};
-  incoming.startedAtMs = end - 5000;
-  CHECK_EQ(h.door.correctSession(h.user, session, incoming).error, CorrectionError::overlap);
+  const auto before = h.repo.log.session(h.user, session);
+  REQUIRE(before);
+  CHECK_EQ(GymDoor::refusal(h.door.command(h.user, "gym.correctSession",
+               correctionOf("session_correct", "correct_request1", end - 2000, end - 1000, "Renamed",
+                            {lineOf("set_unknown2", "missing-movement", 1, 20.25, 5, end - 1500)}))),
+           "unknown-exercise");
+  CHECK_EQ(GymDoor::refusal(h.door.command(h.user, "gym.correctSession",
+               correctionOf("session_correct", "correct_request1", end - 2000, end - 1000, "Renamed",
+                            {lineOf("set_taken001", "dip", 1, 20.25, 5, end - 1500)}))),
+           "id-taken");
+  const auto crossing = h.door.command(h.user, "gym.correctSession",
+      correctionOf("session_correct", "correct_request1", end - 5000, end - 1000, "Renamed",
+                   {lineOf("set_correct01", "dip", 1, 20.25, 5, end - 1500)}));
+  CHECK_EQ(GymDoor::refusal(crossing), "session-overlap");
+  CHECK_EQ(crossing["detail"]["sessionId"].asString(), "session_taken1");
+  CHECK_EQ(h.repo.log.session(h.user, session), before);
+  CHECK_EQ(h.repo.log.setsOf(session), std::vector<Set>{*kept});
   CHECK(h.failures.messages.empty());
 }
 
-TEST(gym_training_engine_correction_admits_trimmed_name_and_keeps_raw_receipt) {
-  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
-  Harness h;
-  const auto end = h.clock.now;
-  const SessionId session{"session_trimmed"};
-  SessionImport imported{session, end - 2000, end - 1000, std::nullopt,
-                         {setAt("set_trimmed01", end - 1500)}};
-  REQUIRE_EQ(h.door.importSession(h.user, imported).error, BatchLogError::none);
-  const auto stored = h.repo.log.setOf(h.user, imported.sets[0].id);
-  REQUIRE(stored);
-  SessionCorrectionIn incoming{"correct_trimmed1", end - 2000, end - 1000,
-                               "  Corrected workout  ", {{*stored, true, true}}};
-  const auto corrected = h.door.correctSession(h.user, session, incoming);
-  REQUIRE_EQ(corrected.error, CorrectionError::none);
-  REQUIRE(corrected.session);
-  CHECK_EQ(corrected.session->displayName, std::optional<std::string>{"Corrected workout"});
-  CHECK_EQ(corrected.sets, std::vector<Set>{*stored});
-  CHECK(h.door.correctSession(h.user, session, incoming).replayed);
-  auto original = toJson(incoming);
-  original["sessionId"] = session.str();
-  {
-    PgLease lease{*pool()};
-    pqxx::read_transaction sql{*lease};
-    const auto receipt = sql.exec("select request_hash,sync_args from gym_correction_receipts where id=$1",
-                                  pqxx::params{incoming.requestId});
-    REQUIRE_EQ(receipt.size(), 1u);
-    CHECK_EQ(receipt[0][0].as<std::string>(), gymCorrectionRequestHash(original));
-    CHECK_EQ(sync::jcs(sync::parseJson(receipt[0][1].as<std::string>())), sync::jcs(original));
-  }
-  incoming.routineName = "Corrected workout";
-  CHECK_EQ(h.door.correctSession(h.user, session, incoming).error, CorrectionError::payloadConflict);
-  CHECK(h.failures.messages.empty());
-}
-
-TEST(gym_training_engine_correction_admits_long_padding_and_validated_numbers) {
+TEST(gym_training_engine_correction_command_refuses_padding_and_numbers_off_their_step) {
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
   Harness h;
   const auto end = h.clock.now;
   const SessionId session{"session_padding"};
-  SessionImport imported{session, end - 2000, end - 1000, std::nullopt,
-                         {setAt("set_padding01", end - 1500)}};
+  SessionImport imported{session, end - 2000, end - 1000, std::nullopt, {setAt("set_padding01", end - 1500)}};
   REQUIRE_EQ(h.door.importSession(h.user, imported).error, BatchLogError::none);
-  auto existing = h.repo.log.setOf(h.user, imported.sets[0].id);
-  REQUIRE(existing);
-  existing->weightKg = 20.2500000001;
-  existing->rpe = 7.5000000001;
-  existing->note = "ignored because absent from the request";
-  const Set added{SetId{"set_padding02"}, session, ExerciseId{"dip"}, 2,
-                  -0.0000000001, 8, SetKind::working, std::nullopt, "", end - 1400};
-  SessionCorrectionIn incoming{"correct_padding1", end - 2000, end - 1000,
-                               std::string(241, ' ') + "Valid workout" + std::string(241, ' '),
-                               {{*existing, true, false}, {added, true, true}}};
-  const auto corrected = h.door.correctSession(h.user, session, incoming);
-  REQUIRE_EQ(corrected.error, CorrectionError::none);
-  REQUIRE(corrected.session);
-  CHECK_EQ(corrected.session->displayName, std::optional<std::string>{"Valid workout"});
-  REQUIRE_EQ(corrected.sets.size(), 2u);
-  CHECK_EQ(corrected.sets[0].weightKg, 20.25);
-  CHECK_EQ(corrected.sets[0].rpe, std::optional<double>{7.5});
-  CHECK_EQ(corrected.sets[0].note, "");
-  CHECK_EQ(corrected.sets[1].weightKg, 0.0);
-  CHECK(!std::signbit(corrected.sets[1].weightKg));
-  CHECK(h.door.correctSession(h.user, session, incoming).replayed);
-  incoming.sets[0].set.weightKg = 20.25;
-  CHECK_EQ(h.door.correctSession(h.user, session, incoming).error, CorrectionError::payloadConflict);
+  const auto stored = h.repo.log.setOf(h.user, imported.sets[0].id);
+  REQUIRE(stored);
+  const auto correction = [&](const std::string& name, double keptKg, double keptRpe, double addedKg) {
+    Json::Value keptLine = lineOf("set_padding01", "dip", 1, keptKg, 5, end - 1500);
+    keptLine["rpe"] = keptRpe;
+    Json::Value addedLine = lineOf("set_padding02", "dip", 2, addedKg, 8, end - 1400);
+    addedLine["rpe"] = Json::Value();
+    addedLine["note"] = "";
+    return correctionOf("session_padding", "correct_padding1", end - 2000, end - 1000, name, {keptLine, addedLine});
+  };
+  const std::string padded = std::string(241, ' ') + "Valid workout" + std::string(241, ' ');
+  CHECK_EQ(GymDoor::refusal(h.door.command(h.user, "gym.correctSession", correction(padded, 20.25, 7.5, 0))), "invalid");
+  CHECK_EQ(GymDoor::refusal(h.door.command(h.user, "gym.correctSession", correction("Valid workout", 20.2500000001, 7.5, 0))), "invalid");
+  CHECK_EQ(GymDoor::refusal(h.door.command(h.user, "gym.correctSession", correction("Valid workout", 20.25, 7.5000000001, 0))), "invalid");
+  CHECK_EQ(GymDoor::refusal(h.door.command(h.user, "gym.correctSession", correction("Valid workout", 20.25, 7.5, -0.0000000001))), "invalid");
+  CHECK_EQ(h.repo.log.setsOf(session), std::vector<Set>{*stored});
+  GymDoor::requireOk(h.door.command(h.user, "gym.correctSession", correction("Valid workout", 20.25, 7.5, 0)));
+  const auto corrected = h.repo.log.session(h.user, session);
+  REQUIRE(corrected);
+  CHECK_EQ(corrected->displayName, std::optional<std::string>{"Valid workout"});
+  const auto sets = h.repo.log.setsOf(session);
+  CHECK_EQ(sets, (std::vector<Set>{
+      Set{SetId{"set_padding01"}, session, ExerciseId{"dip"}, 1, 20.25, 5, SetKind::working, 7.5, "", end - 1500},
+      Set{SetId{"set_padding02"}, session, ExerciseId{"dip"}, 2, 0, 8, SetKind::working, std::nullopt, "", end - 1400}}));
+  REQUIRE_EQ(sets.size(), 2u);
+  CHECK(!std::signbit(sets[1].weightKg));
   CHECK(h.failures.messages.empty());
 }
 
@@ -389,30 +370,14 @@ TEST(gym_training_engine_parent_refusal_is_an_absent_session_at_the_door) {
   CHECK(h.failures.messages.empty());
 }
 
-TEST(gym_training_engine_stale_settle_is_a_command_and_freeze_preserves_rows) {
+TEST(gym_training_engine_stale_settle_is_a_command) {
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
-  EngineSwitch enabled;
   Harness h;
-  TrainingService training{h.repo.log, h.repo.program, h.clock, h.tokens, &h.door};
   const auto at = h.clock.now;
-  REQUIRE(training.start(h.user, startAt("session_stale1", at)).session);
+  REQUIRE(h.training.start(h.user, startAt("session_stale1", at)).session);
   h.clock.now += kAutoCloseMs;
-  const char* old = std::getenv("GYM_WRITE_FREEZE");
-  const auto previous = old ? std::optional<std::string>{old} : std::nullopt;
-  setenv("GYM_WRITE_FREEZE", "1", 1);
-  const auto frozen = training.openSession(h.user);
-  CHECK(frozen);
-  if (frozen) CHECK(!frozen->finishedAtMs);
-  bool refused = false;
-  try { training.finish(h.user, SessionId{"session_stale1"}, h.clock.now); }
-  catch (const GymUnavailable& error) { refused = error.code == "gym-frozen"; }
-  CHECK(refused);
-  if (previous) setenv("GYM_WRITE_FREEZE", previous->c_str(), 1);
-  else unsetenv("GYM_WRITE_FREEZE");
-  CHECK(!training.openSession(h.user));
-  const auto settled = h.repo.log.session(h.user, SessionId{"session_stale1"});
-  REQUIRE(settled);
-  CHECK_EQ(settled->finishedAtMs, std::optional<std::uint64_t>{at});
-  CHECK_EQ(settled->closedBy, std::optional<ClosedBy>{ClosedBy::stale});
+  CHECK(!h.training.openSession(h.user));
+  CHECK_EQ(h.repo.log.session(h.user, SessionId{"session_stale1"}),
+           std::optional<Session>(Session{SessionId{"session_stale1"}, h.user, at, at, std::nullopt, std::nullopt, ClosedBy::stale}));
   CHECK(h.failures.messages.empty());
 }

@@ -530,12 +530,14 @@ add_executable(windmill_mcp_tests
   test/products/roadmap/adapters/mcp/WireCorpusTest.cpp
   test/products/gym/adapters/mcp/GymToolsTest.cpp)
 # Both products' tool surfaces link here: the gym suite pins its own catalog AND that no gym name
-# collides with a roadmap one, which is the difference between a boot failure and a green suite.
-target_link_libraries(windmill_mcp_tests PRIVATE windmill_roadmap windmill_gym)
+# collides with a roadmap one, which is the difference between a boot failure and a green suite. Its
+# write cases run on the real gym door, which takes the product catalog the server seals.
+target_link_libraries(windmill_mcp_tests PRIVATE windmill_roadmap windmill_gym windmill_product_sync)
 # The golden MCP wire (WireCorpusTest) lives beside the roadmap tools and is byte-compared against
 # a fresh transcript; the source path is handed in so the check finds it from any build tree.
 target_compile_definitions(windmill_mcp_tests PRIVATE
-  WM_WIRE_CORPUS_PATH="${CMAKE_SOURCE_DIR}/products/roadmap/adapters/mcp/golden/wire_corpus.json")
+  WM_WIRE_CORPUS_PATH="${CMAKE_SOURCE_DIR}/products/roadmap/adapters/mcp/golden/wire_corpus.json"
+  WM_SCHEMA_SQL="${CMAKE_SOURCE_DIR}/db/schema.sql")
 add_test(NAME mcp COMMAND windmill_mcp_tests)
 
 # The probe's Postgres adapter and the dev stack's endpoints, on the probe library (never linked into windmill_server).
@@ -630,7 +632,6 @@ test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
   test/products/gym/sync/adapters/postgres/GymAdoptionDoorTest.cpp
   test/products/gym/sync/adapters/postgres/GymRecordDoorTest.cpp
   test/products/gym/adapters/http/GymDoorApiTest.cpp
-  test/products/gym/adapters/http/GymFreezeTest.cpp
   test/products/gym/adapters/http/TrainingApiTest.cpp
   test/products/gym/adapters/http/CatalogApiTest.cpp
   test/products/gym/adapters/http/ProgramApiTest.cpp
@@ -654,4 +655,6 @@ test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
   test/products/gym/adapters/postgres/PgNotesRepositoryTest.cpp
   test/products/gym/adapters/postgres/PgBodyweightRepositoryTest.cpp)
 target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_journal windmill_gym windmill_product_sync)
+# The gym door harness re-plants the catalog seed exactly as the schema writes it.
+target_compile_definitions(windmill_adapters_tests PRIVATE WM_SCHEMA_SQL="${CMAKE_SOURCE_DIR}/db/schema.sql")
 add_test(NAME adapters COMMAND windmill_adapters_tests)

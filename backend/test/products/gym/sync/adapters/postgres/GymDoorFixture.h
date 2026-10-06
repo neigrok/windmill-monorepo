@@ -23,7 +23,10 @@
 
 #include <pqxx/pqxx>
 
+#include <fstream>
+#include <iterator>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -46,6 +49,22 @@ struct Failures : FailureReporter {
 };
 
 using EngineSwitch = fake::EngineWrites;
+
+// The movement catalog exactly as schema.sql seeds it, re-planted for every case: the sync suite's corpus
+// worlds replace the seeds on the same database.
+inline const std::string& catalogSeed() {
+  static const std::string statement = [] {
+    std::ifstream file(WM_SCHEMA_SQL);
+    const std::string schema{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    const std::string head = "insert into gym_exercises (id, name, pattern, equipment, step_kg) values";
+    const std::string tail = "on conflict (id) do nothing;";
+    const auto begin = schema.find(head);
+    const auto end = begin == std::string::npos ? begin : schema.find(tail, begin);
+    if (end == std::string::npos) throw std::runtime_error("schema.sql seeds no gym catalog");
+    return schema.substr(begin, end + tail.size() - begin);
+  }();
+  return statement;
+}
 
 // The gym's Postgres repositories, under the names FakeGym gives its in-memory ones.
 struct Repositories {
@@ -88,8 +107,8 @@ struct Harness {
   Harness() {
     PgLease lease{*pool()};
     pqxx::work txn{*lease};
-    txn.exec("truncate gym_sync_metadata_upgrades, gym_sync_metadata_upgrade_runs, gym_sync_adoptions, gym_ask_deleted_threads, gym_ask_threads, gym_note_saves, gym_write_receipts, gym_correction_receipts, gym_set_revisions, gym_log_shares, gym_session_shares, gym_routine_creations, gym_proposals, gym_routines, gym_sessions, gym_sets, gym_notes, gym_bodyweight, gym_preferences, gym_exercise_names, gym_exercise_aliases, sync_spent, sync_requests, sync_replicas, sync_scopes cascade");
-    txn.exec("delete from gym_exercises where created_by is not null");
+    txn.exec("truncate gym_sync_metadata_upgrades, gym_sync_metadata_upgrade_runs, gym_sync_adoptions, gym_ask_deleted_threads, gym_ask_threads, gym_note_saves, gym_write_receipts, gym_correction_receipts, gym_set_revisions, gym_log_shares, gym_session_shares, gym_routine_creations, gym_proposals, gym_routines, gym_sessions, gym_sets, gym_notes, gym_bodyweight, gym_preferences, gym_exercise_names, gym_exercise_aliases, gym_exercises, sync_spent, sync_requests, sync_replicas, sync_scopes cascade");
+    txn.exec(catalogSeed());
     txn.exec("insert into users(id,email) values($1::uuid,'gym-door@example.com'),($2::uuid,'gym-door-other@example.com') on conflict(id) do nothing", pqxx::params{user.str(), other.str()});
     txn.commit();
     engine::PgGymMetadataUpgrade(pool()).run();

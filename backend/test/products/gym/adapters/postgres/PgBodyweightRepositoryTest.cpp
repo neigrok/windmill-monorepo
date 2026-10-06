@@ -1,6 +1,6 @@
 #include "products/gym/adapters/postgres/PgBodyweightRepository.h"
 
-#include "test/products/gym/Fakes.h"
+#include "test/products/gym/sync/adapters/postgres/GymDoorFixture.h"
 #include "test/products/gym/adapters/postgres/PgGymFixture.h"
 #include "test/testing.h"
 
@@ -8,173 +8,113 @@
 
 #include <cstdlib>
 #include <exception>
-#include <latch>
 #include <string>
-#include <thread>
 #include <vector>
 
-// The weigh-in rows, against the real primary key, the numeric(5,2) column and its CHECK, and the
-// guarded upsert. Every case drives the fake beside the store and asserts the two answer alike.
+// The weigh-in rows against the real key, column and CHECK, written as a phone's /v1/sync put of a day.
+using namespace wm;
 using namespace wm::gym;
 using namespace wm::gym::pgtest;
 
 namespace {
 
-Bodyweight at(const std::string& day, double weightKg, std::uint64_t recordedAtMs = kNow,
-              const std::string& owner = kUser) {
-  return Bodyweight{wm::UserId{owner}, day, weightKg, recordedAtMs};
-}
+// The server's day: a weigh-in is a forecast past the day after it.
+constexpr std::uint64_t kAugust26 = 1'787'745'600'000;
 
-std::vector<std::string> daysOf(BodyweightRepository& repo, const std::string& owner = kUser,
-                                BodyweightRange range = {}) {
-  std::vector<std::string> days;
-  for (const Bodyweight& held : repo.entries(wm::UserId{owner}, range)) days.push_back(held.dateLocal);
-  return days;
+// A phone's put of one day: the whole weigh-in, admitted.
+Json::Value weighIn(doortest::Harness& h, const Bodyweight& entry) {
+  Json::Value fields(Json::objectValue);
+  fields["kg"] = entry.weightKg;
+  fields["recordedAt"] = Json::UInt64(entry.recordedAtMs);
+  return h.admit(entry.user, {GymDoor::delta("weighin", entry.dateLocal, fields, true)});
 }
 
 }  // namespace
 
-TEST(pg_gym_bodyweight_is_one_row_per_day_and_the_later_recorded_at_wins) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgBodyweightRepository repo{wm::pgTestPool()};
-  fake::FakeGym twin;
+TEST(pg_gym_bodyweight_is_one_row_per_day_and_the_later_put_replaces_it_whole) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  h.clock.now = kAugust26;
+  CHECK_EQ(h.repo.bodyweight.entries(h.user, {}), std::vector<Bodyweight>{});
+  CHECK_EQ(h.repo.bodyweight.latest(h.user), std::optional<Bodyweight>());
 
-  CHECK_EQ(repo.entries(wm::UserId{kUser}, {}), std::vector<Bodyweight>{});
-  CHECK_EQ(repo.latest(wm::UserId{kUser}), std::optional<Bodyweight>());
-  std::vector<Bodyweight> answers;
-  std::vector<Bodyweight> twinAnswers;
-  for (const Bodyweight& write : {at("2026-08-25", 82.4, kNow), at("2026-08-25", 82.9, kNow + 60'000),
-                                  at("2026-08-25", 82.4, kNow),           // stale: loses
-                                  at("2026-08-25", 82.9, kNow + 60'000),  // replay
-                                  at("2026-08-25", 83.1, kNow + 60'000),  // tied: replaces
-                                  at("2026-08-01", 83.0, kNow + 120'000),
-                                  at("2026-08-25", 70.0, kNow + 999'000, kOther)}) {
-    answers.push_back(repo.save(write));
-    twinAnswers.push_back(twin.bodyweight.save(write));
+  for (const Bodyweight& put : {Bodyweight{h.user, "2026-08-25", 82.4, kNow},
+                                Bodyweight{h.user, "2026-08-25", 82.9, kNow + 60'000},
+                                Bodyweight{h.user, "2026-08-01", 83.0, kNow + 120'000},
+                                Bodyweight{h.other, "2026-08-25", 70.0, kNow + 999'000}}) {
+    GymDoor::requireOk(weighIn(h, put));
+    h.clock.now += 1'000;
   }
 
-  CHECK_EQ(answers, twinAnswers);
-  CHECK_EQ(answers[0], at("2026-08-25", 82.4, kNow));
-  CHECK_EQ(answers[1], at("2026-08-25", 82.9, kNow + 60'000));
-  CHECK_EQ(answers[2], at("2026-08-25", 82.9, kNow + 60'000));   // the row that stands
-  CHECK_EQ(answers[3], at("2026-08-25", 82.9, kNow + 60'000));
-  CHECK_EQ(answers[4], at("2026-08-25", 83.1, kNow + 60'000));
-  CHECK_EQ(repo.entries(wm::UserId{kUser}, {}), twin.bodyweight.entries(wm::UserId{kUser}, {}));
-  CHECK_EQ(daysOf(repo), (std::vector<std::string>{"2026-08-01", "2026-08-25"}));
-  CHECK_EQ(repo.latest(wm::UserId{kUser}), std::optional<Bodyweight>(at("2026-08-25", 83.1, kNow + 60'000)));
-  CHECK_EQ(repo.latest(wm::UserId{kUser}), twin.bodyweight.latest(wm::UserId{kUser}));
-  CHECK_EQ(daysOf(repo, kOther), std::vector<std::string>{"2026-08-25"});
-  CHECK_EQ(repo.entries(wm::UserId{kOther}, {})[0].weightKg, 70.0);
-  reset();
+  CHECK_EQ(h.repo.bodyweight.entries(h.user, {}),
+           (std::vector<Bodyweight>{Bodyweight{h.user, "2026-08-01", 83.0, kNow + 120'000},
+                                    Bodyweight{h.user, "2026-08-25", 82.9, kNow + 60'000}}));
+  CHECK_EQ(h.repo.bodyweight.latest(h.user), std::optional<Bodyweight>(Bodyweight{h.user, "2026-08-25", 82.9, kNow + 60'000}));
+  CHECK_EQ(h.repo.bodyweight.entries(h.other, {}),
+           (std::vector<Bodyweight>{Bodyweight{h.other, "2026-08-25", 70.0, kNow + 999'000}}));
+  // The later put stands whole, whatever instant it carries: the order is the engine's, not recordedAt's.
+  GymDoor::requireOk(weighIn(h, Bodyweight{h.user, "2026-08-25", 82.4, kNow}));
+  CHECK_EQ(h.repo.bodyweight.latest(h.user), std::optional<Bodyweight>(Bodyweight{h.user, "2026-08-25", 82.4, kNow}));
 }
 
 TEST(pg_gym_bodyweight_reads_inside_inclusive_bounds) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgBodyweightRepository repo{wm::pgTestPool()};
-  fake::FakeGym twin;
-  for (const Bodyweight& write : {at("2026-08-25", 82.4, 1'700'000'000'000ull),
-                                  at("2026-07-04", 84.0, 1'700'000'060'000ull),
-                                  at("2026-08-01", 83.25, 1'700'000'120'000ull),
-                                  at("2026-08-03", 83.0, 1'700'000'180'000ull),
-                                  at("2026-08-02", 70.0, kNow, kOther)}) {
-    repo.save(write);
-    twin.bodyweight.save(write);
-  }
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  h.clock.now = kAugust26;
+  const Bodyweight july4{h.user, "2026-07-04", 84.0, 1'700'000'060'000ull};
+  const Bodyweight august1{h.user, "2026-08-01", 83.25, 1'700'000'120'000ull};
+  const Bodyweight august3{h.user, "2026-08-03", 83.0, 1'700'000'180'000ull};
+  const Bodyweight august25{h.user, "2026-08-25", 82.4, 1'700'000'000'000ull};
+  for (const Bodyweight& put : {august25, july4, august1, august3, Bodyweight{h.other, "2026-08-02", 70.0, kNow}})
+    GymDoor::requireOk(weighIn(h, put));
 
-  for (const BodyweightRange& range :
-       {BodyweightRange{}, BodyweightRange{"2026-08-01", "2026-08-03"},
-        BodyweightRange{"2026-08-02", ""}, BodyweightRange{"", "2026-08-01"},
-        BodyweightRange{"2026-08-04", "2026-08-24"}, BodyweightRange{"2026-08-25", "2026-08-01"}})
-    CHECK_EQ(repo.entries(wm::UserId{kUser}, range), twin.bodyweight.entries(wm::UserId{kUser}, range));
-  CHECK_EQ(daysOf(repo, kUser, BodyweightRange{"2026-08-01", "2026-08-03"}),
-           (std::vector<std::string>{"2026-08-01", "2026-08-03"}));
-  CHECK_EQ(daysOf(repo), (std::vector<std::string>{"2026-07-04", "2026-08-01", "2026-08-03",
-                                                    "2026-08-25"}));
-  reset();
+  CHECK_EQ(h.repo.bodyweight.entries(h.user, BodyweightRange{}),
+           (std::vector<Bodyweight>{july4, august1, august3, august25}));
+  CHECK_EQ(h.repo.bodyweight.entries(h.user, BodyweightRange{"2026-08-01", "2026-08-03"}),
+           (std::vector<Bodyweight>{august1, august3}));
+  CHECK_EQ(h.repo.bodyweight.entries(h.user, BodyweightRange{"2026-08-02", ""}),
+           (std::vector<Bodyweight>{august3, august25}));
+  CHECK_EQ(h.repo.bodyweight.entries(h.user, BodyweightRange{"", "2026-08-01"}),
+           (std::vector<Bodyweight>{july4, august1}));
+  CHECK_EQ(h.repo.bodyweight.entries(h.user, BodyweightRange{"2026-08-04", "2026-08-24"}), std::vector<Bodyweight>{});
+  CHECK_EQ(h.repo.bodyweight.entries(h.user, BodyweightRange{"2026-08-25", "2026-08-01"}), std::vector<Bodyweight>{});
 }
 
 TEST(pg_gym_bodyweight_remove_is_owner_scoped_and_absent_is_a_no_op) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgBodyweightRepository repo{wm::pgTestPool()};
-  fake::FakeGym twin;
-  for (const Bodyweight& write : {at("2026-08-25", 82.4), at("2026-08-01", 83.0),
-                                  at("2026-08-25", 70.0, kNow, kOther)}) {
-    repo.save(write);
-    twin.bodyweight.save(write);
-  }
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  h.clock.now = kAugust26;
+  for (const Bodyweight& put : {Bodyweight{h.user, "2026-08-25", 82.4, kNow}, Bodyweight{h.user, "2026-08-01", 83.0, kNow},
+                                Bodyweight{h.other, "2026-08-25", 70.0, kNow}})
+    GymDoor::requireOk(weighIn(h, put));
 
-  for (BodyweightRepository* store : {static_cast<BodyweightRepository*>(&repo),
-                                      static_cast<BodyweightRepository*>(&twin.bodyweight)}) {
-    store->remove(wm::UserId{kUser}, "2026-08-25");
-    store->remove(wm::UserId{kUser}, "2026-08-25");
-    store->remove(wm::UserId{kUser}, "2026-08-24");
-  }
+  h.kill(h.user, "weighin", "2026-08-25");
+  h.kill(h.user, "weighin", "2026-08-25");
+  h.kill(h.user, "weighin", "2026-08-24");
 
-  CHECK_EQ(repo.entries(wm::UserId{kUser}, {}), twin.bodyweight.entries(wm::UserId{kUser}, {}));
-  CHECK_EQ(daysOf(repo), std::vector<std::string>{"2026-08-01"});
-  CHECK_EQ(daysOf(repo, kOther), std::vector<std::string>{"2026-08-25"});
-  reset();
-}
-
-// Two writes to one day in flight at once: the primary key's row lock serializes them and the
-// later instant stands whichever lands second; every flight answers with a row, never a 500.
-TEST(pg_gym_bodyweight_overlapping_writes_to_one_day_leave_the_later_instant_standing) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgBodyweightRepository repo{wm::pgTestPool()};
-  constexpr int kRacers = 8;
-  std::vector<std::optional<Bodyweight>> answers(kRacers);
-  std::vector<std::string> thrown(kRacers);
-  std::latch together{kRacers};
-  std::vector<std::thread> racers;
-  for (int at = 0; at < kRacers; ++at)
-    racers.emplace_back([&, at] {
-      const Bodyweight write{wm::UserId{kUser}, "2026-08-25", 80.0 + at,
-                             kNow + static_cast<std::uint64_t>(at) * 1000};
-      together.arrive_and_wait();
-      try {
-        answers[at] = repo.save(write);
-      } catch (const std::exception& failed) {
-        thrown[at] = failed.what();
-      }
-    });
-  for (std::thread& racer : racers) racer.join();
-
-  for (int at = 0; at < kRacers; ++at) {
-    CHECK_EQ(thrown[at], std::string(""));
-    REQUIRE(answers[at].has_value());
-    CHECK(answers[at]->recordedAtMs >= kNow + static_cast<std::uint64_t>(at) * 1000);
-  }
-  const std::vector<Bodyweight> held = repo.entries(wm::UserId{kUser}, {});
-  REQUIRE_EQ(held.size(), std::size_t{1});
-  CHECK_EQ(held[0], (Bodyweight{wm::UserId{kUser}, "2026-08-25", 80.0 + (kRacers - 1),
-                                kNow + static_cast<std::uint64_t>(kRacers - 1) * 1000}));
-  reset();
+  CHECK_EQ(h.repo.bodyweight.entries(h.user, {}), (std::vector<Bodyweight>{Bodyweight{h.user, "2026-08-01", 83.0, kNow}}));
+  CHECK_EQ(h.repo.bodyweight.entries(h.other, {}), (std::vector<Bodyweight>{Bodyweight{h.other, "2026-08-25", 70.0, kNow}}));
 }
 
 TEST(pg_gym_bodyweight_cascades_with_the_account) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgBodyweightRepository repo{wm::pgTestPool()};
-  repo.save(at("2026-08-25", 82.4));
-  repo.save(at("2026-08-25", 70.0, kNow, kOther));
-
+  PgBodyweightRepository repo{pgTestPool()};
   {
-    wm::PgLease conn{*wm::pgTestPool()};
+    PgLease conn{*pgTestPool()};
     pqxx::work txn{*conn};
-    txn.exec_params("DELETE FROM users WHERE id = $1::uuid", kUser);
+    txn.exec("INSERT INTO gym_bodyweight (user_id, date_local, weight_kg, recorded_at) VALUES "
+             "($1::uuid, '2026-08-25', 82.4, $3), ($2::uuid, '2026-08-25', 70.0, $3)",
+             pqxx::params{kUser, kOther, static_cast<std::int64_t>(kNow)});
+    txn.exec("DELETE FROM users WHERE id = $1::uuid", pqxx::params{kUser});
     txn.commit();
   }
-  CHECK_EQ(repo.entries(wm::UserId{kUser}, {}), std::vector<Bodyweight>{});
-  CHECK_EQ(daysOf(repo, kOther), std::vector<std::string>{"2026-08-25"});
+  CHECK_EQ(repo.entries(UserId{kUser}, {}), std::vector<Bodyweight>{});
+  CHECK_EQ(repo.entries(UserId{kOther}, {}), (std::vector<Bodyweight>{Bodyweight{UserId{kOther}, "2026-08-25", 70.0, kNow}}));
   reset();
 }
 
-// The columns carry the entity's band and its two decimals, and the day column refuses a day that
-// is not one — written against raw SQL because the entity can never send these.
+// The columns carry the entity's band, its two decimals and real days, as raw SQL the entity can never send.
 TEST(pg_gym_bodyweight_columns_refuse_what_the_domain_refuses) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -190,7 +130,7 @@ TEST(pg_gym_bodyweight_columns_refuse_what_the_domain_refuses) {
   for (const std::string& statement : refused) {
     bool stopped = false;
     try {
-      wm::PgLease conn{*wm::pgTestPool()};
+      PgLease conn{*pgTestPool()};
       pqxx::work txn{*conn};
       txn.exec(statement);
       txn.commit();
@@ -201,16 +141,16 @@ TEST(pg_gym_bodyweight_columns_refuse_what_the_domain_refuses) {
   }
   // The column rounds a third decimal exactly as the entity does, and the band's ends are legal.
   {
-    wm::PgLease conn{*wm::pgTestPool()};
+    PgLease conn{*pgTestPool()};
     pqxx::work txn{*conn};
     txn.exec(row + "('" + kUser + "', '2026-08-25', 82.456, 1), ('" + kUser + "', '2026-08-26', 20, 1), "
              "('" + kUser + "', '2026-08-27', 400, 1), ('" + kUser + "', '2024-02-29', 19.996, 1)");
     txn.commit();
   }
-  PgBodyweightRepository repo{wm::pgTestPool()};
-  const std::vector<Bodyweight> held = repo.entries(wm::UserId{kUser}, {});
+  PgBodyweightRepository repo{pgTestPool()};
+  const std::vector<Bodyweight> held = repo.entries(UserId{kUser}, {});
   REQUIRE_EQ(held.size(), std::size_t{4});
-  CHECK_EQ(held[0], (Bodyweight{wm::UserId{kUser}, "2024-02-29", 19.996, 1}));   // both round to 20.00
+  CHECK_EQ(held[0], (Bodyweight{UserId{kUser}, "2024-02-29", 19.996, 1}));   // both round to 20.00
   CHECK_EQ(held[1].weightKg, 82.46);
   CHECK_EQ(held[2].weightKg, 20.0);
   CHECK_EQ(held[3].weightKg, 400.0);

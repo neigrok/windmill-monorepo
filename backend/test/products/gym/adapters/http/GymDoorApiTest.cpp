@@ -13,41 +13,6 @@ using namespace wm::gym::apitest;
 
 namespace {
 
-struct DoorApis : doortest::Harness {
-  FakeAuthRepository authRepo;
-  FakeEmail email;
-  FakeOAuthRepository oauthRepo;
-  OAuthService oauth{oauthRepo, tokens, clock};
-  FakeAccountFootprint footprint;
-  FakeSessionRevocations revocations;
-  std::shared_ptr<AuthService> auth = std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works");
-  TrainingApi trainingApi{doortest::borrowed(training), auth, "https://windmill.works"};
-  CatalogApi catalogApi{doortest::borrowed(catalog), doortest::borrowed(training), auth};
-  ProgramApi programApi{doortest::borrowed(program), auth};
-  NotesApi notesApi{doortest::borrowed(notes), auth};
-  BodyweightApi bodyweightApi{doortest::borrowed(bodyweight), auth, clock};
-  PreferencesApi preferencesApi{doortest::borrowed(preferences), auth};
-  ThreadsApi threadsApi{doortest::borrowed(threads), auth};
-
-  DoorApis() {
-    const User account{user, Email{"gym-door@example.com"}, "Lifter", std::nullopt};
-    authRepo.usersById.emplace(user.str(), account);
-    authRepo.usersByEmail.emplace(account.email.value, account);
-    authRepo.insertSession(tokens.digestOf("s-door"), user, clock.now + 1000000, "", "", clock.now);
-  }
-
-  long long seq() {
-    PgLease lease{*doortest::pool()};
-    pqxx::work txn{*lease};
-    const auto rows = txn.exec_params("select coalesce((select seq from sync_scopes where key=$1),0)", "acct:" + user.str() + "/gym");
-    return rows[0][0].as<long long>();
-  }
-
-  ToolResult call(const std::string& name, const Json::Value& args) {
-    return tools.callTool(name, args, ToolCaller{user, ToolScope::everything(), ToolConnection{"cli_gymdoor", "Gym door test"}});
-  }
-};
-
 Json::Value sessionArgs(const std::string& id) {
   Json::Value args(Json::objectValue);
   args["sessionId"] = id;
@@ -58,7 +23,6 @@ Json::Value sessionArgs(const std::string& id) {
 
 TEST(gym_engine_real_mcp_write_catalog_admits_synced_records_and_keeps_shares) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
-  doortest::EngineSwitch engine;
   DoorApis h;
   std::set<std::string> written;
   const auto admit = [&](const std::string& name, const Json::Value& args, bool synced = true) {
@@ -125,49 +89,8 @@ TEST(gym_engine_real_mcp_write_catalog_admits_synced_records_and_keeps_shares) {
   CHECK(h.failures.messages.empty());
 }
 
-TEST(gym_engine_real_rest_writes_use_typed_projection_and_preserve_error_envelopes) {
-  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
-  doortest::EngineSwitch engine;
-  DoorApis h;
-  CHECK_EQ(send(h.catalogApi, &CatalogApi::createExercise, postRequest("/v1/gym/exercises", exerciseBody("ex_rest0001"), "s-door"))->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(send(h.catalogApi, &CatalogApi::renameExercise, patchRequest("/v1/gym/exercises/bench-press", renameBody("Barbell Bench"), "s-door"), "bench-press")->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(send(h.programApi, &ProgramApi::createRoutine, postRequest("/v1/gym/routines", routineBody("rt_rest0001"), "s-door"))->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(send(h.programApi, &ProgramApi::replaceRoutine, putRequest("/v1/gym/routines/rt_rest0001", routineBody("rt_rest0001", "Push B"), "s-door"), "rt_rest0001")->getStatusCode(), drogon::k200OK);
-  Json::Value note(Json::objectValue);
-  note["title"] = "Goal";
-  note["body"] = "Build strength";
-  CHECK_EQ(send(h.notesApi, &NotesApi::saveNote, putRequest("/v1/gym/notes/note_rest001", note, "s-door"), "note_rest001")->getStatusCode(), drogon::k200OK);
-  Json::Value order(Json::objectValue);
-  order["order"] = Json::Value(Json::arrayValue);
-  order["order"].append("note_rest001");
-  CHECK_EQ(send(h.notesApi, &NotesApi::reorderNotes, putRequest("/v1/gym/notes", order, "s-door"))->getStatusCode(), drogon::k200OK);
-  Json::Value weight(Json::objectValue);
-  weight["weightKg"] = 80;
-  weight["recordedAt"] = Json::UInt64(h.clock.now);
-  CHECK_EQ(send(h.bodyweightApi, &BodyweightApi::saveEntry, putRequest("/v1/gym/bodyweight/2023-11-14", weight, "s-door"), "2023-11-14")->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(send(h.preferencesApi, &PreferencesApi::savePreferences, putRequest("/v1/gym/preferences", Json::Value(Json::objectValue), "s-door"))->getStatusCode(), drogon::k200OK);
-  const auto started = send(h.trainingApi, &TrainingApi::startSession, postRequest("/v1/gym/sessions", startBody("ses_rest0001", h.clock.now - 120000), "s-door"));
-  REQUIRE_EQ(started->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(send(h.trainingApi, &TrainingApi::appendSet, postRequest("/v1/gym/sessions/ses_rest0001/sets", setBody("set_rest0001", "bench-press", 80, h.clock.now - 100000), "s-door"), "ses_rest0001")->getStatusCode(), drogon::k200OK);
-  Json::Value fix(Json::objectValue);
-  fix["weightKg"] = 82.5;
-  CHECK_EQ(send(h.trainingApi, &TrainingApi::fixSet, patchRequest("/v1/gym/sessions/ses_rest0001/sets/set_rest0001", fix, "s-door"), "ses_rest0001", "set_rest0001")->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(send(h.trainingApi, &TrainingApi::deleteSet, deleteRequest("/v1/gym/sessions/ses_rest0001/sets/set_rest0001", "s-door"), "ses_rest0001", "set_rest0001")->getStatusCode(), drogon::k204NoContent);
-  const auto deletedSet = send(h.trainingApi, &TrainingApi::appendSet, postRequest("/v1/gym/sessions/ses_rest0001/sets", setBody("set_rest0001", "bench-press", 80, h.clock.now - 100000), "s-door"), "ses_rest0001");
-  CHECK_EQ(deletedSet->getStatusCode(), drogon::k409Conflict);
-  CHECK_EQ(dump(bodyOf(deletedSet)), std::string(R"({"code":"set-deleted","error":"that set was deleted"})"));
-  CHECK_EQ(send(h.trainingApi, &TrainingApi::finishSession, postRequest("/v1/gym/sessions/ses_rest0001/finish", finishBody(h.clock.now - 60000), "s-door"), "ses_rest0001")->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(send(h.trainingApi, &TrainingApi::discardSession, deleteRequest("/v1/gym/sessions/ses_rest0001", "s-door"), "ses_rest0001")->getStatusCode(), drogon::k204NoContent);
-  CHECK_EQ(send(h.notesApi, &NotesApi::deleteNote, deleteRequest("/v1/gym/notes/note_rest001", "s-door"), "note_rest001")->getStatusCode(), drogon::k204NoContent);
-  CHECK_EQ(send(h.bodyweightApi, &BodyweightApi::deleteEntry, deleteRequest("/v1/gym/bodyweight/2023-11-14", "s-door"), "2023-11-14")->getStatusCode(), drogon::k204NoContent);
-  CHECK_EQ(send(h.programApi, &ProgramApi::deleteRoutine, deleteRequest("/v1/gym/routines/rt_rest0001", "s-door"), "rt_rest0001")->getStatusCode(), drogon::k204NoContent);
-  CHECK(h.seq() > 12);
-  CHECK(h.failures.messages.empty());
-}
-
 TEST(gym_engine_real_coach_records_keep_provenance_and_thread_delete_admits_unlink) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
-  doortest::EngineSwitch engine;
   DoorApis h;
   const ThreadId thread{"thr_doormcp01"};
   REQUIRE_EQ(h.threads.openThread(h.user, thread, "Strength plan").error, ThreadOpenError::none);
@@ -222,46 +145,5 @@ TEST(gym_engine_real_coach_records_keep_provenance_and_thread_delete_admits_unli
   REQUIRE_EQ(unlink.size(), std::size_t{1});
   CHECK(unlink[0]["thread_id"].is_null());
   CHECK_FALSE(unlink[0]["thread_id_stamp"].is_null());
-  CHECK(h.failures.messages.empty());
-}
-
-TEST(gym_engine_real_freeze_reads_never_admit_the_stale_close) {
-  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
-  doortest::EngineSwitch engine;
-  DoorApis h;
-  const auto started = h.training.start(h.user, SessionStart{SessionId{"ses_freeze001"}, h.clock.now - kAutoCloseMs - 1});
-  REQUIRE_EQ(started.error, StartError::none);
-  REQUIRE(started.session);
-  REQUIRE(!started.session->finishedAtMs);
-  const auto before = h.seq();
-  struct Freeze {
-    std::optional<std::string> previous;
-    Freeze() {
-      if (const char* held = std::getenv("GYM_WRITE_FREEZE")) previous = held;
-      setenv("GYM_WRITE_FREEZE", "1", 1);
-    }
-    ~Freeze() {
-      if (previous) { setenv("GYM_WRITE_FREEZE", previous->c_str(), 1); return; }
-      unsetenv("GYM_WRITE_FREEZE");
-    }
-  } freeze;
-  const auto request = getRequest("/v1/gym/read", "s-door");
-  CHECK_EQ(send(h.trainingApi, &TrainingApi::listSessions, request)->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(send(h.trainingApi, &TrainingApi::getSession, request, "ses_freeze001")->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(send(h.trainingApi, &TrainingApi::stats, request)->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(send(h.trainingApi, &TrainingApi::history, request)->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(send(h.catalogApi, &CatalogApi::exerciseRecord, request, "bench-press")->getStatusCode(), drogon::k200OK);
-  CHECK_FALSE(h.call("list_sessions", Json::Value(Json::objectValue)).isError);
-  CHECK_FALSE(h.call("get_session", sessionArgs("ses_freeze001")).isError);
-  Json::Value ids(Json::objectValue);
-  ids["sessionIds"] = Json::Value(Json::arrayValue);
-  ids["sessionIds"].append("ses_freeze001");
-  CHECK_FALSE(h.call("get_sessions", ids).isError);
-  CHECK_FALSE(h.call("get_stats", Json::Value(Json::objectValue)).isError);
-  CHECK(h.training.openSession(h.user));
-  CHECK_EQ(h.seq(), before);
-  const auto current = h.repo.log.session(h.user, SessionId{"ses_freeze001"});
-  REQUIRE(current);
-  CHECK_FALSE(current->finishedAtMs);
   CHECK(h.failures.messages.empty());
 }

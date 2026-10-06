@@ -1,4 +1,8 @@
-#include "test/products/gym/application/GymServiceFixture.h"
+#include "products/gym/application/ThreadService.h"
+
+#include "test/platform/Fakes.h"
+#include "test/products/gym/Fakes.h"
+#include "test/testing.h"
 
 #include <cstdint>
 #include <optional>
@@ -7,11 +11,23 @@
 
 using namespace wm::gym;
 using namespace wm::gym::fake;
-using namespace wm::gym::servicetest;
+
+namespace {
+
+// The threads a lifter reads, over rows seeded straight into the store: the writes are the engine's.
+struct Harness {
+  EngineWrites engine;
+  ReadOnlyDoor door;
+  FakeGym repo;
+  wm::fake::FakeClock clock;
+  ThreadService threads{repo.threads, clock, &door};
+};
+
+}  // namespace
 
 TEST(a_thread_past_the_list_ceiling_still_reads_by_id_with_the_outcome_the_app_shows_it) {
   Harness h;
-  h.create(h.pushAWrite());
+  h.repo.db.routineRows.push_back(pushA());
   const std::uint64_t opened = 1'700'000'000'000ull;
   for (int number = 0; number <= kThreadList; ++number) {
     const std::string id = "thr_probe" + std::to_string(1000 + number);

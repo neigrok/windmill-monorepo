@@ -12,7 +12,7 @@ using namespace wm::gym;
 using namespace wm::gym::fake;
 using namespace wm::gym::apitest;
 
-// PreferencesApi over the fake store: the settings document, read and written whole.
+// PreferencesApi over the fake store: the settings document, read whole.
 
 TEST(gym_settings_answer_the_defaults_for_a_lifter_with_no_row) {
   Harness h;
@@ -29,100 +29,41 @@ TEST(gym_settings_answer_the_defaults_for_a_lifter_with_no_row) {
   CHECK_EQ(h.repo.db.preferenceRows.size(), std::size_t{0});
 }
 
-TEST(gym_settings_write_the_whole_document_and_answer_with_the_stored_one) {
+TEST(gym_settings_answer_the_whole_stored_document) {
   Harness h;
-  h.signIn("s-live");
+  h.repo.db.preferenceRows.push_back(GymPreferences{h.signIn("s-live"), Unit::lb, 90, false, false, true});
 
-  Json::Value body(Json::objectValue);
-  body["units"] = "lb";
-  body["restSeconds"] = 90;
-  body["restSound"] = false;
-  body["confirmHaptic"] = false;
-  body["confirmSound"] = true;
-  drogon::HttpResponsePtr saved =
-      send(h.preferences, &PreferencesApi::savePreferences, putRequest("/v1/gym/preferences", body, "s-live"));
   drogon::HttpResponsePtr read =
       send(h.preferences, &PreferencesApi::preferences, getRequest("/v1/gym/preferences", "s-live"));
 
-  CHECK_EQ(saved->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(dump(bodyOf(saved)),
+  CHECK_EQ(read->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(read)),
            std::string(R"({"confirmHaptic":false,"confirmSound":true,"restSeconds":90,)"
                        R"("restSound":false,"units":"lb"})"));
-  CHECK_EQ(dump(bodyOf(read)), dump(bodyOf(saved)));
-  CHECK_EQ(h.repo.db.preferenceRows.size(), std::size_t{1});
 }
 
-// A whole-document PUT: a field the sender did not name takes its default, and omitting `restSeconds` turns the timer off.
-TEST(gym_settings_omitted_fields_take_their_default_and_no_rest_target_is_the_timer_off) {
+TEST(gym_settings_are_owner_scoped_and_401_signed_out) {
   Harness h;
   h.signIn("s-live");
+  h.repo.db.preferenceRows.push_back(GymPreferences{UserId{"stranger"}, Unit::lb, 90, false, false, true});
 
-  Json::Value armed(Json::objectValue);
-  armed["restSeconds"] = 180;
-  send(h.preferences, &PreferencesApi::savePreferences, putRequest("/v1/gym/preferences", armed, "s-live"));
-  drogon::HttpResponsePtr cleared = send(h.preferences, &PreferencesApi::savePreferences,
-                                         putRequest("/v1/gym/preferences",
-                                                    Json::Value(Json::objectValue), "s-live"));
+  drogon::HttpResponsePtr anonymous =
+      send(h.preferences, &PreferencesApi::preferences, getRequest("/v1/gym/preferences"));
+  drogon::HttpResponsePtr mine =
+      send(h.preferences, &PreferencesApi::preferences, getRequest("/v1/gym/preferences", "s-live"));
 
-  CHECK_EQ(cleared->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(dump(bodyOf(cleared)),
+  CHECK_EQ(anonymous->getStatusCode(), drogon::k401Unauthorized);
+  CHECK_EQ(dump(bodyOf(anonymous)), std::string(R"({"error":"sign in to open your training log"})"));
+  CHECK_EQ(dump(bodyOf(mine)),
            std::string(R"({"confirmHaptic":true,"confirmSound":false,"restSound":true,)"
                        R"("units":"kg"})"));
 }
 
-TEST(gym_settings_refusals_each_name_the_row_that_has_to_be_fixed) {
-  Harness h;
-  h.signIn("s-live");
-
-  const auto refuse = [&](const Json::Value& body) {
-    return send(h.preferences, &PreferencesApi::savePreferences, putRequest("/v1/gym/preferences", body, "s-live"));
-  };
-  Json::Value unknownUnit(Json::objectValue);
-  unknownUnit["units"] = "st";
-  Json::Value badRest(Json::objectValue);
-  badRest["restSeconds"] = 5;
-  Json::Value misspelled(Json::objectValue);
-  misspelled["restSecond"] = 90;
-
-  const auto said = [&](const Json::Value& body) {
-    return std::pair(body["code"].asString(), body["error"].asString());
-  };
-  CHECK_EQ(refuse(unknownUnit)->getStatusCode(), drogon::k400BadRequest);
-  CHECK_EQ(said(bodyOf(refuse(unknownUnit))),
-           std::pair(std::string("unknown-unit"), std::string(R"(units are "kg" or "lb")")));
-  CHECK_EQ(said(bodyOf(refuse(badRest))),
-           std::pair(std::string("rest-target"),
-                     std::string("a rest target runs from 15 to 900 seconds — send none for no "
-                                 "timer")));
-  CHECK_EQ(said(bodyOf(refuse(misspelled))),
-           std::pair(std::string("preferences-unreadable"),
-                     std::string(R"(unknown settings field "restSecond". Settings take: units, )"
-                                 R"(restSeconds, restSound, confirmHaptic, confirmSound.)")));
-  // And nothing landed: a refused document leaves no row behind at all.
-  CHECK_EQ(h.repo.db.preferenceRows.size(), std::size_t{0});
-}
-
-TEST(gym_settings_are_owner_scoped_on_both_doors) {
-  Harness h;
-  h.signIn("s-live");
-
-  CHECK_EQ(send(h.preferences, &PreferencesApi::preferences, getRequest("/v1/gym/preferences"))->getStatusCode(),
-           drogon::k401Unauthorized);
-  CHECK_EQ(send(h.preferences, &PreferencesApi::savePreferences,
-                putRequest("/v1/gym/preferences", Json::Value(Json::objectValue)))
-               ->getStatusCode(),
-           drogon::k401Unauthorized);
-  CHECK_EQ(h.repo.db.preferenceRows.size(), std::size_t{0});
-}
-
 TEST(gym_units_are_a_display_transform_and_reach_no_write_or_read) {
   Harness h;
-  h.signIn("s-live");
-
-  Json::Value toPounds(Json::objectValue);
-  toPounds["units"] = "lb";
-  send(h.preferences, &PreferencesApi::savePreferences, putRequest("/v1/gym/preferences", toPounds, "s-live"));
-  trainedThrough(h, "s-live", "ses_11111111", 1'700'000'000'000, 2);
+  const UserId me = h.signIn("s-live");
+  h.repo.db.preferenceRows.push_back(GymPreferences{me, Unit::lb, std::nullopt, true, true, false});
+  h.seedWorkout(me, "ses_11111111", 1'700'000'000'000, 2);
 
   const std::string sessionUnderLb =
       dump(bodyOf(send(h.training, &TrainingApi::getSession,
@@ -137,12 +78,8 @@ TEST(gym_units_are_a_display_transform_and_reach_no_write_or_read) {
   // Nothing anywhere on the wire says lb but the settings document itself.
   CHECK(sessionUnderLb.find("lb") == std::string::npos);
   CHECK(logUnderLb.find("lb") == std::string::npos);
-  // And the stored sets hold plain kilograms — the store never heard about the unit at all.
-  CHECK_EQ(h.repo.db.sets.front().weightKg, 82.5);
 
-  Json::Value toKilos(Json::objectValue);
-  toKilos["units"] = "kg";
-  send(h.preferences, &PreferencesApi::savePreferences, putRequest("/v1/gym/preferences", toKilos, "s-live"));
+  h.repo.db.preferenceRows[0].units = Unit::kg;
 
   // Switching back rewrites nothing: the same two replies, byte for byte.
   CHECK_EQ(dump(bodyOf(send(h.training, &TrainingApi::getSession,

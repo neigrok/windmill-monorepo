@@ -1,164 +1,120 @@
-#include "products/gym/application/NotesService.h"
-
-#include "test/platform/Fakes.h"
-#include "test/products/gym/Fakes.h"
+#include "test/products/gym/sync/adapters/postgres/GymDoorFixture.h"
 #include "test/testing.h"
 
 #include <cstdint>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
 using namespace wm;
 using namespace wm::gym;
-using namespace wm::gym::fake;
+using namespace wm::gym::doortest;
 
 namespace {
 
-// The store's rules over the fake, which applies the same ones as the SQL: owner scope, the ten
-// cap, position contiguity, the replay, the whole-order replace.
-struct Harness {
-  FakeGym repo;
-  wm::fake::FakeClock clock;
-  NotesService notes{repo.notes, clock};
+Note note(const UserId& owner, const std::string& id, const std::string& title, const std::string& body = "") {
+  return Note{NoteId{id}, owner, title, body};
+}
 
-  Note note(const std::string& id, const std::string& title, const std::string& body = "",
-            const std::string& user = "u1") {
-    return Note{NoteId{id}, UserId{user}, title, body};
-  }
+// What a phone sends through /v1/sync for one note: its changed fields, or its death.
+Json::Value pushed(Harness& h, const UserId& account, const std::string& id, const Json::Value& fields,
+                   bool dead = false) {
+  return h.admit(account, {GymDoor::delta("note", id, fields, false, dead)});
+}
 
-  std::vector<std::string> titlesOf(const std::string& user = "u1") {
-    std::vector<std::string> titles;
-    for (const Note& held : notes.notes(UserId{user})) titles.push_back(held.title);
-    return titles;
-  }
-};
-
-}  // namespace
+}
 
 TEST(a_new_note_lands_last_and_is_dated_by_the_servers_clock) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.clock.now = 1'700'000'000'000;
 
-  const NoteWriteOutcome first = h.notes.saveNote(h.note("note_00000001", "Tone", "Blunt."));
+  const NoteWriteOutcome first = h.notes.saveInsight(note(h.user, "note_00000001", "Tone", "Blunt."));
   h.clock.now += 60'000;
-  const NoteWriteOutcome second = h.notes.saveNote(h.note("note_00000002", "Goal", "A 140 squat."));
+  const NoteWriteOutcome second = h.notes.saveInsight(note(h.user, "note_00000002", "Goal", "A 140 squat."));
 
   REQUIRE(first.error == NoteWriteError::none);
   REQUIRE(second.error == NoteWriteError::none);
-  CHECK_EQ(*first.note, Note(NoteId{"note_00000001"}, uid(), "Tone", "Blunt.", 0, 1'700'000'000'000));
+  CHECK_EQ(*first.note, Note(NoteId{"note_00000001"}, h.user, "Tone", "Blunt.", 0, 1'700'000'000'000));
   CHECK_EQ(*second.note,
-           Note(NoteId{"note_00000002"}, uid(), "Goal", "A 140 squat.", 1, 1'700'000'060'000));
-  CHECK_EQ(h.notes.notes(uid()), (std::vector<Note>{*first.note, *second.note}));
-  CHECK_EQ(h.notes.notes(UserId{"u2"}), std::vector<Note>{});
+           Note(NoteId{"note_00000002"}, h.user, "Goal", "A 140 squat.", 1, 1'700'000'060'000));
+  CHECK_EQ(h.notes.notes(h.user), (std::vector<Note>{*first.note, *second.note}));
+  CHECK_EQ(h.notes.notes(h.other), std::vector<Note>{});
 }
 
-// The id is the idempotency key: the same text replays untouched, different text is an edit in
-// place that keeps its position and moves only its instant.
+// The id is the idempotency key, so the same text replays untouched; a phone's edit keeps the position and moves the instant.
 TEST(a_replayed_note_reads_back_the_stored_row_and_a_changed_one_is_an_edit_in_place) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.clock.now = 1'700'000'000'000;
-  h.notes.saveNote(h.note("note_00000001", "Tone", "Blunt."));
-  h.notes.saveNote(h.note("note_00000002", "Goal", "A 140 squat."));
+  h.notes.saveInsight(note(h.user, "note_00000001", "Tone", "Blunt."));
+  const NoteWriteOutcome goal = h.notes.saveInsight(note(h.user, "note_00000002", "Goal", "A 140 squat."));
   h.clock.now += 60'000;
 
-  const NoteWriteOutcome replayed = h.notes.saveNote(h.note("note_00000001", "Tone", "Blunt."));
-  const NoteWriteOutcome edited = h.notes.saveNote(h.note("note_00000001", "Tone", "Blunt. Numbers first."));
+  const NoteWriteOutcome replayed = h.notes.saveInsight(note(h.user, "note_00000001", "Tone", "Blunt."));
+  Json::Value body(Json::objectValue);
+  body["body"] = "Blunt. Numbers first.";
+  const Json::Value edited = pushed(h, h.user, "note_00000001", body);
 
   REQUIRE(replayed.error == NoteWriteError::none);
-  CHECK_EQ(replayed.note->updatedAtMs, 1'700'000'000'000u);
-  REQUIRE(edited.error == NoteWriteError::none);
-  CHECK_EQ(edited.note->position, 0);
-  CHECK_EQ(edited.note->body, std::string("Blunt. Numbers first."));
-  CHECK_EQ(edited.note->updatedAtMs, 1'700'000'060'000u);
-  CHECK_EQ(h.notes.notes(uid()).size(), std::size_t{2});
-  CHECK_EQ(h.notes.notes(uid())[0], *edited.note);
+  CHECK_EQ(*replayed.note, Note(NoteId{"note_00000001"}, h.user, "Tone", "Blunt.", 0, 1'700'000'000'000));
+  CHECK_EQ(GymDoor::refusal(edited), std::string());
+  CHECK_EQ(h.notes.notes(h.user),
+           (std::vector<Note>{Note(NoteId{"note_00000001"}, h.user, "Tone", "Blunt. Numbers first.", 0,
+                                   1'700'000'060'000),
+                              *goal.note}));
 }
 
 TEST(the_eleventh_note_is_refused_and_an_edit_at_ten_still_lands) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   for (int at = 1; at <= 10; ++at)
-    CHECK(h.notes.saveNote(h.note("note_000000" + std::to_string(10 + at), "Note " + std::to_string(at)))
+    CHECK(h.notes.saveInsight(note(h.user, "note_000000" + std::to_string(10 + at), "Note " + std::to_string(at)))
               .error == NoteWriteError::none);
 
-  const NoteWriteOutcome eleventh = h.notes.saveNote(h.note("note_00000099", "One too many"));
-  const NoteWriteOutcome edited = h.notes.saveNote(h.note("note_00000020", "Note 10", "still fits"));
+  const NoteWriteOutcome eleventh = h.notes.saveInsight(note(h.user, "note_00000099", "One too many"));
+  Json::Value body(Json::objectValue);
+  body["body"] = "still fits";
+  const Json::Value edited = pushed(h, h.user, "note_00000020", body);
 
   CHECK(eleventh.error == NoteWriteError::full);
   CHECK_FALSE(eleventh.note.has_value());
-  CHECK(edited.error == NoteWriteError::none);
-  CHECK_EQ(h.notes.notes(uid()).size(), std::size_t{10});
-  CHECK_EQ(h.notes.notes(uid()).back().position, 9);
+  CHECK_EQ(GymDoor::refusal(edited), std::string());
+  CHECK_EQ(h.notes.notes(h.user).size(), std::size_t{10});
+  CHECK_EQ(h.notes.notes(h.user).back(),
+           Note(NoteId{"note_00000020"}, h.user, "Note 10", "still fits", 9, h.clock.now));
 }
 
 // The primary key spans every account: an id another account holds is refused, never overwritten
 // and never read back to the stranger.
 TEST(an_id_another_account_holds_is_refused_and_their_note_is_untouched) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
-  h.notes.saveNote(h.note("note_00000001", "Tone", "Blunt."));
+  const NoteWriteOutcome mine = h.notes.saveInsight(note(h.user, "note_00000001", "Tone", "Blunt."));
 
-  const NoteWriteOutcome taken = h.notes.saveNote(h.note("note_00000001", "Mine now", "", "u2"));
+  const NoteWriteOutcome taken = h.notes.saveInsight(note(h.other, "note_00000001", "Mine now"));
 
   CHECK(taken.error == NoteWriteError::idTaken);
   CHECK_FALSE(taken.note.has_value());
-  CHECK_EQ(h.titlesOf("u1"), std::vector<std::string>{"Tone"});
-  CHECK_EQ(h.titlesOf("u2"), std::vector<std::string>{});
-  CHECK_EQ(h.notes.notes(uid())[0].body, std::string("Blunt."));
+  CHECK_EQ(h.notes.notes(h.user), std::vector<Note>{*mine.note});
+  CHECK_EQ(h.notes.notes(h.other), std::vector<Note>{});
 }
 
+// A note a phone deletes leaves no gap, and its freed slot is the next note's, so ten stays reachable.
 TEST(deleting_a_note_closes_the_gap_and_a_second_delete_is_a_no_op) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
-  h.notes.saveNote(h.note("note_00000001", "A"));
-  h.notes.saveNote(h.note("note_00000002", "B"));
-  h.notes.saveNote(h.note("note_00000003", "C"));
+  const NoteWriteOutcome a = h.notes.saveInsight(note(h.user, "note_00000001", "A"));
+  h.notes.saveInsight(note(h.user, "note_00000002", "B"));
+  const NoteWriteOutcome c = h.notes.saveInsight(note(h.user, "note_00000003", "C"));
 
-  h.notes.deleteNote(uid(), NoteId{"note_00000002"});
-  h.notes.deleteNote(uid(), NoteId{"note_00000002"});
-  h.notes.deleteNote(UserId{"u2"}, NoteId{"note_00000001"});   // not theirs: nothing moves
+  h.kill(h.user, "note", "note_00000002");
+  const Json::Value again = pushed(h, h.user, "note_00000002", Json::Value(Json::objectValue), true);
+  const Json::Value stranger = pushed(h, h.other, "note_00000001", Json::Value(Json::objectValue), true);
 
-  const std::vector<Note> left = h.notes.notes(uid());
-  REQUIRE_EQ(left.size(), std::size_t{2});
-  CHECK_EQ(left[0].id, NoteId{"note_00000001"});
-  CHECK_EQ(left[0].position, 0);
-  CHECK_EQ(left[1].id, NoteId{"note_00000003"});
-  CHECK_EQ(left[1].position, 1);
-  // The freed slot is taken by the next note, so ten stays reachable.
-  CHECK_EQ(h.notes.saveNote(h.note("note_00000004", "D")).note->position, 2);
-}
-
-// Order is precedence: the whole list is replaced at once, and it must name every note once.
-TEST(reordering_replaces_the_whole_order_or_refuses_it) {
-  Harness h;
-  h.clock.now = 1'700'000'000'000;
-  h.notes.saveNote(h.note("note_00000001", "A"));
-  h.notes.saveNote(h.note("note_00000002", "B"));
-  h.notes.saveNote(h.note("note_00000003", "C"));
-  h.notes.saveNote(h.note("note_00000009", "Theirs", "", "u2"));
-  h.clock.now += 60'000;
-
-  const NotesOrderOutcome moved =
-      h.notes.reorderNotes(uid(), {NoteId{"note_00000003"}, NoteId{"note_00000001"}, NoteId{"note_00000002"}});
-
-  REQUIRE(moved.error == NotesOrderError::none);
-  CHECK_EQ(h.titlesOf(), (std::vector<std::string>{"C", "A", "B"}));
-  CHECK_EQ(moved.notes, h.notes.notes(uid()));
-  CHECK_EQ(moved.notes[0].position, 0);
-  CHECK_EQ(moved.notes[2].position, 2);
-  // Precedence is not the note's text, so nothing was re-dated.
-  for (const Note& held : moved.notes) CHECK_EQ(held.updatedAtMs, 1'700'000'000'000u);
-
-  for (const std::vector<NoteId>& bad : std::vector<std::vector<NoteId>>{
-           {NoteId{"note_00000001"}, NoteId{"note_00000002"}},
-           {NoteId{"note_00000001"}, NoteId{"note_00000001"}, NoteId{"note_00000002"}},
-           {NoteId{"note_00000001"}, NoteId{"note_00000002"}, NoteId{"note_00000009"}},
-           {NoteId{"note_00000001"}, NoteId{"note_00000002"}, NoteId{"note_00000003"},
-            NoteId{"note_00000004"}},
-           {}}) {
-    const NotesOrderOutcome refused = h.notes.reorderNotes(uid(), bad);
-    CHECK(refused.error == NotesOrderError::mismatch);
-    CHECK(refused.notes.empty());
-  }
-  CHECK_EQ(h.titlesOf(), (std::vector<std::string>{"C", "A", "B"}));   // nothing moved
-  CHECK_EQ(h.titlesOf("u2"), std::vector<std::string>{"Theirs"});
-  // An account with nothing reorders nothing, and that is the one empty order that is not a mismatch.
-  CHECK(h.notes.reorderNotes(UserId{"u3"}, {}).error == NotesOrderError::none);
+  CHECK_EQ(GymDoor::refusal(again), std::string());
+  CHECK_EQ(GymDoor::refusal(stranger), std::string());   // not theirs: answered, and nothing moves
+  const std::vector<Note> left = h.notes.notes(h.user);
+  CHECK_EQ(left, (std::vector<Note>{*a.note, Note(NoteId{"note_00000003"}, h.user, "C", "", 1, c.note->updatedAtMs)}));
+  CHECK_EQ(h.notes.saveInsight(note(h.user, "note_00000004", "D")).note->position, 2);
 }
