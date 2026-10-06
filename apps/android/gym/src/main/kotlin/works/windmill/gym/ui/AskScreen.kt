@@ -118,18 +118,14 @@ fun AskScreen(
     // Read back off the log: the reply carries ids only. A proposal moves when anybody decides, and a
     // decision taken in this room overrides the copy read here, so the card and the receipt agree.
     val minted = remember { mutableStateMapOf<String, Proposal>() }
-    val failures = remember { mutableStateMapOf<String, String>() }
     val missing = remember { mutableStateMapOf<String, Boolean>() }
-    var attempt by remember { mutableStateOf(0) }
     val wanted = (thread.flatMap { it.answer?.proposals.orEmpty() } + proposalIds).distinct()
-    LaunchedEffect(wanted, attempt) {
+    LaunchedEffect(wanted) {
         wanted.forEach { id ->
             if (minted.containsKey(id) || missing.containsKey(id)) return@forEach
-            val read = store.proposal(id)
-            when (read) {
-                is ProposalRead.Found -> { minted[id] = read.proposal; failures.remove(id) }
-                ProposalRead.Gone -> { missing[id] = true; failures.remove(id) }
-                is ProposalRead.Failed -> failures[id] = read.why.line("the proposal wasn’t read")
+            when (val read = store.proposal(id)) {
+                is ProposalRead.Found -> minted[id] = read.proposal
+                ProposalRead.Gone -> missing[id] = true
             }
         }
     }
@@ -197,8 +193,7 @@ fun AskScreen(
                                 Answer(answer.copy(answer = text), exchange.answer != null, minted + store.settledProposals, store.catalog, nowMs, lookedAt, onReview, onOpenRoutine)
                                 answer.proposals.filter { it !in minted && it !in store.settledProposals }.forEach { id ->
                                     if (id in missing) Trouble(ProposalRead.Gone.line, null)
-                                    else failures[id]?.let { Trouble(it) { failures.remove(id); attempt += 1 } }
-                                        ?: Text("Reading proposal…", style = WindmillFont.body(14), color = skin.inkDim)
+                                    else Text("Reading proposal…", style = WindmillFont.body(14), color = skin.inkDim)
                                 }
                             }
                             exchange.trouble?.let { said ->
@@ -219,7 +214,6 @@ fun AskScreen(
                         Minted(proposal, store.catalog, nowMs, id in lookedAt) { onReview(proposal) }
                     }
                     if (id in missing) Trouble(ProposalRead.Gone.line, null)
-                    failures[id]?.let { Trouble(it) { failures.remove(id); attempt++ } }
                 }
                 val shown = (minted + store.settledProposals).values.mapNotNull { it.receipt }.toSet()
                 receipts.filterNot { it in shown }.forEach { ReceiptLine(it) }

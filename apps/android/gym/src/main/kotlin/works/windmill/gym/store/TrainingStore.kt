@@ -2007,7 +2007,6 @@ sealed interface ProposalRead {
     data object Gone : ProposalRead {
         const val line = "This proposal is no longer available."
     }
-    data class Failed(val why: WriteFailure) : ProposalRead
 }
 
 // `Answered` carries the reply whole and the screen draws it without adding to it. `Refused` is the
