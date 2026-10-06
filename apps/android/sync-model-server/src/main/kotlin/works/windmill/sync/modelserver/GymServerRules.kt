@@ -140,7 +140,7 @@ class GymServerRules : ServerRules {
         }
         val appended = mutableListOf<PlannedDelta>(); val numbered = c.storedRecords("set").toMutableList()
         val staged = listOf("set", "session", "routine", "routineCreation", "proposal", "exercise", "exerciseName", "note").flatMap(c::records).associateBy { it.key }.toMutableMap()
-        val newly = changes.filter { it.after.isAlive && !it.before.isAlive }.map { it.key }.toSet(); val checked = mutableSetOf<RecordKey>()
+        val newly = changes.filter { it.createdHere }.map { it.key }.toSet(); val checked = mutableSetOf<RecordKey>()
         fun records(type: String) = staged.values.filter { it.key.type == type }.sortedBy { it.key }
         fun append(delta: PlannedDelta) {
             appended.add(delta); val row = staged[delta.key] ?: Row(delta.key, seq = 0)
@@ -149,7 +149,7 @@ class GymServerRules : ServerRules {
         }
         fun known(id: Json?): Boolean = (id as? Json.Str)?.let { c.product["seeds"]?.get(it.value) != null || staged[key("exercise", it.value)]?.isAlive == true } ?: false
         for (change in changes.filter { it.key.type == "routine" && it.after.isAlive }) {
-            val created = !change.before.isAlive
+            val created = change.createdHere
             if (!created && !changed(change, "name") && !changed(change, "entries")) continue
             val revision = if (created) 1 else (value(change.before.row, "revision")?.long() ?: throw Refusal("invalid")) + 1
             if (revision > 2_147_483_647) throw Refusal("invalid")
@@ -158,7 +158,7 @@ class GymServerRules : ServerRules {
             append(PlannedDelta.update(change.key, change.after.lattice.born, fields))
         }
         for (change in changes) {
-            val row = change.after; val before = change.before.row; val created = row.isAlive && !change.before.isAlive
+            val row = change.after; val before = change.before.row; val created = change.createdHere
             when (row.key.type) {
                 "set" -> {
                     if (row.isAlive && row.serials["setNumber"]?.long()?.let { it !in 1..2_147_483_647L } == true) throw Refusal("invalid")
@@ -196,6 +196,7 @@ class GymServerRules : ServerRules {
                         records("session").filter { it.isAlive && value(it, "routineId") == row.key.id.json }.forEach { append(PlannedDelta.update(it.key, it.lattice.born, mapOf("routineId" to Json.Null))) }; continue
                     }
                     if (!row.isAlive) continue
+                    if (blankNamed(change, "name")) throw Refusal("invalid")
                     if (created || changed(change, "entries")) {
                         val entries = value(row, "entries")?.arr() ?: throw Refusal("invalid")
                         if (entries.isEmpty() || entries.any { it["sets"]?.arr()?.isEmpty() == true }) throw Refusal("invalid")
@@ -212,16 +213,21 @@ class GymServerRules : ServerRules {
                 }
                 "exercise" -> {
                     if (change.diesHere || created && value(row, "stepKg") == null) throw Refusal("invalid")
+                    if (blankNamed(change, "name")) throw Refusal("invalid")
                     val bn = value(before, "name"); val an = value(row, "name")
                     if (changed(change, "name") && bn != null && an != null) append(PlannedDelta.update(row.key, row.lattice.born, mapOf("aliases" to renamed(value(row, "aliases"), bn, an))))
                 }
                 "exerciseName" -> {
                     val seed = c.product["seeds"]?.get(row.key.id.toString()) ?: throw Refusal("invalid")
+                    if (blankNamed(change, "name")) throw Refusal("invalid")
                     val bn = value(before, "name") ?: seed.member("name"); val an = value(row, "name") ?: seed.member("name")
                     if (bn != an) append(PlannedDelta.update(row.key, null, mapOf("aliases" to renamed(value(row, "aliases"), bn, an))))
                 }
                 "weighin" -> if (row.isAlive && row.key.id.toString() > utcDay(c.serverNow + 86_400_000)) throw Refusal("bad-instant")
-                "note" -> if (created || changed(change, "title") || changed(change, "body")) append(PlannedDelta.update(row.key, row.lattice.born, mapOf("updatedAt" to Json.of(c.serverNow))))
+                "note" -> {
+                    if (blankNamed(change, "title")) throw Refusal("invalid")
+                    if (created || changed(change, "title") || changed(change, "body")) append(PlannedDelta.update(row.key, row.lattice.born, mapOf("updatedAt" to Json.of(c.serverNow))))
+                }
                 "proposal" -> {
                     if (!created) continue
                     if (c.origin.isReplica && (value(row, "door") != Json.of("ask") || (value(row, "connection") ?: Json.of("")) != Json.of("") || (value(row, "agent") ?: Json.of("")) != Json.of(""))) throw Refusal("invalid")
@@ -255,7 +261,7 @@ class GymServerRules : ServerRules {
         val changes = value(proposal, "changes")!!.arr(); val base = value(routine, "entries")!!.arr()
         val proposed = changes.filter { it["kind"] != Json.of("removed") }.map { (it["after"] ?: throw Refusal("invalid")).with("exerciseId" to it["exerciseId"]) }
         if (value(proposal, "intent") == Json.of("remove")) { if (proposed.isNotEmpty()) throw Refusal("invalid") }
-        else if (proposed.isEmpty() || proposed.size > 50 || (value(proposal, "proposedName") as? Json.Str)?.value?.isNotEmpty() != true || proposed.any { it["sets"]?.arr()?.isEmpty() == true }) throw Refusal("invalid")
+        else if (proposed.isEmpty() || proposed.size > 50 || TextMerge.isBlank((value(proposal, "proposedName") as? Json.Str)?.value ?: "") || proposed.any { it["sets"]?.arr()?.isEmpty() == true }) throw Refusal("invalid")
         fun targets(entry: Json) = Json.objectOf().with("sets" to entry["sets"], "restSeconds" to entry["restSeconds"])
         val matched = mutableSetOf<Int>(); val expected = mutableListOf<Json>()
         for (entry in proposed) {
@@ -270,6 +276,7 @@ class GymServerRules : ServerRules {
         if (proposed.any { !known(it["exerciseId"]) }) throw Refusal("unknown-exercise")
     }
     private fun changed(change: RecordChange, field: String) = change.after.isAlive && change.before.isAlive && value(change.before.row, field) != value(change.after, field)
+    private fun blankNamed(change: RecordChange, field: String) = (value(change.after, field) as? Json.Str)?.value?.let(TextMerge::isBlank) == true && (change.createdHere || changed(change, field))
     private fun renamed(aliases: Json?, before: Json, after: Json) = Json.Arr((listOf(before) + aliases?.arr().orEmpty().filter { it != before && it != after }).take(5))
     private fun staleClose(c: RuleContext): List<PlannedDelta> {
         val open = c.storedRecords("session").firstOrNull(::isOpen) ?: return emptyList(); val last = lastActivity(open, c)

@@ -106,13 +106,13 @@ python3 tools/schema_gen.py --check
 
 | Gate | Verified result |
 |---|---|
-| Full build | `./gradlew --max-workers=4 build`: green in 2m6s; 463 tasks (13 executed, 450 up-to-date). App/platform/gym debug+release assembly and normal lint pass. |
+| Full build | `./gradlew --max-workers=4 build`: green; 474 tasks. App/platform/gym debug+release assembly and normal lint pass. |
 | Client corpus | 52/52 files, 740/740 cases, 0 unclaimed. All seven protocol transcripts generate requests through Engine, use actual model replies, and compare client returns and final devices/ended/server state. JSONL transcripts each count once. |
-| Server corpus | 27 server-role files / 748 cases, plus 7 protocol transcripts. |
-| Kit corpus | 12/12 files, 475/475 cases, 0 unclaimed. Gym domain corpus: 5/5 files, 56 cases. |
-| API and engine | API 13/13; engine 134/134 per debug/release variant, 0 skips/errors/failures. Includes native SQLite on SDK26/27/28/29/35 and transport/runtime failure paths. |
-| Kit and model units | Kit 24/24; kit-testing 507/507; gym-domain 62/62; model-server 5/5. |
-| Test execution | Sync-testing: 1494/1494 ordinary tests + 258/258 mandatory-property tests, 0 skips/errors/failures. App: 35/35 and platform: 92/92 per variant; gym: 1264 tests per variant, 12 existing ignored tests each, 0 failures. |
+| Server corpus | 27 server-role files / 760 cases, plus 7 protocol transcripts. |
+| Kit corpus | 12/12 files, 475/475 cases, 0 unclaimed. Gym domain corpus: 12/12 files, 480 cases. |
+| API and engine | API 13/13; engine 156/156 per debug/release variant, 0 skips/errors/failures. Includes native SQLite on SDK26/27/28/29/35 and transport/runtime failure paths. |
+| Kit and model units | Kit 24/24; kit-testing 508/508; gym-domain 63/63; model-server 5/5. |
+| Test execution | Sync-testing: 1494/1494 ordinary tests + 258/258 mandatory-property tests, 0 skips/errors/failures. App: 40/40 and platform: 108/108 per variant; gym: 1102 tests per variant, the 13 live-wire tests skipped without their environment, 0 failures. |
 | Properties | P1/P3/P4/P5/P6/P7/P8: 128 distinct seeds each. P1: 147456 law assertions; P3: compares drawn after each result and pull; P4: 32768 admissions; P5: 32768 order assertions; P6: 32768 digest assertions; P7: 16384 merges / 43582 token-occurrence checks; P8: frozen-server-clock recovery under holds, undo, retire, keyed carriers, orphans, later writes, epochs and 409. |
 | Network replay | 128 seeds × 128 steps / 130425 entries checked; all 56 events produced. Five seeds × 128 steps × 2 runs pass deterministic equality. Thirty 60×60 coverage surveys (first seeds 1,1001,…,29001) pass with 0 misses; minimum mean producing seeds: 22.533333333333335 (floor 10). |
 | Journal replay | 60 seeds × 160 steps: 9600 steps, 4829 replica / 4771 server origins; 7 journal paths plus 4 failure events. 118 rollbacks, 136 committed crashes, 109 unauthorized replies, 624 lost replies. Thirty 60×160 coverage surveys pass with 0 misses; minimum mean producing seeds: 51.56666666666667. Deterministic replay passes. |
@@ -161,8 +161,8 @@ commits and forbids pushing.
   are unchanged by the fix pass.
 - `LEAVE_DEBOUNCE_MS` applies to web tabs. Android process-level leave releases holds immediately
   and makes one bounded best-effort push. Product liveHint is injected and defaults false.
-- Journal fuzz seeds old/future content and revision history through server-origin saves, rather
-  than the CPP_ONLY backfill adapters. A1 introduces no store migration.
+- Journal fuzz seeds old/future content and revision history through server-origin saves.
+  A1 introduces no store migration.
 
 ## Remaining and verification limits
 

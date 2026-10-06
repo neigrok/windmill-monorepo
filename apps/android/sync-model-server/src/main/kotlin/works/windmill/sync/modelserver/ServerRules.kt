@@ -25,7 +25,10 @@ class RuleContext(val registry: Registry, val scope: ScopeKey, val origin: Inten
     fun ensure(table: String) { product = product.with(table to (product[table] ?: Json.objectOf()).with(scope.text to (product[table]?.get(scope.text) ?: Json.objectOf()))) }
 }
 fun putEntry(product: Json, table: String, scope: ScopeKey, id: String, value: Json?) = product.with(table to (product[table] ?: Json.objectOf()).with(scope.text to (product[table]?.get(scope.text) ?: Json.objectOf()).with(id to value)))
-data class RecordChange(val scope: ScopeKey, val key: RecordKey, val before: IdState, val after: Row, val createdBy: List<String>) { val diesHere get() = before.isAlive && !after.isAlive }
+data class RecordChange(val scope: ScopeKey, val key: RecordKey, val before: IdState, val after: Row, val createdBy: List<String>) {
+    val createdHere get() = !before.isAlive && after.isAlive
+    val diesHere get() = before.isAlive && !after.isAlive
+}
 data class CommandOutcome(val deltas: List<PlannedDelta> = emptyList(), val write: List<WriteClaim> = emptyList(), val detail: Json? = null,
     val product: Json, val created: Map<ScopeKey, List<PlannedDelta>> = emptyMap())
 data class WriteClaim(val key: RecordKey, val from: RecordID? = null, val born: Stamp? = null, val mintedBorn: Boolean = false, val fields: List<String> = emptyList()) {

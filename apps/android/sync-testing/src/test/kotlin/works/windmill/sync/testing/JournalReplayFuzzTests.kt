@@ -141,7 +141,7 @@ class JournalReplayFuzzTests {
             trace.update(durable.jcs.encodeToByteArray())
         }
         try {
-            // Seed equivalent legacy content through actual server commands, without the CPP_ONLY migration adapter.
+            // Seed old and future-stamped content through actual server commands.
             val legacyStamp = Json.objectOf("ms" to Json.of(start + seed.mod(3) * 1_000_000), "counter" to Json.of(2), "actor" to Json.of("legacy:writer"))
             val base = Json.objectOf("day" to Json.of("2026-10-01"), "body" to Json.of("Old seed words."), "mood" to Json.of(6), "energy" to Json.Null, "source" to Json.of("typed"),
                 "stamp" to Json.objectOf("ms" to Json.of(start - 1000), "counter" to Json.of(0), "actor" to Json.of("legacy:writer")))

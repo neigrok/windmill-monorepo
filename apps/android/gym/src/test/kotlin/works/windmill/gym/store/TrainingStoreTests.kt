@@ -230,7 +230,7 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testAStorageFailureKeepsTheSetQueuedRatherThanRefusingIt() = runTest {
+    fun testAServerFailureKeepsTheSetOwedRatherThanRefusingIt() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice")
             room.store.start(); room.store.choose("bench-press")
