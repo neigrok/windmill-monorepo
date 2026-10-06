@@ -135,7 +135,8 @@ export function watchClaims(engine) {
   reconcile();
 }
 
-export async function corpus({ account = null, engine = syncSession.engine } = {}) {
+export function corpus({ account = null } = {}) {
+  const { engine } = syncSession;
   if (!engine || !syncSession.snapshot.ready) return { pages: [], source: 'failed' };
   const meta = engine.device.activeReplica.meta;
   if ((account ?? null) !== (meta.state === 'bound' ? meta.account : null)) return { pages: [], source: 'failed' };

@@ -63,7 +63,7 @@ export function usePages() {
     : records.firstPullComplete ? 'ready' : 'failed';
   const saveState = records.notices.some((notice) => !notice.dismissed) ? 'refused' : failure ? 'unsaved' : !session.online ? 'offline'
     : engine?.device.activeReplica.meta.state === 'anon' || hasPending ? 'device' : 'saved';
-  return { today, history: pages.filter((page) => page.day < today && isWritten(page)).map((page) => ({ ...page, date: page.day })),
+  return { today, history: pages.filter((page) => page.day < today && isWritten(page)),
     loading: !session.ready, readState,
     firstRun: session.ready && records.firstPullComplete && !pages.some(isWritten) && state?.f.placeholder?.[0] !== 'retired',
     scalesInvitation: state?.f.firstPage?.[0] === 'retired' && (retained.scales ?? state?.f.scales?.[0]) !== 'retired', retireScales,

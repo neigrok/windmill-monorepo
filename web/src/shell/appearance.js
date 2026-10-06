@@ -16,7 +16,7 @@ export function readAppearance() {
   return 'system';
 }
 
-export function writeAppearance(choice) {
+function writeAppearance(choice) {
   if (!CHOICES.includes(choice)) return;
   try { localStorage.setItem(KEY, choice); } catch { /* the choice still applies for this session */ }
 }
@@ -30,7 +30,7 @@ export function resolveAppearance(choice = readAppearance(), system = systemAppe
   return choice === 'system' ? system : choice;
 }
 
-export function watchSystemAppearance(onChange) {
+function watchSystemAppearance(onChange) {
   if (typeof window === 'undefined' || !window.matchMedia) return () => {};
   const query = window.matchMedia('(prefers-color-scheme: dark)');
   const handler = () => onChange(query.matches ? 'dark' : 'light');

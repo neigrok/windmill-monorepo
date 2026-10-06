@@ -80,7 +80,7 @@ test('only the spelling and the weigh-in call the conversion, and no module that
     .sort();
   assert.deepEqual(callers, ['bodyweight/bodyweight.js', 'log.js', 'progress/progress.js', 'units.js']);
 
-  const writers = ['gymApi.js', 'backfill/draft.js', 'fix.js', 'routines.js', 'logger/entry.js', 'mint.js'];
+  const writers = ['gymSync.js', 'backfill/draft.js', 'fix.js', 'routines.js', 'logger/entry.js', 'mint.js'];
   const reaching = writers.filter((file) => /from '\.\.?\/?[a-z/]*units\.js'/.test(read(file)));
   assert.deepEqual(reaching, []);
 

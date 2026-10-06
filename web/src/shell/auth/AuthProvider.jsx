@@ -1,9 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { API_BASE } from '../apiBase.js';
 import { fetchMe, logout } from './AuthClient.js';
 import { DeviceSeat } from './accountChange.js';
 import { PRODUCTS } from '../products.js';
 import { syncSession } from '../../platform/sync/session.js';
-import { pendingClaimWork } from '../../platform/sync/journal/client.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
 import { SyncDecisions } from './SyncDecisions.jsx';
@@ -62,7 +62,7 @@ export default function AuthProvider({ children }) {
       await engine.finishSignOut({ choice: 'keep' });
     }
     const result = await engine.signIn(me.id, answers);
-    pending.current = { user: me, ...answers, due: result.due ?? [] };
+    pending.current = { user: me, ...answers };
     if (!result.complete) {
       setQuestion(result.due?.[0] ?? null);
       setError(!result.upgradeRequired && !result.due?.length);
@@ -161,13 +161,16 @@ export default function AuthProvider({ children }) {
   }), [session.engine, refresh]);
   useEffect(() => {
     let alive = true;
-    syncSession.open({ credentials: { clear: async (account) => {
+    const hooks = PRODUCTS.map((product) => product.sync ?? {});
+    syncSession.open({ base: API_BASE, credentials: { clear: async (account) => {
       const current = await fetchMe();
       if (current === undefined) throw new Error('cookie-cleanup-unavailable');
       if (current?.id === account) await logout();
-    } }, pendingDeviceWork: pendingClaimWork,
-      onPushResult: (...args) => { for (const product of PRODUCTS) product.onSyncResult?.(...args); },
-      prepare: async (engine) => { for (const product of PRODUCTS) await product.prepareSync?.(engine); },
+    } },
+      prepare: async (engine) => { for (const each of hooks) await each.prepare?.(engine); },
+      onPushResult: (...args) => { for (const each of hooks) each.onPushResult?.(...args); },
+      pendingDeviceWork: (product, rows) => hooks.flatMap((each) => each.pendingDeviceWork?.(product, rows) ?? []),
+      liveHint: (replica) => hooks.some((each) => each.liveHint?.(syncSession.engine, replica)),
     }).then(() => { if (alive) refresh().catch(() => {}); }).catch(() => {});
     const broadcast = new BroadcastChannel('wm-auth');
     channel.current = broadcast;
@@ -178,7 +181,7 @@ export default function AuthProvider({ children }) {
     return () => { alive = false; broadcast.close(); channel.current = null; clearInterval(poll);
       window.removeEventListener('focus', wake); window.removeEventListener('online', wake); };
   }, [refresh]);
-  return <AuthContext.Provider value={{ user, status, account, signIn, signOut, refresh, online: session.online }}>
+  return <AuthContext.Provider value={{ user, status, account, signIn, signOut, refresh }}>
     <div style={{ display: 'contents' }} inert={question && !upgradeRequired ? '' : undefined}>{children}</div>
     {!session.online && <div role="status" style={{ position: 'fixed', left: 16, bottom: 62, zIndex: 80, padding: '8px 12px', background: 'var(--surface-card)', color: 'var(--text-secondary)', borderRadius: 8, fontSize: 13 }}>Offline. Coach, echoes, nudges, voice and export need a connection.</div>}
     {session.error && <div role="alert">Couldn’t open this device’s saved work. Reload to try again.</div>}
@@ -188,7 +191,8 @@ export default function AuthProvider({ children }) {
       {updateError && <p>Couldn’t fetch the update. Your work is still here. Try again when connected.</p>}
     </div>}
     {error && !question && !upgradeRequired && <div role="alert">Couldn’t connect your account. Your work is still on this device.</div>}
-    <SyncDecisions key={`${question?.product ?? 'signout'}:${question?.counted?.join('|') ?? ''}`} question={upgradeRequired ? null : question} busy={busy} error={error} onDecision={decide}
+    <SyncDecisions key={`${question?.product ?? 'signout'}:${question?.counted?.join('|') ?? ''}`} question={upgradeRequired ? null : question}
+      work={PRODUCTS.find((product) => product.id === question?.product)?.sync?.signedOutWork} busy={busy} error={error} onDecision={decide}
       onCancel={async () => {
         setBusy(true); setError(false);
         try { await enqueue(() => syncSession.engine.cancelSignOut()); setQuestion(null); }

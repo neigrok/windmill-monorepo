@@ -43,7 +43,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
   const [highlight, setHighlight] = useState(null); // { day, lo, hi } — a search hit, lit for a beat
 
   if (!loading && !bornSet.current) {
-    bornSet.current = new Set(history.map((day) => day.date));
+    bornSet.current = new Set(history.map((page) => page.day));
     bornSet.current.add(today);
   }
   const isBorn = (date) => (bornSet.current ? !bornSet.current.has(date) : false);
@@ -185,22 +185,22 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
 
   const rendered = [];
   let lastMonth = null;
-  for (const day of history) {
-    const month = day.date.slice(0, 7);
+  for (const page of history) {
+    const month = page.day.slice(0, 7);
     if (month !== lastMonth) {
-      rendered.push(<MonthDivider key={`m-${month}`} iso={day.date} />);
+      rendered.push(<MonthDivider key={`m-${month}`} iso={page.day} />);
       lastMonth = month;
     }
-    const dayHighlight = highlight && highlight.day === day.date ? highlight : null;
+    const dayHighlight = highlight && highlight.day === page.day ? highlight : null;
     rendered.push(
       <DayBlock
-        key={day.date}
-        day={day}
-        born={isBorn(day.date)}
+        key={page.day}
+        page={page}
+        born={isBorn(page.day)}
         highlight={dayHighlight}
         echoes={echoes}
-        standing={day.date === standingOn}
-        addressed={day.date === addressedDay}
+        standing={page.day === standingOn}
+        addressed={page.day === addressedDay}
       />,
     );
   }
@@ -266,19 +266,19 @@ function MonthDivider({ iso }) {
 }
 
 // The writing and its echoes share one positioning context, .journal-page.
-function DayBlock({ day, born, highlight = null, echoes = null, standing = false, addressed = false }) {
+function DayBlock({ page, born, highlight = null, echoes = null, standing = false, addressed = false }) {
   return (
-    <article className={'journal-day' + (born ? ' journal-born' : '')} data-date={day.date}>
+    <article className={'journal-day' + (born ? ' journal-born' : '')} data-date={page.day}>
       <DayMarker
-        date={day.date}
-        mood={day.mood}
-        energy={day.energy}
-        wordCount={wordCount(day.body)}
+        date={page.day}
+        mood={page.mood}
+        energy={page.energy}
+        wordCount={wordCount(page.body)}
         addressed={addressed}
       />
       <div className="journal-page">
-        <div className="journal-prose"><Prose text={day.body} highlight={highlight} /></div>
-        {echoes && <PageEchoes echoes={echoes} day={day.date} standing={standing} />}
+        <div className="journal-prose"><Prose text={page.body} highlight={highlight} /></div>
+        {echoes && <PageEchoes echoes={echoes} day={page.day} standing={standing} />}
       </div>
     </article>
   );

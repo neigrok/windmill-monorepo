@@ -48,19 +48,13 @@ test('cached records open offline, empty first boot waits for the first pull', (
   assert.equal(view.log.summaries[0].id, 'cachedSession');
 });
 
-test('older history is a local slice and preserves observations while paging', (t) => {
+test('the room holds the fifty newest sessions as a local slice that follows observations', (t) => {
   const rows = Array.from({ length: 101 }, (_, index) => row('session', `session${String(index).padStart(4, '0')}`, { startedAt: 1000 + index, finishedAt: 2000 + index }));
   const { view, update } = log(t, rows);
-  assert.equal(view.log.summaries.length, 50);
-  view.log.older.load();
-  assert.equal(view.log.summaries.length, 100);
+  assert.deepEqual([view.log.summaries.length, view.log.summaries[0].id, view.log.summaries.at(-1).id], [50, 'session0100', 'session0051']);
   const grown = [...rows, row('session', 'sessionNew00', { startedAt: 3000, finishedAt: 4000 })];
   update({ drawn: grown, stored: grown });
-  assert.equal(view.log.summaries.length, 100);
-  assert.equal(view.log.summaries[0].id, 'sessionNew00');
-  view.log.older.load();
-  assert.equal(view.log.summaries.length, 102);
-  assert.equal(view.log.older.status, 'end');
+  assert.deepEqual([view.log.summaries.length, view.log.summaries[0].id, view.log.summaries.at(-1).id], [50, 'sessionNew00', 'session0052']);
 });
 
 test('a held delete is offered from the engine’s own offer, and Undo hands its gesture back to the engine', async (t) => {
@@ -78,7 +72,7 @@ test('a held delete is offered from the engine’s own offer, and Undo hands its
   assert.deepEqual(view.log.held.map(({ key, kind, id, line, gestureId, releaseAt }) => ({ key, kind, id, line, gestureId, releaseAt })),
     [{ key: 'note:note000001', kind: 'note', id: 'note000001', line: 'Note deleted.', gestureId: 'gesture1', releaseAt: 1_800_000_009_000 }]);
   assert.equal(view.log.transient.action.label, 'Undo');
-  await view.log.undoWithheld();
+  await view.log.transient.action.run();
   assert.deepEqual(undone, ['gesture1']);
   assert.deepEqual(view.log.held, []);
   assert.equal(view.log.transient, null);

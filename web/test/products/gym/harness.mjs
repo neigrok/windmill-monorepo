@@ -158,10 +158,6 @@ export function browserWith() {
       globalThis.document.visibilityState = 'visible';
       (listeners.get('visibilitychange') ?? []).forEach((fn) => fn());
     },
-    reconnect: () => {
-      globalThis.navigator.onLine = true;
-      (listeners.get('online') ?? []).forEach((fn) => fn());
-    },
   };
 }
 
@@ -261,14 +257,12 @@ export function roomLog({ settled = [], ...overrides } = {}) {
     catalog: [],
     session: null,
     sets: [],
-    older: { status: 'end', load: () => {} },
     held,
     hidden: (kind) => hiddenIds(held, settled, kind),
     gone: (kind) => goneIds(settled, kind),
     say: () => {},
     withhold: () => {},
     holdDelete: () => {},
-    undoWithheld: () => {},
     dropWithheld: () => {},
     createMovement: async () => null,
     ...overrides,

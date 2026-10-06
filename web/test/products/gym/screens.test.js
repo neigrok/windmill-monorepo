@@ -374,7 +374,7 @@ test('web correction uses plain numeric fields and validates their raw values', 
 });
 
 test('no surface of the fix promises a set back', () => {
-  for (const file of ['fix.js', 'FixSheet.jsx', 'Log.jsx', 'gymApi.js', 'gym.css']) {
+  for (const file of ['fix.js', 'FixSheet.jsx', 'Log.jsx', 'gymSync.js', 'gym.css']) {
     const source = speech(file).toLowerCase();
     for (const promise of ['30 days', 'thirty days', 'recoverable', 'restore', 'undelete', 'trash']) {
       assert.equal(source.includes(promise), false, `${file} promises "${promise}"`);
@@ -870,8 +870,6 @@ test('rack controls stay outside web planning and correction fields', () => {
   for (const file of ['planning/TargetEditor.jsx', 'FixSheet.jsx', 'correction/WorkoutEditor.jsx']) {
     assert.equal(/Keypad|LADDER_KEYS|gym-rungs/.test(read(file)), false, file);
   }
-  const keypad = read('logger/Keypad.jsx');
-  assert.equal(keypad.includes("const SPOKEN = { '±': 'Flip the sign — band-assisted', [DELETE]: 'Delete' };"), true);
 });
 
 test('the two shape refusals are struck on this surface: an open line disables, it never refuses', () => {

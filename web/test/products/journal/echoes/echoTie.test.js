@@ -225,8 +225,8 @@ test('THE TIE AND THE PANEL CANNOT NAME DIFFERENT DAYS — every part reads the 
   // there is no second pick to disagree with. The tracker aims at that page and no other.
   assert.match(MARGIN, /stampRect: scroller && stampRect \? stampRect\(page\.day\) : null,/);
   assert.ok(!MARGIN.includes('marginDay ?'), 'the panel is picking a day of its own again');
-  // The one place the panel reads the ADDRESSED day rather than the shown one is the network check,
-  // which draws nothing: there is no reason to delay a re-location by the length of a fade.
+  // The one place the panel reads the ADDRESSED day rather than the shown one is the re-location
+  // check, which draws nothing: there is no reason to delay a re-location by the length of a fade.
   assert.match(MARGIN, /useEffect\(\(\) => \{ if \(echoes\.marginDay\) verify\(echoes\.marginDay\); \}/);
 });
 
@@ -234,7 +234,7 @@ test('the frame hands the panel the day the SWAP is showing, and the canvas ligh
   const APP = readFileSync(new URL('../../../../src/products/journal/JournalApp.jsx', import.meta.url), 'utf8');
   assert.match(APP, /const shownPage = echoes\.shownDay \? echoes\.pageOf\(echoes\.shownDay\) : null;/);
   assert.match(CANVAS, /const addressedDay = echoes\?\.shownDay \?\? null;/);
-  assert.match(CANVAS, /addressed=\{day\.date === addressedDay\}/);
+  assert.match(CANVAS, /addressed=\{page\.day === addressedDay\}/);
   assert.match(CANVAS, /addressed=\{today === addressedDay\}/);
   // the lit row is colour and NOTHING else — a weight change would reflow a sticky row
   assert.match(MARKER, /'journal-marker' \+ \(addressed \? ' is-addressed' : ''\)/);

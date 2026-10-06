@@ -498,22 +498,19 @@ button.gym-set:focus-visible .gym-set-fix {
   flex-direction: column;
   justify-content: flex-end;
 }
-/* The session stays visible behind the fix, dimmed. The keypad and the picker carry no scrim. */
+/* The session stays visible behind the fix, dimmed. The picker carries no scrim. */
 .gym-sheet-catch.is-dimmed {
   background: var(--gym-scrim);
 }
 /* A sheet is as wide as .gym-column and no wider. */
-.gym-sheet,
-.gym-keypad {
+.gym-sheet {
   width: min(560px, 100%);
   margin: 0 auto;
+  padding: 14px 14px 30px;
   background: var(--gym-surface);
   border-top: 1px solid var(--gym-line-strong);
   box-shadow: var(--shadow-lg);
   animation: gym-sheet 200ms var(--ease-soft);
-}
-.gym-sheet {
-  padding: 14px 14px 30px;
 }
 .gym-sheet-head {
   display: flex;
@@ -549,98 +546,6 @@ button.gym-set:focus-visible .gym-set-fix {
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
-}
-
-.gym-keypad {
-  padding: 12px 12px 30px;
-}
-.gym-keypad-title {
-  margin: 0;
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--gym-ink-dim);
-  white-space: pre;
-}
-.gym-keypad-echo {
-  margin: 2px 0 0;
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 46px;
-  line-height: 1.1;
-  color: var(--weight-ink);
-  font-variant-numeric: tabular-nums;
-}
-.gym-keypad-echo.is-invalid {
-  color: var(--alarm-ink);
-}
-.gym-keypad-message {
-  margin: 0 0 8px;
-  font-size: 11.5px;
-  line-height: 1.4;
-  color: var(--gym-ink-faint);
-  white-space: pre-wrap;
-}
-.gym-keypad-message.is-invalid {
-  color: var(--alarm-ink);
-}
-.gym-keypad-keys {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 7px;
-}
-.gym-key {
-  height: 50px;
-  border: 1px solid var(--gym-line-strong);
-  border-radius: var(--radius-md);
-  background: var(--gym-raised);
-  color: var(--gym-ink);
-  font-family: var(--font-mono);
-  font-size: 19px;
-  font-weight: 600;
-}
-.gym-key.is-inert {
-  color: var(--gym-ink-faint);
-}
-.gym-keypad-actions {
-  display: flex;
-  gap: 7px;
-  margin-top: 7px;
-}
-.gym-keypad-cancel {
-  width: 86px;
-  height: 50px;
-  border: none;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--gym-ink-dim);
-  font-size: 13px;
-  font-weight: 700;
-}
-.gym-keypad-back {
-  width: 66px;
-  height: 50px;
-  border: none;
-  border-radius: var(--radius-md);
-  background: var(--gym-raised);
-  color: var(--gym-ink);
-  font-family: var(--font-mono);
-  font-size: 17px;
-}
-.gym-keypad-set {
-  flex: 1;
-  height: 50px;
-  border: none;
-  border-radius: var(--radius-md);
-  background: var(--color-brand);
-  color: var(--gym-on-accent);
-  font-size: 15px;
-  font-weight: 800;
-}
-.gym-keypad-set.is-inert {
-  background: var(--gym-raised);
-  color: var(--gym-ink-faint);
 }
 
 .gym-picker {

@@ -29,7 +29,7 @@ export async function fetchSubscription() {
   }
 }
 
-export async function startCheckout() {
+async function startCheckout() {
   try {
     const response = await fetch(`${API_BASE}/v1/billing/checkout`, {
       method: 'POST',

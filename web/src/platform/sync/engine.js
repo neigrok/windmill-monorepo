@@ -2,7 +2,6 @@ import { IndexedDBStore } from './store.js';
 import { TabLeadership } from './leadership.js';
 import { HttpTransport, LiveChannel } from './transport.js';
 import { syncTelemetry } from './telemetry.js';
-import { API_BASE } from '../../shell/apiBase.js';
 import { registry as composedRegistry } from './schema.js';
 import { CONSTANTS } from './core/constants.js';
 import { compareRecords, recordKey } from './core/rows.js';
@@ -10,14 +9,14 @@ import { bodyBytes, Cursor } from './core/wire.js';
 import { Stamp } from './core/stamp.js';
 import { CommitError, commit } from './client/commit.js';
 import { release, releaseAll, releaseDue, undo, undoOffers } from './client/hold.js';
-import { anonCount, discardUnsent, engineStart, epochChange, signIn, signOut } from './client/lifecycle.js';
+import { engineStart, epochChange, signIn, signOut } from './client/lifecycle.js';
 import { applyChunk, applyPage, finishPage, onFrame, onPullResponse, pullRequest, settle } from './client/puller.js';
 import { dismiss } from './client/refusal.js';
 import { applyPushResult, nextPush, onHello, onPushResponse, SenderWait } from './client/sender.js';
 import { Doubts, firstPullComplete, reconcile, subscribe, subscriptionsOf } from './client/subscriptions.js';
 import { drawn, stored } from './client/views.js';
 
-export function secureDraw(bound) {
+function secureDraw(bound) {
   if (!Number.isSafeInteger(bound) || bound <= 0 || bound > 2 ** 32) throw new Error('invalid random bound');
   const maximum = 2 ** 32 - (2 ** 32 % bound);
   const word = new Uint32Array(1);
@@ -40,7 +39,7 @@ export class BrowserSyncEngine {
     document = globalThis.document, window = globalThis.window, timers = globalThis, now = Date.now,
     monotonic = () => Math.floor(performance.now()), newReplicaId = replicaId, newActor = actorId,
     draw = secureDraw, limits = CONSTANTS, appVersion = import.meta.env?.VITE_RELEASE ?? '1', liveHint = () => false,
-    pendingDeviceWork = () => [], onPushResult = () => {}, credentials, base = API_BASE }) {
+    pendingDeviceWork = () => [], onPushResult = () => {}, credentials, base }) {
     Object.assign(this, { store, registry, navigator, document, window, timers, now, monotonic,
       newReplicaId, newActor, draw, appVersion, liveHint, pendingDeviceWork, onPushResult, credentials });
     this.limits = { ...CONSTANTS, ...limits };
@@ -281,8 +280,6 @@ export class BrowserSyncEngine {
     this.armHolds();
     await this.cleanupCredentials();
     this.kick();
-    await this.credentials?.retainAccounts?.(this.device.replicas.filter((replica) => replica.meta.state === 'bound')
-      .map((replica) => replica.meta.account).concat(this.device.meta.pendingSignIn?.account ?? []));
     if (this.device.meta.pendingSignIn && this.online)
       this.signIn(this.device.meta.pendingSignIn.account).catch(() => {});
   }
@@ -382,10 +379,6 @@ export class BrowserSyncEngine {
   }
 
   dismissNotice(id) { return this.write(null, (device) => dismiss(device.activeReplica, id)); }
-  anonCount(product) {
-    const replica = this.device.anonReplica();
-    return replica ? anonCount(this.registry, replica, product) : {};
-  }
 
   armHolds() {
     this.timers.clearTimeout(this.holdTimer);
@@ -913,7 +906,6 @@ export class BrowserSyncEngine {
     this.signingOut = false;
     this.kick();
   }
-  discardDormant(replica) { return this.write(null, (device, ctx) => discardUnsent(device, ctx, device.replica(replica))); }
 
   async upgrade() {
     const key = `${this.appVersion}:${this.registry.version}`;

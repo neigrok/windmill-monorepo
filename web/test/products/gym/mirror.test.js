@@ -8,14 +8,13 @@ const session = (plan) => ({ id: 'ses_1', startedAt: NOW - 600_000, ...(plan ? {
 const sets = [{ id: 'set_1', exerciseId: 'bench-press', setNumber: 2, weightKg: 80, reps: 5, kind: 'working', completedAt: NOW - 30_000 }];
 
 // The mirror hands the running session to a child; the harness renders no child, so it is drawn here.
-async function mirror(t, { plan = null, restSeconds = null, logged = sets }) {
+async function mirror(t, { plan = null, logged = sets }) {
   browserWith();
   const { LiveMirror } = await loadScreen('products/gym/Mirror.jsx');
   const log = roomLog({
     session: session(plan),
     sets: logged,
     catalog: [{ id: 'bench-press', name: 'Bench press' }, { id: 'back-squat', name: 'Back Squat' }],
-    preferences: { restSeconds },
   });
   const training = elementsOf(LiveMirror({ log })).find((each) => typeof each.type === 'function');
   return renderHook(t, () => training.type(training.props)).tree;
@@ -27,7 +26,7 @@ test('the mirror shows two quiet count-up readings before the first set and afte
   assert.deepEqual(findByClass(empty, 'gym-workout-clock').map((clock) => [textOf(clock), clock.props['aria-label']]), [
     ['10:00', 'Workout time: 10 minutes'], ['10:00', 'Since start: 10 minutes'],
   ]);
-  const logged = await mirror(t, { restSeconds: 120 });
+  const logged = await mirror(t, {});
   assert.deepEqual(findByClass(logged, 'gym-workout-clock').map((clock) => [textOf(clock), clock.props['aria-label']]), [
     ['10:00', 'Workout time: 10 minutes'], ['0:30', 'Since last set: 30 seconds'],
   ]);

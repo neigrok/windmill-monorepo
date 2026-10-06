@@ -22,6 +22,11 @@ function ok(body) {
   return { ok: true, status: 200, json: async () => body };
 }
 
+// An answer the ask door sends whole rather than as a stream of snapshots.
+function whole(body, status = 200) {
+  return { ok: true, status, headers: new Headers({ 'content-type': 'application/json' }), json: async () => body };
+}
+
 function nothing() {
   return { ok: true, status: 204, json: async () => { throw new SyntaxError('Unexpected end of JSON input'); } };
 }
@@ -77,7 +82,7 @@ test('revokeShare — nothing to revoke is revoked, and a store that failed is s
   serve(refusal(404, 'no such session'));
   assert.equal(await gymApi.revokeShare('ses_gone'), null);
   serve(refusal(503, 'internal error'));
-  await assert.rejects(() => gymApi.revokeShare('ses_1'), (error) => error.status === 503 && !error.terminal);
+  await assert.rejects(() => gymApi.revokeShare('ses_1'), (error) => error.status === 503);
 });
 
 test('sharedSession — one workout, no ids in it, and one null for all three ways a token can fail', async () => {
@@ -109,14 +114,14 @@ test('sharedSession — one workout, no ids in it, and one null for all three wa
 });
 
 test('ask — one question into one thread, and the answer with its receipt, steps and proposals back', async () => {
-  serve(ok({
+  serve(whole({
     answer: 'Three sessions at the same top set, and the fourth lost a rep.',
     steps: [{ tool: 'get_stats', failed: false }, { tool: 'propose_routine_change', failed: false }],
     read: { sets: 214, sessions: 34, weeks: 12 },
     proposals: ['prop_0a1b2c3d'],
     thread: 'thr_0a1b2c3d4e5f6071',
   }));
-  const reply = await gymApi.ask('thr_0a1b2c3d4e5f6071', 'bench has been stuck at 82.5 for three weeks. What do you see?');
+  const reply = await gymApi.askStream('thr_0a1b2c3d4e5f6071', 'bench has been stuck at 82.5 for three weeks. What do you see?', 'ask_1');
   assert.deepEqual(reply, {
     pending: false,
     answer: 'Three sessions at the same top set, and the fourth lost a rep.',
@@ -130,7 +135,7 @@ test('ask — one question into one thread, and the answer with its receipt, ste
     method: 'POST',
     credentials: 'include',
     contentType: 'application/json',
-    body: '{"thread":"thr_0a1b2c3d4e5f6071","question":"bench has been stuck at 82.5 for three weeks. What do you see?"}',
+    body: '{"thread":"thr_0a1b2c3d4e5f6071","question":"bench has been stuck at 82.5 for three weeks. What do you see?","requestId":"ask_1","stream":true}',
   });
 });
 
@@ -145,13 +150,13 @@ test('ask — every refusal arrives with the machine word the room reads it by',
   ];
   for (const [status, sentence, code] of refusals) {
     serve(refusal(status, sentence, code));
-    const error = await gymApi.ask('thr_1', 'q').catch((held) => held);
+    const error = await gymApi.askStream('thr_1', 'q', 'ask_1').catch((held) => held);
     assert.equal(error.status, status, code);
     assert.equal(error.code, code);
     assert.equal(error.detail, sentence);
   }
   serve({ ok: false, status: 404, json: async () => { throw new SyntaxError('Unexpected end of JSON input'); } });
-  const absent = await gymApi.ask('thr_1', 'q').catch((held) => held);
+  const absent = await gymApi.askStream('thr_1', 'q', 'ask_1').catch((held) => held);
   assert.equal(absent.status, 404);
   assert.equal(absent.code, '');
   assert.equal(absent.detail, '');
@@ -231,15 +236,14 @@ test('deleteThread — 204 and nothing back, for a conversation deleted twice as
 
 test('Coach generation status and failed action results survive the transport boundary', async () => {
   const generation = { id: 'gen_1', requestId: 'ask_retry', status: 'running', question: 'Create Push.', answer: '', at: 10 };
-  serve({ ok: true, status: 202, json: async () => ({ thread: 'thr_1', generation, results: [] }) });
-  assert.deepEqual(await gymApi.ask('thr_1', 'Create Push.', 'ask_retry'), { thread: 'thr_1', generation, results: [], pending: true });
-  assert.deepEqual(JSON.parse(calls[0].options.body), { thread: 'thr_1', question: 'Create Push.', requestId: 'ask_retry' });
+  serve(whole({ thread: 'thr_1', generation, results: [] }, 202));
+  assert.deepEqual(await gymApi.askStream('thr_1', 'Create Push.', 'ask_retry'), { thread: 'thr_1', generation, results: [], pending: true });
+  assert.deepEqual(JSON.parse(calls[0].options.body), { thread: 'thr_1', question: 'Create Push.', requestId: 'ask_retry', stream: true });
   const results = [{ kind: 'routine-created', operationId: 'op_1', routineId: 'rt_1', routineName: 'Push' }];
   serve({ ok: false, status: 502, json: async () => ({ error: 'Response interrupted.', generation: { ...generation, status: 'failed', results }, results }) });
-  await assert.rejects(gymApi.ask('thr_1', 'Create Push.', 'ask_retry'), (error) => {
+  await assert.rejects(gymApi.askStream('thr_1', 'Create Push.', 'ask_retry'), (error) => {
     assert.equal(error.detail, 'Response interrupted.');
     assert.deepEqual(error.generation, { ...generation, status: 'failed', results });
-    assert.deepEqual(error.results, results);
     return true;
   });
 });

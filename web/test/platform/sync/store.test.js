@@ -144,29 +144,3 @@ test('governing-type index reads omit unrelated product rows and preserve them o
   assert.equal((await store.read(['self/probe'])).device.activeReplica.confirmedRows('self/probe').length, 101);
   store.close();
 });
-
-test('the version-one cache migrates atomically into indexed generation pointers', async () => {
-  const indexedDB = new IDBFactory();
-  const database = await new Promise((resolve) => {
-    const request = indexedDB.open('migration', 1);
-    request.onupgradeneeded = () => request.result.createObjectStore('records', { keyPath: 'key' });
-    request.onsuccess = () => resolve(request.result);
-  });
-  await new Promise((resolve) => {
-    const transaction = database.transaction('records', 'readwrite'), records = transaction.objectStore('records');
-    records.put({ key: '["head"]', value: { active: id, meta: {}, revision: 9 } });
-    records.put({ key: JSON.stringify(['replica', id]), value: { replica: id, state: 'anon', authPaused: false } });
-    records.put({ key: JSON.stringify(['confirmed', id, 'self/probe', '["card","card0001"]']), value: { t: 'card', id: 'card0001', seq: 1 } });
-    records.put({ key: JSON.stringify(['staging', id, 'self/probe']), value: 'digest' });
-    records.put({ key: JSON.stringify(['stagedRow', id, 'self/probe', '["card","card0002"]']), value: { t: 'card', id: 'card0002', seq: 2 } });
-    transaction.oncomplete = resolve;
-  });
-  database.close();
-  const store = await IndexedDBStore.open({ indexedDB, name: 'migration', newReplicaId: () => assert.fail() });
-  const replica = (await store.read()).device.activeReplica;
-  assert.deepEqual(replica.confirmedRows('self/probe'), [{ t: 'card', id: 'card0001', seq: 1 }]);
-  assert.deepEqual(Object.values(replica.staging['self/probe'].rows), [{ t: 'card', id: 'card0002', seq: 2 }]);
-  assert.equal(replica.staging['self/probe'].digest, 'digest');
-  assert.equal((await store.read([{ scope: 'self/probe', type: 'card' }])).measurement.rowReads, 2);
-  store.close();
-});

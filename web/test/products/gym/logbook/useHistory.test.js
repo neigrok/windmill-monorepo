@@ -8,7 +8,7 @@ test('history appends once and a changed filter never draws or appends an old sc
   const reads = [];
   const api = { ready: true, history: (query) => new Promise((resolve, reject) => reads.push({ query, resolve, reject })) };
   let filters = {};
-  const screen = renderHook(t, () => useHistory(filters, 0, api));
+  const screen = renderHook(t, () => useHistory(filters, api));
   reads[0].resolve({ sessions: [{ id: 'latest' }], next: { before: 2, beforeId: 'latest' } });
   await settle();
   const first = screen.log.load();
@@ -38,7 +38,7 @@ test('date facets ignore date selection, track other filters and carry the local
   const reads = [];
   const api = { ready: true, history: (query) => new Promise((resolve) => reads.push({ query, resolve })) };
   let filters = { year: 2024, month: 3, exercise: 'bench' };
-  const screen = renderHook(t, () => useHistoryDates(filters, 0, api));
+  const screen = renderHook(t, () => useHistoryDates(filters, api));
   assert.deepEqual(reads[0].query, { exercise: 'bench', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, limit: 1 });
   reads[0].resolve({ months: [{ month: '2026-09', sessions: 3 }, { month: '2024-03', sessions: 2 }] });
   await settle();
@@ -60,11 +60,11 @@ test('local history reacts to sync while a token-scoped REST reader keeps its ex
   const session = { ready: true, signedIn: false, engine: { observe: () => observation } };
   t.mock.method(syncSession, 'getSnapshot', () => session);
   const calls = [];
-  const api = { ready: true, sync: true, history: async (query) => { calls.push(query); return { sessions: [{ id: String(calls.length) }], next: null }; } };
+  const api = { ready: true, live: true, history: async (query) => { calls.push(query); return { sessions: [{ id: String(calls.length) }], next: null }; } };
   let publicReads = 0;
   const rest = { ready: true, history: async () => { publicReads += 1; return { sessions: [], next: null }; } };
-  const local = renderHook(t, () => useHistory({}, 0, api));
-  const shared = renderHook(t, () => useHistory({}, 0, rest));
+  const local = renderHook(t, () => useHistory({}, api));
+  const shared = renderHook(t, () => useHistory({}, rest));
   await settle();
   assert.deepEqual(local.log.data.sessions, [{ id: '1' }]);
   records = { ...records, drawn: [{ id: 'phone-workout' }] };
@@ -84,14 +84,14 @@ test('a sync refresh preserves every loaded row past the projection page limit',
   t.mock.method(syncSession, 'getSnapshot', () => session);
   let rows = Array.from({ length: 320 }, (_, index) => ({ id: `workout-${index}`, startedAt: 320 - index }));
   const calls = [];
-  const api = { ready: true, sync: true, history: async (query) => {
+  const api = { ready: true, live: true, history: async (query) => {
     calls.push(query);
     const available = rows.filter((row) => row.startedAt < (query.before ?? Infinity));
     const sessions = available.slice(0, Math.min(200, query.limit));
     const last = sessions.at(-1);
     return { sessions, next: available.length > sessions.length ? { before: last.startedAt, beforeId: last.id } : null };
   } };
-  const screen = renderHook(t, () => useHistory({}, 0, api));
+  const screen = renderHook(t, () => useHistory({}, api));
   await settle();
   for (let page = 0; page < 4; page += 1) await screen.log.load();
   assert.equal(screen.log.data.sessions.length, 250);
@@ -112,14 +112,14 @@ test('a refresh whose continuation stalls fails while retaining the loaded histo
   const rows = Array.from({ length: 250 }, (_, index) => ({ id: String(index) }));
   let refresh = false;
   let calls = 0;
-  const api = { ready: true, sync: true, history: async (query) => {
+  const api = { ready: true, live: true, history: async (query) => {
     calls += 1;
     if (refresh) return { sessions: query.before ? [] : rows.slice(0, 200), next: { before: 1, beforeId: 'same' } };
     const start = query.before ?? 0;
     const sessions = rows.slice(start, start + query.limit);
     return { sessions, next: start + sessions.length < rows.length ? { before: start + sessions.length } : null };
   } };
-  const screen = renderHook(t, () => useHistory({}, 0, api));
+  const screen = renderHook(t, () => useHistory({}, api));
   await settle();
   for (let page = 0; page < 4; page += 1) await screen.log.load();
   assert.deepEqual(screen.log.data.sessions, rows);

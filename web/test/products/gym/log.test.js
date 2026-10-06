@@ -5,20 +5,20 @@ import {
   agoLabel, alsoReadsLabel, arrivedLabel, BACKFILL_HREF, backfillFromOf, backfillHref, backfillTargetOf, COACH_HREF, clockOf, CLOSED_ITSELF_NOTE,
   closedOnItsOwn,
   dayLabel,
-  durLabel, e1rmLabel, entryLabel, finishHref, finishIdOf, fixSetHref, fixSetIdOf, firstSessionLabel, fmt, fmtKg, FROM_THE_ROUTINE,
+  durLabel, e1rmLabel, entryLabel, finishHref, finishIdOf, fixSetHref, fixSetIdOf, fmt, fmtKg,
   groupByExercise,
-  FREE_SESSION, FROM_PICK, FROM_ROUTINE_MENU, hasRecord, isFinished, isFirstSession, isNameOverCap, isNeverTrained, lastTrainedDayLabel,
-  loadedLine, logWhenLabel, NEVER_TRAINED, NEVER_TRAINED_ALONE,
+  FREE_SESSION, FROM_PICK, FROM_ROUTINE_MENU, isFinished, isFirstSession, isNameOverCap, isNeverTrained, lastTrainedDayLabel,
+  logWhenLabel, NEVER_TRAINED_ALONE,
   FROM_ROUTINES, fromSession, MOVEMENTS_HREF, recordFromOf,
   movementIdOf, movementOf, NAME_COUNT_FROM, NAME_MAX, nameCountLabel, NOTES_HREF,
-  nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, NOT_IN_PLAN, numberWord, onThisDevice, OPEN_TARGET,
+  nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, NOT_IN_PLAN, numberWord, OPEN_TARGET,
   planFrozenLabel,
   BODYWEIGHT_HREF, planOf, planReadingOf, proposalHref, proposalIdOf,
-  recordHref, restInForce, routineHref, routineIdOf, routineMetaLabel, routineNameOf, routineSizeLabel, ROUTINES_HREF, screenOf, showsNameCount,
-  sameSet, schemeAgrees, sessionDetailMeta, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel,
-  setNoteOf, setReading, slotRows, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel, tonnageOf,
+  recordHref, routineHref, routineIdOf, routineNameOf, routineSizeLabel, ROUTINES_HREF, screenOf, showsNameCount,
+  sameSet, schemeAgrees, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel,
+  setReading, slotRows, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel,
   threadHref, threadIdOf, THREADS_HREF,
-  topSetLabel, topSetOf, weekdayName, weeksOf, whenLabel, workingLabel, workingSetsOf,
+  topSetLabel, topSetOf, weekdayName, whenLabel, workingSetsOf,
 } from '../../../src/products/gym/log.js';
 import { KG, LB, spellWeightsIn } from '../../../src/products/gym/units.js';
 
@@ -415,27 +415,6 @@ test('weekdayName — the day a session happened, as the opening value in the na
   assert.equal(weekdayName(new Date(2026, 7, 9, 7, 40).getTime()), 'Sunday');
 });
 
-test('routineMetaLabel — what a routine holds, and when it was last used', () => {
-  const now = new Date(2026, 7, 4, 9, 41).getTime();
-  const entries = (count) => Array.from({ length: count }, (each, index) => ({ position: index + 1 }));
-  assert.equal(
-    routineMetaLabel({ entries: entries(6), lastTrainedAt: now - 5 * 86_400_000 }, now),
-    '6 movements · trained 5 days ago',
-  );
-  assert.equal(
-    routineMetaLabel({ entries: entries(1), lastTrainedAt: now - 86_400_000 }, now),
-    '1 movement · trained yesterday',
-  );
-  assert.equal(routineMetaLabel({ entries: entries(4), lastTrainedAt: now }, now), '4 movements · trained today');
-  assert.equal(routineMetaLabel({ entries: entries(5) }, now), '5 movements · never trained');
-  assert.equal(routineMetaLabel({ entries: [] }, now), '0 movements · never trained');
-  assert.deepEqual([NEVER_TRAINED, NEVER_TRAINED_ALONE], ['never trained', 'Never trained']);
-  assert.equal(isNeverTrained({ entries: [] }), true);
-  assert.equal(isNeverTrained({ entries: [], lastTrainedAt: now }), false);
-  assert.equal(isNeverTrained({ entries: [], lastTrainedAt: 0 }), false);
-  assert.equal(isNeverTrained(null), true);
-});
-
 test('the routine pick’s row: the day it was last trained, and the sets it names', () => {
   const at = new Date(2026, 8, 22, 18, 5).getTime();
   assert.deepEqual([
@@ -636,12 +615,6 @@ test('planOf — the frozen snapshot, parsed once for every surface that reads i
   assert.equal(planOf(null), null);
 });
 
-test('firstSessionLabel — the bottom of the log is the day it started', () => {
-  assert.equal(firstSessionLabel(new Date(2026, 4, 6, 7, 30).getTime()), 'first session · 6 May 2026');
-  assert.equal(firstSessionLabel(new Date(2024, 11, 31, 23, 59).getTime()), 'first session · 31 Dec 2024');
-  assert.equal(firstSessionLabel(new Date(2025, 0, 1, 0, 0).getTime()), 'first session · 1 Jan 2025');
-});
-
 test('logWhenLabel — today is a time, everything older is a day, and an open session says so', () => {
   const now = new Date(2026, 7, 10, 20, 15).getTime();
   const today = new Date(2026, 7, 10, 18, 44).getTime();
@@ -656,30 +629,11 @@ test('logWhenLabel — today is a time, everything older is a day, and an open s
   );
 });
 
-test('workingLabel and e1rmLabel — the two facts the wire hands a row', () => {
-  assert.equal(workingLabel(11), '11 working');
-  assert.equal(workingLabel(1), '1 working');
-  assert.equal(workingLabel(0), '0 working');
+test('e1rmLabel — the estimate the wire hands a row', () => {
   assert.equal(e1rmLabel(122.5), 'e1RM 122.5');
   assert.equal(e1rmLabel(84), 'e1RM 84');
   assert.equal(e1rmLabel(null), null);
   assert.equal(e1rmLabel(undefined), null);
-});
-
-test('tonnageOf — the store’s sum on a row, the same sum from the sets on a session', () => {
-  const set = (kind, weightKg, reps) => ({ kind, weightKg, reps });
-  assert.equal(tonnageOf({ id: 'ses_1', tonnageKg: 5400 }), 5400);
-  assert.equal(tonnageOf({ id: 'ses_1', tonnageKg: 0 }), 0);
-  assert.equal(tonnageOf({ id: 'ses_1' }), null);
-  assert.equal(tonnageOf({ id: 'ses_1' }, [set('working', 100, 5), set('working', 80, 10)]), 1300);
-  assert.equal(
-    tonnageOf({ id: 'ses_1' }, [set('warmup', 40, 8), set('working', 100, 5), set('drop', 60, 8), set('failure', 100, 1)]),
-    500,
-  );
-  assert.equal(tonnageOf({ id: 'ses_1' }, [set('working', -20, 9), set('working', 0, 12)]), 0);
-  assert.equal(tonnageOf({ id: 'ses_1' }, [set('working', -20, 9), set('working', 60, 5)]), 300);
-  assert.equal(tonnageOf({ id: 'ses_1' }, []), 0);
-  assert.equal(tonnageOf({ id: 'ses_1', tonnageKg: 5400 }, [set('working', 100, 5)]), 5400);
 });
 
 test('tonnageLabel — a bare number grouped by thousands, the unit left to the head, and a zero says nothing', () => {
@@ -699,140 +653,6 @@ test('tonnageLabel — a bare number grouped by thousands, the unit left to the 
   assert.equal(tonnageLabel(NaN), null);
   assert.equal(tonnageLabel(Infinity), null);
   assert.equal(tonnageLabel('1380'), null, 'a string off a bad wire is not a number');
-});
-
-test('loadedLine — the head says how much of the log is on the screen', () => {
-  assert.equal(loadedLine(41, 12), '41 sessions · 12 weeks loaded · loads in kg');
-  assert.equal(loadedLine(1, 1), '1 session · 1 week loaded · loads in kg');
-  assert.equal(loadedLine(2, 1), '2 sessions · 1 week loaded · loads in kg');
-});
-
-test('loadedLine — a pound reader is told the log is in pounds', (t) => {
-  t.after(() => spellWeightsIn(KG));
-  spellWeightsIn(LB);
-  assert.equal(loadedLine(41, 12), '41 sessions · 12 weeks loaded · loads in lb');
-});
-
-test('onThisDevice — only a session that says so is saved on this device only', () => {
-  assert.equal(onThisDevice({ id: 'ses_1', onThisDevice: true }), true);
-  assert.equal(onThisDevice({ id: 'ses_1', onThisDevice: false }), false);
-  assert.equal(onThisDevice({ id: 'ses_1' }), false);
-  assert.equal(onThisDevice(null), false);
-});
-
-test('hasRecord — only a session the store says holds a record wears the dot', () => {
-  assert.equal(hasRecord({ id: 'ses_1', record: true }), true);
-  assert.equal(hasRecord({ id: 'ses_1', record: false }), false);
-  assert.equal(hasRecord({ id: 'ses_1' }), false);
-  assert.equal(hasRecord(null), false);
-});
-
-test('weeksOf — Monday to Monday, newest first, and the oldest week withholds its tonnage', () => {
-  const row = (id, at, tonnageKg) => ({ id, startedAt: at.getTime(), tonnageKg });
-  const summaries = [
-    row('ses_5', new Date(2026, 7, 10, 18, 44), 5400),
-    row('ses_4', new Date(2026, 7, 7, 9, 5), 6100),
-    row('ses_3', new Date(2026, 7, 5, 18, 0), 9800),
-    row('ses_2', new Date(2026, 7, 3, 7, 30), 1200),
-    row('ses_1', new Date(2026, 7, 1, 11, 0), 5000),
-  ];
-  const weeks = weeksOf(summaries);
-  assert.deepEqual(weeks.map((week) => week.label), ['week of 10 aug', 'week of 3 aug', 'week of 27 jul']);
-  assert.deepEqual(weeks.map((week) => week.tonnage), ['5,400', '17,100', null]);
-  assert.deepEqual(weeks.map((week) => week.sessions.map((session) => session.id)), [
-    ['ses_5'], ['ses_4', 'ses_3', 'ses_2'], ['ses_1'],
-  ]);
-  assert.deepEqual(weeks.map((week) => week.startedAt), [
-    new Date(2026, 7, 10).getTime(), new Date(2026, 7, 3).getTime(), new Date(2026, 6, 27).getTime(),
-  ]);
-  assert.deepEqual(weeksOf(summaries, { complete: true }).map((week) => week.tonnage), ['5,400', '17,100', '5,000']);
-  assert.deepEqual(weeksOf([]), []);
-});
-
-test('weeksOf — a week nobody can sum, and a week that adds up to nothing, both say nothing', () => {
-  const row = (id, at, tonnageKg) => ({ id, startedAt: at.getTime(), tonnageKg });
-  const partly = [
-    row('ses_3', new Date(2026, 7, 10, 18, 44), 5400),
-    { id: 'ses_2', startedAt: new Date(2026, 7, 12, 7, 0).getTime() },
-    row('ses_1', new Date(2026, 7, 4, 18, 0), 3000),
-  ];
-  assert.deepEqual(weeksOf(partly, { complete: true }).map((week) => week.tonnage), [null, '3,000']);
-  const bodyweight = [
-    row('ses_2', new Date(2026, 7, 12, 7, 0), 0),
-    row('ses_1', new Date(2026, 7, 10, 7, 0), 0),
-  ];
-  assert.deepEqual(weeksOf(bodyweight, { complete: true }).map((week) => week.tonnage), [null]);
-});
-
-test('weeksOf — one training week is one divider in a zone whose clocks jump at midnight', () => {
-  const zone = process.env.TZ;
-  try {
-    process.env.TZ = 'America/Santiago';
-    const chile = weeksOf([
-      { id: 'ses_4', startedAt: new Date(2026, 8, 6, 10, 0).getTime(), tonnageKg: 1000 },
-      { id: 'ses_3', startedAt: new Date(2026, 8, 5, 10, 0).getTime(), tonnageKg: 1000 },
-      { id: 'ses_2', startedAt: new Date(2026, 8, 2, 10, 0).getTime(), tonnageKg: 1000 },
-      { id: 'ses_1', startedAt: new Date(2026, 7, 31, 10, 0).getTime(), tonnageKg: 1000 },
-    ], { complete: true });
-    assert.deepEqual(chile.map((week) => [week.label, week.tonnage, week.sessions.length]), [
-      ['week of 31 aug', '4,000', 4],
-    ]);
-
-    process.env.TZ = 'Asia/Beirut';
-    const lebanon = weeksOf([
-      { id: 'ses_2', startedAt: new Date(2026, 2, 29, 10, 0).getTime(), tonnageKg: 1000 },
-      { id: 'ses_1', startedAt: new Date(2026, 2, 23, 10, 0).getTime(), tonnageKg: 1000 },
-    ], { complete: true });
-    assert.deepEqual(lebanon.map((week) => [week.label, week.tonnage, week.sessions.length]), [
-      ['week of 23 mar', '2,000', 2],
-    ]);
-
-    process.env.TZ = 'Europe/Berlin';
-    const berlin = weeksOf([
-      { id: 'ses_2', startedAt: new Date(2026, 2, 29, 10, 0).getTime(), tonnageKg: 1000 },
-      { id: 'ses_1', startedAt: new Date(2026, 2, 23, 10, 0).getTime(), tonnageKg: 1000 },
-    ], { complete: true });
-    assert.deepEqual(berlin.map((week) => [week.label, week.tonnage, week.sessions.length]), [
-      ['week of 23 mar', '2,000', 2],
-    ]);
-  } finally {
-    if (zone == null) delete process.env.TZ; else process.env.TZ = zone;
-  }
-});
-
-test('weeksOf — a session that crosses midnight into Monday starts the new week, not the old one', () => {
-  const summaries = [
-    { id: 'ses_2', startedAt: new Date(2026, 7, 10, 0, 20).getTime(), tonnageKg: 1000 },
-    { id: 'ses_1', startedAt: new Date(2026, 7, 9, 23, 40).getTime(), tonnageKg: 2000 },
-  ];
-  const weeks = weeksOf(summaries, { complete: true });
-  assert.deepEqual(weeks.map((week) => [week.label, week.tonnage]), [
-    ['week of 10 aug', '1,000'], ['week of 3 aug', '2,000'],
-  ]);
-});
-
-test('sessionDetailMeta — the day, the length, and the two facts the header is measured in', () => {
-  const startedAt = new Date(2026, 7, 10, 18, 2).getTime();
-  const set = (kind, weightKg, reps) => ({ kind, weightKg, reps });
-  const sets = [set('warmup', 40, 8), set('working', 82.5, 5), set('working', 82.5, 5)];
-  assert.equal(
-    sessionDetailMeta({ startedAt, finishedAt: startedAt + 58 * 60_000 }, sets),
-    'Mon 10 Aug · 58m · 2 working · 825 kg',
-  );
-  assert.equal(
-    sessionDetailMeta({ startedAt, finishedAt: null }, sets),
-    'Mon 10 Aug · in progress · 2 working · 825 kg',
-  );
-  const wholeSession = [set('warmup', 40, 8), ...Array.from({ length: 11 }, () => set('working', 98, 5))];
-  assert.equal(
-    sessionDetailMeta({ startedAt, finishedAt: startedAt + 58 * 60_000 }, wholeSession),
-    'Mon 10 Aug · 58m · 11 working · 5,390 kg',
-  );
-  assert.equal(
-    sessionDetailMeta({ startedAt, finishedAt: startedAt + 3_600_000 }, [set('working', 0, 9), set('working', 0, 7)]),
-    'Mon 10 Aug · 1h 00m · 2 working',
-  );
-  assert.equal(sessionDetailMeta({ startedAt, finishedAt: startedAt + 600_000 }, []), 'Mon 10 Aug · 10m · 0 working');
 });
 
 test('planFrozenLabel — the snapshot is named by the moment it was taken', () => {
@@ -891,65 +711,6 @@ test('planReadingOf — the target, the movement nobody planned, and the plan th
   });
 });
 
-test('setNoteOf — one word per set, and never a grade', () => {
-  const straight = (reps, weightKg) => ({ plan: { routine: 'Push A', entries: [{ exerciseId: 'bench-press', sets: [{ reps, weightKg }, { reps, weightKg }] }] } });
-  const planned = planReadingOf(straight(5, 82.5), 'bench-press');
-  const set = (kind, weightKg, reps) => ({ kind, weightKg, reps });
-
-  assert.equal(setNoteOf(set('working', 82.5, 5), planned, 1), 'on plan');
-  assert.equal(setNoteOf(set('working', 82.5, 3), planned, 1), 'two short');
-  assert.equal(setNoteOf(set('working', 82.5, 4), planned, 1), 'one short');
-  assert.equal(setNoteOf(set('working', 85, 5), planned, 1), '+2.5 over plan');
-  assert.equal(setNoteOf(set('working', 100, 5), planned, 1), '+17.5 over plan');
-  assert.equal(setNoteOf(set('working', 85, 3), planned, 1), '+2.5 over plan');
-  assert.equal(setNoteOf(set('working', 70, 5), planned, 1), null);
-  assert.equal(setNoteOf(set('working', 70, 3), planned, 1), 'two short');
-  assert.equal(setNoteOf(set('working', 82.5, 0), planReadingOf(straight(12, 82.5), 'bench-press'), 1), '12 short');
-  // A set past the plan is measured against nothing.
-  assert.equal(setNoteOf(set('working', 85, 5), planned, 2), null);
-
-  assert.equal(setNoteOf(set('warmup', 40, 8), planned, 0), 'warmup');
-  assert.equal(setNoteOf(set('drop', 60, 8), planned, -1), 'drop');
-  assert.equal(setNoteOf(set('failure', 82.5, 1), planned, 1), 'failure');
-
-  const added = planReadingOf({ plan: { routine: 'Push A', entries: [] } }, 'chin-up');
-  assert.equal(setNoteOf(set('working', 0, 9), added, 0), 'added today');
-  assert.equal(setNoteOf(set('working', 0, 7), added, 1), null);
-
-  assert.equal(setNoteOf(set('working', 140, 3), { kind: 'ambiguous', line: null, entry: null }, 0), null);
-  assert.equal(setNoteOf(set('working', 140, 3), { kind: 'unplanned', line: null, entry: null }, 0), null);
-
-  const toMax = planReadingOf({ plan: { routine: 'Pull A', entries: [{ exerciseId: 'chin-up', sets: [{}, {}, {}] }] } }, 'chin-up');
-  assert.equal(toMax.line, 'plan 3 × max');
-  assert.equal(setNoteOf(set('working', 0, 9), toMax, 0), null);
-  assert.equal(setNoteOf(set('working', 5, 9), toMax, 0), null);
-
-  const bodyweight = planReadingOf({ plan: { routine: 'Pull A', entries: [{ exerciseId: 'chin-up', sets: [{ reps: 9, weightKg: 0 }, { reps: 9, weightKg: 0 }] }] } }, 'chin-up');
-  assert.equal(bodyweight.line, 'plan 2 × 9');
-  assert.equal(setNoteOf(set('working', 0, 9), bodyweight, 0), null);
-  assert.equal(setNoteOf(set('working', 5, 9), bodyweight, 0), null);
-  assert.equal(setNoteOf(set('working', 0, 7), bodyweight, 1), 'two short');
-
-  const assisted = planReadingOf({ plan: { routine: 'Pull A', entries: [{ exerciseId: 'chin-up', sets: [{ reps: 6, weightKg: -20 }] }] } }, 'chin-up');
-  assert.equal(assisted.line, 'plan 1 × 6 · −20');
-  assert.equal(setNoteOf(set('working', -20, 6), assisted, 0), 'on plan');
-  assert.equal(setNoteOf(set('working', -10, 6), assisted, 0), '+10 over plan');
-});
-
-test('setNoteOf — on a scheme whose sets disagree, the Nth working set is measured against the Nth slot', () => {
-  const ramp = planReadingOf({ plan: { routine: 'Lower A', entries: [{ exerciseId: 'back-squat', sets: RAMP }] } }, 'back-squat');
-  const set = (weightKg, reps) => ({ kind: 'working', weightKg, reps });
-  assert.equal(setNoteOf(set(60, 5), ramp, 0), 'on plan');
-  assert.equal(setNoteOf(set(80, 5), ramp, 1), 'on plan');
-  assert.equal(setNoteOf(set(90, 3), ramp, 2), 'on plan');
-  assert.equal(setNoteOf(set(102.5, 1), ramp, 3), '+2.5 over plan');
-  assert.equal(setNoteOf(set(80, 4), ramp, 4), 'one short');
-  assert.equal(setNoteOf(set(80, 5), ramp, 5), null, 'a sixth set has no slot');
-  // The same 80 × 5 is on plan in slot 2 and over plan in slot 1: the slot decides, not the load.
-  assert.equal(setNoteOf(set(80, 5), ramp, 0), '+20 over plan');
-  assert.equal(setNoteOf({ kind: 'warmup', weightKg: 40, reps: 8 }, ramp, -1), 'warmup');
-});
-
 test('slotRows — the slot strip as rows: what was lifted, then the slots still to come', () => {
   const entry = { exerciseId: 'back-squat', sets: RAMP, restSeconds: 180 };
   const logged = (id, weightKg, reps, kind = 'working') => ({ id, exerciseId: 'back-squat', weightKg, reps, kind });
@@ -992,26 +753,6 @@ test('setLoadLabel — what a set was, in the one spelling a weight has here', (
   assert.equal(setLoadLabel({ weightKg: -20, reps: 9 }), '−20 × 9');
   assert.equal(setLoadLabel({ weightKg: 100, reps: 1 }), '100 × 1');
 });
-
-test('restInForce — the routine entry’s own rest wins over the dial and says so; the dial is silent about where it came from', () => {
-  const session = {
-    plan: { routine: 'Push A', entries: [
-      { exerciseId: 'bench-press', sets: [{ reps: 5 }], restSeconds: 180 },
-      { exerciseId: 'dip', sets: [{}, {}, {}] },
-      { exerciseId: 'row', sets: [{ reps: 8 }], restSeconds: 90 },
-      { exerciseId: 'row', sets: [{ reps: 8 }], restSeconds: 60 },
-    ] },
-  };
-  assert.deepEqual(restInForce(session, 'bench-press', 120), { seconds: 180, fromRoutine: true });
-  assert.deepEqual(restInForce(session, 'bench-press', null), { seconds: 180, fromRoutine: true }, 'the entry runs the clock even with the dial off');
-  assert.deepEqual(restInForce(session, 'dip', 120), { seconds: 120, fromRoutine: false });
-  assert.equal(restInForce(session, 'dip', null), null);
-  assert.deepEqual(restInForce(session, 'curl', 120), { seconds: 120, fromRoutine: false }, 'not in the plan: the dial');
-  assert.deepEqual(restInForce(session, 'row', 120), { seconds: 120, fromRoutine: false }, 'named twice, so nothing can say which entry: the dial');
-  assert.deepEqual(restInForce({ plan: null }, 'bench-press', 120), { seconds: 120, fromRoutine: false });
-  assert.equal(FROM_THE_ROUTINE, ' · from the routine');
-});
-
 
 test('focused set correction preserves the filtered history origin in its dedicated route', () => {
   const href = fixSetHref('ses_1', 'set_2', '#/gym/log?year=2024&exercise=bench&selected=ses_1');

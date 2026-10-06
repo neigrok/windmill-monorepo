@@ -91,7 +91,6 @@ export const NOTES_HREF = '#/gym/notes';
 // The chart screen; the log's head reads the number and the reach band writes it.
 export const BODYWEIGHT_HREF = '#/gym/bodyweight';
 
-
 // The id is minted by whoever wrote the proposal, so the parse takes the whole charset the wire
 // allows (`^[A-Za-z0-9_-]{8,64}$`) rather than gym's own narrower mint.
 export function proposalIdOf(hash) {
@@ -112,7 +111,6 @@ export function movementIdOf(hash) {
 // A record opened from a workout carries that session in its own hash, so its back link returns
 // there. A record opened with no origin was opened from Routines, the home.
 export const FROM_ROUTINES = { screen: 'routines' };
-export const FROM_LOG = { screen: 'log' };
 
 export function fromSession(sessionId, href) {
   return { screen: 'session', id: sessionId, ...(href ? { href } : {}) };
@@ -191,11 +189,6 @@ export function weekdayName(ms) {
 export function timeLabel(ms) {
   const at = new Date(ms);
   return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
-}
-
-// The year is spelled here and nowhere else.
-export function firstSessionLabel(ms) {
-  return `first session · ${shortDayLabel(ms)} ${new Date(ms).getFullYear()}`;
 }
 
 export function whenLabel(ms) {
@@ -295,22 +288,10 @@ export function setCountLabel(count) {
   return count === 1 ? '1 set' : `${count} sets`;
 }
 
-export function workingLabel(count) {
-  return `${count} working`;
-}
-
 // `topE1rm` comes off the wire; the web computes no estimate of its own.
 export function e1rmLabel(topE1rm) {
   if (topE1rm == null) return null;
   return `e1RM ${fmt(topE1rm)}`;
-}
-
-// An assisted or bodyweight set contributes zero: the sum clamps at zero rather than subtracting.
-// A listed session carries the store's `tonnageKg` and no sets; one read whole is summed here.
-export function tonnageOf(session, sets = null) {
-  if (typeof session?.tonnageKg === 'number') return session.tonnageKg;
-  if (sets == null) return null;
-  return workingSetsOf(sets).reduce((total, set) => total + Math.max(set.weightKg, 0) * set.reps, 0);
 }
 
 // A tonnage is a bare number in the account's unit, grouped by thousands — `1,380`. The unit is
@@ -324,63 +305,7 @@ export function tonnageLabel(kg, unit = weightUnit()) {
   return TONNAGE.format(inDisplayUnit(kg, unit));
 }
 
-// Both numbers are of what is in hand; the log carries no total. The line is also where the log
-// names the unit every row under it is read in.
-export function loadedLine(sessions, weeks) {
-  const list = sessions === 1 ? '1 session' : `${sessions} sessions`;
-  const span = weeks === 1 ? '1 week' : `${weeks} weeks`;
-  return `${list} · ${span} loaded · loads in ${weightUnit()}`;
-}
-
-// A fold over the page in hand: the log arrives newest-first, so a week is a run of adjacent rows.
-// Weeks start Monday in the lifter's own zone, and the oldest loaded week reports no tonnage while
-// `Load older` can still add sessions to it.
-export function weeksOf(summaries, { complete = false } = {}) {
-  const weeks = [];
-  for (const summary of summaries) {
-    // The arithmetic runs at noon and the Monday is rebuilt from the date it lands on: a zone whose
-    // clocks jump at local midnight has no 00:00 that day, and the instant is this fold's key.
-    const day = new Date(summary.startedAt);
-    day.setHours(12, 0, 0, 0);
-    day.setDate(day.getDate() - ((day.getDay() + 6) % 7));
-    const monday = new Date(day.getFullYear(), day.getMonth(), day.getDate());
-    const startedAt = monday.getTime();
-    const open = weeks[weeks.length - 1];
-    if (open && open.startedAt === startedAt) {
-      open.sessions.push(summary);
-      continue;
-    }
-    weeks.push({
-      startedAt,
-      label: `week of ${monday.getDate()} ${MONTHS[monday.getMonth()].toLowerCase()}`,
-      sessions: [summary],
-    });
-  }
-  return weeks.map((week, index) => {
-    const partial = index === weeks.length - 1 && !complete;
-    // A row carrying no `tonnageKg` leaves the week unsummable; summing the rest would understate it.
-    const unknown = week.sessions.some((session) => typeof session.tonnageKg !== 'number');
-    if (partial || unknown) return { ...week, tonnage: null };
-    const kg = week.sessions.reduce((total, session) => total + session.tonnageKg, 0);
-    return { ...week, tonnage: tonnageLabel(kg) };
-  });
-}
-
-// Saved on this device only. Not a wire field: each surface decides it from the queue it holds, and
-// the web holds nothing locally.
-export function onThisDevice(session) {
-  return session?.onThisDevice === true;
-}
-
-// The store decides which sessions hold a PR; nothing here re-derives one. It is judged against the
-// log as it is now, so a correction moves records and the log is re-read when one lands.
-export function hasRecord(session) {
-  return session?.record === true;
-}
-
-// `lastTrainedAt` is the store's aggregate over the log; its absence IS this state. Lower-case after
-// a separator, capitalised where it stands alone.
-export const NEVER_TRAINED = 'never trained';
+// `lastTrainedAt` is the store's aggregate over the log; its absence IS this state.
 export const NEVER_TRAINED_ALONE = 'Never trained';
 
 export function isNeverTrained(routine) {
@@ -390,11 +315,6 @@ export function isNeverTrained(routine) {
 function movementsLabel(routine) {
   const count = routine.entries?.length ?? 0;
   return count === 1 ? '1 movement' : `${count} movements`;
-}
-
-export function routineMetaLabel(routine, now = Date.now()) {
-  if (isNeverTrained(routine)) return `${movementsLabel(routine)} · ${NEVER_TRAINED}`;
-  return `${movementsLabel(routine)} · trained ${agoLabel(routine.lastTrainedAt, now)}`;
 }
 
 // `4 movements · 10 sets`, the sets the routine names; an open entry names none.
@@ -561,35 +481,11 @@ export function planOf(session) {
   try { return JSON.parse(plan); } catch { return null; }
 }
 
-// The routine is the title above this line and is never printed twice.
-export function sessionDetailMeta(session, sets) {
-  const parts = [dayLabel(session.startedAt)];
-  if (isFinished(session)) parts.push(durLabel(session.finishedAt - session.startedAt));
-  else parts.push('in progress');
-  parts.push(workingLabel(workingSetsOf(sets).length));
-  // No head above this line names the unit, so the tonnage carries it here.
-  const tonnage = tonnageLabel(tonnageOf(session, sets));
-  if (tonnage) parts.push(`${tonnage} ${weightUnit()}`);
-  return parts.join(' · ');
-}
-
 // The instant is the session's start, which is when the plan was frozen.
 export function planFrozenLabel(session) {
   if (!planOf(session)) return null;
   return `plan snapshot · frozen ${timeLabel(session.startedAt)}`;
 }
-
-// The rest target in force for a movement, and where it came from: the routine entry's own
-// `restSeconds` when the frozen plan names one for this movement alone, the dial otherwise. Null when
-// neither names one. `fromRoutine` is the fact the timer says once, on every surface.
-export function restInForce(session, exerciseId, dialSeconds) {
-  const entry = planReadingOf(session, exerciseId).entry;
-  if (entry?.restSeconds != null) return { seconds: entry.restSeconds, fromRoutine: true };
-  if (dialSeconds == null) return null;
-  return { seconds: dialSeconds, fromRoutine: false };
-}
-
-export const FROM_THE_ROUTINE = ' · from the routine';
 
 export const NOT_IN_PLAN = 'not in the plan';
 
@@ -614,29 +510,6 @@ const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'sev
 
 export function numberWord(count) {
   return NUMBER_WORDS[count] ?? String(count);
-}
-
-// A set that is not `working` says only its own kind and is measured against no target. `slot` is
-// the set's place among the movement's working sets, and the Nth working set is measured against the
-// Nth slot of the scheme; a set past the plan is measured against nothing.
-// Short only when the bar did not go up: heavier for fewer reps is not short.
-export function setNoteOf(set, reading, slot) {
-  if (set.kind !== 'working') return set.kind;
-  if (reading.kind === 'added') return slot === 0 ? 'added today' : null;
-  if (reading.kind !== 'planned') return null;
-  const planned = reading.entry.sets?.[slot];
-  if (!planned) return null;
-  const { reps, weightKg } = planned;
-  // A slot that named no weight can be neither gone over nor met.
-  const target = targetLoadOf(weightKg);
-  const load = round(set.weightKg);
-  if (reps != null && set.reps < reps && (target == null || load <= target)) {
-    return `${numberWord(reps - set.reps)} short`;
-  }
-  if (target == null) return null;
-  if (load > target) return `+${fmt(load - target)} over plan`;
-  if (load === target) return 'on plan';
-  return null;
 }
 
 // The slot strip as rows, for one movement: what was lifted, in order, then the slots still to

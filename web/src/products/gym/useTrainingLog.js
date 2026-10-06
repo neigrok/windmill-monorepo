@@ -12,13 +12,14 @@ import {
   deleteLineOf, goneIds, HELD_KINDS, HELD_TYPES, hiddenIds, openHeld, transientOf, UNDO_LABEL, WINDOW_CLOSED, withheldKey,
 } from './withheld.js';
 
-const LOG_PAGE = 50;
+// The recent log the room hands its screens: the movement pickers rank by it and a past workout finds
+// its free slot in it.
+const RECENT_SESSIONS = 50;
 const TOAST_MS = 9000;
 
 export function useTrainingLog() {
   const api = useGymApi();
   const records = useSyncRecords('self/gym');
-  const [depth, setDepth] = useState(LOG_PAGE);
   const [expiry, expire] = useState(0);
   const [toast, setToast] = useState(null);
   const [, redrawWindow] = useState(0);
@@ -28,14 +29,7 @@ export function useTrainingLog() {
   }), [records, expiry]);
   const ready = Boolean(api?.ready);
   const phase = ready ? 'ready' : 'loading';
-  const summaries = [];
-  while (summaries.length < depth) {
-    const last = summaries.at(-1);
-    const page = projection.sessions({ limit: Math.min(200, depth - summaries.length),
-      ...(last ? { before: last.startedAt, beforeId: last.id } : {}) });
-    summaries.push(...page);
-    if (page.length === 0) break;
-  }
+  const summaries = projection.sessions({ limit: RECENT_SESSIONS });
   const open = records.stored.find((row) => row.t === 'session' && row.life?.[0] !== 'dead' && row.f?.finishedAt === undefined);
   const detail = open ? projection.session(open.id) : null;
   const session = detail?.session.finishedAt == null ? detail?.session ?? null : null;
@@ -240,10 +234,9 @@ export function useTrainingLog() {
     dismiss: spoken.undoable ? null : dismissToast,
   };
   return {
-    phase, revision: records, progress,
-    session, sets: sets.filter((set) => !hidden('set').has(set.id)), catalog, summaries, preferences,
-    older: { status: summaries.length < depth ? 'end' : 'more', load: () => setDepth((count) => count + LOG_PAGE) },
+    phase, progress,
+    session, sets: sets.filter((set) => !hidden('set').has(set.id)), catalog, summaries,
     createMovement, renameMovement, say, transient, held, hidden, gone,
-    withhold, holdDelete, undoWithheld, dropWithheld,
+    withhold, holdDelete, dropWithheld,
   };
 }

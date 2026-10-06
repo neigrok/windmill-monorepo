@@ -196,9 +196,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
     stream.current = controller;
     try {
       const options = { attachmentIds: request.attachmentIds ?? [], signal: controller.signal, onSnapshot: snapshot };
-      const reply = api.askStream
-        ? await api.askStream(request.thread, request.question, request.requestId, options)
-        : await api.ask(request.thread, request.question, request.requestId, options);
+      const reply = await api.askStream(request.thread, request.question, request.requestId, options);
       if (!mounted.current) return;
       if (reply.generation) snapshot(reply);
       if (reply.pending || reply.generation?.status === 'running') {
@@ -223,7 +221,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
       const missingPhoto = error.code === 'ask-attachment-invalid' && request.attachmentIds?.includes(photo?.id);
       const known = retry || current.current.request?.accepted || current.current.turns.length || initialThread;
       const unavailable = failure.fresh && known;
-      change({ note: api.askStream && !error.detail ? 'Response interrupted.' : failure.note, closed: unavailable ? 'thread' : failure.gone ? 'account' : '', pending: Boolean(current.current.stopRequested),
+      change({ note: error.detail ? failure.note : 'Response interrupted.', closed: unavailable ? 'thread' : failure.gone ? 'account' : '', pending: Boolean(current.current.stopRequested),
         ...(current.current.stopRequested ? { attempt: current.current.attempt + 1 } : {}),
         ...(missingPhoto ? { photo: { ...photo, status: 'failed', progress: 0, note: 'The saved upload is no longer available.' }, note: '' } : {}),
         ...(failure.refused && !missingPhoto && !retry && !error.generation && !current.current.request?.accepted ? { request: null } : {}),

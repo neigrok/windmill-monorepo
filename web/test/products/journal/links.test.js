@@ -122,7 +122,7 @@ test('the runs always spell the page back, exactly', () => {
 // ─── the canvas and the composer paint the same one ───────────────────────────────────────────────
 
 test('past prose and the composer paint are both runs, and only past prose is clickable', () => {
-  assert.match(CANVAS, /className="journal-prose"><Prose text=\{day\.body\} highlight=\{highlight\} \/>/);
+  assert.match(CANVAS, /className="journal-prose"><Prose text=\{page\.body\} highlight=\{highlight\} \/>/);
   assert.match(CANVAS, /className="journal-input-paint"[^>]*><Prose text=\{body\} inert \/>/);
   // inert paints a span, never an anchor: a click in the field has to place a caret
   assert.match(CANVAS, /if \(inert\) return <span key=\{run\.lo\} className="journal-link">/);

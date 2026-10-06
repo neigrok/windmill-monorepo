@@ -93,8 +93,6 @@ export function answerTurn(reply) {
 
 export const COACH_TITLE = 'Coach';
 export const COACH_PLACEHOLDER = 'Ask about your training';
-export const PROPOSAL_NOTE =
-  'Nothing changes until you tap Apply on the diff. Your logged sets are never part of a proposal.';
 export const CAP_REACHED_NOTE = 'The next question frees up in a couple of hours.';
 
 // The cap is bytes, not characters.
