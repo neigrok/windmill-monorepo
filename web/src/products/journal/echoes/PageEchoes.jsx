@@ -106,8 +106,8 @@ function EdgeTab({ count, tab, arrival, fresh, settling, taken, onInView, onClic
   // remounts the page would re-kindle a light that has been burning for a minute.
   //
   // And `is-born` belongs to the element's FIRST paint or to nothing. The tab is drawn by the read,
-  // unverified, and armed a body fetch later; a ramp applied at arming would find a tab that has
-  // been on screen at full weight for a round trip, drop it to zero and fade it back — a step, and
+  // unverified, and armed a re-location later; a ramp applied at arming would find a tab that has
+  // been on screen at full weight since its first frame, drop it to zero and fade it back — a step, and
   // the one abrupt onset this whole design exists to carry none of. So the ramp goes where the
   // appearance actually is: a tab whose page the reader had not been shown when this element first
   // rendered. On the mount's own read every page is already presented, so a cold canvas ramps

@@ -35,7 +35,7 @@ export function useSearch(active, account = null) {
     neuralRef.current?.dispose();
     (async () => {
       setIndexing(true);
-      const read = await corpus({ account });
+      const read = corpus({ account });
       const pages = read.pages;
       if (!aliveRef.current || build.current !== generation) return;
       setSource(read.source);

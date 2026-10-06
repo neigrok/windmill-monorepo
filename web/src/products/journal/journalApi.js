@@ -1,8 +1,6 @@
-// Server features use the session cookie. Page reads come from the active browser replica.
+// The journal's server features, over the session cookie. Pages are the browser replica's (pages.js).
 
-import { corpus } from './pages.js';
 import { captureError } from '../../telemetry/sentry.js';
-import { syncSession } from '../../platform/sync/session.js';
 import { API_BASE } from '../../shell/apiBase.js';
 
 const base = `${API_BASE}/v1/journal`;
@@ -38,13 +36,6 @@ export class JournalError extends Error {
 }
 
 export const journalApi = {
-  async page(date) {
-    return (await corpus({ account: syncSession.engine?.device.activeReplica.meta.account ?? null })).pages.find((page) => page.day === date) ?? null;
-  },
-  async allPages() {
-    return (await corpus({ account: syncSession.engine?.device.activeReplica.meta.account ?? null })).pages;
-  },
-
   async exportAll() {
     return (await json(await call('/export'))).pages;
   },
@@ -68,11 +59,6 @@ export const journalApi = {
   // "Useful" — idempotent; the read hands it back per match, so the answer follows the account.
   async echoUseful(triggerDay, matchDay) {
     await sent(await call(`/echoes/${triggerDay}/${matchDay}/useful`, { method: 'POST' }));
-  },
-
-  // "Not now" — retire the offer for this page; the echo still opens.
-  async dismissEchoOffer(triggerDay) {
-    await sent(await call(`/echoes/${triggerDay}/offer/dismiss`, { method: 'POST' }));
   },
 
   // Fire-and-forget: a failed beacon must never cost the walk.

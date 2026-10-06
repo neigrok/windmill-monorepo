@@ -54,7 +54,7 @@ function echoesWith(overrides = {}) {
     taken: null,
     // Whether this page has ever been drawn at rest. A tab asks it once, as it mounts, to know
     // whether it is the appearance of a new object or an element that was already on screen — the
-    // arming cannot answer that, because a tab is drawn by the read and armed a body fetch later.
+    // arming cannot answer that, because a tab is drawn by the read and armed a re-location later.
     presentedBefore: () => true,
     litInView: () => {},
     spendLight: () => {},
@@ -255,8 +255,8 @@ test('a light still held under an overlay draws nothing — it has not kindled y
 });
 
 // THE RAMP BELONGS TO THE ELEMENT'S FIRST PAINT OR TO NOTHING. A tab is drawn by the read, still
-// unverified, and armed a body fetch later; a ramp keyed to the ARMING would find a tab that had
-// been on screen at full weight for a whole round trip, drop it to zero and fade it back — a step,
+// unverified, and armed a re-location later; a ramp keyed to the ARMING would find a tab that had
+// been on screen at full weight since its first frame, drop it to zero and fade it back — a step,
 // and the one abrupt onset this design exists to carry none of.
 test('a tab whose page the reader had not been shown ramps in; one already drawn never does', () => {
   const fresh = markup(echoesWith({ presentedBefore: () => false }));

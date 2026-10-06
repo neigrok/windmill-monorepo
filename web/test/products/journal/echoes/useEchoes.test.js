@@ -4,7 +4,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { browserWith, renderHook, settle } from '../../gym/harness.mjs';
-import { journalApi } from '../../../../src/products/journal/journalApi.js';
 import { locate, stillStanding, useEchoes } from '../../../../src/products/journal/echoes/useEchoes.js';
 
 const TWICE = "i don't know. and then i don't know.";
@@ -99,7 +98,7 @@ const ECHO_PAGES = [
   { day: '2026-08-20', entitled: true, matches: [{ day: '2026-01-19', text: 'older still', occurrenceHint: 0 }] },
 ];
 
-// The REST echoes read AND the replica page reads behind it, because the hook re-locates every quote it is handed
+// The REST echoes read AND the page bodies behind it, because the hook re-locates every quote it is handed
 // before it will hold it: a fake that answers the echo list alone is a fake of a server that retires
 // every echo it sends, and every page here would come straight back off the canvas.
 function reading({ wide, reduced = false, pages = ECHO_PAGES }) {
@@ -125,11 +124,10 @@ function reading({ wide, reduced = false, pages = ECHO_PAGES }) {
   ]);
   const asked = { echoes: 0, page: 0 };
   const held = [];
-  journalApi.page = async (day) => {
+  // The device's bodies, handed to the hook in place of the replica it would read.
+  const bodyOf = (day) => {
     asked.page += 1;
-    const reply = { day, body: bodies().get(day) ?? '' };
-    if (answer.hold) return new Promise((keep) => held.push(() => keep(reply)));
-    return reply;
+    return bodies().get(day) ?? '';
   };
   globalThis.fetch = async (url) => {
     asked.echoes += 1;
@@ -148,6 +146,7 @@ function reading({ wide, reduced = false, pages = ECHO_PAGES }) {
     // What the next read answers, so a test can land an echo without waiting out LIVE_INTERVAL.
     serve: (next) => { answer.pages = next; },
     asked,
+    bodyOf,
     // Hold replies in the air, so a test can decide WHEN a read lands relative to everything else.
     holdReplies: () => { answer.hold = true; },
     resume: () => { answer.hold = false; },
@@ -159,7 +158,7 @@ function reading({ wide, reduced = false, pages = ECHO_PAGES }) {
   };
 }
 
-const readerOn = (t) => renderHook(t, () => useEchoes({ today: '2026-09-01', account: 'reader' }));
+const readerOn = (t, server) => renderHook(t, () => useEchoes({ today: '2026-09-01', account: 'reader', bodyOf: server.bodyOf }));
 const rested = () => new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 60));
 // Two clocks, and they are different facts. `rested` is the scroll settling and the panel COMMITTING
 // to a page; `shown` is the panel having finished LEAVING the page before it and named the new one.
@@ -198,27 +197,23 @@ test('the margin’s space is reserved on WIDTH ALONE, so no echo can ever widen
   // It used to also need the account to have been paired before, held in localStorage — so the space
   // appeared mid-session the first time an account was ever echoed, sliding the reading column 150px
   // sideways at exactly the moment the arrival light was asking to be looked at. Ruled 2026-09-02.
-  reading({ wide: true });
-  const room = readerOn(t);
+  const room = readerOn(t, reading({ wide: true }));
   assert.equal(room.log.marginOpen, true, 'the space is claimed before the first read lands');
   await settle(8);
   assert.equal(room.log.marginOpen, true, 'and the read that finds echoes changes nothing about it');
 
-  reading({ wide: false });
-  const phone = readerOn(t);
+  const phone = readerOn(t, reading({ wide: false }));
   assert.equal(phone.log.marginOpen, false);
   await settle(8);
   assert.equal(phone.log.marginOpen, false, 'a phone with echoes has no room for the panel');
 
-  reading({ wide: true, pages: [] });
-  const empty = readerOn(t);
+  const empty = readerOn(t, reading({ wide: true, pages: [] }));
   await settle(8);
   assert.equal(empty.log.marginOpen, true, 'room with no echoes reserves it anyway — an empty column costs nothing, a moving canvas costs a sentence');
 });
 
 test('nothing about the reserved space is remembered between mounts — the width is the whole answer', async (t) => {
-  reading({ wide: true, pages: [] });
-  const first = readerOn(t);
+  const first = readerOn(t, reading({ wide: true, pages: [] }));
   await settle(8);
   assert.equal(first.log.marginOpen, true);
   const wrote = Object.keys(globalThis.localStorage ?? {}).filter((key) => key.includes('gutter'));
@@ -226,8 +221,7 @@ test('nothing about the reserved space is remembered between mounts — the widt
 });
 
 test('with nothing held, the panel sits beside the waterline’s page once the scroll has rested', async (t) => {
-  reading({ wide: true });
-  const run = readerOn(t);
+  const run = readerOn(t, reading({ wide: true }));
   await settle(8);
   canvasOf(run.log);
 
@@ -239,8 +233,7 @@ test('with nothing held, the panel sits beside the waterline’s page once the s
 });
 
 test('a hold takes the panel off the scroll and keeps it there; pressing again hands it back', async (t) => {
-  reading({ wide: true });
-  const run = readerOn(t);
+  const run = readerOn(t, reading({ wide: true }));
   await settle(8);
   const canvas = canvasOf(run.log);
   await rested();
@@ -261,8 +254,7 @@ test('a hold takes the panel off the scroll and keeps it there; pressing again h
 });
 
 test('a hold on a page whose echoes are gone falls through to the scroll rather than resting on nothing', async (t) => {
-  reading({ wide: true });
-  const run = readerOn(t);
+  const run = readerOn(t, reading({ wide: true }));
   await settle(8);
   canvasOf(run.log);
   await rested();
@@ -278,8 +270,7 @@ test('a hold on a page whose echoes are gone falls through to the scroll rather 
 });
 
 test('a walk holds the panel on the page it lands on; going back to tonight hands it to the scroll', async (t) => {
-  reading({ wide: true });
-  const run = readerOn(t);
+  const run = readerOn(t, reading({ wide: true }));
   await settle(8);
 
   run.log.walkTo('2026-08-20', { day: '2026-05-02', lo: 0, hi: 5 });
@@ -300,8 +291,7 @@ test('a walk holds the panel on the page it lands on; going back to tonight hand
 // stops three pixels past the line, commits, drifts, and commits again.
 
 test('a page must cross the waterline by 12px to take the panel, and by 12px to give it up', async (t) => {
-  reading({ wide: true });
-  const run = readerOn(t);
+  const run = readerOn(t, reading({ wide: true }));
   await settle(8);
   const canvas = canvasOf(run.log);
 
@@ -335,8 +325,7 @@ test('a page must cross the waterline by 12px to take the panel, and by 12px to 
 });
 
 test('THE SWAP — the panel goes on naming the page it is drawing until the new one is ready to be named', async (t) => {
-  reading({ wide: true });
-  const run = readerOn(t);
+  const run = readerOn(t, reading({ wide: true }));
   await settle(8);
   canvasOf(run.log);
   await shown();
@@ -358,8 +347,7 @@ test('THE SWAP CANNOT WEDGE: changing the subject and changing it back inside th
   // something has to say so. Press one tab twice inside 90ms: the cleanup kills the timer that would
   // have cleared the flag, and an early return that only returned would hold the panel AND the rule
   // at opacity 0 for ever, with the canvas still lighting the row beside them. A double-click does it.
-  reading({ wide: true });
-  const run = readerOn(t);
+  const run = readerOn(t, reading({ wide: true }));
   await settle(8);
   canvasOf(run.log);
   await shown();
@@ -378,8 +366,7 @@ test('THE SWAP CANNOT WEDGE: changing the subject and changing it back inside th
 });
 
 test('the settle is a rate limit on the FACT: a pass across a page commits nothing until it rests', async (t) => {
-  reading({ wide: true });
-  const run = readerOn(t);
+  const run = readerOn(t, reading({ wide: true }));
   await settle(8);
   const canvas = canvasOf(run.log);
   await rested();
@@ -402,8 +389,7 @@ test('a page the reader has just refused is never left lit on the canvas with th
   // `shownDay` is the machine's subject until the swap catches up, and for that stretch it can name a
   // page `pageOf` no longer answers — the panel would rest on "No echo on this page." while the
   // canvas went on lighting that page's row. One predicate, so the two cannot hold opposite halves.
-  reading({ wide: true });
-  const run = readerOn(t);
+  const run = readerOn(t, reading({ wide: true }));
   await settle(8);
   canvasOf(run.log);
   await shown();
@@ -418,8 +404,7 @@ test('a page the reader has just refused is never left lit on the canvas with th
 });
 
 test('under prefers-reduced-motion the subject changes on ONE frame — a gap with no fade is the only motion left', async (t) => {
-  reading({ wide: true, reduced: true });
-  const run = readerOn(t);
+  const run = readerOn(t, reading({ wide: true, reduced: true }));
   await settle(8);
   canvasOf(run.log);
   await rested();
@@ -431,8 +416,7 @@ test('under prefers-reduced-motion the subject changes on ONE frame — a gap wi
 });
 
 test('below the margin’s width nothing describes a page, so no day row may be lit as though something did', async (t) => {
-  reading({ wide: false });
-  const run = readerOn(t);
+  const run = readerOn(t, reading({ wide: false }));
   await settle(8);
   canvasOf(run.log);
   await shown();
@@ -442,7 +426,7 @@ test('below the margin’s width nothing describes a page, so no day row may be 
 
 test('AN ARRIVAL NEVER CHANGES WHICH PAGE IS ADDRESSED — news lower on the same screen does not take the panel', async (t) => {
   const server = reading({ wide: true, pages: [ECHO_PAGES[0]] });
-  const run = readerOn(t);
+  const run = readerOn(t, server);
   await settle(12);
   canvasOf(run.log);
   await shown();
@@ -472,8 +456,7 @@ const LANDED = { day: '2026-02-02', text: 'newly found words', occurrenceHint: 0
 const withMatch = (page, match) => ({ ...page, matches: [...page.matches, match] });
 
 test('the mount’s first completed read arms nothing — a page already there when you opened is not news', async (t) => {
-  reading({ wide: false });
-  const run = readerOn(t);
+  const run = readerOn(t, reading({ wide: false }));
   await settle(12);
 
   assert.equal(run.log.pageOf('2026-08-11').matches.length, 1, 'the page is on the canvas');
@@ -483,7 +466,7 @@ test('the mount’s first completed read arms nothing — a page already there w
 
 test('a passage that lands after the journal is open lights its page, ONCE, however often it is re-read', async (t) => {
   const server = reading({ wide: false, pages: [ECHO_PAGES[0]] });
-  const run = readerOn(t);
+  const run = readerOn(t, server);
   await settle(12);
   assert.equal(run.log.lit, null);
 
@@ -506,11 +489,11 @@ test('a passage that lands after the journal is open lights its page, ONCE, howe
 });
 
 // Whether a TAB is new is a fact about an element, not about the arming, because the tab is drawn by
-// the read and armed a body fetch later. The hook answers only what it can: had this page ever been
+// the read and armed a re-location later. The hook answers only what it can: had this page ever been
 // drawn at rest when the element asked?
 test('a page nobody had an echo on at all has not been presented, and its tab is a new object', async (t) => {
   const server = reading({ wide: false, pages: [ECHO_PAGES[0]] });
-  const run = readerOn(t);
+  const run = readerOn(t, server);
   await settle(12);
   assert.equal(run.log.presentedBefore('2026-08-20'), false, 'no such page has ever been drawn');
 
@@ -525,7 +508,7 @@ test('a page nobody had an echo on at all has not been presented, and its tab is
 
 test('AT MOST ONE TAB IS LIT: a read dropping echoes on two pages lights the one at the waterline', async (t) => {
   const server = reading({ wide: true, pages: [] });
-  const run = readerOn(t);
+  const run = readerOn(t, server);
   await settle(12);
   canvasOf(run.log);
   await rested();
@@ -541,7 +524,7 @@ test('AT MOST ONE TAB IS LIT: a read dropping echoes on two pages lights the one
 
 test('news on a second page moves the light rather than adding one — never two at once', async (t) => {
   const server = reading({ wide: false, pages: [ECHO_PAGES[0]] });
-  const run = readerOn(t);
+  const run = readerOn(t, server);
   await settle(12);
 
   server.serve([withMatch(ECHO_PAGES[0], LANDED)]);
@@ -557,7 +540,7 @@ test('news on a second page moves the light rather than adding one — never two
 
 test('a shrinking match set arms nothing, and retiring the lit page puts the light out', async (t) => {
   const server = reading({ wide: false, pages: [withMatch(ECHO_PAGES[0], LANDED)] });
-  const run = readerOn(t);
+  const run = readerOn(t, server);
   await settle(12);
   assert.equal(run.log.lit, null);
 
@@ -574,7 +557,7 @@ test('a shrinking match set arms nothing, and retiring the lit page puts the lig
 
 test('a light whose page is retired goes out with it', async (t) => {
   const server = reading({ wide: false, pages: [ECHO_PAGES[0]] });
-  const run = readerOn(t);
+  const run = readerOn(t, server);
   await settle(12);
 
   server.serve(ECHO_PAGES);
@@ -589,7 +572,7 @@ test('a light whose page is retired goes out with it', async (t) => {
 
 test('one region says the tab’s own words, once per arrival, and never the word "new"', async (t) => {
   const server = reading({ wide: false, pages: [ECHO_PAGES[0]] });
-  const run = readerOn(t);
+  const run = readerOn(t, server);
   await settle(12);
   assert.equal(run.log.announce, null, 'nothing is said about what was already on screen');
 
@@ -611,7 +594,7 @@ test('one region says the tab’s own words, once per arrival, and never the wor
 
 async function lightOn(t, { wide = false, covered = false } = {}) {
   const server = reading({ wide, pages: [ECHO_PAGES[0]] });
-  const run = renderHook(t, () => useEchoes({ today: '2026-09-01', account: 'reader', covered }));
+  const run = renderHook(t, () => useEchoes({ today: '2026-09-01', account: 'reader', covered, bodyOf: server.bodyOf }));
   await settle(12);
   const canvas = canvasOf(run.log);
   await settle(4);
@@ -704,7 +687,7 @@ test('two seconds without a keystroke spends it; every keystroke puts the two se
 test('an arrival under an overlay is HELD, not spent, and kindles on the first frame the canvas is back', async (t) => {
   const server = reading({ wide: false, pages: [ECHO_PAGES[0]] });
   let covered = true;
-  const run = renderHook(t, () => useEchoes({ today: '2026-09-01', account: 'reader', covered }));
+  const run = renderHook(t, () => useEchoes({ today: '2026-09-01', account: 'reader', covered, bodyOf: server.bodyOf }));
   await settle(12);
   canvasOf(run.log);
   await settle(4);
@@ -785,7 +768,7 @@ test('THE MOUNT READ PRESENTS ITSELF AS IT LANDS, so no later commit can mistake
   // into one commit, the counter already said two, the memory was still empty, and every page the
   // mount itself had read armed. The read now seeds the memory itself, so there is no window at all.
   const server = reading({ wide: false });
-  const run = readerOn(t);
+  const run = readerOn(t, server);
   await settle(12);
 
   for (const day of ['2026-08-11', '2026-08-20']) {
@@ -804,7 +787,7 @@ test('THE MOUNT READ PRESENTS ITSELF AS IT LANDS, so no later commit can mistake
 test('A READ THAT OUTLIVES A SIGN-OUT IS DROPPED — it may not draw, light or announce another account', async (t) => {
   let account = 'alice';
   const server = reading({ wide: false, pages: [] });
-  const run = renderHook(t, () => useEchoes({ today: '2026-09-01', account }));
+  const run = renderHook(t, () => useEchoes({ today: '2026-09-01', account, bodyOf: server.bodyOf }));
   await settle(12);
 
   // Alice's poll goes out and is still in the air when she signs out.
@@ -830,15 +813,15 @@ test('A READ THAT OUTLIVES A SIGN-OUT IS DROPPED — it may not draw, light or a
   await settle(16);
 
   assert.equal(server.asked.page, bodiesRead,
-    'the reply was taken: Bob’s canvas went and fetched the bodies of Alice’s quotes');
+    'the reply was taken: Bob’s canvas went and read the bodies of Alice’s quotes');
   assert.equal(run.log.pageOf('2026-08-11'), null, 'Alice’s page was drawn on Bob’s canvas');
   assert.equal(run.log.lit, null, 'and it lit a tab');
   assert.equal(run.log.announce, null, 'and a screen reader was told about it');
 });
 
-test('opening the journal fetches no bodies of its own — the tabs that draw ask for what they need', async (t) => {
+test('opening the journal reads no bodies of its own — the tabs that draw ask for what they need', async (t) => {
   const server = reading({ wide: false });
-  const run = readerOn(t);
+  const run = readerOn(t, server);
   await settle(16);
 
   assert.equal(server.asked.echoes, 1);
@@ -849,7 +832,7 @@ test('opening the journal fetches no bodies of its own — the tabs that draw as
 
 test('a page a LATER read brings IS re-located at once, without waiting out the beat', async (t) => {
   const server = reading({ wide: false, pages: [ECHO_PAGES[0]] });
-  const run = readerOn(t);
+  const run = readerOn(t, server);
   await settle(16);
   const before = server.asked.page;
 
@@ -866,7 +849,7 @@ test('a page a LATER read brings IS re-located at once, without waiting out the 
 // the SCROLL and the READER chose. Nothing the journal receives may take that answer.
 test('AN ARRIVAL NEVER MOVES THE PANEL, even onto a page further down the same screen', async (t) => {
   const server = reading({ wide: true, pages: [ECHO_PAGES[0]] });
-  const run = readerOn(t);
+  const run = readerOn(t, server);
   await settle(12);
   const canvas = canvasOf(run.log);
   await rested();
@@ -890,7 +873,7 @@ test('AN ARRIVAL NEVER MOVES THE PANEL, even onto a page further down the same s
 
 test('the light moving to newer news leaves the page it left DECAYING, not dark', async (t) => {
   const server = reading({ wide: false, pages: [ECHO_PAGES[0]] });
-  const run = readerOn(t);
+  const run = readerOn(t, server);
   await settle(12);
 
   server.serve([withMatch(ECHO_PAGES[0], LANDED)]);
@@ -914,7 +897,7 @@ test('A READ THAT PRESENTED NOTHING IS NOT THE FIRST READ — a floored mount ar
   return (async () => {
     const server = reading({ wide: false });
     server.floorNext();
-    const run = readerOn(t);
+    const run = readerOn(t, server);
     await settle(12);
     assert.equal(run.log.pageOf('2026-08-11'), null, 'under the floor the canvas stays quiet');
     assert.equal(run.log.lit, null);
@@ -933,7 +916,7 @@ test('an echo an edit retracted comes back as news, and as a new tab, when the w
   // The beat is what re-reads bodies the client already holds, so it is the beat that retires a
   // quote the writer has edited away. Taken over here so the test does not sit through 15s of it.
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
-  const run = readerOn(t);
+  const run = readerOn(t, server);
   await settle(16);
   assert.equal(run.log.presentedBefore('2026-08-11'), true);
 
