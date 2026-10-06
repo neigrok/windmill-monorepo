@@ -61,7 +61,7 @@ export default function AuthProvider({ children }) {
       await engine.finishSignOut({ choice: 'keep' });
     }
     const result = await engine.signIn(me.id, answers);
-    pending.current = { user: me, ...answers, due: result.due ?? [] };
+    pending.current = { user: me, ...answers };
     if (!result.complete) {
       setQuestion(result.due?.[0] ?? null);
       setError(!result.upgradeRequired && !result.due?.length);
@@ -180,7 +180,7 @@ export default function AuthProvider({ children }) {
     return () => { alive = false; broadcast.close(); channel.current = null; clearInterval(poll);
       window.removeEventListener('focus', wake); window.removeEventListener('online', wake); };
   }, [refresh]);
-  return <AuthContext.Provider value={{ user, status, account, signIn, signOut, refresh, online: session.online }}>
+  return <AuthContext.Provider value={{ user, status, account, signIn, signOut, refresh }}>
     <div style={{ display: 'contents' }} inert={question && !upgradeRequired ? '' : undefined}>{children}</div>
     {!session.online && <div role="status" style={{ position: 'fixed', left: 16, bottom: 62, zIndex: 80, padding: '8px 12px', background: 'var(--surface-card)', color: 'var(--text-secondary)', borderRadius: 8, fontSize: 13 }}>Offline. Coach, echoes, nudges, voice and export need a connection.</div>}
     {session.error && <div role="alert">Couldn’t open this device’s saved work. Reload to try again.</div>}

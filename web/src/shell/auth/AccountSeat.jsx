@@ -1,5 +1,4 @@
-// Presentational: the caller passes user/status and the handlers. `expired` keeps the ghost seat
-// and voices the lapsed-session line in the pop-up. Appearance is the one thing the seat reads for
+// Presentational: the caller passes user/status and the handlers. Appearance is the one thing the seat reads for
 // itself — a device preference, so the row shows signed out too — unless `appearance` is false: a
 // landing chooses it in the nav's own toggle instead. The pop-up is a plain popover: the identity,
 // the Appearance radiogroup, then the one menu of rows.
@@ -12,7 +11,7 @@ const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // `mine` — { label, count, onSelect } — is the row back to a visitor's own work; omit it for no row.
-export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSettings, onConnect, mine, footer, expired = false, claimBusy, appearance = true, display = 'avatar' }) {
+export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSettings, onConnect, mine, footer, appearance = true, display = 'avatar' }) {
   const [open, setOpen] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [claim, setClaim] = useState(null); // null | 'syncing' | 'synced' | 'fading'
@@ -21,46 +20,24 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
   const seatRef = useRef(null);
   const popoverId = useId();
   const prevStatus = useRef(status);
-  const beatStartRef = useRef(0);
-  const claimBusyRef = useRef(claimBusy);
-  claimBusyRef.current = claimBusy;
 
   const reduced = prefersReducedMotion();
   const signedIn = status === 'signed-in' && Boolean(user);
   const name = signedIn ? (user.name?.trim() || user.email) : '';
 
-  // Fires only on a live ghost→signed-in flip. Without a claimBusy prop the chip runs on its own
-  // timers; with one, the "Syncing…" line holds until the claim reports done.
+  // Fires only on a live ghost→signed-in flip, and runs the chip on its own timers.
   useEffect(() => {
     const woken = prevStatus.current === 'ghost' && status === 'signed-in';
     prevStatus.current = status;
     if (!woken) return undefined;
     setWoke(true);
     setClaim('syncing');
-    beatStartRef.current = Date.now();
     const settle = setTimeout(() => setWoke(false), 520);
-    if (claimBusyRef.current !== undefined) return () => clearTimeout(settle);
     const toSynced = setTimeout(() => setClaim('synced'), 1200);
     const toFading = setTimeout(() => setClaim('fading'), 2100);
     const toSilent = setTimeout(() => setClaim(null), 2550);
     return () => [toSynced, toFading, toSilent, settle].forEach(clearTimeout);
   }, [status]);
-
-  // claimBusy released mid-beat: hold the syncing line for its minimum, then "Synced", then fade.
-  useEffect(() => {
-    if (claimBusy === undefined || claimBusy === true || claim !== 'syncing') return undefined;
-    const wait = Math.max(0, 1200 - (Date.now() - beatStartRef.current));
-    if (claimBusy === 'incomplete') {
-      // Something stayed unclaimed: never say "Synced".
-      const toFading = setTimeout(() => setClaim('fading'), wait);
-      const toSilent = setTimeout(() => setClaim(null), wait + 450);
-      return () => [toFading, toSilent].forEach(clearTimeout);
-    }
-    const toSynced = setTimeout(() => setClaim('synced'), wait);
-    const toFading = setTimeout(() => setClaim('fading'), wait + 1500);
-    const toSilent = setTimeout(() => setClaim(null), wait + 1950);
-    return () => [toSynced, toFading, toSilent].forEach(clearTimeout);
-  }, [claimBusy, claim]);
 
   useEffect(() => {
     if (status !== 'signed-in') setClaim(null);
@@ -253,11 +230,6 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
             </>
           ) : (
             <>
-              {expired && (
-                <div style={{ padding: '8px 10px 10px', marginBottom: 4, borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                  Your sign-in expired. Everything's still here — sign in to keep syncing.
-                </div>
-              )}
               {appearance && <AppearanceRow />}
               <div role="menu" aria-label="Account">
                 <MenuRow label="Sign in" onSelect={() => choose(onSignIn)} />

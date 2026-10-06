@@ -15,7 +15,7 @@ const LEVELS = {
 
 const LEVEL_ORDER = ['read', 'write', 'delete'];
 
-export function productLabel(product) {
+function productLabel(product) {
   return PRODUCTS[product] ?? product;
 }
 
