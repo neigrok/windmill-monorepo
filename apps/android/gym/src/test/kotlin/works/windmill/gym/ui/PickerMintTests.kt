@@ -3,9 +3,8 @@ package works.windmill.gym.ui
 import android.graphics.Insets
 import android.view.View
 import android.view.WindowInsets
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
@@ -17,19 +16,16 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -40,14 +36,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.store.DeviceCopy
-import works.windmill.gym.store.LocalBodyweight
-import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
-import works.windmill.gym.store.SetQueue
-import works.windmill.gym.store.TrainingStore
-import works.windmill.platform.Account
-import works.windmill.platform.net.WindmillApi
+import works.windmill.gym.store.EngineRoomFixture
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -60,35 +49,20 @@ class PickerMintTests {
     @get:Rule
     val tmp = TemporaryFolder()
 
-    private val account = Account(
-        api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
-        user = null,
-    )
-
-    private fun store(scope: CoroutineScope): TrainingStore {
-        val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json")),
-            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
-            localLog = LocalLog(File(tmp.root, "local.json")),
-            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
-            scope = scope,
-            sync = { null },
-        )
-        runBlocking { store.connect(account) }
-        return store
-    }
-
-    private fun editorPicker(scope: CoroutineScope): () -> RoutineDraft {
-        val held = store(scope)
-        var draft by mutableStateOf(RoutineDraft(name = "Push"))
+    // Signed out, so a minted movement lives in this phone's own replica.
+    private fun editorPicker(scope: CoroutineScope,
+                             draft: MutableState<RoutineDraft> = mutableStateOf(RoutineDraft(name = "Push"))): EngineRoomFixture {
+        val room = EngineRoomFixture(tmp.newFolder(), scope)
+        room.now = System.currentTimeMillis()
+        runBlocking { room.select(null) }
+        room.store.observeEngine()
         compose.setContent {
             contentView = LocalView.current
             RoutineBuilder(
-                draft = draft,
-                store = held,
+                draft = draft.value,
+                store = room.store,
                 saving = false,
-                onDraft = { draft = it },
+                onDraft = { draft.value = it },
                 onSave = {},
                 onClose = {},
                 say = {},
@@ -96,7 +70,7 @@ class PickerMintTests {
         }
         compose.onNodeWithText("Add movement").performClick()
         compose.waitForIdle()
-        return { draft }
+        return room
     }
 
     private fun search() =
@@ -131,41 +105,40 @@ class PickerMintTests {
     @Test
     fun testCancellingTheCreateStepHandsBackTheSearchThatOpenedIt() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        editorPicker(scope)
+        try { editorPicker(scope).use {
+            search().performTextReplacement("Zercher")
+            compose.waitForIdle()
+            compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
+            hideSearchIme()
+            compose.waitForIdle()
 
-        search().performTextReplacement("Zercher")
-        compose.waitForIdle()
-        compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
-        hideSearchIme()
-        compose.waitForIdle()
+            compose.onNode(hasText("Create movement") and !hasClickAction()).assertIsDisplayed()
+            dismissTheCreateStep()
 
-        compose.onNode(hasText("Create movement") and !hasClickAction()).assertIsDisplayed()
-        dismissTheCreateStep()
-
-        compose.onNodeWithText("Create movement").assertIsDisplayed()
-        compose.onNode(hasText("Create movement") and !hasClickAction()).assertDoesNotExist()
-        scope.cancel()
+            compose.onNodeWithText("Create movement").assertIsDisplayed()
+            compose.onNode(hasText("Create movement") and !hasClickAction()).assertDoesNotExist()
+        } } finally { scope.cancel() }
     }
 
     @Test
     fun testMintingFromTheCreateStepPutsTheMovementInTheDraft() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val draft = editorPicker(scope)
+        val draft = mutableStateOf(RoutineDraft(name = "Push"))
+        try { editorPicker(scope, draft).use {
+            search().performTextReplacement("Zercher Squat")
+            compose.waitForIdle()
+            compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
+            hideSearchIme()
+            compose.waitForIdle()
+            compose.onNodeWithText("Add to routine").performClick()
+            compose.waitForIdle()
 
-        search().performTextReplacement("Zercher Squat")
-        compose.waitForIdle()
-        compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
-        hideSearchIme()
-        compose.waitForIdle()
-        compose.onNodeWithText("Add to routine").performClick()
-        compose.waitForIdle()
-
-        compose.runOnIdle {
-            assertEquals("the picker's create door mints and adds, it opens no second screen",
-                         1, draft().entries.size)
-        }
-        compose.onNodeWithText("Zercher Squat").assertIsDisplayed()
-        scope.cancel()
+            compose.runOnIdle {
+                assertEquals("the picker's create door mints and adds, it opens no second screen",
+                             1, draft.value.entries.size)
+            }
+            compose.onNodeWithText("Zercher Squat").assertIsDisplayed()
+        } } finally { scope.cancel() }
     }
 
     @Test

@@ -7,7 +7,6 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
-import java.io.File
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
@@ -15,7 +14,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -26,20 +24,11 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import works.windmill.gym.domain.PlanSnapshot
-import works.windmill.gym.domain.Session
+import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.SessionSummary
-import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.net.FakeTraining
-import works.windmill.gym.store.DeviceCopy
-import works.windmill.gym.store.LocalBodyweight
-import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
-import works.windmill.gym.store.SetQueue
-import works.windmill.gym.store.TrainingStore
-import works.windmill.platform.Account
-import works.windmill.platform.User
-import works.windmill.platform.net.WindmillApi
+import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.gym.store.FinishOutcome
+import works.windmill.gym.store.GymResult
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w320dp-h640dp-xhdpi")
@@ -51,24 +40,36 @@ class LogRowLayoutTests {
     @Test
     fun doubleTextStacksTheDateAndGivesTheRecordTheFullCardWidth() {
         val now = LocalDate.of(2026, 9, 24).atTime(12, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-        val session = Session("push", now - 86_400_000, now - 86_400_000 + 3_600_000, plan = PlanSnapshot("Push A"))
-        val set = TrainingSet("best", "bench-press", weightKg = 62.5, reps = 8, completedAtMs = session.startedAtMs)
-        val server = FakeTraining().apply {
-            stored[session.id] = session
-            sets[session.id] = mutableListOf(set)
-        }
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = TrainingStore(SetQueue(File(tmp.root, "queue")), DeviceCopy(File(tmp.root, "catalog")), LocalLog(File(tmp.root, "log")),
-            LocalPreferences(File(tmp.root, "prefs")), LocalBodyweight(File(tmp.root, "weight")), scope, now = { now }, sync = { server })
-        val account = Account(WindmillApi("https://windmill.works".toHttpUrl(), { null }), User("a", "a@example.com", "A"))
-        runBlocking { store.connect(account) }
-        val opened = mutableListOf<SessionSummary>()
-        compose.setContent {
-            CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 2f)) {
-                GymMaterial { LogScreen(store, "A", { opened += it }, {}, {}, {}, now = { now }) }
+        val server = EngineRoomFixture.server()
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            // Yesterday's Push A, logged on another phone: one working set of bench, the account's record.
+            val phoneScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+            try { EngineRoomFixture(tmp.newFolder(), phoneScope).use { phone -> runBlocking {
+                phone.now = now - 86_400_000
+                phone.select("u1")
+                phone.pull(server)
+                val pushA = (phone.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press")) as GymResult.Ok).value
+                phone.store.start(pushA.id)
+                phone.store.choose("bench-press")
+                phone.store.logSet(62.5, 8)
+                phone.now += 3_600_000
+                assertTrue(phone.store.finish() is FinishOutcome.Closed)
+                phone.sync(server)
+            } } } finally { phoneScope.cancel() }
+            room.now = now
+            runBlocking {
+                room.select("u1")
+                room.pull(server)
+                room.store.refreshEngine()
             }
-        }
-        try {
+            room.store.observeEngine()
+            val opened = mutableListOf<SessionSummary>()
+            compose.setContent {
+                CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 2f)) {
+                    GymMaterial { LogScreen(room.store, "A", { opened += it }, {}, {}, {}, now = { now }) }
+                }
+            }
             val title = compose.onNodeWithText("Push A", useUnmergedTree = true).assertIsDisplayed().getBoundsInRoot()
             val date = compose.onNodeWithText("Yesterday", useUnmergedTree = true).assertIsDisplayed().getBoundsInRoot()
             val record = compose.onNodeWithText("Record · Bench Press 62.5 × 8", useUnmergedTree = true).assertIsDisplayed()
@@ -88,7 +89,7 @@ class LogRowLayoutTests {
             assertEquals("Record · Bench Press 62.5 × 8", layout.layoutInput.text.text)
             compose.onNodeWithText("Weigh in").assertIsDisplayed()
             compose.onNode(hasText("Push A") and hasClickAction()).performClick()
-            assertEquals(listOf(SessionSummary(session, listOf(set))), opened)
-        } finally { scope.cancel() }
+            assertEquals("the row opens the one session the log holds", room.store.recent, opened)
+        } } finally { scope.cancel() }
     }
 }
