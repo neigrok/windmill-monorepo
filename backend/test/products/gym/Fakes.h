@@ -140,13 +140,6 @@ struct FakeGymStore {
     return out;
   }
 
-  // The catalog read's predicate where a WRITE names a movement: a seed, or one this account created.
-  bool visibleTo(const UserId& owner, const ExerciseId& exercise) const {
-    for (const Exercise& known : catalogOf(owner))
-      if (known.id == exercise) return true;
-    return false;
-  }
-
   // What THIS account calls a movement: its own line over the seed's name. A seed row is global.
   std::optional<std::string> nameOf(const UserId& user, const ExerciseId& id) const {
     for (const auto& [key, name] : displayNames)
@@ -747,7 +740,7 @@ public:
 
   FakeGymStore& db;
 
-  // The store's projection, which is also the predicate every write naming a movement checks (visibleTo).
+  // The seeds under this account's names, then its own movements.
   std::vector<Exercise> catalog(const UserId& user) override { return db.catalogOf(user); }
 };
 
