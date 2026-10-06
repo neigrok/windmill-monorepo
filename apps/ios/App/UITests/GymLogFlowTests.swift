@@ -264,11 +264,14 @@ import XCTest
     app.buttons["gym-bodyweight-door"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-bodyweight"].waitForExistence(timeout: 5))
     snapshot("bodyweight-\(appearance)", app: app)
-    app.buttons["82.6 kg · 20 Sep"].tap()
+    let crowdedPoint = app.buttons["gym-chart-point-2026-09-20"]
+    XCTAssertTrue(crowdedPoint.waitForExistence(timeout: 5)); crowdedPoint.tap()
     let fixedDate = app.descendants(matching: .any)["gym-weigh-in-fixed-date"]
     XCTAssertTrue(fixedDate.waitForExistence(timeout: 5))
     snapshot("weigh-in-crowded-\(appearance)", app: app)
-    XCTAssertTrue(fixedDate.label.contains("20 September") || (fixedDate.value as? String ?? "").contains("20 September") || fixedDate.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "20 September")).firstMatch.exists)
+    let expectedDate = Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 9, day: 20))!
+      .formatted(.dateTime.day().month(.wide).year())
+    XCTAssertTrue(fixedDate.label.contains(expectedDate) || (fixedDate.value as? String ?? "").contains(expectedDate) || fixedDate.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", expectedDate)).firstMatch.exists)
     app.buttons["Cancel"].tap()
     app.segmentedControls["gym-bodyweight-window"].buttons["All"].tap()
     XCTAssertTrue(app.staticTexts["All · 6 weigh-ins"].waitForExistence(timeout: 5))
@@ -282,7 +285,7 @@ import XCTest
     XCTAssertTrue(app.buttons["gym-log-undo"].waitForExistence(timeout: 5))
     app.buttons["gym-log-undo"].firstMatch.tap()
     XCTAssertTrue(row.waitForExistence(timeout: 5))
-    app.buttons["82.4 kg · 26 Sep"].tap()
+    app.buttons["gym-chart-point-2026-09-26"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-weigh-in-fixed-date"].waitForExistence(timeout: 5))
     app.buttons["Cancel"].tap()
     back(app)
