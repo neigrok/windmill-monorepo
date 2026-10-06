@@ -433,13 +433,13 @@ class EngineTraining(val engine: Engine) {
             val id = subject.id.string ?: notice.id
             RefusedSet(id, (values["exerciseId"] as? Json.Str)?.value.orEmpty(),
                 (values["weightKg"] as? Json.Num)?.value ?: 0.0, (values["reps"] as? Json.Num)?.value?.toInt() ?: 0, reason)
-        } else RefusedClaim(notice.id, "Saved change", reason)
+        } else RefusedChange(notice.id, "Saved change", reason)
     }
     fun refusedNotes(): List<RefusedWrite> = engine.notices("gym").notices.value.mapNotNull { notice ->
         val domain = DomainNotice(notice, engine.registry, GymRefusal)
         val subject = domain.subject?.takeIf { it.type == EngineNote.type } ?: return@mapNotNull null
         val title = domain.values(subject)["title"]?.str().orEmpty()
-        RefusedClaim(notice.id, "Note: $title", refusal(domain.refusal).line)
+        RefusedChange(notice.id, "Note: $title", refusal(domain.refusal).line)
     }
     fun dismissRefusals() { for (notice in engine.notices("gym").notices.value) engine.dismissNotice(notice.id) }
 
