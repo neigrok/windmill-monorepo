@@ -1,11 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { API_BASE } from '../../../../src/shell/apiBase.js';
-import { browserWith, elementsOf, findByClass, loadScreen, renderHook, roomLog, settle, textOf } from '../harness.mjs';
-
-const realFetch = global.fetch;
-test.afterEach(() => { global.fetch = realFetch; });
+import { projectGym } from '../../../../src/products/gym/syncProjections.js';
+import {
+  browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle, textOf,
+} from '../harness.mjs';
 
 const at = (day, hour, minute = 0) => new Date(2026, 8, day, hour, minute).getTime();
 const NOW = at(24, 18, 5);
@@ -17,48 +16,45 @@ const CATALOG = [
   { id: 'face-pull', name: 'Face Pull', stepKg: 2.5 },
 ];
 
-const PUSH_A = {
-  id: 'rt_push',
+const PUSH_A = confirmed('routine', 'routinePushA', {
   name: 'Push A',
   position: 0,
-  lastTrainedAt: at(22, 18),
   entries: [
-    { position: 0, exerciseId: 'bench-press', sets: [{ reps: 8, weightKg: 60 }, { reps: 8, weightKg: 60 }, { reps: 8, weightKg: 60 }] },
-    { position: 1, exerciseId: 'overhead-press', sets: [{ reps: 8, weightKg: 32.5 }, { reps: 8, weightKg: 32.5 }, { reps: 8, weightKg: 32.5 }] },
-    { position: 2, exerciseId: 'chin-up', sets: [{ reps: 8 }, { reps: 7 }, { reps: 6 }] },
-    { position: 3, exerciseId: 'face-pull' },
+    { exerciseId: 'bench-press', sets: [{ reps: 8, weightKg: 60 }, { reps: 8, weightKg: 60 }, { reps: 8, weightKg: 60 }] },
+    { exerciseId: 'overhead-press', sets: [{ reps: 8, weightKg: 32.5 }, { reps: 8, weightKg: 32.5 }, { reps: 8, weightKg: 32.5 }] },
+    { exerciseId: 'chin-up', sets: [{ reps: 8 }, { reps: 7 }, { reps: 6 }] },
+    { exerciseId: 'face-pull' },
   ],
-};
-
-const lastOf = (exerciseId, sets) => ({
-  exerciseId,
-  ...(sets ? { session: { id: 'ses_old', startedAt: at(19, 18) }, sets: sets.map(([weightKg, reps]) => ({ weightKg, reps, kind: 'working' })) } : {}),
 });
 
-// The store on the wire, answering from a table of `METHOD /path` → reply or (body) => reply.
-function store(routes) {
-  const calls = [];
-  global.fetch = async (url, options = {}) => {
-    const path = url.slice(`${API_BASE}/v1/gym`.length);
-    const method = options.method ?? 'GET';
-    const body = options.body ? JSON.parse(options.body) : null;
-    calls.push(body ? `${method} ${path} ${options.body}` : `${method} ${path}`);
-    const route = routes[`${method} ${path}`];
-    if (!route) throw new Error(`unexpected ${method} ${path}`);
-    const { status = 200, reply = {} } = typeof route === 'function' ? route(body) : route;
-    return { ok: status < 300, status, headers: { get: () => null }, json: async () => reply };
-  };
-  return calls;
+// The one workout the account last trained these movements in: 19 Sep, each movement's `[kg, reps]`
+// in the order it was lifted.
+function lastWorkout(movements) {
+  let minute = 0;
+  return [
+    confirmed('session', 'sessionOld01', { startedAt: at(19, 18), finishedAt: at(19, 19) }),
+    ...movements.flatMap(([exerciseId, sets]) => sets.map(([weightKg, reps], index) => {
+      minute += 1;
+      return confirmed('set', `setOld_${exerciseId}_${index + 1}`, {
+        sessionId: 'sessionOld01', exerciseId, setNumber: index + 1, weightKg, reps, kind: 'working', completedAt: at(19, 18, minute), note: '',
+      });
+    })),
+  ];
 }
 
-const pushARoutes = (extra = {}) => ({
-  'GET /routines/rt_push': { reply: PUSH_A },
-  'GET /last?exercise=bench-press': { reply: lastOf('bench-press', [[60, 8], [60, 8], [57.5, 8]]) },
-  'GET /last?exercise=overhead-press': { reply: lastOf('overhead-press', [[30, 8], [30, 8], [30, 8]]) },
-  'GET /last?exercise=chin-up': { reply: lastOf('chin-up', [[0, 8], [0, 7], [0, 6]]) },
-  'GET /last?exercise=face-pull': { reply: lastOf('face-pull') },
-  ...extra,
-});
+// Push A, and last time for three of its four movements; Face Pull has never been trained.
+const pushAAccount = (t, more = []) => gymAccount(t, [
+  PUSH_A,
+  ...lastWorkout([
+    ['bench-press', [[60, 8], [60, 8], [57.5, 8]]],
+    ['overhead-press', [[30, 8], [30, 8], [30, 8]]],
+    ['chin-up', [[0, 8], [0, 7], [0, 6]]],
+  ]),
+  ...more,
+]);
+
+// The workout the form sent, as the replica holds it.
+const imported = (gym) => gym.engine.device.activeReplica.entries().map((entry) => entry.intent.cmd?.args).filter(Boolean);
 
 const named = (tree, name) => elementsOf(tree).filter((each) => typeof each.type === 'function' && each.type.name === name);
 
@@ -89,25 +85,23 @@ const saveButton = (tree) => findByClass(tree, 'gym-save-do')[0];
 test('the pick lists the program in its own order, each row the log’s index row, and a free session under a rule', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();
-  store({
-    'GET /routines': {
-      reply: {
-        routines: [
-          { id: 'rt_legs', name: 'Legs', position: 2, lastTrainedAt: at(18, 9), entries: [{ exerciseId: 'a', sets: [{}, {}, {}, {}] }, { exerciseId: 'b', sets: [{}, {}, {}, {}] }, { exerciseId: 'c', sets: [{}, {}, {}, {}] }] },
-          PUSH_A,
-          { id: 'rt_upper', name: 'Upper B', position: 3, entries: [{ exerciseId: 'a' }, { exerciseId: 'b' }] },
-          { id: 'rt_gone', name: 'Gone', position: 1, entries: [] },
-        ],
-      },
-    },
-  });
-  const outer = await route(t, null, roomLog({ held: [{ key: 'routine:rt_gone', kind: 'routine', id: 'rt_gone', settling: false }] }));
+  const four = [{}, {}, {}, {}];
+  await gymAccount(t, [
+    confirmed('routine', 'routineLegs1', { name: 'Legs', position: 2, entries: [{ exerciseId: 'a', sets: four }, { exerciseId: 'b', sets: four }, { exerciseId: 'c', sets: four }] }),
+    PUSH_A,
+    confirmed('routine', 'routineUpperB', { name: 'Upper B', position: 3, entries: [{ exerciseId: 'a' }, { exerciseId: 'b' }] }),
+    confirmed('routine', 'routineGone1', { name: 'Gone', position: 1, entries: [{ exerciseId: 'a' }] }),
+    confirmed('session', 'sessionPush1', { startedAt: at(22, 18), finishedAt: at(22, 19), routineId: 'routinePushA', historyRoutineId: 'routinePushA' }),
+    confirmed('session', 'sessionLegs1', { startedAt: at(18, 9), finishedAt: at(18, 10), routineId: 'routineLegs1', historyRoutineId: 'routineLegs1' }),
+  ]);
+  // Gone is still in the store; the room's window is holding its delete.
+  const outer = await route(t, null, roomLog({ held: [{ key: 'routine:routineGone1', kind: 'routine', id: 'routineGone1', settling: false }] }));
   assert.deepEqual(findByClass(outer.tree, 'gym-index-row').map((row) => [
     row.props.href, textOf(findByClass(row, 'gym-index-name')[0]), textOf(findByClass(row, 'gym-index-when')[0]), textOf(findByClass(row, 'gym-index-facts')[0]),
   ]), [
-    ['#/gym/backfill/rt_push', 'Push A', '22 Sep', '4 movements · 9 sets'],
-    ['#/gym/backfill/rt_legs', 'Legs', '18 Sep', '3 movements · 12 sets'],
-    ['#/gym/backfill/rt_upper', 'Upper B', 'Never trained', '2 movements'],
+    ['#/gym/backfill/routinePushA', 'Push A', '22 Sep', '4 movements · 9 sets'],
+    ['#/gym/backfill/routineLegs1', 'Legs', '18 Sep', '3 movements · 12 sets'],
+    ['#/gym/backfill/routineUpperB', 'Upper B', 'Never trained', '2 movements'],
   ]);
   assert.deepEqual(findByClass(outer.tree, 'gym-index-free').map((link) => [link.props.href, textOf(link)]), [['#/gym/backfill/free', '+ Free session']]);
   assert.deepEqual(named(outer.tree, 'Back').map((back) => [back.props.href, back.props.children]), [['#/gym/log', 'The log']]);
@@ -117,7 +111,7 @@ test('the pick lists the program in its own order, each row the log’s index ro
 test('an account with no routines skips the pick: the free session, and a card that says where a routine comes from', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();
-  store({ 'GET /routines': { reply: { routines: [] } } });
+  await gymAccount(t);
   const view = await form(t, null, roomLog({ catalog: CATALOG }));
   assert.deepEqual(named(view.tree, 'Back').map((back) => [back.props.href, back.props.children]), [['#/gym/log', 'The log']]);
   assert.deepEqual(findByClass(view.tree, 'gym-title').map(textOf), ['Free session']);
@@ -131,15 +125,8 @@ test('an account with no routines skips the pick: the free session, and a card t
 test('a routine arrives filled: agreeing sets fold to a line and a rail, bodyweight reads its own way, an open line with no history waits', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();
-  const calls = store(pushARoutes());
-  const view = await form(t, 'rt_push', roomLog({ catalog: CATALOG }));
-  assert.deepEqual(calls, [
-    'GET /routines/rt_push',
-    'GET /last?exercise=bench-press',
-    'GET /last?exercise=overhead-press',
-    'GET /last?exercise=chin-up',
-    'GET /last?exercise=face-pull',
-  ]);
+  await pushAAccount(t);
+  const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG }));
   assert.deepEqual(named(view.tree, 'Back').map((back) => [back.props.href, back.props.children]), [['#/gym/backfill', 'Past workout']]);
   assert.deepEqual(findByClass(view.tree, 'gym-title').map(textOf), ['Push A']);
   assert.deepEqual(findByClass(view.tree, 'gym-past-units').map(textOf), ['kg × reps']);
@@ -165,8 +152,8 @@ test('a routine arrives filled: agreeing sets fold to a line and a rail, bodywei
 test('an edit carries down into the untouched sets below it, the carried numerals lift in turn, and the caption says so', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();
-  store(pushARoutes());
-  const view = await form(t, 'rt_push', roomLog({ catalog: CATALOG }));
+  await pushAAccount(t);
+  const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG }));
   movements(view.tree)[0].props.onOpen();
   let bench = movements(view.tree)[0];
   assert.equal(bench.props.open, true);
@@ -190,8 +177,8 @@ test('an edit carries down into the untouched sets below it, the carried numeral
 test('a set leaves by its ×, Add set copies the row above, and an emptied value keeps Save inert', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();
-  store(pushARoutes());
-  const view = await form(t, 'rt_push', roomLog({ catalog: CATALOG }));
+  await pushAAccount(t);
+  const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG }));
   const chin = () => movements(view.tree)[2];
   findByClass(chin().tree, 'gym-past-set-drop')[1].props.onClick();
   assert.deepEqual(rowsOf(chin()).map((cell) => cell.value), [0, 8, 0, 6]);
@@ -205,9 +192,9 @@ test('a set leaves by its ×, Add set copies the row above, and an emptied value
 test('a skipped movement leaves at once through the withheld window, and Undo puts it back where it stood', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();
-  store(pushARoutes());
+  await pushAAccount(t);
   const held = [];
-  const view = await form(t, 'rt_push', roomLog({ catalog: CATALOG, withhold: (entry) => held.push(entry) }));
+  const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG, withhold: (entry) => held.push(entry) }));
   movements(view.tree)[1].props.onSkip();
   assert.deepEqual(movements(view.tree).map(({ props }) => props.name), ['Bench Press', 'Chin-up', 'Face Pull']);
   assert.deepEqual(held.map(({ kind, line, send }) => [kind, line, send]), [['entry', 'Overhead Press is out of this workout.', undefined]]);
@@ -216,27 +203,19 @@ test('a skipped movement leaves at once through the withheld window, and Undo pu
   assert.deepEqual(movements(view.tree).map(({ props }) => props.name), ['Bench Press', 'Overhead Press', 'Chin-up', 'Face Pull']);
 });
 
-test('Save writes the whole workout in one request, reads Saved for 900ms, then opens the session with its Undo', async (t) => {
+test('Save writes the whole workout in one command, reads Saved for 900ms, then opens the session with its Undo', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  let stored = null;
-  const calls = store(pushARoutes({
-    'POST /sessions/import': (body) => {
-      stored = body;
-      return { status: 201, reply: { session: { id: body.id, startedAt: body.startedAt, finishedAt: body.finishedAt }, sets: [] } };
-    },
-  }));
-  const said = [];
-  let reloads = 0;
   // The log has a running workout on the phone: this door does not wait for it.
-  const running = { id: 'ses_live', startedAt: at(24, 17, 40) };
+  const gym = await pushAAccount(t, [confirmed('session', 'sessionLive1', { startedAt: at(24, 17, 40) })]);
+  const said = [];
+  const running = { id: 'sessionLive1', startedAt: at(24, 17, 40) };
   const summaries = [running];
-  const view = await form(t, 'rt_push', roomLog({
+  const view = await form(t, 'routinePushA', roomLog({
     catalog: CATALOG,
     session: running,
     summaries,
     say: (text, options) => said.push([text, options?.action?.label]),
-    reloadLog: async () => { reloads += 1; },
   }));
   findByClass(movements(view.tree)[3].tree, 'gym-past-add')[0].props.onClick();
   rowsOf(movements(view.tree)[3])[0].onCommit(20);
@@ -246,13 +225,14 @@ test('Save writes the whole workout in one request, reads Saved for 900ms, then 
 
   saveButton(view.tree).props.onClick();
   await settle();
+  const [stored] = imported(gym);
   assert.match(stored.id, /^ses_[0-9a-f]{16}$/);
   const spread = (n) => at(24, 12) + Math.round((3_600_000 * n) / 11);
   assert.deepEqual(stored, {
     id: stored.id,
     startedAt: at(24, 12),
     finishedAt: at(24, 13),
-    routineId: 'rt_push',
+    routineId: 'routinePushA',
     sets: [
       ['bench-press', 60, 8], ['bench-press', 60, 8], ['bench-press', 60, 8],
       ['overhead-press', 32.5, 8], ['overhead-press', 32.5, 8], ['overhead-press', 32.5, 8],
@@ -262,11 +242,11 @@ test('Save writes the whole workout in one request, reads Saved for 900ms, then 
       id: `set_${stored.id.slice(4)}_${index + 1}`, exerciseId, weightKg, reps, completedAt: spread(index + 1), kind: 'working',
     })),
   });
-  assert.equal(calls.filter((call) => call.startsWith('POST')).length, 1, 'one request, whole or not at all');
-  assert.equal(calls.some((call) => /routines\/rt_push /.test(call) && !call.startsWith('GET')), false, 'the routine is never written');
+  assert.deepEqual(gym.owed(), [`ready gym.importSession ${stored.id}`], 'one command, whole or not at all, and the routine is never written');
   assert.deepEqual([textOf(saveButton(view.tree)), saveButton(view.tree).props['aria-disabled']], ['Saved · 10 sets', true]);
-  assert.equal(reloads, 1);
-  // The reload brings the saved workout into the log; the note keeps reading the span it stored.
+  const { session, sets } = projectGym(gym.engine.observe('self/gym').getSnapshot().stored).session(stored.id);
+  assert.deepEqual([session.startedAt, session.finishedAt, sets.length], [at(24, 12), at(24, 13), 10], 'the store holds the workout the moment it is saved');
+  // The room reads the saved workout into the log; the note keeps reading the span it stored.
   summaries.unshift({ id: stored.id, startedAt: stored.startedAt, finishedAt: stored.finishedAt });
   view.redraw();
   assert.deepEqual(findByClass(view.tree, 'gym-save-note').map(textOf), ['Today · 12:00–13:00']);
@@ -281,10 +261,7 @@ test('Save writes the whole workout in one request, reads Saved for 900ms, then 
 test('a free session’s movement arrives with last time’s sets, and Save’s Undo opens the discard’s own window on the log', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  store({
-    'GET /last?exercise=bench-press': { reply: lastOf('bench-press', [[60, 8]]) },
-    'POST /sessions/import': (body) => ({ status: 201, reply: { session: { id: body.id }, sets: [] } }),
-  });
+  const gym = await gymAccount(t, lastWorkout([['bench-press', [[60, 8]]]]));
   const said = [];
   const held = [];
   const view = await form(t, 'free', roomLog({
@@ -308,6 +285,7 @@ test('a free session’s movement arrives with last time’s sets, and Save’s 
   await settle();
   t.mock.timers.tick(900);
   const saved = window.location.hash.slice('#/gym/session/'.length).split('?')[0];
+  assert.deepEqual(gym.owed(), [`ready gym.importSession ${saved}`]);
   assert.deepEqual(said.map(([text, action]) => [text, action.label]), [['Free session is in the log.', 'Undo']]);
   said[0][1].run();
   assert.equal(window.location.hash, '#/gym/log');
@@ -317,10 +295,10 @@ test('a free session’s movement arrives with last time’s sets, and Save’s 
 test('a time the lifter sets is checked against the log — the open session included — and refused in place with its two doors', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();
-  store(pushARoutes());
-  const earlier = { id: 'ses_1', startedAt: at(24, 15), finishedAt: at(24, 16, 10), plan: { routine: 'Pull A', entries: [] } };
-  const running = { id: 'ses_live', startedAt: at(24, 17, 40) };
-  const view = await form(t, 'rt_push', roomLog({ catalog: CATALOG, summaries: [running, earlier], session: running }));
+  await pushAAccount(t);
+  const earlier = { id: 'sessionPull1', startedAt: at(24, 15), finishedAt: at(24, 16, 10), plan: { routine: 'Pull A', entries: [] } };
+  const running = { id: 'sessionLive1', startedAt: at(24, 17, 40) };
+  const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG, summaries: [running, earlier], session: running }));
   assert.deepEqual(findByClass(view.tree, 'gym-save-note').map(textOf), ['Today · 12:00–13:00']);
 
   findByClass(view.tree, 'gym-past-link')[0].props.onClick();
@@ -337,7 +315,7 @@ test('a time the lifter sets is checked against the log — the open session inc
   assert.deepEqual(findByClass(view.tree, 'gym-past-refusal-body').map(textOf), [
     'Pull A · today · 15:00 – 16:10 is already in the log. One visit is one session — if sets are missing from it, add them there instead.',
   ]);
-  assert.deepEqual(findByClass(view.tree, 'gym-past-refusal-open').map((link) => [link.props.href, textOf(link)]), [['#/gym/session/ses_1', 'Open that session ›']]);
+  assert.deepEqual(findByClass(view.tree, 'gym-past-refusal-open').map((link) => [link.props.href, textOf(link)]), [['#/gym/session/sessionPull1', 'Open that session ›']]);
   assert.deepEqual(findByClass(view.tree, 'gym-past-refusal-fix').map(textOf), ['Change time']);
   assert.equal(saveButton(view.tree).props['aria-disabled'], true);
 
@@ -371,8 +349,8 @@ test('a time the lifter sets is checked against the log — the open session inc
 test('a lifter’s time that ends after now reads as running past now, and Save waits', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();
-  store(pushARoutes());
-  const view = await form(t, 'rt_push', roomLog({ catalog: CATALOG }));
+  await pushAAccount(t);
+  const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG }));
   findByClass(view.tree, 'gym-past-link')[0].props.onClick();
   elementsOf(view.tree).find((each) => each.props?.['aria-label'] === 'Start time').props.onChange({ target: { value: '17:30' } });
   assert.deepEqual(findByClass(view.tree, 'gym-past-refusal').map(textOf), [
@@ -387,139 +365,62 @@ test('a lifter’s time that ends after now reads as running past now, and Save 
 test('the store’s own overlap refusal — the log moved under the form — is drawn like the form’s, until the time moves', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();
-  const crossed = { id: 'ses_phone', startedAt: at(24, 11, 50), finishedAt: at(24, 12, 40), plan: { routine: 'Legs', entries: [] } };
-  const calls = store(pushARoutes({
-    'POST /sessions/import': { status: 409, reply: { code: 'session-overlap', error: 'these times cross a session already in the log', sessionId: 'ses_phone', session: crossed } },
-  }));
+  // The phone's workout reached the account; the room this form reads has not drawn it yet.
+  const gym = await pushAAccount(t, [
+    confirmed('session', 'sessionPhone', { startedAt: at(24, 11, 50), finishedAt: at(24, 12, 40), plan: { routine: 'Legs', entries: [] } }),
+  ]);
   const said = [];
-  const view = await form(t, 'rt_push', roomLog({ catalog: CATALOG, say: (text) => said.push(text) }));
+  const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG, say: (text) => said.push(text) }));
   saveButton(view.tree).props.onClick();
   await settle();
   assert.deepEqual(findByClass(view.tree, 'gym-past-refusal-body').map(textOf), [
     'Legs · today · 11:50 – 12:40 is already in the log. One visit is one session — if sets are missing from it, add them there instead.',
   ]);
-  assert.deepEqual(findByClass(view.tree, 'gym-past-refusal-open').map((link) => link.props.href), ['#/gym/session/ses_phone']);
+  assert.deepEqual(findByClass(view.tree, 'gym-past-refusal-open').map((link) => link.props.href), ['#/gym/session/sessionPhone']);
   assert.deepEqual([textOf(saveButton(view.tree)), saveButton(view.tree).props['aria-disabled']], ['Save · 9 sets', true]);
   assert.deepEqual(said, []);
   findByClass(view.tree, 'gym-past-refusal-fix')[0].props.onClick();
   assert.deepEqual(findByClass(view.tree, 'gym-past-refusal'), []);
-  assert.equal(calls.filter((call) => call.startsWith('POST')).length, 1);
+  assert.deepEqual(gym.owed(), [], 'the refused workout is not in the log, and changing the time writes nothing');
 });
 
-test('a press that did not land sends the same request again, ids and all, so the store answers it with the row it holds', async (t) => {
+test('a press the browser could not keep is pressed again with the same request, ids and all, and lands once', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();
-  let answer = { status: 503, reply: { error: 'the log is not answering' } };
-  const sent = [];
-  store(pushARoutes({ 'POST /sessions/import': (body) => { sent.push(JSON.stringify(body)); return answer; } }));
+  const gym = await pushAAccount(t);
+  // Every press's command is read on its way into the replica; the first one fails inside the
+  // browser's transaction, the way a full IndexedDB fails it.
+  const pressed = [];
+  let refusing = true;
+  const commit = gym.engine.commit.bind(gym.engine);
+  gym.engine.commit = (scope, build, options) => commit(scope, (views) => {
+    const write = build(views);
+    pressed.push(JSON.stringify(write.gesture.opts.cmd.args));
+    if (refusing) throw new DOMException('storage refused', 'QuotaExceededError');
+    return write;
+  }, options);
   const said = [];
-  const view = await form(t, 'rt_push', roomLog({ catalog: CATALOG, say: (text) => said.push(text) }));
+  const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG, say: (text) => said.push(text) }));
   saveButton(view.tree).props.onClick();
   await settle();
   assert.deepEqual(said, ['That workout didn’t reach the log — the log didn’t answer. Try again when you have signal.']);
   assert.equal(textOf(saveButton(view.tree)), 'Save · 9 sets');
-  answer = { status: 200, reply: { session: {}, sets: [] } };
+  assert.deepEqual(gym.owed(), []);
+  refusing = false;
   saveButton(view.tree).props.onClick();
   await settle();
-  assert.equal(sent.length, 2);
-  assert.equal(sent[1], sent[0]);
-});
-
-// The store honouring its own contract: an exact replay answers the stored row, a different workout
-// under a spent id is `session-id-taken`, and the first reply can be lost after the row landed.
-function honestStore({ loseFirstReply = false } = {}) {
-  const stored = new Map();
-  const posts = [];
-  let lost = loseFirstReply;
-  const routes = pushARoutes({
-    'POST /sessions/import': (body) => {
-      posts.push(JSON.stringify(body));
-      const prior = stored.get(body.id);
-      if (prior) {
-        if (JSON.stringify(prior) === JSON.stringify(body)) return { status: 200, reply: { session: prior, sets: [] } };
-        return { status: 409, reply: { code: 'session-id-taken', error: 'that session id is taken' } };
-      }
-      stored.set(body.id, body);
-      if (lost) {
-        lost = false;
-        return { status: 503, reply: { error: 'the reply was lost' } };
-      }
-      return { status: 201, reply: { session: body, sets: [] } };
-    },
-  });
-  store(new Proxy(routes, {
-    get: (table, key) => {
-      const match = /^GET \/sessions\/(ses_[0-9a-f]+)$/.exec(key);
-      if (!match) return table[key];
-      const session = stored.get(match[1]);
-      return session ? { reply: { session, sets: session.sets } } : { status: 404, reply: {} };
-    },
-  }));
-  return { stored, posts };
-}
-
-test('a save whose reply was lost, pressed again unchanged, sends the same bytes and lands once', async (t) => {
-  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
-  browserWith();
-  const server = honestStore({ loseFirstReply: true });
-  const said = [];
-  const view = await form(t, 'rt_push', roomLog({ catalog: CATALOG, say: (text) => said.push(text) }));
-  saveButton(view.tree).props.onClick();
-  await settle();
-  assert.deepEqual(said, ['That workout didn’t reach the log — the log didn’t answer. Try again when you have signal.']);
-  t.mock.timers.tick(60_000);
-  saveButton(view.tree).props.onClick();
-  await settle();
-  assert.deepEqual([server.posts.length, server.posts[1] === server.posts[0], server.stored.size], [2, true, 1]);
+  assert.equal(pressed.length, 2);
+  assert.equal(pressed[1], pressed[0]);
+  assert.deepEqual(gym.owed(), [`ready gym.importSession ${JSON.parse(pressed[0]).id}`]);
   assert.equal(textOf(saveButton(view.tree)), 'Saved · 9 sets');
-});
-
-test('a save whose reply was lost, then a time moved and saved again, lands once and says the first save stood', async (t) => {
-  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
-  browserWith();
-  const server = honestStore({ loseFirstReply: true });
-  const said = [];
-  const view = await form(t, 'rt_push', roomLog({ catalog: CATALOG, say: (text, options) => said.push([text, options?.action?.label ?? null]) }));
-  saveButton(view.tree).props.onClick();
-  await settle();
-  findByClass(view.tree, 'gym-past-link')[0].props.onClick();
-  elementsOf(view.tree).find((each) => each.props?.['aria-label'] === 'Start time').props.onChange({ target: { value: '14:00' } });
-  saveButton(view.tree).props.onClick();
-  await settle();
-  assert.equal(server.stored.size, 1, 'one session, not two');
-  const [first] = server.stored.values();
-  assert.deepEqual([first.startedAt, first.finishedAt], [at(24, 12), at(24, 13)]);
-  assert.deepEqual(findByClass(view.tree, 'gym-save-note').map(textOf), ['Today · 12:00–13:00'], 'the note reads what the store holds');
-  assert.equal(textOf(saveButton(view.tree)), 'Saved · 9 sets');
-  t.mock.timers.tick(900);
-  assert.equal(window.location.hash, `#/gym/session/${first.id}?from=%23%2Fgym%2Flog`);
-  assert.deepEqual(said.slice(1), [['Push A was already in the log — the changes made after that save were not written.', 'Undo']]);
-});
-
-test('a spent id the account does not hold is not a landing: the form says so and keeps the workout', async (t) => {
-  t.mock.timers.enable({ apis: ['Date'], now: NOW });
-  browserWith();
-  const calls = store(pushARoutes({
-    'POST /sessions/import': { status: 409, reply: { code: 'session-deleted', error: 'that workout was discarded' } },
-  }));
-  global.fetch = ((inner) => async (url, options) => (/\/sessions\/ses_[0-9a-f]+$/.test(url)
-    ? { ok: false, status: 404, headers: { get: () => null }, json: async () => ({}) }
-    : inner(url, options)))(global.fetch);
-  const said = [];
-  const view = await form(t, 'rt_push', roomLog({ catalog: CATALOG, say: (text) => said.push(text) }));
-  saveButton(view.tree).props.onClick();
-  await settle();
-  assert.deepEqual(said, ['This workout was saved and then discarded, so this form can’t save it again. Open Add past workout to log it afresh.']);
-  assert.equal(textOf(saveButton(view.tree)), 'Save · 9 sets');
-  assert.equal(calls.filter((call) => call.startsWith('POST')).length, 1, 'no second send under a fresh id');
 });
 
 test('two sets removed inside one collapse each take the set they name', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
   window.matchMedia = () => ({ matches: false });
-  store(pushARoutes());
-  const view = await form(t, 'rt_push', roomLog({ catalog: CATALOG }));
+  await pushAAccount(t);
+  const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG }));
   const chin = () => movements(view.tree)[2];
   findByClass(chin().tree, 'gym-past-set-drop')[0].props.onClick();
   findByClass(chin().tree, 'gym-past-set-drop')[1].props.onClick();
@@ -533,10 +434,10 @@ test('two sets removed inside one collapse each take the set they name', async (
 test('Saved does not pull the lifter back: a form already left goes nowhere, and one unmounted says nothing', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  store(pushARoutes({ 'POST /sessions/import': (body) => ({ status: 201, reply: { session: body, sets: [] } }) }));
+  const gym = await pushAAccount(t);
   const said = [];
-  const view = await form(t, 'rt_push', roomLog({ catalog: CATALOG, say: (text) => said.push(text) }));
-  window.location.hash = '#/gym/backfill/rt_push';
+  const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG, say: (text) => said.push(text) }));
+  window.location.hash = '#/gym/backfill/routinePushA';
   saveButton(view.tree).props.onClick();
   await settle();
   window.location.hash = '#/gym/notes';
@@ -544,29 +445,24 @@ test('Saved does not pull the lifter back: a form already left goes nowhere, and
   assert.equal(window.location.hash, '#/gym/notes');
   assert.deepEqual(said, ['Push A is in the log.']);
 
-  const second = await form(t, 'rt_push', roomLog({ catalog: CATALOG, say: (text) => said.push(`second: ${text}`) }));
+  // The second form's room holds the first workout, so its default slot is a free one.
+  const [first] = imported(gym);
+  const second = await form(t, 'routinePushA', roomLog({
+    catalog: CATALOG, summaries: [{ id: first.id, startedAt: first.startedAt, finishedAt: first.finishedAt }], say: (text) => said.push(`second: ${text}`),
+  }));
   saveButton(second.tree).props.onClick();
   await settle();
+  assert.equal(imported(gym).length, 2, 'the second workout landed too');
   second.unmount();
   t.mock.timers.tick(900);
   assert.deepEqual(said, ['Push A is in the log.']);
 });
 
-test('one last time that did not answer leaves the form standing: that movement keeps its target', async (t) => {
-  t.mock.timers.enable({ apis: ['Date'], now: NOW });
-  browserWith();
-  store(pushARoutes({ 'GET /last?exercise=overhead-press': { status: 503, reply: { error: 'busy' } } }));
-  const view = await form(t, 'rt_push', roomLog({ catalog: CATALOG }));
-  assert.deepEqual(movements(view.tree).map(({ props, tree }) => [props.name, textOf(findByClass(tree, 'gym-past-scheme')[0])]), [
-    ['Bench Press', '3 × 8 · 60'], ['Overhead Press', '3 × 8 · 32.5'], ['Chin-up', '3 × 6–8'], ['Face Pull', 'open · no last time'],
-  ]);
-});
-
 test('a day with no free slot opens the time row, focused, and the note asks for a start', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: at(24, 0, 10) });
   browserWith();
-  store(pushARoutes());
-  const view = await form(t, 'rt_push', roomLog({ catalog: CATALOG }));
+  await pushAAccount(t);
+  const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG }));
   const start = () => elementsOf(view.tree).find((each) => each.props?.['aria-label'] === 'Start time');
   assert.deepEqual([start().props.value, start().props.autoFocus], ['', true]);
   assert.deepEqual(findByClass(view.tree, 'gym-past-link'), []);
@@ -584,35 +480,34 @@ test('a day with no free slot opens the time row, focused, and the note asks for
 test('a workout past the store’s two hundred sets says so, and Save waits', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();
-  const routine = {
-    id: 'rt_big', name: 'Big', position: 0,
-    entries: Array.from({ length: 41 }, (_, at) => ({ exerciseId: 'bench-press', sets: Array.from({ length: 5 }, () => ({ reps: 5, weightKg: 20 })) })).map((entry, position) => ({ ...entry, position })),
-  };
-  store({ 'GET /routines/rt_big': { reply: routine }, 'GET /last?exercise=bench-press': { reply: lastOf('bench-press') } });
-  const view = await form(t, 'rt_big', roomLog({ catalog: CATALOG }));
+  await gymAccount(t, [confirmed('routine', 'routineBig01', {
+    name: 'Big', position: 0,
+    entries: Array.from({ length: 41 }, () => ({ exerciseId: 'bench-press', sets: Array.from({ length: 5 }, () => ({ reps: 5, weightKg: 20 })) })),
+  })]);
+  const view = await form(t, 'routineBig01', roomLog({ catalog: CATALOG }));
   assert.deepEqual([textOf(saveButton(view.tree)), saveButton(view.tree).props['aria-disabled']], ['Save · 205 sets', true]);
   assert.deepEqual(findByClass(view.tree, 'gym-past-limit').map(textOf), ['A workout holds up to 200 sets.']);
 });
 test('the routine’s ⋯ holds Log past above Delete, and it opens the filled form without the pick', async (t) => {
   browserWith();
-  store({ 'GET /routines': { reply: { routines: [PUSH_A] } } });
+  await gymAccount(t, [PUSH_A]);
   const { RoutinesList } = await loadScreen('products/gym/Routines.jsx');
-  const view = renderHook(t, () => RoutinesList({ log: roomLog(), onSignIn: () => {} }));
+  const view = renderHook(t, () => RoutinesList({ log: roomLog() }));
   await settle();
   view.redraw();
   const [menu] = named(view.tree, 'Menu');
   assert.deepEqual(menu.props.items.map((item) => item.label), ['Log past', 'Delete']);
   menu.props.items[0].run();
-  assert.equal(window.location.hash, '#/gym/backfill/rt_push?from=routines');
+  assert.equal(window.location.hash, '#/gym/backfill/routinePushA?from=routines');
 });
 
 test('a form opened from the routine’s ⋯ goes back to Routines; one opened from the pick goes back to it', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();
-  store(pushARoutes());
+  await pushAAccount(t);
   const { Backfill } = await loadScreen('products/gym/backfill/Backfill.jsx');
   const backOf = async (from) => {
-    const screen = Backfill({ target: 'rt_push', from, log: roomLog({ catalog: CATALOG }) });
+    const screen = Backfill({ target: 'routinePushA', from, log: roomLog({ catalog: CATALOG }) });
     const view = renderHook(t, () => screen.type(screen.props));
     await settle();
     view.redraw();
@@ -626,8 +521,8 @@ test('a form opened from the routine’s ⋯ goes back to Routines; one opened f
 test('a cell focused while a carry lands reads the carried number: Enter confirms it and ↑ steps from it', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();
-  store(pushARoutes());
-  const view = await form(t, 'rt_push', roomLog({ catalog: CATALOG }));
+  await pushAAccount(t);
+  const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG }));
   const { EditableNumber } = await loadScreen('products/gym/backfill/EditableNumber.jsx');
   movements(view.tree)[0].props.onOpen();
   // Each cell hosts its own state and reads its props off the form as it stands on every render.
@@ -661,9 +556,10 @@ test('a cell focused while a carry lands reads the carried number: Enter confirm
 
 test('the log’s door to a past workout is a plain link, open while a workout runs on the phone', async (t) => {
   browserWith();
+  await gymAccount(t, [confirmed('session', 'sessionLive1', { startedAt: NOW })]);
   const { LogList } = await loadScreen('products/gym/Log.jsx');
-  const running = { id: 'ses_live', startedAt: NOW };
-  const view = renderHook(t, () => LogList({ log: roomLog({ session: running, summaries: [running] }), onSignIn: () => {} }));
+  const running = { id: 'sessionLive1', startedAt: NOW };
+  const view = renderHook(t, () => LogList({ log: roomLog({ session: running, summaries: [running] }) }));
   assert.deepEqual(findByClass(view.tree, 'gym-door-past').map((door) => [door.type, door.props.href, textOf(door)]), [
     ['a', '#/gym/backfill', 'Add past workout'],
     ['a', '#/gym/backfill', 'Add past workout'],

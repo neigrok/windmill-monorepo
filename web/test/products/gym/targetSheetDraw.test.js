@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { NEW_ROUTINE_ID } from '../../../src/products/gym/log.js';
 import { OPEN_LINE, REPS_BAND, SETS_BAND, VARIES_PLACEHOLDER } from '../../../src/products/gym/routines.js';
-import { browserWith, elementsOf, findByClass, loadScreen, renderHook, roomLog, settle, textOf } from './harness.mjs';
+import { browserWith, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle, textOf } from './harness.mjs';
 
 const CATALOG = [
   { id: 'back-squat', name: 'Back Squat', equipment: 'barbell' },
@@ -48,9 +48,11 @@ const fill = (t, tree) => {
   return { items: menu.props.items, opener: textOf(findByClass(renderHook(t, () => menu.type(menu.props)).tree, 'gym-fill-open')[0]) };
 };
 
-// The sheet is reached the way a lifter reaches it: a new routine, a movement added, its row tapped.
+// The sheet is reached the way a lifter reaches it: a new routine in a signed-in account, a movement
+// added, its row tapped.
 async function openEditor(t, exerciseId = 'back-squat') {
   browserWith();
+  await gymAccount(t);
   const { RoutineEditor } = await loadScreen('products/gym/Routines.jsx');
   const editor = renderHook(t, () => RoutineEditor({ id: NEW_ROUTINE_ID, log: LOG }));
   await settle();

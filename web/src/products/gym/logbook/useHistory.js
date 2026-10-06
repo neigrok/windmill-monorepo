@@ -18,7 +18,7 @@ export function useHistory(filters, revision = 0, suppliedApi = null) {
   useEffect(() => {
     const mine = ++epoch.current;
     pendingPage.current = null;
-    if (api.ready === false) return;
+    if (!api?.ready) return;
     const limit = loadedScope.current === scope ? loadedCount.current : 50;
     setView((current) => ({ ...current, scope, more: 'idle', data: loadedScope.current === scope ? current.data : null,
       phase: loadedScope.current === scope && current.data ? 'ready' : 'loading', failure: false }));
@@ -74,7 +74,7 @@ export function useHistoryDates(filters, revision = 0, suppliedApi = null) {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   useEffect(() => {
     let current = true;
-    if (api.ready === false) return;
+    if (!api?.ready) return;
     setView({ months: [], failure: false });
     api.history({ ...JSON.parse(scope), timeZone, limit: 1 }).then((data) => {
       if (current) setView({ months: data.months, failure: false });

@@ -2,9 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { API_BASE } from '../../../src/shell/apiBase.js';
-import {
-  failureReason, gymApi, GymError,
-} from '../../../src/products/gym/gymApi.js';
+import { gymApi } from '../../../src/products/gym/gymApi.js';
 
 const realFetch = global.fetch;
 let calls = [];
@@ -46,30 +44,6 @@ function wireOf({ url, options }) {
   };
 }
 
-function flagsOf(error) {
-  return {
-    name: error.name,
-    status: error.status,
-    message: error.message,
-    detail: error.detail,
-    code: error.code,
-    terminal: error.terminal,
-    retryable: error.retryable,
-    setIdTaken: error.setIdTaken,
-    sessionIdTaken: error.sessionIdTaken,
-    unknownExercise: error.unknownExercise,
-    routineIdTaken: error.routineIdTaken,
-    exerciseIdTaken: error.exerciseIdTaken,
-    sessionOpen: error.sessionOpen,
-    sessionDeleted: error.sessionDeleted,
-    sessionOverlap: error.sessionOverlap,
-    fixUnreadable: error.fixUnreadable,
-    setNotFound: error.setNotFound,
-    proposalSuperseded: error.proposalSuperseded,
-    proposalSettled: error.proposalSettled,
-  };
-}
-
 test.afterEach(() => { global.fetch = realFetch; calls = []; });
 
 test('shareSession — the share link, minted on a tap, with no document to send', async () => {
@@ -103,7 +77,7 @@ test('revokeShare — nothing to revoke is revoked, and a store that failed is s
   serve(refusal(404, 'no such session'));
   assert.equal(await gymApi.revokeShare('ses_gone'), null);
   serve(refusal(503, 'internal error'));
-  await assert.rejects(() => gymApi.revokeShare('ses_1'), (error) => error.status === 503 && error.retryable);
+  await assert.rejects(() => gymApi.revokeShare('ses_1'), (error) => error.status === 503 && !error.terminal);
 });
 
 test('sharedSession — one workout, no ids in it, and one null for all three ways a token can fail', async () => {
@@ -132,16 +106,6 @@ test('sharedSession — one workout, no ids in it, and one null for all three wa
   assert.equal(await gymApi.sharedSession('expired'), null);
   serve(refusal(404, 'no such session'));
   assert.equal(await gymApi.sharedSession('never-existed'), null);
-});
-
-test('failureReason — a refusal, a lapsed sign-in, a row that is gone and a silence each get their own sentence', async () => {
-  assert.equal(failureReason(new GymError(400, 'a routine needs at least one movement')), 'the log wouldn’t take it as written');
-  assert.equal(failureReason(new GymError(409, 'that routine id is taken', 'routine-id-taken')), 'the log wouldn’t take it as written');
-  assert.equal(failureReason(new GymError(503, '')), 'the log didn’t answer. Try again when you have signal');
-  assert.equal(failureReason(new GymError(401, 'sign in to open your training log')), 'you’re signed out. Sign in and try again');
-  assert.equal(failureReason(new GymError(404, 'no such session')), 'it isn’t in the log any more');
-  assert.equal(failureReason(new TypeError('Failed to fetch')), 'the log didn’t answer. Try again when you have signal');
-  assert.equal(failureReason(undefined), 'the log didn’t answer. Try again when you have signal');
 });
 
 test('ask — one question into one thread, and the answer with its receipt, steps and proposals back', async () => {

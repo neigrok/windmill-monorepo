@@ -30,16 +30,10 @@ try {
   try { listeners = commands('lsof', ['-tiTCP:8090', '-sTCP:LISTEN']).toString().trim(); } catch (error) { if (error.status !== 1) throw error; }
   assert.equal(listeners, '', 'port 8090 must be free');
   commands('createdb', ['-h', host, database]); created = true;
-  commands('psql', [url, '-v', 'ON_ERROR_STOP=1', '-f', 'backend/db/schema.sql', '-f', 'backend/db/gym_sync.sql', '-f', 'backend/db/journal_sync.sql']);
+  commands('psql', [url, '-v', 'ON_ERROR_STOP=1', '-f', 'backend/db/schema.sql']);
   commands('psql', [url, '-v', 'ON_ERROR_STOP=1'], { input: `INSERT INTO users(id,email) VALUES ('${account}','web-b1-${process.pid}@example.com'); INSERT INTO sessions(token_hash,user_id,expires_ms) VALUES ('${hash}','${account}',${Date.now() + 86400000});` });
-  for (const name of ['gym', 'journal']) {
-    commands(join(binDir, `windmill_${name}_backfill`), [], { env: { ...process.env, DATABASE_URL: url } });
-    commands(join(binDir, `windmill_${name}_backfill`), ['--audit'], { env: { ...process.env, DATABASE_URL: url } });
-  }
-  commands('psql', [url, '-v', 'ON_ERROR_STOP=1', '-f', 'backend/db/gym_sync_v5.sql']);
-  for (const mode of ['--upgrade-v5', '--audit-v5']) commands(join(binDir, 'windmill_gym_backfill'), [mode], { env: { ...process.env, DATABASE_URL: url } });
   server = spawn(join(binDir, 'windmill_server'), [], { cwd: root, env: { ...process.env, DATABASE_URL: url, PORT: '8090',
-    SYNC_ENABLED: '1', GYM_ENGINE_WRITES: '1', JOURNAL_ENGINE_WRITES: '1', WINDMILL_HOST: '127.0.0.1', WINDMILL_APP_URL: base,
+    WINDMILL_HOST: '127.0.0.1', WINDMILL_APP_URL: base,
     RESEND_API_KEY: '', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', JOURNAL_EMBEDDER_URL: '' }, stdio: ['ignore', log, log] });
   let startError; server.on('error', (error) => { startError = error; });
   for (let attempt = 0; ; attempt++) {

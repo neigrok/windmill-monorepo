@@ -26,9 +26,9 @@ const WHY_READ_MS = 2500;
 
 export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWriter = null }) {
   const {
-    today, history, loading, firstRun, readState, reach,
+    today, history, loading, firstRun, readState,
     body, mood, energy, saveState, saveTick,
-    setBody, setMood, setEnergy, extendTo, reachBack, scalesInvitation, retireScales,
+    setBody, setMood, setEnergy, scalesInvitation, retireScales,
   } = usePages();
 
   const scrollRef = useRef(null);
@@ -40,7 +40,6 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
   const focusedRef = useRef(false);
   const widthRef = useRef(0);        // the composer's last measured width, so a re-wrap is visible
   const bornSet = useRef(null); // the dates present at first paint — these never animate
-  const anchorRef = useRef(null); // distance from the scroll bottom, held across a reach back
   const [highlight, setHighlight] = useState(null); // { day, lo, hi } — a search hit, lit for a beat
 
   if (!loading && !bornSet.current) {
@@ -152,52 +151,31 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
     };
   }, []);
 
-  // A reach back prepends above the viewport, so hold the distance from the scroller's bottom — the one
-  // distance a prepend cannot change — and put it back once the read settles.
-  const startReachBack = () => {
-    openingRef.current = false;   // they went looking — the canvas stops taking its own position
-    const scroller = scrollRef.current;
-    anchorRef.current = scroller ? scroller.scrollHeight - scroller.scrollTop : null;
-    reachBack();
-  };
-
-  useLayoutEffect(() => {
-    if (anchorRef.current == null || reach === 'loading') return;
-    const scroller = scrollRef.current;
-    if (scroller) scroller.scrollTop = scroller.scrollHeight - anchorRef.current;
-    anchorRef.current = null;
-  }, [reach, history.length]);
-
-  // A hit older than the rendered window is loaded first, then scrolled; a hit on today lands in the
-  // composer with its span selected. Prepends keep moving the target, so the flight re-aims for a few
-  // frames instead of firing once.
+  // A hit on an earlier day is scrolled to its page; a hit on today lands in the composer with its span
+  // selected. The flight re-aims for a few frames instead of firing once.
   useEffect(() => {
     if (!flyTo || loading) return;
     openingRef.current = false;   // a flight is a position the writer asked for
     let cancelled = false;
     const hasSpan = flyTo.lo != null;   // a search hit or an echo lights a span; a picked day just lands
     if (hasSpan) setHighlight(flyTo);
-    (async () => {
-      await extendTo(flyTo.day);
+    const aim = (frames) => {
       if (cancelled) return;
-      const aim = (frames) => {
-        if (cancelled) return;
-        scrollToDay(flyTo.day, 'center');
-        if (frames > 0) requestAnimationFrame(() => aim(frames - 1));
-      };
-      requestAnimationFrame(() => {
-        if (cancelled) return;
-        aim(SETTLE_FRAMES);
-        if (hasSpan && flyTo.day === today && textareaRef.current) {
-          const field = textareaRef.current;
-          field.focus({ preventScroll: true });
-          field.setSelectionRange(flyTo.lo, flyTo.hi);
-        }
-      });
-    })();
+      scrollToDay(flyTo.day, 'center');
+      if (frames > 0) requestAnimationFrame(() => aim(frames - 1));
+    };
+    requestAnimationFrame(() => {
+      if (cancelled) return;
+      aim(SETTLE_FRAMES);
+      if (hasSpan && flyTo.day === today && textareaRef.current) {
+        const field = textareaRef.current;
+        field.focus({ preventScroll: true });
+        field.setSelectionRange(flyTo.lo, flyTo.hi);
+      }
+    });
     const fade = hasSpan ? setTimeout(() => setHighlight(null), 2600) : null;
     return () => { cancelled = true; if (fade) clearTimeout(fade); };
-  }, [flyTo, loading, extendTo, today]);
+  }, [flyTo, loading, today]);
 
   const standingOn = focusDate || today;
   // The page the echo margin is describing right now — the hook's own answer, run through the swap, so
@@ -229,13 +207,14 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
   const todayMonth = today.slice(0, 7);
   if (todayMonth !== lastMonth) rendered.push(<MonthDivider key={`m-${todayMonth}`} iso={today} />);
 
-  // Only an account that answered has an edge to reach past, and an empty one shows the first run.
-  const showFloor = readState === 'ready' && !(history.length === 0 && reach === 'end');
+  // The device holds the whole journal, so an account that answered shows where it starts; an empty
+  // one shows the first run instead.
+  const showStart = readState === 'ready' && history.length > 0;
 
   return (
     <div className="journal-scroll" ref={scrollRef}>
       <div className="journal-column" ref={columnRef}>
-        {showFloor && <CanvasFloor reach={reach} onReach={startReachBack} />}
+        {showStart && <p className="journal-floor-end">That’s the start of your journal.</p>}
         {rendered}
 
         {readState === 'failed' && (
@@ -278,31 +257,6 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
         </article>
       </div>
     </div>
-  );
-}
-
-// One window deeper per press. A failed read is never "the beginning": it offers the step again.
-function CanvasFloor({ reach, onReach }) {
-  if (reach === 'end') return <p className="journal-floor-end">That’s the start of your journal.</p>;
-  if (reach === 'failed') {
-    return (
-      <p className="journal-floor-failed">
-        Couldn’t read further back — this is what’s loaded so far, not where you started.
-        <button type="button" className="journal-floor-retry" onClick={onReach}>Try again</button>
-      </p>
-    );
-  }
-  // aria-disabled, not disabled: a real `disabled` drops focus to the body mid-press.
-  return (
-    <button
-      type="button"
-      className="journal-floor-more"
-      onClick={onReach}
-      aria-disabled={reach === 'loading'}
-      aria-busy={reach === 'loading'}
-    >
-      {reach === 'loading' ? 'Reading further back…' : 'Read further back'}
-    </button>
   );
 }
 

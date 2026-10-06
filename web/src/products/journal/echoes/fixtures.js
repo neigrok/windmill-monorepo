@@ -1,7 +1,7 @@
 // A journal with a couple of years in it, so every echo state can be seen without a backend. Days are
 // computed from today. Every quote is a real substring of the page body it points at.
 
-import { localDay } from '../hlc.js';
+import { localDay } from '../localDay.js';
 
 function monthsBack(months, dayOfMonth) {
   const [year, month] = localDay().split('-').map(Number);

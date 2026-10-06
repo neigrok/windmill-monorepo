@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { NEW_ROUTINE_ID } from '../../../src/products/gym/log.js';
-import { browserWith, elementsOf, findByClass, loadScreen, renderHook, roomLog, settle, textOf } from './harness.mjs';
+import { browserWith, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle, textOf } from './harness.mjs';
 
 const CATALOG = [
   { id: 'back-squat', name: 'Back Squat' },
@@ -21,11 +21,13 @@ const STYLES = fs.readFileSync(
 const handed = (tree, prop) => elementsOf(tree)
   .find((each) => typeof each.type === 'function' && each.props != null && prop in each.props);
 
-// The list is reached the way a lifter reaches it: a new routine, three movements added through the
-// picker. The list itself is a child component, so it is rendered from the props the editor hands it
-// and re-rendered from the editor's own next render — which is what a reorder causes.
+// The list is reached the way a lifter reaches it: a new routine in a signed-in account, three
+// movements added through the picker. The list itself is a child component, so it is rendered from
+// the props the editor hands it and re-rendered from the editor's own next render — which is what a
+// reorder causes.
 async function openList(t) {
   browserWith();
+  await gymAccount(t);
   const { RoutineEditor } = await loadScreen('products/gym/Routines.jsx');
   const editor = renderHook(t, () => RoutineEditor({ id: NEW_ROUTINE_ID, log: LOG }));
   await settle();

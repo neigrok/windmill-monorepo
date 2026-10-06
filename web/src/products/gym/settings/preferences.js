@@ -38,6 +38,6 @@ export function preferencesWrite(preferences) {
 }
 
 export function preferenceRefusal(error) {
-  if (error?.detail) return error.detail;
+  if (error?.sentence) return error.sentence;
   return 'that setting didn’t save — the log didn’t answer. Try again in a moment';
 }

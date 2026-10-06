@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
-import { failureReason } from '../gymApi.js';
+import { failureReason } from '../errors.js';
 import { HistoryFilter, HistoryIndex } from '../Log.jsx';
 import { groupByExercise } from '../log.js';
 import { historyQuery, historyTotals } from '../logbook/history.js';
@@ -30,7 +30,7 @@ export function LogShareScreen() {
     const scope = logShareRequest(draft, 'preview-count');
     if (scope.error) return Promise.resolve(null);
     return api.history({ ...shareHistoryScope(scope.value, { limit: 1 }), projection: 'progress' });
-  }, [draft.scope, draft.from, draft.until], { sync: true, ready: api.ready !== false });
+  }, [draft.scope, draft.from, draft.until], { sync: true, ready: Boolean(api?.ready) });
   const identity = useRef(null);
   const previewBox = useRef(null);
   const detailHistory = useGymRead(() => detail?.token && !detail.revoked ? logShareApi.read(detail.token, { limit: 1 }) : Promise.resolve(null), [detail?.id, detail?.revoked]);
@@ -154,7 +154,7 @@ export function ReadOnlyLog({ token = null, preview = null, hash = '', onReady =
     const scope = shareHistoryScope(preview, query);
     if (scope.from >= scope.until) return Promise.resolve({ sessions: [], summary: { sessions: 0, sets: 0, reps: 0, tonnageKg: 0 }, months: [], exercises: [], routines: [], next: null });
     return localApi.history({ ...scope, projection: 'progress' });
-  }, sync: Boolean(preview), ready: !preview || localApi.ready !== false }), [token, preview, localApi]);
+  }, sync: Boolean(preview), ready: !preview || Boolean(localApi?.ready) }), [token, preview, localApi]);
   const history = useHistory(filters, 0, api);
   const dates = useHistoryDates(filters, 0, api);
   useEffect(() => { onReady?.(history.phase === 'ready'); }, [history.phase, onReady]);

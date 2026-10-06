@@ -53,7 +53,8 @@ test('older history is a local slice and preserves observations while paging', (
   assert.equal(view.log.summaries.length, 50);
   view.log.older.load();
   assert.equal(view.log.summaries.length, 100);
-  update({ drawn: [...rows, row('session', 'sessionNew00', { startedAt: 3000, finishedAt: 4000 })] });
+  const grown = [...rows, row('session', 'sessionNew00', { startedAt: 3000, finishedAt: 4000 })];
+  update({ drawn: grown, stored: grown });
   assert.equal(view.log.summaries.length, 100);
   assert.equal(view.log.summaries[0].id, 'sessionNew00');
   view.log.older.load();

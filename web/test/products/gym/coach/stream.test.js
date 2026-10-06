@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readCoachStream } from '../../../../src/products/gym/coach/stream.js';
-import { gymApi, GymError } from '../../../../src/products/gym/gymApi.js';
+import { GymError } from '../../../../src/products/gym/errors.js';
+import { gymApi } from '../../../../src/products/gym/gymApi.js';
 
 const frame = (revision, status, answer) => `id: gen_1:${revision}\r\nevent: snapshot\r\ndata: ${JSON.stringify({ thread: 'thr_1', generation: { id: 'gen_1', requestId: 'ask_1', revision, status, question: 'Hello', answer, at: 10 } })}\r\n\r\n`;
 

@@ -199,8 +199,7 @@ export function axisDate(ms) {
 
 // Save was refused: the store's sentence where it sent one, the wordless fallback otherwise.
 export function saveRefusal(error) {
-  if (typeof error?.detail === 'string' && error.detail !== '') return error.detail;
-  if (error?.status === 401) return 'You’re signed out. Sign in and try again.';
+  if (error?.sentence) return error.sentence;
   return 'That weigh-in wasn’t saved — the log didn’t answer. Try again when you have signal.';
 }
 

@@ -30,6 +30,13 @@ export function historyScope(filters) {
   };
 }
 
+// The count over the rows follows the rows: a session a delete window hides leaves it, while the
+// store goes on holding it until the window closes.
+export function withoutRows(summary, sessions) {
+  return sessions.reduce((left, session) => ({ ...left, sessions: left.sessions - 1, sets: left.sets - session.workingSetCount,
+    reps: left.reps - session.reps, tonnageKg: Math.round((left.tonnageKg - session.tonnageKg) * 100) / 100 }), summary);
+}
+
 export function historyTotals(summary, unit = weightUnit()) {
   if (!summary) return null;
   return `${summary.sessions} ${summary.sessions === 1 ? 'workout' : 'workouts'} · ${summary.sets} sets · ${summary.reps} reps · loads in ${unit}`;

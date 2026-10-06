@@ -35,15 +35,7 @@ export function inTheLogLine(name) {
   return `${name} is in the log.`;
 }
 
-export function discardedLine() {
-  return 'This workout was saved and then discarded, so this form can’t save it again. Open Add past workout to log it afresh.';
-}
-
-export function alreadySavedLine(name) {
-  return `${name} was already in the log — the changes made after that save were not written.`;
-}
-
-// The reply of `GET /v1/gym/last`: `session` is what says there is history.
+// A `lastTime` answer: `session` is what says there is history.
 function lastTimeOf(reply) {
   if (!reply?.session) return null;
   return { at: reply.session.startedAt, sets: (reply.sets ?? []).map(({ weightKg, reps }) => ({ weightKg, reps })) };
@@ -240,7 +232,7 @@ export function sourceCaption(movement, edited) {
 }
 
 // One request, the whole workout, built from what the form holds and nothing else: the set ids are
-// the session id's own, numbered, so the same form sends the same bytes and a resend is a replay.
+// the session id's own, numbered, so the same form always builds the same request.
 // The set instants are spread evenly strictly inside the span and read as approximate; nothing
 // reads a rest interval off them. Every set is a working set.
 export function importOf({ id, slot, draft }) {

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
-import { failureReason } from '../gymApi.js';
+import { failureReason } from '../errors.js';
 import {
   BACKFILL_HREF, backfillHref, FREE_SESSION, FROM_PICK, FROM_ROUTINE_MENU, isFinished, lastTrainedDayLabel, movementOf, nameOfMovement,
   NEW_ROUTINE_ID, NO_ROUTINE, routineHref, routineSizeLabel, ROUTINES_HREF, sessionHref, shortDayLabel,
@@ -13,7 +13,7 @@ import { useGymRead } from '../useGymRead.js';
 import { useGymApi } from '../gymSync.js';
 import { UNDO_LABEL } from '../withheld.js';
 import {
-  alreadySavedLine, collapses, discardedLine, draftFromRoutine, freeDraft, importOf, inTheLogLine, isOverLimit,
+  collapses, draftFromRoutine, freeDraft, importOf, inTheLogLine, isOverLimit,
   isReady, movementLine, movementSkippedLine, savedLabel, saveLabel, SET_LIMIT_LINE, sourceCaption, targetLine,
   valueLabel, withMovementAdded, withMovementAt, withMovementRemoved, withSetAdded, withSetRemoved, withValueSet,
 } from './draft.js';
@@ -55,7 +55,7 @@ export function Backfill({ target, from = FROM_PICK, log }) {
 
 function RoutinePick({ log }) {
   const api = useGymApi();
-  const view = useGymRead(() => api.routines(), [], { sync: true, ready: api.ready !== false });
+  const view = useGymRead(() => api.routines(), [], { sync: true, ready: Boolean(api?.ready) });
   const hidden = log.hidden('routine');
 
   if (view.phase === 'loading') return <ScreenNote back={LOG_BACK}>Opening your routines…</ScreenNote>;
@@ -100,7 +100,7 @@ function RoutineWorkout({ id, back, log }) {
     const movements = [...new Set(routine.entries.map((entry) => entry.exerciseId))];
     const replies = await Promise.all(movements.map((exerciseId) => api.lastTime(exerciseId).catch(() => null)));
     return draftFromRoutine(routine, new Map(movements.map((exerciseId, at) => [exerciseId, replies[at]])));
-  }, [id], { sync: true, ready: api.ready !== false });
+  }, [id], { sync: true, ready: Boolean(api?.ready) });
 
   if (view.phase === 'loading') return <ScreenNote back={back}>Opening the routine…</ScreenNote>;
   if (view.phase === 'absent') return <ScreenNote back={back}>This routine isn’t in your program.</ScreenNote>;
@@ -255,48 +255,31 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
       id,
       engineDeath: { type: 'session', id },
       line: SESSION_DELETED,
-      send: async () => {
-        await api.discardSession(id);
-        await log.reloadLog();
-      },
       refused: (error) => log.say(`That session wasn’t discarded — ${failureReason(error)}.`),
     });
     window.location.hash = '#/gym/log';
   };
 
-  // The id is this form's for good. A save whose answer was lost and is pressed again sends the same
-  // bytes, which the store answers as a replay; one sent after an edit meets the id already spent,
-  // and the session the store holds under it is what landed.
-  const send = async (request) => {
-    try {
-      const stored = await api.importSession(request);
-      return { session: stored.session, already: false };
-    } catch (error) {
-      if (!error.sessionIdTaken && !error.sessionDeleted) return { error };
-      const held = await api.session(request.id).catch(() => null);
-      if (held?.session) return { session: held.session, already: true };
-      return { error };
-    }
-  };
-
+  // The id is this form's for good, so a save pressed again after a refusal sends the same workout.
   const save = async () => {
     if (inert) return;
     setSaving(true);
-    const { session, already, error } = await send(importOf({ id: sessionId, slot, draft }));
-    setSaving(false);
-    if (error) {
+    let session;
+    try {
+      ({ session } = await api.importSession(importOf({ id: sessionId, slot, draft })));
+    } catch (error) {
+      setSaving(false);
       if (error.overlapping) setRaced(error.overlapping);
-      else if (error.sessionDeleted) log.say(discardedLine());
       else log.say(`That workout didn’t reach the log — ${failureReason(error)}.`);
       return;
     }
+    setSaving(false);
     setLanded({ startedAt: session.startedAt, finishedAt: session.finishedAt });
-    log.reloadLog();
     const name = draft.name ?? NO_ROUTINE;
     const form = window.location.hash;
     savedTimer.current = setTimeout(() => {
       if (window.location.hash === form) window.location.hash = `${sessionHref(sessionId)}?from=${encodeURIComponent('#/gym/log')}`;
-      log.say(already ? alreadySavedLine(name) : inTheLogLine(name), {
+      log.say(inTheLogLine(name), {
         action: { label: UNDO_LABEL, run: () => discard(sessionId) },
       });
     }, SAVED_MS);

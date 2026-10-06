@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Button } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
-import { failureReason } from './gymApi.js';
+import { failureReason } from './errors.js';
 import {
   cappedName, entryLabel, fromSession, isFirstSession, nameOfMovement, recordHref, routineNameOf, sessionHref,
   weekdayName,
@@ -23,11 +23,12 @@ export function FinishScreen({ id, log }) {
       api.sessions({ limit: 2 }),
     ]).then(([detail, review, catalog, recent]) => (detail ? { detail, review, catalog, recent } : null)),
     [id],
-    { sync: true, ready: api.ready !== false },
+    { sync: true, ready: Boolean(api?.ready) },
   );
 
   if (view.phase === 'loading') return <p className="gym-quiet">Opening the review…</p>;
-  if (view.phase === 'absent') {
+  // A session its delete window holds is gone from its review, as its row is from the log.
+  if (view.phase === 'absent' || log.hidden('session').has(id)) {
     return (
       <>
         <Back href="#/gym/log">The log</Back>
@@ -112,17 +113,12 @@ export function FinishScreen({ id, log }) {
 // and the transient carries the way back until release.
 // There is no confirmation, because a dialog in front of an act that can be undone is ceremony.
 function ShortSession({ id, log }) {
-  const api = useGymApi();
   const discard = () => {
     log.withhold({
       kind: 'session',
       id,
       engineDeath: { type: 'session', id },
       line: SESSION_DELETED,
-      send: async () => {
-        await api.discardSession(id);
-        await log.reloadLog();
-      },
       refused: (error) => log.say(`That session wasn’t discarded — ${failureReason(error)}.`),
     });
     window.location.hash = '#/gym';

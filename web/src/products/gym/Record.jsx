@@ -40,7 +40,7 @@ function OneMovement({ id, from, log }) {
     () => Promise.all([api.record(id), from.screen === 'session' ? api.session(from.id).catch(() => null) : null])
       .then(([record, detail]) => (record ? { record, session: detail?.session ?? null } : null)),
     [id, from.screen, from.id],
-    { sync: true, ready: api.ready !== false },
+    { sync: true, ready: Boolean(api?.ready) },
   );
   const [renaming, setRenaming] = useState(false);
 

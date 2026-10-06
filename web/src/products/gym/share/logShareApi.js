@@ -1,5 +1,5 @@
 import { API_BASE } from '../../../shell/apiBase.js';
-import { GymError } from '../gymApi.js';
+import { GymError } from '../errors.js';
 
 async function request(path, options = {}) {
   const response = await fetch(`${API_BASE}/v1/gym${path}`, {

@@ -32,11 +32,11 @@ test('the routine row’s overflow is Log past above Delete, and no surface offe
   assert.equal(source.includes('More for this routine'), false);
   assert.equal(/gym-routine-copy|gym-editor-duplicate|gym-editor-foot/.test(source), false);
   assert.equal(/gym-routine-copy|gym-editor-duplicate|gym-editor-foot/.test(read('gym.css')), false);
-  // The gate 13-gestures.md put in front of Delete is met: it is withheld, and the room's window is
-  // the only thing that ever sends it.
-  assert.equal((source.match(/api\.deleteRoutine/g) ?? []).length, 1);
+  // The gate 13-gestures.md put in front of Delete is met: it is a held engine death, and the room's
+  // window is its way back.
+  assert.equal((source.match(/engineDeath: \{ type: 'routine', id: routine\.id \}/g) ?? []).length, 1);
   assert.equal(source.includes("log.withhold({\n    kind: 'routine',"), true);
-  assert.ok(source.indexOf('const remove = (routine) => log.withhold(') < source.indexOf('api.deleteRoutine'));
+  assert.ok(source.indexOf('const remove = (routine) => log.withhold(') < source.indexOf("engineDeath: { type: 'routine'"));
 });
 
 test('every list of a routine’s entries is keyed on the position as well as the movement', () => {
@@ -67,7 +67,7 @@ test('the three tabs preserve their order and every pushed destination maps to a
 
 test('the live mirror heads the routines home and keeps its charter: no Finish, no countdown, the words when idle', () => {
   const routines = read('Routines.jsx');
-  assert.equal(routines.includes('<LiveMirror log={log} onSignIn={onSignIn} />'), true);
+  assert.equal(routines.includes('<LiveMirror log={log} />'), true);
   assert.ok(routines.indexOf('<LiveMirror') < routines.indexOf('<ul className="gym-routines">'));
   assert.equal(routines.includes("import { LiveMirror } from './Mirror.jsx';"), true);
   const mirror = speech('Mirror.jsx');
@@ -391,7 +391,7 @@ test('a deleted set is withheld for the window, never sent and re-posted, and th
   assert.equal(source.includes('setTimeout'), false, 'the screen arms no clock of its own');
   assert.equal(source.includes('UNDO_MS'), false);
   assert.equal(source.includes("kind: 'set',"), true);
-  assert.ok(source.indexOf('withhold({') < source.indexOf('api.deleteSet'));
+  assert.ok(source.indexOf('withhold({') < source.indexOf("engineDeath: { type: 'set', id: set.id }"));
   const room = read('useTrainingLog.js');
   assert.equal(room.includes('clocks.current.set(key, setTimeout(() => close(key), UNDO_MS));'), true);
   assert.equal(room.includes("import { UNDO_MS } from './fix.js';"), true);
@@ -419,7 +419,7 @@ test('leaving the room retires its UI clocks without sending a REST delete', () 
 test('every re-read of the session lets go of the corrections this screen was holding', () => {
   const source = read('Log.jsx');
   assert.equal(source.includes('const reread = () => {\n    setMoves(new Map());\n    view.retry();\n  };'), true);
-  assert.equal(source.includes('if (error.setNotFound) { closeFix(); reread();'), true);
+  assert.equal(source.includes("if (error.code === 'unknown-record') { closeFix(); reread();"), true);
   assert.equal(source.includes('<Button variant="secondary" size="sm" onClick={reread}>Retry</Button>'), true);
   assert.equal((source.match(/view\.retry/g) ?? []).length, 1);
 });
@@ -466,7 +466,7 @@ test('the CSV export is out of the product: no door, no string, no href, and no 
 
 test('the picker reads every movement’s last set when it opens, and never on a keystroke', () => {
   const picker = read('logger/MovementPicker.jsx');
-  assert.equal(picker.includes('const last = useGymRead(() => api.lastSets(), [], { sync: true, ready: api.ready !== false });'), true);
+  assert.equal(picker.includes('const last = useGymRead(() => api.lastSets(), [], { sync: true, ready: Boolean(api?.ready) });'), true);
   assert.equal((picker.match(/useGymRead\(/g) ?? []).length, 1);
   assert.equal(/useGymRead\([^;]*\[[^\]]*query/.test(picker), false);
   for (const host of ['Routines.jsx', 'backfill/Backfill.jsx', 'Record.jsx']) {
@@ -675,9 +675,9 @@ test('discarding a session is withheld and undoable, so it is not confirmed and 
   assert.equal(finish.includes('setConfirming'), false);
   assert.equal(finish.includes('gym-confirm'), false);
   assert.equal(finish.includes('DISCARD_CONFIRM'), false);
-  assert.equal((finish.match(/api\.discardSession/g) ?? []).length, 1);
+  assert.equal((finish.match(/engineDeath: \{ type: 'session', id \}/g) ?? []).length, 1);
   assert.equal(finish.includes("kind: 'session',"), true);
-  assert.ok(finish.indexOf('log.withhold({') < finish.indexOf('api.discardSession'));
+  assert.ok(finish.indexOf('log.withhold({') < finish.indexOf("engineDeath: { type: 'session', id }"));
   assert.equal(finish.includes('<button type="button" className="gym-short-discard" onClick={discard}>'), true);
   assert.equal(read('review.js').includes("export const SESSION_DELETED = 'Session deleted.';"), true);
   // The sentence became false the day the delete gained a way back, so it is nowhere in the room.
@@ -718,7 +718,7 @@ test('the Notes screen is its own room off #/gym/notes, titled as a room with th
   assert.equal(notes.includes('{countReadout(titleCountLabel(title))}'), true);
   assert.equal(/className="gym-note-title-input"[^/]*maxLength/.test(notes), false, 'no silent maxLength on the title');
   assert.equal(notes.includes('<Back href={NOTES_HREF} onClick={(event) => { event.preventDefault(); onClose(); }}>{NOTES_TITLE}</Back>'), true, 'the editor draws its back through Back.jsx');
-  assert.equal(notes.includes("if (error?.code === 'notes-full') onStale();"), true, 'a full account re-reads the list behind the editor');
+  assert.equal(notes.includes("if (error?.code === 'cap') onStale();"), true, 'a full account re-reads the list behind the editor');
   assert.equal(notes.includes('onStale={() => settle(null)}'), true);
   assert.equal(notes.includes('{!note.fresh && ('), true, 'delete is offered only on a stored note');
   // The cap is the STORE's count and the rows are the drawn list: a note held for deletion is off
@@ -979,9 +979,9 @@ test('bodyweight: the log actions open one sheet, the reading stays in options, 
   assert.equal(screen.includes("const hidden = log.hidden('bodyweight');"), true);
   assert.equal((screen.match(/hidden\('bodyweight'\)/g) ?? []).length, 1);
   assert.equal((screen.match(/log\.gone\('bodyweight'\)/g) ?? []).length, 1);
-  // The stance reads the account, the rows read the window, and the delete's send is the store call
+  // The stance reads the account, the rows read the window, and the delete is the engine's held death
   // and nothing else — a screen's own record of what the store took is the thing this replaced.
-  assert.equal(screen.includes('send: () => api.deleteBodyweight(dateLocal),'), true);
+  assert.equal(screen.includes("engineDeath: { type: 'weighin', id: dateLocal },"), true);
   assert.equal(screen.includes('const rows = entries.filter((entry) => !hidden.has(entry.dateLocal));'), true);
   assert.equal(screen.includes('weights.entries.length === 0'), true);
   assert.equal(screen.includes('windowOf(weights.rows, windowId, now)'), true);
@@ -1005,8 +1005,8 @@ test('the finished session’s detail has the discard door, through the same win
   const log = read('Log.jsx');
   assert.equal(log.includes('{isFinished(session) && <div className="gym-detail-discard">'), true);
   assert.equal(log.includes('<button type="button" className="gym-short-discard" onClick={discard}>Discard session</button>'), true);
-  assert.equal((log.match(/api\.discardSession/g) ?? []).length, 1);
-  assert.ok(log.indexOf("kind: 'session',") < log.indexOf('api.discardSession'));
+  assert.equal((log.match(/engineDeath: \{ type: 'session', id \}/g) ?? []).length, 1);
+  assert.ok(log.indexOf("kind: 'session',") < log.indexOf("engineDeath: { type: 'session', id }"));
   assert.equal(log.includes('line: SESSION_DELETED,'), true, 'the same sentence as the review’s discard');
   assert.equal(log.includes("window.location.hash = '#/gym/log';"), true);
   assert.equal(/gym-confirm|confirming/.test(log), false, 'no confirmation in front of an undoable act');

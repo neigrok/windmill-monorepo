@@ -1,36 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { API_BASE } from '../../../../src/shell/apiBase.js';
 import { dateLocalOf, joinsAcross } from '../../../../src/products/gym/bodyweight/bodyweight.js';
-import { browserWith, elementsOf, findByClass, loadScreen, renderHook, roomLog, settle, textOf } from '../harness.mjs';
-
-const realFetch = global.fetch;
-test.afterEach(() => { global.fetch = realFetch; });
+import {
+  browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle, textOf,
+} from '../harness.mjs';
 
 const TODAY = dateLocalOf(Date.now());
 
-// The bodyweight wire: the series read, PUTs answered with the stored row, DELETEs with nothing.
-function weighInsOnTheWire(entries, { putStatus = 200, putBody = null } = {}) {
-  const wire = [];
-  global.fetch = async (url, options = {}) => {
-    const path = url.slice(`${API_BASE}/v1/gym`.length);
-    const method = options.method ?? 'GET';
-    wire.push({ method, path, body: options.body ? JSON.parse(options.body) : null });
-    if (path === '/bodyweight' && method === 'GET') {
-      return { ok: true, status: 200, json: async () => ({ entries, latest: entries[entries.length - 1] ?? null }) };
-    }
-    if (path.startsWith('/bodyweight/') && method === 'PUT') {
-      if (putStatus !== 200) return { ok: false, status: putStatus, json: async () => putBody };
-      const sent = JSON.parse(options.body);
-      return { ok: true, status: 200, json: async () => ({ entry: { dateLocal: decodeURIComponent(path.slice('/bodyweight/'.length)), ...sent } }) };
-    }
-    if (path.startsWith('/bodyweight/') && method === 'DELETE') return { ok: true, status: 204, json: async () => { throw new Error('no body'); } };
-    if (path === '/exercises') return { ok: true, status: 200, json: async () => ({ exercises: [] }) };
-    throw new Error(`unexpected ${method} ${path}`);
-  };
-  return wire;
-}
+// The account's weigh-ins as the server confirmed them.
+const weighIns = (entries) => entries.map(({ dateLocal, weightKg, recordedAt }) => confirmed('weighin', dateLocal, { kg: weightKg, recordedAt }));
 
 const quietLog = () => roomLog();
 
@@ -39,9 +18,9 @@ const chartOf = (tree) => elementsOf(tree).find((each) => typeof each.type === '
 
 test('the log options read the last weigh-in and its age, and draw nothing at all without one', async (t) => {
   browserWith();
-  weighInsOnTheWire([{ dateLocal: TODAY, weightKg: 82.4, recordedAt: 1 }]);
+  await gymAccount(t, weighIns([{ dateLocal: TODAY, weightKg: 82.4, recordedAt: 1 }]));
   const { LogList } = await loadScreen('products/gym/Log.jsx');
-  const screen = renderHook(t, () => LogList({ log: quietLog(), onSignIn: () => {} }));
+  const screen = renderHook(t, () => LogList({ log: quietLog() }));
   await settle();
   const reading = elementsOf(screen.tree).find((each) => typeof each.type === 'function' && each.type.name === 'BodyweightReading');
   assert.deepEqual(reading.props.latest, { dateLocal: TODAY, weightKg: 82.4, recordedAt: 1 });
@@ -54,10 +33,12 @@ test('the log options read the last weigh-in and its age, and draw nothing at al
 });
 
 test('the log actions open one weigh-in sheet beside Add past workout and read the saved weight back', async (t) => {
+  const now = Date.now();
+  t.mock.timers.enable({ apis: ['Date'], now });
   browserWith();
-  const wire = weighInsOnTheWire([]);
+  const gym = await gymAccount(t);
   const { LogList } = await loadScreen('products/gym/Log.jsx');
-  const screen = renderHook(t, () => LogList({ log: quietLog(), onSignIn: () => {} }));
+  const screen = renderHook(t, () => LogList({ log: quietLog() }));
   await settle();
   const header = findByClass(screen.tree, 'gym-history-actions')[0];
   const footer = findByClass(screen.tree, 'gym-log-footer')[0];
@@ -77,10 +58,11 @@ test('the log actions open one weigh-in sheet beside Add past workout and read t
 
   const refused = await sheet.props.onSave({ dateLocal: TODAY, weightKg: 82.4, recordedAt: 7 });
   assert.equal(refused, null);
-  assert.deepEqual(wire[wire.length - 1], { method: 'PUT', path: `/bodyweight/${TODAY}`, body: { weightKg: 82.4, recordedAt: 7 } });
+  // The whole day is written again, stamped by the log's own clock at the moment it took the number.
+  assert.deepEqual(gym.owed(), [`ready put weighin ${TODAY} kg recordedAt`]);
   assert.equal(sheetOf(screen.tree), undefined, 'the sheet closes on a landed write');
   const reading = elementsOf(screen.tree).find((each) => typeof each.type === 'function' && each.type.name === 'BodyweightReading');
-  assert.deepEqual(reading.props.latest, { dateLocal: TODAY, weightKg: 82.4, recordedAt: 7 });
+  assert.deepEqual(reading.props.latest, { dateLocal: TODAY, weightKg: 82.4, recordedAt: now });
   findByClass(footer, 'gym-history-weigh')[0].props.onClick();
   assert.equal(elementsOf(screen.tree).filter((each) => typeof each.type === 'function' && each.type.name === 'WeighInSheet').length, 1);
   sheetOf(screen.tree).props.onClose();
@@ -88,16 +70,20 @@ test('the log actions open one weigh-in sheet beside Add past workout and read t
   assert.equal(findByClass(screen.tree, 'gym-keypad').length, 0);
 });
 
-test('a refused save shows the store’s own sentence in the sheet and leaves it open', async (t) => {
+test('a refused save shows the log’s own sentence in the sheet and leaves it open', async (t) => {
   browserWith();
-  weighInsOnTheWire([], { putStatus: 400, putBody: { error: 'Between 20 and 400 kg — check the number.' } });
+  const gym = await gymAccount(t);
   const { LogList } = await loadScreen('products/gym/Log.jsx');
-  const screen = renderHook(t, () => LogList({ log: quietLog(), onSignIn: () => {} }));
+  const screen = renderHook(t, () => LogList({ log: quietLog() }));
   await settle();
   findByClass(screen.tree, 'gym-history-weigh')[0].props.onClick();
-  const refused = await sheetOf(screen.tree).props.onSave({ dateLocal: TODAY, weightKg: 420, recordedAt: 7 });
-  assert.equal(refused, 'Between 20 and 400 kg — check the number.');
+  // Another tab signed this account out under the open sheet: the log refuses the write, in its words.
+  const commit = gym.engine.commit.bind(gym.engine);
+  t.mock.method(gym.engine, 'commit', (scope, build) => commit(scope, (views) => build({ ...views, replica: 'anotherAccount' })));
+  const refused = await sheetOf(screen.tree).props.onSave({ dateLocal: TODAY, weightKg: 82.4, recordedAt: 7 });
+  assert.equal(refused, 'Sign in to save to your training log.');
   assert.notEqual(sheetOf(screen.tree), undefined);
+  assert.deepEqual(gym.owed(), []);
 });
 
 test('the sheet: a plain decimal field with no hint, a date defaulting to today, refusals one at a time on Save', async (t) => {
@@ -139,7 +125,7 @@ test('the sheet: a plain decimal field with no hint, a date defaulting to today,
   findByClass(screen.tree, 'gym-weigh-save')[0].props.onClick();
   await settle();
   assert.equal(textOf(findByClass(screen.tree, 'gym-weigh-refusal')[0]), 'A weigh-in is not a forecast — today or earlier.');
-  assert.deepEqual(saved, [], 'a forecast never reaches the wire');
+  assert.deepEqual(saved, [], 'a forecast never reaches the log');
 
   findByClass(screen.tree, 'gym-weigh-date-input')[0].props.onChange({ target: { value: '2026-08-20' } });
   findByClass(screen.tree, 'gym-weigh-save')[0].props.onClick();
@@ -178,11 +164,11 @@ test('the chart screen: a dot per weigh-in in the stated window, the rule printe
   browserWith();
   const today = new Date();
   const daysAgo = (days) => { const day = new Date(today); day.setDate(day.getDate() - days); return dateLocalOf(day.getTime()); };
-  const wire = weighInsOnTheWire([
+  const gym = await gymAccount(t, weighIns([
     { dateLocal: daysAgo(120), weightKg: 84, recordedAt: 1 },
     { dateLocal: daysAgo(30), weightKg: 83.1, recordedAt: 2 },
     { dateLocal: daysAgo(2), weightKg: 82.4, recordedAt: 3 },
-  ]);
+  ]));
   const { BodyweightScreen } = await loadScreen('products/gym/bodyweight/Bodyweight.jsx');
   const screen = renderHook(t, () => BodyweightScreen({ log: quietLog() }));
   await settle();
@@ -210,24 +196,24 @@ test('the chart screen: a dot per weigh-in in the stated window, the rule printe
   assert.equal(typeof sheet.props.onDelete, 'function');
 
   // The delete goes to the room's window, so the sheet — which would sit over the only Undo there
-  // is — closes in the same act, and nothing at all is on the wire. This room's `withhold` is a
+  // is — closes in the same act, and the screen writes nothing itself. This room's `withhold` is a
   // no-op, so what the window then does to the dot and the head reading is proved in
   // withheldWindow.test.js and nowhere here.
   sheet.props.onDelete(daysAgo(30));
   await settle();
-  assert.deepEqual(wire.filter((each) => each.method === 'DELETE'), []);
+  assert.deepEqual(gym.owed(), []);
   assert.equal(sheetOf(screen.tree), undefined);
 });
 
 test('a served row dated after the device’s local today is never the log’s latest reading and never a dot', async (t) => {
   browserWith();
   const forecast = { dateLocal: '2031-01-05', weightKg: 70, recordedAt: 9 };
-  weighInsOnTheWire([{ dateLocal: TODAY, weightKg: 82.4, recordedAt: 1 }, forecast]);
+  await gymAccount(t, weighIns([{ dateLocal: TODAY, weightKg: 82.4, recordedAt: 1 }, forecast]));
   const { LogList } = await loadScreen('products/gym/Log.jsx');
-  const log = renderHook(t, () => LogList({ log: quietLog(), onSignIn: () => {} }));
+  const log = renderHook(t, () => LogList({ log: quietLog() }));
   await settle();
   const reading = elementsOf(log.tree).find((each) => typeof each.type === 'function' && each.type.name === 'BodyweightReading');
-  assert.deepEqual(reading.props.latest, { dateLocal: TODAY, weightKg: 82.4, recordedAt: 1 }, 'the wire’s `latest` is not the reading; the newest past day is');
+  assert.deepEqual(reading.props.latest, { dateLocal: TODAY, weightKg: 82.4, recordedAt: 1 }, 'the series’ own `latest` is not the reading; the newest past day is');
 
   const { BodyweightScreen } = await loadScreen('products/gym/bodyweight/Bodyweight.jsx');
   const screen = renderHook(t, () => BodyweightScreen({ log: quietLog() }));
@@ -241,7 +227,7 @@ test('a served row dated after the device’s local today is never the log’s l
 
 test('the chart screen with nothing to draw says so in words and draws no frame', async (t) => {
   browserWith();
-  weighInsOnTheWire([]);
+  await gymAccount(t);
   const { BodyweightScreen } = await loadScreen('products/gym/bodyweight/Bodyweight.jsx');
   const screen = renderHook(t, () => BodyweightScreen({ log: quietLog() }));
   await settle();

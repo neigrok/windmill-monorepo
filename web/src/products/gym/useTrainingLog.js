@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSyncRecords } from '../../platform/sync/react.js';
 import { UNDO_MS } from './fix.js';
-import { failureReason } from './gymApi.js';
+import { failureReason } from './errors.js';
 import { useGymApi, gymStep } from './gymSync.js';
 import { projectGym } from './syncProjections.js';
 import { mintId } from './mint.js';
@@ -13,20 +13,18 @@ import { goneIds, hiddenIds, openHeld, transientOf, UNDO_LABEL, WINDOW_CLOSED, w
 const LOG_PAGE = 50;
 const TOAST_MS = 9000;
 
-export function useTrainingLog({ api: injected } = {}) {
-  const boundApi = useGymApi();
-  const api = injected ?? boundApi;
+export function useTrainingLog() {
+  const api = useGymApi();
   const records = useSyncRecords('self/gym');
   const [depth, setDepth] = useState(LOG_PAGE);
   const [expiry, expire] = useState(0);
   const [toast, setToast] = useState(null);
   const [, redrawWindow] = useState(0);
   const spoke = useRef(0);
-  const [injectedData, setInjectedData] = useState(null);
-  const projection = useMemo(() => projectGym(records.drawn, {
+  const projection = useMemo(() => projectGym(records.stored, {
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   }), [records, expiry]);
-  const ready = api.ready !== false && (Boolean(injected) || records.firstPullComplete || records.drawn.length > 0);
+  const ready = Boolean(api?.ready);
   const phase = ready ? 'ready' : 'loading';
   const summaries = [];
   while (summaries.length < depth) {
@@ -36,32 +34,23 @@ export function useTrainingLog({ api: injected } = {}) {
     summaries.push(...page);
     if (page.length === 0) break;
   }
-  if (injectedData) summaries.splice(0, summaries.length, ...injectedData.summaries);
-  const open = records.drawn.find((row) => row.t === 'session' && row.life?.[0] !== 'dead' && row.f?.finishedAt === undefined);
+  const open = records.stored.find((row) => row.t === 'session' && row.life?.[0] !== 'dead' && row.f?.finishedAt === undefined);
   const detail = open ? projection.session(open.id) : null;
   const session = detail?.session.finishedAt == null ? detail?.session ?? null : null;
   const sets = session ? detail.sets : [];
-  const catalog = injectedData?.catalog ?? projection.exercises();
-  const preferences = readPreferences(injectedData?.preferences ?? projection.preferences());
+  const catalog = projection.exercises();
+  const preferences = readPreferences(projection.preferences());
   const progress = ready ? { phase: 'ready', data: projection.progress() } : { phase: 'loading', data: null };
   useEffect(() => { spellWeightsIn(preferences.units); }, [preferences.units]);
   useEffect(() => {
-    const open = records.drawn.find((row) => row.t === 'session' && row.life?.[0] !== 'dead' && row.f?.finishedAt === undefined);
+    const open = records.stored.find((row) => row.t === 'session' && row.life?.[0] !== 'dead' && row.f?.finishedAt === undefined);
     if (!open) return undefined;
-    const activity = Math.max(open.f.startedAt[0], ...records.drawn.filter((row) => row.t === 'set' && row.life?.[0] !== 'dead' && row.f?.sessionId?.[0] === open.id).map((row) => row.f.completedAt[0]));
+    const activity = Math.max(open.f.startedAt[0], ...records.stored.filter((row) => row.t === 'set' && row.life?.[0] !== 'dead' && row.f?.sessionId?.[0] === open.id).map((row) => row.f.completedAt[0]));
     const remaining = activity + 4 * 3600_000 - Date.now();
     if (remaining <= 0) return undefined;
     const timer = setTimeout(() => expire((count) => count + 1), remaining);
     return () => clearTimeout(timer);
   }, [records]);
-  useEffect(() => {
-    if (!injected) return;
-    let alive = true;
-    Promise.all([injected.exercises(), injected.sessions({ limit: depth }), injected.preferences()]).then(([catalog, summaries, preferences]) => {
-      if (alive) setInjectedData({ catalog, summaries, preferences });
-    }).catch(() => {});
-    return () => { alive = false; };
-  }, [injected, depth]);
 
   const say = useCallback((text, { action = null } = {}) => {
     spoke.current += 1;
@@ -95,20 +84,17 @@ export function useTrainingLog({ api: injected } = {}) {
   }, [publish]);
 
   const withhold = useCallback(({ kind, id, line, detail = null, send = null, refused = null, undo = null, engineDeath = null }) => {
-    if (engineDeath && api.ready === false) return;
+    if (engineDeath && !api?.ready) return;
     const key = withheldKey(kind, id);
     if (withheld.current.some((each) => each.key === key)) return;
-    const durable = engineDeath && api.holdDeath;
-    const pending = durable ? api.holdDeath(engineDeath.type, engineDeath.id) : null;
+    const pending = engineDeath ? api.holdDeath(engineDeath.type, engineDeath.id) : null;
     spoke.current += 1;
     publish([...withheld.current, { key, kind, id, line, detail, send, refused, undo,
-      engineDeath: durable ? engineDeath : null, pending, at: spoke.current, settling: false }]);
+      engineDeath, pending, at: spoke.current, settling: false }]);
     if (pending) pending.then(() => {
       if (roomLive.current && withheld.current.some((each) => each.key === key)) clocks.current.set(key, setTimeout(() => close(key), UNDO_MS));
     }).catch((error) => {
       if (!roomLive.current) return;
-      clearTimeout(clocks.current.get(key));
-      clocks.current.delete(key);
       publish(withheld.current.filter((each) => each.key !== key));
       refused?.(error);
     });
@@ -197,8 +183,6 @@ export function useTrainingLog({ api: injected } = {}) {
     publish(withheld.current.filter((each) => !released.includes(each)));
   }, [records, publish]);
 
-  const reloadLog = useCallback(async () => {}, []);
-  const retryBoot = reloadLog;
   const createMovement = useCallback(async ({ name, equipment }) => {
     try { return await api.createExercise({ id: mintId('ex_'), name: name.trim(), equipment, pattern: CREATED_PATTERN }); }
     catch (error) { say(`That movement wasn’t created — ${failureReason(error)}.`); return null; }
@@ -236,10 +220,10 @@ export function useTrainingLog({ api: injected } = {}) {
     dismiss: spoken.undoable ? null : dismissToast,
   };
   return {
-    phase, revision: records, progress, reloadProgress: reloadLog, failure: null, retryBoot,
-    session, sets, catalog, summaries, preferences,
+    phase, revision: records, progress,
+    session, sets: sets.filter((set) => !hidden('set').has(set.id)), catalog, summaries, preferences,
     older: { status: summaries.length < depth ? 'end' : 'more', load: () => setDepth((count) => count + LOG_PAGE) },
-    reloadLog, createMovement, renameMovement, say, transient, held: withheld.current, hidden, gone,
+    createMovement, renameMovement, say, transient, held: withheld.current, hidden, gone,
     withhold, undoWithheld, dropWithheld, writtenAgain,
   };
 }

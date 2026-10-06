@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Icon } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
-import { failureReason } from './gymApi.js';
+import { failureReason } from './errors.js';
 import { BodyweightReading, useBodyweight, WeighInSheet } from './bodyweight/Bodyweight.jsx';
 import { WEIGH_IN_VERB } from './bodyweight/bodyweight.js';
 import { deletedLine, deleteFailure, fixFailure, setsAfter } from './fix.js';
@@ -15,7 +15,7 @@ import { SESSION_DELETED } from './review.js';
 import { ShareWorkout } from './share/ShareWorkout.jsx';
 import { useGymRead } from './useGymRead.js';
 import { useGymApi } from './gymSync.js';
-import { collapsedScheme, emptyHistoryLine, historyHref, historyQuery, historyTotals, workoutTotals, yearsOf } from './logbook/history.js';
+import { collapsedScheme, emptyHistoryLine, historyHref, historyQuery, historyTotals, withoutRows, workoutTotals, yearsOf } from './logbook/history.js';
 import { useHistory, useHistoryDates } from './logbook/useHistory.js';
 import { DateJump } from './logbook/DateJump.jsx';
 import { weightUnit } from './units.js';
@@ -23,24 +23,7 @@ import { WorkoutEditor } from './correction/WorkoutEditor.jsx';
 import { ProgressCards } from './progress/Progress.jsx';
 import { consistencyLine } from './progress/progress.js';
 
-export function LogNotOpen({ log, onSignIn }) {
-  if (log.failure === 'signed-out') {
-    return (
-      <p className="gym-read-failed">
-        Your sign-in lapsed.
-        <Button variant="secondary" size="sm" onClick={onSignIn}>Sign in</Button>
-      </p>
-    );
-  }
-  return (
-    <p className="gym-read-failed">
-      {log.failure === 'signal' ? 'The log didn’t load. Open it again when you have signal.' : 'The log didn’t answer.'}
-      <Button variant="secondary" size="sm" onClick={log.retryBoot}>Retry</Button>
-    </p>
-  );
-}
-
-export function LogList({ log, onSignIn, hash = '#/gym/log', sessionId = null, fixSetId = null, edit = false, positions = null, pagePositions = null }) {
+export function LogList({ log, hash = '#/gym/log', sessionId = null, fixSetId = null, edit = false, positions = null, pagePositions = null }) {
   const filters = historyQuery(hash);
   const localPositions = useRef(new Map());
   const index = useRef(null);
@@ -132,7 +115,7 @@ export function LogList({ log, onSignIn, hash = '#/gym/log', sessionId = null, f
         <HistoryFilter label="Movement" value={filters.exercise} onChange={(exercise) => moveFilter({ exercise })} options={exerciseOptions} />
         <HistoryFilter label="Routine" value={filters.routine} onChange={(routine) => moveFilter({ routine })} options={routineOptions} />
       </div>
-      {history.data?.summary && <p className="gym-log-count">{historyTotals(history.data.summary)}</p>}
+      {history.data?.summary && <p className="gym-log-count">{historyTotals(withoutRows(history.data.summary, (history.data.sessions ?? []).filter((session) => hidden.has(session.id))))}</p>}
       {history.phase === 'loading' && !history.data && <p className="gym-quiet">Opening the log…</p>}
       {history.failure && <p className="gym-read-failed">The log didn’t load. <Button size="sm" variant="secondary" onClick={history.retry}>Retry</Button></p>}
       {history.phase === 'ready' && stored.length === 0 && !noMatches && <p className="gym-quiet">No sessions yet.</p>}
@@ -197,12 +180,12 @@ function SessionRow({ summary, selected, href, unit }) {
 
 export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', edit = false, fixSetId = null }) {
   const api = useGymApi();
-  const { say, reloadLog, withhold } = log;
+  const { say, withhold } = log;
   const view = useGymRead(
     () => Promise.all([api.session(id), api.exercises()])
       .then(([detail, catalog]) => (detail ? { detail, catalog } : null)),
     [id],
-    { sync: true, ready: api.ready !== false },
+    { sync: true, ready: Boolean(api?.ready) },
   );
   const [moves, setMoves] = useState(() => new Map());
   useEffect(() => setMoves(new Map()), [view.data]);
@@ -217,10 +200,6 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
       id: set.id,
       engineDeath: { type: 'set', id: set.id },
       line: deletedLine(set),
-      send: async () => {
-        await api.deleteSet(id, set.id);
-        await reloadLog();
-      },
       refused: (error) => say(deleteFailure(error)),
     });
   };
@@ -232,10 +211,6 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
       id,
       engineDeath: { type: 'session', id },
       line: SESSION_DELETED,
-      send: async () => {
-        await api.discardSession(id);
-        await reloadLog();
-      },
       refused: (error) => say(`That session wasn’t discarded — ${failureReason(error)}.`),
     });
     window.location.hash = '#/gym/log';
@@ -253,14 +228,14 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
       setMoves((current) => new Map(current).set(set.id, stored));
       closeFix();
     } catch (error) {
-      if (error.setNotFound) { closeFix(); reread(); say(fixFailure(error)); return null; }
+      if (error.code === 'unknown-record') { closeFix(); reread(); say(fixFailure(error)); return null; }
       return fixFailure(error);
     }
-    reloadLog();
   };
 
   if (view.phase === 'loading') return <p className="gym-quiet">Opening the session…</p>;
-  if (view.phase === 'absent') {
+  // A session its delete window holds is gone from its own screen, as its row is from the log.
+  if (view.phase === 'absent' || log.hidden('session').has(id)) {
     return (
       <>
         {!embedded && <Back href={from}>The log</Back>}

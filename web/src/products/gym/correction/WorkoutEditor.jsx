@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
-import { failureReason } from '../gymApi.js';
+import { failureReason } from '../errors.js';
 import { useGymApi } from '../gymSync.js';
 import { dayLabel, fmtKg, groupByExercise, NO_ROUTINE, routineNameOf, sessionHref, shortDayLabel } from '../log.js';
 import { mintId } from '../mint.js';
@@ -53,10 +53,9 @@ export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
     setBusy(true);
     try {
       await api.correctSession(session.id, { ...parsed.value, requestId: request.current.id });
-      await log.reloadLog();
       window.location.hash = back;
     } catch (error) {
-      setFailure({ reason: error.detail || `Those changes didn’t land — ${failureReason(error)}.` });
+      setFailure({ reason: error.sentence || `Those changes didn’t land — ${failureReason(error)}.` });
       setBusy(false);
     }
   };

@@ -4,7 +4,8 @@ import { recordKey } from '../../platform/sync/core/rows.js';
 import { jcs } from '../../platform/sync/core/jcs.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
-import { GymError, gymApi } from './gymApi.js';
+import { GymRefusal } from './errors.js';
+import { BODY_BYTES, FULL_LINE, isBodyOverCap, isTitleOverCap, TITLE_MAX } from './notes/notes.js';
 import { projectGym } from './syncProjections.js';
 import { readPreferences } from './settings/preferences.js';
 
@@ -28,28 +29,23 @@ export function gymFailure(operation) {
   try { captureError('gym', `gym-${operation}`, '', '/gym'); } catch { /* reporting cannot stop a save */ }
 }
 
-export function gymRefusal(code, detail, projection) {
-  const mapped = { stale: 'routine-stale', 'record-dead': 'session-deleted', cap: 'notes-full',
-    'unknown-record': 'set-not-found' }[code] ?? code;
-  const sentences = {
-    stale: 'This changed on another device. Read it again before saving.',
-    cap: '10 of 10 notes. Delete one to add another.',
-    'session-open': 'that session is still running',
-    'session-overlap': 'these times cross a session already in the log',
-    'bad-instant': 'These times run past now or outside the workout.',
-    'not-writable': 'Sign in to save to your training log.',
-    'proposal-superseded': 'That proposal has been superseded.',
-    'proposal-settled': 'That proposal has already been settled.',
-  };
-  return new GymError(code === 'not-writable' ? 401 : 409,
-    sentences[code] ?? 'The log wouldn’t take this change as written.', mapped,
-    detail?.sessionId ? { session: projection?.session(detail.sessionId)?.session } : null);
-}
+const SENTENCES = {
+  stale: 'This changed on another device. Read it again before saving.',
+  cap: FULL_LINE,
+  'session-open': 'that session is still running',
+  'session-overlap': 'these times cross a session already in the log',
+  'bad-instant': 'These times run past now or outside the workout.',
+  'not-writable': 'Sign in to save to your training log.',
+  'proposal-superseded': 'That proposal has been superseded.',
+  'proposal-settled': 'That proposal has already been settled.',
+};
+
+const refusal = (code, { sentence = SENTENCES[code], overlapping = null } = {}) => new GymRefusal(code, { sentence, overlapping });
 
 export function createGymApi(engine, { event = gymStep, failure = gymFailure } = {}) {
   const replica = engine.activeReplica();
   const snapshot = () => engine.observe(SCOPE).getSnapshot();
-  const project = (rows = snapshot().drawn, now = Date.now()) => projectGym(rows, {
+  const project = (rows = snapshot().stored, now = Date.now()) => projectGym(rows, {
     now, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
   const attachBase = (value, t, id) => {
@@ -61,33 +57,33 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
   const commit = async (operation, build) => {
     try {
       const result = await engine.commit(SCOPE, (views) => {
-        if (views.replica !== replica) throw gymRefusal('not-writable');
+        if (views.replica !== replica) throw refusal('not-writable');
         return build(views);
       });
-      if (result.outcome?.refused) throw gymRefusal(result.outcome.refused, result.outcome.detail, project());
+      if (result.outcome?.refused) throw refusal(result.outcome.refused);
       event(operation, 'saved-local');
       return result.value;
     } catch (error) {
       event(operation, 'failed');
-      if (!(error instanceof GymError)) failure(operation);
+      if (!(error instanceof GymRefusal)) failure(operation);
       throw error;
     }
   };
   const guarded = (views, t, id, fields, base) => {
     const row = views.drawn.get(recordKey(t, id));
-    if (!row || row.life?.[0] === 'dead') throw gymRefusal('record-dead');
+    if (!row || row.life?.[0] === 'dead') throw refusal('record-dead');
     const original = base?.[BASE];
-    if (!original || original.replica !== replica || jcs(original.row?.born ?? null) !== jcs(row.born ?? null)) throw gymRefusal('stale');
-    for (const field of fields) if (jcs(original.row.f?.[field] ?? null) !== jcs(row.f?.[field] ?? null)) throw gymRefusal('stale');
+    if (!original || original.replica !== replica || jcs(original.row?.born ?? null) !== jcs(row.born ?? null)) throw refusal('stale');
+    for (const field of fields) if (jcs(original.row.f?.[field] ?? null) !== jcs(row.f?.[field] ?? null)) throw refusal('stale');
     return fields.map((field) => ({ t, id, field }));
   };
   const fieldsOfRoutine = ({ name, position = 0, entries }) => ({ name, position,
     entries: entries.map(({ exerciseId, sets, restSeconds }) => ({ exerciseId,
       ...(sets === undefined ? {} : { sets }), ...(restSeconds == null ? {} : { restSeconds }) })) });
-  const api = { ...gymApi, ready: true, sync: true };
+  const api = { sync: true };
   for (const name of READS) api[name] = async (...args) => {
     try {
-    const value = project(name === 'notes' || name === 'bodyweight' ? snapshot().stored : snapshot().drawn)[name](...args);
+    const value = project()[name](...args);
     if (name === 'routine') return attachBase(value, 'routine', args[0]);
     if (name === 'routines') return value.map((routine) => attachBase(routine, 'routine', routine.id));
     if (name === 'notes') return value.map((note) => attachBase(note, 'note', note.id));
@@ -115,9 +111,9 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
     gesture: { changes: [{ op: 'write', t: 'prefs', id: 'prefs', f: readPreferences(document) }] }, value: readPreferences(document),
   }));
   api.saveNote = (id, note, base) => commit('note-save', (views) => {
-    if (!note.title.trim()) throw new GymError(400, 'a note needs a title', 'invalid');
-    if ([...note.title].length > 60) throw new GymError(400, 'a title runs to 60 characters', 'invalid');
-    if (new TextEncoder().encode(note.body).length > 500) throw new GymError(400, 'a note runs to 500 bytes', 'invalid');
+    if (!note.title.trim()) throw refusal('invalid', { sentence: 'a note needs a title' });
+    if (isTitleOverCap(note.title)) throw refusal('invalid', { sentence: `a title runs to ${TITLE_MAX} characters` });
+    if (isBodyOverCap(note.body)) throw refusal('invalid', { sentence: `a note runs to ${BODY_BYTES} bytes` });
     const exists = views.drawn.get(recordKey('note', id));
     const changes = [{ op: exists ? 'update' : 'create', t: 'note', id,
       f: { title: note.title, body: note.body },
@@ -125,17 +121,13 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
     const guard = exists ? guarded(views, 'note', id, ['title', 'body'], base) : [];
     return { gesture: { changes, opts: { guard } }, value: { id, ...note, position: base?.position ?? project([...views.stored.values()], views.now).notes().length } };
   });
-  api.reorderNotes = (order) => commit('note-reorder', (views) => {
+  api.moveNote = (id, below) => commit('note-reorder', (views) => {
     const notes = project([...views.stored.values()], views.now).notes();
-    if (order.length !== notes.length || new Set(order).size !== order.length || order.some((id) => !notes.some((note) => note.id === id))) throw gymRefusal('invalid');
-    const moved = order.find((id, index) => notes[index].id !== id);
-    if (!moved) return { gesture: null, value: notes };
-    // The UI moves one row. Select the candidate whose removal leaves the same order.
-    const id = order.find((candidate) => jcs(order.filter((each) => each !== candidate)) === jcs(notes.map((note) => note.id).filter((each) => each !== candidate)));
-    if (!id) throw gymRefusal('invalid');
-    const index = order.indexOf(id);
-    return { gesture: { changes: [{ op: 'move', t: 'note', id, anchor: { field: 'ord', below: order[index - 1] ?? null } }] },
-      value: order.map((key, position) => ({ ...notes.find((note) => note.id === key), position })) };
+    const rest = notes.filter((note) => note.id !== id);
+    const at = rest.findIndex((note) => note.id === below) + 1;
+    if (rest.length === notes.length || (below !== null && at === 0)) throw refusal('unknown-record');
+    return { gesture: { changes: [{ op: 'move', t: 'note', id, anchor: { field: 'ord', below } }] },
+      value: [...rest.slice(0, at), notes.find((note) => note.id === id), ...rest.slice(at)].map((note, position) => ({ ...note, position })) };
   });
   api.saveBodyweight = (id, { weightKg }) => commit('bodyweight-save', (views) => ({
     gesture: { changes: [{ op: 'put', t: 'weighin', id, f: { kg: weightKg, recordedAt: views.now } }], opts: { retire: [{ t: 'weighin', id }] } },
@@ -143,21 +135,21 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
   }));
   api.fixSet = (sessionId, id, fix) => commit('set-correct', (views) => {
     const row = views.drawn.get(recordKey('set', id));
-    if (!row || row.life?.[0] === 'dead' || row.f?.sessionId?.[0] !== sessionId) throw gymRefusal('unknown-record');
+    if (!row || row.life?.[0] === 'dead' || row.f?.sessionId?.[0] !== sessionId) throw refusal('unknown-record');
     const old = project([...views.drawn.values()], views.now).session(sessionId)?.sets.find((set) => set.id === id);
     return { gesture: { changes: [{ op: 'update', t: 'set', id, f: fix }] }, value: { ...old, ...fix } };
   });
   api.holdDeath = async (t, id) => {
     try {
       const answer = await engine.commit(SCOPE, (views) => {
-        if (views.replica !== replica) throw gymRefusal('not-writable');
+        if (views.replica !== replica) throw refusal('not-writable');
         return { gesture: { changes: [{ op: 'delete', t, id }], opts: { hold: true } }, value: null };
       });
       const result = answer.outcome;
-      if (result?.refused) throw gymRefusal(result.refused, result.detail, project());
+      if (result?.refused) throw refusal(result.refused);
       event('delete', 'held');
       return result.localIds[0]?.slice(0, result.localIds[0].lastIndexOf('/'));
-    } catch (error) { event('delete', 'failed'); if (!(error instanceof GymError)) failure('delete'); throw error; }
+    } catch (error) { event('delete', 'failed'); if (!(error instanceof GymRefusal)) failure('delete'); throw error; }
   };
   api.undoDeath = async (gestureId) => {
     try { const result = await engine.undo(gestureId); event('delete', result ? 'undone' : 'closed'); return result; }
@@ -167,13 +159,15 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
     gesture: { changes: [], opts: { cmd: { name, args }, predict: predict(views) } }, value: value(views),
   }));
   const checkWorkout = (views, args, sessionId = null) => {
-    if (![args.startedAt, args.finishedAt].every(Number.isSafeInteger) || args.startedAt <= 0 || args.finishedAt < args.startedAt || args.finishedAt > views.now || args.sets.some((set) => !Number.isSafeInteger(set.completedAt) || set.completedAt < args.startedAt || set.completedAt > args.finishedAt)) throw gymRefusal('bad-instant');
-    if (args.sets.length > 200 || (sessionId && args.sets.length === 0) || new Set(args.sets.map((set) => set.id)).size !== args.sets.length) throw gymRefusal('invalid');
+    if (![args.startedAt, args.finishedAt].every(Number.isSafeInteger) || args.startedAt <= 0 || args.finishedAt < args.startedAt || args.finishedAt > views.now || args.sets.some((set) => !Number.isSafeInteger(set.completedAt) || set.completedAt < args.startedAt || set.completedAt > args.finishedAt)) throw refusal('bad-instant');
+    if (args.sets.length > 200 || (sessionId && args.sets.length === 0) || new Set(args.sets.map((set) => set.id)).size !== args.sets.length) throw refusal('invalid');
     for (const row of views.drawn.values()) {
       if (row.t !== 'session' || row.life?.[0] === 'dead' || row.id === sessionId || row.id === args.id) continue;
       const start = row.f.startedAt[0];
       const end = Math.max(row.f.finishedAt?.[0] ?? views.now, start + 1);
-      if (args.startedAt < end && start < Math.max(args.finishedAt, args.startedAt + 1)) throw gymRefusal('session-overlap', { sessionId: row.id }, project([...views.drawn.values()], views.now));
+      if (args.startedAt < end && start < Math.max(args.finishedAt, args.startedAt + 1)) {
+        throw refusal('session-overlap', { overlapping: project([...views.drawn.values()], views.now).session(row.id).session });
+      }
     }
   };
   api.importSession = (args) => command('session-import', 'gym.importSession', args, (views) => {
@@ -194,8 +188,8 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
     const args = { sessionId, ...correction };
     return command('session-correct', 'gym.correctSession', args, (views) => {
       const session = views.drawn.get(recordKey('session', sessionId));
-      if (!session || session.life?.[0] === 'dead') throw gymRefusal('unknown-record');
-      if (session.f.finishedAt === undefined) throw gymRefusal('session-open');
+      if (!session || session.life?.[0] === 'dead') throw refusal('unknown-record');
+      if (session.f.finishedAt === undefined) throw refusal('session-open');
       checkWorkout(views, args, sessionId);
       const standing = [...views.drawn.values()].filter((row) => row.t === 'set' && row.life?.[0] !== 'dead' && row.f?.sessionId?.[0] === sessionId);
       return [{ op: 'update', t: 'session', id: sessionId, f: { startedAt: args.startedAt, finishedAt: args.finishedAt,
@@ -209,9 +203,9 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
   for (const verb of ['apply', 'dismiss']) api[`${verb}Proposal`] = (id) => command(`proposal-${verb}`, `gym.${verb}Proposal`, { proposalId: id }, (views) => {
     const projection = project([...views.drawn.values()], views.now);
     const proposal = projection.proposal(id);
-    if (!proposal) throw gymRefusal('unknown-record');
-    if (proposal.state === 'superseded') throw gymRefusal('proposal-superseded');
-    if (proposal.state === (verb === 'apply' ? 'dismissed' : 'applied')) throw gymRefusal('proposal-settled');
+    if (!proposal) throw refusal('unknown-record');
+    if (proposal.state === 'superseded') throw refusal('proposal-superseded');
+    if (proposal.state === (verb === 'apply' ? 'dismissed' : 'applied')) throw refusal('proposal-settled');
     const predict = [{ op: 'update', t: 'proposal', id, f: { state: verb === 'apply' ? 'applied' : 'dismissed', settledAt: views.now } }];
     if (verb === 'dismiss') return predict;
     if (proposal.intent === 'remove') return [...predict, { op: 'delete', t: 'routine', id: proposal.routineId }];
@@ -225,7 +219,7 @@ export function useGymApi() {
   const engine = useSyncEngine();
   const records = useSyncRecords(SCOPE);
   const ready = records.firstPullComplete || records.drawn.length > 0;
-  return useMemo(() => engine ? { ...createGymApi(engine), ready } : gymApi, [engine, records.replica, ready]);
+  return useMemo(() => engine ? { ...createGymApi(engine), ready } : null, [engine, records.replica, ready]);
 }
 
 export function prepareGymSync(engine) {

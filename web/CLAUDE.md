@@ -76,6 +76,7 @@ The auth provider opens the browser sync engine once for this document and owns 
 Product preparations run before networking; occupied rooms pin Add/Discard, and sign-out pins
 Keep/Discard after the bounded flush. `platform/sync/react.js` exports `useSyncEngine()` and
 `useSyncRecords(scope)`. The anonymous journal uses record observations; Gym retains its account gate.
+Gym and journal records change only through the engine; their REST clients carry server features.
 The worker stages the shell and room dependencies listed by `offline-assets.json` in one verified
 cache generation before promoting it; a failed update retains the previous complete shell. The build
 enforces a 4 MiB precache budget. Neural search loads its worker and WASM runtime on first search use.

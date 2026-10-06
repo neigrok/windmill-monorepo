@@ -71,7 +71,8 @@ test('v5 authoritative gym fields and independent routine creation snapshots sur
   assert.deepEqual({ baseRevision: proposal.baseRevision, baseName: proposal.baseName, changeCount: proposal.changeCount }, { baseRevision: 6, baseName: 'Frozen lower', changeCount: 2 });
   assert.deepEqual((await resumed.notes()).map(({ id, position, title, body, updatedAt }) => ({ id, position, title, body, updatedAt })), [{ id: 'note000001', position: 0, title: 'Edited', body: '', updatedAt: 500 }]);
   await resumed.holdDeath('routine', routine.id);
-  assert.equal(await resumed.routine(routine.id), null);
+  assert.equal(opened.engine.observe('self/gym').getSnapshot().drawn.find((row) => row.t === 'routine').life[0], 'dead');
+  assert.equal((await resumed.routine(routine.id)).id, routine.id, 'a held delete stays in the store until its release');
   assert.equal(registry.type('routineCreation').field('snapshot').writer, 'server');
   assert.deepEqual(opened.engine.observe('self/gym').getSnapshot().drawn.find((row) => row.t === 'routineCreation').f.snapshot[0], receipt);
   assert.equal(opened.engine.device.activeReplica.outbox.some((entry) => entry.intent.d.some((delta) => delta.t === 'routineCreation')), false);
@@ -85,20 +86,27 @@ test('routine saves persist schemes and guards; stale bases refuse without parti
   await api.replaceRoutine(routine.id, { ...routine, name: 'Lower B' }, base);
   assert.deepEqual(engine.device.activeReplica.entries()[1].intent.guard.map(({ field }) => field).sort(), ['entries', 'name', 'position']);
   const before = structuredClone(engine.device.activeReplica.outbox);
-  await assert.rejects(api.replaceRoutine(routine.id, { ...routine, name: 'Stale' }, base), { code: 'routine-stale' });
+  await assert.rejects(api.replaceRoutine(routine.id, { ...routine, name: 'Stale' }, base), { code: 'stale' });
   assert.deepEqual(engine.device.activeReplica.outbox, before);
   assert.deepEqual(failures, []);
 });
 
-test('notes append; reorder writes only the moved note order register', async (t) => {
+test('notes append; a move writes only the moved note order register', async (t) => {
   const { api, engine } = await open(t);
   for (let n = 1; n <= 3; n++) await api.saveNote(`note00000${n}`, { title: String(n), body: '' });
   assert.deepEqual((await api.notes()).map(({ id }) => id), ['note000001', 'note000002', 'note000003']);
   await confirm(engine);
-  await api.reorderNotes(['note000003', 'note000001', 'note000002']);
+  assert.deepEqual((await api.moveNote('note000002', 'note000003')).map(({ id, position }) => [id, position]),
+    [['note000001', 0], ['note000003', 1], ['note000002', 2]]);
+  assert.deepEqual((await api.notes()).map(({ id }) => id), ['note000001', 'note000003', 'note000002']);
+  const [delta] = engine.device.activeReplica.entries().at(-1).intent.d;
+  assert.deepEqual([delta.id, Object.keys(delta.f)], ['note000002', ['ord']]);
+  await api.moveNote('note000003', null);
   assert.deepEqual((await api.notes()).map(({ id }) => id), ['note000003', 'note000001', 'note000002']);
-  assert.deepEqual(Object.keys(engine.device.activeReplica.entries().at(-1).intent.d[0].f), ['ord']);
-  await assert.rejects(api.reorderNotes(['note000001']), { code: 'invalid' });
+  const before = structuredClone(engine.device.activeReplica.outbox);
+  await assert.rejects(api.moveNote('note000099', null), { code: 'unknown-record' });
+  await assert.rejects(api.moveNote('note000001', 'note000099'), { code: 'unknown-record' });
+  assert.deepEqual(engine.device.activeReplica.outbox, before);
 });
 
 test('note editor guards refuse changed content and preserve the original local draft', async (t) => {
@@ -107,7 +115,7 @@ test('note editor guards refuse changed content and preserve the original local 
   await confirm(engine);
   const base = (await api.notes())[0];
   await api.saveNote('note000001', { title: 'First', body: 'Changed' }, base);
-  await assert.rejects(api.saveNote('note000001', { title: 'First', body: 'Stale' }, base), { code: 'routine-stale' });
+  await assert.rejects(api.saveNote('note000001', { title: 'First', body: 'Stale' }, base), { code: 'stale' });
   assert.deepEqual(engine.device.activeReplica.entries().at(-1).intent.guard.map(({ field }) => field), ['title', 'body']);
 });
 
@@ -151,9 +159,9 @@ test('held note deaths occupy the cap slot and allow siblings to reorder', async
   await api.holdDeath('note', 'note000000');
   const order = (await api.notes()).map(({ id }) => id);
   [order[1], order[2]] = [order[2], order[1]];
-  await api.reorderNotes(order);
+  await api.moveNote('note000002', 'note000000');
   assert.deepEqual((await api.notes()).map(({ id }) => id), order);
-  await assert.rejects(api.saveNote('note000099', { title: 'Extra', body: '' }), { code: 'notes-full' });
+  await assert.rejects(api.saveNote('note000099', { title: 'Extra', body: '' }), { code: 'cap', sentence: '10 of 10 notes. Delete one to add another.' });
 });
 
 test('weigh-in puts use the transaction clock and atomically retire a held death', async (t) => {
@@ -229,7 +237,7 @@ test('storage denial leaves no durable partial write and reports only a static o
 test('an adapter pinned to a previous replica cannot write into another account', async (t) => {
   const { api, engine } = await open(t);
   t.mock.method(engine, 'commit', async (scope, read) => read({ replica: 'anotherAccount' }));
-  await assert.rejects(api.createRoutine(routine), { code: 'not-writable', status: 401 });
+  await assert.rejects(api.createRoutine(routine), { code: 'not-writable', sentence: 'Sign in to save to your training log.' });
 });
 
 test('liveHint follows the phone session and expires after four idle hours', async (t) => {
@@ -263,6 +271,6 @@ test('a tombstoned set cannot be corrected as if its value were saved', async (t
   await api.importSession({ id: 'session00001', startedAt: 100, finishedAt: 900, sets: [{ id: 'set00000001', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: 850 }] });
   await api.holdDeath('set', 'set00000001');
   const before = structuredClone(engine.device.activeReplica.outbox);
-  await assert.rejects(api.fixSet('session00001', 'set00000001', { reps: 6 }), { code: 'set-not-found' });
+  await assert.rejects(api.fixSet('session00001', 'set00000001', { reps: 6 }), { code: 'unknown-record' });
   assert.deepEqual(engine.device.activeReplica.outbox, before);
 });
