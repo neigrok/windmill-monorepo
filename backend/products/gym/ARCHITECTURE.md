@@ -548,7 +548,8 @@ admission asked for a retry, `gym-engine-unavailable` for an engine refusal the 
 Both are retryable: HTTP answers 503 with the code, and a tool fails naming it.
 
 **One pipeline, `GymDoor::execute`.** Each door method posts one call to the door's `gym-sync`
-worker pool and waits for it. On the worker a `ServerCall` admits a built intent (engine §6.3): the
+worker pool and waits for it. On the worker a `ServerCall` with no `requestId` admits a built intent
+(engine §6.3) — the door dedupes by the ids each write carries, never by the call — and the
 door's builder runs inside the admitting transaction, under the account's scope lock, and reads what
 it needs through the repositories and SQL. It either answers without admitting — a replay of what
 the store holds, or a refusal it can decide — or returns the intent a phone would push: deltas

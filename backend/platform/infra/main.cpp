@@ -557,7 +557,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto gymNotes = std::make_shared<gym::PgNotesRepository>(pool);
   auto gymBodyweight = std::make_shared<gym::PgBodyweightRepository>(pool);
   auto gymDoor = std::make_shared<gym::GymDoor>(pool, *systemClock, *sentry, *gymLog, *gymProgram,
-      *gymCatalog, *gymNotes, productsCatalog, *syncEngine->live);
+      *gymCatalog, productsCatalog, *syncEngine->live);
   auto gymTrainingService = std::make_shared<gym::TrainingService>(*gymLog, *systemClock, *tokens, *gymDoor);
   auto gymCatalogService = std::make_shared<gym::CatalogService>(*gymCatalog, *gymDoor);
   auto gymProgramService = std::make_shared<gym::ProgramService>(*gymProgram, *gymDoor);

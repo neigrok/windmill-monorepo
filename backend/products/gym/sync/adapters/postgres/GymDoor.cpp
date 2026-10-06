@@ -27,9 +27,9 @@ struct GymDoor::Impl {
 
 GymDoor::GymDoor(std::shared_ptr<PgPool> pool, Clock& clock, FailureReporter& failures,
                  LogRepository& log, ProgramRepository& program, CatalogRepository& catalog,
-                 NotesRepository& notes, std::shared_ptr<sync::SyncCatalog> bound, sync::ChangeFeed& feed)
+                 std::shared_ptr<sync::SyncCatalog> bound, sync::ChangeFeed& feed)
     : impl_(std::make_unique<Impl>(std::move(pool), clock, failures, std::move(bound), feed)), clock_(clock), log_(log),
-      program_(program), catalog_(catalog), notes_(notes) {}
+      program_(program), catalog_(catalog) {}
 
 GymDoor::~GymDoor() = default;
 
@@ -37,6 +37,13 @@ Json::Value GymDoor::intent() {
   Json::Value value(Json::objectValue);
   value["scope"] = "self/gym";
   value["d"] = Json::Value(Json::arrayValue);
+  return value;
+}
+
+Json::Value GymDoor::intent(const std::string& command, const Json::Value& args) {
+  Json::Value value = intent();
+  value["cmd"]["name"] = command;
+  value["cmd"]["args"] = args;
   return value;
 }
 
@@ -81,13 +88,12 @@ bool GymDoor::recordTaken(sync::SyncTxn& txn, const UserId& user, const std::str
   return !impl_->store.spentIn(txn, scope, def, ids).empty() || !impl_->store.spentElsewhere(txn, scope, def, ids).empty();
 }
 
-Json::Value GymDoor::execute(const UserId& user, const std::string& tool, const Json::Value& args,
-                             const Builder& builder, std::optional<std::string> requestId) {
+Json::Value GymDoor::execute(const UserId& user, const Builder& builder) {
   auto observation = std::make_shared<WriteObservation>("gym.server_call", "gym", "server-origin");
   WriteContext context(*observation);
   auto answer = std::make_shared<std::promise<Json::Value>>();
   auto future = answer->get_future();
-  const bool posted = impl_->workers.post([&, answer, requestId = std::move(requestId), observation] {
+  const bool posted = impl_->workers.post([&, answer, observation] {
     WriteContext workerContext(*observation);
     try {
       const auto build = [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
@@ -113,20 +119,15 @@ Json::Value GymDoor::execute(const UserId& user, const std::string& tool, const 
         }
         return built;
       };
-      sync::ServerCall call(impl_->admission, impl_->store, user, requestId, tool, args, "gym");
-      Json::Value placeholder = intent();
-      placeholder["cmd"]["name"] = "gym.closeStale";
-      placeholder["cmd"]["args"] = Json::Value(Json::objectValue);
+      sync::ServerCall call(impl_->admission, impl_->store, user, "gym");
       const auto now = impl_->now.nowMs();
-      const auto outcome = call.admitBuilt(placeholder, now, build);
-      Json::Value result;
-      if (const auto* admitted = std::get_if<sync::Admitted>(&outcome)) result = admitted->result;
-      if (const auto* replayed = std::get_if<sync::Replayed>(&outcome)) result = replayed->result;
-      if (const auto* answered = std::get_if<sync::CallAnswered>(&outcome)) result = answered->result;
-      if (result.isNull()) throw GymUnavailable("gym-engine-busy", "gym engine is temporarily unavailable");
-      call.finish(result, now);
-      observation->finish(impl_->catalog->observationOutcome(result));
-      answer->set_value(std::move(result));
+      // Admission locks the scope this intent names, then admits what the builder builds in its place.
+      const auto outcome = call.admitBuilt(intent("gym.closeStale", Json::Value(Json::objectValue)), now, build);
+      // A call with no requestId is admitted or asked to retry, and a retry is the engine being busy.
+      const auto* admitted = std::get_if<sync::Admitted>(&outcome);
+      if (!admitted) throw GymUnavailable("gym-engine-busy", "gym engine is temporarily unavailable");
+      observation->finish(impl_->catalog->observationOutcome(admitted->result));
+      answer->set_value(admitted->result);
     } catch (const GymUnavailable& refused) {
       observation->finish(refused.code);
       answer->set_exception(std::current_exception());
@@ -149,12 +150,7 @@ Json::Value GymDoor::execute(const UserId& user, const std::string& tool, const 
 }
 
 Json::Value GymDoor::command(const UserId& user, const std::string& name, const Json::Value& args) {
-  return execute(user, name, args, [&](sync::SyncTxn&) {
-    Json::Value value = intent();
-    value["cmd"]["name"] = name;
-    value["cmd"]["args"] = args;
-    return std::optional<Json::Value>(std::move(value));
-  });
+  return execute(user, [&](sync::SyncTxn&) { return std::optional<Json::Value>(intent(name, args)); });
 }
 
 void GymDoor::closeStale(const UserId& user) {
@@ -164,7 +160,7 @@ void GymDoor::closeStale(const UserId& user) {
 }
 
 void GymDoor::unlinkThread(const UserId& user, const ThreadId& thread) {
-  const auto result = execute(user, "unlink_thread", Json::Value(thread.str()), [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
+  const auto result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
     const auto rows = sync::sqlOf(txn).exec("select id from gym_proposals where user_id=$1::uuid and thread_id=$2 order by id", pqxx::params{user.str(), thread.str()});
     if (rows.empty()) return std::nullopt;
     auto value = intent();

@@ -31,6 +31,10 @@ ServerCall::ServerCall(Admission& admission, SyncStore& store, UserId account, s
     : admission_(admission), store_(store), account_(std::move(account)), requestId_(std::move(requestId)), digest_(callDigest(tool, args)),
       gestureId_(requestId_.value_or(serverGesture())), product_(std::move(product)) {}
 
+ServerCall::ServerCall(Admission& admission, SyncStore& store, UserId account, std::string product)
+    : admission_(admission), store_(store), account_(std::move(account)), gestureId_(serverGesture()),
+      product_(std::move(product)) {}
+
 AdmitOutcome ServerCall::admit(Json::Value intent, Ms serverNow) {
   ++k_;
   intent["gestureId"] = gestureId_;

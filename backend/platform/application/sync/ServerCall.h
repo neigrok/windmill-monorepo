@@ -21,6 +21,8 @@ class ServerCall {
 public:
   ServerCall(Admission& admission, SyncStore& store, UserId account, std::optional<std::string> requestId, const std::string& tool,
              const Json::Value& args, std::string product = "platform");
+  // A call with no requestId: nothing deduplicates it, so nothing names it, and its gesture is server-minted.
+  ServerCall(Admission& admission, SyncStore& store, UserId account, std::string product);
 
   // The call's next admit. A part a run of the call stored before is replayed: it answers Admitted with that
   // result, and nothing is admitted or written. The call stops at an answer the lookup gave it whole

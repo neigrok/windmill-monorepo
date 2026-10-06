@@ -17,6 +17,7 @@ Json::Value entriesOf(const Routine& routine) {
 }
 
 bool knownEntries(CatalogRepository& catalog, const UserId& user, const std::vector<RoutineEntry>& entries) {
+  if (entries.empty()) return true;
   const auto visible = catalog.catalog(user);
   return std::all_of(entries.begin(), entries.end(), [&](const RoutineEntry& entry) {
     return std::any_of(visible.begin(), visible.end(), [&](const Exercise& exercise) { return exercise.id == entry.exercise; });
@@ -46,7 +47,7 @@ Json::Value proposalFields(const RoutineProposal& proposal) {
 RoutineWriteOutcome GymDoor::createRoutine(const Routine& incoming, std::optional<ProposalDoor> byAgent) {
   std::optional<Routine> held;
   RoutineWriteError error = RoutineWriteError::none;
-  const Json::Value result = execute(incoming.user, "create_routine", toJson(incoming), [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
+  const Json::Value result = execute(incoming.user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
     held = program_.routine(incoming.user, incoming.id);
     if (held) return std::nullopt;
     if (recordTaken(txn, incoming.user, "routine", incoming.id.str())) { error = RoutineWriteError::idTaken; return std::nullopt; }
@@ -70,60 +71,49 @@ RoutineWriteOutcome GymDoor::createRoutine(const Routine& incoming, std::optiona
 }
 
 ProposalMintOutcome GymDoor::propose(const UserId& user, const ProposalWrite& incoming) {
-  ProposalMintError error = ProposalMintError::none;
-  std::optional<RoutineProposal> held;
-  Json::Value args(Json::objectValue); args["id"] = incoming.id.str();
-  const Json::Value result = execute(user, "propose_routine_change", args, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
-    const auto base = program_.routine(user, incoming.routine);
-    if (!base) { error = ProposalMintError::unknownRoutine; return std::nullopt; }
-    const Routine becomes{base->id, user, incoming.name.value_or(base->name), base->position, incoming.entries};
-    std::vector<RoutineChange> changes = changesBetween(base->entries, becomes.entries);
-    const int count = countedChanges(base->entries, changes, base->name, becomes.name);
-    if (count == 0) { error = ProposalMintError::noChange; return std::nullopt; }
-    const RoutineProposal proposal{ProposalHead{incoming.id, base->id, user, ProposalIntent::revise, ProposalState::pending,
-        incoming.source, incoming.summary, count, clock_.nowMs(), std::nullopt}, base->revision, base->name, becomes.name, std::move(changes)};
-    const auto ids = sync::sqlOf(txn).exec("select user_id=$2::uuid from gym_proposals where id=$1", pqxx::params{incoming.id.str(), user.str()});
-    if (!ids.empty()) {
-      if (!ids[0][0].as<bool>()) { error = ProposalMintError::idTaken; return std::nullopt; }
-      held = program_.proposal(user, incoming.id);
-      if (!held || !isReplayOf(*held, proposal)) error = ProposalMintError::idReused;
-      return std::nullopt;
-    }
-    if (recordTaken(txn, user, "proposal", incoming.id.str())) { error = ProposalMintError::idTaken; return std::nullopt; }
-    if (!knownEntries(catalog_, user, becomes.entries)) { error = ProposalMintError::unknownExercise; return std::nullopt; }
-    Json::Value built = intent(); built["d"].append(delta("proposal", incoming.id.str(), proposalFields(proposal), true));
-    return built;
+  return mintProposal(user, incoming.id, incoming.routine, incoming.entries,
+                      [&](const Routine& base) -> std::optional<RoutineProposal> {
+    const Routine becomes{base.id, user, incoming.name.value_or(base.name), base.position, incoming.entries};
+    std::vector<RoutineChange> changes = changesBetween(base.entries, becomes.entries);
+    const int count = countedChanges(base.entries, changes, base.name, becomes.name);
+    if (count == 0) return std::nullopt;
+    return RoutineProposal{ProposalHead{incoming.id, base.id, user, ProposalIntent::revise, ProposalState::pending,
+        incoming.source, incoming.summary, count, clock_.nowMs(), std::nullopt}, base.revision, base.name, becomes.name, std::move(changes)};
   });
-  if (error != ProposalMintError::none) return {std::nullopt, error};
-  const std::string code = refusal(result);
-  if (code == "id-taken" || code == "id-spent") return {std::nullopt, ProposalMintError::idTaken};
-  if (code == "unknown-record") return {std::nullopt, ProposalMintError::unknownRoutine};
-  if (code == "unknown-exercise") return {std::nullopt, ProposalMintError::unknownExercise};
-  requireOk(result);
-  return {held ? held : program_.proposal(user, incoming.id), ProposalMintError::none};
 }
 
+// No document to build: the whole plan leaves, so every line of it is a removed row.
 ProposalMintOutcome GymDoor::proposeRemoval(const UserId& user, const ProposalId& id, const RoutineId& routine,
                                           const std::string& summary, const ProposalSource& source) {
+  return mintProposal(user, id, routine, {}, [&](const Routine& base) -> std::optional<RoutineProposal> {
+    std::vector<RoutineChange> changes = changesBetween(base.entries, {});
+    const int count = static_cast<int>(changes.size());
+    return RoutineProposal{ProposalHead{id, routine, user, ProposalIntent::remove, ProposalState::pending,
+        source, summary, count, clock_.nowMs(), std::nullopt}, base.revision, base.name, base.name, std::move(changes)};
+  });
+}
+
+// A spent id splits three ways: another account's is idTaken, the caller's own with the same document
+// is the replay and answers the stored proposal, and the caller's own with another document is idReused.
+ProposalMintOutcome GymDoor::mintProposal(const UserId& user, const ProposalId& id, const RoutineId& routine,
+                                          const std::vector<RoutineEntry>& lines, const ProposalOf& proposalOf) {
   ProposalMintError error = ProposalMintError::none;
   std::optional<RoutineProposal> held;
-  Json::Value args(Json::objectValue); args["id"] = id.str();
-  const Json::Value result = execute(user, "propose_routine_removal", args, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
+  const Json::Value result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
     const auto base = program_.routine(user, routine);
     if (!base) { error = ProposalMintError::unknownRoutine; return std::nullopt; }
-    auto changes = changesBetween(base->entries, {});
-    const int count = static_cast<int>(changes.size());
-    const RoutineProposal proposal{ProposalHead{id, routine, user, ProposalIntent::remove, ProposalState::pending,
-        source, summary, count, clock_.nowMs(), std::nullopt}, base->revision, base->name, base->name, std::move(changes)};
+    const std::optional<RoutineProposal> proposal = proposalOf(*base);
+    if (!proposal) { error = ProposalMintError::noChange; return std::nullopt; }
     const auto ids = sync::sqlOf(txn).exec("select user_id=$2::uuid from gym_proposals where id=$1", pqxx::params{id.str(), user.str()});
     if (!ids.empty()) {
       if (!ids[0][0].as<bool>()) { error = ProposalMintError::idTaken; return std::nullopt; }
       held = program_.proposal(user, id);
-      if (!held || !isReplayOf(*held, proposal)) error = ProposalMintError::idReused;
+      if (!held || !isReplayOf(*held, *proposal)) error = ProposalMintError::idReused;
       return std::nullopt;
     }
     if (recordTaken(txn, user, "proposal", id.str())) { error = ProposalMintError::idTaken; return std::nullopt; }
-    Json::Value built = intent(); built["d"].append(delta("proposal", id.str(), proposalFields(proposal), true));
+    if (!knownEntries(catalog_, user, lines)) { error = ProposalMintError::unknownExercise; return std::nullopt; }
+    Json::Value built = intent(); built["d"].append(delta("proposal", id.str(), proposalFields(*proposal), true));
     return built;
   });
   if (error != ProposalMintError::none) return {std::nullopt, error};
@@ -137,7 +127,7 @@ ProposalMintOutcome GymDoor::proposeRemoval(const UserId& user, const ProposalId
 
 ExerciseInsertOutcome GymDoor::createExercise(const UserId& user, const Exercise& incoming) {
   std::optional<Exercise> held;
-  const Json::Value result = execute(user, "create_exercise", toJson(incoming), [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
+  const Json::Value result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
     for (const auto& exercise : catalog_.catalog(user)) if (exercise.id == incoming.id && exercise.custom) { held = exercise; return std::nullopt; }
     Json::Value fields(Json::objectValue); fields["name"] = incoming.name; fields["pattern"] = toString(incoming.pattern);
     fields["equipment"] = toString(incoming.equipment);
@@ -163,7 +153,7 @@ NoteWriteOutcome GymDoor::saveInsight(const Note& incoming) {
     if (saved->title != incoming.title || saved->body != incoming.body) error = NoteWriteError::idTaken;
     return true;
   };
-  const Json::Value result = execute(incoming.user, "save_note", toJson(incoming), [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
+  const Json::Value result = execute(incoming.user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
     if (receipt(txn)) return std::nullopt;
     const auto ids = sync::sqlOf(txn).exec("select title,body,user_id=$2::uuid from gym_notes where id=$1", pqxx::params{incoming.id.str(), incoming.user.str()});
     if (!ids.empty() && (!ids[0][2].as<bool>() || ids[0][0].as<std::string>() != incoming.title || ids[0][1].as<std::string>() != incoming.body)) {

@@ -16,6 +16,7 @@ public:
 class JournalProduct::Command final : public SyncCommand {
 public:
   Command(JournalState& state, std::string name) : state_(state), name_(std::move(name)) {}
+  const std::string& name() const { return name_; }
 
   bool isReplay(CommandCtx& ctx) override {
     return name_ == "journal.claimPage" && state_.load(ctx.txn, ctx.scope.key)["claims"].isMember(ctx.args["claimId"].asString());
@@ -45,8 +46,7 @@ JournalProduct::~JournalProduct() = default;
 
 void JournalProduct::bindTo(SyncCatalog& catalog, const std::map<std::string, TypeStore*>& stores) {
   for (const auto& [name, store] : stores) catalog.bindType(*store, rules_.get());
-  catalog.bindCommand("journal.savePage", *commands_[0]);
-  catalog.bindCommand("journal.claimPage", *commands_[1]);
+  for (const auto& command : commands_) catalog.bindCommand(command->name(), *command);
 }
 
 }

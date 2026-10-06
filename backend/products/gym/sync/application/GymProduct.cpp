@@ -33,6 +33,7 @@ private:
 class GymProduct::Command final : public SyncCommand {
 public:
   Command(GymState& state, std::string name) : state_(state), name_(std::move(name)) {}
+  const std::string& name() const { return name_; }
 
   bool isReplay(CommandCtx& ctx) override {
     const Json::Value books = state_.load(ctx.txn, ctx.scope.key);
@@ -74,10 +75,7 @@ GymProduct::~GymProduct() = default;
 
 void GymProduct::bindTo(SyncCatalog& catalog, const std::map<std::string, TypeStore*>& stores) {
   for (const auto& [name, store] : stores) catalog.bindType(*store, rules_.get());
-  for (std::size_t i = 0; i < commands_.size(); ++i) {
-    static const char* names[] = {"gym.start", "gym.importSession", "gym.correctSession", "gym.finish", "gym.applyProposal", "gym.dismissProposal", "gym.closeStale"};
-    catalog.bindCommand(names[i], *commands_[i]);
-  }
+  for (const auto& command : commands_) catalog.bindCommand(command->name(), *command);
 }
 
 }

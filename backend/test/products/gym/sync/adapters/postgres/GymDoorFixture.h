@@ -112,7 +112,7 @@ struct Harness {
   Failures failures;
   Repositories repo;
   sync::NullChangeFeed feed;
-  GymDoor door{pool(), clock, failures, repo.log, repo.program, repo.catalog, repo.notes, sync::productCatalog(), feed};
+  GymDoor door{pool(), clock, failures, repo.log, repo.program, repo.catalog, sync::productCatalog(), feed};
   TrainingService training{repo.log, clock, tokens, door};
   CatalogService catalog{repo.catalog, door};
   ProgramService program{repo.program, door};
@@ -132,7 +132,7 @@ struct Harness {
   // A write a phone makes through /v1/sync, admitted as the server's own intent: the deltas in, the result
   // out. GymDoor::delta builds one.
   Json::Value admit(const UserId& account, const std::vector<Json::Value>& deltas) {
-    return door.execute(account, "test_admit", Json::Value(Json::objectValue), [&](sync::SyncTxn&) {
+    return door.execute(account, [&](sync::SyncTxn&) {
       Json::Value intent = GymDoor::intent();
       for (const Json::Value& delta : deltas) intent["d"].append(delta);
       return std::optional<Json::Value>{intent};

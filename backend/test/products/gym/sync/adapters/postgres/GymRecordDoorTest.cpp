@@ -306,9 +306,7 @@ TEST(gym_record_engine_server_spent_batch_has_one_sequence_result_and_publicatio
   sync::ServerClock stamps;
   sync::Admission admission{catalog, store, feed, stamps, h.failures};
   BlockingThread::Mark blocking;
-  auto scopeIntent = GymDoor::intent();
-  scopeIntent["cmd"]["name"] = "gym.closeStale";
-  scopeIntent["cmd"]["args"] = Json::Value(Json::objectValue);
+  const auto scopeIntent = GymDoor::intent("gym.closeStale", Json::Value(Json::objectValue));
   const auto reserve = [&] {
     return admission.admitBuilt(sync::ServerOrigin{h.user, std::nullopt}, scopeIntent, h.clock.now,
       [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {

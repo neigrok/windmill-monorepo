@@ -31,7 +31,7 @@ Json::Value rawAppend(Harness& h, const UserId& user, const SessionId& session, 
   fields.removeMember("id");
   fields.removeMember("setNumber");
   fields["sessionId"] = session.str();
-  return h.door.execute(user, "refusal_test", fields, [&](sync::SyncTxn&) {
+  return h.door.execute(user, [&](sync::SyncTxn&) {
     auto value = GymDoor::intent();
     value["d"].append(GymDoor::delta("set", incoming.id.str(), fields, true));
     return std::optional<Json::Value>{value};
@@ -158,12 +158,9 @@ TEST(gym_training_engine_refused_join_rolls_back_reserved_alias) {
   args["id"] = "session_nojoin";
   args["startedAt"] = Json::UInt64(h.clock.now);
   args["joinOpenSession"] = false;
-  const auto result = h.door.execute(h.user, "refused_join_test", args, [&](sync::SyncTxn& txn) {
+  const auto result = h.door.execute(h.user, [&](sync::SyncTxn& txn) {
     txn.reserveSpent("session", sync::RecordId{std::string{"session_nojoin"}});
-    auto built = GymDoor::intent();
-    built["cmd"]["name"] = "gym.start";
-    built["cmd"]["args"] = args;
-    return std::optional<Json::Value>{built};
+    return std::optional<Json::Value>{GymDoor::intent("gym.start", args)};
   });
   CHECK_EQ(GymDoor::refusal(result), "session-open");
   PgLease lease{*pool()};
@@ -359,7 +356,7 @@ TEST(gym_training_engine_parent_refusal_is_an_absent_session_at_the_door) {
   args.removeMember("id");
   args.removeMember("setNumber");
   args["sessionId"] = "session_absent";
-  const auto result = h.door.execute(h.user, "parent_refusal", args, [&](sync::SyncTxn&) {
+  const auto result = h.door.execute(h.user, [&](sync::SyncTxn&) {
     auto value = GymDoor::intent();
     value["d"].append(GymDoor::delta("set", set.id.str(), args, true));
     return std::optional<Json::Value>{value};

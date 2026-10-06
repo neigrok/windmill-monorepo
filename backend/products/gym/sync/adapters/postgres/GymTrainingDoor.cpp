@@ -12,13 +12,6 @@ namespace wm::gym {
 
 namespace {
 
-Json::Value gymCommand(const std::string& name, const Json::Value& args) {
-  auto value = GymDoor::intent();
-  value["cmd"]["name"] = name;
-  value["cmd"]["args"] = args;
-  return value;
-}
-
 // A new set's fields, as a phone's create delta carries them.
 Json::Value setFields(const Set& set) {
   auto fields = toJson(set);
@@ -48,6 +41,26 @@ bool visibleMovement(pqxx::transaction_base& sql, const UserId& user, const Exer
                    pqxx::params{id.str(), user.str()}).empty();
 }
 
+// The receipt a created set left behind, if any: its owner, then its request's hash.
+pqxx::result setReceipt(pqxx::transaction_base& sql, const SetId& id) {
+  return sql.exec("select user_id::text,request_hash from gym_write_receipts where kind='set' and id=$1",
+                  pqxx::params{id.str()});
+}
+
+// A set the lifter took out of the log: its delete left the whole row behind as a revision.
+bool deletedFromLog(pqxx::transaction_base& sql, const UserId& user, const SetId& id) {
+  return !sql.exec("select 1 from gym_set_revisions where set_id=$1 and user_id=$2::uuid and deleted limit 1",
+                   pqxx::params{id.str(), user.str()}).empty();
+}
+
+// The batch's indexes in set-id order, the order every set row is locked in.
+std::vector<std::size_t> inIdOrder(const std::vector<Set>& sets) {
+  std::vector<std::size_t> order(sets.size());
+  std::iota(order.begin(), order.end(), 0);
+  std::sort(order.begin(), order.end(), [&](auto a, auto b) { return sets[a].id < sets[b].id; });
+  return order;
+}
+
 BatchLogError batchRefusal(const std::string& code) {
   if (code == "id-taken") return BatchLogError::idTaken;
   if (code == "id-spent" || code == "record-dead") return BatchLogError::deleted;
@@ -69,14 +82,14 @@ StartOutcome GymDoor::start(const UserId& user, const SessionStart& incoming) {
   args["joinOpenSession"] = incoming.joinOpenSession;
   if (incoming.routine) args["routineId"] = incoming.routine->str();
   StartOutcome answer{std::nullopt, StartError::none};
-  const auto result = execute(user, "start_session", args, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
+  const auto result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
     auto& sql = sync::sqlOf(txn);
     const auto receipt = sql.exec("select user_id::text,session_id from gym_write_receipts where kind='session' and id=$1",
                                   pqxx::params{incoming.id.str()});
     std::optional<Session> held = log_.session(user, incoming.id);
     if (!receipt.empty() && receipt[0][0].as<std::string>() == user.str())
       held = log_.session(user, SessionId{receipt[0][1].as<std::string>()});
-    if (held) return gymCommand("gym.start", args);
+    if (held) return intent("gym.start", args);
     const auto open = log_.open(user);
     if (open) {
       if (!incoming.joinOpenSession) { answer.error = StartError::alreadyOpen; return std::nullopt; }
@@ -86,7 +99,7 @@ StartOutcome GymDoor::start(const UserId& user, const SessionStart& incoming) {
       }
       if (receipt.empty() && incoming.id != open->id)
         txn.reserveSpent("session", sync::RecordId{incoming.id.str()});
-      return gymCommand("gym.start", args);
+      return intent("gym.start", args);
     }
     if (!receipt.empty()) { answer.error = StartError::idTaken; return std::nullopt; }
     const auto now = clock_.nowMs();
@@ -100,7 +113,7 @@ StartOutcome GymDoor::start(const UserId& user, const SessionStart& incoming) {
       return std::nullopt;
     }
     Session{incoming.id, user, incoming.startedAtMs, std::nullopt, incoming.routine};
-    return gymCommand("gym.start", args);
+    return intent("gym.start", args);
   });
   const auto code = refusal(result);
   if (code == "session-open") return {std::nullopt, StartError::alreadyOpen};
@@ -113,18 +126,8 @@ StartOutcome GymDoor::start(const UserId& user, const SessionStart& incoming) {
 }
 
 AppendOutcome GymDoor::append(const UserId& user, const SessionId& session, const SetWrite& incoming) {
-  Json::Value args(Json::objectValue);
-  args["id"] = incoming.id.str();
-  args["sessionId"] = session.str();
-  args["exerciseId"] = incoming.exercise.str();
-  args["weightKg"] = incoming.weightKg;
-  args["reps"] = incoming.reps;
-  args["kind"] = toString(incoming.kind);
-  args["rpe"] = incoming.rpe ? Json::Value(*incoming.rpe) : Json::Value();
-  args["note"] = incoming.note;
-  args["completedAt"] = Json::UInt64(incoming.completedAtMs);
   AppendOutcome answer{std::nullopt, AppendError::none};
-  const auto result = execute(user, "log_set", args, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
+  const auto result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
     const auto stored = log_.session(user, session);
     if (!stored) { answer.error = AppendError::notFound; return std::nullopt; }
     Set canonical{incoming.id, session, incoming.exercise, 0, incoming.weightKg, incoming.reps,
@@ -136,15 +139,12 @@ AppendOutcome GymDoor::append(const UserId& user, const SessionId& session, cons
       return std::nullopt;
     }
     auto& sql = sync::sqlOf(txn);
-    const auto receipt = sql.exec("select user_id::text from gym_write_receipts where kind='set' and id=$1",
-                                  pqxx::params{incoming.id.str()});
+    const auto receipt = setReceipt(sql, incoming.id);
     if (!receipt.empty()) {
       answer.error = receipt[0][0].as<std::string>() == user.str() ? AppendError::deleted : AppendError::idTaken;
       return std::nullopt;
     }
-    const auto deleted = sql.exec("select 1 from gym_set_revisions where set_id=$1 and user_id=$2::uuid and deleted limit 1",
-                                  pqxx::params{incoming.id.str(), user.str()});
-    if (!deleted.empty()) { answer.error = AppendError::deleted; return std::nullopt; }
+    if (deletedFromLog(sql, user, incoming.id)) { answer.error = AppendError::deleted; return std::nullopt; }
     if (stored->finishedAtMs && !lateSetLands(*stored, incoming.completedAtMs)) {
       answer.error = AppendError::finished;
       return std::nullopt;
@@ -177,18 +177,14 @@ BatchLogOutcome GymDoor::appendSets(const UserId& user, const SessionId& session
   const SetBatch batch{session, batchSets(session, incoming), clock_.nowMs()};
   BatchLogOutcome answer;
   std::vector<bool> replayed(batch.sets.size(), false);
-  const auto result = execute(user, "log_sets", toJson(batch.sets), [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
+  const auto result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
     answer.session = log_.session(user, session);
     if (!answer.session) { answer.error = BatchLogError::notFound; return std::nullopt; }
     batch.checkInterval(*answer.session, false);
     auto& sql = sync::sqlOf(txn);
-    std::vector<std::size_t> order(batch.sets.size());
-    std::iota(order.begin(), order.end(), 0);
-    std::sort(order.begin(), order.end(), [&](auto a, auto b) { return batch.sets[a].id < batch.sets[b].id; });
-    for (const auto index : order) {
+    for (const auto index : inIdOrder(batch.sets)) {
       const auto& set = batch.sets[index];
-      const auto receipt = sql.exec("select user_id::text,request_hash from gym_write_receipts where kind='set' and id=$1",
-                                    pqxx::params{set.id.str()});
+      const auto receipt = setReceipt(sql, set.id);
       if (receipt.empty()) continue;
       if (receipt[0][0].as<std::string>() != user.str() || receipt[0][1].as<std::string>() != gymSetRequestHash(toJson(set), session.str())) {
         answer.error = BatchLogError::payloadConflict;
@@ -203,9 +199,7 @@ BatchLogOutcome GymDoor::appendSets(const UserId& user, const SessionId& session
       if (replayed[index]) continue;
       const auto& set = batch.sets[index];
       answer.errorIndex = index;
-      const auto deleted = sql.exec("select 1 from gym_set_revisions where set_id=$1 and user_id=$2::uuid and deleted limit 1",
-                                    pqxx::params{set.id.str(), user.str()});
-      if (!deleted.empty()) { answer.error = BatchLogError::deleted; return std::nullopt; }
+      if (deletedFromLog(sql, user, set.id)) { answer.error = BatchLogError::deleted; return std::nullopt; }
       const bool late = standing.finishedAtMs && lateSetLands(standing, set.completedAtMs);
       if (standing.finishedAtMs && !late) { answer.error = BatchLogError::finished; return std::nullopt; }
       if (!visibleMovement(sql, user, set.exercise)) { answer.error = BatchLogError::unknownExercise; return std::nullopt; }
@@ -248,7 +242,7 @@ BatchLogOutcome GymDoor::importSession(const UserId& user, const SessionImport& 
   args["sets"] = toJson(batch.sets);
   for (auto& set : args["sets"]) set.removeMember("setNumber");
   BatchLogOutcome answer;
-  const auto result = execute(user, "import_session", args, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
+  const auto result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
     auto& sql = sync::sqlOf(txn);
     const auto receipt = sql.exec("select user_id::text,request_hash from gym_write_receipts where kind='session' and id=$1",
                                   pqxx::params{incoming.id.str()});
@@ -266,12 +260,9 @@ BatchLogOutcome GymDoor::importSession(const UserId& user, const SessionImport& 
       answer.error = BatchLogError::unknownRoutine;
       return std::nullopt;
     }
-    std::vector<std::size_t> order(batch.sets.size());
-    std::iota(order.begin(), order.end(), 0);
-    std::sort(order.begin(), order.end(), [&](auto a, auto b) { return batch.sets[a].id < batch.sets[b].id; });
-    for (const auto index : order) {
+    for (const auto index : inIdOrder(batch.sets)) {
       const auto& set = batch.sets[index];
-      const auto held = sql.exec("select user_id::text,request_hash from gym_write_receipts where kind='set' and id=$1", pqxx::params{set.id.str()});
+      const auto held = setReceipt(sql, set.id);
       if (held.empty()) continue;
       answer.errorIndex = index;
       answer.error = held[0][0].as<std::string>() == user.str() && held[0][1].as<std::string>() == gymSetRequestHash(toJson(set), incoming.id.str())
@@ -281,12 +272,11 @@ BatchLogOutcome GymDoor::importSession(const UserId& user, const SessionImport& 
     for (std::size_t i = 0; i < batch.sets.size(); ++i) {
       const auto& set = batch.sets[i];
       answer.errorIndex = i;
-      const auto deleted = sql.exec("select 1 from gym_set_revisions where set_id=$1 and user_id=$2::uuid and deleted limit 1", pqxx::params{set.id.str(), user.str()});
-      if (!deleted.empty()) { answer.error = BatchLogError::deleted; return std::nullopt; }
+      if (deletedFromLog(sql, user, set.id)) { answer.error = BatchLogError::deleted; return std::nullopt; }
       if (!visibleMovement(sql, user, set.exercise)) { answer.error = BatchLogError::unknownExercise; return std::nullopt; }
     }
     answer.errorIndex.reset();
-    return gymCommand("gym.importSession", args);
+    return intent("gym.importSession", args);
   });
   const auto code = refusal(result);
   if (!code.empty()) {
@@ -309,11 +299,11 @@ FinishOutcome GymDoor::finish(const UserId& user, const SessionId& session, std:
   args["sessionId"] = session.str();
   args["finishedAt"] = Json::UInt64(at);
   FinishOutcome answer{std::nullopt, FinishError::none};
-  const auto result = execute(user, "finish_session", args, [&](sync::SyncTxn&) -> std::optional<Json::Value> {
+  const auto result = execute(user, [&](sync::SyncTxn&) -> std::optional<Json::Value> {
     const auto stored = log_.session(user, session);
     if (!stored) { answer.error = FinishError::notFound; return std::nullopt; }
     if (!canFinishAt(*stored, at)) { answer.error = FinishError::badInstant; return std::nullopt; }
-    return gymCommand("gym.finish", args);
+    return intent("gym.finish", args);
   });
   const auto code = refusal(result);
   if (code == "unknown-record" || code == "record-dead") return {std::nullopt, FinishError::notFound};
@@ -325,7 +315,7 @@ FinishOutcome GymDoor::finish(const UserId& user, const SessionId& session, std:
 
 DiscardOutcome GymDoor::discard(const UserId& user, const SessionId& session) {
   DiscardOutcome answer = DiscardOutcome::done;
-  const auto result = execute(user, "discard_session", Json::Value(session.str()), [&](sync::SyncTxn&) -> std::optional<Json::Value> {
+  const auto result = execute(user, [&](sync::SyncTxn&) -> std::optional<Json::Value> {
     const auto stored = log_.session(user, session);
     if (!stored) { answer = DiscardOutcome::notFound; return std::nullopt; }
     if (!stored->finishedAtMs) { answer = DiscardOutcome::open; return std::nullopt; }
