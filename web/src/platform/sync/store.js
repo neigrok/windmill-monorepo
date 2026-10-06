@@ -68,35 +68,11 @@ export class IndexedDBStore {
     const database = await new Promise((resolve, reject) => {
       const request = indexedDB.open(name, 2);
       request.onupgradeneeded = () => {
-        const database = request.result, transaction = request.transaction;
-        const records = database.objectStoreNames.contains('records') ? transaction.objectStore('records') : database.createObjectStore('records', { keyPath: 'key' });
+        const database = request.result;
+        database.createObjectStore('records', { keyPath: 'key' });
         const rows = database.createObjectStore('rows', { keyPath: 'key' });
         rows.createIndex('generation', 'generation');
         rows.createIndex('type', 'type');
-        const pointers = new Map();
-        const scan = records.openCursor();
-        scan.onsuccess = () => {
-          const cursor = scan.result;
-          if (!cursor) { for (const [key, value] of pointers) records.put({ key, value }); return; }
-          const [kind, handle, scope, id] = JSON.parse(cursor.key);
-          if (['confirmed', 'spentIds', 'stagedRow'].includes(kind)) {
-            const collection = kind === 'stagedRow' ? 'staging' : kind;
-            const key = keyOf('cache', handle, collection, scope);
-            const generation = keyOf(handle, collection, scope);
-            const pointer = pointers.get(key) ?? { generation, count: 0 };
-            pointer.count++;
-            pointers.set(key, pointer);
-            rows.put({ key: [generation, id], generation, type: [generation, cursor.value.value.t], value: cursor.value.value });
-            cursor.delete();
-          } else if (kind === 'staging') {
-            const key = keyOf('cache', handle, 'staging', scope);
-            const pointer = pointers.get(key) ?? { generation: keyOf(handle, 'staging', scope), count: 0 };
-            pointer.digest = cursor.value.value;
-            pointers.set(key, pointer);
-            cursor.delete();
-          }
-          cursor.continue();
-        };
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);

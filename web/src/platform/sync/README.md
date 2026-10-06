@@ -30,8 +30,7 @@ Persisted restores reopen IndexedDB and coordination with the same observations 
 the shell refreshes account state after restoration. Views and transport are injectable and product-neutral.
 
 HTTP uses the session cookie; anonymous pulls explicitly omit credentials. The `credentials` port
-belongs to the session owner: `clear(account)` removes the credential after a completed sign-out,
-and optional `retainAccounts(accounts)` removes credentials outside bound/pending lineages on start.
+belongs to the session owner: `clear(account)` removes the credential after a completed sign-out.
 The engine stores no tokens. The shell owns the cookie session and pinned account decisions. Finished sign-out durably records cookie cleanup until the credentials port succeeds. Sign-in uses a fresh
 hello and pins Add/Discard decisions. Same-account refreshes preserve held work until its deadline
 or a lifecycle transition. `beginSignOut`, `finishSignOut` and `cancelSignOut` expose the
@@ -46,7 +45,6 @@ only their requested scopes or row keys and the governing record type. Control r
 and durable device work are separate from cached rows. Replica handles stay fixed across wire-ID
 changes. Each cache has a generation pointer; completed boots transfer the staging pointer, and
 forget/sign-out invalidate pointers atomically. Old generations are deleted in batches of 128.
-The version-one store migrates in an atomic IndexedDB upgrade transaction.
 
 Offline open hydrates the active replica's cache once. Subsequent observation reads hydrate observed
 scopes; unobserved cache generations are invalidated, and a later observation reloads them locally.
