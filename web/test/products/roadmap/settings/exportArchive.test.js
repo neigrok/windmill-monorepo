@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { storeZip } from '../../../../src/products/roadmap/paste/storeZip.js';
+import { storeZip } from '../../../../src/products/roadmap/settings/exportArchive.js';
 
 const HELLO = 'hello world'; // CRC32 0x0d4a1185
 const FOX = 'The quick brown fox jumps over the lazy dog'; // CRC32 0x414fa339
