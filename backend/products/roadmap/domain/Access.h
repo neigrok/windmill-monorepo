@@ -8,8 +8,7 @@
 namespace wm {
 
 // Read authorization is binary: private is owner-only, unlisted and public are both readable by
-// anyone holding the id. `public_` adds only a listing consent — it admits the resource to its
-// product's public listing and lets its share page be indexed.
+// anyone holding the id. `public_` adds listing consent and lets the tree's share page be indexed.
 enum class Visibility { private_, unlisted, public_ };
 
 // Fail-closed: an unknown or malformed value reads as private.
@@ -25,14 +24,14 @@ inline std::string toString(Visibility visibility) {
   return "private";
 }
 
-// The one read-authorization decision every read path calls.
+// The read-authorization decision every tree read path calls.
 inline bool canRead(const std::optional<UserId>& caller, const std::optional<UserId>& owner,
                     Visibility visibility) {
   if (visibility != Visibility::private_) return true;
   return caller && owner && *caller == *owner;
 }
 
-// The one write-authorization decision every write path calls. Visibility widens reads only and
+// The write-authorization decision every tree document write calls. Visibility widens reads only and
 // must stay out of this signature.
 inline bool canWrite(const std::optional<UserId>& caller, const std::optional<UserId>& owner) {
   return caller && owner && *caller == *owner;

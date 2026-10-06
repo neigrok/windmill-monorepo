@@ -1,4 +1,4 @@
-#include "products/roadmap/adapters/http/HttpApi.h"
+#include "products/roadmap/adapters/http/TreeApi.h"
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
@@ -6,7 +6,7 @@
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "products/roadmap/application/ActivityFeed.h"
 #include "products/roadmap/application/TreeRoom.h"
-#include "platform/domain/Access.h"
+#include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/LooseGraph.h"
 
@@ -15,19 +15,19 @@
 
 namespace wm {
 
-HttpApi::HttpApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
+TreeApi::TreeApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
                  std::shared_ptr<ProgressRepository> progress, std::shared_ptr<OpLog> ops, Hlc genesis,
                  std::shared_ptr<AuthService> auth, std::shared_ptr<ForkService> fork)
     : registry_(std::move(registry)), trees_(std::move(trees)), progress_(std::move(progress)),
       ops_(std::move(ops)), genesis_(std::move(genesis)), auth_(std::move(auth)), fork_(std::move(fork)) {}
 
-std::optional<UserId> HttpApi::callerOf(const drogon::HttpRequestPtr& req) const {
+std::optional<UserId> TreeApi::callerOf(const drogon::HttpRequestPtr& req) const {
   return wm::callerOf(req, *auth_);
 }
 
 // An absent tree, one this caller may not read, and an infrastructure failure all answer false,
 // so all three become one 404. `read` runs under the strand.
-bool HttpApi::readRoom(const std::string& treeId, const std::optional<UserId>& caller,
+bool TreeApi::readRoom(const std::string& treeId, const std::optional<UserId>& caller,
                        const std::function<void(TreeRoom&)>& read) {
   std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
   try {
@@ -44,7 +44,7 @@ bool HttpApi::readRoom(const std::string& treeId, const std::optional<UserId>& c
   }
 }
 
-void HttpApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
+void TreeApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
   std::optional<UserId> caller = callerOf(req);
   Json::Value body(Json::objectValue);
   if (!readRoom(treeId, caller, [&](TreeRoom& room) {
@@ -69,7 +69,7 @@ void HttpApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
   callback(jsonResponse(body));
 }
 
-void HttpApi::getDiagnostics(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
+void TreeApi::getDiagnostics(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
   Json::Value body;
   if (!readRoom(treeId, callerOf(req), [&](TreeRoom& room) { body = toJson(room.diagnose()); })) {
     callback(error(drogon::k404NotFound, "no such tree"));
@@ -78,7 +78,7 @@ void HttpApi::getDiagnostics(const drogon::HttpRequestPtr& req, HttpCallback&& c
   callback(jsonResponse(body));
 }
 
-void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
+void TreeApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
   std::optional<UserId> caller = callerOf(req);
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to edit"));
@@ -163,7 +163,7 @@ void HttpApi::putTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
   callback(reply);
 }
 
-void HttpApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
+void TreeApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
   std::optional<UserId> caller = callerOf(req);
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to fork"));
@@ -197,7 +197,7 @@ void HttpApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
   callback(jsonResponse(body, drogon::k201Created));
 }
 
-void HttpApi::getProgress(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
+void TreeApi::getProgress(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
   std::optional<UserId> caller = callerOf(req);
   // Progress follows OWNERSHIP, not the caller, and is gated by canRead.
   std::optional<UserId> owner;
@@ -210,7 +210,7 @@ void HttpApi::getProgress(const drogon::HttpRequestPtr& req, HttpCallback&& call
   callback(jsonResponse(toJson(progress)));
 }
 
-void HttpApi::getActivity(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
+void TreeApi::getActivity(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
   Seq since = 0;
   std::size_t limit = 100;
   try {

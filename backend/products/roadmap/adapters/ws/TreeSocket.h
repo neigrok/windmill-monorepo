@@ -17,8 +17,7 @@ public:
   WS_PATH_LIST_END
 };
 
-// Referenced from main so the static WS registration in the .cpp is not dropped when linking
-// the adapters static library.
+// Referenced from registerRoutes so linking windmill_roadmap retains the static WS registration.
 void linkTreeSocket();
 
 }

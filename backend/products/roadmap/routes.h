@@ -29,9 +29,6 @@
 namespace wm {
 
 // Everything the roadmap product's routes need, built once in main.cpp and handed across the seam.
-// These are the same collaborators the flat router constructed inline; bundling them here is what
-// lets a future product mirror the shape (its own Deps, its own registerRoutes) without main.cpp
-// growing a second flat router.
 struct RoadmapDeps {
   std::shared_ptr<RoomRegistry> registry;
   std::shared_ptr<TreeRepository> trees;

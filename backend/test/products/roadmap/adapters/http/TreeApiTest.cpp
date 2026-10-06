@@ -1,4 +1,4 @@
-#include "products/roadmap/adapters/http/HttpApi.h"
+#include "products/roadmap/adapters/http/TreeApi.h"
 
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "products/roadmap/domain/Command.h"
@@ -35,7 +35,7 @@ struct Harness {
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works");
   std::shared_ptr<ForkService> fork = std::make_shared<ForkService>(*rooms, *trees, tokens);
-  HttpApi api{rooms, trees, progress, ops, Hlc{1, 0, "genesis"}, auth, fork};
+  TreeApi api{rooms, trees, progress, ops, Hlc{1, 0, "genesis"}, auth, fork};
 
   UserId signIn(const std::string& sessionSecret, const std::string& email = "sam@example.com") {
     User user = authRepo.createUser(Email{email}, "sam");
@@ -66,25 +66,25 @@ drogon::HttpRequestPtr getRequest(const std::string& session) {
   return request;
 }
 
-drogon::HttpResponsePtr sendGetTree(HttpApi& api, const std::string& session, const std::string& id) {
+drogon::HttpResponsePtr sendGetTree(TreeApi& api, const std::string& session, const std::string& id) {
   drogon::HttpResponsePtr captured;
   api.getTree(getRequest(session), [&](const drogon::HttpResponsePtr& r) { captured = r; }, id);
   return captured;
 }
 
-drogon::HttpResponsePtr sendGetDiagnostics(HttpApi& api, const std::string& session, const std::string& id) {
+drogon::HttpResponsePtr sendGetDiagnostics(TreeApi& api, const std::string& session, const std::string& id) {
   drogon::HttpResponsePtr captured;
   api.getDiagnostics(getRequest(session), [&](const drogon::HttpResponsePtr& r) { captured = r; }, id);
   return captured;
 }
 
-drogon::HttpResponsePtr sendGetActivity(HttpApi& api, const std::string& session, const std::string& id) {
+drogon::HttpResponsePtr sendGetActivity(TreeApi& api, const std::string& session, const std::string& id) {
   drogon::HttpResponsePtr captured;
   api.getActivity(getRequest(session), [&](const drogon::HttpResponsePtr& r) { captured = r; }, id);
   return captured;
 }
 
-drogon::HttpResponsePtr sendGetProgress(HttpApi& api, const std::string& session, const std::string& id) {
+drogon::HttpResponsePtr sendGetProgress(TreeApi& api, const std::string& session, const std::string& id) {
   drogon::HttpResponsePtr captured;
   api.getProgress(getRequest(session), [&](const drogon::HttpResponsePtr& r) { captured = r; }, id);
   return captured;
@@ -101,7 +101,7 @@ Json::Value document(const std::string& title, const std::string& nodeId) {
   return body;
 }
 
-drogon::HttpResponsePtr sendPutText(HttpApi& api, const std::string& session, const std::string& id,
+drogon::HttpResponsePtr sendPutText(TreeApi& api, const std::string& session, const std::string& id,
                                     const std::string& body) {
   auto request = drogon::HttpRequest::newHttpRequest();
   request->setMethod(drogon::Put);
@@ -113,7 +113,7 @@ drogon::HttpResponsePtr sendPutText(HttpApi& api, const std::string& session, co
   return captured;
 }
 
-drogon::HttpResponsePtr sendPut(HttpApi& api, const std::string& session, const std::string& id,
+drogon::HttpResponsePtr sendPut(TreeApi& api, const std::string& session, const std::string& id,
                                 const Json::Value& body) {
   auto request = drogon::HttpRequest::newHttpRequest();
   request->setMethod(drogon::Put);
@@ -145,7 +145,7 @@ drogon::HttpRequestPtr forkRequest(const Json::Value& body, const std::string& s
   return request;
 }
 
-drogon::HttpResponsePtr sendFork(HttpApi& api, const drogon::HttpRequestPtr& request,
+drogon::HttpResponsePtr sendFork(TreeApi& api, const drogon::HttpRequestPtr& request,
                                  const std::string& source) {
   drogon::HttpResponsePtr captured;
   api.forkTree(request, [&](const drogon::HttpResponsePtr& response) { captured = response; }, source);

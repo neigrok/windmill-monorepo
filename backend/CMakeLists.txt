@@ -204,7 +204,6 @@ target_link_libraries(windmill_platform PUBLIC Trantor::Trantor JsonCpp::JsonCpp
 
 add_executable(windmill_domain_tests
   test/main.cpp
-  test/platform/domain/AccessTest.cpp
   test/platform/domain/AiUsageTest.cpp
   test/platform/domain/IdsTest.cpp
   test/platform/domain/sync/JcsTest.cpp
@@ -239,6 +238,7 @@ add_executable(windmill_domain_tests
   test/platform/application/sync/ServerBuilderTest.cpp
   test/platform/application/sync/SyncServiceTest.cpp
   test/platform/application/sync/SyncLiveTest.cpp
+  test/products/roadmap/domain/AccessTest.cpp
   test/products/roadmap/domain/IdsTest.cpp
   test/products/roadmap/domain/LooseGraphTest.cpp
   test/products/roadmap/domain/LegendTest.cpp
@@ -373,7 +373,7 @@ target_sources(windmill_roadmap PRIVATE
   products/roadmap/adapters/postgres/PgOgVideoRepository.cpp
   products/roadmap/adapters/postgres/PgReminderRepository.cpp
   products/roadmap/adapters/postgres/PgTendRunRepository.cpp
-  products/roadmap/adapters/http/HttpApi.cpp
+  products/roadmap/adapters/http/TreeApi.cpp
   products/roadmap/adapters/http/SharePageApi.cpp
   products/roadmap/adapters/http/GalleryApi.cpp
   products/roadmap/adapters/http/OgImageApi.cpp
@@ -560,7 +560,7 @@ add_executable(windmill_adapters_tests
   test/products/roadmap/adapters/postgres/PgProgressRepositoryTest.cpp
   test/products/roadmap/adapters/postgres/PgOpLogTest.cpp
   test/products/roadmap/adapters/http/ComposeApiTest.cpp
-  test/products/roadmap/adapters/http/HttpApiTest.cpp
+  test/products/roadmap/adapters/http/TreeApiTest.cpp
   test/products/roadmap/adapters/http/SharePageApiTest.cpp
   test/products/roadmap/adapters/http/GalleryApiTest.cpp
   test/products/roadmap/adapters/http/OgImageApiTest.cpp

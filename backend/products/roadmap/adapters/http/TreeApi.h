@@ -20,9 +20,9 @@ namespace wm {
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
 // Reads go through the room, so they reflect live socket edits; PUT evicts the room.
-class HttpApi {
+class TreeApi {
 public:
-  HttpApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
+  TreeApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
           std::shared_ptr<ProgressRepository> progress, std::shared_ptr<OpLog> ops, Hlc genesis,
           std::shared_ptr<AuthService> auth, std::shared_ptr<ForkService> fork);
 

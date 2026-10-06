@@ -1,14 +1,13 @@
 #pragma once
 
-#include "platform/domain/Access.h"
+#include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/Command.h"
-#include "platform/domain/Crdt.h"
+#include "products/roadmap/domain/Crdt.h"
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/Tree.h"
 #include "products/roadmap/domain/TreeDiagnostics.h"
-#include "products/roadmap/ports/Op.h"
 #include "products/roadmap/ports/OpLog.h"
 #include "products/roadmap/ports/PresenceBus.h"
 

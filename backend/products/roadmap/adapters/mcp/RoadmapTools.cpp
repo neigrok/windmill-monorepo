@@ -8,7 +8,7 @@
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
 #include "products/roadmap/adapters/mcp/ToolArgs.h"
 #include "products/roadmap/application/TreeRoom.h"
-#include "platform/domain/Access.h"
+#include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/NodeQuery.h"

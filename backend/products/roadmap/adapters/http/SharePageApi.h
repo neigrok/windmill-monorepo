@@ -2,7 +2,7 @@
 
 #include "platform/application/AuthService.h"
 #include "products/roadmap/application/RoomRegistry.h"
-#include "platform/domain/Access.h"
+#include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/ports/OgVideoRepository.h"
 #include "products/roadmap/ports/TreeRepository.h"
