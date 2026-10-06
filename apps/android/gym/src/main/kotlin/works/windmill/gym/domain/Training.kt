@@ -204,6 +204,16 @@ data class SessionSummary(
     )
 
     val session: Session get() = Session(id, startedAtMs, finishedAtMs, routineId, plan)
+
+    companion object {
+        // Read against the account's history: its best estimate, and the dot when a session full
+        // enough to count earned a record.
+        fun of(detail: SessionDetail, history: List<SessionDetail>): SessionSummary {
+            val sets = working(detail)
+            return SessionSummary(detail.session, detail.sets).copy(topE1rm = sets.mapNotNull(::estimate).maxOrNull(),
+                record = sets.size >= Review.slightWorkingSets && earned(detail, history) != null)
+        }
+    }
 }
 
 @Serializable
@@ -383,79 +393,90 @@ data class Review(
                 slight = working < slightWorkingSets,
             )
         }
+
+        // Read against the account's history: the record the session earned, and the routine's
+        // previous session movement by movement, with what the frozen plan asked.
+        fun of(detail: SessionDetail, history: List<SessionDetail>): Review {
+            val working = working(detail)
+            val base = of(detail).let { it.copy(stats = it.stats.copy(topE1rm = working.mapNotNull(::estimate).maxOrNull())) }
+            if (base.slight) return base
+            val previous = detail.session.routineId?.let { id -> prior(detail, history).lastOrNull { it.session.routineId == id } }
+            val against = previous?.let { before -> Against(before.session.id, before.session.plan?.routine, before.session.startedAtMs,
+                working.groupBy { it.exerciseId }.map { (id, sets) -> AgainstMovement(id, effort(sets)!!,
+                    effort(working(before).filter { it.exerciseId == id }), detail.session.plan?.entry(id)?.let { PlannedLine(it.sets) }) }) }
+            return base.copy(record = earned(detail, history), against = against)
+        }
     }
 }
 
-// `e1rm` is absent exactly where Epley is undefined — at or below zero load — and never a zero.
-@Serializable
-data class RecordMark(
-    val weightKg: Double,
-    val reps: Int,
-    @SerialName("at") val atMs: Long,
-    val e1rm: Double? = null,
-)
+// What a review and a summary read off the account's history. The estimate is Epley's, rounded to
+// a tenth, and absent at or below zero load.
+private fun estimate(set: TrainingSet): Double? = if (set.weightKg > 0) floor(set.weightKg * (1 + set.reps / 30.0) * 10 + .5) / 10 else null
+private fun working(detail: SessionDetail) = detail.sets.filter { it.kind == SetKind.Working }.sortedWith(compareBy({ it.completedAtMs }, { it.id }))
+private fun prior(detail: SessionDetail, history: List<SessionDetail>) = history.filter {
+    !it.session.isOpen && it.session.startedAtMs < detail.session.startedAtMs
+}.sortedWith(compareBy({ it.session.startedAtMs }, { it.session.id }))
+private fun marks(history: List<SessionDetail>): List<Pair<TrainingSet, Long>> = history.flatMap { detail -> working(detail).map { it to it.completedAtMs } }
+    .groupBy { it.first.exerciseId to it.first.weightKg }.values.map { values ->
+        values.sortedWith(compareByDescending<Pair<TrainingSet, Long>> { it.first.reps }.thenBy { it.second }).first()
+    }
+private fun earned(detail: SessionDetail, history: List<SessionDetail>): PersonalRecord? {
+    data class Candidate(val rank: Int, val record: PersonalRecord, val set: TrainingSet)
+    val before = marks(prior(detail, history))
+    val candidates = mutableListOf<Candidate>()
+    for ((exercise, sets) in working(detail).groupBy { it.exerciseId }) {
+        val earlier = before.filter { it.first.exerciseId == exercise }
+        val best = sets.filter { estimate(it) != null }.maxByOrNull { estimate(it)!! }
+        val priorBest = earlier.filter { estimate(it.first) != null }.maxByOrNull { estimate(it.first)!! }
+        if (best != null && priorBest != null && estimate(best)!! > estimate(priorBest.first)!!) candidates += Candidate(0,
+            PersonalRecord("e1rm", exercise, estimate(best)!!, best.weightKg, best.reps, estimate(priorBest.first), priorBest.second), best)
+        val heavy = sets.sortedWith(compareByDescending<TrainingSet> { it.weightKg }.thenByDescending { it.reps }
+            .thenBy { it.completedAtMs }.thenBy { it.id }).first()
+        val priorHeavy = earlier.maxWithOrNull(compareBy({ it.first.weightKg }, { it.first.reps }))
+        if (priorHeavy != null && heavy.weightKg > priorHeavy.first.weightKg) candidates += Candidate(1,
+            PersonalRecord("heaviest", exercise, heavy.weightKg, heavy.weightKg, heavy.reps, priorHeavy.first.weightKg, priorHeavy.second), heavy)
+        for (set in sets.groupBy { it.weightKg }.values.map { it.maxBy { set -> set.reps } }) {
+            val priorLoad = earlier.firstOrNull { it.first.weightKg == set.weightKg } ?: continue
+            if (set.reps > priorLoad.first.reps) candidates += Candidate(2,
+                PersonalRecord("reps-at-weight", exercise, set.reps.toDouble(), set.weightKg, set.reps, priorLoad.first.reps.toDouble(), priorLoad.second), set)
+        }
+    }
+    return candidates.sortedWith(compareBy<Candidate> { it.rank }.thenByDescending { estimate(it.set) ?: 0.0 }
+        .thenByDescending { it.set.weightKg }.thenBy { it.set.completedAtMs }).firstOrNull()?.record
+}
+private fun effort(sets: List<TrainingSet>): Effort? {
+    val top = sets.maxWithOrNull(compareBy({ it.weightKg }, { it.reps })) ?: return null
+    return Effort(sets.count { it.weightKg == top.weightKg }, top.reps, top.weightKg)
+}
 
-@Serializable
+// One closed session's sets of a movement, warmups aside.
 data class RecordDay(
     val sessionId: String,
-    @SerialName("startedAt") val startedAtMs: Long,
+    val startedAtMs: Long,
     val sets: List<TrainingSet> = emptyList(),
 )
 
-// The two counts are OPTIONAL, never defaulted to 0; zero itself is a real answer. The three e1RM
-// fields are absent together where the estimator has nothing to say.
-@Serializable
+// A movement's page: the movement and its newest days. Its estimates and bests are read from
+// `StatsProgress`.
 data class MovementRecord(
     val exercise: Exercise,
-    val routineCount: Int? = null,
-    // Which routines, by name, in program order — exactly `routineCount` long, omitted rather than empty.
-    val routines: List<String> = emptyList(),
-    val sessionCount: Int? = null,
-    val bestE1rm: RecordMark? = null,
-    val heaviest: RecordMark? = null,
-    val e1rmSeries: List<RecordMark> = emptyList(),   // oldest first, the last twelve weeks
-    val records: List<RecordMark> = emptyList(),      // NEWEST first, lifetime
     val recentDays: List<RecordDay> = emptyList(),    // newest first, at most ten
 ) {
     companion object {
         const val recentDaysShown = 10
 
-        // The server's rules: a session counts when it holds a WORKING set, and ties on the heaviest
-        // go to more reps.
-        fun of(exercise: Exercise, history: List<SessionDetail>, routines: List<Routine>): MovementRecord {
-            val closed = history.filter { it.session.finishedAtMs != null }
-            val worked = closed.filter { detail ->
-                detail.sets.any { it.exerciseId == exercise.id && it.kind == SetKind.Working }
-            }
-            val heaviest = worked
-                .flatMap { detail ->
-                    detail.sets
-                        .filter { it.exerciseId == exercise.id && it.kind == SetKind.Working }
-                        .map { RecordMark(it.weightKg, it.reps, detail.session.startedAtMs) }
+        // A day is a closed session that holds a set of the movement other than a warmup.
+        fun of(exercise: Exercise, history: List<SessionDetail>): MovementRecord = MovementRecord(exercise,
+            history.filter { it.session.finishedAtMs != null }
+                .sortedByDescending { it.session.startedAtMs }
+                .mapNotNull { detail ->
+                    val performed = detail.sets
+                        .filter { it.exerciseId == exercise.id && it.kind != SetKind.Warmup }
+                        .sortedBy { it.completedAtMs }
+                    if (performed.isEmpty()) return@mapNotNull null
+                    RecordDay(detail.session.id, detail.session.startedAtMs, performed)
                 }
-                .maxWithOrNull(compareBy({ it.weightKg }, { it.reps }))
-
-            val named = routines
-                .filter { routine -> routine.entries.any { it.exerciseId == exercise.id } }
-                .map { it.name }
-            return MovementRecord(
-                exercise = exercise,
-                routineCount = named.size,
-                routines = named,
-                sessionCount = worked.size,
-                heaviest = heaviest,
-                recentDays = closed
-                    .sortedByDescending { it.session.startedAtMs }
-                    .mapNotNull { detail ->
-                        val performed = detail.sets
-                            .filter { it.exerciseId == exercise.id && it.kind != SetKind.Warmup }
-                            .sortedBy { it.completedAtMs }
-                        if (performed.isEmpty()) return@mapNotNull null
-                        RecordDay(detail.session.id, detail.session.startedAtMs, performed)
-                    }
-                    .take(recentDaysShown),
-            )
-        }
+                .take(recentDaysShown))
     }
 }
 

@@ -309,7 +309,7 @@ class EngineLifecycleStoreTests {
             engine.releaseHeld(true); engine.nextPush()
             val record = (room.store.record("bench-press") as GymResult.Ok).value
             assertEquals(session.id, record.recentDays.single().sessionId)
-            assertEquals(82.5, record.bestE1rm!!.weightKg, 0.0)
+            assertEquals(listOf(82.5), record.recentDays.single().sets.map { it.weightKg })
         }
     }
 

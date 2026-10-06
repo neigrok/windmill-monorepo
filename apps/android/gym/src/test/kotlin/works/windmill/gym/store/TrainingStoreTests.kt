@@ -37,7 +37,6 @@ import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalState
 import works.windmill.gym.domain.ReadTally
 import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.RecordMark
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.ReviewStats
 import works.windmill.gym.domain.Routine
@@ -413,14 +412,7 @@ class TrainingStoreTests {
             runCurrent()
 
             val record = (room.store.record(movement.id) as GymResult.Ok).value
-            val top = RecordMark(weightKg = 82.5, reps = 5, atMs = ended.startedAtMs, e1rm = 96.3)
             assertEquals("Bench Press", record.exercise.name)
-            assertEquals(1, record.sessionCount)
-            assertEquals(0, record.routineCount)
-            assertEquals(top, record.heaviest)
-            assertEquals("the phone runs the same estimate the log does", top, record.bestE1rm)
-            assertEquals(listOf(top), record.e1rmSeries)
-            assertEquals(emptyList<Any>(), record.records)
             assertEquals(listOf(ended.id), record.recentDays.map { it.sessionId })
             assertEquals("a warmup counts toward nothing, here as everywhere",
                 listOf(82.5, 82.5, 82.5, 82.5), record.recentDays.single().sets.map { it.weightKg })
@@ -459,7 +451,7 @@ class TrainingStoreTests {
 
             val record = (room.store.record(movement.id) as GymResult.Ok).value
             assertEquals("Bench Press", record.exercise.name)
-            assertEquals("the history is whole — the id never moved", 1, record.sessionCount)
+            assertEquals("the history is whole — the id never moved", 1, record.recentDays.size)
 
             assertEquals("Name it to save it.",
                 ((room.store.rename(movement.id, "   ") as GymResult.Failed).why as WriteFailure.Refused).said)

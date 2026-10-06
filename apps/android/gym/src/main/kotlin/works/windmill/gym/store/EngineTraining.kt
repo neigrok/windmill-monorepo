@@ -241,12 +241,12 @@ class EngineTraining(val engine: Engine) {
             .filter { before == null || it.session.startedAtMs < before || it.session.startedAtMs == before && (beforeId == null || it.session.id < beforeId) }
             .take(limit).map { detail ->
                 val stale = read { TrainingLog(it).drawnSessions.firstOrNull { it.id.text == detail.session.id }?.closedBy == "stale" }
-                val summary = EngineReadouts.summary(detail, history)
+                val summary = SessionSummary.of(detail, history)
                 summary.copy(closedItself = stale, exercises = summary.exercises.map { names[it] ?: it })
             }
     }
     fun session(id: String): SessionDetail? = details().firstOrNull { it.session.id == id }
-    fun review(sessionId: String): Review = EngineReadouts.review(
+    fun review(sessionId: String): Review = Review.of(
         session(sessionId) ?: throw missing("That workout is no longer on the log."), details())
     fun lastTime(exerciseId: String): LastTime {
         if (catalogue().none { it.id == exerciseId }) throw TrainingRefused("unknown-exercise", "That movement is not in the catalog.")
@@ -338,7 +338,7 @@ class EngineTraining(val engine: Engine) {
     }
     fun progress(): StatsProgress = StatsProgress.of(details(), engine.physNow())
     fun record(exerciseId: String): MovementRecord? = catalogue().firstOrNull { it.id == exerciseId }
-        ?.let { EngineReadouts.record(it, details(), program(), engine.physNow()) }
+        ?.let { MovementRecord.of(it, details()) }
     fun settings(): GymPreferences = read { reader ->
         val value = reader.repository(Preferences).find(Preferences().id, ViewMode.drawn) ?: Preferences()
         GymPreferences(Units.entries.first { it.wire == value.units }, value.confirmHaptic, value.confirmSound)
