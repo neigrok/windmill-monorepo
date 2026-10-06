@@ -26,7 +26,7 @@ import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.EngineTraining
 import works.windmill.gym.store.GymEngineSession
-import works.windmill.gym.store.LegacyGymMigration
+import works.windmill.gym.store.WorkoutImports
 import works.windmill.gym.net.GymHttp
 import works.windmill.platform.auth.LocalSession
 import works.windmill.platform.auth.AuthStore
@@ -88,10 +88,9 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
         val initial = Engine.memory(SyncSchema.registry, identities = identities).use { it.snapshot() }
         val engine = AndroidSqlite.open(File(filesDir, "sync-replica.sqlite"), SyncSchema.registry, initial,
             AndroidClock(this), identities, identities.actorID(), telemetry = engineTelemetry,
-            rewriteDeviceValue = LegacyGymMigration.rewriteDeviceValue,
-            commandResultWrites = LegacyGymMigration.commandResultWrites,
-            pendingDeviceWork = LegacyGymMigration.pendingDeviceWork)
-        LegacyGymMigration(filesDir, engine, owner, telemetry).run()
+            rewriteDeviceValue = WorkoutImports.rewriteDeviceValue,
+            commandResultWrites = WorkoutImports.commandResultWrites,
+            pendingDeviceWork = WorkoutImports.pendingDeviceWork)
         val engineStorage = EngineStorage(this, SecretVault.onThisDevice(telemetry))
         if (owner != null) sessions.read()?.let { engineStorage.save(owner, it) }
         val transport = HTTPTransport(baseUrl.toString(), SyncSchema.version.toInt(), engineTelemetry)

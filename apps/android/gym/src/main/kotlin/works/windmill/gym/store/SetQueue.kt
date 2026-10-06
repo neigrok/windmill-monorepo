@@ -132,27 +132,15 @@ class SetQueue private constructor(
     private val storage = StoredDocument(file, telemetry)
     private var transferFailed = false
     private var seat: String = Seat.of(deviceOwner)
-    private var migrated = false
     var unreadable: Boolean = false
         private set
-    private var held: Held = open(deviceOwner)
+    private var held: Held = open()
     private var saved: Held? = null
 
-    init {
-        if (migrated) flush()
-    }
-
-    // An unnamed queue is seated to the device's account, or quarantined when it holds no session;
-    // quarantine is reachable by no seat and adopted by no arriving account.
-    private fun open(deviceOwner: String?): Held {
+    private fun open(): Held {
         val document = storage.tree() ?: run {
             if (file.exists()) unreadable = true
             return Held()
-        }
-        val before = queued(document)
-        if (!before.isEmpty) {
-            migrated = true
-            return Held(mapOf((if (deviceOwner == null) Seat.quarantine else seat) to before))
         }
         if (document["queues"] != null && document["queues"] !is JsonObject) unreadable = true
         val queues = document["queues"] as? JsonObject ?: JsonObject(emptyMap())

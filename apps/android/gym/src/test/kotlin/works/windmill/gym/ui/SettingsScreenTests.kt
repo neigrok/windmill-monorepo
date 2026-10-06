@@ -44,7 +44,7 @@ import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.FixOutcome
 import works.windmill.gym.store.GymResult
-import works.windmill.gym.store.LocalLog
+import works.windmill.gym.store.SavedWorkout
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillMaterial
 
@@ -57,10 +57,10 @@ class SettingsScreenTests {
     @get:Rule
     val tmp = TemporaryFolder()
 
-    private fun editor(refusal: works.windmill.gym.store.LegacyMigrationRefusal,
-        onSave: (LocalLog.FinishedSession, Boolean, Set<String>) -> Unit) {
+    private fun editor(refusal: works.windmill.gym.store.ImportRefusal,
+        onSave: (SavedWorkout, Boolean, Set<String>) -> Unit) {
         compose.setContent { WindmillMaterial { GymMaterial {
-            MigrationWorkoutEditor(refusal, works.windmill.gym.domain.TheSix.movements, {}, onSave)
+            SavedWorkoutEditor(refusal, works.windmill.gym.domain.TheSix.movements, {}, onSave)
         } } }
     }
 
@@ -70,28 +70,28 @@ class SettingsScreenTests {
         val source = works.windmill.gym.domain.Session("session1", at, at + 120_000)
         val set = works.windmill.gym.domain.TrainingSet("set00001", "back-squat", setNumber = 3,
             weightKg = 80.0, reps = 5, completedAtMs = at + 1_234)
-        val refusal = works.windmill.gym.store.LegacyMigrationRefusal("source", source, listOf(set), listOf("set00002"),
+        val refusal = works.windmill.gym.store.ImportRefusal("source", source, listOf(set), listOf("set00002"),
             "source-numbering", "The original set numbering cannot be kept.")
-        val saved = mutableListOf<LocalLog.FinishedSession>()
+        val saved = mutableListOf<SavedWorkout>()
         editor(refusal) { row, _, _ -> saved += row }
         compose.onNodeWithText("Save and retry").performClick()
-        compose.runOnIdle { assertEquals(LocalLog.FinishedSession(source, listOf(set), listOf("set00002")), saved.single()) }
+        compose.runOnIdle { assertEquals(SavedWorkout(source, listOf(set), listOf("set00002")), saved.single()) }
         compose.onAllNodes(isToggleable()).onFirst().performClick()
         compose.onNodeWithText("Save and retry").performClick()
-        compose.runOnIdle { assertEquals(LocalLog.FinishedSession(source, listOf(set.copy(setNumber = 1)), listOf("set00002")), saved.last()) }
+        compose.runOnIdle { assertEquals(SavedWorkout(source, listOf(set.copy(setNumber = 1)), listOf("set00002")), saved.last()) }
     }
 
     @Test
     fun correctingAnAutomaticFinishRequiresTheExplicitChoice() {
         val at = 1_800_000_000_123L
         val source = works.windmill.gym.domain.Session("session1", at, at + 120_000)
-        val refusal = works.windmill.gym.store.LegacyMigrationRefusal("source", source, emptyList(), emptyList(),
+        val refusal = works.windmill.gym.store.ImportRefusal("source", source, emptyList(), emptyList(),
             "source-auto-closed", "The automatic finish marker cannot be kept.")
-        val saved = mutableListOf<LocalLog.FinishedSession>()
+        val saved = mutableListOf<SavedWorkout>()
         val marked = mutableListOf<Boolean>()
         editor(refusal) { row, flag, _ -> saved += row; marked += flag }
         compose.onNodeWithText("Save and retry").performClick()
-        compose.runOnIdle { assertEquals(emptyList<LocalLog.FinishedSession>(), saved) }
+        compose.runOnIdle { assertEquals(emptyList<SavedWorkout>(), saved) }
         compose.onNodeWithText("Choose Mark as finished to remove the automatic finish marker, or Cancel to keep it.").assertIsDisplayed()
         compose.onAllNodes(isToggleable()).onFirst().performClick()
         compose.onNodeWithText("Save and retry").performClick()
@@ -101,9 +101,9 @@ class SettingsScreenTests {
     @Test
     fun anUnfinishedWorkoutEditorKeepsTheStartOpenAndItsOriginalInstant() {
         val source = works.windmill.gym.domain.Session("session1", 1_800_000_000_123L)
-        val refusal = works.windmill.gym.store.LegacyMigrationRefusal("source", source, emptyList(), emptyList(),
+        val refusal = works.windmill.gym.store.ImportRefusal("source", source, emptyList(), emptyList(),
             "bad-instant", "Check the start time.")
-        val saved = mutableListOf<LocalLog.FinishedSession>()
+        val saved = mutableListOf<SavedWorkout>()
         editor(refusal) { row, _, _ -> saved += row }
         compose.onNodeWithText("Finished (yyyy-MM-dd HH:mm)").assertDoesNotExist()
         compose.onNodeWithText("Pending sets stay saved with this workout.").assertIsDisplayed()
@@ -117,19 +117,19 @@ class SettingsScreenTests {
         val source = works.windmill.gym.domain.Session("session1", at, at + 120_000)
         val set = works.windmill.gym.domain.TrainingSet("set00001", "back-squat", weightKg = 80.0, reps = 5,
             completedAtMs = at + 1_234)
-        val refusal = works.windmill.gym.store.LegacyMigrationRefusal("source", source, listOf(set), emptyList(),
+        val refusal = works.windmill.gym.store.ImportRefusal("source", source, listOf(set), emptyList(),
             "source-kind", "Choose the kind of this set.", unrecognizedKindSetIds = listOf(set.id))
-        val saved = mutableListOf<LocalLog.FinishedSession>()
+        val saved = mutableListOf<SavedWorkout>()
         val kinds = mutableListOf<Set<String>>()
         editor(refusal) { row, _, ids -> saved += row; kinds += ids }
         compose.onNodeWithText("Save and retry").performClick()
-        compose.runOnIdle { assertEquals(emptyList<LocalLog.FinishedSession>(), saved) }
+        compose.runOnIdle { assertEquals(emptyList<SavedWorkout>(), saved) }
         compose.onNodeWithText("Choose set kind").performScrollTo().performClick()
         compose.onNodeWithText("Working").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("Kind: Working").assertIsDisplayed()
         compose.onNodeWithText("Save and retry").performClick()
         compose.runOnIdle {
-            assertEquals(LocalLog.FinishedSession(source, listOf(set)), saved.single())
+            assertEquals(SavedWorkout(source, listOf(set)), saved.single())
             assertEquals(listOf(setOf(set.id)), kinds)
         }
     }

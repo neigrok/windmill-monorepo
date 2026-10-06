@@ -45,8 +45,9 @@ import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.Notes
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.store.LocalGymEngineSession
-import works.windmill.gym.store.LegacyGymMigration
-import works.windmill.gym.store.LegacyMigrationRefusal
+import works.windmill.gym.store.ImportRefusal
+import works.windmill.gym.store.SavedWorkout
+import works.windmill.gym.store.WorkoutImports
 import works.windmill.gym.store.gymLineageCounts
 import works.windmill.platform.net.ClientUpdate
 import works.windmill.platform.LocalClientUpdateDestination
@@ -72,7 +73,6 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import works.windmill.gym.domain.Units
-import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
@@ -190,11 +190,12 @@ private fun DeviceTrainingRow(store: TrainingStore, isSignedIn: Boolean, onAccou
     val uri = LocalUriHandler.current
     val update = LocalClientUpdateDestination.current
     var revision by remember(session) { mutableIntStateOf(0) }
-    var fixing by remember(session) { mutableStateOf<LegacyMigrationRefusal?>(null) }
-    var fixingKind by remember(session) { mutableStateOf<LegacyMigrationRefusal?>(null) }
-    var inspecting by remember(session) { mutableStateOf<LegacyMigrationRefusal?>(null) }
+    var fixing by remember(session) { mutableStateOf<ImportRefusal?>(null) }
+    var fixingKind by remember(session) { mutableStateOf<ImportRefusal?>(null) }
+    var inspecting by remember(session) { mutableStateOf<ImportRefusal?>(null) }
     var updateFailure by remember(session) { mutableStateOf<String?>(null) }
-    val refused = remember(session, revision, status) { LegacyGymMigration.refusals(session.engine) }
+    val imports = remember(session) { WorkoutImports(session.engine) }
+    val refused = remember(session, revision, status) { imports.refusals() }
     if (status.upgradeRequired || retired) SettingCard {
         Text("Update required", style = WindmillFont.body(15, FontWeight.Bold), color = skin.alarmInk)
         Caption("Update Windmill to keep syncing. Your work is saved on this phone.")
@@ -218,24 +219,23 @@ private fun DeviceTrainingRow(store: TrainingStore, isSignedIn: Boolean, onAccou
                 else "Keep this workout separately by finishing it at its last logged set.")
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (refusal.session != null) TextButton(onClick = {
-                telemetry.event("gym_migration_recovery", mapOf("action" to "inspect", "state" to "opened")); inspecting = refusal
+                telemetry.event("gym_import_recovery", mapOf("action" to "inspect", "state" to "opened")); inspecting = refusal
             }) { Text("Inspect workout") }
             if (refusal.session?.isOpen == true && refusal.code in setOf("session-open", "session-already-open"))
                 TextButton(onClick = { scope.launch {
                     try {
-                        LegacyGymMigration.keepWorkout(session.engine, refusal.id)
+                        imports.keepWorkout(refusal.id)
                         store.refreshEngine(); revision++; say(null)
-                        telemetry.event("gym_migration_recovery", mapOf("action" to "keep", "outcome" to "completed"))
+                        telemetry.event("gym_import_recovery", mapOf("action" to "keep", "outcome" to "completed"))
                     } catch (cancelled: CancellationException) { throw cancelled
                     } catch (failure: Exception) {
-                        telemetry.failure("gym_migration_keep", failure)
+                        telemetry.failure("gym_import_keep", failure)
                         say("The original workout is still saved on this phone. Keep could not be completed.")
                     }
                 } }) { Text("Keep workout") }
             if (refusal.session != null && refusal.code != "source-needs-update") TextButton(onClick = {
-                telemetry.event("gym_migration_recovery", mapOf("action" to "fix", "state" to "opened")); fixing = refusal
+                telemetry.event("gym_import_recovery", mapOf("action" to "fix", "state" to "opened")); fixing = refusal
             }) { Text("Fix workout") }
-            if (refusal.code == "identity-unresolved") TextButton(onClick = onAccount) { Text("Choose account") }
             if (refusal.code in setOf("source-unreadable", "source-needs-update")) TextButton(onClick = {
                 say(update.open(uri::openUri, telemetry))
             }) { Text(update.label) }
@@ -243,13 +243,13 @@ private fun DeviceTrainingRow(store: TrainingStore, isSignedIn: Boolean, onAccou
                 fixingKind = refusal
             }) { Text("Choose set kind") }
             TextButton(onClick = { scope.launch {
-                telemetry.event("gym_migration_recovery", mapOf("action" to "retry", "state" to "started"))
+                telemetry.event("gym_import_recovery", mapOf("action" to "retry", "state" to "started"))
                 try {
-                    LegacyGymMigration.retry(session.engine, refusal.id); revision++; say(null)
-                    telemetry.event("gym_migration_recovery", mapOf("action" to "retry", "outcome" to "completed"))
+                    imports.retry(refusal.id); revision++; say(null)
+                    telemetry.event("gym_import_recovery", mapOf("action" to "retry", "outcome" to "completed"))
                 }
                 catch (failure: Exception) {
-                    telemetry.failure("gym_migration_retry", failure)
+                    telemetry.failure("gym_import_retry", failure)
                     say("The workout is still saved on this phone. Retry could not be completed.")
                 }
             } }) { Text("Retry") }
@@ -275,20 +275,20 @@ private fun DeviceTrainingRow(store: TrainingStore, isSignedIn: Boolean, onAccou
             if (refusal.sets.isEmpty()) item { Text("No sets logged.") }
         } },
         confirmButton = { TextButton(onClick = { inspecting = null }) { Text("Close") } }) }
-    fixing?.let { refusal -> MigrationWorkoutEditor(refusal, store.catalog, onDismiss = {
-        telemetry.event("gym_migration_recovery", mapOf("action" to "fix", "outcome" to "cancelled")); fixing = null
+    fixing?.let { refusal -> SavedWorkoutEditor(refusal, store.catalog, onDismiss = {
+        telemetry.event("gym_import_recovery", mapOf("action" to "fix", "outcome" to "cancelled")); fixing = null
     }, onSave = { corrected, markFinished, correctedKinds ->
         try {
-            if (corrected.session.isOpen) LegacyGymMigration.replaceStartAndRetry(session.engine, refusal.id, corrected.session,
+            if (corrected.session.isOpen) imports.replaceStartAndRetry(refusal.id, corrected.session,
                 correctedKinds = corrected.sets.filter { it.id in correctedKinds }.associate { it.id to it.kind })
-            else LegacyGymMigration.replaceAndRetry(session.engine, refusal.id, corrected,
+            else imports.replaceAndRetry(refusal.id, corrected,
                 markFinished = markFinished, correctedKinds = correctedKinds)
             revision++
             fixing = null
             say(null)
-            telemetry.event("gym_migration_recovery", mapOf("action" to "fix", "outcome" to "completed"))
+            telemetry.event("gym_import_recovery", mapOf("action" to "fix", "outcome" to "completed"))
         } catch (failure: Exception) {
-            telemetry.failure("gym_migration_fix", failure)
+            telemetry.failure("gym_import_fix", failure)
             say("The original workout is still saved on this phone. The correction could not be saved.")
         }
     }) }
@@ -297,11 +297,11 @@ private fun DeviceTrainingRow(store: TrainingStore, isSignedIn: Boolean, onAccou
         confirmButton = { Column {
             works.windmill.gym.domain.SetKind.entries.forEach { kind -> TextButton(onClick = {
                 try {
-                    LegacyGymMigration.replaceOperationKindAndRetry(session.engine, refusal.id, kind)
+                    imports.replaceOperationKindAndRetry(refusal.id, kind)
                     revision++; fixingKind = null; say(null)
-                    telemetry.event("gym_migration_recovery", mapOf("action" to "fix", "outcome" to "completed"))
+                    telemetry.event("gym_import_recovery", mapOf("action" to "fix", "outcome" to "completed"))
                 } catch (failure: Exception) {
-                    telemetry.failure("gym_migration_fix", failure)
+                    telemetry.failure("gym_import_fix", failure)
                     say("The original set is still saved on this phone. The correction could not be saved.")
                 }
             }) { Text(kind.name) } }
@@ -310,8 +310,8 @@ private fun DeviceTrainingRow(store: TrainingStore, isSignedIn: Boolean, onAccou
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-internal fun MigrationWorkoutEditor(refusal: LegacyMigrationRefusal, catalog: List<works.windmill.gym.domain.Exercise>, onDismiss: () -> Unit,
-    onSave: (LocalLog.FinishedSession, Boolean, Set<String>) -> Unit) {
+internal fun SavedWorkoutEditor(refusal: ImportRefusal, catalog: List<works.windmill.gym.domain.Exercise>, onDismiss: () -> Unit,
+    onSave: (SavedWorkout, Boolean, Set<String>) -> Unit) {
     val session = requireNotNull(refusal.session)
     val zone = remember(refusal.id) { ZoneId.systemDefault() }
     val format = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
@@ -430,7 +430,7 @@ internal fun MigrationWorkoutEditor(refusal: LegacyMigrationRefusal, catalog: Li
             positions[set.exerciseId] = number
             set.copy(setNumber = number)
         } else correctedSets
-        onSave(LocalLog.FinishedSession(session.copy(startedAtMs = startedAt, finishedAtMs = finishedAt,
+        onSave(SavedWorkout(session.copy(startedAtMs = startedAt, finishedAtMs = finishedAt,
             routineId = if (unlink) null else session.routineId, plan = if (unlink) null else session.plan), numberedSets,
             (refusal.deletedSetIds + refusal.sets.filter { old -> sets.none { it.id == old.id } }.map { it.id }).distinct()),
             manualFinish, correctedKinds)

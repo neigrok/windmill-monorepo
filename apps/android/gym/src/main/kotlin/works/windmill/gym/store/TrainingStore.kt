@@ -302,10 +302,10 @@ class TrainingStore(
 
     suspend fun prepareEngineTransition() {
         val engine = gym as? EngineTraining ?: return
-        engine.reconcileLegacyOperations()
+        engine.reconcileImports()
         deliver()
-        val durableLegacy = LegacyGymMigration.operations(engine.engine).mapTo(mutableSetOf()) { it.entry.set.id }
-        if (queue.pending.any { it.set.id !in durableLegacy }) throw WindmillApiException.Refused(409,
+        val durable = engine.imports.operations().mapTo(mutableSetOf()) { it.entry.set.id }
+        if (queue.pending.any { it.set.id !in durable }) throw WindmillApiException.Refused(409,
             works.windmill.platform.net.Refusal("The workout could not be saved safely. Retry before changing accounts."))
         engine.persistControls(queue)
     }
@@ -414,7 +414,7 @@ class TrainingStore(
     var logged: List<SessionSummary> by mutableStateOf(emptyList())      // the account's pages, newest first
         private set
     private var logReadRevision = 0L
-    var shelved: List<SessionSummary> by mutableStateOf(emptyList())     // retained migration refusals
+    var shelved: List<SessionSummary> by mutableStateOf(emptyList())     // refused imports kept on this phone
         private set
     // Both, merged on the clock: everything the account and this
     // device hold between them, which is what the log's empty stance and the first-session line are
@@ -704,7 +704,7 @@ class TrainingStore(
         if (log == null) {
             // Signed out the shelf is the whole log, so the foot is already at the bottom.
             logged = emptyList()
-            shelved = legacyShelf()
+            shelved = refusedImports()
             older = Older.End
             saveState = if (queue.pending.isEmpty()) SaveState.Idle else SaveState.OnThisDevice
             resume()
@@ -712,8 +712,8 @@ class TrainingStore(
             return
         }
         // Durably reconcile accepted local operations before refreshing the room.
-        shelved = legacyShelf()
-        if (log is EngineTraining) tried("gym.migration_reconcile") { log.reconcileLegacyOperations() }
+        shelved = refusedImports()
+        if (log is EngineTraining) tried("gym.import_reconcile") { log.reconcileImports() }
         deliver()
         if (seat != owner || gym !== log) return
         flushMirrors()
@@ -769,19 +769,19 @@ class TrainingStore(
     }
 
     private fun shelfDetail(id: String): SessionDetail? = (gym as? EngineTraining)?.let { engine ->
-        LegacyGymMigration.refusals(engine.engine).firstOrNull { it.id == id }?.let { refused ->
+        engine.imports.refusals().firstOrNull { it.id == id }?.let { refused ->
             refused.session?.let { SessionDetail(it, refused.sets) }
-        } ?: LegacyGymMigration.pendingFinished(engine.engine).firstOrNull { it.session.id == id }?.let { row ->
+        } ?: engine.imports.pendingFinished().firstOrNull { it.session.id == id }?.let { row ->
             SessionDetail(row.session, row.sets.filterNot { it.id in row.deleted })
         }
     } ?: if (gym is EngineTraining) null else localLog.detail(id)
 
-    private fun legacyShelf(): List<SessionSummary> {
+    private fun refusedImports(): List<SessionSummary> {
         val engine = gym as? EngineTraining ?: return localLog.summaries()
-        val migrated = engine.details().mapTo(mutableSetOf()) { it.session.id }
-        return LegacyGymMigration.refusals(engine.engine).mapNotNull { refused -> refused.session?.let { session ->
+        val drawn = engine.details().mapTo(mutableSetOf()) { it.session.id }
+        return engine.imports.refusals().mapNotNull { refused -> refused.session?.let { session ->
             SessionSummary(session, refused.sets)
-        } }.filterNot { it.id in migrated }
+        } }.filterNot { it.id in drawn }
     }
 
     fun observeEngine() {
@@ -796,8 +796,8 @@ class TrainingStore(
         val log = gym as? EngineTraining ?: return
         if (queue.engineReplica != log.engine.activeReplica()) return
         val seat = owner
-        tried("gym.migration_reconcile") { log.reconcileLegacyOperations() }
-        if (log.firstPullComplete && !log.anonymous) LegacyGymMigration.retireCaches(log.engine)
+        tried("gym.import_reconcile") { log.reconcileImports() }
+        if (log.firstPullComplete && !log.anonymous) log.imports.retireStartSources()
         deliver()
         if (seat != owner || gym !== log) return
         refusals = log.refusedWrites()
@@ -1075,7 +1075,7 @@ class TrainingStore(
         val detail = localLog.detail(closed.id) ?: return FinishOutcome.Failed(WriteFailure.NoAnswer)
         retainClosed(detail)
         drawFromQueue()
-        shelved = legacyShelf()
+        shelved = refusedImports()
         redrawShelfRoutines()
         if (log != null) {
             if (!workoutAuthorized || seat != owner || gym !== log) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
@@ -1122,12 +1122,12 @@ class TrainingStore(
         if (!workoutAuthorized) return false
         if (shelfDetail(sessionId) != null) {
             val engine = gym as? EngineTraining
-            if (engine == null) localLog.forget(sessionId) else LegacyGymMigration.discardRefusal(engine.engine, sessionId)
+            if (engine == null) localLog.forget(sessionId) else engine.imports.discardRefusal(sessionId)
             invalidateProgress()
             queue.forget(sessionId)
             queue.flush()
             drawFromQueue()
-            shelved = legacyShelf()
+            shelved = refusedImports()
             // A discarded session is one a routine was NOT trained by.
             redrawShelfRoutines()
             return true
@@ -2179,14 +2179,14 @@ class TrainingStore(
                     ?: return@withLock FixOutcome.Gone("that set is no longer on this device")
                 val engine = log as? EngineTraining
                 if (engine == null) localLog.fixSet(currentSession, currentSet, fix) else {
-                    val deleted = LegacyGymMigration.refusals(engine.engine).firstOrNull { it.id == currentSession }?.deletedSetIds
-                        ?: LegacyGymMigration.pendingFinished(engine.engine).firstOrNull { it.session.id == currentSession }?.deleted.orEmpty()
-                    LegacyGymMigration.replaceAndRetry(engine.engine, currentSession, LocalLog.FinishedSession(detail.session,
+                    val deleted = engine.imports.refusals().firstOrNull { it.id == currentSession }?.deletedSetIds
+                        ?: engine.imports.pendingFinished().firstOrNull { it.session.id == currentSession }?.deleted.orEmpty()
+                    engine.imports.replaceAndRetry(currentSession, SavedWorkout(detail.session,
                         detail.sets.map { if (it.id == currentSet) corrected else it }, deleted),
                         correctedKinds = if (fix.kind != null) setOf(currentSet) else emptySet())
                 }
                 changedSet(currentSession, currentSet, corrected)
-                shelved = legacyShelf()
+                shelved = refusedImports()
                 return@withLock FixOutcome.Corrected(corrected)
             }
             if (log == null) return@withLock FixOutcome.Failed(
@@ -2238,15 +2238,15 @@ class TrainingStore(
             shelfDetail(currentSession)?.let { detail ->
                 val engine = log as? EngineTraining
                 val changed = if (engine == null) localLog.deleteSet(currentSession, currentSet) else {
-                    val deleted = LegacyGymMigration.refusals(engine.engine).firstOrNull { it.id == currentSession }?.deletedSetIds
-                        ?: LegacyGymMigration.pendingFinished(engine.engine).firstOrNull { it.session.id == currentSession }?.deleted.orEmpty()
-                    LegacyGymMigration.replaceAndRetry(engine.engine, currentSession, LocalLog.FinishedSession(detail.session,
+                    val deleted = engine.imports.refusals().firstOrNull { it.id == currentSession }?.deletedSetIds
+                        ?: engine.imports.pendingFinished().firstOrNull { it.session.id == currentSession }?.deleted.orEmpty()
+                    engine.imports.replaceAndRetry(currentSession, SavedWorkout(detail.session,
                         detail.sets.filterNot { it.id == currentSet }, (deleted + currentSet).distinct()))
                     detail.sets.any { it.id == currentSet }
                 }
                 if (changed) {
                     deletedSets = deletedSets + currentSet
-                    shelved = legacyShelf()
+                    shelved = refusedImports()
                     changedSet(currentSession, currentSet, null)
                 }
                 return@withLock null
@@ -2766,7 +2766,7 @@ class TrainingStore(
         }
         logged = page + deeper
         invalidateProgress()
-        shelved = legacyShelf()
+        shelved = refusedImports()
         // The foot is about the deepest row in hand, so it is recomputed only when this page IS the
         // whole of what is held.
         if (deeper.isEmpty()) older = if (page.size < logPage) Older.End else Older.More

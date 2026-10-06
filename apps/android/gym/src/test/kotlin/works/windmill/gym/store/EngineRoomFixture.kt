@@ -50,8 +50,8 @@ internal class EngineRoomFixture(
     private var nextSession = 0
     private var nextSet = 0
     val engine = Engine.memory(SyncSchema.registry, snapshot, clock = object : EngineClock { override fun now() = now },
-        commandResultWrites = LegacyGymMigration.commandResultWrites, pendingDeviceWork = LegacyGymMigration.pendingDeviceWork,
-        rewriteDeviceValue = LegacyGymMigration.rewriteDeviceValue)
+        commandResultWrites = WorkoutImports.commandResultWrites, pendingDeviceWork = WorkoutImports.pendingDeviceWork,
+        rewriteDeviceValue = WorkoutImports.rewriteDeviceValue)
     // As in the application: the REST doors answer only while an account is signed in.
     val training = EngineTraining(engine) { rest.takeIf { selected != null } }
     val controlsFile = File(directory, "control.json")

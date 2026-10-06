@@ -366,19 +366,6 @@ class SetQueueTests {
 
         queue.forget("ses_mine")
         assertFalse("no session, nothing unclaimed", queue.sessionIsUnclaimed)
-
-        file.writeText("""{"session":{"id":"ses_old","startedAt":1000},"entries":{}}""")
-        val fromBefore = SetQueue(file, deviceOwner = null)
-        assertNull("a file from before the seats, on a phone holding no session, belongs to " +
-            "nobody until a human says so", fromBefore.session)
-        assertEquals("ses_old", fromBefore.unattributedSession?.id)
-        val batch = ClaimBatch("legacy-workout-approval", fromBefore.claimItems())
-        fromBefore.adopt("alice")
-        assertNull("selection does not claim it", fromBefore.session)
-        fromBefore.preflight(batch, "alice")
-        fromBefore.complete(batch, "alice")
-        assertTrue("and once released it reads as unclaimed — that build's file says nothing " +
-            "about whether the log ever answered", fromBefore.sessionIsUnclaimed)
     }
 
     @Test
@@ -433,73 +420,6 @@ class SetQueueTests {
         queue.complete(batch, "bob")
         assertEquals("a free seat claims it", "ses_anon", queue.session?.id)
         assertEquals(listOf("set_anon"), queue.pending.map { it.set.id })
-    }
-
-    @Test
-    fun testALiveWorkoutFromBeforeTheSeatsBelongsToTheSeatTheDeviceWasHolding() {
-        val file = queueFile()
-        file.writeText("""{"session":{"id":"ses_old","startedAt":1000},"entries":{}}""")
-
-        val queue = SetQueue(file, deviceOwner = "alice")
-        assertEquals("ses_old", queue.session?.id)
-        assertNull("no door is needed and none is offered", queue.unattributedSession)
-
-        queue.adopt(null)
-        queue.adopt("alice")
-        assertEquals("through the app's own null-first connect ordering",
-            "ses_old", queue.session?.id)
-
-        queue.adopt("bob")
-        assertNull("and it went to A alone", queue.session)
-        queue.adopt("alice")
-        assertEquals("ses_old", queue.session?.id)
-    }
-
-    @Test
-    fun testAQueueFromBeforeTheSeatsOnASignedOutDeviceStaysQuarantined() {
-        val file = queueFile()
-        file.writeText("""{"session":{"id":"ses_old","startedAt":1000},"entries":{}}""")
-
-        val queue = SetQueue(file, deviceOwner = null)
-        queue.adopt(null)
-        queue.adopt("alice")
-        assertNull("not even the first account to sign in afterwards", queue.session)
-        assertEquals("ses_old", queue.unattributedSession?.id)
-        assertNull("and the decision is on DISK — a relaunch that does hold a session must still " +
-            "find a quarantine", SetQueue(file, deviceOwner = "bob").session)
-        val batch = ClaimBatch("quarantine-approval", queue.claimItems())
-        queue.preflight(batch, "alice")
-        queue.complete(batch, "alice")
-        assertEquals("ses_old", queue.session?.id)
-    }
-
-    @Test
-    fun testASignedOutMigrationIsWrittenDownAtOnce() {
-        val file = queueFile()
-        file.writeText("""{"session":{"id":"ses_before","startedAt":1000},"entries":{}}""")
-
-        SetQueue(file, deviceOwner = null)
-
-        val later = SetQueue(file, deviceOwner = "bob")
-        assertNull("B WAS HANDED A STRANGER'S WORKOUT", later.session)
-        assertEquals("ses_before", later.unattributedSession?.id)
-    }
-
-    @Test
-    fun testAQuarantineIsNotReleasedOntoASeatThatStillOwesSets() {
-        val file = queueFile()
-        file.writeText("""{"session":{"id":"ses_before","startedAt":1000},"entries":{}}""")
-
-        val queue = SetQueue(file, deviceOwner = null)
-        queue.adopt("alice")
-        queue.store(aSet("set_a", at = 1_100), "ses_alice", needsPush = true)
-
-        assertNull("no workout stands over them", queue.session)
-        assertEquals(1, queue.pending.size)
-        val batch = ClaimBatch("occupied-queue-approval", queue.claimItems())
-        val refusal = assertThrows(IllegalStateException::class.java) { queue.preflight(batch, "alice") }
-        assertEquals("Finish the account’s current workout before adding this training.", refusal.message)
-        assertTrue("and nothing was taken out of quarantine", queue.hasUnattributed)
     }
 
     @Test

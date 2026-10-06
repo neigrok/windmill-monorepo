@@ -133,7 +133,7 @@ class GymEngineSessionTests {
             }
             EngineRoomFixture(directory, this, snapshot).use { restarted ->
                 assertEquals(original, restarted.training.session(original.session.id))
-                assertTrue(LegacyGymMigration.refusals(restarted.engine).any { it.id == original.session.id })
+                assertTrue(WorkoutImports(restarted.engine).refusals().any { it.id == original.session.id })
             }
         }
     }
@@ -164,7 +164,7 @@ class GymEngineSessionTests {
             }
             EngineRoomFixture(directory, this, snapshot).use { restarted ->
                 assertEquals(original, restarted.training.session(original.session.id))
-                assertTrue(LegacyGymMigration.refusals(restarted.engine).any { it.id == original.session.id })
+                assertTrue(WorkoutImports(restarted.engine).refusals().any { it.id == original.session.id })
             }
         }
     }

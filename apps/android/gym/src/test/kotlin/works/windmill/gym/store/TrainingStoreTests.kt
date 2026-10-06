@@ -633,27 +633,6 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testAnOlderQueueAndItsFinishedHistoryMigrateWithoutReplayingAStart() = runTest {
-        val folder = tmp.newFolder()
-        val at = 1_800_000_000_000L
-        File(folder, SetQueue.fileName).writeText("""{"queues":{"anon":{"session":{"id":"session01","startedAt":${at - 10000}},"entries":{"set00001":{"sessionId":"session01","set":{"id":"set00001","exerciseId":"bench-press","weightKg":82.5,"reps":5,"completedAt":${at - 9000}},"needsPush":true,"attempted":true,"remints":0}}}}}""")
-        LocalLog(File(folder, LocalLog.fileName)).hold(LocalLog.FinishedSession(
-            Session("session00", at - 20000, at - 15000), listOf(TrainingSet("set00000", "bench-press",
-                weightKg = 60.0, reps = 5, completedAtMs = at - 19000))))
-        val original = File(folder, SetQueue.fileName).readText()
-        EngineRoomFixture(folder, backgroundScope).use { room ->
-            LegacyGymMigration(folder, room.engine).run(); room.select(null)
-            assertEquals("session01", room.store.session!!.id)
-            assertEquals(listOf("set00001"), room.store.sets.map { it.id })
-            assertEquals(listOf(82.5), room.store.sets.map { it.weightKg })
-            assertEquals(setOf("session00", "session01"), room.store.recent.map { it.id }.toSet())
-            assertTrue(LegacyGymMigration.operations(room.engine).isEmpty())
-            assertEquals(original, File(folder, SetQueue.fileName).readText())
-            assertTrue(room.store.refusals.isEmpty())
-        }
-    }
-
-    @Test
     fun testARefusedEngineStartIsSaidOnceAndItsOriginalIntentStaysOnThePhone() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice")
@@ -2031,28 +2010,6 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testAnOfflineSetRemainsOnTheSettledWorkoutWhenEarlierHistoryMigrates() = runTest {
-        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
-            room.select(null)
-            val live = room.workout(finish = false)
-            val loggedAt = room.store.sets.single().completedAtMs
-            LocalLog(File(room.directory, LocalLog.fileName)).hold(LocalLog.FinishedSession(
-                Session("sessionPast", room.now - 100000, room.now - 90000), listOf(TrainingSet("setPast1", "back-squat",
-                    weightKg = 100.0, reps = 5, completedAtMs = room.now - 95000))))
-            room.now += 5 * 60 * 60 * 1000
-            LegacyGymMigration(room.directory, room.engine).run()
-            assertTrue("the finished source must import: ${LegacyGymMigration.refusals(room.engine)}", LegacyGymMigration.refusals(room.engine).isEmpty())
-            val morning = room.freshStore(); morning.connect(room.account())
-            assertEquals("last night's set remains in its own workout", listOf(82.5), room.training.session(live.id)!!.sets.map { it.weightKg })
-            assertEquals("the engine closed the workout at that set, not this morning", loggedAt, room.training.session(live.id)!!.session.finishedAtMs)
-            assertEquals(listOf(100.0), room.training.session("sessionPast")!!.sets.map { it.weightKg })
-            assertTrue(morning.refusals.isEmpty())
-            assertNull("the room stands over no session", morning.session)
-            assertEquals(setOf(live.id, "sessionPast"), morning.recent.map { it.id }.toSet())
-        }
-    }
-
-    @Test
     fun testALiveSessionTheLogHoldsIsNotReStartedOnARelaunchAndItsSetsLand() = runTest {
         val folder = tmp.newFolder()
         val server = EngineRoomFixture.server()
@@ -2082,28 +2039,6 @@ class TrainingStoreTests {
             assertEquals("its set walked straight to the log", listOf(82.5),
                 anotherPhone(server, relaunched.now) { phone -> phone.training.session(opened.id)!!.sets.map { it.weightKg } })
             runCurrent()
-        }
-    }
-
-    @Test
-    fun testAFinishedImportDoesNotOpenASlotOrParkThePhonesOwnLiveWorkout() = runTest {
-        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
-            room.select(null)
-            val opened = (room.store.start() as GymResult.Ok).value
-            LocalLog(File(room.directory, LocalLog.fileName)).hold(LocalLog.FinishedSession(
-                Session("sessionPast", room.now - 100000, room.now - 90000), listOf(TrainingSet("setPast1", "back-squat",
-                    weightKg = 100.0, reps = 5, completedAtMs = room.now - 95000))))
-            LegacyGymMigration(room.directory, room.engine).run(); room.store.refreshEngine()
-            assertTrue("the finished source must import: ${LegacyGymMigration.refusals(room.engine)}", LegacyGymMigration.refusals(room.engine).isEmpty())
-            assertEquals("the import cannot adopt the open workout", opened.id, room.store.session!!.id)
-            room.store.choose("bench-press"); room.store.logSet(82.5, 5)
-            assertEquals(listOf(82.5), room.training.session(opened.id)!!.sets.map { it.weightKg })
-            assertEquals(0, room.store.strandedCount)
-            room.now += 60000
-            assertTrue(room.store.finish() is FinishOutcome.Closed)
-            assertFalse(room.training.session(opened.id)!!.session.isOpen)
-            assertEquals(listOf(100.0), room.training.session("sessionPast")!!.sets.map { it.weightKg })
-            assertEquals(setOf(opened.id, "sessionPast"), room.store.recent.map { it.id }.toSet())
         }
     }
 

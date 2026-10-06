@@ -87,7 +87,7 @@ import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.LocalGymEngineSession
-import works.windmill.gym.store.LegacyGymMigration
+import works.windmill.gym.store.WorkoutImports
 import works.windmill.gym.store.Withheld
 import works.windmill.gym.ui.AskAbsentStance
 import works.windmill.gym.ui.AskScreen
@@ -963,8 +963,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             val loggerTransient = live && standing == null
             val engineSession = LocalGymEngineSession.current
             val engineStatus = engineSession?.engine?.status?.state?.collectAsState()?.value
-            val migrationRefusals = remember(engineSession, engineStatus, screen) {
-                engineSession?.let { LegacyGymMigration.refusals(it.engine) }.orEmpty()
+            val importRefusals = remember(engineSession, engineStatus, screen) {
+                engineSession?.let { WorkoutImports(it.engine).refusals() }.orEmpty()
             }
 
             Scaffold(
@@ -989,9 +989,9 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                 )
                             }
                             if (railUp) {
-                                if (migrationRefusals.isNotEmpty()) TextButton(
+                                if (importRefusals.isNotEmpty()) TextButton(
                                     onClick = { look(Away.Settings) }, modifier = Modifier.fillMaxWidth(),
-                                ) { Text("Saved workouts need review (${migrationRefusals.size})", color = skin.alarmInk) }
+                                ) { Text("Saved workouts need review (${importRefusals.size})", color = skin.alarmInk) }
                                 TabRail(
                                     current = tab,
                                     onPick = { picked ->
