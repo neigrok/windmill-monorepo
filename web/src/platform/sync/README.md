@@ -18,7 +18,10 @@ await engine.start();
 
 `commit` accepts either changes/options or the reference's synchronous read-and-commit callback.
 Its Promise resolves after the IndexedDB transaction commits; publication failures report separately and do not reject a durable save. The callback runs inside the
-transaction and must not return a Promise. `observe` exposes drawn/stored records, notices and
+transaction and must not return a Promise; its views carry `drawn`, `stored`, `now`, `replica`, the
+product's `devices` rows and the scope's `firstPullComplete`. `newGestureId()` mints the id a caller
+passes as `opts.gestureId` when it must know it before the commit; the domain kit's runner
+(`src/platform/domain-kit/runner.js`) does. `observe` exposes drawn/stored records, notices and
 `firstPullComplete`, retaining confirmed `seq`, `rc` and `ru` envelope metadata. `observeEngine` exposes replica/auth/upgrade state; `onEvent` delivers active
 replica changes after durable commits and persisted-page suspension, restoration and restore failure.
 Persisted restores reopen IndexedDB and coordination with the same observations and listeners;
