@@ -66,10 +66,9 @@ persisted replay and a 20-seed persisted fault campaign. Every campaign seed exe
 convergence, counters/caps, digest, existence and outbox checks.
 
 `npm run test:sync:server -- /absolute/backend/build` runs an isolated port-8090 server, creates a
-unique database, applies both adoption schemas and the gym v5 upgrade, backfills/audits both products, mints a local session,
-and replays gym/journal writes with a lost push reply. It requires the three production backend
-binaries and Postgres client tools from `backend/RUNNING.md` (set `PGHOST` outside macOS). It stops
-its listener by port and drops its database. The repository's nightly workflow is outside web
+unique database, applies `schema.sql`, mints a local session, and replays gym/journal writes with a
+lost push reply. It requires `windmill_server` and Postgres client tools from `backend/RUNNING.md`
+(set `PGHOST` outside macOS). It stops its listener by port and drops its database. The repository's nightly workflow is outside web
 territory; scheduling this script there remains an integration task. `npm run build` also bundles
 the browser engine separately and rejects Node builtins. The app shell caches the built room assets for offline reload; product adapters own their projections and migration.
 
@@ -87,21 +86,11 @@ Writing a day before its first account read uses a claim, retaining unseen prose
 notices keep their documents visible after reload; corrected saves retire their older notices.
 
 `npm run test:journal:server -- /absolute/backend/build` runs the journal Playwright acceptance on
-ports 8094/5181 with its own database and all three schemas/switches. Build `windmill_server`,
-`windmill_gym_backfill` and `windmill_journal_backfill` using `backend/RUNNING.md` first. It requires
-Postgres client tools (`/tmp` on macOS), stops its listeners by port and drops its database.
-The server acceptance script is callable in CI with those same binaries and Postgres tools;
+ports 8094/5181 with its own database and `schema.sql`. Build `windmill_server` using
+`backend/RUNNING.md` first. It requires Postgres client tools (`/tmp` on macOS), stops its listeners
+by port and drops its database.
+The server acceptance script is callable in CI with that same binary and Postgres tools;
 the existing web workflow runs the complete tests/build, but has no backend-stack step.
 
-Outside web territory, `backend/products/journal/ARCHITECTURE.md:157` and
-`docs/design/consistency.md:69,83` still describe the deleted silent claim/localStorage path.
-`backend/test/products/journal/adapters/postgres/PgEchoRepositoryTest.cpp:255` and
-`backend/test/products/journal/application/EchoSweepTest.cpp:647` cite the deleted store in comments.
-Their behavior/REST contracts remain unchanged; their documentation needs the engine adapter names.
-
 Command predictions may include local deaths and serial values; only the command arguments go on
-the wire. Outside web territory, the reference/native prediction descriptions in
-`packages/api-contract/sync/reference/client/commit.js`, `apps/ios/Sync/Sources/SyncReplica/Commit.swift`
-and `docs/foundation/engine.md` still restrict these local predictions. They do not consume the
-browser's persisted entries. Gym's registry/backend metadata gaps and full-stack CI integration
-are listed in `../../products/gym/README.md` and above.
+the wire.
