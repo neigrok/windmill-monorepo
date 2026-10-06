@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
-import { pendingClaimWork } from '../../../src/platform/sync/journal/client.js';
+import { pendingClaimWork } from '../../../src/products/journal/claims.js';
 import { migratePages } from '../../../src/products/journal/migrate.js';
 import { pagesOf, savePage, watchClaims, onSyncResult, SCOPE, restoreUnclaimedPages, unclaimedPages } from '../../../src/products/journal/pages.js';
 import { environment, until } from '../../platform/sync/fakes.js';

@@ -468,7 +468,7 @@ for (const order of ['pull-before-result', 'result-before-pull']) test(`Chromium
       engine.close();
       const { registry } = await import('/src/platform/sync/schema.js');
       const { savePage, watchClaims, onSyncResult } = await import('/src/products/journal/pages.js');
-      const { pendingClaimWork } = await import('/src/platform/sync/journal/client.js');
+      const { pendingClaimWork } = await import('/src/products/journal/claims.js');
       const { nextPush } = await import('/src/platform/sync/client/sender.js');
       const { Cursor } = await import('/src/platform/sync/core/wire.js');
       const { scopeDigest } = await import('/src/platform/sync/core/digest.js');

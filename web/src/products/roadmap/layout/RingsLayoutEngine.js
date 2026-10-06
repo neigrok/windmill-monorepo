@@ -1,6 +1,6 @@
 // Concentric depth rings: every node on the ring for its trunk depth, siblings in cmpOrder packed by Reingold–Tilford
 // contours in angle space. A forest is islands — the largest crown at the world origin, the rest packed around it.
-import { LayoutEngine } from '../model/ports.js';
+import { LayoutEngine } from './LayoutEngine.js';
 import { cmpOrder } from '../model/TrunkTree.js';
 import { footprintOf, footprintRect } from '../model/footprint.js';
 import { WORKING_ZOOM } from '../theme.js';

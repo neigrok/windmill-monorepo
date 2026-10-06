@@ -1,5 +1,5 @@
 // Radial tidy tree over the trunk arborescence: each node sits on the ring for its trunk depth, at the centre of an angular wedge; wedges split among trunk children proportional to subtree leaf counts.
-import { LayoutEngine } from '../model/ports.js';
+import { LayoutEngine } from './LayoutEngine.js';
 import { cmpOrder } from '../model/TrunkTree.js';
 import { NODE_SIZE } from '../theme.js';
 
