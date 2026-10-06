@@ -16,7 +16,18 @@ import XCTest
     let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
     springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.001)).press(forDuration: 0.05,
       thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)))
-    for title in ["Allow", "Always Allow"] where springboard.buttons[title].exists { springboard.buttons[title].tap() }
+    let bannerDeadline = Date().addingTimeInterval(20)
+    let bannerAction = springboard.buttons.matching(NSPredicate(format: "label IN %@", ["Allow", "Always Allow", "Log set"])).firstMatch
+    let permission = springboard.buttons.matching(NSPredicate(format: "label IN %@", ["Allow", "Always Allow"])).firstMatch
+    for _ in 0..<3 {
+      XCTAssertTrue(bannerAction.waitForExistence(timeout: max(0, bannerDeadline.timeIntervalSinceNow)),
+        "The workout banner or its permission choice must become accessible")
+      if !permission.exists { break }
+      permission.tap()
+    }
+    XCTAssertTrue(springboard.staticTexts["Lower A"].waitForExistence(timeout: max(0, bannerDeadline.timeIntervalSinceNow)))
+    XCTAssertTrue(springboard.buttons["Log set"].waitForExistence(timeout: max(0, bannerDeadline.timeIntervalSinceNow)))
+    XCTAssertTrue(springboard.buttons["Log set"].wait(for: \.isHittable, toEqual: true, timeout: max(0, bannerDeadline.timeIntervalSinceNow)))
     let banner = XCTAttachment(screenshot: springboard.screenshot())
     banner.name = "lock-screen-banner"; banner.lifetime = .keepAlways; add(banner)
     XCUIDevice.shared.press(.home)

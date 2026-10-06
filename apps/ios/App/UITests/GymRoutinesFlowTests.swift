@@ -384,9 +384,20 @@ import UIKit
       XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
       XCTAssertEqual(question.value as? String, "Tell me about the proposal for Push A.")
       let routines = app.tabBars.buttons["Routines"]
-      let routinesReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in routines.isHittable }, object: routines)
-      XCTAssertEqual(XCTWaiter.wait(for: [routinesReady], timeout: 5), .completed)
+      XCTAssertTrue(routines.wait(for: \.isHittable, toEqual: true, timeout: 5))
+      var previousFrame = CGRect.zero
+      var unchangedSince = ContinuousClock.now
+      let routinesSettled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+        let frame = routines.frame
+        if frame.isEmpty || frame != previousFrame {
+          previousFrame = frame; unchangedSince = ContinuousClock.now; return false
+        }
+        return unchangedSince.duration(to: ContinuousClock.now) >= .seconds(1)
+      }, object: routines)
+      XCTAssertEqual(XCTWaiter.wait(for: [routinesSettled], timeout: 5), .completed)
+      XCTAssertTrue(app.tabBars.firstMatch.frame.contains(routines.frame))
       routines.tap()
+      XCTAssertTrue(routines.wait(for: \.isSelected, toEqual: true, timeout: 5))
       XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 5))
       XCTAssertTrue(app.buttons["routine-proposal"].exists)
       app.terminate()
