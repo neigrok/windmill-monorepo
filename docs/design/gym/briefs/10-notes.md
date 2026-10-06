@@ -38,8 +38,8 @@ after trim, which may be empty. The same numbers sit in the schema CHECK, the do
 the `list_notes` tool's description, and the server refuses in three sentences every surface shows
 verbatim: *a note needs a title*, *a title runs to 60 characters*, *a note runs to 500 bytes*.
 Everything around this is bounded by name, and an unbounded free-text field feeding a prompt would
-be the one exception. A note's id is client-minted, `note_<hex>`, so a lost reply is replayed with
-the same id and never minted twice. Coach assigns its own stable note-save identity per generation;
+be the one exception. A note's id is minted on the device, so a retry resends the same intent and
+never mints twice. Coach assigns its own stable note-save identity per generation;
 exact title/body matches reuse an existing note. Its immutable save receipt survives later user edits
 and deletion, so replay does not undo them. New Coach notes append at the bottom and respect the
 same cap; when full, Coach reports that nothing was saved.
@@ -112,8 +112,8 @@ your account.
 whole-document last-write-wins replace — two screens open at once would silently discard one. That is
 a hostile container for text somebody wrote.
 
-**Account-only.** There is no local-first copy on the phones and no claim-replay slot. Signed out,
-the Notes screen is a sign-in door — *"Notes live with your account, so they need you signed in."* —
+**Account-only.** Notes live in the account's replica and nowhere else: none is written signed out,
+so none waits to join an account at sign-in. Signed out, the Notes screen is a sign-in door — *"Notes live with your account, so they need you signed in."* —
 and on the web the screen sits behind the same gate as the Coach room.
 
 ## Seeded, never pre-written

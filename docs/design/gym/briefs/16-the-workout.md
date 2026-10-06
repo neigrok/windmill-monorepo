@@ -31,9 +31,9 @@ classification. iOS retains its kind picker. Targets remain references, independ
 load/reps and extra, skipped or substituted sets.
 
 A successful log persists and sends immediately, with no after-log Undo. Correction and deletion
-begin from its logged row. Before the first send, edits change the queued body; once sending has
-begun, correction/delete queues behind the append. Finish waits for every outstanding session
-write. Show local-only or failed delivery beside the affected set and preserve recovery.
+begin from its logged row and commit at once. The engine sends every change in the order it was
+made, so a correction or a finish never overtakes the sets before it. Show local-only or failed
+delivery beside the affected set and preserve recovery.
 
 The two clocks count up from saved timestamps: workout start and latest valid session-wide set,
 falling back to start. No visible clock labels, rest target or target bar; accessible names remain.
