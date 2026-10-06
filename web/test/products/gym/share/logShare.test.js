@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { logShareRequest, publicLogHref, shareHistoryScope } from '../../../../src/products/gym/share/logShare.js';
 import { spellWeightsIn, weightUnit } from '../../../../src/products/gym/units.js';
-import { logShareApi } from '../../../../src/products/gym/share/logShareApi.js';
+import { gymApi } from '../../../../src/products/gym/gymApi.js';
 
 test('all history omits dates and a local inclusive date range becomes exclusive next midnight', () => {
   assert.deepEqual(logShareRequest({ mode: 'snapshot', scope: 'all', from: '2024-01-01', until: '2024-01-31' }, 'link'), { value: { id: 'link', mode: 'snapshot', scope: 'all' } });
@@ -25,7 +25,7 @@ test('recipient reads omit credentials and request complete progress', async (t)
     requests.push({ path: new URL(url).pathname + new URL(url).search, ...options });
     return { ok: true, status: 200, json: async () => ({ sessions: [] }) };
   });
-  await logShareApi.read('token', { limit: 50 });
+  await gymApi.sharedLog('token', { limit: 50 });
   assert.deepEqual(requests, [
     { path: '/v1/gym/shared-logs/token?limit=50&projection=progress', credentials: 'omit', headers: { 'content-type': 'application/json' } },
   ]);

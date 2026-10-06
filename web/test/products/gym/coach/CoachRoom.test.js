@@ -9,7 +9,7 @@ test('a timeout and reload retry the durable account-scoped request without anot
   const sent = [];
   const api = {
     thread: async () => null,
-    ask: async (thread, question, requestId) => {
+    askStream: async (thread, question, requestId) => {
       const saved = readCoachDraft('alice', thread);
       assert.equal(saved.request.requestId, requestId, 'saved before the send');
       sent.push({ thread, question, requestId });
@@ -41,7 +41,7 @@ test('202 remains pending and retries with backoff using the same request', asyn
   browserWith();
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const sent = [];
-  const api = { ask: async (thread, question, requestId) => {
+  const api = { askStream: async (thread, question, requestId) => {
     sent.push({ thread, question, requestId });
     return { pending: sent.length < 3, generation: { id: 'gen_1', requestId, question, at: 100,
       status: sent.length < 3 ? 'running' : 'completed', answer: sent.length < 3 ? '' : 'Ready.' } };
@@ -70,7 +70,7 @@ test('failed routine creation preserves the result and retry updates the same hi
     { position: 1, from: 'ask', text: '', at: 100, requestId: 'ask_retry', generationId: 'gen_1', status: 'failed', results: generation.results },
   ];
   const sent = [];
-  const api = { ask: async (...args) => { sent.push(args.slice(0, 3)); return { generation: { ...generation, status: 'completed', answer: 'Push is ready.' } }; } };
+  const api = { askStream: async (...args) => { sent.push(args.slice(0, 3)); return { generation: { ...generation, status: 'completed', answer: 'Push is ready.' } }; } };
   const room = renderHook(t, () => useCoachConversation({ accountId: 'alice', api, initialThread: { id: 'thr_old', turns, generation } }));
   await room.tree.send();
   assert.deepEqual(sent, [['thr_old', 'Create Push.', 'ask_retry']]);
@@ -80,7 +80,7 @@ test('failed routine creation preserves the result and retry updates the same hi
 
 test('a refusal returns the draft and exact server recovery without implying a new chat resets an allowance', async (t) => {
   browserWith();
-  const api = { ask: async () => { throw new GymError(429, 'Thirty-day allowance spent.', 'ask-out-of-budget'); } };
+  const api = { askStream: async () => { throw new GymError(429, 'Thirty-day allowance spent.', 'ask-out-of-budget'); } };
   const room = renderHook(t, () => useCoachConversation({ accountId: 'alice', api }));
   room.tree.setDraft('Help me plan.'); await room.tree.send();
   assert.deepEqual(room.tree.turns, []);
@@ -93,7 +93,7 @@ test('a question is not sent if its identity cannot be persisted', async (t) => 
   browserWith();
   window.localStorage.setItem = () => { throw new Error('quota'); };
   let sends = 0;
-  const room = renderHook(t, () => useCoachConversation({ accountId: 'alice', api: { ask: async () => { sends += 1; } } }));
+  const room = renderHook(t, () => useCoachConversation({ accountId: 'alice', api: { askStream: async () => { sends += 1; } } }));
   room.tree.setDraft('What next?'); await room.tree.send();
   assert.equal(sends, 0);
   assert.equal(room.tree.draft, 'What next?');
@@ -106,7 +106,7 @@ test('saved conversations continue beyond four questions and load earlier pages 
   const pages = [];
   const api = {
     thread: async (id, page) => { pages.push([id, page]); return { turns: turns.slice(0, 210), nextCursor: null }; },
-    ask: async (thread, question) => ({ answer: 'Keep going.', read: { sets: 3, sessions: 1, weeks: 1 } }),
+    askStream: async (thread, question) => ({ answer: 'Keep going.', read: { sets: 3, sessions: 1, weeks: 1 } }),
   };
   const room = renderHook(t, () => useCoachConversation({ accountId: 'alice', api,
     initialThread: { id: 'thr_old', turns: turns.slice(200), nextCursor: 'opaque cursor' } }));
@@ -158,7 +158,7 @@ test('workout refusal pauses sends, retries and photo uploads without losing the
   const calls = [];
   const room = renderHook(t, () => useCoachConversation({ accountId: 'alice', workoutInProgress: live,
     initialThread: { id: 'thr_old', turns: [], generation: { id: 'gen_1', requestId: 'ask_1', question: 'What next?', at: 100, status: 'running' } },
-    api: { ask: async (...args) => { calls.push(args.slice(0, 3)); return { answer: 'Keep going.', read: { sets: 1, sessions: 1, weeks: 1 } }; } } }));
+    api: { askStream: async (...args) => { calls.push(args.slice(0, 3)); return { answer: 'Keep going.', read: { sets: 1, sessions: 1, weeks: 1 } }; } } }));
   await room.tree.send();
   await room.tree.selectPhoto({});
   assert.equal(await room.tree.uploadPhoto({ id: 'photo_1' }), false);
@@ -186,7 +186,7 @@ test('a workout starting during photo load or upload preserves the request and s
     const room = renderHook(t, () => useCoachConversation({ accountId: 'alice', initialThread: { id: 'thr_saved', turns: [] }, workoutInProgress: live,
       photos: { load: async () => { if (pauseAt === 'load') await gate; return blob; }, remove: async () => calls.push('remove') },
       api: { uploadCoachPhoto: async () => { calls.push('upload'); if (pauseAt === 'upload') await gate; return photo; },
-        ask: async () => { calls.push('ask'); return { answer: 'Ready.', read: { sets: 0, sessions: 0, weeks: 0 } }; } },
+        askStream: async () => { calls.push('ask'); return { answer: 'Ready.', read: { sets: 0, sessions: 0, weeks: 0 } }; } },
     }));
     const send = room.tree.send();
     await settle();
@@ -220,7 +220,7 @@ test('a photo prepared after training starts is retained locally and only upload
     photos: { prepare: async () => prepared, save: async (account, thread, id, bytes) => blobs.set(id, bytes),
       load: async (account, thread, id) => blobs.get(id), remove: async (account, thread, id) => blobs.delete(id) },
     api: { uploadCoachPhoto: async (thread, id) => { calls.push('upload'); return { ...metadata, id }; },
-      ask: async () => { calls.push('ask'); return { answer: 'Ready.', read: { sets: 0, sessions: 0, weeks: 0 } }; } },
+      askStream: async () => { calls.push('ask'); return { answer: 'Ready.', read: { sets: 0, sessions: 0, weeks: 0 } }; } },
   }));
   room.tree.setDraft('Review this');
   const selection = room.tree.selectPhoto(blob);
@@ -296,7 +296,7 @@ test('a retry refused after creation or an ambiguous send keeps its original imm
     browserWith();
     const sent = [];
     const results = [{ kind: 'routine-created', operationId: 'op_1', routineId: 'rt_1', routineName: 'Push' }];
-    const api = { ask: async (thread, question, requestId) => {
+    const api = { askStream: async (thread, question, requestId) => {
       sent.push({ thread, question, requestId });
       const generation = { id: 'gen_1', requestId, question, at: 100, status: 'failed', answer: '', results };
       if (sent.length === 1) {
@@ -402,7 +402,7 @@ test('a tombstoned known conversation exposes New chat recovery and never mints 
   browserWith();
   const calls = [];
   const room = renderHook(t, () => useCoachConversation({ accountId: 'alice', initialThread: { id: 'thr_old', turns: [] }, api: {
-    ask: async (...args) => { calls.push(args.slice(0, 3)); throw new GymError(409, 'That conversation is unavailable.', 'ask-thread-taken'); },
+    askStream: async (...args) => { calls.push(args.slice(0, 3)); throw new GymError(409, 'That conversation is unavailable.', 'ask-thread-taken'); },
   } }));
   room.tree.setDraft('Continue.'); await room.tree.send();
   assert.equal(room.tree.thread, 'thr_old');
@@ -500,7 +500,7 @@ test('an older Retry cannot replace the unresolved saved question', async (t) =>
   const room = renderHook(t, () => useCoachConversation({ accountId: 'alice', initialThread: { id: 'thr_1', turns: [
     { position: 0, from: 'lifter', requestId: 'ask_old', text: 'Old question.', at: 10 },
     { position: 1, from: 'ask', requestId: 'ask_old', text: '', at: 10, status: 'failed' },
-  ] }, api: { ask: async (...args) => { calls.push(args); throw new Error('network gone'); } } }));
+  ] }, api: { askStream: async (...args) => { calls.push(args); throw new Error('network gone'); } } }));
   room.tree.setDraft('New question.'); await room.tree.send();
   const saved = room.tree.request;
   await room.tree.send(room.tree.turns[1]);

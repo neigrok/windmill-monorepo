@@ -12,7 +12,6 @@ export class GymError extends Error {
     this.code = code;
     this.terminal = status === 400 || status === 409;
     this.generation = body?.generation;
-    this.results = body?.results;
   }
 }
 

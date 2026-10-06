@@ -7,8 +7,8 @@ retain their original register guards. A routine name, movement name or note tit
 NFC-normalised, trimmed and at most 60 code points, and a blank one is refused before it is written;
 a rename to the name the store holds writes nothing. Deletes commit durable held deaths, and the engine owns
 their release and restart. The room draws their Undo from the engine's `undoOffers`, so a delete
-still held when the room is drawn again is offered with the deadline it already had. Coach, shares
-and account exports use their REST doors in `gymApi.js`; a Coach conversation delete is held on the
+still held when the room is drawn again is offered with the deadline it already had. Coach and the
+workout and log shares use their REST doors in `gymApi.js`; a Coach conversation delete is held on the
 room's own clock, and when the room unmounts or the document hides it is dropped unsent and the
 conversation stays. The account gate remains in `GymApp`.
 

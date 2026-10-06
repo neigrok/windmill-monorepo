@@ -37,14 +37,26 @@ export const gymApi = {
     return json(response);
   },
 
-  async ask(thread, question, requestId, { attachmentIds } = {}) {
-    const response = await call('/ask', {
-      method: 'POST', body: JSON.stringify({ thread, question, ...(requestId ? { requestId } : {}), ...(attachmentIds?.length ? { attachmentIds } : {}) }),
-    });
-    const reply = await json(response);
-    return { ...reply, pending: response.status === 202 };
+  async logShares() {
+    return (await json(await call('/log-shares'))).shares;
   },
 
+  async createLogShare(share) {
+    return json(await call('/log-shares', { method: 'POST', body: JSON.stringify(share) }));
+  },
+
+  async revokeLogShare(id) {
+    return json(await call(`/log-shares/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+  },
+
+  // A recipient's read: no cookie, and the complete progress beside the page of sessions.
+  async sharedLog(token, filters = {}) {
+    const query = new URLSearchParams(Object.entries({ ...filters, projection: 'progress' })
+      .filter(([, value]) => value != null && value !== ''));
+    return json(await call(`/shared-logs/${encodeURIComponent(token)}?${query}`, { credentials: 'omit' }));
+  },
+
+  // One question into one thread, its answer streamed as snapshots.
   async askStream(thread, question, requestId, { attachmentIds, signal, onSnapshot } = {}) {
     const response = await call('/ask', {
       method: 'POST', signal,
@@ -114,5 +126,4 @@ export const gymApi = {
   async deleteThread(id) {
     return json(await call(`/threads/${encodeURIComponent(id)}`, { method: 'DELETE' }));
   },
-
 };
