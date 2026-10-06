@@ -18,7 +18,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
-import works.windmill.platform.User
 import works.windmill.platform.auth.AuthStatus
 import works.windmill.platform.auth.AuthStore
 import works.windmill.platform.auth.SignInDoor
@@ -36,24 +35,21 @@ fun YouSheet(
     onDismiss: () -> Unit,
     destinations: List<YouDestination> = emptyList(),
     startSignIn: Boolean = false,
-    flowId: String? = null,
-    onSignedIn: (User, String?) -> Unit = { _, _ -> },
-    onAuthDismiss: (String?) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val palette = LocalWindmillPalette.current
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    var form by rememberSaveable(flowId, startSignIn) { mutableStateOf(startSignIn) }
-    var busy by remember(auth, flowId) { mutableStateOf(false) }
-    var closing by remember(auth, flowId) { mutableStateOf(false) }
-    var refusal by remember(auth, flowId) { mutableStateOf<String?>(null) }
-    val identity = remember(auth, flowId) { Any() }
+    var form by rememberSaveable(startSignIn) { mutableStateOf(startSignIn) }
+    var busy by remember(auth) { mutableStateOf(false) }
+    var closing by remember(auth) { mutableStateOf(false) }
+    var refusal by remember(auth) { mutableStateOf<String?>(null) }
+    val identity = remember(auth) { Any() }
     val currentIdentity by rememberUpdatedState(identity)
     val formState = rememberSaveableStateHolder()
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true,
         confirmValueChange = { it != SheetValue.Hidden || !busy })
-    fun dismiss(cancelAuth: Boolean = false, after: () -> Unit = {}) {
+    fun dismiss(after: () -> Unit = {}) {
         if (busy || closing) return
         closing = true
         focus.clearFocus(force = true)
@@ -64,7 +60,6 @@ fun YouSheet(
             } finally {
                 if (currentIdentity === identity) {
                     if (!sheet.isVisible) {
-                        if (cancelAuth && form) onAuthDismiss(flowId)
                         onDismiss()
                         after()
                     } else closing = false
@@ -72,16 +67,15 @@ fun YouSheet(
             }
         }
     }
-    ModalBottomSheet(onDismissRequest = { dismiss(cancelAuth = true) }, sheetState = sheet,
+    ModalBottomSheet(onDismissRequest = { dismiss() }, sheetState = sheet,
         properties = ModalBottomSheetProperties(shouldDismissOnBackPress = false),
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), containerColor = palette.surface,
         scrimColor = MaterialTheme.colorScheme.scrim,
         dragHandle = { BottomSheetDefaults.DragHandle(color = palette.inkFaint) }) {
         WindmillSheetWindow()
-        WindmillSheetBack(onDismiss = { dismiss(cancelAuth = true) }) {
-            if (form) formState.SaveableStateProvider("auth:${flowId.orEmpty()}") {
-                SignInDoor(auth, onDone = { dismiss() }, flowId = flowId,
-                    onSignedIn = onSignedIn, onBusy = { busy = it })
+        WindmillSheetBack(onDismiss = { dismiss() }) {
+            if (form) formState.SaveableStateProvider("auth") {
+                SignInDoor(auth, onDone = { dismiss() }, onBusy = { busy = it })
             }
             else Column(Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())

@@ -28,29 +28,26 @@ import works.windmill.platform.net.WindmillApiException
 fun SignInDoor(
     auth: AuthStore,
     onDone: () -> Unit = {},
-    flowId: String? = null,
-    onSignedIn: (User, String?) -> Unit = { _, _ -> },
     onBusy: (Boolean) -> Unit = {},
     now: () -> Long = { System.currentTimeMillis() },
 ) {
-    var email by rememberSaveable(flowId) { mutableStateOf("") }
-    var typed by rememberSaveable(flowId) { mutableStateOf("") }
-    var sentTo by rememberSaveable(flowId) { mutableStateOf<String?>(null) }
-    var refusal by rememberSaveable(flowId) { mutableStateOf<String?>(null) }
-    var resendAt by rememberSaveable(flowId) { mutableLongStateOf(0L) }
-    var pending by remember(auth, flowId) { mutableStateOf<String?>(null) }
-    var completed by remember(auth, flowId) { mutableStateOf(false) }
-    val identity = remember(auth, flowId) { Any() }
+    var email by rememberSaveable { mutableStateOf("") }
+    var typed by rememberSaveable { mutableStateOf("") }
+    var sentTo by rememberSaveable { mutableStateOf<String?>(null) }
+    var refusal by rememberSaveable { mutableStateOf<String?>(null) }
+    var resendAt by rememberSaveable { mutableLongStateOf(0L) }
+    var pending by remember(auth) { mutableStateOf<String?>(null) }
+    var completed by remember(auth) { mutableStateOf(false) }
+    val identity = remember(auth) { Any() }
     val currentIdentity by rememberUpdatedState(identity)
     val busyCallback by rememberUpdatedState(onBusy)
     val doneCallback by rememberUpdatedState(onDone)
-    val signedInCallback by rememberUpdatedState(onSignedIn)
-    var active by remember(auth, flowId) { mutableStateOf(true) }
+    var active by remember(auth) { mutableStateOf(true) }
     DisposableEffect(identity) { onDispose { active = false; onBusy(false) } }
     val scope = rememberCoroutineScope()
     val palette = LocalWindmillPalette.current
-    var tick by remember(flowId) { mutableLongStateOf(now()) }
-    LaunchedEffect(resendAt, flowId) {
+    var tick by remember { mutableLongStateOf(now()) }
+    LaunchedEffect(resendAt) {
         tick = now()
         while (tick < resendAt) { delay(250); tick = now() }
     }
@@ -86,9 +83,8 @@ fun SignInDoor(
         val code = entry.takeIf { it.length == 6 && it.all(Char::isDigit) }
         scope.launch {
             try {
-                val beforeCommit: (User) -> Unit = { user ->
+                val beforeCommit: (User) -> Unit = {
                     if (!active || currentIdentity !== identity) throw CancellationException("The sign-in form changed.")
-                    signedInCallback(user, flowId)
                 }
                 if (code != null) auth.completeCode(address, code, beforeCommit) else auth.completeLink(entry, beforeCommit)
                 if (active && currentIdentity === identity) {

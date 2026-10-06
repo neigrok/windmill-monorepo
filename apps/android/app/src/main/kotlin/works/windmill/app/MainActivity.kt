@@ -180,7 +180,6 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
 
     var youUp by rememberSaveable { mutableStateOf(false) }
     var signIn by rememberSaveable { mutableStateOf(false) }
-    var authFlow by rememberSaveable { mutableStateOf<String?>(null) }
     var about by rememberSaveable { mutableStateOf(false) }
     var aboutPage by remember { mutableIntStateOf(0) }
     LaunchedEffect(launchRevision) {
@@ -191,8 +190,7 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
         }
     }
     val shell = remember {
-        ShellActions(openYou = { signIn = false; authFlow = null; youUp = true },
-            openSignIn = { flow -> signIn = true; authFlow = flow; youUp = true })
+        ShellActions(openYou = { signIn = false; youUp = true }, openSignIn = { signIn = true; youUp = true })
     }
     val gym = remember(runtime) { GymModule(runtime.gym.store, runtime.workoutNotifications) }
     val aboutLabel = stringResource(works.windmill.gym.R.string.onboarding_about)
@@ -233,7 +231,7 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
                                 Text("This device’s account could not be restored. Try again, or sign in.",
                                     Modifier.padding(vertical = 16.dp), style = MaterialTheme.typography.bodyLarge)
                                 TextButton(onClick = { scope.launch { auth.restore() } }) { Text("Try again") }
-                                TextButton(onClick = { shell.openSignIn(null) }) { Text("Sign in") }
+                                TextButton(onClick = shell.openSignIn) { Text("Sign in") }
                             }
                         }
                         if (about) OnboardingPager(replay = true, onExit = { about = false; youUp = true },
@@ -241,8 +239,7 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
                     }
                     if (youUp && !about) YouSheet(auth, onDismiss = { youUp = false },
                         destinations = shell.destinations + YouDestination("about_windmill", aboutLabel) { about = true },
-                        startSignIn = signIn, flowId = authFlow,
-                        onSignedIn = shell::authenticated, onAuthDismiss = shell::authDismissed)
+                        startSignIn = signIn)
                     EngineAccountDecision(runtime)
                 }
             }

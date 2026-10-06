@@ -128,7 +128,6 @@ import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.platform.Account
 import works.windmill.platform.LocalShellActions
-import works.windmill.platform.AccountActions
 import works.windmill.platform.ProductModule
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSpace
@@ -437,15 +436,11 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // stale open session at its last activity, and past four hours from that close an owed set is
     // refused for good.
     val openDestination by rememberUpdatedState<(Away) -> Unit> { look(it) }
-    val accountActions = remember(shell, store) {
-        AccountActions(
-            listOf(YouDestination("settings", "Gym settings") { openDestination(Away.Settings) },
-                YouDestination("connections", "Connected log") { openDestination(Away.Connections) }),
-            beforeSignIn = { _, _ -> },
-            cancelSignIn = { _ -> },
-        )
+    val destinations = remember(shell, store) {
+        listOf(YouDestination("settings", "Gym settings") { openDestination(Away.Settings) },
+            YouDestination("connections", "Connected log") { openDestination(Away.Connections) })
     }
-    SideEffect { shell.present(accountActions) }
+    SideEffect { shell.present(destinations) }
 
     LaunchedEffect(store.workoutOpenRequest) {
         if (store.workoutOpenRequest > 0 && store.session != null) {
@@ -1014,7 +1009,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             say = { note = it },
                             onFinish = { close() },
                             // The shell's door: gym draws no sign-in of its own.
-                            onSignIn = { shell.openSignIn(null) },
+                            onSignIn = shell.openSignIn,
                             onSettings = { look(Away.Settings) },
                             transient = transient,
                         )
@@ -1051,7 +1046,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             origin = origin,
                             backTo = beneath,
                             onBack = { back() },
-                            onSignIn = { shell.openSignIn(null) },
+                            onSignIn = shell.openSignIn,
                         )
                         standing is Away.Notes -> NotesScreen(
                             store = store,
@@ -1059,7 +1054,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             backTo = beneath,
                             onBack = { back() },
                             onEdit = { held, seedTitle -> look(Away.NoteEditor(held, seedTitle)) },
-                            onSignIn = { shell.openSignIn(null) },
+                            onSignIn = shell.openSignIn,
                             say = { note = it },
                         )
                         // The list beneath reads itself again on the way back: a saved note is on the list
@@ -1155,7 +1150,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         // A tab cannot be absent the way a door can, so signed out and no-Coach each draw a
                         // designed stance rather than a 401.
                         tab == Tab.Coach && !account.isSignedIn ->
-                            AskSignedOutStance(seat = youInitial, onSignIn = { shell.openSignIn(null) })
+                            AskSignedOutStance(seat = youInitial, onSignIn = shell.openSignIn)
                         tab == Tab.Coach && askAbsent -> AskAbsentStance(seat = youInitial, onNotes = { look(Away.Notes) }, onConnections = { look(Away.Connections) })
                         tab == Tab.Coach -> AskScreen(
                             store = store,
@@ -1195,7 +1190,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onOpenRoutine = { selectedRoutineId = it },
                             onDeleteRoutine = { destroy(it) },
                             onReview = { review(it.id, it.routineId, Reviewing.routines) },
-                            onSignIn = { shell.openSignIn(null) },
+                            onSignIn = shell.openSignIn,
                         )
                     }
                 }
