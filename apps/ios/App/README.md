@@ -6,8 +6,7 @@ minimum. Generate the project with `xcodegen generate`, then open `Windmill.xcod
 The default build connects to `https://windmill.works` and saves on the phone without an account.
 Configure `WM_SERVER_BASE_URL` with a local server origin, such as `http://127.0.0.1:8089`, or launch
 with `-server` followed by that URL. The engine appends `/v1/sync`; native authentication uses
-`/v1/auth`. The server must enable and admit the journal and gym engines.
-See [the full local server recipe](../../../backend/RUNNING.md). Sessions come from the response body
+`/v1/auth`. See [the full local server recipe](../../../backend/RUNNING.md). Sessions come from the response body
 and are kept in Keychain; native authentication does not retain cookies.
 
 Apple sign-in is off by default and the built app declares no Sign in with Apple entitlement.
@@ -35,7 +34,7 @@ labels; no fixture secret enters telemetry.
 `-scenario <name> -report <absolute JSON path>` exercises anonymous writing, Keep, email sign-in,
 backup, session revocation, same-account reauthentication, sign-out Keep, and a second sign-in. A local
 server run supplies `-code-file <absolute path>` with development codes in its isolated database.
-Gym end-to-end tests use `-scenario gym-e2e` (signed in) or `gym-e2e-anonymous`; `-code-file` for Gym reads a local JSON native session minted by the verify skill. These simulator-only fixtures use the real engine and native UI.
+Gym end-to-end tests use `-scenario gym-e2e` (signed in) or `gym-e2e-anonymous`; for Gym, `-code-file` names a JSON native session (`account`, `token`, `email`). The verify skill's iOS gym fixtures mint it with the accounts `GymIntegrationFlowTests` reads. These simulator-only fixtures use the real engine and native UI.
 The report pauses at `revoke-session` and `signed-out`; a local verifier performs the server step and
 writes that checkpoint name to `<report>.ready`. The signed-out checkpoint includes the credential
 for local replay verification; the final report contains no credential.
@@ -119,9 +118,9 @@ changes to QA tone is playing after playback starts. Audio must continue while S
 The test finishes the workout and verifies that the Activity disappears after logging from the Island.
 
 Coordinator-owned documentation outside this worktree's territory still describes the earlier app:
-`CLAUDE.md:12`, `STRUCTURE.md:31`/`:58`, `docs/design/guidelines/onboarding.md:138`/`:141` and
-`docs/design/consistency.md:209`/`:251`/`:332` need the two-room availability update.
-Consistency's iOS auth/adoption claims at 124–128 and 155–160 predate the current Apple ticket flow,
+`CLAUDE.md:12`, `docs/design/guidelines/onboarding.md:138`/`:141` and `docs/design/consistency.md`
+entry 5m need the two-room availability update.
+Consistency's iOS auth/adoption entries 8a and 8h predate the current Apple ticket flow,
 `AppModel` and per-room Add/Discard counts; `docs/design/guidelines/account-linking.md:90` needs a
 two-room adoption example.
 `docs/foundation/domain-kit.md:970` needs “two writing operations”: read guards may accompany one
