@@ -43,8 +43,8 @@ ports/        LogRepository (sessions · sets · the two shares) · CatalogRepos
               ProgramRepository (routines + the ledger) · AskThreadRepository ·
               PreferencesRepository · NotesRepository · BodyweightRepository · AskAgent ·
               GymWriteDoor (every server write and its outcomes)
-application/  TrainingService · CatalogService · ProgramService · ThreadService ·
-              PreferencesService · NotesService · BodyweightService · AskService
+application/  TrainingService · CatalogService · ProgramService · ThreadService · NotesService ·
+              AskService
 adapters/     json/{TrainingJson,HistoryJson} · postgres/PgGymRows.h + seven Pg repositories ·
               http/{Training,TrainingHistory,Catalog,Program,Preferences,Threads,Notes,Bodyweight,Ask}Api ·
               mcp/{GymToolCatalog,GymTools} · llm/AnthropicAsk
@@ -77,8 +77,9 @@ Every gym write the server makes for a lifter — the MCP gym tools, Coach, `POS
 `GymDoor`, the one `GymWriteDoor` implementation, as a server-origin intent (engine §6.3). It builds
 its own `PgSyncStore`, server clock, `Admission` and four-thread `gym-sync` worker pool beside the
 engine's, and publishes committed changes to the same live channel. `TrainingService`,
-`CatalogService`, `ProgramService`, `NotesService` and `ThreadService` take `GymWriteDoor&`;
-`BodyweightService` and `PreferencesService` only read.
+`CatalogService`, `ProgramService`, `NotesService` and `ThreadService` take `GymWriteDoor&`; the
+settings and the weigh-ins hold no rule and no server write, so their adapters read
+`PreferencesRepository` and `BodyweightRepository` directly.
 
 ## 3. Schema
 
@@ -529,11 +530,13 @@ four hours of the last activity, staying at that activity when the tap came late
 
 ## 5. Services and the write path
 
-Seven services, one per repository port, none holding another: `TrainingService` (`LogRepository&`,
-the clock, the token mint and the door), `CatalogService` (+ door), `ProgramService` (+ door),
-`ThreadService` (+ clock, door), `PreferencesService`, `NotesService` (+ door), `BodyweightService`;
-`AskService` stands above them (§12). Each HTTP adapter and `GymTools` takes only the services it
-reads. A service's write is one `GymWriteDoor` call, after the argument shaping that is the
+Five services, one per repository port that carries a rule or a write, none holding another:
+`TrainingService` (`LogRepository&`, the clock, the token mint and the door), `CatalogService` (+
+door), `ProgramService` (+ door), `ThreadService` (+ clock, door), `NotesService` (+ door);
+`AskService` stands above them (§12). The two read-only aggregates have no service:
+`PreferencesApi` reads `PreferencesRepository` and answers the defaults where no row stands, and
+`BodyweightApi` and `list_bodyweight` read `BodyweightRepository`. Each HTTP adapter and `GymTools`
+takes only what it reads. A service's write is one `GymWriteDoor` call, after the argument shaping that is the
 service's own (`CatalogService` applies `defaultStepKg` when a movement names no step;
 `ProgramService` builds the `Routine`, whose constructor is the whole validation). Each write answers
 with a small outcome from `ports/GymWriteDoor.h` — `StartOutcome`, `AppendOutcome`,
@@ -975,11 +978,10 @@ in-process).
 - **No tool edits or deletes a logged set either**: *no agent may edit or delete a logged set —
   not under `gym:write`, not under `gym:delete`, not at any level a future grant invents.*
   `GymWriteDoor` has no such method, and `GymToolsTest` pins the absent names.
-- **Every tool goes through a service, never the repository** — `TrainingService`, `CatalogService`,
-  `ProgramService`, `NotesService`, `BodyweightService`; no tool reads a thread or the settings, and
-  Notes offers `list_notes` and append-only `save_note`. No tool writes a weigh-in: it is a fact only
-  the lifter observed, and
-  `list_bodyweight` is the one door. `GymToolsTest` pins that the only tool whose name says
+- **Every tool goes through a service** — `TrainingService`, `CatalogService`, `ProgramService`,
+  `NotesService` — but `list_bodyweight`, which reads `BodyweightRepository`; no tool reads a thread
+  or the settings, and Notes offers `list_notes` and append-only `save_note`. No tool writes a
+  weigh-in: it is a fact only the lifter observed, and `list_bodyweight` is the one door. `GymToolsTest` pins that the only tool whose name says
   bodyweight is the read, that it is `gym:read`, and that every write-shaped name misses the
   dispatcher and leaves the rows untouched.
   **`propose_routine_create` does not exist and `GymToolsTest` pins the absence by name.** A

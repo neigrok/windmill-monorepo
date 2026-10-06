@@ -95,10 +95,8 @@
 #include "products/gym/adapters/postgres/PgPreferencesRepository.h"
 #include "products/gym/adapters/postgres/PgProgramRepository.h"
 #include "products/gym/application/AskService.h"
-#include "products/gym/application/BodyweightService.h"
 #include "products/gym/application/CatalogService.h"
 #include "products/gym/application/NotesService.h"
-#include "products/gym/application/PreferencesService.h"
 #include "products/gym/application/ProgramService.h"
 #include "products/gym/application/ThreadService.h"
 #include "products/gym/application/TrainingService.h"
@@ -565,12 +563,10 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto gymCatalogService = std::make_shared<gym::CatalogService>(*gymCatalog, *gymDoor);
   auto gymProgramService = std::make_shared<gym::ProgramService>(*gymProgram, *gymDoor);
   auto gymThreadService = std::make_shared<gym::ThreadService>(*gymThreads, *systemClock, *gymDoor);
-  auto gymPreferencesService = std::make_shared<gym::PreferencesService>(*gymPreferences);
   auto gymNotesService = std::make_shared<gym::NotesService>(*gymNotes, *gymDoor);
-  auto gymBodyweightService = std::make_shared<gym::BodyweightService>(*gymBodyweight);
   auto gymTools = std::make_shared<gym::GymTools>(*gymTrainingService, *gymCatalogService,
                                                   *gymProgramService, *gymNotesService,
-                                                  *gymBodyweightService, appBaseUrl);
+                                                  *gymBodyweight, appBaseUrl);
 
   // AskService retains Stop/recovery without a vendor key; only new asks require configuration.
   auto gymAskAgent = std::make_shared<gym::AnthropicAsk>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink,
@@ -579,7 +575,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                                                *gymTools, *entitlements, sentry);
   lifetime.watch(gymAsk, gymTrainingService, gymThreads, systemClock, gymAskAgent, gymTools, entitlements,
                  subscriptionRepo, aiUsageRepo, gymLog, gymProgramService, gymProgram, gymCatalogService, gymCatalog,
-                 gymNotesService, gymNotes, gymBodyweightService, gymBodyweight, tokens, gymDoor, gymPreferences);
+                 gymNotesService, gymNotes, gymBodyweight, tokens, gymDoor, gymPreferences);
 
   // Every product's module behind one host, filtered by the grant the credential carries. A
   // duplicate tool name across two products refuses to boot. Tending is deliberately NOT given this
@@ -1037,10 +1033,10 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   gym::GymDeps gymDeps{.trainingService = gymTrainingService,
                        .catalogService = gymCatalogService,
                        .programService = gymProgramService,
-                       .preferencesService = gymPreferencesService,
                        .threadService = gymThreadService,
                        .notesService = gymNotesService,
-                       .bodyweightService = gymBodyweightService,
+                       .preferences = gymPreferences,
+                       .bodyweight = gymBodyweight,
                        .authService = authService,
                        .askService = gymAsk,
                        .appBaseUrl = appBaseUrl,

@@ -49,20 +49,16 @@ struct Harness {
   std::shared_ptr<CatalogService> catalogService = std::make_shared<CatalogService>(repo.catalog, door);
   std::shared_ptr<ProgramService> programService =
       std::make_shared<ProgramService>(repo.program, door);
-  std::shared_ptr<PreferencesService> preferencesService =
-      std::make_shared<PreferencesService>(repo.preferences);
   std::shared_ptr<ThreadService> threadService =
       std::make_shared<ThreadService>(repo.threads, clock, door);
   std::shared_ptr<NotesService> notesService = std::make_shared<NotesService>(repo.notes, door);
-  std::shared_ptr<BodyweightService> bodyweightService =
-      std::make_shared<BodyweightService>(repo.bodyweight);
   TrainingApi training{trainingService, auth, "https://windmill.works"};
   CatalogApi catalog{catalogService, trainingService, auth};
   ProgramApi program{programService, auth};
-  PreferencesApi preferences{preferencesService, auth};
+  PreferencesApi preferences{doortest::borrowed(repo.preferences), auth};
   ThreadsApi threads{threadService, auth};
   NotesApi notes{notesService, auth};
-  BodyweightApi bodyweight{bodyweightService, auth};
+  BodyweightApi bodyweight{doortest::borrowed(repo.bodyweight), auth};
 
   Harness() {
     repo.db.seed(benchPress());

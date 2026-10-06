@@ -355,7 +355,7 @@ ToolResult saveNote(NotesService& notes, const UserId& caller, const Json::Value
 // Day ascending, the wire's shape minus the device instant an agent has no use for. No receipt:
 // a weigh-in is not a log row. A bound that is not a calendar day is refused before the store is
 // asked, in the sentence the schema's description already gives.
-ToolResult listBodyweight(BodyweightService& bodyweight, const UserId& caller,
+ToolResult listBodyweight(BodyweightRepository& bodyweight, const UserId& caller,
                           const Json::Value& args) {
   BodyweightRange range;
   for (const char* bound : {"from", "to"}) {
@@ -641,7 +641,7 @@ std::optional<ToolResult> GymTools::completedAction(const UserId& user, const st
 }
 
 GymTools::GymTools(TrainingService& training, CatalogService& catalog, ProgramService& program,
-                   NotesService& notes, BodyweightService& bodyweight, std::string appBaseUrl)
+                   NotesService& notes, BodyweightRepository& bodyweight, std::string appBaseUrl)
     : training_(training), catalog_(catalog), program_(program), notes_(notes),
       bodyweight_(bodyweight), appBaseUrl_(std::move(appBaseUrl)) {}
 

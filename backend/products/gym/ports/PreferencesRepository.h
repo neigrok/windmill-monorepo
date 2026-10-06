@@ -8,8 +8,8 @@
 namespace wm::gym {
 
 // The settings row as the engine stores it, owner-scoped by the UserId it carries. A lifter who never
-// changed a setting has no row; the store never invents a document, the defaults being
-// PreferencesService's to give.
+// changed a setting has no row; the store never invents a document, the defaults being the read
+// route's to give.
 struct PreferencesRepository {
   virtual ~PreferencesRepository() = default;
 

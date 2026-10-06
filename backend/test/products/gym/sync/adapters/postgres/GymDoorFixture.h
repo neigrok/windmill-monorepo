@@ -12,10 +12,8 @@
 #include "products/gym/adapters/postgres/PgNotesRepository.h"
 #include "products/gym/adapters/postgres/PgBodyweightRepository.h"
 #include "products/gym/adapters/postgres/PgPreferencesRepository.h"
-#include "products/gym/application/BodyweightService.h"
 #include "products/gym/application/CatalogService.h"
 #include "products/gym/application/NotesService.h"
-#include "products/gym/application/PreferencesService.h"
 #include "products/gym/application/ProgramService.h"
 #include "products/gym/application/ThreadService.h"
 #include "products/gym/application/TrainingService.h"
@@ -119,10 +117,8 @@ struct Harness {
   CatalogService catalog{repo.catalog, door};
   ProgramService program{repo.program, door};
   NotesService notes{repo.notes, door};
-  BodyweightService bodyweight{repo.bodyweight};
-  PreferencesService preferences{repo.preferences};
   ThreadService threads{repo.threads, clock, door};
-  GymTools tools{training, catalog, program, notes, bodyweight, "https://windmill.works"};
+  GymTools tools{training, catalog, program, notes, repo.bodyweight, "https://windmill.works"};
 
   Harness() {
     PgLease lease{*pool()};

@@ -28,7 +28,7 @@ Json::Value phonePreferences(doortest::Harness& h, const GymPreferences& incomin
 
 }  // namespace
 
-// No row until the first write, the defaults meanwhile; each whole document replaces the one row.
+// No row until the first write; each whole document replaces the one row.
 TEST(pg_gym_preferences_are_absent_until_written_then_upsert_in_place) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
@@ -36,13 +36,12 @@ TEST(pg_gym_preferences_are_absent_until_written_then_upsert_in_place) {
   const GymPreferences replaced{h.user, Unit::kg, std::nullopt, true, true, false};
 
   CHECK_EQ(h.repo.preferences.preferences(h.user), std::optional<GymPreferences>());
-  CHECK_EQ(h.preferences.preferences(h.user), GymPreferences{h.user});
   CHECK_EQ(GymDoor::refusal(phonePreferences(h, saved)), "");
   CHECK_EQ(h.repo.preferences.preferences(h.user), std::optional<GymPreferences>(saved));
   CHECK_EQ(GymDoor::refusal(phonePreferences(h, replaced)), "");
 
   CHECK_EQ(h.repo.preferences.preferences(h.user), std::optional<GymPreferences>(replaced));
-  CHECK_EQ(h.preferences.preferences(h.other), GymPreferences{h.other});
+  CHECK_EQ(h.repo.preferences.preferences(h.other), std::optional<GymPreferences>());
   // One row per account and not a row per write: the second document replaced the first.
   PgLease conn{*doortest::pool()};
   pqxx::work txn{*conn};

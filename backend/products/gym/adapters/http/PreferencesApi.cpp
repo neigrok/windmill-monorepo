@@ -9,7 +9,7 @@
 
 namespace wm::gym {
 
-PreferencesApi::PreferencesApi(std::shared_ptr<PreferencesService> preferences,
+PreferencesApi::PreferencesApi(std::shared_ptr<PreferencesRepository> preferences,
                                std::shared_ptr<AuthService> auth)
     : preferences_(std::move(preferences)), auth_(std::move(auth)) {}
 
@@ -20,7 +20,7 @@ void PreferencesApi::preferences(const drogon::HttpRequestPtr& req, HttpCallback
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
-  cb(jsonResponse(toJson(preferences_->preferences(*caller))));
+  cb(jsonResponse(toJson(preferences_->preferences(*caller).value_or(GymPreferences{*caller}))));
 }
 
 }

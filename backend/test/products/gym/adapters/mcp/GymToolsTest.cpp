@@ -5,8 +5,6 @@
 #include "products/gym/adapters/json/TrainingJson.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 #include "products/gym/application/AskService.h"
-#include "products/gym/application/BodyweightService.h"
-#include "products/gym/application/PreferencesService.h"
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
 #include "test/platform/Fakes.h"
 #include "test/products/gym/Fakes.h"
@@ -36,8 +34,7 @@ struct MemoryHarness {
   CatalogService catalog{repo.catalog, door};
   ProgramService program{repo.program, door};
   NotesService notes{repo.notes, door};
-  BodyweightService bodyweight{repo.bodyweight};
-  GymTools tools{training, catalog, program, notes, bodyweight, "https://windmill.works"};
+  GymTools tools{training, catalog, program, notes, repo.bodyweight, "https://windmill.works"};
 
   MemoryHarness() {
     repo.db.seed(benchPress());
@@ -384,7 +381,7 @@ TEST(gym_publishes_no_tool_that_writes_a_bodyweight_at_any_level) {
   weighIn["kg"] = 82.4;
   weighIn["recordedAt"] = Json::Value::UInt64(1'786'000'000'000);
   GymDoor::requireOk(h.admit(h.user, {GymDoor::delta("weighin", "2026-08-25", weighIn, true)}));
-  const std::vector<Bodyweight> before = h.bodyweight.entries(h.user, BodyweightRange{});
+  const std::vector<Bodyweight> before = h.repo.bodyweight.entries(h.user, BodyweightRange{});
 
   const auto saysBodyweight = [](std::string word) {
     for (char& c : word) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -434,7 +431,7 @@ TEST(gym_publishes_no_tool_that_writes_a_bodyweight_at_any_level) {
     CHECK(me.call(name, args).isError);
     CHECK_FALSE(h.tools.retirement(name).has_value());
   }
-  CHECK_EQ(h.bodyweight.entries(h.user, BodyweightRange{}), before);
+  CHECK_EQ(h.repo.bodyweight.entries(h.user, BodyweightRange{}), before);
   CHECK_EQ(stored("select date_local from gym_bodyweight order by date_local"),
            std::vector<std::string>{"2026-08-25"});
 }
@@ -1743,7 +1740,7 @@ TEST(gym_an_armed_rest_dial_is_never_copied_into_a_routine_line_that_names_none)
   // A set naming reps alone carries exactly that: the load is last time's, filled in by nobody here.
   CHECK_EQ(dump(body(listed)["routines"][0]["entries"][0]["sets"]),
            std::string(R"([{"reps":5},{"reps":5},{"reps":5},{"reps":5},{"reps":5}])"));
-  CHECK_EQ(h.preferences.preferences(h.user), GymPreferences(h.user, Unit::kg, 120, true, true, false));
+  CHECK_EQ(h.repo.preferences.preferences(h.user), std::optional(GymPreferences(h.user, Unit::kg, 120, true, true, false)));
 }
 
 // `gym:read` cannot mint a proposal, and the gate is the composite's rather than gym's, so it is called through it.

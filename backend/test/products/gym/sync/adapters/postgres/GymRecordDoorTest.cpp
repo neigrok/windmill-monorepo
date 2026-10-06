@@ -348,7 +348,7 @@ TEST(gym_record_engine_d3_server_and_replica_weighins_follow_whole_put_stamp_ord
   reading["kg"] = serverReading.weightKg;
   reading["recordedAt"] = Json::UInt64(serverReading.recordedAtMs);
   GymDoor::requireOk(h.admit(h.user, {GymDoor::delta("weighin", serverReading.dateLocal, reading, true)}));
-  CHECK_EQ(h.bodyweight.latest(h.user), std::optional(serverReading));
+  CHECK_EQ(h.repo.bodyweight.latest(h.user), std::optional(serverReading));
   sync::SyncCatalog catalog{engine::registry()};
   engine::PgGym gym{engine::registry()};
   gym.bindTo(catalog);
@@ -374,11 +374,11 @@ TEST(gym_record_engine_d3_server_and_replica_weighins_follow_whole_put_stamp_ord
   };
   const auto delayed = admit(put(h.clock.now - 1, 90.0, h.clock.now), 1);
   REQUIRE_EQ(delayed["s"].asString(), "ok");
-  CHECK_EQ(h.bodyweight.latest(h.user), std::optional(serverReading));
+  CHECK_EQ(h.repo.bodyweight.latest(h.user), std::optional(serverReading));
   const Bodyweight replicaReading{h.user, serverReading.dateLocal, 91.0, h.clock.now + 100};
   const auto newer = admit(put(h.clock.now + 1, replicaReading.weightKg, replicaReading.recordedAtMs), 2);
   REQUIRE_EQ(newer["s"].asString(), "ok");
-  CHECK_EQ(h.bodyweight.latest(h.user), std::optional(replicaReading));
+  CHECK_EQ(h.repo.bodyweight.latest(h.user), std::optional(replicaReading));
   CHECK(h.failures.messages.empty());
 }
 

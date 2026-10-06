@@ -34,11 +34,11 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   auto catalog =
       std::make_shared<CatalogApi>(deps.catalogService, deps.trainingService, deps.authService);
   auto program = std::make_shared<ProgramApi>(deps.programService, deps.authService);
-  auto preferences = std::make_shared<PreferencesApi>(deps.preferencesService, deps.authService);
+  auto preferences = std::make_shared<PreferencesApi>(deps.preferences, deps.authService);
   auto threads = std::make_shared<ThreadsApi>(deps.threadService, deps.authService, deps.askService);
   if (deps.onShutdown) deps.onShutdown([threads] { threads->stop(); });
   auto notes = std::make_shared<NotesApi>(deps.notesService, deps.authService);
-  auto bodyweight = std::make_shared<BodyweightApi>(deps.bodyweightService, deps.authService);
+  auto bodyweight = std::make_shared<BodyweightApi>(deps.bodyweight, deps.authService);
 
   // THE RETIRED WRITE PATHS. Android 0.5.0 to 0.10.0 still send these; every client after them
   // writes through /v1/sync. Each answers 410 `client-update-required` before auth, with nothing

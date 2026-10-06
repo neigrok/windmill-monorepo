@@ -149,9 +149,7 @@ add_library(windmill_gym
   products/gym/application/CatalogService.cpp
   products/gym/application/ProgramService.cpp
   products/gym/application/ThreadService.cpp
-  products/gym/application/PreferencesService.cpp
-  products/gym/application/NotesService.cpp
-  products/gym/application/BodyweightService.cpp)
+  products/gym/application/NotesService.cpp)
 target_include_directories(windmill_gym PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_gym PUBLIC windmill_platform)
 
@@ -303,8 +301,7 @@ add_executable(windmill_domain_tests
   test/products/gym/domain/ReadReceiptTest.cpp
   test/products/gym/domain/NoteTest.cpp
   test/products/gym/domain/BodyweightTest.cpp
-  test/products/gym/application/ThreadServiceTest.cpp
-  test/products/gym/application/BodyweightServiceTest.cpp)
+  test/products/gym/application/ThreadServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_journal windmill_gym windmill_probe windmill_product_sync)
 # The corpus and the product registries are read from the contract at run time, so the tests see every file the
 # contract holds.

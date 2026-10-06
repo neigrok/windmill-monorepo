@@ -1,7 +1,7 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
-#include "products/gym/application/BodyweightService.h"
+#include "products/gym/ports/BodyweightRepository.h"
 
 #include <drogon/HttpRequest.h>
 #include <drogon/HttpResponse.h>
@@ -20,12 +20,12 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // A bound that is not a calendar day is a 400, `could not read that date`.
 class BodyweightApi {
 public:
-  BodyweightApi(std::shared_ptr<BodyweightService> bodyweight, std::shared_ptr<AuthService> auth);
+  BodyweightApi(std::shared_ptr<BodyweightRepository> bodyweight, std::shared_ptr<AuthService> auth);
 
   void listEntries(const drogon::HttpRequestPtr& req, HttpCallback&& cb);     // GET    /v1/gym/bodyweight
 
 private:
-  std::shared_ptr<BodyweightService> bodyweight_;
+  std::shared_ptr<BodyweightRepository> bodyweight_;
   std::shared_ptr<AuthService> auth_;
 };
 

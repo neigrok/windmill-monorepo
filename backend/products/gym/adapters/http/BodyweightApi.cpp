@@ -9,7 +9,7 @@
 
 namespace wm::gym {
 
-BodyweightApi::BodyweightApi(std::shared_ptr<BodyweightService> bodyweight,
+BodyweightApi::BodyweightApi(std::shared_ptr<BodyweightRepository> bodyweight,
                              std::shared_ptr<AuthService> auth)
     : bodyweight_(std::move(bodyweight)), auth_(std::move(auth)) {}
 
