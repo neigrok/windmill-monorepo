@@ -94,12 +94,12 @@ import SyncModelServer
     defer { try? FileManager.default.removeItem(at: cache.directory) }
     let coach = CoachConversation(gym: gym, rest: rest, store: cache)
     await coach.activate(); coach.edit("Private question"); coach.send()
-    try await settle { !coach.asking }
+    await coach.work?.value; #expect(!coach.asking)
     let request = try #require(coach.saved.request)
     let first = try #require(CoachTestProtocol.state.withLock { $0.requests.first?.body })
     let terminal = try JSONSerialization.data(withJSONObject: ["thread": request.thread, "generation": ["id": "generation-123", "requestId": request.requestId, "question": request.question, "revision": 3, "status": "completed", "answer": "Final"]])
     CoachTestProtocol.state.withLock { $0.reply = .http(200, "event: snapshot\ndata: " + String(decoding: terminal, as: UTF8.self) + "\n\n", "text/event-stream") }
-    coach.retry(); try await settle { !coach.asking }
+    coach.retry(); await coach.work?.value; #expect(!coach.asking)
     #expect(coach.activeGeneration?.answer == "Final" && coach.saved.text.isEmpty)
     let bodies = CoachTestProtocol.state.withLock { $0.requests.compactMap(\.body) }
     #expect(bodies.count == 2)
@@ -139,7 +139,7 @@ import SyncModelServer
     let (gym, rest, _) = try await authed(.failure(.networkConnectionLost)), cache = store()
     defer { try? FileManager.default.removeItem(at: cache.directory) }
     let coach = CoachConversation(gym: gym, rest: rest, store: cache)
-    await coach.activate(); coach.edit("First question"); coach.send(); try await settle { !coach.asking }
+    await coach.activate(); coach.edit("First question"); coach.send(); await coach.work?.value; #expect(!coach.asking)
     let first = try #require(coach.saved.request)
     CoachTestProtocol.state.withLock { $0.reply = .stalled }
     coach.stopResponse()
@@ -208,7 +208,9 @@ import SyncModelServer
     _ = CoachHistoryScreen(gym: gym, coach: coach, history: history)
     let row = try #require(saved.thread)
     history.rows = [row]; history.remove(row)
-    try await Task.sleep(for: .seconds(9.1)); try await settle { history.held.isEmpty && rest.tasks.isEmpty }
+    let deleting = try #require(history.held.first?.task)
+    await deleting.value
+    #expect(history.held.isEmpty && rest.tasks.isEmpty)
     #expect(history.rows.isEmpty && history.error == nil)
     #expect(coach.saved.threadId != row.id && coach.saved.thread == nil && coach.saved.request == nil && coach.saved.generation == nil && coach.saved.exchanges.isEmpty)
     #expect(coach.saved.text == saved.text && coach.saved.photo == saved.photo && coach.saved.photoData == saved.photoData)
@@ -269,18 +271,18 @@ import SyncModelServer
     let (gym, rest, _) = try await authed(.failure(.networkConnectionLost)), cache = store()
     defer { try? FileManager.default.removeItem(at: cache.directory) }
     let first = CoachConversation(gym: gym, rest: rest, store: cache)
-    await first.activate(); first.edit("Private question"); first.send(); try await settle { !first.asking }
+    await first.activate(); first.edit("Private question"); first.send(); await first.work?.value; #expect(!first.asking)
     let request = try #require(first.saved.request)
     func event(_ status: String, _ revision: Int, _ answer: String) throws -> String {
       let data = try JSONSerialization.data(withJSONObject: ["thread": request.thread, "generation": ["id": "generation-123", "requestId": request.requestId, "question": request.question, "status": status, "revision": revision, "answer": answer]])
       return "event: snapshot\r\ndata: " + String(decoding: data, as: UTF8.self) + "\r\n\r\n"
     }
     CoachTestProtocol.state.withLock { $0.reply = .http(200, try! event("running", 1, "Partial"), "text/event-stream") }
-    first.retry(); try await settle { !first.asking }
+    first.retry(); await first.work?.value; #expect(!first.asking)
     #expect(first.activeGeneration?.answer == "Partial" && first.retryable)
     CoachTestProtocol.state.withLock { $0.reply = .http(200, try! event("completed", 2, "Recovered"), "text/event-stream") }
     let restarted = CoachConversation(gym: gym, rest: rest, store: cache); await restarted.activate()
-    try await settle { !restarted.asking }
+    await restarted.work?.value; #expect(!restarted.asking)
     #expect(restarted.activeGeneration?.answer == "Recovered" && restarted.saved.request == request)
     let calls = CoachTestProtocol.state.withLock { $0.requests.compactMap(\.body) }
     #expect(calls.count == 3)
@@ -298,8 +300,10 @@ import SyncModelServer
     try await settle { coach.activeGeneration?.answer == "Partial" }
     #expect(coach.asking && !coach.saved.text.isEmpty)
     let terminal = try JSONSerialization.data(withJSONObject: ["thread": request.thread, "generation": ["id": "generation-123", "requestId": request.requestId, "question": request.question, "status": "completed", "revision": 2, "answer": "Final"]])
-    CoachTestProtocol.state.withLock { $0.reply = .http(200, String(decoding: terminal, as: UTF8.self)) }
-    try await settle { !coach.asking }
+    try await settle { CoachTestProtocol.state.withLock { $0.requests.count == 2 && $0.active != nil } }
+    let poll = try #require(CoachTestProtocol.state.withLock { $0.requests.count == 2 ? $0.active : nil })
+    poll.respond(200, String(decoding: terminal, as: UTF8.self))
+    await coach.work?.value; #expect(!coach.asking)
     #expect(coach.activeGeneration?.answer == "Final" && coach.saved.text.isEmpty)
     #expect(CoachTestProtocol.state.withLock { $0.requests.count } == 2)
   }
@@ -326,7 +330,7 @@ import SyncModelServer
     let request = CoachSaved.Request(thread: "thread-123", question: "Private question", requestId: "request-123", attachmentIds: [])
     var next = coach.saved; next.threadId = request.thread; next.request = request; _ = coach.keep(next, failure: "failure")
     try coach.accept(snapshot(answer: "Durable partial"), request: request)
-    coach.stopResponse(); try await settle { !coach.stopping }
+    coach.stopResponse(); await coach.stopWork?.value; #expect(!coach.stopping)
     #expect(coach.error == "The stop request didn’t reach Coach. Try again.")
     #expect(coach.activeGeneration?.answer == "Durable partial" && coach.activeGeneration?.results.count == 1)
     let call = try #require(CoachTestProtocol.state.withLock { $0.requests.first })
@@ -347,7 +351,8 @@ import SyncModelServer
     let history = CoachHistory(gym: gym, rest: rest)
     let row = try JSONDecoder().decode(CoachThread.self, from: Data(#"{"id":"thread-123","title":"Private","askedAt":1000}"#.utf8))
     history.rows = [row]; history.remove(row)
-    try await Task.sleep(for: .seconds(9.1)); try await settle { !history.rows.isEmpty }
+    let deleting = try #require(history.held.first?.task)
+    await deleting.value
     #expect(history.error == "Another generation is still running" && history.rows.map(\.id) == [row.id])
     #expect(history.held.isEmpty)
   }
@@ -398,7 +403,7 @@ import SyncModelServer
     let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
     let priorThread = coach.saved.threadId
     #expect(coach.begin(CoachHandoff(question: "Check my last session.", send: true)))
-    try await settle { !coach.asking }
+    await coach.work?.value; #expect(!coach.asking)
     let request = try #require(coach.saved.request)
     #expect(request.thread != priorThread && request.question == "Check my last session." && request.attachmentIds.isEmpty)
     let call = try #require(CoachTestProtocol.state.withLock { $0.requests.first })
@@ -424,7 +429,7 @@ import SyncModelServer
     let (gym, rest, telemetry) = try await authed(reply), cache = store()
     defer { try? FileManager.default.removeItem(at: cache.directory) }
     let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
-    coach.edit("Training question"); coach.send(); try await settle { !coach.asking }
+    coach.edit("Training question"); coach.send(); await coach.work?.value; #expect(!coach.asking)
     #expect(coach.refusal == .absent && coach.error == CoachCopy.absent && !coach.canCompose)
     #expect(gym.coachUnavailable && !coach.retryable)
     #expect(telemetry.entries.withLock { $0.filter { $0.name == "client_error" }.isEmpty })

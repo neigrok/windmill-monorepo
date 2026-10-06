@@ -22,6 +22,20 @@ import XCTest
   func sessionRow(_ app: XCUIApplication) -> XCUIElement {
     app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-log-session-")).firstMatch
   }
+  func openFirstSession(_ app: XCUIApplication) {
+    let row = sessionRow(app)
+    XCTAssertTrue(row.waitForExistence(timeout: 20))
+    for _ in 0..<8 {
+      let frame = row.frame, top = app.navigationBars.firstMatch.frame.maxY + 8
+      if frame.minY > top && frame.maxY < app.buttons["gym-weigh-in"].frame.minY - 12 && row.isHittable { break }
+      if frame.minY <= top { app.swipeDown(velocity: .slow) } else { app.swipeUp(velocity: .slow) }
+    }
+    XCTAssertTrue(row.isHittable)
+    XCTAssertGreaterThan(row.frame.minY, app.navigationBars.firstMatch.frame.maxY + 8)
+    XCTAssertLessThan(row.frame.maxY, app.buttons["gym-weigh-in"].frame.minY - 12)
+    row.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 10))
+  }
   func firstSet(_ app: XCUIApplication) -> XCUIElement {
     app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-finished-set-")).firstMatch
   }
@@ -49,8 +63,9 @@ import XCTest
 
   func testMovementRecordWindows() {
     let app = launch("dark")
-    sessionRow(app).tap()
-    app.buttons["gym-session-movement"].firstMatch.tap()
+    openFirstSession(app)
+    let movement = app.buttons["gym-session-movement"].firstMatch
+    XCTAssertTrue(movement.waitForExistence(timeout: 10)); movement.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
     let picker = app.segmentedControls["gym-record-window"]
     XCTAssertTrue(picker.waitForExistence(timeout: 5))
@@ -70,8 +85,9 @@ import XCTest
 
   func testBothChartDateAxesFollowOverflowingHistoryPans() {
     let app = launch("light", overflowingCharts: true)
-    sessionRow(app).tap()
-    app.buttons["gym-session-movement"].firstMatch.tap()
+    openFirstSession(app)
+    let movement = app.buttons["gym-session-movement"].firstMatch
+    XCTAssertTrue(movement.waitForExistence(timeout: 10)); movement.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
     let window = app.segmentedControls["gym-record-window"]
     XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -196,17 +212,7 @@ import XCTest
     XCTAssertEqual(XCTWaiter.wait(for: [collapsed], timeout: 5), .completed)
     XCTAssertTrue(openRecord.waitForNonExistence(timeout: 5))
     snapshot("moment-collapsed-\(appearance)", app: app)
-    let workoutRow = sessionRow(app)
-    for _ in 0..<8 {
-      let frame = workoutRow.frame, top = app.navigationBars.firstMatch.frame.maxY + 8
-      if frame.minY > top && frame.maxY < app.buttons["gym-weigh-in"].frame.minY - 12 && workoutRow.isHittable { break }
-      if frame.minY <= top { app.swipeDown(velocity: .slow) } else { app.swipeUp(velocity: .slow) }
-    }
-    XCTAssertTrue(workoutRow.isHittable)
-    XCTAssertGreaterThan(workoutRow.frame.minY, app.navigationBars.firstMatch.frame.maxY + 8)
-    XCTAssertLessThan(workoutRow.frame.maxY, app.buttons["gym-weigh-in"].frame.minY - 12)
-    workoutRow.tap()
-    XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
+    openFirstSession(app)
     XCTAssertTrue(app.staticTexts["Plan saved at start"].exists)
     snapshot("session-\(appearance)", app: app)
     let correctedSet = firstSet(app)
