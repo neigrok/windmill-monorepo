@@ -83,20 +83,5 @@ and starts the engine. Each product's route table carries a `sync` group — `pr
 sign-in question counts — and the session owner composes every group into the engine options;
 `prepare` runs before the first network request.
 
-Journal's `prepare` imports v1/v2 cached pages and owed writes, preserving account lineages and
-anonymous snapshots. Durable source digests prevent replay after a crash between the import and
-source deletion. Invalid/blocked storage fails visibly and leaves source keys intact. Unattributable
-pages stay quarantined until an explicit restore. The product's result hook records claim receipts
-inside the result transaction; observations reconcile edited claims only after a covering pull.
-Writing a day before its first account read uses a claim, retaining unseen prose. Terminal refusal
-notices keep their documents visible after reload; corrected saves retire their older notices.
-
-`npm run test:journal:server -- /absolute/backend/build` runs the journal Playwright acceptance on
-ports 8094/5181 with its own database and `schema.sql`. Build `windmill_server` using
-`backend/RUNNING.md` first. It requires Postgres client tools (`/tmp` on macOS), stops its listeners
-by port and drops its database.
-The server acceptance script is callable in CI with that same binary and Postgres tools;
-the existing web workflow runs the complete tests/build, but has no backend-stack step.
-
 Command predictions may include local deaths and serial values; only the command arguments go on
 the wire.
