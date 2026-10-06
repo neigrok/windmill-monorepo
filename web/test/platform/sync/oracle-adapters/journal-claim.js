@@ -8,7 +8,7 @@ import { onPullResponse, pullRequest } from "../../../../src/platform/sync/clien
 import { nextPush, onPushResponse } from "../../../../src/platform/sync/client/sender.js";
 import {
   editPendingClaim, onClaimPushResponse, pendingClaimKey, pendingClaimWork, queueClaim, reconcilePendingClaim,
-} from "../../../../src/platform/sync/journal/client.js";
+} from "../../../../src/products/journal/claims.js";
 import { nextDocumentStamp } from "../../../../src/platform/sync/core/content.js";
 import { pull } from "../../../../../packages/api-contract/sync/reference/server/pull.js";
 import { push } from "../../../../../packages/api-contract/sync/reference/server/push.js";

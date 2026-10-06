@@ -4,8 +4,8 @@
 request. `start()` installs tab coordination and lifecycle hooks, releases holds on the first tab,
 requests persistent storage and starts synchronization. No product or UI imports this engine.
 
-The registry composes the shared gym and journal registries at version 5, minimum 4. The deterministic core,
-replica rules and journal claim helpers are browser ports of `packages/api-contract/sync/reference`.
+The registry composes the shared gym and journal registries at version 5, minimum 4. The deterministic
+core and replica rules are browser ports of `packages/api-contract/sync/reference`.
 UTF-8 uses `TextEncoder`, canonical cursor encoding uses browser base64 APIs and synchronous SHA-256
 uses `@noble/hashes`. Test oracles stay outside the shipping dependency graph.
 

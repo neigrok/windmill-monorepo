@@ -2,7 +2,7 @@ import { syncSession } from '../../platform/sync/session.js';
 import { compareDocumentStamps, nextDocumentStamp } from '../../platform/sync/core/content.js';
 import { commit } from '../../platform/sync/client/commit.js';
 import { drawn } from '../../platform/sync/client/views.js';
-import { queueClaim, editPendingClaim, pendingClaimKey, reconcilePendingClaim } from '../../platform/sync/journal/client.js';
+import { queueClaim, editPendingClaim, pendingClaimKey, reconcilePendingClaim } from './claims.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
 

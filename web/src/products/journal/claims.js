@@ -1,7 +1,7 @@
-import { commit, CommitError } from "../client/commit.js";
-import { onPushResponse } from "../client/sender.js";
-import { Cursor } from "../core/wire.js";
-import { claimBody, nextDocumentStamp } from "../core/content.js";
+import { commit, CommitError } from "../../platform/sync/client/commit.js";
+import { onPushResponse } from "../../platform/sync/client/sender.js";
+import { Cursor } from "../../platform/sync/core/wire.js";
+import { claimBody, nextDocumentStamp } from "../../platform/sync/core/content.js";
 
 const SCOPE = "self/journal";
 const fields = ["body", "mood", "energy", "source"];

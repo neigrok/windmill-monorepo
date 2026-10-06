@@ -6,6 +6,10 @@ anonymous or before the account's first read of that day, and reads the replica 
 (`pagesOf`, `corpus`). `journalApi.js` holds the server features over the session cookie: echoes,
 nudges, transcription and export.
 
+`claims.js` owns pending claim edits and reconciliation, a browser port of
+`packages/api-contract/sync/reference/journal/client.js` checked by the sync corpus. Page writes and
+the route table use it to keep anonymous contributions and edits durable until the account receives them.
+
 The route table's `sync` group hands the engine the journal's hooks. `prepare` imports v1/v2 cached
 pages and owed writes, preserving account lineages and anonymous snapshots. Durable source digests
 prevent replay after a crash between the import and source deletion. Invalid/blocked storage fails
