@@ -409,9 +409,6 @@ public:
       const std::string kind = page["kind"].asString();
       observation.finish(kind == "rows" ? "ok" : kind);
       return page;
-    } catch (const ProductScopeUnavailable&) {
-      observation.finish("unavailable");
-      throw;
     } catch (const std::exception& error) {
       observation.fail(error);
       throw;
@@ -455,7 +452,6 @@ private:
     const std::optional<ScopeRow> scope = store_.scope(*txn, key, RowLock::none);
     const Access access = accessIn(*txn, key, scope);
     if (!access.read) return answered(ref, access.gone ? "gone" : "not-found");
-    catalog_.requireReady(*txn, key);
     std::optional<Cursor> cursor;
     if (!cursorText.isNull()) {
       cursor = Cursor::decode(cursorText.asString());
@@ -564,19 +560,14 @@ SyncReply SyncService::hello(const Credential& credential) {
   const std::optional<UserId>& caller = credential.servedAs();
   body["as"] = servedAsJson(caller);
   Json::Value holds(Json::objectValue);
-  try {
-    if (caller) {
-      for (const auto& [product, def] : registry.products()) {
-        const ScopeKey scope = ScopeKey::product(*caller, product);
-        catalog_.requireReady(*txn, scope);
-        const std::vector<const TypeDef*> types = catalog_.typesIn(scope.registryScope());
-        holds[product] = std::any_of(types.begin(), types.end(), [&](const TypeDef* type) {
-          return type->primary && !catalog_.store(type->name).feed(*txn, scope, FeedQuery{.visibleOnly = true, .limit = 1}).empty();
-        });
-      }
+  if (caller) {
+    for (const auto& [product, def] : registry.products()) {
+      const ScopeKey scope = ScopeKey::product(*caller, product);
+      const std::vector<const TypeDef*> types = catalog_.typesIn(scope.registryScope());
+      holds[product] = std::any_of(types.begin(), types.end(), [&](const TypeDef* type) {
+        return type->primary && !catalog_.store(type->name).feed(*txn, scope, FeedQuery{.visibleOnly = true, .limit = 1}).empty();
+      });
     }
-  } catch (const ProductScopeUnavailable&) {
-    return SyncReply::unavailable(std::move(body));
   }
   body["schema"] = Json::Int64(registry.version());
   body["minSchema"] = Json::Int64(registry.minVersion());
@@ -611,12 +602,7 @@ SyncReply SyncService::pull(const Credential& credential, std::string_view body)
     return SyncReply::refused(400, std::move(answer), "malformed");
   ScopePull pull(catalog_, store_, admission_, caller, serverNow);
   Json::Value& pages = answer["pages"] = Json::Value(Json::arrayValue);
-  try {
-    for (const Json::Value& wanted : (*request)["scopes"]) pages.append(pull.page(wanted));
-  } catch (const ProductScopeUnavailable&) {
-    answer.removeMember("pages");
-    return SyncReply::unavailable(std::move(answer));
-  }
+  for (const Json::Value& wanted : (*request)["scopes"]) pages.append(pull.page(wanted));
   return SyncReply{200, std::move(answer)};
 }
 

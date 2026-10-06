@@ -15,7 +15,6 @@ on:
       - 'packages/api-contract/sync/reference/core/**'
       - '.github/workflows/backend.yml'
       - '.github/workflows/deploy.yml'
-      - '.github/workflows/products-cutover.yml'
       - '!backend/**/*.md'
       - '!services/embedder/**/*.md'
   pull_request:
@@ -28,7 +27,6 @@ on:
       - 'packages/api-contract/sync/reference/core/**'
       - '.github/workflows/backend.yml'
       - '.github/workflows/deploy.yml'
-      - '.github/workflows/products-cutover.yml'
       - '!backend/**/*.md'
       - '!services/embedder/**/*.md'
   workflow_dispatch:
@@ -62,8 +60,9 @@ jobs:
   # The builder stage the test job built and cached, run again against a Postgres service: the domain, mcp,
   # sync and adapters suites with their WM_PG_TEST cases, the domain suite's pattern fuzz over cases
   # the JS reference generated and answered for a fresh seed, and what engine.md asks of a deployment (§9.1's
-  # credential cases and §6.8's idle live socket) against windmill_server_probe and SYNC_ENABLED=1 windmill_server, through the
-  # production Caddyfile over HTTP/1.1 and HTTP/2.
+  # credential cases and §6.8's idle live socket) against windmill_server_probe and windmill_server, through the
+  # production Caddyfile over HTTP/1.1 and HTTP/2. On the runner itself: re-applying schema.sql, as every deploy does,
+  # changes nothing.
   postgres:
     needs: test
     runs-on: ubuntu-latest
@@ -81,28 +80,12 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
-      # The builder's PG14 pg_dump reads both catalog snapshots and real rollback archives.
-      migration-postgres:
-        image: postgres:14
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: products_migration_test
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/windmill_test
       WM_SYNC_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/windmill_sync_test
-      WM_ENGINE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/windmill_deployment_test
-      WM_MIGRATION_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/products_migration_test
+      WM_DEPLOYMENT_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/windmill_deployment_test
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
       - uses: docker/setup-buildx-action@v4
       - name: Load the tested builder stage
         uses: docker/build-push-action@v7
@@ -117,26 +100,11 @@ jobs:
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/db/schema.sql
           createdb --maintenance-db="$DATABASE_URL" windmill_sync_test
-          psql "$WM_SYNC_DATABASE_URL" -v ON_ERROR_STOP=1 \
-            -f backend/db/schema.sql -f backend/db/probe.sql -f backend/db/gym_sync.sql -f backend/db/journal_sync.sql -f backend/db/gym_sync_v5.sql
+          psql "$WM_SYNC_DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/db/schema.sql -f backend/db/probe.sql
           createdb --maintenance-db="$DATABASE_URL" windmill_deployment_test
-          psql "$WM_ENGINE_DATABASE_URL" -v ON_ERROR_STOP=1 \
-            -f backend/db/schema.sql -f backend/db/gym_sync.sql -f backend/db/journal_sync.sql
-      - name: Preserve fresh and adopted catalogs when deployment re-applies schema.sql
-        run: |
-          git show 4b18960d5d24855750a77f7904d8ea7b341a03b7:backend/db/schema.sql > "$RUNNER_TEMP/origin-schema.sql"
-          docker run --rm --network host -e DATABASE_URL="$WM_MIGRATION_TEST_DATABASE_URL" \
-            -v "$RUNNER_TEMP/origin-schema.sql:/origin-schema.sql:ro" windmill-backend-build \
-            python3 test/deploy/schema_reapplication_test.py --bin-dir build \
-            --origin-schema /origin-schema.sql --maintenance-db "$WM_MIGRATION_TEST_DATABASE_URL"
-      - name: Exercise production cutover, rollback, killed-script recovery and deploy refusals
-        run: |
-          docker run --rm --network host -e DATABASE_URL="$WM_MIGRATION_TEST_DATABASE_URL" \
-            -v "$GITHUB_WORKSPACE/.github/workflows/deploy.yml:/deploy.yml:ro" \
-            -v "$GITHUB_WORKSPACE/.github/workflows/products-cutover.yml:/products-cutover.yml:ro" \
-            windmill-backend-build python3 test/deploy/products_cutover_test.py --bin-dir build \
-            --maintenance-db "$WM_MIGRATION_TEST_DATABASE_URL" --deploy-workflow /deploy.yml \
-            --cutover-workflow /products-cutover.yml
+          psql "$WM_DEPLOYMENT_DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/db/schema.sql
+      - name: Re-applying schema.sql, as every deploy does, changes nothing
+        run: python3 backend/test/deploy/schema_reapplication_test.py --maintenance-db "$DATABASE_URL"
       - uses: actions/setup-node@v5
         with:
           node-version: "20"
@@ -158,60 +126,24 @@ jobs:
           exit 1
       - name: Probe credentials and the idle live socket, directly and through the production edge (engine.md §9.1, §6.8)
         run: WM_E2E_DB="$WM_SYNC_DATABASE_URL" PORT=18613 EDGE_PORT=18643 node backend/test/e2e/deployment_conformance.mjs
-      - name: deploy.yml forwards the native-auth and sync settings (it reads the repo, so it runs outside the image)
+      - name: deploy.yml forwards the native-auth settings (it reads the repo, so it runs outside the image)
         run: python3 backend/test/e2e/deploy_auth_env_test.py
-      - name: Prove windmill_server has no sync routes with SYNC_ENABLED unset
+      - name: Serve windmill_server from the tested builder stage
         run: |
-          docker run -d --name engine-sync-off --network host -e DATABASE_URL="$WM_ENGINE_DATABASE_URL" \
+          docker run -d --name server --network host -e DATABASE_URL="$WM_DEPLOYMENT_DATABASE_URL" \
             -e PORT=18614 windmill-backend-build build/windmill_server
-          ready=0
-          for ((attempt=0; attempt<50; attempt++)); do
-            if curl -s -o /dev/null http://127.0.0.1:18614/v1/sync/hello; then
-              ready=1
-              break
-            fi
-            sleep 0.2
-          done
-          if [ "$ready" != 1 ]; then
-            docker logs engine-sync-off
-            exit 1
-          fi
-          WM_E2E_CATALOG=products PORT=18614 node backend/test/e2e/deployment_conformance.mjs --check-disabled
-          docker rm -f engine-sync-off
-      - name: Adopt the composed catalog's deployment accounts
-        run: |
-          WM_E2E_DB="$WM_ENGINE_DATABASE_URL" WM_E2E_CATALOG=products node backend/test/e2e/deployment_conformance.mjs --prepare-accounts
-          docker run --rm --network host -e DATABASE_URL="$WM_ENGINE_DATABASE_URL" \
-            windmill-backend-build build/windmill_gym_backfill
-          docker run --rm --network host -e DATABASE_URL="$WM_ENGINE_DATABASE_URL" \
-            windmill-backend-build build/windmill_journal_backfill
-      - name: Serve windmill_server with SYNC_ENABLED from the tested builder stage
-        run: |
-          docker run -d --name engine-sync --network host -e DATABASE_URL="$WM_ENGINE_DATABASE_URL" \
-            -e PORT=18614 -e SYNC_ENABLED=1 windmill-backend-build build/windmill_server
           for ((attempt=0; attempt<50; attempt++)); do
             curl -sf -o /dev/null -H 'Sync-Schema: 4' http://127.0.0.1:18614/v1/sync/hello && exit 0
             sleep 0.2
           done
-          docker logs engine-sync
+          docker logs server
           exit 1
       - name: Composed catalog credentials and the idle live socket, directly and through the production edge (engine.md §9.1, §6.8)
-        run: WM_E2E_DB="$WM_ENGINE_DATABASE_URL" WM_E2E_CATALOG=products PORT=18614 EDGE_PORT=18644 node backend/test/e2e/deployment_conformance.mjs
-      - name: Serve two windmill_server processes from the tested builder stage and compare gym writes
-        run: >-
-          python3 backend/test/e2e/gym_write_differential.py
-          --mode off-vs-on
-          --image windmill-backend-build --bin-dir build
-          --maintenance-db "$DATABASE_URL"
-      - name: Serve two windmill_server processes from the tested builder stage and compare journal writes
-        run: >-
-          python3 backend/test/e2e/journal_write_differential.py
-          --image windmill-backend-build --bin-dir build
-          --maintenance-db "$DATABASE_URL"
+        run: WM_E2E_DB="$WM_DEPLOYMENT_DATABASE_URL" WM_E2E_CATALOG=products PORT=18614 EDGE_PORT=18644 node backend/test/e2e/deployment_conformance.mjs
       - name: Stop deployment servers and drop throwaway databases
         if: always()
         run: |
-          docker rm -f probe engine-sync engine-sync-off || true
+          docker rm -f probe server || true
           dropdb --if-exists --maintenance-db="$DATABASE_URL" windmill_deployment_test
           dropdb --if-exists --maintenance-db="$DATABASE_URL" windmill_sync_test
 

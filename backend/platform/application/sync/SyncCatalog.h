@@ -29,7 +29,6 @@ public:
 
   void bindType(TypeStore& store, TypeRules* rules = nullptr);
   void bindCommand(const std::string& name, SyncCommand& command);
-  void bindReadiness(const std::string& product, ScopeReadiness& readiness);
   void seal();
 
   const Registry& registry() const { return registry_; }
@@ -41,8 +40,6 @@ public:
   std::string observationProduct(const RegistryScope& scope) const;
   std::string observationProduct(const Json::Value& intent, const UserId& caller) const;
   std::string observationOutcome(const Json::Value& result) const;
-  void requireReady(SyncTxn& txn, const ScopeKey& scope) const;
-  void requireWritable(SyncTxn& txn, const ScopeKey& scope) const;
   std::timed_mutex& scopeMutex(const ScopeKey& scope) const;
 
   // The registry's types of one scope kind, in registry order.
@@ -63,7 +60,6 @@ private:
   std::optional<Opening> opening_;
   std::map<std::string, TypeBinding> types_;
   std::map<std::string, SyncCommand*> commands_;
-  std::map<std::string, ScopeReadiness*> readiness_;
   mutable std::array<std::timed_mutex, 256> scopeMutexes_;
   std::vector<const TypeDef*> applyOrder_;
   bool sealed_ = false;

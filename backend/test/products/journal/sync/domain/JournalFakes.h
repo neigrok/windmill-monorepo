@@ -71,7 +71,7 @@ public:
     FakeTypeStore::purge(txn, scope);
     auto& db = sync::fake::dbOf(txn);
     std::erase_if(db.revisionMetadata, [&](const auto& row) { return std::get<0>(row.first).scope == scope && std::get<0>(row.first).t == def().name; });
-    if (def().name == "page") for (const char* name : {"journalClaims", "journalContentClocks", "journalPages", "journalRevisionProjection", "journalAdoptions"}) {
+    if (def().name == "page") for (const char* name : {"journalClaims", "journalContentClocks", "journalPages", "journalRevisionProjection"}) {
       if (db.journal.isMember(name) && db.journal[name].isObject()) db.journal[name].removeMember(scope.text());
     }
   }

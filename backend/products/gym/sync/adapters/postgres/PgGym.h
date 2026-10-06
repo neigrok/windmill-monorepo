@@ -26,25 +26,17 @@ public:
                                          const std::string&, Seq) override { return std::nullopt; }
   void purge(sync::SyncTxn&, const sync::ScopeKey&) override;
 
-  std::vector<sync::Row> adoptionRows(sync::SyncTxn&, const sync::ScopeKey&, sync::Ms migrationTime);
-  std::vector<sync::Row> adoptedRows(sync::SyncTxn&, const sync::ScopeKey&);
-  bool needsAdoption(sync::SyncTxn&, const sync::ScopeKey&, bool permitUnsetDefaults = false);
-  Seq greatestSeq(sync::SyncTxn&, const sync::ScopeKey&);
-  void adopt(sync::SyncTxn&, const sync::ScopeKey&, const std::vector<sync::Row>&);
-
 private:
   const sync::TypeDef& type_;
   std::string table_;
   std::string owner_;
   std::string id_;
-  std::string adoptionPredicate(bool permitUnsetDefaults = false) const;
 };
 
-class PgGym : public sync::ScopeReadiness {
+class PgGym {
 public:
   explicit PgGym(const sync::Registry& registry);
-  void bindTo(sync::SyncCatalog& catalog, bool checkAdoption = true);
-  void requireReady(sync::SyncTxn&, const sync::ScopeKey&) override;
+  void bindTo(sync::SyncCatalog& catalog);
 
 private:
   PgGymState state_;

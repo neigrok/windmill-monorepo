@@ -1,6 +1,6 @@
 [
   {
-    "name": "a server-origin weigh-in put is admitted: REST writes weigh-ins as the server",
+    "name": "a server-origin weigh-in put is admitted",
     "input": {
       "state": {
         "epoch": "ep-1",

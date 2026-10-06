@@ -157,7 +157,8 @@ target_link_libraries(windmill_gym PUBLIC windmill_platform)
 
 add_library(windmill_gym_sync
   products/gym/sync/domain/GymRules.cpp
-  products/gym/sync/application/GymProduct.cpp)
+  products/gym/sync/application/GymProduct.cpp
+  products/gym/sync/adapters/postgres/PgGym.cpp)
 target_include_directories(windmill_gym_sync PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_gym_sync PUBLIC windmill_platform)
 target_link_libraries(windmill_gym PUBLIC windmill_gym_sync)
@@ -173,8 +174,7 @@ wm_embed_registry(windmill_gym_sync wm::gym::engine registryText "${WM_API_CONTR
 add_library(windmill_journal_sync
   products/journal/sync/domain/JournalRules.cpp
   products/journal/sync/application/JournalProduct.cpp
-  products/journal/sync/adapters/postgres/PgJournal.cpp
-  products/journal/sync/adapters/postgres/PgJournalBackfill.cpp)
+  products/journal/sync/adapters/postgres/PgJournal.cpp)
 target_include_directories(windmill_journal_sync PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_journal_sync PUBLIC windmill_platform)
 target_link_libraries(windmill_journal PUBLIC windmill_journal_sync)
@@ -477,10 +477,9 @@ target_link_libraries(windmill_server_test_clock PRIVATE windmill_roadmap windmi
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_test(NAME auth_differential COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/e2e/auth_differential_test.py)
-add_test(NAME gym_differential COMMAND ${Python3_EXECUTABLE}
-  ${CMAKE_SOURCE_DIR}/test/e2e/gym_write_differential_test.py)
-add_test(NAME journal_differential COMMAND ${Python3_EXECUTABLE}
-  ${CMAKE_SOURCE_DIR}/test/e2e/journal_write_differential_test.py)
+# deploy-production.sh against a modeled Docker host: promotion, the kept database password, Caddy's proof and refusals.
+add_test(NAME deploy_production COMMAND ${Python3_EXECUTABLE}
+  ${CMAKE_SOURCE_DIR}/test/deploy/deploy_production_test.py)
 
 # The same server with the sync engine over the probe product (db/probe.sql): the test and dev stack's
 # server, never the image's. main.cpp refuses to start it where WINDMILL_APP_URL is https.
@@ -494,15 +493,8 @@ target_link_libraries(windmill_mcp PRIVATE windmill_roadmap)
 add_executable(windmill_mcp_http platform/infra/mcp_http_main.cpp)  # standalone HTTP transport: windmill_server serves MCP in prod, and this still ships in the image for local/single-purpose runs (Dockerfile builds, smoke-tests and installs it)
 target_link_libraries(windmill_mcp_http PRIVATE windmill_roadmap)
 
-add_executable(windmill_gym_backfill platform/infra/gym_backfill_main.cpp)
-target_link_libraries(windmill_gym_backfill PRIVATE windmill_gym_sync)
-
 add_test(NAME log_lifecycle COMMAND ${Python3_EXECUTABLE}
-  ${CMAKE_SOURCE_DIR}/test/platform/adapters/sentry/log_lifecycle_test.py
-  $<TARGET_FILE:windmill_mcp> $<TARGET_FILE:windmill_gym_backfill>)
-
-add_executable(windmill_journal_backfill platform/infra/journal_backfill_main.cpp)
-target_link_libraries(windmill_journal_backfill PRIVATE windmill_journal_sync)
+  ${CMAKE_SOURCE_DIR}/test/platform/adapters/sentry/log_lifecycle_test.py $<TARGET_FILE:windmill_mcp>)
 
 add_executable(windmill_mcp_tests
   test/http_main.cpp
@@ -531,8 +523,8 @@ target_sources(windmill_probe PRIVATE
   products/probe/adapters/http/DevApi.cpp)
 
 # The sync engine over Postgres alone, so `ctest -R sync` runs it without every product's Pg suite. Its
-# cases use WM_SYNC_DATABASE_URL, isolated from the REST adapters' DATABASE_URL, with schema.sql,
-# probe.sql, gym_sync.sql and journal_sync.sql applied. They skip unless WM_PG_TEST is set.
+# cases use WM_SYNC_DATABASE_URL, isolated from the REST adapters' DATABASE_URL, with schema.sql and
+# probe.sql applied. They skip unless WM_PG_TEST is set.
 add_executable(windmill_sync_tests
   test/http_main.cpp
   test/platform/adapters/http/SyncApiTest.cpp
@@ -542,14 +534,7 @@ add_executable(windmill_sync_tests
   test/platform/adapters/postgres/PgPullSnapshotTest.cpp
   test/products/probe/adapters/postgres/PgProbeTest.cpp
   test/products/gym/sync/adapters/postgres/PgGymTest.cpp
-  test/products/gym/sync/adapters/postgres/PgGymBackfillTest.cpp
-  test/products/gym/sync/adapters/postgres/PgGymMetadataUpgradeTest.cpp
-  test/products/journal/sync/adapters/postgres/PgJournalTest.cpp
-  test/products/journal/sync/adapters/postgres/PgJournalBackfillTest.cpp)
-target_sources(windmill_gym_sync PRIVATE
-  products/gym/sync/adapters/postgres/PgGym.cpp
-  products/gym/sync/adapters/postgres/PgGymBackfill.cpp
-  products/gym/sync/adapters/postgres/PgGymMetadataUpgrade.cpp)
+  test/products/journal/sync/adapters/postgres/PgJournalTest.cpp)
 target_link_libraries(windmill_sync_tests PRIVATE windmill_probe windmill_product_sync windmill_journal windmill_gym)
 target_compile_definitions(windmill_sync_tests PRIVATE
   WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync"
@@ -614,7 +599,6 @@ test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
   test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp
   test/products/journal/adapters/postgres/PgEchoRepositoryTest.cpp
   test/products/gym/sync/adapters/postgres/GymTrainingDoorTest.cpp
-  test/products/gym/sync/adapters/postgres/GymAdoptionDoorTest.cpp
   test/products/gym/sync/adapters/postgres/GymRecordDoorTest.cpp
   test/products/gym/adapters/http/GymDoorApiTest.cpp
   test/products/gym/adapters/http/TrainingApiTest.cpp

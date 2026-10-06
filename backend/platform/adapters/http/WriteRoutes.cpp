@@ -41,7 +41,7 @@ const std::set<std::string> refusalCodes{
     "ask-not-configured", "ask-out-of-budget", "ask-request-conflict", "ask-request-malformed",
     "ask-session-open", "ask-thread-taken", "authorization_pending", "bad-id", "bad_request",
     "client-update-required", "clock-ahead", "cursor-invalid", "epoch-mismatch", "expired",
-    "gym-engine-busy", "gym-engine-unavailable", "gym-not-adopted", "id-retired", "id-taken",
+    "gym-engine-busy", "gym-engine-unavailable", "id-retired", "id-taken",
     "identity-taken", "invalid_client", "invalid_client_metadata",
     "invalid_email", "invalid_grant", "invalid_redirect_uri", "invalid_request", "invalid_scope",
     "login_required", "malformed", "rate_limited", "replica-foreign",

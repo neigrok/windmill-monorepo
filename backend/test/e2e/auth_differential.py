@@ -13,7 +13,7 @@ import tempfile
 import time
 
 sys.dont_write_bytecode = True
-from gym_write_differential import BACKEND, Differential, command, database_url
+from differential_harness import BACKEND, Differential, command, database_url
 
 
 ACCOUNT = "40000000-0000-4000-8000-000000000001"
@@ -140,8 +140,7 @@ class AuthDifferential(Differential):
                 "WINDMILL_APP_URL": ("https" if secure else "http") + "://auth.test",
                 "WINDMILL_API_URL": "http://auth.test", "WINDMILL_COOKIE_DOMAIN": "auth.test" if secure else "",
                 "WINDMILL_COOKIE_RETIRED_DOMAINS": "old.auth.test,.older.auth.test" if secure else "",
-                "SYNC_ENABLED": "0", "APPLE_NATIVE_ENABLED": "0", "APPLE_CLIENT_ID": "",
-                "GYM_ENGINE_WRITES": "0", "JOURNAL_ENGINE_WRITES": "0", "GYM_WRITE_FREEZE": "0", "JOURNAL_WRITE_FREEZE": "0",
+                "APPLE_NATIVE_ENABLED": "0", "APPLE_CLIENT_ID": "",
                 "JOURNAL_NUDGE_ENABLED": "0", "JOURNAL_ECHO_ADMIN_TOKEN": "", "REMINDERS_ENABLED": "0",
                 "TENDING_ENABLED": "0", "RESEND_API_KEY": "", "ANTHROPIC_API_KEY": "", "OPENAI_API_KEY": "",
                 "SENTRY_DSN": "", "AMPLITUDE_API_KEY": "", "WINDMILL_MCP_TOKEN": "",

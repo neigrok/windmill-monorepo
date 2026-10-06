@@ -1,5 +1,3 @@
--- windmill-schema-adoption-compatibility: gym-journal-v1
--- windmill-gym-sync-metadata-version: 5
 -- Re-applied in order on every deploy: every statement must be idempotent. Grouped by FK
 -- dependency, so the per-product banners alternate.
 
@@ -682,6 +680,27 @@ ON CONFLICT DO NOTHING;
 update trees set visibility = 'public', deleted_at = null where id = 't_9e407a96b5330ebe';
 
 -- ── Journal (products/journal) ───────────────────────────────────────────────────────────────
+-- Each account's adoption record (docs/foundation/engine.md Appendix D): the frozen pages and
+-- revisions the adoption read, written once, never updated, and deleted with the account.
+create table if not exists journal_sync_adoptions (
+  user_id uuid primary key references users(id) on delete cascade,
+  migration_ms bigint not null,
+  first_run_policy text not null check(first_run_policy = 'retire-existing'),
+  manifest_digest text not null,
+  frozen_input jsonb not null,
+  frozen_receipts jsonb not null default '{}'::jsonb
+);
+create or replace function journal_sync_adoption_immutable() returns trigger language plpgsql as $$
+begin
+  raise exception 'journal adoption source and migration clock are immutable';
+end $$;
+do $$ begin
+  if not exists(select 1 from pg_trigger where tgrelid='journal_sync_adoptions'::regclass and tgname='journal_sync_adoption_immutable') then
+    create trigger journal_sync_adoption_immutable before update on journal_sync_adoptions
+      for each row execute function journal_sync_adoption_immutable();
+  end if;
+end $$;
+
 -- One page per user per LOCAL day. Nothing is shared: every read is scoped `where user_id = $1`.
 -- A user's devices converge last-writer-wins on (stamp_ms, stamp_counter).
 create table if not exists journal_page (
@@ -747,6 +766,64 @@ create table if not exists journal_page_revision (
   superseded_at timestamptz not null default now()
 );
 create index if not exists journal_page_revision_key on journal_page_revision (user_id, day);
+
+-- The sync engine's registers (docs/foundation/engine.md §2.2, Appendix D): a page's seq and row
+-- times, each field's stamp, and its body's text revision; the account's first-run state; the claim
+-- receipts and the content clock. engine_rev is the body revision a superseded row held, and
+-- migration_id the order the adoption gave the revisions it carried; neither moves once set.
+alter table journal_page add column if not exists seq bigint;
+alter table journal_page add column if not exists rc bigint;
+alter table journal_page add column if not exists ru bigint;
+alter table journal_page add column if not exists mood_stamp text;
+alter table journal_page add column if not exists energy_stamp text;
+alter table journal_page add column if not exists source_stamp text;
+alter table journal_page add column if not exists document_stamp_stamp text;
+alter table journal_page add column if not exists body_rev bigint;
+alter table journal_page add column if not exists body_merged boolean;
+create index if not exists journal_page_sync_feed on journal_page(user_id, seq);
+
+alter table journal_page_revision add column if not exists migration_id bigint;
+alter table journal_page_revision add column if not exists engine_rev bigint;
+create unique index if not exists journal_page_revision_engine_rev on journal_page_revision(user_id, engine_rev);
+create unique index if not exists journal_page_revision_migration_id on journal_page_revision(user_id, migration_id);
+create or replace function journal_sync_revision_identity_immutable() returns trigger language plpgsql as $$
+begin
+  if old.migration_id is not null and
+     (new.migration_id is distinct from old.migration_id or new.engine_rev is distinct from old.engine_rev) then
+    raise exception 'journal frozen revision identity is immutable';
+  end if;
+  return new;
+end $$;
+do $$ begin
+  if not exists(select 1 from pg_trigger where tgrelid='journal_page_revision'::regclass and tgname='journal_sync_revision_identity_immutable') then
+    create trigger journal_sync_revision_identity_immutable before update on journal_page_revision
+      for each row execute function journal_sync_revision_identity_immutable();
+  end if;
+end $$;
+
+create table if not exists journal_sync_state (
+  user_id uuid primary key references users(id) on delete cascade,
+  placeholder text not null default 'pending', placeholder_stamp text,
+  privacy_line text not null default 'pending', privacy_line_stamp text,
+  first_page text not null default 'pending', first_page_stamp text,
+  scales text not null default 'pending', scales_stamp text,
+  seq bigint, rc bigint, ru bigint
+);
+create index if not exists journal_sync_state_feed on journal_sync_state(user_id, seq);
+
+create table if not exists journal_claim_receipts (
+  user_id uuid not null references users(id) on delete cascade,
+  claim_id text not null,
+  arguments_digest text not null,
+  day date not null,
+  document_stamp jsonb not null,
+  primary key(user_id, claim_id)
+);
+create table if not exists journal_content_clock (
+  user_id uuid primary key references users(id) on delete cascade,
+  ms bigint not null,
+  counter bigint not null
+);
 
 -- ── Journal nudges (one a day at most) ───────────────────────────────────────────────────────
 -- next_due_at is materialised by the DEVICE, so the server keeps no timezone; NULL means never
@@ -938,7 +1015,72 @@ alter table journal_page_curation add column if not exists judge_version   text 
 -- Every gym_* row is owner-scoped and cascades on account deletion: every route stays
 -- `WHERE user_id = :caller`, and the only reader who is not the owner comes in through
 -- gym_session_shares. All date/time work stays in SQL; instants cross the wire and the domain as
--- epoch-ms. Create order is FK order.
+-- epoch-ms. Create order is FK order. A reference from one engine record to another is checked at
+-- commit and never deletes or rewrites on its own (docs/foundation/engine.md C.1); a record's own
+-- rows, a routine's entries or a proposal's changes, go with it.
+
+-- Each account's adoption record (docs/foundation/engine.md Appendix C): the frozen rows the
+-- adoption read and, for C.8's metadata, the run and each account's source and result. Written
+-- once, never rewritten, and deleted with the account.
+create table if not exists gym_sync_adoptions (
+  user_id uuid primary key references users(id) on delete cascade,
+  migration_ms bigint not null check (migration_ms >= 0),
+  frozen_source jsonb not null check (jsonb_typeof(frozen_source) = 'object')
+);
+create or replace function gym_sync_adoption_immutable() returns trigger language plpgsql as $$
+begin
+  raise exception 'gym adoption source and migration clock are immutable';
+end;
+$$;
+do $$ begin
+  if not exists(select 1 from pg_trigger where tgrelid='gym_sync_adoptions'::regclass and tgname='gym_sync_adoption_immutable') then
+    create trigger gym_sync_adoption_immutable before update on gym_sync_adoptions
+      for each row execute function gym_sync_adoption_immutable();
+  end if;
+end $$;
+
+create table if not exists gym_sync_metadata_upgrade_runs (
+  version integer primary key check(version = 5),
+  run_id uuid not null unique,
+  migration_ms bigint not null check(migration_ms >= 0),
+  registry_hash text not null,
+  epoch text not null,
+  roster jsonb not null check(jsonb_typeof(roster) = 'array')
+);
+create table if not exists gym_sync_metadata_upgrades (
+  user_id uuid not null references users(id) on delete cascade,
+  version integer not null references gym_sync_metadata_upgrade_runs(version),
+  migration_ms bigint not null check(migration_ms >= 0),
+  frozen_source jsonb not null check(jsonb_typeof(frozen_source) = 'object'),
+  result jsonb check(result is null or jsonb_typeof(result) = 'object'),
+  primary key(user_id, version)
+);
+create or replace function gym_sync_metadata_run_immutable() returns trigger language plpgsql as $$
+begin
+  raise exception 'gym metadata upgrade run is immutable';
+end;
+$$;
+do $$ begin
+  if not exists(select 1 from pg_trigger where tgrelid='gym_sync_metadata_upgrade_runs'::regclass and tgname='gym_sync_metadata_run_immutable') then
+    create trigger gym_sync_metadata_run_immutable before update on gym_sync_metadata_upgrade_runs
+      for each row execute function gym_sync_metadata_run_immutable();
+  end if;
+end $$;
+create or replace function gym_sync_metadata_upgrade_immutable() returns trigger language plpgsql as $$
+begin
+  if old.result is not null or new.result is null or
+     (to_jsonb(old) - 'result') is distinct from (to_jsonb(new) - 'result') then
+    raise exception 'gym metadata upgrade source and committed result are immutable';
+  end if;
+  return new;
+end;
+$$;
+do $$ begin
+  if not exists(select 1 from pg_trigger where tgrelid='gym_sync_metadata_upgrades'::regclass and tgname='gym_sync_metadata_upgrade_immutable') then
+    create trigger gym_sync_metadata_upgrade_immutable before update on gym_sync_metadata_upgrades
+      for each row execute function gym_sync_metadata_upgrade_immutable();
+  end if;
+end $$;
 
 -- id is a stable slug ('back-squat'), never renamed and never displayed; name is the mutable
 -- display string, so every set keeps pointing at the same id across a rename. created_by NULL marks
@@ -957,12 +1099,12 @@ create table if not exists gym_exercises (
 );
 
 -- What a lifter calls a SEEDED movement. Seed rows are global, so renaming one writes a line here
--- and every read coalesces it over the seed's name; a movement the lifter created renames in place
--- on its own row instead. Renaming back to the seed name deletes the row.
+-- and every read coalesces it over the seed's name; a null name reads as the seed's own. A movement
+-- the lifter created renames in place on its own row instead.
 create table if not exists gym_exercise_names (
   user_id     uuid not null references users(id) on delete cascade,
-  exercise_id text not null references gym_exercises(id) on delete cascade,
-  name        text not null,
+  exercise_id text not null references gym_exercises(id) deferrable initially deferred,
+  name        text,
   updated_at  timestamptz not null default now(),
   primary key (user_id, exercise_id)
 );
@@ -972,7 +1114,7 @@ create table if not exists gym_exercise_names (
 -- list per movement, because this row set ships on the catalog read.
 create table if not exists gym_exercise_aliases (
   user_id     uuid not null references users(id) on delete cascade,
-  exercise_id text not null references gym_exercises(id) on delete cascade,
+  exercise_id text not null references gym_exercises(id) deferrable initially deferred,
   name        text not null,
   created_at  timestamptz not null default now(),
   primary key (user_id, exercise_id, name)
@@ -1016,7 +1158,7 @@ create index if not exists gym_routine_creations_owner on gym_routine_creations(
 create table if not exists gym_routine_entries (
   routine_id   text not null references gym_routines(id) on delete cascade,
   position     int  not null check (position >= 1),
-  exercise_id  text not null references gym_exercises(id),
+  exercise_id  text not null references gym_exercises(id) deferrable initially deferred,
   rest_seconds int check (rest_seconds between 15 and 900),   -- null = client default
   primary key (routine_id, position)
 );
@@ -1037,13 +1179,13 @@ create table if not exists gym_routine_entry_sets (
 );
 
 -- An agent mints a row here and nothing moves until the lifter applies it. No tool at any grant
--- level writes `applied`; only the owner-scoped routes do. base_revision and base_name are frozen
+-- level writes `applied`; only the lifter does, on a phone through /v1/sync. base_revision and base_name are frozen
 -- at mint: an apply lands only while gym_routines.revision still equals base_revision, and a routine
 -- that moved is superseded, never merged over. door / connection / agent are provenance; connection
 -- and agent are empty from every door today.
 create table if not exists gym_proposals (
   id            text primary key,                   -- client-minted 'prop_<hex>', the idempotency key
-  routine_id    text not null references gym_routines(id) on delete cascade,
+  routine_id    text not null references gym_routines(id) deferrable initially deferred,
   user_id       uuid not null references users(id) on delete cascade,
   intent        text not null check (intent in ('revise','remove')),
   base_revision int  not null,
@@ -1076,7 +1218,7 @@ create table if not exists gym_proposal_changes (
   position            int  not null check (position >= 1),
   user_id             uuid not null references users(id) on delete cascade,
   kind                text not null check (kind in ('kept','added','removed','retargeted')),
-  exercise_id         text not null references gym_exercises(id),
+  exercise_id         text not null references gym_exercises(id) deferrable initially deferred,
   before_sets         jsonb,
   before_rest_seconds int,
   after_sets          jsonb,
@@ -1085,7 +1227,7 @@ create table if not exists gym_proposal_changes (
 );
 
 -- id is client-minted ('ses_<hex>') and is the idempotency key: a double-tapped start, an offline
--- replay and a retried POST all conflict on the PK and no-op. One open session per user, enforced by
+-- replay and a retried call all conflict on the PK and no-op. One open session per user, enforced by
 -- the partial unique index: starting while another is open joins that session, unless the caller
 -- states it will not join, in which case the no-op is a refusal. plan is a frozen jsonb copy of the
 -- routine at start, composed by the server and never by a client (null = ad-hoc); routine_id is
@@ -1094,7 +1236,7 @@ create table if not exists gym_proposal_changes (
 create table if not exists gym_sessions (
   id          text primary key,
   user_id     uuid not null references users(id) on delete cascade,
-  routine_id  text references gym_routines(id) on delete set null,
+  routine_id  text references gym_routines(id) deferrable initially deferred,
   plan        jsonb,
   started_at  timestamptz not null,
   finished_at timestamptz,
@@ -1184,9 +1326,9 @@ create index if not exists gym_write_receipts_owner on gym_write_receipts(user_i
 -- sets count toward volume.
 create table if not exists gym_sets (
   id           text primary key,
-  session_id   text not null references gym_sessions(id) on delete cascade,
+  session_id   text not null references gym_sessions(id) deferrable initially deferred,
   user_id      uuid not null references users(id) on delete cascade,
-  exercise_id  text not null references gym_exercises(id),
+  exercise_id  text not null references gym_exercises(id) deferrable initially deferred,
   set_number   int  not null check (set_number >= 1),
   weight_kg    numeric(6,2) not null check (weight_kg between -500 and 500),
   reps         int  not null check (reps between 1 and 500),
@@ -1368,7 +1510,7 @@ create index if not exists gym_ask_attachments_thread on gym_ask_attachments(lin
 -- Which conversation minted this proposal. Null for every MCP-door proposal and for one whose
 -- thread was deleted; both read to a client as nothing to open.
 alter table gym_proposals add column if not exists thread_id text
-  references gym_ask_threads(id) on delete set null;
+  references gym_ask_threads(id) deferrable initially deferred;
 create index if not exists gym_proposals_thread on gym_proposals (thread_id);
 
 -- Which proposal took a pending one's slot: the id the SAME door and connection minted next on the
@@ -1421,6 +1563,159 @@ create table if not exists gym_bodyweight (
   updated_at  timestamptz not null default now(),
   primary key (user_id, date_local)
 );
+
+-- The sync engine's registers on every gym table it adopted (docs/foundation/engine.md §2.2,
+-- Appendix C): each row's seq and row times, born and life stamps, one stamp per field, and the
+-- presence flags that tell an absent value from a null one. The C.8 metadata registers are written by
+-- the engine's rules, never sent by a client.
+alter table gym_routines
+  add column if not exists seq bigint,
+  add column if not exists rc bigint,
+  add column if not exists ru bigint,
+  add column if not exists born text,
+  add column if not exists life_stamp text,
+  add column if not exists name_stamp text,
+  add column if not exists position_stamp text,
+  add column if not exists entries_stamp text,
+  add column if not exists created_door_stamp text,
+  add column if not exists revision_stamp text,
+  add column if not exists created_entries_stamp text;
+create index if not exists gym_routines_sync_feed on gym_routines (user_id, seq);
+
+alter table gym_routine_creations
+  add column if not exists seq bigint,
+  add column if not exists rc bigint,
+  add column if not exists ru bigint,
+  add column if not exists snapshot_stamp text;
+create index if not exists gym_routine_creations_sync_feed on gym_routine_creations(user_id, seq);
+
+alter table gym_exercises
+  add column if not exists seq bigint,
+  add column if not exists rc bigint,
+  add column if not exists ru bigint,
+  add column if not exists born text,
+  add column if not exists life_stamp text,
+  add column if not exists name_stamp text,
+  add column if not exists pattern_stamp text,
+  add column if not exists equipment_stamp text,
+  add column if not exists step_kg_stamp text,
+  add column if not exists aliases_stamp text;
+create index if not exists gym_exercises_sync_feed on gym_exercises (created_by, seq);
+
+alter table gym_exercise_names
+  add column if not exists seq bigint,
+  add column if not exists rc bigint,
+  add column if not exists ru bigint,
+  add column if not exists name_stamp text,
+  add column if not exists aliases_stamp text;
+create index if not exists gym_exercise_names_sync_feed on gym_exercise_names (user_id, seq);
+alter table gym_exercise_aliases add column if not exists sync_positions jsonb;
+
+alter table gym_sessions
+  add column if not exists seq bigint,
+  add column if not exists rc bigint,
+  add column if not exists ru bigint,
+  add column if not exists born text,
+  add column if not exists life_stamp text,
+  add column if not exists routine_id_stamp text,
+  add column if not exists history_routine_id_stamp text,
+  add column if not exists plan_stamp text,
+  add column if not exists started_at_stamp text,
+  add column if not exists finished_at_stamp text,
+  add column if not exists closed_by_stamp text,
+  add column if not exists display_name_stamp text;
+create index if not exists gym_sessions_sync_feed on gym_sessions (user_id, seq);
+
+alter table gym_sets
+  add column if not exists seq bigint,
+  add column if not exists rc bigint,
+  add column if not exists ru bigint,
+  add column if not exists born text,
+  add column if not exists life_stamp text,
+  add column if not exists session_id_stamp text,
+  add column if not exists exercise_id_stamp text,
+  add column if not exists weight_kg_stamp text,
+  add column if not exists reps_stamp text,
+  add column if not exists kind_stamp text,
+  add column if not exists rpe_stamp text,
+  add column if not exists note_stamp text,
+  add column if not exists completed_at_stamp text;
+create index if not exists gym_sets_sync_feed on gym_sets (user_id, seq);
+
+alter table gym_notes
+  add column if not exists seq bigint,
+  add column if not exists rc bigint,
+  add column if not exists ru bigint,
+  add column if not exists born text,
+  add column if not exists life_stamp text,
+  add column if not exists title_stamp text,
+  add column if not exists body_stamp text,
+  add column if not exists ord_stamp text,
+  add column if not exists ord text,
+  add column if not exists updated_at_stamp text;
+create index if not exists gym_notes_sync_feed on gym_notes (user_id, seq);
+
+alter table gym_bodyweight
+  add column if not exists seq bigint,
+  add column if not exists rc bigint,
+  add column if not exists ru bigint,
+  add column if not exists life_stamp text,
+  add column if not exists kg_stamp text,
+  add column if not exists recorded_at_stamp text;
+create index if not exists gym_bodyweight_sync_feed on gym_bodyweight (user_id, seq);
+
+alter table gym_preferences
+  add column if not exists seq bigint,
+  add column if not exists rc bigint,
+  add column if not exists ru bigint,
+  add column if not exists units_stamp text,
+  add column if not exists rest_seconds_stamp text,
+  add column if not exists rest_sound_stamp text,
+  add column if not exists confirm_haptic_stamp text,
+  add column if not exists confirm_sound_stamp text;
+create index if not exists gym_preferences_sync_feed on gym_preferences (user_id, seq);
+
+alter table gym_proposals
+  add column if not exists seq bigint,
+  add column if not exists rc bigint,
+  add column if not exists ru bigint,
+  add column if not exists born text,
+  add column if not exists life_stamp text,
+  add column if not exists routine_id_stamp text,
+  add column if not exists intent_stamp text,
+  add column if not exists proposed_name_stamp text,
+  add column if not exists summary_stamp text,
+  add column if not exists changes_stamp text,
+  add column if not exists door_stamp text,
+  add column if not exists connection_stamp text,
+  add column if not exists agent_stamp text,
+  add column if not exists thread_id_stamp text,
+  add column if not exists state_stamp text,
+  add column if not exists superseded_by_stamp text,
+  add column if not exists settled_at_stamp text,
+  add column if not exists base_revision_stamp text,
+  add column if not exists base_name_stamp text,
+  add column if not exists change_count_stamp text;
+create index if not exists gym_proposals_sync_feed on gym_proposals (user_id, seq);
+
+alter table gym_routine_entries
+  add column if not exists rest_seconds_present boolean not null default false,
+  add column if not exists sets_present boolean not null default false;
+alter table gym_routine_entry_sets
+  add column if not exists reps_present boolean not null default false,
+  add column if not exists weight_kg_present boolean not null default false;
+alter table gym_proposal_changes
+  add column if not exists before_present boolean not null default false,
+  add column if not exists after_present boolean not null default false,
+  add column if not exists before_rest_present boolean not null default false,
+  add column if not exists after_rest_present boolean not null default false,
+  add column if not exists before_sets_present boolean not null default false,
+  add column if not exists after_sets_present boolean not null default false;
+
+alter table gym_write_receipts
+  add column if not exists sync_kind text,
+  add column if not exists sync_args jsonb;
+alter table gym_correction_receipts add column if not exists sync_args jsonb;
 
 -- The catalog seed. step_kg by equipment, in kg: barbell 2.5, dumbbell 2.0, machine 5.0, cable 2.5,
 -- bodyweight 2.5, kettlebell 4.0. ON CONFLICT DO NOTHING so a redeploy never clobbers a rename.

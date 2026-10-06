@@ -1,7 +1,8 @@
 #pragma once
 
 #include "products/gym/sync/adapters/postgres/GymDoor.h"
-#include "products/gym/sync/adapters/postgres/PgGymMetadataUpgrade.h"
+#include "platform/adapters/postgres/PgSyncStore.h"
+#include "platform/domain/sync/Digest.h"
 #include "platform/infra/SyncProducts.h"
 #include "products/gym/adapters/mcp/GymTools.h"
 #include "products/gym/adapters/postgres/PgAskThreadRepository.h"
@@ -23,6 +24,7 @@
 
 #include <pqxx/pqxx>
 
+#include <algorithm>
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -62,6 +64,27 @@ inline const std::string& catalogSeed() {
     return schema.substr(begin, end + tail.size() - begin);
   }();
   return statement;
+}
+
+// The account's gym scope as the engine stored it against its rows and spent ids, recomputed: every
+// admission keeps the digest the sum of the row hashes and the seq the greatest one written (§6.12).
+inline bool scopeConsistent(const UserId& account) {
+  const auto catalog = sync::productCatalog();
+  sync::PgSyncStore store{pool(), sync::Limits{}.lockTimeoutMs};
+  const auto txn = store.begin(sync::TxnMode::snapshot);
+  const auto key = sync::ScopeKey::product(account, "gym");
+  const auto scope = store.scope(*txn, key, sync::RowLock::none);
+  if (!scope) return false;
+  sync::Digest256 digest;
+  Seq greatest = 0;
+  for (const sync::TypeDef* type : catalog->typesIn(key.registryScope())) {
+    for (const sync::Row& row : catalog->store(type->name).feed(*txn, key, sync::FeedQuery{})) {
+      digest = digest + sync::rowHash(row.toJson());
+      greatest = std::max(greatest, row.seq);
+    }
+    for (const sync::Row& row : store.feedSpent(*txn, key, *type, sync::FeedQuery{})) greatest = std::max(greatest, row.seq);
+  }
+  return digest == scope->digest && greatest == scope->seq;
 }
 
 // The gym's Postgres repositories, under the names FakeGym gives its in-memory ones.
@@ -104,11 +127,10 @@ struct Harness {
   Harness() {
     PgLease lease{*pool()};
     pqxx::work txn{*lease};
-    txn.exec("truncate gym_sync_metadata_upgrades, gym_sync_metadata_upgrade_runs, gym_sync_adoptions, gym_ask_deleted_threads, gym_ask_threads, gym_note_saves, gym_write_receipts, gym_correction_receipts, gym_set_revisions, gym_log_shares, gym_session_shares, gym_routine_creations, gym_proposals, gym_routines, gym_sessions, gym_sets, gym_notes, gym_bodyweight, gym_preferences, gym_exercise_names, gym_exercise_aliases, gym_exercises, sync_spent, sync_requests, sync_replicas, sync_scopes cascade");
+    txn.exec("truncate gym_ask_deleted_threads, gym_ask_threads, gym_note_saves, gym_write_receipts, gym_correction_receipts, gym_set_revisions, gym_log_shares, gym_session_shares, gym_routine_creations, gym_proposals, gym_routines, gym_sessions, gym_sets, gym_notes, gym_bodyweight, gym_preferences, gym_exercise_names, gym_exercise_aliases, gym_exercises, sync_spent, sync_requests, sync_replicas, sync_scopes cascade");
     txn.exec(catalogSeed());
     txn.exec("insert into users(id,email) values($1::uuid,'gym-door@example.com'),($2::uuid,'gym-door-other@example.com') on conflict(id) do nothing", pqxx::params{user.str(), other.str()});
     txn.commit();
-    engine::PgGymMetadataUpgrade(pool()).run();
   }
 
   // A write a phone makes through /v1/sync, admitted as the server's own intent: the deltas in, the result

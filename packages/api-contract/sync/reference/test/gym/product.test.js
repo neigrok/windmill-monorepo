@@ -2,13 +2,15 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { CommitError, commit } from '../../client/commit.js';
+import { onPullResponse, pullRequest } from '../../client/puller.js';
 import { Replica } from '../../client/replica.js';
 import { drawn } from '../../client/views.js';
+import { steadyTiming } from '../../core/clock.js';
 import { CONSTANTS } from '../../core/constants.js';
 import { ZERO_DIGEST, replaceRow } from '../../core/digest.js';
 import { jcs } from '../../core/jcs.js';
-import { isAlive } from '../../core/rows.js';
-import { auditMetadata, backfill, upgradeMetadata } from '../../gym/backfill.js';
+import { Registry } from '../../core/registry.js';
+import { compareRecords } from '../../core/rows.js';
 import { admit } from '../../server/admit.js';
 import { pull } from '../../server/pull.js';
 import { ServerState } from '../../server/state.js';
@@ -71,21 +73,47 @@ test('R118 client storage and drawn views retain metadata and refuse authored se
   }
 });
 
-test('gym/metadata.json replays the supplement of adopted scopes', () => {
-  for (const { name, input, expect } of load('metadata.json')) {
-    if (expect.error) {
-      assert.throws(() => upgradeMetadata({ ...input, state: new ServerState(input.state), registry: gymRegistry }), Error, name);
-      continue;
-    }
-    const state = new ServerState(input.state);
-    const next = upgradeMetadata({ ...input, state, registry: gymRegistry });
-    assert.deepEqual(next.toJSON(), expect.state, name);
-    const marker = state.product.gymMetadataUpgrades?.[`acct:${input.account}/gym`];
-    const frozen = marker ? new ServerState({ ...input.state, scopes: { ...input.state.scopes, [`acct:${input.account}/gym`]: marker.before.scope },
-      rows: { ...input.state.rows, [`acct:${input.account}/gym`]: marker.before.rows },
-      product: Object.fromEntries(Object.entries(input.state.product).filter(([key]) => key !== 'gymMetadataUpgrades')) }) : state;
-    assert.equal(auditMetadata({ ...input, state: next, frozen, registry: gymRegistry }), true, name);
+test('R118 metadata the server writes converges a v4 store through ordinary live pulls with unknown fields and types', () => {
+  const metadata = { routine: ['revision', 'createdEntries'], proposal: ['baseRevision', 'baseName', 'changeCount'], note: ['updatedAt'] };
+  const json = JSON.parse(readFileSync(new URL('../../../gym.registry.json', import.meta.url), 'utf8'));
+  json.version = json.minVersion = 4;
+  json.types = json.types.filter((type) => type.type !== 'routineCreation');
+  for (const [t, fields] of Object.entries(metadata)) {
+    for (const field of fields) delete json.types.find((type) => type.type === t).fields[field];
   }
+  const v4 = new Registry(json);
+  const key = 'acct:A/gym';
+  const limits = { ...CONSTANTS, PULL_PAGE_BYTES: 1 << 30 };
+  const delivered = new Set();
+  const writes = load('admit.json').filter((v) => v.name.startsWith('R118') && v.expect.result.s === 'ok' && jcs(v.expect.state) !== jcs(v.input.state));
+  for (const { name, input, expect } of writes) {
+    const before = new ServerState(input.state);
+    const after = new ServerState(expect.state);
+    const now = input.serverNow;
+    const ctx = { registry: v4, actor: 'r_aaaaaaaaaaaa', deviceNow: now, limits: CONSTANTS, ended: [], telemetry: [], appVersion: 'v4' };
+    let replica = Replica.fresh({ replica: 'rp_00000000000000000000000000000001', state: 'bound', account: 'A' });
+    const boot = pullRequest(replica, v4, ['self/gym']);
+    onPullResponse(replica, ctx, boot, pull({ state: before, registry: gymRegistry, product: gymProduct, account: 'A', request: boot, serverNow: now, limits }).response, steadyTiming(now, now));
+    const cursor = replica.cursorOf('self/gym').cursor;
+    const request = pullRequest(replica, v4, ['self/gym']);
+    assert.equal(request.scopes[0].cursor, cursor, name);
+    const live = pull({ state: after, registry: gymRegistry, product: gymProduct, account: 'A', request, serverNow: now, limits });
+    const [page] = live.response.body.pages;
+    assert.equal(page.kind, 'rows', name);
+    assert.ok(page.rows.every((row) => row.seq > before.scope(key).seq), name);
+    for (const row of page.rows) {
+      if (row.t === 'routineCreation') delivered.add('routineCreation');
+      for (const field of metadata[row.t] ?? []) if (row.f?.[field]) delivered.add(`${row.t}.${field}`);
+    }
+    onPullResponse(replica, ctx, request, live.response, steadyTiming(now, now));
+    replica = new Replica(replica.toJSON());
+    assert.deepEqual(replica.confirmedRows('self/gym'), after.rowsOf(key).sort(compareRecords), name);
+    assert.equal(replica.cursorOf('self/gym').digest, after.scope(key).digest, name);
+    assert.equal(replica.meta.serverEpoch, before.epoch, name);
+    assert.deepEqual(ctx.telemetry, [], name);
+  }
+  assert.deepEqual([...delivered].sort(), ['note.updatedAt', 'proposal.baseName', 'proposal.baseRevision', 'proposal.changeCount',
+    'routine.createdEntries', 'routine.revision', 'routineCreation']);
 });
 
 test('gym.start treats prototype names as ids and stores own receipts through restart', () => {
@@ -162,53 +190,8 @@ test('gym seed overrides require an own seed and support __proto__ seed ids', ()
   assert.deepEqual(out.state.row('acct:A/gym', 'exerciseName', '__proto__').f.aliases[0], ['Original']);
 });
 
-test('gym/backfill.json replays through the backfill', () => {
-  for (const { name, input, expect } of load('backfill.json')) {
-    const next = backfill({ state: new ServerState(input.state), registry: gymRegistry, account: input.account, legacy: input.legacy, M: input.M });
-    assert.equal(jcs(next.toJSON()), jcs(expect.state), name);
-  }
-});
-
-// Appendix C's rehearsal gates, on every backfilled scope of the corpus: the stored digest equals the sum recomputed
-// from its rows, a second run changes nothing, and a boot from a null cursor, after the beforePull close of a legacy
-// open session gone stale, serves every alive row at the scope's seq with that seq's digest (INV-15's base case).
-test('a backfilled scope: its digest is the sum over the rows a pull serves, a rerun is a no-op, a boot reaches it', () => {
-  for (const { name, input, expect } of load('backfill.json')) {
-    const state = new ServerState(expect.state);
-    const key = `acct:${input.account}/gym`;
-    const scope = state.scope(key);
-    if (!scope) continue;
-    const alive = state.rowsOf(key).filter(isAlive);
-    assert.equal(alive.reduce((digest, row) => replaceRow(digest, undefined, row), ZERO_DIGEST), scope.digest, name);
-    const rerun = backfill({ state, registry: gymRegistry, account: input.account, legacy: input.legacy, M: input.M });
-    assert.equal(jcs(rerun.toJSON()), jcs(expect.state), name);
-    const served = pull({ state, registry: gymRegistry, product: gymProduct, account: input.account, request: { scopes: [{ scope: 'self/gym', cursor: null }] }, serverNow: input.M + 1, limits: { ...CONSTANTS, PULL_PAGE_BYTES: 1 << 30 } });
-    const [page] = served.response.body.pages;
-    const after = served.state.scope(key);
-    assert.equal(page.more, false, name);
-    assert.equal(page.seq, after.seq, name);
-    assert.equal(page.digest, after.digest, name);
-    assert.equal(page.rows.filter(isAlive).reduce((digest, row) => replaceRow(digest, undefined, row), ZERO_DIGEST), after.digest, name);
-  }
-});
-
-// Every register the backfill writes carries the one stamp M:0:srv, so every stored stamp is at most the server
-// time of the run plus MAX_SKEW_MS (INV-14's base case).
-test('the backfill writes one stamp, M:0:srv, in every born, life and register', () => {
-  for (const { name, input, expect } of load('backfill.json')) {
-    const state = new ServerState(expect.state);
-    const stamp = `${input.M}:0:srv`;
-    for (const row of state.rowsOf(`acct:${input.account}/gym`)) {
-      if (input.state.scopes?.[`acct:${input.account}/gym`]) continue;
-      const stamps = [row.born, row.life?.[1], ...Object.values(row.f ?? {}).map((register) => register[1])].filter((value) => value !== undefined);
-      assert.ok(stamps.every((value) => value === stamp), `${name}: ${row.t} ${row.id}`);
-    }
-    for (const entry of state.spentOf(`acct:${input.account}/gym`)) assert.equal(entry.lifeStamp, stamp, name);
-  }
-});
-
-// C.6 numbers adopted records in the registry's type order, which lists each gym type after the types its ref fields
-// and key name, so a boot's rows arrive after the records they reference.
+// C.6's adopted base runs in the registry's type order, which lists each gym type after the types its ref fields and
+// key name, so a boot's rows arrive after the records they reference.
 test('gym.registry.json lists each type after the types its references name', () => {
   const order = [...gymRegistry.types.keys()];
   for (const type of gymRegistry.types.values()) {

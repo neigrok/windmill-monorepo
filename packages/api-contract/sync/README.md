@@ -51,10 +51,9 @@ declare a product, type, command or refusal code twice. `reference/test/core/reg
 all three. A product's registry joins `composition.json` in the change that binds the product on the
 server. The Swift engine composes them in `apps/ios/Sync/Sources/SyncSchema`, generated from these
 files: after editing a composed registry or `composition.json`, run `swift run SyncSchemaGen` in
-`apps/ios/Sync`. iOS CI fails while `SyncSchema` is stale. R118 requires regeneration in the Swift implementation
-wave: this server/contract delivery does not edit native generated files. `composition.json`
-keeps its gym + journal membership; its effective version is the shared version on those registries,
-not a second version stored on the composition manifest.
+`apps/ios/Sync`. iOS CI fails while `SyncSchema` is stale. `composition.json` names gym and journal;
+its effective version is the version those registries share, not a second version stored on the
+composition manifest.
 
 ## What the reference does not model
 
@@ -87,18 +86,19 @@ single-threaded run can observe, nor the HTTP envelope:
 - the sign-out flush bound (`SIGNOUT_FLUSH_MS`, §7.10: a runner's I/O before the sign-out step), and
   stored credentials (§7.10);
 - web tab leadership (§7.8);
-- of gym (A.2, Appendix C): its server-origin doors, which build intents from REST, MCP and Coach
-  requests and present today's replies (`backend/products/gym/ARCHITECTURE.md`); the re-check of a
-  replica's proposal by the shared diff rule; REST formatting of the client-derived note `position`; the
-  follow-up write that supersedes a pending proposal whose apply found its routine moved; the legacy
-  receipts' request hashes; and the backfill's write freeze.
-- of journal (A.3, Appendix D): REST request parsing and its exact response envelopes; the write
-  freeze and physical PostgreSQL `ctid` capture (the input carries its immutable `migrationId` ordinal);
-  UI animation, ink-note installation preferences and server-only echoes, nudges and transcription.
-  The reference models page content, its display-time projection, revision audit metadata, both
-  first-run migration policies, claims and the independent device content clock.
-  `journal.claimPage` builds account-first content from the stored account page; receipt replay
-  does not append the words twice.
+- of gym (A.2): its server-origin doors, which build intents from MCP, Coach and import requests and
+  present their replies (`backend/products/gym/ARCHITECTURE.md`); the re-check of a replica's proposal
+  by the shared diff rule; REST formatting of the client-derived note `position`; the follow-up write
+  that supersedes a pending proposal whose apply found its routine moved; and the request hashes of
+  gym's receipt tables.
+- of journal (A.3): its REST reads' request parsing and exact response envelopes; UI animation,
+  ink-note installation preferences and server-only echoes, nudges and transcription. The reference
+  models page content, its display-time projection, revision audit metadata, the ranked first-run
+  state, claims and the independent device content clock. `journal.claimPage` builds account-first
+  content from the stored account page; receipt replay does not append the words twice.
+- the in-place adoptions of Appendices C and D: a vector's state may hold what only they wrote, such
+  as an over-cap journal head or `journalRevisionProjection`, and the reference admits over it, but no
+  reference function adopts a store.
 
 ## Reference layout
 
@@ -120,8 +120,8 @@ single-threaded run can observe, nor the HTTP envelope:
 | `server/admit.js` | §6.1 (with caps, §6.5) |
 | `server/push.js`, `server/pull.js`, `server/requests.js` | §6.2 and §6.6, §6.7 and §6.8 and §9.2, §6.3 |
 | `probe/product.js` | the probe's product rules (its Appendix A) |
-| `gym/product.js`, `gym/backfill.js` | gym's product rules and R118 metadata (A.2), the adopted base and its audited metadata supplement (Appendix C) |
-| `journal/product.js`, `journal/backfill.js` | journal's whole-page save and claim rules, content clock and audit pruning (A.3), and its in-place adoption (Appendix D) |
+| `gym/product.js` | gym's product rules and R118 metadata (A.2) |
+| `journal/product.js` | journal's whole-page save and claim rules, content clock and audit pruning (A.3) |
 | `journal/client.js` | durable pending-claim edits and result/covering-pull reconciliation before a newer-stamped save (A.3) |
 | `client/replica.js` | §2.5 the local store, D-3 the device |
 | `client/views.js` | §7.6 |

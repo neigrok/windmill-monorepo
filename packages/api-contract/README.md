@@ -38,5 +38,5 @@ Read as a test — each from this file in the repo, never a bundled copy — by:
 ## `gym-history.md`
 
 Filtered workout history, complete scope totals and progress, local month indexes, snapshot/live log
-links and atomic workout corrections. Backend HTTP and Postgres tests cover the contract; legacy
-phone session and workout-share routes keep their existing fields.
+links and the display name a workout correction sets. Backend HTTP and Postgres tests cover the
+contract; session reads and workout shares keep their own fields.

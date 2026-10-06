@@ -37,14 +37,14 @@ for the `gym/` files, and `../journal.registry.json` for the `journal/` files.
   and a commit rounds every such number.
 - `constants.json` holds the Appendix B and §9.7 values the vectors were generated with. A runner whose
   constants differ fails on it first.
-- In-place migrations are gym's adopted base and metadata supplement (`gym/backfill.json`,
-  `gym/metadata.json`, Appendix C), and journal's adoption (`journal/backfill.json`, Appendix D).
-  Other stores start empty.
+- Gym's and journal's stores were adopted in place (engine.md Appendices C and D); every other store
+  starts empty. A vector's state may hold what only that adoption wrote, such as an over-cap journal
+  head or `journalRevisionProjection`; no vector runs an adoption.
 
 | Role | Files |
 |---|---|
 | all | `constants.json`, `stamp/`, `hlc/tick.json`, `hlc/observe.json`, `jcs/`, `join/`, `derive/`, `identity/seeded.json`, `digest/`, `protocol/` |
-| server | `identity/table.json`, `admit/`, `text/`, `envelope/credentials.json`, `push/serve.json`, `pull/serve.json`, `pull/hello.json`, `live/death.json`, `machine/scope.json`, `gym/admit.json`, `journal/admit.json`, `journal/revisions.json`; the C++ server also `gym/backfill.json`, `gym/metadata.json` and `journal/backfill.json`, since its stores are adopted in place |
+| server | `identity/table.json`, `admit/`, `text/`, `envelope/credentials.json`, `push/serve.json`, `pull/serve.json`, `pull/hello.json`, `live/death.json`, `machine/scope.json`, `gym/admit.json`, `journal/admit.json`, `journal/revisions.json` |
 | client | `hlc/offset.json`, `hlc/jump.json`, `fracindex/`, `view/`, `commit/`, `hold/`, `refusal/`, `write/`, `lineage/`, `pull/pages.json`, `machine/intent.json`, `machine/replica.json`, `journal/client.json`, `journal/content-clock.json`, `journal/claim-edit.json` |
 
 ## The probe product
@@ -120,8 +120,8 @@ as `product.receipts[<scope key>][<called run id>] = <resolved run id>`, copy re
 
 The `gym/` files run against gym's own registry, `../gym.registry.json`, and gym's product binding
 (engine.md Appendix A.2), which every server runner implements as it implements the probe's. The rules
-below are the ones the reference models; A.2 also specifies gym's server-origin doors (REST, MCP
-and the server Coach), whose adapters live in `backend/products/gym/ARCHITECTURE.md`.
+below are the ones the reference models; A.2 also specifies gym's server-origin doors (MCP, the
+server Coach and the import door), whose adapters live in `backend/products/gym/ARCHITECTURE.md`.
 
 **Product state.** Gym's `product` in the server state holds the seed catalog, the command receipts
 only:
@@ -137,9 +137,7 @@ product: {
 
 R118's routine revision/count, frozen proposal base/count and note content time are server-written
 registers on the rows. `routineCreation.snapshot` is an independent immutable register over the
-existing Coach receipt table, with no life or live-routine reference. `gym/backfill.json` models
-C.1–C.9's adopted base without the R118 registers; `gym/metadata.json` models their supplement
-from the existing typed columns and creation receipt JSON.
+existing Coach receipt table, with no life or live-routine reference.
 
 A seed exercise id is `foreign` to every account (§4.2): the binding's `elsewhere` reports it held
 outside every scope. A proposal's unset `state` reads as `pending`, the registry's `default`.
@@ -244,95 +242,11 @@ bases are captured:
 
 The shape of `admit/*.json`, against gym's registry and binding: `{name, input: {state, origin,
 intent, serverNow}, expect: {result, state}}`. The server states hold `acct:A/gym` and `acct:B/gym`.
-
-### `gym/backfill.json` (C++ server)
-
-```ts
-{name, input: {state: ServerStateJson, account, legacy: Legacy, M: number}, expect: {state: ServerStateJson}}
-```
-
-Run Appendix C's backfill of one account: `legacy` holds the account's rows as today's gym tables hold
-them, instants as epoch ms and numerics as numbers, a missing key or `null` for a NULL column.
-
-```ts
-type Legacy = {
-  exercises?: {id, name, pattern, equipment, stepKg, createdAt}[],        // gym_exercises the account created
-  exerciseNames?: {exerciseId, name, updatedAt}[],                        // gym_exercise_names
-  aliases?: {exerciseId, name, createdAt}[],                              // gym_exercise_aliases
-  routines?: {id, name, position, revision, createdAt, createdDoor?,
-              entries: {position, exerciseId, restSeconds?, sets?: {setIndex, reps?, weightKg?}[]}[]}[],
-  routineCreations?: string[],                                             // gym_routine_creations ids
-  proposals?: {id, routineId, intent, baseRevision, baseName, proposedName, summary, state, door,
-               connection, agent, threadId?, supersededBy?, createdAt, settledAt?,
-               changes: {position, kind, exerciseId, beforeSets?, beforeRestSeconds?, afterSets?, afterRestSeconds?}[]}[],
-  sessions?: {id, routineId?, historyRoutineId?, plan?, startedAt, finishedAt?, closedBy?, displayName?}[],
-  sets?: {id, sessionId, exerciseId, setNumber, weightKg, reps, kind, rpe?, note, completedAt}[],
-  setRevisions?: {setId, deleted}[],
-  writeReceipts?: {kind: 'set'|'session', id, sessionId}[],
-  notes?: {id, position, title, body, createdAt, updatedAt}[],
-  noteSaves?: string[],                                                    // gym_note_saves ids
-  bodyweight?: {dateLocal, weightKg, recordedAt, updatedAt}[],
-  preferences?: {units, restSeconds?, restSound, confirmHaptic, confirmSound, updatedAt}
-}
-```
-
-The vectors pin Appendix C's rules, as the reference applies them:
-- **An adopted scope is left as it is**, and an account with no row and no spent id gets no scope.
-- **One stamp**, `M:0:srv`, in every born, life and field register it writes.
-- **Registers.** Each record's non-null columns become registers under the fields of C.2: a routine's
-  `entries` from its lines in `position` order (`restSeconds` when set; `sets` from its set rows in
-  `setIndex` order when it has any, each with the columns set), a proposal's `changes` from its rows in
-  `position` order (`before` for `kept`, `removed` and `retargeted`, `after` for `kept`, `added` and
-  `retargeted`, each `{sets?, restSeconds?}`), aliases newest first (`createdAt` descending, then name),
-  an `exerciseName` for every seed the account renamed or holds aliases of, and each note's `ord` from
-  `between(previous, null)`, starting from `between(null, null)`, in `(position, id)` order.
-- **Spent ids** (born and life stamp `M:0:srv`): a set revision marked deleted and a set receipt, a
-  session receipt, a routine creation and a note save, each whose id no standing row of its type holds.
-- **seq** 1, 2, … over the records and spent ids in the registry's type order, then by id; the scope's
-  seq is the last. `rc` is the row's `createdAt`, else its `updatedAt`, else `M`; `ru` its `updatedAt`,
-  else `M`. The note counter counts the notes, and the digest sums the rows (§6.12).
-- **Product state:** start receipts from the session receipts, each routine's `revision`, and each
-  proposal's base from `baseRevision` and `baseName`.
-
-### `gym/metadata.json` (C++ server, R118)
-
-```ts
-{name, input: {state: ServerStateJson, account, source: MetadataSource, M: number},
- expect: {state: ServerStateJson} | {error: true}}
-
-type MetadataSource = {
-  routines?: {id, revision, createdEntries?: number | null}[],
-  proposals?: {id, baseRevision, baseName, changeCount}[],
-  notes?: {id, updatedAt}[],
-  routineCreations?: {id, snapshot: Json}[]
-}
-```
-
-Run C.10's supplement of an already adopted account. `source` is the separate, immutable capture
-of CURRENT existing columns, including exact JSON snapshots; it is not derived from candidate wire
-rows or C.7's original adoption manifest. Required source rosters match current routine/proposal/note
-rows exactly. Missing required columns, duplicate snapshots or an unadopted snapshot account fail;
-unknown original counts remain absent. All new registers carry `M:0:srv`; existing row envelopes
-and receipts/counters/spent ids stay unchanged, except fresh row seqs above the frozen high seq.
-New snapshot rows have administrative `rc = ru = M`, never historical creation dates.
-
-Records are numbered in v5 type order, then id; digest and marker commit atomically. The reference
-marker `product.gymMetadataUpgrades[scopeKey]` retains version 5, M, source and the old scope/rows/spent
-roster for independent audit. An exact marker replay changes nothing; changed M/source refuses.
-`auditMetadata` derives expected values from the separately retained frozen inputs, validates source
-completeness and detects altered values, stamps, seqs, receipts and counters even with a recalculated
-digest. `reference/test/gym/backfill-audit.test.js` pins those failure gates.
-
-The old base-adoption vectors and the R118 supplement are distinct runners. The pure reference does
-not perform SQL, process interruption, shared writer freezes or startup;
-C.10 requires those operational failure tests in C++ and deployment. The named C++ runner is
-`PgGymMetadataUpgradeTest.cpp`, with the shared cutover/rehearsal runner exercising the deployment
-gates. Client readers use the stamped metadata
-and immutable snapshot. Fresh seqs deliver every upgrade through ordinary pulls in the unchanged
-epoch; §6.12 hashes those seqs. `gym/admit.json` also pins mixed-intent joined bases, forging refusals,
-no-op and losing writes, content time after reorder and snapshot retention after routine death.
-The gym audit tests also apply the supplement to a v4 store: ordinary live pulls retain unknown
-fields and `routineCreation` through restart and converge on the v5 digest.
+Its R118 vectors pin mixed-intent joined bases, forging refusals, no-op and losing writes, content
+time after reorder and snapshot retention after routine death. `reference/test/gym/product.test.js`
+boots a v4 store on the input state of each R118 admission that writes, then pulls the state it
+admitted: ordinary live pulls retain the unknown fields and `routineCreation` through restart and
+converge on the v5 digest.
 
 ## The journal product
 
@@ -380,21 +294,6 @@ values, and carries a full counter; only the bounded server envelope HLC is engi
 - `journal/admit.json`: the `admit/*.json` shape with journal's binding. It includes strict save
   ordering, internal-marker refusal, duplicate audit capture, clear and blank resources, independent
   future content clocks, ranked onboarding, claim joins, receipt replay/conflict and cap rollback.
-- `journal/backfill.json`: `{name,input:{state,account,legacy,M,firstRunPolicy?},expect:{state,reads}}`,
-  or `{error:string}` for a rehearsal failure. `legacy.pages` holds
-  `{day,body,mood,energy,source,stamp:{ms,counter,actor},updatedAt}`; `legacy.revisions` holds
-  `{migrationId,day,body,stamp,supersededAt}`. The revision table has no id: `migrationId` is the
-  immutable frozen `ctid` scan ordinal, globally increasing within the account. Adopt every audit
-  row as a reserved rev in ordinal order, then pages by day, then the derived singleton. Each page
-  head has `rev=seq`, `merged=false` and `rc=ru=updatedAt`. Every envelope register gets `M:0:srv`;
-  raw body and full legacy content stamps stay intact. Historical scores/source narrow exactly as
-  REST reads them. Existing revision retention is not pruned at adoption. Projections keep original
-  audit stamps, times and migration ordinals. Digests exclude revisions. The scope watermark
-  includes reserved revision allocations, even for a revisions-only scope. The fixed
-  `firstRunPolicy` is `retire-existing`; omitting it uses that value and any other value fails
-  rehearsal. Written pages retire all four first-run controls, including scales. An adopted marker
-  records `M`, the SHA-256 of JCS of the raw legacy manifest and the fixed policy. Matching retry is a no-op;
-  mismatched or unmarked existing scopes fail rehearsal. Empty tables create no scope.
 - `journal/revisions.json`: compact direct pruning vectors. Input revisions are
   `{day,rev,bytes,archivedAt}`; expand each body as `"x".repeat(bytes)`, with `t=page,field=body`.
   `input.days` are the days archived by this admission and `serverNow` the pruning instant.

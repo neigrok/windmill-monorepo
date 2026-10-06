@@ -30,11 +30,10 @@ private:
   std::string table_;
 };
 
-class PgJournal : public sync::ScopeReadiness {
+class PgJournal {
 public:
   explicit PgJournal(const sync::Registry& registry);
-  void bindTo(sync::SyncCatalog&, bool checkAdoption = true);
-  void requireReady(sync::SyncTxn&, const sync::ScopeKey&) override;
+  void bindTo(sync::SyncCatalog&);
 
 private:
   PgJournalState state_;

@@ -184,7 +184,7 @@ Delta newSet(const std::string& session, const Json::Value& set, bool correction
 std::string supersededReason(const GymFacts& facts, const Row& proposal) {
   if (!value(&proposal, "supersededBy").isNull()) return "replaced";
   const std::string routine = value(&proposal, "routineId").asString();
-  if (facts.books["metadataVersion"] == 4 ? facts.books["revisions"][routine] != facts.books["bases"][proposal.id.column()]["revision"] : value(facts.row("routine", routine), "revision") != value(&proposal, "baseRevision")) return "routine-changed";
+  if (value(facts.row("routine", routine), "revision") != value(&proposal, "baseRevision")) return "routine-changed";
   return "superseded";
 }
 
@@ -216,7 +216,6 @@ Json::Value proposalChanges(const Json::Value& base, const Json::Value& proposed
 }
 
 std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& changes, const Intent& intent, bool server, Ms now) {
-  const bool metadata = facts.books["metadataVersion"] != 4;
   const std::map<std::string, std::vector<std::string>> authored{
       {"routine", {"revision", "createdEntries"}}, {"proposal", {"baseRevision", "baseName", "changeCount"}}, {"note", {"updatedAt"}}};
   for (const Delta& delta : intent.d) {
@@ -269,7 +268,7 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
     for (const auto& [field, reg] : delta.lattice.f) row.lattice.f.insert_or_assign(field, reg);
     appended.push_back(std::move(delta));
   };
-  if (metadata) for (const Change& change : changes) {
+  for (const Change& change : changes) {
     const Row& after = change.after;
     if (after.t != "routine" || !after.alive()) continue;
     const bool fresh = created(change);
@@ -343,7 +342,7 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
         }
         for (const Json::Value& entry : entries) if (!known(entry["exerciseId"])) throw Refusal("unknown-exercise");
       }
-      if (metadata && created(change) && value(&after, "createdDoor") == "ask") {
+      if (created(change) && value(&after, "createdDoor") == "ask") {
         if (current("routineCreation", after.id.json())) throw Refusal(code::invalid);
         Json::Value snapshot = object({{"id", after.id.json()}, {"name", value(&after, "name")},
             {"position", value(&after, "position").isNull() ? Json::Value(0) : value(&after, "position")},
@@ -383,7 +382,7 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
       if (after.alive() && after.id.column() > date) throw Refusal("bad-instant");
       continue;
     }
-    if (metadata && after.t == "note" && (created(change) || changed(change, "title") || changed(change, "body")))
+    if (after.t == "note" && (created(change) || changed(change, "title") || changed(change, "body")))
       append(fields(after, object({{"updatedAt", Json::UInt64(now)}})));
     if (after.t != "proposal" || !created(change)) continue;
     futureProposals.erase(after.id.column());
@@ -411,7 +410,7 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
     }
     if (!same(value(&after, "changes"), proposalChanges(value(routine, "entries"), proposed))) throw Refusal(code::invalid);
     for (const Json::Value& entry : proposed) if (!known(entry["exerciseId"])) throw Refusal("unknown-exercise");
-    if (metadata) append(fields(after, object({{"baseRevision", value(routine, "revision")},
+    append(fields(after, object({{"baseRevision", value(routine, "revision")},
         {"baseName", value(routine, "name")},
         {"changeCount", proposalChangeCount(value(routine, "entries"), value(&after, "changes"), value(routine, "name"), value(&after, "proposedName"))}})));
     for (const auto& [key, other] : joined) {
@@ -546,7 +545,7 @@ GymOutcome runGym(const std::string& name, const Json::Value& args, const Json::
   if (state == "applied" || state == "dismissed") throw Refusal("proposal-settled", object({{"state", state}}));
   if (state == "superseded") throw Refusal("proposal-superseded", object({{"reason", supersededReason(facts, proposal)}}));
   const std::string routineId = value(&proposal, "routineId").asString();
-  if (apply && (facts.books["metadataVersion"] == 4 ? facts.books["revisions"][routineId] != facts.books["bases"][id]["revision"] : value(facts.row("routine", routineId), "revision") != value(&proposal, "baseRevision"))) throw Refusal("proposal-superseded", object({{"reason", "routine-changed"}}));
+  if (apply && value(facts.row("routine", routineId), "revision") != value(&proposal, "baseRevision")) throw Refusal("proposal-superseded", object({{"reason", "routine-changed"}}));
   Delta settle = fields(proposal, object({{"state", apply ? "applied" : "dismissed"}, {"settledAt", Json::UInt64(now)}}));
   if (!apply) {
     append(outcome, std::move(settle));

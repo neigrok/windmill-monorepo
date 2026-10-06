@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-for required in python3 sha256sum; do
-  if ! command -v "$required" > /dev/null 2>&1; then
-    printf 'FAIL required host command missing: %s\n' "$required" >&2
-    exit 1
-  fi
-done
+if ! command -v python3 > /dev/null 2>&1; then
+  printf 'FAIL required host command missing: python3\n' >&2
+  exit 1
+fi
 if ! docker compose version > /dev/null 2>&1; then
   printf 'FAIL required host command unavailable: docker compose\n' >&2
   exit 1
@@ -14,17 +12,6 @@ fi
 
 # Run from ~/windmill. All candidate files are uploaded under separate names so a rejected
 # image/configuration cannot change the live environment or recreate any old container.
-if [[ -f migration-evidence/active-cutover ]]; then
-  cutover_evidence=$(cat migration-evidence/active-cutover)
-  cutover_phase=$(cat "$cutover_evidence/phase")
-  case "$cutover_phase" in
-    complete|rolled-back|forward-only) ;;
-    *)
-      printf 'FAIL interrupted production cutover (%s); keep services stopped and rerun products-cutover.yml for recovery instructions. Old configuration remains unchanged.\n' "$cutover_phase" >&2
-      exit 1
-      ;;
-  esac
-fi
 candidate_env=.env.next
 trap 'rm -f "$candidate_env"' EXIT
 prior_pg=
@@ -39,63 +26,9 @@ else
 fi
 candidate=(docker compose --env-file "$candidate_env" -f docker-compose.next.yml)
 "${candidate[@]}" config -q
-config=$("${candidate[@]}" config --format json)
-image=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["migrate"]["image"])' <<< "$config")
-server_image=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["server"]["image"])' <<< "$config")
-gym_writes=$(python3 -c 'import json,sys; print(int(json.load(sys.stdin)["services"]["server"].get("environment",{}).get("GYM_ENGINE_WRITES","0") in ("1","true","on")))' <<< "$config")
-journal_writes=$(python3 -c 'import json,sys; print(int(json.load(sys.stdin)["services"]["server"].get("environment",{}).get("JOURNAL_ENGINE_WRITES","0") in ("1","true","on")))' <<< "$config")
 "${candidate[@]}" pull
 
-adopted=f
-schemas_present=f
-metadata_v5=f
-if [[ -f docker-compose.yml && -f .env ]] && [[ -n $(docker compose ps -aq db) ]]; then
-  status=$(docker compose exec -T db bash -seuo pipefail <<'DATABASE'
-psql -w -XAtq -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<'SQL'
-SELECT to_regclass('public.gym_sync_adoptions') IS NOT NULL AS gym,
-       to_regclass('public.journal_sync_adoptions') IS NOT NULL AS journal \gset
-SELECT :'gym'::boolean OR :'journal'::boolean;
-SELECT :'gym'::boolean AND :'journal'::boolean;
-SELECT to_regclass('public.gym_sync_metadata_upgrade_runs') IS NOT NULL OR to_regclass('public.gym_sync_metadata_upgrades') IS NOT NULL;
-SQL
-DATABASE
-  )
-  IFS=$'\n' read -r -d '' adopted schemas_present metadata_v5 < <(printf '%s\n\0' "$status") || true
-fi
-if [[ "$gym_writes" == 1 || "$journal_writes" == 1 ]] && [[ "$schemas_present" != t ]]; then
-  printf 'FAIL engine writes require complete product adoption; run products-cutover.yml. Old configuration remains running.\n' >&2
-  exit 1
-fi
-if [[ "$adopted" == t ]]; then
-  if [[ "$gym_writes" != 1 || "$journal_writes" != 1 ]]; then
-    printf 'FAIL adopted database requires both GYM_ENGINE_WRITES and JOURNAL_ENGINE_WRITES on. Old configuration remains running.\n' >&2
-    exit 1
-  fi
-  for compatible_image in "$image" "$server_image"; do
-    compatibility=$(docker image inspect --format '{{ index .Config.Labels "io.windmill.schema-adoption-compatibility" }}' "$compatible_image")
-    if [[ "$compatibility" != gym-journal-v1 ]]; then
-      printf 'FAIL adopted database requires an adoption-compatible image. Old configuration remains running.\n' >&2
-      exit 1
-    fi
-    docker run --rm --network none "$compatible_image" bash /app/deploy/gym-migration/schema-compatibility.sh check-image
-    if [[ "$metadata_v5" == t ]] && [[ "$(docker image inspect --format '{{ index .Config.Labels "io.windmill.gym-sync-metadata-version" }}' "$compatible_image")" != 5 ]]; then
-      printf 'FAIL gym metadata v5 database requires a v5-capable image. Old configuration remains running.\n' >&2
-      exit 1
-    fi
-    if [[ "$metadata_v5" == t ]]; then
-      docker run --rm --network none "$compatible_image" bash /app/deploy/gym-migration/schema-compatibility.sh check-v5-image
-    fi
-  done
-  for product in gym journal; do
-    # The products audit eligible and fresh accounts themselves; empty users need no migration marker.
-    if ! "${candidate[@]}" run --rm --no-deps -T --pull never --entrypoint "windmill_${product}_backfill" server --audit-current; then
-      printf 'FAIL engine writes require complete %s adoption; current audit failed. Old configuration remains running.\n' "$product" >&2
-      exit 1
-    fi
-  done
-fi
-
-# Only validated, compatible candidates cross this point. Preserve the initialized DB password.
+# Only a valid candidate whose images pulled crosses this point. Preserve the initialized DB password.
 [[ ! -f .env ]] || cp .env .env.bak
 mv "$candidate_env" .env
 mv docker-compose.next.yml docker-compose.yml

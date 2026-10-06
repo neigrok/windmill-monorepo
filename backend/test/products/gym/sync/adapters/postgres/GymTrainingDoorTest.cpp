@@ -5,7 +5,6 @@
 #include "platform/application/WorkerPool.h"
 #include "platform/adapters/postgres/PgSyncStore.h"
 #include "products/gym/sync/adapters/postgres/PgGym.h"
-#include "products/gym/sync/adapters/postgres/PgGymBackfill.h"
 #include "products/gym/sync/GymRegistry.h"
 
 #include <cmath>
@@ -118,11 +117,10 @@ TEST(gym_training_engine_join_reserves_alias_for_retries_audit_next_writes_and_r
   CHECK_EQ(reserved[0]["alias_seq"].as<int>(), 2);
   CHECK_EQ(h.door.start(h.user, startAt("session_joinalias", at)).session, original.session);
   CHECK_EQ(state()[0]["seq"].as<int>(), 2);
-  engine::PgGymBackfill backfill{pool()};
-  CHECK(backfill.auditCurrent(h.user.str())[0]["audit"].asBool());
+  CHECK(doortest::scopeConsistent(h.user));
   REQUIRE(h.door.append(h.user, original.session->id, setAt("set_joinalias1", at)).set);
   CHECK_EQ(state()[0]["seq"].as<int>(), 3);
-  CHECK(backfill.auditCurrent(h.user.str())[0]["audit"].asBool());
+  CHECK(doortest::scopeConsistent(h.user));
 
   sync::SyncCatalog catalog{engine::registry()};
   engine::PgGym gym{engine::registry()};
@@ -147,7 +145,7 @@ TEST(gym_training_engine_join_reserves_alias_for_retries_audit_next_writes_and_r
   CHECK_EQ(refused->result["code"].asString(), "id-spent");
   CHECK_EQ(state()[0]["seq"].as<int>(), 3);
   CHECK(!h.repo.log.session(h.user, SessionId{"session_joinalias"}));
-  CHECK(backfill.auditCurrent(h.user.str())[0]["audit"].asBool());
+  CHECK(doortest::scopeConsistent(h.user));
   CHECK(h.failures.messages.empty());
 }
 

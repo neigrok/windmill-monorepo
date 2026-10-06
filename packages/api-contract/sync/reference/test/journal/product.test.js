@@ -2,13 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { CONSTANTS } from "../../core/constants.js";
-import { ZERO_DIGEST, replaceRow } from "../../core/digest.js";
-import { jcs } from "../../core/jcs.js";
 import { isVisible, stampsOf } from "../../core/rows.js";
-import { backfill } from "../../journal/backfill.js";
-import { nextDocumentStamp, restPage } from "../../journal/product.js";
+import { nextDocumentStamp } from "../../journal/product.js";
 import { admit } from "../../server/admit.js";
-import { hello, pull } from "../../server/pull.js";
+import { hello } from "../../server/pull.js";
 import { push } from "../../server/push.js";
 import { ServerState } from "../../server/state.js";
 import {
@@ -140,97 +137,6 @@ test("legacy future content stamps never enter the envelope HLC", () => {
   );
   assert.ok(s.clock.ms <= v.input.serverNow + CONSTANTS.MAX_SKEW_MS);
 });
-test("journal/backfill.json rehearses exact REST projections, digest, idempotence and boot", () => {
-  for (const { name, input, expect } of load("backfill.json")) {
-    if (expect.error) {
-      assert.throws(
-        () =>
-          backfill({
-            ...input,
-            state: new ServerState(input.state),
-            registry: journalRegistry,
-          }),
-        { message: expect.error },
-        name,
-      );
-      continue;
-    }
-    const legacy = jcs(input.legacy);
-    const s = backfill({
-      ...input,
-      state: new ServerState(input.state),
-      registry: journalRegistry,
-    });
-    assert.deepEqual(s.toJSON(), expect.state, name);
-    assert.equal(jcs(input.legacy), legacy, name);
-    assert.deepEqual(
-      backfill({ ...input, state: s, registry: journalRegistry }).toJSON(),
-      expect.state,
-      name,
-    );
-    const scope = s.scope(key);
-    if (!scope) continue;
-    assert.equal(
-      s
-        .rowsOf(key)
-        .reduce(
-          (digest, row) => replaceRow(digest, undefined, row),
-          ZERO_DIGEST,
-        ),
-      scope.digest,
-      name,
-    );
-    assert.deepEqual(
-      s
-        .rowsOf(key)
-        .filter((r) => r.t === "page")
-        .map((r) => restPage(r, s.product.journalPages[key][r.id])),
-      expect.reads,
-      name,
-    );
-    for (const row of s.rowsOf(key))
-      assert.ok(
-        stampsOf(row).every((stamp) => stamp === `${input.M}:0:srv`),
-        name,
-      );
-    const boot = pull({
-      state: s,
-      registry: journalRegistry,
-      product: journalProduct,
-      account: "A",
-      request: { scopes: [{ scope: "self/journal", cursor: null }] },
-      serverNow: input.M,
-      limits: { ...CONSTANTS, PULL_PAGE_BYTES: 1 << 30 },
-    });
-    assert.equal(boot.response.body.pages[0].seq, scope.seq, name);
-    assert.equal(boot.response.body.pages[0].digest, scope.digest, name);
-    assert.deepEqual(
-      boot.response.body.pages[0].rows,
-      s.rowsOf(key).sort((a, b) => a.seq - b.seq),
-      name,
-    );
-  }
-});
-test("backfill refuses unmarked existing scopes and changed adoption manifests", () => {
-  const v = load("backfill.json")[0];
-  const s = new ServerState(v.input.state);
-  s.insertScope(key, { kind: "product", owner: "A" });
-  assert.throws(
-    () => backfill({ ...v.input, state: s, registry: journalRegistry }),
-    /without an adoption marker/,
-  );
-  const adopted = new ServerState(v.expect.state);
-  assert.throws(
-    () =>
-      backfill({
-        ...v.input,
-        state: adopted,
-        legacy: {},
-        registry: journalRegistry,
-      }),
-    /manifest differs/,
-  );
-});
 test("journal/revisions.json and content-clock.json replay compact vectors", () => {
   for (const { name, input, expect } of load("revisions.json"))
     assert.deepEqual(
@@ -308,43 +214,34 @@ test("audit retention boundaries have independent expected prefixes", () => {
   assert.equal(vectors[5].expect.kept.length, 12);
 });
 
-test("frozen revision ordinal preserves account-wide tie order and every raw audit body", () => {
-  const vectors = load("backfill.json");
-  const tie = vectors.find(
-    (v) => v.name === "revision tie order global across days",
-  );
-  const adopted = new ServerState(tie.expect.state);
-  assert.deepEqual(adopted.product.journalRevisionProjection[key], {
-    1: {
-      migrationId: 1,
-      stamp: tie.input.legacy.revisions[0].stamp,
-      supersededAt: tie.input.M,
-    },
-    2: {
-      migrationId: 2,
-      stamp: tie.input.legacy.revisions[1].stamp,
-      supersededAt: tie.input.M,
-    },
-  });
-  const kept = journalProduct.pruneRevisions({
-    scopeKey: key,
-    productState: adopted.product,
-    revisions: adopted.revisions[key],
-    archived: [{ t: "page", id: "2026-10-01", field: "body" }],
-    serverNow: tie.input.M,
-  });
-  assert.deepEqual(
-    kept.map((r) => [r.rev, r.id]),
-    [
+test("adopted revisions prune newest rev first at one archive time, and their projection follows what is kept", () => {
+  const T = 1760000000000;
+  const stamp = (ms) => ({ ms, counter: 0, actor: "legacy:writer" });
+  const revisions = [
+    { t: "page", id: "2026-10-02", field: "body", rev: 1, text: "Earlier words.", archivedAt: T, documentStamp: stamp(T - 100) },
+    { t: "page", id: "0001-01-01", field: "body", rev: 2, text: "Earlier words.", archivedAt: T, documentStamp: stamp(T - 200) },
+  ];
+  const projection = {
+    1: { migrationId: 1, stamp: stamp(T - 100), supersededAt: T },
+    2: { migrationId: 2, stamp: stamp(T - 200), supersededAt: T },
+  };
+  const prune = (serverNow) => {
+    const productState = { journalRevisionProjection: { [key]: structuredClone(projection) } };
+    const kept = journalProduct.pruneRevisions({
+      scopeKey: key,
+      productState,
+      revisions,
+      archived: [{ t: "page", id: "2026-10-01", field: "body" }],
+      serverNow,
+    });
+    return { kept: kept.map((r) => [r.rev, r.id]), projection: productState.journalRevisionProjection[key] };
+  };
+  assert.deepEqual(prune(T), {
+    kept: [
       [2, "0001-01-01"],
       [1, "2026-10-02"],
     ],
-  );
-  const raw = vectors.find(
-    (v) => v.name === "historic empty and oversized audit rows are preserved",
-  );
-  assert.deepEqual(
-    raw.expect.state.revisions[key].map((r) => r.text),
-    ["", "x".repeat(131073)],
-  );
+    projection,
+  });
+  assert.deepEqual(prune(T + 90 * 86400000 + 1), { kept: [], projection: {} });
 });

@@ -23,18 +23,6 @@
 
 namespace wm::sync {
 
-// An incomplete adoption or product write freeze retries without advancing the replica.
-struct ProductScopeUnavailable : std::runtime_error {
-  using std::runtime_error::runtime_error;
-};
-
-class ScopeReadiness {
-public:
-  virtual ~ScopeReadiness() = default;
-  virtual void requireReady(SyncTxn&, const ScopeKey&) = 0;
-  virtual void requireWritable(SyncTxn& txn, const ScopeKey& scope) { requireReady(txn, scope); }
-};
-
 // One type's typed rows (§2.2). Every method works inside the engine's transaction.
 class TypeStore {
 public:
