@@ -109,9 +109,9 @@ spans are stored. `attempts` is diagnostic and does not implement backoff.
 
 ## Scheduling and limits
 
-`PageService::write` notifies `EchoDerivations` only after an accepted write. The watcher queues work
-under a short mutex; derivation runs on its own thread, round-robin across accounts. The queue drains
-every second. `LiveDerivationRules` defaults are:
+`JournalFeed` notifies `EchoDerivations`, the `PageWatcher`, after each committed page change. The
+watcher queues work under a short mutex; derivation runs on its own thread, round-robin across
+accounts. The queue drains every second. `LiveDerivationRules` defaults are:
 
 | Limit | Default |
 |---|---|

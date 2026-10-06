@@ -47,37 +47,21 @@ finds it with no configuration. The default is `:8080`, which Docker Desktop usu
 Everything else is optional and each feature stays dark without its key — copy `.env.example` to
 `.env` and `set -a; source .env; set +a` before the binary.
 
-### Full engine server for the iOS simulator
+### Engine server for the iOS simulator
 
-Run from `backend/`. This uses an isolated local database, both in-place adoption schemas,
-both backfills and the gym v5 metadata upgrade. Choose the port with `WM_ENGINE_PORT`; the simulator can reach
-`http://127.0.0.1:<port>`. `SYNC_ENABLED`, `GYM_ENGINE_WRITES` and `JOURNAL_ENGINE_WRITES`
-default off independently. The probe product and its dev endpoints are absent from this server.
+Run from `backend/`. This serves `windmill_server` on an isolated local database, and the simulator
+reaches it at `http://127.0.0.1:<port>`; choose the port with `WM_ENGINE_PORT`. The probe product and
+its dev endpoints are absent from this server.
 
 ```sh
 WM_ENGINE_DB=wm_ios_engine
 WM_ENGINE_PORT=8088
-WM_ENGINE_BUILD=/private/tmp/claude-501/codex-ios-server/build
 createdb -h /tmp "$WM_ENGINE_DB"
 export DATABASE_URL="postgresql:///$WM_ENGINE_DB?host=/tmp"
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql -f db/gym_sync.sql -f db/journal_sync.sql
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
-insert into users(id,email,name) values(gen_random_uuid(),'ios-dev@example.com','iOS Dev');
-insert into gym_preferences(user_id) select id from users where email='ios-dev@example.com';
-insert into journal_page(user_id,day,body,stamp_ms,stamp_counter,stamp_actor,updated_at)
-  select id,'2026-01-01','Local engine seed',1,0,'localdev',to_timestamp(0.001) from users where email='ios-dev@example.com';
-SQL
-"$WM_ENGINE_BUILD/windmill_gym_backfill"
-"$WM_ENGINE_BUILD/windmill_journal_backfill"
-"$WM_ENGINE_BUILD/windmill_gym_backfill" --audit
-"$WM_ENGINE_BUILD/windmill_journal_backfill" --audit
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/gym_sync_v5.sql
-"$WM_ENGINE_BUILD/windmill_gym_backfill" --upgrade-v5
-"$WM_ENGINE_BUILD/windmill_gym_backfill" --audit-v5
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
 RESEND_API_KEY= ANTHROPIC_API_KEY= OPENAI_API_KEY= JOURNAL_EMBEDDER_URL= \
-  SYNC_ENABLED=1 GYM_ENGINE_WRITES=1 JOURNAL_ENGINE_WRITES=1 \
   WINDMILL_HOST=127.0.0.1 WINDMILL_APP_URL="http://127.0.0.1:$WM_ENGINE_PORT" \
-  PORT="$WM_ENGINE_PORT" "$WM_ENGINE_BUILD/windmill_server"
+  PORT="$WM_ENGINE_PORT" ./build/windmill_server
 ```
 
 In a second terminal, seed a development code using the direct-database path, then verify through
@@ -100,15 +84,12 @@ curl -sS "http://127.0.0.1:$WM_ENGINE_PORT/v1/auth/verify-code" \
   -d '{"email":"ios-dev@example.com","code":"483201","sessionTransport":"bearer"}'
 ```
 
-The response's `session` is the bearer secret and `user.id` is the engine account. The app stores
-the secret in its Keychain and sends `Authorization: Bearer <session>` with `Sync-Schema: 4` on
-hello, push and pull; live uses `/v1/sync/live?schema=4`. Existing web and Android callers omit
-`sessionTransport` and receive their existing bodies. Read [AUTH.md](AUTH.md) for native Apple
-configuration and its identity-token/nonce exchange. With `SYNC_ENABLED` off, all four sync routes
-return 404. Unadopted legacy history returns engine `503 unavailable`, or a push retry, rather than
-an empty product scope; an unavailable live subscription closes with code 1013.
-Both product write-freeze switches also block native engine pushes with a retry while leaving
-hello, pull and live subscriptions available.
+The code sign-in creates the account on first use. The response's `session` is the bearer secret and
+`user.id` is the engine account. The app stores the secret in its Keychain and sends
+`Authorization: Bearer <session>` with `Sync-Schema: 5`, its registry's version, on hello, push and
+pull; live uses `/v1/sync/live?schema=5`. Existing web and Android callers omit `sessionTransport` and
+receive their existing bodies. Read [AUTH.md](AUTH.md) for native Apple configuration and its
+identity-token/nonce exchange.
 
 After the simulator run, stop the listener by its chosen port and remove the local database:
 
@@ -162,99 +143,42 @@ resolves to `http://localhost:8088` outside a production build. Run the server o
 
 ```sh
 cmake --build build -j8
-ctest --test-dir build --output-on-failure       # four C++ suites, deploy check and differential comparator tests
+ctest --test-dir build --output-on-failure       # four C++ suites and four script checks
 ctest --test-dir build -V                        # …and their summary lines
 ```
+
+`domain`, `mcp`, `sync` and `adapters` are the C++ suites. `deploy` checks that the production
+Caddyfile forwards every credential line as received, `deploy_production` runs
+`deploy/deploy-production.sh` against a modeled Docker host, `auth_differential` tests the
+authentication differential's comparator (`test/e2e/README.md`), and `log_lifecycle` drives
+`windmill_mcp`'s log shutdown at stdin EOF, on a fatal signal and with stalled stderr.
 
 Each binary ends with one line — `N/M cases passed, X stopped before the end, Y skipped, Z
 assertion(s) failed`. *Stopped before the end* counts cases a failing `REQUIRE` cut short; *skipped*
 counts cases the environment could not run, never folded into the passed count. A case that takes
 the process down is named (`*** CRASHED mid-case … ***`) and re-raised, so the exit status is honest.
 
-The Postgres integration cases run only under `WM_PG_TEST` and require two fresh throwaway databases.
-The REST `adapters` suite reads `DATABASE_URL`, holding plain `db/schema.sql`. The engine `sync` suite
-reads `WM_SYNC_DATABASE_URL`, holding `db/schema.sql`, `db/probe.sql`, `db/gym_sync.sql`, `db/journal_sync.sql` and `db/gym_sync_v5.sql`.
-The combined gym and journal adoption rehearsal and cutover are documented in
-[deploy/gym-migration/README.md](deploy/gym-migration/README.md).
-Both URLs must be set when running those suites under `WM_PG_TEST`. Never apply `gym_sync.sql` or `journal_sync.sql` to the
-legacy repository database: it removes the `ON DELETE` actions those repository tests require.
-The admitted gym door cases in `adapters` use `WM_SYNC_DATABASE_URL`, with real repositories and
-the gym catalog. The existing HTTP/MCP contract fixtures use fakes. The sync suite wipes sync,
-probe, gym and journal data as it replays the corpus, store and concurrency cases; run these binaries serially.
+The Postgres integration cases run only under `WM_PG_TEST` and require two fresh throwaway databases,
+each built by `db/schema.sql`. `DATABASE_URL` holds it alone. `WM_SYNC_DATABASE_URL` also holds
+`db/probe.sql`: the `sync` suite runs there, and so does every gym case in `mcp` and `adapters` that
+writes through `GymDoor` (`test/products/gym/sync/adapters/postgres/GymDoorFixture.h`). The gym HTTP
+and MCP cases that only read run over a read-only fake store (`test/products/gym/Fakes.h`). The sync
+suite wipes sync, probe, gym and journal data as it replays the corpus, store and concurrency cases;
+run these binaries serially.
 
 ```sh
 createdb -h /tmp wm_rest_test
 createdb -h /tmp wm_sync_test
 psql -h /tmp -d wm_rest_test -v ON_ERROR_STOP=1 -f db/schema.sql
-psql -h /tmp -d wm_sync_test -v ON_ERROR_STOP=1 -f db/schema.sql -f db/probe.sql -f db/gym_sync.sql -f db/journal_sync.sql -f db/gym_sync_v5.sql
+psql -h /tmp -d wm_sync_test -v ON_ERROR_STOP=1 -f db/schema.sql -f db/probe.sql
 WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
   WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" \
-  ctest --test-dir build -R '^(domain|sync|adapters)$' -V
+  ctest --test-dir build -R '^(domain|sync|adapters|mcp)$' -V
 ```
 
-`GYM_ENGINE_WRITES` and `GYM_WRITE_FREEZE` accept `1`, `true` or `on`, and default off. Engine writes
-require the adopted gym schema and metadata. The freeze refuses REST writes with `503 gym-frozen`,
-MCP and Coach abilities with error results, and leaves staleness unchanged on reads. Conversations
-and workout shares retain their existing tables; conversation deletion admits proposal unlinking.
-
-`JOURNAL_ENGINE_WRITES` and `JOURNAL_WRITE_FREEZE` accept the same values and default off.
-The journal engine door requires `journal_sync.sql` and adopted history; premature admission
-returns `503 journal-not-adopted`. The freeze returns `503 journal-frozen` from every journal
-mutation door and stops echo derivation, echo/nudge sweeps and provider-suppression writes.
-Journal reads retain their existing repository and REST wire contract. `SYNC_ENABLED` accepts
-`1`, `true` or `on` and mounts the full gym + journal engine HTTP and live routes; it defaults off.
-Enable gym and journal together only after their shared frozen rehearsal gates pass.
-
-`LEGACY_REST_WRITES_RETIRED` defaults off and accepts only `1`. It returns `410
-client-update-required` before auth, parsing or data access on the Retire rows of the
-[gym](products/gym/ARCHITECTURE.md#81-http-routes) and
-[journal](products/journal/ARCHITECTURE.md#http-surface) route ledgers, independently of the
-engine and freeze switches. Keep routes, reads, MCP, Coach and server-origin doors stay active.
-The owner sets the fixed retirement date; no date is configured in the server.
-
-```sh
-WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
-  WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" GYM_ENGINE_WRITES=1 \
-  ctest --test-dir build -R '^(mcp|adapters)$' -V
-```
-
-Each real-server write differential owns two fresh databases and two test server processes on
-free loopback ports (gym 18900–18949; journal 18950–18999). Both use the production composition with one controlled test clock;
-the production `windmill_server` ignores the test clock environment. It seeds matching session cookies and MCP keys,
-backfills the engine
-database, drives every write route and gym tool with retries, and interleaves reads. Each stops both
-servers and drops both databases on success or failure. Python 3 and the Postgres client tools are
-required. CI runs off-vs-on with `--image`. Both products' main-vs-off modes build `origin/main` in
-a separate temporary worktree and build directory and keep the branch server's engine and freeze
-switches off. They are pre-merge gates run locally, not CI steps. Journal includes reverse-inserted
-and later-updated equal-HLC cohorts, checking full reads, limit=1 and strict cursor exclusion against
-main's exact response bytes. Both modes compare timestamps exactly; only gym's independently
-random generated identities use stable paired aliases (test/e2e/README.md).
-
-```sh
-python3 test/e2e/gym_write_differential.py --mode off-vs-on --bin-dir build \
-  --maintenance-db 'postgresql:///postgres?host=/tmp'
-python3 test/e2e/journal_write_differential.py --mode off-vs-on --bin-dir build \
-  --maintenance-db 'postgresql:///postgres?host=/tmp'
-python3 test/e2e/gym_write_differential.py --mode main-vs-off --bin-dir build \
-  --maintenance-db 'postgresql:///postgres?host=/tmp'
-python3 test/e2e/journal_write_differential.py --mode main-vs-off --bin-dir build \
-  --maintenance-db 'postgresql:///postgres?host=/tmp'
-dropdb -h /tmp wm_rest_test
-dropdb -h /tmp wm_sync_test
-```
-
-See [test/e2e/README.md](test/e2e/README.md) for the exact normalization and intended differences.
-The migration binaries and rehearsal ship in the runtime image. Optional production backup and
-restored-copy rehearsal prepare the dispatch-only `products-cutover.yml`, described in
-[deploy/gym-migration/README.md](deploy/gym-migration/README.md). Cutover stops every database writer
-and takes its rollback backup before adopting both products. The whole site, roadmap included, is
-down for a few minutes. Failure before the persisted startup boundary restores the old database and
-configuration; recovery is forward-only once startup is attempted. None of these workflows runs on push.
-
-`windmill_server_probe` is `windmill_server` with the sync engine mounted over the probe product, for
-that throwaway database only; it refuses to start where `WINDMILL_APP_URL` is https. It also mounts the
-dev stack's endpoints
+`windmill_server_probe` is `windmill_server` with the sync engine mounted over the probe product
+instead of gym and journal, for the throwaway sync database only; it refuses to start where
+`WINDMILL_APP_URL` is https. It also mounts the dev stack's endpoints
 (`products/probe/adapters/http/DevApi.h`), which native end-to-end runs drive:
 
 - `POST /v1/dev/sign-in` `{"email"}` → `{"account", "token"}`: finds or creates the account and mints a
@@ -305,13 +229,14 @@ dropdb -h /tmp wm_sync_test
 
 The Docker build runs `ctest` with no database beside it, so its Postgres cases skip. Backend CI's
 `postgres` job runs them: it loads the builder stage the `test` job built and runs the `domain`,
-`sync` and `adapters` tests in one `ctest` run under `WM_PG_TEST` against a Postgres 16 service with
-the same two-database setup above (`windmill_test` for REST, `windmill_sync_test` for sync), then
-serves the stage's own `windmill_server_probe` on the sync database and runs
-`test/e2e/deployment_conformance.mjs` against it. It also verifies all sync routes return 404 on
-`windmill_server` with the switch off, then serves it with `SYNC_ENABLED=1` on a separate
-plain + gym + journal database after both backfills. `WM_E2E_CATALOG=products` selects schema 4
-and both product scopes for the same direct and edge conformance suite.
+`mcp`, `sync` and `adapters` tests in one `ctest` run under `WM_PG_TEST` against a Postgres 16 service
+with the same two-database setup above (`windmill_test` for `DATABASE_URL`, `windmill_sync_test` for
+`WM_SYNC_DATABASE_URL`). It then serves the stage's own `windmill_server_probe` on the sync database
+and runs `test/e2e/deployment_conformance.mjs` against it, and serves `windmill_server` on a third
+database holding `db/schema.sql` alone, where `WM_E2E_CATALOG=products` runs the same direct and edge
+suite over the gym + journal catalog (schema 5, minimum 4) and both product scopes. On the runner
+itself, `test/deploy/schema_reapplication_test.py` checks that re-applying `db/schema.sql`, as every
+deploy does, changes nothing.
 
 The domain suite's pattern fuzz matches the sync registry's `Pattern` against the JS reference
 (`packages/api-contract/sync/reference/core/registry.js`) on patterns and values the reference

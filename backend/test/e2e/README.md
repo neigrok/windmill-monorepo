@@ -7,7 +7,7 @@
 | `deployment_conformance.mjs` | what engine.md asks of a deployment, directly and through the production Caddyfile |
 | `deploy_auth_env_test.py` | that `deploy.yml` forwards the native-auth settings |
 | `sync_probe.sh` | the sync engine against `windmill_server_probe` |
-| `journal.sh`, `journal_echo.sh`, `journal_nudge.sh` | journal pages, echoes and nudges against the local stack |
+| `journal_echo.sh`, `journal_nudge.sh` | journal echoes and nudges against the local stack |
 
 Each shell and Node script's header names its prerequisites and how to run it.
 

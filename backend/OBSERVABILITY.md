@@ -19,8 +19,9 @@ both default to INFO. Use DEBUG for inner outcomes and timings. Background runs 
 after a committed write or failure. Session refresh emits only for a matched UPDATE or failure; its
 successful housekeeping completion always uses DEBUG, including authenticated read requests.
 HTTP response codes, engine codes and tool outcomes are read without modifying wire objects.
-Legacy refusals without a machine code use `http_NNN` or `refused`. Expected freezes, adoption
-refusals, unavailable configuration, rate limits, invalid tool arguments and 4xx never create Issues.
+Refusals without a machine code use `http_NNN` or `refused`. Expected refusals — unavailable
+configuration, a busy gym engine, rate limits, invalid tool arguments and every 4xx, a retired path's
+410 included — never create Issues.
 Unexpected exceptions and unclassified 5xx create Issues grouped by static operation and compiled
 exception type; the Issue's `tags.request_id` matches its completion. Nested boundaries share the
 request state and report its first unexpected failure once. Admission, command and postcommit
@@ -29,14 +30,14 @@ publication are separate completions: a failed watcher leaves the committed admi
 `WriteRoutes` registers all HTTP handlers, automatically wrapping mutating verbs and explicitly
 marking GET authentication/OAuth writes. The early advice finds declared write routes before rate
 limiting. Its callback and `observedHttpCallback` carry the request state across asynchronous work.
-`registerLegacyWriteHandler` marks the retired gym/journal REST writes. With
-`LEGACY_REST_WRITES_RETIRED=1`, they emit one WARN completion with `client-update-required` for
-the 410, without product work or an Issue; callback failures keep the normal failure reporting.
-MCP's `CompositeToolHost`, Coach's `AskTools` and roadmap's `ScopedToolHost` dispatch by their
-access declarations. Sync admission instruments every intent and catalog command; it validates
-labels against its sealed registry. `Heartbeat`, `MailSweep`, and `runObservedTool` cover scheduled
-work, mail slots, and all six migration binaries. Tool structured logs use stderr, preserving stdout
-artifacts and exit codes. Standalone MCP keeps protocol stdout untouched. Every composition root stops its heartbeat, worker and vendor producers before draining logs and
+`WriteRoutes::retire` registers the 20 retired gym write paths listed in `products/gym/routes.cpp`:
+each answers 410 `client-update-required` before authentication with nothing behind it and emits one
+WARN completion with outcome `client-update-required`, without an Issue, and the rate limiter skips
+it (`retiredRoute`). MCP's `CompositeToolHost`, Coach's `AskTools` and roadmap's `ScopedToolHost`
+dispatch by their access declarations. Sync admission instruments every intent and catalog command;
+it validates labels against its sealed registry. `Heartbeat` and `MailSweep` cover scheduled work
+and mail slots. Standalone stdio MCP writes its structured logs to stderr and keeps protocol stdout
+untouched. Every composition root stops its heartbeat, worker and vendor producers before draining logs and
 envelopes. `ObservabilityLifetime` preserves producer dependencies, stops producers in reverse order,
 then closes and joins the writer, including stdio EOF and exception exits. Sentry shutdown cancels its
 timer, waits for pending envelopes and releases its HTTP client before stopping its loop.
@@ -101,7 +102,7 @@ Clients own their event/property allowlists and must exclude user content and cr
 
 An event's optional `id` uses the same bounded alphabet as `sessionKey`: 1–64 letters, digits,
 hyphens or underscores. It gives Amplitude the stable insert ID `sessionKey:id`, including when a
-client retries events in a different batch. Legacy events retain their timestamp/name/index key.
+client retries events in a different batch. An event without an `id` keeps its timestamp/name/index key.
 
 `202 {"accepted":N}` means the accepted events reached Postgres. It does not confirm delivery to
 Amplitude. `AMPLITUDE_API_KEY` enables forwarding and `AMPLITUDE_HOST` chooses the region
@@ -116,39 +117,38 @@ accepted rows, but no automatic replay to Amplitude runs. Repeated accepted clie
 create duplicate Postgres rows; the stable event ID deduplicates the Amplitude mirror. An unset
 Amplitude key intentionally disables forwarding.
 
-The inventory has 88 HTTP registrations: REST platform 25, roadmap 13, gym 29, journal 12,
-probe 2; sync 3; MCP transport 4. Excluding the two dev routes and two standalone transport
-duplicates leaves 84 production HTTP operations. MCP has 36 write declarations (roadmap 23,
-gym 13); compatibility aliases share their canonical operation. Coach has 27 operations (ask 2,
-gym abilities 4, scoped roadmap abilities 21). The catalogs have nine production commands
-(gym 7, journal 2), plus four probe commands. Six binaries expose 14 tool modes. Background
-coverage includes 19 scheduled/stage operations plus sync publication, Amplitude forwarding and
-legacy gym settlement and the AI usage ledger (24 background operations). Server-origin entry points include gym/journal doors, ServerCall metadata,
-session refresh and signup fork. The roadmap socket has two write frame kinds plus rate refusal.
+The inventory has 89 HTTP write registrations: REST platform 27, roadmap 13, gym 29 (20 of them
+retired paths), journal 11, probe 2; sync 3; MCP transport 4. Excluding the two dev routes and two
+standalone transport duplicates leaves 85 production HTTP operations. MCP has 36 write declarations
+(roadmap 23, gym 13); compatibility aliases share their canonical operation. Coach has 27 operations
+(ask 2, gym abilities 4, scoped roadmap abilities 21). The catalogs have nine production commands
+(gym 7, journal 2), plus four probe commands. Background coverage includes 21 scheduled/stage
+operations plus sync publication, Amplitude forwarding and the AI usage ledger (24 background
+operations). Server-origin entry points include the gym door, ServerCall metadata, session refresh
+and signup fork. The roadmap socket has two write frame kinds plus rate refusal.
 
 The HTTP coverage test enumerates every source registration, rejects alternate registration APIs,
-and requires the shared registrar, including handlers in headers and computed method lists. MCP,
+and requires the shared registrar, including handlers in headers and computed method lists; a second
+case requires the registered retired paths to equal the Retire rows of gym's route ledger. MCP,
 Coach and command tests enumerate the real catalogs and exercise each write through the dispatcher
 or admission. Failure, refusal, asynchronous correlation, exact JSON preservation and callback
-exception cases use capture sinks. Every test source is listed in `CMakeLists.txt`. Process-level `log_lifecycle` regressions cover 500
-rejected MCP writes at EOF and SIGABRT with unread stderr, plus permanently full-pipe tool shutdown.
+exception cases use capture sinks. Every test source is listed in `CMakeLists.txt`. Process-level
+`log_lifecycle` regressions run `windmill_mcp` through 500 rejected MCP writes at EOF and SIGABRT
+with unread stderr, and through shutdown with a permanently full stderr pipe.
 Queue, heartbeat, session and dispatcher tests cover bounded shutdown/loss accounting, idle ticks,
 actual writes, one INFO completion per request id and two-decimal duration serialization.
 
 Client scope digest mismatches, doubts and scheduled re-pulls are local client transitions. The
 server receives only a scope and cursor, so it cannot label a request as an actual client mismatch
 or doubt. It logs each scope pull/reset and intent/call digest disagreement. Scope digests are
-maintained transactionally; admission/pull do not perform a new full-table digest scan. Adoption,
-backfill and audit binaries check digests/invariants and report unexpected violations.
+maintained transactionally; admission/pull do not perform a new full-table digest scan.
 
 In the table, **completion** means all six fields above; **unexpected** means a correlated Issue
-with static operation and compiled type, excluding expected refusals. REST, MCP and Coach rows
-cover both engine-switch modes. Export/download reads are listed separately because their only
-server writes are authentication refresh or lazy settlement.
+with static operation and compiled type, excluding expected refusals. Export/download reads are
+listed separately because their only server writes are authentication refresh or lazy settlement.
 
 | Path / boundary | Operation | Logged | Sentry Issues |
 | --- | --- | --- | --- |
-| `PUT /v1/journal/page/{date}` (journal; rest) | `journal.PUT.v1.journal.page.date` | completion; bounded refusal or result | unexpected |
 | `PATCH /v1/journal/nudge` (journal; rest) | `journal.PATCH.v1.journal.nudge` | completion; bounded refusal or result | unexpected |
 | `POST /v1/journal/nudge/pause` (journal; rest) | `journal.POST.v1.journal.nudge.pause` | completion; bounded refusal or result | unexpected |
 | `POST /v1/journal/nudge/unsubscribe` (journal; rest) | `journal.POST.v1.journal.nudge.unsubscribe` | completion; bounded refusal or result | unexpected |
@@ -173,32 +173,32 @@ server writes are authentication refresh or lazy settlement.
 | `POST /v1/reminders/unsubscribe` (roadmap; rest) | `roadmap.POST.v1.reminders.unsubscribe` | completion; bounded refusal or result | unexpected |
 | `POST /v1/admin/reminders/sweep` (roadmap; rest) | `roadmap.POST.v1.admin.reminders.sweep` | completion; bounded refusal or result | unexpected |
 | `POST /v1/compose` (roadmap; rest) | `roadmap.POST.v1.compose` | completion; bounded refusal or result | unexpected |
-| `POST /v1/gym/exercises` (gym; rest) | `gym.POST.v1.gym.exercises` | completion; bounded refusal or result | unexpected |
-| `PATCH /v1/gym/exercises/{id}` (gym; rest) | `gym.PATCH.v1.gym.exercises.id` | completion; bounded refusal or result | unexpected |
-| `POST /v1/gym/sessions` (gym; rest) | `gym.POST.v1.gym.sessions` | completion; bounded refusal or result | unexpected |
+| `POST /v1/gym/exercises` (gym; rest; retired) | `gym.POST.v1.gym.exercises` | completion; `client-update-required` | none: expected refusal |
+| `PATCH /v1/gym/exercises/{id}` (gym; rest; retired) | `gym.PATCH.v1.gym.exercises.id` | completion; `client-update-required` | none: expected refusal |
+| `POST /v1/gym/sessions` (gym; rest; retired) | `gym.POST.v1.gym.sessions` | completion; `client-update-required` | none: expected refusal |
 | `POST /v1/gym/sessions/import` (gym; rest) | `gym.POST.v1.gym.sessions.import` | completion; bounded refusal or result | unexpected |
-| `POST /v1/gym/sessions/{id}/sets` (gym; rest) | `gym.POST.v1.gym.sessions.id.sets` | completion; bounded refusal or result | unexpected |
-| `PATCH /v1/gym/sessions/{id}/sets/{setId}` (gym; rest) | `gym.PATCH.v1.gym.sessions.id.sets.setid` | completion; bounded refusal or result | unexpected |
-| `DELETE /v1/gym/sessions/{id}/sets/{setId}` (gym; rest) | `gym.DELETE.v1.gym.sessions.id.sets.setid` | completion; bounded refusal or result | unexpected |
-| `POST /v1/gym/sessions/{id}/finish` (gym; rest) | `gym.POST.v1.gym.sessions.id.finish` | completion; bounded refusal or result | unexpected |
-| `DELETE /v1/gym/sessions/{id}` (gym; rest) | `gym.DELETE.v1.gym.sessions.id` | completion; bounded refusal or result | unexpected |
-| `POST /v1/gym/routines` (gym; rest) | `gym.POST.v1.gym.routines` | completion; bounded refusal or result | unexpected |
-| `PUT /v1/gym/routines/{id}` (gym; rest) | `gym.PUT.v1.gym.routines.id` | completion; bounded refusal or result | unexpected |
-| `DELETE /v1/gym/routines/{id}` (gym; rest) | `gym.DELETE.v1.gym.routines.id` | completion; bounded refusal or result | unexpected |
-| `POST /v1/gym/proposals/{id}/apply` (gym; rest) | `gym.POST.v1.gym.proposals.id.apply` | completion; bounded refusal or result | unexpected |
-| `POST /v1/gym/proposals/{id}/dismiss` (gym; rest) | `gym.POST.v1.gym.proposals.id.dismiss` | completion; bounded refusal or result | unexpected |
-| `PUT /v1/gym/preferences` (gym; rest) | `gym.PUT.v1.gym.preferences` | completion; bounded refusal or result | unexpected |
-| `PUT /v1/gym/notes` (gym; rest) | `gym.PUT.v1.gym.notes` | completion; bounded refusal or result | unexpected |
-| `PUT /v1/gym/notes/{id}` (gym; rest) | `gym.PUT.v1.gym.notes.id` | completion; bounded refusal or result | unexpected |
-| `DELETE /v1/gym/notes/{id}` (gym; rest) | `gym.DELETE.v1.gym.notes.id` | completion; bounded refusal or result | unexpected |
-| `PUT /v1/gym/bodyweight/{dateLocal}` (gym; rest) | `gym.PUT.v1.gym.bodyweight.datelocal` | completion; bounded refusal or result | unexpected |
-| `DELETE /v1/gym/bodyweight/{dateLocal}` (gym; rest) | `gym.DELETE.v1.gym.bodyweight.datelocal` | completion; bounded refusal or result | unexpected |
+| `POST /v1/gym/sessions/{id}/sets` (gym; rest; retired) | `gym.POST.v1.gym.sessions.id.sets` | completion; `client-update-required` | none: expected refusal |
+| `PATCH /v1/gym/sessions/{id}/sets/{setId}` (gym; rest; retired) | `gym.PATCH.v1.gym.sessions.id.sets.setid` | completion; `client-update-required` | none: expected refusal |
+| `DELETE /v1/gym/sessions/{id}/sets/{setId}` (gym; rest; retired) | `gym.DELETE.v1.gym.sessions.id.sets.setid` | completion; `client-update-required` | none: expected refusal |
+| `POST /v1/gym/sessions/{id}/finish` (gym; rest; retired) | `gym.POST.v1.gym.sessions.id.finish` | completion; `client-update-required` | none: expected refusal |
+| `DELETE /v1/gym/sessions/{id}` (gym; rest; retired) | `gym.DELETE.v1.gym.sessions.id` | completion; `client-update-required` | none: expected refusal |
+| `POST /v1/gym/routines` (gym; rest; retired) | `gym.POST.v1.gym.routines` | completion; `client-update-required` | none: expected refusal |
+| `PUT /v1/gym/routines/{id}` (gym; rest; retired) | `gym.PUT.v1.gym.routines.id` | completion; `client-update-required` | none: expected refusal |
+| `DELETE /v1/gym/routines/{id}` (gym; rest; retired) | `gym.DELETE.v1.gym.routines.id` | completion; `client-update-required` | none: expected refusal |
+| `POST /v1/gym/proposals/{id}/apply` (gym; rest; retired) | `gym.POST.v1.gym.proposals.id.apply` | completion; `client-update-required` | none: expected refusal |
+| `POST /v1/gym/proposals/{id}/dismiss` (gym; rest; retired) | `gym.POST.v1.gym.proposals.id.dismiss` | completion; `client-update-required` | none: expected refusal |
+| `PUT /v1/gym/preferences` (gym; rest; retired) | `gym.PUT.v1.gym.preferences` | completion; `client-update-required` | none: expected refusal |
+| `PUT /v1/gym/notes` (gym; rest; retired) | `gym.PUT.v1.gym.notes` | completion; `client-update-required` | none: expected refusal |
+| `PUT /v1/gym/notes/{id}` (gym; rest; retired) | `gym.PUT.v1.gym.notes.id` | completion; `client-update-required` | none: expected refusal |
+| `DELETE /v1/gym/notes/{id}` (gym; rest; retired) | `gym.DELETE.v1.gym.notes.id` | completion; `client-update-required` | none: expected refusal |
+| `PUT /v1/gym/bodyweight/{dateLocal}` (gym; rest; retired) | `gym.PUT.v1.gym.bodyweight.datelocal` | completion; `client-update-required` | none: expected refusal |
+| `DELETE /v1/gym/bodyweight/{dateLocal}` (gym; rest; retired) | `gym.DELETE.v1.gym.bodyweight.datelocal` | completion; `client-update-required` | none: expected refusal |
 | `PUT /v1/gym/threads/{thread}/attachments/{id}` (gym; rest) | `gym.PUT.v1.gym.threads.thread.attachments.id` | completion; bounded refusal or result | unexpected |
 | `POST /v1/gym/threads/{thread}/generations/{request}/stop` (gym; rest) | `gym.POST.v1.gym.threads.thread.generations.request.stop` | completion; bounded refusal or result | unexpected |
 | `DELETE /v1/gym/threads/{id}` (gym; rest) | `gym.DELETE.v1.gym.threads.id` | completion; bounded refusal or result | unexpected |
 | `POST /v1/gym/sessions/{id}/share` (gym; rest) | `gym.POST.v1.gym.sessions.id.share` | completion; bounded refusal or result | unexpected |
 | `DELETE /v1/gym/sessions/{id}/share` (gym; rest) | `gym.DELETE.v1.gym.sessions.id.share` | completion; bounded refusal or result | unexpected |
-| `POST /v1/gym/sessions/{id}/corrections` (gym; rest) | `gym.POST.v1.gym.sessions.id.corrections` | completion; bounded refusal or result | unexpected |
+| `POST /v1/gym/sessions/{id}/corrections` (gym; rest; retired) | `gym.POST.v1.gym.sessions.id.corrections` | completion; `client-update-required` | none: expected refusal |
 | `POST /v1/gym/log-shares` (gym; rest) | `gym.POST.v1.gym.log.shares` | completion; bounded refusal or result | unexpected |
 | `DELETE /v1/gym/log-shares/{id}` (gym; rest) | `gym.DELETE.v1.gym.log.shares.id` | completion; bounded refusal or result | unexpected |
 | `POST /v1/gym/ask` (gym; rest) | `gym.POST.v1.gym.ask` | completion; bounded refusal or result | unexpected |
@@ -289,28 +289,13 @@ server writes are authentication refresh or lazy settlement.
 | `probe` registry command `probe.tick` | `sync.command.probe.tick` | completion; command result | unexpected |
 | `Admission::admit` / `admitBuilt` (replica and server-origin intents; gym 10 types, journal 2 types, probe 10 types) | `sync.admit` | completion; bounded refusal or result | unexpected |
 | `Admission::commitAndPublish` committed change publication | `sync.publish` | completion; bounded refusal or result | unexpected |
-| `GymDoor::execute` (engine writes from REST, MCP, Coach, lazy settlement) | `gym.server_call` | completion; actual call result and expected training refusal | unexpected |
-| `JournalDoor::execute` (engine writes from REST and server services) | `journal.server_call` | completion; actual call result and expected journal refusal | unexpected |
+| `GymDoor::execute` (engine writes from MCP, Coach, `POST /v1/gym/sessions/import`, Coach conversation deletion and the lazy close of a stale workout) | `gym.server_call` | completion; actual call result and expected training refusal | unexpected |
 | `ServerCall::admit` / `admitBuilt` invalid dedupe id | `sync.server_call.admit` | completion; bounded refusal or result | log only |
 | `ServerCall::finish` dedupe metadata write | `sync.server_call.finish` | completion; bounded refusal or result | unexpected |
 | `Admission::storedAnswer` / `callAnswer` call digest disagreement | `sync.call.digest` | completion; expected digest conflict | log only |
 | `ReplicaPush::storedAnswer` replay intent digest disagreement | `sync.intent.digest` | completion; expected digest conflict | log only |
 | `ScopePull::page` each requested scope including reset/re-pull | `sync.scope.pull` | completion; scope result/reset | unexpected |
 | `SyncApi::onWorker` async exception boundary | route operation `sync.hello`, `sync.push`, `sync.pull` | completion; bounded refusal or result | unexpected |
-| `platform/infra/gym_backfill_main.cpp (backfill)` (tool) | `gym.backfill` | completion; bounded stage outcome | unexpected |
-| `platform/infra/gym_backfill_main.cpp (backfill_dry_run)` (tool) | `gym.backfill_dry_run` | completion; bounded stage outcome | unexpected |
-| `platform/infra/gym_backfill_main.cpp (audit)` (tool) | `gym.audit` | completion; bounded stage outcome | unexpected |
-| `platform/infra/gym_backfill_main.cpp (audit_current)` (tool) | `gym.audit_current` | completion; bounded stage outcome | unexpected |
-| `platform/infra/gym_backfill_main.cpp (upgrade_v5)` (tool) | `gym.metadata_upgrade` | completion; bounded stage outcome | unexpected |
-| `platform/infra/gym_backfill_main.cpp (audit_v5)` (tool) | `gym.metadata_audit` | completion; bounded stage outcome | unexpected |
-| `platform/infra/gym_snapshot_main.cpp (snapshot)` (tool) | `gym.snapshot` | completion; bounded stage outcome | unexpected |
-| `platform/infra/gym_rehearsal_seed_main.cpp (rehearsal_seed)` (tool) | `gym.rehearsal_seed` | completion; bounded stage outcome | unexpected |
-| `platform/infra/journal_backfill_main.cpp (backfill)` (tool) | `journal.backfill` | completion; bounded stage outcome | unexpected |
-| `platform/infra/journal_backfill_main.cpp (backfill_dry_run)` (tool) | `journal.backfill_dry_run` | completion; bounded stage outcome | unexpected |
-| `platform/infra/journal_backfill_main.cpp (audit)` (tool) | `journal.audit` | completion; bounded stage outcome | unexpected |
-| `platform/infra/journal_backfill_main.cpp (audit_current)` (tool) | `journal.audit_current` | completion; bounded stage outcome | unexpected |
-| `platform/infra/journal_snapshot_main.cpp (snapshot)` (tool) | `journal.snapshot` | completion; bounded stage outcome | unexpected |
-| `platform/infra/journal_rehearsal_seed_main.cpp (rehearsal_seed)` (tool) | `journal.rehearsal_seed` | completion; bounded stage outcome | unexpected |
 | `products/gym/application/AskService.cpp ask admission + generation/thread persistence` (coach) | `ask.run` | completion; bounded stage outcome | unexpected |
 | `products/gym/application/AskService.cpp stop` (coach) | `ask.stop` | completion; bounded stage outcome | unexpected |
 | `products/gym/application/AskService.cpp AskTools dispatcher + recovery` (coach) | `gym.create_routine` | completion; bounded stage outcome | unexpected |
@@ -344,7 +329,8 @@ server writes are authentication refresh or lazy settlement.
 | `products/journal/application/NudgeSweep.cpp via platform/application/Heartbeat.h` (background) | `background.journal-nudge` | completion; bounded stage outcome | unexpected |
 | `products/journal/application/EchoSweep.cpp via platform/application/Heartbeat.h` (background) | `background.journal-echo` | completion; bounded stage outcome | unexpected |
 | `products/journal/application/EchoDerivations.cpp via platform/application/Heartbeat.h` (background) | `background.journal-echo-live` | completion; bounded stage outcome | unexpected |
-| `platform/adapters/ws/SyncSocket.cpp via platform/application/Heartbeat.h` (background) | `background.ws-readers` | completion only for actual writes or failure | unexpected |
+| `products/roadmap/adapters/ws/Collab.cpp via platform/application/Heartbeat.h` (background) | `background.ws-readers` | completion only for actual writes or failure | unexpected |
+| `platform/adapters/ws/SyncSocket.cpp via platform/application/Heartbeat.h` (background) | `background.sync-live` | completion only for actual writes or failure | unexpected |
 | `products/journal/application/EchoExplain.cpp via platform/application/Heartbeat.h` (background) | `background.journal-echo-explain` | completion; bounded stage outcome | unexpected |
 | `platform/application/RetentionSweep.h` (background) | `platform.retention` | completion; bounded stage outcome | unexpected |
 | `platform/application/MailSweep.h + ReminderSweep.cpp` (background) | `roadmap.reminder.sweep` | completion; bounded stage outcome | unexpected |
@@ -361,12 +347,11 @@ server writes are authentication refresh or lazy settlement.
 | `products/roadmap/adapters/llm/AnthropicComposer.cpp` (rest) | `roadmap.compose.buffered` | completion; bounded stage outcome | unexpected |
 | `products/roadmap/adapters/llm/AnthropicComposer.cpp` (rest) | `roadmap.compose.stream` | completion; bounded stage outcome | unexpected |
 | `AuthService::revalidate` (REST/MCP/WS reads and writes) | `auth.session.refresh` | DEBUG completion only for actual session UPDATE; ERROR on failure | unexpected |
-| `TrainingService::settleOpen` (legacy reads/start) | `gym.close_stale` | completion only when a stale session closes | unexpected |
 | `ForkSignup::plant` | `roadmap.signup.fork` | completion; `ok`, `source-missing-or-id-taken`, `failed` | unexpected |
 | `AmplitudeClient::forward` | `amplitude.forward` | completion after all retries; `ok`, `http_NNN`, `rate_limited`, `failed` | unexpected transport/5xx |
 | `Collab::onMessage` subgraph/progress | `roadmap.ws.subgraph`, `roadmap.ws.progress` | completion; exact reject/skew outcome | unexpected |
 | `Collab::onMessage` rate gate | `roadmap.ws.frame` | completion; `rate_limited` | log only |
-| `GET /v1/journal/export`, `GET /v1/gym/history`, session/share/download reads | `auth.session.refresh`, `gym.close_stale` or `gym.server_call` | authentication refresh; actual lazy settlement where applicable; no export body | unexpected write failure |
+| `GET /v1/journal/export`, `GET /v1/gym/history`, session/share/download reads | `auth.session.refresh` or `gym.server_call` | authentication refresh; actual lazy settlement where applicable; no export body | unexpected write failure |
 | `PgAiUsageRepository::record` (noexcept ledger persistence, including transcription callback) | `ai.usage.record` | completion; `ok` or `failed`; no spend fields | unexpected compiled storage exception |
 
 Standalone MCP accepts unprefixed tool aliases; completions use canonical operations
