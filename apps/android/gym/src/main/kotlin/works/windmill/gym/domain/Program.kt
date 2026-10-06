@@ -53,11 +53,6 @@ object Program {
     // The TRIMMED name is compared, since that is what writes.
     fun renamed(from: String, typed: String): String? = named(typed)?.takeIf { it != from }
 
-    fun overlay(stored: List<Routine>, pending: List<Routine>): List<Routine> {
-        val local = pending.associateBy { it.id }
-        return stored.map { local[it.id] ?: it } + pending.filter { row -> stored.none { it.id == row.id } }
-    }
-
     // One at a time and in this order; null once the draft is savable.
     fun missing(draft: RoutineDraft): String? {
         if (named(draft.name) == null) return nameItToSaveIt
@@ -307,7 +302,7 @@ object TargetEntry {
     }
 }
 
-// `id` absent is a routine that does not exist yet; present, this is an edit PUT whole.
+// `id` absent is a routine that does not exist yet; present, this is an edit that saves the routine whole.
 @Serializable
 data class RoutineDraft(
     val id: String? = null,

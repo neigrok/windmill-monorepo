@@ -54,7 +54,7 @@ class RoutineSheetTests {
             EngineRoomFixture(tmp.newFolder(), scope).use { other -> runBlocking {
                 other.select("u1"); other.pull(server)
                 assertTrue(other.store.saveRoutine(RoutineDraft(name = "Push Day", entries = entries, creationId = "routine_push")) is GymResult.Ok)
-                other.training.startSession(SessionStart("remote01", other.now - 10_000, routineId = "routine_push", joinOpenSession = false))
+                other.training.startSession(SessionStart("remote01", other.now - 10_000, routineId = "routine_push"))
                 other.training.appendSet("remote01", SetWrite("remoteset", "bench-press", 50.0, 8, SetKind.Working, other.now - 9_000))
                 other.training.finishSession("remote01", other.now)
                 other.sync(server)

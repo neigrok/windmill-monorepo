@@ -22,7 +22,7 @@ import works.windmill.gym.notification.AndroidWorkoutClock
 import works.windmill.gym.notification.WorkoutNotificationHost
 import works.windmill.gym.notification.WorkoutNotifications
 import works.windmill.gym.store.GymRuntime
-import works.windmill.gym.store.SetQueue
+import works.windmill.gym.store.WorkoutControls
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.EngineTraining
 import works.windmill.gym.store.GymEngineSession
@@ -110,20 +110,19 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
             engineStorage, BuildConfig.VERSION_NAME, products = listOf("gym"))
         engineSession = GymEngineSession(engine, syncRuntime, telemetry, transport)
         auth = AuthStore(baseUrl, sessions, telemetry = telemetry, lifecycle = engineSession)
-        val training = EngineTraining(engine) {
-            (auth.status as? AuthStatus.SignedIn)?.let { GymHttp(auth.accountApi(it.user)) }
-        }
+        val training = EngineTraining(engine)
         val store = TrainingStore(
-            queue = SetQueue(File(filesDir, SetQueue.fileName), owner, telemetry = telemetry),
-            scope = scope, workoutClock = clock, workoutAuthority = { selectedOwner ->
+            controls = WorkoutControls(File(filesDir, WorkoutControls.fileName), owner, telemetry = telemetry),
+            training = training,
+            scope = scope,
+            rest = { (auth.status as? AuthStatus.SignedIn)?.let { GymHttp(auth.accountApi(it.user)) } },
+            workoutClock = clock, workoutAuthority = { selectedOwner ->
                 when (val current = sessions.localSession) {
                     LocalSession.Absent -> selectedOwner == null
                     is LocalSession.Owned -> selectedOwner == current.user.id
                     is LocalSession.Unresolved -> false
                 }
             }, telemetry = telemetry,
-            sync = { training },
-            engineTraining = training,
             localCoach = works.windmill.gym.store.LocalCoach(File(filesDir, works.windmill.gym.store.LocalCoach.fileName)),
         )
         engineSession.beforeAccountChange = store::prepareEngineTransition

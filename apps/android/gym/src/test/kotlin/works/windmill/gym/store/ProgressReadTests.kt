@@ -24,7 +24,7 @@ class ProgressReadTests {
             EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
                 other.now = room.now + 600_000
                 other.select("a")
-                other.training.startSession(SessionStart("remote01", other.now - 10_000, joinOpenSession = false))
+                other.training.startSession(SessionStart("remote01", other.now - 10_000))
                 other.training.appendSet("remote01", SetWrite("remoteset", "back-squat", 100.0, 5, SetKind.Working, other.now - 9_000))
                 other.training.finishSession("remote01", other.now - 5_000)
                 other.sync(server)

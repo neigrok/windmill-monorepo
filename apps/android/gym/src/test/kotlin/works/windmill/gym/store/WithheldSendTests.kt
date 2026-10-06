@@ -14,11 +14,11 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.AskThread
 import works.windmill.gym.net.FakeGymRest
-import works.windmill.gym.net.TrainingSyncing
+import works.windmill.gym.net.GymRest
 
 // A conversation delete the log has not answered yet: the door is held open so the store can be
 // asked what it says about a delete already committed to.
-private class HeldDelete(private val inner: FakeGymRest) : TrainingSyncing by inner {
+private class HeldDelete(private val inner: FakeGymRest) : GymRest by inner {
     val entered = CompletableDeferred<Unit>()
     val release = CompletableDeferred<Unit>()
 

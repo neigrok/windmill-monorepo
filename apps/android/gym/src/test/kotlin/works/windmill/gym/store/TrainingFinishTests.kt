@@ -18,7 +18,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.*
 import works.windmill.gym.net.FakeGymRest
-import works.windmill.gym.net.TrainingSyncing
+import works.windmill.gym.net.GymRest
 import works.windmill.sync.engine.*
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -49,7 +49,7 @@ class TrainingFinishTests {
         val server = EngineRoomFixture.server()
         val secondHistory = EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
             other.select("b")
-            other.training.startSession(SessionStart("remote01", other.now - 10_000, joinOpenSession = false))
+            other.training.startSession(SessionStart("remote01", other.now - 10_000))
             other.training.appendSet("remote01", SetWrite("remoteset", "back-squat", 80.0, 5, SetKind.Working, other.now - 9_000))
             other.training.finishSession("remote01", other.now - 5_000)
             other.sync(server)
@@ -123,7 +123,7 @@ class TrainingFinishTests {
                 room.store.logSet(60.0, 8)
                 room.now += 60_000
                 val receipt = room.store.finish() as FinishOutcome.Closed
-                other.training.startSession(SessionStart("remote01", other.now - 10_000, joinOpenSession = false))
+                other.training.startSession(SessionStart("remote01", other.now - 10_000))
                 other.training.appendSet("remote01", SetWrite("remoteset", "back-squat", 100.0, 5, SetKind.Working, other.now - 9_000))
                 other.training.finishSession("remote01", other.now - 5_000)
                 other.sync(server)
@@ -155,10 +155,10 @@ class TrainingFinishTests {
                 room.store.logSet(60.0, 8)
                 room.now += 60_000
                 room.store.finish()
-                other.training.startSession(SessionStart("remote01", other.now - 10_000, joinOpenSession = false))
+                other.training.startSession(SessionStart("remote01", other.now - 10_000))
                 other.training.appendSet("remote01", SetWrite("remoteset", "bench-press", 80.0, 5, SetKind.Working, other.now - 9_000))
                 other.training.finishSession("remote01", other.now - 8_000)
-                other.training.startSession(SessionStart("remote02", other.now - 5_000, joinOpenSession = false))
+                other.training.startSession(SessionStart("remote02", other.now - 5_000))
                 other.training.appendSet("remote02", SetWrite("remotenext", "back-squat", 100.0, 5, SetKind.Working, other.now - 4_000))
                 other.sync(server)
                 room.sync(server)
@@ -252,7 +252,7 @@ class TrainingFinishTests {
             room.store.logSet(60.0, 8)
             val logged = room.store.sets.single()
             assertEquals(FixOutcome.Corrected(logged.copy(reps = 9)), room.store.fixSet(live.id, logged.id, SetFix(reps = 9)))
-            assertEquals("the correction's own walk is still queued", listOf(logged), room.training.session(live.id)!!.sets)
+            assertEquals("the correction is in the replica at once", listOf(logged.copy(reps = 9)), room.training.session(live.id)!!.sets)
             room.select("b")
             runCurrent()
             assertEquals(emptyList<TrainingSet>(), room.store.sets)
@@ -347,7 +347,7 @@ class TrainingFinishTests {
         val fake = FakeGymRest()
         fake.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
         val gate = CompletableDeferred<Unit>()
-        val log = object : TrainingSyncing by fake {
+        val log = object : GymRest by fake {
             override suspend fun deleteThread(id: String) {
                 gate.await()
                 throw IOException("offline")

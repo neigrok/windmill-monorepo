@@ -29,7 +29,6 @@ class BodyweightWriteTests {
             room.pull(server); room.store.refreshEngine()
             assertEquals(listOf(older, saved), room.store.bodyweight)
             assertTrue(room.store.bodyweightRead)
-            assertFalse(room.store.bodyweightLoading)
         }
     }
 

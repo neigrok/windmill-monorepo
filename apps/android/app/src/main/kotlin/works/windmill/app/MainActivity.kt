@@ -260,7 +260,7 @@ private fun EngineAccountDecision(runtime: WindmillApplication) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(sync.upgradeRequired, retired) {
         if (sync.upgradeRequired || retired) runtime.telemetry.event("client_update_required",
-            mapOf("state" to "shown", "status" to if (sync.upgradeRequired) "426" else "410"))
+            mapOf("state" to "shown", "status" to "426"))
     }
     if (sync.upgradeRequired || retired) {
         var shown by remember { mutableStateOf(true) }

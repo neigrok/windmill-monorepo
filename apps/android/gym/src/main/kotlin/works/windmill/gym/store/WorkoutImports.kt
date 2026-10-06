@@ -52,6 +52,14 @@ data class OwedSet(
     val step: Owed get() = if (attempted) Owed.Append else write
 }
 
+// What an owed set asks of the account.
+@Serializable
+enum class Owed {
+    Append,     // the account has never seen this row
+    Fix,        // the account holds this row, and this phone holds numbers it does not
+    Delete,     // the account holds this row, and this phone has taken it back
+}
+
 data class ImportRefusal(val id: String, val session: Session?, val sets: List<TrainingSet>,
     val deletedSetIds: List<String>, val code: String, val reason: String, val unrecognizedKindSetIds: List<String> = emptyList())
 

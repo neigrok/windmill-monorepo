@@ -67,7 +67,7 @@ class GymEngineSessionTests {
     private suspend fun accountWorkout(room: EngineRoomFixture, server: ModelServer) {
         room.select("A")
         room.now += 1_000_000
-        room.training.startSession(SessionStart("remote01", room.now - 10_000, joinOpenSession = false))
+        room.training.startSession(SessionStart("remote01", room.now - 10_000))
         room.training.appendSet("remote01", SetWrite("remoteset", "back-squat", 60.0, 5, SetKind.Working, room.now - 9_000))
         room.sync(server)
     }

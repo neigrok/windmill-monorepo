@@ -15,7 +15,7 @@ import works.windmill.gym.domain.ThreadProposal
 
 // The REST doors the gym keeps beside the engine: Coach conversations, session shares and the
 // connected-log credential lists. Every training read and write goes through the engine instead.
-internal class FakeGymRest : TrainingSyncing {
+internal class FakeGymRest : GymRest {
     var online = true
     val calls = mutableListOf<String>()
 

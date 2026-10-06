@@ -74,18 +74,6 @@ class NotesTests {
     }
 
     @Test
-    fun aNoteWriteCarriesBothFieldsEvenWhenTheBodyIsEmpty() {
-        assertEquals(
-            """{"title":"Tone","body":""}""",
-            WindmillJson.encodeToString(NoteWrite.serializer(), NoteWrite(title = "Tone", body = "")),
-        )
-        assertEquals(
-            """{"order":["note_b","note_a"]}""",
-            WindmillJson.encodeToString(NotesOrder.serializer(), NotesOrder(listOf("note_b", "note_a"))),
-        )
-    }
-
-    @Test
     fun aNoteReadsBackWholeAndItsMetaIsTheFirstLineThatSaysAnything() {
         val note = WindmillJson.decodeFromString(
             Note.serializer(),

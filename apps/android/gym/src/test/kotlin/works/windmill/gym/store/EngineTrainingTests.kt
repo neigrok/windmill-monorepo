@@ -5,18 +5,13 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.flow.first
-import java.io.File
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import works.windmill.gym.domain.*
-import works.windmill.platform.Account
-import works.windmill.platform.net.WindmillApi
-import works.windmill.platform.net.WindmillApiException
 import works.windmill.sync.api.*
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.RecordID
@@ -25,16 +20,8 @@ import works.windmill.sync.engine.EngineClock
 import works.windmill.sync.engine.signIn
 import works.windmill.sync.engine.signOut
 import works.windmill.sync.engine.nextPush
-import works.windmill.sync.engine.onPushResponse
-import works.windmill.sync.engine.onPullResponse
-import works.windmill.sync.engine.pullRequest
 import works.windmill.sync.engine.SyncResponse
-import works.windmill.sync.engine.RequestTiming
-import works.windmill.sync.core.ClockReading
 import works.windmill.sync.modelserver.ModelServer
-import works.windmill.sync.modelserver.GymServerRules
-import works.windmill.sync.modelserver.Credential
-import works.windmill.platform.User
 import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
 
@@ -67,7 +54,7 @@ class EngineTrainingTests {
                 other.sync(server)
             }
             room.pull(server)
-            assertEquals(listOf("Mine", "Original"), room.training.exercises().first { it.id == "exercise1" }.aliases)
+            assertEquals(listOf("Mine", "Original"), room.training.catalogue().first { it.id == "exercise1" }.aliases)
             room.training.renameExercise("exercise1", "Phone name")
             assertEquals(listOf("Phone name", "Elsewhere", "Mine", "Original"), room.training.renameExercise("exercise1", "Final").aliases)
         }
@@ -210,7 +197,7 @@ class EngineTrainingTests {
             runCurrent(); server.refuse(code = "stale"); room.sync(server)
             withContext(Dispatchers.IO) { withTimeout(2_000) { room.engine.notices("gym").notices.first { it.isNotEmpty() } } }
             advanceTimeBy(25); runCurrent()
-            assertTrue(decision.await().exceptionOrNull() is WindmillApiException.Refused)
+            assertEquals("stale", (decision.await().exceptionOrNull() as TrainingRefused).code)
             assertEquals(ProposalState.Pending, room.training.proposal("proposal1")!!.state)
             assertEquals("Original", room.training.routine("routine1")!!.name)
         }
@@ -225,8 +212,8 @@ class EngineTrainingTests {
             val queued = room.outbox()
             when (ending) {
                 "cancel" -> { decision.cancelAndJoin(); assertTrue(decision.isCancelled) }
-                "account" -> { room.select(null); advanceTimeBy(25); runCurrent(); assertTrue(decision.await().exceptionOrNull() is WindmillApiException.Refused) }
-                else -> { advanceTimeBy(15_001); runCurrent(); assertTrue(decision.await().exceptionOrNull() is WindmillApiException.Offline) }
+                "account" -> { room.select(null); advanceTimeBy(25); runCurrent(); assertEquals("account-changed", (decision.await().exceptionOrNull() as TrainingRefused).code) }
+                else -> { advanceTimeBy(15_001); runCurrent(); assertEquals(TrainingUnanswered, decision.await().exceptionOrNull()) }
             }
             assertEquals(queued, room.outbox())
             if (ending != "account") {
@@ -239,7 +226,7 @@ class EngineTrainingTests {
     @Test fun routineEditsPreserveUnownedFieldsByMovementWhileTargetsAndOrderComeFromTheDraft() = runBlocking {
         engine().use { engine ->
             seedRoutine(engine)
-            val gym = EngineTraining(engine) { null }
+            val gym = EngineTraining(engine)
             val saved = gym.replaceRoutine("routine1", RoutineWrite("routine1", "Reordered", 0, listOf(
                 RoutineEntryWrite("back-squat"), RoutineEntryWrite("bench-press", listOf(SetTarget(6, 80.0))), RoutineEntryWrite("chin-up", listOf(SetTarget(10))),
             )))
@@ -255,7 +242,7 @@ class EngineTrainingTests {
     @Test fun routineEditsNeverAcquireARevisionFromThePreservationRead() = runBlocking {
         engine().use { engine ->
             seedRoutine(engine)
-            val gym = EngineTraining(engine) { null }
+            val gym = EngineTraining(engine)
             gym.replaceRoutine("routine1", RoutineWrite("routine1", "Renamed", 0, listOf(RoutineEntryWrite("back-squat"))))
             val outbox = engine.snapshot().member("replicas").arr().first().member("outbox").arr()
             assertTrue(outbox.all { it["guards"] == null || it["guards"]!!.arr().none { guard -> guard["field"] == Json.of("revision") } })
@@ -265,7 +252,7 @@ class EngineTrainingTests {
     @Test fun aFailedRoutinePreservationReadNeverSendsAReplacement() = runBlocking {
         engine().use { engine ->
             seedRoutine(engine)
-            val gym = EngineTraining(engine) { null }
+            val gym = EngineTraining(engine)
             engine.failNextCommit()
             try { gym.replaceRoutine("routine1", RoutineWrite("routine1", "Changed", 0, listOf(RoutineEntryWrite("back-squat")))); fail("Must preserve the existing routine when storage fails.") }
             catch (_: CommitFailure) {}
@@ -275,8 +262,8 @@ class EngineTrainingTests {
     @Test fun unitWritesPreserveTheFreshServerDocumentIncludingUnownedFields() = runBlocking {
         engine().use { engine ->
             seed(engine, Gym.Types.prefs, "prefs", mapOf("units" to Json.of("kg"), "restSeconds" to Json.of(180), "restSound" to Json.of(true)))
-            val gym = EngineTraining(engine) { null }
-            assertEquals(GymPreferences(), gym.preferences())
+            val gym = EngineTraining(engine)
+            assertEquals(GymPreferences(), gym.settings())
             assertEquals(GymPreferences(units = Units.Pounds), gym.savePreferences(GymPreferences(units = Units.Pounds)))
             assertEquals(GymPreferences(), gym.savePreferences(GymPreferences()))
             engine.read(works.windmill.sync.core.ScopeRef(Gym.scope)) { reader ->
@@ -288,30 +275,30 @@ class EngineTrainingTests {
     }
     @Test fun aFailedPreferenceReadCannotReplaceTheServerDocumentWithDefaults() = runBlocking {
         engine().use { engine ->
-            val gym = EngineTraining(engine) { null }
+            val gym = EngineTraining(engine)
             gym.savePreferences(GymPreferences(units = Units.Pounds))
             engine.failNextCommit()
             try { gym.savePreferences(GymPreferences()); fail("Storage must preserve the saved preferences.") } catch (_: CommitFailure) {}
-            assertEquals(GymPreferences(units = Units.Pounds), gym.preferences())
+            assertEquals(GymPreferences(units = Units.Pounds), gym.settings())
         }
     }
     @Test fun anonymousWorkoutIsDurableInTheEngineWithoutRestAndAllIdsSurviveRestore() = runBlocking {
         val original = engine()
-        val gym = EngineTraining(original) { error("Gym data must not call REST.") }
-        gym.startSession(SessionStart("session1", now - 10_000, joinOpenSession = false))
+        val gym = EngineTraining(original)
+        gym.startSession(SessionStart("session1", now - 10_000))
         gym.appendSet("session1", SetWrite("set00001", "back-squat", 80.0, 5, SetKind.Working, now - 9_000))
         gym.finishSession("session1", now - 5_000)
         val snapshot = original.snapshot()
         original.close()
         Engine.memory(SyncSchema.registry, snapshot, clock = object : EngineClock { override fun now() = now }).use { engine ->
-            val restored = EngineTraining(engine) { null }
+            val restored = EngineTraining(engine)
             assertEquals(Session("session1", now - 10_000, now - 5_000), restored.session("session1")!!.session)
             assertEquals(listOf(TrainingSet("set00001", "back-squat", weightKg = 80.0, reps = 5, completedAtMs = now - 9_000)), restored.session("session1")!!.sets)
         }
     }
     @Test fun ambiguousAppendReplaysTheExistingIdBeforeApplyingCorrectionAndDeletion() = runBlocking {
         engine().use { engine ->
-            val gym = EngineTraining(engine) { null }
+            val gym = EngineTraining(engine)
             gym.startSession(SessionStart("session1", now - 10_000))
             val write = SetWrite("set00001", "back-squat", 80.0, 5, SetKind.Working, now - 9_000)
             gym.appendSet("session1", write)
@@ -319,10 +306,9 @@ class EngineTrainingTests {
             for ((session, collision) in listOf("session2" to write, "session1" to write.copy(exerciseId = "bench-press"),
                 "session1" to write.copy(completedAt = now - 8_000))) {
                 try { gym.appendSet(session, collision); fail("A set identity cannot acquire another immutable origin.") }
-                catch (failure: WindmillApiException.Refused) {
-                    assertEquals(409, failure.status)
-                    assertEquals("set-id-taken", failure.refusal.code)
-                    assertEquals("that set id is already used", failure.refusal.message)
+                catch (failure: TrainingRefused) {
+                    assertEquals("set-id-taken", failure.code)
+                    assertEquals("that set id is already used", failure.line)
                 }
                 assertEquals(beforeCollision, engine.snapshot())
             }
@@ -335,18 +321,22 @@ class EngineTrainingTests {
             assertEquals(emptyList<TrainingSet>(), gym.session("session1")!!.sets)
         }
     }
-    @Test fun explicitStartRefusesAndMigrationStartJoinsTheOpenWorkout() = runBlocking {
+    @Test fun aStartRefusesWhileAnotherWorkoutIsOpen() = runBlocking {
         engine().use { engine ->
-            val gym = EngineTraining(engine) { null }
-            gym.startSession(SessionStart("session1", now - 10_000, joinOpenSession = false))
-            try { gym.startSession(SessionStart("session2", now - 9_000, joinOpenSession = false)); fail("An explicit start must refuse an already open workout.") }
-            catch (failure: WindmillApiException.Refused) { assertEquals("session-already-open", failure.refusal.code) }
-            assertEquals("session1", gym.startSession(SessionStart("session2", now - 9_000, joinOpenSession = true)).id)
+            val gym = EngineTraining(engine)
+            gym.startSession(SessionStart("session1", now - 10_000))
+            val before = engine.snapshot()
+            try { gym.startSession(SessionStart("session2", now - 9_000)); fail("A start must refuse an already open workout.") }
+            catch (failure: TrainingRefused) {
+                assertEquals("session-already-open", failure.code)
+                assertEquals("A workout is already open. Finish it first.", failure.line)
+            }
+            assertEquals(before, engine.snapshot())
         }
     }
     @Test fun cursorUsesBothHalvesAndWarmupsDoNotBecomeLastTimeOrProgress() = runBlocking {
         engine().use { engine ->
-            val gym = EngineTraining(engine) { null }
+            val gym = EngineTraining(engine)
             for (id in listOf("session1", "session2")) {
                 gym.startSession(SessionStart(id, now - 10_000))
                 gym.appendSet(id, SetWrite("set0000" + id.last(), "back-squat", 80.0, 5, if (id == "session1") SetKind.Warmup else SetKind.Working, now - 9_000))
@@ -360,11 +350,11 @@ class EngineTrainingTests {
     }
     @Test fun notesReorderAtomicallyAndWeighinsKeepTheNewerRecordedAt() = runBlocking {
         engine().use { engine ->
-            val gym = EngineTraining(engine) { null }
+            val gym = EngineTraining(engine)
             gym.writeNote("note0001", NoteWrite("One", "First"))
             gym.writeNote("note0002", NoteWrite("Two", "Second"))
             val before = engine.snapshot().jcs
-            try { gym.reorderNotes(listOf("note0001")); fail("An order must name every note.") } catch (_: WindmillApiException.Refused) {}
+            try { gym.reorderNotes(listOf("note0001")); fail("An order must name every note.") } catch (_: TrainingRefused) {}
             assertEquals(before, engine.snapshot().jcs)
             assertEquals(listOf("note0002", "note0001"), gym.reorderNotes(listOf("note0002", "note0001")).map { it.id })
             gym.putBodyweight("2026-01-01", WeighInWrite(70.0, now - 1))
@@ -399,10 +389,10 @@ class EngineTrainingTests {
     @Test fun anUnreadAccountDoesNotClaimNeverLoggedOrAFirstWorkout() = runBlocking {
         engine().use { engine ->
             engine.signIn("A", mapOf("gym" to true))
-            val gym = EngineTraining(engine) { null }
-            try { gym.lastSets(); fail("An unread account cannot say never logged.") } catch (_: WindmillApiException.Offline) {}
-            try { gym.lastTime("bench-press"); fail("An unread account cannot invent the last workout.") } catch (_: WindmillApiException.Offline) {}
-            try { gym.sessions(50, null, null); fail("An unread account cannot say first workout.") } catch (_: WindmillApiException.Offline) {}
+            val gym = EngineTraining(engine)
+            try { gym.lastSets(); fail("An unread account cannot say never logged.") } catch (_: TrainingUnanswered) {}
+            try { gym.lastTime("bench-press"); fail("An unread account cannot invent the last workout.") } catch (_: TrainingUnanswered) {}
+            try { gym.sessions(50, null, null); fail("An unread account cannot say first workout.") } catch (_: TrainingUnanswered) {}
         }
     }
     @Test fun addAndDiscardThenKeepSignoutCannotResurrectAnOldAnonymousMirror() = runTest {
@@ -411,7 +401,7 @@ class EngineTrainingTests {
             val session = (room.store.start() as GymResult.Ok).value
             room.store.choose("back-squat")
             val offer = room.store.notification.value!!.offer!!
-            assertTrue(room.store.acceptSet(LogSetCommand(offer.key, offer.id), scheduleDelivery = false) is LogSetAcceptance.Accepted)
+            assertTrue(room.store.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Accepted)
             assertEquals(1, room.training.session(session.id)!!.sets.size)
             room.store.prepareEngineTransition()
             room.engine.signIn("A", mapOf("gym" to true), mapOf("gym" to choice))
@@ -422,13 +412,12 @@ class EngineTrainingTests {
             room.store.connect(room.account(null))
             assertNull(room.store.session)
             assertEquals(emptyList<SessionSummary>(), room.store.allSessions)
-            room.store.flushPendingSets()
             assertEquals(emptyList<SessionDetail>(), room.training.details())
         }
     }
     @Test fun productionActionContextCopiesNestingAcrossHopsAndIsolatesIndependentEntriesAfterCancel() = runBlocking {
         engine().use { engine ->
-            val gym = EngineTraining(engine) { null }
+            val gym = EngineTraining(engine)
             withGymActionContext { parent ->
                 parent.insideRun = true
                 try {
@@ -450,7 +439,7 @@ class EngineTrainingTests {
                 async(Dispatchers.Default) { gym.createExercise(ExerciseWrite("exercise2", "Two", "isolation", "bodyweight")) }.await()
             }
             withGymActionContext { assertFalse(it.insideRun) }
-            assertEquals(listOf("exercise1", "exercise2"), gym.exercises().filter { it.custom }.map { it.id }.sorted())
+            assertEquals(listOf("exercise1", "exercise2"), gym.catalogue().filter { it.custom }.map { it.id }.sorted())
         }
     }
 

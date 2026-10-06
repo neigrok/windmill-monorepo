@@ -197,7 +197,7 @@ class SettingsScreenTests {
             EngineRoomFixture(tmp.newFolder(), scope).use { remote ->
                 remote.select("A")
                 remote.now += 1_000_000
-                remote.training.startSession(works.windmill.gym.domain.SessionStart("remote01", remote.now - 10_000, joinOpenSession = false))
+                remote.training.startSession(works.windmill.gym.domain.SessionStart("remote01", remote.now - 10_000))
                 remote.training.appendSet("remote01", works.windmill.gym.domain.SetWrite("remoteset", "back-squat", 60.0, 5,
                     works.windmill.gym.domain.SetKind.Working, remote.now - 9_000))
                 remote.sync(server)
@@ -210,7 +210,6 @@ class SettingsScreenTests {
                         val logged = room.store.sets.single()
                         (room.store.fixSet(source.id, logged.id, SetFix(note = "Saved effort")) as FixOutcome.Corrected).set
                     }
-                    room.store.flushPendingSets()
                     room.now = remote.now
                     room.training.prepareAdoption()
                     room.select("A")
@@ -254,7 +253,6 @@ class SettingsScreenTests {
                 repeat(201) { room.store.logSet(82.5, 5) }
                 val last = room.store.sets.last()
                 assertTrue(room.store.fixSet(source.id, last.id, SetFix(note = "Last set")) is FixOutcome.Corrected)
-                room.store.flushPendingSets()
                 assertTrue(room.store.finish() is FinishOutcome.Closed)
                 val original = requireNotNull(room.training.session(source.id))
                 assertEquals(201, original.sets.size)

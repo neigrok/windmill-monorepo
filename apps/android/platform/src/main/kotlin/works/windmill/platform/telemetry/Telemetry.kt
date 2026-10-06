@@ -22,7 +22,7 @@ object TelemetryPolicy {
     private val label = Regex("[a-zA-Z0-9_.:/-]{1,80}")
     private val eventLabel = Regex("[a-z0-9_]{1,64}")
     private val keys = setOf(
-        "operation", "outcome", "failure_kind", "status", "storage", "cap", "action",
+        "operation", "outcome", "failure_kind", "status", "cap", "action",
         "method", "route", "state", "release", "environment", "platform",
         "app_version", "build", "duration_ms", "network_phase", "screen",
     )

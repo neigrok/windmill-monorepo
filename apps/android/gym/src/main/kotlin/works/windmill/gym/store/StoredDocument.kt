@@ -1,11 +1,7 @@
 package works.windmill.gym.store
 
 import java.io.File
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import kotlinx.serialization.DeserializationStrategy
-import kotlinx.serialization.SerializationStrategy
 import kotlinx.serialization.SerializationException
 import works.windmill.platform.telemetry.Telemetry
 import kotlinx.serialization.json.Json
@@ -22,10 +18,10 @@ internal val diskJson = Json {
     explicitNulls = false
 }
 
-// How every device store reads its file: as a tree first, the previous app version's shapes
-// rewritten into this one's, then one item at a time — so a row this build cannot read costs that
-// row and never the shelf, the queue or the copy around it. The rewritten document is not written
-// back here; the next flush writes it in this version's shape.
+// How a device document is read: as a tree first, the previous app version's shapes rewritten into
+// this one's, then one item at a time — so a row this build cannot read costs that row and never
+// the document around it. The rewritten document is not written back here; the next flush writes it
+// in this version's shape.
 internal class StoredDocument(private val file: File, private val telemetry: Telemetry) {
     fun tree(): JsonObject? {
         if (!file.exists()) return null
@@ -36,23 +32,6 @@ internal class StoredDocument(private val file: File, private val telemetry: Tel
         } catch (error: Exception) {
             telemetry.failure("gym.storage.read", error)
             null
-        }
-    }
-
-    fun <T> write(value: T, strategy: SerializationStrategy<T>) {
-        try {
-            val text = diskJson.encodeToString(strategy, value)
-            file.parentFile?.mkdirs()
-            val temporary = File(file.parentFile, file.name + ".tmp")
-            temporary.writeText(text)
-            try {
-                Files.move(temporary.toPath(), file.toPath(),
-                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-            } catch (unsupported: AtomicMoveNotSupportedException) {
-                Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            }
-        } catch (error: Exception) {
-            telemetry.failure("gym.storage.write", error)
         }
     }
 

@@ -1,6 +1,5 @@
 package works.windmill.gym.net
 
-import java.io.IOException
 import kotlinx.serialization.Serializable
 import okhttp3.MediaType.Companion.toMediaType
 import kotlinx.coroutines.ensureActive
@@ -28,13 +27,12 @@ import works.windmill.gym.domain.AskThread
 import works.windmill.gym.domain.McpKey
 import works.windmill.gym.domain.OAuthGrant
 import works.windmill.gym.domain.SessionShare
-import works.windmill.gym.store.RefusalFacts
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
 
 
 // Pass every path WHOLE, query included: appending it as a path segment percent-encodes `?` and `&`.
-class GymHttp(private val api: WindmillApi) : TrainingSyncing {
+class GymHttp(private val api: WindmillApi) : GymRest {
     override suspend fun share(sessionId: String): SessionShare =
         api.send<SessionShare>("POST", "/v1/gym/sessions/$sessionId/share", operation = "gym_share")
 
@@ -142,25 +140,6 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
 
     override suspend fun mcpKeys(): List<McpKey> =
         api.get<Keys>("/v1/mcp-keys", operation = "gym_mcp_keys").keys
-
-    private fun escaped(value: String): String = buildString {
-        for (byte in value.toByteArray(Charsets.UTF_8)) {
-            val code = byte.toInt() and 0xFF
-            val char = code.toChar()
-            if (char in 'A'..'Z' || char in 'a'..'z' || char in '0'..'9') append(char)
-            else append("%%%02X".format(code))
-        }
-    }
-}
-
-// No facts reads as Retry: a set is never dropped on a guess.
-fun RefusalFacts(refusing: Throwable): RefusalFacts = when (refusing) {
-    is WindmillApiException.Offline -> RefusalFacts(offline = true)
-    is IOException -> RefusalFacts(offline = true)
-    is WindmillApiException.Malformed -> RefusalFacts(malformed = true)
-    is WindmillApiException.Refused -> RefusalFacts(
-        status = refusing.status, code = refusing.refusal.code, sentence = refusing.refusal.message)
-    else -> RefusalFacts()
 }
 
 @Serializable

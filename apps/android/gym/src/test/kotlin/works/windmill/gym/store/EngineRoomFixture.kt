@@ -22,7 +22,7 @@ internal class EngineRoomFixture(
     val directory: File,
     val scope: CoroutineScope,
     snapshot: Json? = null,
-    private val rest: works.windmill.gym.net.TrainingSyncing? = null,
+    private val rest: works.windmill.gym.net.GymRest? = null,
     private val undoWindowMs: Long = Withheld.windowMs,
     private val telemetry: Telemetry = Telemetry.None,
     private val workoutClock: WorkoutClock? = null,
@@ -52,16 +52,15 @@ internal class EngineRoomFixture(
     val engine = Engine.memory(SyncSchema.registry, snapshot, clock = object : EngineClock { override fun now() = now },
         commandResultWrites = WorkoutImports.commandResultWrites, pendingDeviceWork = WorkoutImports.pendingDeviceWork,
         rewriteDeviceValue = WorkoutImports.rewriteDeviceValue)
-    // As in the application: the REST doors answer only while an account is signed in.
-    val training = EngineTraining(engine) { rest.takeIf { selected != null } }
+    val training = EngineTraining(engine)
     val controlsFile = File(directory, "control.json")
     val store = freshStore()
-    fun freshStore(scope: CoroutineScope = this.scope) = TrainingStore(queue = SetQueue(controlsFile, write = controlsWrite), scope = scope,
-        now = { ++now }, mintSession = { "session${(++nextSession).toString().padStart(2, '0')}" },
+    // As in the application: the REST doors answer only while an account is signed in.
+    fun freshStore(scope: CoroutineScope = this.scope) = TrainingStore(WorkoutControls(controlsFile, write = controlsWrite), training,
+        scope, rest = { rest.takeIf { selected != null } }, now = { ++now }, mintSession = { "session${(++nextSession).toString().padStart(2, '0')}" },
         mintSet = { "set${(++nextSet).toString().padStart(5, '0')}" }, mintRoutine = mintRoutine, mintExercise = mintExercise,
         undoWindowMs = undoWindowMs, workoutClock = workoutClock ?: WorkoutClock { val at = ++now; WorkoutMoment(at, at, "local") },
-        workoutAuthority = workoutAuthority, telemetry = telemetry, elapsedNanos = elapsedNanos, localCoach = localCoach,
-        engineTraining = training, sync = { training })
+        workoutAuthority = workoutAuthority, telemetry = telemetry, elapsedNanos = elapsedNanos, localCoach = localCoach)
     fun account(id: String? = selected) = Account(WindmillApi("https://windmill.works".toHttpUrl(), { null }),
         id?.let { User(it, "$it@example.com") }, verified = true)
     suspend fun select(id: String?) {

@@ -3,7 +3,6 @@ package works.windmill.gym.store
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -105,7 +104,6 @@ class LogSetDeliveryTests {
             room.store.logSet(weightKg = 82.5, reps = 5)
             val set = room.store.sets.single()
             assertTrue(room.store.fixSet(sessionId, set.id, SetFix(weightKg = 85.0)) is FixOutcome.Corrected)
-            runCurrent()
             assertEquals(listOf(85.0), room.store.sets.map { it.weightKg })
             Triple(sessionId, set.id, room.engine.snapshot())
         }
@@ -131,7 +129,6 @@ class LogSetDeliveryTests {
             room.sync(server)
             val first = room.store.sets.first()
             assertNull(room.store.deleteSet(sessionId, first.id))
-            runCurrent()
             assertEquals(listOf(90.0), room.store.sets.map { it.weightKg })
             sessionId to room.engine.snapshot()
         }

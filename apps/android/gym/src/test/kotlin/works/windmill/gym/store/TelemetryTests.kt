@@ -1,7 +1,6 @@
 package works.windmill.gym.store
 
 import java.io.File
-import java.io.IOException
 import java.net.SocketTimeoutException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
@@ -119,19 +118,19 @@ class TelemetryTests {
             store.choose("bench-press")
             val offered = requireNotNull(store.notification.value?.offer)
             val command = LogSetCommand(offered.key, offered.id)
-            assertTrue(store.acceptSet(command, scheduleDelivery = false) is LogSetAcceptance.Accepted)
-            assertEquals(LogSetAcceptance.Stale, store.acceptSet(command, scheduleDelivery = false))
+            assertTrue(store.acceptSet(command) is LogSetAcceptance.Accepted)
+            assertEquals(LogSetAcceptance.Stale, store.acceptSet(command))
             assertTrue(store.finish() is FinishOutcome.Closed)
             assertEquals(listOf(
-                "gym_session_started" to mapOf("storage" to "engine"),
+                "gym_session_started" to emptyMap<String, String>(),
                 "gym_set_logged" to emptyMap<String, String>(),
-                "gym_session_finished" to mapOf("storage" to "engine"),
+                "gym_session_finished" to emptyMap<String, String>(),
             ), telemetry.events)
             assertEquals(emptyList<Pair<String, Throwable>>(), telemetry.failures)
         }
     }
 
-    @Test fun absentStorageIsNormalButUnreadableAndUnwritableDocumentsAreReported() {
+    @Test fun absentStorageIsNormalButUnreadableDocumentsAreReported() {
         val telemetry = Recorder()
         val file = File(tmp.root, "document")
         val storage = StoredDocument(file, telemetry)
@@ -142,10 +141,6 @@ class TelemetryTests {
         assertEquals(listOf("gym.storage.read"), telemetry.failures.map { it.first })
         assertNull(storage.one(kotlinx.serialization.json.JsonObject(emptyMap()), Session.serializer()))
         assertEquals(listOf("gym.storage.read", "gym.storage.decode"), telemetry.failures.map { it.first })
-        val blocker = File(tmp.root, "blocked").apply { writeText("file, not a directory") }
-        StoredDocument(File(blocker, "nested"), telemetry).write(Session("private-id", 1), Session.serializer())
-        assertEquals(listOf("gym.storage.read", "gym.storage.decode", "gym.storage.write"), telemetry.failures.map { it.first })
-        assertTrue(telemetry.failures.last().second is IOException)
         assertEquals(emptyList<Pair<String, Map<String, String>>>(), telemetry.events)
     }
 }

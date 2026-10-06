@@ -29,7 +29,7 @@ import org.robolectric.annotation.Config
 import works.windmill.gym.domain.AskThread
 import works.windmill.gym.domain.Threads
 import works.windmill.gym.net.FakeGymRest
-import works.windmill.gym.net.TrainingSyncing
+import works.windmill.gym.net.GymRest
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.Withheld
 import works.windmill.gym.ui.GymMaterial
@@ -68,7 +68,7 @@ class RefusedSettleTests {
         val server = FakeGymRest()
         server.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
         var deletes = 0
-        val log = object : TrainingSyncing by server {
+        val log = object : GymRest by server {
             override suspend fun deleteThread(id: String) {
                 deletes += 1
                 throw IOException("the log is down")

@@ -56,12 +56,12 @@ class WorkoutImportsTests {
     // The account holds an open workout of its own before the phone signs in.
     private suspend fun accountWorkout(server: ModelServer) = engine().use { remote ->
         remote.signIn("A", emptyMap()); pull(remote, server)
-        EngineTraining(remote) { null }.startSession(SessionStart("existing1", 500)); push(remote, server)
+        EngineTraining(remote).startSession(SessionStart("existing1", 500)); push(remote, server)
     }
 
     @Test fun repackagingLinkedAnonymousHistoryRollsBackOnCrashAndResumesWithOneDurableImport() = runBlocking {
         engine().use { local ->
-            val gym = EngineTraining(local) { null }
+            val gym = EngineTraining(local)
             val exercise = gym.createExercise(ExerciseWrite("exercise1", "Custom", "isolation", "machine"))
             val routine = gym.createRoutine(RoutineWrite("routine01", "Original", 0, listOf(RoutineEntryWrite(exercise.id, listOf(SetTarget(5, 60.0))))))
             val row = finished().copy(session = finished().session.copy(routineId = routine.id, plan = PlanSnapshot(routine)),
@@ -88,7 +88,7 @@ class WorkoutImportsTests {
         val server = EngineRoomFixture.server()
         accountWorkout(server)
         engine().use { local ->
-            val gym = EngineTraining(local) { null }
+            val gym = EngineTraining(local)
             gym.startSession(SessionStart("session01", 1_000))
             listOf("original1" to 2_000L, "zzzzzzzz" to 2_500L, "aaaaaaaa" to 2_500L, "fourth01" to 3_000L).forEach { (id, at) ->
                 gym.appendSet("session01", SetWrite(id, "back-squat", 60.0, 5, SetKind.Working, at))
@@ -106,7 +106,7 @@ class WorkoutImportsTests {
                 assertEquals("gym.importSession", command.member("name").str()); assertEquals(3_000L, command.member("args").member("finishedAt").long())
                 assertEquals(listOf("original1", "aaaaaaaa", "zzzzzzzz", "fourth01"), command.member("args").member("sets").arr().map { it.member("id").str() })
                 assertTrue(imports.operations().isEmpty()); push(reopened, server)
-                val actual = EngineTraining(reopened) { null }
+                val actual = EngineTraining(reopened)
                 assertTrue(actual.session("existing1")!!.session.isOpen)
                 assertEquals(listOf(1, 2, 3, 4), actual.session("session01")!!.sets.map { it.setNumber })
             }
@@ -117,7 +117,7 @@ class WorkoutImportsTests {
         val server = EngineRoomFixture.server()
         accountWorkout(server)
         val (set, refused) = engine().use { local ->
-            val gym = EngineTraining(local) { null }
+            val gym = EngineTraining(local)
             gym.startSession(SessionStart("session01", 1_000))
             gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, SetKind.Working, 2_000))
             gym.fixSet("session01", "set00001", SetFix(note = "n".repeat(3_000)))
@@ -146,7 +146,7 @@ class WorkoutImportsTests {
 
     @Test fun refreshedFinishedSnapshotsPreserveExplicitCorrectionsToDefaultValues() = runBlocking {
         engine().use { local ->
-            val gym = EngineTraining(local) { null }; gym.createExercise(ExerciseWrite("exercise1", "Custom", "isolation", "machine"))
+            val gym = EngineTraining(local); gym.createExercise(ExerciseWrite("exercise1", "Custom", "isolation", "machine"))
             gym.startSession(SessionStart("session01", 1_000))
             gym.appendSet("session01", SetWrite("set00001", "exercise1", 60.0, 5, SetKind.Warmup, 2_000))
             gym.fixSet("session01", "set00001", SetFix(rpe = 9.0, rpeNamed = true, note = "Before"))
@@ -246,7 +246,7 @@ class WorkoutImportsTests {
 
     @Test fun refusalOfARoutineAtomicallyRetainsItsFoldedImportWithAVisibleRetryReason() = runBlocking {
         engine().use { engine ->
-            val routine = EngineTraining(engine) { null }.createRoutine(RoutineWrite("routine01", "Original", 0,
+            val routine = EngineTraining(engine).createRoutine(RoutineWrite("routine01", "Original", 0,
                 listOf(RoutineEntryWrite("back-squat", listOf(SetTarget(5, 60.0))))))
             val row = finished().copy(session = finished().session.copy(routineId = routine.id, plan = PlanSnapshot(routine)))
             WorkoutImports(engine).prepare(row)

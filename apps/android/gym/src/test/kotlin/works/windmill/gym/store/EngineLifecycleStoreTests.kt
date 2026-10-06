@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import kotlin.time.Duration.Companion.minutes
 import java.io.File
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -34,10 +35,10 @@ class EngineLifecycleStoreTests {
         rewriteDeviceValue = WorkoutImports.rewriteDeviceValue)
     private data class Room(val gym: EngineTraining, val store: TrainingStore)
     private fun TestScope.room(engine: Engine): Room {
-        val gym = EngineTraining(engine) { error("Gym training must use the engine.") }
-        return Room(gym, TrainingStore(queue = SetQueue(File(tmp.root, "control.json")), scope = backgroundScope,
+        val gym = EngineTraining(engine)
+        return Room(gym, TrainingStore(WorkoutControls(File(tmp.root, "control.json")), gym, backgroundScope,
             now = { ++clockMs }, mintSession = { "session${++nextSession}" }, mintSet = { "set${(++nextSet).toString().padStart(5, '0')}" },
-            undoWindowMs = 0, sync = { gym }, engineTraining = gym))
+            undoWindowMs = 0))
     }
     private suspend fun Room.workout(weight: Double = 82.5, movement: String = "bench-press", finish: Boolean = true): Session {
         val opened = (store.start() as GymResult.Ok).value
@@ -155,9 +156,10 @@ class EngineLifecycleStoreTests {
         }
     }
 
-    @Test fun tooManyImportedSetsRefuseTheWholeWorkoutWithoutDroppingAnyRows() = runTest {
+    // Two hundred and one engine commits make this the slowest store test; it keeps a generous clock.
+    @Test fun tooManyImportedSetsRefuseTheWholeWorkoutWithoutDroppingAnyRows() = runTest(timeout = 5.minutes) {
         engine().use { engine ->
-            val gym = EngineTraining(engine) { null }
+            val gym = EngineTraining(engine)
             gym.startSession(SessionStart("session1", clockMs - 300_000))
             repeat(201) { gym.appendSet("session1", SetWrite("set${it.toString().padStart(5, '0')}", "bench-press", 82.5, 5, SetKind.Working, clockMs - 299_000 + it)) }
             gym.finishSession("session1", clockMs - 1_000)
@@ -170,7 +172,7 @@ class EngineLifecycleStoreTests {
                 assertTrue(reader.drawn(Gym.Types.set).isEmpty())
                 assertTrue(reader.stored(Gym.Types.set).isEmpty())
             }
-            assertEquals(SessionDetail(row.session, row.sets), EngineTraining(engine) { null }.session(row.session.id))
+            assertEquals(SessionDetail(row.session, row.sets), EngineTraining(engine).session(row.session.id))
             assertTrue(outbox(engine).isEmpty())
         }
     }
@@ -252,9 +254,9 @@ class EngineLifecycleStoreTests {
             val before = room.gym.session(session.id)
             engine.failNextCommit()
             assertNotNull(room.store.savePreferences(GymPreferences(confirmSound = true)))
-            assertEquals(before, room.gym.session(session.id)); assertFalse(room.gym.preferences().confirmSound)
+            assertEquals(before, room.gym.session(session.id)); assertFalse(room.gym.settings().confirmSound)
             assertNull(room.store.savePreferences(GymPreferences(confirmSound = true)))
-            assertEquals(before, room.gym.session(session.id)); assertTrue(room.gym.preferences().confirmSound)
+            assertEquals(before, room.gym.session(session.id)); assertTrue(room.gym.settings().confirmSound)
         }
     }
 

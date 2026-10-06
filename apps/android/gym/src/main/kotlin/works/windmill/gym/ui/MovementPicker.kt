@@ -169,7 +169,6 @@ object PickerOptions {
         lastSets: Map<String, LastSet>? = null,
         nowMs: Long = 0,
         sessions: List<SessionSummary> = emptyList(),
-        catalogUnread: Boolean = false,
     ): Result {
         val term = query.trim()
         val available = catalog
@@ -188,7 +187,7 @@ object PickerOptions {
             }
         val matches = if (term.isEmpty()) rest else rest.take(shown)
 
-        val unread = if (!catalogUnread && catalog.isNotEmpty()) null else PickerOptions.catalogUnread
+        val unread = if (catalog.isNotEmpty()) null else PickerOptions.catalogUnread
         val result = Result(six.map { it.copy(selected = it.id in taken) },
             matches.map { it.copy(selected = it.id in taken) }, unread, empty = null)
         if (result.hasRows || unread != null) return result
@@ -255,7 +254,6 @@ fun MovementPicker(
     subtitle: String? = null,
     firstSession: Boolean = false,
     signedIn: Boolean = false,
-    catalogUnread: Boolean = false,
     onClose: (() -> Unit)? = null,
     onBuildRoutine: () -> Unit = {},
     state: MovementPickerState = rememberMovementPickerState(),
@@ -278,7 +276,7 @@ fun MovementPicker(
     val held = remember { mutableStateOf(emptyList<SessionSummary>()) }
     if (held.value.isEmpty()) held.value = sessions.take(PickerOptions.trainedWindow)
     val options = PickerOptions.matching(state.query, catalog, taken, lastSets, nowMs,
-        sessions = held.value, catalogUnread = catalogUnread)
+        sessions = held.value)
 
     Column(modifier.fillMaxWidth().imePadding(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

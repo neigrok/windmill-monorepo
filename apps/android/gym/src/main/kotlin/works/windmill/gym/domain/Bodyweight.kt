@@ -19,9 +19,7 @@ data class WeighIn(val dateLocal: String, val weightKg: Double, val recordedAt: 
     val date: LocalDate get() = LocalDate.parse(dateLocal)
 }
 
-// PUT /v1/gym/bodyweight/{dateLocal}. Both fields ride explicitly: encodeDefaults is off and neither
-// has a default to omit.
-@Serializable
+// A weigh-in as this phone saves it for its date.
 data class WeighInWrite(val weightKg: Double, val recordedAt: Long)
 
 // What the field said, or the one refusal it met first.

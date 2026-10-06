@@ -1,6 +1,5 @@
 package works.windmill.gym.store
 
-import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
@@ -774,7 +773,7 @@ class TrainingStoreTests {
             room.select("alice"); room.pull(EngineRoomFixture.server())
             repeat(60) { index ->
                 val id = "session${index.toString().padStart(3, '0')}"
-                room.training.startSession(SessionStart(id, room.now - 100_000 + index * 1_000L, joinOpenSession = false))
+                room.training.startSession(SessionStart(id, room.now - 100_000 + index * 1_000L))
                 room.training.finishSession(id, room.now - 99_500 + index * 1_000L)
             }
             room.store.connect(room.account())
@@ -802,13 +801,13 @@ class TrainingStoreTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             repeat(60) { index ->
                 val id = "session${index.toString().padStart(3, '0')}"
-                room.training.startSession(SessionStart(id, room.now - 100000 + index * 1000L, joinOpenSession = false))
+                room.training.startSession(SessionStart(id, room.now - 100000 + index * 1000L))
                 room.training.finishSession(id, room.now - 99500 + index * 1000L)
             }
             room.select(null); room.store.loadOlder()
             assertEquals(60, room.store.logged.size)
             assertEquals(Older.End, room.store.older)
-            room.training.startSession(SessionStart("sessionShelf", room.now - 1000, joinOpenSession = false))
+            room.training.startSession(SessionStart("sessionShelf", room.now - 1000))
             room.training.appendSet("sessionShelf", SetWrite("setShelf", "bench-press", 100.0, 5, SetKind.Working, room.now - 900))
             room.training.finishSession("sessionShelf", room.now - 500)
             room.store.refreshEngine()
@@ -1055,7 +1054,7 @@ class TrainingStoreTests {
             repeat(60) { index ->
                 val id = "session${index.toString().padStart(3, '0')}"
                 val startedAt = room.now - 100_000 + index * 1_000L
-                room.training.startSession(SessionStart(id, startedAt, joinOpenSession = false))
+                room.training.startSession(SessionStart(id, startedAt))
                 room.training.appendSet(id, SetWrite("set${index.toString().padStart(5, '0')}", "bench-press", 100.0, 5,
                     SetKind.Working, startedAt + 100))
                 room.training.finishSession(id, startedAt + 500)

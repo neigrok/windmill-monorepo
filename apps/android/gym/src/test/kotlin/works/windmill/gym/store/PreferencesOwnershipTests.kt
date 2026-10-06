@@ -12,7 +12,7 @@ import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.McpKey
 import works.windmill.gym.net.FakeGymRest
-import works.windmill.gym.net.TrainingSyncing
+import works.windmill.gym.net.GymRest
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class PreferencesOwnershipTests {
@@ -71,7 +71,7 @@ class PreferencesOwnershipTests {
         val release = CompletableDeferred<Unit>()
         var reads = 0
         val server = FakeGymRest()
-        val boundary = object : TrainingSyncing by server {
+        val boundary = object : GymRest by server {
             override suspend fun mcpKeys(): List<McpKey> {
                 if (++reads == 1) { release.await(); return listOf(old) }
                 return listOf(latest)

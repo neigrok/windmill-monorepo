@@ -2,7 +2,6 @@ package works.windmill.gym.domain
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -64,10 +63,6 @@ class TrainingWireTests {
         val line = json.decodeFromString(RoutineEntry.serializer(),
                                          """{"position":3,"exerciseId":"chin-up","sets":[{"weightKg":100}]}""")
         assertEquals(RoutineEntry(position = 3, exerciseId = "chin-up", sets = listOf(SetTarget(weightKg = 100.0))), line)
-
-        assertEquals("""{"exerciseId":"chin-up","sets":[{"weightKg":100.0}]}""",
-            WindmillJson.encodeToString(RoutineEntryWrite.serializer(),
-                                        RoutineEntryWrite(exerciseId = "chin-up", sets = listOf(SetTarget(weightKg = 100.0)))))
     }
 
     @Test
@@ -97,8 +92,6 @@ class TrainingWireTests {
             WindmillJson.encodeToString(RoutineEntry.serializer(), RoutineEntry(position = 2, exerciseId = "face-pull")))
         assertEquals("""{"exerciseId":"face-pull"}""",
             WindmillJson.encodeToString(PlanEntry.serializer(), PlanEntry(exerciseId = "face-pull")))
-        assertEquals("""{"exerciseId":"face-pull"}""",
-            WindmillJson.encodeToString(RoutineEntryWrite.serializer(), RoutineEntryWrite(exerciseId = "face-pull")))
         assertEquals("{}", WindmillJson.encodeToString(ProposalTargets.serializer(), ProposalTargets()))
 
         assertTrue(WindmillJson.decodeFromString(RoutineEntry.serializer(), """{"position":2,"exerciseId":"face-pull"}""").isOpen)
@@ -150,14 +143,6 @@ class TrainingWireTests {
         assertNull("a set this device minted has no number until the log gives it one", written["setNumber"])
         assertNull(written["rpe"])
         assertEquals(1_754_300_000_000, written["completedAt"]?.jsonPrimitive?.long)
-
-        val start = fields(SessionStart(id = "ses_1", startedAt = 1))
-        assertNull("an ad-hoc session names no routine, and says so by silence", start["routineId"])
-        assertNull("a start that declines to state the flag omits it — and an omitted flag IS the " +
-            "join, which is why every real start on this phone states false", start["joinOpenSession"])
-
-        val stated = fields(SessionStart(id = "ses_1", startedAt = 1, joinOpenSession = false))
-        assertEquals(false, stated["joinOpenSession"]?.jsonPrimitive?.boolean)
     }
 
     @Test

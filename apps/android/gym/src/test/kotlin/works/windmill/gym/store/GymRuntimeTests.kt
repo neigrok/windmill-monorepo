@@ -268,7 +268,7 @@ class GymRuntimeTests {
                 assertNull(runtime.notification.value?.offer)
                 assertEquals("the engine never holds a set the phone could not save", emptyList<TrainingSet>(),
                     room.training.openWorkout()!!.sets)
-                val reopened = SetQueue(room.controlsFile)
+                val reopened = WorkoutControls(room.controlsFile)
                 if (!afterReplace) {
                     assertEquals(before, room.controlsFile.readText())
                     assertEquals(emptyList<TrainingSet>(), reopened.sets)
@@ -329,7 +329,7 @@ class GymRuntimeTests {
             assertEquals(101_000L, saved.session.finishedAtMs)
             assertEquals(listOf(offer.id), saved.sets.map { it.id })
             assertNull(cold.training.openWorkout())
-            assertNull(SetQueue(cold.controlsFile).session)
+            assertNull(WorkoutControls(cold.controlsFile).session)
         }
     }
 }

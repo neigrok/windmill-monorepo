@@ -47,7 +47,7 @@ import works.windmill.gym.domain.LogLevel
 import works.windmill.gym.domain.McpKey
 import works.windmill.gym.domain.OAuthGrant
 import works.windmill.gym.net.FakeGymRest
-import works.windmill.gym.net.TrainingSyncing
+import works.windmill.gym.net.GymRest
 import kotlinx.coroutines.CompletableDeferred
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.TrainingStore
@@ -84,7 +84,7 @@ class ConnectedLogScreenTests {
     @After
     fun closeRooms() = rooms.forEach(EngineRoomFixture::close)
 
-    private fun room(scope: CoroutineScope, rest: TrainingSyncing, signedIn: Boolean): EngineRoomFixture =
+    private fun room(scope: CoroutineScope, rest: GymRest, signedIn: Boolean): EngineRoomFixture =
         EngineRoomFixture(tmp.newFolder(), scope, rest = rest).also { room ->
             rooms += room
             runBlocking { room.select(if (signedIn) "u1" else null) }
@@ -302,7 +302,7 @@ class ConnectedLogScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val release = CompletableDeferred<Unit>()
         var reads = 0
-        val server = object : TrainingSyncing by FakeGymRest() {
+        val server = object : GymRest by FakeGymRest() {
             override suspend fun grants(): List<OAuthGrant> {
                 reads++
                 if (reads == 1) { release.await(); throw IllegalStateException("unavailable") }

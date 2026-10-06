@@ -18,7 +18,7 @@ import works.windmill.domain.kit.Outcome
 import works.windmill.gym.domain.*
 import works.windmill.gym.domain.sync.ProposeRoutine
 import works.windmill.gym.net.FakeGymRest
-import works.windmill.gym.net.TrainingSyncing
+import works.windmill.gym.net.GymRest
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.gym.domain.sync.Exercise as SyncExercise
@@ -42,7 +42,7 @@ class CoachOwnershipTests {
         }
         val partial = AskGeneration("generation-a", "request-a", "Question", "running", "Café\n東京", revision = 1)
         val stopped = partial.copy(status = "stopped", revision = 2)
-        val server = object : TrainingSyncing by FakeGymRest() {
+        val server = object : GymRest by FakeGymRest() {
             override suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit): AskAnswer {
                 onSnapshot(partial)
                 onSnapshot(stopped)
@@ -90,7 +90,7 @@ class CoachOwnershipTests {
                 works.windmill.platform.storage.AtomicDocument.write(target, text)
             }
             val done = AskGeneration("generation-a", "request-a", "Question", "completed", "Private answer", revision = 2)
-            val server = object : TrainingSyncing by FakeGymRest() {
+            val server = object : GymRest by FakeGymRest() {
                 override suspend fun ask(question: AskQuestion): AskAnswer {
                     if (recover) throw WindmillApiException.Transport(java.io.IOException("interrupted"))
                     return done.response()
@@ -120,7 +120,7 @@ class CoachOwnershipTests {
         disk.saveDraft("a", request.thread, CoachDraft(request.question, photo))
         val uploads = mutableListOf<String>()
         val requests = mutableListOf<AskQuestion>()
-        val boundary = object : TrainingSyncing by FakeGymRest() {
+        val boundary = object : GymRest by FakeGymRest() {
             override suspend fun uploadPhoto(threadId: String, value: CoachAttachment, body: ByteArray, onProgress: (Float) -> Unit): CoachAttachment {
                 assertArrayEquals(bytes, body); uploads += value.id; return value
             }
@@ -161,7 +161,7 @@ class CoachOwnershipTests {
         disk.saveDraft("a", "thread-a", CoachDraft(photo = photo))
         val seen = mutableListOf<AskQuestion>()
         var uploads = 0
-        val boundary = object : TrainingSyncing by FakeGymRest() {
+        val boundary = object : GymRest by FakeGymRest() {
             override suspend fun uploadPhoto(threadId: String, value: CoachAttachment, body: ByteArray, onProgress: (Float) -> Unit): CoachAttachment {
                 assertEquals(photo, value); assertArrayEquals(bytes, body); uploads++; onProgress(1f); return value
             }
@@ -204,7 +204,7 @@ class CoachOwnershipTests {
         val file = File(tmp.root, "coach-owner")
         val release = CompletableDeferred<Unit>()
         val partial = AskGeneration("generation-a", "request-a", "Question", "completed", "Private", revision = 1)
-        val boundary = object : TrainingSyncing by FakeGymRest() {
+        val boundary = object : GymRest by FakeGymRest() {
             override suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit): AskAnswer {
                 release.await(); onSnapshot(partial); return partial.response()
             }
@@ -229,7 +229,7 @@ class CoachOwnershipTests {
         val request = AskQuestion("thread-a", "Please create a routine", "request-a")
         val generation = AskGeneration("generation-a", "request-a", request.question, "running")
         val seen = mutableListOf<AskQuestion>()
-        val boundary = object : TrainingSyncing by FakeGymRest() {
+        val boundary = object : GymRest by FakeGymRest() {
             override suspend fun ask(question: AskQuestion): AskAnswer {
                 assertEquals(listOf(request), LocalCoach(file).pending("a"))
                 seen += question
@@ -276,7 +276,7 @@ class CoachOwnershipTests {
     fun aLateAnswerAndThreadReadCannotAppearInTheNextAccount() = runTest {
         val release = CompletableDeferred<Unit>()
         val old = AskThread("thread-a", "A's question", turns = listOf(AskTurn("coach", "Private answer")))
-        val boundary = object : TrainingSyncing by FakeGymRest() {
+        val boundary = object : GymRest by FakeGymRest() {
             override suspend fun ask(question: AskQuestion): AskAnswer { release.await(); return AskAnswer("Private answer", ReadTally(3, 1, 1)) }
             override suspend fun threadPage(id: String, before: String?): AskThread { release.await(); return old }
             override suspend fun threadsPage(cursor: String?): ThreadPage { release.await(); return ThreadPage(listOf(old)) }

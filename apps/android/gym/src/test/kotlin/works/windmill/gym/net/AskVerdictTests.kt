@@ -1,4 +1,4 @@
-package works.windmill.gym.store
+package works.windmill.gym.net
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
