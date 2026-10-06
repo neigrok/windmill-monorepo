@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SearchIndex } from '../../../../src/products/journal/search/searchIndex.js';
+import { SearchIndex, chunk, cosine, topK } from '../../../../src/products/journal/search/searchIndex.js';
 import { contentWords } from '../../../../src/products/journal/search/tokenize.js';
 
 const VOCAB = ['calm', 'lake', 'felt', 'deadline', 'anxious', 'passed', 'walk', 'quiet'];
@@ -70,4 +70,29 @@ test('query — the floor comes from the embedder, and an explicit floor overrid
   assert.equal(wide.length, 2, 'a floor below every score keeps a hit for both days');
   const none = await index.query('walk');
   assert.equal(none.length, 0, 'the embedder floor drops everything that shares nothing');
+});
+
+test('chunk — every passage span slices back to its exact text', () => {
+  const body = 'Rain all morning. The walk did not happen.\nI noticed how much I counted on it.';
+  const passages = chunk(body);
+  assert.ok(passages.length >= 3);
+  for (const passage of passages) assert.equal(body.slice(passage.lo, passage.hi), passage.text);
+});
+
+test('chunk — splits on sentence terminators and newlines, whitespace trimmed off the span', () => {
+  const passages = chunk('One. Two!  Three?');
+  assert.deepEqual(passages.map((p) => p.text), ['One.', 'Two!', 'Three?']);
+});
+
+test('cosine — identical vectors score 1, orthogonal 0, zero-norm guarded to 0', () => {
+  assert.equal(cosine([1, 0, 0], [1, 0, 0]), 1);
+  assert.equal(cosine([1, 0], [0, 1]), 0);
+  assert.equal(cosine([0, 0], [1, 1]), 0);
+  assert.ok(Math.abs(cosine([1, 1, 0], [1, 0, 0]) - Math.SQRT1_2) < 1e-9);
+});
+
+test('topK — highest first, above the floor, capped at k', () => {
+  const items = [{ v: 1 }, { v: 9 }, { v: 5 }, { v: 0.05 }];
+  const ranked = topK(items, (x) => x.v, 2, 0.1);
+  assert.deepEqual(ranked.map((r) => r.item.v), [9, 5]);
 });

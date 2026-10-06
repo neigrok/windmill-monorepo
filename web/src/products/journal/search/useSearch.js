@@ -1,14 +1,10 @@
-// Owns the on-device index: the first open builds the lexical index, then the neural model loads in the
-// background and the same corpus is rebuilt, swapped in with a `version` bump so a query on screen
-// re-ranks. If the model never loads, search stays lexical, and the query never leaves the device either
-// way. The corpus is the account's pages and this device's (pages.js `corpus`); `source` rides out
-// with the results. The index belongs to one account and is dropped when `account` changes.
+// Indexes the active replica's pages locally, starting lexical and re-ranking when the neural model loads.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { corpus, SCOPE } from '../pages.js';
 import { useSyncRecords } from '../../../platform/sync/react.js';
 import { SearchIndex } from './searchIndex.js';
-import { LexicalEmbedder } from './embedders.js';
+import { LexicalEmbedder } from './lexicalEmbedder.js';
 
 export function useSearch(active, account = null) {
   const records = useSyncRecords(SCOPE);

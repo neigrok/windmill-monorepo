@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { embed, DIM } from '../../../../src/products/journal/search/embed.js';
-import { cosine } from '../../../../src/products/journal/search/cosine.js';
+import { embed, DIM } from '../../../../src/products/journal/search/lexicalEmbedder.js';
+import { cosine } from '../../../../src/products/journal/search/searchIndex.js';
 
 test('embed — deterministic, fixed dimension, unit norm', () => {
   const a = embed('the walk did not happen');
