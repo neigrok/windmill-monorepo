@@ -150,24 +150,27 @@ class EngineTraining(val engine: Engine) {
         return session(id.text)?.session ?: error("The engine does not hold the record it just wrote.")
     }
     suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet {
-        val value = EngineSet(Id(write.id, EngineSet), Id(sessionId, EngineSession), Id(write.exerciseId, EngineExercise),
-            write.weightKg, write.reps, write.kind.wire, completedAt = Instant(write.completedAt))
-        val existing = read { it.repository(EngineSet).find(value.id, ViewMode.drawn) }
-        if (existing != null) {
-            if (existing.sessionId != value.sessionId || existing.exerciseId != value.exerciseId || existing.completedAt != value.completedAt)
-                throw TrainingRefused("set-id-taken", "that set id is already used")
-            return existing.ui()
-        }
+        val value = engineSet(sessionId, write)
+        alreadyWritten(value)?.let { return it.ui() }
         apply(AppendSet(value))
-        return read { it.repository(EngineSet).find(value.id, ViewMode.drawn) }?.ui() ?: error("The engine does not hold the record it just wrote.")
+        return storedSet(value.id)
     }
+    private fun engineSet(sessionId: String, write: SetWrite) = EngineSet(Id(write.id, EngineSet), Id(sessionId, EngineSession),
+        Id(write.exerciseId, EngineExercise), write.weightKg, write.reps, write.kind.wire, completedAt = Instant(write.completedAt))
+    // A set id names one set: a redelivered append finds it written, and a different set under it is refused.
+    private fun alreadyWritten(value: EngineSet): EngineSet? = read { it.repository(EngineSet).find(value.id, ViewMode.drawn) }?.also { existing ->
+        if (existing.sessionId != value.sessionId || existing.exerciseId != value.exerciseId || existing.completedAt != value.completedAt)
+            throw TrainingRefused("set-id-taken", "that set id is already used")
+    }
+    private fun storedSet(id: Id<EngineSet>): TrainingSet =
+        read { it.repository(EngineSet).find(id, ViewMode.drawn) }?.ui() ?: error("The engine does not hold the record it just wrote.")
     suspend fun fixSet(sessionId: String, setId: String, fix: SetFix): TrainingSet {
         val old = read { it.repository(EngineSet).find(Id(setId, EngineSet), ViewMode.drawn) }
             ?.takeIf { it.sessionId.text == sessionId } ?: throw missing("That set is no longer on the log.")
         val next = old.copy(weightKg = fix.weightKg ?: old.weightKg, reps = fix.reps ?: old.reps,
             kind = fix.kind?.wire ?: old.kind, note = fix.note ?: old.note, rpe = if (fix.rpeNamed) fix.rpe else old.rpe)
         apply(CorrectSet(next))
-        return read { it.repository(EngineSet).find(next.id, ViewMode.drawn) }?.ui() ?: error("The engine does not hold the record it just wrote.")
+        return storedSet(next.id)
     }
     suspend fun deleteSet(sessionId: String, setId: String) {
         val id = Id(setId, EngineSet)
@@ -445,15 +448,10 @@ class EngineTraining(val engine: Engine) {
 
     // A set the logger accepted, committed together with the controls that consumed its offer.
     fun commitAccepted(controls: WorkoutControls, set: TrainingSet, sessionId: String): TrainingSet {
-        val write = SetWrite(set)
-        val value = EngineSet(Id(write.id, EngineSet), Id(sessionId, EngineSession), Id(write.exerciseId, EngineExercise),
-            write.weightKg, write.reps, write.kind.wire, completedAt = Instant(write.completedAt))
+        val value = engineSet(sessionId, SetWrite(set))
         val action = AppendSet(value)
         val runner = ActionRunner(engine, engine.registry, zone, object : ActionContext { override var insideRun = false })
-        val existing = read { it.repository(EngineSet).find(value.id, ViewMode.drawn) }
-        if (existing != null && (existing.sessionId != value.sessionId || existing.exerciseId != value.exerciseId || existing.completedAt != value.completedAt))
-            throw TrainingRefused("set-id-taken", "that set id is already used")
-        if (existing == null) when (val outcome = runner.run(object : Action<TrainingState, Id<EngineSet>, GymRefusal> {
+        if (alreadyWritten(value) == null) when (val outcome = runner.run(object : Action<TrainingState, Id<EngineSet>, GymRefusal> {
             override val scope = action.scope
             override val refusals = action.refusals
             override fun load(read: Reader) = action.load(read)
@@ -465,7 +463,7 @@ class EngineTraining(val engine: Engine) {
             is Outcome.Refused -> throw refusal(outcome.refusal)
             else -> Unit
         }
-        return read { it.repository(EngineSet).find(value.id, ViewMode.drawn) }?.ui() ?: error("The engine does not hold the record it just wrote.")
+        return storedSet(value.id)
     }
     private fun controls(controls: WorkoutControls): List<works.windmill.sync.api.DeviceWrite> = controls.session?.let { session -> listOf(
         works.windmill.sync.api.DeviceWrite("movementOrder:${session.id}", Json.Arr(controls.order.map(Json::of))),
