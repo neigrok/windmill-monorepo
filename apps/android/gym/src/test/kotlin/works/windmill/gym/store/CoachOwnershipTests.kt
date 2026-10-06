@@ -95,7 +95,7 @@ class CoachOwnershipTests {
                     if (recover) throw WindmillApiException.Transport(java.io.IOException("interrupted"))
                     return done.response()
                 }
-                override suspend fun thread(id: String): AskThread = AskThread(id, "Question", generation = done)
+                override suspend fun thread(id: String, before: String?): AskThread = AskThread(id, "Question", generation = done)
             }
             EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = server, localCoach = disk).use { room ->
                 room.select("a")
@@ -278,8 +278,8 @@ class CoachOwnershipTests {
         val old = AskThread("thread-a", "A's question", turns = listOf(AskTurn("coach", "Private answer")))
         val boundary = object : GymRest by FakeGymRest() {
             override suspend fun ask(question: AskQuestion): AskAnswer { release.await(); return AskAnswer("Private answer", ReadTally(3, 1, 1)) }
-            override suspend fun threadPage(id: String, before: String?): AskThread { release.await(); return old }
-            override suspend fun threadsPage(cursor: String?): ThreadPage { release.await(); return ThreadPage(listOf(old)) }
+            override suspend fun thread(id: String, before: String?): AskThread { release.await(); return old }
+            override suspend fun threads(cursor: String?): ThreadPage { release.await(); return ThreadPage(listOf(old)) }
         }
         EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = boundary).use { room ->
             room.select("a")

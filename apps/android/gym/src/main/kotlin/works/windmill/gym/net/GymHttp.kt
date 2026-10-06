@@ -108,22 +108,13 @@ class GymHttp(private val api: WindmillApi) : GymRest {
             buffer.readByteArray()
         }
 
-    override suspend fun threads(): List<AskThread> =
-        api.get<Conversations>("/v1/gym/threads", operation = "gym_threads").threads
-
-    override suspend fun thread(id: String): AskThread? = try {
-        api.get<AskThread>("/v1/gym/threads/$id", operation = "gym_thread")
-    } catch (refused: WindmillApiException.Refused) {
-        if (refused.status == 404) null else throw refused
-    }
-
-    override suspend fun threadsPage(cursor: String?): ThreadPage {
+    override suspend fun threads(cursor: String?): ThreadPage {
         val url = api.baseUrl.newBuilder().addPathSegments("v1/gym/threads").addQueryParameter("limit", "50")
             .apply { cursor?.let { addQueryParameter("cursor", it) } }.build()
         return api.get("${url.encodedPath}?${url.encodedQuery}", operation = "gym_threads")
     }
 
-    override suspend fun threadPage(id: String, before: String?): AskThread? = try {
+    override suspend fun thread(id: String, before: String?): AskThread? = try {
         val url = api.baseUrl.newBuilder().addPathSegments("v1/gym/threads").addPathSegment(id).addQueryParameter("limit", "50")
             .apply { before?.let { addQueryParameter("before", it) } }.build()
         api.get<AskThread>("${url.encodedPath}?${url.encodedQuery}", operation = "gym_thread")
@@ -141,9 +132,6 @@ class GymHttp(private val api: WindmillApi) : GymRest {
     override suspend fun mcpKeys(): List<McpKey> =
         api.get<Keys>("/v1/mcp-keys", operation = "gym_mcp_keys").keys
 }
-
-@Serializable
-private data class Conversations(val threads: List<AskThread> = emptyList())
 
 @Serializable
 private data class AskReplyOut(

@@ -42,8 +42,8 @@ class GymHttpTests {
         val pending = gym.ask(AskQuestion("thread-old", "Question", "request-a"))
         assertEquals("running", pending.generation?.status)
         assertEquals("", pending.answer)
-        assertEquals("older+/=", gym.threadsPage("old+/=").nextCursor)
-        assertEquals("before+/=", gym.threadPage("thread-old", "old+/=")?.nextCursor)
+        assertEquals("older+/=", gym.threads("old+/=").nextCursor)
+        assertEquals("before+/=", gym.thread("thread-old", "old+/=")?.nextCursor)
         assertEquals(listOf("""{"thread":"thread-old","question":"Question","requestId":"request-a"}"""), bodies)
         assertEquals(listOf("/v1/gym/ask", "/v1/gym/threads?limit=50&cursor=old%2B%2F%3D", "/v1/gym/threads/thread-old?limit=50&before=old%2B%2F%3D"), paths)
     }
@@ -111,12 +111,6 @@ class GymHttpTests {
         assertEquals(emptyList<OAuthGrant>(), gym.grants())
         assertEquals(listOf(Triple("/v1/gym/ask", 660_000, 660L),
             Triple("/v1/oauth/grants", 10_000, 0L)), timeouts)
-    }
-
-    @Test
-    fun testATransportFailureAndAnUnreadableReplyCarryNoRefusal() {
-        assertEquals(RefusalFacts(offline = true), RefusalFacts(WindmillApiException.Offline))
-        assertEquals(RefusalFacts(malformed = true), RefusalFacts(WindmillApiException.Malformed))
     }
 
     // The wire's `lastUsedMs` is a last-used and is not read: a row would draw it as a last-read. A

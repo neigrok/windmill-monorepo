@@ -74,9 +74,7 @@ import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.domain.WeighIn
 import works.windmill.gym.domain.WeighInWrite
-import works.windmill.gym.net.AskVerdict
 import works.windmill.gym.net.GymRest
-import works.windmill.gym.net.RefusalFacts
 import works.windmill.platform.Account
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.telemetry.Telemetry
@@ -1196,14 +1194,7 @@ class TrainingStore(
             if (snapshot == null && photo != null && refusing is WindmillApiException.Refused && refusing.refusal.code == "ask-attachment-invalid") {
                 return complete(AskOutcome.Failed("Photo wasn’t available. Retry to upload it again."), refusing)
             }
-            val outcome = when (val verdict = AskVerdict.refusing(RefusalFacts(refusing))) {
-                is AskVerdict.Said -> AskOutcome.Refused(verdict.said, snapshot)
-                is AskVerdict.Capped -> AskOutcome.Capped(verdict.said, verdict.cap, snapshot)
-                is AskVerdict.Again -> AskOutcome.Failed(verdict.said, snapshot)
-                is AskVerdict.Fresh -> AskOutcome.Fresh(verdict.said)
-                AskVerdict.Absent -> AskOutcome.Absent
-            }
-            complete(outcome, refusing)
+            complete(AskOutcome.refusing(refusing, snapshot), refusing)
         }
     }
 
@@ -1221,7 +1212,7 @@ class TrainingStore(
         return conversationWrite.withLock {
             if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
             try {
-                val page = coach.threadsPage(cursor)
+                val page = coach.threads(cursor)
                 if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
                 conversations = if (cursor == null) page.threads else (conversations + page.threads).distinctBy { it.id }
                 nextThreadCursor = page.nextCursor
@@ -1242,7 +1233,7 @@ class TrainingStore(
         val seat = owner
         val coach = rest() ?: return GymResult.Failed(WriteFailure.Refused(signInFirst))
         return try {
-            val read = coach.threadPage(id, before)
+            val read = coach.thread(id, before)
             if (seat != owner) return GymResult.Failed(WriteFailure.Refused(accountChanged))
             if (read == null) return GymResult.Failed(WriteFailure.Refused(noSuchThread))
             if (seat != null && read.generation?.status in listOf("completed", "stopped")) localCoach?.clear(seat, id, requireNotNull(read.generation).requestId)
@@ -1277,7 +1268,7 @@ class TrainingStore(
             } catch (refusing: Exception) {
                 reportFailure("gym.deleteThread", refusing)
                 if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
-                if (RefusalFacts(refusing).status != 404) return@withLock GymResult.Failed(WriteFailure(refusing))
+                if ((refusing as? WindmillApiException.Refused)?.status != 404) return@withLock GymResult.Failed(WriteFailure(refusing))
                 conversations = conversations.filterNot { it.id == id }
                 GymResult.Ok(Unit)
             }
@@ -2031,6 +2022,30 @@ sealed interface AskOutcome {
     data class Failed(val said: String, val generation: AskGeneration? = null) : AskOutcome
     data class Fresh(val said: String) : AskOutcome
     data object Absent : AskOutcome
+
+    companion object {
+        // Told apart by status and code, never by the English. Only a log that went quiet, or one
+        // that failed, is worth another tap; a bare 404 is a deployment with no Coach.
+        fun refusing(error: Throwable, generation: AskGeneration?): AskOutcome {
+            val refused = error as? WindmillApiException.Refused ?: return Failed(noAnswer, generation)
+            val said = refused.refusal.message
+            return when {
+                refused.status == 404 -> Absent
+                refused.status >= 500 -> Failed(said ?: noAnswer, generation)
+                // Both ceilings take the composer down: the one unrationed way on, the connect door,
+                // is drawn there and is not drawn beside a live composer.
+                refused.refusal.code == "ask-daily-limit" -> Capped(said ?: AskCap.Daily.wordless, AskCap.Daily, generation)
+                refused.refusal.code == "ask-out-of-budget" -> Capped(said ?: AskCap.Ceiling.wordless, AskCap.Ceiling, generation)
+                refused.refusal.code == "ask-generation-active" ->
+                    Failed(said ?: "Coach is answering another message. Try again when it finishes.", generation)
+                // Both are answered by opening a new thread; nothing is re-sent on its own.
+                refused.refusal.code == "ask-thread-full" || refused.refusal.code == "ask-thread-taken" -> Fresh(said ?: Ask.threadFull)
+                else -> Refused(said ?: "Coach couldn’t take that one", generation)
+            }
+        }
+
+        private const val noAnswer = "Coach didn’t answer. Try again in a moment"
+    }
 
     fun exchange(pending: AskExchange): AskExchange = when (this) {
         is Answered -> answer.generation?.exchange()?.copy(attachments = answer.generation.attachments.ifEmpty { pending.attachments })
