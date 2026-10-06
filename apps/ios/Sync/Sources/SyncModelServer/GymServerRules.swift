@@ -353,6 +353,7 @@ public struct GymServerRules: ServerRules {
           continue
         }
         guard row.isAlive else { continue }
+        if blankNamed(change, field: "name") { throw Refusal(.invalid) }
         if created || changed(change, field: "entries") {
           guard let entries = value(row, "entries"), case .array(let lines) = entries, !lines.isEmpty,
                 lines.allSatisfy({ $0["sets"].map { !$0.arrayValue.isEmpty } ?? true }) else { throw Refusal(.invalid) }
@@ -379,11 +380,13 @@ public struct GymServerRules: ServerRules {
       case "exercise":
         if change.diesHere { throw Refusal(.invalid) }
         if created, value(row, "stepKg") == nil { throw Refusal(.invalid) }
+        if blankNamed(change, field: "name") { throw Refusal(.invalid) }
         if changed(change, field: "name"), let beforeName = value(before, "name"), let afterName = value(row, "name") {
           append(.serverUpdate(row.key, born: row.lattice.born, fields: ["aliases": renamed(value(row, "aliases"), before: beforeName, after: afterName)]))
         }
       case "exerciseName":
         guard let seed = context.product["seeds"]?[row.key.id.description] else { throw Refusal(.invalid) }
+        if blankNamed(change, field: "name") { throw Refusal(.invalid) }
         let beforeName = value(before, "name") ?? seed["name"]!
         let afterName = value(row, "name") ?? seed["name"]!
         if beforeName != afterName {
@@ -392,6 +395,7 @@ public struct GymServerRules: ServerRules {
       case "weighin":
         if row.isAlive, row.key.id.description > utcDay(context.serverNow + Self.dayMs) { throw refuse("bad-instant") }
       case "note":
+        if blankNamed(change, field: "title") { throw Refusal(.invalid) }
         if created || changed(change, field: "title") || changed(change, field: "body") {
           append(.serverUpdate(row.key, born: row.lattice.born, fields: ["updatedAt": JSON(context.serverNow)]))
         }
@@ -440,7 +444,7 @@ public struct GymServerRules: ServerRules {
       guard proposed.isEmpty else { throw Refusal(.invalid) }
     } else {
       guard !proposed.isEmpty, proposed.count <= 50,
-            value(proposal, "proposedName")?.stringValue?.isEmpty == false,
+            !isBlank(value(proposal, "proposedName")?.stringValue ?? ""),
             proposed.allSatisfy({ $0["sets"].map { !$0.arrayValue.isEmpty } ?? true }) else { throw Refusal(.invalid) }
     }
     func targets(_ entry: JSON) -> JSON {
@@ -479,6 +483,13 @@ public struct GymServerRules: ServerRules {
   func changed(_ change: RecordChange, field: String) -> Bool {
     change.after.isAlive && change.before.isAlive && value(change.before.row, field) != value(change.after, field)
   }
+
+  func blankNamed(_ change: RecordChange, field: String) -> Bool {
+    guard let name = value(change.after, field)?.stringValue, isBlank(name) else { return false }
+    return (change.after.isAlive && !change.before.isAlive) || changed(change, field: field)
+  }
+
+  func isBlank(_ name: String) -> Bool { name.unicodeScalars.allSatisfy(TextMerge.isWhitespace) }
 
   func renamed(_ aliases: JSON?, before: JSON, after: JSON) -> JSON {
     .array(Array(([before] + (aliases?.arrayValue ?? []).filter { $0 != before && $0 != after }).prefix(5)))
