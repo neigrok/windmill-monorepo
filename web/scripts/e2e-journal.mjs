@@ -104,14 +104,10 @@ try {
     catch (error) { if (error.status !== 1) throw error; }
   }
   execFileSync('createdb', ['-h', host, database]); created = true;
-  execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-q', '-f', resolve(repo, 'backend/db/schema.sql'), '-f', resolve(repo, 'backend/db/gym_sync.sql'), '-f', resolve(repo, 'backend/db/journal_sync.sql')], { stdio: ['ignore', 'pipe', 'pipe'] });
+  execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-q', '-f', resolve(repo, 'backend/db/schema.sql')], { stdio: ['ignore', 'pipe', 'pipe'] });
   sql(`insert into users(id,email,name) values('${account}','web-b2@example.com','Web B2'); insert into sessions(token_hash,user_id,expires_ms) values('${hash(token)}','${account}',99999999999999);`);
-  for (const binary of ['windmill_gym_backfill', 'windmill_journal_backfill']) execFileSync(resolve(binaries, binary), [], { env: { ...process.env, DATABASE_URL: url }, stdio: ['ignore', 'pipe', 'pipe'] });
-  execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-q', '-f', resolve(repo, 'backend/db/gym_sync_v5.sql')], { stdio: ['ignore', 'pipe', 'pipe'] });
-  for (const mode of ['--upgrade-v5', '--audit-v5']) execFileSync(resolve(binaries, 'windmill_gym_backfill'), [mode], { env: { ...process.env, DATABASE_URL: url }, stdio: ['ignore', 'pipe', 'pipe'] });
   server = launch(resolve(binaries, 'windmill_server'), [], { cwd: resolve(repo, 'backend'), env: { ...process.env, DATABASE_URL: url,
     PORT: '8094', WINDMILL_HOST: '127.0.0.1', WINDMILL_APP_URL: origin, WINDMILL_ALLOWED_ORIGINS: origin,
-    SYNC_ENABLED: '1', GYM_ENGINE_WRITES: '1', JOURNAL_ENGINE_WRITES: '1',
     RESEND_API_KEY: '', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', JOURNAL_EMBEDDER_URL: '', SENTRY_DSN: '', AMPLITUDE_API_KEY: '' } });
   vite = launch(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '5181', '--strictPort'],
     { cwd: process.cwd(), env: { ...process.env, VITE_API_BASE_URL: backend, WINDMILL_ALLOWED_ORIGINS: origin } });
