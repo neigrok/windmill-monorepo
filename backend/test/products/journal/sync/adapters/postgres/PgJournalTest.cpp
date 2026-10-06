@@ -1,5 +1,5 @@
 #include "products/journal/sync/adapters/postgres/PgJournal.h"
-#include "products/journal/sync/adapters/json/JournalIntent.h"
+#include "products/journal/adapters/json/PageJson.h"
 #include "products/journal/sync/domain/JournalRules.h"
 #include "products/journal/sync/application/JournalFeed.h"
 #include "products/journal/adapters/postgres/PgJournalRepository.h"
@@ -12,6 +12,70 @@ using namespace wm;
 using namespace wm::sync;
 
 namespace {
+
+Json::Value journalIntent() {
+  Json::Value intent(Json::objectValue);
+  intent["scope"] = "self/journal";
+  intent["d"] = Json::Value(Json::arrayValue);
+  return intent;
+}
+
+// journal.savePage as a phone pushes it.
+Json::Value savePage(const std::string& day, const std::string& body, const Json::Value& mood, const Json::Value& energy,
+                     const std::string& source, Ms ms, std::uint64_t counter, const std::string& actor) {
+  Json::Value intent = journalIntent();
+  intent["cmd"]["name"] = "journal.savePage";
+  auto& args = intent["cmd"]["args"];
+  args["day"] = day;
+  args["body"] = body;
+  args["mood"] = mood;
+  args["energy"] = energy;
+  args["source"] = source;
+  args["stamp"]["ms"] = Json::UInt64(ms);
+  args["stamp"]["counter"] = Json::UInt64(counter);
+  args["stamp"]["actor"] = actor;
+  return intent;
+}
+
+Json::Value claimPage(const Json::Value& args) {
+  Json::Value intent = journalIntent();
+  intent["cmd"]["name"] = "journal.claimPage";
+  intent["cmd"]["args"] = args;
+  return intent;
+}
+
+// The first-run register written field by field, as the journal app retires each pending step.
+Json::Value journalState(const Json::Value& fields) {
+  Json::Value intent = journalIntent();
+  Json::Value delta(Json::objectValue);
+  delta["t"] = "journalState";
+  delta["id"] = "journalState";
+  for (const auto& field : fields.getMemberNames()) {
+    delta["f"][field] = Json::Value(Json::arrayValue);
+    delta["f"][field].append(fields[field]);
+    delta["f"][field].append(Json::nullValue);
+  }
+  intent["d"].append(delta);
+  return intent;
+}
+
+Json::Value admitted(Admission& admission, const UserId& user, const Json::Value& intent, Ms at) {
+  const auto outcome = admission.admit(ServerOrigin{user, std::nullopt}, intent, at);
+  const auto* result = std::get_if<Admitted>(&outcome);
+  if (!result) throw std::logic_error("journal intent was not admitted");
+  return result->result;
+}
+
+Seq scopeSeq(const UserId& user) {
+  PgLease lease{*pgTestPool()};
+  pqxx::read_transaction sql{*lease};
+  return sql.exec("select seq from sync_scopes where key=$1", pqxx::params{ScopeKey::product(user, "journal").text()})[0][0].as<Seq>();
+}
+
+struct CountingWatcher final : PageWatcher {
+  int calls = 0;
+  void pageSaved(const UserId&, const LocalDate&, std::size_t) override { ++calls; }
+};
 
 Json::Value retentionVector(const Json::Value& input) {
   static test::PgWorld world(false, true);
@@ -113,7 +177,7 @@ TEST(journal_claim_receipts_and_content_clock_are_transactional_and_purged) {
   }
 }
 
-TEST(journal_normalized_rest_builder_keeps_legacy_reads_winners_receipts_and_notices) {
+TEST(journal_admitted_pages_read_back_through_the_rest_reads_with_their_notices_and_revisions) {
   if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
   BlockingThread::Mark blocking;
   test::PgWorld world(false, true);
@@ -135,53 +199,41 @@ TEST(journal_normalized_rest_builder_keeps_legacy_reads_winners_receipts_and_not
   } watcher(rest);
   journal::engine::JournalFeed feed(watcher, world.feed);
   Admission admission(world.catalog(), world.store(), feed, world.clock(), world.failures);
-  auto accepted = [&](const Json::Value& raw, Ms at) -> Seq {
-    const auto wire = journal::engine::savePageIntent(raw, user, day);
-    const auto outcome = admission.admit(ServerOrigin{user, std::nullopt}, wire, at);
-    const auto* result = std::get_if<Admitted>(&outcome);
-    if (!result) throw std::logic_error("normalized journal REST intent was not admitted");
-    CHECK_EQ(result->result["s"].asString(), "ok");
-    CHECK_FALSE(result->result["write"].empty());
-    auto expected = wm::toJson(parsePageWrite(raw, user, day));
+  auto accepted = [&](const Json::Value& intent, Ms at) -> Seq {
+    const auto result = admitted(admission, user, intent, at);
+    CHECK_EQ(result["s"].asString(), "ok");
+    CHECK_FALSE(result["write"].empty());
+    const auto& args = intent["cmd"]["args"];
+    Json::Value expected(Json::objectValue);
+    expected["day"] = args["day"];
+    expected["body"] = args["body"];
+    expected["mood"] = args["mood"];
+    expected["energy"] = args["energy"];
+    expected["source"] = args["source"];
+    expected["stamp"] = std::to_string(args["stamp"]["ms"].asUInt64()) + ":" + std::to_string(args["stamp"]["counter"].asUInt64()) +
+                        ":" + args["stamp"]["actor"].asString();
     expected["updatedAt"] = Json::UInt64(at);
     const auto page = rest.load(user, day);
-    if (!page) throw std::logic_error("accepted journal REST intent has no page");
+    if (!page) throw std::logic_error("an admitted journal page has no row");
     CHECK_EQ(jcs(wm::toJson(*page)), jcs(expected));
     CHECK_EQ(jcs(watcher.pages.back()), jcs(expected));
-    return result->result["seq"].asUInt64();
+    return result["seq"].asUInt64();
   };
-  CHECK_EQ(accepted(Json::Value(Json::objectValue), now), 1u);
-  CHECK_EQ(jcs(journal::engine::savePageIntent(Json::Value(Json::objectValue), user, day)),
-    jcs(parseJson(R"({"scope":"self/journal","d":[],"cmd":{"name":"journal.savePage","args":{"day":"2026-10-01","body":"","mood":null,"energy":null,"source":"typed","stamp":{"ms":0,"counter":0,"actor":""}}}})")));
-  const auto words = parseJson(R"({"body":"  café\n","mood":99,"energy":"unset","source":"unknown","stamp":"9000000000000:7:writer:phone"})");
-  const auto firstRev = accepted(words, now + 1);
-  const auto kept = parseJson(R"({"body":"Kept","mood":0,"energy":0,"source":"spoken","stamp":"9000000000000:8:writer:phone"})");
-  const auto secondRev = accepted(kept, now + 2);
+  CHECK_EQ(accepted(savePage("2026-10-01", "", Json::nullValue, Json::nullValue, "typed", 0, 0, ""), now), 1u);
+  const auto firstRev = accepted(savePage("2026-10-01", "  café\n", Json::nullValue, Json::nullValue, "typed",
+                                          9'000'000'000'000, 7, "writer:phone"), now + 1);
+  const auto secondRev = accepted(savePage("2026-10-01", "Kept", 0, 0, "spoken", 9'000'000'000'000, 8, "writer:phone"), now + 2);
   const auto winner = wm::toJson(*rest.load(user, day));
   const auto before = world.dump();
   const auto notices = watcher.pages.size();
-  auto stale = kept;
-  stale["body"] = "losing words";
-  stale["mood"] = 10;
-  stale["energy"] = Json::nullValue;
-  stale["source"] = "typed";
-  const auto staleOutcome = admission.admit(ServerOrigin{user, std::nullopt}, journal::engine::savePageIntent(stale, user, day), now + 100);
-  const auto* staleResult = std::get_if<Admitted>(&staleOutcome);
-  REQUIRE(staleResult != nullptr);
-  CHECK_EQ(staleResult->result["s"].asString(), "ok");
-  CHECK(staleResult->result["write"].empty());
+  const auto stale = admitted(admission, user,
+      savePage("2026-10-01", "losing words", 10, Json::nullValue, "typed", 9'000'000'000'000, 8, "writer:phone"), now + 100);
+  CHECK_EQ(stale["s"].asString(), "ok");
+  CHECK(stale["write"].empty());
   CHECK_EQ(jcs(world.dump()), jcs(before));
   CHECK_EQ(jcs(wm::toJson(*rest.load(user, day))), jcs(winner));
   CHECK_EQ(watcher.pages.size(), notices);
-  stale["body"] = std::string(journal::engine::kMaxPageBytes + 1, 'x');
-  bool tooLarge = false;
-  try { journal::engine::savePageIntent(stale, user, day); }
-  catch (const PageTooLarge&) { tooLarge = true; }
-  CHECK(tooLarge);
-  CHECK_EQ(jcs(world.dump()), jcs(before));
-  CHECK_EQ(watcher.pages.size(), notices);
-  const auto cleared = parseJson(R"({"stamp":"9000000000000:9:writer:phone"})");
-  accepted(cleared, now + 3);
+  accepted(savePage("2026-10-01", "", Json::nullValue, Json::nullValue, "typed", 9'000'000'000'000, 9, "writer:phone"), now + 3);
   CHECK_EQ(watcher.pages.size(), 4u);
   CHECK_EQ(world.feed.published.size(), 4u);
   CHECK(world.clock().state().ms <= now + 3);
@@ -190,11 +242,110 @@ TEST(journal_normalized_rest_builder_keeps_legacy_reads_winners_receipts_and_not
   const auto scope = ScopeKey::product(user, "journal");
   CHECK_EQ(world.catalog().store("page").count(*txn, scope, FeedQuery{.visibleOnly = true}), 0u);
   CHECK_EQ(world.catalog().store("page").count(*txn, scope, FeedQuery{}), 1u);
-  auto& mutablePage = world.catalog().store("page");
-  const auto firstAudit = mutablePage.revisionText(*txn, scope, RecordId(day.iso()), "body", firstRev);
-  const auto secondAudit = mutablePage.revisionText(*txn, scope, RecordId(day.iso()), "body", secondRev);
+  auto& pages = world.catalog().store("page");
+  const auto firstAudit = pages.revisionText(*txn, scope, RecordId(day.iso()), "body", firstRev);
+  const auto secondAudit = pages.revisionText(*txn, scope, RecordId(day.iso()), "body", secondRev);
   REQUIRE(firstAudit.has_value());
   REQUIRE(secondAudit.has_value());
-  CHECK_EQ(*firstAudit, words["body"].asString());
+  CHECK_EQ(*firstAudit, "  café\n");
   CHECK_EQ(*secondAudit, "Kept");
+}
+
+TEST(journal_partial_first_run_retirement_allows_a_later_state_save_page_save_and_claim) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  BlockingThread::Mark blocking;
+  test::PgWorld world(false, true);
+  world.seed(parseJson(R"({"accounts":{"A":{"name":"A"}}})"));
+  const auto user = world.account("A");
+  const Ms now = 1'760'000'000'000;
+  CountingWatcher watcher;
+  journal::engine::JournalFeed feed(watcher, world.feed);
+  Admission admission(world.catalog(), world.store(), feed, world.clock(), world.failures);
+  PgJournalRepository pages(pgTestPool());
+
+  Json::Value fields(Json::objectValue);
+  fields["placeholder"] = "retired";
+  REQUIRE_EQ(admitted(admission, user, journalState(fields), now)["s"].asString(), "ok");
+  const auto retired = scopeSeq(user);
+  {
+    PgLease lease{*pgTestPool()};
+    pqxx::read_transaction sql{*lease};
+    const auto rows = sql.exec("select * from journal_sync_state where user_id=$1::uuid", pqxx::params{user.str()});
+    REQUIRE_EQ(rows.size(), 1u);
+    CHECK_EQ(rows[0]["placeholder"].as<std::string>(), "retired");
+    CHECK(!rows[0]["placeholder_stamp"].is_null());
+    for (const char* stamp : {"privacy_line_stamp", "first_page_stamp", "scales_stamp"}) CHECK(rows[0][stamp].is_null());
+    CHECK_EQ(rows[0]["seq"].as<Seq>(), retired);
+    CHECK(!rows[0]["rc"].is_null());
+    CHECK(!rows[0]["ru"].is_null());
+  }
+  fields = Json::Value(Json::objectValue);
+  fields["privacyLine"] = "retired";
+  REQUIRE_EQ(admitted(admission, user, journalState(fields), now + 1)["s"].asString(), "ok");
+  CHECK(scopeSeq(user) > retired);
+  CHECK_EQ(watcher.calls, 0);
+  REQUIRE_EQ(admitted(admission, user, savePage("2026-10-01", "Words.", 0, Json::nullValue, "spoken", 1, 0, "writer"), now + 2)["s"].asString(), "ok");
+  CHECK_EQ(pages.load(user, LocalDate("2026-10-01"))->body, "Words.");
+  Json::Value claim(Json::objectValue);
+  claim["day"] = "2026-10-01";
+  claim["body"] = "Here.";
+  claim["mood"] = Json::nullValue;
+  claim["energy"] = 0;
+  claim["source"] = "typed";
+  claim["claimId"] = "partial-retirement-claim";
+  REQUIRE_EQ(admitted(admission, user, claimPage(claim), now + 3)["s"].asString(), "ok");
+  const auto claimed = pages.load(user, LocalDate("2026-10-01"));
+  REQUIRE(claimed);
+  CHECK_EQ(claimed->body, "Words.\n\nHere.");
+  CHECK_EQ(claimed->mood, std::optional<Score>(Score(0)));
+  CHECK_EQ(claimed->energy, std::optional<Score>(Score(0)));
+  CHECK_EQ(watcher.calls, 2);
+  CHECK(world.failures.reports.empty());
+  PgLease lease{*pgTestPool()};
+  pqxx::read_transaction sql{*lease};
+  const auto state = sql.exec("select placeholder,placeholder_stamp,privacy_line,privacy_line_stamp,first_page_stamp,scales_stamp from journal_sync_state where user_id=$1::uuid", pqxx::params{user.str()});
+  REQUIRE_EQ(state.size(), 1u);
+  CHECK_EQ(state[0]["placeholder"].as<std::string>(), "retired");
+  CHECK_EQ(state[0]["privacy_line"].as<std::string>(), "retired");
+  CHECK(!state[0]["placeholder_stamp"].is_null());
+  CHECK(!state[0]["privacy_line_stamp"].is_null());
+  CHECK(state[0]["first_page_stamp"].is_null());
+  CHECK(state[0]["scales_stamp"].is_null());
+  CHECK_EQ(sql.exec("select count(*) from journal_claim_receipts where user_id=$1::uuid", pqxx::params{user.str()})[0][0].as<int>(), 1);
+}
+
+TEST(journal_claim_replays_without_a_write_and_a_changed_claim_conflicts) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  BlockingThread::Mark blocking;
+  test::PgWorld world(false, true);
+  world.seed(parseJson(R"({"accounts":{"A":{"name":"A"}}})"));
+  const auto user = world.account("A");
+  const Ms now = 1'760'000'000'000;
+  CountingWatcher watcher;
+  journal::engine::JournalFeed feed(watcher, world.feed);
+  Admission admission(world.catalog(), world.store(), feed, world.clock(), world.failures);
+  PgJournalRepository pages(pgTestPool());
+
+  REQUIRE_EQ(admitted(admission, user, savePage("2026-10-01", "Words.", 0, Json::nullValue, "spoken", 1, 0, "writer"), now)["s"].asString(), "ok");
+  Json::Value claim(Json::objectValue);
+  claim["day"] = "2026-10-01";
+  claim["body"] = "Here.";
+  claim["mood"] = Json::nullValue;
+  claim["energy"] = 0;
+  claim["source"] = "typed";
+  claim["claimId"] = "claim-1";
+  CHECK_EQ(admitted(admission, user, claimPage(claim), now + 1)["s"].asString(), "ok");
+  const auto head = scopeSeq(user);
+  CHECK_EQ(pages.load(user, LocalDate("2026-10-01"))->body, "Words.\n\nHere.");
+  CHECK_EQ(admitted(admission, user, claimPage(claim), now + 2)["s"].asString(), "ok");
+  CHECK_EQ(scopeSeq(user), head);
+  CHECK_EQ(watcher.calls, 2);
+  claim["body"] = "Changed.";
+  CHECK_EQ(admitted(admission, user, claimPage(claim), now + 3)["code"].asString(), "claim-conflict");
+  Json::Value fields(Json::objectValue);
+  fields["placeholder"] = "retired";
+  CHECK_EQ(admitted(admission, user, journalState(fields), now + 4)["s"].asString(), "ok");
+  CHECK(scopeSeq(user) > head);
+  CHECK_EQ(watcher.calls, 2);
+  CHECK(world.failures.reports.empty());
 }

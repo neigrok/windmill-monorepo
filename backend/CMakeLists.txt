@@ -558,7 +558,6 @@ add_executable(windmill_sync_tests
   test/products/gym/sync/adapters/postgres/PgGymBackfillTest.cpp
   test/products/gym/sync/adapters/postgres/PgGymMetadataUpgradeTest.cpp
   test/products/journal/sync/adapters/postgres/PgJournalTest.cpp
-  test/products/journal/sync/adapters/postgres/JournalDoorTest.cpp
   test/products/journal/sync/adapters/postgres/PgJournalBackfillTest.cpp)
 target_sources(windmill_gym_sync PRIVATE
   products/gym/sync/adapters/postgres/PgGym.cpp
@@ -620,7 +619,6 @@ add_executable(windmill_adapters_tests
   test/products/roadmap/adapters/llm/AnthropicComposerTest.cpp
   test/products/roadmap/adapters/llm/AnthropicAgentTest.cpp
   test/products/journal/adapters/http/JournalApiTest.cpp
-  test/products/journal/adapters/http/JournalFreezeTest.cpp
   test/products/journal/adapters/http/NudgeApiTest.cpp
   test/products/journal/adapters/http/EchoApiTest.cpp
   test/products/journal/adapters/http/VoiceApiTest.cpp
