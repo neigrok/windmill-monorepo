@@ -140,8 +140,8 @@ namespace wm::gym {
 // thread's changes landed on more than one routine. `turns` ride on the conversation's own read
 // alone, so their absence on the list read means "not on this read".
 //
-// `plan` is jsonb on the session row and an object on the wire; PgLogRepository serializes through
-// this codec pair. The routine name stays a plain string at the top level: the prefill's SQL
+// `plan` is jsonb on the session row and an object on the wire; PgLogRepository reads it through
+// planFrom. The routine name stays a plain string at the top level: the prefill's SQL
 // type-checks `jsonb_typeof(plan->'routine') = 'string'`. Reading a stored plan clamps.
 
 // Every instant on the wire is parsed against the domain's (0, kMaxInstantMs] band.

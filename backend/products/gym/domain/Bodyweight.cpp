@@ -1,14 +1,11 @@
 #include "products/gym/domain/Bodyweight.h"
 
 #include <cmath>
-#include <ctime>
 #include <utility>
 
 namespace wm::gym {
 
 namespace {
-constexpr std::uint64_t kDayMs = 86'400'000;
-
 bool digitsAt(std::string_view text, std::size_t from, std::size_t count) {
   for (std::size_t at = from; at < from + count; ++at)
     if (text[at] < '0' || text[at] > '9') return false;

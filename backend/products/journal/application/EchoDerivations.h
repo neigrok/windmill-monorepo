@@ -48,7 +48,8 @@ struct EchoLiveReport {
 
 // Turns saves into derivations on its own thread. One drain thread walks the queue and deals
 // round-robin across accounts; LiveDerivationRules caps what one account may hold and buy.
-// `pageSaved` runs on a request thread: it does map bookkeeping under a short mutex and returns.
+// `pageSaved` runs on the thread that committed the page: it does map bookkeeping under a short mutex
+// and returns.
 class EchoDerivations : public PageWatcher {
 public:
   EchoDerivations(EchoSweep& sweep, Clock& clock, LiveDerivationRules rules);

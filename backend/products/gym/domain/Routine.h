@@ -35,9 +35,9 @@ constexpr int kMaxRoutineEntries = 50;
 // routine — absent until it has been trained.
 // `revision` is the concurrency token a proposal is minted against: an apply lands only while the
 // routine still stands at the revision the diff was computed from. It starts at 1 and moves on every
-// write that changes the DOCUMENT or the NAME — never on a PUT landing the bytes that already stand,
-// and never on a reorder of the routines screen. It is the STORE's to move; a client reads it and
-// never sends it.
+// write that changes the DOCUMENT or the NAME — never on a write landing the document that already
+// stands, and never on a reorder of the routines screen. The engine's rules move it; a client reads it
+// and never sends it.
 struct Routine {
   RoutineId id;
   UserId user;

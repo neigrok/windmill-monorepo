@@ -17,8 +17,9 @@ namespace wm::gym {
 
 // Everything the client says, nothing the server decides: the set number and the owner are the
 // engine's to assign. joinOpenSession true puts the caller into whatever session is open; false
-// creates exactly the session named, which is what backfill needs. A named routine is frozen onto a
-// session the start CREATES, from the engine's own row; the client never composes the copy.
+// creates exactly the session named, which is what logging a past workout needs. A named routine is
+// frozen onto a session the start CREATES, from the engine's own row; the client never composes the
+// copy.
 struct SessionStart {
   SessionId id;
   std::uint64_t startedAtMs;

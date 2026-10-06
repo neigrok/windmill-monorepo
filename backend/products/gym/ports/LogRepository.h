@@ -27,8 +27,8 @@ struct TopWorkingSet {
 // workingMarks: working sets collapsed to one row per (movement, load) carrying the best reps at it,
 // grouped by movement, heaviest first inside each, dated by the SESSION's start. Loads at or below
 // zero ride along unfiltered.
-// closedItself reads `closed_by`, falling back to autoCloseAt's signature: finished_at exactly at
-// the last set's instant, or at started_at for a session holding none.
+// closedItself reads `closed_by`; where it is null, a session closed itself when finished_at sits
+// exactly at the last set's instant, or at started_at for a session holding none.
 struct SessionSummary {
   Session session;
   int setCount;

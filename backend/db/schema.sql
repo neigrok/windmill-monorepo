@@ -1523,11 +1523,9 @@ alter table gym_proposals add column if not exists superseded_by text;
 -- The notes a lifter writes FOR Coach: title-and-body pairs, stored verbatim, read by every agent
 -- holding the gym read scope. Ten per account, a title of 1..60 characters, a body of at most 500
 -- bytes — the same three numbers products/gym/domain/Note.h refuses against and `list_notes`
--- describes. `position` is precedence (the top note wins where two disagree) and is dense 0..n-1:
--- a delete closes the gap, a reorder is a whole-list replace. The unique is DEFERRED so a reorder
--- can move every row inside one transaction without walking through a collision. Its own table,
--- never a column on gym_preferences: that document is a whole-row replace, and two screens open at
--- once would silently discard somebody's text.
+-- describes. `position` is precedence (the top note wins where two disagree) and is dense 0..n-1,
+-- re-ranked from every note's `ord` on each write, so a delete closes the gap. The unique is DEFERRED
+-- so a re-rank can move every row inside one transaction without walking through a collision.
 create table if not exists gym_notes (
   id          text primary key,                   -- client-minted 'note_<hex>', the idempotency key
   user_id     uuid not null references users(id) on delete cascade,
@@ -1550,11 +1548,10 @@ create index if not exists gym_note_saves_owner on gym_note_saves(user_id);
 
 -- A lifter's weigh-ins: one row per LOCAL calendar day, kilograms to two decimals, and the identity
 -- is the day — a second write to the same day is a correction, never a second row. `recorded_at`
--- is the device's clock at the save and decides ONLY which of two writes to one day is newer: the
--- later one wins, an older one answers with the row that stands (a replayed stale write can never
--- overwrite a newer correction). The CHECK is the same band products/gym/domain/Bodyweight.h
--- refuses against. No agent writes here at any grant level: a weigh-in is a fact only the lifter
--- observed, and `list_bodyweight` is the one door.
+-- is the device's clock at the save. A weigh-in is put whole, so of two writes to one day the one
+-- with the later engine stamp stands, weight and time together. The CHECK is the same band
+-- products/gym/domain/Bodyweight.h refuses against. No agent writes here at any grant level: a
+-- weigh-in is a fact only the lifter observed, and `list_bodyweight` is the one door.
 create table if not exists gym_bodyweight (
   user_id     uuid not null references users(id) on delete cascade,
   date_local  date not null,

@@ -32,7 +32,7 @@ struct Note {
 
   // Trims both ends, then refuses: an empty title, a title past kMaxNoteTitleChars, a body past
   // kMaxNoteBodyBytes, text a `text` column cannot hold, a malformed id, a position off the list.
-  // The three bound sentences are the wire's own 400s, forwarded verbatim by NotesApi.
+  // The three bound sentences are what `save_note` answers, verbatim.
   Note(NoteId id, UserId user, std::string title, std::string body, int position = 0,
        std::uint64_t updatedAtMs = 0);
 
