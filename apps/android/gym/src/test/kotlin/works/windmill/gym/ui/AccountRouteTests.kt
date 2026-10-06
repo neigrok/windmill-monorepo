@@ -25,22 +25,18 @@ import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
-import org.junit.After
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.ExternalResource
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import works.windmill.gym.GymModule
-import works.windmill.gym.net.FakeTraining
-import works.windmill.gym.store.DeviceCopy
-import works.windmill.gym.store.LocalBodyweight
-import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
-import works.windmill.gym.store.SetQueue
+import works.windmill.gym.net.FakeGymRest
+import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.Account
 import works.windmill.platform.LocalShellActions
@@ -55,21 +51,31 @@ import works.windmill.platform.you.YouSheet
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class AccountRouteTests {
-    @get:Rule val compose = createComposeRule()
-    @get:Rule val tmp = TemporaryFolder()
+    @get:Rule(order = 0) val tmp = TemporaryFolder()
+
+    private val rooms = mutableListOf<EngineRoomFixture>()
+
+    // The rooms close after the compose rule has torn the screen down: leaving the room flushes the
+    // store, so its engine must still be open.
+    @get:Rule(order = 1) val closing = object : ExternalResource() {
+        override fun after() {
+            rooms.forEach(EngineRoomFixture::close)
+            applicationScope.cancel()
+        }
+    }
+
+    @get:Rule(order = 2) val compose = createComposeRule()
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val applicationStore by lazy {
-        val files = RuntimeEnvironment.getApplication().filesDir
-        TrainingStore(SetQueue(File(files, SetQueue.fileName)),
-            DeviceCopy(File(files, DeviceCopy.fileName)),
-            LocalLog(File(files, LocalLog.fileName)),
-            LocalPreferences(File(files, LocalPreferences.fileName)),
-            LocalBodyweight(File(files, LocalBodyweight.fileName)), applicationScope)
+        room(RuntimeEnvironment.getApplication().filesDir, applicationScope, signedIn = true).store
     }
 
-    @After
-    fun stopApplication() { applicationScope.cancel() }
+    private fun room(directory: File, scope: CoroutineScope, signedIn: Boolean) =
+        EngineRoomFixture(directory, scope, rest = FakeGymRest()).also { room ->
+            rooms += room
+            runBlocking { room.select(if (signedIn) "u1" else null) }
+        }
 
     private fun auth(signedIn: Boolean, restoreNow: Boolean = true, response: () -> Int = { 200 }): AuthStore {
         val user = User("u1", "sam@example.com", "Sam")
@@ -82,18 +88,11 @@ class AccountRouteTests {
             .also { if (restoreNow) runBlocking { it.restore() } }
     }
 
-    private fun store(scope: CoroutineScope, server: FakeTraining) = TrainingStore(
-        SetQueue(File(tmp.root, "queue.json")), DeviceCopy(File(tmp.root, "catalog.json")),
-        LocalLog(File(tmp.root, "local.json")), LocalPreferences(File(tmp.root, "prefs.json")),
-        LocalBodyweight(File(tmp.root, "weights.json")), scope,
-        sync = { if (it.isSignedIn) server else null },
-    )
-
     @Test
     fun connectedLogRoundTripKeepsTheRegisteredAccountDestinations() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val auth = auth(signedIn = true)
-        val store = store(scope, FakeTraining())
+        val store = room(tmp.newFolder(), scope, signedIn = true).store
         lateinit var shell: ShellActions
         compose.setContent { AccountRoot(auth, store) { current, _ -> shell = current } }
         compose.onNodeWithContentDescription("Your account").performClick()
@@ -116,7 +115,7 @@ class AccountRouteTests {
     fun signedOutSettingsRoundTripKeepsTheSameAccountOverview() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val auth = auth(signedIn = false)
-        val store = store(scope, FakeTraining())
+        val store = room(tmp.newFolder(), scope, signedIn = false).store
         lateinit var shell: ShellActions
         compose.setContent { AccountRoot(auth, store) { current, _ -> shell = current } }
         compose.onNodeWithContentDescription("Your account").performClick()
@@ -134,8 +133,9 @@ class AccountRouteTests {
     @Test
     fun applicationOwnedStoreKeepsDestinationsAfterAConnectedLogRoundTrip() {
         val auth = auth(signedIn = true)
+        val store = applicationStore
         lateinit var shell: ShellActions
-        compose.setContent { AccountRoot(auth, applicationStore) { current, _ -> shell = current } }
+        compose.setContent { AccountRoot(auth, store) { current, _ -> shell = current } }
         compose.onNodeWithContentDescription("Your account").performClick()
         val first = shell
         compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).assertIsDisplayed()
@@ -151,11 +151,12 @@ class AccountRouteTests {
     @Test
     fun restoredAccountOverviewKeepsTheApplicationStoreAndRegistersTheFreshShell() {
         val auth = auth(signedIn = true)
+        val store = applicationStore
         lateinit var shell: ShellActions
         val owners = mutableListOf<TrainingStore>()
         val restoration = StateRestorationTester(compose)
         restoration.setContent {
-            AccountRoot(auth, applicationStore) { current, owner ->
+            AccountRoot(auth, store) { current, owner ->
                 shell = current
                 owners += owner
             }
@@ -163,12 +164,12 @@ class AccountRouteTests {
         compose.onNodeWithContentDescription("Your account").performClick()
         val firstShell = shell
         val firstOwner = owners.last()
-        assertSame(applicationStore, firstOwner)
+        assertSame(store, firstOwner)
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("You").assertIsDisplayed()
         assertNotSame(firstShell, shell)
         assertSame(firstOwner, owners.last())
-        assertEquals(setOf(applicationStore), owners.toSet())
+        assertEquals(setOf(store), owners.toSet())
         assertEquals(listOf("settings", "connections"), shell.destinations.map { it.id })
         compose.onNode(hasText("Gym settings") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).assertIsDisplayed()
@@ -178,6 +179,7 @@ class AccountRouteTests {
     fun restoredOverviewKeepsItsRoutesAcrossDelayedStartupAuthentication() {
         val hold = AtomicBoolean(false)
         val release = CountDownLatch(1)
+        val store = applicationStore
         lateinit var auth: AuthStore
         lateinit var shell: ShellActions
         val restoration = StateRestorationTester(compose)
@@ -189,7 +191,7 @@ class AccountRouteTests {
                 }
             }
             SideEffect { auth = current }
-            AccountRoot(current, applicationStore) { currentShell, _ -> shell = currentShell }
+            AccountRoot(current, store) { currentShell, _ -> shell = currentShell }
         }
         compose.onNodeWithContentDescription("Your account").performClick()
         hold.set(true)
@@ -213,8 +215,9 @@ class AccountRouteTests {
     fun sameOwnerVerificationChangesKeepRoutesBetweenAccountOpens() {
         val reply = AtomicInteger(200)
         val auth = auth(signedIn = true, response = { reply.get() })
+        val store = applicationStore
         lateinit var shell: ShellActions
-        compose.setContent { AccountRoot(auth, applicationStore) { current, _ -> shell = current } }
+        compose.setContent { AccountRoot(auth, store) { current, _ -> shell = current } }
         compose.onNodeWithContentDescription("Your account").performClick()
         val first = shell
         compose.onNode(hasText("Connected log") and hasAnyAncestor(isDialog())).performClick()
@@ -238,12 +241,12 @@ class AccountRouteTests {
     fun restoredAccountOverviewRegistersDestinationsWithTheFreshShellAndStore() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val auth = auth(signedIn = true)
-        val server = FakeTraining()
+        val room = room(tmp.newFolder(), scope, signedIn = true)
         val restoration = StateRestorationTester(compose)
         lateinit var shell: ShellActions
         var stores = 0
         restoration.setContent {
-            val store = remember { stores++; store(scope, server) }
+            val store = remember { stores++; room.freshStore(scope) }
             AccountRoot(auth, store) { current, _ -> shell = current }
         }
         compose.onNodeWithContentDescription("Your account").performClick()
