@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { useSyncRecords } from '../../platform/sync/react.js';
 import { syncSession } from '../../platform/sync/session.js';
 import { captureError } from '../../telemetry/sentry.js';
-import { localDay, watchLocalDay } from './hlc.js';
+import { localDay, watchLocalDay } from './localDay.js';
 import { isWritten, pagesOf, savePage, SCOPE } from './pages.js';
 
 export function useToday() {
@@ -64,11 +64,10 @@ export function usePages() {
   const saveState = records.notices.some((notice) => !notice.dismissed) ? 'refused' : failure ? 'unsaved' : !session.online ? 'offline'
     : engine?.device.activeReplica.meta.state === 'anon' || hasPending ? 'device' : 'saved';
   return { today, history: pages.filter((page) => page.day < today && isWritten(page)).map((page) => ({ ...page, date: page.day })),
-    loading: !session.ready, readState, reach: records.firstPullComplete || readState === 'device' ? 'end' : 'loading',
+    loading: !session.ready, readState,
     firstRun: session.ready && records.firstPullComplete && !pages.some(isWritten) && state?.f.placeholder?.[0] !== 'retired',
     scalesInvitation: state?.f.firstPage?.[0] === 'retired' && (retained.scales ?? state?.f.scales?.[0]) !== 'retired', retireScales,
     body: shown.body, mood: shown.mood, energy: shown.energy, saveState, saveTick,
     setBody: (value) => change('body', value), setMood: (value) => change('mood', value), setEnergy: (value) => change('energy', value),
-    extendTo: () => {}, reachBack: () => engine?.kickPull([SCOPE]),
   };
 }

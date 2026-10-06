@@ -1,6 +1,6 @@
 // The last seven days, oldest first. Pure over the pages and an explicit `today`, never the clock.
 
-import { daysBefore } from '../hlc.js';
+import { daysBefore } from '../localDay.js';
 
 function wordCount(body) {
   const trimmed = (body || '').trim();

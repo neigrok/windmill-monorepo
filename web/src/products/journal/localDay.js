@@ -4,7 +4,7 @@ export function localDay(date = new Date()) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-// N days before a given ISO day, still local — for loading a window back from today.
+// N days before a given ISO day, still local.
 export function daysBefore(iso, n) {
   const [y, m, d] = iso.split('-').map(Number);
   const date = new Date(y, m - 1, d - n);

@@ -611,8 +611,8 @@ test('THE STAMP HOLDS THE PANEL ON THE PAGE IT NAMES — otherwise "Go to X" tak
 });
 
 test('a press on the stamp for a page the canvas is not holding yet does nothing, and throws nothing', async (t) => {
-  // Reachable: `walkTo` holds the panel on its destination and `extendTo` is still fetching, so the
-  // panel names a page that has no element on the canvas for a beat.
+  // Reachable: `walkTo` holds the panel on its destination before the canvas has drawn that page, so
+  // the panel names a page that has no element on the canvas for a beat.
   const echoes = echoesWith({ holdPanel: () => {}, canvas: { scroller: {}, dayElement: () => null, stampRect: () => null } });
   const run = renderHook(t, () => EchoMargin({ echoes, page: PAGE }));
   await settle(6);

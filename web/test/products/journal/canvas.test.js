@@ -55,8 +55,8 @@ test('the opening latch is armed by a gesture listener and never by a scroll eve
   assert.match(CODE, /for \(const type of GESTURES\) scroller\.removeEventListener\(type, taken\);/);
   assert.ok(!/addEventListener\('scroll'/.test(CODE), 'a scroll event is deciding ownership again');
   assert.ok(!CODE.includes('placedRef'), 'the >8px placed-position heuristic is back');
-  // the three positions the writer asks for are still the only other things that end it
-  assert.equal(CODE.split('openingRef.current = false').length - 1, 3);
+  // the writer's gesture and a flight the writer asked for are still the only things that end it
+  assert.equal(CODE.split('openingRef.current = false').length - 1, 2);
   assert.match(CODE, /useLayoutEffect\(\(\) => \{ openingRef\.current = true; \}, \[focusDate\]\);/);
 });
 

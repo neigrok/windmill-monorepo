@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { journalApi } from '../journalApi.js';
-import { localDay } from '../hlc.js';
+import { localDay } from '../localDay.js';
 import { hopToHash } from '../openPosition.js';
 import { CEILING_MS, PAUSE_MS, SETTLE_MS, armArrival } from './arrival.js';
 

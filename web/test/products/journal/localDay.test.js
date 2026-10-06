@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { localDay, daysBefore, msUntilNextDay, watchLocalDay } from '../../../src/products/journal/hlc.js';
+import { localDay, daysBefore, msUntilNextDay, watchLocalDay } from '../../../src/products/journal/localDay.js';
 
 test('localDay and daysBefore — the writer’s own calendar, never UTC', () => {
   assert.equal(localDay(new Date(2026, 7, 7, 23, 59)), '2026-08-07');
