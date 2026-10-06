@@ -82,7 +82,7 @@ test('revokeShare — nothing to revoke is revoked, and a store that failed is s
   serve(refusal(404, 'no such session'));
   assert.equal(await gymApi.revokeShare('ses_gone'), null);
   serve(refusal(503, 'internal error'));
-  await assert.rejects(() => gymApi.revokeShare('ses_1'), (error) => error.status === 503 && !error.terminal);
+  await assert.rejects(() => gymApi.revokeShare('ses_1'), (error) => error.status === 503);
 });
 
 test('sharedSession — one workout, no ids in it, and one null for all three ways a token can fail', async () => {

@@ -2,7 +2,7 @@
 
 import { CommitError } from '../../platform/sync/client/commit.js';
 
-// A REST door's answer that was not a success, in the store's words and code. 400 and 409 are terminal.
+// A REST door's answer that was not a success, in the server's words and code.
 export class GymError extends Error {
   constructor(status, detail = '', code = '', body = null) {
     super(detail || `gym request failed: ${status}`);
@@ -10,7 +10,6 @@ export class GymError extends Error {
     this.status = status;
     this.detail = detail;
     this.code = code;
-    this.terminal = status === 400 || status === 409;
     this.generation = body?.generation;
   }
 }
@@ -37,7 +36,7 @@ export function failureReason(error) {
     return error.code === 'not-writable' ? 'you’re signed out. Sign in and try again' : 'the log wouldn’t take it as written';
   }
   if (isStoreFailure(error)) return 'this device couldn’t store it';
-  if (error instanceof CommitError || error?.terminal) return 'the log wouldn’t take it as written';
+  if (error instanceof CommitError || error?.status === 400 || error?.status === 409) return 'the log wouldn’t take it as written';
   if (error?.status === 401) return 'you’re signed out. Sign in and try again';
   if (error?.status === 404) return 'it isn’t in the log any more';
   return 'the log didn’t answer. Try again when you have signal';
