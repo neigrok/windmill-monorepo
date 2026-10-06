@@ -33,6 +33,13 @@ class Differential:
     def sql(self, database, sql):
         return command(["psql", database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c", sql]).decode().strip()
 
+    # Each server runs on the schema its own tree deploys: the baseline's database is built from origin/main's.
+    def schemas(self):
+        baseline = self.directory / "origin-main-schema.sql"
+        baseline.write_bytes(command(["git", "-c", "safe.directory=" + str(BACKEND.parent), "-C", str(BACKEND.parent),
+                                      "show", "origin/main:backend/db/schema.sql"]))
+        return [baseline, BACKEND / "db/schema.sql"]
+
     def build_main(self):
         repository = self.directory / "baseline.git"
         command(["git", "-c", "safe.directory=" + str(BACKEND.parent), "clone", "--mirror", "--shared",

@@ -13,7 +13,7 @@ import tempfile
 import time
 
 sys.dont_write_bytecode = True
-from differential_harness import BACKEND, Differential, command, database_url
+from differential_harness import Differential, command, database_url
 
 
 ACCOUNT = "40000000-0000-4000-8000-000000000001"
@@ -35,25 +35,6 @@ def compare(responses, label, minted=False):
             cookies = [cookies[0], *sorted(cookies[1:])]
         normalized.append((status, body, cookies))
     assert normalized[0] == normalized[1], (label, normalized)
-
-
-def pinned_auth_changes(responses, target, status):
-    left, right = responses
-    if target == "/v1/auth/verify-code" and status == 410:
-        old = {"error": "That code has expired", "detail": "Codes work once and last 15 minutes.", "code": "expired"}
-        new = {"error": "That code didn't work", "detail": "Check the digits, or send a fresh one.", "code": "expired"}
-        assert json.loads(left[1]) == old, left
-        assert json.loads(right[1]) == new, right
-        migrated = left[1].replace(b"That code has expired", b"That code didn't work").replace(
-            b"Codes work once and last 15 minutes.", b"Check the digits, or send a fresh one.")
-        return [(left[0], migrated, left[2]), right]
-    if target == "/v1/me" and status == 200:
-        old, new = json.loads(left[1]), json.loads(right[1])
-        assert new == {**old, "signInMethods": [{"kind": "email", "email": old["user"]["email"]}]}, new
-        prefix = b'"signInMethods":[{"email":' + json.dumps(old["user"]["email"]).encode() + b',"kind":"email"}],'
-        assert right[1].count(prefix) == 1, right
-        return [left, (right[0], right[1].replace(prefix, b"", 1), right[2])]
-    return responses
 
 
 class Connection:
@@ -126,12 +107,12 @@ class AuthDifferential(Differential):
                 probe.bind(("127.0.0.1", port))
         if self.main_binary is None:
             self.build_main()
-        for side in range(2):
+        for side, schema in enumerate(self.schemas()):
             name = f"wm_auth_diff_{os.getpid()}_{time.time_ns()}_{side}"
             command(["createdb", "--maintenance-db=" + self.args.maintenance_db, name])
             database = database_url(self.args.maintenance_db, name)
             self.databases.append((name, database))
-            command(["psql", database, "-Xq", "-v", "ON_ERROR_STOP=1", "-f", str(BACKEND / "db/schema.sql")])
+            command(["psql", database, "-Xq", "-v", "ON_ERROR_STOP=1", "-f", str(schema)])
             self.sql(database, f"INSERT INTO users(id,email,name) VALUES ('{ACCOUNT}','{EMAIL}','Auth');")
 
     def start(self, secure):
@@ -173,7 +154,7 @@ class AuthDifferential(Differential):
             responses.append(connection.request(method, target, body, headers))
         label = f"{method} {target} #{self.requests + 1}"
         assert [response[0] for response in responses] == [expected, expected], (label, responses)
-        compare(pinned_auth_changes(responses, target, expected), label, minted)
+        compare(responses, label, minted)
         if minted:
             for side, (_, _, cookies) in enumerate(responses):
                 self.tokens[side] = next(SESSION.search(line).group().decode() for line in cookies if SESSION.search(line))
@@ -244,7 +225,7 @@ class AuthDifferential(Differential):
                         self.pair("POST", "/v1/auth/verify-code", {"email": EMAIL, "code": CODE}, 410)
                 self.pair("POST", "/v1/auth/logout", expected=204)
             self.stop_servers()
-        return {"passed": True, "pairedRequests": self.requests, "bodies": "exact bytes except explicitly verified pinned code copy and signInMethods addition",
+        return {"passed": True, "pairedRequests": self.requests, "bodies": "exact bytes",
                 "setCookie": "raw header bytes; fresh 43-byte session substituted; live cookie first, unordered retired lines sorted",
                 "configurations": ["HTTP host-only", "HTTPS live and retired domains"],
                 "mail": "unconfigured local provider returns 502; persisted request codes verified"}
@@ -258,8 +239,8 @@ class AuthDifferential(Differential):
 
 def main():
     parser = argparse.ArgumentParser(description="Compare origin/main and tree legacy auth bodies and raw Set-Cookie bytes")
-    parser.add_argument("--bin-dir", type=Path, required=True)
-    parser.add_argument("--main-bin", type=Path)
+    parser.add_argument("--bin-dir", type=lambda path: Path(path).resolve(), required=True)
+    parser.add_argument("--main-bin", type=lambda path: Path(path).resolve())
     parser.add_argument("--maintenance-db", default=os.environ.get("WM_MAINTENANCE_DB", "postgresql:///postgres?host=/tmp"))
     parser.add_argument("--drogon-prefix", type=Path)
     parser.add_argument("--jobs", type=int, default=4)

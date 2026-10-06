@@ -15,8 +15,10 @@ Each shell and Node script's header names its prerequisites and how to run it.
 
 `auth_differential.py` compares `origin/main` with the current production composition using two
 throwaway Postgres databases and persistent raw HTTP sockets on ports 18870–18871. Its databases,
-`psql` calls and baseline build come from `differential_harness.py`. It builds the baseline in an
-isolated shared mirror unless `--main-bin` supplies an already built baseline:
+`psql` calls and baseline build come from `differential_harness.py`. Each side's database is built
+from its own tree's `db/schema.sql`: the baseline's from `origin/main`, the current server's from
+this tree. It builds the baseline in an isolated shared mirror unless `--main-bin` supplies an
+already built baseline:
 
 ```sh
 python3 backend/test/e2e/auth_differential.py \
@@ -38,10 +40,9 @@ No email provider is contacted: request persistence is checked, then the newest 
 is replaced with a known fixture for verification. Successful provider delivery is outside this
 local comparison. Native `sessionTransport=bearer` is a new opt-in and is outside the legacy corpus.
 
-Status and body bytes compare exactly, apart from two changes the comparator pins byte for byte:
-the expired-code copy and the `signInMethods` addition to `/v1/me`. Set-Cookie field lines retain
-their original header case, spacing, attribute order, scope, flags and line endings; only the
-independently minted 43-byte live session secret is substituted. The minted secret must authenticate
-the same seeded account and exist in its database. Logout and failure cookies have no substitutions.
+Status and body bytes compare exactly. Set-Cookie field lines retain their original header case,
+spacing, attribute order, scope, flags and line endings; only the independently minted 43-byte live
+session secret is substituted. The minted secret must authenticate the same seeded account and
+exist in its database. Logout and failure cookies have no substitutions.
 Comparator tests reject body reformatting, cookie attribute changes, reordered lines and broader
 entropy normalization.
