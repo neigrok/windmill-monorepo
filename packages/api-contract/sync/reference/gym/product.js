@@ -436,11 +436,11 @@ function renamed(aliases, before, after) {
   return [before, ...(aliases ?? []).filter((name) => name !== before && name !== after)].slice(0, MAX_ALIASES);
 }
 
-// A.2 display names: one created or changed to nothing but whitespace (§6.11's set, ECMAScript `\s`) is
-// `invalid`, whoever writes it. A stored one stands until it is next changed.
+// A.2 display names: a new register holding only whitespace is invalid; untouched historical names stand.
 function blankNamed(record, field) {
   const name = valueOf(record.after, field);
-  return typeof name === 'string' && /^\s*$/.test(name) && (created(record) || changed(record, field));
+  return isAlive(record.after) && typeof name === 'string' && /^\s*$/.test(name)
+    && (created(record) || !sameJson(record.original?.f?.[field], record.after.f?.[field]));
 }
 
 const RULES = {

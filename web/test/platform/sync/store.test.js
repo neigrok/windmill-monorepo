@@ -5,6 +5,7 @@ import { IndexedDBStore } from '../../../src/platform/sync/store.js';
 import { commit } from '../../../src/platform/sync/client/commit.js';
 import { reidentify } from '../../../src/platform/sync/client/lifecycle.js';
 import { registry } from './oracle-adapters/fixtures.js';
+import { versionOneFixture } from './store-v1.js';
 
 const id = 'rp_00000000000000000000000000000001';
 const context = (device) => ({ registry, device, actor: 'r_aaaaaaaaaaaa', deviceNow: 100,
@@ -143,4 +144,30 @@ test('governing-type index reads omit unrelated product rows and preserve them o
   assert.equal(answer.measurement.rowWrites, 0);
   assert.equal((await store.read(['self/probe'])).device.activeReplica.confirmedRows('self/probe').length, 101);
   store.close();
+});
+
+test('every version-one row survives migration and a second open', async () => {
+  const indexedDB = new IDBFactory();
+  const { records, expected } = versionOneFixture();
+  const database = await new Promise((resolve, reject) => {
+    const request = indexedDB.open('migration', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('records', { keyPath: 'key' });
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  await new Promise((resolve, reject) => {
+    const transaction = database.transaction('records', 'readwrite');
+    for (const record of records) transaction.objectStore('records').put(record);
+    transaction.oncomplete = resolve;
+    transaction.onabort = () => reject(transaction.error);
+  });
+  database.close();
+  for (let opened = 0; opened < 2; opened++) {
+    const store = await IndexedDBStore.open({ indexedDB, name: 'migration', newReplicaId: () => assert.fail('existing device must survive') });
+    try {
+      assert.equal(store.database.version, 2);
+      assert.deepEqual((await store.read()).device.toJSON(), expected);
+      assert.equal((await store.read([{ scope: 'self/probe', type: 'card' }])).measurement.rowReads, 12);
+    } finally { store.close(); }
+  }
 });

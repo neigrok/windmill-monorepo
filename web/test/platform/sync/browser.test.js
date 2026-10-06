@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { fileURLToPath } from 'node:url';
+import { versionOneFixture } from './store-v1.js';
 
 let server, browser, origin;
 const root = fileURLToPath(new URL('../../../', import.meta.url));
@@ -92,6 +93,75 @@ async function leader(pages) {
 }
 
 const gesture = (page, id) => page.evaluate((id) => engine.commit('self/probe', [{ op: 'create', t: 'card', id, f: { title: 'private' } }], { hold: true }), id);
+
+for (const abort of [false, true]) test(`Chromium: every real v1 row survives ${abort ? 'an aborted upgrade and retry' : 'upgrade'} and reopen`, async () => {
+  const context = await freshContext();
+  try {
+    const page = await context.newPage();
+    await page.goto(`${origin}/sync-test`);
+    const { records, expected } = versionOneFixture();
+    const result = await page.evaluate(async ({ records, abort }) => {
+      const { IndexedDBStore } = await import('/src/platform/sync/store.js');
+      const name = 'migration';
+      const database = await new Promise((resolve, reject) => {
+        const request = indexedDB.open(name, 1);
+        request.onupgradeneeded = () => request.result.createObjectStore('records', { keyPath: 'key' });
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      await new Promise((resolve, reject) => {
+        const transaction = database.transaction('records', 'readwrite');
+        for (const record of records) transaction.objectStore('records').put(record);
+        transaction.oncomplete = resolve;
+        transaction.onabort = () => reject(transaction.error);
+      });
+      database.close();
+      const newReplicaId = () => { throw new Error('existing device must survive'); };
+      let aborted = null, migratedRows = 0;
+      if (abort) {
+        const interrupt = { open(name, version) {
+          const request = indexedDB.open(name, version);
+          request.addEventListener('upgradeneeded', () => {
+            const transaction = request.transaction;
+            const cursor = transaction.objectStore('records').openCursor();
+            cursor.onsuccess = () => {
+              const moved = transaction.objectStore('rows').count();
+              moved.onsuccess = () => {
+                migratedRows = moved.result;
+                if (migratedRows) transaction.abort();
+                else cursor.result?.continue();
+              };
+            };
+          });
+          return request;
+        } };
+        try { await IndexedDBStore.open({ indexedDB: interrupt, name, newReplicaId }); }
+        catch (error) { aborted = error.name; }
+        const original = await new Promise((resolve, reject) => {
+          const request = indexedDB.open(name, 1);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        const retained = await new Promise((resolve, reject) => {
+          const request = original.transaction('records').objectStore('records').getAll();
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        original.close();
+        if (!migratedRows) throw new Error('the upgrade must abort after migrating a row');
+        if (JSON.stringify(retained.sort((a, b) => a.key.localeCompare(b.key))) !== JSON.stringify(records.toSorted((a, b) => a.key.localeCompare(b.key)))) throw new Error('an aborted upgrade lost v1 rows');
+      }
+      const snapshots = [];
+      for (let opened = 0; opened < 2; opened++) {
+        const store = await IndexedDBStore.open({ name, newReplicaId });
+        try { snapshots.push({ version: store.database.version, device: (await store.read()).device.toJSON() }); }
+        finally { store.close(); }
+      }
+      return { aborted, snapshots };
+    }, { records, abort });
+    assert.deepEqual(result, { aborted: abort ? 'AbortError' : null, snapshots: [{ version: 2, device: expected }, { version: 2, device: expected }] });
+  } finally { await context.close(); }
+});
 
 async function accountTransport(page) {
   await page.evaluate(() => {

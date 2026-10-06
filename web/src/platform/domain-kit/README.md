@@ -44,6 +44,10 @@ their siblings. A draft is immutable: `Draft.new(blank, placement)`, `Draft.open
 answers `{ result, draft }`. `run` and `save` are `async` because the browser engine's commit resolves
 after its IndexedDB transaction; the body that loads, decides and translates runs synchronously inside
 it, and a decider that returns a Promise is a `Fault`.
+Nested `run` and `save` calls fault before queueing a transaction, including calls through another
+runner in that synchronous execution context. Independent queued runs remain allowed. The persisted
+web runner tests cover load, decide and refusal mapping: §15.2's pipeline vectors have no nested-call operation and use a
+loader that does nothing.
 
 ## Binding
 

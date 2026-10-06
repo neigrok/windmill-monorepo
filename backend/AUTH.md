@@ -102,6 +102,17 @@ account's email or the latest sign-in token.
 
 Drops the session, expires the cookie in every one of its scopes (Frontend integration), `204`.
 
+### `DELETE /v1/me`
+
+Request `{ "account": "<the account id shown in the confirmation>" }`, with the caller's session.
+The server compares that id with the authenticated account before closing anything. A different
+account answers `409 { "error": …, "code": "account-mismatch" }`; a missing, empty or non-string
+id answers `400` with code `malformed`. Both refusals retain every account, session and cookie.
+Signed out answers `401`.
+
+A match soft-closes that account with a 30-day grace, revokes all its sessions and grants, clears
+the session cookie, and answers `200 { "closingOn": "<ISO UTC>", "closesMs": <epoch ms> }`.
+
 ### `POST /v1/auth/apple` — the authorization-code door
 
 Request `{ "authorizationCode": "<from ASAuthorizationController>", "name": "Sam Gold" }`. The name
@@ -201,7 +212,7 @@ Request `{ "token": "<the secret from an emailed URL>" }`, sent **while holding 
 The caller's row is deleted on success, and its session with it — which is why a fresh one comes
 back in the reply.
 
-Also on this surface: `PATCH /v1/me`, `DELETE /v1/me` (soft close with a 30-day grace),
+Also on this surface: `PATCH /v1/me`,
 `GET /v1/sessions`, `DELETE /v1/sessions/{id}`, `DELETE /v1/sessions`, and Google's two redirects
 `GET /v1/auth/google/start` · `GET /v1/auth/google/callback`.
 

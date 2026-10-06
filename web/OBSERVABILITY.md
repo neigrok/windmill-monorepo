@@ -31,7 +31,8 @@ reports storage failures and keeps its local records available for a retry.
 Add/Discard and sign-out emit `sync_signin`/`sync_signout` with `outcome: pending`; the engine reports
 completed transitions. Revoking this session uses the sign-out question before clearing its cookie.
 Account closure persists its account and current session before the server request and discards local
-account data after it succeeds. A failed local discard reports the auth-session failure; reload and
+account data after it succeeds. The request names the confirmed account; `account-mismatch` retains
+its local data and reports the auth-session failure. A failed local discard reports the same failure; reload and
 retry reconcile that session before recovering the discard. A new session keeps its cookie, including
 one that reopens the same account. Closure refuses an unavailable session identity before deleting.
 Offline copy identifies the REST features that need a connection.

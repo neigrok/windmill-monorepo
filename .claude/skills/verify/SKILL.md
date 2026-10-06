@@ -42,26 +42,53 @@ a multi-variable incantation onto the command line.
 
 ## Backend suites
 
+Run each recipe from the repository root. The first runs without Postgres, even if the shell has
+database settings; the second creates and removes two isolated databases. Both run serially.
+
 ```sh
+cmake -S backend -B backend/build
 cmake --build backend/build -j8
-ctest --test-dir backend/build -V     # three binaries: domain · mcp · adapters
+env -u WM_PG_TEST -u DATABASE_URL -u WM_SYNC_DATABASE_URL \
+  ctest --test-dir backend/build --parallel 1 -V
 ```
+
+The four C++ suites are `domain`, `mcp`, `sync` and `adapters`; four script checks cover deployment,
+authentication comparison and log shutdown.
 
 Each binary ends with `N/M cases passed, X stopped before the end, Y skipped, Z assertion(s)
 failed`. Read all four numbers: *skipped* is never a pass, and a case a `REQUIRE` cut short counts
 as *stopped before the end*. `--output-on-failure` prints nothing while green, so use `-V` when the
 skip count is what you came for.
 
-The Postgres integration cases (`Pg*` tests in the adapters binary) need a live database and skip
-without `WM_PG_TEST`. They seed and clean their own rows, so re-running is free — and they are the
-only proof the SQL half works, since CI runs ctest in a container with no database:
+Postgres cases in all four binaries skip without `WM_PG_TEST`. They require two fresh databases:
+`DATABASE_URL` with `schema.sql`, and `WM_SYNC_DATABASE_URL` with both `schema.sql` and `probe.sql`.
+The sync suite and gym door cases in `mcp` and `adapters` share the latter and must run serially.
+Set `WM_VERIFY_DB_PREFIX` to choose a database prefix; its default includes the shell's process id.
 
 ```sh
-WM_PG_TEST=1 DATABASE_URL="postgresql:///windmill?host=/tmp" \
-  ctest --test-dir backend/build -R adapters -V
+(
+  set -eu
+  cmake -S backend -B backend/build
+  cmake --build backend/build -j8
+  WM_VERIFY_DB_PREFIX=${WM_VERIFY_DB_PREFIX:-wm_verify_$$}
+  VERIFY_REST_DB="${WM_VERIFY_DB_PREFIX}_rest"
+  VERIFY_SYNC_DB="${WM_VERIFY_DB_PREFIX}_sync"
+  createdb -h /tmp "$VERIFY_REST_DB"
+  trap 'dropdb -h /tmp "$VERIFY_REST_DB"' EXIT
+  createdb -h /tmp "$VERIFY_SYNC_DB"
+  trap 'dropdb -h /tmp "$VERIFY_REST_DB"; dropdb -h /tmp "$VERIFY_SYNC_DB"' EXIT
+  DATABASE_URL="postgresql:///$VERIFY_REST_DB?host=/tmp"
+  WM_SYNC_DATABASE_URL="postgresql:///$VERIFY_SYNC_DB?host=/tmp"
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/db/schema.sql
+  psql "$WM_SYNC_DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/db/schema.sql -f backend/db/probe.sql
+  WM_PG_TEST=1 DATABASE_URL="$DATABASE_URL" WM_SYNC_DATABASE_URL="$WM_SYNC_DATABASE_URL" \
+    ctest --test-dir backend/build --parallel 1 -V
+)
 ```
 
-Run them before pushing a change to a Postgres repository or to the tables it reads.
+The Docker build runs the first gate without a database; backend CI then runs all four C++ suites
+in that image against Postgres 16 with both databases. Run the Postgres recipe before pushing a
+change to a repository, write door or table. The subshell removes its databases on success or failure.
 
 ## Signing in without mail
 
@@ -80,8 +107,10 @@ curl -s localhost:8088/v1/gym/exercises -H "Authorization: Bearer $SECRET"
 ```
 
 Record ids are global, so prefix anything you seed (`ses_probe*`, `set_probe*`) and a parallel
-agent's ids never collide with yours. Deleting the `users` row cascades to sessions and to every
-product's rows, but the engine's tables hold the account too, so clear them first:
+agent's ids never collide with yours. Deleting the `users` row cascades to sessions and gym/journal
+rows. Roadmap rows do not cascade: remove scratch trees separately (below). The engine's tables
+hold the account too, so clear them first. For complete teardown, stop the server and drop its
+throwaway database as described under Launch.
 
 ```sh
 psql windmill -q -v ON_ERROR_STOP=1 <<SQL

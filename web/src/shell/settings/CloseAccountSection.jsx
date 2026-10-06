@@ -23,7 +23,7 @@ export function CloseAccountSection() {
     setClosing(true);
     setCloseError(null);
     try {
-      await closeAccount();
+      await closeAccount(user.id);
       window.location.hash = '#/';
     } catch {
       setClosing(false);

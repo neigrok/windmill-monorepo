@@ -485,8 +485,8 @@ public struct GymServerRules: ServerRules {
   }
 
   func blankNamed(_ change: RecordChange, field: String) -> Bool {
-    guard let name = value(change.after, field)?.stringValue, isBlank(name) else { return false }
-    return (change.after.isAlive && !change.before.isAlive) || changed(change, field: field)
+    guard change.after.isAlive, let name = value(change.after, field)?.stringValue, isBlank(name) else { return false }
+    return !change.before.isAlive || change.before.row?.lattice.fields[field] != change.after.lattice.fields[field]
   }
 
   func isBlank(_ name: String) -> Bool { name.unicodeScalars.allSatisfy(TextMerge.isWhitespace) }

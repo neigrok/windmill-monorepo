@@ -121,7 +121,7 @@ async function pendingAccount(context, label) {
   await page.getByRole('button', { name: `Account — Journal ${label}`, exact: true }).click();
   await page.getByRole('menuitem', { name: 'Account settings', exact: true }).click();
   await page.getByRole('heading', { name: 'Sessions & devices', exact: true }).waitFor();
-  return { page, id, email };
+  return { page, id, email, secret };
 }
 try {
   // Own the chosen ports only when they are free; never stop somebody else's stack.
@@ -138,7 +138,7 @@ try {
   vite = launch(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'],
     { cwd: process.cwd(), env: { ...process.env, VITE_API_BASE_URL: backend, WINDMILL_ALLOWED_ORIGINS: origin } });
   await Promise.all([waitForServer(`${backend}/v1/me`, server), waitForServer(origin, vite)]);
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ channel: 'chromium', headless: true });
   browser.on('disconnected', () => { if (!passed) console.error('Browser disconnected before acceptance completed'); });
   await check('journal write → offline reload → write → reconnect → convergence', async () => {
     const context = await browser.newContext(); await cookie(context);
@@ -250,6 +250,68 @@ try {
       try { await page?.unrouteAll({ behavior: 'wait' }); } finally { await context.close(); }
     }
   });
+  await check('two tabs: account A closure refuses B’s replacement cookie and preserves both accounts', async () => {
+    const context = await browser.newContext();
+    try {
+      const { page, id, email, secret } = await pendingAccount(context, 'cookie-race');
+      const settings = page.url();
+      const successor = randomUUID();
+      const link = randomBytes(24).toString('hex');
+      const nextEmail = 'journal-cookie-successor@example.com';
+      const now = Date.now();
+      sql(`insert into users(id,email,name) values('${successor}','${nextEmail}','Successor');
+        insert into magic_links(token_hash,email,created_ms,expires_ms)
+          values('${hash(link)}','${nextEmail}',${now},${now + 900000});`);
+      const other = await context.newPage();
+      await other.goto(`${origin}/privacy.html`);
+      let sessionReads = 0;
+      await page.route('**/v1/sessions', async (route) => {
+        const response = await route.fetch();
+        if (++sessionReads === 2) {
+          const signedIn = await other.evaluate(async (token) => {
+            const { verifyToken } = await import('/src/shell/auth/AuthClient.js');
+            return verifyToken(token);
+          }, link);
+          assert.equal(signedIn.user.id, successor, 'the second tab signs in as B using the real server');
+        }
+        await route.fulfill({ response });
+      });
+      const deletion = page.waitForResponse((response) => response.url() === `${backend}/v1/me`
+        && response.request().method() === 'DELETE');
+      deletion.catch(() => {});
+      const closing = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Close your account', exact: true }) });
+      await closing.getByRole('button', { name: 'Close my account', exact: true }).click();
+      await closing.getByRole('textbox').fill(email);
+      await closing.getByRole('button', { name: 'Close my account', exact: true }).click();
+      const response = await deletion;
+      const intended = await fetch(`${backend}/v1/me`, { headers: { Authorization: `Bearer ${secret}` } });
+      const successorMe = await other.evaluate(async (backend) => {
+        const response = await fetch(`${backend}/v1/me`, { credentials: 'include' });
+        return { status: response.status, body: await response.json() };
+      }, backend);
+      const closed = JSON.parse(execFileSync('psql', [url, '-X', '-At', '-v', 'ON_ERROR_STOP=1', '-c',
+        `select json_build_object('A', (select deleted_at is not null from users where id='${id}'),
+          'B', (select deleted_at is not null from users where id='${successor}'))`], { encoding: 'utf8' }));
+      console.log(`Account closure race: ${JSON.stringify({ tabs: context.pages().length, sessionReads,
+        status: response.status(), credentialStatus: { A: intended.status, B: successorMe.status }, closed })}`);
+      assert.equal(sessionReads, 2);
+      assert.equal(response.status(), 409);
+      assert.deepEqual(await response.json(), { error: 'the signed-in account changed; no account was closed', code: 'account-mismatch' });
+      assert.deepEqual(response.request().postDataJSON(), { account: id });
+      assert.equal(intended.status, 200);
+      assert.equal((await intended.json()).user.id, id);
+      assert.equal(successorMe.status, 200);
+      assert.equal(successorMe.body.user.id, successor);
+      assert.deepEqual(closed, { A: false, B: false });
+      await closing.getByText('Couldn’t finish closing your account on this device. Try again.').waitFor();
+      assert.equal(page.url(), settings);
+      assert.deepEqual(await page.evaluate(() => {
+        const engine = journal.syncSession.engine;
+        return { account: engine.device.activeReplica.meta.account, entries: engine.device.activeReplica.entries('self/journal').length,
+          closing: engine.device.meta.closingAccount, signingOut: engine.signingOut };
+      }), { account: id, entries: 1, closing: undefined, signingOut: false });
+    } finally { await context.close(); }
+  });
   await check('close account → discard device data without a question → completed sign-out', async () => {
     const context = await browser.newContext();
     let release, page;
@@ -297,7 +359,7 @@ try {
   assert.ok(Number(sql("select count(*) from events where name in ('sync_commit','sync_signin','sync_signout','sync_writer')").toString().match(/\n\s*(\d+)\s*\n/)?.[1] ?? 0) > 0, 'sync beacons reached the local intake');
   assert.ok(Number(sql("select count(*) from events where name = 'sync_signout' and props->>'outcome' = 'ok'").toString().match(/\n\s*(\d+)\s*\n/)?.[1] ?? 0) >= 3,
     'all three completed sign-outs reached the local beacon intake');
-  console.log(`Journal local-stack e2e: ${passed}/7 passed, 0 skipped; local beacon intake verified`);
+  console.log(`Journal local-stack e2e: ${passed}/8 passed, 0 skipped; local beacon intake verified`);
 } catch (error) {
   console.error(error);
   console.error(`Stack diagnostics: ${logPath}`);

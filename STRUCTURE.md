@@ -81,10 +81,11 @@ Raw design tokens are mirrored in `web/src/styles/tokens/` and
 | `deploy.yml` | deploy a successful backend main-push SHA or a manually selected image tag |
 
 Build workflows skip Markdown-only changes within their surface. Shared API contracts still trigger
-their consumers, and web retains its email README because a test reads it.
+their consumers; web also checks its email README and the verify skill because tests read them.
 
-Backend Postgres integration cases require `WM_PG_TEST` and a database: the Docker build skips them,
-and backend CI runs them in the image it built against a Postgres service. Automated model tests use
+Backend Postgres integration cases require `WM_PG_TEST` and two isolated databases (`DATABASE_URL`
+and `WM_SYNC_DATABASE_URL`, initialized as [RUNNING.md §7](backend/RUNNING.md#7-tests) describes).
+The Docker build skips them; backend CI runs them in that image against a Postgres service. Automated model tests use
 deterministic fakes and fixtures. Actual-model exploration is manual and local with a user-provided
 key.
 

@@ -47,6 +47,19 @@ and durable device work are separate from cached rows. Replica handles stay fixe
 changes. Each cache has a generation pointer; completed boots transfer the staging pointer, and
 forget/sign-out invalidate pointers atomically. Old generations are deleted in batches of 128.
 
+IndexedDB store versions are independent of the wire registry version:
+
+| Store version | Layout | Release evidence |
+|---|---|---|
+| 1 | Control and cache rows together in `records` | Legacy upgrade input; its shipping date is not recorded in the retained Git history. |
+| 2 | Control records plus generation-indexed `rows` | The browser sync release, `082e971d`, dated 2026-10-05; the earliest retained implementation, `76b82e9c` on 2026-10-04, already opens version 2. |
+
+A version-one database upgrades in one atomic IndexedDB version-change transaction. Every replica's
+confirmed, spent and staged rows move to their cache generations; controls, outboxes, notices and device
+work survive unchanged. An aborted upgrade retains the complete version-one store for retry. Native
+Chromium regressions open real version-one databases, verify every row after upgrade and reopen,
+and interrupt an upgrade after a migrated row to verify rollback.
+
 Offline open hydrates the active replica's cache once. Subsequent observation reads hydrate observed
 scopes; unobserved cache generations are invalidated, and a later observation reloads them locally.
 The default beacon adapter maps spec event labels to the intake's snake_case names.

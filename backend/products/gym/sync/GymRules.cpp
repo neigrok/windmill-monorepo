@@ -55,10 +55,15 @@ bool changed(const Change& change, const std::string& field) {
   return change.after.alive() && change.wasAlive() && !same(value(&*change.stored, field), value(&change.after, field));
 }
 
-// A.2 display names: one created or changed to a blank one is `invalid`, whoever writes it. A stored one stands.
+// A.2 display names: a new blank register is invalid; untouched historical names stand.
 bool blankNamed(const Change& change, const std::string& field) {
   const Json::Value name = value(&change.after, field);
-  return name.isString() && isBlank(name.asString()) && (created(change) || changed(change, field));
+  if (!change.after.alive() || !name.isString() || !isBlank(name.asString())) return false;
+  if (created(change)) return true;
+  const auto before = change.stored->lattice.f.find(field);
+  const auto& after = change.after.lattice.f.at(field);
+  return before == change.stored->lattice.f.end() || before->second.stamp != after.stamp
+      || !same(before->second.value, after.value);
 }
 
 Delta deltaFor(const Row& row) {

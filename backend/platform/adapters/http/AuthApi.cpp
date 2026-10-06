@@ -577,6 +577,15 @@ void AuthApi::deleteMe(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     callback(error(drogon::k401Unauthorized, "sign in to close your account"));
     return;
   }
+  const auto json = req->getJsonObject();
+  if (!json || !json->isObject() || !(*json)["account"].isString() || (*json)["account"].asString().empty()) {
+    callback(error(drogon::k400BadRequest, "name the account to close", "malformed"));
+    return;
+  }
+  if ((*json)["account"].asString() != caller->id.str()) {
+    callback(error(drogon::k409Conflict, "the signed-in account changed; no account was closed", "account-mismatch"));
+    return;
+  }
   const UnixMs closesMs = auth_->closeAccount(caller->id);
 
   Json::Value body(Json::objectValue);

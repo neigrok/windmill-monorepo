@@ -260,8 +260,9 @@ cmake --build backend/build -j4
 ctest --test-dir backend/build -R adapters --output-on-failure
 ```
 
-Postgres cases additionally require `WM_PG_TEST=1` and an isolated `DATABASE_URL`, as described
-above. A local protocol fixture can exercise HTTP and proxy transport without calling a model;
+Postgres cases additionally require `WM_PG_TEST=1`, an isolated `DATABASE_URL` and an isolated
+`WM_SYNC_DATABASE_URL` initialized with the probe schema, as described in §7. Run the suites serially.
+A local protocol fixture can exercise HTTP and proxy transport without calling a model;
 its replies do not establish actual-model quality or vision understanding.
 
 Actual-model exploration is manual and local only, when the user provides a local key. Use the

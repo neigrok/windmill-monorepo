@@ -53,8 +53,8 @@ RoutineProposal::RoutineProposal(ProposalHead head, int baseRevision, std::strin
                                  std::string proposedName, std::vector<RoutineChange> changes)
     : RoutineProposal(Stored{}, std::move(head), baseRevision, std::move(baseName),
                       std::move(proposedName), std::move(changes)) {
-  if (sync::isBlank(this->baseName) || sync::isBlank(this->proposedName))
-    throw InvalidTraining("a proposal names the routine on both sides");
+  if (this->head.intent == ProposalIntent::revise && sync::isBlank(this->proposedName))
+    throw InvalidTraining("a revision proposal needs a name");
 }
 
 RoutineProposal::RoutineProposal(Stored, ProposalHead head, int baseRevision, std::string baseName,

@@ -270,13 +270,11 @@ TEST(proposal_refuses_what_it_could_never_be_applied_as) {
   }));
 }
 
-// A write refuses a blank name on either side by admission's own test; a read builds what the store holds.
-TEST(proposal_write_refuses_a_blank_name_and_a_stored_one_reads_as_it_trims) {
+TEST(proposal_write_refuses_a_blank_revision_name_and_reads_historical_names) {
   const std::vector<RoutineChange> ok =
       changesBetween({line(1, "bench-press")}, {line(1, "bench-press", straight(5, 3, 87.5))});
-  const std::string sentence = "a proposal names the routine on both sides";
+  const std::string sentence = "a revision proposal needs a name";
   CHECK_EQ(refusal([&] { RoutineProposal{head(), 1, "Push A", "", ok}; }), sentence);
-  CHECK_EQ(refusal([&] { RoutineProposal{head(), 1, "   ", "Push A", ok}; }), sentence);
   CHECK_EQ(refusal([&] { RoutineProposal{head(), 1, "Push A", "\xC2\xA0", ok}; }), sentence);   // U+00A0
 
   const RoutineProposal stored{Stored{}, head(), 2, "   ", "\xE3\x80\x80", ok};   // U+3000
@@ -287,6 +285,24 @@ TEST(proposal_write_refuses_a_blank_name_and_a_stored_one_reads_as_it_trims) {
   CHECK_EQ(stored.changes, ok);
   CHECK_EQ(refusal([&] { RoutineProposal{Stored{}, head(), 0, "", "", ok}; }),
            std::string("a proposal stands on a revision from 1"));
+}
+
+TEST(proposals_can_rename_or_remove_a_historical_blank_routine) {
+  const std::vector<RoutineEntry> base{line(1, "bench-press")};
+  const auto kept = changesBetween(base, base);
+  const auto removed = changesBetween(base, {});
+  for (const std::string name : {"", " \t ", "\xC2\xA0\xE2\x80\x83\xEF\xBB\xBF"}) {
+    const RoutineProposal renamed{head(), 1, name, "Readable name", kept};
+    CHECK_EQ(renamed.baseName, trimmedName(name));
+    CHECK_EQ(renamed.proposedName, "Readable name");
+    CHECK_EQ(renamed.changes, kept);
+    const RoutineProposal removal{head(ProposalIntent::remove), 1, name, name, removed};
+    CHECK_EQ(removal.baseName, trimmedName(name));
+    CHECK_EQ(removal.proposedName, trimmedName(name));
+    CHECK_EQ(removal.changes, removed);
+    CHECK_EQ(refusal([&] { RoutineProposal{head(), 1, name, name, kept}; }),
+             "a revision proposal needs a name");
+  }
 }
 
 TEST(proposal_refuses_a_removed_line_in_the_middle_of_the_run) {

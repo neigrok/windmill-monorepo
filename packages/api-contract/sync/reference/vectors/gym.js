@@ -392,6 +392,41 @@ function names() {
   ];
 }
 
+function historicalNames() {
+  return [['empty', ''], ['ASCII blank', ' \t '], ['Unicode blank', '\u00a0\u2003\u202f\u3000\ufeff']].flatMap(([label, name]) => {
+    const routine = rec('routine', 'routine0001', { stamp: s(T + 1), seq: 1,
+      f: { name, position: 0, entries: SQUAT, revision: 1, createdEntries: 1 } });
+    const state = gymState({ rows: { [GYM_A]: [routine] } });
+    const propose = (intent, proposedName, origin) => gym([create('proposal', 'proposal003', origin === SERVER_A ? null : s(T + 9 * H), {
+      routineId: routine.id, intent, proposedName, summary: '',
+      changes: intent === 'remove' ? CHANGES.map(({ exerciseId, before }) => ({ kind: 'removed', exerciseId, before })) : CHANGES,
+      door: origin === SERVER_A ? 'mcp' : 'ask', connection: '', agent: '',
+    })], origin === A ? { guard: ROUTINE_GUARDS } : {});
+    return [
+      admitted(`historical ${label} routine accepts an entries-only edit`, { state,
+        intent: gym([update('routine', routine.id, routine.born, s(T + 9 * H), { entries: [{ exerciseId: 'dip' }] })]) }),
+      admitted(`historical ${label} routine accepts a valid rename`, { state,
+        intent: gym([update('routine', routine.id, routine.born, s(T + 9 * H), { name: 'Readable name' })]) }),
+      admitted(`historical ${label} routine remains readable when starting a workout`, { state,
+        intent: cmd('gym.start', { id: 'session0002', routineId: routine.id, startedAt: NOW, joinOpenSession: true }) }),
+      admitted(`historical ${label} routine refuses a new blank revision proposal`, { state, origin: SERVER_A,
+        intent: propose('revise', name, SERVER_A) }),
+      ...[A, SERVER_A].flatMap((origin) => {
+        const input = { state, origin, serverNow: NOW,
+          intent: gym([update('routine', routine.id, routine.born, origin === SERVER_A ? null : s(T + 9 * H), { name })]) };
+        return [
+          admitted(`historical ${label} routine accepts a ${origin.kind} rename proposal`, { state, origin,
+            intent: propose('revise', 'Readable name', origin) }),
+          admitted(`historical ${label} routine accepts a ${origin.kind} removal proposal`, { state, origin,
+            intent: propose('remove', name, origin) }),
+          vector(`historical ${label} routine refuses a ${origin.kind} write setting the same blank name`, input,
+            { result: { s: 'refused', code: 'invalid' }, state }),
+        ];
+      }),
+    ];
+  });
+}
+
 // M7: notes order by `ord`; the cap counts alive notes.
 function notes() {
   const note = (id, seq, ord) => rec('note', id, { stamp: s(T + seq), seq, f: { title: `Note ${seq}`, body: '', ord, updatedAt: T } });
@@ -475,6 +510,6 @@ function metadata() {
 
 export function files() {
   return {
-    'gym/admit.json': [...weighins(), ...catalog(), ...sets(), ...routines(), ...proposals(), ...sessions(), ...notes(), ...names(), ...adversarial(), ...metadata()],
+    'gym/admit.json': [...weighins(), ...catalog(), ...sets(), ...routines(), ...proposals(), ...sessions(), ...notes(), ...names(), ...historicalNames(), ...adversarial(), ...metadata()],
   };
 }

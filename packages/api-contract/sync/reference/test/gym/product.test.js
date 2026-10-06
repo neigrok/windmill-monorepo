@@ -26,6 +26,28 @@ test('gym/admit.json replays through admit under gym.registry.json and gym\'s bi
   }
 });
 
+test('historical blank names remain readable and repairable while new blank names are refused', () => {
+  const vectors = load('admit.json').filter(({ name }) => name.startsWith('historical '));
+  assert.equal(vectors.length, 30);
+  for (const { name, input, expect } of vectors) {
+    const state = new ServerState(input.state);
+    const original = state.row('acct:A/gym', 'routine', 'routine0001');
+    assert.equal(expect.result.s, name.includes(' refuses ') ? 'refused' : 'ok', name);
+    if (expect.result.s === 'refused') {
+      assert.equal(expect.result.code, 'invalid', name);
+      assert.deepEqual(expect.state, input.state, name);
+    }
+    const replica = Replica.fresh({ replica: 'rp_00000000000000000000000000000001', state: 'bound', account: 'A' });
+    const request = pullRequest(replica, gymRegistry, ['self/gym']);
+    const response = pull({ state, registry: gymRegistry, product: gymProduct, account: 'A', request,
+      serverNow: input.serverNow, limits: CONSTANTS }).response;
+    const rows = response.body.pages.flatMap((page) => page.rows ?? []);
+    assert.deepEqual(rows.find((row) => row.t === 'routine'), original, name);
+    const proposal = expect.state.rows['acct:A/gym'].find((row) => row.t === 'proposal');
+    if (proposal) assert.deepEqual(proposal.f.baseName[0], original.f.name[0], name);
+  }
+});
+
 test('R118 metadata reflects admitted facts and preserves immutable receipts', () => {
   const rows = (name) => load('admit.json').find((v) => v.name === name).expect.state.rows['acct:A/gym'];
   const row = (name, t, id) => rows(name).find((r) => r.t === t && r.id === id);

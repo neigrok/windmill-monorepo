@@ -83,15 +83,98 @@ test('a device write commits with no record and is read back inside the next run
   engine.close();
 });
 
-test('a run inside a run and a decider that awaits are faults, and write nothing', async () => {
+for (const phase of ['load', 'decide', 'refusal']) for (const operation of ['run', 'save']) for (const shared of [true, false]) {
+  test(`a nested ${operation} in ${phase} on ${shared ? 'the same' : 'another'} runner cannot queue a write after the outer fault`, async () => {
+    const { env, engine, runner } = await open();
+    const inner = shared ? runner : new ActionRunner(new EngineReplica(engine), env.options.registry, new FixedZone(0));
+    const draft = Draft.new(probeValue(Probe.card, runner.mint(Probe.card).record, { title: 'Nested' }), Placement.bottom);
+    const write = action(PROBE_SCOPE, () => null, () => {
+      const plan = new Plan();
+      plan.device('rack', { unexpected: 'persisted' });
+      return Decision.write(plan, null);
+    });
+    const before = (await engine.store.read()).device.toJSON();
+    /** @type {Promise<unknown> | undefined} */
+    let nested;
+    const enter = () => {
+      nested = operation === 'run' ? inner.run(write) : inner.save(draft, ProbeRefusals);
+      void nested.catch(() => {});
+      return nested;
+    };
+    const outer = action(PROBE_SCOPE, phase === 'load' ? enter : () => null,
+      /** @type {any} */ (phase === 'decide' ? enter : () => {
+        if (phase !== 'refusal') return Decision.unchanged(null);
+        const plan = new Plan();
+        plan.remove(draft.current.id);
+        return Decision.write(plan, null);
+      }));
+    if (phase === 'refusal') outer.refusals = { ...ProbeRefusals, ofRefused: () => {
+      enter();
+      throw new Fault('the outer refusal failed');
+    } };
+    const [outerResult] = await Promise.allSettled([runner.run(outer)]);
+    assert.ok(nested);
+    const [innerResult] = await Promise.allSettled([nested]);
+    const after = (await engine.store.read()).device.toJSON();
+    engine.close();
+    const reopened = await BrowserSyncEngine.open(env.options);
+    const restored = (await reopened.store.read()).device.toJSON();
+    reopened.close();
+    assert.deepEqual(after, before);
+    assert.deepEqual(restored, before);
+    assert.equal(outerResult?.status, 'rejected');
+    assert.ok(outerResult?.status === 'rejected' && outerResult.reason instanceof Fault);
+    assert.equal(innerResult?.status, 'rejected');
+    assert.ok(innerResult?.status === 'rejected' && innerResult.reason instanceof Fault);
+    assert.equal(innerResult?.status === 'rejected' && innerResult.reason.message, 'a run cannot enter inside a run');
+  });
+}
+
+test('independent queued runs commit and a decider that awaits writes nothing', async () => {
   const { engine, runner } = await open();
-  const nested = action(PROBE_SCOPE, () => runner.run(action(PROBE_SCOPE, () => null, () => Decision.unchanged(null))), () => Decision.unchanged(null));
-  await assert.rejects(runner.run(nested), Fault);
+  const outcomes = await Promise.all([1, 2].map((n) => runner.run(action(PROBE_SCOPE, () => null, () => {
+    const plan = new Plan();
+    plan.device('rack', n);
+    return Decision.write(plan, null);
+  }))));
+  assert.deepEqual(outcomes.map((outcome) => outcome.kind), ['committed', 'committed']);
+  assert.equal(runner.read(PROBE_SCOPE, (reader) => reader.device('rack')), 2);
   const awaiting = action(PROBE_SCOPE, async () => null, () => Decision.unchanged(null));
   await assert.rejects(runner.run(/** @type {any} */ (awaiting)), Fault);
-  assert.equal(runner.insideRun, false);
   assert.deepEqual(engine.observe(PROBE_SCOPE).getSnapshot().drawn, []);
   engine.close();
+});
+
+test('mapping an engine refusal cannot queue an inner write after the outer fault', async () => {
+  const { env, engine, runner } = await open({ limits: { PUSH_MAX_BYTES: 64 } });
+  const draft = Draft.new(probeValue(Probe.card, runner.mint(Probe.card).record, { title: 'Plan' }), Placement.bottom);
+  /** @type {Promise<unknown> | undefined} */
+  let nested;
+  const refusals = { ...ProbeRefusals, ofRefused: () => {
+    nested = runner.run(action(PROBE_SCOPE, () => null, () => {
+      const plan = new Plan();
+      plan.device('rack', { unexpected: 'persisted' });
+      return Decision.write(plan, null);
+    }));
+    void nested.catch(() => {});
+    throw new Fault('the outer refusal failed');
+  } };
+  await assert.rejects(runner.save(draft, refusals), Fault);
+  assert.ok(nested);
+  const [inner] = await Promise.allSettled([nested]);
+  const after = (await engine.store.read()).device.toJSON().replicas[0];
+  engine.close();
+  const reopened = await BrowserSyncEngine.open(env.options);
+  const restored = (await reopened.store.read()).device.toJSON().replicas[0];
+  reopened.close();
+  for (const replica of [after, restored]) {
+    assert.equal(replica.device, undefined);
+    assert.equal(replica.outbox, undefined);
+    assert.equal(replica.notices?.length, 1);
+    assert.equal(replica.notices?.[0].dismissed, true);
+  }
+  assert.equal(inner?.status, 'rejected');
+  assert.ok(inner?.status === 'rejected' && inner.reason instanceof Fault);
 });
 
 test('a too-large commit is refused once, with the record as its subject, and its notice is dismissed', async () => {

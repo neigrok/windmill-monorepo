@@ -353,34 +353,94 @@ TEST(pg_gym_a_proposal_round_trips_its_typed_diff_with_every_absence_intact) {
 // Blank names the store holds read as stored: the routines, one routine, its Coach creation and a proposal.
 TEST(pg_gym_blank_stored_routine_and_proposal_names_read_as_stored) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
-  doortest::Harness h;
-  const Routine pushDay = dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press")});
-  const Routine pullDay = dayOf(h.user, "rt_pg000002", "Pull A", {entryAt(1, "back-squat")}, 1);
-  REQUIRE(mcpCreate(h, pushDay).routine.has_value());
-  REQUIRE(h.door.createRoutine(h.user, RoutineWrite{pullDay.id, pullDay.name, pullDay.position, pullDay.entries},
-                                  ProposalDoor::ask).routine.has_value());
-  const ProposalWrite heavier = proposalOf("prop_pg00001", "rt_pg000001", {benchAt(87.5, 3)});
-  REQUIRE(h.door.propose(h.user, heavier).proposal.has_value());
-  {
-    PgLease lease{*doortest::pool()};
-    pqxx::work txn{*lease};
-    txn.exec("UPDATE gym_routines SET name = '   ' WHERE id IN ('rt_pg000001', 'rt_pg000002')");
-    txn.exec("UPDATE gym_routine_creations SET routine = jsonb_set(routine, '{name}', '\"\\t\"') "
-             "WHERE routine_id = 'rt_pg000002'");
-    txn.exec("UPDATE gym_proposals SET base_name = '   ', proposed_name = $1 WHERE id = 'prop_pg00001'",
-             pqxx::params{"\xE3\x80\x80"});   // U+3000, past the ASCII trim
-    txn.commit();
-  }
-  const Routine push{Stored{}, pushDay.id, h.user, "", 0, pushDay.entries};
-  const Routine pull{Stored{}, pullDay.id, h.user, "", 1, pullDay.entries};
-  const RoutineProposal minted = mintedFrom(pushDay, heavier, kNow);
+  for (const std::string name : {"", " \t ", "\xC2\xA0\xE2\x80\x83\xEF\xBB\xBF"}) {
+    doortest::Harness h;
+    const Routine pushDay = dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press")});
+    const Routine pullDay = dayOf(h.user, "rt_pg000002", "Pull A", {entryAt(1, "back-squat")}, 1);
+    REQUIRE(mcpCreate(h, pushDay).routine.has_value());
+    REQUIRE(h.door.createRoutine(h.user, RoutineWrite{pullDay.id, pullDay.name, pullDay.position, pullDay.entries},
+                                    ProposalDoor::ask).routine.has_value());
+    const ProposalWrite heavier = proposalOf("prop_pg00001", "rt_pg000001", {benchAt(87.5, 3)});
+    REQUIRE(h.door.propose(h.user, heavier).proposal.has_value());
+    {
+      PgLease lease{*doortest::pool()};
+      pqxx::work txn{*lease};
+      txn.exec("UPDATE gym_routines SET name = $1 WHERE id IN ('rt_pg000001', 'rt_pg000002')", pqxx::params{name});
+      txn.exec("UPDATE gym_routine_creations SET routine = jsonb_set(routine, '{name}', to_jsonb($1::text)) "
+               "WHERE routine_id = 'rt_pg000002'", pqxx::params{name});
+      txn.exec("UPDATE gym_proposals SET base_name = $1, proposed_name = $1 WHERE id = 'prop_pg00001'", pqxx::params{name});
+      txn.commit();
+    }
+    const Routine push{Stored{}, pushDay.id, h.user, name, 0, pushDay.entries};
+    const Routine pull{Stored{}, pullDay.id, h.user, name, 1, pullDay.entries};
+    const RoutineProposal minted = mintedFrom(pushDay, heavier, kNow);
 
-  CHECK_EQ(h.repo.program.routines(h.user), (std::vector<Routine>{push, pull}));
-  CHECK_EQ(h.repo.program.routine(h.user, RoutineId{"rt_pg000001"}), std::optional<Routine>(push));
-  CHECK_EQ(h.repo.program.routineCreation(h.user, RoutineId{"rt_pg000002"}), std::optional<Routine>(pull));
-  CHECK_EQ(h.repo.program.proposal(h.user, ProposalId{"prop_pg00001"}),
-           std::optional<RoutineProposal>(
-               RoutineProposal{Stored{}, minted.head, minted.baseRevision, "", "\xE3\x80\x80", minted.changes}));
+    CHECK_EQ(h.repo.program.routines(h.user), (std::vector<Routine>{push, pull}));
+    CHECK_EQ(h.repo.program.routine(h.user, RoutineId{"rt_pg000001"}), std::optional<Routine>(push));
+    CHECK_EQ(h.repo.program.routineCreation(h.user, RoutineId{"rt_pg000002"}), std::optional<Routine>(pull));
+    CHECK_EQ(h.repo.program.proposal(h.user, ProposalId{"prop_pg00001"}),
+             std::optional<RoutineProposal>(
+                 RoutineProposal{Stored{}, minted.head, minted.baseRevision, name, name, minted.changes}));
+    CHECK_EQ(h.repo.program.proposalHeads(h.user, ProposalQuery{push.id, false}), std::vector<ProposalHead>{minted.head});
+    REQUIRE_EQ(h.repo.program.routineHistory(h.user, push.id).size(), 2u);
+    CHECK_EQ(h.repo.program.routineHistory(h.user, push.id)[0].proposal, std::optional<ProposalHead>{minted.head});
+  }
+}
+
+TEST(pg_gym_mcp_and_coach_can_propose_renaming_and_removing_historical_blank_routines) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  for (const std::string name : {"", " \t ", "\xC2\xA0\xE2\x80\x83\xEF\xBB\xBF"}) {
+    doortest::Harness h;
+    const Routine initial = dayOf(h.user, "rt_pg000001", "Named routine", {entryAt(1, "bench-press")});
+    REQUIRE(mcpCreate(h, initial).routine.has_value());
+    {
+      wm::sync::PgSyncStore store{doortest::pool(), wm::sync::Limits{}.lockTimeoutMs};
+      const auto txn = store.begin(wm::sync::TxnMode::write);
+      wm::sync::sqlOf(*txn).exec("UPDATE gym_routines SET name = $1 WHERE id = $2", pqxx::params{name, initial.id.str()});
+      const auto key = wm::sync::ScopeKey::product(h.user, "gym");
+      auto scope = store.scope(*txn, key, wm::sync::RowLock::update).value();
+      scope.digest = wm::sync::Digest256{};
+      const auto catalog = wm::sync::productCatalog();
+      for (const auto* type : catalog->typesIn(key.registryScope()))
+        for (const auto& row : catalog->store(type->name).feed(*txn, key, wm::sync::FeedQuery{}))
+          scope.digest = scope.digest + wm::sync::rowHash(row.toJson());
+      store.saveScope(*txn, scope);
+      txn->commit();
+    }
+    const Routine historical{Stored{}, initial.id, h.user, name, initial.position, initial.entries};
+    for (const ProposalDoor door : {ProposalDoor::mcp, ProposalDoor::ask}) {
+      const auto caller = wm::ToolCaller{h.user, wm::ToolScope::everything()};
+      const ProposalSource source{door, "", "", std::nullopt};
+      ReadReceipt read;
+      Json::Value args = toJson(initial);
+      args["id"] = door == ProposalDoor::mcp ? "prop_mcp0001" : "prop_ask0001";
+      args["routineId"] = initial.id.str();
+      args["name"] = "Readable name";
+      const auto renamed = h.tools.callTool("propose_routine_change", args, caller, source, read);
+      REQUIRE(!renamed.isError);
+      const auto storedRename = h.repo.program.proposal(h.user, ProposalId{args["id"].asString()});
+      REQUIRE(storedRename.has_value());
+      CHECK_EQ(storedRename->baseName, trimmedName(name));
+      CHECK_EQ(storedRename->proposedName, "Readable name");
+      CHECK_EQ(storedRename->head.state, ProposalState::pending);
+      CHECK_EQ(storedRename->head.source, source);
+      args["id"] = door == ProposalDoor::mcp ? "prop_mcp0002" : "prop_ask0002";
+      args.removeMember("name");
+      args.removeMember("entries");
+      const auto removed = h.tools.callTool("propose_routine_removal", args, caller, source, read);
+      REQUIRE(!removed.isError);
+      const auto storedRemoval = h.repo.program.proposal(h.user, ProposalId{args["id"].asString()});
+      REQUIRE(storedRemoval.has_value());
+      CHECK_EQ(storedRemoval->baseName, trimmedName(name));
+      CHECK_EQ(storedRemoval->proposedName, trimmedName(name));
+      CHECK_EQ(storedRemoval->head.intent, ProposalIntent::remove);
+      CHECK_EQ(storedRemoval->head.state, ProposalState::pending);
+      CHECK_EQ(storedRemoval->head.source, source);
+      CHECK_EQ(h.repo.program.routine(h.user, initial.id), std::optional<Routine>{historical});
+      CHECK_EQ(h.repo.program.routines(h.user), std::vector<Routine>{historical});
+      CHECK(doortest::scopeConsistent(h.user));
+    }
+  }
 }
 
 // A second proposal from the same door settles the first, and the replaced row says so even once the routine moves.

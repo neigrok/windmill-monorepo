@@ -2610,9 +2610,11 @@ create is pending.
 
 **Display names.** `routine.name`, `exercise.name`, `exerciseName.name`, `note.title` and a revision's
 `proposedName` are blank when they hold nothing but whitespace, the set §6.11 tokenises on. A create
-or a change to a blank one is `invalid`, whoever writes it; clients trim before they write, and
-admission keeps a name as it arrives. A blank one already stored stands until it next changes,
-and a server read shows it as stored rather than failing.
+or a write setting a blank name register is `invalid`, including a newer stamp carrying the same
+blank value, whoever writes it. Clients trim before they write; admission keeps a name as it arrives.
+A historical blank name stays readable and permits writes to other fields. A revision proposal
+may replace it with a valid name, and a removal proposal may retain it. Neither proposal validates
+the historical `baseName` as a new name.
 
 **Set rules** (`check`):
 - A supplied or automatically assigned `setNumber` outside 1–2 147 483 647 → `invalid`. The

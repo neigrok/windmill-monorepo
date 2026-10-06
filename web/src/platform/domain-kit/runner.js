@@ -15,6 +15,8 @@ import { Instant, Moment } from './time.js';
 import { translate } from './translation.js';
 import { Fault, precondition } from './values.js';
 
+let insideRun = false;
+
 /** @typedef {import('./values.js').Json} Json */
 /** @typedef {import('./entities.js').RecordID} RecordID */
 /** @typedef {import('./entities.js').ViewRecord} ViewRecord */
@@ -64,7 +66,6 @@ export class ActionRunner {
     this.replica = replica;
     this.registry = registry;
     this.zone = zone;
-    this.insideRun = false;
   }
 
   /**
@@ -83,20 +84,27 @@ export class ActionRunner {
    * @returns {Promise<import('./actions.js').Outcome<T, R>>}
    */
   async perform(decider) {
+    precondition(!insideRun, 'a run cannot enter inside a run');
     const scope = decider.scope;
     /** @typedef {{ done: import('./actions.js').Outcome<T, R> } | { writing: { plan: import('./plans.js').Plan, result: T } }} Step */
     /** @type {{ outcome: CommitOutcome | null, value: Step }} */
     let committed;
     try {
       committed = await this.replica.commit(scope, /** @returns {{ gesture: Gesture | null, value: Step }} */ (input) => {
-        const views = this.viewsOf(scope, input);
-        const reader = new Reader(views, scope, new Moment(new Instant(input.now), this.zone));
-        const decided = this.decideInside(decider, reader, new IDSource(views));
-        if (decided.kind === 'refuse') return { gesture: null, value: { done: Outcome.refused(decided.refusal) } };
-        if (decided.kind === 'unchanged') return { gesture: null, value: { done: Outcome.unchanged(decided.result) } };
-        const gone = firstGone(decided.plan, views, scope, this.registry);
-        if (gone) return { gesture: null, value: { done: Outcome.refused(decider.refusals.ofRefused(gone)) } };
-        return { gesture: translate(decided.plan, scope, this.registry), value: { writing: { plan: decided.plan, result: decided.result } } };
+        insideRun = true;
+        try {
+          const views = this.viewsOf(scope, input);
+          const reader = new Reader(views, scope, new Moment(new Instant(input.now), this.zone));
+          const loaded = decider.load(reader);
+          precondition(!isThenable(loaded), 'a decider loads synchronously');
+          const decided = decision(decider, loaded, new IDSource(views));
+          precondition(!isThenable(decided), 'a decider decides synchronously');
+          if (decided.kind === 'refuse') return { gesture: null, value: { done: Outcome.refused(decided.refusal) } };
+          if (decided.kind === 'unchanged') return { gesture: null, value: { done: Outcome.unchanged(decided.result) } };
+          const gone = firstGone(decided.plan, views, scope, this.registry);
+          if (gone) return { gesture: null, value: { done: Outcome.refused(decider.refusals.ofRefused(gone)) } };
+          return { gesture: translate(decided.plan, scope, this.registry), value: { writing: { plan: decided.plan, result: decided.result } } };
+        } finally { insideRun = false; }
       });
     } catch (error) {
       if (error instanceof Error && 'kind' in error && error.kind === 'malformed') throw new Fault(`a malformed commit is a programming fault: ${error.message}`);
@@ -109,33 +117,13 @@ export class ActionRunner {
     if ('refused' in outcome) {
       const { code, detail, notice } = outcome.refused;
       if (notice !== null) await this.replica.dismissNotice(notice);
-      return Outcome.refused(decider.refusals.ofRefused(new Refused(code, refusalSubject(plan, code, detail, this.registry), detail, 'predicted')));
+      insideRun = true;
+      try { return Outcome.refused(decider.refusals.ofRefused(new Refused(code, refusalSubject(plan, code, detail, this.registry), detail, 'predicted'))); }
+      finally { insideRun = false; }
     }
     const { receipt } = outcome;
     const wroteNothing = receipt.localIds.length === 0 && receipt.retired.length === 0 && plan.deviceWrites.length === 0;
     return wroteNothing ? Outcome.unchanged(result) : Outcome.committed(result, receipt);
-  }
-
-  // Steps 1, 3 and 4: no run inside a run, and a decider that loads or decides asynchronously is a fault,
-  // since the transaction has ended by the time it would resume.
-  /**
-   * @template L, T, R
-   * @param {import('./actions.js').Decider<L, T, R>} decider
-   * @param {Reader} reader
-   * @param {IDSource} ids
-   */
-  decideInside(decider, reader, ids) {
-    precondition(!this.insideRun, 'a run cannot enter inside a run');
-    this.insideRun = true;
-    try {
-      const loaded = decider.load(reader);
-      precondition(!isThenable(loaded), 'a decider loads synchronously');
-      const decided = decision(decider, loaded, ids);
-      precondition(!isThenable(decided), 'a decider decides synchronously');
-      return decided;
-    } finally {
-      this.insideRun = false;
-    }
   }
 
   /**

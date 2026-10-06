@@ -111,11 +111,12 @@ test('Chromium: a 426 shows the update state; a verified latest-shell reload ret
 });
 
 async function settings(context, name) {
-  const state = { signedIn: true, userId: 'A', sessionId: 'this', requests: [], closeStatus: 200 };
+  const state = { signedIn: true, userId: 'A', sessionId: 'this', requests: [], closures: [], closeStatus: 200 };
   await context.route('**/v1/me', async (route) => {
     const method = route.request().method();
     state.requests.push(`${method} /v1/me`);
     if (method === 'DELETE') {
+      state.closures.push(route.request().postDataJSON());
       if (state.beforeClose) await state.beforeClose();
       if (state.closeStatus === 200) state.signedIn = false;
       if (state.closeResponseLost) return route.abort('failed');
@@ -255,6 +256,30 @@ test('Chromium: account closure discards without asking; failed server and local
     assert.equal(await page.getByRole('dialog').count(), 0);
     assert.equal(await page.evaluate((replica) => engine.device.replicas.some((each) => each.id === replica), replica), false);
     assert.deepEqual(state.requests.filter((request) => request.startsWith('DELETE')), ['DELETE /v1/me', 'DELETE /v1/me']);
+  } finally { await context.close(); }
+});
+
+test('Chromium: closure names the confirmed account and a mismatch keeps its pending work', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    const { page, state } = await settings(context, 'auth-close-mismatch');
+    await page.waitForFunction(() => engine.device.activeReplica.meta.pushRetryAt);
+    const replica = await page.evaluate(() => engine.device.activeReplica.toJSON());
+    state.closeStatus = 409;
+    await page.getByRole('button', { name: 'Close my account', exact: true }).click();
+    await page.getByPlaceholder('ada@example.test').fill('ada@example.test');
+    await page.getByRole('button', { name: 'Close my account', exact: true }).click();
+    await page.getByText('Couldn’t finish closing your account on this device. Try again.').waitFor();
+    assert.deepEqual(state.closures, [{ account: 'A' }]);
+    assert.equal(state.signedIn, true);
+    assert.equal(page.url(), `${origin}/auth-test#/settings`);
+    const retained = await page.evaluate(() => engine.device.activeReplica.toJSON());
+    // The bounded flush can schedule another send without changing the pending work.
+    delete replica.meta.pushRetryAt; delete retained.meta.pushRetryAt;
+    assert.deepEqual(retained, replica);
+    assert.equal(await page.evaluate(() => engine.device.meta.closingAccount), undefined);
+    assert.equal(await page.evaluate(() => engine.signingOut), false);
   } finally { await context.close(); }
 });
 

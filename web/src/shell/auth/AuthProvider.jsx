@@ -72,7 +72,7 @@ export default function AuthProvider({ children }) {
         const current = (await listSessions()).find((session) => session.current);
         if (!current?.id) throw new Error('account-closure-session-unavailable');
         if (current.id === sessionId) {
-          try { await requestAccountClosure(); }
+          try { await requestAccountClosure(account); }
           catch (error) {
             if (error.status && error.status !== 401) {
               await engine.write(null, (device) => { if (device.meta.closingAccount?.sessionId === sessionId) delete device.meta.closingAccount; });
@@ -158,12 +158,13 @@ export default function AuthProvider({ children }) {
     }).catch(() => { signOutResult.current = null; resolve(false); });
     return promise;
   }, [enqueue]);
-  const closeAccount = useCallback(() => enqueue(async () => {
+  const closeAccount = useCallback((account) => enqueue(async () => {
     setBusy(true); setError(false);
     const engine = syncSession.engine;
     try {
+      if (!account || (engine.device.meta.closingAccount?.account ?? engine.device.activeReplica.meta.account) !== account)
+        throw new Error('account-changed-during-closure');
       if (!engine.device.meta.closingAccount) {
-        const account = engine.device.activeReplica.meta.account;
         const current = (await listSessions()).find((session) => session.current);
         if (!current?.id) throw new Error('account-closure-session-unavailable');
         if (!engine.releaseSignOut) await engine.beginSignOut();

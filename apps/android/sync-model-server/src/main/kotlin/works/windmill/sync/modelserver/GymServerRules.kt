@@ -276,7 +276,8 @@ class GymServerRules : ServerRules {
         if (proposed.any { !known(it["exerciseId"]) }) throw Refusal("unknown-exercise")
     }
     private fun changed(change: RecordChange, field: String) = change.after.isAlive && change.before.isAlive && value(change.before.row, field) != value(change.after, field)
-    private fun blankNamed(change: RecordChange, field: String) = (value(change.after, field) as? Json.Str)?.value?.let(TextMerge::isBlank) == true && (change.createdHere || changed(change, field))
+    private fun blankNamed(change: RecordChange, field: String) = change.after.isAlive && (value(change.after, field) as? Json.Str)?.value?.let(TextMerge::isBlank) == true &&
+        (change.createdHere || change.before.row?.lattice?.fields?.get(field) != change.after.lattice.fields[field])
     private fun renamed(aliases: Json?, before: Json, after: Json) = Json.Arr((listOf(before) + aliases?.arr().orEmpty().filter { it != before && it != after }).take(5))
     private fun staleClose(c: RuleContext): List<PlannedDelta> {
         val open = c.storedRecords("session").firstOrNull(::isOpen) ?: return emptyList(); val last = lastActivity(open, c)

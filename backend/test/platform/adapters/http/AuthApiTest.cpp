@@ -366,10 +366,10 @@ TEST(auth_the_link_door_signs_the_surviving_account_in_across_both_cookie_scopes
 
 TEST(auth_closing_an_account_clears_this_device_s_cookie_and_names_the_day_it_ends) {
   Harness h;
-  h.signIn("s-live");
+  const UserId mine = h.signIn("s-live");
 
   const drogon::HttpResponsePtr response =
-      call(h, &AuthApi::deleteMe, request(drogon::Delete, "/v1/me", "", "s-live"));
+      call(h, &AuthApi::deleteMe, request(drogon::Delete, "/v1/me", "{\"account\":\"" + mine.str() + "\"}", "s-live"));
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
   checkSessionCookies(response, true, kDomain, 0);
 
@@ -379,6 +379,42 @@ TEST(auth_closing_an_account_clears_this_device_s_cookie_and_names_the_day_it_en
   REQUIRE_EQ(body["closingOn"].asString().size(), std::size_t{20});   // ISO 8601 UTC, to the second
   CHECK_EQ(body["closingOn"].asString().back(), 'Z');
   CHECK(h.authRepo.sessions.empty());
+}
+
+TEST(auth_closing_an_account_refuses_a_shared_cookie_for_another_account) {
+  Harness h;
+  const UserId intended = h.signIn("s-intended", "ada@example.com");
+  const UserId successor = h.signIn("s-successor", "sam@example.com");
+  const auto response = call(h, &AuthApi::deleteMe,
+      request(drogon::Delete, "/v1/me", "{\"account\":\"" + intended.str() + "\"}", "s-successor"));
+
+  CHECK_EQ(response->getStatusCode(), drogon::k409Conflict);
+  Json::Value expected(Json::objectValue);
+  expected["error"] = "the signed-in account changed; no account was closed";
+  expected["code"] = "account-mismatch";
+  CHECK_EQ(*response->getJsonObject(), expected);
+  CHECK(sessionCookieLines(response).empty());
+  CHECK_FALSE(h.authRepo.findUserById(intended)->deletedAt);
+  CHECK_FALSE(h.authRepo.findUserById(successor)->deletedAt);
+  CHECK_EQ(h.authRepo.sessions.size(), std::size_t{2});
+  CHECK(h.auth->authenticate("s-intended"));
+  CHECK(h.auth->authenticate("s-successor"));
+}
+
+TEST(auth_closing_an_account_requires_the_intended_account) {
+  for (const std::string body : {"", "{}", "[]", "null", "{", "{\"account\":null}", "{\"account\":42}", "{\"account\":\"\"}"}) {
+    Harness h;
+    const UserId mine = h.signIn("s-live");
+    const auto response = call(h, &AuthApi::deleteMe, request(drogon::Delete, "/v1/me", body, "s-live"));
+    CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+    Json::Value expected(Json::objectValue);
+    expected["error"] = "name the account to close";
+    expected["code"] = "malformed";
+    CHECK_EQ(*response->getJsonObject(), expected);
+    CHECK(sessionCookieLines(response).empty());
+    CHECK_FALSE(h.authRepo.findUserById(mine)->deletedAt);
+    CHECK(h.auth->authenticate("s-live"));
+  }
 }
 
 TEST(auth_only_revoking_your_own_session_clears_your_own_cookie) {

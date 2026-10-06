@@ -9,6 +9,7 @@ on:
     paths:
       - 'web/**'
       - 'packages/**'
+      - '.claude/skills/verify/SKILL.md'
       - '.github/workflows/web.yml'
       - '!web/**/*.md'
       - 'web/emails/README.md'
@@ -16,6 +17,7 @@ on:
     paths:
       - 'web/**'
       - 'packages/**'
+      - '.claude/skills/verify/SKILL.md'
       - '.github/workflows/web.yml'
       - '!web/**/*.md'
       - 'web/emails/README.md'
