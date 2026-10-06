@@ -9,12 +9,15 @@ import XCTest
   }
 
   func switchRoom(_ room: String, in app: XCUIApplication) {
-    let menu = app.buttons["room-menu"]
+    let menu = app.buttons.matching(NSPredicate(format: "identifier == %@ AND enabled == true", "room-menu")).firstMatch
     XCTAssertTrue(menu.waitForExistence(timeout: 10))
     menu.tap()
-    let item = app.buttons["room-\(room.lowercased())"]
+    let item = app.buttons.matching(NSPredicate(format: "identifier == %@ AND enabled == true", "room-\(room.lowercased())")).firstMatch
     XCTAssertTrue(item.waitForExistence(timeout: 5))
+    XCTAssertTrue(item.isHittable)
     item.tap()
+    let selected = app.buttons.matching(NSPredicate(format: "identifier == %@ AND label == %@", "room-menu", room)).firstMatch
+    XCTAssertTrue(selected.waitForExistence(timeout: 10))
     XCTAssertEqual(menu.label, room)
   }
 

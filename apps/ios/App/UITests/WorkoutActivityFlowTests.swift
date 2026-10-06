@@ -60,6 +60,7 @@ import XCTest
   }
 
   func waitForSettledIsland(_ element: XCUIElement) {
+    XCTAssertTrue(element.waitForExistence(timeout: 20), "Dynamic Island content must become accessible before settling")
     var previous = CGRect.zero
     var settledSince: Date?
     let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in

@@ -23,7 +23,7 @@ import UIKit
     XCTAssertTrue(menu.wait(for: \.isHittable, toEqual: true, timeout: 10))
     menu.tap()
     let ids = ["History": "history", "Notes": "notes", "Connected log": "connections", "Gym settings": "settings"]
-    let choices = app.sheets.firstMatch
+    let choices = app.sheets.containing(.button, identifier: "History").firstMatch
     XCTAssertTrue(choices.waitForExistence(timeout: 5))
     if let snapshot { capture(snapshot, app) }
     let item = choices.buttons[name]
@@ -31,6 +31,7 @@ import UIKit
     let frame = item.frame
     XCTAssertTrue(frame.minX.isFinite && frame.minY.isFinite && frame.width > 0 && frame.height > 0)
     item.tap()
+    XCTAssertTrue(choices.waitForNonExistence(timeout: 10))
     if ids[name] != nil { XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5)) }
   }
   func back(_ app: XCUIApplication, expecting title: String? = nil) {
