@@ -5,6 +5,7 @@
 #include "platform/domain/sync/Record.h"
 #include "platform/domain/sync/Registry.h"
 #include "platform/domain/sync/Scope.h"
+#include "platform/domain/sync/Shape.h"
 #include "platform/domain/sync/Wire.h"
 #include "platform/ports/SyncStore.h"
 
@@ -63,16 +64,10 @@ public:
   virtual std::vector<Row> scanScope(const ScopeKey& key, const std::string& type, const FeedQuery& query = {}) = 0;
 };
 
-// Who admits the intent, as a product's rules and commands see it.
-struct Caller {
-  UserId account;
-  bool server = false;
-};
-
 struct CheckCtx {
   const Registry& registry;
   const ScopeRow& scope;
-  const Caller& caller;
+  const Sender& caller;
   Ms serverNow = 0;
   SyncReader& read;
   SyncTxn& txn;
@@ -91,7 +86,7 @@ public:
 struct CommandCtx {
   const Registry& registry;
   const ScopeRow& scope;
-  const Caller& caller;
+  const Sender& caller;
   Ms serverNow = 0;
   const Json::Value& args;
   SyncReader& read;

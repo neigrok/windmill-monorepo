@@ -8,7 +8,7 @@
 #include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
 #include "test/platform/Fakes.h"
 #include "test/products/gym/Fakes.h"
-#include "test/products/gym/sync/adapters/postgres/GymDoorFixture.h"
+#include "test/products/gym/sync/GymDoorFixture.h"
 #include "test/testing.h"
 
 #include <cctype>

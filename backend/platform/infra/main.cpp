@@ -78,7 +78,7 @@
 #include "products/journal/adapters/postgres/PgJournalRepository.h"
 #include "products/journal/adapters/postgres/PgNudgeRepository.h"
 #include "products/journal/application/EchoDerivations.h"
-#include "products/journal/sync/application/JournalFeed.h"
+#include "products/journal/sync/JournalFeed.h"
 #include "products/journal/application/WarmEchoRepository.h"
 #include "products/journal/routes.h"
 #include "products/gym/adapters/llm/AnthropicAsk.h"
@@ -94,7 +94,7 @@
 #include "products/gym/application/AskService.h"
 #include "products/gym/application/ThreadService.h"
 #include "products/gym/application/TrainingService.h"
-#include "products/gym/sync/adapters/postgres/GymDoor.h"
+#include "products/gym/sync/GymDoor.h"
 #include "platform/infra/SyncProducts.h"
 #include "products/gym/routes.h"
 

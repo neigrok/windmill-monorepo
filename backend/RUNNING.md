@@ -161,7 +161,7 @@ the process down is named (`*** CRASHED mid-case … ***`) and re-raised, so the
 The Postgres integration cases run only under `WM_PG_TEST` and require two fresh throwaway databases,
 each built by `db/schema.sql`. `DATABASE_URL` holds it alone. `WM_SYNC_DATABASE_URL` also holds
 `db/probe.sql`: the `sync` suite runs there, and so does every gym case in `mcp` and `adapters` that
-writes through `GymDoor` (`test/products/gym/sync/adapters/postgres/GymDoorFixture.h`). The gym HTTP
+writes through `GymDoor` (`test/products/gym/sync/GymDoorFixture.h`). The gym HTTP
 and MCP cases that only read run over a read-only fake store (`test/products/gym/Fakes.h`). The sync
 suite wipes sync, probe, gym and journal data as it replays the corpus, store and concurrency cases;
 run these binaries serially.

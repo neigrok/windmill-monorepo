@@ -3,8 +3,8 @@
 #include "platform/domain/sync/Jcs.h"
 
 #include "products/probe/ProbeRegistry.h"
-#include "products/gym/sync/GymRegistry.h"
-#include "products/journal/sync/JournalRegistry.h"
+#include "products/gym/sync/GymProduct.h"
+#include "products/journal/sync/JournalProduct.h"
 #include "platform/infra/SyncProducts.h"
 #include "test/testing.h"
 

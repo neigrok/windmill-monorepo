@@ -11,9 +11,11 @@ telemetry, access, the HTTP host, and the AI spend meter (`domain/AiUsage`, `dom
 rows the owner page does).
 
 `products/<p>/` is one product each (roadmap, journal, gym, and the sync engine's test-only probe),
-and every product repeats the same four layers: `domain/` (pure), `application/` (services over
+with four shared layers: `domain/` (pure), `application/` (services over
 ports), `ports/` (the abstractions), `adapters/` (one subfolder per messy edge — `http` and `postgres`
-everywhere, plus `ws`/`mcp`/`llm`/`email` where a product needs them).
+everywhere, plus `ws`/`mcp`/`llm`/`email` where a product needs them). Gym and journal each keep their
+small engine binding together in `sync/`: rules, state port, product registry/binding and Postgres
+stores, plus gym's server write door and journal's change feed. Each builds into its product library.
 
 Composition roots: `platform/infra/main.cpp` (REST, the collab socket, MCP and the sync engine in one
 process; it builds `windmill_server`, the harness-clocked `windmill_server_test_clock` and the probe's

@@ -1,4 +1,4 @@
-#include "test/products/gym/sync/adapters/postgres/GymDoorFixture.h"
+#include "test/products/gym/sync/GymDoorFixture.h"
 #include "test/products/gym/adapters/postgres/PgGymFixture.h"
 #include "test/testing.h"
 

@@ -1,5 +1,5 @@
 #include "platform/domain/sync/Jcs.h"
-#include "test/products/gym/sync/adapters/postgres/GymDoorFixture.h"
+#include "test/products/gym/sync/GymDoorFixture.h"
 #include "test/testing.h"
 
 #include <pqxx/pqxx>

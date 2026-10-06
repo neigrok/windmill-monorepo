@@ -4,8 +4,8 @@
 #include "platform/domain/sync/Jcs.h"
 #include "products/probe/ProbeRegistry.h"
 #include "products/probe/adapters/postgres/PgProbe.h"
-#include "products/gym/sync/adapters/postgres/PgGym.h"
-#include "products/journal/sync/adapters/postgres/PgJournal.h"
+#include "products/gym/sync/PgGym.h"
+#include "products/journal/sync/PgJournal.h"
 #include "test/PgTestPool.h"
 #include "test/platform/application/sync/SyncWorld.h"
 

@@ -46,7 +46,7 @@ endfunction()
 # and depends on the platform, never the other way round. `windmill_journal` and `windmill_gym`
 # mirror that seam — one products/<name> library each, beside roadmap and linked into the server.
 
-# --- platform + roadmap CORE (domain + application). The adapters (the messy vendor edges) are
+# --- platform + roadmap domain and application. The adapters (the messy vendor edges) are
 # folded into these same libraries below.
 add_library(windmill_platform
   platform/domain/AiFuse.cpp
@@ -112,9 +112,8 @@ add_library(windmill_roadmap
 target_include_directories(windmill_roadmap PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_roadmap PUBLIC windmill_platform)
 
-# --- journal product CORE (domain + application). Depends on windmill_platform only, never
-# windmill_roadmap — the same one-way rule roadmap follows (STRUCTURE.md). The messy adapters (Pg,
-# http, json) fold into this same library below.
+# --- journal domain, application and sync binding. Other adapters join this library below.
+# Depends on windmill_platform only, never another product (STRUCTURE.md).
 add_library(windmill_journal
   products/journal/domain/Page.cpp
   products/journal/domain/NudgePlan.cpp
@@ -125,12 +124,15 @@ add_library(windmill_journal
   products/journal/application/EchoSweep.cpp
   products/journal/application/EchoExplain.cpp
   products/journal/application/EchoDerivations.cpp
-  products/journal/application/WarmEchoRepository.cpp)
+  products/journal/application/WarmEchoRepository.cpp
+  products/journal/sync/JournalRules.cpp
+  products/journal/sync/JournalProduct.cpp
+  products/journal/sync/PgJournal.cpp)
 target_include_directories(windmill_journal PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_journal PUBLIC windmill_platform)
 
-# --- gym product CORE (domain + application). Same one-way rule: windmill_platform only, never
-# another product. The adapters (Pg, http, json) fold into this same library below.
+# --- gym domain, application and sync binding. Other adapters join this library below.
+# Depends on windmill_platform only, never another product.
 add_library(windmill_gym
   products/gym/domain/Training.cpp
   products/gym/domain/Preferences.cpp
@@ -145,37 +147,28 @@ add_library(windmill_gym
   products/gym/domain/Note.cpp
   products/gym/domain/Bodyweight.cpp
   products/gym/application/TrainingService.cpp
-  products/gym/application/ThreadService.cpp)
+  products/gym/application/ThreadService.cpp
+  products/gym/sync/GymRules.cpp
+  products/gym/sync/GymProduct.cpp
+  products/gym/sync/PgGym.cpp
+  products/gym/sync/GymDoor.cpp
+  products/gym/sync/GymTrainingDoor.cpp
+  products/gym/sync/GymRecordDoor.cpp)
 target_include_directories(windmill_gym PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_gym PUBLIC windmill_platform)
 
-add_library(windmill_gym_sync
-  products/gym/sync/domain/GymRules.cpp
-  products/gym/sync/application/GymProduct.cpp
-  products/gym/sync/adapters/postgres/PgGym.cpp)
-target_include_directories(windmill_gym_sync PUBLIC ${CMAKE_SOURCE_DIR})
-target_link_libraries(windmill_gym_sync PUBLIC windmill_platform)
-target_link_libraries(windmill_gym PUBLIC windmill_gym_sync)
 file(READ "${WM_API_CONTRACT_DIR}/sync/composition.json" WM_COMPOSITION)
 string(JSON WM_REGISTRY_COUNT LENGTH "${WM_COMPOSITION}" registries)
 string(JSON WM_GYM_REGISTRY GET "${WM_COMPOSITION}" registries 0)
 string(JSON WM_JOURNAL_REGISTRY GET "${WM_COMPOSITION}" registries 1)
 if(NOT WM_REGISTRY_COUNT EQUAL 2 OR NOT WM_GYM_REGISTRY STREQUAL "gym.registry.json" OR NOT WM_JOURNAL_REGISTRY STREQUAL "journal.registry.json")
-  message(FATAL_ERROR "wave 1 binds the gym + journal composition")
+  message(FATAL_ERROR "the server binds the gym + journal composition")
 endif()
-wm_embed_registry(windmill_gym_sync wm::gym::engine registryText "${WM_API_CONTRACT_DIR}/sync/${WM_GYM_REGISTRY}")
-
-add_library(windmill_journal_sync
-  products/journal/sync/domain/JournalRules.cpp
-  products/journal/sync/application/JournalProduct.cpp
-  products/journal/sync/adapters/postgres/PgJournal.cpp)
-target_include_directories(windmill_journal_sync PUBLIC ${CMAKE_SOURCE_DIR})
-target_link_libraries(windmill_journal_sync PUBLIC windmill_platform)
-target_link_libraries(windmill_journal PUBLIC windmill_journal_sync)
-wm_embed_registry(windmill_journal_sync wm::journal::engine registryText "${WM_API_CONTRACT_DIR}/sync/${WM_JOURNAL_REGISTRY}")
+wm_embed_registry(windmill_gym wm::gym::engine registryText "${WM_API_CONTRACT_DIR}/sync/${WM_GYM_REGISTRY}")
+wm_embed_registry(windmill_journal wm::journal::engine registryText "${WM_API_CONTRACT_DIR}/sync/${WM_JOURNAL_REGISTRY}")
 
 add_library(windmill_product_sync platform/infra/SyncProducts.cpp)
-target_link_libraries(windmill_product_sync PUBLIC windmill_gym_sync windmill_journal_sync)
+target_link_libraries(windmill_product_sync PUBLIC windmill_gym windmill_journal)
 wm_embed_registry(windmill_product_sync wm::sync compositionText "${WM_API_CONTRACT_DIR}/sync/composition.json")
 
 # --- probe: the sync engine's test and dev product (packages/api-contract/sync/probe.registry.json), the
@@ -281,9 +274,9 @@ add_executable(windmill_domain_tests
   test/products/journal/application/EchoSweepTest.cpp
   test/products/journal/application/EchoDerivationsTest.cpp
   test/products/journal/application/WarmEchoRepositoryTest.cpp
-  test/products/gym/sync/domain/GymRulesTest.cpp
-  test/products/journal/sync/domain/JournalRulesTest.cpp
-  test/products/journal/sync/application/JournalFeedTest.cpp
+  test/products/gym/sync/GymRulesTest.cpp
+  test/products/journal/sync/JournalRulesTest.cpp
+  test/products/journal/sync/JournalFeedTest.cpp
   test/products/gym/domain/TrainingTest.cpp
   test/products/gym/domain/PreferencesTest.cpp
   test/products/gym/domain/RoutineTest.cpp
@@ -297,7 +290,7 @@ add_executable(windmill_domain_tests
   test/products/gym/domain/NoteTest.cpp
   test/products/gym/domain/BodyweightTest.cpp
   test/products/gym/application/ThreadServiceTest.cpp)
-target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_journal windmill_gym windmill_probe windmill_product_sync)
+target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_probe windmill_product_sync)
 # The corpus and the product registries are read from the contract at run time, so the tests see every file the
 # contract holds.
 target_compile_definitions(windmill_domain_tests PRIVATE WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync")
@@ -426,9 +419,6 @@ target_sources(windmill_journal PRIVATE
 # route seam.
 # They reach Drogon + libpqxx through windmill_platform (linked PUBLIC by the core lib above).
 target_sources(windmill_gym PRIVATE
-  products/gym/sync/adapters/postgres/GymDoor.cpp
-  products/gym/sync/adapters/postgres/GymTrainingDoor.cpp
-  products/gym/sync/adapters/postgres/GymRecordDoor.cpp
   products/gym/adapters/json/HistoryJson.cpp
   products/gym/adapters/json/TrainingJson.cpp
   products/gym/adapters/postgres/PgLogHistory.cpp
@@ -459,12 +449,12 @@ target_sources(windmill_gym PRIVATE
 # composition root: it builds platform + roadmap singletons, mounts the shared MCP endpoint, and
 # calls roadmap::registerRoutes for the product half (products/roadmap/routes.h).
 add_executable(windmill_server platform/infra/main.cpp)
-target_link_libraries(windmill_server PRIVATE windmill_roadmap windmill_journal windmill_gym windmill_product_sync)
+target_link_libraries(windmill_server PRIVATE windmill_roadmap windmill_product_sync)
 
 # The real composition with a harness-controlled clock; never copied to the runtime image.
 add_executable(windmill_server_test_clock platform/infra/main.cpp)
 target_compile_definitions(windmill_server_test_clock PRIVATE WM_TEST_CLOCK=1)
-target_link_libraries(windmill_server_test_clock PRIVATE windmill_roadmap windmill_journal windmill_gym windmill_product_sync)
+target_link_libraries(windmill_server_test_clock PRIVATE windmill_roadmap windmill_product_sync)
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_test(NAME auth_differential COMMAND ${Python3_EXECUTABLE}
@@ -477,7 +467,7 @@ add_test(NAME deploy_production COMMAND ${Python3_EXECUTABLE}
 # server, never the image's. main.cpp refuses to start it where WINDMILL_APP_URL is https.
 add_executable(windmill_server_probe platform/infra/main.cpp)
 target_compile_definitions(windmill_server_probe PRIVATE WM_SYNC_PROBE=1)
-target_link_libraries(windmill_server_probe PRIVATE windmill_roadmap windmill_journal windmill_gym windmill_probe windmill_product_sync)
+target_link_libraries(windmill_server_probe PRIVATE windmill_roadmap windmill_probe windmill_product_sync)
 
 add_executable(windmill_mcp platform/infra/mcp_main.cpp)            # stdio transport (local hosts)
 target_link_libraries(windmill_mcp PRIVATE windmill_roadmap)
@@ -501,7 +491,7 @@ add_executable(windmill_mcp_tests
 # Both products' tool surfaces link here: the gym suite pins its own catalog AND that no gym name
 # collides with a roadmap one, which is the difference between a boot failure and a green suite. Its
 # write cases run on the real gym door, which takes the product catalog the server seals.
-target_link_libraries(windmill_mcp_tests PRIVATE windmill_roadmap windmill_gym windmill_product_sync)
+target_link_libraries(windmill_mcp_tests PRIVATE windmill_roadmap windmill_product_sync)
 # The golden MCP wire (WireCorpusTest) lives beside the roadmap tools and is byte-compared against
 # a fresh transcript; the source path is handed in so the check finds it from any build tree.
 target_compile_definitions(windmill_mcp_tests PRIVATE
@@ -525,9 +515,9 @@ add_executable(windmill_sync_tests
   test/platform/adapters/postgres/PgAdmissionConcurrencyTest.cpp
   test/platform/adapters/postgres/PgPullSnapshotTest.cpp
   test/products/probe/adapters/postgres/PgProbeTest.cpp
-  test/products/gym/sync/adapters/postgres/PgGymTest.cpp
-  test/products/journal/sync/adapters/postgres/PgJournalTest.cpp)
-target_link_libraries(windmill_sync_tests PRIVATE windmill_probe windmill_product_sync windmill_journal windmill_gym)
+  test/products/gym/sync/PgGymTest.cpp
+  test/products/journal/sync/PgJournalTest.cpp)
+target_link_libraries(windmill_sync_tests PRIVATE windmill_probe windmill_product_sync)
 target_compile_definitions(windmill_sync_tests PRIVATE
   WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync"
   WM_PG_TEST_URL_ENV="WM_SYNC_DATABASE_URL")
@@ -590,8 +580,8 @@ add_executable(windmill_adapters_tests
 test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
   test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp
   test/products/journal/adapters/postgres/PgEchoRepositoryTest.cpp
-  test/products/gym/sync/adapters/postgres/GymTrainingDoorTest.cpp
-  test/products/gym/sync/adapters/postgres/GymRecordDoorTest.cpp
+  test/products/gym/sync/GymTrainingDoorTest.cpp
+  test/products/gym/sync/GymRecordDoorTest.cpp
   test/products/gym/adapters/http/GymDoorApiTest.cpp
   test/products/gym/adapters/http/TrainingApiTest.cpp
   test/products/gym/adapters/http/CatalogApiTest.cpp
@@ -604,9 +594,9 @@ test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
   test/products/gym/adapters/llm/AnthropicAskTest.cpp
   test/products/gym/application/AskServiceTest.cpp
   test/products/gym/application/TrainingServiceTest.cpp
-  test/products/gym/sync/adapters/postgres/GymProgramDoorTest.cpp
-  test/products/gym/sync/adapters/postgres/GymCatalogDoorTest.cpp
-  test/products/gym/sync/adapters/postgres/GymNotesDoorTest.cpp
+  test/products/gym/sync/GymProgramDoorTest.cpp
+  test/products/gym/sync/GymCatalogDoorTest.cpp
+  test/products/gym/sync/GymNotesDoorTest.cpp
   test/products/gym/adapters/postgres/PgLogHistoryTest.cpp
   test/products/gym/adapters/postgres/PgLogRepositoryTest.cpp
   test/products/gym/adapters/postgres/PgCatalogRepositoryTest.cpp
@@ -615,7 +605,7 @@ test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
   test/products/gym/adapters/postgres/PgPreferencesRepositoryTest.cpp
   test/products/gym/adapters/postgres/PgNotesRepositoryTest.cpp
   test/products/gym/adapters/postgres/PgBodyweightRepositoryTest.cpp)
-target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_journal windmill_gym windmill_product_sync)
+target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_product_sync)
 # The gym door harness re-plants the catalog seed exactly as the schema writes it.
 target_compile_definitions(windmill_adapters_tests PRIVATE WM_SCHEMA_SQL="${CMAKE_SOURCE_DIR}/db/schema.sql")
 add_test(NAME adapters COMMAND windmill_adapters_tests)

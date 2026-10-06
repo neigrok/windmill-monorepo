@@ -1,5 +1,5 @@
 #include "test/products/gym/adapters/http/GymApiFixture.h"
-#include "test/products/gym/sync/adapters/postgres/GymDoorFixture.h"
+#include "test/products/gym/sync/GymDoorFixture.h"
 #include "products/gym/adapters/postgres/PgAskThreadRepository.h"
 #include "products/gym/application/AskService.h"
 

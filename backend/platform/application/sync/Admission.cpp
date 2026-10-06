@@ -104,7 +104,7 @@ private:
   AdmitOutcome runAttempt() {
     if (std::optional<AdmitOutcome> answered = answeredCall()) return *answered;
     try {
-      shaped_.emplace(shapeIntent(registry_, wire_, Sender{caller_.account, caller_.server}, now_, a_.limits_.maxSkewMs));
+      shaped_.emplace(shapeIntent(registry_, wire_, caller_, now_, a_.limits_.maxSkewMs));
     } catch (const Refusal& refusal) {
       return answerRefusal(refusal.refused);
     } catch (const std::exception& error) {
@@ -717,7 +717,7 @@ private:
   const Json::Value& wire_;
   std::optional<Json::Value> builtWire_;
   const Ms now_;
-  const Caller caller_;
+  const Sender caller_;
   const ServerBuilder* builder_;
   WriteObservation observation_;
   WriteContext context_;

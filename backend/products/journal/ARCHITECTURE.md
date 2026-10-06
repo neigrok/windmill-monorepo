@@ -24,7 +24,7 @@ Semantic search, threads, the writing rhythm and sharing stay on the device.
 
 ### Privacy
 
-- Journal does not import `platform/domain/Access.h`. There is no visibility to parse.
+- Journal data is private to its account; it has no visibility setting.
 - Every query is `… WHERE user_id = $1` with the authenticated caller.
 - A page nobody owns and a page somebody else owns return the same 404.
 
@@ -42,12 +42,11 @@ backend/products/journal/
     http/        JournalApi · NudgeApi · EchoApi · VoiceApi
     json/        PageJson — the REST page read shape
     postgres/    PgJournalRepository · PgEchoRepository · PgNudgeRepository
-    llm/         HttpEmbedder · AnthropicSegmenter · AnthropicCurator · OpenAiTranscriber,
-                 each beside a Null… that reports unconfigured so its feature is dark
+    llm/         HttpEmbedder · AnthropicSegmenter · AnthropicCurator · OpenAiTranscriber ·
+                 UnconfiguredModels (NullCurator, NullEmbedder, NullTranscriber)
     email/       ResendNudgeSender
-  sync/          the engine binding: JournalRegistry · domain/JournalRules ·
-                 application/{JournalProduct, JournalFeed} · ports/JournalState ·
-                 adapters/postgres/PgJournal; its notes are sync/README.md
+  sync/          JournalRules · JournalProduct (registry + binding) · JournalState ·
+                 PgJournal · JournalFeed; its notes are sync/README.md
   routes.{h,cpp} journal::registerRoutes(app, JournalDeps&)
   ECHOES.md      the echo pipeline's spec
 ```
@@ -79,7 +78,7 @@ DDL lives once, in `db/schema.sql` under `-- ── Journal ──`. Tables:
 Domain types (`domain/Page.h`): `LocalDate` (validated ISO day), `Score` (a validated 0…10 that
 both scales share — `Page::mood` and `Page::energy` are `std::optional<Score>`, where no value is
 "never answered" and `Score{0}` is the answer zero), `Source` (typed | spoken), `Page`. A body holds
-at most 131,072 bytes (`kMaxPageBytes`, `sync/domain/JournalRules.h`). There are no titles, folders or
+at most 131,072 bytes (`kMaxPageBytes`, `sync/JournalRules.h`). There are no titles, folders or
 tags in the model.
 
 ## Pages

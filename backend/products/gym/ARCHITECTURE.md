@@ -47,8 +47,8 @@ application/  TrainingService · ThreadService · AskService
 adapters/     json/{TrainingJson,HistoryJson} · postgres/PgGymRows.h + seven Pg repositories ·
               http/{Training,TrainingHistory,Catalog,Program,Preferences,Threads,Notes,Bodyweight,Ask}Api ·
               mcp/{GymToolCatalog,GymTools} · llm/AnthropicAsk
-sync/         GymRegistry.h · domain/GymRules · application/GymProduct · ports/GymState ·
-              adapters/postgres/{PgGym,GymDoor,GymTrainingDoor,GymRecordDoor}
+sync/         GymRules · GymProduct (registry + binding) · GymState · PgGym ·
+              GymDoor · GymTrainingDoor · GymRecordDoor · GymDoorHash
 routes.h/.cpp gym::GymDeps + gym::registerRoutes(app, deps)
 ```
 
@@ -63,9 +63,9 @@ refuses every other write: the write rules are the engine's, tested on the real 
 `TrainingApi.h` holds the status ladder.
 
 **The sync engine is gym's only writer.** The binding lives in `sync/`: the pure rules and the seven
-commands in `domain/GymRules`, their binding in `application/GymProduct`, receipts and command books
-through `ports/GymState`, and the stores over gym's tables in `adapters/postgres/PgGym`.
-`windmill_gym_sync` embeds `gym.registry.json` (version 5, minimum 4), and
+commands in `GymRules`, their registry and binding in `GymProduct`, receipts and command books
+through `GymState`, and the stores over gym's tables in `PgGym`.
+`windmill_gym` embeds `gym.registry.json` (version 5, minimum 4), and
 `platform/infra/SyncProducts` seals it with journal's into the catalog `windmill_server` serves at
 `/v1/sync`. Phones and web write sets, deletions, corrections, routine edits, proposal apply and
 dismiss, renames, notes, weigh-ins and preferences through `/v1/sync`, as the registry and
@@ -414,7 +414,7 @@ agent holding `gym:read` (`list_bodyweight`), written by the lifter's own client
 Pure, no I/O. Real constructors, never aggregate init: an invalid entity cannot exist in memory, and
 the import route's 400 and a tool's `invalid-arguments` failure are the constructor's throw of
 `InvalidTraining` caught at the boundary. The rules a write must meet in storage are the engine
-binding's, `sync/domain/GymRules` (§5).
+binding's, `sync/GymRules` (§5).
 
 `Exercise` (id, name, pattern, equipment, stepKg, custom, aliases) · `Session` (id, user,
 startedAtMs, finishedAtMs?, routine?, plan?, closedBy?, displayName? — plan absent = ad-hoc) · `Set`
@@ -463,7 +463,7 @@ restSeconds? — an empty `sets` is `open`; in a `SetTarget` an absent reps is `
 ### 4.2 The session rules
 
 The pure session rules live in two places with one meaning: `domain/Training.h` for what the server
-doors decide before admitting, and `sync/domain/GymRules` for what admission decides for every writer.
+doors decide before admitting, and `sync/GymRules` for what admission decides for every writer.
 
 - **The stale close** — an open session with no activity for four hours (`kAutoCloseMs` in
   `domain/Training.h`, `kStaleMs` in GymRules) is over, and it ended at its last set; a session with
@@ -1057,12 +1057,12 @@ flow. This intake guidance does not block recording supplied workout facts.
 
 ## 10. Composition
 
-`windmill_gym` links the domain and application layers to `windmill_platform` and to
-`windmill_gym_sync` (GymRules, GymProduct, `PgGym` and the embedded registry), and CMake folds the
-adapters, `GymDoor` and the routes into the same library. Tests live in `test/products/gym/` and join
+`windmill_gym` contains the domain, application, sync binding, adapters and routes, and links
+`windmill_platform`. Its sync binding includes GymRules, GymProduct, PgGym, GymDoor and the embedded
+registry. Tests live in `test/products/gym/` and join
 the domain, MCP, sync and adapter executables. Write cases run on real admission over the
 `WM_SYNC_DATABASE_URL` database, through `GymDoor` in
-`test/products/gym/sync/adapters/postgres/GymDoorFixture.h`; the in-memory harness writes nothing. Build
+`test/products/gym/sync/GymDoorFixture.h`; the in-memory harness writes nothing. Build
 and portability rules live in [backend rules](../../CLAUDE.md).
 
 `platform/infra/main.cpp` builds the repositories, `GymDoor` (over the pool, the clock, the failure
@@ -1077,7 +1077,8 @@ by `created_by` so shared catalog seeds do not count as account data.
 
 The API is owner-scoped and surface-neutral. Web and the phones write gym's records through
 `/v1/sync`, as engine A.2 binds them; MCP tools, Coach and import scripts such as
-`tools/lift-import` write through `GymDoor`; every surface reads the REST routes. Surface behavior
+`tools/lift-import` write through `GymDoor`. REST exposes server read projections, Coach and shares;
+clients also read their engine replicas. Surface behavior
 and local storage belong in the [Android](../../../apps/android/README.md) and web product
 documentation.
 
