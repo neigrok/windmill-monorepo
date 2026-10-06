@@ -536,8 +536,8 @@ door), `ProgramService` (+ door), `ThreadService` (+ clock, door), `NotesService
 `AskService` stands above them (§12). The two read-only aggregates have no service:
 `PreferencesApi` reads `PreferencesRepository` and answers the defaults where no row stands, and
 `BodyweightApi` and `list_bodyweight` read `BodyweightRepository`. Each HTTP adapter and `GymTools`
-takes only what it reads. A service's write is one `GymWriteDoor` call, after the argument shaping that is the
-service's own (`CatalogService` applies `defaultStepKg` when a movement names no step;
+takes only what it reads. A service's write is one `GymWriteDoor` call, after the argument shaping
+that is the service's own (`CatalogService` applies `defaultStepKg` when a movement names no step;
 `ProgramService` builds the `Routine`, whose constructor is the whole validation). Each write answers
 with a small outcome from `ports/GymWriteDoor.h` — `StartOutcome`, `AppendOutcome`,
 `BatchLogOutcome`, `FinishOutcome`, `DiscardOutcome`, `RoutineWriteOutcome`, `ProposalMintOutcome`,
@@ -982,9 +982,9 @@ in-process).
 - **Every tool goes through a service** — `TrainingService`, `CatalogService`, `ProgramService`,
   `NotesService` — but `list_bodyweight`, which reads `BodyweightRepository`; no tool reads a thread
   or the settings, and Notes offers `list_notes` and append-only `save_note`. No tool writes a
-  weigh-in: it is a fact only the lifter observed, and `list_bodyweight` is the one door. `GymToolsTest` pins that the only tool whose name says
-  bodyweight is the read, that it is `gym:read`, and that every write-shaped name misses the
-  dispatcher and leaves the rows untouched.
+  weigh-in: it is a fact only the lifter observed, and `list_bodyweight` is the one door.
+  `GymToolsTest` pins that the only tool whose name says bodyweight is the read, that it is
+  `gym:read`, and that every write-shaped name misses the dispatcher and leaves the rows untouched.
   **`propose_routine_create` does not exist and `GymToolsTest` pins the absence by name.** A
   proposal targets an existing routine and its revision; Coach creates a new routine through its
   separately granted, durable `create_routine` operation. The tools are a second *door on the same
