@@ -91,15 +91,22 @@ test('routine saves persist schemes and guards; stale bases refuse without parti
   assert.deepEqual(failures, []);
 });
 
-test('notes append; reorder writes only the moved note order register', async (t) => {
+test('notes append; a move writes only the moved note order register', async (t) => {
   const { api, engine } = await open(t);
   for (let n = 1; n <= 3; n++) await api.saveNote(`note00000${n}`, { title: String(n), body: '' });
   assert.deepEqual((await api.notes()).map(({ id }) => id), ['note000001', 'note000002', 'note000003']);
   await confirm(engine);
-  await api.reorderNotes(['note000003', 'note000001', 'note000002']);
+  assert.deepEqual((await api.moveNote('note000002', 'note000003')).map(({ id, position }) => [id, position]),
+    [['note000001', 0], ['note000003', 1], ['note000002', 2]]);
+  assert.deepEqual((await api.notes()).map(({ id }) => id), ['note000001', 'note000003', 'note000002']);
+  const [delta] = engine.device.activeReplica.entries().at(-1).intent.d;
+  assert.deepEqual([delta.id, Object.keys(delta.f)], ['note000002', ['ord']]);
+  await api.moveNote('note000003', null);
   assert.deepEqual((await api.notes()).map(({ id }) => id), ['note000003', 'note000001', 'note000002']);
-  assert.deepEqual(Object.keys(engine.device.activeReplica.entries().at(-1).intent.d[0].f), ['ord']);
-  await assert.rejects(api.reorderNotes(['note000001']), { code: 'invalid' });
+  const before = structuredClone(engine.device.activeReplica.outbox);
+  await assert.rejects(api.moveNote('note000099', null));
+  await assert.rejects(api.moveNote('note000001', 'note000099'));
+  assert.deepEqual(engine.device.activeReplica.outbox, before);
 });
 
 test('note editor guards refuse changed content and preserve the original local draft', async (t) => {
@@ -152,7 +159,7 @@ test('held note deaths occupy the cap slot and allow siblings to reorder', async
   await api.holdDeath('note', 'note000000');
   const order = (await api.notes()).map(({ id }) => id);
   [order[1], order[2]] = [order[2], order[1]];
-  await api.reorderNotes(order);
+  await api.moveNote('note000002', 'note000000');
   assert.deepEqual((await api.notes()).map(({ id }) => id), order);
   await assert.rejects(api.saveNote('note000099', { title: 'Extra', body: '' }), { code: 'notes-full' });
 });

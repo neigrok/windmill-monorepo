@@ -8,7 +8,7 @@ import {
   ADD_VERB, BODY_BYTES, BODY_COUNT_FROM, bodyBytes, byteCountLabel, DELETE_VERB,
   firstLineOf, FULL_LINE, HEAD_LINE, HONESTY_LINE, NOTES_TITLE, isBodyOverCap, isFull, mintNoteId, NOTE_DELETED,
   NOTE_PREFIX,
-  noteRefusal, NOTES_MAX, orderOf, PLACEHOLDER_TITLES, PRECEDENCE_CAPTION, reorderNotes,
+  noteAbove, noteRefusal, NOTES_MAX, PLACEHOLDER_TITLES, PRECEDENCE_CAPTION, reorderNotes,
   isTitleOverCap, showsByteCount, showsTitleCount,
   TITLE_COUNT_FROM, titleChars, titleCountLabel, TITLE_MAX,
 } from '../../../../src/products/gym/notes/notes.js';
@@ -106,7 +106,13 @@ test('reorderNotes moves one row, renumbers every position, and clamps to the li
   assert.deepEqual(reorderNotes(notes, 1, -4).map((each) => each.id), ['note_b', 'note_a', 'note_c']);
   assert.equal(reorderNotes(notes, 1, 1), notes);
   assert.equal(reorderNotes(notes, 7, 0), notes);
-  assert.deepEqual(orderOf(reorderNotes(notes, 2, 0)), ['note_c', 'note_a', 'note_b']);
+});
+
+test('a moved note is placed after the row drawn above it, so a held note keeps its own place', () => {
+  const moved = [note('note_c', 0), note('note_a', 1), note('note_held', 2), note('note_b', 3)];
+  assert.equal(noteAbove(moved, 'note_c', new Set()), null);
+  assert.equal(noteAbove(moved, 'note_b', new Set()), 'note_held');
+  assert.equal(noteAbove(moved, 'note_b', new Set(['note_held'])), 'note_a');
 });
 
 test('a refusal speaks in the store’s own words where it sent any, and finishes itself otherwise', () => {

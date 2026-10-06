@@ -2,8 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spellWeightsIn, weightUnit } from '../../../../src/products/gym/units.js';
 import { logShareApi } from '../../../../src/products/gym/share/logShareApi.js';
-import { screenApi } from '../legacyScreenApi.mjs';
-import { browserWith, elementsOf, findByClass, loadScreen, renderHook, settle, textOf } from '../harness.mjs';
+import { browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, settle, textOf } from '../harness.mjs';
 
 function button(tree, label) {
   return elementsOf(tree).find((element) => (element.type === 'button' || element.type?.name === 'Button') && element.props.children === label);
@@ -11,8 +10,8 @@ function button(tree, label) {
 
 test('setup previews without mutation, requires a successful read, and retries creation with the same identity', async (t) => {
   browserWith();
+  await gymAccount(t);
   t.mock.method(logShareApi, 'list', async () => []);
-  t.mock.method(screenApi, 'history', async () => ({ sessions: [], summary: { sessions: 0 } }));
   const requests = [];
   t.mock.method(logShareApi, 'create', async (body) => {
     requests.push(body);
@@ -39,8 +38,8 @@ test('setup previews without mutation, requires a successful read, and retries c
 test('active links retain scope and expiry, copy exact URL, and revoke into a receipt', async (t) => {
   browserWith();
   const share = { id: 'link', mode: 'live', scope: 'all', url: 'https://windmill.test/#/gym/shared-log/token', expiresAt: 1000 };
+  await gymAccount(t);
   t.mock.method(logShareApi, 'list', async () => [share]);
-  t.mock.method(screenApi, 'history', async () => ({ sessions: [], summary: { sessions: 0 } }));
   const revoke = t.mock.method(logShareApi, 'revoke', async () => null);
   const copied = [];
   navigator.clipboard = { writeText: async (value) => copied.push(value) };
@@ -57,18 +56,21 @@ test('active links retain scope and expiry, copy exact URL, and revoke into a re
 
 test('a public deep link loads bounded pages until the selected workout and never calls an owner read', async (t) => {
   browserWith();
+  // The viewer's own log holds a workout of its own, which a public link may never draw.
+  await gymAccount(t, [confirmed('session', 'ownerWorkout', { startedAt: 30, finishedAt: 40 })]);
   const calls = [];
   t.mock.method(logShareApi, 'read', async (token, query) => {
     calls.push({ token, query });
     const older = Boolean(query.before);
     return { sessions: [{ id: older ? 'older' : 'newer', startedAt: older ? 10 : 20, sets: [] }], next: older ? null : { before: 20, beforeId: 'newer' }, summary: { sessions: 2, sets: 0, reps: 0, tonnageKg: 0 }, months: [], exercises: [], routines: [], share: { mode: 'snapshot', scope: 'all' } };
   });
-  t.mock.method(screenApi, 'history', () => { throw new Error('owner API must not be used'); });
   const { ReadOnlyLog } = await loadScreen('products/gym/share/LogShare.jsx');
   const screen = renderHook(t, () => ReadOnlyLog({ token: 'token', hash: '#/gym/shared-log/token?session=older' }));
   await settle(); await settle();
   const reader = elementsOf(screen.tree).find((element) => element.type?.name === 'SharedWorkoutReader');
   assert.equal(reader.props.session.id, 'older');
+  const index = elementsOf(screen.tree).find((element) => element.type?.name === 'HistoryIndex');
+  assert.deepEqual(index.props.sessions.map((session) => session.id), ['newer', 'older'], 'every row is the shared log’s');
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   assert.deepEqual(calls, [
     { token: 'token', query: { timeZone, limit: 1 } },
@@ -100,15 +102,15 @@ test('shared collapsed and expanded sets stay in kilograms without changing the 
 test('narrow preview opens the history list and permits selecting a workout without leaving preview', async (t) => {
   browserWith();
   window.matchMedia = () => ({ matches: false });
-  t.mock.method(screenApi, 'history', async () => ({ sessions: [{ id: 'latest', startedAt: 1000, finishedAt: 2000, sets: [] }], summary: { sessions: 1, sets: 0, reps: 0, tonnageKg: 0 }, months: [], exercises: [], routines: [], next: null }));
+  await gymAccount(t, [confirmed('session', 'sessionLatest', { startedAt: 1000, finishedAt: 2000 })]);
   const { ReadOnlyLog } = await loadScreen('products/gym/share/LogShare.jsx');
   const preview = { id: 'draft', mode: 'snapshot', scope: 'all' };
   const screen = renderHook(t, () => ReadOnlyLog({ preview }));
   await settle();
   assert.equal(elementsOf(screen.tree).some((element) => element.type?.name === 'SharedWorkoutReader'), false);
-  findByClass(screen.tree, 'gym-history-index')[0].props.onClick({ preventDefault() {}, target: { closest: () => ({ getAttribute: () => '#/gym/shared-log/preview?session=latest' }) } });
+  findByClass(screen.tree, 'gym-history-index')[0].props.onClick({ preventDefault() {}, target: { closest: () => ({ getAttribute: () => '#/gym/shared-log/preview?session=sessionLatest' }) } });
   const reader = elementsOf(screen.tree).find((element) => element.type?.name === 'SharedWorkoutReader');
-  assert.equal(reader.props.session.id, 'latest');
+  assert.equal(reader.props.session.id, 'sessionLatest');
   reader.props.onBack();
   assert.equal(elementsOf(screen.tree).some((element) => element.type?.name === 'SharedWorkoutReader'), false);
   assert.equal(window.location.hash, '#/gym');

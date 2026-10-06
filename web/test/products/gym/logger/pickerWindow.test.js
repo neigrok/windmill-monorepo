@@ -2,12 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  mostTrained, movementOptions, PICKER_FEATURED, PICKER_OPENERS, TRAINED_WINDOW,
+  mostTrained, movementOptions, NO_LAST_TIME_META, PICKER_FEATURED, PICKER_OPENERS, TRAINED_WINDOW,
 } from '../../../../src/products/gym/logger/movements.js';
-import { API_BASE } from '../../../../src/shell/apiBase.js';
 import React from 'react';
 
-import { browserWith, elementsOf, loadScreen, renderHook, settle } from '../harness.mjs';
+import { browserWith, elementsOf, gymAccount, loadScreen, renderHook, settle } from '../harness.mjs';
 
 // Everything the openers name, plus one movement the log will bury them under.
 const CATALOG = [
@@ -46,22 +45,17 @@ test('a fresh account is offered the six too — nothing here is gated on a firs
   assert.equal(fresh.empty, null);
 });
 
-const realFetch = global.fetch;
-test.afterEach(() => { global.fetch = realFetch; });
-
 const sixOf = (tree) => elementsOf(tree)
   .filter((each) => each.props?.className === 'gym-picker-row')
   .slice(0, PICKER_FEATURED)
   .map((each) => elementsOf(each).find((child) => child.props?.className === 'gym-picker-named').props.children[0]);
 
 // One open picker, whose `sessions` prop the test moves under it the way a poll or an Older tap does.
+// Its last-set read answers from an account with no finished workout.
 let MovementPicker = null;
 async function picker(t, opening) {
   browserWith();
-  global.fetch = async (url) => {
-    assert.equal(url, `${API_BASE}/v1/gym/exercises/last`);
-    return { ok: true, status: 200, json: async () => ({ movements: [] }) };
-  };
+  await gymAccount(t);
   ({ MovementPicker } = await loadScreen('products/gym/logger/MovementPicker.jsx'));
   let sessions = opening;
   let redraw = () => {};
@@ -78,6 +72,8 @@ async function picker(t, opening) {
 test('the picker holds the window it opened on: the log moving under it moves nothing', async (t) => {
   const { drawn, land } = await picker(t, NEWEST_FIFTY);
   await settle();
+  // The last-set read answered from the account, which has no finished workout yet.
+  assert.deepEqual([...new Set(elementsOf(drawn.tree).filter((each) => each.props?.className === 'gym-picker-meta').map((each) => each.props.children))], [NO_LAST_TIME_META]);
 
   // Opened over a log that has answered: the section is the six that log names most.
   assert.deepEqual(sixOf(drawn.tree), [
@@ -125,7 +121,7 @@ test('a picker opened before the log answers freezes on the first read that ANSW
 
 test('planning offers six named shortcuts and searches the full catalog before creating a movement', async (t) => {
   browserWith();
-  global.fetch = async () => ({ ok: true, status: 200, json: async () => ({ movements: [] }) });
+  await gymAccount(t);
   const { MovementPicker } = await loadScreen('products/gym/logger/MovementPicker.jsx');
   const catalog = [
     { id: 'back-squat', name: 'Back Squat' }, { id: 'bench-press', name: 'Bench Press' },

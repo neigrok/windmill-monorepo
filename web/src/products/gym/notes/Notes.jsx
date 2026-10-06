@@ -13,7 +13,7 @@ import { useGymApi } from '../gymSync.js';
 import {
   ADD_VERB, byteCountLabel, DELETE_VERB, firstLineOf, FULL_LINE, HEAD_LINE, HONESTY_LINE,
   isBodyOverCap, isFull, isTitleOverCap, mintNoteId, NOTE_DELETED, noteRefusal, NOTES_FAILED, NOTES_TITLE,
-  orderOf, PLACEHOLDER_TITLES, PRECEDENCE_CAPTION, reorderNotes, showsByteCount, showsTitleCount,
+  noteAbove, PLACEHOLDER_TITLES, PRECEDENCE_CAPTION, reorderNotes, showsByteCount, showsTitleCount,
   titleCountLabel,
 } from './notes.js';
 
@@ -43,14 +43,15 @@ export function Notes({ log }) {
     view.retry();
   };
 
-  // The indices are the drawn list's; the order sent is the whole store's, which a note held for
+  // The indices are the drawn list's; the list moved is the whole store's, which a note held for
   // deletion is still part of until its window closes.
   const move = async (from, to) => {
+    const { id } = shown[from];
     const moved = reorderNotes(notes, notes.indexOf(shown[from]), notes.indexOf(shown[to]));
     if (moved === notes) return;
     setHeld(moved);
     try {
-      setHeld(await api.reorderNotes(orderOf(moved)));
+      setHeld(await api.moveNote(id, noteAbove(moved, id, hidden)));
     } catch (error) {
       log.say(noteRefusal(error, 'reordered'));
       settle(null);

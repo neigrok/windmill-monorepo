@@ -125,17 +125,13 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
     const guard = exists ? guarded(views, 'note', id, ['title', 'body'], base) : [];
     return { gesture: { changes, opts: { guard } }, value: { id, ...note, position: base?.position ?? project([...views.stored.values()], views.now).notes().length } };
   });
-  api.reorderNotes = (order) => commit('note-reorder', (views) => {
+  api.moveNote = (id, below) => commit('note-reorder', (views) => {
     const notes = project([...views.stored.values()], views.now).notes();
-    if (order.length !== notes.length || new Set(order).size !== order.length || order.some((id) => !notes.some((note) => note.id === id))) throw gymRefusal('invalid');
-    const moved = order.find((id, index) => notes[index].id !== id);
-    if (!moved) return { gesture: null, value: notes };
-    // The UI moves one row. Select the candidate whose removal leaves the same order.
-    const id = order.find((candidate) => jcs(order.filter((each) => each !== candidate)) === jcs(notes.map((note) => note.id).filter((each) => each !== candidate)));
-    if (!id) throw gymRefusal('invalid');
-    const index = order.indexOf(id);
-    return { gesture: { changes: [{ op: 'move', t: 'note', id, anchor: { field: 'ord', below: order[index - 1] ?? null } }] },
-      value: order.map((key, position) => ({ ...notes.find((note) => note.id === key), position })) };
+    const rest = notes.filter((note) => note.id !== id);
+    const at = rest.findIndex((note) => note.id === below) + 1;
+    if (rest.length === notes.length || (below !== null && at === 0)) throw gymRefusal('unknown-record');
+    return { gesture: { changes: [{ op: 'move', t: 'note', id, anchor: { field: 'ord', below } }] },
+      value: [...rest.slice(0, at), notes.find((note) => note.id === id), ...rest.slice(at)].map((note, position) => ({ ...note, position })) };
   });
   api.saveBodyweight = (id, { weightKg }) => commit('bodyweight-save', (views) => ({
     gesture: { changes: [{ op: 'put', t: 'weighin', id, f: { kg: weightKg, recordedAt: views.now } }], opts: { retire: [{ t: 'weighin', id }] } },

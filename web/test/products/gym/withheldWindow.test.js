@@ -1,48 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { API_BASE } from '../../../src/shell/apiBase.js';
 import { UNDO_MS } from '../../../src/products/gym/fix.js';
 import { WINDOW_CLOSED } from '../../../src/products/gym/withheld.js';
-import { firstSessionLabel, loadedLine } from '../../../src/products/gym/log.js';
 import { dateLocalOf } from '../../../src/products/gym/bodyweight/bodyweight.js';
 import {
-  browserWith, elementsOf, findByClass, loadScreen, renderHook, roomAndScreen, roomLog, settle,
+  browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomAndScreen, roomLog, settle,
   textOf,
 } from './harness.mjs';
 
-const realFetch = global.fetch;
-test.afterEach(() => { global.fetch = realFetch; });
+// One wall clock for every test that lets the engine release a hold: the room's window and the
+// engine's hold are both armed off it, so one tick closes both.
+const NOW = new Date(2026, 8, 24, 18, 5).getTime();
 
-// The room, alone. Its own reads go through the injected api; anything a screen does goes through
-// `fetch`, so the two are never confused in the wire log.
-// One object for the life of the room: the boot read runs again whenever the api it was handed is a
-// new one, so a literal built inside the render would re-read for ever.
-const quietApi = (api = {}) => ({
-  exercises: async () => [],
-  sessions: async () => [],
-  preferences: async () => ({}),
-  ...api,
-});
-
-async function room(t, api = {}) {
+// The room, alone, in a signed-in account with nothing in it.
+async function room(t) {
+  await gymAccount(t);
   const { useTrainingLog } = await loadScreen('products/gym/useTrainingLog.js');
-  const held = quietApi(api);
-  const view = renderHook(t, () => useTrainingLog({ api: held }));
+  const view = renderHook(t, () => useTrainingLog(), { live: true });
   await settle();
   return view;
 }
 
 // The room with one screen inside it, rendered as one tree: the window belongs to the room, and a
 // screen tested without one is a screen that cannot exist.
-async function roomWith(t, module, render, api = {}) {
+async function roomWith(t, module, render) {
   const { useTrainingLog } = await loadScreen('products/gym/useTrainingLog.js');
   const screens = await loadScreen(module);
-  const held = quietApi(api);
   const view = renderHook(t, () => {
-    const log = useTrainingLog({ api: held });
+    const log = useTrainingLog();
     return { log, screen: render(screens, log) };
-  });
+  }, { live: true });
   await settle();
   return { view, log: () => view.tree.log, screen: () => view.tree.screen };
 }
@@ -186,80 +174,63 @@ test('the editor’s window closes with the draft it could put a line back into,
 
 // ── The three verbs, each proved at the screen that draws it ────────────────
 
-// `deleted` is the store's memory: a re-read after the window closes answers the truth, which is the
-// only way a screen that trusts a stale read can be caught.
-function routinesOnTheWire({ deleteStatus = 204 } = {}) {
-  const wire = [];
-  let deleted = false;
-  global.fetch = async (url, options = {}) => {
-    const path = url.slice(`${API_BASE}/v1/gym`.length);
-    wire.push(`${options.method ?? 'GET'} ${path}`);
-    if (path === '/routines') {
-      const routines = deleted ? [] : [{ id: 'rt_push', name: 'Push A', position: 0, revision: 1, entries: [] }];
-      return { ok: true, status: 200, json: async () => ({ routines }) };
-    }
-    if (path === '/routines/rt_push' && options.method === 'DELETE') {
-      if (deleteStatus < 300) deleted = true;
-      return { ok: deleteStatus < 300, status: deleteStatus, json: async () => ({ error: 'internal error' }) };
-    }
-    throw new Error(`unexpected ${options.method ?? 'GET'} ${path}`);
-  };
-  return wire;
-}
+// The account's one routine, as the server confirmed it.
+const pushA = () => confirmed('routine', 'routinePushA', { name: 'Push A', position: 0, entries: [{ exerciseId: 'bench-press' }] });
 
 const menuOf = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'Menu');
+const routinesHome = (t) => roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
 
-test('a routine delete is in the row overflow, is not on the wire until the window closes, and names the routine', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+test('a routine delete is in the row overflow, is held on the device until the window closes, and names the routine', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const wire = routinesOnTheWire();
-  const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
-  await settle();
+  const gym = await gymAccount(t, [pushA()]);
+  const home = await routinesHome(t);
 
   assert.deepEqual(menuOf(home.screen()).props.items.map((item) => item.label), ['Log past', 'Delete']);
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), ['Push A']);
 
   menuOf(home.screen()).props.items.find((item) => item.label === 'Delete').run();
-  assert.deepEqual(wire, ['GET /routines'], 'nothing is on the wire while the window runs');
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), [], 'the row is off the home');
+  await settle();
+  assert.deepEqual(gym.owed(), ['held delete routine routinePushA'], 'held on the device, and nothing is owed to the store yet');
   // Deleting a routine cascades its proposals, so the transient says WHICH routine it was.
   assert.equal(home.log().transient.text, 'Push A deleted.');
   assert.equal(home.log().transient.action.label, 'Undo');
 
   t.mock.timers.tick(UNDO_MS - 1);
-  assert.deepEqual(wire, ['GET /routines']);
+  await settle();
+  assert.deepEqual(gym.owed(), ['held delete routine routinePushA']);
   t.mock.timers.tick(1);
   await settle();
-  assert.deepEqual(wire, ['GET /routines', 'DELETE /routines/rt_push']);
+  assert.deepEqual(gym.owed(), ['ready delete routine routinePushA'], 'the window closing is the release');
   assert.equal(home.log().transient, null);
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), [], 'and it stays gone');
 });
 
 test('a routine delete taken back is never sent, and the row is back on the home', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const wire = routinesOnTheWire();
-  const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
-  await settle();
+  const gym = await gymAccount(t, [pushA()]);
+  const home = await routinesHome(t);
 
   menuOf(home.screen()).props.items.find((item) => item.label === 'Delete').run();
   home.log().transient.action.run();
+  await settle();
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), ['Push A']);
 
   t.mock.timers.tick(UNDO_MS * 2);
   await settle();
-  assert.deepEqual(wire, ['GET /routines']);
+  assert.deepEqual(gym.owed(), []);
 });
 
 // 13-gestures.md: a window decides which rows are drawn; it never decides what state a screen is in.
 // The sharpest instance in the room, because this stance carries an ACT: every other one only says
 // something that is wrong.
 test('the home’s empty stance and its new routine action read the store: a held delete of the only routine offers no act, and the settled one does', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const wire = routinesOnTheWire();
-  const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
-  await settle();
+  const gym = await gymAccount(t, [pushA()]);
+  const home = await routinesHome(t);
   const quiet = () => findByClass(home.screen(), 'gym-plan-empty').map(textOf);
   const build = () => elementsOf(findByClass(home.screen(), 'gym-plan-empty')[0])
     .filter((each) => typeof each.type === 'function' && each.type.name === 'Button' && textOf(each.props.children) === 'New routine');
@@ -267,6 +238,7 @@ test('the home’s empty stance and its new routine action read the store: a hel
   assert.deepEqual(build(), []);
 
   menuOf(home.screen()).props.items.find((item) => item.label === 'Delete').run();
+  await settle();
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), [], 'the row is off the home, which is all the window decides');
   assert.deepEqual(quiet(), [], 'the account still holds a routine, so nothing on this home says it holds none');
   assert.deepEqual(build(), [], 'least of all an act offered over a program that has one');
@@ -274,69 +246,66 @@ test('the home’s empty stance and its new routine action read the store: a hel
 
   t.mock.timers.tick(UNDO_MS);
   await settle();
-  // The read this home holds was taken while the routine was there and is never taken again, so the
-  // stance becomes true only because the settled delete leaves the READ as well as the drawn rows.
-  assert.deepEqual(wire, ['GET /routines', 'DELETE /routines/rt_push']);
+  // The stance becomes true only once the release takes the delete into the store the home reads.
+  assert.deepEqual(gym.owed(), ['ready delete routine routinePushA']);
   assert.deepEqual(quiet(), ['No routines yet. Build the first one.']);
-  assert.equal(build().length, 1, 'the store answered, and only now is the offer honest');
+  assert.equal(build().length, 1, 'the store took it, and only now is the offer honest');
 });
 
-test('leaving the room abandons a held routine delete: the row is back, and nothing ever went', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+test('leaving the room takes its Undo with it, and the engine still lets the delete go on its own clock', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const wire = routinesOnTheWire();
-  const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
-  await settle();
+  const gym = await gymAccount(t, [pushA()]);
+  const home = await routinesHome(t);
 
   menuOf(home.screen()).props.items.find((item) => item.label === 'Delete').run();
+  await settle();
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), []);
 
-  // Out of the gym and into another product, four seconds in. Committing the delete here would put
-  // it past every way back, reached by two ordinary acts — so the room abandons what it holds.
+  // Out of the gym and into another product, four seconds in. The delete is already on the device;
+  // the room that offered it back is what goes, and no clock of its own outlives it.
   t.mock.timers.tick(4000);
   home.view.unmount();
   t.mock.timers.tick(UNDO_MS * 2);
   await settle();
-  assert.deepEqual(wire, ['GET /routines'], 'nothing went on the wire, and no clock outlived the room');
+  assert.deepEqual(gym.owed(), ['ready delete routine routinePushA'], 'the hold ran out on the engine’s clock');
 
-  // Back in: the routine the store still has, and no sentence about a delete that never happened.
-  const again = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
-  await settle();
-  assert.deepEqual(findByClass(again.screen(), 'gym-routine-name').map(textOf), ['Push A']);
+  // Back in, after the hold: the routine is gone, and nothing is offered back for a delete that went.
+  const again = await routinesHome(t);
+  assert.deepEqual(findByClass(again.screen(), 'gym-routine-name').map(textOf), []);
   assert.equal(again.log().transient, null);
   assert.deepEqual(again.log().held, []);
 });
 
-test('a hidden tab abandons a held routine delete: the row is back, and nothing ever went', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+test('a hidden tab ends the Undo: the offer leaves with the foreground, the row stays off, and nothing is said', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   const browser = browserWith();
-  const wire = routinesOnTheWire();
-  const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
-  await settle();
+  const gym = await gymAccount(t, [pushA()]);
+  const home = await routinesHome(t);
 
   menuOf(home.screen()).props.items.find((item) => item.label === 'Delete').run();
+  await settle();
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), []);
 
-  // Another tab, four seconds in. A hidden tab is a room that has left the foreground — the exact
-  // counterpart of the phones' ON_STOP — so letting the clock run here would spend the row while
-  // nobody could see the Undo, reached by two ordinary acts.
+  // Another tab, four seconds in. A hidden tab is the app leaving the foreground — the exact
+  // counterpart of the phones' ON_STOP — and leaving lets every held delete go into the queue.
   t.mock.timers.tick(4000);
   browser.hide();
   await settle();
   assert.deepEqual(home.log().held, [], 'the window let go of everything it was holding');
-  assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), ['Push A'], 'the row is back');
-  assert.equal(home.log().transient, null, 'and nothing is said, because nothing happened');
+  assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), [], 'the row stays off: the delete stands');
+  assert.equal(home.log().transient, null, 'and nothing is offered back or said');
 
   t.mock.timers.tick(UNDO_MS * 2);
   await settle();
-  assert.deepEqual(wire, ['GET /routines'], 'no clock outlived the hide, and nothing reached the store');
+  assert.deepEqual(gym.owed(), ['ready delete routine routinePushA'], 'the delete went into the queue');
 
-  // Back to the tab: still the routine the store never lost, and still no sentence about it.
+  // Back to the tab: the routine is still gone, and still no sentence about it.
   browser.show();
   await settle();
-  assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), ['Push A']);
+  assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), []);
   assert.equal(home.log().transient, null);
-  assert.deepEqual(wire, ['GET /routines']);
+  assert.deepEqual(gym.owed(), ['ready delete routine routinePushA']);
 });
 
 test('a hidden tab puts a dropped editor line back in the draft, the one verb that owns its own way back', async (t) => {
@@ -392,79 +361,74 @@ test('a hidden tab abandons what is still open and leaves what is already settli
 
 // The home, torn down and built again while the room holds the window — the lifter walking off the
 // routines tab and back inside the nine seconds.
-const homeAgainAndAgain = (t, api = {}) => roomAndScreen(t, {
+const homeAgainAndAgain = (t) => roomAndScreen(t, {
   module: 'products/gym/Routines.jsx',
   render: ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }),
-  api: quietApi(api),
 });
 const namesOn = (home) => findByClass(home.screen(), 'gym-routine-name').map(textOf);
 
 test('a delete settles into a screen that never armed it, and the row does not come back', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const wire = routinesOnTheWire();
+  const gym = await gymAccount(t, [pushA()]);
   const home = await homeAgainAndAgain(t);
 
   menuOf(home.screen()).props.items.find((item) => item.label === 'Delete').run();
   home.redraw();
   assert.deepEqual(namesOn(home), [], 'off the home for the length of the window');
+  await settle();
 
   // Off the tab and back, four seconds in. The new screen reads a store that STILL HAS the routine,
-  // because withheld means not sent — so it is drawn around a read that the delete is about to
-  // falsify, and it knows nothing about the delete the screen before it armed.
+  // because a held delete is not in the store — and it knows nothing about the delete the screen
+  // before it armed.
   t.mock.timers.tick(4000);
   await home.remount();
-  assert.deepEqual(wire, ['GET /routines', 'GET /routines'], 'the second screen read the store again');
-  assert.deepEqual(namesOn(home), [], 'still held, and the room is what is holding it');
+  assert.deepEqual(gym.owed(), ['held delete routine routinePushA'], 'the store the second screen reads still holds it');
+  assert.deepEqual(namesOn(home), [], 'still held, and the room is what hides it');
 
   // The clock closes into a screen that armed nothing.
   t.mock.timers.tick(UNDO_MS);
   await settle();
   home.redraw();
-  assert.deepEqual(wire, ['GET /routines', 'GET /routines', 'DELETE /routines/rt_push']);
+  assert.deepEqual(gym.owed(), ['ready delete routine routinePushA']);
   assert.deepEqual(namesOn(home), [], 'the delete landed, and the row it hid stayed gone');
   assert.equal(home.log().transient, null, 'the window retired with its last clock');
 
-  // And on every screen after that: the fact is the room's for as long as the room lives.
+  // And on every screen after that.
   await home.remount();
   assert.deepEqual(namesOn(home), []);
 });
 
 test('a refusal reaches the room even though the screen that armed it is gone, and the row is back', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
   browserWith();
-  const wire = routinesOnTheWire({ deleteStatus: 500 });
+  const gym = await gymAccount(t, [pushA()]);
   const home = await homeAgainAndAgain(t);
+  gym.refuseWrites();
 
+  // The screen is torn down in the same turn as the act, before the device has answered it.
   menuOf(home.screen()).props.items.find((item) => item.label === 'Delete').run();
-  t.mock.timers.tick(4000);
   await home.remount();
-  assert.deepEqual(namesOn(home), []);
-
-  t.mock.timers.tick(UNDO_MS);
   await settle();
   home.redraw();
-  assert.deepEqual(wire, ['GET /routines', 'GET /routines', 'DELETE /routines/rt_push']);
-  // Nothing settled, so nothing is hidden — and the sentence is still the one the screen wrote.
-  assert.deepEqual(namesOn(home), ['Push A'], 'the store kept it, so the home draws it');
+  assert.deepEqual(gym.owed(), []);
+  // Nothing was taken, so nothing is hidden — and the sentence is still the one the screen wrote.
+  assert.deepEqual(namesOn(home), ['Push A'], 'the device kept it, so the home draws it');
   assert.equal(
     home.log().transient.text,
     'Push A is still in your program — the log didn’t answer. Try again when you have signal.',
   );
 });
 
-test('a routine delete the store refuses says the routine is still in the program, and puts the row back', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+test('a routine delete the device cannot keep says the routine is still in the program, and puts the row back', async (t) => {
   browserWith();
-  const wire = routinesOnTheWire({ deleteStatus: 500 });
-  const home = await roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
-  await settle();
+  const gym = await gymAccount(t, [pushA()]);
+  const home = await routinesHome(t);
+  gym.refuseWrites();
 
   menuOf(home.screen()).props.items.find((item) => item.label === 'Delete').run();
-  t.mock.timers.tick(UNDO_MS);
   await settle();
 
-  assert.deepEqual(wire, ['GET /routines', 'DELETE /routines/rt_push']);
+  assert.deepEqual(gym.owed(), []);
   assert.equal(
     home.log().transient.text,
     'Push A is still in your program — the log didn’t answer. Try again when you have signal.',
@@ -475,32 +439,15 @@ test('a routine delete the store refuses says the routine is still in the progra
 test('the editor’s × drops the line from the draft and hands the way back to the room’s transient', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   browserWith();
-  const wire = [];
-  global.fetch = async (url, options = {}) => {
-    const path = url.slice(`${API_BASE}/v1/gym`.length);
-    wire.push(`${options.method ?? 'GET'} ${path}`);
-    if (path === '/routines/rt_push') {
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({
-          id: 'rt_push',
-          name: 'Push A',
-          position: 0,
-          revision: 1,
-          entries: [{ exerciseId: 'bench-press' }, { exerciseId: 'dip' }],
-        }),
-      };
-    }
-    throw new Error(`unexpected ${options.method ?? 'GET'} ${path}`);
-  };
+  const gym = await gymAccount(t, [confirmed('routine', 'routinePushA', {
+    name: 'Push A', position: 0, entries: [{ exerciseId: 'bench-press' }, { exerciseId: 'dip' }],
+  })]);
   const catalog = [{ id: 'bench-press', name: 'Bench Press' }, { id: 'dip', name: 'Dip' }];
   const editor = await roomWith(
     t,
     'products/gym/Routines.jsx',
-    ({ RoutineEditor }, log) => RoutineEditor({ id: 'rt_push', log: { ...log, catalog } }),
+    ({ RoutineEditor }, log) => RoutineEditor({ id: 'routinePushA', log: { ...log, catalog } }),
   );
-  await settle();
 
   const entries = () => elementsOf(editor.screen())
     .find((each) => typeof each.type === 'function' && each.type.name === 'EntryList').props.entries;
@@ -520,29 +467,18 @@ test('the editor’s × drops the line from the draft and hands the way back to 
 
   t.mock.timers.tick(UNDO_MS * 2);
   await settle();
-  assert.deepEqual(wire, ['GET /routines/rt_push'], 'a draft edit is never on the wire');
+  assert.deepEqual(gym.owed(), [], 'a draft edit writes nothing');
 });
 
 test('the editor’s window closes when the editor does, because the draft it would restore into is gone', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   browserWith();
-  global.fetch = async (url) => {
-    const path = url.slice(`${API_BASE}/v1/gym`.length);
-    if (path === '/routines/rt_push') {
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ id: 'rt_push', name: 'Push A', position: 0, revision: 1, entries: [{ exerciseId: 'dip' }] }),
-      };
-    }
-    throw new Error(`unexpected GET ${path}`);
-  };
+  await gymAccount(t, [confirmed('routine', 'routinePushA', { name: 'Push A', position: 0, entries: [{ exerciseId: 'dip' }] })]);
   const editor = await roomWith(
     t,
     'products/gym/Routines.jsx',
-    ({ RoutineEditor }, log) => RoutineEditor({ id: 'rt_push', log: { ...log, catalog: [{ id: 'dip', name: 'Dip' }] } }),
+    ({ RoutineEditor }, log) => RoutineEditor({ id: 'routinePushA', log: { ...log, catalog: [{ id: 'dip', name: 'Dip' }] } }),
   );
-  await settle();
 
   elementsOf(editor.screen())
     .find((each) => typeof each.type === 'function' && each.type.name === 'EntryList').props.onRemove(0);
@@ -552,213 +488,155 @@ test('the editor’s window closes when the editor does, because the draft it wo
   assert.equal(editor.log().held.length, 0);
 });
 
-function finishOnTheWire({ deleteStatus = 204 } = {}) {
-  const wire = [];
-  const session = { id: 'ses_1', startedAt: 1_755_000_000_000, finishedAt: 1_755_000_600_000 };
-  global.fetch = async (url, options = {}) => {
-    const path = url.slice(`${API_BASE}/v1/gym`.length);
-    wire.push(`${options.method ?? 'GET'} ${path}`);
-    if (path === '/exercises') return { ok: true, status: 200, json: async () => ({ exercises: [] }) };
-    if (path === '/sessions?limit=2') return { ok: true, status: 200, json: async () => ({ sessions: [session] }) };
-    if (path.startsWith('/history?')) return { ok: true, status: 200, json: async () => ({ sessions: [session], months: [], next: null }) };
-    if (path === '/sessions/ses_1' && options.method === 'DELETE') {
-      return { ok: deleteStatus < 300, status: deleteStatus, json: async () => ({ error: 'internal error' }) };
-    }
-    if (path === '/sessions/ses_1') return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ session, sets: [] }) };
-    if (path === '/sessions/ses_1/review') {
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ slight: true, stats: { durationMs: 600_000, workingSets: 1, topE1rm: null }, record: null, against: null }),
-      };
-    }
-    throw new Error(`unexpected ${options.method ?? 'GET'} ${path}`);
-  };
-  return wire;
-}
+// A short finished workout: no sets, so its review offers Keep it or Discard.
+const shortSession = () => confirmed('session', 'session0001', { startedAt: 1_755_000_000_000, finishedAt: 1_755_000_600_000 });
 
-test('Discard asks nothing, holds the session for the window, and only then reaches the store', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+// A child component is not rendered by the harness, and the short-session block reads the account
+// through hooks, so it is drawn inside the same render as the review that holds it.
+const reviewWithShort = (review) => {
+  const element = elementsOf(review).find((each) => typeof each.type === 'function' && each.type.name === 'ShortSession');
+  return { review, short: element ? element.type(element.props) : null };
+};
+
+test('Discard asks nothing, holds the session for the window, and only then lets it go to the store', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const wire = finishOnTheWire();
-  const finish = await roomWith(t, 'products/gym/Finish.jsx', ({ FinishScreen }, log) => FinishScreen({ id: 'ses_1', log }));
-  await settle();
-
-  // A child component is not rendered by the harness, so the short-session block is drawn here.
-  const short = () => {
-    const element = elementsOf(finish.screen()).find((each) => typeof each.type === 'function' && each.type.name === 'ShortSession');
-    return element.type(element.props);
-  };
+  const gym = await gymAccount(t, [shortSession()]);
+  const finish = await roomWith(t, 'products/gym/Finish.jsx', ({ FinishScreen }, log) => reviewWithShort(FinishScreen({ id: 'session0001', log })));
+  const short = () => finish.screen().short;
   const discard = findByClass(short(), 'gym-short-discard')[0];
   assert.equal(textOf(discard), 'Discard session');
-  window.location.hash = '#/gym/finish/ses_1';
+  window.location.hash = '#/gym/finish/session0001';
   discard.props.onClick();
 
   // No confirmation stands between the press and the window; Law 2 refuses one on an undoable act.
   assert.equal(findByClass(short(), 'gym-confirm').length, 0);
-  assert.equal(wire.filter((line) => line.startsWith('DELETE')).length, 0);
+  await settle();
+  assert.deepEqual(gym.owed(), ['held delete session session0001']);
   assert.equal(finish.log().transient.text, 'Session deleted.');
   assert.equal(finish.log().transient.action.label, 'Undo');
   assert.equal(window.location.hash, '#/gym', 'the lifter is back in the room, and the transient came with them');
 
   t.mock.timers.tick(UNDO_MS - 1);
-  assert.equal(wire.filter((line) => line.startsWith('DELETE')).length, 0);
+  await settle();
+  assert.deepEqual(gym.owed(), ['held delete session session0001']);
   t.mock.timers.tick(1);
   await settle();
-  assert.deepEqual(wire.filter((line) => line.startsWith('DELETE')), ['DELETE /sessions/ses_1']);
+  assert.deepEqual(gym.owed(), ['ready delete session session0001']);
   assert.equal(finish.log().transient, null);
 });
 
 test('a discard taken back inside the window never reaches the store', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const wire = finishOnTheWire();
-  const finish = await roomWith(t, 'products/gym/Finish.jsx', ({ FinishScreen }, log) => FinishScreen({ id: 'ses_1', log }));
-  await settle();
+  const gym = await gymAccount(t, [shortSession()]);
+  const finish = await roomWith(t, 'products/gym/Finish.jsx', ({ FinishScreen }, log) => reviewWithShort(FinishScreen({ id: 'session0001', log })));
 
-  const short = elementsOf(finish.screen()).find((each) => typeof each.type === 'function' && each.type.name === 'ShortSession');
-  findByClass(short.type(short.props), 'gym-short-discard')[0].props.onClick();
+  findByClass(finish.screen().short, 'gym-short-discard')[0].props.onClick();
   finish.log().transient.action.run();
   t.mock.timers.tick(UNDO_MS * 2);
   await settle();
-  assert.equal(wire.filter((line) => line.startsWith('DELETE')).length, 0);
+  assert.deepEqual(gym.owed(), []);
 });
 
 test('a finished session’s detail draws Discard session, and it takes the same window as every other delete', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const wire = finishOnTheWire();
-  const detail = await roomWith(t, 'products/gym/Log.jsx', ({ SessionDetail }, log) => SessionDetail({ id: 'ses_1', log }));
-  await settle();
+  const gym = await gymAccount(t, [shortSession()]);
+  const detail = await roomWith(t, 'products/gym/Log.jsx', ({ SessionDetail }, log) => SessionDetail({ id: 'session0001', log }));
 
   const discard = findByClass(detail.screen(), 'gym-short-discard');
   assert.equal(discard.length, 1);
   assert.equal(textOf(discard[0]), 'Discard session');
-  window.location.hash = '#/gym/log/ses_1';
+  window.location.hash = '#/gym/log/session0001';
   discard[0].props.onClick();
 
   assert.equal(findByClass(detail.screen(), 'gym-confirm').length, 0, 'no confirmation in front of an act with a way back');
-  assert.equal(wire.filter((line) => line.startsWith('DELETE')).length, 0);
+  assert.equal(detail.log().hidden('session').has('session0001'), true);
+  await settle();
+  assert.deepEqual(gym.owed(), ['held delete session session0001']);
   assert.equal(detail.log().transient.text, 'Session deleted.');
   assert.equal(detail.log().transient.action.label, 'Undo');
   assert.equal(window.location.hash, '#/gym/log', 'the lifter is on the log, where the row is already off it');
-  assert.equal(detail.log().hidden('session').has('ses_1'), true);
 
   t.mock.timers.tick(UNDO_MS - 1);
-  assert.equal(wire.filter((line) => line.startsWith('DELETE')).length, 0);
+  await settle();
+  assert.deepEqual(gym.owed(), ['held delete session session0001']);
   t.mock.timers.tick(1);
   await settle();
-  assert.deepEqual(wire.filter((line) => line.startsWith('DELETE')), ['DELETE /sessions/ses_1']);
+  assert.deepEqual(gym.owed(), ['ready delete session session0001']);
   assert.equal(detail.log().transient, null);
 });
 
-test('a detail discard taken back never reaches the store, and a refused one says so in the room’s voice', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+test('a detail discard taken back never reaches the store', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const wire = finishOnTheWire();
-  const detail = await roomWith(t, 'products/gym/Log.jsx', ({ SessionDetail }, log) => SessionDetail({ id: 'ses_1', log }));
-  await settle();
+  const gym = await gymAccount(t, [shortSession()]);
+  const detail = await roomWith(t, 'products/gym/Log.jsx', ({ SessionDetail }, log) => SessionDetail({ id: 'session0001', log }));
   findByClass(detail.screen(), 'gym-short-discard')[0].props.onClick();
   detail.log().transient.action.run();
   t.mock.timers.tick(UNDO_MS * 2);
   await settle();
-  assert.equal(wire.filter((line) => line.startsWith('DELETE')).length, 0);
+  assert.deepEqual(gym.owed(), []);
 });
 
-test('a detail discard the store refuses says the session was not discarded, in the review’s own words', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+test('a detail discard the device cannot keep says the session was not discarded, in the review’s own words', async (t) => {
   browserWith();
-  const wire = finishOnTheWire({ deleteStatus: 500 });
-  const detail = await roomWith(t, 'products/gym/Log.jsx', ({ SessionDetail }, log) => SessionDetail({ id: 'ses_1', log }));
-  await settle();
+  const gym = await gymAccount(t, [shortSession()]);
+  const detail = await roomWith(t, 'products/gym/Log.jsx', ({ SessionDetail }, log) => SessionDetail({ id: 'session0001', log }));
+  gym.refuseWrites();
   findByClass(detail.screen(), 'gym-short-discard')[0].props.onClick();
-  t.mock.timers.tick(UNDO_MS);
   await settle();
-  assert.deepEqual(wire.filter((line) => line.startsWith('DELETE')), ['DELETE /sessions/ses_1']);
+  assert.deepEqual(gym.owed(), []);
   assert.equal(
     detail.log().transient.text,
     'That session wasn’t discarded — the log didn’t answer. Try again when you have signal.',
   );
-  assert.equal(detail.log().hidden('session').has('ses_1'), false, 'the store kept it, so the log draws it');
+  assert.equal(detail.log().hidden('session').has('session0001'), false, 'the device kept it, so the log draws it');
 });
 
 test('the open session’s detail draws no discard: the phone owns it', async (t) => {
   browserWith();
-  const open = { id: 'ses_1', startedAt: 1_755_000_000_000 };
-  global.fetch = async (url, options = {}) => {
-    const path = url.slice(`${API_BASE}/v1/gym`.length);
-    if (path === '/exercises') return { ok: true, status: 200, json: async () => ({ exercises: [] }) };
-    if (path === '/sessions/ses_1') return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ session: open, sets: [] }) };
-    throw new Error(`unexpected ${options.method ?? 'GET'} ${path}`);
-  };
-  const detail = await roomWith(t, 'products/gym/Log.jsx', ({ SessionDetail }, log) => SessionDetail({ id: 'ses_1', log }));
-  await settle();
+  await gymAccount(t, [confirmed('session', 'session0001', { startedAt: Date.now() - 600_000 })]);
+  const detail = await roomWith(t, 'products/gym/Log.jsx', ({ SessionDetail }, log) => SessionDetail({ id: 'session0001', log }));
+  assert.equal(findByClass(detail.screen(), 'gym-reader-totals').length, 1, 'the open session is drawn');
   assert.equal(findByClass(detail.screen(), 'gym-short-discard').length, 0);
 });
 
-test('history hides pending sessions immediately and restores them on Undo without a new read', async (t) => {
+test('history hides pending sessions immediately and restores them on Undo from the rows it already drew', async (t) => {
   browserWith();
-  const sessions = [
-    { id: 'ses_1', startedAt: 1_755_000_000_000, finishedAt: 1_755_003_600_000, routineName: 'Push A' },
-    { id: 'ses_2', startedAt: 1_754_900_000_000, finishedAt: 1_754_903_600_000, routineName: 'Pull A' },
-  ];
-  global.fetch = async (url) => ({ ok: true, status: 200, json: async () => url.includes('/history') ? { sessions, months: [], next: null } : { entries: [], latest: null } });
+  await gymAccount(t, [
+    confirmed('session', 'session0001', { startedAt: 1_755_000_000_000, finishedAt: 1_755_003_600_000, displayName: 'Push A' }),
+    confirmed('session', 'session0002', { startedAt: 1_754_900_000_000, finishedAt: 1_754_903_600_000, displayName: 'Pull A' }),
+  ]);
   const { LogList } = await loadScreen('products/gym/Log.jsx');
-  let held = [{ key: 'session:ses_1', kind: 'session', id: 'ses_1', line: 'Session deleted.', at: 1, settling: false }];
+  let held = [{ key: 'session:session0001', kind: 'session', id: 'session0001', line: 'Session deleted.', at: 1, settling: false }];
   const screen = renderHook(t, () => LogList({ log: roomLog({ held }), onSignIn() {} }));
   await settle();
   const rows = () => elementsOf(screen.tree).find((each) => typeof each.type === 'function' && each.type.name === 'HistoryIndex').props.sessions.map((session) => session.id);
-  assert.deepEqual(rows(), ['ses_2']);
+  assert.deepEqual(rows(), ['session0002']);
   held = [];
   screen.redraw();
-  assert.deepEqual(rows(), ['ses_1', 'ses_2']);
+  assert.deepEqual(rows(), ['session0001', 'session0002']);
 });
 
-// The log's own instance of the law, and the half without which the fix is worse than the defect:
-// the settled delete has to leave the READ. `reloadLog` is what usually does it here — so this
-// answers the re-read with a store that still has the session, which is what a failed or stale read
-// looks like, and the stance is honest anyway.
-test('the log’s empty stance reads the store: a held delete of the only session invites nothing, and the settled one does even when the re-read is stale', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+// The log's own instance of the law: the settled delete has to leave the READ as well as the drawn
+// rows, and the stance follows the store and never the window.
+test('the log’s empty stance reads the store: a held delete of the only session invites nothing, and the settled one does', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const session = { id: 'ses_1', startedAt: 1_755_000_000_000, finishedAt: 1_755_000_600_000 };
-  const wire = [];
-  global.fetch = async (url, options = {}) => {
-    const path = url.slice(`${API_BASE}/v1/gym`.length);
-    const method = options.method ?? 'GET';
-    wire.push(`${method} ${path}`);
-    if (path === '/bodyweight') return { ok: true, status: 200, json: async () => ({ entries: [], latest: null }) };
-    if (path === '/exercises') return { ok: true, status: 200, json: async () => ({ exercises: [] }) };
-    if (path === '/sessions?limit=2') return { ok: true, status: 200, json: async () => ({ sessions: [session] }) };
-    if (path.startsWith('/history?')) return { ok: true, status: 200, json: async () => ({ sessions: [session], months: [], next: null }) };
-    if (path === '/sessions/ses_1' && method === 'DELETE') return { ok: true, status: 204, json: async () => ({}) };
-    if (path === '/sessions/ses_1') return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ session, sets: [] }) };
-    if (path === '/sessions/ses_1/review') {
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ slight: true, stats: { durationMs: 600_000, workingSets: 1, topE1rm: null }, record: null, against: null }),
-      };
-    }
-    throw new Error(`unexpected ${method} ${path}`);
-  };
+  const gym = await gymAccount(t, [shortSession()]);
   const { useTrainingLog } = await loadScreen('products/gym/useTrainingLog.js');
   const { LogList } = await loadScreen('products/gym/Log.jsx');
   const { FinishScreen } = await loadScreen('products/gym/Finish.jsx');
-  // The store the ROOM reads, and it never loses the session: the re-read behind the delete answers
-  // the same page it answered on the way in.
-  const api = quietApi({ sessions: async () => [session] });
   const view = renderHook(t, () => {
-    const log = useTrainingLog({ api });
-    return { log, logScreen: LogList({ log, onSignIn: () => {} }), finish: FinishScreen({ id: 'ses_1', log }) };
-  });
+    const log = useTrainingLog();
+    return { log, logScreen: LogList({ log, onSignIn: () => {} }), finish: reviewWithShort(FinishScreen({ id: 'session0001', log })) };
+  }, { live: true });
   await settle();
   const quiet = () => findByClass(view.tree.logScreen, 'gym-quiet').map(textOf);
   const rows = () => elementsOf(view.tree.logScreen).find((each) => typeof each.type === 'function' && each.type.name === 'HistoryIndex').props.sessions.length;
-  const short = () => {
-    const element = elementsOf(view.tree.finish).find((each) => typeof each.type === 'function' && each.type.name === 'ShortSession');
-    return element.type(element.props);
-  };
+  const short = () => view.tree.finish.short;
   assert.equal(rows(), 1);
   assert.deepEqual(quiet(), []);
 
@@ -770,7 +648,7 @@ test('the log’s empty stance reads the store: a held delete of the only sessio
 
   t.mock.timers.tick(UNDO_MS);
   await settle();
-  assert.deepEqual(wire.filter((line) => line.startsWith('DELETE')), ['DELETE /sessions/ses_1']);
+  assert.deepEqual(gym.owed(), ['ready delete session session0001']);
   assert.deepEqual(quiet(), ['No sessions yet.']);
 });
 
@@ -778,31 +656,18 @@ test('the log’s empty stance reads the store: a held delete of the only sessio
 // door in it. `withhold` is the room's own verb, the one `ShortSession` calls; this drives it
 // directly so the test stays on the screen whose read is under test.
 test('the past workout’s overlap refusal reads the account: it stands while the window holds the session it names, and falls away once the store has answered', async (t) => {
-  const now = new Date(2026, 8, 24, 18, 5).getTime();
-  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now });
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const ghost = { id: 'ses_1', startedAt: new Date(2026, 8, 24, 15).getTime(), finishedAt: new Date(2026, 8, 24, 16, 10).getTime() };
-  const wire = [];
-  global.fetch = async (url, options = {}) => {
-    const path = url.slice(`${API_BASE}/v1/gym`.length);
-    const method = options.method ?? 'GET';
-    wire.push(`${method} ${path}`);
-    if (path === '/sessions/ses_1' && method === 'DELETE') return { ok: true, status: 204, json: async () => ({}) };
-    if (path === '/last?exercise=ex_1') return { ok: true, status: 200, json: async () => ({ exerciseId: 'ex_1' }) };
-    if (path === '/sessions/import' && method === 'POST') return { ok: true, status: 201, json: async () => ({ session: {}, sets: [] }) };
-    throw new Error(`unexpected ${method} ${path}`);
-  };
-  // The re-read behind the delete answers the page it answered on the way in — a `reloadLog` that
-  // did not land, which is the state `useTrainingLog`'s own catch leaves behind for the room's life.
-  const api = { exercises: async () => [{ id: 'ex_1', name: 'Bench' }], sessions: async () => [ghost], preferences: async () => ({}) };
+  const gym = await gymAccount(t, [confirmed('session', 'session0001', {
+    startedAt: new Date(2026, 8, 24, 15).getTime(), finishedAt: new Date(2026, 8, 24, 16, 10).getTime(),
+  })]);
   const past = await roomWith(t, 'products/gym/backfill/Backfill.jsx', ({ Backfill }, log) => {
     const workout = Backfill({ target: 'free', log });
     return workout.type(workout.props);
-  }, api);
-  await settle();
+  });
   findByClass(past.screen(), 'gym-past-add')[0].props.onClick();
   past.view.redraw();
-  elementsOf(past.screen()).find((each) => typeof each.type === 'function' && each.type.name === 'MovementPicker').props.onPick('ex_1');
+  elementsOf(past.screen()).find((each) => typeof each.type === 'function' && each.type.name === 'MovementPicker').props.onPick('bench-press');
   await settle();
   past.view.redraw();
   const cell = (field) => {
@@ -822,62 +687,46 @@ test('the past workout’s overlap refusal reads the account: it stands while th
   const refusal = () => findByClass(past.screen(), 'gym-past-refusal-body').map(textOf);
   const door = () => findByClass(past.screen(), 'gym-past-refusal-open').map((each) => each.props.href);
   assert.equal(refusal().length, 1, 'the account holds that session, so the workout that crosses it is refused');
-  assert.deepEqual(door(), ['#/gym/session/ses_1']);
+  assert.deepEqual(door(), ['#/gym/session/session0001']);
 
-  past.log().withhold({
-    kind: 'session',
-    id: 'ses_1',
-    line: 'Session deleted.',
-    send: async () => { await fetch(`${API_BASE}/v1/gym/sessions/ses_1`, { method: 'DELETE' }); await past.log().reloadLog(); },
-  });
+  past.log().withhold({ kind: 'session', id: 'session0001', engineDeath: { type: 'session', id: 'session0001' }, line: 'Session deleted.' });
+  await settle();
   past.view.redraw();
+  assert.deepEqual(gym.owed(), ['held delete session session0001']);
   assert.equal(refusal().length, 1, 'a window decides which rows are drawn, and never whether a workout may be filed');
-  assert.deepEqual(door(), ['#/gym/session/ses_1'], 'and the door it offers still opens on a session that is there');
+  assert.deepEqual(door(), ['#/gym/session/session0001'], 'and the door it offers still opens on a session that is there');
 
   t.mock.timers.tick(UNDO_MS);
   await settle();
   past.view.redraw();
-  assert.equal(wire.includes('DELETE /sessions/ses_1'), true);
+  assert.deepEqual(gym.owed(), ['ready delete session session0001']);
   assert.deepEqual(refusal(), [], 'the store answered, so nothing is left to cross');
   assert.deepEqual(door(), [], 'and no door onto `This session isn’t in your log.`');
   findByClass(past.screen(), 'gym-save-do')[0].props.onClick();
   await settle();
-  assert.equal(wire.filter((line) => line === 'POST /sessions/import').length, 1, 'and the workout is filed');
+  assert.deepEqual(gym.owed().map((line) => line.replace(/ses_[0-9a-f]{16}$/, 'ses_…')),
+    ['ready delete session session0001', 'ready gym.importSession ses_…'], 'and the workout is filed');
 });
 
 // ── The two verbs that used to ask a question ───────────────────────────────
-// A note and a weigh-in are deleted in one press now, and every state the confirmation carried is
-// re-homed here: `are you sure` is the window, `this row is gone` is `log.hidden`, and the refusal
-// after the window is said by the room.
+// A note and a weigh-in are deleted in one press, and every state a confirmation would carry is
+// homed here: `are you sure` is the window, `this row is gone` is `log.hidden`, and a refusal is
+// said by the room.
 
-function notesOnTheWire({ count = 10, deleteStatus = 204, said = null } = {}) {
-  const wire = [];
-  const deleted = new Set();
-  const stored = () => Array.from({ length: count }, (_, at) => ({ id: `note_${at}`, position: at, title: `Note ${at}`, body: '', updatedAt: 0 }))
-    .filter((note) => !deleted.has(note.id));
-  global.fetch = async (url, options = {}) => {
-    const path = url.slice(`${API_BASE}/v1/gym`.length);
-    const method = options.method ?? 'GET';
-    wire.push(`${method} ${path}`);
-    if (path === '/notes' && method === 'GET') return { ok: true, status: 200, json: async () => ({ notes: stored() }) };
-    if (path.startsWith('/notes/') && method === 'DELETE') {
-      if (deleteStatus < 300) deleted.add(path.slice('/notes/'.length));
-      return { ok: deleteStatus < 300, status: deleteStatus, json: async () => (said ? { error: said } : {}) };
-    }
-    throw new Error(`unexpected ${method} ${path}`);
-  };
-  return wire;
-}
+// The account's notes as the server confirmed them, in the store's order.
+const storedNotes = (count) => Array.from({ length: count }, (_, at) =>
+  confirmed('note', `note00000${at}`, { title: `Note ${at}`, body: '', ord: `a${at}`, updatedAt: 0 }));
 
 const noteList = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'NoteList');
 const noteEditor = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'NoteEditor');
+const noteCount = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'CoachNavigation').props.noteCount;
+const notesRoom = (t) => roomWith(t, 'products/gym/notes/Notes.jsx', ({ Notes }, log) => Notes({ log }));
 
-test('a note delete is one press, leaves the editor in the same act, and is not on the wire until the window closes', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+test('a note delete is one press, leaves the editor in the same act, and is held on the device until the window closes', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const wire = notesOnTheWire({ count: 3 });
-  const notes = await roomWith(t, 'products/gym/notes/Notes.jsx', ({ Notes }, log) => Notes({ log }));
-  await settle();
+  const gym = await gymAccount(t, storedNotes(3));
+  const notes = await notesRoom(t);
 
   const held = noteList(notes.screen()).props.notes[1];
   noteList(notes.screen()).props.onOpen(held);
@@ -887,71 +736,71 @@ test('a note delete is one press, leaves the editor in the same act, and is not 
 
   assert.equal(noteEditor(notes.screen()), undefined, 'the editor is left in the same act');
   assert.deepEqual(noteList(notes.screen()).props.notes.map((note) => note.title), ['Note 0', 'Note 2']);
-  assert.deepEqual(wire, ['GET /notes'], 'nothing is on the wire while the window runs');
+  assert.deepEqual(gym.owed(), ['held delete note note000001'], 'held on the device, and nothing is owed to the store yet');
+  assert.equal(noteCount(notes.screen()), 3, 'the store still holds it');
   assert.equal(notes.log().transient.text, 'Note deleted.');
   assert.equal(notes.log().transient.action.label, 'Undo');
 
   t.mock.timers.tick(UNDO_MS);
   await settle();
-  // The store renumbers the rest, so the list re-reads — and a reorder sent afterwards carries the
-  // store's own list rather than an id the store no longer has.
-  assert.deepEqual(wire, ['GET /notes', 'DELETE /notes/note_1', 'GET /notes']);
+  // The release takes the note out of the store, so the list is read again — and a reorder sent
+  // afterwards carries the store's own list rather than an id the store no longer has.
+  assert.deepEqual(gym.owed(), ['ready delete note note000001']);
+  assert.equal(noteCount(notes.screen()), 2, 'the list was read again from the store');
   assert.deepEqual(noteList(notes.screen()).props.notes.map((note) => note.title), ['Note 0', 'Note 2']);
 });
 
 test('the re-read after a note delete keeps the list drawn: the screen does not blank nine seconds after the act', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  notesOnTheWire({ count: 3 });
-  const notes = await roomWith(t, 'products/gym/notes/Notes.jsx', ({ Notes }, log) => Notes({ log }));
-  await settle();
+  const gym = await gymAccount(t, storedNotes(3));
+  const notes = await notesRoom(t);
 
   const held = noteList(notes.screen()).props.notes[1];
   noteList(notes.screen()).props.onOpen(held);
   noteEditor(notes.screen()).props.onDelete(held);
   await settle();
 
-  // The store's answer lands; the re-read behind it is still in the air.
-  let answerTheRead = null;
-  global.fetch = async (url, options = {}) => {
-    if ((options.method ?? 'GET') === 'DELETE') return { ok: true, status: 204, json: async () => ({}) };
-    return new Promise((resolve) => { answerTheRead = () => resolve({ ok: true, status: 200, json: async () => ({ notes: [{ id: 'note_0', position: 0, title: 'Note 0', body: '', updatedAt: 0 }, { id: 'note_2', position: 1, title: 'Note 2', body: '', updatedAt: 0 }] }) }); });
-  };
+  // The release lands in the store; the re-read behind it is still in the air at that moment.
+  const meanwhile = [];
+  gym.engine.observe('self/gym').subscribe(() => meanwhile.push({
+    titles: noteList(notes.screen())?.props.notes.map((note) => note.title),
+    opening: findByClass(notes.screen(), 'gym-quiet').length,
+  }));
   t.mock.timers.tick(UNDO_MS);
   await settle();
 
-  assert.deepEqual(noteList(notes.screen()).props.notes.map((note) => note.title), ['Note 0', 'Note 2'], 'the rows stand');
-  assert.equal(findByClass(notes.screen(), 'gym-quiet').length, 0, 'never back to `Opening your notes…`');
-  answerTheRead();
-  await settle();
+  assert.notEqual(meanwhile.length, 0, 'the store changed under the screen');
+  for (const drawn of meanwhile) {
+    assert.deepEqual(drawn, { titles: ['Note 0', 'Note 2'], opening: 0 }, 'the rows stand, never back to `Opening your notes…`');
+  }
   assert.deepEqual(noteList(notes.screen()).props.notes.map((note) => note.title), ['Note 0', 'Note 2']);
 });
 
 test('a note delete taken back is never sent, and the row is back on the list', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const wire = notesOnTheWire({ count: 3 });
-  const notes = await roomWith(t, 'products/gym/notes/Notes.jsx', ({ Notes }, log) => Notes({ log }));
-  await settle();
+  const gym = await gymAccount(t, storedNotes(3));
+  const notes = await notesRoom(t);
 
   const held = noteList(notes.screen()).props.notes[0];
   noteList(notes.screen()).props.onOpen(held);
   noteEditor(notes.screen()).props.onDelete(held);
   await settle();
   notes.log().transient.action.run();
+  await settle();
   assert.deepEqual(noteList(notes.screen()).props.notes.map((note) => note.title), ['Note 0', 'Note 1', 'Note 2']);
 
   t.mock.timers.tick(UNDO_MS * 2);
   await settle();
-  assert.deepEqual(wire, ['GET /notes']);
+  assert.deepEqual(gym.owed(), []);
 });
 
 test('the cap is the store’s count: a tenth note held for deletion still fills the account, so the cap line stands', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  notesOnTheWire({ count: 10 });
-  const notes = await roomWith(t, 'products/gym/notes/Notes.jsx', ({ Notes }, log) => Notes({ log }));
-  await settle();
+  await gymAccount(t, storedNotes(10));
+  const notes = await notesRoom(t);
   assert.equal(textOf(findByClass(notes.screen(), 'gym-notes-full')[0]), '10 of 10 notes. Delete one to add another.');
 
   const held = noteList(notes.screen()).props.notes[9];
@@ -963,76 +812,50 @@ test('the cap is the store’s count: a tenth note held for deletion still fills
   assert.equal(textOf(findByClass(notes.screen(), 'gym-notes-full')[0]), '10 of 10 notes. Delete one to add another.');
   assert.equal(findByClass(notes.screen(), 'gym-notes-add').length, 0, 'and no door onto a mint the store would refuse');
 
-  // Once the store has answered, the account really has nine and the door comes back.
+  // Once the delete is released into the store, the account really has nine and the door comes back.
   t.mock.timers.tick(UNDO_MS);
   await settle();
   assert.equal(findByClass(notes.screen(), 'gym-notes-full').length, 0);
   assert.equal(textOf(findByClass(notes.screen(), 'gym-notes-add')[0]), 'Add a note');
 });
 
-test('a note delete the store refuses is said in the room’s words, and the row is back because nothing was taken', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+test('a note delete the device cannot keep is said in the room’s words, and the row is back because nothing was taken', async (t) => {
   browserWith();
-  // Wordless, so what is read is the room's own sentence and not the store's.
-  notesOnTheWire({ count: 3, deleteStatus: 500 });
-  const notes = await roomWith(t, 'products/gym/notes/Notes.jsx', ({ Notes }, log) => Notes({ log }));
-  await settle();
+  const gym = await gymAccount(t, storedNotes(3));
+  const notes = await notesRoom(t);
+  // The browser's refusal carries no sentence, so what is read is the room's own.
+  gym.refuseWrites();
 
   const held = noteList(notes.screen()).props.notes[1];
   noteList(notes.screen()).props.onOpen(held);
   noteEditor(notes.screen()).props.onDelete(held);
-  t.mock.timers.tick(UNDO_MS);
   await settle();
 
   assert.equal(notes.log().transient.text, 'That note wasn’t deleted — the log didn’t answer. Try again when you have signal.');
   assert.equal(notes.log().transient.action, null, 'a refusal carries no way back');
-  // Only a send that RESOLVES records the id gone, so a refused delete leaves the row standing —
-  // which is the state the sentence names, and the reason it names the way out as trying again.
+  assert.deepEqual(gym.owed(), []);
+  // Nothing was taken, so the row is back — which is the state the sentence names, and the reason
+  // it names the way out as trying again.
   assert.deepEqual(noteList(notes.screen()).props.notes.map((note) => note.title), ['Note 0', 'Note 1', 'Note 2']);
 });
 
-// A store that really keeps the series, so a delete that lands and a weigh-in written afterwards are
-// read back off the same rows the screens are drawing from.
-function weighInsOnTheWire(entries, { deleteStatus = 204 } = {}) {
-  const wire = [];
-  let stored = [...entries];
-  global.fetch = async (url, options = {}) => {
-    const path = url.slice(`${API_BASE}/v1/gym`.length);
-    const method = options.method ?? 'GET';
-    wire.push(`${method} ${path}`);
-    if (path === '/bodyweight' && method === 'GET') {
-      return { ok: true, status: 200, json: async () => ({ entries: stored, latest: stored[stored.length - 1] ?? null }) };
-    }
-    if (path.startsWith('/bodyweight/') && method === 'DELETE') {
-      const day = path.slice('/bodyweight/'.length);
-      if (deleteStatus < 300) stored = stored.filter((each) => each.dateLocal !== day);
-      return { ok: deleteStatus < 300, status: deleteStatus, json: async () => ({ error: 'internal error' }) };
-    }
-    if (path.startsWith('/bodyweight/') && method === 'PUT') {
-      const day = path.slice('/bodyweight/'.length);
-      const entry = { dateLocal: day, ...JSON.parse(options.body) };
-      stored = [...stored.filter((each) => each.dateLocal !== day), entry];
-      return { ok: true, status: 200, json: async () => ({ entry }) };
-    }
-    throw new Error(`unexpected ${method} ${path}`);
-  };
-  return { wire, onTheLog: () => stored };
-}
-
 // Both screens that read the series, in one room: the chart owns one instance of `useBodyweight` and
 // the log owns a second, and the hide is inside the hook precisely so the two never disagree.
-async function weighInRoom(t, entries, options = {}) {
+async function weighInRoom(t, entries) {
+  const gym = await gymAccount(t, entries.map(({ dateLocal, weightKg, recordedAt }) => confirmed('weighin', dateLocal, { kg: weightKg, recordedAt })));
   const { useTrainingLog } = await loadScreen('products/gym/useTrainingLog.js');
   const { BodyweightScreen } = await loadScreen('products/gym/bodyweight/Bodyweight.jsx');
   const { LogList } = await loadScreen('products/gym/Log.jsx');
-  const held = quietApi();
-  const { wire, onTheLog } = weighInsOnTheWire(entries, options);
   const view = renderHook(t, () => {
-    const log = useTrainingLog({ api: held });
+    const log = useTrainingLog();
     return { log, chart: BodyweightScreen({ log }), logScreen: LogList({ log, onSignIn: () => {} }) };
-  });
+  }, { live: true });
   await settle();
   const named = (tree, name) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === name);
+  // The weigh-ins the store holds, in the store's own words.
+  const onTheLog = () => gym.engine.observe('self/gym').getSnapshot().stored
+    .filter((row) => row.t === 'weighin' && row.life?.[0] !== 'dead')
+    .map((row) => ({ dateLocal: row.id, weightKg: row.f.kg[0], recordedAt: row.f.recordedAt[0] }));
   const reading = () => named(view.tree.logScreen, 'BodyweightReading');
   const chart = () => named(view.tree.chart, 'DotChart');
   const sheet = () => named(view.tree.chart, 'WeighInSheet');
@@ -1041,11 +864,11 @@ async function weighInRoom(t, entries, options = {}) {
   // Every quiet line the chart screen is drawing: its stance about the account, and its line about
   // the window it is showing.
   const quiet = () => findByClass(view.tree.chart, 'gym-quiet').map(textOf);
-  return { wire, onTheLog, log: () => view.tree.log, reading, chart, sheet, weighButton, logSheet, quiet };
+  return { owed: gym.owed, refuseWrites: gym.refuseWrites, onTheLog, log: () => view.tree.log, reading, chart, sheet, weighButton, logSheet, quiet };
 }
 
 test('a weigh-in delete is one press, closes the sheet over the transient, and drops the dot AND the log’s head reading together', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
   const today = dateLocalOf(Date.now());
   const room = await weighInRoom(t, [
@@ -1065,17 +888,17 @@ test('a weigh-in delete is one press, closes the sheet over the transient, and d
   assert.equal(room.sheet(), undefined, 'a sheet over the room would hide the only Undo there is');
   assert.equal(room.chart().props.points.length, 1, 'the dot is gone');
   assert.equal(room.reading().props.latest.dateLocal, '2026-08-20', 'and so is the head reading, from the same filter');
-  assert.deepEqual(room.wire.filter((line) => line.startsWith('DELETE')), []);
+  assert.deepEqual(room.owed(), [`held delete weighin ${today}`]);
   assert.equal(room.log().transient.text, 'Weigh-in deleted.');
   assert.equal(room.log().transient.action.label, 'Undo');
 
   t.mock.timers.tick(UNDO_MS);
   await settle();
-  assert.deepEqual(room.wire.filter((line) => line.startsWith('DELETE')), [`DELETE /bodyweight/${today}`]);
+  assert.deepEqual(room.owed(), [`ready delete weighin ${today}`]);
 });
 
 test('a weigh-in delete taken back puts the dot and the reading back, and never reaches the store', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
   const today = dateLocalOf(Date.now());
   const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }]);
@@ -1093,14 +916,14 @@ test('a weigh-in delete taken back puts the dot and the reading back, and never 
 
   t.mock.timers.tick(UNDO_MS * 2);
   await settle();
-  assert.deepEqual(room.wire.filter((line) => line.startsWith('DELETE')), []);
+  assert.deepEqual(room.owed(), []);
 });
 
 // 13-gestures.md: a window decides which rows are drawn; it never decides what state a screen is in.
 // The stance about the account reads the STORE, so the invitation to weigh in for the first time is
 // never drawn over a number the transient is still offering back.
 test('the chart’s empty stance reads the store, so a held delete of the only weigh-in draws no invitation and the settled one does', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
   const today = dateLocalOf(Date.now());
   const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }]);
@@ -1119,20 +942,20 @@ test('the chart’s empty stance reads the store, so a held delete of the only w
   assert.deepEqual(room.quiet(), ['No weigh-ins yet.', 'Weigh in from the log and the number lands here.']);
 });
 
-test('a weigh-in delete the store refuses is said in the screen’s own words', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+test('a weigh-in delete the device cannot keep is said in the screen’s own words', async (t) => {
   browserWith();
   const today = dateLocalOf(Date.now());
-  const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }], { deleteStatus: 500 });
+  const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }]);
+  room.refuseWrites();
 
   room.chart().props.onPick(room.chart().props.points[0]);
   room.sheet().props.onDelete(today);
-  t.mock.timers.tick(UNDO_MS);
   await settle();
 
   assert.equal(room.log().transient.text, 'That weigh-in wasn’t deleted. Try again in a moment.');
   assert.equal(room.log().transient.action, null);
-  // The same rule on the other verb: the store refused, so the dot and the head reading are back.
+  assert.deepEqual(room.owed(), []);
+  // The same rule on the other verb: nothing was taken, so the dot and the head reading are back.
   assert.equal(room.chart().props.points.length, 1);
   assert.equal(room.reading().props.latest.dateLocal, today);
 });
@@ -1142,7 +965,7 @@ test('a weigh-in delete the store refuses is said in the screen’s own words', 
 // about the row that was there. A date can be written again, and then both answers are wrong.
 
 test('a weigh-in written again on a day whose delete is still holding takes that delete back, and nothing is sent', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
   const today = dateLocalOf(Date.now());
   const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }]);
@@ -1157,22 +980,24 @@ test('a weigh-in written again on a day whose delete is still holding takes that
   assert.equal(await room.logSheet().props.onSave({ dateLocal: today, weightKg: 79.5, recordedAt: 3 }), null);
   await settle();
   assert.equal(room.log().held.length, 0, 'writing the day again IS the way back');
+  assert.deepEqual(room.owed(), [`ready put weighin ${today} kg recordedAt`], 'the held delete is retired by the write');
 
   t.mock.timers.tick(UNDO_MS * 2);
   await settle();
-  assert.deepEqual(room.wire.filter((line) => line.startsWith('DELETE')), [], 'the clock is gone, so the new number is never destroyed');
-  assert.deepEqual(room.onTheLog(), [{ dateLocal: today, weightKg: 79.5, recordedAt: 3 }]);
+  assert.deepEqual(room.owed(), [`ready put weighin ${today} kg recordedAt`], 'no hold is left to destroy the new number');
+  assert.deepEqual(room.onTheLog(), [{ dateLocal: today, weightKg: 79.5, recordedAt: NOW }]);
   assert.equal(room.reading().props.latest.weightKg, 79.5);
 });
 
 test('a weigh-in written again on a day whose delete already settled is drawn: the dot and the head reading both come back', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
   const today = dateLocalOf(Date.now());
   const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }]);
 
   room.chart().props.onPick(room.chart().props.points[0]);
   room.sheet().props.onDelete(today);
+  await settle();
   t.mock.timers.tick(UNDO_MS);
   await settle();
   assert.deepEqual(room.onTheLog(), [], 'the store took it, and the room records the date gone');
@@ -1183,7 +1008,7 @@ test('a weigh-in written again on a day whose delete already settled is drawn: t
   assert.equal(await room.logSheet().props.onSave({ dateLocal: today, weightKg: 79.5, recordedAt: 3 }), null);
   await settle();
 
-  assert.deepEqual(room.onTheLog(), [{ dateLocal: today, weightKg: 79.5, recordedAt: 3 }]);
+  assert.deepEqual(room.onTheLog(), [{ dateLocal: today, weightKg: 79.5, recordedAt: NOW + UNDO_MS }]);
   assert.equal(room.reading().props.latest.weightKg, 79.5, 'a number on the log that the room draws nowhere would be the worse lie');
   // The dot the title names, and the stance beside it: the day is back in the account, so the chart
   // may not go on offering to seed an account that holds a number the head is reading out.
@@ -1191,8 +1016,8 @@ test('a weigh-in written again on a day whose delete already settled is drawn: t
   assert.deepEqual(room.quiet(), []);
 });
 
-test('a weigh-in written again while the delete’s send is still in the air is drawn: the room records nothing gone', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+test('a weigh-in written again while the delete’s release is still landing is drawn: the room records nothing gone', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
   const today = dateLocalOf(Date.now());
   const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }]);
@@ -1201,25 +1026,15 @@ test('a weigh-in written again while the delete’s send is still in the air is 
   room.sheet().props.onDelete(today);
   await settle();
 
-  // The seam the window has always had: the clock has fired, the DELETE is on the wire, and the
-  // answer that would record the date gone has not come back yet.
-  const takenFromTheWire = global.fetch;
-  let answerTheDelete = null;
-  global.fetch = async (url, options = {}) => {
-    if ((options.method ?? 'GET') !== 'DELETE') return takenFromTheWire(url, options);
-    await new Promise((resolve) => { answerTheDelete = resolve; });
-    return takenFromTheWire(url, options);
-  };
+  // The seam the window has: the clock has fired, the engine is writing the release, and the day is
+  // written again before that write has landed.
   t.mock.timers.tick(UNDO_MS);
-  await settle();
-
   room.weighButton().props.onClick();
-  await settle();
-  assert.equal(await room.logSheet().props.onSave({ dateLocal: today, weightKg: 79.5, recordedAt: 3 }), null);
+  const saved = room.logSheet().props.onSave({ dateLocal: today, weightKg: 79.5, recordedAt: 3 });
+  assert.equal(await saved, null);
   await settle();
 
-  answerTheDelete();
-  await settle();
+  assert.deepEqual(room.onTheLog(), [{ dateLocal: today, weightKg: 79.5, recordedAt: NOW + UNDO_MS }]);
   assert.equal(room.reading().props.latest.weightKg, 79.5, 'the date was written again, so it is not a date the store answered for');
   // And the chart is reading the same account the head is: the day is a day the account holds.
   assert.equal(room.chart().props.points.length, 1);

@@ -7,17 +7,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { API_BASE } from '../../../src/shell/apiBase.js';
 import {
   cappedName, isNameOverCap, NAME_MAX, nameChars, nameCountLabel, showsNameCount,
 } from '../../../src/products/gym/log.js';
 import {
   isTitleOverCap, titleChars, titleCountLabel, TITLE_MAX,
 } from '../../../src/products/gym/notes/notes.js';
-import { browserWith, elementsOf, findByClass, loadScreen, renderHook, roomLog, settle } from './harness.mjs';
-
-const realFetch = global.fetch;
-test.afterEach(() => { global.fetch = realFetch; });
+import {
+  browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle,
+} from './harness.mjs';
 
 const SIXTY = '😀'.repeat(30) + 'ü'.repeat(30);
 const SIXTY_ONE = `${SIXTY}ü`;
@@ -87,28 +85,20 @@ test('a note’s title counts the same fixture the same way, against the column�
 // receipt would be chrome, so its absence here is a decision and not an omission.
 test('the finish card cuts a typed routine name at sixty code points, and draws no counter', async (t) => {
   browserWith();
-  const session = { id: 'ses_1', startedAt: 1_755_000_000_000, finishedAt: 1_755_003_600_000 };
-  const sets = [{ id: 'st_1', exerciseId: 'squat', kind: 'working', weightKg: 100, reps: 5 }];
-  global.fetch = async (url) => {
-    const path = url.slice(`${API_BASE}/v1/gym`.length);
-    if (path === '/exercises') return { ok: true, status: 200, json: async () => ({ exercises: [{ id: 'squat', name: 'Squat' }] }) };
-    if (path === '/sessions?limit=2') return { ok: true, status: 200, json: async () => ({ sessions: [session] }) };
-    if (path === '/sessions/ses_1') return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ session, sets }) };
-    if (path === '/sessions/ses_1/review') {
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ slight: false, stats: { durationMs: 3_600_000, workingSets: 1, topE1rm: null }, record: null, against: null }),
-      };
-    }
-    throw new Error(`unexpected GET ${path}`);
-  };
+  // Four working sets and no routine: a workout the review offers to keep as one.
+  const startedAt = 1_755_000_000_000;
+  await gymAccount(t, [
+    confirmed('session', 'session0001', { startedAt, finishedAt: startedAt + 3_600_000 }),
+    ...[1, 2, 3, 4].map((setNumber) => confirmed('set', `set000000${setNumber}`, {
+      sessionId: 'session0001', exerciseId: 'back-squat', setNumber, weightKg: 100, reps: 5, kind: 'working', completedAt: startedAt + setNumber * 600_000, note: '',
+    })),
+  ]);
 
   const { FinishScreen } = await loadScreen('products/gym/Finish.jsx');
   // The card is a child component, so the harness does not render it: it is rendered here, inside
   // the same pass, which is what gives its own hooks a dispatcher.
   const view = renderHook(t, () => {
-    const screen = FinishScreen({ id: 'ses_1', log: roomLog() });
+    const screen = FinishScreen({ id: 'session0001', log: roomLog() });
     const card = elementsOf(screen).find((each) => typeof each.type === 'function' && each.type.name === 'KeepAsRoutine');
     return card ? card.type(card.props) : null;
   });

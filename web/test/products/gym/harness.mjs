@@ -1,18 +1,23 @@
 // Named `.mjs`: the runner takes any `.js` under test/ as a test file.
 
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { register } from 'node:module';
 import React from 'react';
+import { hello } from '../../../../packages/api-contract/sync/reference/server/pull.js';
+import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
+import { registry } from '../../../src/platform/sync/schema.js';
+import { syncSession } from '../../../src/platform/sync/session.js';
 import { goneIds, hiddenIds } from '../../../src/products/gym/withheld.js';
+import { environment } from '../../platform/sync/fakes.js';
 
 const { ReactCurrentDispatcher } = React.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
 
 // Teardown is registered at mount: a thrown assertion would otherwise leave intervals holding the event loop open.
 // `context` answers any `useContext` whose provider is not mounted here, since no provider ever is.
-// `useSyncExternalStore` reads the snapshot and never subscribes: a store's change is a `redraw`.
-export function renderHook(t, run, { context = null } = {}) {
+// `useSyncExternalStore` reads the snapshot and, unless `live`, never subscribes: a store's change is a
+// `redraw`. A `live` render subscribes the way React does, so a store that changes draws again.
+export function renderHook(t, run, { context = null, live = false } = {}) {
   const cells = [];
   const queued = [];
   let cursor = 0;
@@ -63,7 +68,19 @@ export function renderHook(t, run, { context = null } = {}) {
     },
     useLayoutEffect(effect, deps) { dispatcher.useEffect(effect, deps); },
     useContext(ctx) { return ctx._currentValue ?? context; },
-    useSyncExternalStore(subscribe, getSnapshot) { return getSnapshot(); },
+    useSyncExternalStore(subscribe, getSnapshot) {
+      if (!live) return getSnapshot();
+      const cell = cells[cursor] ?? (cells[cursor] = {});
+      cursor += 1;
+      cell.getSnapshot = getSnapshot;
+      cell.value = getSnapshot();
+      if (cell.subscribe !== subscribe) {
+        cell.unsubscribe?.();
+        cell.subscribe = subscribe;
+        cell.unsubscribe = subscribe(() => { if (!rendering && !Object.is(cell.getSnapshot(), cell.value)) render(); });
+      }
+      return cell.value;
+    },
     useDebugValue() {},
   };
 
@@ -88,7 +105,10 @@ export function renderHook(t, run, { context = null } = {}) {
 
   render();
   const unmount = () => {
-    cells.forEach((cell) => { cell.cleanup?.(); cell.cleanup = null; });
+    cells.forEach((cell) => {
+      cell.cleanup?.(); cell.cleanup = null;
+      cell.unsubscribe?.(); cell.unsubscribe = null;
+    });
   };
   t.after(unmount);
   return {
@@ -101,15 +121,19 @@ export function renderHook(t, run, { context = null } = {}) {
   };
 }
 
+// Every engine write an open account has started, so `settle` can wait for the replica to be quiet.
+const writing = new Set();
+
 export const settle = async (turns = 4) => {
   for (let turn = 0; turn < turns; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+  while (writing.size > 0) {
+    await Promise.allSettled([...writing]);
+    for (let turn = 0; turn < turns; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+  }
 };
 
-// `live` and `queue` are seeded as raw bytes.
-export function browserWith({ queue = null, live = null } = {}) {
+export function browserWith() {
   const disk = new Map();
-  if (queue !== null) disk.set('windmill.gym.queue', queue);
-  if (live !== null) disk.set('windmill.gym.live', live);
   const listeners = new Map();
   const bind = (type, fn) => listeners.set(type, [...(listeners.get(type) ?? []), fn]);
   const unbind = (type, fn) => listeners.set(type, (listeners.get(type) ?? []).filter((each) => each !== fn));
@@ -126,8 +150,6 @@ export function browserWith({ queue = null, live = null } = {}) {
   globalThis.document = { visibilityState: 'visible', addEventListener: bind, removeEventListener: unbind };
   globalThis.navigator = { onLine: true };
   return {
-    held: () => (disk.has('windmill.gym.queue') ? disk.get('windmill.gym.queue') : null),
-    kept: () => (disk.has('windmill.gym.live') ? disk.get('windmill.gym.live') : null),
     hide: () => {
       globalThis.document.visibilityState = 'hidden';
       (listeners.get('visibilitychange') ?? []).forEach((fn) => fn());
@@ -143,20 +165,76 @@ export function browserWith({ queue = null, live = null } = {}) {
   };
 }
 
+// A signed-in account whose server-confirmed `records` sit in a real browser engine, so every screen
+// reads and writes the replica production does. The engine keeps the tab's clock and never networks.
+export async function gymAccount(t, records = []) {
+  const env = environment();
+  const reading = () => ({ wall: Date.now(), mono: Date.now(), boot: 'test' });
+  env.transport.request = async () => ({ response: hello({ state: env.state, registry, account: 'A', serverTime: Date.now() }),
+    timing: { send: reading(), recv: reading() } });
+  // Node's mocked `clearTimeout` throws on an id that was never set; a browser's ignores it.
+  const timers = { setTimeout: (run, delay) => setTimeout(run, delay), clearTimeout: (id) => { if (id != null) clearTimeout(id); } };
+  const engine = await BrowserSyncEngine.open({ ...env.options, registry, timers, now: () => Date.now(), monotonic: () => Date.now() });
+  const write = engine.write.bind(engine);
+  engine.write = (...args) => {
+    const pending = write(...args);
+    writing.add(pending);
+    pending.then(() => writing.delete(pending), () => writing.delete(pending));
+    return pending;
+  };
+  t.after(() => engine.close());
+  await engine.signIn('A');
+  await engine.write(null, (device) => {
+    const replica = device.activeReplica;
+    records.forEach((row, index) => replica.putConfirmed('self/gym', { ...row, seq: index + 1 }));
+    replica.cursors['self/gym'] = { ...replica.cursorOf('self/gym'), booted: true };
+  }, ['self/gym']);
+  engine.observe('self/gym');
+  const session = { engine, ready: true, signedIn: true, online: true, error: false };
+  t.mock.method(syncSession, 'getSnapshot', () => session);
+  return {
+    engine,
+    // What the account still owes the server: one line per outbox entry, its state then its change.
+    owed: () => engine.device.activeReplica.entries().map(({ state, intent }) => {
+      if (intent.cmd) return `${state} ${intent.cmd.name} ${intent.cmd.args.id ?? intent.cmd.args.sessionId ?? intent.cmd.args.proposalId}`;
+      return `${state} ${intent.d.map((delta) => {
+        if (delta.life?.[0] === 'dead') return `delete ${delta.t} ${delta.id}`;
+        const verb = delta.born === undefined ? 'put' : delta.born === delta.life?.[1] ? 'create' : 'update';
+        return [verb, delta.t, delta.id, ...Object.keys(delta.f ?? {}).sort()].join(' ');
+      }).join(', ')}`;
+    }),
+    // Newer server rows reach the replica, the way a pull brings another device's write.
+    land: (...rows) => engine.write(null, (device) => rows.forEach((row) => device.activeReplica.putConfirmed('self/gym', row)), ['self/gym']),
+    // The browser refuses every later write, the way a full or evicted IndexedDB does.
+    refuseWrites: () => { engine.store.transact = () => Promise.reject(new DOMException('storage refused', 'QuotaExceededError')); },
+  };
+}
+
+// A record as the server confirmed it: `fields` are plain values, stamped in `f` except the serial
+// fields, which the server numbers in `v`.
+export function confirmed(t, id, fields, { rc = 1000 } = {}) {
+  const stamp = '1:0:srv';
+  const type = registry.type(t);
+  const serial = Object.entries(fields).filter(([name]) => type.field(name).kind === 'serial');
+  const stamped = Object.entries(fields).filter(([name]) => type.field(name).kind !== 'serial');
+  return { t, id, ...(type.hasBorn ? { born: stamp } : {}), ...(type.life ? { life: ['alive', stamp] } : {}), rc, ru: rc,
+    f: Object.fromEntries(stamped.map(([name, value]) => [name, [value, stamp]])),
+    ...(serial.length ? { v: Object.fromEntries(serial) } : {}) };
+}
 
 // A real room, and a screen with a life of its own inside it. The two are rendered separately so the
 // SCREEN can be torn down and built again while the room goes on holding its window — which is what
 // walking off a tab and back really does, and the case where a screen keeping its own memory of a
 // delete lets a settled delete reach nobody. `redraw` is the render the room's own publish would
 // have caused; the harness has no tree to propagate through.
-export async function roomAndScreen(t, { module, render, api }) {
+export async function roomAndScreen(t, { module, render }) {
   const { useTrainingLog } = await loadScreen('products/gym/useTrainingLog.js');
   const screens = await loadScreen(module);
-  const room = renderHook(t, () => useTrainingLog({ api }));
+  const room = renderHook(t, () => useTrainingLog(), { live: true });
   await settle();
   let screen = null;
   const mount = async () => {
-    screen = renderHook(t, () => render(screens, room.log));
+    screen = renderHook(t, () => render(screens, room.log), { live: true });
     await settle();
   };
   await mount();
@@ -202,7 +280,7 @@ export function roomLog({ settled = [], ...overrides } = {}) {
 let loaderRegistered = false;
 export async function loadScreen(relativeToSrc) {
   if (!loaderRegistered) {
-    register('./screenLoader.mjs', import.meta.url);
+    register('../../jsxLoader.mjs', import.meta.url);
     loaderRegistered = true;
   }
   const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../src');

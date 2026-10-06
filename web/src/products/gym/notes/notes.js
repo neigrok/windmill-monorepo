@@ -95,9 +95,11 @@ export function reorderNotes(notes, from, to) {
   return next.map((note, position) => ({ ...note, position }));
 }
 
-// The whole order, every note exactly once; the store refuses anything else.
-export function orderOf(notes) {
-  return notes.map((note) => note.id);
+// A move writes the moved note's place alone: right after the row drawn above it, so a note the window
+// is holding keeps its stored place. Null is the top of the list.
+export function noteAbove(notes, id, hidden) {
+  const drawn = notes.filter((note) => !hidden.has(note.id));
+  return drawn[drawn.findIndex((note) => note.id === id) - 1]?.id ?? null;
 }
 
 // A refusal speaks in the store's own words where it sent any; the store's sentence is never rewritten.

@@ -5,9 +5,11 @@ import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { IDBFactory } from 'fake-indexeddb';
 import { chromium } from 'playwright';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { registry } from '../../../src/platform/sync/schema.js';
+import { HttpTransport } from '../../../src/platform/sync/transport.js';
 import { environment } from '../../platform/sync/fakes.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -75,7 +77,7 @@ async function run() {
   const hash = createHash('sha256').update(secret).digest('hex');
   const account = randomUUID();
   const now = Date.now();
-  let created = false, completed = false, browser, lastPage, e2e = 0;
+  let created = false, completed = false, browser, lastPage, phone, e2e = 0;
   const pageErrors = [];
   const servers = [];
   const commands = (program, args, options = {}) => execFileSync(program, args, { cwd: root, timeout: 60000, stdio: ['pipe', 'pipe', 'pipe'], ...options });
@@ -238,13 +240,33 @@ async function run() {
         const { syncSession } = await import('/src/platform/sync/session.js');
         return syncSession.engine?.live?.following?.has('self/gym');
       });
+      // The phone is a second replica of the account and writes the way the native apps do: commands
+      // and record changes pushed through the engine, never a gym REST door.
+      phone = await BrowserSyncEngine.open({ indexedDB: new IDBFactory(), name: 'stack-phone', registry, document: null, window: null,
+        telemetry: { event() {}, failure() {} },
+        transport: new HttpTransport({ schema: registry.version, base, timers: globalThis,
+          reading: () => ({ wall: Date.now(), mono: Math.floor(performance.now()), boot: 'stack-phone' }),
+          fetch: (url, options) => fetch(url, { ...options, headers: { ...options.headers, Cookie: `wm_session=${secret}` } }) }) });
+      await phone.signIn(account);
+      phone.started = true; phone.leader = true;
+      const pushFromPhone = async (changes, opts) => {
+        await phone.commit('self/gym', changes, opts);
+        await waitUntil(async () => {
+          phone.kick(); await phone.send();
+          return phone.device.activeReplica.outbox.every((entry) => entry.state === 'acked');
+        }, { processes: [backend], label: 'phone push admission' });
+      };
       const phoneStart = Date.now() - 60000;
-      await request('/v1/gym/sessions', { body: { id: 'ses_fixture_phone', routineId: 'rt_fixture_main', startedAt: phoneStart, joinOpenSession: true } });
+      await pushFromPhone([], { cmd: { name: 'gym.start', args: { id: 'ses_fixture_phone', routineId: 'rt_fixture_main', startedAt: phoneStart, joinOpenSession: true } },
+        predict: [{ op: 'create', t: 'session', id: 'ses_fixture_phone', f: { startedAt: phoneStart } }] });
       await page.locator('.gym-mirror-head').filter({ hasText: 'Training now' }).waitFor(); e2e++;
       assert.equal(await page.locator('.gym-mirror button').count(), 0, 'mirror must never control a live workout');
-      await request('/v1/gym/sessions/ses_fixture_phone/sets', { body: { id: 'set_fixture_phone', exerciseId: 'back-squat', weightKg: 92.5, reps: 5, completedAt: Date.now() - 5000 } });
+      await pushFromPhone([{ op: 'create', t: 'set', id: 'set_fixture_phone', f: { sessionId: 'ses_fixture_phone', exerciseId: 'back-squat',
+        weightKg: 92.5, reps: 5, kind: 'working', rpe: null, note: '', completedAt: Date.now() - 5000 } }]);
       await page.locator('.gym-mirror-line').filter({ hasText: '92.5 × 5' }).waitFor(); e2e++;
-      await request('/v1/gym/sessions/ses_fixture_phone/finish', { body: { finishedAt: Date.now() - 1000 } });
+      const phoneFinish = Date.now() - 1000;
+      await pushFromPhone([], { cmd: { name: 'gym.finish', args: { sessionId: 'ses_fixture_phone', finishedAt: phoneFinish } },
+        predict: [{ op: 'update', t: 'session', id: 'ses_fixture_phone', f: { finishedAt: phoneFinish } }] });
       await page.locator('.gym-mirror').waitFor({ state: 'detached' }); e2e++;
 
       await goto('#/gym/routines/rt_fixture_main');
@@ -312,6 +334,7 @@ async function run() {
     throw error;
   } finally {
     const cleanupErrors = [];
+    phone?.close();
     try { await browser?.close(); } catch (error) { cleanupErrors.push(error); }
     for (const server of servers.reverse()) {
       try { await stopOwnedServer(server, listener); } catch (error) { cleanupErrors.push(error); }
