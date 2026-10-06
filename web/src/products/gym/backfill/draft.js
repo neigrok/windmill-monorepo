@@ -35,15 +35,7 @@ export function inTheLogLine(name) {
   return `${name} is in the log.`;
 }
 
-export function discardedLine() {
-  return 'This workout was saved and then discarded, so this form can’t save it again. Open Add past workout to log it afresh.';
-}
-
-export function alreadySavedLine(name) {
-  return `${name} was already in the log — the changes made after that save were not written.`;
-}
-
-// The reply of `GET /v1/gym/last`: `session` is what says there is history.
+// A `lastTime` answer: `session` is what says there is history.
 function lastTimeOf(reply) {
   if (!reply?.session) return null;
   return { at: reply.session.startedAt, sets: (reply.sets ?? []).map(({ weightKg, reps }) => ({ weightKg, reps })) };

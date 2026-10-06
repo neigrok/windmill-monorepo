@@ -55,7 +55,6 @@ export function useBodyweight(log) {
     id: dateLocal,
     engineDeath: { type: 'weighin', id: dateLocal },
     line: WEIGH_IN_DELETED,
-    send: () => api.deleteBodyweight(dateLocal),
     refused: () => log.say(DELETE_FAILED),
   });
 

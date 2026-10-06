@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  alreadySavedLine, collapses, discardedLine, draftFromRoutine, freeDraft, importOf, inTheLogLine, isOverLimit, isReady,
+  collapses, draftFromRoutine, freeDraft, importOf, inTheLogLine, isOverLimit, isReady,
   movementLine, movementSkippedLine, savedLabel, saveLabel, SET_LIMIT_LINE, sourceCaption, steppedValue, targetLine,
   typedValue, valueLabel, withMovementAdded, withMovementAt, withMovementRemoved, withSetAdded, withSetRemoved,
   withValueSet,
@@ -248,8 +248,6 @@ test('the side column’s caption says where the numbers came from, and the tran
   ]);
   assert.equal(movementSkippedLine('Overhead Press'), 'Overhead Press is out of this workout.');
   assert.equal(inTheLogLine('Push A'), 'Push A is in the log.');
-  assert.equal(alreadySavedLine('Push A'), 'Push A was already in the log — the changes made after that save were not written.');
-  assert.equal(discardedLine(), 'This workout was saved and then discarded, so this form can’t save it again. Open Add past workout to log it afresh.');
 });
 
 test('a number as the row draws it, as it is typed, and as ↑ and ↓ step it', () => {

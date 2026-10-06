@@ -42,18 +42,14 @@ function entryWrite(entry) {
   };
 }
 
-// `lastTrainedAt` and the entry positions are the store's, so neither travels back. `revision` goes
-// only when the caller names the one it read; a save over a routine that moved since is then refused
-// 409 routine-stale. A write naming none lands unconditionally.
-export function routineWrite(routine, readRevision = null) {
-  const write = {
+// `lastTrainedAt`, `revision` and the entry positions are the store's, so none of them travels back.
+export function routineWrite(routine) {
+  return {
     id: routine.id,
     name: routine.name,
     position: routine.position,
     entries: routine.entries.map(entryWrite),
   };
-  if (readRevision != null) write.revision = readRevision;
-  return write;
 }
 
 // In the order performed, every working set transcribed as its own slot — the load as lifted, zero

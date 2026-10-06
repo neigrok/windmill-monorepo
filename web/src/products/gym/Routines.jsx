@@ -38,7 +38,6 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
     id: routine.id,
     engineDeath: { type: 'routine', id: routine.id },
     line: routineDeletedLine(routine.name),
-    send: () => api.deleteRoutine(routine.id),
     refused: (error) => log.say(`${routine.name} is still in your program — ${failureReason(error)}.`),
   });
 
@@ -166,7 +165,7 @@ export function RoutineEditor({ id, log }) {
     if (missing || saving) return false;
     setSaving(true);
     // The draft retains the registers it read, even while the mirror receives newer data.
-    const write = routineWrite({ ...draft, name: draft.name.trim() }, fresh ? null : view.data.revision);
+    const write = routineWrite({ ...draft, name: draft.name.trim() });
     try {
       if (fresh) await api.createRoutine(write);
       else await api.replaceRoutine(draft.id, write, view.data);

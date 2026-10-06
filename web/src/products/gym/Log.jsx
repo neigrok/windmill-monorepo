@@ -217,10 +217,6 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
       id: set.id,
       engineDeath: { type: 'set', id: set.id },
       line: deletedLine(set),
-      send: async () => {
-        await api.deleteSet(id, set.id);
-        await reloadLog();
-      },
       refused: (error) => say(deleteFailure(error)),
     });
   };
@@ -232,10 +228,6 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
       id,
       engineDeath: { type: 'session', id },
       line: SESSION_DELETED,
-      send: async () => {
-        await api.discardSession(id);
-        await reloadLog();
-      },
       refused: (error) => say(`That session wasn’t discarded — ${failureReason(error)}.`),
     });
     window.location.hash = '#/gym/log';

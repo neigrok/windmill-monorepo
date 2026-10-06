@@ -67,14 +67,6 @@ export function Notes({ log }) {
       id: note.id,
       engineDeath: { type: 'note', id: note.id },
       line: NOTE_DELETED,
-      // In place, never `settle`: the store renumbers the rest, and a reorder sent afterwards must
-      // carry the store's own list — but a re-read from `loading` would blank the screen nine
-      // seconds after the act, for a row that is already off it.
-      send: async () => {
-        await api.deleteNote(note.id);
-        setHeld(null);
-        view.refresh();
-      },
       refused: (error) => log.say(noteRefusal(error, 'deleted')),
     });
     setEditing(null);

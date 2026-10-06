@@ -112,17 +112,12 @@ export function FinishScreen({ id, log }) {
 // and the transient carries the way back until release.
 // There is no confirmation, because a dialog in front of an act that can be undone is ceremony.
 function ShortSession({ id, log }) {
-  const api = useGymApi();
   const discard = () => {
     log.withhold({
       kind: 'session',
       id,
       engineDeath: { type: 'session', id },
       line: SESSION_DELETED,
-      send: async () => {
-        await api.discardSession(id);
-        await log.reloadLog();
-      },
       refused: (error) => log.say(`That session wasn’t discarded — ${failureReason(error)}.`),
     });
     window.location.hash = '#/gym';
