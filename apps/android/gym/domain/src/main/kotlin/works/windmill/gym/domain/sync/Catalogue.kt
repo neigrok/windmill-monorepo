@@ -14,7 +14,10 @@ data class Exercise(override val id: Id<Exercise>, val name: String, val pattern
         override val type = Gym.Types.exercise
         override val scope = ScopeRef(Gym.scope)
         override fun decode(f: Fields) = Exercise(Id(f.id, this), f.string("name"), f.string("pattern"), f.string("equipment"),
-            f.double("stepKg"), (f.json("aliases") as? Json.Arr)?.values?.map { it.str() }.orEmpty())
+            f.double("stepKg"), f.json("aliases")?.orNull()?.let { json ->
+                val items = (json as? Json.Arr)?.values ?: throw f.failure("aliases", "not an array")
+                items.mapIndexed { index, item -> (item as? Json.Str)?.value ?: throw f.failure("aliases.$index", "not a string") }
+            }.orEmpty())
         override val checks = listOf(
             Check<Exercise>("name") { value, _ -> value.copy(name = ExerciseRules.name.apply(value.name, Path("name"))) },
             Check<Exercise>("pattern") { value, _ -> value.copy(pattern = ExerciseRules.pattern.apply(value.pattern, Path("pattern"))) },
@@ -29,7 +32,10 @@ data class ExerciseName(override val id: Id<ExerciseName>, val name: String?, va
     companion object : WritableType<ExerciseName> {
         override val type = Gym.Types.exerciseName
         override val scope = ScopeRef(Gym.scope)
-        override fun decode(f: Fields) = ExerciseName(Id(f.id, this), f.optionalString("name"), (f.json("aliases") as? Json.Arr)?.values?.map { it.str() }.orEmpty())
+        override fun decode(f: Fields) = ExerciseName(Id(f.id, this), f.optionalString("name"), f.json("aliases")?.orNull()?.let { json ->
+                val items = (json as? Json.Arr)?.values ?: throw f.failure("aliases", "not an array")
+                items.mapIndexed { index, item -> (item as? Json.Str)?.value ?: throw f.failure("aliases.$index", "not a string") }
+            }.orEmpty())
         override val checks = listOf(Check<ExerciseName>("name") { value, _ -> value.copy(name = ExerciseRules.seedName.applyOptional(value.name, Path("name"))) })
     }
 }

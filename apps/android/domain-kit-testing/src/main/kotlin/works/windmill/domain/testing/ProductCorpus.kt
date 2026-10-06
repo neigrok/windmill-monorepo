@@ -51,7 +51,6 @@ class ProductCorpus(val book: RuleBook) {
         val source = scene(vector, type.scope)
         val read = Reader(source, type.scope, moment(vector.input), book.registry)
         val existing = read.repository(type).find(blank.id, works.windmill.sync.api.ViewMode.drawn)
-        check(book.registry.type(type.type)?.identity in listOf("keyed", "singleton")) { "open with a blank requires keyed or singleton identity" }
         val draft = (existing?.let { Draft.opening(it) } ?: Draft.new(blank)).edit(edit)
         return decision(SaveDraft.fromDraft(draft, type, refusals), vector, result, refusal)
     }

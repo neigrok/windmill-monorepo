@@ -73,7 +73,7 @@ class TrainingRulesTests {
         assertEquals(workout, log.open)
         assertTrue(log.liveHint)
         assertEquals(1450.0, log.volumeKg(sessionId), 0.0)
-        assertEquals(126.7, log.topE1rm(sessionId)!!, 0.0)
+        assertEquals(95.0 * (1 + 10 / 30.0), log.topE1rm(sessionId)!!, 0.0)
         assertEquals(listOf(first, ignored, assisted, best).sortedWith(compareBy({ it.completedAt }, { it.id })), log.sets(sessionId))
         val stale = TrainingLog(listOf(workout), listOf(first), Moment(Instant(first.completedAt.ms + SessionRules.staleAfterMs), FixedZone(0)))
         assertNull(stale.open)
@@ -85,6 +85,10 @@ class TrainingRulesTests {
         }
         assertNull(assisted.e1rm)
         assertNull(first.copy(weightKg = 0.0).e1rm)
+        assertEquals(100.0, first.copy(reps = 1).e1rm!!, 0.0)
+        assertNull(first.copy(reps = 11).e1rm)
+        assertNull(first.copy(rpe = 6.9).e1rm)
+        assertEquals(first.e1rm, first.copy(rpe = 7.0).e1rm)
     }
 
     @Test fun setsNormalizeLoadRpeAndPreserveUntrimmedNotes() {
@@ -138,7 +142,7 @@ class TrainingRulesTests {
 
     @Test fun appendPredictsMissingFinishedUnknownExerciseAndTakenRefusals() {
         val value = trainingSet()
-        assertTrue(decide(AppendSet(value)) is Decision.Write)
+        assertEquals(Decision.Refuse(GymRefusal.Gone(sessionId.ref, Refused.Path.predicted)), decide(AppendSet(value)))
         val finished = session(testMoment.now, "finish")
         assertEquals(Decision.Refuse(GymRefusal.SessionFinished(Refused(RefusalCode(Gym.Codes.sessionFinished), setId.ref, path = Refused.Path.predicted))),
             decide(AppendSet(value), reader(listOf(row(finished)))))

@@ -158,15 +158,24 @@ object RuleBookParity {
     fun check(book: RuleBook, file: String) { if (Contract.json(file) != book.json) throw CheckFailure("RuleBookParity", 0, file, "the book differs from the pinned file") }
 }
 object RuleBookCheck {
-    fun <R> check(book: RuleBook, refusals: Refusals<R>, vectors: String) {
+    fun <R> check(book: RuleBook, refusals: Refusals<R>, vectors: String, actionVectors: List<String> = emptyList()) {
         val names = mutableSetOf<String>()
         fun failure(rule: String, reason: String): Nothing = throw CheckFailure("RuleBookCheck", 0, rule, reason)
         for (rule in book.rules) if (!names.add(rule.name)) failure(rule.name, "two rules share the name")
         val cases = Contract.vectors(vectors)
+        val actions = actionVectors.flatMap(Contract::vectors)
+        fun violation(json: Json, rule: String): Boolean = when (json) {
+            is Json.Obj -> (json["rule"] == Json.of(rule) && json["path"] is Json.Str && json["reason"] is Json.Str) || json.members.values.any { violation(it, rule) }
+            is Json.Arr -> json.values.any { violation(it, rule) }
+            else -> false
+        }
         for (rule in book.rules.filter { it.kind == Rule.Kind.local }) {
             if (rule.spec != null && cases.none { it.input["spec"]?.get("path") == rule.spec!!["path"] }) failure(rule.name, "a LOCAL spec with no spec case")
-            if (rule.spec == null || book.entities.any { rule.name.startsWith("${it.type}.") })
+            if (rule.spec == null) {
+                if ((cases + actions).none { violation(it.expect, rule.name) }) failure(rule.name, "a LOCAL rule with no value or action violation case")
+            } else if (book.entities.any { rule.name.startsWith("${it.type}.") }) {
                 if (cases.none { it.input["entity"] != null && it.expect["violation"]?.get("rule") == Json.of(rule.name) }) failure(rule.name, "a LOCAL rule bound to a field with no entity case")
+            }
         }
         for (rule in book.rules) for (code in rule.codes) for (path in if (rule.kind == Rule.Kind.serverDecided) Refused.Path.entries else listOf(Refused.Path.notice)) {
             val detail = if (code == RefusalCode.cap) Json.objectOf("type" to Json.of(rule.subject), "cap" to Json.of(book.registry.type(rule.subject)?.cap ?: 0)) else null

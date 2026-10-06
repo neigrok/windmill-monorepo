@@ -26,7 +26,7 @@ class RegistryAndPersonalFactsTests {
             listOf(RoutineChange("kept", squat, EntryTargets(entry), EntryTargets(entry)))), book)
         RegistryCheck.entity(Session, SyncSchema.registry)
         RegistryCheck.entity(RoutineCreation, SyncSchema.registry)
-        assertEquals(setOf(Note.type, WeighIn.type, Routine.type, RoutineCreation.type, Exercise.type, ExerciseName.type, TrainingSet.type, Preferences.type, Proposal.type, Session.type),
+        assertEquals(setOf(Note.type, WeighIn.type, Routine.type, Exercise.type, ExerciseName.type, TrainingSet.type, Preferences.type, Proposal.type, Session.type),
             book.entities.map { it.type }.toSet())
     }
 
@@ -93,13 +93,13 @@ class RegistryAndPersonalFactsTests {
         val receipt = row(RoutineCreation, id.record, mapOf("snapshot" to snapshot))
         assertNull(receipt.life)
         assertFalse(EntityFacts(RoutineCreation).isRemovable)
-        assertFalse(GymRules.book.entity(RoutineCreation.type) is WritableType<*>)
+        assertNull(GymRules.book.entity(RoutineCreation.type))
         for (stored in listOf(listOf(receipt), listOf(receipt, row(routine, visible = false)))) {
             val repository = reader(stored).repository(RoutineCreation)
             assertEquals(RoutineCreation(id, snapshot), repository.find(id, ViewMode.stored))
             assertEquals(listOf(RoutineCreation(id, snapshot)), repository.all(ViewMode.drawn))
         }
-        assertEquals("snapshot", assertThrows(DecodeError::class.java) { RoutineCreation.decode(Fields(receipt.copy(values = emptyMap()))) }.field)
+        assertNull(RoutineCreation.decode(Fields(receipt.copy(values = emptyMap()))).snapshot)
     }
 
     @Test fun everyPublicGymReplicaCommandAppliesSpecsPinnedByRuleBook() {

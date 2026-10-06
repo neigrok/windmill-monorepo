@@ -41,7 +41,7 @@ data class RoutineEntry(val exerciseId: Id<Exercise>, val sets: List<SetTarget>?
 }
 
 data class Routine(override val id: Id<Routine>, val name: String = "", val position: Int = 0,
-    val entries: List<RoutineEntry> = emptyList(), val revision: Int? = null, val createdEntries: Int? = null) : Writable<Routine> {
+    val entries: List<RoutineEntry> = emptyList(), val revision: Int? = null, val createdEntries: Int? = null, val createdDoor: String? = null) : Writable<Routine> {
     override fun fields(): Map<String, Json> = mapOf("name" to Json.of(name), "position" to Json.of(position), "entries" to Json.Arr(entries.map { it.json }))
     companion object : DraftableType<Routine>, RemovableType<Routine> {
         override val type = Gym.Types.routine
@@ -49,7 +49,8 @@ data class Routine(override val id: Id<Routine>, val name: String = "", val posi
         override val savesGuarded = true
         override val heldRemoval = true
         override fun decode(f: Fields) = Routine(Id(f.id, this), f.string("name"), f.optionalInt("position") ?: 0,
-            f.list("entries", RoutineEntry), f.optionalInt("revision"), f.optionalInt("createdEntries"))
+            f.list("entries", RoutineEntry), f.optionalInt("revision"), f.optionalInt("createdEntries"), f.optionalString("createdDoor"))
+        fun ordered(routines: List<Routine>): List<Routine> = routines.sortedWith(compareBy({ it.position }, { it.id }))
         override val checks = listOf(
             Check<Routine>("name") { value, _ -> value.copy(name = RoutineRules.name.apply(value.name, Path("name"))) },
             Check<Routine>("position") { value, _ -> value.copy(position = RoutineRules.position.apply(value.position, Path("position"))) },
@@ -58,11 +59,11 @@ data class Routine(override val id: Id<Routine>, val name: String = "", val posi
     }
 }
 
-data class RoutineCreation(override val id: Id<RoutineCreation>, val snapshot: Json) : Entity<RoutineCreation> {
+data class RoutineCreation(override val id: Id<RoutineCreation>, val snapshot: Json? = null) : Entity<RoutineCreation> {
     companion object : EntityType<RoutineCreation> {
         override val type = Gym.Types.routineCreation
         override val scope = ScopeRef(Gym.scope)
-        override fun decode(f: Fields) = RoutineCreation(Id(f.id, this), f.present("snapshot"))
+        override fun decode(f: Fields) = RoutineCreation(Id(f.id, this), f.json("snapshot")?.orNull())
     }
 }
 
@@ -71,20 +72,9 @@ data class PlanSnapshot(val routine: String, val entries: List<RoutineEntry>) {
     val json: Json get() = Json.objectOf("routine" to Json.of(routine), "entries" to Json.Arr(entries.map { it.json }))
     companion object {
         fun decode(json: Json?): PlanSnapshot? {
-            if (json !is Json.Obj) return null
-            val name = (json["routine"] as? Json.Str)?.value ?: ""
-            val entries = (json["entries"] as? Json.Arr)?.values.orEmpty().mapNotNull { item ->
-                if (item !is Json.Obj) return@mapNotNull null
-                val exerciseId = (item["exerciseId"] as? Json.Str)?.value ?: return@mapNotNull null
-                val rawSets = item["sets"]
-                if (rawSets != null && rawSets !is Json.Arr) return@mapNotNull null
-                val sets = if (rawSets is Json.Arr) try {
-                    rawSets.values.map { SetTarget.decode(Fields(it)).validated(Path("sets")) }.takeIf { it.isNotEmpty() && it.size <= 20 }
-                } catch (_: DecodeError) { null } catch (_: Violation) { null } else null
-                val rest = (item["restSeconds"] as? Json.Num)?.value?.let { if (it == it.toInt().toDouble() && it.toInt() in 15..900) it.toInt() else null }
-                RoutineEntry(Id(exerciseId, Exercise), sets, rest)
-            }
-            return PlanSnapshot(name, entries)
+            if (json == null || json === Json.Null) return null
+            val fields = Fields(json)
+            return PlanSnapshot(fields.string("routine", ""), fields.optionalList("entries", RoutineEntry).orEmpty())
         }
     }
 }

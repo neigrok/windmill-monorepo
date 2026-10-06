@@ -113,11 +113,11 @@ class SessionCommandsTests {
     @Test fun correctChecksRequestIdsCountsUniqueMovementNumbersAndInterval() {
         for (request in listOf("short", "x".repeat(65), "request!"))
             invalid(decide(CorrectSession(sessionId, request, start, finish, null, listOf(corrected))), "session.requestId", "requestId", Violation.Reason.Custom("invalid"))
-        for (sets in listOf(emptyList(), listOf(corrected, corrected), listOf(corrected.copy(setNumber = 0)),
+        for (sets in listOf(emptyList(), listOf(corrected, corrected), listOf(corrected.copy(setNumber = 0)), listOf(corrected.copy(setNumber = Int.MAX_VALUE.toLong() + 1)),
             listOf(corrected, corrected.copy(id = Id("set00002", TrainingSet))),
-            (1..201).map { corrected.copy(id = Id("set" + it.toString().padStart(5, '0'), TrainingSet), setNumber = it) }))
+            (1..201).map { corrected.copy(id = Id("set" + it.toString().padStart(5, '0'), TrainingSet), setNumber = it.toLong()) }))
             invalid(decide(CorrectSession(sessionId, "request1", start, finish, null, sets)), "session.sets", "sets", Violation.Reason.Custom("invalid"))
-        for (sets in listOf(listOf(corrected.copy(setNumber = Int.MAX_VALUE)),
+        for (sets in listOf(listOf(corrected.copy(setNumber = Int.MAX_VALUE.toLong())),
             listOf(corrected, corrected.copy(id = Id("set00002", TrainingSet), exerciseId = bench))))
             assertTrue(decide(CorrectSession(sessionId, "request1", start, finish, null, sets)) is Decision.Write)
         for (action in listOf(CorrectSession(sessionId, "request1", finish, start, null, listOf(corrected)),

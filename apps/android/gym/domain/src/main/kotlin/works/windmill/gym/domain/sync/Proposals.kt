@@ -44,10 +44,13 @@ data class Proposal(override val id: Id<Proposal>, val routineId: Id<Routine>, v
         "summary" to Json.of(summary), "changes" to Json.Arr(changes.map { it.json }), "door" to Json.of(door), "connection" to Json.of(connection), "agent" to Json.of(agent))
     val document: List<RoutineEntry> get() = changes.filter { it.kind != "removed" }.map { RoutineEntry(it.exerciseId, it.after?.sets, it.after?.restSeconds) }
     fun changeCount(base: Routine): Int {
-        val moved = changes.count { it.kind != "kept" }
-        val reordered = changes.filter { it.kind == "kept" || it.kind == "retargeted" }.map { it.exerciseId } !=
-            base.entries.filter { entry -> changes.any { it.exerciseId == entry.exerciseId && it.kind != "added" && it.kind != "removed" } }.map { it.exerciseId }
-        return moved + (if (base.name != proposedName) 1 else 0) + (if (reordered) 1 else 0)
+        changeCount?.let { return it }
+        val unmatched = base.entries.indices.toMutableList()
+        val retained = changes.filter { it.kind == "kept" || it.kind == "retargeted" }.mapNotNull { change ->
+            val at = unmatched.indexOfFirst { base.entries[it].exerciseId == change.exerciseId }
+            if (at < 0) null else unmatched.removeAt(at)
+        }
+        return changes.count { it.kind != "kept" } + (if (base.name != proposedName) 1 else 0) + (if (retained != retained.sorted()) 1 else 0)
     }
     companion object : WritableType<Proposal> {
         override val type = Gym.Types.proposal
@@ -120,12 +123,13 @@ object ProposalRules {
 
 class ProposeRoutine(val id: Id<Proposal>, val routineId: Id<Routine>, val name: String, val entries: List<RoutineEntry>, val summary: String,
     val removing: Boolean = false) : Action<ProposeRoutine.Loaded, Id<Proposal>, GymRefusal> {
-    data class Loaded(val routine: Routine?, val catalogue: Catalogue, val moment: Moment)
+    data class Loaded(val routine: Routine?, val catalogue: Catalogue, val moment: Moment, val routineVisible: Boolean = true)
     override val scope = Proposal.scope
     override val refusals = GymRefusal
-    override fun load(read: Reader) = Loaded(read.repository(Routine).find(routineId, ViewMode.stored), Catalogue(read, ViewMode.stored), read.moment)
+    override fun load(read: Reader) = Loaded(read.repository(Routine).find(routineId, ViewMode.stored), Catalogue(read, ViewMode.stored), read.moment,
+        read.repository(Routine).find(routineId, ViewMode.drawn) != null)
     override fun decide(loaded: Loaded, ids: IDSource): Decision<Id<Proposal>, GymRefusal> {
-        val base = loaded.routine ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, routineId.ref, path = Refused.Path.predicted)))
+        val base = loaded.routine?.takeIf { loaded.routineVisible } ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, routineId.ref, path = Refused.Path.predicted)))
         val proposed = if (removing) emptyList() else RoutineRules.entries.apply(entries, Path("entries"))
         val proposedName = if (removing) "" else RoutineRules.name.apply(name, Path("name"))
         if (proposed.any { loaded.catalogue.find(it.exerciseId) == null }) return Decision.Refuse(GymRefusal.of(Refused(RefusalCode(Gym.Codes.unknownExercise), id.ref, path = Refused.Path.predicted)))
@@ -138,14 +142,24 @@ class ProposeRoutine(val id: Id<Proposal>, val routineId: Id<Routine>, val name:
     }
 }
 
-data class ProposalState(val proposal: Proposal?, val routine: Routine?, val moment: Moment) {
+data class ProposalState(val proposal: Proposal?, val routine: Routine?, val moment: Moment, val routineVisible: Boolean = true) {
     constructor(read: Reader, id: Id<Proposal>) : this(read.repository(Proposal).find(id, ViewMode.stored), read.repository(Proposal).find(id, ViewMode.stored)?.let {
         read.repository(Routine).find(it.routineId, ViewMode.stored)
-    }, read.moment)
+    }, read.moment, read.repository(Proposal).find(id, ViewMode.stored)?.let {
+        read.repository(Routine).find(it.routineId, ViewMode.drawn)
+    } != null)
     fun refusal(id: Id<Proposal>, applying: Boolean): GymRefusal? {
         val value = proposal ?: return GymRefusal.of(Refused(RefusalCode.unknownRecord, id.ref, path = Refused.Path.predicted))
-        if (value.state == "superseded") return if (value.supersededBy == null) null else
-            GymRefusal.of(Refused(RefusalCode(Gym.Codes.proposalSuperseded), id.ref, Json.objectOf("reason" to Json.of("replaced")), Refused.Path.predicted))
+        val reason = when {
+            value.supersededBy != null -> "replaced"
+            routine?.revision != null && value.baseRevision != null && routine.revision != value.baseRevision -> "routine-changed"
+            value.state == "superseded" && routine?.revision != null && value.baseRevision != null -> "superseded"
+            else -> null
+        }
+        if (value.state == "superseded" || (applying && value.state == "pending" && reason == "routine-changed")) {
+            if (reason == null) return null
+            return GymRefusal.of(Refused(RefusalCode(Gym.Codes.proposalSuperseded), id.ref, Json.objectOf("reason" to Json.of(reason)), Refused.Path.predicted))
+        }
         if (value.state != "pending" && value.state != if (applying) "applied" else "dismissed")
             return GymRefusal.of(Refused(RefusalCode(Gym.Codes.proposalSettled), id.ref, Json.objectOf("state" to Json.of(value.state)), Refused.Path.predicted))
         return null
@@ -161,7 +175,7 @@ class ApplyProposal(val id: Id<Proposal>) : Action<ProposalState, Unit, GymRefus
         val proposal = loaded.proposal!!
         if (proposal.state == "applied") return Decision.Unchanged(Unit)
         if (proposal.state == "superseded") return Decision.Write(Plan(GymCommand(Gym.Commands.applyProposal, mapOf("proposalId" to id.json))), Unit)
-        val routine = loaded.routine ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, proposal.routineId.ref, path = Refused.Path.predicted)))
+        val routine = loaded.routine?.takeIf { loaded.routineVisible } ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, proposal.routineId.ref, path = Refused.Path.predicted)))
         val change = if (proposal.intent == "remove") Prediction.remove(Routine, routine.id)
         else Prediction.update(Routine, routine.id, mapOf("name" to Json.of(proposal.proposedName), "entries" to Json.Arr(proposal.document.map { it.json })))
         val settled = Prediction.update(Proposal, id, mapOf("state" to Json.of("applied"), "settledAt" to Json.of(loaded.moment.now.ms)))

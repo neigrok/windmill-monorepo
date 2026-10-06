@@ -189,10 +189,25 @@ class ChecksTests {
         val seen = mutableListOf<Refused.Path>()
         val refuses = object : Refusals<Refused> { override fun of(violation: Violation): Refused = error("not a code"); override fun of(refused: Refused): Refused { seen.add(refused.path); return refused }; override fun isGeneric(refusal: Refused) = false }
         val book = RuleBook(registry, emptyList(), listOf(Rule.serverDecided("item.duplicate", listOf(RefusalCode("duplicate-name")), "item"), Rule.local("item.local", "item", listOf(RefusalCode("invalid")))))
-        withJson(Json.Arr(listOf(Json.objectOf("name" to Json.of("local"), "input" to Json.objectOf("entity" to Json.of("item")), "expect" to Json.objectOf("violation" to Json.objectOf("rule" to Json.of("item.local"))))))) { RuleBookCheck.check(book, refuses, it) }
+        withJson(Json.Arr(listOf(Json.objectOf("name" to Json.of("local"), "input" to Json.objectOf("entity" to Json.of("item")), "expect" to Json.objectOf("violation" to Json.objectOf("rule" to Json.of("item.local"), "path" to Json.of("local"), "reason" to Json.of("custom"), "custom" to Json.of("local"))))))) { RuleBookCheck.check(book, refuses, it) }
         assertEquals(listOf(Refused.Path.predicted, Refused.Path.notice, Refused.Path.notice), seen)
         val generic = object : Refusals<Boolean> { override fun of(violation: Violation) = true; override fun of(refused: Refused) = true; override fun isGeneric(refusal: Boolean) = refusal }
         withJson(vectors(rules)) { file -> assertThrows(CheckFailure::class.java) { RuleBookCheck.check(book(CheckedType("item", itemFields)), generic, file) } }
+    }
+    @Test fun actionOnlyLocalRulesRequireACompleteViolationCase() {
+        val book = RuleBook(registry, emptyList(), listOf(Rule.local("item.action", "item")))
+        val refused = Json.objectOf("decision" to Json.objectOf("refuse" to Json.objectOf("invalid" to
+            Json.objectOf("rule" to Json.of("item.action"), "path" to Json.of("value"), "reason" to Json.of("custom"), "custom" to Json.of("action")))))
+        withJson(Json.Arr(emptyList())) { values ->
+            assertThrows(CheckFailure::class.java) { RuleBookCheck.check(book, mapped, values) }
+            withJson(Json.Arr(listOf(Json.objectOf("name" to Json.of("action"), "input" to Json.Null, "expect" to refused)))) { actions ->
+                RuleBookCheck.check(book, mapped, values, listOf(actions))
+            }
+            withJson(Json.Arr(listOf(Json.objectOf("name" to Json.of("incomplete"), "input" to Json.Null,
+                "expect" to Json.objectOf("rule" to Json.of("item.action")))))) { actions ->
+                assertThrows(CheckFailure::class.java) { RuleBookCheck.check(book, mapped, values, listOf(actions)) }
+            }
+        }
     }
     @Test fun parityRejectsDrift() {
         val book = book(CheckedType("item", itemFields))

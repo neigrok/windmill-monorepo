@@ -37,6 +37,8 @@ import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.PlanSnapshot
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.ProposalState
+import works.windmill.gym.domain.LastTime
+import works.windmill.gym.domain.StatsProgress
 
 private val <E : Entity<E>> Id<E>.text: String get() = record.string ?: error("gym-string-identity")
 

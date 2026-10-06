@@ -29,7 +29,7 @@ data class TrainingSet(override val id: Id<TrainingSet>, val sessionId: Id<Sessi
     override fun fields(): Map<String, Json> = mapOf("sessionId" to sessionId.json, "exerciseId" to exerciseId.json, "weightKg" to Json.of(weightKg),
         "reps" to Json.of(reps), "kind" to Json.of(kind), "rpe" to (rpe?.let(Json::of) ?: Json.Null), "note" to Json.of(note), "completedAt" to Json.of(completedAt.ms))
     val volumeKg: Double get() = if (kind == "working") maxOf(0.0, weightKg) * reps else 0.0
-    val e1rm: Double? get() = if (kind == "working" && weightKg > 0) works.windmill.sync.core.Quantum(0.1).rounded(weightKg * (1 + reps / 30.0)) else null
+    val e1rm: Double? get() = GymEstimate.value(weightKg, reps, kind, rpe)
     companion object : WritableType<TrainingSet>, RemovableType<TrainingSet> {
         override val type = Gym.Types.set
         override val scope = ScopeRef(Gym.scope)
@@ -98,12 +98,16 @@ object SessionRules {
     }
 }
 
-data class TrainingLog(val sessions: List<Session>, val sets: List<TrainingSet>, val moment: Moment) {
-    constructor(read: Reader) : this(read.repository(Session).all(works.windmill.sync.api.ViewMode.drawn), read.repository(TrainingSet).all(works.windmill.sync.api.ViewMode.drawn), read.moment)
-    val drawnSessions: List<Session> get() = sessions.map { SessionRules.drawn(it, sets, moment.now) }.sortedByDescending { it.startedAt }
+data class TrainingLog(val sessions: List<Session>, val sets: List<TrainingSet>, val moment: Moment, val firstPullComplete: Boolean = true) {
+    constructor(read: Reader) : this(read.repository(Session).all(works.windmill.sync.api.ViewMode.drawn), read.repository(TrainingSet).all(works.windmill.sync.api.ViewMode.drawn), read.moment, read.firstPullComplete())
+    val drawnSessions: List<Session> get() = sessions.map { SessionRules.drawn(it, sets, moment.now) }
+        .sortedWith(compareByDescending<Session> { it.startedAt }.thenBy { it.id })
     val open: Session? get() = drawnSessions.firstOrNull { it.isOpen }
     val liveHint: Boolean get() = open != null
-    fun sets(session: Id<Session>): List<TrainingSet> = sets.filter { it.sessionId == session }.sortedWith(compareBy({ it.completedAt }, { it.id }))
+    fun sets(session: Id<Session>): List<TrainingSet> {
+        if (sessions.none { it.id == session }) return emptyList()
+        return sets.filter { it.sessionId == session }.sortedWith(compareBy({ it.completedAt }, { it.id }))
+    }
     fun volumeKg(session: Id<Session>): Double = sets(session).sumOf { it.volumeKg }
     fun topE1rm(session: Id<Session>): Double? = sets(session).mapNotNull { it.e1rm }.maxOrNull()
 }

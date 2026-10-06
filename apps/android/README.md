@@ -18,7 +18,7 @@ account and backend. There is no subscription surface.
 | `:sync-testing` | JVM strict client/server corpus, stepped memory engine, simulated network, mandatory properties, replay fuzz and layering. |
 | `:domain-kit` | JVM values, readers, plans, drafts, action runner, ordering and refusal subjects. |
 | `:domain-kit-testing` | JVM strict kit corpus, checks and layering. |
-| `:gym:domain` | JVM gym domain declarations and Notes/Bodyweight rules. |
+| `:gym:domain` | JVM gym actions, training reads, progress, units and rules; every shared gym domain vector. |
 
 The eight JVM modules and Android engine library contain the SyncAPI, client runtime, model server
 and kit. The full build enforces corpus coverage, properties, replay fuzz, schema freshness and
