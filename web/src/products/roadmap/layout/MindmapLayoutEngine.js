@@ -1,7 +1,7 @@
 // A radial mind map: each branch a Buchheim/Walker tidy tree along its own axis, the branches taking the twelve compass
 // directions by size. Captions stay horizontal, so a footprint is projected onto the branch's frame before the pass.
 
-import { LayoutEngine } from '../model/ports.js';
+import { LayoutEngine } from './LayoutEngine.js';
 import { cmpOrder } from '../model/TrunkTree.js';
 import { footprintOf, footprintRect } from '../model/footprint.js';
 import { BODY_WU, WORKING_ZOOM } from '../theme.js';

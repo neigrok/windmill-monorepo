@@ -1,6 +1,6 @@
 // Bubble tree over the trunk arborescence: each node's children on rays inside its enclosing circle, in-edge side free,
 // then a post-order tuck sliding subtrees on their rays until footprints or trunk edges touch or discs meet their air.
-import { LayoutEngine } from '../model/ports.js';
+import { LayoutEngine } from './LayoutEngine.js';
 import { cmpOrder } from '../model/TrunkTree.js';
 import { footprintOf, footprintRect } from '../model/footprint.js';
 import { WORKING_ZOOM, BODY_WU } from '../theme.js';

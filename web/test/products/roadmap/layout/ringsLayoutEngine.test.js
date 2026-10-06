@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { RingsLayoutEngine } from '../../../../src/products/roadmap/layout/RingsLayoutEngine.js';
-import { LayoutEngine } from '../../../../src/products/roadmap/model/ports.js';
+import { LayoutEngine } from '../../../../src/products/roadmap/layout/LayoutEngine.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { footprintOf, footprintRect } from '../../../../src/products/roadmap/model/footprint.js';
 import { loadDogfoodTree } from '../fixtures/dogfoodTree.js';

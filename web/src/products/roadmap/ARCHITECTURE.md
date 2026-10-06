@@ -39,8 +39,7 @@ owner view reframes as chrome measurements arrive until the reader moves the cam
 
 ## Domain and shared geometry
 
-`model/ports.js` records data shapes and defines the `LayoutEngine` seam. `SkillTree`
-validates the DAG, builds indexes and derives render nodes. `renderableGraph.js` supplies a
+`SkillTree` validates the DAG, builds indexes and derives render nodes. `renderableGraph.js` supplies a
 best-effort projection when replicated state contains cycles. `TrunkTree` chooses one primary
 parent per node for layout: same-kind parents first, then depth and id; siblings retain their
 fractional order and creation-stamp order.
@@ -58,6 +57,7 @@ without DOM measurement. Everything under `model/` is independent of React and W
 
 ## Layout
 
+`layout/LayoutEngine.js` defines the layout contract and each engine's caption and reorder capabilities.
 `pageLayoutEngine()` and `layoutTree()` serve the canvas, quest thumbnails and paste ghosts.
 `?layout=` accepts `bubble`, `radial`, `rings` or `mindmap`. Unknown names use bubble. Radial is the
 synchronous fallback for an alternative import or layout failure; failure of the fallback itself
