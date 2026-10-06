@@ -1,0 +1,13 @@
+# Workout integration
+
+`GymRoom` presents `WorkoutScreen(gym:)` while `gym.workout.isPresented`, retaining the cover through finish and receipt. After dismissal it consumes the handoff once: finished detail opens in Log, Keep opens the account flow, and Share with Coach starts a fresh conversation with `Check my last session.` The shared movement picker routes written programs to Account or Coach. Closed workout content uses Log’s `SessionDetailScreen`.
+
+Routines calls `gym.startWorkout(routineId:)`; explicit starts refuse joining an already-open workout and restore its identity. Hidden workouts preserve their rack row and sets, and Gym settings restores them. Movement order, selection, hidden status and pending/answered deviation state are stored in `rack:<session-id>`.
+
+Adding a movement selects it and prefills its rack before the next set. A deviation retains the offered entry and the routine’s server revision in the rack row. Save guards both; stale offers rebuild against the current routine while today’s sets remain intact. A server refusal after an unseen remote edit also restores the offer, and earlier notices cannot consume a retried save. Dismiss targets the displayed local failure or the exact durable notice; the visual and accessibility actions share that operation.
+
+`SyncStatus.failedPushes` names records stranded behind a failed push. Workout derives its failure band from that status, connectivity and authentication. Finish waits for set admission and the server’s finished session, including the acknowledged-start interval before a pull. Clock-skew recovery preserves device starts and sets; performed zero-load targets remain explicit when a receipt becomes a routine.
+
+`WorkoutActivityController` reads this phone's session and persists each pre-minted offer in the local `rack:liveactivity` row. The widget's authenticated `WorkoutLogSetIntent` runs in the app and calls `LogWorkoutSet` through the same runner as the screen. The command validates ownership and the current offer before entering the durable engine queue. The Gym engine binding ends the activity before an account change makes its local record dormant. Dismissal remains suppressed until an explicit Restore or new workout.
+
+`BoardFixture` prepares workout boards before journal setup. Telemetry allows training and content-free activity events with bounded properties; product copy, identifiers, notes and loads never enter telemetry. See `apps/ios/App/PARITY.md` for checklist evidence and verification, and `docs/IOS_OBSERVABILITY.md` for delivery/privacy contracts.

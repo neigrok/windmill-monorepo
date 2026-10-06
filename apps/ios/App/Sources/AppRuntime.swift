@@ -70,6 +70,7 @@ final class AppRuntime {
   let telemetry: any Telemetry
   let store: Store
   let engine: SyncEngine
+  let workoutActivityBinding = WorkoutActivityBinding()
   let runner: ActionRunner
   let auth: NativeAuth
   let lifecycle: AppLifecycle
@@ -85,7 +86,7 @@ final class AppRuntime {
     self.settings = settings; self.telemetry = telemetry
     let telemetry: any Telemetry = telemetry is NoopTelemetry ? telemetry : BoundedTelemetry(telemetry)
     let storageDirectory = directory ?? URL.applicationSupportDirectory.appending(path: settings.board.map { "JournalBoards/\($0)" } ?? settings.scenario.map { "JournalVerification/\($0)" } ?? "WindmillSync")
-    if directory == nil && ((settings.board != nil && !settings.restoreBoard) || settings.scenario != nil) { try? FileManager.default.removeItem(at: storageDirectory) }
+    if directory == nil && ((settings.board != nil || settings.scenario != nil) && !settings.restoreBoard) { try? FileManager.default.removeItem(at: storageDirectory) }
     let keychainService = service ?? settings.board.map { "works.windmill.boards.\($0)" } ?? settings.scenario.map { "works.windmill.scenarios.\($0)" } ?? "works.windmill.app"
     tokens = KeychainTokenStore(service: keychainService, telemetry: telemetry)
     revocations = KeychainTokenStore(service: keychainService + ".signed-out-sessions", telemetry: telemetry)
@@ -101,9 +102,10 @@ final class AppRuntime {
       throw error
     }
     let transport: any SyncTransport
+    let boardClock = settings.board != nil && settings.board?.hasPrefix("workout-live-activity") != true
     #if DEBUG
     if settings.modelServer {
-      let model = JournalModelTransport(boardClock: settings.board != nil)
+      let model = JournalModelTransport(boardClock: boardClock)
       model.state.withLock { state in
         if settings.appleFixture != nil || settings.board?.hasPrefix("23") == true || settings.board?.hasPrefix("24") == true {
           state.appleEmail = "sam@privaterelay.appleid.com"
@@ -128,9 +130,9 @@ final class AppRuntime {
     transport = HTTPTransport(baseURL: settings.baseURL ?? URL(string: "http://127.0.0.1:1")!, schema: SyncSchema.version, telemetry: telemetry)
     auth = NativeAuth(baseURL: settings.baseURL, telemetry: telemetry)
     #endif
-    engine = try SyncEngine(config: EngineConfig(appVersion: "0.2.0", surface: .ios), store: store, transport: syncTransport ?? transport,
+    engine = try SyncEngine(config: EngineConfig(appVersion: "0.2.0", surface: .ios), bindings: [workoutActivityBinding], store: store, transport: syncTransport ?? transport,
                             tokens: tokens,
-                            forkGuard: storage.forkGuard, clock: EngineClock(wall: settings.board != nil ? BoardClock() : SystemClock(), sleeper: ContinuousClock()), random: SystemRandom(), connectivity: PathConnectivity(), telemetry: telemetry)
+                            forkGuard: storage.forkGuard, clock: EngineClock(wall: boardClock ? BoardClock() : SystemClock(), sleeper: ContinuousClock()), random: SystemRandom(), connectivity: PathConnectivity(), telemetry: telemetry)
     runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: DeviceZone())
     lifecycle = AppLifecycle(engine: engine, signals: .application, time: ApplicationBackgroundTime())
     updateTelemetryIdentity()
@@ -281,6 +283,29 @@ final class NativeAuth {
       if appleTicket != nil, $0["appleAttached"] as? Bool != true { throw URLError(.cannotParseResponse) }
       return try self.identity($0)
     }
+  }
+
+  static func linkToken(_ input: String) throws -> String {
+    let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    let token: String
+    if trimmed.contains("://") {
+      guard let link = URLComponents(string: trimmed), ["https", "http"].contains(link.scheme),
+            let value = link.queryItems?.first(where: { $0.name == "token" })?.value else {
+        throw AppFailure(message: "Paste the full sign-in link or its token.")
+      }
+      token = value
+    } else { token = trimmed }
+    guard !token.isEmpty, token.count <= 1024,
+          token.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "-_".contains($0)) }) else {
+      throw AppFailure(message: "Paste the full sign-in link or its token.")
+    }
+    return token
+  }
+
+  func verifyLink(_ input: String) async throws -> AuthIdentity {
+    let token = try Self.linkToken(input)
+    return try await exchange("v1/auth/verify", operation: "auth_verify_code",
+                              body: ["token": token, "sessionTransport": "bearer"]) { try self.identity($0) }
   }
 
   func apple(identityToken: String, nonce: String, name: String, token: SessionToken? = nil) async throws -> AppleAuthResponse {

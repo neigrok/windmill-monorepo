@@ -1,6 +1,7 @@
 #if DEBUG
 import Foundation
 import CryptoKit
+import GymDomain
 import Synchronization
 import SyncCore
 import SyncEngine
@@ -16,7 +17,17 @@ import SyncSchema
 
 nonisolated final class JournalModelTransport: SyncTransport, Sendable {
   struct State: Sendable {
-    var server = ModelServer(registry: SyncSchema.registry, rules: ComposedServerRules.windmill(registry: SyncSchema.registry), state: ServerState(epoch: "journal-model-1"))
+    var server: ModelServer = {
+      var snapshot = ServerState(epoch: "journal-model-1")
+      var seeds = JSON.Object()
+      for seed in SeedExercises.all {
+        var fields = JSON.Object()
+        for (name, value) in seed.fields { fields[name] = value }
+        seeds[seed.id.description] = .object(fields)
+      }
+      snapshot.product["seeds"] = .object(seeds)
+      return ModelServer(registry: SyncSchema.registry, rules: ComposedServerRules.windmill(registry: SyncSchema.registry), state: snapshot)
+    }()
     var sessions: [String: String] = [:]
     var logoutOnline = true
     var authOnline = true

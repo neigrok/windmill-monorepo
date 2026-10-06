@@ -106,6 +106,7 @@ package actor Sender {
     defer { if leaving { wait.restoreBackoff(from: before) } }
     guard core.connectivity.isOnline else { return .idle }
     var requestStart: Int64?
+    var pushing: PushRequest?
     do {
       guard let seat = try core.seat(), seat.state == .bound, !seat.authPaused, let account = seat.account else { return .idle }
       guard signingOut?.account.utf8.elementsEqual(account.utf8) != true else { return .idle }
@@ -114,13 +115,20 @@ package actor Sender {
         return .idle
       }
       guard request.replica.utf8.elementsEqual(seat.replica.utf8) else { return .again }
+      pushing = request
       let send = core.clock.wall.reading()
       requestStart = send.mono
       let exchange = await core.answered(operation: "sync_push") { [transport] in await transport.push(request, token: token) }
       let next = try record(exchange.reply, to: request, under: token, timing: Timing(send: send, recv: core.clock.wall.reading()))
+      switch exchange.reply {
+      case .answered(.ok): core.recordPushFailure(request, failed: false)
+      case .answered(.failed(let failure)): core.recordPushFailure(request, failed: failure.status >= 500)
+      default: if !Task.isCancelled { core.recordPushFailure(request, failed: true) }
+      }
       core.outcome("sync_push_outcome", reply: exchange.reply, since: send.mono, failureKind: exchange.failureKind)
       return next
     } catch {
+      if let pushing, !Task.isCancelled { core.recordPushFailure(pushing, failed: true) }
       if let requestStart { core.failedOutcome("sync_push_outcome", error: error, since: requestStart) }
       return .backoff(ms: nextBackoff(floorMs: 0))
     }

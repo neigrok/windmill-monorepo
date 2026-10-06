@@ -14,6 +14,40 @@ struct SenderTests {
   static let card1 = Gesture(changes: [Rig.card("card0001", "One")], gestureId: "g1")
   static let three = Gesture(changes: [Rig.card("card0001", "A"), Rig.card("card0002", "B"), Rig.card("card0003", "C")], gestureId: "g1")
 
+  @Test(arguments: [0, 500, 503])
+  func failedPushStatusNamesQueuedRecordsAndClearsOnlyAfterRecovery(status: Int) async throws {
+    let rig = try Rig(account: "A")
+    try rig.commit(Self.card1)
+    if status == 0 { rig.transport.willDropPush() }
+    else { rig.transport.willAnswerPush(status) }
+    _ = await rig.engine.sender.step()
+    await rig.engine.settle()
+    let expected: [ScopeRef: Set<RecordKey>] = [Rig.scope: [RecordKey("card", RecordID("card0001"))]]
+    #expect(await MainActor.run { rig.engine.status.failedPushes } == expected)
+    #expect(try rig.outbox() == ["g1/0 sent 1"])
+    try rig.commit(Gesture(changes: [Rig.card("card0002", "Two")], gestureId: "g2"))
+    await rig.engine.settle()
+    #expect(await MainActor.run { rig.engine.status.failedPushes } == [Rig.scope: [RecordKey("card", RecordID("card0001")), RecordKey("card", RecordID("card0002"))]])
+    rig.clock.advance(ms: 1_000)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 2, [Rig.admitted(1, seq: 1), Rig.admitted(2, seq: 2)]))
+    await rig.engine.flushOnLeave()
+    await rig.engine.settle()
+    #expect(await MainActor.run { rig.engine.status.failedPushes.isEmpty })
+    #expect(try rig.outbox() == ["g1/0 acked 1", "g2/0 acked 2"])
+  }
+
+  @Test func cancelledPushDoesNotInventAFailedPushStatus() async throws {
+    let rig = try Rig(account: "A")
+    try rig.commit(Self.card1)
+    rig.transport.willNotAnswerPush()
+    let sending = Task { await rig.engine.sender.step() }
+    await rig.clock.asleep(until: Constants.requestTimeoutMs)
+    sending.cancel(); _ = await sending.value
+    await rig.engine.settle()
+    #expect(await MainActor.run { rig.engine.status.failedPushes.isEmpty })
+    #expect(try rig.outbox() == ["g1/0 sent 1"])
+  }
+
   static func numbers(_ transport: ScriptedTransport) -> [[Int64]] {
     transport.pushes.map { $0.intents.compactMap(\.n) }
   }

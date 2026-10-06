@@ -31,7 +31,7 @@ import Synchronization
     throw CancellationError()
   }
 
-  func completed(_ model: JournalModel) async throws {
+  func completed(_ model: AppModel) async throws {
     for _ in 0..<500 {
       if model.syncStarted { return }
       try await Task.sleep(for: .milliseconds(10))
@@ -47,19 +47,19 @@ import Synchronization
     let preferences = UserDefaults(suiteName: service)!, recorder = TelemetryRecorder()
     preferences.set(true, forKey: "journalOpened")
     #expect(preferences.object(forKey: "inkShown") == nil)
-    let model = try JournalModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: recorder)
+    let model = try AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: recorder)
     defer {
       model.timerTask?.cancel(); model.observationTask?.cancel()
       preferences.removePersistentDomain(forName: service)
     }
-    #expect(!model.welcome && model.room?.firstRunKnown == true && model.room?.stance == .empty && model.room?.days.isEmpty == true)
+    #expect(!model.welcome && model.journal.room?.firstRunKnown == true && model.journal.room?.stance == .empty && model.journal.room?.days.isEmpty == true)
     await model.start()
     #expect(model.syncStarted && !model.restoringSignIn && !model.editorReadOnly)
-    #expect(!model.inkVisible && preferences.object(forKey: "inkShown") == nil)
+    #expect(!model.journal.inkVisible && preferences.object(forKey: "inkShown") == nil)
     #expect(recorder.entries.withLock { $0.map(\.name) } == ["auth_restore"])
     #expect(recorder.entries.withLock { $0.map(\.properties) } == [["outcome": "anonymous"]])
-    model.automaticallyShowInk(); model.openJournal()
-    #expect(!model.inkVisible && preferences.object(forKey: "inkShown") == nil)
+    model.journal.automaticallyShowInk(); model.openJournal()
+    #expect(!model.journal.inkVisible && preferences.object(forKey: "inkShown") == nil)
     #expect(recorder.entries.withLock { $0.filter { $0.properties["screen"] == "ink_notes" }.isEmpty })
   }
 
@@ -68,7 +68,7 @@ import Synchronization
     let transport = RecoveryTransport()
     let (runtime, identity) = try await pendingRuntime(transport: transport, directory: directory, service: service)
     let preferences = UserDefaults(suiteName: service)!, recorder = TelemetryRecorder()
-    let model = try JournalModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: recorder)
+    let model = try AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: recorder)
     #expect(model.restoringSignIn && model.pendingSignIn != nil && model.sheet == .authPending && model.editorReadOnly)
     let phase = RecoveryPhase()
     let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
@@ -96,7 +96,7 @@ import Synchronization
     try await completed(model)
     #expect(model.account == identity.account && !model.accountTransition)
     #expect(!model.restoringSignIn && model.pendingSignIn == nil && model.sheet == nil)
-    #expect(!model.inkVisible && !preferences.bool(forKey: "inkShown"))
+    #expect(!model.journal.inkVisible && !preferences.bool(forKey: "inkShown"))
     #expect(try runtime.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == nil)
     #expect(transport.state.withLock { $0.maximumActive } == 1)
     #expect(recorder.entries.withLock { $0.map(\.properties) } == [["outcome": "signed_in"]])
@@ -108,7 +108,7 @@ import Synchronization
     let transport = RecoveryTransport()
     let (runtime, identity) = try await pendingRuntime(transport: transport, directory: directory, service: service)
     let preferences = UserDefaults(suiteName: service)!, recorder = TelemetryRecorder()
-    let model = try JournalModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: recorder)
+    let model = try AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: recorder)
     defer {
       model.timerTask?.cancel(); model.observationTask?.cancel()
       try? runtime.tokens.delete(for: identity.account)
@@ -123,7 +123,7 @@ import Synchronization
     await first.value
     #expect(!model.syncStarted && !model.accountTransition)
     #expect(model.restoringSignIn && model.pendingSignIn != nil && model.sheet == .authPending)
-    #expect(!model.inkVisible && !preferences.bool(forKey: "inkShown"))
+    #expect(!model.journal.inkVisible && !preferences.bool(forKey: "inkShown"))
     #expect(model.recoveryDue == nil && model.recoveryDelayMs == Constants.backoffBaseMs)
     #expect(try runtime.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == identity.account)
     #expect(recorder.entries.withLock { $0.isEmpty })
@@ -133,7 +133,7 @@ import Synchronization
     model.refresh()
     #expect(model.account == identity.account && !model.accountTransition)
     #expect(!model.restoringSignIn && model.pendingSignIn == nil && model.sheet == nil)
-    #expect(!model.inkVisible && !preferences.bool(forKey: "inkShown"))
+    #expect(!model.journal.inkVisible && !preferences.bool(forKey: "inkShown"))
     #expect(try runtime.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == nil)
     #expect(transport.state.withLock { $0.maximumActive } == 1)
     #expect(recorder.entries.withLock { $0.map(\.properties) } == [["outcome": "signed_in"]])
@@ -144,7 +144,7 @@ import Synchronization
     let transport = RecoveryTransport()
     let (runtime, identity) = try await pendingRuntime(transport: transport, directory: directory, service: service)
     let preferences = UserDefaults(suiteName: service)!, recorder = TelemetryRecorder()
-    let model = try JournalModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: recorder)
+    let model = try AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: recorder)
     defer {
       model.timerTask?.cancel(); model.observationTask?.cancel()
       try? runtime.tokens.delete(for: identity.account)
@@ -153,7 +153,7 @@ import Synchronization
     await model.start()
     #expect(!model.syncStarted && !model.accountTransition)
     #expect(model.restoringSignIn && model.pendingSignIn != nil && model.sheet == .authPending)
-    #expect(!model.inkVisible && !preferences.bool(forKey: "inkShown"))
+    #expect(!model.journal.inkVisible && !preferences.bool(forKey: "inkShown"))
     #expect(try runtime.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == identity.account)
     #expect(recorder.entries.withLock { $0.map(\.name) } == ["auth_restore"])
     #expect(recorder.entries.withLock { $0.map(\.properties) } == [["outcome": "failed"]])
@@ -171,7 +171,7 @@ import Synchronization
     model.refresh()
     #expect(model.account == identity.account && !model.accountTransition)
     #expect(!model.restoringSignIn && model.pendingSignIn == nil && model.sheet == nil)
-    #expect(!model.inkVisible && !preferences.bool(forKey: "inkShown"))
+    #expect(!model.journal.inkVisible && !preferences.bool(forKey: "inkShown"))
     #expect(try runtime.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == nil)
     #expect(transport.state.withLock { $0.maximumActive } == 1)
     #expect(model.recoveryDue == nil && model.recoveryDelayMs == Constants.backoffBaseMs)
@@ -184,15 +184,12 @@ import Synchronization
 }
 
 private struct RecoveryHost: View {
-  let model: JournalModel
+  let model: AppModel
   let phase: RecoveryPhase
   var body: some View {
     Color.clear
-      .onChange(of: phase.value) { _, value in
-        if value != .active { model.background() }
-        else { model.refresh() }
-      }
-      .modifier(JournalStartup(model: model))
+      .onChange(of: phase.value) { _, value in model.scenePhaseChanged(value) }
+      .modifier(AppStartup(model: model))
       .environment(\.scenePhase, phase.value)
   }
 }

@@ -5,20 +5,20 @@ import Synchronization
 @testable import Windmill
 
 @Suite @MainActor struct AppleLinkingTests {
-  func fixture(_ server: JournalModelTransport) throws -> JournalModel { try LineageFlowTests().fixture(server) }
+  func fixture(_ server: JournalModelTransport) throws -> AppModel { try LineageFlowTests().fixture(server) }
 
   @Test func ticketCreatesNothingAndDismissalPreservesLocalWriting() async throws {
     let server = JournalModelTransport(), model = try fixture(server)
-    model.type("Local page"); model.done(); model.sheet = .keep
+    model.journal.type("Local page"); model.journal.done(); model.sheet = .keep
     let before = server.state.withLock { $0.server.state }
     await model.authenticateApple { [auth = model.runtime!.auth] token in try auth.authorizeFakeApple(token: token) }
     #expect(model.sheet == .appleQuestion && model.account == nil && model.signInSession == nil)
-    #expect(model.appleTicket != nil && model.document.body == "Local page")
+    #expect(model.appleTicket != nil && model.journal.document.body == "Local page")
     #expect(server.state.withLock { $0.emails.isEmpty && $0.sessions.isEmpty && $0.appleDoors.isEmpty && $0.server.state == before })
     let ticket = try #require(model.appleTicket)
     #expect(!server.state.withLock { $0.tickets.keys.contains(ticket.secret) })
     model.closeAppleStep()
-    #expect(model.sheet == .keep && model.appleTicket == nil && model.document.body == "Local page")
+    #expect(model.sheet == .keep && model.appleTicket == nil && model.journal.document.body == "Local page")
     await model.authenticateApple { [auth = model.runtime!.auth] token in try auth.authorizeFakeApple(token: token) }
     #expect(model.appleTicket?.secret != ticket.secret)
     model.dismissSheet()
@@ -27,21 +27,21 @@ import Synchronization
 
   @Test func createConsumesTicketAndAdoptsIntoEmptyAccount() async throws {
     let server = JournalModelTransport(), model = try fixture(server)
-    model.type("Local page"); model.done(); model.sheet = .keep
+    model.journal.type("Local page"); model.journal.done(); model.sheet = .keep
     await model.authenticateApple { [auth = model.runtime!.auth] token in try auth.authorizeFakeApple(token: token) }
     let ticket = try #require(model.appleTicket)
     await model.createAppleAccount()
     #expect(model.account == "model-apple@example.com" && model.sheet == nil && model.appleTicket == nil)
-    #expect(model.document.body == "Local page")
+    #expect(model.journal.document.body == "Local page")
     #expect(throws: AuthRefusal.expired) { try server.createApple(ticket: ticket) }
   }
 
   @Test(arguments: [true, false]) func linkingUsesReceiptThenExistingAdoption(add: Bool) async throws {
     let server = JournalModelTransport(), existing = try fixture(server)
     try await existing.signIn(server.identity(email: "sam@example.com"))
-    existing.type("Account page"); existing.done(); await existing.beginSignOut(); await existing.finishSignOut(.keep)
+    existing.journal.type("Account page"); existing.journal.done(); await existing.beginSignOut(); await existing.finishSignOut(.keep)
     let model = try fixture(server)
-    model.type("Local page"); model.done(); model.sheet = .keep
+    model.journal.type("Local page"); model.journal.done(); model.sheet = .keep
     await model.authenticateApple { [auth = model.runtime!.auth] token in try auth.authorizeFakeApple(token: token) }
     model.useAppleAccount(); model.email = "sam@example.com"; await model.sendCode(); model.code = "482913"
     let verification = Task { await model.verifyCode() }
@@ -50,10 +50,10 @@ import Synchronization
     #expect(model.appleReceiptEmail == "sam@example.com" && model.appleTicket == nil && model.editorReadOnly)
     await verification.value
     #expect(model.sheet == .adoption && model.adoptionCount == 1)
-    #expect(AccountSheet(model: model).alertMessage == "1 page from before you signed in is only on this phone, and your account already has pages. Add it, or discard it for good.")
+    #expect(model.adoptionAlertMessage == "Journal · 1 page from before you signed in is only on this phone, and your account already has pages. Add it, or discard it for good.")
     if !add {
       model.sheet = .discardAdoption
-      #expect(AccountSheet(model: model).alertTitle == "Discard 1 page?")
+      #expect(model.adoptionAlertTitle == "Discard 1 page?")
     }
     await model.adopt(add ? .add : .discard)
     #expect(model.account == "model-sam@example.com" && model.sheet == nil)
@@ -91,7 +91,7 @@ import Synchronization
 
   @Test func offlineAndLocalExpiryRetainPagesAndNeverSignIn() async throws {
     let server = JournalModelTransport(), model = try fixture(server)
-    model.type("Local"); model.done(); model.sheet = .keep
+    model.journal.type("Local"); model.journal.done(); model.sheet = .keep
     await model.authenticateApple { _ in throw URLError(.notConnectedToInternet) }
     #expect(model.error == AuthRefusal.offline.message && model.sheet == .keep && model.appleTicket == nil && model.account == nil)
     await model.authenticateApple { [auth = model.runtime!.auth] token in try auth.authorizeFakeApple(token: token) }
@@ -101,7 +101,7 @@ import Synchronization
     let ticket = try #require(model.appleTicket)
     model.appleTicket = AppleTicket(secret: ticket.secret, expiresAt: .distantPast)
     #expect(model.expireAppleTicket())
-    #expect(model.sheet == .appleExpired && model.appleTicket == nil && model.document.body == "Local")
+    #expect(model.sheet == .appleExpired && model.appleTicket == nil && model.journal.document.body == "Local")
   }
 
   @Test(arguments: [false, true]) func signedInAttachMovesOnlyEmptyOwner(withData: Bool) async throws {
@@ -145,7 +145,7 @@ import Synchronization
   @Test func pausedAccountSkipsQuestionWithItsAddressAndKeepsReplica() async throws {
     let server = JournalModelTransport(), model = try fixture(server)
     let identity = server.identity(email: "sam@example.com")
-    try await model.signIn(identity); model.type("Account writing"); model.done()
+    try await model.signIn(identity); model.journal.type("Account writing"); model.journal.done()
     let runtime = try #require(model.runtime), replica = try runtime.store.read { try $0.device().activeReplica.meta.replica }
     try await runtime.auth.logout(token: identity.token); await runtime.engine.start()
     #expect(model.authPaused)
@@ -171,10 +171,10 @@ import Synchronization
     if link {
       let existing = try fixture(server)
       try await existing.signIn(server.identity(email: "sam@example.com"))
-      existing.type("Account page"); existing.done(); await existing.beginSignOut(); await existing.finishSignOut(.keep)
+      existing.journal.type("Account page"); existing.journal.done(); await existing.beginSignOut(); await existing.finishSignOut(.keep)
     }
     let model = try fixture(server)
-    model.type("Local page"); model.done(); model.sheet = .keep
+    model.journal.type("Local page"); model.journal.done(); model.sheet = .keep
     await model.authenticateApple { [auth = model.runtime!.auth] token in try auth.authorizeFakeApple(token: token) }
     let ticket = try #require(model.appleTicket)
     server.state.withLock { $0.helloOnline = false }
@@ -182,7 +182,7 @@ import Synchronization
       model.useAppleAccount(); model.email = "sam@example.com"; await model.sendCode(); model.code = "482913"; await model.verifyCode()
     } else { await model.createAppleAccount() }
     #expect(model.sheet == .authPending && model.account == nil && model.appleTicket == nil && model.pendingSignIn != nil && model.editorReadOnly)
-    #expect(model.document.body == "Local page")
+    #expect(model.journal.document.body == "Local page")
     #expect(throws: AuthRefusal.expired) { try server.createApple(ticket: ticket) }
     let sessions = server.state.withLock { $0.sessions }
     await model.retryAuthenticatedSignIn()
@@ -196,25 +196,25 @@ import Synchronization
     }
     #expect(model.account == (link ? "model-sam@example.com" : "model-apple@example.com") && model.sheet == nil)
     await model.runtime?.engine.start(); try await AppScenario.backedUp(model)
-    #expect(model.document.body == (link ? "Account page\n\nLocal page" : "Local page"))
+    #expect(model.journal.document.body == (link ? "Account page\n\nLocal page" : "Local page"))
   }
 
   @Test func pendingEngineSignInRestoresAndTimerRecoversWithoutAuth() async throws {
     let server = JournalModelTransport(), model = try fixture(server)
-    model.type("Survives the failed hello"); model.done(); model.sheet = .keep
+    model.journal.type("Survives the failed hello"); model.journal.done(); model.sheet = .keep
     await model.authenticateApple { [auth = model.runtime!.auth] token in try auth.authorizeFakeApple(token: token) }
     server.state.withLock { $0.helloOnline = false }
     await model.createAppleAccount()
     let runtime = try #require(model.runtime), sessions = server.state.withLock { $0.sessions }
     let recorder = TelemetryRecorder()
-    let restored = try JournalModel(runner: runtime.runner, preferences: model.preferences, runtime: runtime, telemetry: recorder)
+    let restored = try AppModel(runner: runtime.runner, preferences: model.preferences, runtime: runtime, telemetry: recorder)
     #expect(restored.pendingSignIn != nil && restored.sheet == .authPending && restored.appleTicket == nil)
     server.state.withLock { $0.helloOnline = true; $0.authOnline = false }
     await restored.start()
     defer { restored.timerTask?.cancel(); restored.observationTask?.cancel() }
     for _ in 0..<200 where restored.pendingSignIn != nil { try await Task.sleep(for: .milliseconds(10)) }
     #expect(restored.pendingSignIn == nil && restored.account == "model-apple@example.com" && restored.sheet == nil)
-    #expect(restored.document.body == "Survives the failed hello" && server.state.withLock { $0.sessions == sessions })
+    #expect(restored.journal.document.body == "Survives the failed hello" && server.state.withLock { $0.sessions == sessions })
     #expect(recorder.entries.withLock { $0.filter { $0.name == "auth_signed_in" }.map(\.properties) } == [["method": "apple", "outcome": "ok"]])
     #expect(restored.preferences.string(forKey: "pendingAuthMethod") == nil && !restored.restoringSignIn)
   }
@@ -222,7 +222,7 @@ import Synchronization
   @Test func lostRemovalResponseThen404ClearsStaleAppleRow() async throws {
     let server = JournalModelTransport(), model = try fixture(server)
     try await model.signIn(server.identity(email: "sam@example.com"))
-    model.type("Account page"); model.done(); model.sheet = .you
+    model.journal.type("Account page"); model.journal.done(); model.sheet = .you
     await model.authenticateApple { [auth = model.runtime!.auth] token in try auth.authorizeFakeApple(token: token) }
     #expect(model.signInMethods.contains { $0.kind == "apple" })
     server.state.withLock { $0.loseRemovalResponse = true }
@@ -231,6 +231,6 @@ import Synchronization
     #expect(server.state.withLock { $0.appleDoors.isEmpty })
     await model.removeApple()
     #expect(model.signInMethods == [SignInMethod(kind: "email", email: "sam@example.com")] && model.error == nil)
-    #expect(model.account == "model-sam@example.com" && model.document.body == "Account page")
+    #expect(model.account == "model-sam@example.com" && model.journal.document.body == "Account page")
   }
 }

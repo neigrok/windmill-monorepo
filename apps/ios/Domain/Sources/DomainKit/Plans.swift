@@ -164,7 +164,7 @@ public protocol ServerCommand: Sendable {
 // The values a product expects its command to write, server-written fields included, drawn until the result arrives.
 public struct Prediction: Sendable {
   enum Kind: Sendable {
-    case create, update, write
+    case create, update, write, remove
   }
 
   let kind: Kind
@@ -183,6 +183,10 @@ public struct Prediction: Sendable {
 
   public static func update<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON]) -> Prediction {
     Prediction(kind: .update, type: E.type, id: id.record, values: values)
+  }
+
+  public static func remove<E: Entity>(_ type: E.Type, _ id: ID<E>) -> Prediction {
+    Prediction(kind: .remove, type: E.type, id: id.record, values: [:])
   }
 }
 

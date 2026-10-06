@@ -992,6 +992,7 @@ public protocol ServerCommand: Sendable {
 public struct Prediction: Sendable {
   public static func create<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON]) -> Prediction
   public static func update<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON]) -> Prediction
+  public static func remove<E: Entity>(_ type: E.Type, _ id: ID<E>) -> Prediction
 }
 ```
 
@@ -1003,6 +1004,8 @@ public struct Prediction: Sendable {
   included, unvalidated. The engine draws them until the command's entry resolves, once the cursor
   covers its result (engine §7.5 step 2), and restamps or rewrites them through the write map (engine
   §7.7).
+- A removal prediction draws a dead life register, preserving the record's born. It becomes a
+  keyed `put(present: false)` or a minted `delete`; a refused command restores the prior record.
 - A product holds no predicted id across the result; it reads the record again from a view.
 - A command's refusal codes are declared in the rule book.
 

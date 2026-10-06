@@ -31,6 +31,20 @@ struct ReadersTests {
 
   static func ids(_ records: [Record]) -> [String] { records.map(\.id.description) }
 
+  @Test func queuedCommandsReportAdmissionBeforeTheirPredictionIsPulled() async throws {
+    let rig = try Rig(account: "A")
+    _ = try rig.engine.commit(Rig.scope) { context -> (Gesture?, Void) in
+      let id = try context.mintID("run")
+      return (Gesture(changes: [], command: Command(name: "probe.start", args: ["id": id.json, "startedAt": JSON(context.now), "join": false]),
+                      predict: [.create("run", id: .given(id), ["startedAt": JSON(context.now)])], gestureId: "admission"), ())
+    }
+    #expect(try rig.engine.commit(Rig.scope) { context in (nil as Gesture?, try context.commands().map(\.isAdmitted)) }.value == [false])
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 7)]))
+    #expect(await rig.engine.sender.step() == .again)
+    #expect(try rig.engine.commit(Rig.scope) { context in (nil as Gesture?, try context.commands().map(\.isAdmitted)) }.value == [true])
+    #expect(try rig.outbox() == ["admission/0 acked 1"])
+  }
+
   // §7.12: a read-and-commit body is given the id of the replica its commit writes to, the active one as it stands at
   // that commit: after a re-identify, the new id.
   @Test func aReadAndCommitBodyIsGivenTheIdOfTheReplicaItWritesTo() throws {

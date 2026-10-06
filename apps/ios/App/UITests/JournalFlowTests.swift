@@ -147,27 +147,28 @@ import XCTest
     XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, "Short walk, then an early night. Appended.")
   }
 
-  func testOneRoomTitleIsInertAndTopRightYouStillOpensSettings() {
+  func testRoomMenuListsBothRoomsAndTopRightYouStillOpensSettings() {
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", "05-journal-first-open", "-journal-layout-test"]
     app.launch()
-    let title = app.staticTexts["room-name"]
-    XCTAssertTrue(title.waitForExistence(timeout: 10))
-    XCTAssertEqual(title.label, "Journal")
-    XCTAssertFalse(app.buttons["room-menu"].exists)
-    XCTAssertFalse(app.buttons["room-name"].exists)
-    XCTAssertFalse(app.buttons["show-ink-notes"].exists)
-    XCTAssertFalse(app.buttons["Show ink notes"].exists)
+    let roomMenu = app.buttons["room-menu"]
+    XCTAssertTrue(roomMenu.waitForExistence(timeout: 10))
+    XCTAssertEqual(roomMenu.label, "Journal")
     let editor = app.textViews["journal-editor"]
     assertInkVisible(true, in: editor)
-    let frame = title.frame
-    title.tap()
+    XCTAssertFalse(app.buttons["show-ink-notes"].exists)
+    XCTAssertFalse(app.buttons["Show ink notes"].exists)
+    let frame = roomMenu.frame
+    roomMenu.tap()
+    XCTAssertTrue(app.buttons["room-journal"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["room-gym"].exists)
+    XCTAssertFalse(app.buttons["about-windmill"].exists)
+    app.buttons["room-journal"].tap()
+    XCTAssertEqual(roomMenu.frame, frame)
     assertInkVisible(false, in: editor)
-    XCTAssertEqual(title.frame, frame)
     XCTAssertFalse(app.keyboards.firstMatch.exists)
-    XCTAssertFalse(app.descendants(matching: .any)["journal-room-menu"].exists)
     let screenshot = XCTAttachment(screenshot: app.screenshot())
-    screenshot.name = "room-title"
+    screenshot.name = "room-menu"
     screenshot.lifetime = .keepAlways
     add(screenshot)
     app.buttons["you"].tap()
@@ -231,7 +232,8 @@ import XCTest
     let editor = app.textViews["journal-editor"]
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
     let parked = editor.screenshot().pngRepresentation
-    app.staticTexts["room-name"].tap()
+    app.buttons["room-menu"].tap()
+    app.buttons["room-journal"].tap()
     XCTAssertEqual(editor.screenshot().pngRepresentation, parked)
     let screenshot = XCTAttachment(screenshot: app.screenshot())
     screenshot.name = "journal-reduce-motion-empty"
@@ -442,20 +444,20 @@ import XCTest
     let app = XCUIApplication()
     app.launchArguments = ["-board", "05-journal-first-open"]
     app.launch()
-    XCTAssertTrue(app.staticTexts["room-name"].waitForExistence(timeout: 10))
-    let roomSize = app.staticTexts["room-name"].frame.size
+    XCTAssertTrue(app.buttons["room-menu"].waitForExistence(timeout: 10))
+    let roomSize = app.buttons["room-menu"].frame.size
     let accountSize = app.buttons["you"].frame.size
     let writeSize = app.buttons["write-today"].frame.size
     let bodyHeight = app.textViews["journal-editor"].frame.height
     app.terminate()
     app.launchArguments = ["-board", "05-journal-first-open-AX3"]
     app.launch()
-    XCTAssertTrue(app.staticTexts["room-name"].waitForExistence(timeout: 10))
-    XCTAssertEqual(app.staticTexts["room-name"].frame.size, roomSize)
+    XCTAssertTrue(app.buttons["room-menu"].waitForExistence(timeout: 10))
+    XCTAssertEqual(app.buttons["room-menu"].frame.size, roomSize)
     XCTAssertEqual(app.buttons["you"].frame.size, accountSize)
     XCTAssertEqual(app.buttons["write-today"].frame.size, writeSize)
     XCTAssertGreaterThan(app.textViews["journal-editor"].frame.height, bodyHeight)
-    XCTAssertEqual(app.staticTexts["room-name"].label, "Journal")
+    XCTAssertEqual(app.buttons["room-menu"].label, "Journal")
     XCTAssertEqual(app.buttons["you"].label, "You and settings")
   }
   func testPausedBackupOffersSameAccountEmailReauthentication() {

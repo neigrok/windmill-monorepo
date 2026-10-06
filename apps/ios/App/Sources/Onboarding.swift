@@ -12,7 +12,7 @@ nonisolated enum OnboardingPage: Int, CaseIterable {
      "Write a line or a page, in your own words. Nothing is graded or shared.",
      "Two taps a set, and next time your numbers are already there."][rawValue]
   }
-  var location: String? { [nil, "On the web", "In this app", "On the web and Android"][rawValue] }
+  var location: String? { [nil, "On the web", "In this app", "In this app"][rawValue] }
   var example: String {
     ["Example of three rooms: Roadmap, Journal, Gym",
      "Example of a skill tree: Learn to sail, three steps open, three locked",
@@ -38,12 +38,13 @@ struct OnboardingPalette {
 // Device history is checked before the model enters the view tree.
 enum OnboardingLaunch {
   static let shownKey = "windmillIntroductionShown"
-  static func shouldPresent(model: JournalModel, deepLink: Bool) throws -> Bool {
+  static func shouldPresent(model: AppModel, deepLink: Bool) throws -> Bool {
     guard !model.preferences.bool(forKey: shownKey) else { return false }
     defer { model.preferences.set(true, forKey: shownKey) }
-    guard !deepLink, model.account == nil, !model.readFailed, model.welcome,
-          !model.dirty, model.room?.stance == .empty, model.room?.days.isEmpty == true,
+    guard !deepLink, model.account == nil, !model.journal.readFailed, model.welcome,
+          !model.journal.dirty, model.journal.room?.stance == .empty, model.journal.room?.days.isEmpty == true,
           !model.preferences.bool(forKey: "journalOpened"),
+          model.preferences.string(forKey: "lastRoom") == nil, !model.gym.hasData, !model.gym.readFailed,
           !model.preferences.bool(forKey: "keepDismissed") else { return false }
     if let runtime = model.runtime {
       guard !runtime.hadInstallHistory, runtime.tokens.accounts().isEmpty, runtime.revocations.accounts().isEmpty else { return false }

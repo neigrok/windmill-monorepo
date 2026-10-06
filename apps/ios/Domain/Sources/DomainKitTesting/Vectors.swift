@@ -52,14 +52,14 @@ public struct ProductCorpus {
     return ["decision": try decision.form(in: decider.scope, registry: book.registry, result: result, refusal: refusal)]
   }
 
-  // A draft's one save in the same form, as an editor makes it: the draft `open(id, orNew: blank)` gives over the
-  // records, `edit` applied to its current value, then the save's decision (§10.2).
+  // An editor opens the drawn entity or starts a new draft, edits its current value, then decides its save (§10.2).
   public func save<E: Draftable, R: ProductRefusal>(_ type: SaveDraft<E, R>.Type, _ vector: Vector, opening blank: E,
                                                    edit: (inout E) -> Void, result: (Saved) -> JSON, refusal: (R) -> JSON)
     throws -> JSON
   {
     let (context, moment) = try scene(of: vector, in: E.scope)
-    var draft = try Draft(orNew: blank, in: Reader(context, scope: E.scope, moment: moment, registry: book.registry))
+    let read = Reader(context, scope: E.scope, moment: moment, registry: book.registry)
+    var draft = try read.repository(E.self).find(blank.id, in: .drawn).map { Draft(opening: $0) } ?? Draft(new: blank)
     edit(&draft.current)
     return try decision(of: SaveDraft<E, R>(draft), vector, result: result, refusal: refusal)
   }

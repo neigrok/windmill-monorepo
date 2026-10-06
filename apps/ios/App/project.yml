@@ -17,9 +17,12 @@ targets:
     platform: iOS
     sources:
       - Sources
+      - WorkoutActivityShared
       - path: Resources
         buildPhase: resources
     dependencies:
+      - target: WindmillWorkoutActivity
+        embed: true
       - package: Sentry
         product: Sentry
       - package: WindmillSync
@@ -42,6 +45,8 @@ targets:
         product: DomainKit
       - package: WindmillDomain
         product: JournalDomain
+      - package: WindmillDomain
+        product: GymDomain
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app
@@ -87,6 +92,10 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
+        NSSupportsLiveActivities: true
+        CFBundleURLTypes:
+          - CFBundleURLName: works.windmill.workout
+            CFBundleURLSchemes: [windmill]
         WMServerBaseURL: $(WM_SERVER_BASE_URL)
         UILaunchScreen:
           UIColorName: ShellCanvas
@@ -102,6 +111,41 @@ targets:
           - Baloo2-Bold.ttf
     scheme:
       testTargets: [WindmillTests, WindmillUITests]
+  WindmillWorkoutActivity:
+    type: app-extension
+    platform: iOS
+    sources:
+      - WorkoutActivityShared
+      - WorkoutActivityWidget
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app.workout-activity
+        MARKETING_VERSION: "0.2.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_STYLE: Manual
+        SWIFT_VERSION: "6.0"
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: "YES"
+        SWIFT_WARNINGS_AS_WARNINGS_GROUPS: DeprecatedDeclaration
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) WORKOUT_ACTIVITY_WIDGET"
+        APPLICATION_EXTENSION_API_ONLY: "YES"
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: "YES"
+      configs:
+        Debug:
+          CODE_SIGN_IDENTITY: "-"
+        Release:
+          CODE_SIGN_IDENTITY: Apple Development
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY[sdk=iphonesimulator*]: "-"
+          CODE_SIGN_STYLE[sdk=iphonesimulator*]: Manual
+    info:
+      path: Generated/WorkoutActivity.Info.plist
+      properties:
+        CFBundleDisplayName: Workout
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
   WindmillTests:
     type: bundle.unit-test
     platform: iOS

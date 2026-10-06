@@ -104,7 +104,8 @@ public struct QueuedCommand: Sendable {
   public let gestureId: String
   public let command: Command
   public let canSupersede: Bool
-  public init(gestureId: String, command: Command, canSupersede: Bool) {
-    self.gestureId = gestureId; self.command = command; self.canSupersede = canSupersede
+  public let isAdmitted: Bool
+  public init(gestureId: String, command: Command, canSupersede: Bool, isAdmitted: Bool = false) {
+    self.gestureId = gestureId; self.command = command; self.canSupersede = canSupersede; self.isAdmitted = isAdmitted
   }
 }

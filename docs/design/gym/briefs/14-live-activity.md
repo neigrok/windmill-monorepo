@@ -5,9 +5,10 @@ a second writer. Logging uses the same domain command, owner and action identity
 
 ## iOS design
 
-The proposed presentations are the Lock Screen banner and Dynamic Island compact, expanded and
-minimal forms. Show the current movement, elapsed time since the last set, rest-target bar and
-prefilled next set. The time counts up; a target is a reference, never a countdown instruction.
+The presentations are the Lock Screen banner and Dynamic Island compact, expanded and
+minimal forms. Show the routine or free workout title, current movement, prefilled next set
+(load × reps and working-set ordinal of the plan count), workout elapsed and time since the last
+set. Both clocks count up from timestamps drawn by the system. There is no rest-target bar or countdown.
 The in-app logger's two clocks remain governed by [feedback](../feedback-contract.md).
 
 **Log set** is the only action and requires device authentication. Reading remains available while
@@ -19,9 +20,15 @@ advancing to the next set creates a new ID. Validate owner, session and current 
 write. Show unsynced work honestly.
 
 The activity stale date follows the workout's four-hour idle limit, and a stale presentation must
-remove the logging action. Verify stale rendering, over-target progress, truncation, the circular
+remove the logging action. Verify stale rendering, truncation, the minimal
 presentation and locked-action behavior on the supported device matrix before accepting this
 surface. Static drawings do not establish these behaviors.
+
+Request locally when this phone starts or restores its own workout. Update in place after sets,
+movement/prefill changes and queue changes; show unsynced sets honestly. End on finish, discard,
+auto-close, Hide workout, sign-out and owner change. Lock Screen dismissal suppresses the activity
+for that workout until explicit Restore workout. Settings denial preserves in-app logging without
+a prompt. No push token or APNs is used.
 
 ## Android contract
 

@@ -21,7 +21,7 @@ import SyncIOS
     try prior(directory, tokens, revocations)
     let runtime = try AppRuntime(settings: AppSettings(arguments: ["app", "-model-server"]),
                                  directory: directory, service: service)
-    let model = try JournalModel(runner: runtime.runner, preferences: preferences, runtime: runtime)
+    let model = try AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime)
     #expect(runtime.hadInstallHistory == history)
     #expect(try runtime.account() == nil)
     #expect(runtime.tokens.accounts().isEmpty)

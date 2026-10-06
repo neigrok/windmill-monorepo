@@ -139,6 +139,22 @@ class ReleaseProjectTests(unittest.TestCase):
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                 generate_project.configured_spec(deepcopy(self.spec), {**self.settings, key: value}, True)
 
+    def test_release_sets_matching_widget_build_and_automatic_signing_team(self):
+        spec = deepcopy(self.spec)
+        spec["targets"]["WindmillWorkoutActivity"] = {"settings": {
+            "base": {"CURRENT_PROJECT_VERSION": "1", "PRODUCT_BUNDLE_IDENTIFIER": "works.windmill.app.workout"},
+            "configs": {"Release": {"CODE_SIGN_STYLE": "Automatic", "CODE_SIGN_IDENTITY": "Apple Development"}},
+        }}
+        configured = generate_project.configured_spec(spec, self.settings, True)
+        widget = configured["targets"]["WindmillWorkoutActivity"]["settings"]
+        self.assertEqual({"CURRENT_PROJECT_VERSION": "72", "PRODUCT_BUNDLE_IDENTIFIER": "works.windmill.app.workout"}, widget["base"])
+        self.assertEqual({"CODE_SIGN_STYLE": "Automatic", "CODE_SIGN_IDENTITY": "Apple Development",
+                          "DEVELOPMENT_TEAM": "ABCDEFGHIJ"}, widget["configs"]["Release"])
+        self.assertEqual(configured["targets"]["Windmill"]["settings"]["base"]["CURRENT_PROJECT_VERSION"],
+                         widget["base"]["CURRENT_PROJECT_VERSION"])
+        self.assertEqual(configured["targets"]["Windmill"]["settings"]["configs"]["Release"]["DEVELOPMENT_TEAM"],
+                         widget["configs"]["Release"]["DEVELOPMENT_TEAM"])
+
     def test_ci_sets_nonproduction_dsn_without_signing_team_or_build_number_override(self):
         settings = {**self.settings, "CONFIGURATION": "Debug", "IOS_SENTRY_DSN": "https://nonproduction@example.invalid/1"}
         configured = generate_project.configured_spec(deepcopy(self.spec), settings, False)

@@ -17,18 +17,15 @@ public struct Note: Draftable, Removable, Ordered {
   public var body: String
   public let updatedAt: Instant?
 
-  public init(id: ID<Note>, title: String = "", body: String = "") {
+  public init(id: ID<Note>, title: String = "", body: String = "", updatedAt: Instant? = nil) {
     self.id = id
     self.title = title
     self.body = body
-    self.updatedAt = nil
+    self.updatedAt = updatedAt
   }
 
   public init(_ r: Fields) throws(DecodeError) {
-    id = ID(r.id)
-    title = try r.string("title")
-    body = try r.string("body", default: "")
-    updatedAt = try r.optionalInstant("updatedAt")
+    self.init(id: ID(r.id), title: try r.string("title"), body: try r.string("body", default: ""), updatedAt: try r.optionalInstant("updatedAt"))
   }
 
   public var fields: [String: JSON] { ["title": .string(title), "body": .string(body)] }

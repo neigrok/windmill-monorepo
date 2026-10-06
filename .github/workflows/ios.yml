@@ -14,6 +14,8 @@ on:
       - 'apps/ios/**'
       - 'packages/api-contract/sync/**'
       - 'packages/api-contract/domain-kit/**'
+      - 'packages/api-contract/gym/**'
+      - 'packages/api-contract/gym-ladder.json'
       - '.github/workflows/ios.yml'
       - '!apps/ios/**/*.md'
   pull_request:
@@ -21,6 +23,8 @@ on:
       - 'apps/ios/**'
       - 'packages/api-contract/sync/**'
       - 'packages/api-contract/domain-kit/**'
+      - 'packages/api-contract/gym/**'
+      - 'packages/api-contract/gym-ladder.json'
       - '.github/workflows/ios.yml'
       - '!apps/ios/**/*.md'
   workflow_dispatch:
@@ -37,7 +41,7 @@ jobs:
   test-and-build:
     # swift-tools-version 6.2 needs Xcode 26.
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 100
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:

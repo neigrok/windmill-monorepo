@@ -60,7 +60,7 @@ import XCTest
     XCTAssertTrue(app.staticTexts["Apple now opens sam@example.com."].exists)
     let adoption = app.alerts["Add to your account?"]
     XCTAssertTrue(adoption.waitForExistence(timeout: 10))
-    XCTAssertTrue(adoption.staticTexts["1 page from before you signed in is only on this phone, and your account already has pages. Add it, or discard it for good."].exists)
+    XCTAssertTrue(adoption.staticTexts.matching(NSPredicate(format: "label == %@", "Journal · 1 page from before you signed in is only on this phone, and your account already has pages. Add it, or discard it for good.")).firstMatch.exists)
     adoption.buttons["Add"].tap()
     XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 10))
     assertPage(app, equals: accountPage + "\n\n" + localPage)

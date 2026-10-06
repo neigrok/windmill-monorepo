@@ -323,6 +323,7 @@ final class EngineCore: Sendable {
   let foreground = Atomic(true)
   let opened = Mutex<[ScopeRef]>([])
   let doubts = Mutex(Doubts())
+  let failedPushScopes = Mutex<[[UInt8]: Set<ScopeRef>]>([:])
   let writers = WriterLine()
   let slices: Mutex<WriterSlices>
   // The thread inside a write, 0 when none: a write nested in one on the same thread (an engine call from a commit's
@@ -577,6 +578,18 @@ final class EngineCore: Sendable {
     var change = StoreChange()
     change[keyPath: changed] = true
     publisher.publish(change, [])
+  }
+
+  func recordPushFailure(_ request: PushRequest, failed: Bool) {
+    let scopes = Set(request.intents.map(\.scope))
+    let changed = failedPushScopes.withLock { failures in
+      let id = Array(request.replica.utf8), before = failures[id] ?? []
+      let next = failed ? before.union(scopes) : before.subtracting(scopes)
+      guard next != before else { return false }
+      failures[id] = next.isEmpty ? nil : next
+      return true
+    }
+    if changed { publish(\.status) }
   }
 
   // A backoff's ceiling (§7.4): 30 s while any product's live hint holds, else 300 s; a hint that cannot be read does not

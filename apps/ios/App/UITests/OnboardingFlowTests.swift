@@ -74,8 +74,24 @@ import XCTest
       assertPage(page, in: app)
       let title = app.staticTexts[titles[page]]
       let frame = title.frame
-      app.swipeUp(velocity: .fast)
-      XCTAssertEqual(title.frame, frame)
+      let scroll = app.scrollViews.firstMatch
+      let lastContent = app.staticTexts[page == 0 ? bodies[page] : page == 1 ? "On the web" : "In this app"]
+      // A page may need to scroll even at normal text sizes; navigation stays pinned either way.
+      let overflow = max(0, lastContent.frame.maxY + 16 - scroll.frame.maxY)
+      let primary = app.buttons["onboarding-next"], control = app.pageIndicators["onboarding-page-control"]
+      let primaryFrame = primary.frame, controlFrame = control.frame
+      scroll.swipeUp(velocity: .fast)
+      XCTAssertEqual(title.frame.minX, frame.minX, accuracy: 0.5)
+      XCTAssertEqual(title.frame.size.width, frame.size.width, accuracy: 0.5)
+      XCTAssertEqual(title.frame.size.height, frame.size.height, accuracy: 0.5)
+      if overflow <= 0.5 { XCTAssertEqual(title.frame.minY, frame.minY, accuracy: 0.5) }
+      else {
+        XCTAssertLessThan(title.frame.minY, frame.minY)
+        XCTAssertGreaterThanOrEqual(title.frame.minY, frame.minY - overflow - 0.5)
+      }
+      XCTAssertEqual(primary.frame, primaryFrame)
+      XCTAssertEqual(control.frame, controlFrame)
+      XCTAssertTrue(primary.isHittable)
       app.swipeLeft(velocity: .fast)
       assertPage(page + 1, in: app)
     }
@@ -258,7 +274,7 @@ import XCTest
     XCTAssertEqual(control.label, "Page \(page + 1) of 4", file: file, line: line)
     if page > 0 {
       XCTAssertTrue(app.staticTexts[["ROADMAP", "JOURNAL", "GYM"][page - 1]].exists, file: file, line: line)
-      XCTAssertTrue(app.staticTexts[["On the web", "In this app", "On the web and Android"][page - 1]].exists, file: file, line: line)
+      XCTAssertTrue(app.staticTexts[["On the web", "In this app", "In this app"][page - 1]].exists, file: file, line: line)
     }
     let exit = app.buttons["onboarding-exit"]
     if replay || page < 3 {
@@ -274,6 +290,7 @@ import XCTest
 
   func assertWhereToStart(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
     XCTAssertTrue(app.buttons["open-journal"].waitForExistence(timeout: 10), file: file, line: line)
+    XCTAssertTrue(app.buttons["open-gym"].exists, file: file, line: line)
     XCTAssertTrue(app.staticTexts["Where to start?"].exists, file: file, line: line)
     XCTAssertFalse(app.staticTexts["onboarding-title"].exists, file: file, line: line)
   }

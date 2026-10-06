@@ -160,7 +160,8 @@ final class TransactionReader: CommitContext {
       guard isOpen else { throw TransactionReader.ended }
       guard let replica = try tx.replica(meta.replica, entries: EntrySelection(scopes: [scope])) else { throw StoreError.noReplica(meta.replica) }
       return replica.entries(in: scope).compactMap { entry in
-        entry.intent.command.map { QueuedCommand(gestureId: entry.gestureId, command: $0, canSupersede: meta.state == .anon && entry.isQueued && entry.n == nil) }
+        entry.intent.command.map { QueuedCommand(gestureId: entry.gestureId, command: $0,
+          canSupersede: meta.state == .anon && entry.isQueued && entry.n == nil, isAdmitted: entry.state == .acked) }
       }
     }
   }

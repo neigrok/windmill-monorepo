@@ -5,6 +5,7 @@ import JournalDomain
 
 struct JournalScreen: View {
   @Bindable var model: JournalModel
+  let app: AppModel
   @State var focused = false
   @State var writeRequest = 0
   @State var appendRequest = 0
@@ -48,6 +49,8 @@ struct JournalScreen: View {
           }
           inkNotes(origin: geo.frame(in: .global).origin)
         }
+      }.onChange(of: model.document.body) { old, new in
+        if focused && new == old + "\n" { scroll.scrollTo("journal-today", anchor: .bottom) }
       }.overlay(alignment: .bottomTrailing) {
         if !model.editorReadOnly && model.sheet == nil && !model.compactAccountSheet {
           Button {
@@ -108,20 +111,11 @@ struct JournalScreen: View {
 
   var header: some View {
     HStack {
-      roomName
+      RoomSeat(app: app).inkAnchor("title", enabled: inkMounted, frames: $inkFrames)
+        .simultaneousGesture(TapGesture().onEnded { model.liftInk() })
       Spacer()
-      Button { model.liftInk(); focused = false; model.sheet = .you } label: {
-        YouGlyph().stroke(Design.ink, lineWidth: 1.5).frame(width: 18, height: 18).frame(width: 44, height: 44).modifier(Glass(capsule: false))
-      }.accessibilityLabel("You and settings").accessibilityIdentifier("you").inkAnchor("you", enabled: inkMounted, frames: $inkFrames)
+      AccountButton(app: app).inkAnchor("you", enabled: inkMounted, frames: $inkFrames)
     }.buttonStyle(.plain).dynamicTypeSize(...DynamicTypeSize.large)
-  }
-
-  // The room menu mounts in this seat when the phone carries a second room.
-  var roomName: some View {
-    Text("Journal").font(Design.strong(17)).foregroundStyle(Design.ink)
-      .inkAnchor("title", enabled: inkMounted, frames: $inkFrames)
-      .padding(.leading, 16).padding(.trailing, 14).frame(height: 44)
-      .accessibilityAddTraits(.isHeader).accessibilityIdentifier("room-name")
   }
 
   func today(width: CGFloat) -> some View {
@@ -284,7 +278,7 @@ struct JournalBodyText: UIViewRepresentable {
       defer { publishingText = false }
       parent.text = textView.text
     }
-    func textViewDidBeginEditing(_ textView: UITextView) { if !parent.focused { parent.focused = true } }
+    func textViewDidBeginEditing(_ textView: UITextView) { if !parent.focused { textView.resignFirstResponder() } }
     func textViewDidEndEditing(_ textView: UITextView) { if parent.focused { parent.focused = false } }
   }
 }

@@ -3,12 +3,12 @@ import SwiftUI
 
 // Simulator fixtures go through the launch policy and journal actions.
 enum OnboardingFixture {
-  static func prepare(_ board: String, model: JournalModel) async -> Bool {
+  static func prepare(_ board: String, model: AppModel) async -> Bool {
     #if DEBUG && targetEnvironment(simulator)
     guard board.hasPrefix("onboarding-") else { return false }
     model.welcome = true
     if board == "onboarding-room" {
-      model.openJournal(); model.type("A page already on this phone."); model.save(); model.done(); model.dismissScales()
+      model.openJournal(); model.journal.type("A page already on this phone."); model.journal.save(); model.journal.done(); model.journal.dismissScales()
       model.preferences.removeObject(forKey: OnboardingLaunch.shownKey)
     }
     if board == "onboarding-signed-in", let identity = try? model.runtime?.auth.fakeApple() {

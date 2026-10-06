@@ -1,4 +1,4 @@
-# Windmill Journal
+# Windmill · Journal and Gym
 
 The product app uses `works.windmill.app`, the previous TestFlight bundle identifier. iOS 18 is the
 minimum. Generate the project with `xcodegen generate`, then open `Windmill.xcodeproj`.
@@ -6,7 +6,7 @@ minimum. Generate the project with `xcodegen generate`, then open `Windmill.xcod
 The default build connects to `https://windmill.works` and saves on the phone without an account.
 Configure `WM_SERVER_BASE_URL` with a local server origin, such as `http://127.0.0.1:8089`, or launch
 with `-server` followed by that URL. The engine appends `/v1/sync`; native authentication uses
-`/v1/auth`. The server must enable and admit the journal engine.
+`/v1/auth`. The server must enable and admit the journal and gym engines.
 See [the full local server recipe](../../../backend/RUNNING.md). Sessions come from the response body
 and are kept in Keychain; native authentication does not retain cookies.
 
@@ -35,9 +35,33 @@ labels; no fixture secret enters telemetry.
 `-scenario <name> -report <absolute JSON path>` exercises anonymous writing, Keep, email sign-in,
 backup, session revocation, same-account reauthentication, sign-out Keep, and a second sign-in. A local
 server run supplies `-code-file <absolute path>` with development codes in its isolated database.
+Gym end-to-end tests use `-scenario gym-e2e` (signed in) or `gym-e2e-anonymous`; `-code-file` for Gym reads a local JSON native session minted by the verify skill. These simulator-only fixtures use the real engine and native UI.
 The report pauses at `revoke-session` and `signed-out`; a local verifier performs the server step and
 writes that checkpoint name to `<report>.ready`. The signed-out checkpoint includes the credential
 for local replay verification; the final report contains no credential.
+
+`AppModel` coordinates one account, runtime, runner and active replica for both rooms. The engine
+subscribes both product scopes from its iOS registry. Gym and Journal writes made anonymously stay
+local until adoption. Occupied accounts ask Journal then Gym with counts by kind; Add/Discard
+answers persist against the exact counted work and complete together. Changed work asks again.
+Sign-out flushes both rooms, releases held deletes, and keeps dormant work only for its account.
+
+The Gym UI contract is `Sources/Gym/GymModel.swift` plus `GymRoom.swift`. `GymRoom(gym:app:)` owns a
+native TabView (Routines · The log · Coach), independent NavigationStacks and full-screen
+`WorkoutScreen` while logging, finishing or showing its receipt. Hidden workouts restore from Gym settings. Each UI track owns its folder and root view:
+`Routines/RoutinesTab.swift`, `Log/LogTab.swift`, `Coach/CoachTab.swift`, and
+`Workout/WorkoutScreen.swift`. Each root takes `gym: GymModel`; the room supplies account/navigation callbacks and Coach handoffs. Add model extensions
+only in the owning track's folder, never in `GymModel.swift`.
+
+`GymModel(runner:runtime:telemetry:)` exposes engine-backed log/catalogue/routines/notes/bodyweight/
+preferences/proposals, sessions/sets/openSession, account/isAnonymous/authPaused, notices,
+refusal/error/readFailed and undoOffers. Use `run(_:)` for GymDomain actions, `save(_:)` for drafts,
+`undo(_:)` for held gestures, `dismissNotice(_:)`, and `refresh()`; `start()`/`stop()` observe engine
+changes. `flush()` releases holds before account transitions; real backgrounding ends Undo windows.
+An inactive scene persists Journal drafts while Gym live sync, REST work and pending Undo windows continue.
+The app sets `accountTransition` to lock writes during account changes. `rest` is the authenticated
+client handle for Coach, shares and Connected log; engine-backed training writes use domain actions.
+Gym includes routine planning and movement creation, the live set rack and finish receipt, session history/sharing and strength/bodyweight charts, and account-only Coach, proposal review, Notes and Connected log. Gym follows system light/dark appearance; Journal keeps its night canvas.
 
 Run the `WindmillTests` scheme tests for deterministic domain and lineage flows, and
 `WindmillUITests` for the native sheet/keyboard round trip. All product persistence is in the engine's
@@ -50,9 +74,10 @@ through the space above the mood rows opens the keyboard with the caret at the e
 at least three lines at the current text size. An empty, unfocused page shows a still lamp caret.
 The 44 pt Write seat at bottom-right returns from history to today and opens writing; the same seat
 becomes Done writing above the keyboard. It hides during read-only transitions and account sheets.
-The one-room header is a plain Journal heading; the account button opens You.
-Hand-drawn Caveat ink notes appear once per install on the first Journal open with no pages.
-Writing or a tap lifts them while the editor keeps the tap; there is no replay control.
+The room seat is a native Journal · Gym menu with the current room checked; the separate account
+button opens You. The last room persists across launches. A fresh phone gets both doors after the
+introduction on Where to start?.
+Hand-drawn Caveat ink notes appear only on a true first Journal open. Previous Journal visits, retained history, drafts and unreadable state suppress them; restored sign-in stays quiet. Writing or a tap lifts them while the editor keeps the tap; there is no replay control.
 `journal-empty-later`, `journal-one-line` and `journal-history` board fixtures seed past pages through
 the journal actions. A `-RM` suffix exercises the journal's Reduce Motion scroll and glyph swap.
 Focus and dismissal emit the bounded `first_run_choice` actions `write` and `done_writing` on the
@@ -83,7 +108,22 @@ follow the supplied Figma `TOKENS.json`.
 Telemetry uses Sentry Cocoa for failures and first-party `/v1/events` for product events. Debug
 telemetry is off unless `WM_DEBUG_TELEMETRY=YES` is supplied; simulator verification can use
 `-telemetry -sentry-dsn http://ios@127.0.0.1:8091/42`. Release builds require `IOS_SENTRY_DSN`.
-See [iOS observability](../../../docs/IOS_OBSERVABILITY.md) for the complete 22-event allowlist,
+See [iOS observability](../../../docs/IOS_OBSERVABILITY.md) for the complete 36-event allowlist,
 privacy rules, queue behavior and release verification. CI uses `python3 Tools/generate_project.py`
 with a nonproduction DSN. The manual release workflow uses `--release` with the signing secrets,
 builds with Xcode 26.3 and uploads to TestFlight; it does not run on push.
+
+The Live Activity UI test waits for stable Island content before taking screenshots. To capture its
+minimal layout, `WM_ACTIVITY_RENDER_MEDIA` can point to a local audio page whose Play QA tone button
+changes to QA tone is playing after playback starts. Audio must continue while Safari is backgrounded.
+The test finishes the workout and verifies that the Activity disappears after logging from the Island.
+
+Coordinator-owned documentation outside this worktree's territory still describes the earlier app:
+`CLAUDE.md:12`, `STRUCTURE.md:31`/`:58`, `docs/design/guidelines/onboarding.md:138`/`:141` and
+`docs/design/consistency.md:209`/`:251`/`:332` need the two-room availability update.
+Consistency's iOS auth/adoption claims at 124–128 and 155–160 predate the current Apple ticket flow,
+`AppModel` and per-room Add/Discard counts; `docs/design/guidelines/account-linking.md:90` needs a
+two-room adoption example.
+`docs/foundation/domain-kit.md:970` needs “two writing operations”: read guards may accompany one
+write to a record. Figma `_Room capsule` variant `117:52` retains a stale You-row description;
+set `226:4315` and boards 21a/21b match Journal · Gym only.

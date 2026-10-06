@@ -9,18 +9,18 @@ import SyncSchema
 @testable import Windmill
 
 @Suite @MainActor struct OnboardingLaunchTests {
-  func model(account: String? = nil) throws -> JournalModel {
+  func model(account: String? = nil) throws -> AppModel {
     let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: account,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry),
                           commandResultWrites: JournalWriting.resultWrites, pendingDeviceWork: JournalWriting.pendingWork)
-    return try JournalModel(runner: harness.runner, preferences: UserDefaults(suiteName: UUID().uuidString)!)
+    return try AppModel(runner: harness.runner, preferences: UserDefaults(suiteName: UUID().uuidString)!)
   }
 
   @Test func firstColdLaunchIsConsumedBeforeExitOrProcessDeath() throws {
     let first = try model()
     #expect(try OnboardingLaunch.shouldPresent(model: first, deepLink: false))
     #expect(first.preferences.bool(forKey: OnboardingLaunch.shownKey))
-    let relaunched = try JournalModel(runner: first.runner, preferences: first.preferences)
+    let relaunched = try AppModel(runner: first.runner, preferences: first.preferences)
     #expect(try !OnboardingLaunch.shouldPresent(model: relaunched, deepLink: false))
   }
 
@@ -34,13 +34,13 @@ import SyncSchema
     let first = try model()
     first.openJournal()
     first.preferences.removeObject(forKey: OnboardingLaunch.shownKey)
-    #expect(first.document.body.isEmpty)
+    #expect(first.journal.document.body.isEmpty)
     #expect(try !OnboardingLaunch.shouldPresent(model: first, deepLink: false))
   }
 
   @Test func savedRoomNeverShowsEvenWithoutOldPreference() throws {
     let first = try model()
-    first.type("A line already here."); #expect(first.save())
+    first.journal.type("A line already here."); #expect(first.journal.save())
     first.preferences.removeObject(forKey: "journalOpened")
     first.welcome = true
     #expect(try !OnboardingLaunch.shouldPresent(model: first, deepLink: false))
@@ -48,11 +48,11 @@ import SyncSchema
 
   @Test func draftAndFailedReadNeverHideExistingWork() throws {
     let first = try model()
-    first.type("An unfinished line.")
-    first.saveTask?.cancel()
+    first.journal.type("An unfinished line.")
+    first.journal.saveTask?.cancel()
     #expect(try !OnboardingLaunch.shouldPresent(model: first, deepLink: false))
     let unreadable = try model()
-    unreadable.readFailed = true
+    unreadable.journal.readFailed = true
     #expect(try !OnboardingLaunch.shouldPresent(model: unreadable, deepLink: false))
   }
 
@@ -65,6 +65,6 @@ import SyncSchema
   }
 
   @Test func locationsAreTheCurrentIPhoneTruthTable() {
-    #expect(OnboardingPage.allCases.map(\.location) == [nil, "On the web", "In this app", "On the web and Android"])
+    #expect(OnboardingPage.allCases.map(\.location) == [nil, "On the web", "In this app", "In this app"])
   }
 }

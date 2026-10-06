@@ -6,8 +6,7 @@ import SyncCore
 import SyncTesting
 import Testing
 
-// §14.4 a product's corpus decides as the runner does: a draft's save opens its draft as `open(_:orNew:)` does and saves
-// it as `save` does, and a read reads only its own scope, over the probe declarations.
+// §14.4 a product's corpus opens or creates an editor draft, decides its save, and reads only its own scope.
 struct ProductCorpusTests {
   static func vector(_ input: JSON) throws -> Vector {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent("product-corpus-\(UUID().uuidString).json")
@@ -35,12 +34,11 @@ struct ProductCorpusTests {
       "result": ["values": written, "exists": true]]]])
   }
 
-  @Test func aDraftSaveOfAMintedTypeTrapsAsOpenOrNewDoes() async {
-    await #expect(processExitsWith: .failure) {
-      let vector = try ProductCorpusTests.vector(["records": ["drawn": []], "now": 1_800_000_000_000, "offsetSeconds": 0])
-      _ = try ProductCorpusTests.corpus().save(SaveDraft<Card, ProbeRefusal>.self, vector, opening: Card(id: ID("cardA001")),
-                                               edit: { $0.title = "Alpha" }, result: \.form, refusal: \.form)
-    }
+  @Test func aNewMintedDraftIsValidatedThroughItsEditorSave() throws {
+    let vector = try ProductCorpusTests.vector(["records": ["drawn": []], "now": 1_800_000_000_000, "offsetSeconds": 0])
+    let result = try ProductCorpusTests.corpus().save(SaveDraft<Card, ProbeRefusal>.self, vector, opening: Card(id: ID("cardA001")),
+                                                   edit: { _ in }, result: \.form, refusal: \.form)
+    #expect(result == ["decision": ["refuse": ["violation": ["rule": "card.title", "path": "title", "reason": "blank"]]]])
   }
 
   @Test func aDraftSaveWhoseEditNamesAnotherRecordTrapsAsSaveDoes() async {

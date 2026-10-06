@@ -73,6 +73,17 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     #expect(TelemetryPrivacy.properties(["action": "private-marker"]).isEmpty)
   }
 
+  @Test func gymEventsRetainBoundedLabelsAndRejectTrainingContent() {
+    #expect(TelemetryPrivacy.events.count == 36)
+    #expect(TelemetryPrivacy.events.isSuperset(of: ["gym_activity_set_logged", "gym_activity_offer_refused", "gym_session_started", "gym_session_finished", "gym_set_logged", "gym_routine_saved", "gym_ask_started", "gym_ask_outcome", "gym_proposal_outcome"]))
+    for screen in ["routine", "routine_editor", "movement", "session", "fix_set", "record", "bodyweight", "weigh_in", "session_share", "history", "notes", "note", "settings", "review", "connected_log"] {
+      #expect(TelemetryPrivacy.properties(["screen": screen, "name": "private-marker", "load": "100", "note": "private-marker", "question": "private-marker"]) == ["screen": .label(screen)])
+    }
+    #expect(TelemetryPrivacy.properties(["action": "apply", "outcome": "decided", "method": "PUT", "cap": "daily", "storage": "device"]) ==
+            ["action": .label("apply"), "outcome": .label("decided"), "method": .label("PUT"), "cap": .label("daily"), "storage": .label("device")])
+    #expect(TelemetryPrivacy.properties(["cap": "private-marker", "screen": "private-marker", "storage": "private-marker"]).isEmpty)
+  }
+
   @Test func inkLabelsAreBoundedWithoutReplayAction() {
     #expect(TelemetryPrivacy.properties(["screen": "ink_notes", "action": "dismiss_ink", "text": "private-marker"]) ==
             ["screen": .label("ink_notes"), "action": .label("dismiss_ink")])
@@ -108,6 +119,14 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     #expect(!json.contains("private-marker"))
     #expect(json.contains("duration_ms") && json.contains("123") && json.contains("BoundaryFailure"))
     #expect(json.contains("ios-0.2.0-abc123"))
+    for operation in ["gym_activity_request", "gym_activity_update"] {
+      delivered.withLock { $0 = nil }
+      CrashReports.failure(operation, kind: "storage", properties: ["title": "private-marker", "load": "private-marker"], durationMs: nil)
+      for _ in 0..<100 { if delivered.withLock({ $0 != nil }) { break }; try await Task.sleep(for: .milliseconds(50)) }
+      let activityFailure = try #require(delivered.withLock { $0 })
+      #expect(activityFailure.contains(operation) && activityFailure.contains("WindmillHandledFailure"))
+      #expect(!activityFailure.contains("private-marker"))
+    }
   }
 
   @Test func retryAndRelaunchKeepEventIdsAndPersistNoCredentials() async throws {
@@ -323,14 +342,14 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry),
                           commandResultWrites: JournalWriting.resultWrites, pendingDeviceWork: JournalWriting.pendingWork)
     let recorder = TelemetryRecorder()
-    let model = try JournalModel(runner: harness.runner, preferences: UserDefaults(suiteName: UUID().uuidString)!, telemetry: recorder)
-    model.openJournal(); model.type("private-marker"); #expect(model.save()); model.done(); model.setScale("mood", 8); model.setScale("energy", 2); model.keep(); model.closeKeep()
+    let model = try AppModel(runner: harness.runner, preferences: UserDefaults(suiteName: UUID().uuidString)!, telemetry: recorder)
+    model.openJournal(); model.journal.type("private-marker"); #expect(model.journal.save()); model.journal.done(); model.journal.setScale("mood", 8); model.journal.setScale("energy", 2); model.keep(); model.closeKeep()
     let entries = recorder.entries.withLock { $0 }
     #expect(entries.filter { $0.name == "journal_line_saved" }.count == 1)
     #expect(entries.contains { $0.name == "scale_invitation_shown" })
     #expect(entries.filter { $0.name == "scale_invitation_answered" }.map(\.properties) == [["action": "answered"]])
     #expect(entries.contains { $0.properties == ["screen": "journal", "action": "keep"] })
     #expect(entries.allSatisfy { !$0.properties.values.contains("private-marker") && $0.properties["mood"] == nil && $0.properties["energy"] == nil })
-    model.saveTask?.cancel()
+    model.journal.saveTask?.cancel()
   }
 }

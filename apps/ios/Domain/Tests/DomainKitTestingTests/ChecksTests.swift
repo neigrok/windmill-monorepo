@@ -229,6 +229,20 @@ struct ChecksTests {
     try withVectors(Expected.vectors) { file in try RuleBookCheck.check(ChecksTests.book, refusal: ItemRefusal.self, vectors: file) }
   }
 
+  @Test func anActionRuleNeedsItsOwnViolationVector() throws {
+    let book = ChecksTests.book(ChecksTests.rules + [.local("item.identity", subject: "item")])
+    let action: JSON = ["name": "immutable identity", "input": [:], "expect": ["decision": ["refuse": ["violation":
+      ["rule": "item.identity", "path": "id", "reason": "custom", "custom": "immutable"]]]]]
+    try withVectors(Expected.vectors) { values in
+      #expect(throws: CheckFailure("RuleBookCheck", step: 0, path: "item.identity", "a LOCAL rule with no value or action violation case")) {
+        try RuleBookCheck.check(book, refusal: ItemRefusal.self, vectors: values)
+      }
+      try withVectors([action]) { actions in
+        try RuleBookCheck.check(book, refusal: ItemRefusal.self, vectors: values, actionVectors: [actions])
+      }
+    }
+  }
+
   @Test func aLocalRuleWithNoVectorFailsTheCheck() throws {
     let vectors = Expected.vectors.filter { $0["input"]?["spec"]?["path"] != "page.mood" }
     try withVectors(vectors) { file in

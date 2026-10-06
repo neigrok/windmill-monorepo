@@ -28,6 +28,10 @@ def configured_spec(spec, settings, release):
             raise ValueError("GITHUB_RUN_NUMBER must be a positive build number.")
         target["base"]["CURRENT_PROJECT_VERSION"] = build
         target["configs"]["Release"]["DEVELOPMENT_TEAM"] = team
+        widget = spec["targets"].get("WindmillWorkoutActivity")
+        if widget:
+            widget["settings"]["base"]["CURRENT_PROJECT_VERSION"] = build
+            widget["settings"]["configs"]["Release"]["DEVELOPMENT_TEAM"] = team
     return spec
 
 

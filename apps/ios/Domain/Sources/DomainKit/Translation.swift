@@ -26,7 +26,7 @@ extension Plan {
   // Rule 2.
   func checkOneOperationPerRecord(_ registry: Registry) throws(PlanError) {
     var named: [RecordKey] = []
-    for operation in operations {
+    for operation in operations where operation.writes {
       let key = RecordKey(operation.entity.type, operation.recordID(in: registry))
       guard !named.contains(key) else { throw PlanError(rule: 2, "two operations name \(key)") }
       named.append(key)
@@ -88,6 +88,10 @@ extension Plan {
       case .create: changes.append(.create(prediction.type, id: .given(prediction.id), prediction.values))
       case .update: changes.append(.update(prediction.type, prediction.id, prediction.values))
       case .write: changes.append(.write(prediction.type, prediction.id, prediction.values, texts: prediction.texts.mapValues { TextEdit(text: $0) }))
+      case .remove:
+        changes.append(registry.type(prediction.type)?.identity == .keyed
+          ? .put(prediction.type, prediction.id, present: false)
+          : .delete(prediction.type, prediction.id))
       }
     }
     return changes

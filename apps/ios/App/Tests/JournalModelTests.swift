@@ -14,24 +14,31 @@ import Synchronization
 @testable import Windmill
 
 @Suite @MainActor struct JournalModelTests {
-  func fixture(account: String? = nil, telemetry: any Telemetry = NoopTelemetry()) throws -> (Harness, JournalModel) {
+  func fixture(account: String? = nil, telemetry: any Telemetry = NoopTelemetry()) throws -> (Harness, AppModel) {
     let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: account,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry),
                           commandResultWrites: JournalWriting.resultWrites, pendingDeviceWork: JournalWriting.pendingWork)
     let preferences = UserDefaults(suiteName: UUID().uuidString)!
-    return (harness, try JournalModel(runner: harness.runner, preferences: preferences, telemetry: telemetry))
+    return (harness, try AppModel(runner: harness.runner, preferences: preferences, telemetry: telemetry))
+  }
+
+  func inkFixture(account: String? = nil, telemetry: any Telemetry = NoopTelemetry()) throws -> (Harness, JournalModel) {
+    let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: account,
+                          rules: ComposedServerRules.windmill(registry: SyncSchema.registry),
+                          commandResultWrites: JournalWriting.resultWrites, pendingDeviceWork: JournalWriting.pendingWork)
+    return (harness, try JournalModel(runner: harness.runner, preferences: UserDefaults(suiteName: UUID().uuidString)!, telemetry: telemetry))
   }
 
   @Test func firstOpenHasOptionalScalesAndPrivacy() throws {
     let (_, model) = try fixture()
-    #expect(model.showPrivacy && model.showPlaceholder)
-    #expect(model.document.mood == nil && model.document.energy == nil)
-    #expect(!model.scalesDue && !model.keepDue)
+    #expect(model.journal.showPrivacy && model.journal.showPlaceholder)
+    #expect(model.journal.document.mood == nil && model.journal.document.energy == nil)
+    #expect(!model.journal.scalesDue && !model.journal.keepDue)
   }
 
   @Test func firstJournalOpenShowsInkAndConsumesItAtPresentation() throws {
     let recorder = TelemetryRecorder()
-    let (_, model) = try fixture(telemetry: recorder)
+    let (_, model) = try inkFixture(telemetry: recorder)
     #expect(!model.inkVisible && !model.preferences.bool(forKey: "inkShown"))
     model.openJournal()
     #expect(model.inkVisible && model.preferences.bool(forKey: "inkShown"))
@@ -44,7 +51,7 @@ import Synchronization
   }
 
   @Test(arguments: [false, true]) func previouslyOpenedInstallNeverShowsInkWithoutPresentationPreference(clearOpenedMarker: Bool) throws {
-    let (harness, _) = try fixture()
+    let (harness, _) = try inkFixture()
     let suite = "journal-ink-upgrade-tests.\(UUID())", preferences = UserDefaults(suiteName: suite)!
     defer { preferences.removePersistentDomain(forName: suite) }
     preferences.set(true, forKey: "journalOpened")
@@ -59,16 +66,17 @@ import Synchronization
   }
 
   @Test(arguments: [false, true]) func emptyAuthEntryRecordsVisitWithoutRearmingInkOnRelaunch(showBeforeExit: Bool) throws {
-    let (harness, _) = try fixture(account: "empty-auth-account")
+    let (harness, _) = try inkFixture(account: "empty-auth-account")
     harness.sync()
     let suite = "journal-ink-auth-entry-tests.\(UUID())", preferences = UserDefaults(suiteName: suite)!
     defer { preferences.removePersistentDomain(forName: suite) }
     let recorder = TelemetryRecorder()
-    let first = try JournalModel(runner: harness.runner, preferences: preferences, telemetry: recorder)
-    #expect(first.welcome && preferences.object(forKey: "journalOpened") == nil && preferences.object(forKey: "inkShown") == nil)
+    let app = try AppModel(runner: harness.runner, preferences: preferences, telemetry: recorder)
+    let first = app.journal
+    #expect(app.welcome && preferences.object(forKey: "journalOpened") == nil && preferences.object(forKey: "inkShown") == nil)
     #expect(first.room?.firstRunKnown == true && first.room?.stance == .empty && first.room?.days.isEmpty == true && first.room?.isAnonymous == false)
-    first.sheet = .code
-    first.presentSignInResult()
+    app.sheet = .code
+    app.presentSignInResult()
     #expect(!first.welcome && first.sheet == nil && preferences.bool(forKey: "journalOpened") && preferences.object(forKey: "inkShown") == nil)
     if showBeforeExit {
       first.automaticallyShowInk()
@@ -109,7 +117,7 @@ import Synchronization
   }
 
   @Test func retiredFirstPageSuppressesInkInEmptyRoomWithoutInstallFlags() throws {
-    let (harness, _) = try fixture()
+    let (harness, _) = try inkFixture()
     _ = try harness.runner.run(RetireJournalInvitation("firstPage"))
     let suite = "journal-ink-retired-tests.\(UUID())", preferences = UserDefaults(suiteName: suite)!
     defer { preferences.removePersistentDomain(forName: suite) }
@@ -124,7 +132,7 @@ import Synchronization
   }
 
   @Test(arguments: [false, true]) func inkNeverReturnsAcrossPreferencesAndModelRecreation(dismissBeforeExit: Bool) throws {
-    let (harness, _) = try fixture()
+    let (harness, _) = try inkFixture()
     let suite = "journal-ink-tests.\(UUID())", preferences = UserDefaults(suiteName: suite)!
     defer { preferences.removePersistentDomain(forName: suite) }
     let first = try JournalModel(runner: harness.runner, preferences: preferences)
@@ -140,7 +148,7 @@ import Synchronization
 
   @Test(arguments: [false, true]) func writingAndTapLiftInkOnce(writing: Bool) throws {
     let recorder = TelemetryRecorder()
-    let (_, model) = try fixture(telemetry: recorder)
+    let (_, model) = try inkFixture(telemetry: recorder)
     model.openJournal()
     if writing { model.type("A line.") } else { model.liftInk() }
     #expect(!model.inkVisible && model.document.body == (writing ? "A line." : ""))
@@ -155,7 +163,7 @@ import Synchronization
 
   @Test(arguments: [false, true]) func inputWhileInkIsDeferredPreventsLatePresentation(writeThenDelete: Bool) throws {
     let recorder = TelemetryRecorder()
-    let (_, model) = try fixture(telemetry: recorder)
+    let (_, model) = try inkFixture(telemetry: recorder)
     model.readFailed = true
     model.automaticallyShowInk()
     #expect(!model.inkVisible && model.preferences.object(forKey: "inkShown") == nil)
@@ -173,7 +181,7 @@ import Synchronization
   }
 
   @Test func inkWaitsForKnownEmptyRoom() throws {
-    let (harness, model) = try fixture(account: "new-account")
+    let (harness, model) = try inkFixture(account: "new-account")
     #expect(model.room?.firstRunKnown == false && model.room?.stance == .unknown)
     model.automaticallyShowInk()
     #expect(!model.inkVisible && !model.preferences.bool(forKey: "inkShown"))
@@ -212,7 +220,7 @@ import Synchronization
 
   @Test func failedReadDoesNotConsumeInkFromPreviouslyKnownEmptyRoom() throws {
     let recorder = TelemetryRecorder()
-    let (_, model) = try fixture(telemetry: recorder)
+    let (_, model) = try inkFixture(telemetry: recorder)
     #expect(model.room?.firstRunKnown == true && model.room?.stance == .empty)
     model.readFailed = true
     model.automaticallyShowInk()
@@ -224,72 +232,99 @@ import Synchronization
     #expect(recorder.entries.withLock { $0.map(\.properties) } == [["screen": "ink_notes"]])
   }
 
+  @Test func gymFirstVisitLeavesInkForTheFirstExplicitJournalVisit() throws {
+    let recorder = TelemetryRecorder()
+    let (_, app) = try fixture(telemetry: recorder)
+    app.openRoom(.gym)
+    app.refresh(); app.journal.automaticallyShowInk()
+    #expect(app.selectedRoom == .gym && !app.welcome && !app.journal.inkVisible)
+    #expect(app.preferences.object(forKey: "journalOpened") == nil && app.preferences.object(forKey: "inkShown") == nil)
+    #expect(recorder.entries.withLock { $0.filter { $0.properties["screen"] == "ink_notes" }.isEmpty })
+    app.switchRoom(.journal)
+    #expect(app.selectedRoom == .journal && app.journal.inkVisible)
+    #expect(app.preferences.bool(forKey: "journalOpened") && app.preferences.bool(forKey: "inkShown"))
+    #expect(recorder.entries.withLock { $0.filter { $0.properties["screen"] == "ink_notes" }.map(\.properties) } == [["screen": "ink_notes"]])
+  }
+
+  @Test(arguments: [false, true]) func journalInkNeverReplaysAfterAccountOrRoomNavigation(accountDoor: Bool) throws {
+    let recorder = TelemetryRecorder()
+    let (_, app) = try fixture(telemetry: recorder)
+    app.openJournal()
+    #expect(app.journal.inkVisible)
+    if accountDoor { app.sheet = .you; app.sheet = nil }
+    else { app.switchRoom(.gym); app.switchRoom(.journal) }
+    #expect(!app.journal.inkVisible && !app.journal.editing && app.journal.document.body.isEmpty)
+    app.journal.automaticallyShowInk(); app.openJournal(); app.refresh()
+    #expect(!app.journal.inkVisible && app.preferences.bool(forKey: "inkShown"))
+    #expect(recorder.entries.withLock { $0.filter { $0.properties["screen"] == "ink_notes" }.map(\.properties) } == [
+      ["screen": "ink_notes"], ["screen": "ink_notes", "action": "dismiss_ink"]
+    ])
+  }
+
   @Test func firstInputRetiresPlaceholderEvenWhenDeleted() throws {
     let (_, model) = try fixture()
-    model.type("a"); model.type("")
-    #expect(!model.showPlaceholder)
-    model.saveTask?.cancel()
-    #expect(model.showPrivacy)
+    model.journal.type("a"); model.journal.type("")
+    #expect(!model.journal.showPlaceholder)
+    model.journal.saveTask?.cancel()
+    #expect(model.journal.showPrivacy)
   }
 
   @Test func durableFirstPageRetiresCopyAndInvitesScales() throws {
     let (_, model) = try fixture()
-    model.type("One line."); #expect(model.save()); model.done()
-    #expect(!model.showPrivacy && model.firstKept && model.scalesDue)
-    #expect(!model.keepDue && model.backup == "saved")
+    model.journal.type("One line."); #expect(model.journal.save()); model.journal.done()
+    #expect(!model.journal.showPrivacy && model.journal.firstKept && model.journal.scalesDue)
+    #expect(!model.journal.keepDue && model.journal.backup == "saved")
   }
 
   @Test func failedSaveRetainsWritingAndDoesNotRetireFirstPage() throws {
     let (harness, model) = try fixture()
-    model.openJournal()
-    model.type("Still mine"); harness.failNextCommit()
-    #expect(!model.save())
-    #expect(model.document.body == "Still mine" && model.dirty && model.error != nil)
-    #expect(model.room?.state.firstPage == "pending" && model.backup == "not saved")
-    model.refresh(); model.automaticallyShowInk()
-    #expect(model.document.body == "Still mine" && !model.inkVisible)
-    #expect(model.save()); #expect(!model.dirty)
+    model.journal.type("Still mine"); harness.failNextCommit()
+    #expect(!model.journal.save())
+    #expect(model.journal.document.body == "Still mine" && model.journal.dirty && model.journal.error != nil)
+    #expect(model.journal.room?.state.firstPage == "pending" && model.journal.backup == "not saved")
+    model.refresh(); #expect(model.journal.document.body == "Still mine")
+    #expect(model.journal.save()); #expect(!model.journal.dirty)
   }
 
   @Test func zeroAnswersScaleAndClearKeepsNullDistinct() throws {
     let (_, model) = try fixture()
-    model.type("A"); model.save(); model.done()
-    model.setScale("mood", 0)
-    #expect(model.document.mood == 0 && !model.scalesDue && model.keepDue)
-    model.setScale("mood", nil)
-    #expect(model.document.mood == nil && model.keepDue)
+    model.journal.type("A"); model.journal.save(); model.journal.done()
+    model.journal.setScale("mood", 0)
+    #expect(model.journal.document.mood == 0 && !model.journal.scalesDue && model.journal.keepDue)
+    model.journal.setScale("mood", nil)
+    #expect(model.journal.document.mood == nil && model.journal.keepDue)
   }
 
   @Test func dismissScalesUnlocksQuietKeep() throws {
     let (_, model) = try fixture()
-    model.type("A"); model.save(); model.done(); model.dismissScales()
-    #expect(!model.scalesDue && model.keepDue)
+    model.journal.type("A"); model.journal.save(); model.journal.done(); model.journal.dismissScales()
+    #expect(!model.journal.scalesDue && model.journal.keepDue)
     model.keep(); #expect(model.sheet == .keep)
-    model.closeKeep(); #expect(!model.keepDue)
+    model.closeKeep(); #expect(!model.journal.keepDue)
   }
 
   @Test func editingSuppressesInvitations() throws {
     let (_, model) = try fixture()
-    model.type("A"); model.save(); model.editing = true
-    #expect(!model.scalesDue && !model.keepDue)
-    model.done(); #expect(model.scalesDue)
+    model.journal.type("A"); model.journal.save(); model.journal.editing = true
+    #expect(!model.journal.scalesDue && !model.journal.keepDue)
+    model.journal.done(); #expect(model.journal.scalesDue)
   }
 
   @Test func signedInPagesNeverOfferKeepAndBackupWaitsForSync() throws {
     let (harness, model) = try fixture(account: "account-a")
     model.account = "account-a"
     harness.sync(); model.refresh()
-    model.type("Bound writing"); model.save(); model.done(); model.dismissScales()
-    #expect(!model.keepDue && model.backup == "not backed up yet")
+    model.journal.type("Bound writing"); model.journal.save(); model.journal.done(); model.journal.dismissScales()
+    #expect(!model.journal.keepDue && model.journal.backup == "not backed up yet")
     harness.sync(); model.refresh()
-    #expect(model.backup == "backed up" && !model.keepDue)
+    #expect(model.journal.backup == "backed up" && !model.journal.keepDue)
   }
 
   @Test func anonymousSnapshotCoalescesAndSurvivesModelRecreation() throws {
     let (_, model) = try fixture()
-    model.type("Old"); model.save(); model.type("Latest"); model.save()
-    let recreated = try JournalModel(runner: model.runner, preferences: model.preferences)
-    #expect(recreated.document.body == "Latest" && !recreated.showPrivacy)
+    model.journal.type("Old"); model.journal.save(); model.journal.type("Latest"); model.journal.save()
+    let recreated = try AppModel(runner: model.runner, preferences: model.preferences)
+    #expect(recreated.journal.document.body == "Latest" && !recreated.journal.showPrivacy)
     #expect(!recreated.welcome)
     let commands = try model.runner.read(Journal.scope) { try $0.commands() }
     #expect(commands.filter { $0.command.name == Journal.Commands.claimPage }.count == 1)
@@ -297,55 +332,53 @@ import Synchronization
 
   @Test func invalidScaleRetainsDocumentAsUnsaved() throws {
     let (_, model) = try fixture()
-    model.setScale("energy", 11)
-    #expect(model.dirty && model.error != nil && model.document.energy == 11)
-    #expect(model.room?.days.isEmpty == true)
+    model.journal.setScale("energy", 11)
+    #expect(model.journal.dirty && model.journal.error != nil && model.journal.document.energy == 11)
+    #expect(model.journal.room?.days.isEmpty == true)
   }
 
   @Test func pastDayDomainWriteRemainsReadOnly() throws {
     let (_, model) = try fixture()
-    let result = try model.runner.run(SavePage(day: model.today.adding(days: -1), document: PageDocument(body: "Past")))
-    #expect(result.refusal != nil && model.room?.days.isEmpty == true)
+    let result = try model.runner.run(SavePage(day: model.journal.today.adding(days: -1), document: PageDocument(body: "Past")))
+    #expect(result.refusal != nil && model.journal.room?.days.isEmpty == true)
   }
 
   @Test func accountWithPagesHasNoReonboarding() throws {
     let (harness, model) = try fixture(account: "returning")
     harness.sync()
-    _ = try harness.runner.run(SavePage(day: model.today, document: PageDocument(body: "Existing"), retiring: ["scales"]))
+    _ = try harness.runner.run(SavePage(day: model.journal.today, document: PageDocument(body: "Existing"), retiring: ["scales"]))
     harness.sync()
-    let reopened = try JournalModel(runner: harness.runner, preferences: model.preferences)
-    #expect(!reopened.showPlaceholder && !reopened.showPrivacy && !reopened.scalesDue)
-    reopened.openJournal()
-    #expect(!reopened.inkVisible && !reopened.preferences.bool(forKey: "inkShown"))
+    let reopened = try AppModel(runner: harness.runner, preferences: model.preferences)
+    #expect(!reopened.journal.showPlaceholder && !reopened.journal.showPrivacy && !reopened.journal.scalesDue)
   }
 
   @Test func wordCountUsesCurrentWriting() throws {
     let (_, model) = try fixture()
-    model.type("One\n—\ntwo three.")
-    #expect(model.words == 3)
-    model.saveTask?.cancel()
+    model.journal.type("One\n—\ntwo three.")
+    #expect(model.journal.words == 3)
+    model.journal.saveTask?.cancel()
   }
 
   @Test func closingYouDoesNotDismissTheKeepInvitation() throws {
     let (_, model) = try fixture()
-    model.type("A page"); model.save(); model.done(); model.dismissScales()
+    model.journal.type("A page"); model.journal.save(); model.journal.done(); model.journal.dismissScales()
     model.sheet = .you; model.sheet = nil; model.dismissSheet()
-    #expect(model.keepDue)
+    #expect(model.journal.keepDue)
     model.keep(); model.closeKeep(); model.dismissSheet()
-    #expect(!model.keepDue)
+    #expect(!model.journal.keepDue)
   }
   @Test func midnightCarriesOpenDraftDurablyAndLeavesYesterdayReadOnly() throws {
     let (harness, model) = try fixture()
-    model.type("Saved prefix"); model.save(); model.editing = true
-    let yesterday = model.editorDay
+    model.journal.type("Saved prefix"); model.journal.save(); model.journal.editing = true
+    let yesterday = model.journal.editorDay
     harness.advance(ms: 43_199_000)
-    model.type("Saved prefix plus unsaved words"); model.saveTask?.cancel()
+    model.journal.type("Saved prefix plus unsaved words"); model.journal.saveTask?.cancel()
     harness.advance(ms: 2_000); model.refresh()
-    #expect(model.editorDay == model.today && !model.dirty)
-    #expect(model.document.body == "Saved prefix plus unsaved words")
-    #expect(model.room?.days.first(where: { $0.day == yesterday })?.document.body == "Saved prefix")
-    let reopened = try JournalModel(runner: model.runner, preferences: model.preferences)
-    #expect(reopened.document.body == "Saved prefix plus unsaved words")
+    #expect(model.journal.editorDay == model.journal.today && !model.journal.dirty)
+    #expect(model.journal.document.body == "Saved prefix plus unsaved words")
+    #expect(model.journal.room?.days.first(where: { $0.day == yesterday })?.document.body == "Saved prefix")
+    let reopened = try AppModel(runner: model.runner, preferences: model.preferences)
+    #expect(reopened.journal.document.body == "Saved prefix plus unsaved words")
   }
 
   @Test func timezoneChangeCombinesOpenDraftWithDestinationAndBackgroundSaveSurvivesRelaunch() throws {
@@ -353,16 +386,16 @@ import Synchronization
     let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), zone: zone, account: nil,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry),
                           commandResultWrites: JournalWriting.resultWrites, pendingDeviceWork: JournalWriting.pendingWork)
-    let model = try JournalModel(runner: harness.runner, preferences: UserDefaults(suiteName: UUID().uuidString)!)
-    model.type("Destination page"); model.save()
+    let model = try AppModel(runner: harness.runner, preferences: UserDefaults(suiteName: UUID().uuidString)!)
+    model.journal.type("Destination page"); model.journal.save()
     zone.seconds.withLock { $0 = 14 * 3_600 }; model.refresh()
-    model.editing = true; model.type("Draft before zone change"); model.saveTask?.cancel()
+    model.journal.editing = true; model.journal.type("Draft before zone change"); model.journal.saveTask?.cancel()
     zone.seconds.withLock { $0 = 0 }
     model.background()
-    #expect(!model.dirty)
-    let reopened = try JournalModel(runner: model.runner, preferences: model.preferences)
-    #expect(reopened.document.body == "Destination page\n\nDraft before zone change")
-    #expect(!reopened.dirty && reopened.editorDay == reopened.today)
+    #expect(!model.journal.dirty)
+    let reopened = try AppModel(runner: model.runner, preferences: model.preferences)
+    #expect(reopened.journal.document.body == "Destination page\n\nDraft before zone change")
+    #expect(!reopened.journal.dirty && reopened.journal.editorDay == reopened.journal.today)
   }
 
   @Test(arguments: [false, true]) func diskDraftSurvivesTerminationAcrossMidnightAndBackground(background: Bool) throws {
@@ -371,21 +404,21 @@ import Synchronization
     defer { try? FileManager.default.removeItem(at: directory) }
     let clock = SimClock(wallMs: 1_790_424_000_000), tokens = InMemoryTokenStore(), guardStore = InMemoryForkGuardStore()
     let preferences = UserDefaults(suiteName: UUID().uuidString)!
-    func reopen() throws -> JournalModel {
+    func reopen() throws -> AppModel {
       let store = try Store(path: directory.appending(path: "sync.sqlite").path, registry: SyncSchema.registry,
                             commandResultWrites: JournalWriting.resultWrites, pendingDeviceWork: JournalWriting.pendingWork)
       let engine = try SyncEngine(config: EngineConfig(appVersion: "test", surface: .ios, drivesLoops: false), store: store, transport: JournalModelTransport(),
                                   tokens: tokens, forkGuard: guardStore, clock: EngineClock(wall: clock, sleeper: ContinuousClock()),
                                   random: SeededRandomSource(seed: 71), connectivity: SwitchedConnectivity())
-      return try JournalModel(runner: ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0)), preferences: preferences)
+      return try AppModel(runner: ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0)), preferences: preferences)
     }
-    var model: JournalModel? = try reopen()
-    model?.editing = true; model?.type("Not yet autosaved"); model?.saveTask?.cancel()
+    var model: AppModel? = try reopen()
+    model?.journal.editing = true; model?.journal.type("Not yet autosaved"); model?.journal.saveTask?.cancel()
     clock.advance(ms: 86_400_000)
     if background { model?.background() }
     model = nil
     let restored = try reopen()
-    #expect(restored.document.body == "Not yet autosaved" && restored.editorDay == restored.today && !restored.dirty)
+    #expect(restored.journal.document.body == "Not yet autosaved" && restored.journal.editorDay == restored.journal.today && !restored.journal.dirty)
   }
 
   @Test func oversizedDayCarryKeepsBothTextsDurablyUntilShortened() throws {
@@ -393,16 +426,16 @@ import Synchronization
     let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), zone: zone, account: nil,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry),
                           commandResultWrites: JournalWriting.resultWrites, pendingDeviceWork: JournalWriting.pendingWork)
-    let model = try JournalModel(runner: harness.runner, preferences: UserDefaults(suiteName: UUID().uuidString)!)
+    let model = try AppModel(runner: harness.runner, preferences: UserDefaults(suiteName: UUID().uuidString)!)
     let destination = String(repeating: "A", count: 80_000), draft = String(repeating: "B", count: 80_000)
-    model.type(destination); model.save()
+    model.journal.type(destination); model.journal.save()
     zone.seconds.withLock { $0 = 14 * 3_600 }; model.refresh()
-    model.editing = true; model.type(draft); model.saveTask?.cancel()
+    model.journal.editing = true; model.journal.type(draft); model.journal.saveTask?.cancel()
     zone.seconds.withLock { $0 = 0 }; model.background()
-    #expect(model.dirty && model.error != nil)
-    let reopened = try JournalModel(runner: model.runner, preferences: model.preferences)
-    #expect(reopened.document.body == destination + "\n\n" + draft && reopened.dirty)
-    reopened.type("Shortened with both memories"); #expect(reopened.save())
+    #expect(model.journal.dirty && model.journal.error != nil)
+    let reopened = try AppModel(runner: model.runner, preferences: model.preferences)
+    #expect(reopened.journal.document.body == destination + "\n\n" + draft && reopened.journal.dirty)
+    reopened.journal.type("Shortened with both memories"); #expect(reopened.journal.save())
     #expect(try reopened.runner.read(Journal.scope) { try $0.device(EditorDraft.key) } == nil)
   }
 

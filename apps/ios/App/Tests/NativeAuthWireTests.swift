@@ -38,6 +38,20 @@ nonisolated final class AuthWireProtocol: URLProtocol, @unchecked Sendable {
     return NativeAuth(baseURL: URL(string: "https://auth.invalid")!, telemetry: telemetry, session: URLSession(configuration: config))
   }
 
+  @Test func pastedLinkAndTokenUseNativeBearerDoorAndPreserveExpiryRefusal() async throws {
+    let wire = auth(replies: [(200, #"{"user":{"id":"account","email":"sam@example.com"},"session":"native-secret"}"#), (410, #"{"code":"expired","error":"That link has expired","detail":"Links work once and last 15 minutes."}"#)])
+    #expect(try NativeAuth.linkToken(" https://windmill.works/auth/verify?token=abc_123 ") == "abc_123")
+    #expect(try NativeAuth.linkToken("abc-123") == "abc-123")
+    #expect(throws: AppFailure.self) { try NativeAuth.linkToken("https://windmill.works/?email=private") }
+    #expect(throws: AppFailure.self) { try NativeAuth.linkToken("abc secret") }
+    #expect(try await wire.verifyLink("https://windmill.works/auth/verify?token=abc_123").token == SessionToken("native-secret"))
+    do { _ = try await wire.verifyLink("abc_123"); Issue.record("Accepted spent link") }
+    catch let failure as AuthRefusal { #expect(failure.code == "expired" && failure.message == "That link has expired. Links work once and last 15 minutes.") }
+    let requests = AuthWireProtocol.state.withLock { $0.requests }
+    #expect(requests.map(\.path) == ["/v1/auth/verify", "/v1/auth/verify"])
+    #expect(try JSONSerialization.jsonObject(with: requests[0].body!) as? [String: String] == ["token": "abc_123", "sessionTransport": "bearer"])
+  }
+
   @Test func ticketCreateCodeAttachMeAndDeleteUsePinnedWireAndBearer() async throws {
     let success = #"{"user":{"id":"account","email":"sam@example.com","name":"Sam"},"session":"body-session","created":true}"#
     let linked = #"{"user":{"id":"account","email":"sam@example.com","name":"Sam"},"session":"linked-session","appleAttached":true}"#
@@ -83,11 +97,11 @@ nonisolated final class AuthWireProtocol: URLProtocol, @unchecked Sendable {
     let server = JournalModelTransport(), recorder = TelemetryRecorder()
     let wire = auth(replies: [(200, "{\"user\":{\"id\":\"legacy-account\",\"email\":\"relay@privaterelay.appleid.com\",\"name\":\"Sam\"},\"session\":\"legacy-secret\",\"created\":\(created)}")], telemetry: recorder)
     let model = try LineageFlowTests().fixture(server)
-    model.type("Keep this local page"); model.done(); model.sheet = .keep
+    model.journal.type("Keep this local page"); model.journal.done(); model.sheet = .keep
     let before = server.state.withLock { $0.server.state }
     await model.authenticateApple { token in try await wire.apple(identityToken: "identity-secret", nonce: "nonce", name: "Sam", token: token) }
     #expect(model.account == nil && model.pendingSignIn == nil && model.signInSession == nil && model.sheet == .keep)
-    #expect(model.appleTicket == nil && model.document.body == "Keep this local page" && model.error != nil)
+    #expect(model.appleTicket == nil && model.journal.document.body == "Keep this local page" && model.error != nil)
     #expect(try model.runtime!.store.read { try $0.device().meta.pendingSignIn } == nil)
     #expect(server.state.withLock { $0.server.state == before && $0.sessions.isEmpty && $0.appleDoors.isEmpty })
     #expect(recorder.entries.withLock { !$0.isEmpty && !$0.contains { $0.properties.values.contains { $0.contains("secret") } } })
@@ -124,11 +138,11 @@ nonisolated final class AuthWireProtocol: URLProtocol, @unchecked Sendable {
       (200, #"{"attached":true}"#)
     ])
     let original = try LineageFlowTests().fixture(server, auth: wire)
-    try await original.signIn(owner); original.type("Account writing"); original.done()
+    try await original.signIn(owner); original.journal.type("Account writing"); original.journal.done()
     let runtime = try #require(original.runtime)
     try server.revoke(owner.token); await runtime.engine.start()
     original.preferences.removeObject(forKey: "accountEmail:\(owner.account)")
-    let model = try JournalModel(runner: runtime.runner, preferences: original.preferences, runtime: runtime)
+    let model = try AppModel(runner: runtime.runner, preferences: original.preferences, runtime: runtime)
     let replica = try runtime.store.read { try $0.device().activeReplica.meta.replica }
     #expect(model.authPaused && model.accountEmail.isEmpty)
     model.sheet = .you

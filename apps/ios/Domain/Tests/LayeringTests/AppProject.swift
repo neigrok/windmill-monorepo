@@ -21,7 +21,7 @@ enum AppProject {
   }
 
   static let targetTypes: Set<String> = [
-    "com.apple.product-type.application", "com.apple.product-type.bundle.unit-test", "com.apple.product-type.bundle.ui-testing",
+    "com.apple.product-type.application", "com.apple.product-type.app-extension", "com.apple.product-type.bundle.unit-test", "com.apple.product-type.bundle.ui-testing",
   ]
   static let pinnedValues: Set<String> = ["SWIFT_VERSION", "SWIFT_TREAT_WARNINGS_AS_ERRORS", "SWIFT_WARNINGS_AS_WARNINGS_GROUPS"]
   static let pinnedUnset: Set<String> = ["OTHER_SWIFT_FLAGS", "SWIFT_EXEC", "SWIFT_USE_INTEGRATED_DRIVER", "TOOLCHAINS"]

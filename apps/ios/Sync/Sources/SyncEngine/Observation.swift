@@ -326,10 +326,16 @@ final class ViewHub {
 
   nonisolated static func loadStatus(_ tx: StoreTransaction, core: EngineCore) throws -> SyncStatus.Snapshot {
     guard let device = try tx.deviceMeta(), let replica = try tx.replica(device.active) else { throw StoreError.noDevice }
+    let failed = core.failedPushScopes.withLock { $0[Array(replica.meta.replica.utf8)] ?? [] }
+    var failedPushes: [ScopeRef: Set<RecordKey>] = [:]
+    for entry in replica.outbox where failed.contains(entry.scope) && (entry.state == .ready || entry.state == .sent) {
+      failedPushes[entry.scope, default: []].formUnion(entry.drawnDeltas.map(\.key))
+    }
     return SyncStatus.Snapshot(
       account: replica.meta.state == .bound ? replica.meta.account : nil, authPaused: replica.meta.authPaused,
       upgradeRequired: core.upgradeRequired, online: core.connectivity.isOnline, pendingSignIn: device.meta.pendingSignIn,
-      ready: replica.outbox.filter { $0.state == .ready }.count, sent: replica.outbox.filter { $0.state == .sent }.count)
+      ready: replica.outbox.filter { $0.state == .ready }.count, sent: replica.outbox.filter { $0.state == .sent }.count,
+      failedPushes: failedPushes)
   }
 }
 
@@ -503,12 +509,13 @@ public final class SyncStatus {
     var pendingSignIn: String?
     var ready = 0
     var sent = 0
+    var failedPushes: [ScopeRef: Set<RecordKey>] = [:]
 
     static func == (lhs: Snapshot, rhs: Snapshot) -> Bool {
       lhs.account.map { Array($0.utf8) } == rhs.account.map { Array($0.utf8) } && lhs.authPaused == rhs.authPaused
         && lhs.upgradeRequired == rhs.upgradeRequired && lhs.online == rhs.online
         && lhs.pendingSignIn.map { Array($0.utf8) } == rhs.pendingSignIn.map { Array($0.utf8) } && lhs.ready == rhs.ready
-        && lhs.sent == rhs.sent
+        && lhs.sent == rhs.sent && lhs.failedPushes == rhs.failedPushes
     }
   }
 
@@ -519,6 +526,7 @@ public final class SyncStatus {
   public private(set) var pendingSignIn: String?
   public private(set) var ready = 0
   public private(set) var sent = 0
+  public private(set) var failedPushes: [ScopeRef: Set<RecordKey>] = [:]
 
   // A store that cannot be read yet shows the defaults until the next change.
   init(_ snapshot: Snapshot?) {
@@ -527,7 +535,7 @@ public final class SyncStatus {
 
   var snapshot: Snapshot {
     Snapshot(account: account, authPaused: authPaused, upgradeRequired: upgradeRequired, online: online,
-             pendingSignIn: pendingSignIn, ready: ready, sent: sent)
+             pendingSignIn: pendingSignIn, ready: ready, sent: sent, failedPushes: failedPushes)
   }
 
   func apply(_ next: Snapshot) {
@@ -539,5 +547,6 @@ public final class SyncStatus {
     pendingSignIn = next.pendingSignIn
     ready = next.ready
     sent = next.sent
+    failedPushes = next.failedPushes
   }
 }

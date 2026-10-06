@@ -15,6 +15,7 @@ public struct Reader {
     self.registry = registry
   }
 
+  public var replica: String { (source as? any CommitContext)?.replica ?? "" }
   public var actor: String { (source as? any CommitContext)?.actor ?? "" }
   public var isAnonymous: Bool { source.isAnonymous }
   public func commands() throws -> [QueuedCommand] { try (source as? any CommitContext)?.commands() ?? [] }

@@ -382,17 +382,24 @@ extension Domain {
 public enum RuleBookCheck {
   // §6.3: names are unique; every LOCAL rule has a vector; every code of a SERVER-DECIDED rule maps to a non-generic
   // refusal on both paths, and every backstop code on the notice path. `vectors` is a path under `packages/api-contract/`.
-  public static func check<R: ProductRefusal>(_ book: RuleBook, refusal: R.Type, vectors: String) throws {
+  public static func check<R: ProductRefusal>(_ book: RuleBook, refusal: R.Type, vectors: String, actionVectors: [String] = []) throws {
     let names = book.rules.map(\.name)
     for (index, name) in names.enumerated() where names[..<index].contains(name) {
       throw failure(name, "two rules share the name")
     }
     let cases = try Contract.vectors(vectors)
+    let actions = try actionVectors.flatMap { try Contract.vectors($0) }
     for rule in book.rules where rule.kind == .local {
       if let spec = rule.spec.map(Spec.init), !cases.contains(where: { $0.input["spec"].map(Spec.init)?.path == spec.path }) {
         throw failure(rule.name, "a LOCAL spec with no spec case in \(vectors)")
       }
-      guard rule.spec == nil || book.bindsToAField(rule) else { continue }
+      if rule.spec == nil {
+        guard (cases + actions).contains(where: { violation(in: $0.expect, rule: rule.name) }) else {
+          throw failure(rule.name, "a LOCAL rule with no value or action violation case")
+        }
+        continue
+      }
+      guard book.bindsToAField(rule) else { continue }
       guard cases.contains(where: { $0.input["entity"] != nil && $0.expect["violation"]?["rule"] == .string(rule.name) }) else {
         throw failure(rule.name, "a LOCAL rule bound to a field with no entity case in \(vectors)")
       }
@@ -411,6 +418,16 @@ public enum RuleBookCheck {
   static func sample(_ code: RefusalCode, of subject: String, on path: Refused.Path, registry: Registry) -> Refused {
     let detail: JSON? = code == .cap ? ["type": .string(subject), "cap": JSON(registry.type(subject)?.cap ?? 0)] : nil
     return Refused(code, subject: RecordRef(type: subject, id: RecordID("subject")), detail: detail, path: path)
+  }
+
+  static func violation(in json: JSON, rule: String) -> Bool {
+    switch json {
+    case .object(let object):
+      if object["rule"] == .string(rule), case .string? = object["path"], case .string? = object["reason"] { return true }
+      return object.members.contains { violation(in: $0.value, rule: rule) }
+    case .array(let items): return items.contains { violation(in: $0, rule: rule) }
+    default: return false
+    }
   }
 
   static func failure(_ rule: String, _ reason: String) -> CheckFailure {
@@ -453,5 +470,3 @@ extension FieldDef {
     return rank.values.map(\.value)
   }
 }
-
-
