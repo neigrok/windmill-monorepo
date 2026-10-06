@@ -2,9 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { API_BASE } from '../../../src/shell/apiBase.js';
-import {
-  failureReason, gymApi, GymError,
-} from '../../../src/products/gym/gymApi.js';
+import { gymApi } from '../../../src/products/gym/gymApi.js';
 
 const realFetch = global.fetch;
 let calls = [];
@@ -108,16 +106,6 @@ test('sharedSession — one workout, no ids in it, and one null for all three wa
   assert.equal(await gymApi.sharedSession('expired'), null);
   serve(refusal(404, 'no such session'));
   assert.equal(await gymApi.sharedSession('never-existed'), null);
-});
-
-test('failureReason — a refusal, a lapsed sign-in, a row that is gone and a silence each get their own sentence', async () => {
-  assert.equal(failureReason(new GymError(400, 'a routine needs at least one movement')), 'the log wouldn’t take it as written');
-  assert.equal(failureReason(new GymError(409, 'That proposal has already been settled.', 'proposal-settled')), 'the log wouldn’t take it as written');
-  assert.equal(failureReason(new GymError(503, '')), 'the log didn’t answer. Try again when you have signal');
-  assert.equal(failureReason(new GymError(401, 'sign in to open your training log')), 'you’re signed out. Sign in and try again');
-  assert.equal(failureReason(new GymError(404, 'no such session')), 'it isn’t in the log any more');
-  assert.equal(failureReason(new TypeError('Failed to fetch')), 'the log didn’t answer. Try again when you have signal');
-  assert.equal(failureReason(undefined), 'the log didn’t answer. Try again when you have signal');
 });
 
 test('ask — one question into one thread, and the answer with its receipt, steps and proposals back', async () => {

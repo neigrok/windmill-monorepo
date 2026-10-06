@@ -86,7 +86,7 @@ test('routine saves persist schemes and guards; stale bases refuse without parti
   await api.replaceRoutine(routine.id, { ...routine, name: 'Lower B' }, base);
   assert.deepEqual(engine.device.activeReplica.entries()[1].intent.guard.map(({ field }) => field).sort(), ['entries', 'name', 'position']);
   const before = structuredClone(engine.device.activeReplica.outbox);
-  await assert.rejects(api.replaceRoutine(routine.id, { ...routine, name: 'Stale' }, base), { code: 'routine-stale' });
+  await assert.rejects(api.replaceRoutine(routine.id, { ...routine, name: 'Stale' }, base), { code: 'stale' });
   assert.deepEqual(engine.device.activeReplica.outbox, before);
   assert.deepEqual(failures, []);
 });
@@ -115,7 +115,7 @@ test('note editor guards refuse changed content and preserve the original local 
   await confirm(engine);
   const base = (await api.notes())[0];
   await api.saveNote('note000001', { title: 'First', body: 'Changed' }, base);
-  await assert.rejects(api.saveNote('note000001', { title: 'First', body: 'Stale' }, base), { code: 'routine-stale' });
+  await assert.rejects(api.saveNote('note000001', { title: 'First', body: 'Stale' }, base), { code: 'stale' });
   assert.deepEqual(engine.device.activeReplica.entries().at(-1).intent.guard.map(({ field }) => field), ['title', 'body']);
 });
 
@@ -161,7 +161,7 @@ test('held note deaths occupy the cap slot and allow siblings to reorder', async
   [order[1], order[2]] = [order[2], order[1]];
   await api.moveNote('note000002', 'note000000');
   assert.deepEqual((await api.notes()).map(({ id }) => id), order);
-  await assert.rejects(api.saveNote('note000099', { title: 'Extra', body: '' }), { code: 'notes-full' });
+  await assert.rejects(api.saveNote('note000099', { title: 'Extra', body: '' }), { code: 'cap', sentence: '10 of 10 notes. Delete one to add another.' });
 });
 
 test('weigh-in puts use the transaction clock and atomically retire a held death', async (t) => {
@@ -237,7 +237,7 @@ test('storage denial leaves no durable partial write and reports only a static o
 test('an adapter pinned to a previous replica cannot write into another account', async (t) => {
   const { api, engine } = await open(t);
   t.mock.method(engine, 'commit', async (scope, read) => read({ replica: 'anotherAccount' }));
-  await assert.rejects(api.createRoutine(routine), { code: 'not-writable', status: 401 });
+  await assert.rejects(api.createRoutine(routine), { code: 'not-writable', sentence: 'Sign in to save to your training log.' });
 });
 
 test('liveHint follows the phone session and expires after four idle hours', async (t) => {
@@ -271,6 +271,6 @@ test('a tombstoned set cannot be corrected as if its value were saved', async (t
   await api.importSession({ id: 'session00001', startedAt: 100, finishedAt: 900, sets: [{ id: 'set00000001', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: 850 }] });
   await api.holdDeath('set', 'set00000001');
   const before = structuredClone(engine.device.activeReplica.outbox);
-  await assert.rejects(api.fixSet('session00001', 'set00000001', { reps: 6 }), { code: 'set-not-found' });
+  await assert.rejects(api.fixSet('session00001', 'set00000001', { reps: 6 }), { code: 'unknown-record' });
   assert.deepEqual(engine.device.activeReplica.outbox, before);
 });

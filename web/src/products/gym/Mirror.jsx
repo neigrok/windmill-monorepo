@@ -3,14 +3,12 @@ import { Clock3, Timer } from 'lucide-react';
 import {
   clockOf, fmt, nameOfMovement, planReadingOf, recordHref, routineNameOf, slotRows, workoutClocks,
 } from './log.js';
-import { LogNotOpen } from './Log.jsx';
 
 // The mirror's charter (ledger 0t): it never offers a Finish, it says "Not training now." in words
 // rather than as a greyed control, and every clock on it counts up. Nothing here can drive the
 // workout it shows.
-export function LiveMirror({ log, onSignIn }) {
+export function LiveMirror({ log }) {
   if (log.phase === 'loading') return null;
-  if (log.phase === 'failed') return <LogNotOpen log={log} onSignIn={onSignIn} />;
   if (!log.session) {
     return (
       <section className="gym-mirror-idle">

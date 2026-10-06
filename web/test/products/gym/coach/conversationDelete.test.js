@@ -64,8 +64,6 @@ function threadsOnTheWire({ deleteStatus = 204 } = {}) {
   return wire;
 }
 
-const quietApi = { exercises: async () => [], sessions: async () => [], preferences: async () => ({}) };
-
 // The room, with both of Coach's screens inside it. Both are drawn every render because the harness
 // reads hooks by position, so a screen that came and went would be read as the other's — and because
 // what is under test is the ROOM's window, which every screen draws around and none of them owns.
@@ -75,7 +73,7 @@ async function coachRoom(t, open) {
   const { ThreadsList, ThreadDetail } = await loadScreen('products/gym/coach/Threads.jsx');
   const looking = { at: open };
   const view = renderHook(t, () => {
-    const log = useTrainingLog({ api: quietApi });
+    const log = useTrainingLog();
     return { log, detail: ThreadDetail({ id: looking.at, log }), list: ThreadsList({ log }) };
   });
   await settle();

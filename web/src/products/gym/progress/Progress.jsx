@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Button, DotChart } from '../../../design-system/index.js';
+import { DotChart } from '../../../design-system/index.js';
 import { fmt, recordHref, setLoadLabel, shortDayLabel } from '../log.js';
 import { weightUnit } from '../units.js';
 import { estimateValue, joinsSessions, movementProgress, POINT_PITCH_PT, progressDateLabel, progressCards, SCRUB_HOLD_MS, sessionGapLabel } from './progress.js';
@@ -12,7 +12,6 @@ export function ProgressCards({ log, from = { screen: 'log' }, readOnly = false,
   const Card = readOnly ? 'article' : 'a';
   return (
     <section className="gym-progress" aria-label="Progress by movement">
-      {progress.phase === 'failed' && <p className="gym-read-failed">Progress didn’t load. <Button size="sm" variant="secondary" onClick={log.reloadProgress}>Retry</Button></p>}
       <div className="gym-progress-grid">
         {cards.map((card) => (
           <Card className="gym-progress-card" key={card.exerciseId} href={readOnly ? undefined : recordHref(card.exerciseId, from)} aria-label={`${card.name}. ${[card.latestLine, card.bestLine, card.heaviestLine, card.mostRepsLine, card.sparseLine].filter(Boolean).join('. ')}.${readOnly ? '' : ' Opens this movement’s record.'}`}>
@@ -47,7 +46,6 @@ export function MovementChart({ id, log, equipment }) {
     <div className="gym-window" aria-label="Chart window">
       {[['12', '12 weeks'], ['all', 'All']].map(([value, label]) => <button type="button" key={value} aria-pressed={window === value} onClick={() => setWindow(value)}>{label}</button>)}
     </div>
-    {progress.phase === 'failed' && <p className="gym-read-failed">Progress didn’t load. <Button size="sm" variant="secondary" onClick={log.reloadProgress}>Retry</Button></p>}
     {model.points.length ? <>
       <section className="gym-record-chart" aria-label="Estimated strength">
         <h2>e1RM per session</h2>

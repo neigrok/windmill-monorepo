@@ -20,7 +20,7 @@ test('the log options read the last weigh-in and its age, and draw nothing at al
   browserWith();
   await gymAccount(t, weighIns([{ dateLocal: TODAY, weightKg: 82.4, recordedAt: 1 }]));
   const { LogList } = await loadScreen('products/gym/Log.jsx');
-  const screen = renderHook(t, () => LogList({ log: quietLog(), onSignIn: () => {} }));
+  const screen = renderHook(t, () => LogList({ log: quietLog() }));
   await settle();
   const reading = elementsOf(screen.tree).find((each) => typeof each.type === 'function' && each.type.name === 'BodyweightReading');
   assert.deepEqual(reading.props.latest, { dateLocal: TODAY, weightKg: 82.4, recordedAt: 1 });
@@ -38,7 +38,7 @@ test('the log actions open one weigh-in sheet beside Add past workout and read t
   browserWith();
   const gym = await gymAccount(t);
   const { LogList } = await loadScreen('products/gym/Log.jsx');
-  const screen = renderHook(t, () => LogList({ log: quietLog(), onSignIn: () => {} }));
+  const screen = renderHook(t, () => LogList({ log: quietLog() }));
   await settle();
   const header = findByClass(screen.tree, 'gym-history-actions')[0];
   const footer = findByClass(screen.tree, 'gym-log-footer')[0];
@@ -74,7 +74,7 @@ test('a refused save shows the log’s own sentence in the sheet and leaves it o
   browserWith();
   const gym = await gymAccount(t);
   const { LogList } = await loadScreen('products/gym/Log.jsx');
-  const screen = renderHook(t, () => LogList({ log: quietLog(), onSignIn: () => {} }));
+  const screen = renderHook(t, () => LogList({ log: quietLog() }));
   await settle();
   findByClass(screen.tree, 'gym-history-weigh')[0].props.onClick();
   // Another tab signed this account out under the open sheet: the log refuses the write, in its words.
@@ -210,7 +210,7 @@ test('a served row dated after the device’s local today is never the log’s l
   const forecast = { dateLocal: '2031-01-05', weightKg: 70, recordedAt: 9 };
   await gymAccount(t, weighIns([{ dateLocal: TODAY, weightKg: 82.4, recordedAt: 1 }, forecast]));
   const { LogList } = await loadScreen('products/gym/Log.jsx');
-  const log = renderHook(t, () => LogList({ log: quietLog(), onSignIn: () => {} }));
+  const log = renderHook(t, () => LogList({ log: quietLog() }));
   await settle();
   const reading = elementsOf(log.tree).find((each) => typeof each.type === 'function' && each.type.name === 'BodyweightReading');
   assert.deepEqual(reading.props.latest, { dateLocal: TODAY, weightKg: 82.4, recordedAt: 1 }, 'the series’ own `latest` is not the reading; the newest past day is');

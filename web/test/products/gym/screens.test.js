@@ -67,7 +67,7 @@ test('the three tabs preserve their order and every pushed destination maps to a
 
 test('the live mirror heads the routines home and keeps its charter: no Finish, no countdown, the words when idle', () => {
   const routines = read('Routines.jsx');
-  assert.equal(routines.includes('<LiveMirror log={log} onSignIn={onSignIn} />'), true);
+  assert.equal(routines.includes('<LiveMirror log={log} />'), true);
   assert.ok(routines.indexOf('<LiveMirror') < routines.indexOf('<ul className="gym-routines">'));
   assert.equal(routines.includes("import { LiveMirror } from './Mirror.jsx';"), true);
   const mirror = speech('Mirror.jsx');
@@ -419,7 +419,7 @@ test('leaving the room retires its UI clocks without sending a REST delete', () 
 test('every re-read of the session lets go of the corrections this screen was holding', () => {
   const source = read('Log.jsx');
   assert.equal(source.includes('const reread = () => {\n    setMoves(new Map());\n    view.retry();\n  };'), true);
-  assert.equal(source.includes('if (error.setNotFound) { closeFix(); reread();'), true);
+  assert.equal(source.includes("if (error.code === 'unknown-record') { closeFix(); reread();"), true);
   assert.equal(source.includes('<Button variant="secondary" size="sm" onClick={reread}>Retry</Button>'), true);
   assert.equal((source.match(/view\.retry/g) ?? []).length, 1);
 });
@@ -466,7 +466,7 @@ test('the CSV export is out of the product: no door, no string, no href, and no 
 
 test('the picker reads every movement’s last set when it opens, and never on a keystroke', () => {
   const picker = read('logger/MovementPicker.jsx');
-  assert.equal(picker.includes('const last = useGymRead(() => api.lastSets(), [], { sync: true, ready: api.ready !== false });'), true);
+  assert.equal(picker.includes('const last = useGymRead(() => api.lastSets(), [], { sync: true, ready: Boolean(api?.ready) });'), true);
   assert.equal((picker.match(/useGymRead\(/g) ?? []).length, 1);
   assert.equal(/useGymRead\([^;]*\[[^\]]*query/.test(picker), false);
   for (const host of ['Routines.jsx', 'backfill/Backfill.jsx', 'Record.jsx']) {
@@ -718,7 +718,7 @@ test('the Notes screen is its own room off #/gym/notes, titled as a room with th
   assert.equal(notes.includes('{countReadout(titleCountLabel(title))}'), true);
   assert.equal(/className="gym-note-title-input"[^/]*maxLength/.test(notes), false, 'no silent maxLength on the title');
   assert.equal(notes.includes('<Back href={NOTES_HREF} onClick={(event) => { event.preventDefault(); onClose(); }}>{NOTES_TITLE}</Back>'), true, 'the editor draws its back through Back.jsx');
-  assert.equal(notes.includes("if (error?.code === 'notes-full') onStale();"), true, 'a full account re-reads the list behind the editor');
+  assert.equal(notes.includes("if (error?.code === 'cap') onStale();"), true, 'a full account re-reads the list behind the editor');
   assert.equal(notes.includes('onStale={() => settle(null)}'), true);
   assert.equal(notes.includes('{!note.fresh && ('), true, 'delete is offered only on a stored note');
   // The cap is the STORE's count and the rows are the drawn list: a note held for deletion is off

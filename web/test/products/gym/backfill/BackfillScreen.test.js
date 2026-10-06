@@ -492,7 +492,7 @@ test('the routine’s ⋯ holds Log past above Delete, and it opens the filled f
   browserWith();
   await gymAccount(t, [PUSH_A]);
   const { RoutinesList } = await loadScreen('products/gym/Routines.jsx');
-  const view = renderHook(t, () => RoutinesList({ log: roomLog(), onSignIn: () => {} }));
+  const view = renderHook(t, () => RoutinesList({ log: roomLog() }));
   await settle();
   view.redraw();
   const [menu] = named(view.tree, 'Menu');
@@ -559,7 +559,7 @@ test('the log’s door to a past workout is a plain link, open while a workout r
   await gymAccount(t, [confirmed('session', 'sessionLive1', { startedAt: NOW })]);
   const { LogList } = await loadScreen('products/gym/Log.jsx');
   const running = { id: 'sessionLive1', startedAt: NOW };
-  const view = renderHook(t, () => LogList({ log: roomLog({ session: running, summaries: [running] }), onSignIn: () => {} }));
+  const view = renderHook(t, () => LogList({ log: roomLog({ session: running, summaries: [running] }) }));
   assert.deepEqual(findByClass(view.tree, 'gym-door-past').map((door) => [door.type, door.props.href, textOf(door)]), [
     ['a', '#/gym/backfill', 'Add past workout'],
     ['a', '#/gym/backfill', 'Add past workout'],

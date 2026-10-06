@@ -7,29 +7,20 @@ import { HEAD_LINE } from '../notes/notes.js';
 import { LB, spellWeightsIn, UNITS } from '../units.js';
 import { preferenceRefusal, preferencesWrite, readPreferences } from './preferences.js';
 
-export function GymSettingsSection({ api: injected } = {}) {
-  const boundApi = useGymApi();
-  const api = injected ?? boundApi;
+export function GymSettingsSection() {
+  const api = useGymApi();
   const records = useSyncRecords('self/gym');
   const [preferences, setPreferences] = useState(null);
   const [refused, setRefused] = useState('');
-  // The document the store last confirmed; a ref, so a reverting reply cannot close over a stale copy.
+  // The document the store holds; a ref, so a refused save reverts to the store and never to a stale copy.
   const stored = useRef(null);
-  // An older reply landing after a newer one must not redraw the row.
-  const write = useRef(0);
-  const confirmed = useRef(0);
   const loadedReplica = useRef(null);
   const replica = useRef(records.replica);
   replica.current = records.replica;
 
   useEffect(() => {
     let live = true;
-    if (loadedReplica.current !== records.replica) {
-      write.current += 1;
-      confirmed.current = 0;
-      stored.current = null;
-    }
-    if (api.ready === false) return undefined;
+    if (!api?.ready) return undefined;
     api.preferences()
       .then((document) => {
         if (!live) return;
@@ -50,22 +41,11 @@ export function GymSettingsSection({ api: injected } = {}) {
     setPreferences(next);
     spellWeightsIn(next.units);
     setRefused('');
-    const mine = write.current + 1;
-    write.current = mine;
     const account = records.replica;
     try {
-      const answered = readPreferences(await api.savePreferences(preferencesWrite(next)));
-      if (replica.current !== account) return;
-      if (mine > confirmed.current) {
-        confirmed.current = mine;
-        stored.current = answered;
-      }
-      if (write.current !== mine) return;
-      setPreferences(answered);
-      spellWeightsIn(answered.units);
+      await api.savePreferences(preferencesWrite(next));
     } catch (error) {
       if (replica.current !== account) return;
-      if (write.current !== mine) return;
       setPreferences(stored.current);
       spellWeightsIn(stored.current.units);
       setRefused(preferenceRefusal(error));

@@ -27,7 +27,7 @@ import {
 // write again, which takes the delete back and puts the day back in both answers at once.
 export function useBodyweight(log) {
   const api = useGymApi();
-  const view = useGymRead(() => api.bodyweight(), [], { sync: true, ready: api.ready !== false });
+  const view = useGymRead(() => api.bodyweight(), [], { sync: true, ready: Boolean(api?.ready) });
   const [moves, setMoves] = useState(() => new Map());
   useEffect(() => setMoves(new Map()), [view.data]);
   const gone = log.gone('bodyweight');

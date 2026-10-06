@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
-import { failureReason } from '../gymApi.js';
+import { failureReason } from '../errors.js';
 import {
   BACKFILL_HREF, backfillHref, FREE_SESSION, FROM_PICK, FROM_ROUTINE_MENU, isFinished, lastTrainedDayLabel, movementOf, nameOfMovement,
   NEW_ROUTINE_ID, NO_ROUTINE, routineHref, routineSizeLabel, ROUTINES_HREF, sessionHref, shortDayLabel,
@@ -55,7 +55,7 @@ export function Backfill({ target, from = FROM_PICK, log }) {
 
 function RoutinePick({ log }) {
   const api = useGymApi();
-  const view = useGymRead(() => api.routines(), [], { sync: true, ready: api.ready !== false });
+  const view = useGymRead(() => api.routines(), [], { sync: true, ready: Boolean(api?.ready) });
   const hidden = log.hidden('routine');
 
   if (view.phase === 'loading') return <ScreenNote back={LOG_BACK}>Opening your routines…</ScreenNote>;
@@ -100,7 +100,7 @@ function RoutineWorkout({ id, back, log }) {
     const movements = [...new Set(routine.entries.map((entry) => entry.exerciseId))];
     const replies = await Promise.all(movements.map((exerciseId) => api.lastTime(exerciseId).catch(() => null)));
     return draftFromRoutine(routine, new Map(movements.map((exerciseId, at) => [exerciseId, replies[at]])));
-  }, [id], { sync: true, ready: api.ready !== false });
+  }, [id], { sync: true, ready: Boolean(api?.ready) });
 
   if (view.phase === 'loading') return <ScreenNote back={back}>Opening the routine…</ScreenNote>;
   if (view.phase === 'absent') return <ScreenNote back={back}>This routine isn’t in your program.</ScreenNote>;
@@ -275,7 +275,6 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
     }
     setSaving(false);
     setLanded({ startedAt: session.startedAt, finishedAt: session.finishedAt });
-    log.reloadLog();
     const name = draft.name ?? NO_ROUTINE;
     const form = window.location.hash;
     savedTimer.current = setTimeout(() => {

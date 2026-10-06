@@ -178,7 +178,7 @@ test('the editor’s window closes with the draft it could put a line back into,
 const pushA = () => confirmed('routine', 'routinePushA', { name: 'Push A', position: 0, entries: [{ exerciseId: 'bench-press' }] });
 
 const menuOf = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'Menu');
-const routinesHome = (t) => roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }));
+const routinesHome = (t) => roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log }));
 
 test('a routine delete is in the row overflow, is held on the device until the window closes, and names the routine', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
@@ -363,7 +363,7 @@ test('a hidden tab abandons what is still open and leaves what is already settli
 // routines tab and back inside the nine seconds.
 const homeAgainAndAgain = (t) => roomAndScreen(t, {
   module: 'products/gym/Routines.jsx',
-  render: ({ RoutinesList }, log) => RoutinesList({ log, onSignIn: () => {} }),
+  render: ({ RoutinesList }, log) => RoutinesList({ log }),
 });
 const namesOn = (home) => findByClass(home.screen(), 'gym-routine-name').map(textOf);
 
@@ -611,7 +611,7 @@ test('history hides pending sessions immediately and restores them on Undo from 
   ]);
   const { LogList } = await loadScreen('products/gym/Log.jsx');
   let held = [{ key: 'session:session0001', kind: 'session', id: 'session0001', line: 'Session deleted.', at: 1, settling: false }];
-  const screen = renderHook(t, () => LogList({ log: roomLog({ held }), onSignIn() {} }));
+  const screen = renderHook(t, () => LogList({ log: roomLog({ held }) }));
   await settle();
   const rows = () => elementsOf(screen.tree).find((each) => typeof each.type === 'function' && each.type.name === 'HistoryIndex').props.sessions.map((session) => session.id);
   assert.deepEqual(rows(), ['session0002']);
@@ -631,7 +631,7 @@ test('the log’s empty stance reads the store: a held delete of the only sessio
   const { FinishScreen } = await loadScreen('products/gym/Finish.jsx');
   const view = renderHook(t, () => {
     const log = useTrainingLog();
-    return { log, logScreen: LogList({ log, onSignIn: () => {} }), finish: reviewWithShort(FinishScreen({ id: 'session0001', log })) };
+    return { log, logScreen: LogList({ log }), finish: reviewWithShort(FinishScreen({ id: 'session0001', log })) };
   }, { live: true });
   await settle();
   const quiet = () => findByClass(view.tree.logScreen, 'gym-quiet').map(textOf);
@@ -848,7 +848,7 @@ async function weighInRoom(t, entries) {
   const { LogList } = await loadScreen('products/gym/Log.jsx');
   const view = renderHook(t, () => {
     const log = useTrainingLog();
-    return { log, chart: BodyweightScreen({ log }), logScreen: LogList({ log, onSignIn: () => {} }) };
+    return { log, chart: BodyweightScreen({ log }), logScreen: LogList({ log }) };
   }, { live: true });
   await settle();
   const named = (tree, name) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === name);

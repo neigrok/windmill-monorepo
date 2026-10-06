@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Icon } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
-import { failureReason } from './gymApi.js';
+import { failureReason } from './errors.js';
 import { BodyweightReading, useBodyweight, WeighInSheet } from './bodyweight/Bodyweight.jsx';
 import { WEIGH_IN_VERB } from './bodyweight/bodyweight.js';
 import { deletedLine, deleteFailure, fixFailure, setsAfter } from './fix.js';
@@ -23,24 +23,7 @@ import { WorkoutEditor } from './correction/WorkoutEditor.jsx';
 import { ProgressCards } from './progress/Progress.jsx';
 import { consistencyLine } from './progress/progress.js';
 
-export function LogNotOpen({ log, onSignIn }) {
-  if (log.failure === 'signed-out') {
-    return (
-      <p className="gym-read-failed">
-        Your sign-in lapsed.
-        <Button variant="secondary" size="sm" onClick={onSignIn}>Sign in</Button>
-      </p>
-    );
-  }
-  return (
-    <p className="gym-read-failed">
-      {log.failure === 'signal' ? 'The log didn’t load. Open it again when you have signal.' : 'The log didn’t answer.'}
-      <Button variant="secondary" size="sm" onClick={log.retryBoot}>Retry</Button>
-    </p>
-  );
-}
-
-export function LogList({ log, onSignIn, hash = '#/gym/log', sessionId = null, fixSetId = null, edit = false, positions = null, pagePositions = null }) {
+export function LogList({ log, hash = '#/gym/log', sessionId = null, fixSetId = null, edit = false, positions = null, pagePositions = null }) {
   const filters = historyQuery(hash);
   const localPositions = useRef(new Map());
   const index = useRef(null);
@@ -197,12 +180,12 @@ function SessionRow({ summary, selected, href, unit }) {
 
 export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', edit = false, fixSetId = null }) {
   const api = useGymApi();
-  const { say, reloadLog, withhold } = log;
+  const { say, withhold } = log;
   const view = useGymRead(
     () => Promise.all([api.session(id), api.exercises()])
       .then(([detail, catalog]) => (detail ? { detail, catalog } : null)),
     [id],
-    { sync: true, ready: api.ready !== false },
+    { sync: true, ready: Boolean(api?.ready) },
   );
   const [moves, setMoves] = useState(() => new Map());
   useEffect(() => setMoves(new Map()), [view.data]);
@@ -245,10 +228,9 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
       setMoves((current) => new Map(current).set(set.id, stored));
       closeFix();
     } catch (error) {
-      if (error.setNotFound) { closeFix(); reread(); say(fixFailure(error)); return null; }
+      if (error.code === 'unknown-record') { closeFix(); reread(); say(fixFailure(error)); return null; }
       return fixFailure(error);
     }
-    reloadLog();
   };
 
   if (view.phase === 'loading') return <p className="gym-quiet">Opening the session…</p>;

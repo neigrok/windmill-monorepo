@@ -1,5 +1,6 @@
 import { API_BASE } from '../../shell/apiBase.js';
 import { readCoachStream } from './coach/stream.js';
+import { GymError } from './errors.js';
 
 const base = `${API_BASE}/v1/gym`;
 
@@ -19,36 +20,7 @@ async function json(response) {
   throw new GymError(response.status, body?.error ?? '', body?.code ?? '', body);
 }
 
-// A refusal in the store's words and code; 400 and 409 are terminal. `overlapping` is the finished
-// session the times cross; setNotFound, proposalSuperseded and proposalSettled are read again.
-export class GymError extends Error {
-  constructor(status, detail = '', code = '', body = null) {
-    super(detail || `gym request failed: ${status}`);
-    this.name = 'GymError';
-    this.status = status;
-    this.detail = detail;
-    this.generation = body?.generation;
-    this.results = body?.results;
-    this.code = code;
-    this.terminal = status === 400 || status === 409;
-    this.sessionOverlap = this.code === 'session-overlap';
-    this.overlapping = this.sessionOverlap ? body?.session ?? null : null;
-    this.setNotFound = this.code === 'set-not-found';
-    this.proposalSuperseded = this.code === 'proposal-superseded';
-    this.proposalSettled = this.code === 'proposal-settled';
-  }
-}
-
-export function failureReason(error) {
-  if (error?.terminal) return 'the log wouldn’t take it as written';
-  if (error?.status === 401) return 'you’re signed out. Sign in and try again';
-  if (error?.status === 404) return 'it isn’t in the log any more';
-  return 'the log didn’t answer. Try again when you have signal';
-}
-
 export const gymApi = {
-  ready: false,
-
   async shareSession(id) {
     return json(await call(`/sessions/${id}/share`, { method: 'POST' }));
   },

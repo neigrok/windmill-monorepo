@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { GymError } from '../../../../src/products/gym/gymApi.js';
+import { GymRefusal } from '../../../../src/products/gym/errors.js';
 import { BODY_COUNT_FROM as NAME_TWIN } from '../../../../src/products/gym/notes/notes.js';
 import { NAME_COUNT_FROM, NAME_MAX } from '../../../../src/products/gym/log.js';
 import {
@@ -116,8 +116,8 @@ test('a moved note is placed after the row drawn above it, so a held note keeps 
 });
 
 test('a refusal speaks in the store’s own words where it sent any, and finishes itself otherwise', () => {
-  assert.equal(noteRefusal(new GymError(400, 'a note runs to 500 bytes'), 'saved'), 'a note runs to 500 bytes');
-  assert.equal(noteRefusal(new GymError(409, '10 of 10 notes. Delete one to add another.', 'notes-full'), 'saved'), '10 of 10 notes. Delete one to add another.');
-  assert.equal(noteRefusal(new GymError(503, ''), 'saved'), 'That note wasn’t saved — the log didn’t answer. Try again when you have signal.');
+  assert.equal(noteRefusal(new GymRefusal('invalid', { sentence: 'a note runs to 500 bytes' }), 'saved'), 'a note runs to 500 bytes');
+  assert.equal(noteRefusal(new GymRefusal('cap', { sentence: '10 of 10 notes. Delete one to add another.' }), 'saved'), '10 of 10 notes. Delete one to add another.');
+  assert.equal(noteRefusal(new DOMException('storage refused', 'QuotaExceededError'), 'saved'), 'That note wasn’t saved — the log didn’t answer. Try again when you have signal.');
   assert.equal(noteRefusal(undefined, 'deleted'), 'That note wasn’t deleted — the log didn’t answer. Try again when you have signal.');
 });

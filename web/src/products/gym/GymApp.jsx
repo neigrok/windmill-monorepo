@@ -125,8 +125,8 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
       <Chrome inShell={inShell} user={user} status={status} onSignIn={onSignIn} onSignOut={onSignOut} />
       <div ref={content} className="gym-scroll">
         <main className={`gym-column${columnClass(screen)}`}>
-          {(screen === 'routines' || screen === 'proposal') && <RoutinesList log={log} onSignIn={onSignIn} reviewing={screen === 'proposal' ? proposalIdOf(hash) : null} />}
-          {(screen === 'log' || screen === 'session') && <LogList log={log} positions={historyPositions.current} pagePositions={pagePositions.current} onSignIn={onSignIn} hash={screen === 'log' ? hash : new URLSearchParams(hash.split('?').slice(1).join('?')).get('from') ?? '#/gym/log'} sessionId={screen === 'session' ? sessionIdOf(hash) : null} fixSetId={fixSetIdOf(hash)} edit={/^#\/gym\/session\/[^/?]+\/edit(?:\?|$)/.test(hash)} />}
+          {(screen === 'routines' || screen === 'proposal') && <RoutinesList log={log} reviewing={screen === 'proposal' ? proposalIdOf(hash) : null} />}
+          {(screen === 'log' || screen === 'session') && <LogList log={log} positions={historyPositions.current} pagePositions={pagePositions.current} hash={screen === 'log' ? hash : new URLSearchParams(hash.split('?').slice(1).join('?')).get('from') ?? '#/gym/log'} sessionId={screen === 'session' ? sessionIdOf(hash) : null} fixSetId={fixSetIdOf(hash)} edit={/^#\/gym\/session\/[^/?]+\/edit(?:\?|$)/.test(hash)} />}
           {screen === 'bodyweight' && <BodyweightScreen log={log} />}
           {screen === 'record' && <MovementRecord id={movementIdOf(hash)} from={recordFromOf(hash)} log={log} />}
           {screen === 'routine' && <RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />}

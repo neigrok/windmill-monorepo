@@ -17,7 +17,7 @@ async function mirror(t, { plan = null, restSeconds = null, logged = sets }) {
     catalog: [{ id: 'bench-press', name: 'Bench press' }, { id: 'back-squat', name: 'Back Squat' }],
     preferences: { restSeconds },
   });
-  const training = elementsOf(LiveMirror({ log, onSignIn: () => {} })).find((each) => typeof each.type === 'function');
+  const training = elementsOf(LiveMirror({ log })).find((each) => typeof each.type === 'function');
   return renderHook(t, () => training.type(training.props)).tree;
 }
 

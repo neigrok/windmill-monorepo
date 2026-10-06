@@ -207,33 +207,6 @@ test('the session’s stance and its closed-on-its-own note read the store, and 
   assert.deepEqual(closed(), [], 'and the instant the claim was inferred from is gone with it');
 });
 
-test('the log that did not open names its reason, and offers the repair for it', async () => {
-  const { LogNotOpen } = await loadScreen('products/gym/Log.jsx');
-  const pressed = [];
-  const log = (failure) => ({ phase: 'failed', failure, retryBoot: () => pressed.push('retry') });
-  const onSignIn = () => pressed.push('sign-in');
-  // The repair is the design system's Button now, so it is a component element and not a class.
-  const repair = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function');
-
-  const signedOut = LogNotOpen({ log: log('signed-out'), onSignIn });
-  assert.equal(textOf(signedOut), 'Your sign-in lapsed.');
-  assert.equal(repair(signedOut).props.children, 'Sign in');
-  repair(signedOut).props.onClick();
-  assert.deepEqual(pressed, ['sign-in']);
-
-  const server = LogNotOpen({ log: log('server'), onSignIn });
-  assert.equal(textOf(server), 'The log didn’t answer.');
-  assert.equal(/signal/.test(textOf(server)), false);
-  assert.equal(repair(server).props.children, 'Retry');
-  repair(server).props.onClick();
-  assert.deepEqual(pressed, ['sign-in', 'retry']);
-
-  const signal = LogNotOpen({ log: log('signal'), onSignIn });
-  assert.equal(textOf(signal), 'The log didn’t load. Open it again when you have signal.');
-  repair(signal).props.onClick();
-  assert.deepEqual(pressed, ['sign-in', 'retry', 'retry']);
-});
-
 test('history uses the log’s scope totals and names the unit once, with no legacy session estimate', async (t) => {
   browserWith();
   const workout = (id, startedAt, routineName, sets, reps, weightKg) => [
@@ -250,7 +223,7 @@ test('history uses the log’s scope totals and names the unit once, with no leg
     { id: 'ses_1', startedAt: new Date(2026, 7, 24, 18).getTime(), finishedAt: new Date(2026, 7, 24, 19).getTime(), routineName: 'Bench day', workingSetCount: 3, tonnageKg: 1380 },
   ];
   const { LogList, HistoryIndex } = await loadScreen('products/gym/Log.jsx');
-  const view = renderHook(t, () => LogList({ log: roomLog({ summaries }), onSignIn: () => {} }));
+  const view = renderHook(t, () => LogList({ log: roomLog({ summaries }) }));
   await settle();
   assert.deepEqual(findByClass(view.tree, 'gym-log-count').map(textOf), ['2 workouts · 12 sets · 84 reps · loads in kg']);
   const rows = elementsOf(HistoryIndex({ sessions: summaries })).filter((each) => typeof each.type === 'function' && each.type.name === 'SessionRow');

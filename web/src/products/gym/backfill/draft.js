@@ -232,7 +232,7 @@ export function sourceCaption(movement, edited) {
 }
 
 // One request, the whole workout, built from what the form holds and nothing else: the set ids are
-// the session id's own, numbered, so the same form sends the same bytes and a resend is a replay.
+// the session id's own, numbered, so the same form always builds the same request.
 // The set instants are spread evenly strictly inside the span and read as approximate; nothing
 // reads a rest interval off them. Every set is a working set.
 export function importOf({ id, slot, draft }) {

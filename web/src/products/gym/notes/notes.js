@@ -2,7 +2,7 @@
 // are the store's (`gym_notes`): ten per account, a title of sixty characters, a body of five hundred
 // UTF-8 bytes. Notes are their own resource, never a field of the preferences document.
 
-import { failureReason } from '../gymApi.js';
+import { failureReason } from '../errors.js';
 import { mintId } from '../mint.js';
 
 export const NOTE_PREFIX = 'note_';
@@ -104,6 +104,6 @@ export function noteAbove(notes, id, hidden) {
 
 // A refusal speaks in the store's own words where it sent any; the store's sentence is never rewritten.
 export function noteRefusal(error, verb) {
-  if (error?.detail) return error.detail;
+  if (error?.sentence) return error.sentence;
   return `That note wasn’t ${verb} — ${failureReason(error)}.`;
 }

@@ -1,4 +1,4 @@
-import { failureReason } from './gymApi.js';
+import { failureReason } from './errors.js';
 import { setLoadLabel } from './log.js';
 
 // The RPE band a lifter reads a set in: six to ten, by halves. The rungs are COUNTED off the band so
@@ -76,7 +76,7 @@ export function deletedLine(set) {
 }
 
 export function fixFailure(error) {
-  if (error?.setNotFound) return 'That set isn’t in this workout any more.';
+  if (error?.code === 'unknown-record') return 'That set isn’t in this workout any more.';
   return `That fix didn’t land — ${failureReason(error)}.`;
 }
 

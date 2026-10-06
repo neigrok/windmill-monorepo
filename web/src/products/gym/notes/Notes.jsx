@@ -25,7 +25,7 @@ function countReadout(label) {
 // drag moves it here first and the store's answer replaces it.
 export function Notes({ log }) {
   const api = useGymApi();
-  const view = useGymRead(() => api.notes(), [], { sync: true, ready: api.ready !== false });
+  const view = useGymRead(() => api.notes(), [], { sync: true, ready: Boolean(api?.ready) });
   const [held, setHeld] = useState(null);
   const [editing, setEditing] = useState(null);
   useEffect(() => setHeld(null), [view.data]);
@@ -215,7 +215,7 @@ function NoteList({ notes, onOpen, onMove }) {
 }
 
 // Over the bound the store refuses, and its sentence is shown in place; nothing here rewrites it.
-// A refusal for a full account (`notes-full`) means the list behind the editor is behind the store:
+// A refusal for a full account (`cap`) means the list behind the editor is behind the store:
 // `onStale` re-reads it while the editor stays open with the sentence.
 export function NoteEditor({ note, noteCount = null, onClose, onSaved, onDelete, onStale }) {
   const api = useGymApi();
@@ -235,7 +235,7 @@ export function NoteEditor({ note, noteCount = null, onClose, onSaved, onDelete,
     } catch (error) {
       setSaving(false);
       setRefused(noteRefusal(error, 'saved'));
-      if (error?.code === 'notes-full') onStale();
+      if (error?.code === 'cap') onStale();
     }
   };
 

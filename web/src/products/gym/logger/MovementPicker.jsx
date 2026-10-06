@@ -26,7 +26,7 @@ export function MovementPicker({
   const opened = held.current;
   const { featured, matches, empty, create } = movementOptions({ catalog, order, query, sessions: opened });
   const [minting, setMinting] = useState(null);
-  const last = useGymRead(() => api.lastSets(), [], { sync: true, ready: api.ready !== false });
+  const last = useGymRead(() => api.lastSets(), [], { sync: true, ready: Boolean(api?.ready) });
   const meta = last.phase === 'ready' ? lastSetsById(last.data) : null;
   const row = (each) => (
     <li key={each.id}>

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GymError } from '../../../../src/products/gym/gymApi.js';
+import { GymError } from '../../../../src/products/gym/errors.js';
 import { browserWith, elementsOf, findByClass, loadScreen, renderHook, roomLog, settle, textOf } from '../harness.mjs';
 import { coachDraftKey, readCoachDraft, useCoachConversation } from '../../../../src/products/gym/coach/useCoachConversation.js';
 

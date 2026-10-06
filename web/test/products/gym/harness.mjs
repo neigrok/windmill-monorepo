@@ -199,7 +199,7 @@ export async function gymAccount(t, records = []) {
       if (intent.cmd) return `${state} ${intent.cmd.name} ${intent.cmd.args.id ?? intent.cmd.args.sessionId ?? intent.cmd.args.proposalId}`;
       return `${state} ${intent.d.map((delta) => {
         if (delta.life?.[0] === 'dead') return `delete ${delta.t} ${delta.id}`;
-        const verb = delta.born === undefined ? 'put' : delta.born === delta.life?.[1] ? 'create' : 'update';
+        const verb = delta.born === undefined ? (delta.life ? 'put' : 'write') : delta.born === delta.life?.[1] ? 'create' : 'update';
         return [verb, delta.t, delta.id, ...Object.keys(delta.f ?? {}).sort()].join(' ');
       }).join(', ')}`;
     }),
@@ -257,7 +257,6 @@ export function roomLog({ settled = [], ...overrides } = {}) {
   const held = overrides.held ?? [];
   return {
     phase: 'ready',
-    failure: null,
     summaries: [],
     catalog: [],
     session: null,
@@ -267,7 +266,6 @@ export function roomLog({ settled = [], ...overrides } = {}) {
     hidden: (kind) => hiddenIds(held, settled, kind),
     gone: (kind) => goneIds(settled, kind),
     say: () => {},
-    reloadLog: () => {},
     withhold: () => {},
     undoWithheld: () => {},
     dropWithheld: () => {},
