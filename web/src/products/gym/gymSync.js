@@ -249,13 +249,11 @@ export function useGymApi() {
   return useMemo(() => engine ? { ...createGymApi(engine), ready } : null, [engine, records.replica, ready]);
 }
 
-export function prepareGymSync(engine) {
-  const previous = engine.liveHint;
-  engine.liveHint = (replica) => {
-    const rows = engine.observe(SCOPE).getSnapshot().drawn;
-    const session = rows.find((row) => row.t === 'session' && row.life?.[0] !== 'dead' && row.f?.finishedAt === undefined);
-    if (!session) return previous?.(replica) ?? false;
-    const activity = Math.max(session.f.startedAt[0], ...rows.filter((row) => row.t === 'set' && row.life?.[0] !== 'dead' && row.f?.sessionId?.[0] === session.id).map((row) => row.f.completedAt[0]));
-    return Date.now() + (replica?.meta?.serverOffsetMs ?? 0) - activity < 4 * 3600_000 || (previous?.(replica) ?? false);
-  };
+// A workout running on a phone keeps the mirror's sync close, until four idle hours close it.
+export function gymLiveHint(engine, replica) {
+  const rows = engine.observe(SCOPE).getSnapshot().drawn;
+  const session = rows.find((row) => row.t === 'session' && row.life?.[0] !== 'dead' && row.f?.finishedAt === undefined);
+  if (!session) return false;
+  const activity = Math.max(session.f.startedAt[0], ...rows.filter((row) => row.t === 'set' && row.life?.[0] !== 'dead' && row.f?.sessionId?.[0] === session.id).map((row) => row.f.completedAt[0]));
+  return Date.now() + (replica?.meta?.serverOffsetMs ?? 0) - activity < 4 * 3600_000;
 }

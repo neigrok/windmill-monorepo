@@ -5,6 +5,7 @@ import { lazy } from 'react';
 import { journalLandingHead } from './marketing/landingHead.js';
 import { migratePages } from './migrate.js';
 import { onSyncResult, watchClaims } from './pages.js';
+import { pendingClaimWork } from '../../platform/sync/journal/client.js';
 
 const importJournalApp = () => import('./JournalApp.jsx').then((m) => ({ default: m.JournalApp }));
 const JournalApp = lazy(importJournalApp);
@@ -48,8 +49,14 @@ export const journalRoutes = {
   landingAfterSignIn,
   render,
   preloadApp: importJournalApp,
-  prepareSync: async (engine) => { await migratePages(engine); watchClaims(engine); },
-  onSyncResult,
+  // How the journal rides the browser engine; the shell composes every product's hooks into it.
+  sync: {
+    prepare: async (engine) => { await migratePages(engine); watchClaims(engine); },
+    onPushResult: onSyncResult,
+    pendingDeviceWork: pendingClaimWork,
+    // The work a sign-in question counts from before sign-in: the journal's pages.
+    signedOutWork: { type: 'page', one: 'page', many: 'pages' },
+  },
   settingsSections: {
     data: [YourJournalSection],
   },

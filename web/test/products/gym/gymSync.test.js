@@ -5,7 +5,7 @@ import { registry } from '../../../src/platform/sync/schema.js';
 import { environment, until } from '../../platform/sync/fakes.js';
 import { hello } from '../../../../packages/api-contract/sync/reference/server/pull.js';
 import { GymRefusal, isStoreFailure } from '../../../src/products/gym/errors.js';
-import { createGymApi, prepareGymSync } from '../../../src/products/gym/gymSync.js';
+import { createGymApi, gymLiveHint } from '../../../src/products/gym/gymSync.js';
 
 async function open(t) {
   const env = environment();
@@ -301,12 +301,13 @@ test('liveHint follows the phone session and expires after four idle hours', asy
   const now = Date.now();
   let rows = [{ t: 'session', id: 'session0001', life: ['alive', 's'], f: { startedAt: [now - 1000, 's'] } }];
   t.mock.method(engine, 'observe', () => ({ getSnapshot: () => ({ drawn: rows }) }));
-  prepareGymSync(engine);
-  assert.equal(engine.liveHint(), true);
+  assert.equal(gymLiveHint(engine), true);
   rows[0] = { ...rows[0], f: { startedAt: [now - 4 * 3600_000, 's'] } };
-  assert.equal(engine.liveHint(), false);
+  assert.equal(gymLiveHint(engine), false);
   rows.push({ t: 'set', id: 'set0000001', f: { sessionId: ['session0001', 's'], completedAt: [now, 's'] } });
-  assert.equal(engine.liveHint(), true);
+  assert.equal(gymLiveHint(engine), true);
+  rows = [];
+  assert.equal(gymLiveHint(engine), false, 'no open workout, no live hint');
 });
 
 test('known overlap, future instants and live corrections refuse before queuing', async (t) => {

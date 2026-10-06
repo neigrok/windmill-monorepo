@@ -80,9 +80,12 @@ the browser engine separately and rejects Node builtins. The app shell caches th
 `react.js` exports `useSyncEngine()` (the open bound engine, or null during boot/sign-out) and
 `useSyncRecords(scope)` (stable drawn/stored records, notices and first-pull state through
 `useSyncExternalStore`). Records can observe the anonymous replica; only the session owner opens
-and starts the engine. Product `prepareSync(engine)` registrations run before its first network request.
+and starts the engine. Each product's route table carries a `sync` group — `prepare(engine)`,
+`onPushResult`, `pendingDeviceWork`, `liveHint(engine, replica)` and `signedOutWork`, the record type a
+sign-in question counts — and the session owner composes every group into the engine options;
+`prepare` runs before the first network request.
 
-Journal's `prepareSync` imports v1/v2 cached pages and owed writes, preserving account lineages and
+Journal's `prepare` imports v1/v2 cached pages and owed writes, preserving account lineages and
 anonymous snapshots. Durable source digests prevent replay after a crash between the import and
 source deletion. Invalid/blocked storage fails visibly and leaves source keys intact. Unattributable
 pages stay quarantined until an explicit restore. The product's result hook records claim receipts

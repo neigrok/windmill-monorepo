@@ -3,7 +3,6 @@ import { fetchMe, logout } from './AuthClient.js';
 import { DeviceSeat } from './accountChange.js';
 import { PRODUCTS } from '../products.js';
 import { syncSession } from '../../platform/sync/session.js';
-import { pendingClaimWork } from '../../platform/sync/journal/client.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
 import { SyncDecisions } from './SyncDecisions.jsx';
@@ -161,13 +160,16 @@ export default function AuthProvider({ children }) {
   }), [session.engine, refresh]);
   useEffect(() => {
     let alive = true;
+    const hooks = PRODUCTS.map((product) => product.sync ?? {});
     syncSession.open({ credentials: { clear: async (account) => {
       const current = await fetchMe();
       if (current === undefined) throw new Error('cookie-cleanup-unavailable');
       if (current?.id === account) await logout();
-    } }, pendingDeviceWork: pendingClaimWork,
-      onPushResult: (...args) => { for (const product of PRODUCTS) product.onSyncResult?.(...args); },
-      prepare: async (engine) => { for (const product of PRODUCTS) await product.prepareSync?.(engine); },
+    } },
+      prepare: async (engine) => { for (const each of hooks) await each.prepare?.(engine); },
+      onPushResult: (...args) => { for (const each of hooks) each.onPushResult?.(...args); },
+      pendingDeviceWork: (product, rows) => hooks.flatMap((each) => each.pendingDeviceWork?.(product, rows) ?? []),
+      liveHint: (replica) => hooks.some((each) => each.liveHint?.(syncSession.engine, replica)),
     }).then(() => { if (alive) refresh().catch(() => {}); }).catch(() => {});
     const broadcast = new BroadcastChannel('wm-auth');
     channel.current = broadcast;
@@ -188,7 +190,8 @@ export default function AuthProvider({ children }) {
       {updateError && <p>Couldn’t fetch the update. Your work is still here. Try again when connected.</p>}
     </div>}
     {error && !question && !upgradeRequired && <div role="alert">Couldn’t connect your account. Your work is still on this device.</div>}
-    <SyncDecisions key={`${question?.product ?? 'signout'}:${question?.counted?.join('|') ?? ''}`} question={upgradeRequired ? null : question} busy={busy} error={error} onDecision={decide}
+    <SyncDecisions key={`${question?.product ?? 'signout'}:${question?.counted?.join('|') ?? ''}`} question={upgradeRequired ? null : question}
+      work={PRODUCTS.find((product) => product.id === question?.product)?.sync?.signedOutWork} busy={busy} error={error} onDecision={decide}
       onCancel={async () => {
         setBusy(true); setError(false);
         try { await enqueue(() => syncSession.engine.cancelSignOut()); setQuestion(null); }
