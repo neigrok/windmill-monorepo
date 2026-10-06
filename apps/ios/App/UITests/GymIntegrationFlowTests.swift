@@ -245,12 +245,14 @@ import XCTest
       signed.swipeUp()
     }
     XCTAssertTrue(review.waitForExistence(timeout: 10)); XCTAssertTrue(review.isHittable)
+    XCTAssertTrue(signed.buttons["coach-stop"].waitForNonExistence(timeout: 10))
     let question = signed.staticTexts["Check my last session."]
     for _ in 0..<4 {
       if question.waitForExistence(timeout: 3), question.isHittable { break }
       signed.swipeDown()
     }
-    XCTAssertTrue(question.waitForExistence(timeout: 5)); XCTAssertTrue(question.isHittable)
+    XCTAssertTrue(question.waitForExistence(timeout: 5))
+    XCTAssertTrue(question.wait(for: \.isHittable, toEqual: true, timeout: 5))
     signed.terminate()
     let anonymous = launch(anonymous: true)
     anonymous.buttons["Just start logging"].tap()

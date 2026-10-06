@@ -53,6 +53,74 @@ import SyncModelServer
     return (gym, GymRESTClient(runtime: runtime, telemetry: telemetry, session: URLSession(configuration: config)), telemetry)
   }
 
+  func snapshotEvent(status: String, revision: Int, answer: String) throws -> String {
+    let data = try JSONSerialization.data(withJSONObject: ["thread": "thread-123", "generation": ["id": "generation-123",
+      "requestId": "request-123", "question": "private question", "status": status, "revision": revision, "answer": answer]])
+    return "event: snapshot\ndata: " + String(decoding: data, as: UTF8.self) + "\n\n"
+  }
+
+  @Test func largeSnapshotsValidateCredentialsPerEvent() async throws {
+    let answer = String(repeating: "private answer ", count: 2_048)
+    let stream = try snapshotEvent(status: "running", revision: 1, answer: answer) + snapshotEvent(status: "completed", revision: 2, answer: answer)
+    let (_, original, telemetry) = try await authed(.http(200, stream, "text/event-stream"))
+    let base = try #require(original.runtime), tokens = CoachCountingTokenStore(base.tokens)
+    let runtime = AppRuntime(settings: base.settings, store: base.store, engine: base.engine, auth: base.auth,
+      runner: base.runner, tokens: tokens, revocations: base.revocations, telemetry: telemetry)
+    let rest = GymRESTClient(runtime: runtime, telemetry: telemetry, session: original.session)
+    var received: [CoachSnapshot] = []
+    let data = try await rest.coachRequest("/v1/gym/ask") { received.append($0) }
+    #expect(data.isEmpty && received.map(\.generation.revision) == [1, 2])
+    #expect(received.map(\.generation.answer) == [answer, answer])
+    #expect(received.map(\.generation.terminal) == [false, true])
+    #expect(tokens.reads.withLock { $0 } <= 8)
+    #expect(CoachTestProtocol.state.withLock { $0.requests.count } == 1 && rest.tasks.isEmpty)
+    #expect(telemetry.entries.withLock { $0.filter { $0.properties["operation"] == "gym_rest" }.isEmpty })
+  }
+
+  @Test(arguments: ["token", "account", "cancel", "blocked"], [false, true])
+  func invalidatedStreamRejectsLaterEventsAndCompletion(change: String, afterTerminal: Bool) async throws {
+    let stream = try (afterTerminal ? "" : snapshotEvent(status: "running", revision: 1, answer: "private partial")) +
+      snapshotEvent(status: "completed", revision: 2, answer: "private final")
+    let (_, rest, telemetry) = try await authed(.http(200, stream, "text/event-stream"))
+    let runtime = try #require(rest.runtime), owner = try #require(try runtime.account())
+    var received: [CoachSnapshot] = []
+    do {
+      _ = try await rest.coachRequest("/v1/gym/ask") { value in
+        received.append(value)
+        switch change {
+        case "token": try runtime.tokens.save(SessionToken("changed-private-token"), for: owner)
+        case "account":
+          _ = try runtime.store.signOut(choice: .keep, counted: nil, identities: Identities(random: SystemRandom()))
+          #expect(try runtime.account() == nil)
+        case "cancel": rest.cancel()
+        default: rest.blocked = true
+        }
+      }
+      Issue.record("Expected invalidated stream cancellation")
+    } catch { #expect(error is CancellationError || (error as? URLError)?.code == .cancelled) }
+    #expect(received.map(\.generation.revision) == [afterTerminal ? 2 : 1])
+    #expect(received.map(\.generation.answer) == [afterTerminal ? "private final" : "private partial"])
+    #expect(rest.tasks.isEmpty)
+    #expect(telemetry.entries.withLock { $0.filter { $0.properties["operation"] == "gym_rest" }.isEmpty })
+  }
+
+  @Test func truncatedTerminalEventKeepsOnlyTheCompleteSnapshot() async throws {
+    let stream = try snapshotEvent(status: "running", revision: 1, answer: "private partial") +
+      snapshotEvent(status: "completed", revision: 2, answer: "private final").dropLast()
+    let (_, rest, telemetry) = try await authed(.http(200, stream, "text/event-stream"))
+    var received: [CoachSnapshot] = []
+    do {
+      _ = try await rest.coachRequest("/v1/gym/ask") { received.append($0) }
+      Issue.record("Expected truncated stream failure")
+    } catch { #expect((error as? URLError)?.code == .networkConnectionLost) }
+    #expect(received.map(\.generation.revision) == [1] && received.map(\.generation.answer) == ["private partial"])
+    #expect(rest.tasks.isEmpty)
+    let entries = telemetry.entries.withLock { $0.filter { $0.properties["operation"] == "gym_rest" } }
+    #expect(entries.map(\.name) == ["api_request_failed"])
+    #expect(entries.first?.properties == ["operation": "gym_rest", "route": "/v1/gym", "method": "GET", "failure_kind": "offline"])
+    #expect(!entries.flatMap { $0.properties.values }.contains { $0.contains("private") })
+  }
+
   func settle(_ condition: () -> Bool) async throws {
     for _ in 0..<200 { if condition() { return }; try await Task.sleep(for: .milliseconds(10)) }
     Issue.record("Asynchronous Coach work did not settle")
@@ -619,6 +687,19 @@ import SyncModelServer
     #expect(rows.last?.meta.hasPrefix("API key · whole account · since ") == true)
     #expect(throws: DecodingError.self) { try CoachConnection.decode(grants: grants, keys: Data("{}".utf8)) }
   }
+}
+
+nonisolated final class CoachCountingTokenStore: TokenStore {
+  let base: any TokenStore
+  let reads = Mutex(0)
+  init(_ base: any TokenStore) { self.base = base }
+  func token(for account: String) -> SessionToken? {
+    reads.withLock { $0 += 1 }
+    return base.token(for: account)
+  }
+  func save(_ token: SessionToken, for account: String) throws { try base.save(token, for: account) }
+  func delete(for account: String) throws { try base.delete(for: account) }
+  func accounts() -> [String] { base.accounts() }
 }
 
 nonisolated final class CoachTestProtocol: URLProtocol, @unchecked Sendable {

@@ -162,7 +162,7 @@ jobs:
               -only-testing:WindmillUITests/GymWorkoutFlowTests
               -only-testing:WindmillUITests/AppleLinkingFlowTests
           - shard: routines-journal
-            timeout: 95
+            timeout: 75
             tests: >-
               -only-testing:WindmillUITests/GymRoutinesFlowTests
               -only-testing:WindmillUITests/JournalFlowTests

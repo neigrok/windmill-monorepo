@@ -22,7 +22,7 @@ import XCTest
   func sessionRow(_ app: XCUIApplication) -> XCUIElement {
     app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-log-session-")).firstMatch
   }
-  func openFirstSession(_ app: XCUIApplication) {
+  func visibleSessionRow(_ app: XCUIApplication) -> XCUIElement {
     let row = sessionRow(app)
     XCTAssertTrue(row.waitForExistence(timeout: 20))
     for _ in 0..<8 {
@@ -33,7 +33,10 @@ import XCTest
     XCTAssertTrue(row.isHittable)
     XCTAssertGreaterThan(row.frame.minY, app.navigationBars.firstMatch.frame.maxY + 8)
     XCTAssertLessThan(row.frame.maxY, app.buttons["gym-weigh-in"].frame.minY - 12)
-    row.tap()
+    return row
+  }
+  func openFirstSession(_ app: XCUIApplication) {
+    visibleSessionRow(app).tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 10))
   }
   func firstSet(_ app: XCUIApplication) -> XCUIElement {
@@ -293,10 +296,13 @@ import XCTest
     XCTAssertTrue(app.descendants(matching: .any)["gym-weigh-in-fixed-date"].waitForExistence(timeout: 5))
     app.buttons["Cancel"].tap()
     back(app)
-    sessionRow(app).press(forDuration: 1)
+    visibleSessionRow(app).press(forDuration: 1)
+    XCTAssertFalse(app.descendants(matching: .any)["gym-session-detail"].exists)
     XCTAssertTrue(app.buttons["Share this workout"].waitForExistence(timeout: 5))
+    let discard = app.buttons["Discard workout"]
+    XCTAssertTrue(discard.wait(for: \.isHittable, toEqual: true, timeout: 5))
     snapshot("log-actions-\(appearance)", app: app)
-    app.buttons["Discard workout"].tap()
+    discard.tap()
     XCTAssertTrue(app.buttons["gym-log-undo"].waitForExistence(timeout: 5))
     app.buttons["gym-log-undo"].firstMatch.tap()
   }
