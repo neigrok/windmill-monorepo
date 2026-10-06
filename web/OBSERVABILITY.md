@@ -28,9 +28,14 @@ The shell reports cookie cleanup, session transition and auth-hint storage failu
 The update-required reload emits `sync_upgrade` with `pending`, `ok` or `failed`; a failed
 shell update reports the static `offline-shell-update` operation. A persisted page restore
 reports storage failures and keeps its local records available for a retry.
-Add/Discard and the sign-out question emit `sync_signin`/`sync_signout` with `outcome: pending`;
-the engine reports completed transitions. Offline copy identifies the REST features that need a
-connection. No account identifier or decision content is included.
+Add/Discard and sign-out emit `sync_signin`/`sync_signout` with `outcome: pending`; the engine reports
+completed transitions. Revoking this session uses the sign-out question before clearing its cookie.
+Account closure persists its account and current session before the server request and discards local
+account data after it succeeds. A failed local discard reports the auth-session failure; reload and
+retry reconcile that session before recovering the discard. A new session keeps its cookie, including
+one that reopens the same account. Closure refuses an unavailable session identity before deleting.
+Offline copy identifies the REST features that need a connection.
+No account identifier or decision content is included.
 
 Journal reports migration, durable save, pending-claim reconciliation, invitation retirement and
 REST transport failures using static `journal-*` Sentry operation names. Migration and recovery

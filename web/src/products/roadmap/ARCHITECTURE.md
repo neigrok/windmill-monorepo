@@ -39,7 +39,7 @@ owner view reframes as chrome measurements arrive until the reader moves the cam
 
 ## Domain and shared geometry
 
-`model/ports.js` defines data shapes and the `TreeRepository` and `LayoutEngine` seams. `SkillTree`
+`model/ports.js` records data shapes and defines the `LayoutEngine` seam. `SkillTree`
 validates the DAG, builds indexes and derives render nodes. `renderableGraph.js` supplies a
 best-effort projection when replicated state contains cycles. `TrunkTree` chooses one primary
 parent per node for layout: same-kind parents first, then depth and id; siblings retain their

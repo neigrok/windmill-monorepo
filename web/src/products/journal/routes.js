@@ -29,14 +29,7 @@ function landingAfterSignIn() {
   return home();
 }
 
-// `import.meta.env.DEV` is a literal false in a production build, so neither the route nor the fixtures
-// reach a shipped bundle.
-const EchoLab = import.meta.env && import.meta.env.DEV
-  ? lazy(() => import('./echoes/EchoLab.jsx').then((m) => ({ default: m.EchoLab })))
-  : null;
-
 function render({ hash }) {
-  if (EchoLab && hash.startsWith('#/journal/echoes-lab')) return { Component: EchoLab, props: { hash } };
   if (hash.startsWith('#/journal')) return { Component: JournalApp, props: { hash } };
   return null;
 }

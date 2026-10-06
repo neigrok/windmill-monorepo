@@ -67,12 +67,14 @@ async function run() {
   const binDir = resolve(process.argv[2] ?? join(root, 'backend/build'));
   const capture = process.argv.includes('--capture');
   const parityOnly = process.argv.includes('--parity');
-  const database = `wm_web_b2_gym_${process.pid}`;
+  const database = `${process.env.WM_E2E_DB_PREFIX ?? 'wm_web_'}gym_${process.pid}`;
+  const backendPort = Number(process.env.WM_E2E_PORT ?? 8094);
+  const webPort = Number(process.env.WM_E2E_WEB_PORT ?? 5181);
   const host = process.env.PGHOST ?? '/tmp';
   const databaseUrl = `postgresql:///${database}?host=${encodeURIComponent(host)}`;
-  const base = 'http://127.0.0.1:8094';
-  const origin = 'http://127.0.0.1:5181';
-  const temporary = mkdtempSync(join(tmpdir(), 'wm-web-b2-gym-'));
+  const base = `http://127.0.0.1:${backendPort}`;
+  const origin = `http://127.0.0.1:${webPort}`;
+  const temporary = mkdtempSync(join(tmpdir(), 'wm-web-gym-'));
   const log = openSync(join(temporary, 'stack.log'), 'w');
   const secret = randomBytes(24).toString('hex');
   const hash = createHash('sha256').update(secret).digest('hex');
@@ -101,14 +103,14 @@ async function run() {
     return response.status === 204 ? null : response.json();
   };
   try {
-    for (const port of [8094, 5181]) assert.equal(listener(port), '', `port ${port} must be free`);
+    for (const port of [backendPort, webPort]) assert.equal(listener(port), '', `port ${port} must be free`);
     commands('createdb', ['-h', host, database]); created = true;
     commands('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-f', 'backend/db/schema.sql']);
     sql(`
-      INSERT INTO users(id,email,name) VALUES ('${account}','web-b2-gym-${process.pid}@example.com','Gym fixture');
+      INSERT INTO users(id,email,name) VALUES ('${account}','web-gym-${process.pid}@example.com','Gym fixture');
       INSERT INTO sessions(token_hash,user_id,expires_ms) VALUES ('${hash}','${account}',${now + day});
     `);
-    const backend = start(join(binDir, 'windmill_server'), [], 8094, { DATABASE_URL: databaseUrl, PORT: '8094', WINDMILL_HOST: '127.0.0.1', WINDMILL_APP_URL: origin, WINDMILL_ALLOWED_ORIGINS: origin, SENTRY_DSN: '', AMPLITUDE_API_KEY: '', RESEND_API_KEY: '', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', JOURNAL_EMBEDDER_URL: '' });
+    const backend = start(join(binDir, 'windmill_server'), [], backendPort, { DATABASE_URL: databaseUrl, PORT: String(backendPort), WINDMILL_HOST: '127.0.0.1', WINDMILL_APP_URL: origin, WINDMILL_ALLOWED_ORIGINS: origin, SENTRY_DSN: '', AMPLITUDE_API_KEY: '', RESEND_API_KEY: '', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', JOURNAL_EMBEDDER_URL: '' });
     await waitUntil(async () => { try { return Boolean(await request('/v1/sync/hello', { sync: true })); } catch { return false; } }, { processes: [backend], label: 'backend readiness' });
 
     // The phone is a second replica of the account and writes the way the native apps do: commands and
@@ -229,7 +231,7 @@ async function run() {
     }
 
     if (!parityOnly) {
-      const vite = start(process.execPath, [join(root, 'web/node_modules/vite/bin/vite.js'), join(root, 'web'), '--host', '127.0.0.1', '--port', '5181', '--strictPort'], 5181, { VITE_API_BASE_URL: base });
+      const vite = start(process.execPath, [join(root, 'web/node_modules/vite/bin/vite.js'), join(root, 'web'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webPort, { VITE_API_BASE_URL: base });
       await waitUntil(async () => { try { return (await fetch(origin, { signal: AbortSignal.timeout(1000) })).ok; } catch { return false; } }, { processes: [vite, backend], label: 'vite readiness' });
       browser = await chromium.launch({ headless: true });
       const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, timezoneId: 'UTC' });
@@ -317,7 +319,7 @@ async function run() {
       assert.deepEqual(pageErrors, []);
       assert.deepEqual(gymRequests.filter((request) => request !== 'GET /v1/gym/threads'), [], 'web mirror and engine writes must use no replaced REST door');
       await context.close();
-      console.log(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 6, pending: 0, persistedGymOperations: 2, syncWriteLog: true, ports: [8094, 5181] }));
+      console.log(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 6, pending: 0, persistedGymOperations: 2, syncWriteLog: true, ports: [backendPort, webPort] }));
     }
     completed = true;
   } catch (error) {

@@ -32,6 +32,11 @@ test('the deal promises no erasure and no deadline, because the server performs 
     assert.equal(forbidden.test(line), false, `"${line}" claims something AuthService::closeAccount does not do`);
 });
 
+test('closing discards this account’s device data, including changes the server has not received', () => {
+  assert.equal(closingDeal([])[2],
+    'This account’s data on this device is discarded, including changes that haven’t reached the account.');
+});
+
 function sourceFiles(dir) {
   const files = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

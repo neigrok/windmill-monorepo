@@ -14,7 +14,6 @@ const prefersReducedMotion = () =>
 export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSettings, onConnect, mine, footer, appearance = true, display = 'avatar' }) {
   const [open, setOpen] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const [claim, setClaim] = useState(null); // null | 'syncing' | 'synced' | 'fading'
   const [woke, setWoke] = useState(false);
   const rootRef = useRef(null);
   const seatRef = useRef(null);
@@ -25,22 +24,14 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
   const signedIn = status === 'signed-in' && Boolean(user);
   const name = signedIn ? (user.name?.trim() || user.email) : '';
 
-  // Fires only on a live ghost→signed-in flip, and runs the chip on its own timers.
+  // The avatar wakes on a live ghost→signed-in flip.
   useEffect(() => {
     const woken = prevStatus.current === 'ghost' && status === 'signed-in';
     prevStatus.current = status;
     if (!woken) return undefined;
     setWoke(true);
-    setClaim('syncing');
     const settle = setTimeout(() => setWoke(false), 520);
-    const toSynced = setTimeout(() => setClaim('synced'), 1200);
-    const toFading = setTimeout(() => setClaim('fading'), 2100);
-    const toSilent = setTimeout(() => setClaim(null), 2550);
-    return () => [toSynced, toFading, toSilent, settle].forEach(clearTimeout);
-  }, [status]);
-
-  useEffect(() => {
-    if (status !== 'signed-in') setClaim(null);
+    return () => clearTimeout(settle);
   }, [status]);
 
   // Escape and a press outside both close the pop-up and hand focus back to the seat.
@@ -70,51 +61,7 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
     <div ref={rootRef} style={{ position: 'relative', display: 'inline-flex' }}>
       <style>{`
         @keyframes wm-seat-wake { 0% { transform: scale(1); } 45% { transform: scale(1.02); } 100% { transform: scale(1); } }
-        @keyframes wm-seat-breathe { 0%, 100% { opacity: 0.6; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.12); } }
-        @keyframes wm-seat-chip-fade { from { opacity: 0; } to { opacity: 1; } }
       `}</style>
-
-      {claim && (
-        <span
-          style={{
-            position: 'absolute',
-            right: 'calc(100% + 8px)',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 7,
-            height: 28,
-            padding: '0 12px',
-            whiteSpace: 'nowrap',
-            borderRadius: 'var(--radius-full)',
-            background: 'var(--surface-card)',
-            border: '1px solid var(--border-subtle)',
-            boxShadow: 'var(--shadow-sm)',
-            fontFamily: 'var(--font-body)',
-            fontSize: 'var(--text-xs)',
-            fontWeight: 600,
-            color: claim === 'syncing' ? 'var(--accent-gold-600)' : 'var(--accent-olive-600)',
-            opacity: claim === 'fading' ? 0 : 1,
-            transition: `opacity ${reduced ? 'var(--duration-fast)' : 'var(--duration-base)'} var(--ease-soft)`,
-            animation: reduced
-              ? 'wm-seat-chip-fade var(--duration-fast) var(--ease-soft)'
-              : 'wm-fade-in-up var(--duration-fast) var(--ease-soft)',
-            pointerEvents: 'none',
-          }}
-        >
-          <span
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: 'var(--radius-full)',
-              background: claim === 'syncing' ? 'var(--accent-gold-500)' : 'var(--accent-olive-500)',
-              animation: !reduced && claim === 'syncing' ? 'wm-seat-breathe 1.6s var(--ease-standard) infinite' : 'none',
-            }}
-          />
-          {claim === 'syncing' ? 'Syncing…' : 'Synced'}
-        </span>
-      )}
 
       <button
         ref={seatRef}

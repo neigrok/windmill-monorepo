@@ -22,6 +22,7 @@ web/                        Vite/React superapp for all three products
     main.jsx                entry point
     styles/                 shared tokens and global styles
     telemetry/              product-neutral telemetry
+    platform/               browser sync engine and product-neutral domain kit
     design-system/          shared components
     showcase/               component and product gallery
     shell/                  router, product registry, account, billing and shared navigation
