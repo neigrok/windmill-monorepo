@@ -63,11 +63,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-import works.windmill.gym.domain.Ask
-import works.windmill.gym.domain.AskCap
-import works.windmill.gym.domain.CoachAttachment
-import works.windmill.gym.domain.CoachDraft
-import works.windmill.gym.domain.AskExchange
+import works.windmill.gym.coach.Ask
+import works.windmill.gym.coach.AskCap
+import works.windmill.gym.coach.CoachAttachment
+import works.windmill.gym.coach.CoachDraft
+import works.windmill.gym.coach.AskExchange
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.Coach
 import works.windmill.gym.domain.CoachDoors
@@ -79,9 +79,9 @@ import works.windmill.gym.domain.Notes
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.SessionSummary
-import works.windmill.gym.domain.Threads
+import works.windmill.gym.coach.Threads
 import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.store.AskOutcome
+import works.windmill.gym.coach.AskOutcome
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
@@ -89,9 +89,9 @@ import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.LocalGymEngineSession
 import works.windmill.gym.store.WorkoutImports
 import works.windmill.gym.store.Withheld
-import works.windmill.gym.ui.AskAbsentStance
-import works.windmill.gym.ui.AskScreen
-import works.windmill.gym.ui.AskSignedOutStance
+import works.windmill.gym.coach.AskAbsentStance
+import works.windmill.gym.coach.AskScreen
+import works.windmill.gym.coach.AskSignedOutStance
 import works.windmill.gym.ui.BodyweightScreen
 import works.windmill.gym.ui.ConnectedLogScreen
 import works.windmill.gym.ui.FinishCoach
@@ -112,9 +112,9 @@ import works.windmill.gym.ui.RoutinesScreen
 import works.windmill.gym.ui.rememberGymHaptics
 import works.windmill.gym.ui.SessionScreen
 import works.windmill.gym.ui.SettingsScreen
-import works.windmill.gym.ui.ThreadScreen
-import works.windmill.gym.ui.ThreadsScreen
-import works.windmill.gym.ui.askThreadSaver
+import works.windmill.gym.coach.ThreadScreen
+import works.windmill.gym.coach.ThreadsScreen
+import works.windmill.gym.coach.askThreadSaver
 import works.windmill.gym.notification.WorkoutNotifications
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -480,12 +480,12 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         store.connect(account)
         if (conversationId.isEmpty() && standing != null) {
             try {
-                store.pendingQuestions().lastOrNull()?.let { pending ->
+                store.coach.pendingQuestions().lastOrNull()?.let { pending ->
                     conversationId = pending.thread
-                    val read = store.thread(pending.thread)
+                    val read = store.coach.thread(pending.thread)
                     conversation = if (read is GymResult.Ok) read.value.exchanges() else emptyList()
                     if (read !is GymResult.Ok || read.value.generation?.requestId != pending.requestId) {
-                        conversation = conversation + store.pendingExchange(pending)
+                        conversation = conversation + store.coach.pendingExchange(pending)
                     }
                     conversation = Ask.settled(conversation)
                 }
@@ -663,8 +663,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         val attachments = previous?.attachments.orEmpty().ifEmpty { listOfNotNull(photo) }
         val pending = AskExchange(question = asked, requestId = requestId, generation = previous?.generation, attachments = attachments)
         try {
-            store.saveCoachDraft(into, CoachDraft(asked, attachments.firstOrNull()))
-            store.saveCoachDraft("new", CoachDraft())
+            store.coach.saveDraft(into, CoachDraft(asked, attachments.firstOrNull()))
+            store.coach.saveDraft("new", CoachDraft())
         } catch (_: Exception) { note = "Your message couldn’t be saved. Try again."; return }
         cap = null
         asking = true
@@ -672,18 +672,18 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         conversation = from + pending
         coachJob = scope.launch {
             try {
-                val outcome = store.ask(into, asked, requestId, attachments.firstOrNull(), stream = true,
+                val outcome = store.coach.ask(into, asked, requestId, attachments.firstOrNull(), stream = true,
                     onSnapshot = { snapshot ->
                         if (askingOwner == currentAccount.user?.id && conversationId == into) {
                             conversation = from + snapshot.exchange().copy(attachments = snapshot.attachments.ifEmpty { attachments })
-                            store.saveCoachDraft(into, CoachDraft())
+                            store.coach.saveDraft(into, CoachDraft())
                         }
                     }, onUpload = { coachUpload = it })
                 if (askingOwner != currentAccount.user?.id || conversationId != into) return@launch
                 conversation = from + outcome.exchange(pending)
                 if (outcome is AskOutcome.Capped) cap = outcome.cap
                 if (outcome is AskOutcome.Absent) askAbsent = true
-                if (outcome is AskOutcome.Answered) store.saveCoachDraft(into, CoachDraft())
+                if (outcome is AskOutcome.Answered) store.coach.saveDraft(into, CoachDraft())
             } finally {
                 if (askingOwner == currentAccount.user?.id && conversationId == into) { asking = false; coachUpload = null; stopPending = false }
             }
@@ -703,10 +703,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         stopPending = true
         scope.launch {
             try {
-                val snapshot = store.stopAsk(into, last.requestId)
+                val snapshot = store.coach.stop(into, last.requestId)
                 if (askingOwner == currentAccount.user?.id && conversationId == into) {
                     conversation = conversation.dropLast(1) + snapshot.exchange()
-                    if (snapshot.terminal) { store.saveCoachDraft(into, CoachDraft()); coachJob?.cancel(); asking = false }
+                    if (snapshot.terminal) { store.coach.saveDraft(into, CoachDraft()); coachJob?.cancel(); asking = false }
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (_: Exception) { note = "The stop request didn’t reach Coach. Try again." }
@@ -724,7 +724,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // The live thread and its id are let go of; what was asked is on the log.
     fun askSomethingNew(draft: String = "") {
         if (asking) return
-        try { store.abandonCoach(conversationId.ifEmpty { "new" }) }
+        try { store.coach.abandon(conversationId.ifEmpty { "new" }) }
         catch (_: Exception) { note = "Your draft couldn’t be cleared. Try again."; return }
         conversationSeed = draft
         conversation = emptyList()

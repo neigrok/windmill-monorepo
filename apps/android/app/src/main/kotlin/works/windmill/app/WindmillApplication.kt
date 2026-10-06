@@ -1,5 +1,6 @@
 package works.windmill.app
 
+import works.windmill.gym.coach.LocalCoach
 import android.app.Application
 import android.app.Activity
 import android.app.KeyguardManager
@@ -121,7 +122,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
                     is LocalSession.Unresolved -> false
                 }
             }, telemetry = telemetry,
-            localCoach = works.windmill.gym.store.LocalCoach(File(filesDir, works.windmill.gym.store.LocalCoach.fileName)),
+            localCoach = works.windmill.gym.coach.LocalCoach(File(filesDir, works.windmill.gym.coach.LocalCoach.fileName)),
         )
         engineSession = GymEngineSession(engine, syncRuntime, telemetry, transport, beforeAccountChange = store::prepareEngineTransition)
         auth = AuthStore(baseUrl, sessions, telemetry = telemetry, lifecycle = engineSession)

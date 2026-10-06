@@ -1,5 +1,6 @@
-package works.windmill.gym.domain
+package works.windmill.gym.coach
 
+import works.windmill.gym.domain.*
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

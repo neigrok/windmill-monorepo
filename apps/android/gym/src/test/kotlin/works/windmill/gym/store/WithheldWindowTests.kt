@@ -11,7 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.domain.AskThread
+import works.windmill.gym.coach.AskThread
 import works.windmill.gym.domain.NoteWrite
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
@@ -434,7 +434,7 @@ class WithheldWindowTests {
         server.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
         EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = server).use { room ->
             room.select("u1")
-            assertTrue(room.store.readThreads() is GymResult.Ok)
+            assertTrue(room.store.coach.readThreads() is GymResult.Ok)
             server.refuseThreads = WindmillApiException.Refused(500, Refusal(message = "internal error"))
 
             room.store.withhold(Deletion.Thread("thr_1"))
@@ -445,7 +445,7 @@ class WithheldWindowTests {
                 "internal error", room.store.deleteRefused)
             assertEquals("the window is closed either way", emptyList<WithheldDelete>(), room.store.withheld)
             assertEquals("and the row is back, because nothing local was crossed out",
-                listOf("thr_1"), room.store.threads.map { it.id })
+                listOf("thr_1"), room.store.coach.threads.map { it.id })
 
             room.store.clearDeleteRefused()
             assertNull("said once", room.store.deleteRefused)

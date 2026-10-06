@@ -26,15 +26,6 @@ import works.windmill.gym.domain.WorkoutChange
 import works.windmill.gym.domain.LogSetCommand
 import works.windmill.gym.domain.LogSetAcceptance
 import works.windmill.gym.domain.Readout
-import works.windmill.gym.domain.Ask
-import works.windmill.gym.domain.AskExchange
-import works.windmill.gym.domain.AskGeneration
-import works.windmill.gym.domain.CoachDraft
-import works.windmill.gym.domain.CoachAttachment
-import works.windmill.gym.domain.AskAnswer
-import works.windmill.gym.domain.AskCap
-import works.windmill.gym.domain.AskQuestion
-import works.windmill.gym.domain.AskThread
 import works.windmill.gym.domain.AutoClose
 import works.windmill.gym.domain.Blocker
 import works.windmill.gym.domain.Bodyweight
@@ -75,13 +66,14 @@ import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.domain.WeighIn
 import works.windmill.gym.domain.WeighInWrite
 import works.windmill.gym.net.GymRest
+import works.windmill.gym.coach.CoachStore
+import works.windmill.gym.coach.LocalCoach
 import works.windmill.platform.Account
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.schema.Gym
 
-// Main-thread boundary between the screens and the account's engine replica: training reads and
-// writes go through `training`, and only Coach, shares and credential lists through `rest`.
+// Main-thread training state; Coach owns its conversations, drafts and network requests.
 class TrainingStore(
     private val controls: WorkoutControls,
     private val training: EngineTraining,
@@ -96,9 +88,14 @@ class TrainingStore(
     private val workoutClock: WorkoutClock = WorkoutClock { val at = now(); WorkoutMoment(at, at, "local") },
     private val workoutAuthority: (String?) -> Boolean = { true },
     private val telemetry: Telemetry = Telemetry.None,
-    private val elapsedNanos: () -> Long = System::nanoTime,
-    private val localCoach: LocalCoach? = null,
+    elapsedNanos: () -> Long = System::nanoTime,
+    localCoach: LocalCoach? = null,
 ) {
+    val coach = CoachStore(
+        accountOwner = { owner }, withheldIds = { withheldIds }, onProgramChanged = ::reread,
+        rest = rest, localCoach = localCoach, telemetry = telemetry, elapsedNanos = elapsedNanos,
+    )
+
     // A refusal is an answer the screen says, never a failure to report.
     private fun reportFailure(operation: String, error: Exception) {
         if (error is WindmillApiException || error is TrainingRefused || error is TrainingUnanswered || error is CancellationException) return
@@ -332,7 +329,6 @@ class TrainingStore(
     // The account replica's notes in precedence order. The first pull distinguishes an unread
     // notebook from an empty one; the room keeps one projection so an undo window stays hidden.
     private val notebookWrite = Mutex()
-    private val conversationWrite = Mutex()
     private val proposalWrite = Mutex()
     private var notebook: List<Note> by mutableStateOf(emptyList())
     var notesRead by mutableStateOf(false)
@@ -344,15 +340,6 @@ class TrainingStore(
     val notes: List<Note>
         get() = notebook.filterNot { it.id in withheldIds }
     val noteCount: Int get() = notebook.size
-    // The account's conversations as the log last answered them, newest first. Held by the ROOM for
-    // exactly the reason the notes are: a screen keeping a snapshot of its own would draw a
-    // conversation back the moment its window settled. Writes go to `conversations`.
-    private var conversations: List<AskThread> by mutableStateOf(emptyList())
-    // A conversation inside its undo window is off the list; `allThreads` still holds it, because the
-    // account does. A window decides which ROWS are drawn and never what state a screen is in, so the
-    // threads room reads its empty stance from `allThreads`.
-    val threads: List<AskThread> get() = conversations.filterNot { it.id in withheldIds }
-    val allThreads: List<AskThread> get() = conversations
     // Every proposal this room settled, as the log's receipt said it: a card minted in a conversation
     // reads off this before the copy it was minted with, so a settled one never keeps saying waiting.
     var settledProposals: Map<String, Proposal> by mutableStateOf(emptyMap())
@@ -452,9 +439,6 @@ class TrainingStore(
         // Coach, shares and connected-log credentials are the account's: signed out, nothing is asked.
         const val signInFirst = "Sign in first."
 
-        // Absent, another account's and deleted are one sentence: three answers a stranger could tell
-        // apart would say whether a conversation exists on somebody else's log.
-        const val noSuchThread = "that conversation is no longer on the log"
     }
 
     // Warmups included; `Prefill` is narrower and follows the working sets only.
@@ -572,8 +556,7 @@ class TrainingStore(
             notebook = emptyList()
             notesRead = false
             noteRefusals = emptyList()
-            conversations = emptyList()
-            nextThreadCursor = null
+            coach.resetThreads()
             connectedLog = ConnectedLogState.Unknown
         }
         reconcileWorkoutTime()
@@ -1013,265 +996,6 @@ class TrainingStore(
         val deleted = before.keys - program.map { it.id }.toSet()
         val fetched = written.filterNot { it.id in deleted }
         routines = fetched.map { changed[it.id] ?: it } + changed.values.filter { row -> fetched.none { it.id == row.id } }
-    }
-
-    // The reply is drawn as it arrived: the prose, the server's own count of the rows it served, and
-    // any proposal ids. NOTHING HERE COMPOSES A NUMBER. A proposal minted in a conversation is a card
-    // on home too, so the program is re-read the moment one appears.
-    fun pendingQuestions(): List<AskQuestion> = try {
-        owner?.let { localCoach?.pending(it) }.orEmpty()
-    } catch (failure: Exception) {
-        reportFailure("gym.restoreConversation", failure)
-        emptyList()
-    }
-
-    private val coachDrafts = mutableMapOf<Pair<String, String>, CoachDraft>()
-    var coachDraftVersion by mutableStateOf(0)
-        private set
-
-    fun coachDraft(key: String): CoachDraft = owner?.let { seat ->
-        localCoach?.draft(seat, key) ?: coachDrafts[seat to key]
-    } ?: CoachDraft()
-
-    fun saveCoachDraft(key: String, draft: CoachDraft) {
-        val seat = owner ?: return
-        if (coachDraft(key) == draft && (coachDrafts[seat to key] ?: CoachDraft()) == draft) return
-        localCoach?.saveDraft(seat, key, draft)
-        coachDrafts[seat to key] = draft
-        coachDraftVersion++
-    }
-
-    fun abandonCoach(threadId: String) {
-        val seat = owner ?: return
-        localCoach?.clear(seat, threadId)
-        coachDrafts.remove(seat to threadId)
-        coachDraftVersion++
-    }
-
-    suspend fun importCoachPhoto(key: String, resolver: android.content.ContentResolver, uri: android.net.Uri) {
-        val seat = owner ?: error(signInFirst)
-        val disk = localCoach ?: error("Photo storage is unavailable.")
-        val (photo, bytes) = withContext(Dispatchers.IO) { CoachPhotos.read(resolver, uri) }
-        check(seat == owner) { accountChanged }
-        withContext(Dispatchers.IO) { disk.savePhoto(seat, photo.id, bytes) }
-        if (seat == owner) saveCoachDraft(key, coachDraft(key).copy(photo = photo))
-    }
-
-    suspend fun coachPhoto(threadId: String, photo: CoachAttachment): ByteArray {
-        val seat = owner ?: error(signInFirst)
-        val coach = rest() ?: error(signInFirst)
-        val cached = localCoach?.photoFile(seat, photo.id)
-        val bytes = if (cached?.isFile == true) withContext(Dispatchers.IO) { cached.readBytes() }
-            else coach.photo(threadId, photo.id)
-        check(seat == owner) { accountChanged }
-        return bytes
-    }
-
-    suspend fun stopAsk(threadId: String, requestId: String): AskGeneration {
-        val seat = owner ?: error(signInFirst)
-        val coach = rest() ?: error(signInFirst)
-        val generation = coach.stop(threadId, requestId)
-        check(seat == owner) { accountChanged }
-        withContext(Dispatchers.IO) { localCoach?.record(seat, generation) }
-        check(seat == owner) { accountChanged }
-        val current = localCoach?.snapshot(seat, requestId) ?: generation
-        if (current.status in listOf("completed", "stopped")) withContext(Dispatchers.IO) { localCoach?.clear(seat, threadId, requestId) }
-        check(seat == owner) { accountChanged }
-        return current
-    }
-
-    fun pendingExchange(question: AskQuestion): AskExchange {
-        val snapshot = owner?.let { localCoach?.snapshot(it, question.requestId.orEmpty()) }
-        return snapshot?.exchange() ?: AskExchange(question.question, requestId = question.requestId.orEmpty(),
-            trouble = Ask.interrupted, again = true,
-            attachments = question.attachmentIds.mapNotNull { id ->
-                owner?.let { localCoach?.draft(it, question.thread)?.photo?.takeIf { it.id == id } }
-            })
-    }
-
-    suspend fun ask(threadId: String, question: String, requestId: String = Ids.thread(),
-        photo: CoachAttachment? = null, stream: Boolean = false,
-        onSnapshot: (AskGeneration) -> Unit = {}, onUpload: (Float?) -> Unit = {},
-    ): AskOutcome {
-        val started = elapsedNanos()
-        telemetry.event("gym_ask_started")
-        fun complete(outcome: AskOutcome, failure: Exception? = null): AskOutcome {
-            val properties = mutableMapOf("duration_ms" to ((elapsedNanos() - started) / 1_000_000).toString())
-            properties["outcome"] = when (outcome) {
-                is AskOutcome.Answered -> "answered"
-                is AskOutcome.Refused -> "refused"
-                is AskOutcome.Capped -> "capped"
-                is AskOutcome.Failed -> "failed"
-                is AskOutcome.Fresh -> "fresh"
-                AskOutcome.Absent -> "absent"
-            }
-            if (outcome is AskOutcome.Capped) properties["cap"] = outcome.cap.name.lowercase()
-            if (failure != null) properties["failure_kind"] = when (failure) {
-                WindmillApiException.Offline -> "offline"
-                is WindmillApiException.Timeout -> "timeout"
-                WindmillApiException.Malformed -> "malformed"
-                is WindmillApiException.Transport -> "transport"
-                is WindmillApiException.Refused -> "http"
-                else -> "unexpected"
-            }
-            if (failure is WindmillApiException.Refused) properties["status"] = failure.status.toString()
-            telemetry.event("gym_ask_outcome", properties)
-            return outcome
-        }
-        val seat = owner
-        val coach = rest() ?: return complete(AskOutcome.Refused(signInFirst))
-        var snapshot = seat?.let { localCoach?.snapshot(it, requestId) }
-        var photoUpload = false
-        return try {
-            val saved = seat?.let { localCoach?.pending(it)?.firstOrNull { it.requestId == requestId } }
-            val request = saved ?: AskQuestion(thread = threadId, question = question, requestId = requestId,
-                attachmentIds = listOfNotNull(photo?.id))
-            require(request.thread == threadId && request.question == question) { "A retry must keep the original message." }
-            if (seat != null) withContext(Dispatchers.IO) { localCoach?.keep(seat, request) }
-            if (seat != owner) return complete(AskOutcome.Refused(accountChanged))
-            if (photo != null && seat != null && snapshot == null) {
-                val file = localCoach?.photoFile(seat, photo.id)
-                if (file?.isFile == true) {
-                    photoUpload = true
-                    onUpload(0f)
-                    val bytes = withContext(Dispatchers.IO) { file.readBytes() }
-                    coach.uploadPhoto(threadId, photo, bytes) { if (seat == owner) onUpload(it) }
-                    if (seat != owner) return complete(AskOutcome.Refused(accountChanged))
-                    photoUpload = false
-                    onUpload(null)
-                }
-            }
-            onUpload(null)
-            val accept: suspend (AskGeneration) -> Unit = { next ->
-                if (seat == owner && snapshot != next && (snapshot == null || next.revision >= snapshot!!.revision)) {
-                    if (seat != null) withContext(Dispatchers.IO) { localCoach?.record(seat, next) }
-                    if (seat == owner) {
-                        snapshot = next
-                        onSnapshot(next)
-                    }
-                }
-            }
-            var answered = if (stream) coach.stream(request, accept) else coach.ask(request)
-            answered.generation?.let { accept(it) }
-            var pause = 1_000L
-            while (answered.generation?.status == "running") {
-                if (seat != owner) return complete(AskOutcome.Refused(accountChanged))
-                delay(pause)
-                if (seat != owner) return complete(AskOutcome.Refused(accountChanged))
-                pause = (pause * 2).coerceAtMost(10_000)
-                answered = if (stream) coach.stream(request, accept) else coach.ask(request)
-                answered.generation?.let { accept(it) }
-            }
-            if (seat != owner) return complete(AskOutcome.Refused(accountChanged))
-            if (answered.proposals.isNotEmpty() || answered.results.isNotEmpty()) reread()
-            if (answered.generation?.status == "failed") return complete(AskOutcome.Failed(Ask.interrupted, snapshot))
-            if (seat != null) withContext(Dispatchers.IO) { localCoach?.clear(seat, threadId, requestId) }
-            if (seat != owner) return complete(AskOutcome.Refused(accountChanged))
-            complete(AskOutcome.Answered(answered))
-        } catch (interrupted: CancellationException) {
-            telemetry.event("gym_ask_outcome", mapOf("outcome" to "cancelled",
-                "duration_ms" to ((elapsedNanos() - started) / 1_000_000).toString()))
-            throw interrupted
-        } catch (refusing: Exception) {
-            reportFailure("gym.ask", refusing)
-            if (seat != owner) return complete(AskOutcome.Refused(accountChanged), refusing)
-            val authoritative = try { coach.thread(threadId)?.generation?.takeIf { it.requestId == requestId } }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { null }
-            if (seat != owner) return complete(AskOutcome.Refused(accountChanged), refusing)
-            if (authoritative != null && (snapshot == null || authoritative.revision >= snapshot!!.revision)) {
-                snapshot = authoritative
-                if (seat != null) withContext(Dispatchers.IO) { localCoach?.record(seat, authoritative) }
-                if (seat != owner) return complete(AskOutcome.Refused(accountChanged), refusing)
-            }
-            if (snapshot?.status in listOf("completed", "stopped")) {
-                if (seat != null) withContext(Dispatchers.IO) { localCoach?.clear(seat, threadId, requestId) }
-                if (seat != owner) return complete(AskOutcome.Refused(accountChanged), refusing)
-                return complete(AskOutcome.Answered(requireNotNull(snapshot).response()))
-            }
-            if (photoUpload) return complete(AskOutcome.Failed("Photo didn’t upload. Retry to send this photo.", snapshot), refusing)
-            if (snapshot == null && photo != null && refusing is WindmillApiException.Refused && refusing.refusal.code == "ask-attachment-invalid") {
-                return complete(AskOutcome.Failed("Photo wasn’t available. Retry to upload it again."), refusing)
-            }
-            complete(AskOutcome.refusing(refusing, snapshot), refusing)
-        }
-    }
-
-    // The list is the ROOM's, exactly as the notes are: a screen holding a copy of its own would draw
-    // a conversation back the moment its window settled. It is re-read on the way into the screen and
-    // written into `conversations` here, because the outcome is DERIVED by the server from the
-    // proposals and a list nobody re-read would say `waiting` days after somebody decided. The single
-    // thread below is still held nowhere at all.
-    var nextThreadCursor: String? by mutableStateOf(null)
-        private set
-
-    suspend fun readThreads(cursor: String? = null): GymResult<List<AskThread>> {
-        val seat = owner
-        val coach = rest() ?: return GymResult.Failed(WriteFailure.Refused(signInFirst))
-        return conversationWrite.withLock {
-            if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
-            try {
-                val page = coach.threads(cursor)
-                if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
-                conversations = if (cursor == null) page.threads else (conversations + page.threads).distinctBy { it.id }
-                nextThreadCursor = page.nextCursor
-                GymResult.Ok(conversations)
-            } catch (interrupted: CancellationException) {
-                throw interrupted
-            } catch (refusing: Exception) {
-                reportFailure("gym.readThreads", refusing)
-                if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
-                GymResult.Failed(WriteFailure(refusing))
-            }
-        }
-    }
-
-    // A log that refused with a sentence is not a log holding no such thread, so the absence answers
-    // in words rather than as a null.
-    suspend fun thread(id: String, before: String? = null): GymResult<AskThread> {
-        val seat = owner
-        val coach = rest() ?: return GymResult.Failed(WriteFailure.Refused(signInFirst))
-        return try {
-            val read = coach.thread(id, before)
-            if (seat != owner) return GymResult.Failed(WriteFailure.Refused(accountChanged))
-            if (read == null) return GymResult.Failed(WriteFailure.Refused(noSuchThread))
-            if (seat != null && read.generation?.status in listOf("completed", "stopped")) localCoach?.clear(seat, id, requireNotNull(read.generation).requestId)
-            GymResult.Ok(read)
-        } catch (interrupted: CancellationException) {
-            throw interrupted
-        } catch (refusing: Exception) {
-            reportFailure("gym.thread", refusing)
-            if (seat != owner) return GymResult.Failed(WriteFailure.Refused(accountChanged))
-            GymResult.Failed(WriteFailure(refusing))
-        }
-    }
-
-    // Deleting a conversation preserves every applied routine change. A 404 answers as success.
-    //
-    // The settled delete leaves the READ and not only the drawn rows: a list still holding it once
-    // the window closed would put the row back on screen, and the room would go on calling an emptied
-    // account full.
-    suspend fun deleteThread(id: String): GymResult<Unit> {
-        val seat = owner
-        val coach = rest() ?: return GymResult.Failed(WriteFailure.Refused(signInFirst))
-        return conversationWrite.withLock {
-            if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
-            try {
-                coach.deleteThread(id)
-                if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
-                conversations = conversations.filterNot { it.id == id }
-                if (seat != null) localCoach?.clear(seat, id)
-                GymResult.Ok(Unit)
-            } catch (interrupted: CancellationException) {
-                throw interrupted
-            } catch (refusing: Exception) {
-                reportFailure("gym.deleteThread", refusing)
-                if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
-                if ((refusing as? WindmillApiException.Refused)?.status != 404) return@withLock GymResult.Failed(WriteFailure(refusing))
-                conversations = conversations.filterNot { it.id == id }
-                GymResult.Ok(Unit)
-            }
-        }
     }
 
     // What a screen asks on the way in: the answer already held for this seat, or the read that
@@ -1736,7 +1460,7 @@ class TrainingStore(
     private suspend fun send(deletion: Deletion): WriteFailure? = when (deletion) {
         is Deletion.Set -> deleteSet(deletion.sessionId, deletion.set.id)
         is Deletion.Routine -> dropRoutine(deletion.routineId)
-        is Deletion.Thread -> (deleteThread(deletion.threadId) as? GymResult.Failed)?.why
+        is Deletion.Thread -> (coach.deleteThread(deletion.threadId) as? GymResult.Failed)?.why
         is Deletion.Session ->
             if (discard(deletion.sessionId)) null else WriteFailure.NoAnswer
         is Deletion.Note -> deleteNote(deletion.noteId)
@@ -2005,54 +1729,6 @@ sealed interface ProposalRead {
     data class Found(val proposal: Proposal) : ProposalRead
     data object Gone : ProposalRead {
         const val line = "This proposal is no longer available."
-    }
-}
-
-// `Answered` carries the reply whole and the screen draws it without adding to it. `Refused` is the
-// log answering in its own words, which a retry cannot change; `Capped` is the one refusal that takes
-// the composer down, since the next question is hours away; `Failed` is the log going quiet, which
-// is worth another tap. `Absent` is the deployment having no Coach. `Fresh` is the conversation being
-// full or another account's: the QUESTION is fine, so asking it again opens a new thread.
-sealed interface AskOutcome {
-    data class Answered(val answer: AskAnswer) : AskOutcome
-    data class Refused(val said: String, val generation: AskGeneration? = null) : AskOutcome
-    data class Capped(val said: String, val cap: AskCap, val generation: AskGeneration? = null) : AskOutcome
-    data class Failed(val said: String, val generation: AskGeneration? = null) : AskOutcome
-    data class Fresh(val said: String) : AskOutcome
-    data object Absent : AskOutcome
-
-    companion object {
-        // Told apart by status and code, never by the English. Only a log that went quiet, or one
-        // that failed, is worth another tap; a bare 404 is a deployment with no Coach.
-        fun refusing(error: Throwable, generation: AskGeneration?): AskOutcome {
-            val refused = error as? WindmillApiException.Refused ?: return Failed(noAnswer, generation)
-            val said = refused.refusal.message
-            return when {
-                refused.status == 404 -> Absent
-                refused.status >= 500 -> Failed(said ?: noAnswer, generation)
-                // Both ceilings take the composer down: the one unrationed way on, the connect door,
-                // is drawn there and is not drawn beside a live composer.
-                refused.refusal.code == "ask-daily-limit" -> Capped(said ?: AskCap.Daily.wordless, AskCap.Daily, generation)
-                refused.refusal.code == "ask-out-of-budget" -> Capped(said ?: AskCap.Ceiling.wordless, AskCap.Ceiling, generation)
-                refused.refusal.code == "ask-generation-active" ->
-                    Failed(said ?: "Coach is answering another message. Try again when it finishes.", generation)
-                // Both are answered by opening a new thread; nothing is re-sent on its own.
-                refused.refusal.code == "ask-thread-full" || refused.refusal.code == "ask-thread-taken" -> Fresh(said ?: Ask.threadFull)
-                else -> Refused(said ?: "Coach couldn’t take that one", generation)
-            }
-        }
-
-        private const val noAnswer = "Coach didn’t answer. Try again in a moment"
-    }
-
-    fun exchange(pending: AskExchange): AskExchange = when (this) {
-        is Answered -> answer.generation?.exchange()?.copy(attachments = answer.generation.attachments.ifEmpty { pending.attachments })
-            ?: pending.copy(answer = answer)
-        is Failed -> pending.copy(trouble = said, again = true, generation = generation ?: pending.generation)
-        is Refused -> pending.copy(trouble = said, again = generation != null, generation = generation ?: pending.generation)
-        is Capped -> pending.copy(trouble = said, again = generation != null, generation = generation ?: pending.generation)
-        is Fresh -> pending.copy(trouble = said, needsNew = true)
-        Absent -> pending.copy(trouble = Ask.notHere)
     }
 }
 

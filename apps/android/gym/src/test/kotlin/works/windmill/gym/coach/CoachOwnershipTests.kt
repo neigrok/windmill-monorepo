@@ -1,5 +1,6 @@
-package works.windmill.gym.store
+package works.windmill.gym.coach
 
+import works.windmill.gym.store.*
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -52,15 +53,15 @@ class CoachOwnershipTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = server, localCoach = disk).use { room ->
             room.select("a")
             val store = room.store
-            store.saveCoachDraft("thread-a", CoachDraft("Question"))
-            assertEquals(1, store.coachDraftVersion)
+            store.coach.saveDraft("thread-a", CoachDraft("Question"))
+            assertEquals(1, store.coach.draftVersion)
             writes.clear()
             val shown = mutableListOf<AskGeneration>()
-            val result = store.ask("thread-a", "Question", "request-a", stream = true, onSnapshot = {
+            val result = store.coach.ask("thread-a", "Question", "request-a", stream = true, onSnapshot = {
                 assertSame(caller, Thread.currentThread())
                 assertEquals(it, LocalCoach(file).snapshot("a", "request-a"))
-                store.saveCoachDraft("thread-a", CoachDraft())
-                assertEquals(2, store.coachDraftVersion)
+                store.coach.saveDraft("thread-a", CoachDraft())
+                assertEquals(2, store.coach.draftVersion)
                 shown += it
             })
             assertEquals(AskOutcome.Answered(stopped.response()), result)
@@ -99,7 +100,7 @@ class CoachOwnershipTests {
             }
             EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = server, localCoach = disk).use { room ->
                 room.select("a")
-                val outcome = async { room.store.ask("thread-a", "Question", "request-a") }
+                val outcome = async { room.store.coach.ask("thread-a", "Question", "request-a") }
                 entered.await()
                 try { room.select("b") } finally { release.countDown() }
                 assertEquals(AskOutcome.Refused("The account changed. Open this again."), outcome.await())
@@ -134,14 +135,14 @@ class CoachOwnershipTests {
         val snapshot = EngineRoomFixture(directory, backgroundScope, rest = boundary, localCoach = disk).use { first ->
             first.select("a")
             assertEquals(AskOutcome.Failed("Photo wasn’t available. Retry to upload it again."),
-                first.store.ask(request.thread, request.question, "request-expired", photo, stream = true))
+                first.store.coach.ask(request.thread, request.question, "request-expired", photo, stream = true))
             first.engine.snapshot()
         }
         EngineRoomFixture(directory, backgroundScope, snapshot, rest = boundary, localCoach = LocalCoach(file)).use { restored ->
             restored.selected = "a"
             restored.store.connect(restored.account())
-            assertEquals(photo, restored.store.pendingExchange(request).attachments.single())
-            assertTrue(restored.store.ask(request.thread, request.question, "request-expired", photo, stream = true) is AskOutcome.Answered)
+            assertEquals(photo, restored.store.coach.pendingExchange(request).attachments.single())
+            assertTrue(restored.store.coach.ask(request.thread, request.question, "request-expired", photo, stream = true) is AskOutcome.Answered)
         }
         assertEquals(listOf(request, request), requests)
         assertEquals(listOf(photo.id, photo.id), uploads)
@@ -178,7 +179,7 @@ class CoachOwnershipTests {
         val snapshot = EngineRoomFixture(directory, backgroundScope, rest = boundary, localCoach = disk).use { room ->
             room.select("a")
             val snapshots = mutableListOf<AskGeneration>()
-            val failure = room.store.ask(request.thread, "", "request-a", photo, stream = true, onSnapshot = snapshots::add)
+            val failure = room.store.coach.ask(request.thread, "", "request-a", photo, stream = true, onSnapshot = snapshots::add)
             assertEquals(partial, (failure as AskOutcome.Failed).generation)
             assertEquals(listOf(request), LocalCoach(file).pending("a"))
             assertEquals(partial, LocalCoach(file).snapshot("a", "request-a"))
@@ -188,7 +189,7 @@ class CoachOwnershipTests {
         EngineRoomFixture(directory, backgroundScope, snapshot, rest = boundary, localCoach = LocalCoach(file)).use { restored ->
             restored.selected = "a"
             restored.store.connect(restored.account())
-            val answer = restored.store.ask(request.thread, "", "request-a", photo, stream = true) as AskOutcome.Answered
+            val answer = restored.store.coach.ask(request.thread, "", "request-a", photo, stream = true) as AskOutcome.Answered
             assertEquals("stopped", answer.answer.generation?.status)
             assertEquals(Ask.stopped, answer.exchange(partial.exchange()).trouble)
             assertFalse(answer.exchange(partial.exchange()).again)
@@ -212,7 +213,7 @@ class CoachOwnershipTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = boundary, localCoach = LocalCoach(file)).use { room ->
             room.select("a")
             val seen = mutableListOf<AskGeneration>()
-            val result = async { room.store.ask("thread-a", "Question", "request-a", stream = true, onSnapshot = seen::add) }
+            val result = async { room.store.coach.ask("thread-a", "Question", "request-a", stream = true, onSnapshot = seen::add) }
             runCurrent()
             room.select("b")
             release.complete(Unit)
@@ -239,7 +240,7 @@ class CoachOwnershipTests {
         }
         EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = boundary, localCoach = LocalCoach(file)).use { room ->
             room.select("a")
-            assertTrue(room.store.ask(request.thread, request.question, requireNotNull(request.requestId)) is AskOutcome.Answered)
+            assertTrue(room.store.coach.ask(request.thread, request.question, requireNotNull(request.requestId)) is AskOutcome.Answered)
             assertEquals(listOf(request, request, request), seen)
             assertEquals(emptyList<AskQuestion>(), LocalCoach(file).pending("a"))
         }
@@ -258,15 +259,15 @@ class CoachOwnershipTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = server, localCoach = LocalCoach(file)).use { room ->
             room.select("a")
             val store = room.store
-            assertEquals(AskOutcome.Failed("Response interrupted.", generation), store.ask(request.thread, request.question, "request-a"))
+            assertEquals(AskOutcome.Failed("Response interrupted.", generation), store.coach.ask(request.thread, request.question, "request-a"))
             assertEquals(listOf(request), LocalCoach(file).pending("a"))
             server.refuseAsk = WindmillApiException.Refused(429, Refusal(code = "ask-daily-limit"))
-            assertEquals(AskOutcome.Capped(Ask.capReached, AskCap.Daily, generation), store.ask(request.thread, request.question, "request-a"))
+            assertEquals(AskOutcome.Capped(Ask.capReached, AskCap.Daily, generation), store.coach.ask(request.thread, request.question, "request-a"))
             assertEquals(listOf(request), LocalCoach(file).pending("a"))
             assertEquals(generation, LocalCoach(file).snapshot("a", "request-a"))
             server.refuseAsk = null
             server.answers += AskAnswer("Created Upper body.", ReadTally(), generation = generation.copy(status = "completed"), results = listOf(result))
-            assertTrue(store.ask(request.thread, request.question, "request-a") is AskOutcome.Answered)
+            assertTrue(store.coach.ask(request.thread, request.question, "request-a") is AskOutcome.Answered)
             assertEquals(listOf(request, request, request), server.asked)
             assertEquals(emptyList<AskQuestion>(), LocalCoach(file).pending("a"))
         }
@@ -284,16 +285,16 @@ class CoachOwnershipTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = boundary).use { room ->
             room.select("a")
             val store = room.store
-            val answer = async { store.ask("thread-a", "Question") }
-            val detail = async { store.thread("thread-a") }
-            val list = async { store.readThreads() }
+            val answer = async { store.coach.ask("thread-a", "Question") }
+            val detail = async { store.coach.thread("thread-a") }
+            val list = async { store.coach.readThreads() }
             runCurrent()
             room.select("b")
             release.complete(Unit)
             assertEquals(AskOutcome.Refused("The account changed. Open this again."), answer.await())
             assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), detail.await())
             assertEquals(GymResult.Failed(WriteFailure.Refused("The account changed. Open this again.")), list.await())
-            assertEquals(emptyList<AskThread>(), store.allThreads)
+            assertEquals(emptyList<AskThread>(), store.coach.allThreads)
         }
     }
 

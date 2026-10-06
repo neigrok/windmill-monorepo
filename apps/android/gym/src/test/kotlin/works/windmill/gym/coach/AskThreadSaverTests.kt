@@ -1,11 +1,9 @@
-package works.windmill.gym.ui
+package works.windmill.gym.coach
 
+import works.windmill.gym.ui.*
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import works.windmill.gym.domain.AskAnswer
-import works.windmill.gym.domain.AskExchange
-import works.windmill.gym.domain.ReadTally
 
 class AskThreadSaverTests {
     private fun answered(question: String, said: String) =

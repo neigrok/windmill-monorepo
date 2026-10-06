@@ -1,5 +1,6 @@
-package works.windmill.gym.ui
+package works.windmill.gym.coach
 
+import works.windmill.gym.ui.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -26,19 +27,12 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.Ask
-import works.windmill.gym.domain.AskThread
-import works.windmill.gym.domain.AskTurn
-import works.windmill.gym.domain.AnswerReceipt
-import works.windmill.gym.domain.ReadTally
-import works.windmill.gym.domain.ThreadOutcome
 import works.windmill.gym.domain.ChangeKind
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalChange
 import works.windmill.gym.domain.ProposalTargets
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.ThreadProposal
 import works.windmill.gym.domain.SetTarget
 import works.windmill.domain.kit.Id
 import works.windmill.gym.domain.sync.ProposalRules

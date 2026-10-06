@@ -1,5 +1,13 @@
-package works.windmill.gym.ui
+package works.windmill.gym.coach
 
+import works.windmill.gym.ui.Chevron
+import works.windmill.gym.ui.GymLayout
+import works.windmill.gym.ui.GymScreen
+import works.windmill.gym.ui.GymTap
+import works.windmill.gym.ui.LocalGymColors
+import works.windmill.gym.ui.ProposalCard
+import works.windmill.gym.ui.TopAction
+import works.windmill.gym.ui.YouSeat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
@@ -45,17 +53,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import kotlinx.serialization.builtins.ListSerializer
-import works.windmill.gym.domain.Ask
 import works.windmill.gym.R
-import works.windmill.gym.domain.CoachAttachment
-import works.windmill.gym.domain.CoachDraft
-import works.windmill.gym.domain.AskAnswer
-import works.windmill.gym.domain.AskCap
-import works.windmill.gym.domain.AskExchange
 import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Proposal
-import works.windmill.gym.domain.Threads
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.ProposalRead
 import works.windmill.platform.telemetry.LocalTelemetry
@@ -110,7 +111,7 @@ fun AskScreen(
     var menu by remember { mutableStateOf(false) }
     var draftFailure by remember { mutableStateOf<String?>(null) }
     fun newChat() {
-        try { store.abandonCoach(conversationId.ifEmpty { "new" }); onAskNew() }
+        try { store.coach.abandon(conversationId.ifEmpty { "new" }); onAskNew() }
         catch (_: Exception) { draftFailure = "Your draft couldn’t be cleared. Try again." }
     }
 
@@ -180,7 +181,7 @@ fun AskScreen(
                             .heightIn(min = if (index == thread.lastIndex && cap == null) latestHeight else 0.dp),
                             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x4)) {
                             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                exchange.attachments.forEach { CoachPhoto(store, conversationId, it, Modifier.size(160.dp)) }
+                                exchange.attachments.forEach { CoachPhoto(store.coach, conversationId, it, Modifier.size(160.dp)) }
                                 if (exchange.question.isNotEmpty()) CoachQuestion(exchange.question)
                             }
                             val answered = exchange.answer ?: exchange.generation?.response()
@@ -250,12 +251,12 @@ fun AskScreen(
                         onNewDraft(thread.lastOrNull()?.takeIf { it.answer == null && !it.pending }?.question.orEmpty())
                     })
                 }
-                else -> CoachComposer(store, conversationId.ifEmpty { "new" }, seed, asking || olderBusy,
+                else -> CoachComposer(store.coach, conversationId.ifEmpty { "new" }, seed, asking || olderBusy,
                     onSend = { text, photo ->
                         val last = thread.lastOrNull()
                         if (last?.again == true && last.question == text && last.attachments.map { it.id } == listOfNotNull(photo?.id)) onRetry()
                         else if (onPhotoAsk != null) onPhotoAsk(text, photo)
-                        else { onAsk(text); store.saveCoachDraft(conversationId.ifEmpty { "new" }, CoachDraft()) }
+                        else { onAsk(text); store.coach.saveDraft(conversationId.ifEmpty { "new" }, CoachDraft()) }
                     }, onStop = onStop, upload = upload, retainDraft = onPhotoAsk != null)
             }
         }

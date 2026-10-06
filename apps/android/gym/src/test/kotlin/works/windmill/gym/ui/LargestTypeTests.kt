@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.gym.coach.AskScreen
 import androidx.compose.foundation.layout.Box
 import kotlinx.coroutines.launch
 import androidx.compose.ui.test.onNodeWithTag
@@ -47,9 +48,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import works.windmill.gym.domain.Ask
-import works.windmill.gym.domain.AskCap
-import works.windmill.gym.domain.AskExchange
+import works.windmill.gym.coach.Ask
+import works.windmill.gym.coach.AskCap
+import works.windmill.gym.coach.AskExchange
 import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.RoutineDraft

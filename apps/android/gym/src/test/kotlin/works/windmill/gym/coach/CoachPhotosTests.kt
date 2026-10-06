@@ -1,5 +1,6 @@
-package works.windmill.gym.store
+package works.windmill.gym.coach
 
+import works.windmill.gym.store.*
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.ExifInterface

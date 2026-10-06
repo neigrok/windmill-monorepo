@@ -1,5 +1,6 @@
-package works.windmill.gym.ui
+package works.windmill.gym.coach
 
+import works.windmill.gym.ui.*
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import androidx.compose.runtime.getValue
@@ -50,11 +51,8 @@ import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.shadows.ShadowKeyCharacterMap
-import works.windmill.gym.domain.CoachAttachment
-import works.windmill.gym.domain.CoachDraft
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.EngineRoomFixture
-import works.windmill.gym.store.LocalCoach
 import works.windmill.platform.storage.AtomicDocument
 
 @RunWith(RobolectricTestRunner::class)
@@ -81,9 +79,9 @@ class CoachComposerTests {
         val store = signedIn(scope).store
         val draft = CoachDraft("alpha bravo charlie")
         val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
-        store.saveCoachDraft("thread-a", draft)
+        store.coach.saveDraft("thread-a", draft)
         compose.setContent {
-            CoachComposer(store, "thread-a", "", false, { _, _ -> }, null, null, true)
+            CoachComposer(store.coach, "thread-a", "", false, { _, _ -> }, null, null, true)
         }
         val field = compose.onNodeWithContentDescription("Question")
         field.performClick()
@@ -95,16 +93,16 @@ class CoachComposerTests {
         field.performTouchInput { doubleClick(word) }
         assertEquals(TextRange(6, 11), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
 
-        compose.runOnIdle { store.saveCoachDraft("another-thread", CoachDraft("Unrelated draft")) }
+        compose.runOnIdle { store.coach.saveDraft("another-thread", CoachDraft("Unrelated draft")) }
         assertEquals(TextRange(6, 11), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-        compose.runOnIdle { store.saveCoachDraft("thread-a", draft.copy(photo = photo)) }
+        compose.runOnIdle { store.coach.saveDraft("thread-a", draft.copy(photo = photo)) }
         compose.onNodeWithText("Remove photo").assertIsDisplayed()
         assertEquals(TextRange(6, 11), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
         compose.onNodeWithText("Remove photo").performClick()
-        assertEquals(draft, store.coachDraft("thread-a"))
+        assertEquals(draft, store.coach.draft("thread-a"))
         assertEquals(TextRange(6, 11), field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
 
-        compose.runOnIdle { store.abandonCoach("thread-a") }
+        compose.runOnIdle { store.coach.abandon("thread-a") }
         assertEquals("", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
         assertEquals(CoachDraft(), LocalCoach(File(tmp.root, "coach.json")).draft("user-a", "thread-a"))
         scope.cancel()
@@ -115,12 +113,12 @@ class CoachComposerTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = signedIn(scope).store
         val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
-        store.saveCoachDraft("thread-a", CoachDraft("Old caption", photo))
+        store.coach.saveDraft("thread-a", CoachDraft("Old caption", photo))
         var busy by mutableStateOf(false)
         var upload by mutableStateOf<Float?>(null)
         val sent = mutableListOf<CoachDraft>()
         compose.setContent {
-            CoachComposer(store, "thread-a", "", busy,
+            CoachComposer(store.coach, "thread-a", "", busy,
                 onSend = { text, attachment -> sent += CoachDraft(text, attachment); busy = true; upload = .25f },
                 onStop = { busy = false; upload = null }, upload = upload, retainDraft = true)
         }
@@ -153,13 +151,13 @@ class CoachComposerTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val room = signedIn(scope)
         val store = room.store
-        store.saveCoachDraft("thread-a", CoachDraft("First thread"))
-        store.saveCoachDraft("thread-b", CoachDraft("Second thread"))
+        store.coach.saveDraft("thread-a", CoachDraft("First thread"))
+        store.coach.saveDraft("thread-b", CoachDraft("Second thread"))
         var thread by mutableStateOf("thread-a")
         var account by mutableStateOf("user-a")
         compose.setContent {
             key(account) {
-                CoachComposer(store, thread, "", false, { _, _ -> }, null, null, true)
+                CoachComposer(store.coach, thread, "", false, { _, _ -> }, null, null, true)
             }
         }
         val field = compose.onNodeWithContentDescription("Question")
@@ -195,7 +193,7 @@ class CoachComposerTests {
         val store = signedIn(scope, localCoach).store
         val sent = mutableListOf<CoachDraft>()
         compose.setContent {
-            CoachComposer(store, "thread-a", "", false,
+            CoachComposer(store.coach, "thread-a", "", false,
                 { text, photo -> sent += CoachDraft(text, photo) }, null, null, false)
         }
         val field = compose.onNodeWithContentDescription("Question")
@@ -205,7 +203,7 @@ class CoachComposerTests {
         assertEquals("Unsaved question", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
         compose.onNodeWithContentDescription("Send").performClick()
         assertEquals(emptyList<CoachDraft>(), sent)
-        assertEquals(CoachDraft(), store.coachDraft("thread-a"))
+        assertEquals(CoachDraft(), store.coach.draft("thread-a"))
 
         compose.runOnIdle { diskAvailable = true }
         field.performTextReplacement("Saved question")
@@ -222,10 +220,10 @@ class CoachComposerTests {
     fun keyboardUndoAndRedoImmediatelySendAndPersistTheVisibleText() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = signedIn(scope).store
-        store.saveCoachDraft("thread-a", CoachDraft("First question"))
+        store.coach.saveDraft("thread-a", CoachDraft("First question"))
         val sent = mutableListOf<CoachDraft>()
         compose.setContent {
-            CoachComposer(store, "thread-a", "", false,
+            CoachComposer(store.coach, "thread-a", "", false,
                 { text, photo -> sent += CoachDraft(text, photo) }, null, null, true)
         }
         val field = compose.onNodeWithContentDescription("Question")

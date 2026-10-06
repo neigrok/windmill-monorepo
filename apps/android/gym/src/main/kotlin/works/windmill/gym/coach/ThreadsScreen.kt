@@ -1,5 +1,14 @@
-package works.windmill.gym.ui
+package works.windmill.gym.coach
 
+import works.windmill.gym.ui.Chevron
+import works.windmill.gym.ui.GymLayout
+import works.windmill.gym.ui.GymScreen
+import works.windmill.gym.ui.GymTap
+import works.windmill.gym.ui.GymType
+import works.windmill.gym.ui.LocalGymColors
+import works.windmill.gym.ui.RowDeleteGround
+import works.windmill.gym.ui.rememberGymHaptics
+import works.windmill.gym.ui.rememberRowDismiss
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
@@ -38,14 +47,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import works.windmill.gym.domain.Ids
-import works.windmill.gym.domain.AskCap
-import works.windmill.gym.domain.CoachAttachment
-import works.windmill.gym.domain.CoachDraft
-import works.windmill.gym.domain.AskExchange
-import works.windmill.gym.domain.AskThread
-import works.windmill.gym.domain.ThreadProposal
-import works.windmill.gym.domain.Threads
-import works.windmill.gym.store.AskOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
@@ -79,7 +80,7 @@ fun ThreadsScreen(
         loading = true
         read = false
         outOfReach = false
-        when (store.readThreads()) {
+        when (store.coach.readThreads()) {
             is GymResult.Ok -> {
                 read = true
                 outOfReach = false
@@ -97,7 +98,7 @@ fun ThreadsScreen(
     // moment a proposal is decided elsewhere — a list nobody re-read would say `waiting` days after
     // somebody applied it, and saying that under `out of reach` claims more than a failed read
     // allows. `read` is the read's own status and not a window, so the stance is untouched.
-    val held = if (read) store.threads else emptyList()
+    val held = if (read) store.coach.threads else emptyList()
     GymScreen(title = Threads.title, onBack = onBack, backTo = backTo) {
         Column(Modifier.fillMaxSize()) {
             PullToRefreshBox(isRefreshing = loading, onRefresh = { attempt++ }, modifier = Modifier.weight(1f)) {
@@ -116,7 +117,7 @@ fun ThreadsScreen(
                         Text(Threads.outOfReach, style = GymType.numeral(12), color = skin.inkDim)
                     }
                 }
-                if (read && store.allThreads.isEmpty() && !outOfReach) {
+                if (read && store.coach.allThreads.isEmpty() && !outOfReach) {
                     item("none") {
                         Text(
                             Threads.none,
@@ -128,11 +129,11 @@ fun ThreadsScreen(
                 items(held, key = { it.id }) { thread ->
                     SwipeableThreadRow(thread, nowMs, { onOpen(thread.id) }, { onDelete(thread.id) })
                 }
-                store.nextThreadCursor?.let { cursor -> item("older") {
+                store.coach.nextThreadCursor?.let { cursor -> item("older") {
                     CoachAction(if (loading) "Reading conversations…" else "Earlier conversations", enabled = !loading, onClick = {
                         loading = true
                         scope.launch {
-                            outOfReach = store.readThreads(cursor) is GymResult.Failed
+                            outOfReach = store.coach.readThreads(cursor) is GymResult.Failed
                             loading = false
                         }
                     })
@@ -240,24 +241,24 @@ fun ThreadScreen(
         val last = conversation.lastOrNull()?.takeIf { it.requestId == requestId }
         val attachments = last?.attachments.orEmpty().ifEmpty { listOfNotNull(photo) }
         val pending = AskExchange(question, requestId = requestId, generation = last?.generation, attachments = attachments)
-        try { store.saveCoachDraft(threadId, CoachDraft(question, attachments.firstOrNull())) }
+        try { store.coach.saveDraft(threadId, CoachDraft(question, attachments.firstOrNull())) }
         catch (_: Exception) { say("Your message couldn’t be saved. Try again."); return }
         asking = true
         upload = if (attachments.isNotEmpty() && last?.generation == null) 0f else null
         conversation = previous + pending
         coachJob = scope.launch {
             try {
-                val outcome = store.ask(threadId, question, requestId, attachments.firstOrNull(), stream = true,
+                val outcome = store.coach.ask(threadId, question, requestId, attachments.firstOrNull(), stream = true,
                     onSnapshot = { snapshot ->
                         if (store.accountKey == owner) {
                             conversation = previous + snapshot.exchange().copy(attachments = snapshot.attachments.ifEmpty { attachments })
-                            store.saveCoachDraft(threadId, CoachDraft())
+                            store.coach.saveDraft(threadId, CoachDraft())
                         }
                     }, onUpload = { upload = it })
                 if (store.accountKey != owner) return@launch
                 conversation = previous + outcome.exchange(pending)
                 if (outcome is AskOutcome.Capped) cap = outcome.cap
-                if (outcome is AskOutcome.Answered) store.saveCoachDraft(threadId, CoachDraft())
+                if (outcome is AskOutcome.Answered) store.coach.saveDraft(threadId, CoachDraft())
             } finally { if (store.accountKey == owner) { asking = false; upload = null; stopPending = false } }
         }
     }
@@ -274,10 +275,10 @@ fun ThreadScreen(
         stopPending = true
         scope.launch {
             try {
-                val snapshot = store.stopAsk(threadId, last.requestId)
+                val snapshot = store.coach.stop(threadId, last.requestId)
                 if (store.accountKey == owner) {
                     conversation = conversation.dropLast(1) + snapshot.exchange()
-                    if (snapshot.terminal) { store.saveCoachDraft(threadId, CoachDraft()); coachJob?.cancel(); asking = false }
+                    if (snapshot.terminal) { store.coach.saveDraft(threadId, CoachDraft()); coachJob?.cancel(); asking = false }
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
             catch (_: Exception) { say("The stop request didn’t reach Coach. Try again.") }
@@ -287,13 +288,13 @@ fun ThreadScreen(
 
     LaunchedEffect(threadId, store.accountKey, attempt) {
         failure = null
-        when (val read = store.thread(threadId)) {
+        when (val read = store.coach.thread(threadId)) {
             is GymResult.Ok -> {
                 history = read.value
                 conversation = read.value.exchanges()
-                val pending = store.pendingQuestions().firstOrNull { it.thread == threadId }
+                val pending = store.coach.pendingQuestions().firstOrNull { it.thread == threadId }
                 if (pending != null && read.value.generation?.requestId != pending.requestId) {
-                    conversation = conversation + store.pendingExchange(pending)
+                    conversation = conversation + store.coach.pendingExchange(pending)
                 }
                 read.value.generation?.takeIf { it.status == "running" }?.let { ask(it.question, it.requestId, retry = true) }
             }
@@ -322,7 +323,7 @@ fun ThreadScreen(
             if (!olderBusy) {
                 olderBusy = true
                 scope.launch {
-                    when (val read = store.thread(threadId, cursor)) {
+                    when (val read = store.coach.thread(threadId, cursor)) {
                         is GymResult.Ok -> {
                             val old = requireNotNull(history)
                             val page = old.copy(turns = (read.value.turns + old.turns).distinctBy { it.position }, nextCursor = read.value.nextCursor)

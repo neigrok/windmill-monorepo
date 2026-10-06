@@ -1,4 +1,4 @@
-package works.windmill.gym.ui
+package works.windmill.gym.coach
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -8,7 +8,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import java.text.BreakIterator
-import works.windmill.gym.domain.AskGeneration
 
 private const val nanosPerSecond = 1e9
 private const val floorCharsPerSecond = 40.0

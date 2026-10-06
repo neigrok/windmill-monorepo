@@ -1,4 +1,4 @@
-package works.windmill.gym.ui
+package works.windmill.gym.coach
 
 import androidx.compose.foundation.ScrollState
 import androidx.compose.runtime.Composable
@@ -11,7 +11,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.layout.layout
-import works.windmill.gym.domain.AskExchange
 
 // The one owner of the conversation's scroll offset. Every correction lands in the layout phase,
 // after the scroller measured its content and before it places it, so text that grew this frame is

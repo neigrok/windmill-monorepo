@@ -1,5 +1,6 @@
-package works.windmill.gym.domain
+package works.windmill.gym.coach
 
+import works.windmill.gym.domain.*
 import org.junit.Assert.*
 import org.junit.Test
 import works.windmill.platform.net.WindmillJson

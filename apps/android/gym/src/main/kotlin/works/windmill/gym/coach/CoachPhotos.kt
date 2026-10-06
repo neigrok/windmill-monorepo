@@ -1,4 +1,4 @@
-package works.windmill.gym.store
+package works.windmill.gym.coach
 
 import android.content.ContentResolver
 import android.graphics.Bitmap
@@ -9,7 +9,6 @@ import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
 import java.io.ByteArrayOutputStream
-import works.windmill.gym.domain.CoachAttachment
 import works.windmill.gym.domain.Ids
 
 object CoachPhotos {

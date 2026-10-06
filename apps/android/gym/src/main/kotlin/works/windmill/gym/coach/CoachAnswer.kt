@@ -1,5 +1,7 @@
-package works.windmill.gym.ui
+package works.windmill.gym.coach
 
+import works.windmill.gym.ui.GymColors
+import works.windmill.gym.ui.LocalGymColors
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -45,15 +47,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import works.windmill.gym.domain.AnswerReceipt
-import works.windmill.gym.domain.Ask
-import works.windmill.gym.domain.AskStep
-import works.windmill.gym.domain.CoachBlock
-import works.windmill.gym.domain.CoachMarkdown
-import works.windmill.gym.domain.CoachResult
-import works.windmill.gym.domain.CoachSpan
 import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.ReadTally
 import works.windmill.gym.domain.Readout
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillSpace

@@ -1,14 +1,14 @@
 package works.windmill.gym.net
 
 import java.io.IOException
-import works.windmill.gym.domain.AskAnswer
-import works.windmill.gym.domain.AskQuestion
-import works.windmill.gym.domain.AskThread
+import works.windmill.gym.coach.AskAnswer
+import works.windmill.gym.coach.AskQuestion
+import works.windmill.gym.coach.AskThread
 import works.windmill.gym.domain.McpKey
 import works.windmill.gym.domain.OAuthGrant
-import works.windmill.gym.domain.ReadTally
+import works.windmill.gym.coach.ReadTally
 import works.windmill.gym.domain.SessionShare
-import works.windmill.gym.domain.ThreadPage
+import works.windmill.gym.coach.ThreadPage
 
 // The REST doors the gym keeps beside the engine: Coach conversations, session shares and the
 // connected-log credential lists. Every training read and write goes through the engine instead.

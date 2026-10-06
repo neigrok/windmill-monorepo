@@ -1,13 +1,14 @@
-package works.windmill.gym.domain
+package works.windmill.gym.coach
 
+import works.windmill.gym.domain.*
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import works.windmill.gym.domain.CoachBlock.Code
-import works.windmill.gym.domain.CoachBlock.Heading
-import works.windmill.gym.domain.CoachBlock.ListItem
-import works.windmill.gym.domain.CoachBlock.Paragraph
-import works.windmill.gym.domain.CoachBlock.Rule
+import works.windmill.gym.coach.CoachBlock.Code
+import works.windmill.gym.coach.CoachBlock.Heading
+import works.windmill.gym.coach.CoachBlock.ListItem
+import works.windmill.gym.coach.CoachBlock.Paragraph
+import works.windmill.gym.coach.CoachBlock.Rule
 
 class CoachMarkdownTests {
     private fun paragraph(vararg spans: CoachSpan) = Paragraph(spans.toList())

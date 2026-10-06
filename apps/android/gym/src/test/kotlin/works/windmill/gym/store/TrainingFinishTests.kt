@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import works.windmill.gym.coach.AskThread
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred

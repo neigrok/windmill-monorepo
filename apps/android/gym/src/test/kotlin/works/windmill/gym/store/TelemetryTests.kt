@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import works.windmill.gym.coach.AskOutcome
 import java.io.File
 import java.net.SocketTimeoutException
 import kotlinx.coroutines.CancellationException
@@ -8,7 +9,7 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.domain.AskCap
+import works.windmill.gym.coach.AskCap
 import works.windmill.gym.domain.LogSetAcceptance
 import works.windmill.gym.domain.LogSetCommand
 import works.windmill.gym.domain.Session
@@ -38,7 +39,7 @@ class TelemetryTests {
             val store = room.store
             room.select("account")
             telemetry.events.clear()
-            assertTrue(store.ask("private-thread-id", "private question") is AskOutcome.Answered)
+            assertTrue(store.coach.ask("private-thread-id", "private question") is AskOutcome.Answered)
             assertEquals(listOf("gym_ask_started" to emptyMap<String, String>(),
                 "gym_ask_outcome" to mapOf("outcome" to "answered", "duration_ms" to "1")), telemetry.events)
 
@@ -73,7 +74,7 @@ class TelemetryTests {
             for ((error, expected, properties) in cases) {
                 telemetry.events.clear()
                 server.refuseAsk = error
-                assertEquals(expected, store.ask("private-thread-id", "private question"))
+                assertEquals(expected, store.coach.ask("private-thread-id", "private question"))
                 assertEquals(listOf("gym_ask_started" to emptyMap<String, String>(),
                     "gym_ask_outcome" to (properties + ("duration_ms" to "1"))), telemetry.events)
             }
@@ -90,7 +91,7 @@ class TelemetryTests {
             room.select("account")
             val broken = IllegalStateException("do not publish conversation content")
             server.refuseAsk = broken
-            assertEquals(AskOutcome.Failed("Coach didn’t answer. Try again in a moment"), store.ask("thread", "question"))
+            assertEquals(AskOutcome.Failed("Coach didn’t answer. Try again in a moment"), store.coach.ask("thread", "question"))
             assertEquals(listOf("gym.ask" to broken), telemetry.failures)
             assertEquals(listOf("gym_ask_started" to emptyMap<String, String>(),
                 "gym_ask_outcome" to mapOf("outcome" to "failed", "failure_kind" to "unexpected", "duration_ms" to "0")), telemetry.events)
@@ -98,7 +99,7 @@ class TelemetryTests {
             val cancelled = CancellationException("left the request")
             server.refuseAsk = cancelled
             try {
-                store.ask("thread", "question")
+                store.coach.ask("thread", "question")
                 fail("cancellation must propagate")
             } catch (error: CancellationException) {
                 assertSame(cancelled, error)

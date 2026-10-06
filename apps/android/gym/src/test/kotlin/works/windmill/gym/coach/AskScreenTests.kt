@@ -1,5 +1,6 @@
-package works.windmill.gym.ui
+package works.windmill.gym.coach
 
+import works.windmill.gym.ui.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -40,22 +41,12 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.Ask
-import works.windmill.gym.domain.AskGeneration
-import works.windmill.gym.domain.CoachAttachment
-import works.windmill.gym.domain.CoachDraft
-import works.windmill.gym.domain.AskAnswer
-import works.windmill.gym.domain.AskCap
-import works.windmill.gym.domain.AskExchange
-import works.windmill.gym.domain.AskStep
 import works.windmill.gym.domain.ChangeKind
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalChange
 import works.windmill.gym.domain.ProposalTargets
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.ReadTally
-import works.windmill.gym.domain.Threads
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.sync.ProposalRules
 import works.windmill.gym.net.FakeGymRest
@@ -184,7 +175,7 @@ class AskScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val store = signedIn(scope).store
         val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
-        store.saveCoachDraft("new", CoachDraft(photo = photo))
+        store.coach.saveDraft("new", CoachDraft(photo = photo))
         val sent = mutableListOf<Pair<String, CoachAttachment?>>()
         compose.setContent {
             AskScreen(store, emptyList(), emptyList(), emptySet(), false, null,
@@ -195,7 +186,7 @@ class AskScreenTests {
         compose.onNodeWithContentDescription("Send").performClick()
         compose.runOnIdle { assertEquals(listOf("" to photo), sent) }
         compose.onNodeWithText("Remove photo").performClick()
-        compose.runOnIdle { assertEquals(CoachDraft(), store.coachDraft("new")) }
+        compose.runOnIdle { assertEquals(CoachDraft(), store.coach.draft("new")) }
         scope.cancel()
     }
 

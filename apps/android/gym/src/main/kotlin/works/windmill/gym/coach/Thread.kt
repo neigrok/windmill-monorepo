@@ -1,5 +1,8 @@
-package works.windmill.gym.domain
+package works.windmill.gym.coach
 
+import works.windmill.gym.domain.Proposal
+import works.windmill.gym.domain.ProposalState
+import works.windmill.gym.domain.Readout
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 

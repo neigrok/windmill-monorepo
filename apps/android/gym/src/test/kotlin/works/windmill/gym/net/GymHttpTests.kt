@@ -8,7 +8,7 @@ import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import java.util.concurrent.TimeUnit
-import works.windmill.gym.domain.AskQuestion
+import works.windmill.gym.coach.AskQuestion
 import works.windmill.platform.net.WindmillApi
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

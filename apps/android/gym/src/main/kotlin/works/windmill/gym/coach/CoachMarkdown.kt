@@ -1,4 +1,4 @@
-package works.windmill.gym.domain
+package works.windmill.gym.coach
 
 data class CoachSpan(val text: String, val bold: Boolean = false, val italic: Boolean = false, val code: Boolean = false)
 

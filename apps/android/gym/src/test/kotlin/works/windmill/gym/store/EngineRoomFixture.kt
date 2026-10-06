@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import works.windmill.gym.coach.LocalCoach
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import org.junit.Assert.*

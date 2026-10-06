@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import works.windmill.gym.coach.AskOutcome
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
@@ -22,10 +23,10 @@ import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
 import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Outcome
-import works.windmill.gym.domain.AskAnswer
-import works.windmill.gym.domain.AskCap
-import works.windmill.gym.domain.AskThread
-import works.windmill.gym.domain.AskTurn
+import works.windmill.gym.coach.AskAnswer
+import works.windmill.gym.coach.AskCap
+import works.windmill.gym.coach.AskThread
+import works.windmill.gym.coach.AskTurn
 import works.windmill.gym.domain.Blocker
 import works.windmill.gym.domain.GymPreferences
 import works.windmill.gym.domain.LastSet
@@ -35,7 +36,7 @@ import works.windmill.gym.domain.PlanSnapshot
 import works.windmill.gym.domain.Prefill
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.ProposalState
-import works.windmill.gym.domain.ReadTally
+import works.windmill.gym.coach.ReadTally
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.Review
 import works.windmill.gym.domain.ReviewStats
@@ -48,7 +49,7 @@ import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.SetWrite
-import works.windmill.gym.domain.ThreadOutcome
+import works.windmill.gym.coach.ThreadOutcome
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.domain.Units
 import works.windmill.gym.domain.sync.ProposeRoutine
@@ -1586,7 +1587,7 @@ class TrainingStoreTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = rest).use { room ->
             room.select(null)
 
-            assertEquals(AskOutcome.Refused("Sign in first."), room.store.ask("thr_1", "what's stalled?"))
+            assertEquals(AskOutcome.Refused("Sign in first."), room.store.coach.ask("thr_1", "what's stalled?"))
             assertEquals(emptyList<String>(), rest.calls)
             runCurrent()
         }
@@ -1610,7 +1611,7 @@ class TrainingStoreTests {
                 room.pull(server)
             }
 
-            val outcome = room.store.ask("thr_1", "write the triples block")
+            val outcome = room.store.coach.ask("thr_1", "write the triples block")
 
             assertEquals(AskOutcome.Answered(AskAnswer(answer = "Done — as a proposal on Push A.",
                 read = ReadTally(sets = 214, sessions = 34, weeks = 12), proposals = listOf("proposal1"))),
@@ -1628,7 +1629,7 @@ class TrainingStoreTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = rest).use { room ->
             room.select("alice")
 
-            val outcome = room.store.ask("thr_1", "what's stalled?")
+            val outcome = room.store.coach.ask("thr_1", "what's stalled?")
 
             assertEquals(ReadTally(sets = 214, sessions = 34, weeks = 12),
                 (outcome as AskOutcome.Answered).answer.read)
@@ -1644,20 +1645,20 @@ class TrainingStoreTests {
             rest.refuseAsk = refusal(429, code = "ask-daily-limit", message = "the next question frees up in a couple of hours")
             assertEquals("the daily cap takes the composer down",
                 AskOutcome.Capped("the next question frees up in a couple of hours", AskCap.Daily),
-                room.store.ask("thr_1", "what's stalled?"))
+                room.store.coach.ask("thr_1", "what's stalled?"))
             rest.refuseAsk = refusal(429, code = "ask-out-of-budget", message = "this account has reached its AI ceiling")
             assertEquals("and so does the account's 30-day ceiling, carrying its OWN sentence",
                 AskOutcome.Capped("this account has reached its AI ceiling", AskCap.Ceiling),
-                room.store.ask("thr_1", "what's stalled?"))
+                room.store.coach.ask("thr_1", "what's stalled?"))
 
             rest.refuseAsk = refusal(500, message = "internal error")
-            assertEquals(AskOutcome.Failed("internal error"), room.store.ask("thr_1", "what's stalled?"))
+            assertEquals(AskOutcome.Failed("internal error"), room.store.coach.ask("thr_1", "what's stalled?"))
 
             rest.refuseAsk = refusal(404, message = "not found")
-            assertEquals(AskOutcome.Absent, room.store.ask("thr_1", "what's stalled?"))
+            assertEquals(AskOutcome.Absent, room.store.coach.ask("thr_1", "what's stalled?"))
 
             rest.refuseAsk = refusal(409, code = "ask-thread-full", message = "that conversation is full")
-            assertEquals(AskOutcome.Fresh("that conversation is full"), room.store.ask("thr_1", "what's stalled?"))
+            assertEquals(AskOutcome.Fresh("that conversation is full"), room.store.coach.ask("thr_1", "what's stalled?"))
             runCurrent()
         }
     }
@@ -1675,13 +1676,13 @@ class TrainingStoreTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = rest).use { room ->
             room.select("alice")
 
-            val listed = room.store.readThreads()
+            val listed = room.store.coach.readThreads()
 
             assertEquals(listOf("thr_2", "thr_1"), (listed as GymResult.Ok).value.map { it.id })
             assertEquals("no turns on the list read", listOf(0, 0), listed.value.map { it.turns.size })
             assertEquals("4 changes → Push A", listed.value[1].outcome.detail)
 
-            room.store.readThreads()
+            room.store.coach.readThreads()
             assertEquals(2, rest.calls.count { it == "threads" })
             runCurrent()
         }
@@ -1696,12 +1697,12 @@ class TrainingStoreTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = rest).use { room ->
             room.select("alice")
 
-            val opened = room.store.thread("thr_1")
+            val opened = room.store.coach.thread("thr_1")
 
             assertEquals(listOf("what's stalled?", "bench, three weeks."),
                 (opened as GymResult.Ok).value.turns.map { it.text })
             assertEquals(GymResult.Failed(WriteFailure.Refused("that conversation is no longer on the log")),
-                room.store.thread("thr_missing"))
+                room.store.coach.thread("thr_missing"))
             runCurrent()
         }
     }
@@ -1715,14 +1716,14 @@ class TrainingStoreTests {
             val pushA = pushAWaitingOnADiff(room, server)
             assertTrue(deciding(room, server) { room.store.applyProposal("proposal1") } is ProposalOutcome.Decided)
 
-            assertEquals(GymResult.Ok(Unit), room.store.deleteThread("thr_1"))
+            assertEquals(GymResult.Ok(Unit), room.store.coach.deleteThread("thr_1"))
 
             val row = room.training.proposal("proposal1")!!
             assertEquals(ProposalState.Applied, row.state)
             assertEquals("the row still says the change came from Coach", "ask", row.source.door)
             assertEquals("and the conversation it opened is gone",
                 GymResult.Failed(WriteFailure.Refused("that conversation is no longer on the log")),
-                room.store.thread("thr_1"))
+                room.store.coach.thread("thr_1"))
             assertEquals("the program did not move on the delete", 2, room.store.routine(pushA.id)?.revision)
             runCurrent()
         }
@@ -1734,10 +1735,10 @@ class TrainingStoreTests {
         EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = rest).use { room ->
             room.select("alice")
 
-            assertEquals(GymResult.Ok(Unit), room.store.deleteThread("thr_gone"))
+            assertEquals(GymResult.Ok(Unit), room.store.coach.deleteThread("thr_gone"))
 
             rest.refuseThreads = refusal(500, message = "internal error")
-            assertEquals(GymResult.Failed(WriteFailure.Refused("internal error")), room.store.deleteThread("thr_1"))
+            assertEquals(GymResult.Failed(WriteFailure.Refused("internal error")), room.store.coach.deleteThread("thr_1"))
             runCurrent()
         }
     }
@@ -1781,9 +1782,9 @@ class TrainingStoreTests {
             room.select(null)
             val signIn = WriteFailure.Refused("Sign in first.")
 
-            assertEquals(GymResult.Failed(signIn), room.store.readThreads())
-            assertEquals(GymResult.Failed(signIn), room.store.thread("thr_1"))
-            assertEquals(GymResult.Failed(signIn), room.store.deleteThread("thr_1"))
+            assertEquals(GymResult.Failed(signIn), room.store.coach.readThreads())
+            assertEquals(GymResult.Failed(signIn), room.store.coach.thread("thr_1"))
+            assertEquals(GymResult.Failed(signIn), room.store.coach.deleteThread("thr_1"))
             assertEquals(emptyList<String>(), rest.calls)
             runCurrent()
         }

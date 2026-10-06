@@ -16,7 +16,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import works.windmill.gym.store.LocalCoach
+import works.windmill.gym.coach.LocalCoach
 import works.windmill.gym.store.WorkoutControls
 import works.windmill.platform.telemetry.Telemetry
 

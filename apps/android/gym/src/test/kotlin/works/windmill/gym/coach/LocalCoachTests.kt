@@ -1,11 +1,11 @@
-package works.windmill.gym.store
+package works.windmill.gym.coach
 
+import works.windmill.gym.store.*
 import java.io.File
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.domain.AskQuestion
 
 class LocalCoachTests {
     @get:Rule val tmp = TemporaryFolder()
@@ -36,11 +36,11 @@ class LocalCoachTests {
         val disk = LocalCoach(file)
         disk.keep("a", abandoned)
         disk.keep("a", retained)
-        disk.saveDraft("a", abandoned.thread, works.windmill.gym.domain.CoachDraft("Question"))
+        disk.saveDraft("a", abandoned.thread, works.windmill.gym.coach.CoachDraft("Question"))
         disk.clear("a", abandoned.thread)
         val restored = LocalCoach(file)
         assertEquals(listOf(retained), restored.pending("a"))
-        assertEquals(works.windmill.gym.domain.CoachDraft(), restored.draft("a", abandoned.thread))
+        assertEquals(works.windmill.gym.coach.CoachDraft(), restored.draft("a", abandoned.thread))
     }
 
     @Test

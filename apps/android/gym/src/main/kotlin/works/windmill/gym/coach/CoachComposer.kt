@@ -1,5 +1,6 @@
-package works.windmill.gym.ui
+package works.windmill.gym.coach
 
+import works.windmill.gym.ui.LocalGymColors
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -41,14 +42,10 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import works.windmill.gym.R
-import works.windmill.gym.domain.Ask
-import works.windmill.gym.domain.CoachAttachment
-import works.windmill.gym.domain.CoachDraft
-import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillFont
 
 @Composable
-internal fun CoachComposer(store: TrainingStore, key: String, seed: String, asking: Boolean,
+internal fun CoachComposer(store: CoachStore, key: String, seed: String, asking: Boolean,
     onSend: (String, CoachAttachment?) -> Unit, onStop: (() -> Unit)?, upload: Float?, retainDraft: Boolean,
 ) {
     val skin = LocalGymColors.current
@@ -60,14 +57,14 @@ internal fun CoachComposer(store: TrainingStore, key: String, seed: String, aski
     val hidden by rememberUpdatedState(asking && upload == null)
     val editor = remember(account, key) { CoachDraftEditor(store, key, hidden) }
     LaunchedEffect(editor) {
-        snapshotFlow { Triple(editor.field.text.toString(), store.coachDraftVersion, hidden) }
+        snapshotFlow { Triple(editor.field.text.toString(), store.draftVersion, hidden) }
             .collect { editor.sync(hidden) }
     }
     LaunchedEffect(account, key) {
         if (store.accountKey != account) return@LaunchedEffect
-        val current = store.coachDraft(key)
+        val current = store.draft(key)
         if (current.text.isEmpty() && current.photo == null && seed.isNotEmpty()) {
-            try { store.saveCoachDraft(key, CoachDraft(seed)) }
+            try { store.saveDraft(key, CoachDraft(seed)) }
             catch (_: Exception) { }
         }
     }
@@ -77,7 +74,7 @@ internal fun CoachComposer(store: TrainingStore, key: String, seed: String, aski
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch {
             preparing = true
-            try { store.importCoachPhoto(key, context.contentResolver, uri); editor.trouble = null }
+            try { store.importPhoto(key, context.contentResolver, uri); editor.trouble = null }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { editor.trouble = "Choose a supported photo." }
             finally { preparing = false }
@@ -135,16 +132,16 @@ internal fun CoachComposer(store: TrainingStore, key: String, seed: String, aski
     }
 }
 
-private class CoachDraftEditor(private val store: TrainingStore, private val key: String, private var hidden: Boolean) {
+private class CoachDraftEditor(private val store: CoachStore, private val key: String, private var hidden: Boolean) {
     private val account = store.accountKey
-    var draft by mutableStateOf(store.coachDraft(key))
+    var draft by mutableStateOf(store.draft(key))
         private set
     val field = TextFieldState(if (hidden) "" else draft.text)
     var trouble by mutableStateOf<String?>(null)
 
     fun sync(hidden: Boolean): Boolean {
         if (store.accountKey != account) return false
-        val current = store.coachDraft(key)
+        val current = store.draft(key)
         val refresh = current.text != draft.text || this.hidden != hidden
         draft = current
         this.hidden = hidden
@@ -160,7 +157,7 @@ private class CoachDraftEditor(private val store: TrainingStore, private val key
     fun keep(next: CoachDraft): Boolean {
         if (store.accountKey != account) return false
         try {
-            store.saveCoachDraft(key, next)
+            store.saveDraft(key, next)
             draft = next
             val text = if (hidden) "" else next.text
             if (field.text.toString() != text) field.setTextAndPlaceCursorAtEnd(text)
@@ -174,7 +171,7 @@ private class CoachDraftEditor(private val store: TrainingStore, private val key
 }
 
 @Composable
-internal fun CoachPhoto(store: TrainingStore, threadId: String, photo: CoachAttachment, modifier: Modifier = Modifier) {
+internal fun CoachPhoto(store: CoachStore, threadId: String, photo: CoachAttachment, modifier: Modifier = Modifier) {
     val skin = LocalGymColors.current
     var bitmap by remember(store.accountKey, threadId, photo.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
     var failure by remember(store.accountKey, threadId, photo.id) { mutableStateOf(false) }
@@ -183,7 +180,7 @@ internal fun CoachPhoto(store: TrainingStore, threadId: String, photo: CoachAtta
     LaunchedEffect(store.accountKey, threadId, photo.id, attempt) {
         failure = false
         try {
-            val bytes = store.coachPhoto(threadId, photo)
+            val bytes = store.photo(threadId, photo)
             bitmap = withContext(Dispatchers.Default) {
                 var sample = 1
                 while (photo.width / sample > 1024 || photo.height / sample > 1024) sample *= 2

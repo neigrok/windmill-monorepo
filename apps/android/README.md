@@ -8,7 +8,7 @@ account and backend. There is no subscription surface.
 | Module | Responsibility |
 |---|---|
 | `:platform` | Bearer HTTP transport, account/session storage, sign-in, tokens and product-neutral shell. |
-| `:gym` | Pure domain rules, durable stores, network/notification adapters and Compose UI. |
+| `:gym` | Android training runtime, device storage, presentation models, network/notification adapters and Compose UI. |
 | `:app` | Composition root; one auth store, gym runtime, training store and notification adapter shared by activity and receivers. |
 | `:sync-core` | JVM JSON/JCS, registry descriptors, clocks, joins, identities, fractional order and digests. |
 | `:sync-api` | JVM product values, Replica port, transaction readers and typed commit failures; depends only on sync-core. |
@@ -86,7 +86,7 @@ frozen routine lineage are never silently changed.
 
 ## Training runtime
 
-`TrainingStore` keeps the Compose interface and runs every gym read and write through
+`TrainingStore` keeps the training interface and runs training reads and writes through
 `EngineTraining` and `:gym:domain`; a write commits to the selected replica at once and the engine
 delivers it. A refusal by the log's rules is said on screen and is not reported as a failure.
 `WorkoutControls` (`windmill-gym-sets.json`) holds the open workout's device controls used by the
@@ -94,8 +94,10 @@ shared `GymRuntime` and notification receivers: movement order, the movement in 
 offer and the clock each set was logged at. It is a projection of the selected replica, rebuilt
 when the replica changes. The bundled movement catalogue uses backend seed identities. Only Coach
 threads, attachments, shares and connected-log credentials use REST, through `GymRest`.
-`LocalCoach` retains account-scoped drafts, request identities and partial replies; retry retains
-identity and Stop preserves completed work.
+`coach/` groups conversation models, storage, photos and screens. `CoachStore` owns thread reads,
+retries and streaming; `TrainingStore` composes it with the current account, shared Undo windows and
+routine refresh. `LocalCoach` retains account-scoped drafts, request identities and partial replies;
+retry retains identity and Stop preserves completed work. Shared HTTP framing lives in `net/GymHttp.kt`.
 
 Notes live with the account. They retain an unread state until the account's first pull
 completes; subsequent pulls refresh the open notebook, and refused saves show their refusal.

@@ -1,14 +1,12 @@
-package works.windmill.gym.store
+package works.windmill.gym.coach
 
+import works.windmill.gym.store.diskJson
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import kotlinx.serialization.Serializable
-import works.windmill.gym.domain.AskQuestion
-import works.windmill.gym.domain.AskGeneration
-import works.windmill.gym.domain.CoachDraft
 import works.windmill.platform.storage.AtomicDocument
 
 class LocalCoach internal constructor(private val file: File, private val write: (File, String) -> Unit) {

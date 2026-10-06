@@ -1,14 +1,14 @@
 package works.windmill.gym.net
 
-import works.windmill.gym.domain.AskAnswer
-import works.windmill.gym.domain.AskGeneration
-import works.windmill.gym.domain.AskQuestion
-import works.windmill.gym.domain.AskThread
-import works.windmill.gym.domain.CoachAttachment
+import works.windmill.gym.coach.AskAnswer
+import works.windmill.gym.coach.AskGeneration
+import works.windmill.gym.coach.AskQuestion
+import works.windmill.gym.coach.AskThread
+import works.windmill.gym.coach.CoachAttachment
 import works.windmill.gym.domain.McpKey
 import works.windmill.gym.domain.OAuthGrant
 import works.windmill.gym.domain.SessionShare
-import works.windmill.gym.domain.ThreadPage
+import works.windmill.gym.coach.ThreadPage
 
 // The gym's doors that stay on REST beside the engine: Coach conversations, session shares and the
 // connected log's credential lists. Training reads and writes never pass through here.

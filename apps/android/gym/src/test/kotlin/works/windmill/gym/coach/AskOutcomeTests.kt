@@ -1,10 +1,9 @@
-package works.windmill.gym.store
+package works.windmill.gym.coach
 
+import works.windmill.gym.store.*
 import java.io.IOException
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import works.windmill.gym.domain.AskCap
-import works.windmill.gym.domain.AskGeneration
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 
