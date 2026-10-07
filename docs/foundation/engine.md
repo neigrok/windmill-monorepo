@@ -1900,14 +1900,15 @@ scope's; a tree or overlay scope's product is its governing type's. It first rel
 entry into the durable queue (Undo does not survive sign-in), before the decisions. While it is
 incomplete, `DeviceMeta.pendingSignIn` holds A.
 - Entries of lineage A, a `dormant(A)` replica's included, are sent without asking.
-- Entries of the `anon` replica are added to A without asking for each product in which A holds no
-  records.
-- For each product in which A holds records and the `anon` replica has entries, a **signed-out
-  decision** is due: an explicit add or discard of exactly those entries, of every type, with no
+- Entries and pending product device work of the `anon` replica are added to A without asking for
+  each product in which A holds no records.
+- For each product in which A holds records and the `anon` replica has entries or pending product
+  device work, a **signed-out decision** is due: an explicit add or discard of that work, of every type, with no
   default and no "later". The engine exposes `anonCount(product)` per decision: the count, by type,
-  of the distinct records `(scope, type, id)` its entries create or change. A decision covers exactly
-  the entries it counted: the engine pins their local ids, and when the product's entries differ at
-  the answer (a commit, an undo or a result in between), the decision is due again with the new
+  of the distinct records `(scope, type, id)` its entries create or change. Pending device work is
+  counted separately, one item per product-identified row. A decision covers exactly the work it
+  counted: the engine pins entry local ids and each pending device row's key and full value bytes.
+  When the entries or device work differ at the answer (a commit, edit, undo or result in between), the decision is due again with the new
   count. How the decisions are presented is product canon. Until every due decision is made the
   sign-in is not complete: the
   `anon` replica stays active, no replica changes and nothing is sent. Cancelling an incomplete
@@ -1921,12 +1922,18 @@ Then, in one local transaction:
    released at the start among them, and the product's device rows in the `anon` replica are
    deleted.
 2. **Bind.** A `dormant(A)` replica becomes `bound(A)`, with every cursor `null`. Otherwise the
-   `anon` replica, when entries are left in it, is rebound (`state := bound`, `account := A`).
+   `anon` replica, when entries or pending product device work remain, is rebound (`state := bound`, `account := A`).
    Otherwise a new `bound(A)` replica is created.
-3. **Add.** When `bound(A)` is not the rebound `anon` replica and entries are left in the `anon`
-   replica, they move, with its device rows and notices, into `bound(A)`, preserving local ids,
+3. **Add.** When `bound(A)` is not the rebound `anon` replica and entries or pending product device
+   work remain in the `anon` replica, they move, with its device rows and notices, into `bound(A)`, preserving local ids,
    gesture ids and stamps, after `bound(A)`'s own entries in their commit order. The `anon` replica
-   is then deleted. A moved device row whose key `bound(A)` already holds is dropped.
+   is then deleted. Products merge writing-bearing device-row collisions without dropping either
+   document; the destination's current draft stays current and incoming writing remains available
+   for recovery. If a differing pending-work collision cannot be merged, the local transaction fails
+   and retains the source replica and both documents. Other device-row collisions retain the
+   destination value. Web and the JS reference accept an optional
+   `adoptDeviceRows(product, incomingRows, keptRows)` hook returning the merged product rows, or
+   `undefined` when the product is unhandled.
 4. Every entry added to A, rebound or moved, takes lineage A, and `bound(A)` observes its stamps
    into `hlc` and `hlcHigh`. `authPaused := false`, and `pendingSignIn` is cleared.
 

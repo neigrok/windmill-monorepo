@@ -14,25 +14,36 @@ const fixture = `
   import { syncSession } from '/src/platform/sync/session.js';
   import { usePages } from '/src/products/journal/usePages.js';
   import { localDay } from '/src/products/journal/localDay.js';
-  export async function open(name) {
-    window.engine = await BrowserSyncEngine.open({ name, registry,
+  let root;
+  export async function open(name, { migrate = false, legacy = null } = {}) {
+    const options = { name, registry,
       transport: { request() { throw new Error('offline'); }, openLive() { throw new Error('offline'); } },
-      telemetry: { failure() {}, event() {} } });
-    engine.setOnline(false);
-    await engine.start();
-    await engine.write(null, (device) => {
-      const replica = device.activeReplica;
-      replica.meta.state = 'bound'; replica.meta.account = 'A'; replica.meta.serverEpoch = 'ep-1';
-      replica.cursorOf('self/journal').booted = true;
-      if (!replica.confirmedRow('self/journal', 'page', localDay())) replica.putConfirmed('self/journal', {
-        t: 'page', id: localDay(), seq: 1, rc: 1, ru: 1,
-        f: { mood: [0, '1:0:srv'], energy: [null, '1:0:srv'], source: ['typed', '1:0:srv'],
-          documentStamp: [{ ms: 1, counter: 0, actor: 'srv' }, '1:0:srv'] },
-        x: { body: { text: 'account text', rev: 1, base: null } },
-      });
-    }, ['self/journal']);
-    syncSession.engine = engine;
-    syncSession.publish({ engine, ready: true, signedIn: true, online: false });
+      telemetry: { failure() {}, event() {} } };
+    if (migrate) {
+      if (legacy) localStorage.setItem('wm.journal.v2.pages.anon', JSON.stringify(legacy));
+      window.engine = await syncSession.open({ ...options, prepare: async (opened) => {
+        opened.setOnline(false);
+        const { migratePages } = await import('/src/products/journal/migrate.js');
+        await migratePages(opened);
+      } });
+    } else {
+      window.engine = await BrowserSyncEngine.open(options);
+      engine.setOnline(false);
+      await engine.start();
+      await engine.write(null, (device) => {
+        const replica = device.activeReplica;
+        replica.meta.state = 'bound'; replica.meta.account = 'A'; replica.meta.serverEpoch = 'ep-1';
+        replica.cursorOf('self/journal').booted = true;
+        if (!replica.confirmedRow('self/journal', 'page', localDay())) replica.putConfirmed('self/journal', {
+          t: 'page', id: localDay(), seq: 1, rc: 1, ru: 1,
+          f: { mood: [0, '1:0:srv'], energy: [null, '1:0:srv'], source: ['typed', '1:0:srv'],
+            documentStamp: [{ ms: 1, counter: 0, actor: 'srv' }, '1:0:srv'] },
+          x: { body: { text: 'account text', rev: 1, base: null } },
+        });
+      }, ['self/journal']);
+      syncSession.engine = engine;
+      syncSession.publish({ engine, ready: true, signedIn: true, online: false });
+    }
     const transact = engine.store.transact.bind(engine.store);
     engine.store.transact = (body, options) => transact((device) => {
       const result = body(device);
@@ -51,7 +62,12 @@ const fixture = `
         React.createElement('output', { 'aria-label': 'Scores' }, JSON.stringify([page.mood, page.energy])),
         React.createElement('output', { 'aria-label': 'History' }, JSON.stringify(page.history)));
     }
-    createRoot(document.getElementById('editor')).render(React.createElement(Editor));
+    root = createRoot(document.getElementById('editor'));
+    root.render(React.createElement(Editor));
+  }
+  export async function showCanvas() {
+    const { Canvas } = await import('/src/products/journal/Canvas.jsx');
+    root.render(React.createElement(Canvas));
   }
 `;
 const ready = (async () => {
@@ -73,17 +89,18 @@ const ready = (async () => {
 })();
 after(async () => { await ready; await browser?.close(); await server?.close(); });
 
-async function open(context, name, now = null) {
+async function open(context, name, now = null, options = {}) {
   const page = await context.newPage();
+  page.setDefaultTimeout(5000);
   if (now) await page.clock.setFixedTime(new Date(now));
   await page.goto(`${origin}/journal-hook-test`);
-  await page.evaluate(async (name) => { await (await import('/journal-hook-fixture.js')).open(name); }, name);
+  await page.evaluate(async ([name, options]) => { await (await import('/journal-hook-fixture.js')).open(name, options); }, [name, options]);
   await page.getByRole('textbox', { name: 'Body' }).waitFor();
   return page;
 }
-async function reopen(page, name) {
+async function reopen(page, name, options = {}) {
   await page.reload();
-  await page.evaluate(async (name) => { await (await import('/journal-hook-fixture.js')).open(name); }, name);
+  await page.evaluate(async ([name, options]) => { await (await import('/journal-hook-fixture.js')).open(name, options); }, [name, options]);
   await page.getByRole('textbox', { name: 'Body' }).waitFor();
 }
 async function body(page, expected) {
@@ -134,6 +151,198 @@ test('Chromium: an oversized draft survives offline reload and a correction repl
     assert.equal(await page.evaluate(() => engine.device.activeReplica.deviceRows('journal')['pendingClaim:__editorDraft__'] ?? null), null);
     await reopen(page, 'journal-oversized-draft');
     await body(page, 'corrected writing');
+  } finally { await context.close(); }
+});
+
+test('Chromium: an untouched recovered draft follows a peer correction before a scale edit', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    const first = await open(context, 'w6_journal-recovered-peer-correction');
+    const draft = 'X'.repeat(131073);
+    await first.getByRole('textbox', { name: 'Body' }).fill(draft);
+    await first.waitForFunction(() => document.querySelector('main').dataset.saveState === 'unsaved');
+    const second = await open(context, 'w6_journal-recovered-peer-correction');
+    await body(second, draft);
+    const corrected = 'corrected words in tab one';
+    await first.getByRole('textbox', { name: 'Body' }).fill(corrected);
+    await second.waitForFunction((corrected) => engine.device.activeReplica.entries('self/journal')
+      .at(-1)?.intent.cmd.args.body === corrected, corrected);
+    await second.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal((await second.getByRole('textbox', { name: 'Body' }).inputValue()).length, corrected.length);
+    await body(second, corrected);
+    await second.getByRole('button', { name: 'Mood', exact: true }).click();
+    await second.waitForFunction(() => Number(document.querySelector('main').dataset.saveTick) === 1);
+    assert.deepEqual(await second.evaluate(() => {
+      const args = engine.device.activeReplica.entries('self/journal').at(-1).intent.cmd.args;
+      return { body: args.body, mood: args.mood, energy: args.energy };
+    }), { body: corrected, mood: 4, energy: null });
+    assert.equal(await second.evaluate(async (draft) => {
+      const { EditorDraft } = await import('/src/products/journal/domain/writing.js');
+      return Object.entries(engine.device.activeReplica.deviceRows('journal'))
+        .some(([key, row]) => key.startsWith(EditorDraft.recoveryPrefix) && row.document.body === draft);
+    }, draft), true);
+    await reopen(second, 'w6_journal-recovered-peer-correction');
+    await body(second, corrected);
+  } finally { await context.close(); }
+});
+
+test('Chromium: recovered storage updates refresh untouched input while locally typed words survive a peer correction', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    const name = 'w6_journal-recovered-peer-update';
+    const first = await open(context, name);
+    const initial = 'A'.repeat(131073);
+    await first.getByRole('textbox', { name: 'Body' }).fill(initial);
+    await first.waitForFunction(() => document.querySelector('main').dataset.saveState === 'unsaved');
+    const second = await open(context, name);
+    await body(second, initial);
+    const updated = 'B'.repeat(131074);
+    await first.getByRole('textbox', { name: 'Body' }).fill(updated);
+    await second.waitForFunction((updated) => engine.device.activeReplica.deviceRows('journal')
+      ['pendingClaim:__editorDraft__']?.document.body === updated, updated);
+    await second.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal((await second.getByRole('textbox', { name: 'Body' }).inputValue()).length, updated.length);
+    await body(second, updated);
+    const local = 'C'.repeat(131075);
+    await second.getByRole('textbox', { name: 'Body' }).fill(local);
+    await second.waitForFunction((local) => engine.device.activeReplica.deviceRows('journal')
+      ['pendingClaim:__editorDraft__']?.document.body === local, local);
+    await first.getByRole('textbox', { name: 'Body' }).fill('peer correction after local typing');
+    await second.waitForFunction(() => engine.device.activeReplica.entries('self/journal')
+      .at(-1)?.intent.cmd.args.body === 'peer correction after local typing');
+    await body(second, local);
+    assert.equal(await second.evaluate(async (local) => {
+      const { EditorDraft } = await import('/src/products/journal/domain/writing.js');
+      return Object.entries(engine.device.activeReplica.deviceRows('journal'))
+        .some(([key, row]) => key.startsWith(EditorDraft.recoveryPrefix) && row.document.body === local);
+    }, local), true);
+    await second.getByRole('button', { name: 'Energy', exact: true }).click();
+    await second.waitForFunction(() => engine.device.activeReplica.deviceRows('journal')
+      ['pendingClaim:__editorDraft__']?.document.energy === 7);
+    await reopen(second, name);
+    await body(second, local);
+    assert.equal(await second.getByRole('status', { name: 'Scores' }).textContent(), '[0,7]');
+  } finally { await context.close(); }
+});
+
+test('Chromium: Canvas exposes the complete recovered draft beside the corrected page after peer correction and reload', async () => {
+  await ready;
+  const context = await browser.newContext({ timezoneId: 'UTC' });
+  try {
+    const name = 'w6_journal-recovery-canvas';
+    const first = await open(context, name, '2026-10-01T12:00:00Z');
+    const original = 'preserved writing '.repeat(8000);
+    await first.getByRole('textbox', { name: 'Body' }).fill(original);
+    await first.waitForFunction(() => document.querySelector('main').dataset.saveState === 'unsaved');
+    const second = await open(context, name, '2026-10-01T12:00:00Z');
+    await body(second, original);
+    await first.getByRole('textbox', { name: 'Body' }).fill('corrected page remains today');
+    await body(second, 'corrected page remains today');
+    for (const reload of [false, true]) {
+      if (reload) await reopen(second, name);
+      await second.evaluate(async () => (await import('/journal-hook-fixture.js')).showCanvas());
+      const today = second.getByRole('textbox', { name: 'Write today', exact: true });
+      await today.waitFor();
+      assert.equal(await today.inputValue(), 'corrected page remains today');
+      await second.getByText('Recovered drafts (1)', { exact: true }).click();
+      await second.getByText('2026-10-01 · draft 1', { exact: true }).click();
+      const recovered = second.getByRole('textbox', { name: 'Recovered draft 1 from 2026-10-01', exact: true });
+      await recovered.waitFor({ state: 'visible' });
+      assert.equal((await recovered.inputValue()).length, original.length);
+      assert.equal(await recovered.inputValue(), original);
+      assert.equal(await recovered.evaluate((field) => field.readOnly), true);
+      assert.equal(await second.locator('.journal-recoveries details > p').textContent(), 'Mood: 0 · Energy: not answered · typed');
+      assert.equal(await today.inputValue(), 'corrected page remains today');
+    }
+  } finally { await context.close(); }
+});
+
+test('Chromium: first offline open migrates oversized legacy writing for correction and durable reload', async () => {
+  await ready;
+  const context = await browser.newContext({ timezoneId: 'UTC' });
+  try {
+    const name = 'w6_journal-legacy-offline-migration';
+    const original = 'legacy writing '.repeat(10000);
+    const legacy = Object.fromEntries([
+      ['2026-10-01', original], ['2026-09-30', 'valid older page'],
+    ].map(([day, body]) => [day, { page: { day, body, mood: 0, energy: null, source: 'spoken', stamp: '1:0:legacy' }, needsPush: true, read: false }]));
+    const page = await open(context, name, '2026-10-01T12:00:00Z', { migrate: true, legacy });
+    await body(page, original);
+    assert.deepEqual(await page.evaluate(async () => {
+      const { syncSession } = await import('/src/platform/sync/session.js');
+      return { ready: syncSession.snapshot.ready, error: syncSession.snapshot.error, closed: engine.closed,
+        legacy: localStorage.getItem('wm.journal.v2.pages.anon'),
+        commands: engine.device.activeReplica.entries('self/journal').map((entry) => entry.intent.cmd.args.body) };
+    }), { ready: true, error: false, closed: false, legacy: null, commands: ['valid older page'] });
+    assert.equal(await page.getByRole('status', { name: 'Scores' }).textContent(), '[0,null]');
+    await page.getByRole('textbox', { name: 'Body' }).fill('corrected legacy writing');
+    await page.waitForFunction(() => Number(document.querySelector('main').dataset.saveTick) === 1);
+    await reopen(page, name, { migrate: true });
+    await body(page, 'corrected legacy writing');
+    assert.deepEqual(await page.evaluate(() => engine.device.activeReplica.entries('self/journal').map((entry) => ({
+      day: entry.intent.cmd.args.day, body: entry.intent.cmd.args.body,
+    }))), [
+      { day: '2026-09-30', body: 'valid older page' },
+      { day: '2026-10-01', body: 'corrected legacy writing' },
+    ]);
+    assert.equal(await page.evaluate(async (original) => {
+      const { EditorDraft } = await import('/src/products/journal/domain/writing.js');
+      return Object.entries(engine.device.activeReplica.deviceRows('journal'))
+        .some(([key, row]) => key.startsWith(EditorDraft.recoveryPrefix) && row.document.body === original);
+    }, original), true);
+  } finally { await context.close(); }
+});
+
+test('Chromium: notice cleanup failure after a durable save does not carry the page across midnight', async () => {
+  await ready;
+  const context = await browser.newContext({ timezoneId: 'UTC' });
+  try {
+    const page = await open(context, 'w6_journal-notice-cleanup-midnight', '2026-10-01T23:59:00Z');
+    await page.evaluate(async () => {
+      const scope = 'self/journal';
+      await engine.write(null, (device) => device.activeReplica.notices.push({
+        id: 'notice-cleanup-midnight', scope, code: 'too-large', dismissed: false,
+        content: { cmd: { name: 'journal.savePage', args: {
+          day: '2026-10-01', body: 'refused prior text', mood: 0, energy: null, source: 'typed',
+          stamp: { ms: 2, counter: 0, actor: 'old' },
+        } } },
+      }), [scope]);
+      const transact = engine.store.transact.bind(engine.store);
+      engine.store.transact = (change, options) => transact((device) => {
+        const durable = device.activeReplica.entries(scope).some((entry) => entry.intent.cmd?.args.body === 'saved before midnight');
+        const dismissed = device.activeReplica.notices.find((notice) => notice.id === 'notice-cleanup-midnight')?.dismissed;
+        const result = change(device);
+        if (options?.readonly !== true && durable && !dismissed && !window.noticeCleanupAborted
+          && device.activeReplica.notices.find((notice) => notice.id === 'notice-cleanup-midnight')?.dismissed) {
+          window.noticeCleanupAborted = true;
+          throw new DOMException('journal test abort during notice cleanup', 'AbortError');
+        }
+        return result;
+      }, options);
+    });
+    await page.getByRole('textbox', { name: 'Body' }).fill('saved before midnight');
+    await page.waitForFunction(() => window.noticeCleanupAborted || Number(document.querySelector('main').dataset.saveTick) > 0);
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const before = await page.evaluate(() => ({
+      tick: Number(document.querySelector('main').dataset.saveTick),
+      commands: engine.device.activeReplica.entries('self/journal').map((entry) => ({
+        day: entry.intent.cmd.args.day, body: entry.intent.cmd.args.body,
+      })),
+    }));
+    await page.clock.setFixedTime(new Date('2026-10-02T00:01:00Z'));
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await page.waitForFunction(() => document.querySelector('main').dataset.day === '2026-10-02');
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(before.tick, 1);
+    assert.equal(await page.getByRole('textbox', { name: 'Body' }).inputValue(), '');
+    assert.deepEqual(await page.evaluate(() => engine.device.activeReplica.entries('self/journal').map((entry) => ({
+      day: entry.intent.cmd.args.day, body: entry.intent.cmd.args.body,
+    }))), before.commands);
+    assert.deepEqual(before.commands, [{ day: '2026-10-01', body: 'saved before midnight' }]);
+    const history = JSON.parse(await page.getByRole('status', { name: 'History' }).textContent());
+    assert.deepEqual(history.map((entry) => ({ day: entry.day, body: entry.body })), before.commands);
   } finally { await context.close(); }
 });
 

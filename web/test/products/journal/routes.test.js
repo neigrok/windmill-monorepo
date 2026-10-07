@@ -13,7 +13,7 @@ test('journal registers a settings section, in the data zone beside the accountâ
 
 test('journal hands the engine its claim hooks, and a sign-in question counts its pages', () => {
   const { sync } = journalRoutes;
-  assert.deepEqual(Object.keys(sync).sort(), ['onPushResult', 'pendingDeviceWork', 'prepare', 'signedOutWork']);
+  assert.deepEqual(Object.keys(sync).sort(), ['adoptDeviceRows', 'onPushResult', 'pendingDeviceWork', 'prepare', 'signedOutWork']);
   const document = { body: 'words', mood: null, energy: null, source: 'typed' };
   const pending = new PendingClaim({ day: '2026-10-01', claimId: 'c1', document });
   pending.edit({ ...document, body: 'later words' });

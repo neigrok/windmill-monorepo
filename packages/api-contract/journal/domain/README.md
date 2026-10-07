@@ -12,7 +12,7 @@ value/action scene with its records reversed.
 | File | Cases |
 |---|---|
 | `rules.json` | One complete rule book: two entity facts and 18 rules |
-| `values.json` | 132 cases: bound specs, both command checks, state, content stamps and clocks, pending edits and contribution reconciliation |
+| `values.json` | 141 cases: bound specs, both command checks, state, content stamps and clocks, pending edits, contribution reconciliation and draft adoption |
 | `page-actions.json` | 44 cases: bound and anonymous saves, retirements, supersession, retained edits, confirmation proofs and reconciliation |
 
 `rules.json` is the gym corpus's `{entities,rules}` object. The other files are arrays of
@@ -36,6 +36,7 @@ and expected text, not an implementation-generated digest or abbreviated body.
 | `{op:"ContentClock.advance",clock,observed,now,actor}` | `{stamp}` or `{error:true}` on clock exhaustion |
 | `{op:"PendingClaim.reconcileBody",joined,base,latest}` | `{body}` |
 | `{op:"PendingClaim.edit",pending,document,retiring}` | `{pending}` |
+| `{op:"EditorDraft.adopt",incoming,current}` | `{current,recovered}`; each member is a complete draft or null |
 
 Command `args` are the complete engine arguments: `day` and the four document fields, plus
 `stamp` for `SavePage` or `claimId` for `ClaimPage`. Malformed typed inputs, including impossible
@@ -71,6 +72,12 @@ and replace the complete latest document. Reverting an edited field still counts
 `touched` is a set, represented in UTF-8 byte order in comparisons, including pending device
 writes. Receipt ids from the deterministic test id source stand for the production CSPRNG ids;
 these fixtures do not test entropy.
+
+A draft is `{day,document:{body,mood,energy,source}}`. Adoption keeps the destination's current
+draft, or transfers the incoming draft when the destination is empty. Distinct incoming writing
+is returned as `recovered` without overriding the current draft. Exact day and document byte
+equality suppresses a duplicate recovery; different days, explicit zero/null scales, source and
+canonically equivalent body spellings remain distinct. Neither input is changed.
 
 ## Actions
 
@@ -137,6 +144,9 @@ its companion delta into the same atomic intent.
 - **Reconciled body cap (C.1, C.3, A.3).** Account prose and the latest contribution can each fit
   while their join exceeds 131072 bytes. Refuse that full save without removing the pending row
   or committing the candidate clock; the retained writing remains available.
+- **Draft adoption (owner ruling).** Sign-in carries every draft into the account or retains it
+  recoverably on the device. Recovery does not override current writing. Keeping an authoritative
+  destination and a distinct incoming recovery preserves both documents without duplication.
 
 The engine's separate [`claim-edit.json`](../../sync/corpus/journal/claim-edit.json) corpus covers delayed admission,
 restart and reordered responses. This corpus pins pure decisions and values; local commit failure
@@ -150,9 +160,9 @@ expectation; no surface supplies expected values.
 | Corpus | Comparisons |
 |---|---:|
 | `rules.json` | 1 |
-| `values.json` | 132 |
+| `values.json` | 141 |
 | `page-actions.json` | 44 |
-| Total | 177 |
+| Total | 186 |
 
 The web domain applies the rulings throughout its commands, editor actions and reconciliation:
 

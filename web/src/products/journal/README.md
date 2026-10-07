@@ -16,17 +16,27 @@ in one transaction. Invalid writing stays in an editor draft; failed transaction
 durable state and the editor keeps newer input available for retry. Pending text takes precedence
 over older refusal notices. Not now retires only the invitation.
 
+Sign-in counts device-only drafts and pins their bytes before Add or Discard. Adoption preserves
+both sides of a draft collision. Displaced drafts live in the reserved device rows
+`pendingClaim:__editorRecovery__<digest>` and appear under **Recovered drafts** on the canvas;
+they never overlay the current page. A recovered editor follows peer corrections, while locally
+typed input remains available. Notice-cleanup failure reports separately from the committed save.
+
 `claims.js` remains the engine-level binding checked against
 `packages/api-contract/sync/reference/journal/client.js` by the sync corpus. Production page
 editing and reconciliation use the domain actions. The route table hands the engine the domain's
-pending-work hook and records claim receipts in the same transaction as result processing.
+pending-work and adoption hooks and records claim receipts in the same transaction as result processing.
 
 `migrate.js` imports v1/v2 cached pages and owed writes, preserving account lineages and anonymous
 snapshots. Durable source digests prevent replay after a crash between import and source deletion.
-Invalid/blocked storage fails visibly and leaves source keys intact. Unattributable pages stay
-quarantined until explicit restore. Migration's claim adapter translates the domain's validated plan.
+Unreadable entries and failed storage leave source keys intact without blocking the journal from
+opening. Valid entries can still migrate; oversized writing becomes an editable or recovered draft.
+Distinct overlapping sources and changed source snapshots remain recoverable without another
+appending claim. Unattributable pages stay quarantined until explicit restore, with alternatives
+marked `recovered` so restoring them retains a draft instead of appending it to the account.
+Migration's claim adapter translates the domain's validated plan.
 
-The domain runner claims all three shared journal files: 177 comparisons, with every value/action
+The domain runner claims all three shared journal files: 186 comparisons, with every value/action
 scene also run in reverse record order. Engine and Chromium tests exercise transaction aborts,
 restart, offline writing, receipt arrival order and multiple tabs.
 

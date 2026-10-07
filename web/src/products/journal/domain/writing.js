@@ -7,7 +7,9 @@ import { LocalDay } from '../../../platform/domain-kit/time.js';
 import { Valid } from '../../../platform/domain-kit/validation.js';
 import { Path, Violation } from '../../../platform/domain-kit/values.js';
 import { claimBody, isDocumentStamp, nextDocumentStamp } from '../../../platform/sync/core/content.js';
-import { EDITOR_DRAFT_KEY, JOURNAL_SCOPE, JournalState, JournalStateValue, Page, PageDocument, STATE_FIELDS } from './page.js';
+import { hashText } from '../../../platform/sync/core/encoding.js';
+import { jcs } from '../../../platform/sync/core/jcs.js';
+import { EDITOR_DRAFT_KEY, EDITOR_RECOVERY_PREFIX, JOURNAL_SCOPE, JournalState, JournalStateValue, Page, PageDocument, STATE_FIELDS } from './page.js';
 import { ClaimPageSpecs, JournalRefusals, JournalRules, SavePageSpecs } from './journalRules.js';
 
 /** @typedef {import('../../../platform/domain-kit/values.js').Json} Json */
@@ -88,6 +90,7 @@ export class ClaimPageCommand {
 
 export class EditorDraft {
   static key = EDITOR_DRAFT_KEY;
+  static recoveryPrefix = EDITOR_RECOVERY_PREFIX;
 
   /** @param {{ day: DayInput, document: PageDocument | DocumentFields }} input */
   constructor({ day, document: doc }) {
@@ -103,6 +106,18 @@ export class EditorDraft {
   }
 
   get json() { return { day: this.day.text, document: this.document.fields() }; }
+
+  /** @param {EditorDraft | null} incoming @param {EditorDraft | null} current */
+  static adopt(incoming, current) {
+    const distinct = incoming !== null && current !== null
+      && (incoming.day.text !== current.day.text || !incoming.document.equals(current.document));
+    return { current: current ?? incoming, recovered: distinct ? incoming : null };
+  }
+
+  get recoveryKey() { return `${EditorDraft.recoveryPrefix}${hashText(jcs(this.json))}`; }
+
+  /** @param {Record<string, Json>} rows @param {EditorDraft} draft */
+  static retain(rows, draft) { rows[draft.recoveryKey] = draft.json; }
 }
 
 export class PreserveEditorDraft {
@@ -192,7 +207,7 @@ export class JournalWriteState {
     this.page = read.confirmed(Page, Id.ofDay(day, Page));
     this.state = read.repository(JournalState).find(new Id('journalState', JournalState), 'drawn') ?? new JournalStateValue();
     const devices = read.devices('pendingClaim:');
-    this.pending = Object.entries(devices).filter(([key]) => key !== EditorDraft.key).sort(([a], [b]) => compareText(a, b))
+    this.pending = Object.entries(devices).filter(([key]) => key !== EditorDraft.key && !key.startsWith(EditorDraft.recoveryPrefix)).sort(([a], [b]) => compareText(a, b))
       .map(([, value]) => PendingClaim.fromJSON(value));
     const draft = devices[EditorDraft.key];
     this.hasEditorDraft = draft !== undefined && EditorDraft.fromJSON(draft).day.text === day.text;
@@ -375,7 +390,7 @@ export const JournalWriting = Object.freeze({
   pendingWork(product, rows) {
     if (product !== 'journal') return [];
     return Object.entries(rows).filter(([key, value]) => {
-      if (key === EditorDraft.key) return true;
+      if (key === EditorDraft.key || key.startsWith(EditorDraft.recoveryPrefix)) return true;
       if (!key.startsWith('pendingClaim:')) return false;
       const pending = PendingClaim.fromJSON(value);
       return pending.touched.length > 0 || Object.keys(pending.retirements).length > 0;

@@ -11,6 +11,7 @@ import { ChoiceSpec, Path } from '../../../platform/domain-kit/values.js';
 
 export const JOURNAL_SCOPE = 'self/journal';
 export const EDITOR_DRAFT_KEY = 'pendingClaim:__editorDraft__';
+export const EDITOR_RECOVERY_PREFIX = 'pendingClaim:__editorRecovery__';
 export const STATE_FIELDS = Object.freeze(['placeholder', 'privacyLine', 'firstPage', 'scales']);
 
 export class PageDocument {
@@ -117,7 +118,7 @@ export class JournalRoom {
     }
     const pendingDays = new Set();
     for (const [key, json] of Object.entries(read.devices('pendingClaim:')).sort(([a], [b]) => compareText(a, b))) {
-      if (key === EDITOR_DRAFT_KEY) continue;
+      if (key === EDITOR_DRAFT_KEY || key.startsWith(EDITOR_RECOVERY_PREFIX)) continue;
       const pending = Fields.object(json, 'pendingClaim');
       const day = LocalDay.parse(pending.string('day'));
       if (day === null) throw pending.failure('day', 'not a Gregorian day');

@@ -8,7 +8,7 @@ import { Plan } from '../../../../src/platform/domain-kit/plans.js';
 import { Fault, Violation } from '../../../../src/platform/domain-kit/values.js';
 import { jcs } from '../../../../src/platform/sync/core/jcs.js';
 import { JournalRefusals, JournalRules, refusalForm } from '../../../../src/products/journal/domain/journalRules.js';
-import { ClaimPage, ClaimPageCommand, ContentClock, PendingClaim, ReconcileClaim, RetireJournalInvitation, SavePage, SavePageCommand } from '../../../../src/products/journal/domain/writing.js';
+import { ClaimPage, ClaimPageCommand, ContentClock, EditorDraft, PendingClaim, ReconcileClaim, RetireJournalInvitation, SavePage, SavePageCommand } from '../../../../src/products/journal/domain/writing.js';
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { RegistryCheck, RuleBookCheck, RuleBookParity } from '../../../platform/domain-kit/checks.js';
 import { Contract, ContractError, momentOf, viewRecords, withRecordsReversed } from '../../../platform/domain-kit/vectors.js';
@@ -56,6 +56,12 @@ class JournalCorpus extends ProductCorpus {
         case 'ContentClock.advance':
           try { return { stamp: ContentClock.advance(input) }; }
           catch { return { error: true }; }
+        case 'EditorDraft.adopt': {
+          const incoming = input.incoming === null ? null : EditorDraft.fromJSON(input.incoming);
+          const current = input.current === null ? null : EditorDraft.fromJSON(input.current);
+          const adopted = EditorDraft.adopt(incoming, current);
+          return { current: adopted.current?.json ?? null, recovered: adopted.recovered?.json ?? null };
+        }
         case 'PendingClaim.reconcileBody': return { body: PendingClaim.reconcileBody(input.joined, input.base, input.latest) };
         case 'PendingClaim.edit': {
           const pending = PendingClaim.fromJSON(input.pending);

@@ -39,9 +39,9 @@ export class BrowserSyncEngine {
     document = globalThis.document, window = globalThis.window, timers = globalThis, now = Date.now,
     monotonic = () => Math.floor(performance.now()), newReplicaId = replicaId, newActor = actorId,
     draw = secureDraw, limits = CONSTANTS, appVersion = import.meta.env?.VITE_RELEASE ?? '1', liveHint = () => false,
-    pendingDeviceWork = () => [], onPushResult = () => {}, credentials, base }) {
+    pendingDeviceWork = () => [], adoptDeviceRows = () => undefined, onPushResult = () => {}, credentials, base }) {
     Object.assign(this, { store, registry, navigator, document, window, timers, now, monotonic,
-      newReplicaId, newActor, draw, appVersion, liveHint, pendingDeviceWork, onPushResult, credentials });
+      newReplicaId, newActor, draw, appVersion, liveHint, pendingDeviceWork, adoptDeviceRows, onPushResult, credentials });
     this.limits = { ...CONSTANTS, ...limits };
     this.telemetry = syncTelemetry(telemetry);
     this.actor = newActor();
@@ -97,7 +97,7 @@ export class BrowserSyncEngine {
     return { registry: this.registry, actor: this.actor, deviceNow: this.now(), appVersion: this.appVersion,
       device, ended: [], telemetry: [], events: [], limits: this.limits, draw: this.draw,
       newReplicaId: this.newReplicaId, newActor: this.newActor,
-      nextGestureId: () => this.newGestureId(), pendingDeviceWork: this.pendingDeviceWork };
+      nextGestureId: () => this.newGestureId(), pendingDeviceWork: this.pendingDeviceWork, adoptDeviceRows: this.adoptDeviceRows };
   }
 
   async write(operation, change, scopes = []) {

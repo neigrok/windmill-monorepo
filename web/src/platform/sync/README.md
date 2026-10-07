@@ -95,9 +95,16 @@ the browser engine separately and rejects Node builtins. The app shell caches th
 `useSyncRecords(scope)` (stable drawn/stored records, notices and first-pull state through
 `useSyncExternalStore`). Records can observe the anonymous replica; only the session owner opens
 and starts the engine. Each product's route table carries a `sync` group — `prepare(engine)`,
-`onPushResult`, `pendingDeviceWork`, `liveHint(engine, replica)` and `signedOutWork`, the record type a
+`onPushResult`, `pendingDeviceWork`, `adoptDeviceRows`, `liveHint(engine, replica)` and `signedOutWork`, the record type a
 sign-in question counts — and the session owner composes every group into the engine options;
 `prepare` runs before the first network request.
+
+`pendingDeviceWork(product, rows)` identifies durable work for both sign-in and sign-out decisions.
+Sign-in adopts that work even without outbox entries, exposes its count as `due.pending`, and pins
+each row's full bytes with its key so a stale Add or Discard is asked again.
+`adoptDeviceRows(product, incomingRows, keptRows)` returns the merged product rows, or `undefined`
+when unhandled. A differing pending-work collision without a merge fails the transaction and keeps
+both replicas intact; ordinary device settings retain the destination value on a shared key.
 
 Command predictions may include local deaths and serial values; only the command arguments go on
 the wire.

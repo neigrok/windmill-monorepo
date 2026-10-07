@@ -3,7 +3,7 @@ import { useSyncRecords } from '../../platform/sync/react.js';
 import { syncSession } from '../../platform/sync/session.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { localDay, watchLocalDay } from './localDay.js';
-import { isWritten, journalRoom, pagesOf, retireInvitation, savePage, SCOPE } from './pages.js';
+import { isWritten, journalRoom, pagesOf, recoveredDrafts, retireInvitation, savePage, SCOPE } from './pages.js';
 import { EditorDraft, JournalWriting } from './domain/writing.js';
 
 export function useToday() {
@@ -24,7 +24,7 @@ export function usePages() {
   const engine = session.engine;
   const pages = engine && session.ready ? pagesOf(engine, records) : [];
   const held = pages.find((page) => page.day === today) ?? { day: today, body: '', mood: null, energy: null, source: 'typed' };
-  const shown = editor?.replica === records.replica && !editor.saved ? editor.doc : held;
+  const shown = editor?.replica === records.replica && !editor.saved && !editor.recovered ? editor.doc : held;
   const persist = useCallback((writing, previous = null) => {
     drafts.current.set(writing.replica, writing);
     setEditor(writing); setFailure(false);
@@ -59,10 +59,11 @@ export function usePages() {
   const change = useCallback((field, value) => {
     if (!engine || !session.ready) return;
     const previous = drafts.current.get(records.replica);
-    const destination = pagesOf(engine).find((page) => page.day === today) ?? held;
-    const current = previous && !previous.saved ? previous.doc : destination;
-    const carriedFrom = current.day !== today ? current.day : previous?.carriedFrom;
     const retained = engine.device.activeReplica.deviceRows('journal')[EditorDraft.key];
+    const destination = pagesOf(engine).find((page) => page.day === today) ?? held;
+    const current = previous && !previous.saved && !previous.recovered ? previous.doc
+      : retained && retained.day !== today ? { day: retained.day, ...retained.document } : destination;
+    const carriedFrom = current.day !== today ? current.day : previous?.carriedFrom;
     const priorDraft = current.day !== today && retained?.day === current.day ? retained
       : retained?.day === today ? null : previous?.priorDraft ?? null;
     const doc = { day: today, body: current.body, mood: current.mood, energy: current.energy,
@@ -74,10 +75,14 @@ export function usePages() {
     if (!engine || !session.ready) return;
     let writing = drafts.current.get(records.replica);
     const retained = engine.device.activeReplica.deviceRows('journal')[EditorDraft.key];
+    if (writing?.recovered && writing.recovered !== retained) {
+      drafts.current.delete(records.replica);
+      writing = null;
+    }
     if (!writing && retained) {
       const saved = EditorDraft.fromJSON(retained);
       writing = { key: `${records.replica}:${saved.day.text}`, replica: records.replica,
-        doc: { day: saved.day.text, ...saved.document.fields() }, saved: false, failed: true };
+        doc: { day: saved.day.text, ...saved.document.fields() }, saved: false, failed: true, recovered: retained };
       drafts.current.set(records.replica, writing);
     }
     if (writing && !writing.pending && writing.doc.day !== today) {
@@ -87,11 +92,11 @@ export function usePages() {
         priorDraft: retained?.day === writing.doc.day ? retained : null }, writing);
       return;
     }
-    if (editor?.replica !== records.replica) {
+    if (editor !== (writing ?? null)) {
       setEditor(writing ?? null);
       setFailure(Boolean(writing?.failed));
     }
-  }, [engine, session.ready, records.replica, today, key, editor, failure, saveTick, persist]);
+  }, [engine, session.ready, records, today, key, editor, failure, saveTick, persist]);
   const hasPending = engine?.device.activeReplica.entries(SCOPE).length > 0
     || Object.keys(engine?.device.activeReplica.deviceRows('journal') ?? {}).some((key) => key.startsWith('pendingClaim:'));
   const room = engine && session.ready ? journalRoom(engine, records) : null;
@@ -104,7 +109,7 @@ export function usePages() {
     : records.firstPullComplete ? 'ready' : 'failed';
   const saveState = records.notices.some((notice) => !notice.dismissed) ? 'refused' : failure || retainedDraft ? 'unsaved' : !session.online ? 'offline'
     : engine?.device.activeReplica.meta.state === 'anon' || hasPending ? 'device' : 'saved';
-  return { today, history: pages.filter((page) => page.day < today && isWritten(page)),
+  return { today, history: pages.filter((page) => page.day < today && isWritten(page)), recoveries: recoveredDrafts(engine),
     loading: !session.ready, readState,
     firstRun: room?.firstRunKnown && !pages.some(isWritten) && room.state.placeholder !== 'retired',
     scalesInvitation: room?.scaleInvitationDue ?? false, retireScales,

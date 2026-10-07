@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
-import { pendingClaimWork, retireInvitation } from '../../../src/products/journal/pages.js';
+import { adoptDeviceRows, pendingClaimWork, recoveredDrafts, retireInvitation } from '../../../src/products/journal/pages.js';
 import { EditorDraft } from '../../../src/products/journal/domain/writing.js';
+import { syncSession } from '../../../src/platform/sync/session.js';
 import { ReconcileClaim } from '../../../src/products/journal/domain/writing.js';
 import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/runner.js';
 import { FixedZone } from '../../../src/platform/domain-kit/time.js';
@@ -28,6 +29,7 @@ async function setup({ watch = true } = {}) {
   let state = ServerState.empty({ epoch: 'ep-1', accounts: { A: {}, B: {} } });
   env.options.registry = journalRegistry;
   env.options.pendingDeviceWork = pendingClaimWork;
+  env.options.adoptDeviceRows = adoptDeviceRows;
   env.options.onPushResult = onSyncResult;
   env.transport.request = async (endpoint, request) => {
     const at = env.timers.time;
@@ -109,7 +111,7 @@ test('a crash or blocked deletion after migration cannot enqueue or append the s
   const { engine, env } = await setup();
   const data = storage({ 'wm.journal.v2.pages.anon': JSON.stringify({ [day]: entry('one copy', true, false) }) });
   data.removeItem = () => { throw new Error('storage denied'); };
-  await assert.rejects(migratePages(engine, data));
+  assert.deepEqual(await migratePages(engine, data), { complete: false });
   assert.equal(engine.device.activeReplica.entries(SCOPE).length, 1);
   engine.close();
   const reopened = await BrowserSyncEngine.open(env.options);
@@ -125,7 +127,7 @@ test('a changed legacy key imports only new entries after blocked cleanup and re
   const key = 'wm.journal.v2.pages.anon';
   const data = storage({ [key]: JSON.stringify({ [day]: entry('one copy', true, false) }) });
   data.removeItem = () => { throw new Error('storage denied'); };
-  await assert.rejects(migratePages(engine, data));
+  assert.deepEqual(await migratePages(engine, data), { complete: false });
   const original = engine.device.activeReplica.entries(SCOPE)[0].intent.cmd.args.claimId;
   const receipts = (await engine.store.read()).device.meta.journalMigrationEntries;
   assert.deepEqual(Object.values(receipts), [original]);
@@ -157,20 +159,81 @@ test('a changed legacy key imports only new entries after blocked cleanup and re
   reopened.close();
 });
 
-test('migration rollback retains every source when a document is invalid or the durable write fails', async () => {
+test('migration keeps malformed entries and failed writes retryable while valid entries remain available', async () => {
   const { engine } = await setup();
   const data = storage({ 'wm.journal.v2.pages.anon': JSON.stringify({ [day]: entry('keep this'), invalid: entry('bad day') }) });
-  await assert.rejects(migratePages(engine, data));
-  assert.equal(data.length, 1); assert.equal(engine.device.activeReplica.entries(SCOPE).length, 0);
-  assert.equal(engine.device.meta.journalMigrationEntries, undefined);
-  data.setItem('wm.journal.v2.pages.anon', JSON.stringify({ [day]: entry('keep this') }));
+  assert.deepEqual(await migratePages(engine, data), { complete: false });
+  assert.equal(data.length, 1); assert.equal(engine.device.activeReplica.entries(SCOPE).length, 1);
+  assert.equal(pagesOf(engine)[0].body, 'keep this');
+  const receipts = structuredClone(engine.device.meta.journalMigrationEntries);
+  data.setItem('wm.journal.v2.pages.anon', JSON.stringify({ [day]: entry('new writing') }));
   const transact = engine.store.transact;
   engine.store.transact = async () => { throw new Error('quota'); };
-  await assert.rejects(migratePages(engine, data));
-  assert.equal(data.length, 1); assert.equal(engine.device.activeReplica.entries(SCOPE).length, 0);
+  assert.deepEqual(await migratePages(engine, data), { complete: false });
+  assert.equal(data.length, 1); assert.equal(engine.device.activeReplica.entries(SCOPE).length, 1);
   engine.store.transact = transact;
-  assert.equal((await engine.store.read()).device.meta.journalMigrationEntries, undefined);
+  assert.deepEqual((await engine.store.read()).device.meta.journalMigrationEntries, receipts);
   engine.close();
+});
+
+test('blocked legacy storage does not reject journal preparation', async () => {
+  const { engine } = await setup({ watch: false });
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true,
+    get() { throw new DOMException('blocked test storage', 'SecurityError'); } });
+  try { assert.deepEqual(await migratePages(engine), { complete: false }); }
+  finally {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
+    else delete globalThis.localStorage;
+    engine.close();
+  }
+});
+
+test('migration preserves a distinct losing same-day source as recoverable writing', async () => {
+  const { engine } = await setup({ watch: false });
+  const data = storage({
+    'wm.journal.pages.anon': JSON.stringify({ [day]: entry('earlier source writing', true, false, '90:0:legacy') }),
+    'wm.journal.v2.pages.anon': JSON.stringify({ [day]: entry('newer source writing', true, false, '100:0:legacy') }),
+  });
+  try {
+    assert.deepEqual(await migratePages(engine, data), { complete: true });
+    assert.equal(data.length, 0);
+    assert.equal(pagesOf(engine)[0].body, 'newer source writing');
+    assert.deepEqual(recoveredDrafts(engine).map(({ day, body }) => ({ day, body })), [{ day, body: 'earlier source writing' }]);
+    assert.equal(engine.device.activeReplica.entries(SCOPE).length, 1);
+    await migratePages(engine, data);
+    assert.equal(recoveredDrafts(engine).length, 1);
+  } finally { engine.close(); }
+});
+
+test('a refused cross-day carry preserves the original dated draft as well as the new input', async () => {
+  const { engine } = await setup({ watch: false });
+  const original = new EditorDraft({ day: '2026-09-26', document: doc('old draft '.repeat(16000)) });
+  try {
+    await engine.write(null, (device) => { device.activeReplica.deviceRows('journal')[EditorDraft.key] = original.json; }, [SCOPE]);
+    const body = `today\n\n${original.document.body}`;
+    await assert.rejects(savePage(engine, doc(body), engine.activeReplica(), {}, original.json), /journal-local-refusal/);
+    assert.equal(pagesOf(engine).find((page) => page.day === day).body, body);
+    assert.deepEqual(recoveredDrafts(engine).map(({ day, body }) => ({ day, body })), [{ day: original.day.text, body: original.document.body }]);
+  } finally { engine.close(); }
+});
+
+test('a changed legacy source after blocked cleanup never appends a replacement snapshot twice', async () => {
+  const { engine, env } = await setup();
+  const key = 'wm.journal.v2.pages.anon';
+  const data = storage({ [key]: JSON.stringify({ [day]: entry('original words', true, false) }) });
+  data.removeItem = () => { throw new Error('blocked source cleanup'); };
+  try {
+    assert.deepEqual(await migratePages(engine, data), { complete: false });
+    data.setItem(key, JSON.stringify({ [day]: entry('corrected words', true, false, '101:0:legacy') }));
+    data.removeItem = (key) => data.data.delete(key);
+    assert.deepEqual(await migratePages(engine, data), { complete: true });
+    assert.deepEqual(engine.device.activeReplica.entries(SCOPE).map((row) => row.intent.cmd.args.body), ['original words']);
+    assert.deepEqual(recoveredDrafts(engine).map(({ day, body }) => ({ day, body })), [{ day, body: 'corrected words' }]);
+    env.transport.account = 'A'; await engine.signIn('A'); await converge(engine);
+    assert.equal(pagesOf(engine).find((page) => page.day === day).body, 'original words');
+    assert.equal(recoveredDrafts(engine)[0].body, 'corrected words');
+  } finally { engine.close(); }
 });
 
 test('unattributable legacy pages stay quarantined through binding and restore with receipt-protected claims', async () => {
@@ -185,6 +248,93 @@ test('unattributable legacy pages stay quarantined through binding and restore w
   watchClaims(engine); await converge(engine);
   assert.equal(pagesOf(engine)[0].body, 'unowned');
   engine.close();
+});
+
+test('legacy oversized writing remains editable while valid pages migrate and first open completes', async () => {
+  const { engine, env } = await setup({ watch: false });
+  engine.close();
+  const body = 'legacy writing '.repeat(10_000);
+  const data = storage({ 'wm.journal.v2.pages.anon': JSON.stringify({
+    [day]: entry(body, true, false),
+    '2026-09-26': { ...entry('valid older page', true, false), page: { ...doc('valid older page', '2026-09-26'), stamp: '100:0:legacy' } },
+  }) });
+  const originalWindow = globalThis.window;
+  globalThis.window = { addEventListener() {} };
+  const session = new syncSession.constructor();
+  try {
+    await session.open({ ...env.options, prepare: (opened) => migratePages(opened, data) });
+    assert.equal(session.snapshot.ready, true);
+    assert.equal(session.snapshot.error, false);
+    assert.equal(session.engine.closed, false);
+    assert.equal(data.length, 0);
+    assert.deepEqual(pagesOf(session.engine).map(({ day, body }) => ({ day, body })), [
+      { day: '2026-09-26', body: 'valid older page' }, { day, body },
+    ]);
+    assert.deepEqual(session.engine.device.activeReplica.entries(SCOPE).map((row) => row.intent.cmd.args.body), ['valid older page']);
+    await savePage(session.engine, doc('corrected legacy writing'));
+    assert.equal(pagesOf(session.engine).find((page) => page.day === day).body, 'corrected legacy writing');
+    assert.deepEqual(recoveredDrafts(session.engine).map(({ day, body: writing }) => ({ day, body: writing })), [{ day, body }]);
+  } finally {
+    session.engine?.close();
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+test('quarantine restores an oversized page for correction without blocking valid writing or repeating it', async () => {
+  const { engine, env } = await setup({ watch: false });
+  const body = 'quarantined writing '.repeat(8_000);
+  try {
+    await migratePages(engine, storage({ 'wm.journal.pages': JSON.stringify({ [day]: entry(body) }) }));
+    env.transport.account = 'A'; await engine.signIn('A');
+    assert.equal(await restoreUnclaimedPages('A', engine), 1);
+    assert.equal(unclaimedPages(engine).length, 0);
+    assert.equal(pagesOf(engine).find((page) => page.day === day).body, body);
+    assert.equal(engine.device.activeReplica.entries(SCOPE).length, 0);
+    assert.equal(await restoreUnclaimedPages('A', engine), 0);
+    await savePage(engine, doc('corrected quarantined writing'));
+    assert.equal(pagesOf(engine).find((page) => page.day === day).body, 'corrected quarantined writing');
+  } finally { engine.close(); }
+});
+
+test('sign-in adopts an offline editor-only draft into the account without an outbox entry', async () => {
+  const { engine, env } = await setup({ watch: false });
+  const body = 'D'.repeat(131073);
+  try {
+    engine.setOnline(false);
+    await assert.rejects(savePage(engine, doc(body)), /journal-local-refusal/);
+    assert.equal(engine.device.activeReplica.entries(SCOPE).length, 0);
+    env.transport.account = 'A';
+    assert.equal((await engine.signIn('A')).complete, true);
+    assert.equal(engine.device.activeReplica.meta.account, 'A');
+    assert.equal(pagesOf(engine).find((page) => page.day === day)?.body, body);
+    engine.close();
+    const reopened = await BrowserSyncEngine.open(env.options);
+    try { assert.equal(pagesOf(reopened).find((page) => page.day === day)?.body, body); }
+    finally { reopened.close(); }
+  } finally { engine.close(); }
+});
+
+test('returning sign-in preserves both account and anonymous drafts when their device keys collide', async () => {
+  const { engine, env } = await setup({ watch: false });
+  const accountBody = 'A'.repeat(131073), anonymousBody = 'B'.repeat(131073);
+  try {
+    env.transport.account = 'A'; await engine.signIn('A');
+    await assert.rejects(savePage(engine, doc(accountBody)), /journal-local-refusal/);
+    await engine.finishSignOut({ choice: 'keep' });
+    await savePage(engine, doc('anonymous seed'));
+    await assert.rejects(savePage(engine, doc(anonymousBody)), /journal-local-refusal/);
+    assert.equal((await engine.signIn('A', { decisions: { journal: 'add' } })).complete, true);
+    assert.equal(pagesOf(engine).find((page) => page.day === day)?.body, accountBody);
+    assert.deepEqual(recoveredDrafts(engine).map(({ day, body }) => ({ day, body })), [{ day, body: anonymousBody }]);
+    const persisted = (await engine.store.read()).device;
+    assert.ok(JSON.stringify(persisted).includes(accountBody));
+    assert.ok(JSON.stringify(persisted).includes(anonymousBody));
+    engine.close();
+    const reopened = await BrowserSyncEngine.open(env.options);
+    try { assert.equal(recoveredDrafts(reopened)[0]?.body, anonymousBody); }
+    finally { reopened.close(); }
+  } finally { engine.close(); }
 });
 
 test('Keep hides journal pending edits from another account and resumes them only for their owner', async () => {

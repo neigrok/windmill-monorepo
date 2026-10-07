@@ -43,6 +43,8 @@ REST transport failures using static `journal-*` Sentry operation names. Migrati
 emit `sync_commit` with bounded outcome labels; claim/save and first-run retirements use the engine's
 gesture events. Domain refusals retain the complete input in a local editor draft and keep the
 editor's unsaved status; failed reconciliation emits a bounded `sync_commit` failure outcome.
+Post-commit notice-cleanup failures use `journal-notice-cleanup` and preserve the successful save
+outcome. Unreadable legacy data uses `journal-migration`, retains its source, and allows startup.
 No page body, scales, date, claim identifier or account is reported.
 
 Gym engine writes emit `gym_action` through the first-party events intake with only `operation`

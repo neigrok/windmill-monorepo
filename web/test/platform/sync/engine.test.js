@@ -7,6 +7,8 @@ import { reidentify } from '../../../src/platform/sync/client/lifecycle.js';
 import { nextPush } from '../../../src/platform/sync/client/sender.js';
 import { Cursor } from '../../../src/platform/sync/core/wire.js';
 import { scopeDigest } from '../../../src/platform/sync/core/digest.js';
+import { hashText } from '../../../src/platform/sync/core/encoding.js';
+import { jcs } from '../../../src/platform/sync/core/jcs.js';
 import { environment, until, tick } from './fakes.js';
 
 const card = (id = 'card0001') => [{ op: 'create', t: 'card', id, f: { title: 'secret' } }];
@@ -258,6 +260,115 @@ test('sign-in pins Add/Discard decisions and sign-out Keep isolates dormant acco
   assert.equal(engine.device.dormantOf('A').outbox.length, 2);
   assert.equal(engine.device.activeReplica.meta.state, 'anon');
   assert.deepEqual(engine.device.dormantOf('A').confirmed, {});
+  engine.close();
+});
+
+const deviceDraftWork = (product, rows) => product === 'probe' ? Object.keys(rows).filter((key) => key === 'rack' || key.startsWith('picture:')) : [];
+
+test('sign-in carries a device-only draft into an empty account and reopening retains it once', async () => {
+  const env = environment();
+  const options = { ...env.options, pendingDeviceWork: deviceDraftWork };
+  const engine = await BrowserSyncEngine.open(options);
+  const draft = { day: '2026-10-07', document: { body: 'anonymous writing', mood: null, energy: null, source: 'typed' } };
+  await engine.commit('self/probe', [], { local: { rack: draft } });
+  assert.deepEqual(engine.device.activeReplica.entries(), []);
+  env.transport.account = 'A';
+  assert.deepEqual(await engine.signIn('A'), { complete: true, due: [] });
+  const stored = (await engine.store.read()).device;
+  assert.deepEqual(stored.activeReplica.deviceRows('probe'), { rack: draft });
+  assert.equal(stored.replicas.filter((replica) => replica.device.probe?.rack).length, 1);
+  engine.close();
+  const reopened = await BrowserSyncEngine.open(options);
+  assert.deepEqual(reopened.device.activeReplica.deviceRows('probe'), { rack: draft });
+  reopened.close();
+});
+
+test('sign-in lets the product retain both device-only drafts when a dormant account owns the same key', async () => {
+  const env = environment();
+  const calls = [];
+  const options = { ...env.options, pendingDeviceWork: deviceDraftWork,
+    adoptDeviceRows: (product, incoming, kept) => {
+      calls.push({ product, incoming: structuredClone(incoming), kept: structuredClone(kept) });
+      return { ...incoming, ...kept, 'picture:incoming': incoming.rack };
+    } };
+  const engine = await BrowserSyncEngine.open(options);
+  env.transport.account = 'A';
+  await engine.signIn('A');
+  const own = { day: '2026-10-07', document: { body: 'account writing', mood: 0, energy: null, source: 'typed' } };
+  const incoming = { day: '2026-10-07', document: { body: 'anonymous writing', mood: null, energy: 0, source: 'typed' } };
+  await engine.commit('self/probe', [], { local: { rack: own } });
+  await engine.finishSignOut({ choice: 'keep' });
+  await engine.commit('self/probe', [], { local: { rack: incoming } });
+  assert.deepEqual(engine.device.activeReplica.entries(), []);
+  const before = (await engine.store.read()).device.toJSON();
+  const transact = engine.store.transact.bind(engine.store);
+  let aborted = 0;
+  engine.store.transact = (change, options) => {
+    let adopting = false;
+    return transact((device) => {
+      const prior = device.activeReplica.meta.state;
+      const value = change(device);
+      adopting = prior === 'anon' && device.activeReplica.meta.state === 'bound';
+      return value;
+    }, { ...options, beforeCommit: ({ transaction }) => {
+      if (adopting) { aborted++; engine.store.transact = transact; transaction.abort(); }
+    } });
+  };
+  await assert.rejects(engine.signIn('A'), (error) => error instanceof CommitError && error.kind === 'store');
+  assert.equal(aborted, 1);
+  const interrupted = await BrowserSyncEngine.open(options);
+  const retained = (await interrupted.store.read()).device.toJSON();
+  assert.deepEqual({ active: retained.active, replicas: retained.replicas }, { active: before.active, replicas: before.replicas });
+  interrupted.close();
+  calls.length = 0;
+  assert.deepEqual(await engine.signIn('A'), { complete: true, due: [] });
+  assert.deepEqual(calls, [{ product: 'probe', incoming: { rack: incoming }, kept: { rack: own } }]);
+  const stored = (await engine.store.read()).device;
+  assert.deepEqual(stored.activeReplica.deviceRows('probe'), { rack: own, 'picture:incoming': incoming });
+  assert.equal(stored.replicas.length, 1);
+  engine.close();
+  const reopened = await BrowserSyncEngine.open(options);
+  assert.deepEqual(reopened.device.activeReplica.deviceRows('probe'), { rack: own, 'picture:incoming': incoming });
+  reopened.close();
+});
+
+test('sign-in refuses a differing pending draft collision without its product merge hook', async () => {
+  const env = environment();
+  const engine = await BrowserSyncEngine.open({ ...env.options, pendingDeviceWork: deviceDraftWork });
+  env.transport.account = 'A';
+  await engine.signIn('A');
+  await engine.commit('self/probe', [], { local: { rack: { body: 'account writing' } } });
+  await engine.finishSignOut({ choice: 'keep' });
+  await engine.commit('self/probe', [], { local: { rack: { body: 'anonymous writing' } } });
+  const before = (await engine.store.read()).device.toJSON();
+  await assert.rejects(engine.signIn('A'), /device-work-adoption-conflict/);
+  const after = (await engine.store.read()).device.toJSON();
+  assert.deepEqual({ active: after.active, replicas: after.replicas }, { active: before.active, replicas: before.replicas });
+  assert.equal(engine.device.activeReplica.meta.state, 'anon');
+  engine.close();
+});
+
+for (const choice of ['add', 'discard']) test(`sign-in byte-pins a device-only draft and asks again before a stale ${choice}`, async () => {
+  const env = environment();
+  const engine = await BrowserSyncEngine.open({ ...env.options, pendingDeviceWork: deviceDraftWork });
+  const draft = { body: 'first draft' }, changed = { body: 'newer draft' };
+  await engine.commit('self/probe', [], { local: { rack: draft } });
+  const response = { status: 200, body: { as: 'A', holdsRecords: { probe: true }, epoch: 'ep-1', serverTime: 1000, schema: 1, minSchema: 1 } };
+  env.transport.response = async () => ({ response, timing: { send: { wall: 1000, mono: 1000, boot: 'test' }, recv: { wall: 1000, mono: 1000, boot: 'test' } } });
+  const expected = (value) => ({ complete: false, due: [{ kind: 'signed-out', product: 'probe', count: {},
+    counted: [`device:probe:rack:${hashText(jcs(value))}`], pending: 1 }] });
+  const question = await engine.signIn('A');
+  assert.deepEqual(question, expected(draft));
+  assert.equal(engine.device.activeReplica.meta.state, 'anon');
+  assert.equal(env.requests.some(({ endpoint }) => endpoint === 'push'), false);
+  await engine.commit('self/probe', [], { local: { rack: changed } });
+  const stale = await engine.signIn('A', { decisions: { probe: choice }, counted: { probe: question.due[0].counted } });
+  assert.deepEqual(stale, expected(changed));
+  assert.deepEqual(engine.device.activeReplica.deviceRows('probe'), { rack: changed });
+  const completed = await engine.signIn('A', { decisions: { probe: choice }, counted: { probe: stale.due[0].counted } });
+  assert.deepEqual(completed, { complete: true, due: stale.due });
+  assert.deepEqual(engine.device.activeReplica.deviceRows('probe'), choice === 'add' ? { rack: changed } : {});
+  assert.equal(engine.device.replicas.some((replica) => replica.meta.state === 'anon' && replica.device.probe?.rack), false);
   engine.close();
 });
 

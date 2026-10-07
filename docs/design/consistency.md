@@ -115,6 +115,16 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
   the web's window come down before a day written again goes in; the web's save retires the held
   delete in its own write.
 
+### Durable draft adoption on native clients
+
+The owner ruling in domain-kit C.2 and engine §7.10 requires device-only drafts to participate in
+sign-in and keeps distinct colliding writing recoverable. Web and the reference implement that
+contract. Native lifecycle follow-ups remain: iOS `SyncReplica/Lifecycle.swift` gates adoption on
+outbox entries and keeps the destination row on a device-key collision; Android
+`sync/engine/Lifecycle.kt` counts device work but also keeps the destination row on collision.
+Their owners need collision-safe transfer or a refusal that preserves both replicas. These are
+source-review findings; native sign-in behavior has not been exercised in the web journal gate.
+
 ### Sign-in doors
 
 Canon: `guidelines/account-linking.md` and the Figma section

@@ -6,6 +6,7 @@ import { recordKey } from '../../platform/sync/core/rows.js';
 import { jcs } from '../../platform/sync/core/jcs.js';
 import { ActionRunner, EngineReplica } from '../../platform/domain-kit/runner.js';
 import { Decision, decision } from '../../platform/domain-kit/actions.js';
+import { Violation } from '../../platform/domain-kit/values.js';
 import { translate } from '../../platform/domain-kit/translation.js';
 import { JournalRoom, PageDocument } from './domain/page.js';
 import { EditorDraft, JournalWriting, PreserveEditorDraft, ReconcileClaim, RetireJournalInvitation, SavePage } from './domain/writing.js';
@@ -15,6 +16,16 @@ import { track } from '../../telemetry/beacon.js';
 export const SCOPE = 'self/journal';
 export const isWritten = (page) => new PageDocument(page).isWritten;
 export const pendingClaimWork = (product, rows) => JournalWriting.pendingWork(product, rows);
+export function adoptDeviceRows(product, incoming, kept) {
+  if (product !== 'journal') return undefined;
+  const rows = { ...incoming, ...kept };
+  const { current, recovered } = EditorDraft.adopt(
+    incoming[EditorDraft.key] ? EditorDraft.fromJSON(incoming[EditorDraft.key]) : null,
+    kept[EditorDraft.key] ? EditorDraft.fromJSON(kept[EditorDraft.key]) : null);
+  if (current) rows[EditorDraft.key] = current.json;
+  if (recovered) EditorDraft.retain(rows, recovered);
+  return rows;
+}
 const pendingClaimKey = (claimId) => `pendingClaim:${claimId}`;
 const deviceZone = { offsetSeconds: (instant) => -new Date(instant.ms).getTimezoneOffset() * 60 };
 
@@ -97,11 +108,19 @@ export async function savePage(engine, doc, expectedReplica = engine.activeRepli
     decide: ({ state: loaded, retained }, ids) => {
       const saved = decision(action, loaded, ids);
       if (saved.kind !== 'refuse') {
+        if (retained && saved.kind === 'write') {
+          const draft = EditorDraft.fromJSON(retained);
+          if (draft.day.text !== doc.day || !draft.document.equals(action.document)) saved.plan.device(draft.recoveryKey, draft.json);
+        }
         if (priorDraft && saved.kind === 'write' && !loaded.hasEditorDraft) saved.plan.device(EditorDraft.key, null);
         return saved;
       }
       if (retained && retained.day !== doc.day && !priorDraft) return saved;
       const preserved = new PreserveEditorDraft({ day: doc.day, document: doc }).decide(null, ids);
+      if (retained && retained.day !== doc.day) {
+        const draft = EditorDraft.fromJSON(retained);
+        preserved.plan.device(draft.recoveryKey, draft.json);
+      }
       return Decision.write(preserved.plan, { refusal: saved.refusal });
     },
   });
@@ -113,8 +132,25 @@ export async function savePage(engine, doc, expectedReplica = engine.activeRepli
     const refusedClaim = Object.values(replica.deviceRows('journal')).some((row) => row?.day === doc.day && row.refusal);
     if (refusedClaim) return;
     for (const notice of replica.notices) if (notice.scope === SCOPE && notices.has(notice.id)) notice.dismissed = true;
-  }, [SCOPE]);
+  }, [SCOPE]).catch(() => captureError('journal', 'journal-notice-cleanup', '', '/journal'));
   return outcome;
+}
+
+export function retainRecoveredPage(replica, doc) {
+  const draft = new EditorDraft({ day: doc.day, document: doc });
+  const rows = replica.deviceRows('journal');
+  const occupied = rows[EditorDraft.key] || replica.confirmedRow(SCOPE, 'page', doc.day)
+    || replica.entries(SCOPE).some((entry) => entry.intent.cmd?.args.day === doc.day);
+  if (occupied) EditorDraft.retain(rows, draft);
+  else rows[EditorDraft.key] = draft.json;
+}
+
+export function recoveredDrafts(engine = syncSession.engine) {
+  return Object.entries(engine?.device.activeReplica.deviceRows('journal') ?? {})
+    .filter(([key]) => key.startsWith(EditorDraft.recoveryPrefix)).map(([key, value]) => {
+      const draft = EditorDraft.fromJSON(value);
+      return { key, day: draft.day.text, ...draft.document.fields() };
+    }).sort((a, b) => a.day.localeCompare(b.day) || a.key.localeCompare(b.key));
 }
 
 export async function retireInvitation(engine, field, expectedReplica = engine.activeReplica()) {
@@ -187,8 +223,18 @@ export async function restoreUnclaimedPages(account, engine = syncSession.engine
     if (replica.meta.state !== 'bound' || replica.meta.account !== account) throw new Error('journal-account-changed');
     if (JSON.stringify(device.meta.journalUnclaimed ?? []) !== JSON.stringify(pages)) throw new Error('journal-unclaimed-changed');
     for (const page of pages) {
-      const { stamp, ...doc } = page;
-      const gesture = claimGesture(doc);
+      const { stamp, recovered, ...doc } = page;
+      if (recovered) {
+        EditorDraft.retain(replica.deviceRows('journal'), new EditorDraft({ day: doc.day, document: doc }));
+        continue;
+      }
+      let gesture;
+      try { gesture = claimGesture(doc); }
+      catch (error) {
+        if (!(error instanceof Violation)) throw error;
+        retainRecoveredPage(replica, doc);
+        continue;
+      }
       const result = commit(replica, ctx, SCOPE, gesture.changes, gesture.opts);
       if (result.refused) throw new Error('journal-restore-refused');
     }
