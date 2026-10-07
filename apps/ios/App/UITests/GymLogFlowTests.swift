@@ -23,8 +23,9 @@ import XCTest
     app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-log-session-")).firstMatch
   }
   func visibleSessionRow(_ app: XCUIApplication) -> XCUIElement {
-    let row = sessionRow(app)
-    XCTAssertTrue(row.waitForExistence(timeout: 20))
+    let first = sessionRow(app)
+    XCTAssertTrue(first.waitForExistence(timeout: 20))
+    let row = app.buttons[first.identifier]
     for _ in 0..<8 {
       let frame = row.frame, top = app.navigationBars.firstMatch.frame.maxY + 8
       let bottom = app.buttons["gym-weigh-in"].frame.minY - 12
@@ -33,9 +34,7 @@ import XCTest
         if row.isHittable { break }
         continue
       }
-      let distance = frame.minY <= top ? top + 8 - frame.minY : bottom - 8 - frame.maxY
-      let limit = min(150, (bottom - top) / 2 - 8)
-      let movement = min(limit, max(40, abs(distance))) * (distance < 0 ? -1 : 1)
+      let movement = min(150, (bottom - top) / 2 - 8) * (frame.minY <= top ? 1 : -1)
       let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
         .withOffset(CGVector(dx: 0, dy: max(top + 8, min(bottom - 8, frame.midY))))
       start.press(forDuration: 0.01, thenDragTo: start.withOffset(CGVector(dx: 0, dy: movement)),
@@ -110,8 +109,18 @@ import XCTest
     XCTAssertTrue(app.staticTexts["All · 35 sessions"].waitForExistence(timeout: 5))
     assertDateAxisFollowsPan(app, chartID: "gym-record-chart")
     back(app); back(app)
-    for _ in 0..<3 where !app.buttons["gym-bodyweight-door"].isHittable { app.swipeDown() }
-    app.buttons["gym-bodyweight-door"].tap()
+    let bodyweight = app.buttons["gym-bodyweight-door"]
+    let top = app.navigationBars.firstMatch.frame.maxY + 8
+    let bottom = app.buttons["gym-weigh-in"].frame.minY - 12
+    for _ in 0..<3 {
+      let frame = bodyweight.frame
+      if frame.minY > top && frame.maxY < bottom && bodyweight.isHittable { break }
+      app.swipeDown()
+    }
+    XCTAssertTrue(bodyweight.isHittable)
+    XCTAssertGreaterThan(bodyweight.frame.minY, top)
+    XCTAssertLessThan(bodyweight.frame.maxY, bottom)
+    bodyweight.tap()
     let weightsWindow = app.segmentedControls["gym-bodyweight-window"]
     XCTAssertTrue(weightsWindow.waitForExistence(timeout: 5))
     selectAllChartHistory(weightsWindow, app: app)
@@ -207,26 +216,21 @@ import XCTest
       app.swipeUp(velocity: .slow)
     }
     let momentLabel = momentHeader.label
-    let moment = app.buttons.matching(identifier: "gym-best-moment")
-      .matching(NSPredicate(format: "label == %@", momentLabel)).firstMatch
+    let moments = app.buttons.matching(identifier: "gym-best-moment")
+      .matching(NSPredicate(format: "label == %@", momentLabel))
+    let moment = moments.firstMatch
     XCTAssertTrue(moment.isHittable)
     moment.tap()
-    let expanded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      guard let snapshot = try? moment.snapshot() else { return false }
-      return snapshot.identifier == "gym-best-moment" && snapshot.label == momentLabel && snapshot.value as? String == "Expanded"
-    }, object: moment)
-    XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 5), .completed)
+    XCTAssertTrue(moments.matching(NSPredicate(format: "value == %@", "Expanded"))
+      .firstMatch.waitForExistence(timeout: 5))
     // The native disclosure applies its identifier to the expanded List rows.
     let openRecord = app.buttons["Open record"]
     XCTAssertTrue(openRecord.waitForExistence(timeout: 5))
     XCTAssertTrue(openRecord.isHittable)
     snapshot("moment-\(appearance)", app: app)
     moment.tap()
-    let collapsed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      guard let snapshot = try? moment.snapshot() else { return false }
-      return snapshot.identifier == "gym-best-moment" && snapshot.label == momentLabel && snapshot.value as? String == "Collapsed"
-    }, object: moment)
-    XCTAssertEqual(XCTWaiter.wait(for: [collapsed], timeout: 5), .completed)
+    XCTAssertTrue(moments.matching(NSPredicate(format: "value == %@", "Collapsed"))
+      .firstMatch.waitForExistence(timeout: 5))
     XCTAssertTrue(openRecord.waitForNonExistence(timeout: 5))
     snapshot("moment-collapsed-\(appearance)", app: app)
     openFirstSession(app)

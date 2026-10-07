@@ -301,7 +301,8 @@ import UIKit
     XCTAssertTrue(deadliftHandle.wait(for: \.isHittable, toEqual: true, timeout: 5))
     XCTAssertTrue(benchHandle.wait(for: \.isHittable, toEqual: true, timeout: 5))
     deadliftHandle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.5,
-      thenDragTo: benchHandle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)))
+      thenDragTo: benchHandle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)),
+      withVelocity: .default, thenHoldForDuration: 0.3)
     let firstMovement = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "builder-movement-")).element(boundBy: 0)
     XCTAssertTrue(firstMovement.wait(for: \.identifier, toEqual: "builder-movement-deadlift", timeout: 5))
     reorder.tap()
