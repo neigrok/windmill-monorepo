@@ -968,18 +968,10 @@ test('bodyweight: the log actions open one sheet, the reading stays in options, 
   assert.equal(screen.includes('inputMode="decimal"'), true);
   assert.equal(screen.includes('type="date"'), true);
   assert.equal(read('GymApp.jsx').includes("{screen === 'bodyweight' && <BodyweightScreen log={log} />}"), true);
-  // Both answers off the ROOM's registers, once each: the log holds the second instance of
-  // this hook, and a day recorded per instance would leave the two disagreeing about the account.
-  assert.equal(screen.includes("const gone = log.gone('bodyweight');"), true);
-  assert.equal(screen.includes("const hidden = log.hidden('bodyweight');"), true);
-  assert.equal((screen.match(/hidden\('bodyweight'\)/g) ?? []).length, 1);
-  assert.equal((screen.match(/log\.gone\('bodyweight'\)/g) ?? []).length, 1);
-  // The stance reads the account, the rows read the window, and the delete is the engine's held death
-  // and nothing else — a screen's own record of what the store took is the thing this replaced.
-  assert.equal(screen.includes("const remove = (dateLocal) => log.holdDelete({\n    kind: 'bodyweight',\n    id: dateLocal,"), true);
-  assert.equal(screen.includes('const rows = entries.filter((entry) => !hidden.has(entry.dateLocal));'), true);
-  assert.equal(screen.includes('weights.entries.length === 0'), true);
-  assert.equal(screen.includes('windowOf(weights.rows, windowId, now)'), true);
+  assert.equal(screen.includes('new Bodyweight(read)'), true);
+  assert.equal(screen.includes("weights.weights?.stance === 'empty'"), true);
+  assert.equal(screen.includes("weights.weights?.chart(windowId === 'all' ? 'all' : 'recent')"), true);
+  assert.equal(screen.includes("kind: 'bodyweight', id: dateLocal"), true);
   assert.equal(log.includes('useBodyweight(log)'), true);
   assert.equal(read('GymApp.jsx').includes("'backfill', 'bodyweight', 'record'"), true, 'not a fourth tab');
   for (const file of gymFiles()) {

@@ -89,7 +89,7 @@ test('only the spelling and the weigh-in call the conversion, and no module that
     .filter((file) => /\bfromDisplayUnit\b/.test(fs.readFileSync(file, 'utf8')))
     .map((file) => path.relative(GYM, file))
     .sort();
-  assert.deepEqual(back, ['bodyweight/bodyweight.js', 'units.js']);
+  assert.deepEqual(back, ['gymRuntime.js', 'units.js']);
 });
 
 test('every field a lifter types into spells the kilogram, not the reading', () => {

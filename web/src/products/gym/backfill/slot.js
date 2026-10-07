@@ -1,7 +1,8 @@
 // When a past workout happened: the day in one tap, a default hour clear of the log the page holds, and
 // the lifter's own time, which is the only one the form checks against the log.
 
-import { dateLocalOf, msOfDateLocal } from '../bodyweight/bodyweight.js';
+import { msOfDateLocal } from '../bodyweight/bodyweight.js';
+import { gymMoment } from '../gymRuntime.js';
 import { agoLabel, dayLabel, durLabel, isFinished, NO_ROUTINE, routineNameOf, shortDayLabel, timeLabel } from '../log.js';
 
 const MINUTE_MS = 60_000;
@@ -22,14 +23,14 @@ const AHEAD_TITLE = 'These times run past now.';
 export const TIME_NEEDED = 'Set a start time for this workout.';
 
 export function todayOf(now) {
-  return dateLocalOf(now);
+  return gymMoment(now).today.text;
 }
 
 // Stepped and not subtracted, so a clock change never lands it two days back or on today.
 export function yesterdayOf(now) {
   const day = new Date(now);
   day.setDate(day.getDate() - 1);
-  return dateLocalOf(day.getTime());
+  return gymMoment(day.getTime()).today.text;
 }
 
 export function dayChipOf(day, now) {
@@ -142,7 +143,7 @@ export function chosenSlot({ day, hour, minute, minutes, now }) {
 
 // The span that will be stored, read before it is written: `Today · 12:00–13:00`.
 export function slotNote(slot, now) {
-  const day = dayNameOf(dateLocalOf(slot.startedAt), now);
+  const day = dayNameOf(gymMoment(slot.startedAt).today.text, now);
   return `${day} · ${timeLabel(slot.startedAt)}–${timeLabel(slot.finishedAt)}`;
 }
 

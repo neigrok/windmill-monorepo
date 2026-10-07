@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { dateLocalOf, joinsAcross } from '../../../../src/products/gym/bodyweight/bodyweight.js';
+import { gymMoment } from '../../../../src/products/gym/gymRuntime.js';
 import {
   browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle, textOf,
 } from '../harness.mjs';
 
-const TODAY = dateLocalOf(Date.now());
+const TODAY = gymMoment(Date.now()).today.text;
 
 // The account's weigh-ins as the server confirmed them.
 const weighIns = (entries) => entries.map(({ dateLocal, weightKg, recordedAt }) => confirmed('weighin', dateLocal, { kg: weightKg, recordedAt }));
@@ -120,7 +120,7 @@ test('the sheet: a plain decimal field with no hint, a date defaulting to today,
 
   findByClass(screen.tree, 'gym-weigh-input')[0].props.onChange({ target: { value: '82,4' } });
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
-  findByClass(screen.tree, 'gym-weigh-date-input')[0].props.onChange({ target: { value: dateLocalOf(tomorrow.getTime()) } });
+  findByClass(screen.tree, 'gym-weigh-date-input')[0].props.onChange({ target: { value: gymMoment(tomorrow.getTime()).today.text } });
   assert.equal(findByClass(screen.tree, 'gym-weigh-refusal').length, 0, 'changing the date clears the refusal');
   findByClass(screen.tree, 'gym-weigh-save')[0].props.onClick();
   await settle();
@@ -133,7 +133,7 @@ test('the sheet: a plain decimal field with no hint, a date defaulting to today,
   assert.equal(saved.length, 1);
   assert.equal(saved[0].dateLocal, '2026-08-20');
   assert.equal(saved[0].weightKg, 82.4);
-  assert.equal(typeof saved[0].recordedAt, 'number');
+  assert.equal(saved[0].recordedAt, undefined, 'the commit supplies its own timestamp');
 });
 
 test('the same sheet from a dot: the date fixed, the number prefilled, and a delete that is one press', async (t) => {
@@ -163,7 +163,7 @@ test('the same sheet from a dot: the date fixed, the number prefilled, and a del
 test('the chart screen: a dot per weigh-in in the stated window, the rule printed, a dot opening the repair sheet', async (t) => {
   browserWith();
   const today = new Date();
-  const daysAgo = (days) => { const day = new Date(today); day.setDate(day.getDate() - days); return dateLocalOf(day.getTime()); };
+  const daysAgo = (days) => { const day = new Date(today); day.setDate(day.getDate() - days); return gymMoment(day.getTime()).today.text; };
   const gym = await gymAccount(t, weighIns([
     { dateLocal: daysAgo(120), weightKg: 84, recordedAt: 1 },
     { dateLocal: daysAgo(30), weightKg: 83.1, recordedAt: 2 },
@@ -178,7 +178,7 @@ test('the chart screen: a dot per weigh-in in the stated window, the rule printe
   assert.equal(chart.props.points.length, 2, 'the 90-day window by default');
   assert.equal(chart.props.caption, 'last 90 days · 2 weigh-ins');
   assert.equal(chart.props.rule, undefined, 'a gap in the line reads as a gap; no legend explains it');
-  assert.equal(chart.props.joins, joinsAcross, 'segments join by calendar days, not elapsed hours');
+  assert.equal(chart.props.joins(chart.props.points[0], chart.props.points[1]), false, 'the domain names this gap');
   assert.equal(chart.props.domain.to, new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime());
   assert.equal(findByClass(screen.tree, 'gym-history-weigh').length, 0, 'no second door onto a new weigh-in');
 

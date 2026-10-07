@@ -12,7 +12,12 @@ workout and log shares use their REST doors in `gymApi.js`; a Coach conversation
 room's own clock, and when the room unmounts or the document hides it is dropped unsent and the
 conversation stays. The account gate remains in `GymApp`.
 
-Reads project the engine's stored view, so a held delete never changes what a screen says about the
+Bodyweight and preferences use the domain kit through `gymRuntime.js`. The bodyweight stance reads
+`stored`; its reading, dots and gaps read `drawn`. Its saves validate the local day and kilograms, stamp
+the commit moment and retire a held delete of that day. Preference saves write only touched client fields
+(units, confirmation haptic and sound); rest settings are read-only.
+
+Other reads project the engine's stored view, so a held delete never changes what a screen says about the
 account. The window decides what is drawn through the room's `log.hidden`: rows, the screen of the
 held record itself, the count heading the log and the live session's sets. Records, last times and
 progress keep counting a held delete until its release. A write the log refuses before
@@ -20,7 +25,8 @@ storing it is a `GymRefusal` (`errors.js`) carrying the engine's code, the sente
 and, for an overlap, the crossed session; `failureReason` finishes the sentence for any failure,
 naming this device when its store could not keep the write and the network only for a REST door.
 
-`syncProjections.js` maps records to the REST reads' presentation shapes. The global seed catalogue
+`syncProjections.js` maps records to the REST reads' presentation shapes, using the domain reads for
+bodyweight and preferences. The global seed catalogue
 is outside sync and is checked against `schema.sql` in CI. Observation updates refresh local reads
 and preserve history depth and editor drafts.
 Creation and proposal chronology use the engine observation's authoritative `rc` envelope. Command
@@ -34,7 +40,7 @@ and survives routine deletion.
 
 ## Observability
 
-Engine-backed writes emit first-party `gym_action` events with allowlisted `operation` and
+`gymRuntime.js` owns the gym telemetry boundary. Engine-backed writes emit first-party `gym_action` events with allowlisted `operation` and
 `outcome` only. Operations cover routine create/save, exercise create/rename, preferences save,
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
 delete/Undo and refusal. Outcomes are `saved-local`, `unchanged`, `failed`, `held`, `undone`,
@@ -47,13 +53,16 @@ unresolved notices.
 ## Gates
 
 Gym tests run through the existing `npm test`, `npm run test:sync` and `npm run build` scripts.
+The gym domain claims five corpus files: the rule book, 121 value vectors, 16 action/preference-read
+vectors and six bodyweight reads, compared by JCS and with reversed record order. The remaining
+eight files are listed explicitly in the corpus runner.
 Screen tests run over a real browser engine for a signed-in account (`gymAccount` in
 `test/products/gym/harness.mjs`) and assert what the account still owes the server. The REST parity
 fixture captures an actual disposable backend account and persisted browser-engine observations.
 The ordinary CI gate and the strict local-stack gate compare complete responses across all 36
-comparisons. Chromium acceptance has six checks: a phone replica's `gym.start`, set and `gym.finish`
-pushes arrive live; web routine edits and backfills converge; the cached log survives an offline
-reload. Product events reach intake and sync writes emit their log.
+comparisons. Chromium acceptance has nine checks: a phone replica's `gym.start`, set and `gym.finish`
+pushes arrive live; web routine edits, backfills, weigh-ins and unit changes converge; a held weigh-in delete can be
+undone; the cached log survives an offline reload. Product events reach intake and sync writes emit their log.
 Run strict parity and local-stack Playwright with:
 
 ```
