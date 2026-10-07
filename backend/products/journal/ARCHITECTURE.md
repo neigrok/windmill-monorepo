@@ -61,11 +61,10 @@ DDL lives once, in `db/schema.sql` under `-- ── Journal ──`. Tables:
 | Table | Holds |
 |---|---|
 | `journal_page` | one page per `(user_id, day)` — body, mood, energy, source, the writer's document stamp, and the engine envelope (`seq`, `rc`, `ru`, a stamp per register, the body's text revision). The key is the writer's local ISO day, not a minted id |
-| `journal_page_revision` | superseded bodies, invisible, each with its outgoing document stamp, archive time and engine text revision (`engine_rev`), pruned inside the admitting transaction. `migration_id` is the order the adoption gave the rows it carried; no server code reads it |
+| `journal_page_revision` | superseded bodies, invisible, each with its outgoing document stamp, archive time and engine text revision (`engine_rev`), pruned inside the admitting transaction |
 | `journal_sync_state` | the account's `journalState`: four ranked first-run fields and their stamps |
 | `journal_claim_receipts` | one row per `journal.claimPage` claim id: its arguments digest, day and the document stamp it wrote |
 | `journal_content_clock` | the account's content clock, from which a claim stamps its page |
-| `journal_sync_adoptions` | the adoption's record per account (engine Appendix D), never updated; no server code reads it |
 | `journal_span` | one segmented passage: text, byte span, float32 vector, and a `span_id` carried across re-derivation |
 | `journal_echo` | one kept pair, keyed `(user, trigger_span_id, match_span_id)`, `check (match_day < trigger_day)` |
 | `journal_echo_dismissal` | "not useful", keyed on the content hash of both passages, so it survives an edit and a re-segmentation |

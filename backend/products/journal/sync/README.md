@@ -14,10 +14,8 @@ id is `claim-conflict`.
 
 `PgJournal` stores `page` in `journal_page` and `journalState` in `journal_sync_state`, claim
 receipts in `journal_claim_receipts` and each account's content clock in `journal_content_clock`.
-Purging a scope deletes the account's pages, revisions, state, claim receipts, content clock and
-adoption record. The production tables were adopted in place (engine Appendix D); `db/schema.sql`
-builds that shape, and the adoption's record, `journal_sync_adoptions` and
-`journal_page_revision.migration_id`, is never updated, and no server code reads it.
+Purging a scope deletes the account's pages, revisions, state, claim receipts and content clock.
+`db/schema.sql` builds that shape; engine Appendix D defines the adopted base's invariants.
 
 Revision pruning runs only when an admission archives a revision: each affected day keeps its
 newest ten, then the account keeps its newest prefix bounded by 500 rows and 8 MiB, and nothing older

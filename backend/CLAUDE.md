@@ -38,9 +38,8 @@ never the composite, so a prompt-injection-exposed agent cannot reach another pr
 
 `db/schema.sql` is one file for every product and builds the whole database, the sync engine's tables
 and envelope columns included. It is applied in order and idempotent (`create … if not exists`); the
-deploy re-applies it every time. The adoption records (`gym_sync_adoptions`, `journal_sync_adoptions`,
-`gym_sync_metadata_upgrade_runs`, `gym_sync_metadata_upgrades`, `journal_page_revision.migration_id`)
-stay in it, immutable, and no server code reads them.
+deploy re-applies it every time. It removes cutover snapshots and their guards; engine registers,
+receipts and retained journal revisions stay in place.
 
 ## Build and test
 

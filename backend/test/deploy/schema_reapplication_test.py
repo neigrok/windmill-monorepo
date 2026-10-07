@@ -71,6 +71,62 @@ class SchemaReapplicationTest(unittest.TestCase):
                     after[name].splitlines(keepends=True), fromfile="first apply", tofile="second apply"))
                 self.assertEqual(before[name], after[name], f"{name} changed:\n{difference}")
 
+    def test_cutover_copies_are_removed_without_changing_live_rows(self):
+        self.apply_schema()
+        command(["psql", self.database, "-Xq", "-v", "ON_ERROR_STOP=1", "-c", """
+insert into users(id,email,name) values('00000000-0000-4000-8000-000000000041','purge@example.invalid','Purge fixture');
+insert into journal_page(user_id,day,body,mood,energy,seq,body_rev)
+  values('00000000-0000-4000-8000-000000000041','2026-10-01','Current page',3,2,2,2);
+insert into journal_page_revision(user_id,day,body,engine_rev)
+  values('00000000-0000-4000-8000-000000000041','2026-10-01','Retained revision',1);
+alter table journal_page_revision add column migration_id bigint;
+update journal_page_revision set migration_id=1;
+create unique index journal_page_revision_migration_id on journal_page_revision(user_id,migration_id);
+create function journal_sync_revision_identity_immutable() returns trigger language plpgsql as $$
+begin raise exception 'immutable'; end $$;
+create trigger journal_sync_revision_identity_immutable before update on journal_page_revision
+  for each row execute function journal_sync_revision_identity_immutable();
+insert into gym_routines(id,user_id,name,position) values
+  ('purge-routine','00000000-0000-4000-8000-000000000041','Current routine',0);
+insert into gym_sessions(id,user_id,routine_id,started_at) values
+  ('purge-session','00000000-0000-4000-8000-000000000041','purge-routine',now());
+create table gym_sync_adoptions(user_id uuid primary key references users(id), frozen_source jsonb);
+insert into gym_sync_adoptions select id,'{"notes":"Frozen gym copy"}'::jsonb from users;
+create table journal_sync_adoptions(user_id uuid primary key references users(id), frozen_input jsonb);
+insert into journal_sync_adoptions select id,'{"body":"Frozen journal copy"}'::jsonb from users;
+create table gym_sync_metadata_upgrade_runs(version integer primary key, roster jsonb);
+insert into gym_sync_metadata_upgrade_runs values(5,'["account"]');
+create table gym_sync_metadata_upgrades(user_id uuid references users(id),
+  version integer references gym_sync_metadata_upgrade_runs(version), frozen_source jsonb, result jsonb);
+insert into gym_sync_metadata_upgrades select id,5,'{"body":"Frozen metadata copy"}','{}' from users;
+"""])
+        live_rows = """
+select to_jsonb(t)::text from users t order by id;
+select to_jsonb(t)::text from journal_page t order by user_id,day;
+select (to_jsonb(t)-'migration_id')::text from journal_page_revision t order by user_id,engine_rev;
+select to_jsonb(t)::text from gym_routines t order by id;
+select to_jsonb(t)::text from gym_sessions t order by id;
+select to_jsonb(t)::text from sync_meta t;
+"""
+        query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]
+        before = command([*query, live_rows])
+        for attempt in (1, 2):
+            with self.subTest(attempt=attempt):
+                self.apply_schema()
+                self.assertEqual(before, command([*query, live_rows]))
+                self.assertEqual("0\n", command([*query, """
+select count(*) from (
+  select tablename as name from pg_tables where schemaname='public' and tablename in
+    ('gym_sync_adoptions','journal_sync_adoptions','gym_sync_metadata_upgrade_runs','gym_sync_metadata_upgrades')
+  union all select tgname from pg_trigger where tgname in
+    ('gym_session_routine_identity','journal_sync_revision_identity_immutable')
+  union all select proname from pg_proc where proname in
+    ('gym_preserve_routine_identity','journal_sync_revision_identity_immutable')
+  union all select column_name from information_schema.columns where table_schema='public'
+    and table_name='journal_page_revision' and column_name='migration_id'
+) retired;
+"""]))
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

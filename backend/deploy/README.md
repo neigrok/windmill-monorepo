@@ -118,16 +118,27 @@ must be public.
   dispatched on (`main` unless another is chosen), and `migrate` applies the older image's own
   `db/schema.sql`.
 - **Rollback floor**: the oldest image that is safe to run is the first one built from a commit
-  containing `backend · the retired REST writes are gone, and the engine is the only gym and journal
-  writer`. Every older image reads six engine and freeze switches that the deploy no longer renders,
-  so each one defaults off: `/v1/sync` is unmounted, taking every engine client down with it, and the
-  legacy REST, MCP and Coach writers write the engine's gym and journal tables again.
+  containing `backend · purge the retired gym and journal cutover copies`. After the purge, use only
+  that image or its descendants: earlier image schemas recreate retired cutover storage and their
+  binaries depend on it. Restoring a pre-engine backup is unsupported. A restore from an engine-era
+  backup must apply the current schema before starting writers and regenerate `sync_meta.epoch`
+  as [the engine restore contract](../../docs/foundation/engine.md) requires.
 - **Migrations**: `db/schema.sql` is idempotent and re-applied on every deploy by the `migrate`
-  one-shot, a plain `psql`.
+  one-shot, a plain `psql`. It removes the retired gym and journal cutover copies while keeping
+  the engine tables and current user data.
+- **Cutover evidence purge**: dispatch `ops-purge-cutover-evidence.yml` with `confirm` set to
+  `PURGE_CUTOVER_EVIDENCE`. It lists safe top-level paths beneath `~/windmill/migration-evidence/`,
+  deletes every entry there, then lists again and reports recursive file, directory and byte counts.
+  Descendant names and unknown top-level names are redacted because they can contain user data.
+  The purge is irreversible. Remove this one-time workflow after its successful production run.
 - **Native Apple sign-in**: the identity-token exchange defaults off (`APPLE_NATIVE_ENABLED=0`);
   [AUTH.md](../AUTH.md) names its audience and app configuration.
 - **Backup**: the dispatch-only `gym-backup.yml` writes a custom-format dump of the whole database to
   `~/windmill/backups/` on the VPS, checks that `pg_restore` can list it, and records its sha256.
+  Dumps made before the cutover-copy purge retain those copies. The repository defines no scheduled
+  database backup or backup rotation; this workflow keeps each dump until it is removed manually.
+  The cutover evidence purge does not touch this directory. Host-managed cron jobs and provider
+  backup policies must be checked on the host and with the provider.
 - **DB shell**: `docker compose exec db psql -U windmill windmill`.
 
 ## Frontend

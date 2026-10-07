@@ -680,26 +680,8 @@ ON CONFLICT DO NOTHING;
 update trees set visibility = 'public', deleted_at = null where id = 't_9e407a96b5330ebe';
 
 -- ── Journal (products/journal) ───────────────────────────────────────────────────────────────
--- Each account's adoption record (docs/foundation/engine.md Appendix D): the frozen pages and
--- revisions the adoption read, written once, never updated, and deleted with the account.
-create table if not exists journal_sync_adoptions (
-  user_id uuid primary key references users(id) on delete cascade,
-  migration_ms bigint not null,
-  first_run_policy text not null check(first_run_policy = 'retire-existing'),
-  manifest_digest text not null,
-  frozen_input jsonb not null,
-  frozen_receipts jsonb not null default '{}'::jsonb
-);
-create or replace function journal_sync_adoption_immutable() returns trigger language plpgsql as $$
-begin
-  raise exception 'journal adoption source and migration clock are immutable';
-end $$;
-do $$ begin
-  if not exists(select 1 from pg_trigger where tgrelid='journal_sync_adoptions'::regclass and tgname='journal_sync_adoption_immutable') then
-    create trigger journal_sync_adoption_immutable before update on journal_sync_adoptions
-      for each row execute function journal_sync_adoption_immutable();
-  end if;
-end $$;
+drop table if exists journal_sync_adoptions;
+drop function if exists journal_sync_adoption_immutable();
 
 -- One page per user per LOCAL day. Nothing is shared: every read is scoped `where user_id = $1`.
 -- A user's devices converge last-writer-wins on (stamp_ms, stamp_counter).
@@ -716,29 +698,6 @@ create table if not exists journal_page (
   updated_at    timestamptz not null default now(),
   primary key (user_id, day)
 );
--- Both scales became 0..10 with null for unanswered (docs/design/journal/scales.md). Before that
--- mood was 1..5, energy 1..3, and 0 was the unset sentinel. The old rows are remapped once: mood
--- onto the odd positions (new = 2*old - 1), which is where the five shipped colour anchors sit, so
--- no migrated page changes colour on any glyph; energy onto the centre of each old third.
--- The legacy NOT NULL guard permits this remap once; adoption excludes it altogether.
-do $$
-begin
-  if to_regclass('public.journal_sync_adoptions') is null and
-     exists (select 1 from information_schema.columns
-             where table_schema = 'public' and table_name = 'journal_page'
-               and column_name = 'mood' and is_nullable = 'NO') then
-    alter table journal_page alter column mood   drop default;
-    alter table journal_page alter column energy drop default;
-    alter table journal_page alter column mood   drop not null;
-    alter table journal_page alter column energy drop not null;
-    alter table journal_page drop constraint if exists journal_page_mood_check;
-    alter table journal_page drop constraint if exists journal_page_energy_check;
-    update journal_page set mood   = case mood   when 0 then null else 2 * mood - 1 end,
-                            energy = case energy when 0 then null
-                                                 when 1 then 2 when 2 then 5 when 3 then 8 end;
-  end if;
-end $$;
-
 do $$ begin
   if not exists (select 1 from pg_constraint
                  where conrelid = 'journal_page'::regclass and conname = 'journal_page_mood_check') then
@@ -769,8 +728,7 @@ create index if not exists journal_page_revision_key on journal_page_revision (u
 
 -- The sync engine's registers (docs/foundation/engine.md §2.2, Appendix D): a page's seq and row
 -- times, each field's stamp, and its body's text revision; the account's first-run state; the claim
--- receipts and the content clock. engine_rev is the body revision a superseded row held, and
--- migration_id the order the adoption gave the revisions it carried; neither moves once set.
+-- receipts and the content clock. engine_rev is the body revision a superseded row held.
 alter table journal_page add column if not exists seq bigint;
 alter table journal_page add column if not exists rc bigint;
 alter table journal_page add column if not exists ru bigint;
@@ -782,24 +740,11 @@ alter table journal_page add column if not exists body_rev bigint;
 alter table journal_page add column if not exists body_merged boolean;
 create index if not exists journal_page_sync_feed on journal_page(user_id, seq);
 
-alter table journal_page_revision add column if not exists migration_id bigint;
+drop trigger if exists journal_sync_revision_identity_immutable on journal_page_revision;
+drop function if exists journal_sync_revision_identity_immutable();
+alter table journal_page_revision drop column if exists migration_id;
 alter table journal_page_revision add column if not exists engine_rev bigint;
 create unique index if not exists journal_page_revision_engine_rev on journal_page_revision(user_id, engine_rev);
-create unique index if not exists journal_page_revision_migration_id on journal_page_revision(user_id, migration_id);
-create or replace function journal_sync_revision_identity_immutable() returns trigger language plpgsql as $$
-begin
-  if old.migration_id is not null and
-     (new.migration_id is distinct from old.migration_id or new.engine_rev is distinct from old.engine_rev) then
-    raise exception 'journal frozen revision identity is immutable';
-  end if;
-  return new;
-end $$;
-do $$ begin
-  if not exists(select 1 from pg_trigger where tgrelid='journal_page_revision'::regclass and tgname='journal_sync_revision_identity_immutable') then
-    create trigger journal_sync_revision_identity_immutable before update on journal_page_revision
-      for each row execute function journal_sync_revision_identity_immutable();
-  end if;
-end $$;
 
 create table if not exists journal_sync_state (
   user_id uuid primary key references users(id) on delete cascade,
@@ -1019,68 +964,12 @@ alter table journal_page_curation add column if not exists judge_version   text 
 -- commit and never deletes or rewrites on its own (docs/foundation/engine.md C.1); a record's own
 -- rows, a routine's entries or a proposal's changes, go with it.
 
--- Each account's adoption record (docs/foundation/engine.md Appendix C): the frozen rows the
--- adoption read and, for C.8's metadata, the run and each account's source and result. Written
--- once, never rewritten, and deleted with the account.
-create table if not exists gym_sync_adoptions (
-  user_id uuid primary key references users(id) on delete cascade,
-  migration_ms bigint not null check (migration_ms >= 0),
-  frozen_source jsonb not null check (jsonb_typeof(frozen_source) = 'object')
-);
-create or replace function gym_sync_adoption_immutable() returns trigger language plpgsql as $$
-begin
-  raise exception 'gym adoption source and migration clock are immutable';
-end;
-$$;
-do $$ begin
-  if not exists(select 1 from pg_trigger where tgrelid='gym_sync_adoptions'::regclass and tgname='gym_sync_adoption_immutable') then
-    create trigger gym_sync_adoption_immutable before update on gym_sync_adoptions
-      for each row execute function gym_sync_adoption_immutable();
-  end if;
-end $$;
-
-create table if not exists gym_sync_metadata_upgrade_runs (
-  version integer primary key check(version = 5),
-  run_id uuid not null unique,
-  migration_ms bigint not null check(migration_ms >= 0),
-  registry_hash text not null,
-  epoch text not null,
-  roster jsonb not null check(jsonb_typeof(roster) = 'array')
-);
-create table if not exists gym_sync_metadata_upgrades (
-  user_id uuid not null references users(id) on delete cascade,
-  version integer not null references gym_sync_metadata_upgrade_runs(version),
-  migration_ms bigint not null check(migration_ms >= 0),
-  frozen_source jsonb not null check(jsonb_typeof(frozen_source) = 'object'),
-  result jsonb check(result is null or jsonb_typeof(result) = 'object'),
-  primary key(user_id, version)
-);
-create or replace function gym_sync_metadata_run_immutable() returns trigger language plpgsql as $$
-begin
-  raise exception 'gym metadata upgrade run is immutable';
-end;
-$$;
-do $$ begin
-  if not exists(select 1 from pg_trigger where tgrelid='gym_sync_metadata_upgrade_runs'::regclass and tgname='gym_sync_metadata_run_immutable') then
-    create trigger gym_sync_metadata_run_immutable before update on gym_sync_metadata_upgrade_runs
-      for each row execute function gym_sync_metadata_run_immutable();
-  end if;
-end $$;
-create or replace function gym_sync_metadata_upgrade_immutable() returns trigger language plpgsql as $$
-begin
-  if old.result is not null or new.result is null or
-     (to_jsonb(old) - 'result') is distinct from (to_jsonb(new) - 'result') then
-    raise exception 'gym metadata upgrade source and committed result are immutable';
-  end if;
-  return new;
-end;
-$$;
-do $$ begin
-  if not exists(select 1 from pg_trigger where tgrelid='gym_sync_metadata_upgrades'::regclass and tgname='gym_sync_metadata_upgrade_immutable') then
-    create trigger gym_sync_metadata_upgrade_immutable before update on gym_sync_metadata_upgrades
-      for each row execute function gym_sync_metadata_upgrade_immutable();
-  end if;
-end $$;
+drop table if exists gym_sync_metadata_upgrades;
+drop table if exists gym_sync_metadata_upgrade_runs;
+drop table if exists gym_sync_adoptions;
+drop function if exists gym_sync_metadata_upgrade_immutable();
+drop function if exists gym_sync_metadata_run_immutable();
+drop function if exists gym_sync_adoption_immutable();
 
 -- id is a stable slug ('back-squat'), never renamed and never displayed; name is the mutable
 -- display string, so every set keeps pointing at the same id across a rename. created_by NULL marks
@@ -1387,21 +1276,8 @@ create table if not exists gym_correction_receipts (
 );
 create index if not exists gym_correction_receipts_owner on gym_correction_receipts(user_id);
 alter table gym_sessions add column if not exists history_routine_id text;
-create or replace function gym_preserve_routine_identity() returns trigger language plpgsql as $$
-begin
-  if NEW.routine_id is not null then NEW.history_routine_id := NEW.routine_id; end if;
-  return NEW;
-end;
-$$;
--- Adoption gives routine_id and history_routine_id independent registers and removes this trigger.
-do $$ begin
-  if to_regclass('public.gym_sync_adoptions') is null then
-    update gym_sessions set history_routine_id = routine_id
-      where history_routine_id is null and routine_id is not null;
-    create or replace trigger gym_session_routine_identity before insert or update of routine_id on gym_sessions
-      for each row execute function gym_preserve_routine_identity();
-  end if;
-end $$;
+drop trigger if exists gym_session_routine_identity on gym_sessions;
+drop function if exists gym_preserve_routine_identity();
 
 create table if not exists gym_log_shares (
   id text primary key,
