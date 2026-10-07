@@ -153,12 +153,11 @@ at all is a copy owner's call and not a build gap.
 **And a weigh-in written for that day while the window runs is a correction, not a race.** The
 newer save wins whole, and a save newer than the delete keeps the weigh-in whether or not the delete
 was sent (the wire, below). A weigh-in is the one delete in this room whose id the lifter can write
-again — it is a calendar date and not a mint — and **writing the day again IS the undo**: on the web
-and Android the window comes down before the number goes in, and on each it is ONE seam every
-weigh-in passes rather than a call each screen has to remember — `useBodyweight`'s own `save` on the
-web (the hook behind the room's one weigh-in door), `TrainingStore.weighIn`'s `dropWithheld` on
-Android. So the transient **retires** rather than standing there offering *Undo* beside a dot the
-chart is drawing again, and the clock that would have deleted the number just saved is gone.
+again — it is a calendar date and not a mint — and **successfully writing the day again IS the undo**.
+The save retires the day's window; a failed save keeps its Undo. Every weigh-in passes through one
+save door rather than requiring each screen to retire the window. So the transient **retires**
+rather than standing there offering *Undo* beside a dot the chart is drawing again, and the clock
+that would have deleted the number just saved is gone.
 
 **Back-dating lives inside the weigh-in sheet, and that is a consequence of the one-door rule.** If
 the chip on the log is the only place a weigh-in is entered, then the sheet it opens has to carry a

@@ -469,4 +469,28 @@ class BodyweightScreenTests {
             compose.onNodeWithText("90 days").assertDoesNotExist()
         } } finally { scope.cancel() }
     }
+
+    @Test
+    fun aRepairedWeighInIsWrittenUnderTheRowsOwnDate() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val store = store(room, EngineRoomFixture.server())
+            val day = today.minusDays(1)
+            runBlocking { store.weighIn(day.toString(), 182.0) }
+            compose.setContent {
+                BodyweightScreen(store = store, backTo = "The log", onBack = {}, say = {})
+            }
+
+            compose.onNodeWithText(Bodyweight.listDay(day)).performScrollTo().performClick()
+            val field = compose.onNodeWithContentDescription(weightField)
+            field.performTextClearance()
+            field.performTextInput("82")
+            compose.onNodeWithText(Bodyweight.save).performClick()
+
+            compose.runOnIdle {
+                assertEquals(listOf(day.toString() to 82.0), store.bodyweight.map { it.dateLocal to it.weightKg })
+                assertEquals(listOf(day.toString() to 82.0), room.training.weighins().map { it.dateLocal to it.weightKg })
+            }
+        } } finally { scope.cancel() }
+    }
 }

@@ -372,4 +372,72 @@ class NotesScreenTests {
             assertEquals(listOf("note 0", "note 2", "note 1"), drawnOrder("note 0", "note 1", "note 2"))
         } } finally { scope.cancel() }
     }
+
+    @Test
+    fun testADragTheLogAcceptsIsTheNewOrder() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val server = threeNotes(room)
+
+            compose.setContent {
+                NotesScreen(
+                    store = room.store,
+                    isSignedIn = true,
+                    backTo = "Coach",
+                    onBack = {},
+                    onEdit = { _, _ -> },
+                    onSignIn = {},
+                    say = {},
+                )
+            }
+            compose.onNodeWithText("note 0").assertIsDisplayed()
+
+            dragBelowTheNextRow("note 0")
+
+            compose.runOnIdle { room.sync(server) }
+            assertEquals(listOf("note_001", "note_000", "note_002"), onTheLog(room, server))
+            assertEquals(listOf("note 1", "note 0", "note 2"), drawnOrder("note 0", "note 1", "note 2"))
+        } } finally { scope.cancel() }
+    }
+
+    // The held note keeps its key; only the dragged note moves below its drawn neighbor.
+    @Test
+    fun testADragInsideAnOpenDeleteWindowKeepsTheWithheldNotesStoredPlace() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val server = threeNotes(room)
+            val store = room.store
+            val said = mutableListOf<String?>()
+
+            compose.setContent {
+                NotesScreen(
+                    store = store,
+                    isSignedIn = true,
+                    backTo = "Coach",
+                    onBack = {},
+                    onEdit = { _, _ -> },
+                    onSignIn = {},
+                    say = { said += it },
+                )
+            }
+            compose.onNodeWithText("note 0").assertIsDisplayed()
+
+            compose.runOnIdle { store.withhold(Deletion.Note("note_001")) }
+            compose.onNodeWithText("note 1").assertDoesNotExist()
+
+            dragBelowTheNextRow("note 0")
+
+            compose.runOnIdle {
+                assertEquals("nothing was refused", emptyList<String>(), said.filterNotNull())
+                assertEquals("and the window is still holding its note", listOf("note_001"), store.withheld.map { it.subjectId })
+                room.sync(server)
+            }
+            assertEquals("only note 0 moves, and note 1 keeps its stored key",
+                listOf("note_001", "note_002", "note_000"), onTheLog(room, server))
+            assertEquals(listOf("note 2", "note 0"), drawnOrder("note 0", "note 2"))
+            compose.onNodeWithText("note 1").assertDoesNotExist()
+            compose.runOnIdle { assertTrue(store.keepWithheld() != null) }
+            assertEquals(listOf("note 1", "note 2", "note 0"), drawnOrder("note 0", "note 1", "note 2"))
+        } } finally { scope.cancel() }
+    }
 }

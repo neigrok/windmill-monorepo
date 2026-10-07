@@ -380,31 +380,46 @@ class EngineTraining(val engine: Engine) {
         return notes().firstOrNull { it.id == id } ?: notes().first { it.title == write.title.trim() && it.body == write.body.trim() }
     }
     suspend fun deleteNote(id: String) { apply(deleteNote(Id(id, EngineNote))) }
-    suspend fun reorderNotes(order: List<String>): List<Note> {
-        if (order.distinct().size != order.size || order.toSet() != notes().map { it.id }.toSet())
-            throw TrainingRefused("stale", "The notes changed. Read them again.")
-        apply(object : Action<List<EngineNote>, Unit, GymRefusal> {
-            override val scope = EngineNote.scope
+    suspend fun moveNote(id: String, drawn: List<String>, withheld: Set<String>): Boolean = writing { runner ->
+        val move = moveNote(Id(id, EngineNote), drawn.getOrNull(drawn.indexOf(id) - 1)?.let { Id(it, EngineNote) })
+        val action = object : Action<Pair<MoveLoaded<EngineNote>, List<String>>, Unit, GymRefusal> {
+            override val scope = move.scope
             override val refusals = GymRefusal
-            override fun load(read: Reader) = read.repository(EngineNote).all(ViewMode.drawn)
-            override fun decide(loaded: List<EngineNote>, ids: IDSource): Decision<Unit, GymRefusal> {
-                if (loaded.map { it.id.text }.toSet() != order.toSet()) return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.stale, null, path = Refused.Path.predicted)))
-                val plan = Plan()
-                for ((index, id) in order.withIndex()) plan.move(Id(id, EngineNote), order.getOrNull(index - 1)?.let { Id(it, EngineNote) })
-                return Decision.Write(plan, Unit)
+            override fun load(read: Reader) = move.load(read) to read.repository(EngineNote).all(ViewMode.drawn)
+                .map { it.id.text }.filterNot { it in withheld }
+            override fun decide(loaded: Pair<MoveLoaded<EngineNote>, List<String>>, ids: IDSource): Decision<Unit, GymRefusal> {
+                val visible = loaded.second
+                if (id !in visible || drawn.size != visible.size || drawn.toSet().size != drawn.size ||
+                    drawn.toSet() != visible.toSet() || drawn.filterNot { it == id } != visible.filterNot { it == id }) {
+                    return Decision.Refuse(GymRefusal.Stale(move.id.ref, Refused.Path.predicted))
+                }
+                if (drawn == visible) return Decision.Unchanged(Unit)
+                return move.decision(loaded.first, ids)
             }
-        })
-        return notes()
+        }
+        when (val outcome = runner.run(action)) {
+            is Outcome.Committed -> true
+            is Outcome.Unchanged -> false
+            is Outcome.Refused -> if (outcome.refusal is GymRefusal.Stale)
+                throw TrainingRefused("stale", "The notes changed. Read them again before reordering.")
+                else throw refusal(outcome.refusal)
+        }
     }
     fun weighins(from: String? = null, to: String? = null): List<WeighIn> = read { reader ->
         reader.repository(EngineWeighIn).all(ViewMode.drawn).mapNotNull { it.kg?.let { kg -> WeighIn(it.id.text, kg, it.recordedAt?.ms ?: 0) } }
             .filter { (from == null || it.dateLocal >= from) && (to == null || it.dateLocal <= to) }.sortedBy { it.dateLocal }
     }
-    suspend fun putBodyweight(dateLocal: String, write: WeighInWrite): WeighIn {
+    suspend fun putBodyweight(dateLocal: String, weightKg: Double): WeighIn {
         val day = LocalDay.parse(dateLocal) ?: throw TrainingRefused("bad-instant", works.windmill.gym.domain.Bodyweight.notAForecast)
-        val next = EngineWeighIn(day, write.weightKg, Instant(write.recordedAt))
-        val old = read { it.repository(EngineWeighIn).find(next.id, ViewMode.drawn) }
-        if (old?.recordedAt == null || old.recordedAt!! <= next.recordedAt!!) apply(saveWeighIn(next))
+        writing { runner ->
+            val blank = EngineWeighIn(day)
+            val draft = runner.open(EngineWeighIn, blank.id, blank).edit { it.copy(kg = weightKg) }
+            when (val result = runner.save(draft, EngineWeighIn, GymRefusal) {}) {
+                is SaveResult.Refused -> throw refusal(result.refusal)
+                is SaveResult.Failed -> throw result.error
+                is SaveResult.Saved -> Unit
+            }
+        }
         return weighins(dateLocal, dateLocal).first()
     }
     suspend fun deleteBodyweight(dateLocal: String) { apply(deleteWeighIn(Id(dateLocal, EngineWeighIn))) }
@@ -566,7 +581,12 @@ class EngineTraining(val engine: Engine) {
     private fun missing(message: String) = TrainingRefused("unknown-record", message)
     private fun refusal(refusal: GymRefusal): TrainingRefused {
         val (code, message) = when (refusal) {
-            is GymRefusal.Invalid -> "invalid" to "Check ${refusal.violation.path.text.substringAfterLast('.')}."
+            is GymRefusal.Invalid -> "invalid" to when {
+                refusal.violation.rule == NoteRules.title.path && refusal.violation.reason == Violation.Reason.Blank -> "a note needs a title"
+                refusal.violation.rule == NoteRules.title.path && refusal.violation.reason is Violation.Reason.TooLong -> "a title runs to 60 characters"
+                refusal.violation.rule == NoteRules.body.path && refusal.violation.reason is Violation.Reason.TooLong -> "a note runs to 500 bytes"
+                else -> "Check ${refusal.violation.path.text.substringAfterLast('.')}."
+            }
             is GymRefusal.Stale -> "stale" to "That changed. Open it again."
             is GymRefusal.Gone -> "unknown-record" to "That is no longer on the log."
             is GymRefusal.Taken -> "id-taken" to "That identity is already on the log."

@@ -64,5 +64,4 @@ data class Bodyweight(val stance: Stance, val entries: List<Entry>, val today: L
     companion object { const val gapDays = 7; const val recentDays = 90 }
 }
 
-fun saveWeighIn(value: WeighIn) = SaveDraft(value, WeighIn, GymRefusal)
 fun deleteWeighIn(id: Id<WeighIn>) = Remove(WeighIn, id, GymRefusal)

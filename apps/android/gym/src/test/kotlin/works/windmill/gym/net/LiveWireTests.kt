@@ -15,6 +15,7 @@ import org.junit.FixMethodOrder
 import org.junit.Test
 import org.junit.runners.MethodSorters
 import works.windmill.gym.domain.Exercise
+import works.windmill.gym.domain.NoteWrite
 import works.windmill.gym.domain.PlanEntry
 import works.windmill.gym.domain.RoutineEntry
 import works.windmill.gym.domain.RoutineEntryWrite
@@ -597,6 +598,40 @@ class LiveWireTests {
                     detail.sets.maxOfOrNull { it.completedAtMs } ?: detail.session.startedAtMs)
                 discardSession(detail.session.id)
             }
+        }
+    }
+
+    @Test
+    fun t16_aWeighInCorrectionAndANoteDragRoundTripToAnotherPhone() = runBlocking {
+        val day = java.time.LocalDate.now().minusDays(4).toString()
+        val weighin = RecordKey(Gym.Types.weighin, RecordID(day))
+        val noteIds = (0..2).map { "note_probe_a$tag$it" }
+        try {
+            adapter.putBodyweight(day, 182.0)
+            drain(weighin)
+            val corrected = adapter.putBodyweight(day, 82.45)
+            assertEquals(82.45, corrected.weightKg, 0.0)
+            drain(weighin)
+            for ((index, id) in noteIds.withIndex()) {
+                adapter.writeNote(id, NoteWrite("Probe $index", ""))
+                drain(RecordKey(Gym.Types.note, RecordID(id)))
+            }
+            val expected = listOf(noteIds[1], noteIds[0], noteIds[2])
+            assertTrue(adapter.moveNote(noteIds[0], expected, emptySet()))
+            assertEquals(expected, adapter.notes().map { it.id })
+            drain(RecordKey(Gym.Types.note, RecordID(noteIds[0])))
+            Engine.memory(SyncSchema.registry, clock = probeClock).use { phone ->
+                val reader = EngineTraining(phone)
+                signIn(phone)
+                drain(phone) { reader.firstPullComplete }
+                assertEquals(listOf(corrected), reader.weighins(day, day))
+                assertEquals(expected, reader.notes().map { it.id })
+            }
+        } finally {
+            adapter.deleteBodyweight(day)
+            for (id in noteIds) adapter.deleteNote(id)
+            engine.releaseHeld(true)
+            drain(engine) { !pending(weighin) && noteIds.none { pending(RecordKey(Gym.Types.note, RecordID(it))) } }
         }
     }
 

@@ -3,6 +3,7 @@ package works.windmill.gym.ui
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import kotlinx.coroutines.*
 import org.junit.Assert.*
 import org.junit.Rule
@@ -66,6 +67,39 @@ class NotesStateTests {
             compose.runOnIdle {
                 assertEquals(initial, compose.onNodeWithText("Title 2").fetchSemanticsNode().id)
                 assertEquals(listOf("note_000", "note_002", "note_001"), runBlocking { room.training.notes() }.map { it.id })
+            }
+        } } finally { scope.cancel() }
+    }
+
+    @Test fun titleHintNeverEnablesSaveAndUnicodeRefusalsRetainRawBuffersAndIdentity() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            signedIn(room)
+            val restored = StateRestorationTester(compose)
+            var done = 0
+            restored.setContent { GymMaterial { NoteEditorScreen(null, "What I am training for", room.store, "Notes", {}, { done++ }) } }
+            compose.onNodeWithText("What I am training for").assertIsDisplayed()
+            compose.onNodeWithText(Notes.save).assertIsNotEnabled()
+            val title = "  " + "🏋".repeat(61) + "  "
+            val body = "\n" + "é".repeat(251) + "\n"
+            compose.onNodeWithContentDescription("Title field").performTextReplacement(title)
+            compose.onNodeWithContentDescription("Body field").performScrollTo().performTextReplacement(body)
+            compose.onNodeWithText(Notes.save).assertIsEnabled().performClick()
+            compose.onNodeWithText("a title runs to 60 characters").performScrollTo().assertIsDisplayed()
+            restored.emulateSavedInstanceStateRestore()
+            compose.onNodeWithContentDescription("Title field").assertTextEquals(title)
+            compose.onNodeWithContentDescription("Body field").assertTextEquals(body)
+            compose.onNodeWithText("a title runs to 60 characters").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithContentDescription("Title field").performScrollTo().performTextReplacement("🏋".repeat(60))
+            compose.onNodeWithText(Notes.save).performClick()
+            compose.onNodeWithText("a note runs to 500 bytes").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithContentDescription("Body field").performScrollTo().performTextReplacement("é".repeat(250))
+            compose.onNodeWithText(Notes.save).performClick()
+            compose.runOnIdle {
+                assertEquals(1, done)
+                val saved = runBlocking { room.training.notes() }.single()
+                assertEquals(Note(saved.id, 0, "🏋".repeat(60), "é".repeat(250), saved.updatedAtMs), saved)
+                assertEquals(listOf(saved), room.store.notes)
             }
         } } finally { scope.cancel() }
     }

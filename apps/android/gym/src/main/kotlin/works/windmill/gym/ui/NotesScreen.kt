@@ -68,14 +68,14 @@ fun NotesScreen(
             }
         } finally { reading = false }
     }
-    fun reorder(next: List<Note>) {
+    fun reorder(moved: String, next: List<Note>) {
         if (savingOrder) return
         savingOrder = true
         order = next
         say(null)
         scope.launch {
             try {
-                val result = store.reorderNotes(next.map { it.id })
+                val result = store.reorderNotes(moved, next.map { it.id })
                 if (result is GymResult.Failed) say(result.why.line("The order stayed as it was."))
             } finally { order = null; savingOrder = false }
         }
@@ -138,7 +138,7 @@ private fun NoteList(
     modifier: Modifier,
     onOpen: (Note) -> Unit,
     onMove: (List<Note>?) -> Unit,
-    onSettle: (List<Note>) -> Unit,
+    onSettle: (String, List<Note>) -> Unit,
     header: @Composable ColumnScope.() -> Unit,
     showRows: Boolean,
     footer: @Composable ColumnScope.() -> Unit,
@@ -162,7 +162,7 @@ private fun NoteList(
             val actions = if (!enabled) emptyList() else buildList {
                 fun move(to: Int) {
                     focused = note.id
-                    onSettle(Notes.moved(standing, index, to))
+                    onSettle(note.id, Notes.moved(standing, index, to))
                     if (list.layoutInfo.visibleItemsInfo.none { it.index == to + 1 }) {
                         scope.launch { list.scrollToItem(to + 1) }
                     }
@@ -184,7 +184,7 @@ private fun NoteList(
                             onDragStart = {
                                 if (mayMove) { dragged = note.id; offset = 0f; order = standing; moved = false }
                             },
-                            onDragEnd = { dragged = null; offset = 0f; if (moved) onSettle(order) },
+                            onDragEnd = { dragged = null; offset = 0f; if (moved) onSettle(note.id, order) },
                             onDragCancel = { dragged = null; offset = 0f; onMove(null) },
                             onDrag = { change, amount ->
                                 if (!mayMove || dragged != note.id) return@detectDragGesturesAfterLongPress

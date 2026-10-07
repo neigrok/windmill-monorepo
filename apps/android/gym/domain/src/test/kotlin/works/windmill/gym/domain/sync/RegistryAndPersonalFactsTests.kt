@@ -178,7 +178,8 @@ class RegistryAndPersonalFactsTests {
 
     @Test fun weighInWritesOneWholeFactWithCommitMomentAndHeldDeletion() {
         val value = WeighIn(testMoment.today, 80.125, Instant(1))
-        val result = writing(decide(saveWeighIn(value))).plan.gesture(WeighIn.scope, SyncSchema.registry)
+        val save = SaveDraft.fromDraft(Draft.new(value), WeighIn, GymRefusal)
+        val result = writing(decide(save)).plan.gesture(WeighIn.scope, SyncSchema.registry)
         assertEquals(listOf(Change.put(WeighIn.type, value.id.record, true, value.copy(kg = 80.13, recordedAt = testMoment.now).fields())), result.changes)
         assertTrue(result.guards.isEmpty())
         val deletion = writing(decide(deleteWeighIn(value.id), reader(listOf(row(value))))).plan.gesture(WeighIn.scope, SyncSchema.registry)
