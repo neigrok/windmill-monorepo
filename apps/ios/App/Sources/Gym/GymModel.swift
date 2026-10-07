@@ -40,6 +40,8 @@ final class GymModel {
   @ObservationIgnored var observationTask: Task<Void, Never>?
   @ObservationIgnored var scopeViews: [RecordsView] = []
   @ObservationIgnored var observationGeneration = 0
+  @ObservationIgnored var proposalReadReplica: String?
+  @ObservationIgnored var coachRemovalDecisions: [String: (proposal: Proposal, resolved: Bool?)] = [:]
 
   init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry()) {
     self.runner = runner; self.runtime = runtime; self.telemetry = telemetry
@@ -78,8 +80,11 @@ final class GymModel {
     observeScopes(observationGeneration)
     let events = runtime.engine.events()
     observationTask = Task { [weak self] in
-      for await _ in events {
+      for await event in events {
         guard !Task.isCancelled else { return }
+        if case .ended(let localId, let outcome, _, _) = event {
+          self?.coachRemovalDecisions[localId]?.resolved = outcome == .resolved
+        }
         self?.refresh()
       }
     }
@@ -134,7 +139,7 @@ final class GymModel {
          Routine.ordered(try read.repository(Routine.self).all(in: .drawn)),
          try read.repository(Note.self).all(in: .drawn), try Bodyweight(read),
          try read.repository(GymPreferences.self).find(ID("prefs"), in: .drawn) ?? GymPreferences(),
-         try read.repository(Proposal.self).all(in: .drawn), read.isAnonymous, counts, hidden)
+         try readCoachProposals(read), read.isAnonymous, counts, hidden)
       }
       (log, catalogue, routines, notes, bodyweight, preferences, proposals, isAnonymous, personalCounts, workoutHidden) = snapshot
       if let runtime {

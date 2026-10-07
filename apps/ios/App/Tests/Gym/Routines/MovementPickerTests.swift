@@ -141,6 +141,32 @@ import SyncModelServer
     #expect(MovementPickerOptions.firstSession(log: log(sessions: [session("current", open: true)]), routines: [], readFailed: false))
   }
 
+  @Test func firstWorkoutKeepsItsWelcomeAndFourSetsAcrossRelaunch() throws {
+    let (harness, gym) = fixture()
+    let picker = MovementPicker(gym: gym, selected: [], includesTargets: false) { _ in }
+    #expect(picker.firstSession)
+    let id = try #require(gym.startWorkout())
+    #expect(picker.firstSession && gym.workout.selected == nil)
+    gym.workout.add(ID("back-squat"))
+    for weight in [100.0, 100.0, 102.5] {
+      gym.workout.weightKg = weight; gym.workout.reps = 5
+      #expect(gym.workout.logSet())
+      harness.advance(ms: 1_000)
+    }
+    gym.workout.add(ID("bench-press")); gym.workout.weightKg = 80; gym.workout.reps = 8
+    #expect(gym.workout.logSet() && picker.firstSession)
+
+    let reopened = GymModel(runner: harness.runner), workout = reopened.workout
+    let restoredPicker = MovementPicker(gym: reopened, selected: [], includesTargets: false) { _ in }
+    #expect(restoredPicker.firstSession && workout.sessionId == id)
+    #expect(workout.sets.map(\.weightKg) == [100, 100, 102.5, 80])
+    #expect(workout.sets.map(\.reps) == [5, 5, 5, 8])
+    #expect(workout.walk.order == [ID<Exercise>("back-squat"), ID<Exercise>("bench-press")])
+    #expect(workout.selected == ID<Exercise>("bench-press"))
+    #expect(reopened.run(FinishSession(id: id))?.receipt != nil)
+    #expect(!restoredPicker.firstSession)
+  }
+
   @Test func absentCatalogueAndFailedReadAreDistinctFromNoMatch() {
     let catalogue = Catalogue(custom: [], names: []).exercises
     let noMatch = MovementPickerOptions.matching(query: "unfindable", catalogue: catalogue, selected: [], log: nil)

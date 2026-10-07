@@ -12,20 +12,48 @@ nonisolated struct CoachReviewExtent: Equatable {
 nonisolated struct CoachReviewPosition: Equatable { let extent: CoachReviewExtent; let atEnd: Bool }
 
 extension GymModel {
+  func readCoachProposals(_ read: Reader) throws -> [Proposal] {
+    if proposalReadReplica != read.replica || read.isAnonymous { coachRemovalDecisions = [:] }
+    proposalReadReplica = read.replica
+    for (localId, decision) in coachRemovalDecisions {
+      guard let resolved = decision.resolved else { continue }
+      let proposal = decision.proposal
+      // Pull deletes the proposal with its routine. The resolved command is the warm review's receipt;
+      // no server settlement timestamp survives, so do not turn the predicted time into a confirmed one.
+      coachRemovalDecisions[localId] = resolved ? (Proposal(id: proposal.id, routineId: proposal.routineId, intent: proposal.intent,
+        proposedName: proposal.proposedName, summary: proposal.summary, changes: proposal.changes, door: proposal.door,
+        connection: proposal.connection, agent: proposal.agent, state: "applied", supersededBy: proposal.supersededBy,
+        baseRevision: proposal.baseRevision, baseName: proposal.baseName, changeCount: proposal.changeCount, threadId: proposal.threadId), nil) : nil
+      telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": "apply", "outcome": resolved ? "decided" : "failed"])
+    }
+    let decisions = try read.commands().filter { [Gym.Commands.applyProposal, Gym.Commands.dismissProposal].contains($0.command.name) }
+    var visible = try read.repository(Proposal.self).all(in: .drawn).map { proposal in
+      if let pending = coachRemovalDecisions.values.first(where: { $0.proposal.id == proposal.id && $0.proposal.state == "pending" }) { return pending.proposal }
+      guard decisions.contains(where: { $0.command.args["proposalId"] == proposal.id.json }),
+            let confirmed = try read.confirmed(Proposal.self, proposal.id) else { return proposal }
+      return try Proposal(Fields(confirmed))
+    }
+    for decision in coachRemovalDecisions.values where !visible.contains(where: { $0.id == decision.proposal.id }) {
+      visible.append(decision.proposal)
+    }
+    return visible
+  }
   func coachProposalAwaitingReceipt(_ id: ID<Proposal>) -> Bool {
-    guard let runtime else { return false }
-    return (try? runtime.storageRead { storage in
-      try storage.device().activeReplica.outbox.contains { entry in
-        guard let command = entry.intent.command else { return false }
-        return [Gym.Commands.applyProposal, Gym.Commands.dismissProposal].contains(command.name) && command.args["proposalId"] == id.json
+    if coachRemovalDecisions.values.contains(where: { $0.proposal.id == id && $0.proposal.state == "pending" }) { return true }
+    return (try? runner.read(Gym.scope) { read in
+      try read.commands().contains { queued in
+        [Gym.Commands.applyProposal, Gym.Commands.dismissProposal].contains(queued.command.name) && queued.command.args["proposalId"] == id.json
       }
     }) ?? true
   }
   func coachDecideProposal(_ proposal: Proposal, apply: Bool) -> Bool {
     guard coachAccountAvailable, !authPaused else { error = "Sign in to review this proposal."; return false }
     guard openSession == nil else { error = "Finish this session"; return false }
+    start()
     let outcome = apply ? run(ApplyProposal(proposal.id)) : run(DismissProposal(proposal.id))
     let ok = outcome != nil && outcome?.refusal == nil
+    let removal = apply && proposal.intent == "remove" && runtime != nil && outcome?.receipt?.localIds.first != nil
+    if removal, let localId = outcome?.receipt?.localIds.first { coachRemovalDecisions[localId] = (proposal, nil) }
     let awaiting = coachProposalAwaitingReceipt(proposal.id)
     if !ok || !awaiting {
       telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": apply ? "apply" : "dismiss", "outcome": ok ? "decided" : "failed"])
@@ -33,7 +61,7 @@ extension GymModel {
     if ok, let runtime {
       Task {
         await runtime.engine.flushOnLeave(); runtime.engine.foreground(); refresh()
-        if awaiting {
+        if awaiting && !removal {
           let state = proposals.first { $0.id == proposal.id }?.state
           let confirmed = !coachProposalAwaitingReceipt(proposal.id) && ["applied", "dismissed"].contains(state ?? "")
           telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": apply ? "apply" : "dismiss", "outcome": confirmed ? "decided" : "failed"])

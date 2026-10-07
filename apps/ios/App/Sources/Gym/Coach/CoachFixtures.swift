@@ -40,9 +40,10 @@ enum CoachFixture {
       await runtime.engine.flushOnLeave(); gym.refresh()
       _ = gym.run(ImportSession(id: ID("coach-fixture-session"), startedAt: Instant(ms: 1_790_423_000_000), finishedAt: Instant(ms: 1_790_424_000_000),
         sets: [ImportedSet(id: ID("coach-fixture-set"), exerciseId: ID("back-squat"), weightKg: 80, reps: 5, completedAt: Instant(ms: 1_790_423_500_000))], routineId: routine.id))
+      let removing = ProcessInfo.processInfo.arguments.contains("-coach-removal")
       _ = gym.run(ProposeRoutine(id: ID("coach-fixture-proposal"), routineId: routine.id, name: "Push A2",
         entries: [RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 3, weightKg: 90)]), RoutineEntry(exerciseId: ID("bench-press"))],
-        summary: "Three triples at 90 keeps the weekly tonnage and gives you a top set to push."))
+        summary: removing ? "Remove this routine." : "Three triples at 90 keeps the weekly tonnage and gives you a top set to push.", removing: removing))
       await runtime.engine.flushOnLeave(); gym.refresh()
     } catch {
       let reason = failureReason(error)

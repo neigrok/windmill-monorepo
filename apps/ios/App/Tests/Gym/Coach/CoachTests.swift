@@ -57,6 +57,13 @@ import SyncModelServer
     for _ in 0..<200 { if condition() { return }; try await Task.sleep(for: .milliseconds(10)) }
     Issue.record("Asynchronous Coach work did not settle")
   }
+  func expectProposal(_ actual: Proposal?, equals expected: Proposal) throws {
+    let actual = try #require(actual)
+    #expect(actual.id == expected.id && actual.fields == expected.fields)
+    #expect(actual.state == expected.state && actual.settledAt == expected.settledAt)
+    #expect(actual.supersededBy == expected.supersededBy && actual.baseRevision == expected.baseRevision)
+    #expect(actual.baseName == expected.baseName && actual.changeCount == expected.changeCount && actual.threadId == expected.threadId)
+  }
   @Test func transportTimeoutOfflineAndHTTPRefusalReportWithoutContent() async throws {
     for reply in [CoachTestProtocol.Reply.failure(.timedOut), .failure(.notConnectedToInternet), .http(429, #"{"code":"ask-image-busy","error":"private server refusal"}"#)] {
       let (_, rest, telemetry) = try await authed(reply)
@@ -597,6 +604,122 @@ import SyncModelServer
     #expect(!ProposalReviewSheet(gym: gym, proposalId: proposal.id.record.string!).superseded)
     #expect(gym.routines.first?.entries.map(\.exerciseId) == [ID<Exercise>("custom-bench")])
     #expect(!gym.coachDecideProposal(proposal, apply: false))
+  }
+  @Test(arguments: [false, true])
+  func removalReceiptKeepsTheConfirmedDecisionAndPerformedLogUntilRelaunch(refused: Bool) async throws {
+    let transport = JournalModelTransport(), telemetry = TelemetryRecorder()
+    let runtime = try GymModelTests().runtime(telemetry: telemetry, transport: transport, drivesLoops: true)
+    let owner = transport.identity(email: "removal-owner@example.com")
+    #expect(try await runtime.engine.signIn(account: owner.account, token: owner.token).isComplete)
+    await runtime.engine.start()
+    let gym = GymModel(runner: runtime.runner, runtime: runtime, telemetry: telemetry)
+    defer { gym.stop() }
+    let exercise = ID<Exercise>("bench-press")
+    var draft = Draft(new: Routine(id: ID("removal-routine"), name: "Push A",
+      entries: [RoutineEntry(exerciseId: exercise, sets: [SetTarget(reps: 5, weightKg: 60)])]))
+    #expect({ if case .saved = gym.save(&draft) { return true }; return false }())
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.routines.first?.revision != nil }
+    let routine = try #require(gym.routines.first)
+    let start = Instant(ms: 1_790_423_000_000), end = Instant(ms: 1_790_424_000_000)
+    let sets = [ImportedSet(id: ID("removal-warmup"), exerciseId: exercise, weightKg: 20, reps: 8, completedAt: start, kind: "warmup"),
+                ImportedSet(id: ID("removal-working"), exerciseId: exercise, weightKg: 60, reps: 5, completedAt: end)]
+    #expect(gym.run(ImportSession(id: ID("removal-session"), startedAt: start, finishedAt: end, sets: sets, routineId: routine.id))?.receipt != nil)
+    #expect(gym.run(ProposeRoutine(id: ID("removal-proposal"), routineId: routine.id, name: "", entries: [], summary: "Remove this routine.", removing: true))?.receipt != nil)
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.proposals.first?.baseRevision != nil }
+    let proposal = try #require(gym.proposals.first), logged = gym.sets
+    let review = ProposalReviewSheet(gym: gym, proposalId: proposal.id.description)
+    #expect(review.applyLabel == "Remove Push A" && proposal.state == "pending" && proposal.settledAt == nil)
+    if refused { transport.state.withLock { $0.server.refuse(code: .invalid) } }
+    #expect(gym.coachDecideProposal(proposal, apply: true))
+    #expect(gym.routines.isEmpty && gym.sets == logged)
+    try expectProposal(review.proposal, equals: proposal)
+    #expect(gym.proposals.count == 1 && review.pending && !review.decidable)
+    #expect(try runtime.runner.read(Gym.scope) { try $0.confirmed(Proposal.self, proposal.id).map { try Proposal(Fields($0)).state } } == "pending")
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return !review.pending && (refused ? !gym.notices.isEmpty : review.proposal?.state == "applied") }
+    let answer = try #require(review.proposal)
+    #expect(gym.sets == logged && gym.sessions.map(\.id) == [ID<Session>("removal-session")])
+    #expect(gym.sessions.first?.plan == SessionPlan(routine))
+    if refused {
+      try expectProposal(answer, equals: proposal)
+      #expect(gym.routines == [routine] && review.decidable)
+      #expect(answer.settledAt == nil && !gym.notices.isEmpty)
+    } else {
+      #expect(answer.state == "applied" && answer.intent == "remove" && answer.settledAt == nil)
+      #expect(answer.summary == proposal.summary && answer.changes == proposal.changes && answer.baseName == routine.name)
+      #expect(gym.routines.isEmpty && gym.waitingRoutineProposals.isEmpty && !review.decidable)
+      #expect(try runtime.runner.read(Gym.scope) { try $0.confirmed(Proposal.self, proposal.id) } == nil)
+      gym.refresh()
+      try expectProposal(gym.proposals.first, equals: answer)
+      #expect(gym.proposals.count == 1)
+      let cold = GymModel(runner: runtime.runner, runtime: runtime)
+      #expect(cold.proposals.isEmpty && cold.sets == logged && cold.routines.isEmpty)
+      #expect(ProposalReviewSheet(gym: cold, proposalId: proposal.id.description).proposal == nil)
+    }
+    #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map { $0.properties["outcome"] } } == [refused ? "failed" : "decided"])
+  }
+  @Test func failedRemovalDeliveryWaitsForReceiptAndAccountSwitchClearsIt() async throws {
+    let transport = WorkoutFaultTransport(), runtime = try WorkoutStateTests.faultRuntime(transport, drivesLoops: true)
+    let owner = transport.model.identity(email: "removal-owner@example.com")
+    #expect(try await runtime.engine.signIn(account: owner.account, token: owner.token).isComplete)
+    await runtime.engine.start()
+    let gym = GymModel(runner: runtime.runner, runtime: runtime)
+    defer { gym.stop() }
+    var routine = Draft(new: Routine(id: ID("removal-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("bench-press"))]))
+    #expect({ if case .saved = gym.save(&routine) { return true }; return false }())
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.routines.first?.revision != nil }
+    #expect(gym.run(ProposeRoutine(id: ID("removal-proposal"), routineId: routine.id, name: "", entries: [], summary: "Remove this routine.", removing: true))?.receipt != nil)
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.proposals.first?.baseRevision != nil }
+    let pending = try #require(gym.proposals.first)
+    let review = ProposalReviewSheet(gym: gym, proposalId: pending.id.description)
+    transport.failure.withLock { $0 = 503 }
+    #expect(gym.coachDecideProposal(pending, apply: true))
+    try await settle { runtime.engine.status.failedPushes[Gym.scope]?.isEmpty == false }
+    gym.refresh()
+    try expectProposal(review.proposal, equals: pending)
+    #expect(gym.proposals.count == 1 && review.pending && !review.decidable)
+    #expect(review.proposal?.settledAt == nil && gym.routines.isEmpty)
+
+    transport.failure.withLock { $0 = nil }
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.proposals.first?.state == "applied" && !review.pending }
+    #expect(gym.proposals.first?.state == "applied" && gym.proposals.first?.settledAt == nil && !review.decidable)
+    _ = try await runtime.engine.signOut().finish(.keep)
+    gym.refresh()
+    #expect(gym.proposals.isEmpty && gym.account == nil)
+    let other = transport.model.identity(email: "removal-other@example.com")
+    #expect(try await runtime.engine.signIn(account: other.account, token: other.token).isComplete)
+    gym.refresh()
+    #expect(gym.proposals.isEmpty && gym.account == other.account && review.proposal == nil)
+    _ = try await runtime.engine.signOut().finish(.keep)
+    #expect(try await runtime.engine.signIn(account: owner.account, token: owner.token).isComplete)
+    gym.refresh()
+    #expect(gym.proposals.isEmpty && gym.account == owner.account && gym.routines.isEmpty)
+  }
+  @Test(arguments: [false, true])
+  func routineDeletionDoesNotInventARemovalReceipt(dismissed: Bool) throws {
+    let (h, gym) = fixture()
+    #expect(gym.run(CreateExercise(Exercise(id: ID("removal-bench"), name: "Bench", pattern: "press", equipment: "barbell", stepKg: 2.5)))?.receipt != nil)
+    var routine = Draft(new: Routine(id: ID("removal-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("removal-bench"))]))
+    #expect({ if case .saved = gym.save(&routine) { return true }; return false }())
+    h.sync(); gym.refresh()
+    #expect(gym.run(ProposeRoutine(id: ID("removal-proposal"), routineId: routine.id, name: "", entries: [], summary: "Remove this routine.", removing: true))?.receipt != nil)
+    h.sync(); gym.refresh()
+    let pending = try #require(gym.proposals.first)
+    if dismissed {
+      #expect(gym.coachDecideProposal(pending, apply: false))
+      try expectProposal(gym.proposals.first, equals: pending)
+      #expect(gym.proposals.count == 1 && gym.coachProposalAwaitingReceipt(pending.id))
+      h.sync(); gym.refresh()
+      #expect(gym.proposals.first?.state == "dismissed")
+    }
+    #expect(gym.run(DeleteRoutine(routine.id))?.receipt != nil)
+    h.leave(); h.sync(); gym.refresh()
+    #expect(gym.routines.isEmpty && gym.proposals.isEmpty)
   }
   @Test func connectedCredentialsFilterScopesAndUseCreationDates() throws {
     let grants = Data(#"{"grants":[{"clientId":"a","name":" Claude ","grantedMs":1000,"scope":"gym:delete gym:read"},{"clientId":"b","name":"Roadmap","grantedMs":2000,"scope":"roadmap:read"},{"clientId":"c","grantedMs":3000,"scope":""}]}"#.utf8)

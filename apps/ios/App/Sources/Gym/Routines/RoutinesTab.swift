@@ -28,7 +28,7 @@ struct RoutinesTab: View {
         Section {
           Button { onReviewProposal?(pending.id) } label: {
             VStack(alignment: .leading, spacing: 4) {
-              Text("Proposal · \(gym.routines.first { $0.id == pending.routineId }?.name ?? pending.proposedName)").font(.headline)
+              Text("Proposal · \(gym.routines.first { $0.id == pending.routineId }?.name ?? pending.baseName ?? pending.proposedName)").font(.headline)
               Text(pending.summary).font(.subheadline).foregroundStyle(.secondary)
               Text("Review changes").font(.subheadline)
             }
