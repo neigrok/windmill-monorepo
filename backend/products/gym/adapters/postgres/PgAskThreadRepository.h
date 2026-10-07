@@ -41,7 +41,7 @@ public:
                    const std::vector<ThreadTurn>& turns) override;
   void discardEmptyThread(const UserId& user, const ThreadId& id) override;
   bool deleteThread(const UserId& user, const ThreadId& id,
-                    const std::function<void()>& beforeDelete = {}) override;
+                    const std::function<void()>& beforeDelete) override;
 
 private:
   std::shared_ptr<PgPool> pool_;

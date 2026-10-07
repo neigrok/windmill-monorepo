@@ -1,35 +1,32 @@
 # Journal sync binding
 
-The v4 composition seals gym and journal together at `platform/infra/SyncProducts`. Journal binds
-its two types and two commands independently, over the same rules on fakes and Postgres.
-`journalState` is ranked and never establishes primary occupancy. `documentStamp` is product data;
-future content clocks do not advance an engine envelope clock. Text replacement is internal to
-commands, with nonempty outgoing heads archived even when the body bytes repeat.
+`platform/infra/SyncProducts` seals gym and journal into one catalog at registry version 5, minimum
+version 4 (`packages/api-contract/sync/composition.json`), and `windmill_server` always serves it at
+`/v1/sync`. Journal binds its two types and two commands independently, over the same rules on fakes
+and Postgres: `page`, keyed by the local day, the `journalState` singleton, `journal.savePage` and
+`journal.claimPage`. `journalState` is ranked and never establishes primary occupancy.
+`documentStamp` is product data; future content clocks do not advance an engine envelope clock.
 
-`db/journal_sync.sql` adds the in-place adoption schema, applied after `schema.sql` during the shared cutover and in the isolated sync test database. Backfill freezes
-original revision tuple order before envelope updates, reserves historical revision numbers, numbers
-page heads by day and derives retired first-run state for written accounts. Immutable markers retain
-M, policy, manifest, frozen source and precise receipt times. Independent auditing compares those
-inputs with candidate envelopes, heads, receipts and projections. Migration sends no watcher work.
+A page changes only through the two commands: an intent carrying a `page` delta is refused `invalid`.
+Text replacement is internal to the commands, with nonempty outgoing heads archived even when the
+body bytes repeat. A claim's `claimId` receipt replays a retry, and a changed raw payload under that
+id is `claim-conflict`.
 
-Revision pruning runs only on insertion: affected-day newest ten, then the account's newest prefix
-bounded by 500 rows and 8 MiB, then the 90-day cutoff. PostgreSQL executes all migration and
-retention vectors and round trips both TypeStores. Client/content-clock/claim-edit vectors belong to
-the client role; generic supersede is already covered by that role's commit claim.
+`PgJournal` stores `page` in `journal_page` and `journalState` in `journal_sync_state`, claim
+receipts in `journal_claim_receipts` and each account's content clock in `journal_content_clock`.
+Purging a scope deletes the account's pages, revisions, state, claim receipts, content clock and
+adoption record. The production tables were adopted in place (engine Appendix D); `db/schema.sql`
+builds that shape, and the adoption's record, `journal_sync_adoptions` and
+`journal_page_revision.migration_id`, is never updated, and no server code reads it.
 
-`JOURNAL_ENGINE_WRITES` defaults off. Enabled, `PageService` delegates normalized REST saves to
-`JournalDoor`, which uses server-origin `ServerCall`, captures the winner under the scope lock,
-and publishes `JournalFeed` only after commit. Internal claim and ranked-state methods use the same
-door and add no REST endpoint. The old SQL save is disabled with the engine switch on. Incomplete
-history or absent adoption schema refuses `503 journal-not-adopted` without creating an empty scope.
-Fresh accounts need no migration marker; their subsequent admitted rows reconcile against their
-scope seq and digest.
+Revision pruning runs only when an admission archives a revision: each affected day keeps its
+newest ten, then the account keeps its newest prefix bounded by 500 rows and 8 MiB, and nothing older
+than 90 days. The domain suite runs the retention vectors (`journal/revisions.json`) over the pure
+rule, and Postgres runs them over `PgJournalType`. The admission vectors (`journal/admit.json`) run
+over fakes and Postgres, and Postgres round-trips both type stores. The client, content-clock and
+claim-edit vectors belong to the client role.
 
-`JOURNAL_WRITE_FREEZE` defaults off and refuses journal mutations with `503 journal-frozen`.
-Echo derivations, repair sweeps and nudge sweeps are quiescent; the diagnostic read skips vendor
-work while frozen. REST reads retain their existing projections. Switches-off HLC-since reads use
-the original three-column ordering and compare byte-for-byte with origin/main; engine reads add
-the day tie-break for equal-HLC cohorts. Both frozen migration snapshots use that target engine
-read ordering and compare every response byte. `SYNC_ENABLED` defaults off and mounts `/v1/sync`
-over the shared gym + journal catalog when enabled. Shared gym/journal adoption and restored-production
-gates live in `deploy/gym-migration/README.md` and engine Appendix D.
+`JournalFeed` wraps the engine's live feed: after each commit it publishes the change to the live
+sockets, then hands every changed page to the `PageWatcher` (`EchoDerivations`) with its body's byte
+length. A failure of either is reported under `sync.publish` and leaves the admission committed.
+No server door admits a journal command; `JournalRepository` and the REST reads only read.

@@ -4,8 +4,8 @@ Android errors use the Sentry Android SDK. Behavioral events use the first-party
 `POST /v1/events` intake, which accepts anonymous and authenticated batches, stores them and
 forwards them to Amplitude. The Android APK contains
 no Amplitude API key. `Telemetry` is injected through the application, account, HTTP transport,
-workout stores, the SQLite sync runtime, migration, notifications and Compose provider; tests
-default to `Telemetry.None`.
+workout stores, the SQLite sync runtime, signed-out workout imports, notifications and Compose
+provider; tests default to `Telemetry.None`.
 
 ## Configuration
 
@@ -49,6 +49,10 @@ budget for the backend's bounded sequence of model/tool calls. An intervening pr
 shorter limit.
 
 Handled storage, synchronization, notification, authentication and UI boundary failures also report.
+Accepted-set recovery failures report at the calling training or account boundary, including
+`gym.finish`, `gym.start`, `gym.restoreWorkout`, `gym.connect`, `gym.loadLog` and
+`gym.reconcileWorkoutTime`. Failed Finish keeps the durable sets, returns a visible failure and
+emits no `gym_session_finished`; a successful retry emits it once.
 The first-launch onboarding gate reports unreadable workout presence, unreadable first-launch state
 and failed launch-marker writes under the static operation `onboarding_storage`; failed inspection or
 flag persistence skips automatic onboarding rather than treating an unknown phone as empty.
@@ -81,14 +85,15 @@ periodic fallback pulls; first reads, live hints, doubt resolution and socket re
 No replica/account identifier,
 record key, source document, workout content or credential enters these reports.
 
-Legacy migration reports unexpected boundary failures under `gym.migration`. Its durable source
-archive and per-replica journal remain on the phone; their contents and local refusal reasons are
-not telemetry. Settings exposes explicit correction and retry. A completed archive fence prevents
-re-running migration after sign-out or Discard. Account decisions include pending retained work,
-pin revisions and preserve unsent account work with Keep.
+Signed-out workout imports keep their per-replica journal on the phone; its contents and local
+refusal reasons are not telemetry. An unexpected reconciliation failure reports under
+`gym.import_reconcile`. Settings exposes inspection, correction, Keep and retry; their unexpected
+failures report under `gym_import_fix`, `gym_import_keep` and `gym_import_retry`. Account decisions
+include pending retained work, pin revisions and preserve unsent account work with Keep. A training
+write the log's rules refuse is said on screen and never becomes a Sentry issue.
 
-The update dialog responds to engine 426 and REST 410 `client-update-required` without deleting
-local work. `-Pwindmill.updateUrl=<public Android update URL>` configures its destination. With no
+The update dialog responds to an engine 426 without deleting local work.
+`-Pwindmill.updateUrl=<public Android update URL>` configures its destination. With no
 configured URL, **Open Windmill** opens `https://windmill.works`. The release workflow supplies
 `https://github.com/neigrok/windmill-monorepo/releases/latest`, labeled **Get the update**.
 Installed-app verification must use that public destination.
@@ -108,10 +113,10 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Motion settings | technical failure `onboarding_motion_settings` | static operation; motion falls back to reduced |
 | Brand onboarding | `onboarding_opened`, `onboarding_page_viewed`, `onboarding_action`, `onboarding_exited` | state, screen, action, outcome |
 | Coach | `gym_ask_started`, `gym_ask_outcome` | outcome, failure_kind, status, duration_ms, cap |
-| Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged` | storage |
-| Routines/proposals | `gym_routine_saved`, `gym_proposal_outcome` | action, storage, outcome |
+| Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged` | common metadata only |
+| Routines/proposals | `gym_routine_saved`, `gym_proposal_outcome` | action, outcome |
 | Engine refusals/failures | `sync_engine` | operation, outcome, failure_kind |
-| Migration | `gym_migration_completed`, `gym_migration_recovery` | outcome; action, state |
+| Workout imports | `gym_import_recovery` | action, state, outcome |
 | Account decisions | `gym_sign_in_decision`, `gym_sign_out` | state, action, outcome |
 | Connectivity | `sync_connectivity` | state |
 | Update | `client_update_required` | state, action, status, outcome |

@@ -1,206 +1,180 @@
 #include "products/gym/adapters/postgres/PgNotesRepository.h"
 
-#include "test/products/gym/Fakes.h"
+#include "test/products/gym/sync/GymDoorFixture.h"
 #include "test/products/gym/adapters/postgres/PgGymFixture.h"
 #include "test/testing.h"
+
+#include "platform/adapters/json/JsonText.h"
+#include "platform/domain/sync/FractionalIndex.h"
 
 #include <pqxx/pqxx>
 
 #include <cstdlib>
 #include <exception>
 #include <latch>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
 
-// The notes rows, against the real column checks and the deferred unique on (user_id, position).
-// Every case drives the fake beside the store and asserts the two answer alike.
+// The notes rows against the real column checks, written by a phone's /v1/sync and Coach's save_note.
+using namespace wm;
 using namespace wm::gym;
 using namespace wm::gym::pgtest;
 
 namespace {
 
-Note noteAt(const std::string& id, const std::string& title, const std::string& body = "",
-            const std::string& owner = kUser) {
-  return Note{NoteId{id}, wm::UserId{owner}, title, body};
+// The fractional keys a phone hands out when it appends: each one sorts after the one before.
+std::vector<std::string> appendKeys(int count) {
+  std::vector<std::string> keys;
+  std::optional<std::string> last;
+  for (int at = 0; at < count; ++at) keys.push_back(*(last = sync::between(last, std::nullopt)));
+  return keys;
 }
 
-std::vector<std::string> titlesOf(NotesRepository& repo, const std::string& owner = kUser) {
+// A phone's note write through /v1/sync: a create carries its ord, an edit only the text.
+Json::Value phoneNote(doortest::Harness& h, const UserId& owner, const std::string& id, const std::string& title,
+                      const std::string& body, std::optional<std::string> ord = std::nullopt) {
+  Json::Value fields(Json::objectValue);
+  fields["title"] = title;
+  fields["body"] = body;
+  if (ord) fields["ord"] = *ord;
+  return h.admit(owner, {GymDoor::delta("note", id, fields, ord.has_value())});
+}
+
+std::vector<std::string> titlesOf(NotesRepository& repo, const UserId& owner) {
   std::vector<std::string> titles;
-  for (const Note& held : repo.notes(wm::UserId{owner})) titles.push_back(held.title);
+  for (const Note& held : repo.notes(owner)) titles.push_back(held.title);
   return titles;
 }
 
 }  // namespace
 
 TEST(pg_gym_notes_append_last_replay_untouched_and_edit_in_place) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgNotesRepository repo{wm::pgTestPool()};
-  fake::FakeGym twin;
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  const std::vector<std::string> keys = appendKeys(2);
+  CHECK_EQ(h.repo.notes.notes(h.user), std::vector<Note>{});
 
-  CHECK_EQ(repo.notes(wm::UserId{kUser}), std::vector<Note>{});
-  const NoteWriteOutcome first = repo.saveNote(noteAt("note_pg00001", "Tone", "Blunt."), kNow);
-  const NoteWriteOutcome second =
-      repo.saveNote(noteAt("note_pg00002", "Goal", "A 140 squat. 💀"), kNow + 60'000);
-  const NoteWriteOutcome replayed = repo.saveNote(noteAt("note_pg00001", "Tone", "Blunt."), kNow + 120'000);
-  const NoteWriteOutcome edited =
-      repo.saveNote(noteAt("note_pg00001", "Tone", "Blunt. Numbers first."), kNow + 180'000);
-  twin.notes.saveNote(noteAt("note_pg00001", "Tone", "Blunt."), kNow);
-  twin.notes.saveNote(noteAt("note_pg00002", "Goal", "A 140 squat. 💀"), kNow + 60'000);
-  twin.notes.saveNote(noteAt("note_pg00001", "Tone", "Blunt."), kNow + 120'000);
-  twin.notes.saveNote(noteAt("note_pg00001", "Tone", "Blunt. Numbers first."), kNow + 180'000);
-
-  REQUIRE(first.error == NoteWriteError::none);
-  CHECK_EQ(*first.note, Note(NoteId{"note_pg00001"}, wm::UserId{kUser}, "Tone", "Blunt.", 0, kNow));
-  REQUIRE(second.error == NoteWriteError::none);
-  CHECK_EQ(second.note->position, 1);
-  CHECK_EQ(second.note->body, std::string("A 140 squat. 💀"));   // byte for byte
-  REQUIRE(replayed.error == NoteWriteError::none);
-  CHECK_EQ(replayed.note->updatedAtMs, kNow);   // untouched: nothing was re-dated
-  REQUIRE(edited.error == NoteWriteError::none);
-  CHECK_EQ(edited.note->position, 0);
-  CHECK_EQ(edited.note->updatedAtMs, kNow + 180'000);
-  CHECK_EQ(repo.notes(wm::UserId{kUser}), twin.notes.notes(wm::UserId{kUser}));
-  reset();
+  CHECK_EQ(GymDoor::refusal(phoneNote(h, h.user, "note_pg00001", "Tone", "Blunt.", keys[0])), "");
+  const Note tone{NoteId{"note_pg00001"}, h.user, "Tone", "Blunt.", 0, kNow};
+  CHECK_EQ(h.repo.notes.notes(h.user), std::vector<Note>{tone});
+  h.clock.now = kNow + 60'000;
+  CHECK_EQ(GymDoor::refusal(phoneNote(h, h.user, "note_pg00002", "Goal", "A 140 squat. 💀", keys[1])), "");
+  const Note goal{NoteId{"note_pg00002"}, h.user, "Goal", "A 140 squat. 💀", 1, kNow + 60'000};   // byte for byte
+  CHECK_EQ(h.repo.notes.notes(h.user), (std::vector<Note>{tone, goal}));
+  // The same text again re-dates nothing.
+  h.clock.now = kNow + 120'000;
+  CHECK_EQ(GymDoor::refusal(phoneNote(h, h.user, "note_pg00001", "Tone", "Blunt.")), "");
+  CHECK_EQ(h.repo.notes.notes(h.user), (std::vector<Note>{tone, goal}));
+  h.clock.now = kNow + 180'000;
+  CHECK_EQ(GymDoor::refusal(phoneNote(h, h.user, "note_pg00001", "Tone", "Blunt. Numbers first.")), "");
+  CHECK_EQ(h.repo.notes.notes(h.user),
+           (std::vector<Note>{Note{NoteId{"note_pg00001"}, h.user, "Tone", "Blunt. Numbers first.", 0, kNow + 180'000},
+                              goal}));
 }
 
 TEST(pg_gym_notes_stop_at_ten_and_an_id_another_account_holds_is_refused) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgNotesRepository repo{wm::pgTestPool()};
-  fake::FakeGym twin;
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  const std::vector<std::string> keys = appendKeys(11);
+  std::vector<Note> held;
   for (int at = 1; at <= 10; ++at) {
     const std::string id = "note_pg000" + std::to_string(10 + at);
-    CHECK(repo.saveNote(noteAt(id, "Note " + std::to_string(at)), kNow).error == NoteWriteError::none);
-    twin.notes.saveNote(noteAt(id, "Note " + std::to_string(at)), kNow);
+    CHECK_EQ(GymDoor::refusal(phoneNote(h, h.user, id, "Note " + std::to_string(at), "", keys[at - 1])), "");
+    held.push_back(Note{NoteId{id}, h.user, "Note " + std::to_string(at), "", at - 1, kNow});
   }
 
-  const NoteWriteOutcome eleventh = repo.saveNote(noteAt("note_pg00099", "One too many"), kNow);
-  const NoteWriteOutcome taken = repo.saveNote(noteAt("note_pg00011", "Mine now", "", kOther), kNow);
-  const NoteWriteOutcome edited = repo.saveNote(noteAt("note_pg00020", "Note 10", "still fits"), kNow);
+  const Json::Value eleventh = phoneNote(h, h.user, "note_pg00099", "One too many", "", keys[10]);
+  const Json::Value taken = phoneNote(h, h.other, "note_pg00011", "Mine now", "", keys[0]);
+  const Json::Value edited = phoneNote(h, h.user, "note_pg00020", "Note 10", "still fits");
 
-  CHECK(eleventh.error == NoteWriteError::full);
-  CHECK(twin.notes.saveNote(noteAt("note_pg00099", "One too many"), kNow).error == NoteWriteError::full);
-  CHECK(taken.error == NoteWriteError::idTaken);
-  CHECK(twin.notes.saveNote(noteAt("note_pg00011", "Mine now", "", kOther), kNow).error ==
-        NoteWriteError::idTaken);
-  CHECK(edited.error == NoteWriteError::none);
-  CHECK_EQ(repo.notes(wm::UserId{kUser}).size(), std::size_t{10});
-  CHECK_EQ(repo.notes(wm::UserId{kUser})[0].title, std::string("Note 1"));   // the stranger changed nothing
-  CHECK_EQ(repo.notes(wm::UserId{kOther}), std::vector<Note>{});
-  reset();
+  CHECK_EQ(eleventh, parse(R"({"s":"refused","code":"cap","detail":{"type":"note","cap":10}})"));
+  CHECK_EQ(taken, parse(R"({"s":"refused","code":"id-taken"})"));
+  CHECK_EQ(GymDoor::refusal(edited), "");
+  held[9].body = "still fits";
+  CHECK_EQ(h.repo.notes.notes(h.user), held);   // the stranger changed nothing
+  CHECK_EQ(h.repo.notes.notes(h.other), std::vector<Note>{});
 }
 
 TEST(pg_gym_notes_delete_closes_the_gap_and_reorder_replaces_the_whole_order) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgNotesRepository repo{wm::pgTestPool()};
-  fake::FakeGym twin;
-  for (NotesRepository* store : {static_cast<NotesRepository*>(&repo),
-                                 static_cast<NotesRepository*>(&twin.notes)}) {
-    store->saveNote(noteAt("note_pg00001", "A"), kNow);
-    store->saveNote(noteAt("note_pg00002", "B"), kNow);
-    store->saveNote(noteAt("note_pg00003", "C"), kNow);
-    store->saveNote(noteAt("note_pg00009", "Theirs", "", kOther), kNow);
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  const std::vector<std::string> keys = appendKeys(4);
+  GymDoor::requireOk(phoneNote(h, h.user, "note_pg00001", "A", "", keys[0]));
+  GymDoor::requireOk(phoneNote(h, h.user, "note_pg00002", "B", "", keys[1]));
+  GymDoor::requireOk(phoneNote(h, h.user, "note_pg00003", "C", "", keys[2]));
+  GymDoor::requireOk(phoneNote(h, h.other, "note_pg00009", "Theirs", "", keys[0]));
+
+  h.kill(h.user, "note", "note_pg00002");
+  h.kill(h.user, "note", "note_pg00002");
+  h.kill(h.user, "note", "note_pg00009");   // not theirs: nothing moves
+
+  CHECK_EQ(h.repo.notes.notes(h.user), (std::vector<Note>{Note{NoteId{"note_pg00001"}, h.user, "A", "", 0, kNow},
+                                                          Note{NoteId{"note_pg00003"}, h.user, "C", "", 1, kNow}}));
+  CHECK_EQ(titlesOf(h.repo.notes, h.other), std::vector<std::string>{"Theirs"});
+  GymDoor::requireOk(phoneNote(h, h.user, "note_pg00004", "D", "", keys[3]));
+  CHECK_EQ(h.repo.notes.notes(h.user).at(2), (Note{NoteId{"note_pg00004"}, h.user, "D", "", 2, kNow}));
+
+  // A swap of the first and last note: every moved note takes a new ord in one admission.
+  h.clock.now = kNow + 60'000;
+  const std::vector<std::string> swapped{"note_pg00004", "note_pg00003", "note_pg00001"};
+  std::vector<Json::Value> moves;
+  for (std::size_t at = 0; at < swapped.size(); ++at) {
+    Json::Value fields(Json::objectValue);
+    fields["ord"] = keys[at];
+    moves.push_back(GymDoor::delta("note", swapped[at], fields));
   }
+  GymDoor::requireOk(h.admit(h.user, moves));
 
-  repo.deleteNote(wm::UserId{kUser}, NoteId{"note_pg00002"});
-  repo.deleteNote(wm::UserId{kUser}, NoteId{"note_pg00002"});
-  repo.deleteNote(wm::UserId{kUser}, NoteId{"note_pg00009"});   // not theirs: nothing moves
-  twin.notes.deleteNote(wm::UserId{kUser}, NoteId{"note_pg00002"});
-  twin.notes.deleteNote(wm::UserId{kUser}, NoteId{"note_pg00009"});
-
-  CHECK_EQ(repo.notes(wm::UserId{kUser}), twin.notes.notes(wm::UserId{kUser}));
-  CHECK_EQ(titlesOf(repo), (std::vector<std::string>{"A", "C"}));
-  CHECK_EQ(repo.notes(wm::UserId{kUser})[1].position, 1);
-  CHECK_EQ(titlesOf(repo, kOther), std::vector<std::string>{"Theirs"});
-  CHECK_EQ(repo.saveNote(noteAt("note_pg00004", "D"), kNow).note->position, 2);
-  twin.notes.saveNote(noteAt("note_pg00004", "D"), kNow);
-
-  // A swap of the first and last row: the deferred unique lets both move in one transaction.
-  const std::vector<NoteId> swapped{NoteId{"note_pg00004"}, NoteId{"note_pg00003"}, NoteId{"note_pg00001"}};
-  const NotesOrderOutcome moved = repo.reorderNotes(wm::UserId{kUser}, swapped);
-  twin.notes.reorderNotes(wm::UserId{kUser}, swapped);
-
-  REQUIRE(moved.error == NotesOrderError::none);
-  CHECK_EQ(moved.notes, twin.notes.notes(wm::UserId{kUser}));
-  CHECK_EQ(titlesOf(repo), (std::vector<std::string>{"D", "C", "A"}));
-  for (const Note& held : moved.notes) CHECK_EQ(held.updatedAtMs, kNow);   // precedence re-dates nothing
-
-  for (const std::vector<NoteId>& bad : std::vector<std::vector<NoteId>>{
-           {NoteId{"note_pg00001"}, NoteId{"note_pg00003"}},
-           {NoteId{"note_pg00001"}, NoteId{"note_pg00001"}, NoteId{"note_pg00003"}},
-           {NoteId{"note_pg00001"}, NoteId{"note_pg00003"}, NoteId{"note_pg00009"}},
-           {}}) {
-    CHECK(repo.reorderNotes(wm::UserId{kUser}, bad).error == NotesOrderError::mismatch);
-    CHECK(twin.notes.reorderNotes(wm::UserId{kUser}, bad).error == NotesOrderError::mismatch);
-  }
-  CHECK_EQ(titlesOf(repo), (std::vector<std::string>{"D", "C", "A"}));
-  CHECK_EQ(titlesOf(repo, kOther), std::vector<std::string>{"Theirs"});
-  reset();
+  // Precedence re-dates nothing.
+  CHECK_EQ(h.repo.notes.notes(h.user), (std::vector<Note>{Note{NoteId{"note_pg00004"}, h.user, "D", "", 0, kNow},
+                                                          Note{NoteId{"note_pg00003"}, h.user, "C", "", 1, kNow},
+                                                          Note{NoteId{"note_pg00001"}, h.user, "A", "", 2, kNow}}));
+  CHECK_EQ(titlesOf(h.repo.notes, h.other), std::vector<std::string>{"Theirs"});
 }
 
-// Saves that overlap in flight, each on its own pooled connection: every distinct id lands at its
-// own position, and a twin of a NEW id whose first flight has not answered yet reads back the
-// stored row. Neither is a 500 — no client can tell a lost reply from a lost race.
-TEST(pg_gym_notes_overlapping_saves_queue_and_an_in_flight_twin_replays) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgNotesRepository repo{wm::pgTestPool()};
-  constexpr int kDistinct = 6;
-  constexpr int kTwins = 4;
-  std::vector<NoteWriteOutcome> answers(kDistinct + kTwins);
-  std::vector<std::string> thrown(kDistinct + kTwins);
-  std::latch together{kDistinct + kTwins};
-  std::vector<std::thread> racers;
-  for (int at = 0; at < kDistinct + kTwins; ++at)
-    racers.emplace_back([&, at] {
-      const Note note = at < kDistinct
-                            ? noteAt("note_pgrace0" + std::to_string(at), "Race " + std::to_string(at))
-                            : noteAt("note_pgtwin01", "Twin", "the same text, four times over");
-      together.arrive_and_wait();
-      try {
-        answers[at] = repo.saveNote(note, kNow);
-      } catch (const std::exception& failed) {
-        thrown[at] = failed.what();
-      }
-    });
-  for (std::thread& racer : racers) racer.join();
-
-  for (int at = 0; at < kDistinct + kTwins; ++at) {
-    CHECK_EQ(thrown[at], std::string(""));
-    CHECK(answers[at].error == NoteWriteError::none);
-    REQUIRE(answers[at].note.has_value());
+// A blank title the store holds reads as stored, on the list and on the insight's receipt: never a 500.
+TEST(pg_gym_a_blank_stored_note_title_reads_as_stored) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  CHECK_EQ(GymDoor::refusal(phoneNote(h, h.user, "note_pg00001", "Tone", "Blunt.", appendKeys(1)[0])), "");
+  REQUIRE(h.door.saveInsight(Note{NoteId{"note_pg00002"}, h.user, "Goal", "A 140 squat."}).note.has_value());
+  {
+    PgLease lease{*doortest::pool()};
+    pqxx::work txn{*lease};
+    txn.exec("UPDATE gym_notes SET title = '   ' WHERE id = 'note_pg00001'");
+    txn.exec("UPDATE gym_notes SET title = $1 WHERE id = 'note_pg00002'", pqxx::params{"\xEF\xBB\xBF"});   // U+FEFF
+    txn.exec("UPDATE gym_note_saves SET note = jsonb_set(note, '{title}', '\" \"') WHERE id = 'note_pg00002'");
+    txn.commit();
   }
-  for (int at = kDistinct; at < kDistinct + kTwins; ++at)
-    CHECK_EQ(*answers[at].note, *answers[kDistinct].note);   // one row, read back by all four
-  const std::vector<Note> held = repo.notes(wm::UserId{kUser});
-  REQUIRE_EQ(held.size(), static_cast<std::size_t>(kDistinct + 1));
-  for (int at = 0; at <= kDistinct; ++at) CHECK_EQ(held[at].position, at);
-  reset();
+
+  CHECK_EQ(h.repo.notes.notes(h.user),
+           (std::vector<Note>{Note{Stored{}, NoteId{"note_pg00001"}, h.user, "", "Blunt.", 0, kNow},
+                              Note{Stored{}, NoteId{"note_pg00002"}, h.user, "\xEF\xBB\xBF", "A 140 squat.", 1, kNow}}));
+  CHECK_EQ(h.repo.notes.noteSave(h.user, NoteId{"note_pg00002"}),
+           std::optional<Note>(Note{Stored{}, NoteId{"note_pg00002"}, h.user, "", "A 140 squat.", 1, kNow}));
 }
 
 TEST(pg_gym_notes_cascade_with_the_account) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
-  PgNotesRepository repo{wm::pgTestPool()};
-  repo.saveNote(noteAt("note_pg00001", "Tone", "Blunt."), kNow);
-  repo.saveNote(noteAt("note_pg00009", "Theirs", "", kOther), kNow);
-
+  PgNotesRepository repo{pgTestPool()};
   {
-    wm::PgLease conn{*wm::pgTestPool()};
+    PgLease conn{*pgTestPool()};
     pqxx::work txn{*conn};
-    txn.exec_params("DELETE FROM users WHERE id = $1::uuid", kUser);
+    txn.exec("INSERT INTO gym_notes (id, user_id, position, title, body) VALUES "
+             "('note_pg00001', $1::uuid, 0, 'Tone', 'Blunt.'), ('note_pg00009', $2::uuid, 0, 'Theirs', '')",
+             pqxx::params{kUser, kOther});
+    txn.exec("DELETE FROM users WHERE id = $1::uuid", pqxx::params{kUser});
     txn.commit();
   }
-  CHECK_EQ(repo.notes(wm::UserId{kUser}), std::vector<Note>{});
-  CHECK_EQ(titlesOf(repo, kOther), std::vector<std::string>{"Theirs"});
+  CHECK_EQ(repo.notes(UserId{kUser}), std::vector<Note>{});
+  CHECK_EQ(titlesOf(repo, UserId{kOther}), std::vector<std::string>{"Theirs"});
   reset();
 }
 
-// The columns carry the same three bounds the entity does, written against raw SQL because the
-// entity can never send these.
+// The columns carry the entity's three bounds, written as raw SQL because the entity can never send these.
 TEST(pg_gym_notes_columns_refuse_what_the_domain_refuses) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
@@ -216,7 +190,7 @@ TEST(pg_gym_notes_columns_refuse_what_the_domain_refuses) {
   for (const std::string& statement : refused) {
     bool stopped = false;
     try {
-      wm::PgLease conn{*wm::pgTestPool()};
+      PgLease conn{*pgTestPool()};
       pqxx::work txn{*conn};
       txn.exec(statement);
       txn.commit();
@@ -231,79 +205,85 @@ TEST(pg_gym_notes_columns_refuse_what_the_domain_refuses) {
   std::string fiveHundred;
   for (int at = 0; at < 250; ++at) fiveHundred += "é";
   {
-    wm::PgLease conn{*wm::pgTestPool()};
+    PgLease conn{*pgTestPool()};
     pqxx::work txn{*conn};
-    txn.exec_params("INSERT INTO gym_notes (id, user_id, position, title, body) "
-                    "VALUES ('note_pgok0001', $1::uuid, 0, $2, $3)",
-                    kUser, sixty, fiveHundred);
+    txn.exec("INSERT INTO gym_notes (id, user_id, position, title, body) "
+             "VALUES ('note_pgok0001', $1::uuid, 0, $2, $3)",
+             pqxx::params{kUser, sixty, fiveHundred});
     txn.commit();
   }
-  PgNotesRepository repo{wm::pgTestPool()};
-  REQUIRE_EQ(repo.notes(wm::UserId{kUser}).size(), std::size_t{1});
-  CHECK_EQ(repo.notes(wm::UserId{kUser})[0].title, sixty);
-  CHECK_EQ(repo.notes(wm::UserId{kUser})[0].body, fiveHundred);
+  PgNotesRepository repo{pgTestPool()};
+  REQUIRE_EQ(repo.notes(UserId{kUser}).size(), std::size_t{1});
+  CHECK_EQ(repo.notes(UserId{kUser})[0].title, sixty);
+  CHECK_EQ(repo.notes(UserId{kUser})[0].body, fiveHundred);
   reset();
 }
 
 TEST(pg_gym_insight_save_survives_lost_ack_user_edit_and_delete_without_overwrite_or_restore) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgNotesRepository repo{wm::pgTestPool()};
-  fake::FakeGym twin;
-  for (NotesRepository* store : {static_cast<NotesRepository*>(&repo), static_cast<NotesRepository*>(&twin.notes)}) {
-    const auto hand = store->saveNote(noteAt("note_hand001", "Priority", "Keep this first."), kNow);
-    REQUIRE(hand.note.has_value());
-    const auto input = noteAt("note_coach01", "Schedule", "I train on Monday and Thursday.");
-    const auto first = store->saveInsight(input, kNow + 1);
-    REQUIRE(first.note.has_value());
-    CHECK_EQ(first.note->position, 1);
-    CHECK_EQ(store->saveInsight(input, kNow + 2).note, first.note);
-    CHECK_EQ(store->notes(wm::UserId{kUser}).size(), 2u);
-    CHECK_FALSE(store->noteSave(wm::UserId{kOther}, input.id).has_value());
-    CHECK(store->saveInsight(noteAt(input.id.str(), input.title, input.body, kOther), kNow + 3).error == NoteWriteError::idTaken);
-    store->saveNote(noteAt(input.id.str(), "Schedule", "I now train on Tuesday."), kNow + 4);
-    CHECK_EQ(store->saveInsight(input, kNow + 5).note, first.note);
-    CHECK_EQ(store->notes(wm::UserId{kUser})[1].body, std::string("I now train on Tuesday."));
-    store->deleteNote(wm::UserId{kUser}, input.id);
-    CHECK_EQ(store->saveInsight(input, kNow + 6).note, first.note);
-    CHECK_EQ(store->noteSave(wm::UserId{kUser}, input.id), first.note);
-    CHECK_EQ(store->notes(wm::UserId{kUser}), std::vector<Note>{*hand.note});
-    CHECK(store->saveInsight(noteAt("note_hand001", "Changed", "Not allowed"), kNow + 7).error == NoteWriteError::idTaken);
-    CHECK_EQ(store->notes(wm::UserId{kUser}), std::vector<Note>{*hand.note});
-  }
-  reset();
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  GymDoor::requireOk(phoneNote(h, h.user, "note_hand001", "Priority", "Keep this first.", appendKeys(1)[0]));
+  const Note hand{NoteId{"note_hand001"}, h.user, "Priority", "Keep this first.", 0, kNow};
+  const Note input{NoteId{"note_coach01"}, h.user, "Schedule", "I train on Monday and Thursday."};
+
+  h.clock.now = kNow + 1;
+  const NoteWriteOutcome first = h.door.saveInsight(input);
+  REQUIRE(first.note.has_value());
+  CHECK_EQ(*first.note, (Note{input.id, h.user, input.title, input.body, 1, kNow + 1}));
+  h.clock.now = kNow + 2;
+  CHECK_EQ(h.door.saveInsight(input).note, first.note);
+  CHECK_EQ(h.repo.notes.notes(h.user), (std::vector<Note>{hand, *first.note}));
+  CHECK_FALSE(h.repo.notes.noteSave(h.other, input.id).has_value());
+  h.clock.now = kNow + 3;
+  CHECK(h.door.saveInsight(Note{input.id, h.other, input.title, input.body}).error == NoteWriteError::idTaken);
+  h.clock.now = kNow + 4;
+  GymDoor::requireOk(phoneNote(h, h.user, input.id.str(), "Schedule", "I now train on Tuesday."));
+  h.clock.now = kNow + 5;
+  CHECK_EQ(h.door.saveInsight(input).note, first.note);
+  CHECK_EQ(h.repo.notes.notes(h.user),
+           (std::vector<Note>{hand, Note{input.id, h.user, "Schedule", "I now train on Tuesday.", 1, kNow + 4}}));
+  h.kill(h.user, "note", input.id.str());
+  h.clock.now = kNow + 6;
+  CHECK_EQ(h.door.saveInsight(input).note, first.note);
+  CHECK_EQ(h.repo.notes.noteSave(h.user, input.id), first.note);
+  CHECK_EQ(h.repo.notes.notes(h.user), std::vector<Note>{hand});
+  h.clock.now = kNow + 7;
+  CHECK(h.door.saveInsight(Note{NoteId{"note_hand001"}, h.user, "Changed", "Not allowed"}).error ==
+        NoteWriteError::idTaken);
+  CHECK_EQ(h.repo.notes.notes(h.user), std::vector<Note>{hand});
 }
 
 TEST(pg_gym_insight_exact_text_deduplicates_at_capacity_and_concurrent_saves_append_once) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgNotesRepository repo{wm::pgTestPool()};
-  const auto input = noteAt("note_race001", "Schedule", "I train on Monday.");
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  const Note input{NoteId{"note_race001"}, h.user, "Schedule", "I train on Monday."};
   std::latch ready{2};
   std::latch start{1};
   NoteWriteOutcome a{std::nullopt, NoteWriteError::none}, b{std::nullopt, NoteWriteError::none};
   std::exception_ptr firstError, secondError;
   std::thread first([&] {
     ready.count_down(); start.wait();
-    try { a = repo.saveInsight(input, kNow); } catch (...) { firstError = std::current_exception(); }
+    try { a = h.door.saveInsight(input); } catch (...) { firstError = std::current_exception(); }
   });
   std::thread second([&] {
     ready.count_down(); start.wait();
-    try { b = repo.saveInsight(input, kNow + 1); } catch (...) { secondError = std::current_exception(); }
+    try { b = h.door.saveInsight(input); } catch (...) { secondError = std::current_exception(); }
   });
   ready.wait(); start.count_down(); first.join(); second.join();
   REQUIRE(!firstError);
   REQUIRE(!secondError);
   REQUIRE(a.note.has_value());
+  CHECK_EQ(*a.note, (Note{input.id, h.user, input.title, input.body, 0, kNow}));
   CHECK_EQ(a.note, b.note);
-  CHECK_EQ(repo.notes(wm::UserId{kUser}), std::vector<Note>{*a.note});
+  CHECK_EQ(h.repo.notes.notes(h.user), std::vector<Note>{*a.note});
   for (int at = 1; at < 10; ++at)
-    REQUIRE(repo.saveNote(noteAt("note_full00" + std::to_string(at), "Title " + std::to_string(at)), kNow).note.has_value());
-  const auto duplicate = repo.saveInsight(noteAt("note_dupe001", input.title, input.body), kNow + 2);
+    REQUIRE(h.door.saveInsight(Note{NoteId{"note_full00" + std::to_string(at)}, h.user, "Title " + std::to_string(at), ""})
+                .note.has_value());
+  const NoteWriteOutcome duplicate = h.door.saveInsight(Note{NoteId{"note_dupe001"}, h.user, input.title, input.body});
   CHECK_EQ(duplicate.note, a.note);
-  CHECK_EQ(repo.notes(wm::UserId{kUser}).size(), 10u);
-  CHECK(repo.saveInsight(noteAt("note_new0001", "New insight", "Different."), kNow).error == NoteWriteError::full);
-  CHECK_FALSE(repo.noteSave(wm::UserId{kUser}, NoteId{"note_new0001"}).has_value());
-  CHECK(repo.saveInsight(noteAt(input.id.str(), "Different", "Changed payload."), kNow).error == NoteWriteError::idTaken);
-  reset();
+  CHECK_EQ(h.repo.notes.notes(h.user).size(), 10u);
+  CHECK(h.door.saveInsight(Note{NoteId{"note_new0001"}, h.user, "New insight", "Different."}).error ==
+        NoteWriteError::full);
+  CHECK_FALSE(h.repo.notes.noteSave(h.user, NoteId{"note_new0001"}).has_value());
+  CHECK(h.door.saveInsight(Note{input.id, h.user, "Different", "Changed payload."}).error == NoteWriteError::idTaken);
 }

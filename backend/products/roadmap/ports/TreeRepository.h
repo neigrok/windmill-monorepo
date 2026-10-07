@@ -1,7 +1,7 @@
 #pragma once
 
-#include "platform/domain/Access.h"
-#include "platform/domain/Crdt.h"
+#include "products/roadmap/domain/Access.h"
+#include "products/roadmap/domain/Crdt.h"
 #include "products/roadmap/domain/GraphState.h"
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Legend.h"

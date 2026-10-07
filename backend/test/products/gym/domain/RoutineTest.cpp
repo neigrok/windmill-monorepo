@@ -161,6 +161,28 @@ TEST(routine_construction_guards_the_id_the_name_and_the_position) {
   }));
 }
 
+// A write refuses a name blank by admission's own test; a read builds the routine the store holds.
+TEST(routine_write_refuses_a_blank_name_and_a_stored_one_reads_as_it_trims) {
+  const auto written = [](const std::string& name) {
+    return refusal([&] { Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, name, 0, {bench(1)}}; });
+  };
+  CHECK_EQ(written(""), std::string("a routine needs a name"));
+  CHECK_EQ(written(" \t "), std::string("a routine needs a name"));
+  CHECK_EQ(written("\xE2\x80\x83\xEF\xBB\xBF"), std::string("a routine needs a name"));   // U+2003, U+FEFF
+
+  const Routine stored{Stored{}, RoutineId{"rt_00000001"}, wm::UserId{"u1"}, "   ", 0, {bench(1)},
+                       std::optional<std::uint64_t>(1'700'000'000'000), 3};
+  CHECK_EQ(stored.id, RoutineId{"rt_00000001"});
+  CHECK_EQ(stored.user, wm::UserId{"u1"});
+  CHECK_EQ(stored.name, std::string(""));
+  CHECK_EQ(stored.position, 0);
+  CHECK_EQ(stored.entries, (std::vector<RoutineEntry>{bench(1)}));
+  CHECK_EQ(stored.lastTrainedAtMs, std::optional<std::uint64_t>(1'700'000'000'000));
+  CHECK_EQ(stored.revision, 3);
+  CHECK_EQ(refusal([] { Routine{Stored{}, RoutineId{"rt_00000001"}, wm::UserId{"u1"}, "   ", 0, {}}; }),
+           std::string("a routine needs at least one movement"));
+}
+
 TEST(routine_construction_refuses_a_document_with_no_entries) {
   CHECK(rejects([] { pushA({}); }));
 }
@@ -195,44 +217,3 @@ TEST(routine_holds_the_same_movement_twice_at_two_positions) {
   CHECK_EQ(routine.entries[1].sets, straight(3, 12, 60.0));
 }
 
-TEST(snapshot_copies_the_name_and_every_line_in_order) {
-  Routine routine = pushA({bench(1, straight(5, 5, 82.5), 180), squat(2)});
-
-  PlanSnapshot snapshot = snapshotOf(routine);
-
-  CHECK_EQ(snapshot,
-           (PlanSnapshot{"Push A",
-                         {PlanEntry{ExerciseId{"bench-press"}, straight(5, 5, 82.5), 180},
-                          PlanEntry{ExerciseId{"back-squat"}, straight(3, 8, std::nullopt),
-                                    std::nullopt}}}));
-}
-
-TEST(snapshot_copies_a_scheme_set_for_set) {
-  Routine routine = pushA({RoutineEntry{1, ExerciseId{"back-squat"}, ramp(), 180}});
-
-  PlanSnapshot snapshot = snapshotOf(routine);
-
-  CHECK_EQ(snapshot,
-           (PlanSnapshot{"Push A", {PlanEntry{ExerciseId{"back-squat"}, ramp(), 180}}}));
-}
-
-TEST(snapshot_copies_an_open_line_as_naming_nothing) {
-  Routine routine = pushA({RoutineEntry{1, ExerciseId{"barbell-row"}, {}, std::nullopt}});
-
-  PlanSnapshot snapshot = snapshotOf(routine);
-
-  CHECK_EQ(snapshot,
-           (PlanSnapshot{"Push A", {PlanEntry{ExerciseId{"barbell-row"}, {}, std::nullopt}}}));
-}
-
-TEST(snapshot_keeps_no_link_to_the_routine_it_was_taken_from) {
-  Routine routine = pushA({bench(1)});
-
-  PlanSnapshot snapshot = snapshotOf(routine);
-  Routine renamed{routine.id, routine.user, "Push A (old)", 3, routine.entries};
-
-  CHECK_EQ(snapshot, snapshotOf(pushA({bench(1)})));
-  CHECK_EQ(snapshot.routineName, std::string("Push A"));
-  CHECK_EQ(snapshotOf(renamed).routineName, std::string("Push A (old)"));
-  CHECK_EQ(snapshotOf(renamed).entries, snapshot.entries);
-}

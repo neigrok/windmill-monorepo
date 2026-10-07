@@ -8,8 +8,12 @@ import SyncTesting
 import Testing
 
 struct CorpusTests {
-  static let metadata = try! Corpus.files().filter { $0.path == "gym/metadata.json" }.flatMap { try Corpus.vectors(in: $0) }
-    .filter { $0.expect["state"] != nil }
+  // The registers R118 has the server author, which a v4 registry does not declare, beside its `routineCreation` type.
+  static let serverAuthored: [String: Set<String>] = ["routine": ["revision", "createdEntries"],
+    "proposal": ["baseRevision", "baseName", "changeCount"], "note": ["updatedAt"]]
+  // gym/admit.json's R118 admissions that write: each serves its input state, then the state it admitted.
+  static let metadata = try! Corpus.files().filter { $0.path == "gym/admit.json" }.flatMap { try Corpus.vectors(in: $0) }
+    .filter { $0.name.hasPrefix("R118") && $0.expect["result"]?["s"] == "ok" && $0.expect["state"] != $0.input["state"] }
 
   // Once no entry touches a record, its confirmed row reads as the engine's own reader hands the record over.
   @Test func aConfirmedRowReadsAsTheEngineReaderHandsItOver() throws {
@@ -25,29 +29,42 @@ struct CorpusTests {
     #expect(rows.map { Record(confirmed: $0, registry: registry) } == read)
     #expect(read.map { $0.map { "\($0.type) \($0.id) \($0.isVisible)" } } == ["board b_0000000a true", "card card0001 true"])
   }
+  @Test func metadataFixturesWriteEveryServerAuthoredRegister() throws {
+    var written: Set<String> = []
+    for vector in Self.metadata {
+      let account = try vector.input.member("origin").member("account").asString()
+      let key = ScopeKey(ScopeRef.product("gym"), account: account)!
+      let initial = try ServerState(json: vector.input.member("state"))
+      for (record, row) in try ServerState(json: vector.expect.member("state")).rows[key] ?? [:] where initial.rows[key]?[record] != row {
+        if record.type == "routineCreation" { written.insert("routineCreation") }
+        for field in Self.serverAuthored[record.type] ?? [] where row.lattice.fields[field] != nil { written.insert("\(record.type).\(field)") }
+      }
+    }
+    #expect(written == ["routine.revision", "routine.createdEntries", "proposal.baseRevision", "proposal.baseName",
+      "proposal.changeCount", "note.updatedAt", "routineCreation"])
+  }
   @Test(arguments: metadata, [4, 5])
   func metadataArrivesThroughOrdinaryPullsAndSurvivesSQLiteRestart(_ vector: CorpusVector, _ version: Int) throws {
     let v5 = try Registry(json: Corpus.registryFile("gym"))
     var json = try Corpus.registryFile("gym").asObject()
     json["version"] = JSON(version)
     if version == 4 {
-      let fields: [String: Set<String>] = ["routine": ["revision", "createdEntries"],
-        "proposal": ["baseRevision", "baseName", "changeCount"], "note": ["updatedAt"]]
       json["types"] = .array(try json.member("types").asArray().filter { $0["type"] != "routineCreation" }.map { value in
         var type = try value.asObject()
         var declared = try type.member("fields").asObject()
-        for field in fields[try type.member("type").asString()] ?? [] { declared[field] = nil }
+        for field in Self.serverAuthored[try type.member("type").asString()] ?? [] { declared[field] = nil }
         type["fields"] = .object(declared)
         return .object(type)
       })
     }
     let registry = try Registry(json: .object(json))
-    let account = try vector.input.member("account").asString(), scope = ScopeRef.product("gym")
+    let account = try vector.input.member("origin").member("account").asString(), scope = ScopeRef.product("gym")
     let key = ScopeKey(scope, account: account)!, replica = "rp_00000000000000000000000000000001"
     let initial = try ServerState(json: vector.input.member("state"))
-    let upgraded = try ServerState(json: vector.expect.member("state"))
+    let admitted = try ServerState(json: vector.expect.member("state"))
     var server = ModelServer(registry: v5, rules: MetadataFeedRules(), state: initial)
-    var instance = Instance(actor: try Stamp.Actor(ClientSteps.actor), deviceNow: try vector.input.member("M").asInteger(), appVersion: "\(version)")
+    var instance = Instance(actor: try Stamp.Actor(ClientSteps.actor), deviceNow: try vector.input.member("serverNow").asInteger(),
+      appVersion: "\(version)")
     let identities = try QueuedIdentities([:])
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("sync-metadata-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -71,7 +88,7 @@ struct CorpusTests {
     let before = try store.read { try $0.device(rows: true).json }
     store = try Store(path: path, registry: registry)
     #expect(try store.read { try $0.device(rows: true).json } == before)
-    server.restore(upgraded)
+    server.restore(admitted)
     let request = try #require(try store.pullPlan([scope], replica: replica)?.request)
     let cursor = try #require(request.json.member("scopes").asArray()[0]["cursor"])
     #expect(try Cursor(decoding: cursor.asString())?.mode == .live)
@@ -82,20 +99,21 @@ struct CorpusTests {
     let loaded = try store.read { try $0.device(rows: true).activeReplica }
     #expect(loaded.id == replica)
     #expect(loaded.meta.serverEpoch == initial.epoch)
-    #expect(upgraded.epoch == initial.epoch)
-    #expect(loaded.rows(scope).all == (upgraded.rows[key] ?? [:]).values.sorted { $0.key < $1.key })
+    #expect(admitted.epoch == initial.epoch)
+    #expect(loaded.rows(scope).all == (admitted.rows[key] ?? [:]).values.sorted { $0.key < $1.key })
     #expect(loaded.spentIDs(scope) == [:])
-    #expect(loaded.cursor(scope)?.digest == (upgraded.scopes[key]?.digest ?? .zero))
+    #expect(loaded.cursor(scope)?.digest == (admitted.scopes[key]?.digest ?? .zero))
     #expect(loaded.outbox == [])
     if version == 5 {
-      let unknown = upgraded.rows[key]?.values.filter { $0.key.type == "routine" && $0.lattice.fields["createdEntries"] == nil } ?? []
-      #expect(unknown.allSatisfy { loaded.rows(scope).row($0.key)?.lattice.fields["createdEntries"] == nil })
-      for row in loaded.rows(scope).all where row.key.type == "routineCreation" {
-        #expect(Record(confirmed: row, registry: registry).values["snapshot"] == upgraded.rows[key]?[row.key]?.lattice.fields["snapshot"]?.value)
+      for row in loaded.rows(scope).all {
+        let fields: Set<String> = row.key.type == "routineCreation" ? ["snapshot"] : Self.serverAuthored[row.key.type] ?? []
+        for field in fields {
+          #expect(Record(confirmed: row, registry: registry).values[field] == admitted.rows[key]?[row.key]?.lattice.fields[field]?.value)
+        }
       }
     }
   }
 }
 
-// Feed the frozen migration snapshots without running gym's time-dependent beforePull command.
+// Serve each fixture state as it stands, without gym's time-dependent beforePull command.
 struct MetadataFeedRules: ServerRules {}

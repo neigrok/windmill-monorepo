@@ -14,11 +14,11 @@ import { holdsNul, widestAloneBytes } from '../core/wire.js';
 import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
 import { drawn, foldDelta, stored, visibleCount } from './views.js';
 
-// §7.1's failures before the transaction commits: `not-writable`, a replica whose state forbids
-// writes, or `malformed`, a programming error. The in-memory reference has no store failure.
+// §7.1's three failures before the transaction commits: `not-writable`, `malformed` (a programming
+// error) and `store`, the device's store failing to commit, which only the browser engine raises.
 export class CommitError extends Error {
-  constructor(message, kind = 'malformed') {
-    super(message);
+  constructor(message, kind = 'malformed', options = undefined) {
+    super(message, options);
     this.kind = kind;
   }
 }

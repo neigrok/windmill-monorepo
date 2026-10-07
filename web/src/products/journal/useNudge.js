@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { journalApi } from './journalApi.js';
+import { corpus } from './pages.js';
 import { nextNudge } from './rhythm.js';
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -31,10 +32,9 @@ export function useNudge(account = null) {
   // The account's pages and nothing else: the rhythm reads each page's last-write instant, and a page
   // held on the device carries no `updatedAt`.
   const enable = useCallback(async () => {
-    const pages = await journalApi.allPages().catch(() => []);
-    const { nextDueAt, slotDay } = nextNudge(pages, Date.now());
+    const { nextDueAt, slotDay } = nextNudge(corpus({ account }).pages, Date.now());
     await apply({ enabled: true, nextDueAt, slotDay });
-  }, [apply]);
+  }, [account, apply]);
 
   const disable = useCallback(() => apply({ enabled: false }), [apply]);
   const setChannel = useCallback((channel) => apply({ channel }), [apply]);

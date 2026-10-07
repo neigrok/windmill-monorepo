@@ -3,13 +3,8 @@ package works.windmill.app
 import android.content.Context
 import java.io.File
 import java.io.IOException
-import works.windmill.gym.store.DeviceCopy
-import works.windmill.gym.store.LocalBodyweight
-import works.windmill.gym.store.LocalClaimConsent
-import works.windmill.gym.store.LocalCoach
-import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
-import works.windmill.gym.store.SetQueue
+import works.windmill.gym.coach.LocalCoach
+import works.windmill.gym.store.WorkoutControls
 import works.windmill.platform.telemetry.Telemetry
 
 class OnboardingLaunch(context: Context, private val telemetry: Telemetry) {
@@ -32,10 +27,7 @@ class OnboardingLaunch(context: Context, private val telemetry: Telemetry) {
                 telemetry.failure("onboarding_storage", IOException("Onboarding flag unavailable"))
             }
             val files = context.filesDir.listFiles() ?: throw IOException()
-            val storageNames = setOf(
-                DeviceCopy.fileName, LocalBodyweight.fileName, LocalClaimConsent.fileName,
-                LocalCoach.fileName, LocalLog.fileName, LocalPreferences.fileName, SetQueue.fileName,
-            )
+            val storageNames = setOf(LocalCoach.fileName, WorkoutControls.fileName)
             val storedGym = files.any { file ->
                 file.name == "coach-photos" || storageNames.any { name ->
                     file.name == name || file.name.startsWith("$name.")

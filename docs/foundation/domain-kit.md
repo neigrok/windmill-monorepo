@@ -2001,8 +2001,8 @@ What the kit guarantees:
 
 Illustrative. The canon is [journal](../design/journal/journal.md),
 [scales](../design/journal/scales.md), [first run](../design/journal/onboarding.md) and engine A.3.
-iOS uses the engine; web uses the REST server-origin door over the same adopted rows. Journal has
-no Android surface.
+Web and iOS write pages through the engine, over the same adopted rows. Journal has no Android
+surface.
 
 ### C.1 The document and its command
 
@@ -2050,7 +2050,7 @@ cannot mint a document stamp below the one already observed.
 `Plan(running:predicting:)` carries the command and a prediction for the page's full body, mood,
 energy, source and `documentStamp`. The prediction names no text base and requests no diff3 merge;
 ordinary deltas never write the page's server-written fields. Superseded text heads and REST
-metadata follow A.3 and the journal migration appendix. When the command resolves the editor
+metadata follow A.3 and engine Appendix D. When the command resolves the editor
 reads the winner from the view; it preserves any input typed since that command was committed.
 A save of an older or equal document stamp may resolve without changing the account's page.
 
@@ -2101,9 +2101,7 @@ entity does not acquire fields for those features merely because web can derive 
 ### C.3 Joining work made signed out
 
 Sign-in follows engine §7.10 and the shell's Add/Discard rule. A room whose account already holds
-pages asks before adoption on web and native; an empty account adopts silently. Web's silent
-auto-claim into an occupied account is a known defect owed a separate web change, recorded in
-journal ARCHITECTURE. The UI names the page count from `anonCount.page`; the decision also covers
+pages asks before adoption on web and native; an empty account adopts silently. The UI names the page count from `anonCount.page`; the decision also covers
 `journalState` entries, and an unanswered question sends nothing. Work belonging to another
 account never joins. The editor retains the input and its first-run state while the shell
 completes this flow.

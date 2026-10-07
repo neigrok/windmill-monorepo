@@ -38,10 +38,4 @@ struct Bodyweight {
 // key and a range bound alike.
 bool wellFormedLocalDate(std::string_view text);
 
-// Whether `dateLocal` (well-formed) lies more than one calendar day past the UTC day `nowMs` falls
-// in. The server's forecast gate: a lifter's local today runs at most a day ahead of UTC, so a day
-// past UTC tomorrow was nobody's today and is refused, while no honest local today ever is. Days
-// written YYYY-MM-DD order as text.
-bool beyondTomorrowUtc(std::string_view dateLocal, std::uint64_t nowMs);
-
 }

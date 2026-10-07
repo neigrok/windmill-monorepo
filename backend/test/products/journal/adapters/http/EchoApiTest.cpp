@@ -39,7 +39,6 @@ struct Harness {
   FakeAiUsageRepository usage;
   Entitlements entitlements{subscriptions, usage};
   FakeJournalRepository pages;
-  PageService pageService{pages};
   std::shared_ptr<EchoSweep> sweep;
   std::shared_ptr<EchoExplainer> explainer;
   std::shared_ptr<EchoApi> api;
@@ -48,7 +47,7 @@ struct Harness {
       : sweep(std::make_shared<EchoSweep>(*echoes, segmenter, embedder, curator, *clock,
                                           entitlements, SelectionRules{}, SweepBudget{})),
         explainer(std::make_shared<EchoExplainer>(*echoes, segmenter, embedder, curator,
-                                                  pageService)),
+                                                  pages)),
         api(std::make_shared<EchoApi>(echoes, sweep, explainer, auth,
                                       std::shared_ptr<Entitlements>(&entitlements, [](Entitlements*) {}),
                                       std::move(adminToken))) {}
@@ -744,8 +743,9 @@ const std::string kExplainTonight = "i want to learn the rust compiler properly"
 const std::string kExplainJanuary = "i want to learn the rust compiler properly this year";
 
 void plantForExplain(Harness& h, const UserId& user) {
-  h.pageService.write(Page{user, ld(kExplainToday), kExplainTonight, std::nullopt, std::nullopt,
-                           Source::typed, Hlc{h.clock->now, 0, "device"}, h.clock->now});
+  h.pages.byKey.emplace(FakeJournalRepository::key(user, ld(kExplainToday)),
+                       Page{user, ld(kExplainToday), kExplainTonight, std::nullopt, std::nullopt,
+                            Source::typed, Hlc{h.clock->now, 0, "device"}, h.clock->now});
   h.echoes->plantPage(user, ld("2026-01-05"), kExplainJanuary);
   h.echoes->plantSpan(user, ld("2026-01-05"), 11, kExplainJanuary,
                       h.embedder.embed({kExplainJanuary}).front());

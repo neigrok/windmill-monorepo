@@ -7,7 +7,7 @@ import SyncReplica
 // product reads it.
 
 public enum CorpusRole: String, Sendable, CaseIterable {
-  case all, server, client, cppOnly
+  case all, server, client
 }
 
 public struct CorpusFile: Sendable, Hashable, CustomStringConvertible {
@@ -51,8 +51,8 @@ public enum Corpus {
     ("join/", .all), ("derive/", .all), ("identity/seeded.json", .all), ("digest/", .all), ("protocol/", .all),
     ("identity/table.json", .server), ("admit/", .server), ("text/", .server), ("envelope/credentials.json", .server),
     ("push/serve.json", .server), ("pull/serve.json", .server), ("pull/hello.json", .server), ("live/death.json", .server),
-    ("machine/scope.json", .server), ("gym/admit.json", .server), ("gym/backfill.json", .cppOnly), ("gym/metadata.json", .cppOnly),
-    ("journal/admit.json", .server), ("journal/revisions.json", .server), ("journal/backfill.json", .cppOnly),
+    ("machine/scope.json", .server), ("gym/admit.json", .server),
+    ("journal/admit.json", .server), ("journal/revisions.json", .server),
     ("journal/client.json", .client), ("journal/content-clock.json", .client), ("journal/claim-edit.json", .client),
     ("hlc/offset.json", .client), ("hlc/jump.json", .client), ("fracindex/", .client), ("view/", .client), ("commit/", .client),
     ("hold/", .client), ("refusal/", .client), ("write/", .client), ("lineage/", .client),

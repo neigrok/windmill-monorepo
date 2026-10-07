@@ -4,7 +4,7 @@ import {
   DEFAULT_LAYOUT, FALLBACK_LAYOUT, LAYOUTS, fallbackLayoutEngine, layoutNameFrom, layoutTree, loadLayoutEngine,
   pageLayoutEngine,
 } from '../../../../src/products/roadmap/layout/index.js';
-import { LayoutEngine } from '../../../../src/products/roadmap/model/ports.js';
+import { LayoutEngine } from '../../../../src/products/roadmap/layout/LayoutEngine.js';
 import { RadialLayoutEngine } from '../../../../src/products/roadmap/layout/RadialLayoutEngine.js';
 import { BubbleLayoutEngine } from '../../../../src/products/roadmap/layout/BubbleLayoutEngine.js';
 import { loadDogfoodTree } from '../fixtures/dogfoodTree.js';

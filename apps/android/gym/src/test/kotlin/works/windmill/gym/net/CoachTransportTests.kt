@@ -1,5 +1,9 @@
 package works.windmill.gym.net
 
+import works.windmill.gym.coach.AskQuestion
+import works.windmill.gym.coach.AskGeneration
+import works.windmill.gym.coach.CoachAttachment
+import works.windmill.gym.coach.CoachResult
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
@@ -25,7 +29,7 @@ class CoachTransportTests {
         val latest = initial.copy(answer = "Café — fuller answer 🏋️", revision = 3)
         val done = latest.copy(status = "completed", revision = 4)
         val input = Buffer().writeUtf8(": keepalive\r\n\r\n" + listOf(initial, latest, initial.copy(answer = "stale", revision = 2), latest, done).joinToString("") {
-            "event: snapshot\r\nid: ${it.id}:${it.revision}\r\ndata: ${WindmillJson.encodeToString(CoachSnapshotOut.serializer(), CoachSnapshotOut("thread-a", it))}\r\n\r\n"
+            "event: snapshot\r\nid: ${it.id}:${it.revision}\r\ndata: ${WindmillJson.encodeToString(CoachSnapshotResponse.serializer(), CoachSnapshotResponse("thread-a", it))}\r\n\r\n"
         })
         val source = object : Source {
             override fun read(sink: Buffer, byteCount: Long) = input.read(sink, minOf(1, byteCount))
@@ -41,7 +45,7 @@ class CoachTransportTests {
     fun eofRetainsThePartialSnapshotAndNeverInventsCompletion() {
         val partial = AskGeneration("generation-a", "request-a", "Question", "running", "Keep this", revision = 2)
         val seen = mutableListOf<AskGeneration>()
-        val body = Buffer().writeUtf8("event: snapshot\ndata: ${WindmillJson.encodeToString(CoachSnapshotOut.serializer(), CoachSnapshotOut("thread-a", partial))}\n\n")
+        val body = Buffer().writeUtf8("event: snapshot\ndata: ${WindmillJson.encodeToString(CoachSnapshotResponse.serializer(), CoachSnapshotResponse("thread-a", partial))}\n\n")
         assertThrows(IOException::class.java) { CoachEvents.read(body, "thread-a", "request-a", seen::add) }
         assertEquals(listOf(partial), seen)
     }
@@ -49,7 +53,7 @@ class CoachTransportTests {
     @Test
     fun aForeignSnapshotCannotBeDisplayedAndARefusalKeepsItsCode() {
         val other = AskGeneration("generation-a", "request-other", "Question", "completed", "Private", revision = 1)
-        val body = Buffer().writeUtf8("event: snapshot\ndata: ${WindmillJson.encodeToString(CoachSnapshotOut.serializer(), CoachSnapshotOut("thread-a", other))}\n\n")
+        val body = Buffer().writeUtf8("event: snapshot\ndata: ${WindmillJson.encodeToString(CoachSnapshotResponse.serializer(), CoachSnapshotResponse("thread-a", other))}\n\n")
         assertThrows(WindmillApiException.Malformed::class.java) { CoachEvents.read(body, "thread-a", "request-a") { fail("Foreign snapshot") } }
         val refusal = Buffer().writeUtf8("event: error\ndata: {\"error\":\"Later\",\"status\":429,\"code\":\"ask-daily-limit\"}\n\n")
         val error = assertThrows(WindmillApiException.Refused::class.java) { CoachEvents.read(refusal, "thread-a", "request-a") { fail("No generation") } }
@@ -65,8 +69,8 @@ class CoachTransportTests {
         try {
             val partial = AskGeneration("generation-a", "request-a", "Question", "running", "First words", revision = 1)
             val done = partial.copy(status = "stopped", revision = 2)
-            val first = "event: snapshot\ndata: ${WindmillJson.encodeToString(CoachSnapshotOut.serializer(), CoachSnapshotOut("thread-a", partial))}\n\n"
-            val last = "event: snapshot\ndata: ${WindmillJson.encodeToString(CoachSnapshotOut.serializer(), CoachSnapshotOut("thread-a", done))}\n\n"
+            val first = "event: snapshot\ndata: ${WindmillJson.encodeToString(CoachSnapshotResponse.serializer(), CoachSnapshotResponse("thread-a", partial))}\n\n"
+            val last = "event: snapshot\ndata: ${WindmillJson.encodeToString(CoachSnapshotResponse.serializer(), CoachSnapshotResponse("thread-a", done))}\n\n"
             server.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream").setBody(first + last)
                 .throttleBody(first.toByteArray().size.toLong(), 1, TimeUnit.SECONDS))
             val gym = GymHttp(WindmillApi(server.url("/"), { "private-bearer" }))
@@ -107,7 +111,7 @@ class CoachTransportTests {
                 answer = "Café 東京 مرحبًا 🏋🏽‍♀️ e\u0301\n".repeat(revision),
                 status = if (terminal && revision == 100) "completed" else "running",
                 results = listOf(CoachResult("routine-created", "operation-a", "routine-a", "Routine"))) }
-            fun event(value: AskGeneration) = "event: snapshot\ndata: ${WindmillJson.encodeToString(CoachSnapshotOut.serializer(), CoachSnapshotOut("thread-a", value))}\n\n"
+            fun event(value: AskGeneration) = "event: snapshot\ndata: ${WindmillJson.encodeToString(CoachSnapshotResponse.serializer(), CoachSnapshotResponse("thread-a", value))}\n\n"
             val beginning = Buffer().writeUtf8(event(first))
             val remainder = Buffer().writeUtf8(generations.joinToString("") { event(it) })
             val consumer = java.util.concurrent.CountDownLatch(1)
@@ -151,7 +155,7 @@ class CoachTransportTests {
         server.start()
         try {
             val stopped = AskGeneration("generation-a", "request-a", "Question", "stopped", "Partial answer", revision = 4)
-            server.enqueue(MockResponse().setBody(WindmillJson.encodeToString(CoachSnapshotOut.serializer(), CoachSnapshotOut("thread-a", stopped))))
+            server.enqueue(MockResponse().setBody(WindmillJson.encodeToString(CoachSnapshotResponse.serializer(), CoachSnapshotResponse("thread-a", stopped))))
             val gym = GymHttp(WindmillApi(server.url("/"), { "private-bearer" }))
             assertEquals(stopped, gym.stop("thread-a", "request-a"))
             val request = server.takeRequest()
@@ -169,7 +173,7 @@ class CoachTransportTests {
         try {
             val photo = CoachAttachment("attachment-a", "image/png", 2, 1, 5)
             val bytes = byteArrayOf(1, 2, 3, 4, 5)
-            server.enqueue(MockResponse().setBody(WindmillJson.encodeToString(CoachPhotoOut.serializer(), CoachPhotoOut(photo))))
+            server.enqueue(MockResponse().setBody(WindmillJson.encodeToString(CoachPhotoResponse.serializer(), CoachPhotoResponse(photo))))
             server.enqueue(MockResponse().setHeader("Content-Type", "image/png").setBody(Buffer().write(bytes)))
             val gym = GymHttp(WindmillApi(server.url("/"), { "private-bearer" }))
             val progress = mutableListOf<Float>()

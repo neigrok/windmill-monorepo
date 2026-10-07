@@ -7,11 +7,8 @@
 
 namespace wm {
 
-// What a save decided against the stored stamp. A stale write is a no-op, never an error.
-// `superseded` also kept the outgoing body as an invisible revision.
-enum class PageWrite { stored, superseded, ignoredStale };
-
-// Every method is owner-scoped by the UserId it carries; a page is legible to exactly one account.
+// The pages as the engine stores them, read. Every method is owner-scoped by the UserId it carries; a
+// page is legible to exactly one account.
 struct JournalRepository {
   virtual ~JournalRepository() = default;
 
@@ -25,9 +22,6 @@ struct JournalRepository {
 
   // Every page a user has, oldest first.
   virtual std::vector<Page> all(const UserId& user) = 0;
-
-  // LWW upsert keyed on (user, day): stores `incoming` only if its stamp dominates the stored one.
-  virtual PageWrite save(const Page& incoming) = 0;
 };
 
 }

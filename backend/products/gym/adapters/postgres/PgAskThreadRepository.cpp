@@ -1,7 +1,7 @@
 #include "products/gym/adapters/postgres/PgAskThreadRepository.h"
 
 #include "platform/adapters/postgres/PgPool.h"
-#include "products/gym/adapters/json/TrainingJson.h"
+#include "products/gym/adapters/json/GymJson.h"
 #include "products/gym/adapters/postgres/PgGymRows.h"
 
 #include <pqxx/pqxx>
@@ -269,7 +269,7 @@ bool PgAskThreadRepository::deleteThread(const UserId& user, const ThreadId& id,
   }
   auto lease = tryLease(user, id);
   if (!lease) throw ThreadBusy{};
-  if (beforeDelete) beforeDelete();
+  beforeDelete();
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result removed = txn.exec_params(

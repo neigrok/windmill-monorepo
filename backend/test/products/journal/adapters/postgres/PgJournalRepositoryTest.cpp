@@ -1,6 +1,5 @@
 #include "products/journal/adapters/postgres/PgJournalRepository.h"
 
-#include "products/journal/application/PageService.h"
 #include "test/PgTestPool.h"
 #include "test/testing.h"
 
@@ -11,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <vector>
 
 // Opt-in integration test: needs a live local Postgres with the schema applied and WM_PG_TEST set; otherwise every case reports skip. It seeds its own user row.
 using namespace wm;
@@ -19,18 +19,6 @@ namespace {
 const char* kNeedsPostgres = "WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7";
 
 const std::string kUser = "11111111-1111-1111-1111-111111111111";
-
-struct JournalEngineMode {
-  std::optional<std::string> previous;
-  explicit JournalEngineMode(bool enabled) {
-    if (const char* value = std::getenv("JOURNAL_ENGINE_WRITES")) previous = value;
-    setenv("JOURNAL_ENGINE_WRITES", enabled ? "1" : "0", 1);
-  }
-  ~JournalEngineMode() {
-    if (previous) setenv("JOURNAL_ENGINE_WRITES", previous->c_str(), 1);
-    else unsetenv("JOURNAL_ENGINE_WRITES");
-  }
-};
 
 void reset() {
   PgLease c{*pgTestPool()};
@@ -41,18 +29,6 @@ void reset() {
   w.exec("DELETE FROM journal_page_revision WHERE user_id = '" + kUser + "'");
   w.commit();
 }
-// March 1st onward, day by day, so a test that needs eighty distinct pages can name them; LocalDate refuses an impossible one.
-std::string dayOfMarchOnwards(int index) {
-  static constexpr int lengths[] = {31, 30, 31};   // March, April, May 2026
-  int month = 3;
-  while (index >= lengths[month - 3]) {
-    index -= lengths[month - 3];
-    ++month;
-  }
-  const std::string day = std::to_string(index + 1);
-  return "2026-0" + std::to_string(month) + "-" + (day.size() == 1 ? "0" + day : day);
-}
-
 Page page(const std::string& body, std::optional<Score> mood, std::optional<Score> energy,
           Source source, const Hlc& stamp) {
   Page p{UserId{kUser}, LocalDate{"2026-07-27"}};
@@ -63,15 +39,48 @@ Page page(const std::string& body, std::optional<Score> mood, std::optional<Scor
   p.stamp = stamp;
   return p;
 }
+
+// The row the engine's page store keeps for a page, written straight in: these cases are about the reads.
+void stored(const Page& incoming) {
+  PgLease c{*pgTestPool()};
+  pqxx::work w{*c};
+  pqxx::params row{incoming.user.str(), incoming.day.iso(), incoming.body};
+  if (incoming.mood) row.append(incoming.mood->value()); else row.append();
+  if (incoming.energy) row.append(incoming.energy->value()); else row.append();
+  row.append(toString(incoming.source));
+  row.append(static_cast<long long>(incoming.stamp.physicalMs));
+  row.append(static_cast<long long>(incoming.stamp.counter));
+  row.append(incoming.stamp.actor);
+  w.exec("INSERT INTO journal_page (user_id, day, body, mood, energy, source, stamp_ms, stamp_counter, stamp_actor) "
+         "VALUES ($1::uuid, $2::date, $3, $4, $5, $6, $7, $8, $9) "
+         "ON CONFLICT (user_id, day) DO UPDATE SET body = excluded.body, mood = excluded.mood, energy = excluded.energy, "
+         "source = excluded.source, stamp_ms = excluded.stamp_ms, stamp_counter = excluded.stamp_counter, "
+         "stamp_actor = excluded.stamp_actor",
+         row);
+  w.commit();
 }
 
-TEST(pg_journal_save_then_load_roundtrips_every_field) {
+// What a read answers: each page's day and words, in the order the read gave them.
+std::vector<std::string> written(const std::vector<Page>& pages) {
+  std::vector<std::string> out;
+  for (const Page& held : pages) out.push_back(held.day.iso() + " " + held.body);
+  return out;
+}
+
+Page writtenOn(const std::string& day, const std::string& body, std::uint64_t stampMs) {
+  Page incoming{UserId{kUser}, LocalDate{day}};
+  incoming.body = body;
+  incoming.stamp = Hlc{stampMs, 0, "dev"};
+  return incoming;
+}
+}
+
+TEST(pg_journal_load_reads_every_field_of_the_stored_row) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgJournalRepository repo{pgTestPool()};
 
-  CHECK_EQ(repo.save(page("round trip", Score{3}, Score{8}, Source::spoken, Hlc{500, 0, "devZ"})),
-           PageWrite::stored);
+  stored(page("round trip", Score{3}, Score{8}, Source::spoken, Hlc{500, 0, "devZ"}));
 
   std::optional<Page> got = repo.load(UserId{kUser}, LocalDate{"2026-07-27"});
   REQUIRE(got.has_value());
@@ -84,9 +93,9 @@ TEST(pg_journal_save_then_load_roundtrips_every_field) {
   CHECK_EQ(got->stamp.actor, std::string("devZ"));
 }
 
-TEST(pg_journal_since_preserves_legacy_ties_off_and_orders_by_day_on) {
+// Equal stamps tie-break on the day, so a page of the feed never splits a cohort differently from the next read.
+TEST(pg_journal_since_orders_equal_stamps_by_day) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  JournalEngineMode off(false);
   reset();
   PgJournalRepository repo{pgTestPool()};
   const UserId user(kUser);
@@ -94,29 +103,10 @@ TEST(pg_journal_since_preserves_legacy_ties_off_and_orders_by_day_on) {
     Page incoming(user, LocalDate(day));
     incoming.body = day;
     incoming.stamp = Hlc{500, 2, "same"};
-    repo.save(incoming);
+    stored(incoming);
   }
   for (int mutation = 0; mutation < 2; ++mutation) {
     for (const int limit : {1, 2, 500}) {
-      std::vector<std::string> mainDays;
-      {
-        PgLease lease{*pgTestPool()};
-        pqxx::work sql{*lease};
-        const auto rows = sql.exec(
-            "SELECT user_id, day::text AS day, body, mood, energy, source, "
-            "stamp_ms, stamp_counter, stamp_actor, "
-            "(extract(epoch from updated_at) * 1000)::bigint AS updated_ms "
-            "FROM journal_page WHERE user_id=$1::uuid "
-            "AND (stamp_ms, stamp_counter, stamp_actor) > ($2::bigint, $3::bigint, $4::text) "
-            "ORDER BY stamp_ms ASC, stamp_counter ASC, stamp_actor ASC LIMIT $5",
-            pqxx::params{kUser, 0LL, 0LL, "", limit});
-        for (const auto& row : rows) mainDays.push_back(row["day"].as<std::string>());
-      }
-      const auto legacy = repo.since(user, Hlc{0, 0, ""}, limit);
-      REQUIRE_EQ(legacy.size(), mainDays.size());
-      for (std::size_t index = 0; index < legacy.size(); ++index)
-        CHECK_EQ(legacy[index].day.iso(), mainDays[index]);
-      JournalEngineMode on(true);
       const auto admitted = repo.since(user, Hlc{0, 0, ""}, limit);
       REQUIRE_EQ(admitted.size(), static_cast<std::size_t>(std::min(limit, 3)));
       for (std::size_t index = 0; index < admitted.size(); ++index)
@@ -130,48 +120,28 @@ TEST(pg_journal_since_preserves_legacy_ties_off_and_orders_by_day_on) {
   }
 }
 
-// 0 is an answer and null is silence, and the column has to keep them apart on both legs.
+// 0 is an answer and null is silence, and the read has to keep them apart.
 TEST(pg_journal_keeps_a_stored_zero_apart_from_an_unanswered_scale) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgJournalRepository repo{pgTestPool()};
 
-  CHECK_EQ(repo.save(page("the floor", Score{0}, Score{0}, Source::typed, Hlc{100, 0, "devA"})),
-           PageWrite::stored);
+  stored(page("the floor", Score{0}, Score{0}, Source::typed, Hlc{100, 0, "devA"}));
 
   std::optional<Page> floored = repo.load(UserId{kUser}, LocalDate{"2026-07-27"});
   REQUIRE(floored.has_value());
   CHECK_EQ(floored->mood, std::optional<Score>{Score{0}});
   CHECK_EQ(floored->energy, std::optional<Score>{Score{0}});
-  {
-    PgLease c{*pgTestPool()};
-    pqxx::work w{*c};
-    CHECK_EQ(w.exec1("SELECT count(*)::int FROM journal_page WHERE user_id = '" + kUser +
-                     "' AND mood = 0 AND energy = 0")[0].as<int>(),
-             1);
-    CHECK_EQ(w.exec1("SELECT count(*)::int FROM journal_page WHERE user_id = '" + kUser +
-                     "' AND mood IS NULL")[0].as<int>(),
-             0);
-  }
 
-  CHECK_EQ(repo.save(page("cleared", std::nullopt, std::nullopt, Source::typed, Hlc{200, 0, "devA"})),
-           PageWrite::superseded);
+  stored(page("cleared", std::nullopt, std::nullopt, Source::typed, Hlc{200, 0, "devA"}));
 
   std::optional<Page> cleared = repo.load(UserId{kUser}, LocalDate{"2026-07-27"});
   REQUIRE(cleared.has_value());
   CHECK_EQ(cleared->mood, std::optional<Score>{});
   CHECK_EQ(cleared->energy, std::optional<Score>{});
-  {
-    PgLease c{*pgTestPool()};
-    pqxx::work w{*c};
-    CHECK_EQ(w.exec1("SELECT count(*)::int FROM journal_page WHERE user_id = '" + kUser +
-                     "' AND mood IS NULL AND energy IS NULL")[0].as<int>(),
-             1);
-  }
 
   // and a null on one scale does not drag the other down with it
-  CHECK_EQ(repo.save(page("half", Score{0}, std::nullopt, Source::typed, Hlc{300, 0, "devA"})),
-           PageWrite::superseded);
+  stored(page("half", Score{0}, std::nullopt, Source::typed, Hlc{300, 0, "devA"}));
   std::optional<Page> half = repo.load(UserId{kUser}, LocalDate{"2026-07-27"});
   REQUIRE(half.has_value());
   CHECK_EQ(half->mood, std::optional<Score>{Score{0}});
@@ -268,132 +238,70 @@ TEST(pg_journal_narrows_an_out_of_range_stored_scale_to_unset) {
   CHECK_EQ(got->energy, std::optional<Score>{});
 }
 
-TEST(pg_journal_lww_and_revision_trail) {
+TEST(pg_journal_load_is_absent_until_the_day_is_written) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgJournalRepository repo{pgTestPool()};
 
-  CHECK_EQ(repo.save(page("first light", Score{7}, Score{5}, Source::typed, Hlc{100, 0, "devA"})),
-           PageWrite::stored);
-  // an older stamp from another device loses and writes nothing
-  CHECK_EQ(repo.save(page("stale", Score{1}, Score{2}, Source::typed, Hlc{50, 0, "devB"})),
-           PageWrite::ignoredStale);
-  // a newer stamp wins and supersedes
-  CHECK_EQ(repo.save(page("clearer now", Score{9}, Score{8}, Source::spoken, Hlc{200, 0, "devB"})),
-           PageWrite::superseded);
-
-  std::optional<Page> got = repo.load(UserId{kUser}, LocalDate{"2026-07-27"});
+  CHECK_EQ(repo.load(UserId{kUser}, LocalDate{"2026-07-27"}), std::optional<Page>());
+  stored(writtenOn("2026-07-27", "here", 10));
+  const std::optional<Page> got = repo.load(UserId{kUser}, LocalDate{"2026-07-27"});
   REQUIRE(got.has_value());
-  CHECK_EQ(got->body, std::string("clearer now"));
-
-  PgLease c{*pgTestPool()};
-  pqxx::work w{*c};
-  // exec1 (not query_value) so this compiles on the CI's pinned libpqxx 7.x as well as mac's 8.x.
-  int revisions = w.exec1(
-      "SELECT count(*)::int FROM journal_page_revision WHERE user_id = '" + kUser + "'")[0].as<int>();
-  CHECK_EQ(revisions, 1);   // only 'first light' was superseded; the ignored 'stale' wrote nothing
+  CHECK_EQ(written({*got}), std::vector<std::string>{"2026-07-27 here"});
 }
 
-TEST(pg_journal_revision_trail_keeps_only_a_days_last_few) {
+TEST(pg_journal_range_is_the_inclusive_window_oldest_first) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgJournalRepository repo{pgTestPool()};
+  stored(writtenOn("2026-07-25", "mon", 10));
+  stored(writtenOn("2026-07-26", "tue", 20));
+  stored(writtenOn("2026-07-27", "wed", 30));
+  stored(writtenOn("2026-07-28", "thu", 40));
 
-  for (int write = 1; write <= 15; ++write)
-    repo.save(page("body " + std::to_string(write), Score{1}, Score{2}, Source::typed,
-                   Hlc{static_cast<std::uint64_t>(100 * write), 0, "devA"}));
-
-  PgLease c{*pgTestPool()};
-  pqxx::work w{*c};
-  CHECK_EQ(w.exec1("SELECT count(*)::int FROM journal_page_revision WHERE user_id = '" + kUser +
-                   "'")[0].as<int>(),
-           10);
-  CHECK_EQ(w.exec1("SELECT count(*)::int FROM journal_page_revision WHERE user_id = '" + kUser +
-                   "' AND body = 'body 1'")[0].as<int>(),
-           0);
-  CHECK_EQ(w.exec1("SELECT count(*)::int FROM journal_page_revision WHERE user_id = '" + kUser +
-                   "' AND body = 'body 14'")[0].as<int>(),
-           1);
-  CHECK_EQ(repo.load(UserId{kUser}, LocalDate{"2026-07-27"})->body, std::string("body 15"));
+  CHECK_EQ(written(repo.range(UserId{kUser}, LocalDate{"2026-07-26"}, LocalDate{"2026-07-27"})),
+           (std::vector<std::string>{"2026-07-26 tue", "2026-07-27 wed"}));
 }
 
-TEST(pg_journal_revision_trail_is_bounded_per_user_by_bytes) {
+TEST(pg_journal_since_is_strictly_past_the_cursor_ascending_and_capped) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgJournalRepository repo{pgTestPool()};
-  const std::string big(kMaxPageBytes, 'x');   // the largest page the write boundary will accept
+  stored(writtenOn("2026-07-25", "a", 10));
+  stored(writtenOn("2026-07-26", "b", 20));
+  stored(writtenOn("2026-07-27", "c", 30));
+  stored(writtenOn("2026-07-28", "d", 40));
 
-  for (int index = 0; index < 80; ++index) {
-    Page first{UserId{kUser}, LocalDate{dayOfMarchOnwards(index)}};
-    first.body = big;
-    first.stamp = Hlc{100, 0, "devA"};
-    Page second = first;
-    second.stamp = Hlc{200, 0, "devA"};
-    repo.save(first);
-    repo.save(second);
-  }
-
-  PgLease c{*pgTestPool()};
-  pqxx::work w{*c};
-  const long long bytes =
-      w.exec1("SELECT coalesce(sum(octet_length(body)), 0)::bigint FROM journal_page_revision "
-              "WHERE user_id = '" + kUser + "'")[0].as<long long>();
-  CHECK(bytes <= 8LL * 1024 * 1024);
-  CHECK(bytes > 7LL * 1024 * 1024);   // it keeps what it can, rather than emptying the trail
+  CHECK_EQ(written(repo.since(UserId{kUser}, Hlc{20, 0, "dev"}, 10)),
+           (std::vector<std::string>{"2026-07-27 c", "2026-07-28 d"}));
+  CHECK_EQ(written(repo.since(UserId{kUser}, Hlc{0, 0, "dev"}, 2)),
+           (std::vector<std::string>{"2026-07-25 a", "2026-07-26 b"}));
 }
 
-TEST(pg_journal_revision_trail_forgets_what_is_older_than_the_retention) {
+TEST(pg_journal_all_is_every_page_oldest_first) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgJournalRepository repo{pgTestPool()};
-  repo.save(page("old body", Score{1}, Score{2}, Source::typed, Hlc{100, 0, "devA"}));
-  repo.save(page("newer body", Score{1}, Score{2}, Source::typed, Hlc{200, 0, "devA"}));
-  {
-    PgLease c{*pgTestPool()};
-    pqxx::work w{*c};
-    w.exec("UPDATE journal_page_revision SET superseded_at = now() - interval '91 days' "
-           "WHERE user_id = '" + kUser + "'");
-    w.commit();
-  }
+  stored(writtenOn("2026-07-27", "c", 30));
+  stored(writtenOn("2026-07-25", "a", 10));
+  stored(writtenOn("2026-07-26", "b", 20));
 
-  repo.save(page("newest body", Score{1}, Score{2}, Source::typed, Hlc{300, 0, "devA"}));
-
-  PgLease c{*pgTestPool()};
-  pqxx::work w{*c};
-  CHECK_EQ(w.exec1("SELECT count(*)::int FROM journal_page_revision WHERE user_id = '" + kUser +
-                   "'")[0].as<int>(),
-           1);
-  CHECK_EQ(w.exec1("SELECT body FROM journal_page_revision WHERE user_id = '" + kUser +
-                   "'")[0].as<std::string>(),
-           std::string("newer body"));
-}
-
-TEST(pg_journal_through_pageservice_keeps_the_body) {
-  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  reset();
-  PgJournalRepository repo{pgTestPool()};
-  PageService service{repo};
-
-  service.write(page("via the service", Score{5}, Score{5}, Source::typed, Hlc{300, 0, "devQ"}));
-  std::optional<Page> got = service.page(UserId{kUser}, LocalDate{"2026-07-27"});
-  REQUIRE(got.has_value());
-  CHECK_EQ(got->body, std::string("via the service"));
-  CHECK_EQ(got->day.iso(), std::string("2026-07-27"));
+  CHECK_EQ(written(repo.all(UserId{kUser})),
+           (std::vector<std::string>{"2026-07-25 a", "2026-07-26 b", "2026-07-27 c"}));
 }
 
 // The server serves every request on a drogon WORKER THREAD; this runs the same read on a fresh worker thread.
-TEST(pg_journal_through_pageservice_on_a_worker_thread) {
+TEST(pg_journal_reads_on_a_worker_thread) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();
   PgJournalRepository repo{pgTestPool()};
-  PageService service{repo};
-  service.write(page("off-thread", Score{3}, Score{2}, Source::spoken, Hlc{400, 0, "devW"}));
+  stored(page("off-thread", Score{3}, Score{2}, Source::spoken, Hlc{400, 0, "devW"}));
 
   std::optional<Page> got;
   std::vector<Page> listed;
   std::thread worker([&] {
-    got = service.page(UserId{kUser}, LocalDate{"2026-07-27"});
-    listed = service.all(UserId{kUser});
+    got = repo.load(UserId{kUser}, LocalDate{"2026-07-27"});
+    listed = repo.all(UserId{kUser});
   });
   worker.join();
 

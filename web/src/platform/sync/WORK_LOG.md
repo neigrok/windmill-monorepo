@@ -5,6 +5,15 @@ replica objects must be detached from the transaction's before-image: otherwise 
 transition also changes the comparison baseline and suppresses its write. The rollback, resend and
 restart tests exercise this boundary.
 
+Store schema compatibility belongs to the IndexedDB upgrade transaction: migrating every replica's
+cache generations there preserves control rows and permits a complete retry after abort. The native
+browser migration test covers both completion and failure after the first migrated row.
+
+The domain kit's nesting guard covers the synchronous execution context across runner instances and
+checks before queueing storage work. Holding it across the outer Promise would mistake independent
+queued actions for nested calls; checking only inside a queued transaction lets an inner write escape
+the outer fault. Persisted run/save regressions wait for both outcomes and reopen the device store.
+
 First-tab detection needs a short registration lock around `locks.query()` and acquisition of the
 shared `wm-tab` lock. Querying independently in simultaneous tab starts can designate two first
 tabs and release a current Undo window. Delayed push replies must also match their request's wire

@@ -23,7 +23,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Readout
-import works.windmill.gym.store.RefusedClaim
+import works.windmill.gym.store.RefusedChange
 import works.windmill.gym.store.RefusedSet
 import works.windmill.gym.store.RefusedWrite
 import works.windmill.platform.design.WindmillSpace
@@ -32,7 +32,7 @@ internal fun refusalHeadline(refused: RefusedWrite, catalog: List<Exercise>): St
     is RefusedSet ->
         "${Readout.movement(refused.exerciseId, catalog)} " +
             "${Readout.effort(refused.weightKg, refused.reps)} never reached the log"
-    is RefusedClaim -> "“${refused.name}” stays on this phone"
+    is RefusedChange -> "“${refused.name}” stays on this phone"
 }
 
 @Composable

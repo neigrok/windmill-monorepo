@@ -1,35 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { API_BASE } from '../../../../src/shell/apiBase.js';
 import { NOTES_HREF } from '../../../../src/products/gym/log.js';
 import { FULL_LINE } from '../../../../src/products/gym/notes/notes.js';
-import { browserWith, elementsOf, findByClass, loadScreen, renderHook, roomLog, settle, textOf } from '../harness.mjs';
-
-const realFetch = global.fetch;
-test.afterEach(() => { global.fetch = realFetch; });
+import {
+  browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle, textOf,
+} from '../harness.mjs';
 
 // Save is the design system's Button — a component element in a shallow render, so it is found by
 // what it says rather than by a class.
 const saveOf = (tree) => elementsOf(tree)
   .find((each) => typeof each.type === 'function' && each.props.children === 'Save note');
 
-// The notes wire: GET /notes serves `stored`; a PUT on one note answers from `onSave`.
-function notesOnTheWire({ stored = [], onSave }) {
-  const wire = [];
-  global.fetch = async (url, options = {}) => {
-    const path = url.slice(`${API_BASE}/v1/gym`.length);
-    const method = options.method ?? 'GET';
-    wire.push(`${method} ${path}`);
-    if (path === '/notes' && method === 'GET') return { ok: true, status: 200, json: async () => ({ notes: stored }) };
-    if (path.startsWith('/notes/') && method === 'PUT') {
-      const { status, body } = onSave(JSON.parse(options.body));
-      return { ok: status < 300, status, json: async () => body };
-    }
-    throw new Error(`unexpected ${method} ${path}`);
-  };
-  return wire;
-}
+// The account's notes as the server confirmed them, in the store's order.
+const storedNotes = (count) => Array.from({ length: count }, (_, at) =>
+  confirmed('note', `note00000${at}`, { title: `Note ${at}`, body: '', ord: `a${at}`, updatedAt: 0 }));
 
 const editorOf = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'NoteEditor');
 const backOf = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'Back');
@@ -50,7 +35,7 @@ function editorWith(t, NoteEditor, note, hooks = {}) {
 
 test('a pasted sixty-one-character title is taken whole, counted in alarm, and refused in place in the store’s words when saved', async (t) => {
   browserWith();
-  const wire = notesOnTheWire({ onSave: () => ({ status: 400, body: { error: 'a title runs to 60 characters' } }) });
+  const gym = await gymAccount(t);
   const { NoteEditor } = await loadScreen('products/gym/notes/Notes.jsx');
   const { screen } = editorWith(t, NoteEditor, fresh);
 
@@ -68,14 +53,13 @@ test('a pasted sixty-one-character title is taken whole, counted in alarm, and r
   save.props.onClick();
   await settle();
 
-  assert.deepEqual(wire, ['PUT /notes/note_0123456789abcdef']);
+  assert.deepEqual(gym.owed(), [], 'the log took nothing');
   assert.equal(textOf(findByClass(screen.tree, 'gym-editor-missing')[0]), 'a title runs to 60 characters');
   assert.notEqual(findByClass(screen.tree, 'gym-note-title-input')[0], undefined, 'the editor stays open with the sentence');
 });
 
 test('the counter is drawn from the forty-eighth character and not before', async (t) => {
   browserWith();
-  notesOnTheWire({ onSave: () => { throw new Error('nothing saves here'); } });
   const { NoteEditor } = await loadScreen('products/gym/notes/Notes.jsx');
   const { screen } = editorWith(t, NoteEditor, fresh);
   const type = (value) => findByClass(screen.tree, 'gym-note-title-input')[0].props.onChange({ target: { value } });
@@ -89,7 +73,7 @@ test('the counter is drawn from the forty-eighth character and not before', asyn
 
 test('an eleventh note the store refuses leaves the editor open with the sentence, and re-reads the list behind it', async (t) => {
   browserWith();
-  const wire = notesOnTheWire({ onSave: () => ({ status: 409, body: { error: FULL_LINE, code: 'notes-full' } }) });
+  const gym = await gymAccount(t, storedNotes(10));
   const { NoteEditor } = await loadScreen('products/gym/notes/Notes.jsx');
   const { screen, called } = editorWith(t, NoteEditor, fresh);
 
@@ -97,8 +81,9 @@ test('an eleventh note the store refuses leaves the editor open with the sentenc
   saveOf(screen.tree).props.onClick();
   await settle();
 
-  assert.deepEqual(wire, ['PUT /notes/note_0123456789abcdef']);
-  assert.equal(textOf(findByClass(screen.tree, 'gym-editor-missing')[0]), '10 of 10 notes. Delete one to add another.');
+  assert.deepEqual(gym.owed(), [], 'the log took nothing');
+  assert.equal(textOf(findByClass(screen.tree, 'gym-editor-missing')[0]), FULL_LINE);
+  assert.equal(FULL_LINE, '10 of 10 notes. Delete one to add another.');
   assert.equal(called.stale, 1, 'the list is re-read once');
   assert.equal(called.closed, 0);
   assert.deepEqual(called.saved, []);
@@ -106,24 +91,25 @@ test('an eleventh note the store refuses leaves the editor open with the sentenc
 
 test('a refusal that is not the full account re-reads nothing', async (t) => {
   browserWith();
-  notesOnTheWire({ onSave: () => ({ status: 400, body: { error: 'a note runs to 500 bytes' } }) });
+  const gym = await gymAccount(t);
   const { NoteEditor } = await loadScreen('products/gym/notes/Notes.jsx');
   const { screen, called } = editorWith(t, NoteEditor, fresh);
 
   findByClass(screen.tree, 'gym-note-title-input')[0].props.onChange({ target: { value: 'Long' } });
+  findByClass(screen.tree, 'gym-note-body')[0].props.onChange({ target: { value: 'x'.repeat(501) } });
   saveOf(screen.tree).props.onClick();
   await settle();
   assert.equal(textOf(findByClass(screen.tree, 'gym-editor-missing')[0]), 'a note runs to 500 bytes');
   assert.equal(called.stale, 0);
+  assert.deepEqual(gym.owed(), []);
 });
 
 test('the Notes screen re-reads the store when the editor says its list is stale', async (t) => {
   browserWith();
-  const wire = notesOnTheWire({ stored: Array.from({ length: 10 }, (_, i) => ({ id: `note_${i}`, position: i, title: `Note ${i}`, body: '', updatedAt: 0 })) });
+  const gym = await gymAccount(t, storedNotes(10));
   const { Notes } = await loadScreen('products/gym/notes/Notes.jsx');
   const screen = renderHook(t, () => Notes({ log: roomLog() }));
   await settle();
-  assert.deepEqual(wire, ['GET /notes']);
   assert.equal(findByClass(screen.tree, 'gym-notes-full').length, 1);
 
   // A note opened from a row; the editor is the screen while it is open.
@@ -131,18 +117,21 @@ test('the Notes screen re-reads the store when the editor says its list is stale
   list.props.onOpen(list.props.notes[3]);
   const editor = editorOf(screen.tree);
   assert.notEqual(editor, undefined);
+  assert.equal(editor.props.noteCount, 10);
+
+  // Another device deleted a note, and the list this screen drew is now behind the store.
+  await gym.land({ ...storedNotes(10)[9], life: ['dead', '2:0:srv'], seq: 11 });
   editor.props.onStale();
   await settle();
-  assert.deepEqual(wire, ['GET /notes', 'GET /notes']);
+  assert.equal(editorOf(screen.tree).props.noteCount, 9, 'the list behind the editor was read again');
   assert.notEqual(editorOf(screen.tree), undefined, 'the editor stays open');
 });
 
 test('a delete window over the last note does not empty the room: the placeholders read the store, not the drawn rows', async (t) => {
   browserWith();
-  const only = { id: 'note_only', position: 0, title: 'How I want to be talked to', body: 'Blunt.', updatedAt: 0 };
-  notesOnTheWire({ stored: [only] });
+  await gymAccount(t, [confirmed('note', 'noteOnly0001', { title: 'How I want to be talked to', body: 'Blunt.', ord: 'a0', updatedAt: 0 })]);
   const { Notes } = await loadScreen('products/gym/notes/Notes.jsx');
-  const held = [{ kind: 'note', id: 'note_only', line: 'Note deleted.' }];
+  const held = [{ kind: 'note', id: 'noteOnly0001', line: 'Note deleted.' }];
   const screen = renderHook(t, () => Notes({ log: roomLog({ held }) }));
   await settle();
 
@@ -157,7 +146,7 @@ test('a delete window over the last note does not empty the room: the placeholde
   assert.equal(findByClass(screen.tree, 'gym-notes-full').length, 0);
 
   // With nothing stored at all, the placeholders are exactly what the room draws.
-  notesOnTheWire({ stored: [] });
+  await gymAccount(t);
   const empty = renderHook(t, () => Notes({ log: roomLog() }));
   await settle();
   assert.deepEqual(
@@ -166,9 +155,9 @@ test('a delete window over the last note does not empty the room: the placeholde
   );
 });
 
-test('the editor’s delete is one press and hands the whole note up: no question, and nothing sent from here', async (t) => {
+test('the editor’s delete is one press and hands the whole note up: no question, and nothing written from here', async (t) => {
   browserWith();
-  const wire = notesOnTheWire({});
+  const gym = await gymAccount(t);
   const { NoteEditor } = await loadScreen('products/gym/notes/Notes.jsx');
   const stored = { id: 'note_0123456789abcdef', title: 'Kept', body: '', fresh: false };
   const handed = [];
@@ -178,8 +167,8 @@ test('the editor’s delete is one press and hands the whole note up: no questio
   assert.equal(textOf(findByClass(screen.tree, 'gym-note-delete')[0]), 'Delete note');
   findByClass(screen.tree, 'gym-note-delete')[0].props.onClick();
   await settle();
-  assert.deepEqual(handed, [stored], 'the room withholds it; the editor sends nothing');
-  assert.deepEqual(wire.filter((line) => line.startsWith('DELETE')), []);
+  assert.deepEqual(handed, [stored], 'the room withholds it; the editor writes nothing');
+  assert.deepEqual(gym.owed(), []);
 
   // A note that was never stored has nothing to delete.
   const { screen: minting } = editorWith(t, NoteEditor, fresh);
@@ -188,7 +177,6 @@ test('the editor’s delete is one press and hands the whole note up: no questio
 
 test('the editor’s back is the one Back link, pointing at the notes list, and closes the editor without leaving the hash', async (t) => {
   browserWith();
-  notesOnTheWire({});
   const { NoteEditor } = await loadScreen('products/gym/notes/Notes.jsx');
   const { screen, called } = editorWith(t, NoteEditor, { ...fresh, fresh: false, title: 'Kept' });
 

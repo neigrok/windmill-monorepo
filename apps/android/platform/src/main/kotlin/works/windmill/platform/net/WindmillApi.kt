@@ -7,8 +7,6 @@ import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -84,9 +82,6 @@ class WindmillApi(
         )
         properties.putAll(diagnostics.properties())
         if (error is WindmillApiException.Refused) properties["status"] = error.status.toString()
-        if (error is WindmillApiException.Refused && error.status == 410 &&
-            (error.refusal.code == "client-update-required" || error.refusal.message == "client-update-required"))
-            telemetry.event("client_update_required", mapOf("state" to "required", "status" to "410"))
         telemetry.event("api_request_failed", properties)
         if (TelemetryPolicy.report(error)) telemetry.failure(operation, error, properties)
     }
@@ -155,7 +150,6 @@ class WindmillApi(
                             response.use {
                                 if (!it.isSuccessful) {
                                     val refusal = runCatching { WindmillJson.decodeFromString<Refusal>(it.body?.string().orEmpty()) }.getOrDefault(Refusal())
-                                    if (it.code == 410 && (refusal.code == "client-update-required" || refusal.message == "client-update-required")) ClientUpdate.required()
                                     throw WindmillApiException.Refused(it.code, refusal)
                                 }
                                 read(it)
@@ -214,12 +208,6 @@ class WindmillApi(
     }
 }
 
-object ClientUpdate {
-    private val state = MutableStateFlow(false)
-    val required: StateFlow<Boolean> = state
-    fun required() { state.value = true }
-}
-
 data class Captured<Reply>(val reply: Reply, val session: String?)
 
 @Serializable
@@ -247,8 +235,8 @@ sealed class WindmillApiException(cause: Throwable? = null) : Exception(cause) {
             is Timeout -> "That took too long. Try again."
             is Transport -> "That connection was interrupted. Try again."
             is Unexpected -> "That didn’t go through"
-            is Refused -> if (status in setOf(410, 426) && (status == 426 || refusal.code == "client-update-required" || refusal.message == "client-update-required"))
-                "Update Windmill to keep syncing. Your work is saved on this phone." else refusal.message ?: "That didn’t go through"
+            is Refused -> if (status == 426) "Update Windmill to keep syncing. Your work is saved on this phone."
+                else refusal.message ?: "That didn’t go through"
             is Malformed -> "That didn’t go through"
         }
 }

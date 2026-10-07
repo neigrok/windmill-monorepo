@@ -2,7 +2,7 @@ import sys
 import unittest
 
 sys.dont_write_bytecode = True
-from auth_differential import compare, pinned_auth_changes
+from auth_differential import compare
 
 
 class AuthComparisonTest(unittest.TestCase):
@@ -47,20 +47,6 @@ class AuthComparisonTest(unittest.TestCase):
                         [live, retired[0], retired[0]], [live, retired[0], retired[1].replace(b'Path=/', b'Path=/v1')]):
             with self.subTest(changed=changed), self.assertRaises(AssertionError):
                 compare([left, (200, b'{}', changed)], "cookie regression", minted=True)
-
-    def test_pinned_code_copy_requires_exact_old_and_new_contracts(self):
-        left = (410, b'{"code":"expired","detail":"Codes work once and last 15 minutes.","error":"That code has expired"}', [])
-        right = (410, b'{"code":"expired","detail":"Check the digits, or send a fresh one.","error":"That code didn\'t work"}', [])
-        compare(pinned_auth_changes([left, right], "/v1/auth/verify-code", 410), "pinned copy")
-        with self.assertRaises(AssertionError):
-            pinned_auth_changes([left, (410, right[1].replace(b'expired', b'unknown'), [])], "/v1/auth/verify-code", 410)
-
-    def test_pinned_methods_addition_preserves_body_bytes_and_refuses_extra_fields(self):
-        left = (200, b'{"user":{"email":"sam@example.com","id":"u"}}', [])
-        right = (200, b'{"signInMethods":[{"email":"sam@example.com","kind":"email"}],"user":{"email":"sam@example.com","id":"u"}}', [])
-        compare(pinned_auth_changes([left, right], "/v1/me", 200), "pinned methods")
-        with self.assertRaises(AssertionError):
-            pinned_auth_changes([left, (200, right[1].replace(b'"id":"u"', b'"id":"different"'), [])], "/v1/me", 200)
 
 
 if __name__ == "__main__":

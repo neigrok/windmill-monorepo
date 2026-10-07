@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cstdlib>
 #include <mutex>
 #include <set>
 #include <stdexcept>
@@ -37,27 +36,17 @@ struct HttpWriteFailure : std::runtime_error {
 };
 
 const std::set<std::string> refusalCodes{
-    "access_denied", "account-mismatch", "account-not-empty", "ask-attachment-invalid",
-    "ask-busy", "ask-daily-limit", "ask-generation-active", "ask-image-busy", "ask-image-limit",
+    "access_denied", "account-mismatch", "account-not-empty", "ask-attachment-invalid", "ask-busy",
+    "ask-daily-limit", "ask-generation-active", "ask-image-busy", "ask-image-limit",
     "ask-not-configured", "ask-out-of-budget", "ask-request-conflict", "ask-request-malformed",
-    "ask-session-open", "ask-thread-taken", "authorization_pending", "bad-id",
-    "bad_request", "client-update-required", "clock-ahead", "correction-conflict", "cursor-invalid",
-    "epoch-mismatch", "exercise-id-taken", "expired", "fix-unreadable",
-    "gym-engine-busy", "gym-engine-unavailable", "gym-frozen", "gym-not-adopted",
-    "gym-unavailable", "id-retired", "id-taken", "identity-taken",
-    "invalid-correction", "invalid_client", "invalid_client_metadata", "invalid_email", "invalid_grant",
-    "invalid_redirect_uri", "invalid_request", "invalid_scope", "login_required", "journal-engine-busy", "journal-engine-disabled",
-    "journal-engine-required", "journal-engine-unavailable", "journal-frozen", "journal-not-adopted",
-    "journal-unavailable", "malformed", "note-id-taken", "notes-full",
-    "notes-order-mismatch", "preferences-unreadable", "proposal-settled", "proposal-superseded",
-    "rate_limited", "replica-foreign", "replica-unknown", "request-too-large",
-    "routine-id-taken", "routine-stale", "scope-forbidden", "scope-unknown",
-    "server_error", "session-already-open", "session-deleted", "session-finished",
-    "session-id-taken", "session-open", "session-overlap", "set-deleted",
-    "set-id-taken", "set-not-found", "share-id-taken", "slow_down",
-    "temporarily_unavailable", "unauthenticated", "unauthorized_client", "unavailable",
-    "unknown-exercise", "unreachable", "unsupported_grant_type", "unsupported_response_type",
-    "upgrade-required"
+    "ask-session-open", "ask-thread-taken", "bad-id", "bad_request", "client-update-required",
+    "clock-ahead", "expired", "gym-engine-busy", "gym-engine-unavailable", "id-retired", "id-taken",
+    "identity-taken", "invalid_client", "invalid_client_metadata", "invalid_email", "invalid_grant",
+    "invalid_redirect_uri", "invalid_request", "login_required", "malformed", "rate_limited",
+    "replica-foreign", "request-too-large", "session-deleted", "session-id-taken",
+    "session-overlap", "set-id-taken", "share-id-taken", "temporarily_unavailable",
+    "unauthenticated", "unavailable", "unknown-exercise", "unreachable", "unsupported_grant_type",
+    "unsupported_response_type", "upgrade-required"
 };
 
 std::string redirectCode(const std::string& location) {
@@ -111,11 +100,12 @@ std::vector<WriteRoute> registeredWriteRoutes() {
   return routes;
 }
 
-bool legacyRestWriteRetired(const drogon::HttpRequestPtr& request) {
-  if (!mutatingMethod(request->method()) ||
-      !request->attributes()->get<bool>("wm.legacy_rest_write")) return false;
-  const char* value = std::getenv("LEGACY_REST_WRITES_RETIRED");
-  return value && std::string_view(value) == "1";
+bool retiredRoute(const drogon::HttpRequestPtr& request) {
+  return request->attributes()->get<bool>("wm.retired_route");
+}
+
+drogon::HttpResponsePtr retiredWriteResponse() {
+  return error(drogon::k410Gone, "This version of the app can no longer save; update it.", "client-update-required");
 }
 
 std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr& request,
@@ -125,7 +115,7 @@ std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr
   auto observation = std::make_shared<WriteObservation>(route.operation, route.product, route.door);
   request->attributes()->insert(kWriteObservationAttribute, observation);
   request->attributes()->insert("wm.write_operation", route.operation);
-  request->attributes()->insert("wm.legacy_rest_write", route.legacyRestWrite && route.door == "rest");
+  request->attributes()->insert("wm.retired_route", route.retired);
   return observation;
 }
 

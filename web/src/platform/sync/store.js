@@ -67,12 +67,13 @@ export class IndexedDBStore {
     if (!indexedDB) throw new Error('sync storage unavailable');
     const database = await new Promise((resolve, reject) => {
       const request = indexedDB.open(name, 2);
-      request.onupgradeneeded = () => {
+      request.onupgradeneeded = ({ oldVersion }) => {
         const database = request.result, transaction = request.transaction;
-        const records = database.objectStoreNames.contains('records') ? transaction.objectStore('records') : database.createObjectStore('records', { keyPath: 'key' });
+        const records = oldVersion === 0 ? database.createObjectStore('records', { keyPath: 'key' }) : transaction.objectStore('records');
         const rows = database.createObjectStore('rows', { keyPath: 'key' });
         rows.createIndex('generation', 'generation');
         rows.createIndex('type', 'type');
+        if (oldVersion === 0) return;
         const pointers = new Map();
         const scan = records.openCursor();
         scan.onsuccess = () => {

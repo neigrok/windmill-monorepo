@@ -1,7 +1,7 @@
 import { BrowserSyncEngine } from './engine.js';
 
 // The session owner supplies cookie cleanup and product preparation before networking starts.
-export class SyncSession {
+class SyncSession {
   constructor() {
     this.listeners = new Set();
     this.snapshot = { engine: null, ready: false, signedIn: false, online: true, error: false };

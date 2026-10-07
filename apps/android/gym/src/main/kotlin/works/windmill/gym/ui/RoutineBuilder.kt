@@ -241,7 +241,6 @@ fun RoutineBuilder(
                     nowMs = 0,
                     sessions = store.recent,
                     title = "Add movement",
-                    catalogUnread = store.catalogUnread,
                     onPick = {
                         onDraft(draft.adding(it))
                         close()

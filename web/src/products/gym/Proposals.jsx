@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from '../../design-system/index.js';
-import { failureReason } from './gymApi.js';
+import { failureReason } from './errors.js';
 import { arrivedLabel, nameOfMovement, proposalHref, recordHref, threadHref } from './log.js';
 import {
   atomicLine, collapseKept, conversationOf, CONVERSATION_VERB, countedLabel, diffRows,
@@ -14,7 +14,7 @@ import './coach/coach.css';
 export function ProposalPreview({ routine, onExpand, log }) {
   const api = useGymApi();
   const id = routine.pendingProposal.id;
-  const view = useGymRead(() => api.proposal(id), [id], { sync: true, ready: api.ready !== false });
+  const view = useGymRead(() => api.proposal(id), [id], { sync: true, ready: Boolean(api?.ready) });
   const changed = view.data ? diffRows(view.data).filter((row) => row.kind !== 'kept') : [];
   return <section className="gym-routine-review" aria-label={`Pending change to ${routine.name}`}>
     <header><span className="gym-proposal-name">{countedLabel(routine.pendingProposal)}</span><a className="gym-proposal-review" href={proposalHref(id)} onClick={(event) => { event.preventDefault(); onExpand(id); }}>Review</a></header>
@@ -25,7 +25,7 @@ export function ProposalPreview({ routine, onExpand, log }) {
 
 export function ProposalPanel({ id, log, onChanged = null, onSettled = null, inConversation = false }) {
   const api = useGymApi();
-  const view = useGymRead(() => api.proposal(id), [id], { sync: true, ready: api.ready !== false });
+  const view = useGymRead(() => api.proposal(id), [id], { sync: true, ready: Boolean(api?.ready) });
   const [settled, setSettled] = useState(null);
   useEffect(() => setSettled(null), [view.data]);
   const [busy, setBusy] = useState(false);
@@ -46,11 +46,11 @@ export function ProposalPanel({ id, log, onChanged = null, onSettled = null, inC
       onSettled?.({ verb, proposal: stored });
       onChanged?.();
     } catch (error) {
-      if (error.proposalSuperseded || error.proposalSettled || error.status === 404) {
+      if (['proposal-superseded', 'proposal-settled', 'unknown-record'].includes(error.code)) {
         view.refresh();
         onChanged?.();
       }
-      setRefusal(error.detail || `That wasn’t ${verb === 'apply' ? 'applied' : 'turned down'} — ${failureReason(error)}.`);
+      setRefusal(error.sentence || `That wasn’t ${verb === 'apply' ? 'applied' : 'turned down'} — ${failureReason(error)}.`);
     } finally {
       setBusy(false);
     }

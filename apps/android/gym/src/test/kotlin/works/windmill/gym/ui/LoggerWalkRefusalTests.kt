@@ -6,13 +6,11 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onFirst
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Rule
@@ -21,19 +19,10 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.SetTarget
-import works.windmill.gym.store.DeviceCopy
+import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
-import works.windmill.gym.store.LocalBodyweight
-import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
-import works.windmill.gym.store.SetQueue
-import works.windmill.gym.store.TrainingStore
-import works.windmill.gym.store.Withheld
-import works.windmill.platform.Account
-import works.windmill.platform.net.WindmillApi
 
 // D8. A swipe arrives faster than a sheet can rise, so a second walk while a deviation is pending is
 // REFUSED rather than overwriting it — overwriting would take the question about the movement you
@@ -52,43 +41,31 @@ class LoggerWalkRefusalTests {
 
     // Signed out, so the whole workout is composed on the device and the plan comes from the routine
     // the device holds — nothing here depends on a server.
-    private fun logger(scope: CoroutineScope): TrainingStore {
-        val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json")),
-            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
-            localLog = LocalLog(File(tmp.root, "local.json")),
-            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
-            scope = scope,
-            mintSession = { "ses_1" },
-            mintSet = Ids::set,
-            undoWindowMs = Withheld.windowMs,
-            sync = { null },
-        )
+    private fun logger(scope: CoroutineScope): EngineRoomFixture {
+        val room = EngineRoomFixture(tmp.newFolder(), scope)
+        room.now = System.currentTimeMillis()
         runBlocking {
-            // The six ride with every seat, so Bench Press and Barbell Row are already named.
-            store.connect(Account(
-                api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
-                user = null))
-            val routine = (store.saveRoutine(
+            room.select(null)
+            val routine = (room.store.saveRoutine(
                 RoutineDraft(name = "Push A")
                     .adding("bench-press")
                     .adding("barbell-row")
                     .targeting("bench-press", List(5) { SetTarget(5, 82.5) })
             ) as GymResult.Ok).value
-            store.start(routine.id)
+            room.store.start(routine.id)
             // The walk is what the session HOLDS, in the order it was walked.
-            store.choose("bench-press")
-            store.choose("barbell-row")
-            store.choose("bench-press")
+            room.store.choose("bench-press")
+            room.store.choose("barbell-row")
+            room.store.choose("bench-press")
             // Heavier than the plan's 82.5, which is the whole reason a question gets raised.
-            store.logSet(weightKg = 87.5, reps = 5)
+            room.store.logSet(weightKg = 87.5, reps = 5)
         }
+        room.store.observeEngine()
         compose.setContent {
-            LoggerScreen(store = store, isSignedIn = false, say = { said += it },
+            LoggerScreen(store = room.store, isSignedIn = false, say = { said += it },
                          onFinish = {}, onSignIn = {}, onSettings = {})
         }
-        return store
+        return room
     }
 
     private fun walk(from: String) = compose
@@ -99,31 +76,29 @@ class LoggerWalkRefusalTests {
     @Test
     fun aSecondWalkWhileAQuestionIsPendingIsRefusedInWordsThatNameTheMovement() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = logger(scope)
+        try { logger(scope).use { room ->
+            // Both walks land in the same frame, before the sheet can rise: the case a stroke makes
+            // ordinary and a tap never did.
+            val leaving = walk("Bench Press")
+            compose.runOnUiThread {
+                leaving()
+                leaving()
+            }
+            compose.waitForIdle()
 
-        // Both walks land in the same frame, before the sheet can rise: the case a stroke makes
-        // ordinary and a tap never did.
-        val leaving = walk("Bench Press")
-        compose.runOnUiThread {
-            leaving()
-            leaving()
-        }
-        compose.waitForIdle()
-
-        assertEquals("Bench Press first — that question is still open.", said.last())
-        assertEquals("the pending question was not overwritten", "barbell-row", store.exerciseId)
-        scope.cancel()
+            assertEquals("Bench Press first — that question is still open.", said.last())
+            assertEquals("the pending question was not overwritten", "barbell-row", room.store.exerciseId)
+        } } finally { scope.cancel() }
     }
 
     @Test
     fun anOrdinaryWalkSaysNothingAtAllAndClearsWhatWasSaidBefore() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        logger(scope)
+        try { logger(scope).use {
+            compose.runOnUiThread { walk("Bench Press")() }
+            compose.waitForIdle()
 
-        compose.runOnUiThread { walk("Bench Press")() }
-        compose.waitForIdle()
-
-        assertNull("a walk that went through has nothing to say", said.last())
-        scope.cancel()
+            assertNull("a walk that went through has nothing to say", said.last())
+        } } finally { scope.cancel() }
     }
 }

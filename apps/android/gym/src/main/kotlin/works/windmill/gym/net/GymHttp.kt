@@ -14,27 +14,27 @@ import kotlinx.coroutines.channels.Channel
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSink
-import works.windmill.gym.domain.CoachAttachment
+import okio.BufferedSource
+import works.windmill.gym.coach.CoachAttachment
 import works.windmill.platform.net.WindmillJson
-import works.windmill.gym.domain.AskAnswer
-import works.windmill.gym.domain.AskQuestion
-import works.windmill.gym.domain.ThreadPage
-import works.windmill.gym.domain.CoachResult
-import works.windmill.gym.domain.AskGeneration
-import works.windmill.gym.domain.AnswerReceipt
-import works.windmill.gym.domain.AskStep
-import works.windmill.gym.domain.ReadTally
-import works.windmill.gym.domain.AskThread
+import works.windmill.gym.coach.AskAnswer
+import works.windmill.gym.coach.AskQuestion
+import works.windmill.gym.coach.ThreadPage
+import works.windmill.gym.coach.CoachResult
+import works.windmill.gym.coach.AskGeneration
+import works.windmill.gym.coach.AnswerReceipt
+import works.windmill.gym.coach.AskStep
+import works.windmill.gym.coach.ReadTally
+import works.windmill.gym.coach.AskThread
 import works.windmill.gym.domain.McpKey
 import works.windmill.gym.domain.OAuthGrant
-import works.windmill.gym.domain.SessionShare
-import works.windmill.gym.store.RefusalFacts
+import works.windmill.gym.sharing.SessionShare
+import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
 
-
 // Pass every path WHOLE, query included: appending it as a path segment percent-encodes `?` and `&`.
-class GymHttp(private val api: WindmillApi) : TrainingSyncing {
+class GymHttp(private val api: WindmillApi) : GymRest {
     override suspend fun share(sessionId: String): SessionShare =
         api.send<SessionShare>("POST", "/v1/gym/sessions/$sessionId/share", operation = "gym_share")
 
@@ -43,7 +43,7 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
     }
 
     override suspend fun ask(question: AskQuestion): AskAnswer {
-        val reply = api.send<AskReplyOut>("POST", "/v1/gym/ask", question, timeoutSeconds = 660, operation = "gym_ask")
+        val reply = api.send<AskResponse>("POST", "/v1/gym/ask", question, timeoutSeconds = 660, operation = "gym_ask")
         if (reply.generation?.status == "running") return AskAnswer("", ReadTally(), generation = reply.generation)
         if (reply.generation?.status == "stopped") return reply.generation.response()
         return AskAnswer(reply.answer ?: throw WindmillApiException.Malformed, reply.read ?: throw WindmillApiException.Malformed,
@@ -52,7 +52,7 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
 
     override suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit): AskAnswer {
         val requestId = requireNotNull(question.requestId)
-        val body = WindmillJson.encodeToString(CoachStreamIn.serializer(), CoachStreamIn(question.thread, question.question,
+        val body = WindmillJson.encodeToString(CoachStreamRequest.serializer(), CoachStreamRequest(question.thread, question.question,
             requestId, question.attachmentIds, true)).toRequestBody("application/json".toMediaType())
         return coroutineScope {
             val snapshots = Channel<AskGeneration>(Channel.CONFLATED)
@@ -76,7 +76,7 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
     }
 
     override suspend fun stop(threadId: String, requestId: String): AskGeneration =
-        api.send<CoachSnapshotOut>("POST", "/v1/gym/threads/$threadId/generations/$requestId/stop", operation = "gym_ask_stop").generation
+        api.send<CoachSnapshotResponse>("POST", "/v1/gym/threads/$threadId/generations/$requestId/stop", operation = "gym_ask_stop").generation
 
     override suspend fun uploadPhoto(threadId: String, photo: CoachAttachment, bytes: ByteArray, onProgress: (Float) -> Unit): CoachAttachment {
         val caller = currentCoroutineContext()
@@ -95,7 +95,7 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
             }
         }
         return api.consume("PUT", "/v1/gym/threads/$threadId/attachments/${photo.id}", body, operation = "gym_coach_photo_upload") {
-            WindmillJson.decodeFromString<CoachPhotoOut>(it.body?.string().orEmpty()).attachment
+            WindmillJson.decodeFromString<CoachPhotoResponse>(it.body?.string().orEmpty()).attachment
         }
     }
 
@@ -110,22 +110,13 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
             buffer.readByteArray()
         }
 
-    override suspend fun threads(): List<AskThread> =
-        api.get<Conversations>("/v1/gym/threads", operation = "gym_threads").threads
-
-    override suspend fun thread(id: String): AskThread? = try {
-        api.get<AskThread>("/v1/gym/threads/$id", operation = "gym_thread")
-    } catch (refused: WindmillApiException.Refused) {
-        if (refused.status == 404) null else throw refused
-    }
-
-    override suspend fun threadsPage(cursor: String?): ThreadPage {
+    override suspend fun threads(cursor: String?): ThreadPage {
         val url = api.baseUrl.newBuilder().addPathSegments("v1/gym/threads").addQueryParameter("limit", "50")
             .apply { cursor?.let { addQueryParameter("cursor", it) } }.build()
         return api.get("${url.encodedPath}?${url.encodedQuery}", operation = "gym_threads")
     }
 
-    override suspend fun threadPage(id: String, before: String?): AskThread? = try {
+    override suspend fun thread(id: String, before: String?): AskThread? = try {
         val url = api.baseUrl.newBuilder().addPathSegments("v1/gym/threads").addPathSegment(id).addQueryParameter("limit", "50")
             .apply { before?.let { addQueryParameter("before", it) } }.build()
         api.get<AskThread>("${url.encodedPath}?${url.encodedQuery}", operation = "gym_thread")
@@ -138,36 +129,14 @@ class GymHttp(private val api: WindmillApi) : TrainingSyncing {
     }
 
     override suspend fun grants(): List<OAuthGrant> =
-        api.get<Grants>("/v1/oauth/grants", operation = "gym_grants").grants
+        api.get<GrantsResponse>("/v1/oauth/grants", operation = "gym_grants").grants
 
     override suspend fun mcpKeys(): List<McpKey> =
-        api.get<Keys>("/v1/mcp-keys", operation = "gym_mcp_keys").keys
-
-    private fun escaped(value: String): String = buildString {
-        for (byte in value.toByteArray(Charsets.UTF_8)) {
-            val code = byte.toInt() and 0xFF
-            val char = code.toChar()
-            if (char in 'A'..'Z' || char in 'a'..'z' || char in '0'..'9') append(char)
-            else append("%%%02X".format(code))
-        }
-    }
-}
-
-// No facts reads as Retry: a set is never dropped on a guess.
-fun RefusalFacts(refusing: Throwable): RefusalFacts = when (refusing) {
-    is WindmillApiException.Offline -> RefusalFacts(offline = true)
-    is IOException -> RefusalFacts(offline = true)
-    is WindmillApiException.Malformed -> RefusalFacts(malformed = true)
-    is WindmillApiException.Refused -> RefusalFacts(
-        status = refusing.status, code = refusing.refusal.code, sentence = refusing.refusal.message)
-    else -> RefusalFacts()
+        api.get<McpKeysResponse>("/v1/mcp-keys", operation = "gym_mcp_keys").keys
 }
 
 @Serializable
-private data class Conversations(val threads: List<AskThread> = emptyList())
-
-@Serializable
-private data class AskReplyOut(
+private data class AskResponse(
     val answer: String? = null,
     val read: ReadTally? = null,
     val steps: List<AskStep> = emptyList(),
@@ -178,7 +147,67 @@ private data class AskReplyOut(
 )
 
 @Serializable
-private data class Grants(val grants: List<OAuthGrant> = emptyList())
+private data class GrantsResponse(val grants: List<OAuthGrant> = emptyList())
 
 @Serializable
-private data class Keys(val keys: List<McpKey> = emptyList())
+private data class McpKeysResponse(val keys: List<McpKey> = emptyList())
+
+@Serializable
+private data class CoachStreamRequest(val thread: String, val question: String, val requestId: String,
+    val attachmentIds: List<String>, val stream: Boolean)
+
+@Serializable
+internal data class CoachSnapshotResponse(val thread: String, val generation: AskGeneration)
+
+@Serializable
+private data class CoachErrorResponse(val status: Int, val generation: AskGeneration? = null)
+
+@Serializable
+internal data class CoachPhotoResponse(val attachment: CoachAttachment)
+
+internal object CoachEvents {
+    fun read(source: BufferedSource, threadId: String, requestId: String, onSnapshot: (AskGeneration) -> Unit): AskGeneration {
+        var event = ""
+        val data = StringBuilder()
+        var current: AskGeneration? = null
+        while (true) {
+            val line = source.readUtf8Line() ?: break
+            if (line.isNotEmpty()) {
+                if (line.startsWith("event:")) event = line.substringAfter(':').trim()
+                if (line.startsWith("data:")) {
+                    if (data.isNotEmpty()) data.append('\n')
+                    data.append(line.substringAfter(':').removePrefix(" "))
+                    if (data.length > 2_000_000) throw WindmillApiException.Malformed
+                }
+                continue
+            }
+            if (data.isEmpty()) { event = ""; continue }
+            val body = data.toString()
+            data.clear()
+            if (event == "error") {
+                val refusal = WindmillJson.decodeFromString<Refusal>(body)
+                val error = WindmillJson.decodeFromString<CoachErrorResponse>(body)
+                error.generation?.let { generation ->
+                    if (generation.requestId != requestId || (current != null && generation.id != current?.id)) throw WindmillApiException.Malformed
+                    if (current == null || generation.revision > requireNotNull(current).revision) {
+                        current = generation
+                        onSnapshot(generation)
+                    }
+                }
+                throw WindmillApiException.Refused(error.status, refusal)
+            }
+            if (event != "snapshot") { event = ""; continue }
+            event = ""
+            val snapshot = WindmillJson.decodeFromString<CoachSnapshotResponse>(body)
+            val generation = snapshot.generation
+            if (snapshot.thread != threadId || generation.requestId != requestId) throw WindmillApiException.Malformed
+            if (generation.status !in setOf("running", "completed", "failed", "stopped") || generation.revision < 0 ||
+                (current != null && generation.id != requireNotNull(current).id)) throw WindmillApiException.Malformed
+            if (current != null && generation.revision <= requireNotNull(current).revision) continue
+            current = generation
+            onSnapshot(generation)
+            if (generation.terminal) return generation
+        }
+        throw IOException("Coach response interrupted")
+    }
+}

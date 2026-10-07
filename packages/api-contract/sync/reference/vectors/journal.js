@@ -1,14 +1,9 @@
-// Journal admission, frozen adoption, retention and first-run vectors.
+// Journal admission, retention, content-clock and client vectors.
 import { fileURLToPath } from "node:url";
 import { CONSTANTS } from "../core/constants.js";
-import { replaceRow, ZERO_DIGEST } from "../core/digest.js";
+import { replaceRow } from "../core/digest.js";
 import { Registry } from "../core/registry.js";
-import { backfill } from "../journal/backfill.js";
-import {
-  JournalProduct,
-  nextDocumentStamp,
-  restPage,
-} from "../journal/product.js";
+import { JournalProduct, nextDocumentStamp } from "../journal/product.js";
 import { admit } from "../server/admit.js";
 import { ServerState } from "../server/state.js";
 import { push } from "../server/push.js";
@@ -120,7 +115,7 @@ export function admissionVectors() {
   const old = state([page()]);
   const out = [
     admission("new whole page", save()),
-    admission("server REST-origin whole page", save(), old, SERVER),
+    admission("server-origin whole page", save(), old, SERVER),
     admission(
       "equal stamp retains stored bytes and scales",
       save({ stamp: content(NOW - 200), body: "Tie loser.", mood: 10 }),
@@ -361,161 +356,51 @@ export function admissionVectors() {
       old,
     ),
   );
-  const oversized = migrationVectors().find((v) =>
-    v.name.startsWith("oversized historic"),
-  );
+  // Appendix D's adopted shape: a head over the cap and the retired first run, at the adoption's stamp.
+  const adopted = `${NOW}:0:srv`;
   out.push(
     admission(
       "valid save replaces oversized adopted head",
       save(),
-      oversized.expect.state,
+      state(
+        [
+          page({
+            f: regs(
+              {
+                mood: null,
+                energy: null,
+                source: "typed",
+                documentStamp: content(NOW + 10000000, 42, "legacy:actor"),
+              },
+              adopted,
+            ),
+            x: { body: { text: "x".repeat(131073), rev: 1, merged: false } },
+            rc: NOW - 900,
+            ru: NOW - 900,
+          }),
+          {
+            t: "journalState",
+            id: "journalState",
+            f: regs(
+              {
+                placeholder: "retired",
+                privacyLine: "retired",
+                firstPage: "retired",
+                scales: "retired",
+              },
+              adopted,
+            ),
+            seq: 2,
+            rc: NOW,
+            ru: NOW,
+          },
+        ],
+        [],
+        { journalPages: { [KEY]: { [DAY]: { updatedAt: NOW - 900 } } } },
+      ),
     ),
   );
   return out;
-}
-export function migrationVectors() {
-  const p = (edit = {}) => ({
-    day: DAY,
-    body: "Kept words.",
-    mood: 0,
-    energy: null,
-    source: "typed",
-    stamp: content(NOW + 10000000, 42, "legacy:actor"),
-    updatedAt: NOW - 900,
-    ...edit,
-  });
-  const r = (migrationId, body = "Earlier words.") => ({
-    migrationId,
-    day: DAY,
-    body,
-    stamp: content(NOW - migrationId * 100),
-    supersededAt: NOW - migrationId * 1000,
-  });
-  const cases = [
-    [
-      "future stamp, duplicate audits and exact display time",
-      { pages: [p()], revisions: [r(2), r(1), r(3)] },
-    ],
-    [
-      "blank row primary without onboarding derivation",
-      { pages: [p({ body: "", mood: null, stamp: content(0, 0, "") })] },
-    ],
-    [
-      "whitespace written derives retirement",
-      { pages: [p({ body: "  ", mood: null })] },
-    ],
-    [
-      "scale-only written derives retirement",
-      { pages: [p({ body: "", mood: null, energy: 0 })] },
-    ],
-    [
-      "audit allocations precede sorted pages, migration does not prune",
-      {
-        pages: [p({ day: "2026-10-02" }), p({ day: "0001-01-01" })],
-        revisions: Array.from({ length: 12 }, (_, i) => ({
-          ...r(i + 1),
-          supersededAt: NOW - 100 * 86400000,
-        })),
-      },
-    ],
-    [
-      "oversized historic head adopted unchanged, old score reads narrowed",
-      { pages: [p({ body: "x".repeat(131073), mood: 99, source: "old" })] },
-    ],
-    [
-      "revision tie order global across days",
-      {
-        pages: [p()],
-        revisions: [
-          { ...r(1), day: "2026-10-02", supersededAt: NOW },
-          { ...r(2), day: "0001-01-01", supersededAt: NOW },
-        ],
-      },
-    ],
-    ["revisions-only scope reserves revision watermark", { revisions: [r(1)] }],
-    [
-      "historic empty and oversized audit rows are preserved",
-      { pages: [p()], revisions: [r(1, ""), r(2, "x".repeat(131073))] },
-    ],
-    ["empty tables remain empty", {}],
-  ].map(([name, legacy]) => {
-    const input = {
-      state: empty(),
-      account: "A",
-      legacy,
-      M: NOW,
-      firstRunPolicy: "retire-existing",
-    };
-    const next = backfill({
-      ...input,
-      state: new ServerState(input.state),
-      registry: journalRegistry,
-    });
-    const reads = next
-      .rowsOf(KEY)
-      .filter((r) => r.t === "page")
-      .map((r) => restPage(r, next.product.journalPages[KEY][r.id]));
-    return vector(name, input, { state: next.toJSON(), reads });
-  });
-  const adopted = cases[0];
-  for (const [name, input] of [
-    [
-      "offer-scales policy rejected",
-      { ...adopted.input, firstRunPolicy: "offer-scales" },
-    ],
-    [
-      "omitted policy adopts retire-existing",
-      { ...adopted.input, firstRunPolicy: undefined },
-    ],
-    [
-      "offer-scales policy on adoption rejected",
-      {
-        ...adopted.input,
-        state: adopted.expect.state,
-        firstRunPolicy: "offer-scales",
-      },
-    ],
-    [
-      "explicit adoption retry no-op",
-      { ...adopted.input, state: adopted.expect.state },
-    ],
-    [
-      "omitted policy adoption retry no-op",
-      { ...adopted.input, state: adopted.expect.state, firstRunPolicy: undefined },
-    ],
-    [
-      "unmarked existing scope fails rehearsal",
-      { ...adopted.input, state: state() },
-    ],
-    [
-      "changed adoption manifest fails rehearsal",
-      { ...adopted.input, state: adopted.expect.state, legacy: {} },
-    ],
-    [
-      "invalid legacy calendar fails rehearsal",
-      { ...adopted.input, legacy: { pages: [p({ day: "0000-01-01" })] } },
-    ],
-    [
-      "unsafe legacy HLC fails rehearsal",
-      { ...adopted.input, legacy: { pages: [p({ stamp: content(2 ** 53) })] } },
-    ],
-  ]) {
-    try {
-      const next = backfill({
-        ...input,
-        state: new ServerState(input.state),
-        registry: journalRegistry,
-      });
-      const reads = next
-        .rowsOf(KEY)
-        .filter((r) => r.t === "page")
-        .map((r) => restPage(r, next.product.journalPages[KEY][r.id]));
-      cases.push(vector(name, input, { state: next.toJSON(), reads }));
-    } catch (error) {
-      cases.push(vector(name, input, { error: error.message }));
-    }
-  }
-  return cases;
 }
 export function pruneExpanded(input) {
   return journalProduct.pruneRevisions({
@@ -842,7 +727,6 @@ export function clientVectors() {
 export function files() {
   return {
     "journal/admit.json": admissionVectors(),
-    "journal/backfill.json": migrationVectors(),
     "journal/revisions.json": revisionVectors(),
     "journal/content-clock.json": clockVectors(),
     "journal/client.json": clientVectors(),

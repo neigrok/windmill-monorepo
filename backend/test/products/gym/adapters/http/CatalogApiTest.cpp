@@ -12,7 +12,7 @@ using namespace wm::gym;
 using namespace wm::gym::fake;
 using namespace wm::gym::apitest;
 
-// CatalogApi over the fake store: the catalog read, the one write, the rename, and the record page.
+// CatalogApi over the fake store: the catalog read and the record page.
 
 TEST(gym_exercises_lists_the_catalog_in_pattern_then_name_order) {
   Harness h;
@@ -30,155 +30,49 @@ TEST(gym_exercises_lists_the_catalog_in_pattern_then_name_order) {
                        R"("name":"Back Squat","pattern":"squat","stepKg":2.5}]})"));
 }
 
-TEST(gym_create_exercise_takes_the_equipments_step_and_joins_the_callers_catalog) {
+TEST(gym_exercises_lists_a_movement_the_caller_created_in_its_place) {
   Harness h;
-  h.signIn("s-live");
+  h.repo.db.seedCustom(h.signIn("s-live"), Exercise{ExerciseId{"ex_11111111"}, "Zercher Squat", Pattern::squat,
+                                                    Equipment::barbell, 2.5, true});
 
-  drogon::HttpResponsePtr created = send(h.catalog, &CatalogApi::createExercise,
-                                         postRequest("/v1/gym/exercises", exerciseBody(), "s-live"));
   drogon::HttpResponsePtr catalog =
       send(h.catalog, &CatalogApi::listExercises, getRequest("/v1/gym/exercises", "s-live"));
 
-  CHECK_EQ(created->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(dump(bodyOf(created)),
-           std::string(R"({"custom":true,"equipment":"barbell","id":"ex_11111111",)"
-                       R"("name":"Zercher Squat","pattern":"squat","stepKg":2.5})"));
-  CHECK_EQ(bodyOf(catalog)["exercises"].size(), 3u);
-  CHECK_EQ(dump(bodyOf(catalog)["exercises"][2]), dump(bodyOf(created)));
+  CHECK_EQ(catalog->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(bodyOf(catalog)),
+           std::string(R"({"exercises":[)"
+                       R"({"custom":false,"equipment":"barbell","id":"bench-press",)"
+                       R"("name":"Bench Press","pattern":"press","stepKg":2.5},)"
+                       R"({"custom":false,"equipment":"barbell","id":"back-squat",)"
+                       R"("name":"Back Squat","pattern":"squat","stepKg":2.5},)"
+                       R"({"custom":true,"equipment":"barbell","id":"ex_11111111",)"
+                       R"("name":"Zercher Squat","pattern":"squat","stepKg":2.5}]})"));
 }
 
-TEST(gym_create_exercise_with_a_spent_id_is_409_and_a_malformed_one_is_400) {
+// A renamed movement reads under its new name with the old one beside it, which the picker searches.
+TEST(gym_exercises_lists_the_names_a_movement_used_to_go_by) {
   Harness h;
-  h.signIn("s-live");
+  const UserId me = h.signIn("s-live");
+  h.repo.db.displayNames.push_back({{me.str(), "back-squat"}, "Low-bar Squat"});
+  h.repo.db.aliasRows.push_back(FakeGymStore::Alias{me.str(), "back-squat", "Back Squat", 1});
 
-  drogon::HttpResponsePtr seedSlug =
-      send(h.catalog, &CatalogApi::createExercise,
-           postRequest("/v1/gym/exercises", exerciseBody("bench-press", "My Bench"), "s-live"));
-  drogon::HttpResponsePtr shortId =
-      send(h.catalog, &CatalogApi::createExercise,
-           postRequest("/v1/gym/exercises", exerciseBody("ex_1"), "s-live"));
-  Json::Value unknownPattern = exerciseBody("ex_22222222");
-  unknownPattern["pattern"] = "legs";
-  drogon::HttpResponsePtr badPattern = send(
-      h.catalog, &CatalogApi::createExercise, postRequest("/v1/gym/exercises", unknownPattern, "s-live"));
-
-  CHECK_EQ(seedSlug->getStatusCode(), drogon::k409Conflict);
-  CHECK_EQ(dump(bodyOf(seedSlug)),
-           std::string(R"({"code":"exercise-id-taken","error":"that movement id is taken"})"));
-  // A created movement's id is client-minted, so it obeys the one id-shape rule the seeds predate.
-  CHECK_EQ(shortId->getStatusCode(), drogon::k400BadRequest);
-  CHECK_EQ(dump(bodyOf(shortId)), std::string(R"({"error":"could not read that movement"})"));
-  CHECK_EQ(badPattern->getStatusCode(), drogon::k400BadRequest);
-  CHECK(h.repo.db.customs.empty());
-}
-
-// A step the step_kg column cannot hold is the CLIENT's mistake and terminal: a 400, at both ends of numeric(4,2).
-TEST(gym_create_exercise_refuses_a_step_or_a_name_the_store_could_not_hold) {
-  Harness h;
-  h.signIn("s-live");
-  Json::Value overflows = exerciseBody("ex_22222222");
-  overflows["stepKg"] = 1000;
-  Json::Value justOver = exerciseBody("ex_33333333");
-  justOver["stepKg"] = 100;
-  Json::Value roundsToZero = exerciseBody("ex_44444444");
-  roundsToZero["stepKg"] = 0.004;
-  Json::Value hugeName = exerciseBody("ex_55555555", std::string(2'000'000, 'x'));
-  Json::Value theCeiling = exerciseBody("ex_66666666");
-  theCeiling["stepKg"] = 99.99;
-
-  for (const Json::Value& body : {overflows, justOver, roundsToZero, hugeName}) {
-    drogon::HttpResponsePtr response =
-        send(h.catalog, &CatalogApi::createExercise, postRequest("/v1/gym/exercises", body, "s-live"));
-    CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
-    CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that movement"})"));
-  }
-  CHECK(h.repo.db.customs.empty());
-
-  drogon::HttpResponsePtr stored =
-      send(h.catalog, &CatalogApi::createExercise, postRequest("/v1/gym/exercises", theCeiling, "s-live"));
-  CHECK_EQ(stored->getStatusCode(), drogon::k200OK);
-  CHECK_EQ(bodyOf(stored)["stepKg"].asDouble(), 99.99);
-}
-
-TEST(gym_rename_answers_the_movement_under_its_new_name_and_its_unchanged_id) {
-  Harness h;
-  h.signIn("s-live");
-
-  drogon::HttpResponsePtr response =
-      send(h.catalog, &CatalogApi::renameExercise,
-           patchRequest("/v1/gym/exercises/back-squat", renameBody(), "s-live"), "back-squat");
-
-  CHECK_EQ(response->getStatusCode(), drogon::k200OK);
-  // The id never moved, and the name it had a moment ago rides back as an alias the picker searches.
-  CHECK_EQ(dump(bodyOf(response)),
-           std::string(R"({"aliases":["Back Squat"],"custom":false,"equipment":"barbell",)"
-                       R"("id":"back-squat","name":"Low-bar Squat","pattern":"squat",)"
-                       R"("stepKg":2.5})"));
-}
-
-TEST(gym_the_old_name_stays_searchable_and_renaming_back_takes_it_off_again) {
-  Harness h;
-  h.signIn("s-live");
-
-  drogon::HttpResponsePtr renamed =
-      send(h.catalog, &CatalogApi::renameExercise,
-           patchRequest("/v1/gym/exercises/back-squat", renameBody(), "s-live"), "back-squat");
   drogon::HttpResponsePtr listed =
       send(h.catalog, &CatalogApi::listExercises, getRequest("/v1/gym/exercises", "s-live"));
-  drogon::HttpResponsePtr back =
-      send(h.catalog, &CatalogApi::renameExercise,
-           patchRequest("/v1/gym/exercises/back-squat", renameBody("Back Squat"), "s-live"),
-           "back-squat");
 
-  CHECK_EQ(dump(bodyOf(renamed)["aliases"]), std::string(R"(["Back Squat"])"));
-  // (The list is ordered by pattern then name, so the squat sits behind the press.)
-  CHECK_EQ(dump(bodyOf(listed)["exercises"][1]["aliases"]), std::string(R"(["Back Squat"])"));
-  CHECK_EQ(bodyOf(back)["name"].asString(), std::string("Back Squat"));
-  CHECK_EQ(dump(bodyOf(back)["aliases"]), std::string(R"(["Low-bar Squat"])"));
+  CHECK_EQ(listed->getStatusCode(), drogon::k200OK);
   // A movement nobody has renamed carries no alias key at all — omitted, never an empty array.
-  CHECK(!bodyOf(listed)["exercises"][0].isMember("aliases"));
-}
-
-TEST(gym_rename_refuses_a_body_that_names_anything_but_the_name) {
-  Harness h;
-  h.signIn("s-live");
-  Json::Value body = renameBody();
-  body["stepKg"] = 5.0;
-
-  drogon::HttpResponsePtr response =
-      send(h.catalog, &CatalogApi::renameExercise,
-           patchRequest("/v1/gym/exercises/back-squat", body, "s-live"), "back-squat");
-  drogon::HttpResponsePtr empty =
-      send(h.catalog, &CatalogApi::renameExercise,
-           patchRequest("/v1/gym/exercises/back-squat", renameBody(""), "s-live"), "back-squat");
-
-  drogon::HttpResponsePtr blank =
-      send(h.catalog, &CatalogApi::renameExercise,
-           patchRequest("/v1/gym/exercises/back-squat", renameBody("   "), "s-live"), "back-squat");
-
-  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
-  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"could not read that name"})"));
-  CHECK_EQ(empty->getStatusCode(), drogon::k400BadRequest);
-  CHECK_EQ(blank->getStatusCode(), drogon::k400BadRequest);
-  CHECK_EQ(dump(bodyOf(blank)), std::string(R"({"error":"could not read that name"})"));
-}
-
-TEST(gym_rename_of_a_movement_this_account_cannot_see_is_404) {
-  Harness h;
-  h.signIn("s-live");
-
-  drogon::HttpResponsePtr response =
-      send(h.catalog, &CatalogApi::renameExercise,
-           patchRequest("/v1/gym/exercises/no-such", renameBody(), "s-live"), "no-such");
-
-  CHECK_EQ(response->getStatusCode(), drogon::k404NotFound);
-  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"no such movement"})"));
+  CHECK_EQ(dump(bodyOf(listed)),
+           std::string(R"({"exercises":[)"
+                       R"({"custom":false,"equipment":"barbell","id":"bench-press",)"
+                       R"("name":"Bench Press","pattern":"press","stepKg":2.5},)"
+                       R"({"aliases":["Back Squat"],"custom":false,"equipment":"barbell",)"
+                       R"("id":"back-squat","name":"Low-bar Squat","pattern":"squat",)"
+                       R"("stepKg":2.5}]})"));
 }
 
 TEST(gym_record_answers_the_whole_page_in_one_read) {
   Harness h;
-  h.signIn("s-live");
-  trainedThrough(h, "s-live", "ses_11111111", 1'700'000'000'000, 4);
+  h.seedWorkout(h.signIn("s-live"), "ses_11111111", 1'700'000'000'000, 4);
 
   drogon::HttpResponsePtr response =
       send(h.catalog, &CatalogApi::exerciseRecord,
@@ -216,7 +110,7 @@ TEST(gym_record_carries_the_days_that_name_the_movement_beside_their_count) {
   h.repo.db.routineRows.push_back(Routine{rtId("rt_11111111"), caller, "Push A", 0, {benchEntry()}});
   h.repo.db.routineRows.push_back(
       Routine{rtId("rt_22222222"), caller, "Legs", 1, {benchEntry(), benchEntry(2)}});
-  trainedThrough(h, "s-live", "ses_11111111", 1'700'000'000'000, 4);
+  h.seedWorkout(caller, "ses_11111111", 1'700'000'000'000, 4);
 
   drogon::HttpResponsePtr response =
       send(h.catalog, &CatalogApi::exerciseRecord,

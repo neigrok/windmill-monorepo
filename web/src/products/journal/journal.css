@@ -346,34 +346,7 @@
 }
 
 /* The floor — the top of the canvas, which is the oldest end of the journal. */
-.journal-floor-more {
-  display: block;
-  width: 100%;
-  min-height: 44px;
-  margin: 0 0 8px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--journal-ink);
-  opacity: 0.55;
-  font-family: var(--font-body);
-  font-size: 13px;
-  line-height: 20px;
-  text-align: center;
-  cursor: pointer;
-  transition: opacity 140ms var(--ease-standard);
-}
-.journal-floor-more:hover { opacity: 0.9; }
-/* Disabled repeats every property :hover sets: a phone leaves :hover stuck after a tap. */
-.journal-floor-more[aria-disabled='true'],
-.journal-floor-more[aria-disabled='true']:hover {
-  cursor: default;
-  opacity: 0.4;
-  font-style: italic;
-}
-
-.journal-floor-end,
-.journal-floor-failed {
+.journal-floor-end {
   font-family: var(--font-body);
   font-size: 13px;
   line-height: 20px;
@@ -381,18 +354,6 @@
   opacity: 0.5;
   margin: 0 0 10px;
   text-align: center;
-}
-
-.journal-floor-retry {
-  margin-left: 8px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--lamp-400);
-  font: inherit;
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
 }
 
 /* The composer is two layers on one box: the real field, whose glyphs are transparent, and the paint
@@ -2000,7 +1961,6 @@ a.journal-link:focus-visible {
 .journal-week-dow { color: var(--journal-ink-dim); font: 400 10px/1 var(--font-mono), ui-monospace, monospace; }
 
 .journal-zoom-grid { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
-.journal-zoom-loading { color: var(--journal-ink-dim); font-style: italic; }
 .journal-zoom-unread {
   max-width: 760px;
   margin: 0 auto 14px;

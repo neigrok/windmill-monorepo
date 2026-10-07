@@ -8,7 +8,7 @@ account and backend. There is no subscription surface.
 | Module | Responsibility |
 |---|---|
 | `:platform` | Bearer HTTP transport, account/session storage, sign-in, tokens and product-neutral shell. |
-| `:gym` | Pure domain rules, durable stores, network/notification adapters and Compose UI. |
+| `:gym` | Android training runtime, device storage, presentation models, network/notification adapters and Compose UI. |
 | `:app` | Composition root; one auth store, gym runtime, training store and notification adapter shared by activity and receivers. |
 | `:sync-core` | JVM JSON/JCS, registry descriptors, clocks, joins, identities, fractional order and digests. |
 | `:sync-api` | JVM product values, Replica port, transaction readers and typed commit failures; depends only on sync-core. |
@@ -23,7 +23,7 @@ account and backend. There is no subscription surface.
 The eight JVM modules and Android engine library contain the SyncAPI, client runtime, model server
 and kit. The full build enforces corpus coverage, properties, replay fuzz, schema freshness and
 strict layering; see [coverage, gates and remaining work](SYNC_FOUNDATION.md). The app composes
-that runtime for gym, with durable legacy migration and account decisions.
+that runtime for gym, with signed-out workout imports and account decisions.
 
 Products depend on `:platform`, never on each other. See [repository structure](../../STRUCTURE.md).
 The app is portrait-only. Shared gym rules live in
@@ -74,32 +74,37 @@ accepts signed-out training automatically. When both sides hold training, sign-i
 the choice is open requires a fresh decision. Sign-out uses **Keep**, retaining unsent account work
 in its dormant replica and selecting an independent anonymous replica.
 
-First launch archives the existing SetQueue, LocalLog, DeviceCopy, preferences, bodyweight and
-claim-consent documents before migrating them. Each engine transaction commits source identity,
-work and its completion marker together; a crash resumes without duplicating completed work.
-Finished signed-out workouts become durable atomic strict imports before adoption. Unfinished
-starts explicitly refuse joining another open workout; only their own confirmed session identity
-reconciles automatically. A migrated planned start waits for the account pull and refuses a changed
-frozen routine plan. Conflicting workouts remain inspectable on the phone, with an explicit
-**Keep** action that imports them finished at their last set. Dismissing a notice does not remove
-workout content. Attempted operations keep their original identities and payloads until
-reconciliation; only an owed correction changes confirmed mutable fields. Pending appends replay
-in performed order, then stable identity order, and the server assigns their set numbers.
-Refused imports retain their source on the phone. Gym settings shows the reason and offers explicit
-correction and retry; dates, sets and frozen routine lineage are never silently changed.
+Before every sign-in, `WorkoutImports` prepares each signed-out workout for the account. A finished
+workout becomes one durable atomic strict import. An unfinished one becomes a start that refuses
+joining another open workout; its sets follow under their own identities once the account
+confirms that start, and the server assigns their set numbers. A planned start waits for the
+account pull and refuses a changed frozen routine plan. Conflicting workouts remain inspectable on
+the phone, with an explicit **Keep** action that imports them finished at their last set.
+Dismissing a notice does not remove workout content. Refused imports retain their source on the
+phone. Gym settings shows the reason and offers explicit correction and retry; dates, sets and
+frozen routine lineage are never silently changed.
 
 ## Training runtime
 
-`TrainingStore` keeps the Compose interface and runs gym reads and writes through `EngineTraining`
-and `:gym:domain`. SetQueue retains the device workout controls used by the shared `GymRuntime`
-and notification receivers; engine replica changes rebuild that projection from the selected
-replica. The bundled movement catalogue uses backend seed identities. Coach threads, attachments,
-shares and connected-log credentials use REST. `LocalCoach` retains account-scoped drafts, request
-identities and partial replies; retry retains identity and Stop preserves completed work.
+`TrainingStore` keeps the training interface and runs training reads and writes through
+`EngineTraining` and `:gym:domain`; a write commits to the selected replica at once and the engine
+delivers it. A refusal by the log's rules is said on screen and is not reported as a failure.
+`WorkoutControls` (`windmill-gym-sets.json`) holds the open workout's device controls used by the
+shared `GymRuntime` and notification receivers: movement order, the movement in hand, the rack's
+offer and the clock each set was logged at. It is a projection of the selected replica, rebuilt
+when the replica changes. It also retains accepted sets until their engine commit succeeds.
+Finish and projection refreshes recover those sets before clearing the controls; a failed recovery
+keeps them for retry. Finish receipts read the committed replica.
+The bundled movement catalogue uses backend seed identities. Only Coach
+threads, attachments, shares and connected-log credentials use REST, through `GymRest`.
+`coach/` groups conversation models, storage, photos and screens. `CoachStore` owns thread reads,
+retries and streaming; `TrainingStore` composes it with the current account, shared Undo windows and
+routine refresh. `LocalCoach` retains account-scoped drafts, request identities and partial replies;
+retry retains identity and Stop preserves completed work. Shared HTTP framing lives in `net/GymHttp.kt`.
+`sharing/` owns public workout links and their card; sharing a workout does not involve a Coach conversation.
 
-Notes retain an unread state until the account's first pull completes; subsequent pulls refresh
-the open notebook, and refused saves show their refusal. Deleting a migrated cached weigh-in
-before that pull persists a pending deletion, hiding it through restart until it lands.
+Notes live with the account. They retain an unread state until the account's first pull
+completes; subsequent pulls refresh the open notebook, and refused saves show their refusal.
 
 Workout logging persists consumed actions and timestamps. Rack, movement, account and finish
 changes invalidate stale actions. Notification logging requires unlock and current identity;
@@ -108,7 +113,7 @@ a system Live Update. Dismiss hides it for that workout; Show workout restores i
 latest-set clocks survive relaunch and freeze at finish. There are no rest alerts or set-confirmation
 signals. The UI displays kilograms even with an account preference of lb.
 
-A 426 from the engine or 410 `client-update-required` from REST presents **Update required**.
+A 426 from the engine presents **Update required**.
 The local replica remains intact while network synchronization is paused. Update destination
 configuration and observability are documented in [Android observability](../../docs/ANDROID_OBSERVABILITY.md).
 
@@ -116,15 +121,15 @@ configuration and observability are documented in [Android observability](../../
 
 Use the full build above for both variants, lint, assembly and shared engine/domain gates. For
 device checks, build with `-Pwindmill.apiBase=http://10.0.2.2:8096` and use `Pixel_API34_Root`.
-Follow [the backend runbook](../../backend/RUNNING.md) with a separate database, `schema.sql`,
-`gym_sync.sql`, `journal_sync.sql`, `gym_sync_v5.sql`, both backfills and the v5 upgrade/audit.
-Enable `SYNC_ENABLED=1`, `GYM_ENGINE_WRITES=1` and `JOURNAL_ENGINE_WRITES=1` on port 8096.
+Follow [the backend runbook](../../backend/RUNNING.md) with a separate database loaded from
+`schema.sql`, on port 8096.
 
-Install an APK built from `android-v0.10.0` with the same test signing key, create finished and
-unfinished workouts, then install this build over its data. Check IDs, frozen routine lineage,
-pending operations, crash/restart and refused-history recovery. Log offline, restart, reconnect
-and verify the server records; exercise Add and Discard with data on both sides, and Keep at
-sign-out. A same-debug-key source upgrade does not establish published release signing.
+Install an APK built from `android-v0.11.0` with the same test signing key, log finished and
+unfinished workouts signed out, then install this build over its data and sign in: the workouts
+arrive as imports with their IDs and frozen routine lineage. Check crash/restart and
+refused-import recovery. Log offline, restart, reconnect and verify the server records; exercise
+Add and Discard with data on both sides, and Keep at sign-out. A same-debug-key source upgrade
+does not establish published release signing.
 
 The live-wire suite requires a fresh local account credential and a single-use magic-link token
 issued against that backend; the runbook's direct-database development code uses the normal auth
@@ -180,9 +185,10 @@ is Compose/engine-model testing. Signed-in acceptance was not repeated on the pu
 Android application code is unchanged from A2 at `3c814064`; the release adds the update destination.
 
 Distribution is by sideload. Published APKs through 0.7.1 use different debug certificates and
-cannot update in place with the retained release key. Uninstalling removes device-only records;
-preserve them before changing installation. When both sides hold training, choose Add to transfer
-signed-out records.
+cannot update in place with the retained release key. This build reads no device records written
+by 0.10.0 or earlier; installing 0.11.0 first moves them into the engine. Uninstalling removes
+device-only records; preserve them before changing installation. When both sides hold training,
+choose Add to transfer signed-out records.
 
 Spoken TalkBack acceptance is unverified. Routines tab labels clip at 320dp with 200% text; see
 [the design consistency ledger](../../docs/design/consistency.md).

@@ -49,14 +49,17 @@ ProposalHead head(ProposalIntent intent = ProposalIntent::revise, int changes = 
                       std::nullopt};
 }
 
-bool rejects(const std::function<void()>& build) {
+// The sentence the constructor refused with, or empty when it built.
+std::string refusal(const std::function<void()>& build) {
   try {
     build();
-    return false;
-  } catch (const InvalidTraining&) {
-    return true;
+    return "";
+  } catch (const InvalidTraining& refused) {
+    return refused.what();
   }
 }
+
+bool rejects(const std::function<void()>& build) { return !refusal(build).empty(); }
 }
 
 TEST(classify_calls_the_log_a_record_whatever_it_touches) {
@@ -186,10 +189,8 @@ TEST(counted_changes_counts_a_run_the_proposal_reorders) {
   CHECK_EQ(changes[0].kind, ChangeKind::kept);
   CHECK_EQ(changes[1].kind, ChangeKind::kept);
   CHECK_EQ(countedChanges(base, changes, "Push A", "Push A"), 1);
-  const std::vector<RoutineEntry> document =
-      documentOf(RoutineProposal{head(ProposalIntent::revise, 1), 1, "Push A", "Push A", changes});
-  CHECK_EQ(document[0].exercise, ExerciseId{"overhead-press"});
-  CHECK_EQ(document[1].exercise, ExerciseId{"bench-press"});
+  CHECK_EQ(changes[0].exercise, ExerciseId{"overhead-press"});
+  CHECK_EQ(changes[1].exercise, ExerciseId{"bench-press"});
 }
 
 TEST(counted_changes_does_not_read_a_removal_or_an_insertion_as_a_reorder) {
@@ -245,53 +246,6 @@ TEST(is_replay_of_reads_the_scheme_set_for_set) {
                                                                             oneSetOff)})}));
 }
 
-TEST(document_of_reads_the_rows_up_to_the_first_removal_and_renumbers_them) {
-  const std::vector<RoutineEntry> base{line(1, "bench-press"),
-                                       line(2, "cable-fly", straight(3, 12, 22.5))};
-  const std::vector<RoutineEntry> proposed{line(1, "bench-press", straight(5, 3, 87.5)),
-                                           line(2, "incline-db-press", straight(3, 10, 24))};
-  const RoutineProposal proposal{head(ProposalIntent::revise, 3), 1, "Push A", "Push A",
-                                 changesBetween(base, proposed)};
-
-  const std::vector<RoutineEntry> document = documentOf(proposal);
-  CHECK_EQ(document.size(), std::size_t(2));
-  CHECK_EQ(document[0].position, 1);
-  CHECK_EQ(document[0].exercise, ExerciseId{"bench-press"});
-  CHECK_EQ(document[0].sets, straight(5, 3, 87.5));
-  CHECK_EQ(document[1].position, 2);
-  CHECK_EQ(document[1].exercise, ExerciseId{"incline-db-press"});
-}
-
-TEST(document_of_and_applied_to_carry_a_ramp_set_for_set) {
-  const Routine base = pushA({line(1, "bench-press")});
-  const RoutineProposal proposal{
-      head(ProposalIntent::revise, 2), 1, "Push A", "Push A",
-      changesBetween(base.entries, {line(1, "back-squat", ramp(), 240)})};
-
-  const std::vector<RoutineEntry> document = documentOf(proposal);
-  const Routine applied = appliedTo(base, proposal);
-
-  CHECK_EQ(document, std::vector<RoutineEntry>{line(1, "back-squat", ramp(), 240)});
-  CHECK_EQ(applied.entries, std::vector<RoutineEntry>{line(1, "back-squat", ramp(), 240)});
-  CHECK_EQ(applied.revision, 2);
-}
-
-TEST(applied_to_moves_the_document_the_name_and_the_revision_and_nothing_else) {
-  const Routine base = pushA({line(1, "bench-press"), line(2, "cable-fly", straight(3, 12, 22.5))}, 4);
-  const RoutineProposal proposal{
-      head(ProposalIntent::revise, 2), 4, "Push A", "Push A — heavy",
-      changesBetween(base.entries, {line(1, "bench-press", straight(5, 3, 87.5))})};
-
-  const Routine applied = appliedTo(base, proposal);
-  CHECK_EQ(applied.id, base.id);
-  CHECK_EQ(applied.user, base.user);
-  CHECK_EQ(applied.position, base.position);
-  CHECK_EQ(applied.name, std::string("Push A — heavy"));
-  CHECK_EQ(applied.revision, 5);
-  CHECK_EQ(applied.entries.size(), std::size_t(1));
-  CHECK_EQ(applied.entries[0].sets, straight(5, 3, 87.5));
-}
-
 TEST(proposal_refuses_what_it_could_never_be_applied_as) {
   const std::vector<RoutineEntry> base{line(1, "bench-press")};
   const std::vector<RoutineChange> ok =
@@ -314,6 +268,41 @@ TEST(proposal_refuses_what_it_could_never_be_applied_as) {
   CHECK(rejects([&] {
     RoutineProposal{head(ProposalIntent::remove), 1, "Push A", "Push A", ok};
   }));
+}
+
+TEST(proposal_write_refuses_a_blank_revision_name_and_reads_historical_names) {
+  const std::vector<RoutineChange> ok =
+      changesBetween({line(1, "bench-press")}, {line(1, "bench-press", straight(5, 3, 87.5))});
+  const std::string sentence = "a revision proposal needs a name";
+  CHECK_EQ(refusal([&] { RoutineProposal{head(), 1, "Push A", "", ok}; }), sentence);
+  CHECK_EQ(refusal([&] { RoutineProposal{head(), 1, "Push A", "\xC2\xA0", ok}; }), sentence);   // U+00A0
+
+  const RoutineProposal stored{Stored{}, head(), 2, "   ", "\xE3\x80\x80", ok};   // U+3000
+  CHECK_EQ(stored.head, head());
+  CHECK_EQ(stored.baseRevision, 2);
+  CHECK_EQ(stored.baseName, std::string(""));
+  CHECK_EQ(stored.proposedName, std::string("\xE3\x80\x80"));
+  CHECK_EQ(stored.changes, ok);
+  CHECK_EQ(refusal([&] { RoutineProposal{Stored{}, head(), 0, "", "", ok}; }),
+           std::string("a proposal stands on a revision from 1"));
+}
+
+TEST(proposals_can_rename_or_remove_a_historical_blank_routine) {
+  const std::vector<RoutineEntry> base{line(1, "bench-press")};
+  const auto kept = changesBetween(base, base);
+  const auto removed = changesBetween(base, {});
+  for (const std::string name : {"", " \t ", "\xC2\xA0\xE2\x80\x83\xEF\xBB\xBF"}) {
+    const RoutineProposal renamed{head(), 1, name, "Readable name", kept};
+    CHECK_EQ(renamed.baseName, trimmedName(name));
+    CHECK_EQ(renamed.proposedName, "Readable name");
+    CHECK_EQ(renamed.changes, kept);
+    const RoutineProposal removal{head(ProposalIntent::remove), 1, name, name, removed};
+    CHECK_EQ(removal.baseName, trimmedName(name));
+    CHECK_EQ(removal.proposedName, trimmedName(name));
+    CHECK_EQ(removal.changes, removed);
+    CHECK_EQ(refusal([&] { RoutineProposal{head(), 1, name, name, kept}; }),
+             "a revision proposal needs a name");
+  }
 }
 
 TEST(proposal_refuses_a_removed_line_in_the_middle_of_the_run) {

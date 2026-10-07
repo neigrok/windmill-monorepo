@@ -6,7 +6,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { journalApi } from '../journalApi.js';
-import { localDay } from '../hlc.js';
+import { localDay } from '../localDay.js';
+import { corpus } from '../pages.js';
 import { hopToHash } from '../openPosition.js';
 import { CEILING_MS, PAUSE_MS, SETTLE_MS, armArrival } from './arrival.js';
 
@@ -56,7 +57,7 @@ export function locate(body, text, occurrence) {
 
 
 // Two match lists are the same pairing set when they name the same passages — used to keep a page's
-// verified flag across a re-read rather than re-fetching bodies that have not moved.
+// verified flag across a re-read rather than re-locating quotes whose pairing has not moved.
 function sameMatches(before, after) {
   if (!before || !after || before.length !== after.length) return false;
   return before.every((match, at) => match.day === after[at].day && match.text === after[at].text);
@@ -112,10 +113,15 @@ function seenFirstEcho() {
   }
 }
 
+// The body a quote is re-located in: the page as this device holds it for `account`, and nothing for a
+// page it does not hold.
+const deviceBodies = (account) => (day) => corpus({ account }).pages.find((page) => page.day === day)?.body ?? '';
+
 // `covered` is the canvas being under something — search, the zoom view, the nudges. An arrival that
-// lands then is HELD rather than spent: it kindles on the first frame the canvas is back.
+// lands then is HELD rather than spent: it kindles on the first frame the canvas is back. `bodyOf`
+// answers a day's body; the device's replica unless a caller hands another.
 export function useEchoes({
-  today = localDay(), account = null, onFly = () => {}, covered = false,
+  today = localDay(), account = null, onFly = () => {}, covered = false, bodyOf = null,
 } = {}) {
   const [pages, setPages] = useState(new Map());       // trigger day -> { day, matches, verified }
   const [floored, setFloored] = useState(false);       // fewer than ~20 pages: the canvas stays quiet
@@ -159,8 +165,8 @@ export function useEchoes({
 
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
-  const bodies = useRef(new Map());                    // match day -> live body, fetched once for re-location
-  const verifying = useRef(new Set());                 // pages whose bodies are already on the way
+  const bodyRef = useRef(null);
+  bodyRef.current = bodyOf ?? deviceBodies(account);
   // How many reads of this mount have PRESENTED this account's echoes.
   //
   // Its whole job is naming the first one, because the first one arms nothing: what it finds was
@@ -179,7 +185,7 @@ export function useEchoes({
   const era = useRef(0);
   // The days a LATER read added or changed, and so the only ones worth re-locating eagerly. The
   // mount's own read is left to the tabs that draw it, which is what keeps opening the journal from
-  // fetching every body of every echo page the account has.
+  // re-locating every quote of every echo page the account has.
   const landed = useRef(new Set());
   // Presented at rest, and therefore not news. Held in a ref because nothing draws it: making it
   // state would re-render the whole canvas on every poll beat that changed nothing.
@@ -252,8 +258,6 @@ export function useEchoes({
     setHeldDay(null);
     setShownSubject(null);
     setSwapping(false);
-    bodies.current = new Map();
-    verifying.current = new Set();
     era.current += 1;
     reads.current = 0;
     shown.current = new Map();
@@ -264,42 +268,19 @@ export function useEchoes({
     return load();
   }, [today, account, load]);
 
-  // Fetch the bodies these quotes live in, re-locate each one, drop the ones that no longer stand.
-  // Fetch the bodies these quotes live in, re-locate each one, drop the ones that no longer stand.
-  // `fresh` re-reads bodies the client already holds, which is what makes this a RECHECK rather than
-  // a first look: the writer edits the page an echo quotes and the quote has to go without anybody
-  // reloading anything.
-  const check = useCallback(async (day, fresh = false) => {
+  // Read the bodies these quotes live in, re-locate each one, drop the ones that no longer stand.
+  // `fresh` re-reads a page already verified, which is what makes this a RECHECK rather than a first
+  // look: the writer edits the page an echo quotes and the quote has to go without anybody reloading
+  // anything.
+  const check = useCallback((day, fresh = false) => {
     const page = pagesRef.current.get(day);
-    if (!page || (!fresh && page.verified) || verifying.current.has(day)) return;
-    const mine = era.current;
-    // Both captured here: a check that unwinds after the account changed must release ITS OWN
-    // marker, not whatever Set the new account has since installed.
-    const inFlight = verifying.current;
-    inFlight.add(day);
-    const days = [...new Set(page.matches.map((match) => match.day))];
-    const wanted = fresh ? days : days.filter((d) => !bodies.current.has(d));
-    const loaded = await Promise.all(wanted.map(async (d) => {
-      try {
-        const fetched = await journalApi.page(d);
-        return [d, fetched?.body || ''];
-      } catch {
-        // A body we could not read decides nothing: leaving the quote alone is the honest failure,
-        // because dropping it would retire an echo on a dropped connection.
-        return [d, bodies.current.get(d) ?? null];
-      }
-    }));
-    inFlight.delete(day);
-    // Bodies fetched for an account that is no longer signed in are that account's prose. They may
-    // not enter this cache, where a later re-location would read them as the new account's words.
-    if (mine !== era.current) return;
-    loaded.forEach(([d, body]) => { if (body !== null) bodies.current.set(d, body); });
+    if (!page || (!fresh && page.verified)) return;
+    const live = new Map(page.matches.map((match) => [match.day, bodyRef.current(match.day)]));
     setPages((current) => {
       const held = current.get(day);
       if (!held) return current;
-      const standing = stillStanding(held.matches, bodies.current);
-      const located = standing.map((match) => {
-        const span = locate(bodies.current.get(match.day), match.text, match.occurrenceHint);
+      const located = stillStanding(held.matches, live).map((match) => {
+        const span = locate(live.get(match.day), match.text, match.occurrenceHint);
         return span ? { ...match, lo: span[0], hi: span[1] } : match;
       });
       const next = new Map(current);
@@ -347,8 +328,8 @@ export function useEchoes({
   // A page a LATER read added or changed is re-located AT ONCE rather than on the next beat: the
   // count and the arming both wait on `verified`, so without this a page that landed this second
   // would state an unchecked count and light up to LIVE_INTERVAL late. Scoped to those days on
-  // purpose — sweeping every unverified page would make opening the journal fetch every body of
-  // every echo the account has, where the mount's own pages are re-located by the tabs that draw
+  // purpose — sweeping every unverified page would make opening the journal re-locate every quote
+  // of every echo the account has, where the mount's own pages are re-located by the tabs that draw
   // them.
   useEffect(() => {
     for (const day of landed.current) {
@@ -441,7 +422,7 @@ export function useEchoes({
 
   // Whether a page has ever been drawn at rest. A tab asks this ONCE, as it mounts, to know whether
   // it is the appearance of a new object or an element that has been on screen all along — which the
-  // arming cannot answer, because a tab is drawn by the read and armed a body fetch later.
+  // arming cannot answer, because a tab is drawn by the read and armed a re-location later.
   const presentedBefore = useCallback((day) => shown.current.has(day), []);
 
   // The lit tab reports its own visibility, because it is the only thing that knows where it is.

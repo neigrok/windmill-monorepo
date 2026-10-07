@@ -1,13 +1,11 @@
-// The TreeRepository over HTTP, per treeId. A bootstrap read only: a live SyncSession's private
+// Tree reads over HTTP, per treeId. A bootstrap read only: a live SyncSession's private
 // lane owns the overlay.
 
-import { TreeRepository } from '../model/ports.js';
 import { ProgressLattice } from '../sync/progressLattice.js';
 import { API_BASE } from '../../../shell/apiBase.js';
 
-export class HttpTreeRepository extends TreeRepository {
+export class HttpTreeRepository {
   constructor({ baseUrl = API_BASE, treeId } = {}) {
-    super();
     if (!treeId) throw new Error('HttpTreeRepository requires a treeId — there is no default roadmap');
     this.baseUrl = baseUrl;
     this.treeId = treeId;

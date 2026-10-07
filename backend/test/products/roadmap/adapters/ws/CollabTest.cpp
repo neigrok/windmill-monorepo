@@ -7,7 +7,7 @@
 #include "products/roadmap/application/ProgressService.h"
 #include "products/roadmap/application/RoomRegistry.h"
 #include "products/roadmap/application/TreeRegistry.h"
-#include "platform/domain/Access.h"
+#include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/Command.h"
 #include "products/roadmap/domain/LooseGraph.h"
 #include "products/roadmap/domain/Subgraph.h"

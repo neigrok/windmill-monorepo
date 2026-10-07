@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
+import { CommitError } from '../../../src/platform/sync/client/commit.js';
+import { releaseDue } from '../../../src/platform/sync/client/hold.js';
 import { reidentify } from '../../../src/platform/sync/client/lifecycle.js';
 import { nextPush } from '../../../src/platform/sync/client/sender.js';
 import { Cursor } from '../../../src/platform/sync/core/wire.js';
@@ -49,6 +51,43 @@ test('durable commits publish stable React snapshots; exceptions publish no part
   assert.equal(observation.getSnapshot(), before);
   assert.equal(snapshots.length, 1);
   unsubscribe(); engine.close();
+});
+
+test('a store that cannot commit is a store failure reported as storage; the read-and-commit function’s own throw is neither', async () => {
+  const env = environment(), engine = await BrowserSyncEngine.open(env.options);
+  const refusal = new Error('the product refuses this');
+  await assert.rejects(engine.commit('self/probe', () => { throw refusal; }), (error) => error === refusal);
+  await assert.rejects(engine.commit('self/probe', [{ op: 'nope', t: 'card', id: 'card0002' }]),
+    (error) => error instanceof CommitError && error.kind === 'malformed');
+  assert.deepEqual(env.failures, []);
+  const bug = new TypeError('an engine step broke');
+  await assert.rejects(engine.write(null, () => { throw bug; }), (error) => error === bug);
+  assert.deepEqual(env.failures, ['storage'], 'the engine’s own broken step still reports');
+  const quota = new DOMException('quota', 'QuotaExceededError');
+  engine.store.transact = () => Promise.reject(quota);
+  await assert.rejects(engine.commit('self/probe', card('card0003')),
+    (error) => error instanceof CommitError && error.kind === 'store' && error.cause === quota);
+  assert.deepEqual(env.failures, ['storage', 'storage']);
+  engine.close();
+});
+
+test('undo offers are the held gestures, each with its own deadline and records, until undone or released', async () => {
+  const env = environment(), engine = await BrowserSyncEngine.open(env.options);
+  const observation = engine.observe('self/probe');
+  const first = await engine.commit('self/probe', card('card0001'), { hold: true });
+  env.timers.advance(4000);
+  const second = await engine.commit('self/probe', card('card0002'), { hold: true });
+  await engine.commit('self/probe', card('card0003'));
+  const gesture = (result) => engine.device.activeReplica.entry(result.localIds[0]).gestureId;
+  assert.deepEqual(observation.getSnapshot().undoOffers, [
+    { id: gesture(first), releaseAt: 1000 + 9000, records: [{ t: 'card', id: 'card0001' }] },
+    { id: gesture(second), releaseAt: 5000 + 9000, records: [{ t: 'card', id: 'card0002' }] },
+  ]);
+  assert.equal(await engine.undo(gesture(second)), true);
+  assert.deepEqual(observation.getSnapshot().undoOffers.map((offer) => offer.id), [gesture(first)]);
+  await engine.write('sync-release', (device, ctx) => releaseDue(device.activeReplica, engine.registry, ctx.ended, 1000 + 9000));
+  assert.deepEqual(observation.getSnapshot().undoOffers, []);
+  engine.close();
 });
 
 test('the first tab releases held work; a second tab preserves the current Undo window', async () => {

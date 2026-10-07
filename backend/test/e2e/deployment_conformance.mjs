@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// What engine.md asks of a deployment, against windmill_server_probe or SYNC_ENABLED=1 windmill_server, directly and through the
+// What engine.md asks of a deployment, against windmill_server_probe or windmill_server, directly and through the
 // production edge, Caddy from its image with backend/deploy/Caddyfile:
 // - §9.1 Credentials: every case of envelope/credentials.json on hello, pull, push and the live socket, over raw
 //   HTTP/1.1 to the origin, then through the edge over HTTP/1.1 and HTTP/2. Over HTTP/1.1 each runs on a connection of
@@ -8,14 +8,12 @@
 // - §6.8 the idle live socket: one socket to the origin and one through the edge say nothing for LIVE_PING_MS +
 //   LIVE_PONG_MS and a second more, and are still open; then each answers a `ping` with `pong` at once.
 //
-// Prereqs: a THROWAWAY Postgres holding schema.sql + probe.sql (default catalog), or schema.sql + gym_sync.sql +
-// journal_sync.sql (WM_E2E_CATALOG=products), the server listening on every interface, Docker, curl with HTTP/2, and cmake.
-// The script rewrites sessions for the corpus's tokens. Before starting the products server, run --prepare-accounts
-// against its database, then windmill_gym_backfill and windmill_journal_backfill. Preparation adds legacy product fixtures.
+// Prereqs: a THROWAWAY Postgres holding schema.sql + probe.sql (default catalog), or schema.sql alone
+// (WM_E2E_CATALOG=products, served by windmill_server), the server listening on every interface, Docker, curl with
+// HTTP/2, and cmake. The script rewrites sessions for the corpus's tokens.
 //   DATABASE_URL="postgresql:///$WM_E2E_DB?host=/tmp" PORT=18613 ./build/windmill_server_probe
 // Run:  WM_E2E_DB=<database name or postgresql:// URL> PORT=18613 EDGE_PORT=18643 node test/e2e/deployment_conformance.mjs
 // EDGE_PORT is where the edge's HTTPS listens on 127.0.0.1; without it the edge runs are skipped and said so.
-// PORT=<port> node test/e2e/deployment_conformance.mjs --check-disabled proves all four routes are absent with SYNC_ENABLED off.
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
@@ -34,14 +32,12 @@ const DB = process.env.WM_E2E_DB;
 const PORT = Number(process.env.PORT);
 const EDGE_PORT = process.env.EDGE_PORT ? Number(process.env.EDGE_PORT) : null;
 const CATALOG = process.env.WM_E2E_CATALOG ?? 'probe';
-const PREPARE = process.argv.includes('--prepare-accounts');
-const CHECK_DISABLED = process.argv.includes('--check-disabled');
-if (!['probe', 'products'].includes(CATALOG) || process.argv.slice(2).some((arg) => !['--prepare-accounts', '--check-disabled'].includes(arg)) || (PREPARE && CHECK_DISABLED)) {
-  console.error('WM_E2E_CATALOG must be probe or products; use at most one of --prepare-accounts and --check-disabled');
+if (!['probe', 'products'].includes(CATALOG) || process.argv.length > 2) {
+  console.error('WM_E2E_CATALOG must be probe or products, and the script takes no arguments');
   process.exit(2);
 }
-if ((!CHECK_DISABLED && !DB) || (!PREPARE && (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535))) {
-  console.error('set WM_E2E_DB to a throwaway database (name or postgresql:// URL) and PORT to the server\'s port; preparation needs only the database, disabled checks only the port');
+if (!DB || !Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+  console.error('set WM_E2E_DB to a throwaway database (name or postgresql:// URL) and PORT to the server\'s port');
   process.exit(2);
 }
 const registryFiles = CATALOG === 'probe' ? ['probe.registry.json'] : JSON.parse(readFileSync(path.resolve(backend, '../packages/api-contract/sync/composition.json'), 'utf8')).registries;
@@ -68,34 +64,24 @@ for (const vector of corpus) {
   if (JSON.stringify(vector.input.sessions) !== JSON.stringify(sessions)) throw new Error(`${vector.name}: another session table`);
 }
 const accountOf = {};
-if (!CHECK_DISABLED) {
-  for (const alias of new Set(Object.values(sessions))) {
-    const email = `credentials-conformance-${alias.toLowerCase()}@example.com`;
-    psql(`insert into users (id, email, name) values (gen_random_uuid(), '${email}', '${alias}') on conflict (email) do nothing`);
-    accountOf[alias] = psql(`select id from users where email = '${email}'`);
-    if (PREPARE && CATALOG === 'products') {
-      psql(`insert into gym_preferences(user_id) values('${accountOf[alias]}') on conflict do nothing`);
-      psql(`insert into journal_page(user_id,day,body) values('${accountOf[alias]}','2026-01-01','Deployment conformance') on conflict do nothing`);
-    }
-  }
-  for (const [token, alias] of Object.entries(sessions)) {
-    const digest = createHash('sha256').update(token).digest('hex');
-    psql(`delete from sessions where token_hash = '${digest}'`);
-    psql(`insert into sessions (token_hash, user_id, expires_ms) values ('${digest}', '${accountOf[alias]}', ${Date.now() + 3_600_000})`);
-  }
+for (const alias of new Set(Object.values(sessions))) {
+  const email = `credentials-conformance-${alias.toLowerCase()}@example.com`;
+  psql(`insert into users (id, email, name) values (gen_random_uuid(), '${email}', '${alias}') on conflict (email) do nothing`);
+  accountOf[alias] = psql(`select id from users where email = '${email}'`);
+}
+for (const [token, alias] of Object.entries(sessions)) {
+  const digest = createHash('sha256').update(token).digest('hex');
+  psql(`delete from sessions where token_hash = '${digest}'`);
+  psql(`insert into sessions (token_hash, user_id, expires_ms) values ('${digest}', '${accountOf[alias]}', ${Date.now() + 3_600_000})`);
 }
 const aliasOf = Object.fromEntries(Object.entries(accountOf).map(([alias, id]) => [id, alias]));
-if (PREPARE) {
-  console.log(`prepared ${CATALOG} accounts: ${JSON.stringify(accountOf)}; run both product backfills before serving the products catalog`);
-  process.exit(0);
-}
 
 // ── requests ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 // A push names the account the vector serves (A when it serves none): one fresh replica per account, and no intents.
 const replicaOf = Object.fromEntries(Object.keys(accountOf).map((alias) => [alias, `rp_${randomBytes(16).toString('hex')}`]));
 const pushBody = (vector) => {
   const alias = vector.expect.principal.account ?? 'A';
-  return JSON.stringify({ replica: replicaOf[alias] ?? 'rp_disabled', account: accountOf[alias] ?? 'disabled', ackThrough: 0, intents: [] });
+  return JSON.stringify({ replica: replicaOf[alias], account: accountOf[alias], ackThrough: 0, intents: [] });
 };
 const ENDPOINTS = {
   hello: { method: 'GET', path: '/v1/sync/hello', lines: [['Sync-Schema', SCHEMA]], body: () => '' },
@@ -307,7 +293,7 @@ async function served(endpoint, answer, connection) {
     if (endpoint === 'pull') {
       const kind = envelope.as === null ? 'not-found' : 'rows';
       if (!Array.isArray(envelope.pages) || envelope.pages.length !== SCOPES.length || envelope.pages.some((page, i) => page.scope !== SCOPES[i] || page.kind !== kind)) {
-        return `refused: pull must answer ${JSON.stringify(SCOPES)} with ${kind} pages; prepare and backfill the products accounts`;
+        return `refused: pull must answer ${JSON.stringify(SCOPES)} with ${kind} pages`;
       }
     }
     return `as:${aliasNamed(envelope.as)}`;
@@ -535,20 +521,8 @@ async function edgeAnswers() {
   throw new Error('the edge never answered a hello');
 }
 
-if (CHECK_DISABLED) {
-  const vector = { input: { headers: [] }, expect: { principal: { account: null } } };
-  for (const endpoint of Object.keys(ENDPOINTS)) {
-    const connection = await Connection.open(false);
-    connection.write(requestBytes(endpoint, vector, `127.0.0.1:${PORT}`, true));
-    const answer = await connection.response();
-    check(answer?.status === 404, `SYNC_ENABLED off: ${endpoint} route absent${endpoint === 'live' ? ' (WebSocket upgrade)' : ''}`, `answered ${answer?.status}`);
-    connection.close();
-  }
-  console.log(`\n${results.pass} passed, ${results.fail} failed`);
-  process.exit(results.fail === 0 ? 0 : 1);
-}
-
 console.log(`origin: 127.0.0.1:${PORT}, ${CATALOG} catalog (schema ${SCHEMA}), ${corpus.length} vectors`);
+execFileSync('python3', [path.join(backend, 'test/e2e/http_disconnect_test.py')], { stdio: 'inherit' });
 await runHttp1(false);
 if (EDGE_PORT) {
   console.log(`edge: the production Caddyfile on 127.0.0.1:${EDGE_PORT}`);

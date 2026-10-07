@@ -4,7 +4,6 @@ import { createHash } from "node:crypto";
 import { COUNTER_LIMIT, MS_LIMIT } from "../core/constants.js";
 import { jcs } from "../core/jcs.js";
 import { ownValue, setOwn } from "../core/maps.js";
-import { Stamp } from "../core/stamp.js";
 import { Refusal, replacementText } from "../server/admit.js";
 
 export const MAX_PAGE_BYTES = 131072;
@@ -87,20 +86,6 @@ export function claimBody(account, here) {
   if (here.trim() === "") return account;
   if (here.includes(account.trim())) return here;
   return `${account.trimEnd()}\n\n${here.trimStart()}`;
-}
-
-export function restPage(row, projection) {
-  if (!row) return null;
-  const stamp = row.f.documentStamp[0];
-  return {
-    day: row.id,
-    body: row.x.body.text,
-    mood: row.f.mood[0],
-    energy: row.f.energy[0],
-    source: row.f.source[0],
-    stamp: Stamp.encode(stamp),
-    updatedAt: projection.updatedAt,
-  };
 }
 
 function book(ctx, name) {

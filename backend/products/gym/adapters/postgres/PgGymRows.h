@@ -50,25 +50,14 @@ Exercise exerciseFrom(const Row& row) {
   const Json::Value stored = parse(row["aliases"].template as<std::string>());
   for (const Json::Value& alias : stored)
     if (alias.isString()) aliases.push_back(alias.asString());
-  return Exercise{ExerciseId{row["id"].template as<std::string>()},
+  return Exercise{Stored{},
+                  ExerciseId{row["id"].template as<std::string>()},
                   row["name"].template as<std::string>(),
                   patternFromStored(row["pattern"].template as<std::string>()),
                   equipmentFromStored(row["equipment"].template as<std::string>()),
                   row["step_kg"].template as<double>(),
                   !row["created_by"].is_null(),
                   std::move(aliases)};
-}
-
-// A movement this account may name on a write: a seed, or one it created. The foreign key only asks
-// whether the row exists, and another lifter's private movement exists. Read inside the caller's own
-// transaction, against the owner of the row being written.
-inline bool namesVisibleMovement(pqxx::work& txn, const std::string& owner,
-                                 const ExerciseId& exercise) {
-  return !txn
-              .exec_params("SELECT 1 FROM gym_exercises "
-                           "WHERE id = $1 AND (created_by IS NULL OR created_by = $2::uuid)",
-                           exercise.str(), owner)
-              .empty();
 }
 
 }

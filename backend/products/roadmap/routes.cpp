@@ -2,7 +2,7 @@
 
 #include "products/roadmap/adapters/http/ComposeApi.h"
 #include "products/roadmap/adapters/http/GalleryApi.h"
-#include "products/roadmap/adapters/http/HttpApi.h"
+#include "products/roadmap/adapters/http/TreeApi.h"
 #include "products/roadmap/adapters/http/OgImageApi.h"
 #include "products/roadmap/adapters/http/OgVideoApi.h"
 #include "products/roadmap/adapters/http/RemindersApi.h"
@@ -22,11 +22,7 @@
 
 namespace wm {
 
-// The roadmap product's whole HTTP/WS surface, mounted behind one named seam. main.cpp builds the
-// platform + roadmap singletons and the shared MCP endpoint, bundles the roadmap collaborators into
-// RoadmapDeps, and calls this. A future product mirrors the same shape: its own registerRoutes over
-// its own deps. Behaviour is identical to the flat router this was lifted out of — same handlers,
-// same paths, same order relative to one another.
+// Mount the roadmap HTTP and WebSocket routes with the collaborators built in main.cpp.
 void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
   WriteRoutes routes(app, "roadmap");
   // The socket authenticates each connection at its upgrade and writes progress as that
@@ -36,7 +32,7 @@ void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
                                      deps.allowedOrigins));
   linkTreeSocket();
 
-  auto api = std::make_shared<HttpApi>(deps.registry, deps.trees, deps.progress, deps.oplog,
+  auto api = std::make_shared<TreeApi>(deps.registry, deps.trees, deps.progress, deps.oplog,
                                        deps.genesis, deps.authService, deps.forkService);
   auto ogImageApi = std::make_shared<OgImageApi>(deps.ogImages, deps.trees, deps.authService);
   auto ogVideoApi = std::make_shared<OgVideoApi>(deps.ogVideos, deps.trees, deps.authService);

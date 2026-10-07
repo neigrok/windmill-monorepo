@@ -1,10 +1,10 @@
 #include "platform/infra/SyncProducts.h"
 
 #include "platform/domain/sync/Jcs.h"
-#include "products/gym/sync/GymRegistry.h"
-#include "products/gym/sync/adapters/postgres/PgGym.h"
-#include "products/journal/sync/JournalRegistry.h"
-#include "products/journal/sync/adapters/postgres/PgJournal.h"
+#include "products/gym/sync/GymProduct.h"
+#include "products/gym/sync/PgGym.h"
+#include "products/journal/sync/JournalProduct.h"
+#include "products/journal/sync/PgJournal.h"
 
 namespace wm::sync {
 

@@ -157,17 +157,6 @@ test('a query that matches nothing says only that, and offers the door out', () 
   assert.equal(movementOptions({ catalog: CATALOG, order: [], query: '  zercher  ' }).create, 'Create “zercher”');
 });
 
-test('only an empty catalog may mention signal, and it offers no door it cannot open', () => {
-  assert.deepEqual(movementOptions({ catalog: [], order: [], query: '' }), {
-    featured: [], matches: [], empty: 'The catalog didn’t load. It comes back when you have signal.', create: null,
-  });
-  assert.deepEqual(movementOptions({ catalog: [], order: [], query: 'z' }), {
-    featured: [], matches: [], empty: 'The catalog didn’t load. It comes back when you have signal.', create: null,
-  });
-  const loaded = movementOptions({ catalog: CATALOG, order: [], query: 'z' });
-  assert.equal(loaded.empty, 'No movement by that name.');
-});
-
 test('a catalog entirely in the session says so, and never blames the network', () => {
   const order = CATALOG.map((each) => each.id);
   assert.deepEqual(movementOptions({ catalog: CATALOG, order, query: '' }), {

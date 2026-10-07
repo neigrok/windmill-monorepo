@@ -1,7 +1,7 @@
 # Golden-vector corpus
 
 Language-neutral fixtures stating the primitive convergence laws that every replica of a Windmill
-tree must reproduce bit-for-bit — the C++ lattice (`platform/domain/Crdt.h`, `platform/domain/Ids.h`,
+tree must reproduce bit-for-bit — the C++ lattice (`products/roadmap/domain/Crdt.h`, `platform/domain/Ids.h`,
 `products/roadmap/domain/Subgraph.h`) and the JS lattice
 (`web/src/products/roadmap/sync/lattice.js`).
 

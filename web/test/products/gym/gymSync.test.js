@@ -4,7 +4,8 @@ import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { registry } from '../../../src/platform/sync/schema.js';
 import { environment, until } from '../../platform/sync/fakes.js';
 import { hello } from '../../../../packages/api-contract/sync/reference/server/pull.js';
-import { createGymApi, prepareGymSync } from '../../../src/products/gym/gymSync.js';
+import { GymRefusal, isStoreFailure } from '../../../src/products/gym/errors.js';
+import { createGymApi, gymLiveHint } from '../../../src/products/gym/gymSync.js';
 
 async function open(t) {
   const env = environment();
@@ -71,7 +72,8 @@ test('v5 authoritative gym fields and independent routine creation snapshots sur
   assert.deepEqual({ baseRevision: proposal.baseRevision, baseName: proposal.baseName, changeCount: proposal.changeCount }, { baseRevision: 6, baseName: 'Frozen lower', changeCount: 2 });
   assert.deepEqual((await resumed.notes()).map(({ id, position, title, body, updatedAt }) => ({ id, position, title, body, updatedAt })), [{ id: 'note000001', position: 0, title: 'Edited', body: '', updatedAt: 500 }]);
   await resumed.holdDeath('routine', routine.id);
-  assert.equal(await resumed.routine(routine.id), null);
+  assert.equal(opened.engine.observe('self/gym').getSnapshot().drawn.find((row) => row.t === 'routine').life[0], 'dead');
+  assert.equal((await resumed.routine(routine.id)).id, routine.id, 'a held delete stays in the store until its release');
   assert.equal(registry.type('routineCreation').field('snapshot').writer, 'server');
   assert.deepEqual(opened.engine.observe('self/gym').getSnapshot().drawn.find((row) => row.t === 'routineCreation').f.snapshot[0], receipt);
   assert.equal(opened.engine.device.activeReplica.outbox.some((entry) => entry.intent.d.some((delta) => delta.t === 'routineCreation')), false);
@@ -85,20 +87,27 @@ test('routine saves persist schemes and guards; stale bases refuse without parti
   await api.replaceRoutine(routine.id, { ...routine, name: 'Lower B' }, base);
   assert.deepEqual(engine.device.activeReplica.entries()[1].intent.guard.map(({ field }) => field).sort(), ['entries', 'name', 'position']);
   const before = structuredClone(engine.device.activeReplica.outbox);
-  await assert.rejects(api.replaceRoutine(routine.id, { ...routine, name: 'Stale' }, base), { code: 'routine-stale' });
+  await assert.rejects(api.replaceRoutine(routine.id, { ...routine, name: 'Stale' }, base), { code: 'stale' });
   assert.deepEqual(engine.device.activeReplica.outbox, before);
   assert.deepEqual(failures, []);
 });
 
-test('notes append; reorder writes only the moved note order register', async (t) => {
+test('notes append; a move writes only the moved note order register', async (t) => {
   const { api, engine } = await open(t);
   for (let n = 1; n <= 3; n++) await api.saveNote(`note00000${n}`, { title: String(n), body: '' });
   assert.deepEqual((await api.notes()).map(({ id }) => id), ['note000001', 'note000002', 'note000003']);
   await confirm(engine);
-  await api.reorderNotes(['note000003', 'note000001', 'note000002']);
+  assert.deepEqual((await api.moveNote('note000002', 'note000003')).map(({ id, position }) => [id, position]),
+    [['note000001', 0], ['note000003', 1], ['note000002', 2]]);
+  assert.deepEqual((await api.notes()).map(({ id }) => id), ['note000001', 'note000003', 'note000002']);
+  const [delta] = engine.device.activeReplica.entries().at(-1).intent.d;
+  assert.deepEqual([delta.id, Object.keys(delta.f)], ['note000002', ['ord']]);
+  await api.moveNote('note000003', null);
   assert.deepEqual((await api.notes()).map(({ id }) => id), ['note000003', 'note000001', 'note000002']);
-  assert.deepEqual(Object.keys(engine.device.activeReplica.entries().at(-1).intent.d[0].f), ['ord']);
-  await assert.rejects(api.reorderNotes(['note000001']), { code: 'invalid' });
+  const before = structuredClone(engine.device.activeReplica.outbox);
+  await assert.rejects(api.moveNote('note000099', null), { code: 'unknown-record' });
+  await assert.rejects(api.moveNote('note000001', 'note000099'), { code: 'unknown-record' });
+  assert.deepEqual(engine.device.activeReplica.outbox, before);
 });
 
 test('note editor guards refuse changed content and preserve the original local draft', async (t) => {
@@ -107,7 +116,7 @@ test('note editor guards refuse changed content and preserve the original local 
   await confirm(engine);
   const base = (await api.notes())[0];
   await api.saveNote('note000001', { title: 'First', body: 'Changed' }, base);
-  await assert.rejects(api.saveNote('note000001', { title: 'First', body: 'Stale' }, base), { code: 'routine-stale' });
+  await assert.rejects(api.saveNote('note000001', { title: 'First', body: 'Stale' }, base), { code: 'stale' });
   assert.deepEqual(engine.device.activeReplica.entries().at(-1).intent.guard.map(({ field }) => field), ['title', 'body']);
 });
 
@@ -151,9 +160,9 @@ test('held note deaths occupy the cap slot and allow siblings to reorder', async
   await api.holdDeath('note', 'note000000');
   const order = (await api.notes()).map(({ id }) => id);
   [order[1], order[2]] = [order[2], order[1]];
-  await api.reorderNotes(order);
+  await api.moveNote('note000002', 'note000000');
   assert.deepEqual((await api.notes()).map(({ id }) => id), order);
-  await assert.rejects(api.saveNote('note000099', { title: 'Extra', body: '' }), { code: 'notes-full' });
+  await assert.rejects(api.saveNote('note000099', { title: 'Extra', body: '' }), { code: 'cap', sentence: '10 of 10 notes. Delete one to add another.' });
 });
 
 test('weigh-in puts use the transaction clock and atomically retire a held death', async (t) => {
@@ -217,19 +226,74 @@ test('an offline removal proposal hides its routine durably before the authorita
   assert.equal((await resumed.proposal('proposal0001')).state, 'applied');
 });
 
-test('storage denial leaves no durable partial write and reports only a static operation', async (t) => {
-  const { api, engine, failures, events } = await open(t);
+test('a store that cannot commit leaves no partial write, is the device’s failure, and the engine alone reports it', async (t) => {
+  const { api, engine, env, failures, events } = await open(t);
   t.mock.method(engine.store, 'transact', async () => { throw new Error('SECRET workout'); });
-  await assert.rejects(api.createRoutine(routine), /SECRET/);
+  await assert.rejects(api.createRoutine(routine), (error) => isStoreFailure(error) && error.message === 'the device store did not commit');
   assert.deepEqual(engine.device.activeReplica.outbox, []);
-  assert.deepEqual(failures, ['routine-create']);
+  assert.deepEqual(failures, []);
+  assert.deepEqual(env.failures, ['storage']);
   assert.deepEqual(events, [{ operation: 'routine-create', outcome: 'failed' }]);
+});
+
+// What each display-name write commits: the record and the name it writes.
+const namesWritten = (engine) => engine.device.activeReplica.entries()
+  .flatMap(({ intent }) => intent.d.map(({ t, id, f }) => [t, id, f.name?.[0] ?? f.title?.[0]]));
+
+test('a rename writes the name trimmed and composed, and a blank one is refused before anything is written', async (t) => {
+  const { api, engine, events, failures } = await open(t);
+  assert.deepEqual(await api.renameExercise('back-squat', '  Cafe\u0301 squat\u3000'),
+    { id: 'back-squat', name: 'Café squat', pattern: 'squat', equipment: 'barbell', stepKg: 2.5, custom: false });
+  assert.deepEqual(namesWritten(engine), [['exerciseName', 'back-squat', 'Café squat']]);
+  for (const blank of ['   ', ' \u3000', '\u00a0\u3000\t', '\u2028\ufeff']) {
+    await assert.rejects(api.renameExercise('back-squat', blank),
+      (error) => error instanceof GymRefusal && error.code === 'invalid' && error.sentence === 'A movement needs a name.');
+  }
+  await assert.rejects(api.renameExercise('back-squat', 'ü'.repeat(61)),
+    (error) => error instanceof GymRefusal && error.code === 'invalid' && error.sentence === 'A name runs to 60 characters.');
+  assert.deepEqual(namesWritten(engine), [['exerciseName', 'back-squat', 'Café squat']], 'nothing refused was written');
+  assert.deepEqual(events.map(({ outcome }) => outcome), ['saved-local', 'failed', 'failed', 'failed', 'failed', 'failed']);
+  assert.deepEqual(failures, [], 'a refusal is expected, and reports nothing');
+});
+
+test('a rename to the name the store already holds writes nothing; an unknown movement is refused', async (t) => {
+  const { api, engine, events } = await open(t);
+  assert.deepEqual(await api.renameExercise('back-squat', ' Back Squat '),
+    { id: 'back-squat', name: 'Back Squat', pattern: 'squat', equipment: 'barbell', stepKg: 2.5, custom: false });
+  await assert.rejects(api.renameExercise('ex_unknown', 'New'), (error) => error instanceof GymRefusal && error.code === 'unknown-record');
+  assert.deepEqual(engine.device.activeReplica.outbox, []);
+  assert.deepEqual(events, [{ operation: 'exercise-rename', outcome: 'unchanged' }, { operation: 'exercise-rename', outcome: 'failed' }]);
+});
+
+test('a movement, a routine and a note are each created with their name trimmed, and none is written blank', async (t) => {
+  const { api, engine } = await open(t);
+  await api.createExercise({ id: 'ex_custom01', name: ' Zercher squat ', pattern: 'isolation', equipment: 'barbell' });
+  await api.renameExercise('ex_custom01', ' Zercher ');
+  await api.createRoutine({ ...routine, name: '\u3000Lower A ' });
+  await api.replaceRoutine(routine.id, { ...routine, name: ' Lower B' }, await api.routine(routine.id));
+  await api.saveNote('note000001', { title: ' First\u00a0', body: '' });
+  const refusals = [
+    [() => api.createExercise({ id: 'ex_custom02', name: '\u3000', pattern: 'isolation', equipment: 'barbell' }), 'A movement needs a name.'],
+    [() => api.createRoutine({ ...routine, id: 'routine00002', name: ' \t ' }), 'Name it to save it.'],
+    [async () => api.replaceRoutine(routine.id, { ...routine, name: '\u00a0' }, await api.routine(routine.id)), 'Name it to save it.'],
+    [() => api.saveNote('note000002', { title: '\u3000 ', body: '' }), 'a note needs a title'],
+  ];
+  for (const [write, sentence] of refusals) {
+    await assert.rejects(write(), (error) => error instanceof GymRefusal && error.code === 'invalid' && error.sentence === sentence);
+  }
+  assert.deepEqual(namesWritten(engine), [
+    ['exercise', 'ex_custom01', 'Zercher squat'],
+    ['exercise', 'ex_custom01', 'Zercher'],
+    ['routine', 'routine00001', 'Lower A'],
+    ['routine', 'routine00001', 'Lower B'],
+    ['note', 'note000001', 'First'],
+  ]);
 });
 
 test('an adapter pinned to a previous replica cannot write into another account', async (t) => {
   const { api, engine } = await open(t);
   t.mock.method(engine, 'commit', async (scope, read) => read({ replica: 'anotherAccount' }));
-  await assert.rejects(api.createRoutine(routine), { code: 'not-writable', status: 401 });
+  await assert.rejects(api.createRoutine(routine), { code: 'not-writable', sentence: 'Sign in to save to your training log.' });
 });
 
 test('liveHint follows the phone session and expires after four idle hours', async (t) => {
@@ -237,12 +301,13 @@ test('liveHint follows the phone session and expires after four idle hours', asy
   const now = Date.now();
   let rows = [{ t: 'session', id: 'session0001', life: ['alive', 's'], f: { startedAt: [now - 1000, 's'] } }];
   t.mock.method(engine, 'observe', () => ({ getSnapshot: () => ({ drawn: rows }) }));
-  prepareGymSync(engine);
-  assert.equal(engine.liveHint(), true);
+  assert.equal(gymLiveHint(engine), true);
   rows[0] = { ...rows[0], f: { startedAt: [now - 4 * 3600_000, 's'] } };
-  assert.equal(engine.liveHint(), false);
+  assert.equal(gymLiveHint(engine), false);
   rows.push({ t: 'set', id: 'set0000001', f: { sessionId: ['session0001', 's'], completedAt: [now, 's'] } });
-  assert.equal(engine.liveHint(), true);
+  assert.equal(gymLiveHint(engine), true);
+  rows = [];
+  assert.equal(gymLiveHint(engine), false, 'no open workout, no live hint');
 });
 
 test('known overlap, future instants and live corrections refuse before queuing', async (t) => {
@@ -263,6 +328,6 @@ test('a tombstoned set cannot be corrected as if its value were saved', async (t
   await api.importSession({ id: 'session00001', startedAt: 100, finishedAt: 900, sets: [{ id: 'set00000001', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: 850 }] });
   await api.holdDeath('set', 'set00000001');
   const before = structuredClone(engine.device.activeReplica.outbox);
-  await assert.rejects(api.fixSet('session00001', 'set00000001', { reps: 6 }), { code: 'set-not-found' });
+  await assert.rejects(api.fixSet('session00001', 'set00000001', { reps: 6 }), { code: 'unknown-record' });
   assert.deepEqual(engine.device.activeReplica.outbox, before);
 });

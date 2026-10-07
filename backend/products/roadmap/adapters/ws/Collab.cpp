@@ -7,7 +7,7 @@
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "products/roadmap/application/TreeRoom.h"
 #include "products/roadmap/domain/Command.h"
-#include "platform/domain/Access.h"
+#include "products/roadmap/domain/Access.h"
 #include "platform/domain/Auth.h"
 
 #include <optional>

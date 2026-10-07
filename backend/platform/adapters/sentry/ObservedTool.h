@@ -10,8 +10,6 @@
 #include <vector>
 
 namespace wm {
-int runObservedTool(const std::string& operation, const std::string& product,
-                    const std::function<int(WriteObservation&)>& run);
 void installToolObservability(bool protocolStdout = false);
 void stopToolObservability();
 

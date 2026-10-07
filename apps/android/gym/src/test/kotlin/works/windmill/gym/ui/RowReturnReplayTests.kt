@@ -1,18 +1,16 @@
 package works.windmill.gym.ui
 
+import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
-import java.io.File
-import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -21,20 +19,14 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.net.FakeTraining
 import works.windmill.gym.store.Deletion
-import works.windmill.gym.store.DeviceCopy
-import works.windmill.gym.store.LocalBodyweight
-import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
-import works.windmill.gym.store.SetQueue
-import works.windmill.gym.store.TrainingStore
-import works.windmill.platform.Account
-import works.windmill.platform.User
-import works.windmill.platform.net.WindmillApi
+import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.gym.store.GymResult
+import works.windmill.sync.core.Json
+import works.windmill.sync.modelserver.ModelServer
 
 // A row this room deletes LEAVES its list and comes back — put back by a log that refused the
 // settle, or taken back by an Undo. Both are ordinary, and both used to re-fire the delete.
@@ -58,32 +50,25 @@ class RowReturnReplayTests {
     // Short enough that a settle lands inside a test and long enough that a swipe finishes first.
     private val window = 300L
 
-    private fun program(scope: CoroutineScope, server: FakeTraining): TrainingStore {
-        val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json")),
-            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
-            localLog = LocalLog(File(tmp.root, "local.json")),
-            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
-            scope = scope,
-            mintSession = { "ses_1" },
-            mintSet = Ids::set,
-            undoWindowMs = window,
-            sync = { if (it.isSignedIn) server else null },
-        )
+    // Push Day, synced: the routine is on the account's log and nothing is owed.
+    private fun program(scope: CoroutineScope, server: ModelServer): EngineRoomFixture {
+        val room = EngineRoomFixture(tmp.newFolder(), scope, undoWindowMs = window)
+        room.now = System.currentTimeMillis()
         runBlocking {
-            store.connect(Account(
-                api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
-                user = User(id = "u1", email = "sam@example.com", name = "Sam")))
-            store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press"))
+            room.select("u1")
+            room.pull(server)
+            assertTrue(room.store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) is GymResult.Ok)
+            room.sync(server)
+            room.store.refreshEngine()
         }
-        return store
+        room.store.observeEngine()
+        return room
     }
 
-    private fun home(store: TrainingStore, deletes: MutableList<String>) {
+    private fun home(room: EngineRoomFixture, deletes: MutableList<String>) {
         compose.setContent {
             RoutinesScreen(
-                store = store,
+                store = room.store,
                 isSignedIn = true,
                 lookedAt = emptySet(),
                 seat = "s",
@@ -92,7 +77,7 @@ class RowReturnReplayTests {
                 onOpenRoutine = {},
                 onDeleteRoutine = { id ->
                     deletes += id
-                    store.withhold(Deletion.Routine(id, store.routine(id)?.name ?: "?"))
+                    room.store.withhold(Deletion.Routine(id, room.store.routine(id)?.name ?: "?"))
                 },
                 onReview = {},
                 onSignIn = {},
@@ -100,74 +85,87 @@ class RowReturnReplayTests {
         }
     }
 
+    // The routine deletes the outbox holds: a delete on the wire is one of these until the log answers.
+    private fun routineDeletes(room: EngineRoomFixture): List<String> = room.outbox()
+        .flatMap { it.member("intent")["d"]?.arr().orEmpty() }
+        .filter { it.member("t").str() == "routine" && it["life"]?.arr()?.first() == Json.of("dead") }
+        .map { it.member("id").str() }
+
     // The centrepiece defect. The log says no, the row comes back where it belongs — and the row
     // coming back used to be a second delete, which failed, which brought it back again: one
-    // `DELETE` every nine seconds on the access log, for as long as the screen stood.
+    // delete every nine seconds on the wire, for as long as the screen stood.
     @Test
     fun testARefusedSettleDoesNotFireTheDeleteAgainWhenTheRowComesBack() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
-        server.refuseRoutineDelete = IOException("the log is down")
-        val store = program(scope, server)
-        val deletes = mutableListOf<String>()
-        home(store, deletes)
+        val server = EngineRoomFixture.server()
+        try { program(scope, server).use { room ->
+            val deletes = mutableListOf<String>()
+            home(room, deletes)
 
-        val routineId = store.routines.single().id
-        compose.onNodeWithText("Push Day").performTouchInput { swipeLeft() }
-        compose.runOnIdle {
-            assertEquals(1, deletes.size)
-            assertTrue("withheld means not sent", server.calls.none { it == "deleteRoutine" })
-        }
+            val routineId = room.store.routines.single().id
+            compose.onNodeWithText("Push Day").performTouchInput { swipeLeft() }
+            compose.runOnIdle {
+                assertEquals(1, deletes.size)
+                assertEquals("withheld means not sent", emptyList<Json>(), room.outbox())
+            }
 
-        // The window closes, the log refuses, and the row is back: nothing local was crossed out.
-        compose.runOnIdle { runBlocking { store.settleWithheld(routineId) } }
-        compose.waitForIdle()
-        compose.mainClock.advanceTimeBy(window * 3)
-        compose.waitForIdle()
+            // The window closes and the delete goes out; the log refuses it, and the row is back:
+            // nothing the log holds was crossed out.
+            compose.runOnIdle { runBlocking { room.store.settleWithheld(routineId) } }
+            compose.runOnIdle {
+                assertEquals("the settled row has left the list", emptyList<String>(), room.store.routines.map { it.id })
+                assertEquals("one delete on the wire", listOf(routineId), routineDeletes(room))
+                server.refuse(code = "stale")
+                room.sync(server)
+            }
+            compose.waitUntil(2_000) {
+                shadowOf(Looper.getMainLooper()).idle()
+                room.store.routines.map { it.id } == listOf(routineId)
+            }
+            compose.waitForIdle()
+            compose.mainClock.advanceTimeBy(window * 3)
+            compose.waitForIdle()
 
-        compose.runOnIdle {
-            assertEquals("one swipe is one delete", 1, deletes.size)
-            assertEquals("and one DELETE on the wire, not one every window",
-                1, server.calls.count { it == "deleteRoutine" })
-            assertEquals("nothing is held any more", emptyList<Any>(), store.withheld)
-        }
-        compose.onNodeWithText("Push Day").assertIsDisplayed()
-        scope.cancel()
+            compose.runOnIdle {
+                assertEquals("one swipe is one delete", 1, deletes.size)
+                assertEquals("and the row coming back sent no second delete", emptyList<String>(), routineDeletes(room))
+                assertEquals("nothing is held any more", emptyList<Any>(), room.store.withheld)
+            }
+            compose.onNodeWithText("Push Day").assertIsDisplayed()
+        } } finally { scope.cancel() }
     }
 
     // The other half, and the one that matters more: taking a delete back must not re-delete it.
     @Test
     fun testAnUndoLeavesTheRowStandingAndSendsNothing() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
-        val store = program(scope, server)
-        val deletes = mutableListOf<String>()
-        home(store, deletes)
+        try { program(scope, EngineRoomFixture.server()).use { room ->
+            val deletes = mutableListOf<String>()
+            home(room, deletes)
 
-        compose.onNodeWithText("Push Day").performTouchInput { swipeLeft() }
-        compose.runOnIdle { assertEquals(1, store.withheld.size) }
+            compose.onNodeWithText("Push Day").performTouchInput { swipeLeft() }
+            compose.runOnIdle { assertEquals(1, room.store.withheld.size) }
 
-        compose.runOnIdle { assertNotNull("the window was still the lifter's", store.keepWithheld()) }
-        compose.waitForIdle()
-        compose.mainClock.advanceTimeBy(window * 3)
-        compose.waitForIdle()
+            compose.runOnIdle { assertNotNull("the window was still the lifter's", room.store.keepWithheld()) }
+            compose.waitForIdle()
+            compose.mainClock.advanceTimeBy(window * 3)
+            compose.waitForIdle()
 
-        compose.runOnIdle {
-            assertEquals("the row a lifter took back is not deleted again", 1, deletes.size)
-            assertEquals("nothing is held", emptyList<Any>(), store.withheld)
-            assertEquals("and nothing ever reached the log", emptyList<String>(),
-                server.calls.filter { it == "deleteRoutine" })
-        }
-        // And it is a whole row again, where it belongs — not parked off the leading edge with the
-        // offset the swipe that removed it left behind. Which is what the second stroke proves: a
-        // state left sitting at `EndToStart` could never travel there again, so the row would be
-        // undeletable for as long as the screen stood.
-        compose.onNodeWithText("Push Day").assertIsDisplayed()
-        compose.onNodeWithText("Push Day").performTouchInput { swipeLeft() }
-        compose.runOnIdle {
-            assertEquals("a row that came back can be deleted again", 2, deletes.size)
-            assertEquals(1, store.withheld.size)
-        }
-        scope.cancel()
+            compose.runOnIdle {
+                assertEquals("the row a lifter took back is not deleted again", 1, deletes.size)
+                assertEquals("nothing is held", emptyList<Any>(), room.store.withheld)
+                assertEquals("and nothing ever reached the log", emptyList<Json>(), room.outbox())
+            }
+            // And it is a whole row again, where it belongs — not parked off the leading edge with the
+            // offset the swipe that removed it left behind. Which is what the second stroke proves: a
+            // state left sitting at `EndToStart` could never travel there again, so the row would be
+            // undeletable for as long as the screen stood.
+            compose.onNodeWithText("Push Day").assertIsDisplayed()
+            compose.onNodeWithText("Push Day").performTouchInput { swipeLeft() }
+            compose.runOnIdle {
+                assertEquals("a row that came back can be deleted again", 2, deletes.size)
+                assertEquals(1, room.store.withheld.size)
+            }
+        } } finally { scope.cancel() }
     }
 }

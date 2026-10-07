@@ -65,6 +65,10 @@ constexpr std::size_t kMaxSetNoteBytes = 4000;
 // Trims the ends before the ceiling is measured. ASCII whitespace only.
 std::string trimmedName(std::string text);
 
+// A write refuses a blank display name (sync::isBlank, admission's test); a read builds what the store
+// holds through the constructors tagged Stored, which run every other check: a stored blank name stands.
+struct Stored {};
+
 // Two ways a string does not survive a Postgres `text` column: a NUL, and bytes that are not
 // well-formed UTF-8 (a lone surrogate half included). Both are refused at construction, as a 400.
 bool storableText(std::string_view text);
@@ -93,6 +97,8 @@ struct Exercise {
   std::vector<std::string> aliases;
 
   Exercise(ExerciseId id, std::string name, Pattern pattern, Equipment equipment, double stepKg,
+           bool custom, std::vector<std::string> aliases = {});
+  Exercise(Stored, ExerciseId id, std::string name, Pattern pattern, Equipment equipment, double stepKg,
            bool custom, std::vector<std::string> aliases = {});
 
   bool operator==(const Exercise&) const = default;
@@ -197,31 +203,15 @@ struct SetBatch {
   void checkInterval(const Session& session, bool completedSession) const;
 };
 
-// An omitted field means "leave what is stored". The movement, the instant, the set number and the
-// session are not correctable.
-// `rpeNamed` says the write mentioned rpe and `rpe` says what it mentioned, so named-and-empty
-// clears it. A note clears itself by being sent empty.
-struct SetFix {
-  std::optional<double> weightKg;
-  std::optional<int> reps;
-  std::optional<SetKind> kind;
-  std::optional<std::string> note;
-  bool rpeNamed = false;
-  std::optional<double> rpe;
-
-  bool operator==(const SetFix&) const = default;
-};
-
-// The stored row with the named values replaced. CONSTRUCTS the set, so a value the store could not
-// hold throws InvalidTraining before anything is written.
-Set corrected(const Set& stored, const SetFix& fix);
-
 // An open session with no activity for four hours is over, and it ended at its last set, not when
-// the server noticed. A session with no sets ended when it began. Applied lazily by TrainingService.
+// the server noticed. A session with no sets ended when it began. The engine's gym.closeStale writes
+// the close; a start and an import run it inside their own command, and a read admits it only when
+// isStale says the open session has gone stale.
 constexpr std::uint64_t kAutoCloseMs = 4ull * 60 * 60 * 1000;
-std::optional<std::uint64_t> autoCloseAt(const Session& session,
-                                         std::optional<std::uint64_t> lastSetAtMs,
-                                         std::uint64_t nowMs);
+
+// GymRules' rule exactly: the last activity is the latest set's completedAt, else the start, and the
+// session is stale once now stands kAutoCloseMs or more past it. A now before it is never stale.
+bool isStale(const Session& open, const std::vector<Set>& sets, std::uint64_t nowMs);
 
 // A workout cannot end before it began, at zero, or past what the store can hold. The first write to
 // finished_at is permanent.
@@ -236,18 +226,6 @@ bool canStartAt(std::uint64_t startedAtMs, std::uint64_t nowMs);
 // last activity — which is what finished_at is on a stale close — and landing it moves the finish
 // forward to it. An explicit finish is never reopened.
 bool lateSetLands(const Session& session, std::uint64_t completedAtMs);
-
-// The instant a lifter's finish lands at when it arrives on a STALE close: within four hours of the
-// last landed activity it moves the end forward to the finish (or keeps the later activity); past
-// that the end stays at that activity and only the word changes.
-std::uint64_t finishAfterStaleClose(const Session& staleClosed, std::uint64_t finishedAtMs);
-
-// One visit is one session, so a past workout may not cross one already in the log. Spans are
-// half-open, [startedAt, finishedAt): a workout ending as the next begins crosses nothing, and an empty
-// span still holds its one instant. Only a FINISHED session is in the way — the open one is still
-// being lifted and has no end yet — and a session never crosses itself. The earliest crossed session
-// answers.
-std::optional<Session> crossedBy(const Session& incoming, const std::vector<Session>& logged);
 
 // Clamped to the store's ceiling, so a share minted near the end of time names a holdable instant.
 constexpr std::uint64_t kShareLifetimeMs = 30ull * 24 * 60 * 60 * 1000;

@@ -4,7 +4,6 @@
 #include "products/journal/domain/SpanReconcile.h"
 
 #include <trantor/utils/Logger.h>
-#include "products/journal/application/JournalSwitches.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -95,10 +94,6 @@ EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) 
   WriteContext context{observation};
   const auto writes = observation.writeCount();
   try {
-    if (journal::journalWriteFrozen()) {
-      observation.skip();
-      return EchoSweepReport{};
-    }
     EchoSweepReport report;
     // Any boundary missing is a no-op: no row is written and the page stays due.
     if (!segmenter_.configured() || !embedder_.configured() || !curator_.configured()) {
@@ -138,7 +133,6 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs, bool rejudgeAll) {
   const auto writes = observation.writeCount();
   try {
     EchoSweepReport report;
-    if (journal::journalWriteFrozen()) { observation.skip(); return report; }
     // Any boundary missing makes the whole pass a no-op rather than an error.
     if (!segmenter_.configured() || !embedder_.configured() || !curator_.configured()) {
       observation.skip();

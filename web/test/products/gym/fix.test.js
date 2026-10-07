@@ -7,7 +7,8 @@ import {
   SET_NOTE_BYTES, SET_NOTE_CAPTION, setNoteCountLabel, SET_NOTE_LABEL, setNoteRefusal, setsAfter,
   showsSetNoteCount, UNDO_MS,
 } from '../../../src/products/gym/fix.js';
-import { GymError } from '../../../src/products/gym/gymApi.js';
+import { CommitError } from '../../../src/platform/sync/client/commit.js';
+import { GymRefusal } from '../../../src/products/gym/errors.js';
 import { readSetFields, setFields } from '../../../src/products/gym/correction/correction.js';
 
 const actualDraft = (set) => readSetFields(setFields(set)).value;
@@ -128,20 +129,20 @@ test('the delete says which set left, in the log’s own spelling', () => {
 
 test('a refused fix is spoken by its code, and the missing set is not blamed on the network', () => {
   assert.equal(
-    fixFailure(new GymError(404, 'no such set', 'set-not-found')),
+    fixFailure(new GymRefusal('unknown-record')),
     'That set isn’t in this workout any more.',
   );
   assert.equal(
-    fixFailure(new GymError(400, 'could not read that fix', 'fix-unreadable')),
+    fixFailure(new GymRefusal('invalid')),
     'That fix didn’t land — the log wouldn’t take it as written.',
   );
   assert.equal(
-    fixFailure(new GymError(500, '')),
-    'That fix didn’t land — the log didn’t answer. Try again when you have signal.',
+    fixFailure(new CommitError('the device store did not commit', 'store', { cause: new DOMException('storage refused', 'QuotaExceededError') })),
+    'That fix didn’t land — this device couldn’t store it.',
   );
   assert.equal(
-    deleteFailure(new GymError(500, '')),
-    'That set is still in the log — the log didn’t answer. Try again when you have signal.',
+    deleteFailure(new CommitError('the device store did not commit', 'store', { cause: new DOMException('storage refused', 'QuotaExceededError') })),
+    'That set is still in the log — this device couldn’t store it.',
   );
 });
 

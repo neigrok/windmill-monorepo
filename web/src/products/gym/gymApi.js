@@ -1,5 +1,6 @@
 import { API_BASE } from '../../shell/apiBase.js';
 import { readCoachStream } from './coach/stream.js';
+import { GymError } from './errors.js';
 
 const base = `${API_BASE}/v1/gym`;
 
@@ -19,60 +20,7 @@ async function json(response) {
   throw new GymError(response.status, body?.error ?? '', body?.code ?? '', body);
 }
 
-// Recovers the machine code from the sentence, for servers that send only the sentence.
-const codeForSentence = new Map([
-  ['that set id is already used', 'set-id-taken'],
-  ['that session id is taken', 'session-id-taken'],
-  ['no such exercise', 'unknown-exercise'],
-  ['that routine id is taken', 'routine-id-taken'],
-  ['that movement id is taken', 'exercise-id-taken'],
-  ['that session is still running', 'session-open'],
-]);
-
-// The retry policy: 400 and 409 are terminal, 5xx retryable, and 401 and 404 neither. Repairs,
-// decided off the code and never off the sentence: setIdTaken / sessionIdTaken / routineIdTaken /
-// exerciseIdTaken — mint a fresh id and retry the same body; sessionDeleted — an import under that id
-// was discarded, mint a fresh one; unknownExercise — reload the catalog; sessionOpen — wait for the
-// open workout to close; sessionOverlap — `overlapping` is the finished session the times cross;
-// fixUnreadable — those bytes never land; setNotFound — drop the pending edit and read the session
-// again; proposalSuperseded and proposalSettled — re-read.
-export class GymError extends Error {
-  constructor(status, detail = '', code = '', body = null) {
-    super(detail || `gym request failed: ${status}`);
-    this.name = 'GymError';
-    this.status = status;
-    this.detail = detail;
-    this.generation = body?.generation;
-    this.results = body?.results;
-    this.code = code || codeForSentence.get(detail) || '';
-    this.terminal = status === 400 || status === 409;
-    this.retryable = status >= 500;
-    this.setIdTaken = this.code === 'set-id-taken';
-    this.sessionIdTaken = this.code === 'session-id-taken';
-    this.unknownExercise = this.code === 'unknown-exercise';
-    this.routineIdTaken = this.code === 'routine-id-taken';
-    this.exerciseIdTaken = this.code === 'exercise-id-taken';
-    this.sessionOpen = this.code === 'session-open';
-    this.sessionDeleted = this.code === 'session-deleted';
-    this.sessionOverlap = this.code === 'session-overlap';
-    this.overlapping = this.sessionOverlap ? body?.session ?? null : null;
-    this.fixUnreadable = this.code === 'fix-unreadable';
-    this.setNotFound = this.code === 'set-not-found';
-    this.proposalSuperseded = this.code === 'proposal-superseded';
-    this.proposalSettled = this.code === 'proposal-settled';
-  }
-}
-
-export function failureReason(error) {
-  if (error?.terminal) return 'the log wouldn’t take it as written';
-  if (error?.status === 401) return 'you’re signed out. Sign in and try again';
-  if (error?.status === 404) return 'it isn’t in the log any more';
-  return 'the log didn’t answer. Try again when you have signal';
-}
-
 export const gymApi = {
-  ready: false,
-
   async shareSession(id) {
     return json(await call(`/sessions/${id}/share`, { method: 'POST' }));
   },
@@ -89,14 +37,26 @@ export const gymApi = {
     return json(response);
   },
 
-  async ask(thread, question, requestId, { attachmentIds } = {}) {
-    const response = await call('/ask', {
-      method: 'POST', body: JSON.stringify({ thread, question, ...(requestId ? { requestId } : {}), ...(attachmentIds?.length ? { attachmentIds } : {}) }),
-    });
-    const reply = await json(response);
-    return { ...reply, pending: response.status === 202 };
+  async logShares() {
+    return (await json(await call('/log-shares'))).shares;
   },
 
+  async createLogShare(share) {
+    return json(await call('/log-shares', { method: 'POST', body: JSON.stringify(share) }));
+  },
+
+  async revokeLogShare(id) {
+    return json(await call(`/log-shares/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+  },
+
+  // A recipient's read: no cookie, and the complete progress beside the page of sessions.
+  async sharedLog(token, filters = {}) {
+    const query = new URLSearchParams(Object.entries({ ...filters, projection: 'progress' })
+      .filter(([, value]) => value != null && value !== ''));
+    return json(await call(`/shared-logs/${encodeURIComponent(token)}?${query}`, { credentials: 'omit' }));
+  },
+
+  // One question into one thread, its answer streamed as snapshots.
   async askStream(thread, question, requestId, { attachmentIds, signal, onSnapshot } = {}) {
     const response = await call('/ask', {
       method: 'POST', signal,
@@ -166,5 +126,4 @@ export const gymApi = {
   async deleteThread(id) {
     return json(await call(`/threads/${encodeURIComponent(id)}`, { method: 'DELETE' }));
   },
-
 };

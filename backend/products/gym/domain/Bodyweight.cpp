@@ -1,14 +1,11 @@
 #include "products/gym/domain/Bodyweight.h"
 
 #include <cmath>
-#include <ctime>
 #include <utility>
 
 namespace wm::gym {
 
 namespace {
-constexpr std::uint64_t kDayMs = 86'400'000;
-
 bool digitsAt(std::string_view text, std::size_t from, std::size_t count) {
   for (std::size_t at = from; at < from + count; ++at)
     if (text[at] < '0' || text[at] > '9') return false;
@@ -40,15 +37,6 @@ bool wellFormedLocalDate(std::string_view text) {
   if (year < 1) return false;   // there is no year zero, and the column agrees
   if (month < 1 || month > 12) return false;
   return day >= 1 && day <= daysIn(year, month);
-}
-
-bool beyondTomorrowUtc(std::string_view dateLocal, std::uint64_t nowMs) {
-  const std::time_t tomorrow = static_cast<std::time_t>((nowMs + kDayMs) / 1000);
-  std::tm utc{};
-  gmtime_r(&tomorrow, &utc);
-  char day[11];
-  std::strftime(day, sizeof(day), "%Y-%m-%d", &utc);
-  return dateLocal > std::string_view(day);
 }
 
 Bodyweight::Bodyweight(UserId user, std::string dateLocal, double weightKg,

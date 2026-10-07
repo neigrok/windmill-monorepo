@@ -25,8 +25,8 @@ struct AskHarness {
   FakeSubscriptionRepository subs;
   FakeAiUsageRepository usage;
   Entitlements entitlements{subs, usage};
-  GymTools gymTools{*h.trainingService, *h.catalogService, *h.programService, *h.notesService,
-                    *h.bodyweightService, "https://windmill.works"};
+  GymTools gymTools{*h.trainingService, h.door, h.repo.catalog, h.repo.program, h.repo.notes,
+                    h.repo.bodyweight, "https://windmill.works"};
   FakeAsk agent;
   std::shared_ptr<AskService> askService = std::make_shared<AskService>(
       *h.trainingService, h.repo.threads, h.clock, agent, gymTools, entitlements);
@@ -253,7 +253,7 @@ TEST(gym_ask_409s_name_the_taken_id_the_full_conversation_and_the_open_workout) 
   const drogon::HttpResponsePtr taken = a.ask("thr_00000002", "and mine?");
   const drogon::HttpResponsePtr full = a.ask("thr_00000003", "once more");
   a.h.clock.now = 1'700'100'000'000;
-  a.h.trainingService->start(a.lifter, SessionStart{SessionId{"ses_22222222"}, 1'700'100'000'000});
+  a.h.repo.db.seedSession(Session{SessionId{"ses_22222222"}, a.lifter, 1'700'100'000'000});
   const drogon::HttpResponsePtr open = a.ask("thr_00000004", "what should I do next?");
 
   CHECK_EQ(refusalOf(taken),

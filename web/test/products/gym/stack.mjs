@@ -5,9 +5,12 @@ import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { IDBFactory } from 'fake-indexeddb';
 import { chromium } from 'playwright';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { registry } from '../../../src/platform/sync/schema.js';
+import { HttpTransport } from '../../../src/platform/sync/transport.js';
+import { createGymApi } from '../../../src/products/gym/gymSync.js';
 import { environment } from '../../platform/sync/fakes.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -49,7 +52,7 @@ export async function stopOwnedServer({ child, port }, listener, { kill = proces
   assert.equal(listener(port), '', `port ${port} remained occupied after shutdown`);
 }
 
-export async function compareParity(fixture) {
+async function compareParity(fixture) {
   const { projectGym } = await import('../../../src/products/gym/syncProjections.js');
   const failures = [];
   for (const sample of fixture.samples) {
@@ -64,18 +67,20 @@ async function run() {
   const binDir = resolve(process.argv[2] ?? join(root, 'backend/build'));
   const capture = process.argv.includes('--capture');
   const parityOnly = process.argv.includes('--parity');
-  const database = `wm_web_b2_gym_${process.pid}`;
+  const database = `${process.env.WM_E2E_DB_PREFIX ?? 'wm_web_'}gym_${process.pid}`;
+  const backendPort = Number(process.env.WM_E2E_PORT ?? 8094);
+  const webPort = Number(process.env.WM_E2E_WEB_PORT ?? 5181);
   const host = process.env.PGHOST ?? '/tmp';
   const databaseUrl = `postgresql:///${database}?host=${encodeURIComponent(host)}`;
-  const base = 'http://127.0.0.1:8094';
-  const origin = 'http://127.0.0.1:5181';
-  const temporary = mkdtempSync(join(tmpdir(), 'wm-web-b2-gym-'));
+  const base = `http://127.0.0.1:${backendPort}`;
+  const origin = `http://127.0.0.1:${webPort}`;
+  const temporary = mkdtempSync(join(tmpdir(), 'wm-web-gym-'));
   const log = openSync(join(temporary, 'stack.log'), 'w');
   const secret = randomBytes(24).toString('hex');
   const hash = createHash('sha256').update(secret).digest('hex');
   const account = randomUUID();
   const now = Date.now();
-  let created = false, completed = false, browser, lastPage, e2e = 0;
+  let created = false, completed = false, browser, lastPage, phone, e2e = 0;
   const pageErrors = [];
   const servers = [];
   const commands = (program, args, options = {}) => execFileSync(program, args, { cwd: root, timeout: 60000, stdio: ['pipe', 'pipe', 'pipe'], ...options });
@@ -98,77 +103,90 @@ async function run() {
     return response.status === 204 ? null : response.json();
   };
   try {
-    for (const port of [8094, 5181]) assert.equal(listener(port), '', `port ${port} must be free`);
+    for (const port of [backendPort, webPort]) assert.equal(listener(port), '', `port ${port} must be free`);
     commands('createdb', ['-h', host, database]); created = true;
-    commands('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-f', 'backend/db/schema.sql', '-f', 'backend/db/gym_sync.sql', '-f', 'backend/db/journal_sync.sql']);
+    commands('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-f', 'backend/db/schema.sql']);
     sql(`
-      INSERT INTO users(id,email,name) VALUES ('${account}','web-b2-gym-${process.pid}@example.com','Gym fixture');
+      INSERT INTO users(id,email,name) VALUES ('${account}','web-gym-${process.pid}@example.com','Gym fixture');
       INSERT INTO sessions(token_hash,user_id,expires_ms) VALUES ('${hash}','${account}',${now + day});
-      INSERT INTO gym_preferences(user_id,units,rest_seconds,rest_sound,confirm_haptic,confirm_sound,updated_at)
-        VALUES ('${account}','kg',180,false,false,true,to_timestamp(${now - day}/1000.0));
-      INSERT INTO gym_exercises(id,name,pattern,equipment,step_kg,created_by,created_at)
-        VALUES ('ex_fixture_custom','Fixture Carry','carry','dumbbell',1.25,'${account}',to_timestamp(${now - 25 * day}/1000.0));
-      INSERT INTO gym_exercise_names(user_id,exercise_id,name,updated_at)
-        VALUES ('${account}','back-squat','Fixture Squat',to_timestamp(${now - 24 * day}/1000.0));
-      INSERT INTO gym_exercise_aliases(user_id,exercise_id,name,created_at)
-        VALUES ('${account}','back-squat','Back Squat',to_timestamp(${now - 24 * day}/1000.0));
-      INSERT INTO gym_routines(id,user_id,name,position,created_at,revision,created_entries,created_door) VALUES
-        ('rt_fixture_main','${account}','Fixture Lower',0,to_timestamp(${now - 24 * day}/1000.0),1,3,NULL),
-        ('rt_fixture_other','${account}','Fixture Agent',1,to_timestamp(${now - 23 * day}/1000.0),2,2,'mcp');
-      INSERT INTO gym_routine_entries(routine_id,position,exercise_id,rest_seconds) VALUES
-        ('rt_fixture_main',1,'back-squat',180),('rt_fixture_main',2,'pull-up',NULL),('rt_fixture_main',3,'ex_fixture_custom',60),
-        ('rt_fixture_other',1,'bench-press',120);
-      INSERT INTO gym_routine_entry_sets(routine_id,position,set_index,reps,weight_kg) VALUES
-        ('rt_fixture_main',1,1,5,60),('rt_fixture_main',1,2,5,80),('rt_fixture_main',1,3,NULL,NULL),
-        ('rt_fixture_main',3,1,10,24),('rt_fixture_other',1,1,8,50);
-      INSERT INTO gym_proposals(id,routine_id,user_id,intent,base_revision,base_name,proposed_name,summary,changes,state,door,connection,agent,created_at,settled_at) VALUES
-        ('prop_fixture_pending','rt_fixture_main','${account}','revise',1,'Fixture Lower','Fixture Lower A','Fixture pending change',2,'pending','mcp','fixture','fixture-agent',to_timestamp(${now - 6 * day}/1000.0),NULL),
-        ('prop_fixture_settled','rt_fixture_other','${account}','revise',1,'Fixture Agent original','Fixture Agent','Fixture settled change',2,'applied','mcp','fixture','fixture-agent',to_timestamp(${now - 22 * day}/1000.0),to_timestamp(${now - 21 * day}/1000.0));
-      INSERT INTO gym_proposal_changes(proposal_id,position,user_id,kind,exercise_id,before_sets,before_rest_seconds,after_sets,after_rest_seconds) VALUES
-        ('prop_fixture_pending',1,'${account}','retargeted','back-squat','[{"reps":5,"weightKg":60},{"reps":5,"weightKg":80},{}]',180,'[{"reps":5,"weightKg":65},{"reps":5,"weightKg":85},{}]',180),
-        ('prop_fixture_pending',2,'${account}','kept','pull-up',NULL,NULL,NULL,NULL),
-        ('prop_fixture_pending',3,'${account}','kept','ex_fixture_custom','[{"reps":10,"weightKg":24}]',60,'[{"reps":10,"weightKg":24}]',60),
-        ('prop_fixture_settled',1,'${account}','retargeted','bench-press','[{"reps":8,"weightKg":45}]',120,'[{"reps":8,"weightKg":50}]',120);
-      INSERT INTO gym_notes(id,user_id,position,title,body,created_at,updated_at) VALUES
-        ('note_fixture_a','${account}',0,'Fixture goal','Synthetic fixture note',to_timestamp(${now - 3 * day}/1000.0),to_timestamp(${now - 2 * day}/1000.0)),
-        ('note_fixture_b','${account}',1,'Fixture cue','',to_timestamp(${now - day}/1000.0),to_timestamp(${now - day}/1000.0));
-      INSERT INTO gym_bodyweight(user_id,date_local,weight_kg,recorded_at) VALUES
-        ('${account}',(to_timestamp(${now}/1000.0) AT TIME ZONE 'UTC')::date-14,80.10,${now - 14 * day}),
-        ('${account}',(to_timestamp(${now}/1000.0) AT TIME ZONE 'UTC')::date-1,79.55,${now - day});
     `);
-    for (const [index, daysAgo, routine, display, sets] of [
-      [1, 20, 'rt_fixture_main', null, [['back-squat', 40, 8, 'warmup'], ['back-squat', 80, 5, 'working'], ['pull-up', -10, 8, 'working']]],
-      [2, 12, 'rt_fixture_other', null, [['bench-press', 50, 8, 'working'], ['bench-press', 55, 8, 'working'], ['bench-press', 30, 12, 'drop']]],
-      [3, 5, 'rt_fixture_main', 'Fixture corrected name', [['back-squat', 85, 5, 'working'], ['back-squat', 82.5, 6, 'working'], ['ex_fixture_custom', 24, 10, 'working']]],
-    ]) {
-      const started = now - daysAgo * day;
-      const routineName = routine === 'rt_fixture_main' ? 'Fixture Lower' : 'Fixture Agent';
-      sql(`INSERT INTO gym_sessions(id,user_id,routine_id,history_routine_id,display_name,plan,started_at,finished_at,closed_by)
-        VALUES ('ses_fixture_${index}','${account}','${routine}','${routine}',${display ? `'${display}'` : 'NULL'},'${JSON.stringify({ routine: routineName, entries: [{ exerciseId: sets[0][0], sets: [{ reps: 5, weightKg: 80 }] }] })}',to_timestamp(${started}/1000.0),to_timestamp(${started + 3600000}/1000.0),'finish');`);
-      const numbered = new Map();
-      sets.forEach(([exercise, kg, reps, kind], setIndex) => {
-        numbered.set(exercise, (numbered.get(exercise) ?? 0) + 1);
-        sql(`INSERT INTO gym_sets(id,session_id,user_id,exercise_id,set_number,weight_kg,reps,kind,rpe,note,completed_at)
-          VALUES ('set_fixture_${index}_${setIndex}','ses_fixture_${index}','${account}','${exercise}',${numbered.get(exercise)},${kg},${reps},'${kind}',${kind === 'working' ? 8.5 : 'NULL'},'Fixture set note',to_timestamp(${started + (setIndex + 1) * 600000}/1000.0));`);
-      });
-    }
-    for (const name of ['gym', 'journal']) {
-      commands(join(binDir, `windmill_${name}_backfill`), [], { env: { ...process.env, DATABASE_URL: databaseUrl } });
-      commands(join(binDir, `windmill_${name}_backfill`), ['--audit'], { env: { ...process.env, DATABASE_URL: databaseUrl } });
-    }
-    commands('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-f', 'backend/db/gym_sync_v5.sql']);
-    for (const flag of ['--upgrade-v5', '--audit-v5']) {
-      commands(join(binDir, 'windmill_gym_backfill'), [flag], { env: { ...process.env, DATABASE_URL: databaseUrl } });
-    }
-    const backend = start(join(binDir, 'windmill_server'), [], 8094, { DATABASE_URL: databaseUrl, PORT: '8094', SYNC_ENABLED: '1', GYM_ENGINE_WRITES: '1', JOURNAL_ENGINE_WRITES: '1', WINDMILL_HOST: '127.0.0.1', WINDMILL_APP_URL: origin, WINDMILL_ALLOWED_ORIGINS: origin, SENTRY_DSN: '', AMPLITUDE_API_KEY: '', RESEND_API_KEY: '', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', JOURNAL_EMBEDDER_URL: '' });
+    const backend = start(join(binDir, 'windmill_server'), [], backendPort, { DATABASE_URL: databaseUrl, PORT: String(backendPort), WINDMILL_HOST: '127.0.0.1', WINDMILL_APP_URL: origin, WINDMILL_ALLOWED_ORIGINS: origin, SENTRY_DSN: '', AMPLITUDE_API_KEY: '', RESEND_API_KEY: '', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', JOURNAL_EMBEDDER_URL: '' });
     await waitUntil(async () => { try { return Boolean(await request('/v1/sync/hello', { sync: true })); } catch { return false; } }, { processes: [backend], label: 'backend readiness' });
+
+    // The phone is a second replica of the account and writes the way the native apps do: commands and
+    // record changes pushed through the engine, never a gym REST door.
+    phone = await BrowserSyncEngine.open({ indexedDB: new IDBFactory(), name: 'stack-phone', registry, document: null, window: null,
+      telemetry: { event() {}, failure() {} },
+      transport: new HttpTransport({ schema: registry.version, base, timers: globalThis,
+        reading: () => ({ wall: Date.now(), mono: Math.floor(performance.now()), boot: 'stack-phone' }),
+        fetch: (url, options) => fetch(url, { ...options, headers: { ...options.headers, Cookie: `wm_session=${secret}` } }) }) });
+    await phone.signIn(account);
+    phone.started = true; phone.leader = true;
+    const pushFromPhone = async () => waitUntil(async () => {
+      phone.kick(); await phone.send();
+      return phone.device.activeReplica.outbox.every((entry) => entry.state === 'acked');
+    }, { processes: [backend], label: 'phone push admission' });
+    const pullToPhone = async () => { phone.kickPull(); await phone.pull(); };
+    const phoneGym = createGymApi(phone, { event() {}, failure() {} });
+
+    // An agent's writes arrive through MCP under a personal key, the way a connected assistant's do.
+    const key = await request('/v1/mcp-keys', { body: { name: 'stack' } });
+    const opened = await fetch(`${base}/mcp`, { method: 'POST', headers: { Authorization: `Bearer ${key.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'stack', version: '0' } } }),
+      signal: AbortSignal.timeout(5000) });
+    assert.ok(opened.ok, `MCP initialize: HTTP ${opened.status}`);
+    const mcpSession = opened.headers.get('mcp-session-id');
+    const agent = async (name, args) => {
+      const response = await fetch(`${base}/mcp`, { method: 'POST', headers: { Authorization: `Bearer ${key.token}`, 'Mcp-Session-Id': mcpSession, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: args } }), signal: AbortSignal.timeout(5000) });
+      const reply = await response.json();
+      assert.ok(response.ok && reply.result && !reply.result.isError, `${name}: ${JSON.stringify(reply.error ?? reply.result?.content)}`);
+    };
+
+    const ramp = [{ reps: 5, weightKg: 60 }, { reps: 5, weightKg: 80 }, {}];
+    await agent('gym_create_exercise', { id: 'ex_fixture_custom', name: 'Fixture Carry', pattern: 'carry', equipment: 'dumbbell', stepKg: 1.25 });
+    await phoneGym.renameExercise('back-squat', 'Fixture Squat');
+    await phoneGym.createRoutine({ id: 'rt_fixture_main', name: 'Fixture Lower', position: 0, entries: [
+      { exerciseId: 'back-squat', sets: ramp, restSeconds: 180 }, { exerciseId: 'pull-up' },
+      { exerciseId: 'ex_fixture_custom', sets: [{ reps: 10, weightKg: 24 }], restSeconds: 60 }] });
+    await phoneGym.savePreferences({ units: 'kg', restSeconds: 180, restSound: false, confirmHaptic: false, confirmSound: true });
+    for (const [id, title, body] of [['note_fixture_a', 'Fixture goal', 'Synthetic fixture note'], ['note_fixture_b', 'Fixture cue', '']]) {
+      await phoneGym.saveNote(id, { title, body });
+    }
+    for (const [daysAgo, weightKg] of [[14, 80.1], [1, 79.55]]) {
+      await phoneGym.saveBodyweight(new Date(now - daysAgo * day).toISOString().slice(0, 10), { weightKg });
+    }
+    await pushFromPhone();
+    await agent('gym_create_routine', { id: 'rt_fixture_other', name: 'Fixture Agent original', position: 1, entries: [{ exerciseId: 'bench-press', sets: [{ reps: 8, weightKg: 45 }], restSeconds: 120 }] });
+    await agent('gym_propose_routine_change', { id: 'prop_fixture_settled', routineId: 'rt_fixture_other', name: 'Fixture Agent', summary: 'Fixture settled change',
+      entries: [{ exerciseId: 'bench-press', sets: [{ reps: 8, weightKg: 50 }], restSeconds: 120 }] });
+    await agent('gym_propose_routine_change', { id: 'prop_fixture_pending', routineId: 'rt_fixture_main', name: 'Fixture Lower A', summary: 'Fixture pending change',
+      entries: [{ exerciseId: 'back-squat', sets: [{ reps: 5, weightKg: 65 }, { reps: 5, weightKg: 85 }, {}], restSeconds: 180 }, { exerciseId: 'pull-up' },
+        { exerciseId: 'ex_fixture_custom', sets: [{ reps: 10, weightKg: 24 }], restSeconds: 60 }] });
+    await waitUntil(async () => { await pullToPhone(); return Boolean(await phoneGym.proposal('prop_fixture_settled')); }, { processes: [backend], label: 'phone pull' });
+    await phoneGym.applyProposal('prop_fixture_settled');
+    for (const [index, daysAgo, routineId, sets] of [
+      [1, 20, 'rt_fixture_main', [['back-squat', 40, 8, 'warmup'], ['back-squat', 80, 5, 'working'], ['pull-up', -10, 8, 'working']]],
+      [2, 12, 'rt_fixture_other', [['bench-press', 50, 8, 'working'], ['bench-press', 55, 8, 'working'], ['bench-press', 30, 12, 'drop']]],
+      [3, 5, 'rt_fixture_main', [['back-squat', 85, 5, 'working'], ['back-squat', 82.5, 6, 'working'], ['ex_fixture_custom', 24, 10, 'working']]],
+    ]) {
+      const startedAt = now - daysAgo * day;
+      await phoneGym.importSession({ id: `ses_fixture_${index}`, routineId, startedAt, finishedAt: startedAt + 3600000,
+        sets: sets.map(([exerciseId, weightKg, reps, kind], setIndex) => ({ id: `set_fixture_${index}_${setIndex}`, exerciseId, weightKg, reps, kind,
+          rpe: kind === 'working' ? 8.5 : null, note: 'Fixture set note', completedAt: startedAt + (setIndex + 1) * 600000 })) });
+    }
+    const corrected = await phoneGym.session('ses_fixture_3');
+    await phoneGym.correctSession('ses_fixture_3', { requestId: 'fix_fixture_3', startedAt: corrected.session.startedAt, finishedAt: corrected.session.finishedAt,
+      routineName: 'Fixture corrected name', sets: corrected.sets.map(({ id, exerciseId, setNumber, weightKg, reps, rpe, note, completedAt }) =>
+        ({ id, exerciseId, setNumber, weightKg, reps, rpe: rpe ?? null, note, completedAt })) });
+    await pushFromPhone();
 
     const fixture = { now, timeZone: 'UTC', wireRows: [], rows: [], samples: [] };
     let cursor = null;
     do {
       const reply = await request('/v1/sync/pull', { sync: true, body: { scopes: [{ scope: 'self/gym', cursor }] } });
       const page = reply.pages[0];
-      assert.equal(page.kind, 'rows', 'seeded gym must be adopted');
+      assert.equal(page.kind, 'rows', 'the seeded gym is readable over sync');
       fixture.wireRows.push(...page.rows);
       cursor = page.more ? page.cursor : null;
     } while (cursor !== null);
@@ -213,7 +231,7 @@ async function run() {
     }
 
     if (!parityOnly) {
-      const vite = start(process.execPath, [join(root, 'web/node_modules/vite/bin/vite.js'), join(root, 'web'), '--host', '127.0.0.1', '--port', '5181', '--strictPort'], 5181, { VITE_API_BASE_URL: base });
+      const vite = start(process.execPath, [join(root, 'web/node_modules/vite/bin/vite.js'), join(root, 'web'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webPort, { VITE_API_BASE_URL: base });
       await waitUntil(async () => { try { return (await fetch(origin, { signal: AbortSignal.timeout(1000) })).ok; } catch { return false; } }, { processes: [vite, backend], label: 'vite readiness' });
       browser = await chromium.launch({ headless: true });
       const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, timezoneId: 'UTC' });
@@ -239,12 +257,19 @@ async function run() {
         return syncSession.engine?.live?.following?.has('self/gym');
       });
       const phoneStart = Date.now() - 60000;
-      await request('/v1/gym/sessions', { body: { id: 'ses_fixture_phone', routineId: 'rt_fixture_main', startedAt: phoneStart, joinOpenSession: true } });
+      await phone.commit('self/gym', [], { cmd: { name: 'gym.start', args: { id: 'ses_fixture_phone', routineId: 'rt_fixture_main', startedAt: phoneStart, joinOpenSession: true } },
+        predict: [{ op: 'create', t: 'session', id: 'ses_fixture_phone', f: { startedAt: phoneStart } }] });
+      await pushFromPhone();
       await page.locator('.gym-mirror-head').filter({ hasText: 'Training now' }).waitFor(); e2e++;
       assert.equal(await page.locator('.gym-mirror button').count(), 0, 'mirror must never control a live workout');
-      await request('/v1/gym/sessions/ses_fixture_phone/sets', { body: { id: 'set_fixture_phone', exerciseId: 'back-squat', weightKg: 92.5, reps: 5, completedAt: Date.now() - 5000 } });
+      await phone.commit('self/gym', [{ op: 'create', t: 'set', id: 'set_fixture_phone', f: { sessionId: 'ses_fixture_phone', exerciseId: 'back-squat',
+        weightKg: 92.5, reps: 5, kind: 'working', rpe: null, note: '', completedAt: Date.now() - 5000 } }]);
+      await pushFromPhone();
       await page.locator('.gym-mirror-line').filter({ hasText: '92.5 × 5' }).waitFor(); e2e++;
-      await request('/v1/gym/sessions/ses_fixture_phone/finish', { body: { finishedAt: Date.now() - 1000 } });
+      const phoneFinish = Date.now() - 1000;
+      await phone.commit('self/gym', [], { cmd: { name: 'gym.finish', args: { sessionId: 'ses_fixture_phone', finishedAt: phoneFinish } },
+        predict: [{ op: 'update', t: 'session', id: 'ses_fixture_phone', f: { finishedAt: phoneFinish } }] });
+      await pushFromPhone();
       await page.locator('.gym-mirror').waitFor({ state: 'detached' }); e2e++;
 
       await goto('#/gym/routines/rt_fixture_main');
@@ -292,9 +317,9 @@ async function run() {
       await page.getByRole('link', { name: 'Fixture Web Edited', exact: false }).first().waitFor();
       assert.ok(await page.getByRole('status').filter({ hasText: 'Offline.' }).count()); e2e++;
       assert.deepEqual(pageErrors, []);
-      assert.deepEqual(gymRequests.filter((request) => !/^(GET \/v1\/gym\/exercises$|GET \/v1\/gym\/threads$)/.test(request)), [], 'web mirror and engine writes must use no replaced REST door');
+      assert.deepEqual(gymRequests.filter((request) => request !== 'GET /v1/gym/threads'), [], 'web mirror and engine writes must use no replaced REST door');
       await context.close();
-      console.log(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 6, pending: 0, persistedGymOperations: 2, syncWriteLog: true, ports: [8094, 5181] }));
+      console.log(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 6, pending: 0, persistedGymOperations: 2, syncWriteLog: true, ports: [backendPort, webPort] }));
     }
     completed = true;
   } catch (error) {
@@ -312,6 +337,7 @@ async function run() {
     throw error;
   } finally {
     const cleanupErrors = [];
+    phone?.close();
     try { await browser?.close(); } catch (error) { cleanupErrors.push(error); }
     for (const server of servers.reverse()) {
       try { await stopOwnedServer(server, listener); } catch (error) { cleanupErrors.push(error); }

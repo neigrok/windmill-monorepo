@@ -1,12 +1,12 @@
 #pragma once
 
 #include "platform/ports/ToolHost.h"
-#include "products/gym/application/BodyweightService.h"
-#include "products/gym/application/CatalogService.h"
-#include "products/gym/application/NotesService.h"
-#include "products/gym/application/ProgramService.h"
+#include "products/gym/ports/CatalogRepository.h"
+#include "products/gym/ports/NotesRepository.h"
+#include "products/gym/ports/ProgramRepository.h"
 #include "products/gym/application/TrainingService.h"
 #include "products/gym/domain/ReadReceipt.h"
+#include "products/gym/ports/BodyweightRepository.h"
 
 #include <string>
 
@@ -16,8 +16,8 @@ namespace wm::gym {
 // CompositeToolHost has already settled the grant, so nothing here asks what a credential may do.
 class GymTools : public ToolHost {
 public:
-  GymTools(TrainingService& training, CatalogService& catalog, ProgramService& program,
-           NotesService& notes, BodyweightService& bodyweight, std::string appBaseUrl);
+  GymTools(TrainingService& training, GymWriteDoor& door, CatalogRepository& catalog, ProgramRepository& program,
+           NotesRepository& notes, BodyweightRepository& bodyweight, std::string appBaseUrl);
 
   std::vector<ToolDeclaration> declareTools() const override;
   // The hosts above consult these after a name misses their catalog; nothing here dispatches them.
@@ -37,10 +37,11 @@ private:
                       const ProposalSource& source, ReadReceipt& served);
 
   TrainingService& training_;
-  CatalogService& catalog_;
-  ProgramService& program_;
-  NotesService& notes_;
-  BodyweightService& bodyweight_;   // read through `list_bodyweight` alone; no tool writes a weigh-in
+  GymWriteDoor& door_;
+  CatalogRepository& catalog_;
+  ProgramRepository& program_;
+  NotesRepository& notes_;
+  BodyweightRepository& bodyweight_;   // read through `list_bodyweight` alone; no tool writes a weigh-in
   std::string appBaseUrl_;
 };
 

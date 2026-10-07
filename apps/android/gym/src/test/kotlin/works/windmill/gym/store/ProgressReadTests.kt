@@ -1,156 +1,97 @@
 package works.windmill.gym.store
 
-import java.io.File
-import java.io.IOException
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.async
-import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.*
-import works.windmill.gym.net.FakeTraining
-import works.windmill.gym.net.TrainingSyncing
-import works.windmill.platform.Account
-import works.windmill.platform.User
-import works.windmill.platform.net.WindmillApi
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ProgressReadTests {
     @get:Rule val tmp = TemporaryFolder()
-    private fun account(id: String) = Account(WindmillApi("https://windmill.works".toHttpUrl(), credential = { null }), User(id, "$id@example.com", id))
-    private fun TestScope.store(logs: Map<String, TrainingSyncing>) = TrainingStore(
-        SetQueue(File(tmp.root, "queue")), DeviceCopy(File(tmp.root, "catalog")), LocalLog(File(tmp.root, "log")),
-        LocalPreferences(File(tmp.root, "prefs")), LocalBodyweight(File(tmp.root, "weight")), backgroundScope,
-        now = { testScheduler.currentTime }, sync = { logs[it.user?.id] })
 
     @Test
-    fun completeReadIsSharedAndFailureNeverFallsBackToLegacySessionEstimate() = runTest {
-        val server = FakeTraining().apply {
-            stored["finished"] = Session("finished", 1, finishedAtMs = 2)
-            sets["finished"] = mutableListOf(TrainingSet("set", "bench", weightKg = 80.0, reps = 8, completedAtMs = 1))
-        }
-        val store = store(mapOf("a" to server))
-        store.connect(account("a"))
-        val expected = StatsProgress.of(listOf(SessionDetail(server.stored.getValue("finished"), server.sets.getValue("finished"))), 0)
-        assertEquals(GymResult.Ok(expected), store.loadProgress())
-        assertEquals(GymResult.Ok(expected), store.loadProgress())
-        assertEquals(1, server.calls.count { it == "progress" })
-        assertEquals(expected, store.progress)
-        server.online = false
-        assertTrue(store.loadProgress(force = true) is GymResult.Failed)
-        assertEquals(expected, store.progress)
-        assertNotNull(store.progressFailure)
-        assertEquals(1, store.logged.size)
-    }
-
-    @Test
-    fun oldOwnerReplyCannotBecomeNewOwnersProjection() = runTest {
-        val reply = CompletableDeferred<StatsProgress>()
-        val a = object : TrainingSyncing by FakeTraining() { override suspend fun progress() = reply.await() }
-        val b = FakeTraining()
-        val store = store(mapOf("a" to a, "b" to b))
-        store.connect(account("a"))
-        val first = async { store.loadProgress() }
-        runCurrent()
-        val arrival = async { store.connect(account("b")) }
-        runCurrent()
-        reply.complete(StatsProgress(900, listOf(ProgressSession("private-a", 1, emptyList()))))
-        assertTrue(first.await() is GymResult.Failed)
-        arrival.await()
-        assertEquals(StatsProgress(0, emptyList()), store.progress)
-        assertNull(store.progressFailure)
-    }
-
-    @Test
-    fun mutationDuringProgressReadRepeatsWholeReadAndHeldSessionSharesOneFilter() = runTest {
-        val server = FakeTraining().apply {
-            stored["finished"] = Session("finished", 1, finishedAtMs = 2)
-            sets["finished"] = mutableListOf(TrainingSet("set", "bench", weightKg = 80.0, reps = 8, completedAtMs = 1))
-        }
-        val release = CompletableDeferred<Unit>()
-        var reads = 0
-        val boundary = object : TrainingSyncing by server {
-            override suspend fun progress(): StatsProgress {
-                val read = server.progress()
-                reads += 1
-                if (reads == 1) release.await()
-                return read
-            }
-        }
-        val store = store(mapOf("a" to boundary))
-        store.connect(account("a"))
-        val read = async { store.loadProgress() }
-        runCurrent()
-        assertTrue(store.fixSet("finished", "set", SetFix(weightKg = 90.0)) is FixOutcome.Corrected)
-        release.complete(Unit)
-        read.await()
-        assertEquals(2, reads)
-        val expected = StatsProgress.of(listOf(SessionDetail(server.stored.getValue("finished"), server.sets.getValue("finished"))), 0)
-        assertEquals(expected, store.progress)
-        store.withhold(Deletion.Session("finished"))
-        assertEquals(StatsProgress(0, emptyList()), store.progress)
-        store.keepWithheld()
-        assertEquals(expected, store.progress)
-    }
-    @Test
-    fun pendingOlderPageCannotAppendIntoNewOwnersRowsOrChangeItsEndState() = runTest {
-        val server = FakeTraining().apply {
-            repeat(50) { index -> stored["s$index"] = Session("s$index", (100 + index).toLong(), finishedAtMs = 200) }
-        }
-        val release = CompletableDeferred<List<SessionSummary>>()
-        val a = object : TrainingSyncing by server {
-            override suspend fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> {
-                if (before != null) return release.await()
-                return server.sessions(limit, before, beforeId)
-            }
-        }
-        val b = FakeTraining().apply { stored["b"] = Session("b", 500, finishedAtMs = 600) }
-        val store = store(mapOf("a" to a, "b" to b))
-        store.connect(account("a"))
-        assertEquals(Older.More, store.older)
-        val older = async { store.loadOlder() }
-        runCurrent()
-        store.connect(account("b"))
-        release.complete(listOf(SessionSummary(Session("old-a", 1, finishedAtMs = 2), emptyList())))
-        older.await()
-        assertEquals(listOf("b"), store.logged.map { it.id })
-        assertEquals(Older.End, store.older)
-    }
-
-    @Test
-    fun confirmedRenameSurvivesAnOlderCatalogReadAndInsertsAnUncachedMovement() = runTest {
-        for (cached in listOf(true, false)) {
-            val folder = tmp.newFolder()
-            val movement = Exercise("private-bench", "Bench", "push", "barbell")
-            val confirmed = movement.copy(name = "Bench Press")
-            val cacheFile = File(folder, "catalog")
-            DeviceCopy(cacheFile).hold("a", if (cached) listOf(movement) else emptyList())
-            val release = CompletableDeferred<Unit>()
-            val server = object : TrainingSyncing by FakeTraining() {
-                override suspend fun exercises(): List<Exercise> { release.await(); return listOf(movement) }
-                override suspend fun renameExercise(exerciseId: String, name: String): Exercise {
-                    assertEquals("private-bench" to "Bench Press", exerciseId to name)
-                    return confirmed
-                }
-            }
-            val store = TrainingStore(SetQueue(File(folder, "queue")), DeviceCopy(cacheFile), LocalLog(File(folder, "log")),
-                LocalPreferences(File(folder, "prefs")), LocalBodyweight(File(folder, "weight")), backgroundScope,
-                now = { testScheduler.currentTime }, sync = { server })
-            val connection = async { store.connect(account("a")) }
+    fun completeReadIsSharedUntilAForcedReadReplacesIt() = runTest {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("a")
+            room.workout(80.0)
             runCurrent()
-            assertEquals(GymResult.Ok(confirmed), store.rename(movement.id, "Bench Press"))
-            assertEquals(listOf(confirmed), store.catalog.filter { it.id == movement.id })
-            release.complete(Unit)
-            connection.await()
-            assertEquals(listOf(confirmed), store.catalog.filter { it.id == movement.id })
-            assertEquals(store.catalog, DeviceCopy(cacheFile).movements("a"))
-            assertEquals(emptyList<Exercise>(), DeviceCopy(cacheFile).movements("b"))
+            val expected = StatsProgress.of(room.training.details(), room.engine.physNow())
+            assertEquals(GymResult.Ok(expected), room.store.loadProgress())
+            EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
+                other.now = room.now + 600_000
+                other.select("a")
+                other.training.startSession(SessionStart("remote01", other.now - 10_000))
+                other.training.appendSet("remote01", SetWrite("remoteset", "back-squat", 100.0, 5, SetKind.Working, other.now - 9_000))
+                other.training.finishSession("remote01", other.now - 5_000)
+                other.sync(server)
+            }
+            room.sync(server)
+            assertEquals(2, room.training.details().size)
+            assertEquals("a second read shares the first", GymResult.Ok(expected), room.store.loadProgress())
+            assertEquals(expected, room.store.progress)
+            val fresh = StatsProgress.of(room.training.details(), room.engine.physNow())
+            assertEquals(GymResult.Ok(fresh), room.store.loadProgress(force = true))
+            assertEquals(fresh, room.store.progress)
+            assertNull(room.store.progressFailure)
         }
     }
 
+    @Test
+    fun oneOwnersProgressNeverBecomesTheNextOwnersProjection() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("a")
+            val session = room.workout(80.0)
+            assertEquals(listOf(session.id), (room.store.loadProgress() as GymResult.Ok).value.sessions.map { it.sessionId })
+            room.select("b")
+            assertEquals(emptyList<ProgressSession>(), room.store.progress!!.sessions)
+            assertNull(room.store.progressFailure)
+        }
+    }
+
+    @Test
+    fun aCorrectionReachesTheProgressReadAndAHeldSessionSharesOneFilter() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("a")
+            val session = room.workout(80.0)
+            runCurrent()
+            assertTrue(room.store.loadProgress() is GymResult.Ok)
+            val set = room.training.session(session.id)!!.sets.single()
+            assertTrue(room.store.fixSet(session.id, set.id, SetFix(weightKg = 90.0)) is FixOutcome.Corrected)
+            runCurrent()
+            val read = room.store.progress!!
+            val expected = StatsProgress.of(room.training.details(), read.asOf)
+            assertEquals(expected, read)
+            assertEquals(listOf(90.0), read.sessions.flatMap { it.movements }.map { it.heaviest.weightKg })
+            room.store.withhold(Deletion.Session(session.id))
+            assertEquals(StatsProgress(read.asOf, emptyList()), room.store.progress)
+            room.store.keepWithheld()
+            assertEquals(expected, room.store.progress)
+        }
+    }
+
+    @Test
+    fun aConfirmedRenameIsTheCatalogsAndSurvivesTheNextRead() = runTest {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
+            other.select("a"); other.pull(server)
+            assertTrue(other.store.create("Bench", "barbell", "private-bench") is GymResult.Ok)
+            other.sync(server)
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("a"); room.pull(server); room.store.refreshEngine()
+            val renamed = room.store.rename("private-bench", "Bench Press")
+            val confirmed = room.training.catalogue().single { it.id == "private-bench" }
+            assertEquals(GymResult.Ok(confirmed), renamed)
+            assertEquals("Bench Press", confirmed.name)
+            assertEquals(listOf(confirmed), room.store.catalog.filter { it.id == "private-bench" })
+            room.store.connect(room.account())
+            assertEquals(listOf(confirmed), room.store.catalog.filter { it.id == "private-bench" })
+            room.sync(server); room.store.refreshEngine()
+            assertEquals(listOf(confirmed), room.store.catalog.filter { it.id == "private-bench" })
+        }
+    }
 }

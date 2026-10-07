@@ -2,7 +2,6 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
-#include "products/journal/application/JournalSwitches.h"
 #include "products/journal/adapters/json/PageJson.h"
 
 #include <algorithm>
@@ -23,7 +22,7 @@ std::optional<LocalDate> dayOf(const std::string& date) {
 }
 }
 
-JournalApi::JournalApi(std::shared_ptr<PageService> pages, std::shared_ptr<AuthService> auth)
+JournalApi::JournalApi(std::shared_ptr<JournalRepository> pages, std::shared_ptr<AuthService> auth)
     : pages_(std::move(pages)), auth_(std::move(auth)) {}
 
 void JournalApi::getPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
@@ -38,56 +37,12 @@ void JournalApi::getPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     cb(error(drogon::k400BadRequest, "bad date"));
     return;
   }
-  std::optional<Page> page = pages_->page(*caller, *day);
+  std::optional<Page> page = pages_->load(*caller, *day);
   if (!page) {
     cb(error(drogon::k404NotFound, "nothing written"));
     return;
   }
   cb(jsonResponse(toJson(*page)));
-}
-
-void JournalApi::putPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                         const std::string& date) {
-  if (journal::journalWriteFrozen()) {
-    cb(error(drogon::k503ServiceUnavailable, "journal writes are temporarily frozen", "journal-frozen"));
-    return;
-  }
-  std::optional<UserId> caller = callerOf(req, *auth_);
-  if (!caller) {
-    cb(error(drogon::k401Unauthorized, "sign in to open your journal"));
-    return;
-  }
-  std::optional<LocalDate> day = dayOf(date);
-  if (!day) {
-    cb(error(drogon::k400BadRequest, "bad date"));
-    return;
-  }
-  std::shared_ptr<Json::Value> json = req->getJsonObject();
-  if (!json) {
-    cb(error(drogon::k400BadRequest, "expected json"));
-    return;
-  }
-  std::optional<Page> incoming;
-  try {
-    incoming = parsePageWrite(*json, *caller, *day);
-  } catch (const PageTooLarge&) {
-    cb(error(drogon::k413RequestEntityTooLarge, "that page is too long to store"));
-    return;
-  } catch (const std::exception&) {
-    cb(error(drogon::k400BadRequest, "could not read that page"));
-    return;
-  }
-  // The reply is always the winning row.
-  try {
-    WriteOutcome out = pages_->write(*incoming);
-    cb(jsonResponse(toJson(out.page)));
-  } catch (const journal::JournalUnavailable& unavailable) {
-    cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
-  } catch (const PageTooLarge&) {
-    cb(error(drogon::k413RequestEntityTooLarge, "that page is too long to store"));
-  } catch (const InvalidPage&) {
-    cb(error(drogon::k400BadRequest, "could not read that page"));
-  }
 }
 
 void JournalApi::listPages(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {

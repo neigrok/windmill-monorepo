@@ -78,8 +78,9 @@ struct AskThreadRepository {
                            const std::vector<ThreadTurn>& turns) = 0;
   // Removes only a thread with neither messages nor a generation.
   virtual void discardEmptyThread(const UserId& user, const ThreadId& id) = 0;
+  // `beforeDelete` runs under the thread's lease, before the row goes: the door unlinks its proposals.
   virtual bool deleteThread(const UserId& user, const ThreadId& id,
-                            const std::function<void()>& beforeDelete = {}) = 0;
+                            const std::function<void()>& beforeDelete) = 0;
 };
 
 }

@@ -1,48 +1,43 @@
 package works.windmill.gym.ui
 
+import works.windmill.gym.coach.ThreadsScreen
+import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
-import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.ExternalResource
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import works.windmill.gym.GymRoom
-import works.windmill.gym.domain.AskThread
-import works.windmill.gym.domain.Ids
+import works.windmill.gym.coach.AskThread
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.Session
-import works.windmill.gym.domain.Threads
-import works.windmill.gym.net.FakeTraining
+import works.windmill.gym.coach.Threads
+import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.Deletion
-import works.windmill.gym.store.DeviceCopy
-import works.windmill.gym.store.LocalBodyweight
-import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
+import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.Older
-import works.windmill.gym.store.SetQueue
-import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.Withheld
 import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.net.Refusal
-import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
 
 // `13-gestures.md:214-215`: a window decides which ROWS are drawn; it never decides what state a
@@ -57,44 +52,46 @@ import works.windmill.platform.net.WindmillApiException
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class StanceReadsTheAccountTests {
-    @get:Rule
+    @get:Rule(order = 0)
+    val tmp = TemporaryFolder()
+
+    private val rooms = mutableListOf<EngineRoomFixture>()
+
+    // The rooms close after the compose rule has torn the screen down: leaving the room flushes the
+    // store, so its engine must still be open.
+    @get:Rule(order = 1)
+    val closing = object : ExternalResource() {
+        override fun after() = rooms.forEach(EngineRoomFixture::close)
+    }
+
+    @get:Rule(order = 2)
     val compose = createComposeRule()
 
     // ONE seat for the whole test: the room re-connects on the way in, and a connect for a seat the
     // store does not already hold is an ARRIVAL, which abandons every open window.
     private val account = Account(
-        api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
+        origin = "https://windmill.works",
         user = User(id = "u1", email = "sam@example.com", name = "Sam"),
     )
 
-    private fun store(
+    private fun room(
         scope: CoroutineScope,
-        server: FakeTraining,
+        rest: FakeGymRest = FakeGymRest(),
         undoWindowMs: Long = Withheld.windowMs,
-    ): TrainingStore {
-        val root = File(System.getProperty("java.io.tmpdir"), "stance-${System.nanoTime()}")
-        root.mkdirs()
-        val store = TrainingStore(
-            queue = SetQueue(File(root, "queue.json")),
-            deviceCopy = DeviceCopy(File(root, "catalog.json")),
-            localLog = LocalLog(File(root, "local.json")),
-            localPreferences = LocalPreferences(File(root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(root, "bodyweight.json")),
-            scope = scope,
-            mintSession = { "ses_1" },
-            mintSet = Ids::set,
-            undoWindowMs = undoWindowMs,
-            sync = { if (it.isSignedIn) server else null },
-        )
-        runBlocking { store.connect(account) }
-        return store
+        startingAt: Long = 1_800_000_000_000L,
+    ): EngineRoomFixture = EngineRoomFixture(tmp.newFolder(), scope, rest = rest, undoWindowMs = undoWindowMs).also { room ->
+        rooms += room
+        room.now = startingAt
+        runBlocking {
+            room.select("u1")
+            room.pull(EngineRoomFixture.server())
+            room.store.connect(account)
+        }
     }
 
-    private fun oneWorkout(store: TrainingStore) = runBlocking {
-        store.choose("bench-press")
-        store.logSet(weightKg = 82.5, reps = 5)
-        store.flushPendingSets()
-        store.finish()
+    // The finish re-reads the log in the room's scope.
+    private fun oneWorkout(room: EngineRoomFixture) = runBlocking { room.workout() }.also {
+        shadowOf(Looper.getMainLooper()).idle()
     }
 
     // The log's own two silences. `No sessions yet` is the never-trained stance and `opening the
@@ -103,17 +100,16 @@ class StanceReadsTheAccountTests {
     @Test
     fun theLogDrawsNeitherSilenceOverASessionTheAccountStillHolds() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
-        server.open(Session(id = "ses_1", startedAtMs = System.currentTimeMillis()))
-        val store = store(scope, server)
-        oneWorkout(store)
+        val room = room(scope)
+        val store = room.store
+        val session = oneWorkout(room)
         compose.setContent {
             LogScreen(store = store, seat = "", onOpenSession = {}, onOpenBodyweight = {},
                 onShareSession = {}, onDiscardSession = {})
         }
         compose.onNodeWithText("No sessions yet").assertDoesNotExist()
 
-        compose.runOnIdle { store.withhold(Deletion.Session("ses_1")) }
+        compose.runOnIdle { store.withhold(Deletion.Session(session.id)) }
 
         compose.onNodeWithText("No sessions yet").assertDoesNotExist()
         compose.onNodeWithText("Your training will land here.").assertDoesNotExist()
@@ -121,12 +117,12 @@ class StanceReadsTheAccountTests {
         compose.runOnIdle {
             assertEquals("the row is off the screen", emptyList<String>(), store.recent.map { it.id })
             assertEquals("and still on the account, which is what Undo puts back",
-                listOf("ses_1"), store.allSessions.map { it.id })
+                listOf(session.id), store.allSessions.map { it.id })
         }
 
         // And the second half: the settled delete leaves the READ, so the invitation becomes true
         // rather than never being drawn again.
-        compose.runOnIdle { runBlocking { store.settleWithheld("ses_1") } }
+        compose.runOnIdle { runBlocking { store.settleWithheld(session.id) } }
         compose.runOnIdle { assertEquals(emptyList<String>(), store.allSessions.map { it.id }) }
         compose.onNodeWithText("No sessions yet").assertIsDisplayed()
         scope.cancel()
@@ -139,7 +135,7 @@ class StanceReadsTheAccountTests {
     @Test
     fun theRoutinesHomeNeverOffersToBuildTheFirstOverAProgramThatStillHasOne() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = store(scope, FakeTraining())
+        val store = room(scope).store
         runBlocking { store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) }
         val drafts = mutableListOf<RoutineDraft>()
         compose.setContent {
@@ -177,9 +173,9 @@ class StanceReadsTheAccountTests {
     @Test
     fun theThreadsRoomReadsTheAccountAndADeletedConversationNeverComesBack() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
+        val server = FakeGymRest()
         server.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
-        val store = store(scope, server)
+        val store = room(scope, server).store
         compose.setContent {
             ThreadsScreen(store = store, backTo = "Coach", onBack = {}, onOpen = {},
                 onDelete = {}, onAskNew = {})
@@ -193,15 +189,15 @@ class StanceReadsTheAccountTests {
         compose.onNodeWithText("why is my bench stalled?").assertDoesNotExist()
         compose.runOnIdle {
             assertEquals("the count captions rows, and there are none to caption",
-                emptyList<AskThread>(), store.threads)
+                emptyList<AskThread>(), store.coach.threads)
             assertEquals("while the account still holds the conversation",
-                listOf("thr_1"), store.allThreads.map { it.id })
+                listOf("thr_1"), store.coach.allThreads.map { it.id })
         }
 
         compose.runOnIdle { runBlocking { store.settleWithheld("thr_1") } }
         compose.runOnIdle {
             assertTrue("the log took it", "thr_1" !in server.conversations)
-            assertEquals("and the READ lost it with the row", emptyList<AskThread>(), store.allThreads)
+            assertEquals("and the READ lost it with the row", emptyList<AskThread>(), store.coach.allThreads)
         }
         compose.onNodeWithText(Threads.none).assertIsDisplayed()
         compose.onNodeWithText("why is my bench stalled?").assertDoesNotExist()
@@ -217,16 +213,15 @@ class StanceReadsTheAccountTests {
     @Test
     fun theFirstSessionStanceReadsTheAccountAndTheSettledDiscardBringsItBack() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
-        server.open(Session(id = "ses_1", startedAtMs = System.currentTimeMillis()))
-        val store = store(scope, server)
-        oneWorkout(store)
+        val room = room(scope)
+        val store = room.store
+        val session = oneWorkout(room)
         assertFalse("the log holds a workout", store.firstSession)
 
-        store.withhold(Deletion.Session("ses_1"))
+        store.withhold(Deletion.Session(session.id))
         assertFalse("and still does while a window is holding its row", store.firstSession)
 
-        runBlocking { store.settleWithheld("ses_1") }
+        runBlocking { store.settleWithheld(session.id) }
         assertTrue("the account is empty now, and the log said so", store.firstSession)
         scope.cancel()
     }
@@ -237,15 +232,14 @@ class StanceReadsTheAccountTests {
     @Test
     fun theLogFootNamesTheDayTheAccountStartedAndNotTheOldestRowDrawn() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
         val day = 24L * 60 * 60 * 1000
-        val oldMs = 1_700_000_000_000L
-        val newMs = oldMs + 30 * day
-        server.stored["ses_old"] =
-            Session(id = "ses_old", startedAtMs = oldMs, finishedAtMs = oldMs + 3_600_000)
-        server.stored["ses_new"] =
-            Session(id = "ses_new", startedAtMs = newMs, finishedAtMs = newMs + 3_600_000)
-        val store = store(scope, server)
+        val room = room(scope, startingAt = 1_700_000_000_000L)
+        val store = room.store
+        val old = oneWorkout(room)
+        room.now = old.startedAtMs + 30 * day
+        val new = oneWorkout(room)
+        val oldMs = old.startedAtMs
+        val newMs = new.startedAtMs
         assertEquals("the log is read to its bottom, which is when the foot says this at all",
             Older.End, store.older)
         compose.setContent {
@@ -254,7 +248,7 @@ class StanceReadsTheAccountTests {
         }
         compose.onNodeWithText("First session · ${Readout.date(oldMs)}").performScrollTo().assertIsDisplayed()
 
-        compose.runOnIdle { store.withhold(Deletion.Session("ses_old")) }
+        compose.runOnIdle { store.withhold(Deletion.Session(old.id)) }
 
         compose.onNodeWithText("First session · ${Readout.date(oldMs)}").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("First session · ${Readout.date(newMs)}").assertDoesNotExist()
@@ -262,10 +256,10 @@ class StanceReadsTheAccountTests {
         // And the settled delete moves it, once, to the day the account actually started on. The
         // re-read is not enough on its own: a row deeper than the page it answers with is folded
         // straight back in, so the discard has to leave the READ itself.
-        compose.runOnIdle { runBlocking { store.settleWithheld("ses_old") } }
+        compose.runOnIdle { runBlocking { store.settleWithheld(old.id) } }
         compose.runOnIdle {
             assertEquals("the log let go of it and never drew it again",
-                listOf("ses_new"), store.allSessions.map { it.id })
+                listOf(new.id), store.allSessions.map { it.id })
         }
         compose.onNodeWithText("First session · ${Readout.date(newMs)}").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("First session · ${Readout.date(oldMs)}").assertDoesNotExist()
@@ -279,10 +273,10 @@ class StanceReadsTheAccountTests {
     @Test
     fun aThreadsReadThisEntryCouldNotMakeDrawsNoRowsAndNoCount() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
+        val server = FakeGymRest()
         server.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
-        val store = store(scope, server)
-        runBlocking { store.readThreads() }
+        val store = room(scope, server).store
+        runBlocking { store.coach.readThreads() }
         server.refuseThreads = IOException("offline")
 
         compose.setContent {
@@ -298,7 +292,7 @@ class StanceReadsTheAccountTests {
         compose.onNodeWithText(Threads.none).assertDoesNotExist()
         compose.runOnIdle {
             assertEquals("the room keeps what it last read, and the screen declines to draw it",
-                listOf("thr_1"), store.allThreads.map { it.id })
+                listOf("thr_1"), store.coach.allThreads.map { it.id })
         }
         scope.cancel()
     }
@@ -309,22 +303,22 @@ class StanceReadsTheAccountTests {
     @Test
     fun aSettledThreadDeleteTheLogHasAlreadyForgottenStillLeavesTheRead() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
+        val server = FakeGymRest()
         server.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
-        val store = store(scope, server)
-        runBlocking { store.readThreads() }
+        val store = room(scope, server).store
+        runBlocking { store.coach.readThreads() }
         server.refuseThreads = WindmillApiException.Refused(
             404, Refusal(message = "no such conversation"))
 
         store.withhold(Deletion.Thread("thr_1"))
-        assertEquals("the row is off the screen", emptyList<AskThread>(), store.threads)
-        assertEquals("and still on the account", listOf("thr_1"), store.allThreads.map { it.id })
+        assertEquals("the row is off the screen", emptyList<AskThread>(), store.coach.threads)
+        assertEquals("and still on the account", listOf("thr_1"), store.coach.allThreads.map { it.id })
 
         val failure = runBlocking { store.settleWithheld("thr_1") }
 
         assertEquals("a conversation the log has already forgotten is not a refusal", null, failure)
         assertEquals("and the READ lost it just as it does on the 200",
-            emptyList<AskThread>(), store.allThreads)
+            emptyList<AskThread>(), store.coach.allThreads)
         scope.cancel()
     }
 
@@ -334,18 +328,17 @@ class StanceReadsTheAccountTests {
     @Test
     fun theFinishReceiptIsNotAFirstSessionOverALogHoldingAnother() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
-        val oldMs = 1_700_000_000_000L
-        server.stored["ses_old"] =
-            Session(id = "ses_old", startedAtMs = oldMs, finishedAtMs = oldMs + 3_600_000)
         // Long enough that the receipt is read while the window is still open, not after it settles.
-        val store = store(scope, server, undoWindowMs = 120_000)
+        val room = room(scope, undoWindowMs = 120_000, startingAt = 1_700_000_000_000L)
+        val store = room.store
+        val old = oneWorkout(room)
+        room.now = 1_800_000_000_000L
         runBlocking {
             store.start(null)
             store.choose("back-squat")
             store.logSet(100.0, 5)
         }
-        store.withhold(Deletion.Session("ses_old"))
+        store.withhold(Deletion.Session(old.id))
 
         compose.setContent { GymMaterial { GymRoom(account, store) } }
         compose.waitForIdle()

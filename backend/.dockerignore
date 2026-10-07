@@ -13,16 +13,10 @@ cmake-build-*/
 .idea/
 .claude/
 uploads/
-# Only the image's migration tools and deployment test inputs enter the build.
+# Only the deployment files ctest reads enter the build.
 deploy/*
 !deploy/Caddyfile
-!deploy/docker-compose.yml
 !deploy/deploy-production.sh
-!deploy/gym-migration/
-deploy/gym-migration/*
-!deploy/gym-migration/rehearse.py
-!deploy/gym-migration/schema-compatibility.sh
-!deploy/gym-migration/cutover-production.sh
 *.md
 !products/gym/ARCHITECTURE.md
 !products/journal/ARCHITECTURE.md

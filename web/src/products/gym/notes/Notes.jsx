@@ -12,8 +12,8 @@ import { useGymRead } from '../useGymRead.js';
 import { useGymApi } from '../gymSync.js';
 import {
   ADD_VERB, byteCountLabel, DELETE_VERB, firstLineOf, FULL_LINE, HEAD_LINE, HONESTY_LINE,
-  isBodyOverCap, isFull, isTitleOverCap, mintNoteId, NOTE_DELETED, noteRefusal, NOTES_FAILED, NOTES_TITLE,
-  orderOf, PLACEHOLDER_TITLES, PRECEDENCE_CAPTION, reorderNotes, showsByteCount, showsTitleCount,
+  isBodyOverCap, isFull, isTitleOverCap, mintNoteId, noteRefusal, NOTES_FAILED, NOTES_TITLE,
+  noteAbove, PLACEHOLDER_TITLES, PRECEDENCE_CAPTION, reorderNotes, showsByteCount, showsTitleCount,
   titleCountLabel,
 } from './notes.js';
 
@@ -25,7 +25,7 @@ function countReadout(label) {
 // drag moves it here first and the store's answer replaces it.
 export function Notes({ log }) {
   const api = useGymApi();
-  const view = useGymRead(() => api.notes(), [], { sync: true, ready: api.ready !== false });
+  const view = useGymRead(() => api.notes(), [], { sync: true, ready: Boolean(api?.ready) });
   const [held, setHeld] = useState(null);
   const [editing, setEditing] = useState(null);
   useEffect(() => setHeld(null), [view.data]);
@@ -43,14 +43,15 @@ export function Notes({ log }) {
     view.retry();
   };
 
-  // The indices are the drawn list's; the order sent is the whole store's, which a note held for
+  // The indices are the drawn list's; the list moved is the whole store's, which a note held for
   // deletion is still part of until its window closes.
   const move = async (from, to) => {
+    const { id } = shown[from];
     const moved = reorderNotes(notes, notes.indexOf(shown[from]), notes.indexOf(shown[to]));
     if (moved === notes) return;
     setHeld(moved);
     try {
-      setHeld(await api.reorderNotes(orderOf(moved)));
+      setHeld(await api.moveNote(id, noteAbove(moved, id, hidden)));
     } catch (error) {
       log.say(noteRefusal(error, 'reordered'));
       settle(null);
@@ -61,19 +62,9 @@ export function Notes({ log }) {
   // Nothing is confirmed — a question in front of an act that can be undone is ceremony
   // (13-gestures.md Law 2).
   const remove = (note) => {
-    log.withhold({
+    log.holdDelete({
       kind: 'note',
       id: note.id,
-      engineDeath: { type: 'note', id: note.id },
-      line: NOTE_DELETED,
-      // In place, never `settle`: the store renumbers the rest, and a reorder sent afterwards must
-      // carry the store's own list — but a re-read from `loading` would blank the screen nine
-      // seconds after the act, for a row that is already off it.
-      send: async () => {
-        await api.deleteNote(note.id);
-        setHeld(null);
-        view.refresh();
-      },
       refused: (error) => log.say(noteRefusal(error, 'deleted')),
     });
     setEditing(null);
@@ -222,7 +213,7 @@ function NoteList({ notes, onOpen, onMove }) {
 }
 
 // Over the bound the store refuses, and its sentence is shown in place; nothing here rewrites it.
-// A refusal for a full account (`notes-full`) means the list behind the editor is behind the store:
+// A refusal for a full account (`cap`) means the list behind the editor is behind the store:
 // `onStale` re-reads it while the editor stays open with the sentence.
 export function NoteEditor({ note, noteCount = null, onClose, onSaved, onDelete, onStale }) {
   const api = useGymApi();
@@ -242,7 +233,7 @@ export function NoteEditor({ note, noteCount = null, onClose, onSaved, onDelete,
     } catch (error) {
       setSaving(false);
       setRefused(noteRefusal(error, 'saved'));
-      if (error?.code === 'notes-full') onStale();
+      if (error?.code === 'cap') onStale();
     }
   };
 

@@ -150,19 +150,15 @@ you’re back*. Android says nothing at all: its `Deletion.Bodyweight.stillThere
 stays quiet, which is the same honesty with one fewer sentence. Whether a phone owes that sentence
 at all is a copy owner's call and not a build gap.
 
-**And a weigh-in written for that day while the window runs is a correction, not a race.** The later
-`recordedAt` wins, which is the rule the wire already states. A weigh-in is the one delete in this
-room whose id the lifter can write again — it is a calendar date and not a mint — and **writing the
-day again IS the undo**: on all three surfaces the window comes down before the number goes in, and
-on each it is ONE seam every weigh-in passes rather than a call each screen has to remember —
-`useBodyweight`'s own `save` on the web (the hook behind the room's one weigh-in door),
-`TrainingStore.weighIn`'s `dayWrittenAgain` on iOS, `TrainingStore.weighIn`'s `dropWithheld` on
-Android. On iOS it sits after the date refusal, so a day the store would refuse anyway costs no
-window. So the transient **retires** rather than standing there offering *Undo* beside a dot the
-chart is drawing again, and the clock that would have
-deleted the number just saved is gone. iOS also holds the instant of the withhold and checks it as
-the clock fires — the same ruling read from the other end, and the guard for a newer row that reaches
-the store some other way.
+**And a weigh-in written for that day while the window runs is a correction, not a race.** The
+newer save wins whole, and a save newer than the delete keeps the weigh-in whether or not the delete
+was sent (the wire, below). A weigh-in is the one delete in this room whose id the lifter can write
+again — it is a calendar date and not a mint — and **writing the day again IS the undo**: on the web
+and Android the window comes down before the number goes in, and on each it is ONE seam every
+weigh-in passes rather than a call each screen has to remember — `useBodyweight`'s own `save` on the
+web (the hook behind the room's one weigh-in door), `TrainingStore.weighIn`'s `dropWithheld` on
+Android. So the transient **retires** rather than standing there offering *Undo* beside a dot the
+chart is drawing again, and the clock that would have deleted the number just saved is gone.
 
 **Back-dating lives inside the weigh-in sheet, and that is a consequence of the one-door rule.** If
 the chip on the log is the only place a weigh-in is entered, then the sheet it opens has to carry a
@@ -171,7 +167,7 @@ date" is a verb with no door. It does, on all three surfaces.
 
 **A weigh-in is never in the future.** The picker's range ends today, and a date after the device's
 local today is refused at the field with *A weigh-in is not a forecast — today or earlier.*; the
-server refuses a day more than one past its own UTC today with the same sentence. A served row
+server refuses a day more than one past its own UTC today (`bad-instant`). A served row
 dated after the device's today is never the reading and never a dot.
 
 The field refuses one thing at a time, in this order: *That is not a number yet.* · *One decimal
@@ -213,20 +209,22 @@ name says bodyweight writes, at any grant level, and nothing by that name is `pr
 
 ## The wire
 
-One row per `(user, dateLocal)`: `{ dateLocal, weightKg, recordedAt }`. The identity **is** the local
-calendar date (`YYYY-MM-DD`, a real day), so every write is idempotent by that key. Kilograms only on
-the wire, two decimals, `20.00 ≤ weightKg ≤ 400.00`. `recordedAt` is the device's clock at the moment
-the lifter saved — it can support an omission, never an assertion — and it decides one thing: **the
-write with the later `recordedAt` wins**; a stale replay is a 200 that answers the stored row
-unchanged, so a replayed old write never overwrites a newer correction. A delete is 204 always.
+A weigh-in is the engine's `weighin` record ([engine](../../../foundation/engine.md) A.2), one per
+`(account, dateLocal)`: `{ kg, recordedAt }`. The identity **is** the local calendar date
+(`YYYY-MM-DD`, a real day), so every write of a day writes the same record. Kilograms only, two
+decimals, `20.00 ≤ kg ≤ 400.00`. `recordedAt` is the device's clock at the moment the lifter saved —
+it can support an omission, never an assertion — and it decides nothing about which save wins: each
+save writes the weight, `recordedAt` and presence at one stamp, so **the newest save wins whole**, and
+a save newer than a delete, held or not, keeps the weigh-in. Only the lifter's own surfaces write
+one.
 
-`GET /v1/gym/bodyweight[?from&to]` answers the window's entries and `latest` — the account's newest
-day **whatever the window**, so one windowed read draws both the chart and the log head. There is
-no export: the CSV is out of the product on every surface (`19-connected-log.md`).
+`GET /v1/gym/bodyweight[?from&to]` answers the window's entries, each `{ dateLocal, weightKg,
+recordedAt }`, and `latest` — the account's newest day **whatever the window**, so one windowed read
+draws both the chart and the log head. There is no export: the CSV is out of the product on every surface (`19-connected-log.md`).
 
-On the phones a weigh-in is local-first like a set: it lands in one store file per seat beside the
-others and is queued to the server, which receives it in the order it was made, among every other
-change, sign-in included.
+On every surface a weigh-in is a record in the account's replica, like a set: it is saved on the
+device and sent through the outbox in the order it was made, among every other change, sign-in
+included.
 
 ## Open
 

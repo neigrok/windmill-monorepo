@@ -22,13 +22,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -38,30 +36,19 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.ChangeKind
-import works.windmill.gym.domain.Exercise
-import works.windmill.gym.domain.GymPreferences
+import works.windmill.domain.kit.ActionContext
+import works.windmill.domain.kit.ActionRunner
+import works.windmill.domain.kit.FixedZone
+import works.windmill.domain.kit.Id
+import works.windmill.domain.kit.Outcome
 import works.windmill.gym.domain.ConnectedLog
-import works.windmill.gym.domain.Proposal
-import works.windmill.gym.domain.ProposalChange
-import works.windmill.gym.domain.ProposalSource
-import works.windmill.gym.domain.ProposalState
-import works.windmill.gym.domain.ProposalTargets
-import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.RoutineEntry
 import works.windmill.gym.domain.SetTarget
-import works.windmill.gym.net.FakeTraining
-import works.windmill.gym.store.DeviceCopy
+import works.windmill.gym.domain.sync.ProposeRoutine
+import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
-import works.windmill.gym.store.LocalBodyweight
-import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
-import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
-import works.windmill.platform.Account
-import works.windmill.platform.User
-import works.windmill.platform.net.WindmillApi
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -73,29 +60,17 @@ class RoutinesScreenTests {
     val tmp = TemporaryFolder()
 
     private fun home(
-        scope: CoroutineScope,
+        room: EngineRoomFixture,
         doors: MutableList<String>,
         drafts: MutableList<RoutineDraft>,
     ): TrainingStore {
-        val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json")),
-            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
-            localLog = LocalLog(File(tmp.root, "local.json")),
-            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
-            scope = scope,
-            sync = { null },
-        )
         runBlocking {
-            store.connect(Account(
-                api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
-                user = null,
-            ))
-            store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press"))
+            room.select(null)
+            room.store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press"))
         }
         compose.setContent {
             RoutinesScreen(
-                store = store,
+                store = room.store,
                 isSignedIn = true,
                 lookedAt = emptySet(),
                 seat = "s",
@@ -107,231 +82,211 @@ class RoutinesScreenTests {
                 onSignIn = { doors += "signIn" },
             )
         }
-        return store
+        return room.store
     }
 
-    private fun routine(id: String, name: String, position: Int) = Routine(
-        id = id, name = name, position = position, revision = 1,
+    private fun routine(id: String, name: String, position: Int) = RoutineDraft(
+        name = name, position = position, creationId = id,
         entries = listOf(RoutineEntry(position = 1, exerciseId = "bench-press", sets = List(5) { SetTarget(5, 82.5) })))
 
-    private fun proposal(id: String, routineId: String, name: String, createdAtMs: Long) = Proposal(
-        id = id, routineId = routineId, state = ProposalState.Pending,
-        summary = "Heavier triples.", changeCount = 1, createdAtMs = createdAtMs,
-        source = ProposalSource(agent = "Claude"), baseRevision = 1,
-        baseName = name, name = name,
-        changes = listOf(ProposalChange(position = 1, kind = ChangeKind.Retargeted,
-            exerciseId = "bench-press", before = ProposalTargets(List(5) { SetTarget(5, 82.5) }),
-            after = ProposalTargets(List(5) { SetTarget(3, 87.5) }))))
+    // A proposal is the log's, so another phone on the account writes it and the room pulls it.
+    private fun propose(device: EngineRoomFixture, id: String, routineId: String, name: String) {
+        val runner = ActionRunner(device.engine, device.engine.registry, FixedZone(0),
+            object : ActionContext { override var insideRun = false })
+        assertTrue(runner.run(ProposeRoutine(Id(id, works.windmill.gym.domain.sync.Proposal),
+            Id(routineId, works.windmill.gym.domain.sync.Routine), name,
+            listOf(works.windmill.gym.domain.sync.RoutineEntry(Id("bench-press", works.windmill.gym.domain.sync.Exercise),
+                List(5) { works.windmill.gym.domain.sync.SetTarget(3, 87.5) })), "Heavier triples.")) is Outcome.Committed)
+    }
 
     @Test
     fun testTheBandStartsTheWorkoutAndTheNewRoutineActionIsInTheTopBar() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val doors = mutableListOf<String>()
-        val drafts = mutableListOf<RoutineDraft>()
-        home(scope, doors, drafts)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val doors = mutableListOf<String>()
+            val drafts = mutableListOf<RoutineDraft>()
+            home(room, doors, drafts)
 
-        compose.onNodeWithText("Start logging").assertIsDisplayed()
-        val newRoutine = compose.onNodeWithText("New routine")
-        newRoutine.assertIsDisplayed().assert(!hasAnyAncestor(hasScrollAction()))
-        newRoutine.performClick()
-        compose.runOnIdle { assertEquals(listOf(RoutineDraft(position = 1)), drafts) }
-        compose.onNodeWithText(ConnectedLog.action).assertDoesNotExist()
-        compose.onNodeWithText("Gym settings").assertDoesNotExist()
+            compose.onNodeWithText("Start logging").assertIsDisplayed()
+            val newRoutine = compose.onNodeWithText("New routine")
+            newRoutine.assertIsDisplayed().assert(!hasAnyAncestor(hasScrollAction()))
+            newRoutine.performClick()
+            compose.runOnIdle { assertEquals(listOf(RoutineDraft(position = 1)), drafts) }
+            compose.onNodeWithText(ConnectedLog.action).assertDoesNotExist()
+            compose.onNodeWithText("Gym settings").assertDoesNotExist()
 
-        compose.onNodeWithText("Start logging").performClick()
-        compose.runOnIdle { assertEquals(listOf("start"), doors) }
-        scope.cancel()
+            compose.onNodeWithText("Start logging").performClick()
+            compose.runOnIdle { assertEquals(listOf("start"), doors) }
+        } } finally { scope.cancel() }
     }
 
     @Test
     fun testTheHeadCountsTheProgramAndClaimsNothingAboutASessionItCannotSee() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        home(scope, mutableListOf(), mutableListOf())
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            home(room, mutableListOf(), mutableListOf())
 
-        compose.onNodeWithText("1 routine").assertDoesNotExist()
-        compose.onNodeWithText("nothing running", substring = true).assertDoesNotExist()
-        scope.cancel()
+            compose.onNodeWithText("1 routine").assertDoesNotExist()
+            compose.onNodeWithText("nothing running", substring = true).assertDoesNotExist()
+        } } finally { scope.cancel() }
     }
 
     @Test
     fun testTheRowDeclaresItsDeleteAsACustomActionNamedWithTheRoutine() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val doors = mutableListOf<String>()
-        val drafts = mutableListOf<RoutineDraft>()
-        val store = home(scope, doors, drafts)
-        val routineId = store.routines.single().id
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val doors = mutableListOf<String>()
+            val drafts = mutableListOf<RoutineDraft>()
+            val store = home(room, doors, drafts)
+            val routineId = store.routines.single().id
 
-        compose.onNodeWithContentDescription("More for Push Day").assertIsDisplayed()
-        compose.onAllNodesWithText("Delete").assertCountEquals(1)
+            compose.onNodeWithContentDescription("More for Push Day").assertIsDisplayed()
+            compose.onAllNodesWithText("Delete").assertCountEquals(1)
 
-        val row = compose.onNode(hasClickAction() and hasText("Push Day")).fetchSemanticsNode()
-        val actions = row.config[SemanticsActions.CustomActions]
-        assertEquals(listOf("Delete Push Day"), actions.map { it.label })
+            val row = compose.onNode(hasClickAction() and hasText("Push Day")).fetchSemanticsNode()
+            val actions = row.config[SemanticsActions.CustomActions]
+            assertEquals(listOf("Delete Push Day"), actions.map { it.label })
 
-        compose.runOnIdle { actions.single { it.label == "Delete Push Day" }.action() }
-        compose.runOnIdle {
-            assertEquals("the same act the swipe makes, and the room withholds it",
-                listOf("delete:$routineId"), doors)
-            assertEquals("nothing else fired", emptyList<RoutineDraft>(), drafts)
-        }
-        scope.cancel()
+            compose.runOnIdle { actions.single { it.label == "Delete Push Day" }.action() }
+            compose.runOnIdle {
+                assertEquals("the same act the swipe makes, and the room withholds it",
+                    listOf("delete:$routineId"), doors)
+                assertEquals("nothing else fired", emptyList<RoutineDraft>(), drafts)
+            }
+        } } finally { scope.cancel() }
     }
 
     @Test
     fun testTheRowStandsOnTheRoomsRowFloor() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        home(scope, mutableListOf(), mutableListOf())
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            home(room, mutableListOf(), mutableListOf())
 
-        val bounds = compose.onNode(hasClickAction() and hasText("Push Day")).getBoundsInRoot()
-        assertEquals(68.dp, bounds.height)
-        scope.cancel()
+            val bounds = compose.onNode(hasClickAction() and hasText("Push Day")).getBoundsInRoot()
+            assertEquals(68.dp, bounds.height)
+        } } finally { scope.cancel() }
     }
 
     @Test
     fun testTheRoutineTheStandingCardIsAboutDrawsNoChipOfItsOwn() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
-        server.written["rt_1"] = routine("rt_1", "Push Day", position = 0)
-        server.written["rt_2"] = routine("rt_2", "Pull Day", position = 1)
-        server.propose(proposal("prop_1", "rt_1", "Push Day", createdAtMs = 9_000))
-        server.propose(proposal("prop_2", "rt_2", "Pull Day", createdAtMs = 1_000))
-        val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json")),
-            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
-            localLog = LocalLog(File(tmp.root, "local.json")),
-            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
-            scope = scope,
-            sync = { server },
-        )
-        runBlocking {
-            store.connect(Account(
-                api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
-                user = User(id = "u1", email = "sam@example.com", name = "Sam"),
-            ))
-        }
-        val reviewed = mutableListOf<String>()
-        compose.setContent {
-            RoutinesScreen(
-                store = store,
-                isSignedIn = true,
-                lookedAt = emptySet(),
-                seat = "s",
-                onJustStart = {},
-                onBuild = {},
-                onOpenRoutine = {},
-                onDeleteRoutine = {},
-                onReview = { reviewed += it.id },
-                onSignIn = {},
-            )
-        }
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val server = EngineRoomFixture.server()
+            EngineRoomFixture(tmp.newFolder(), scope).use { other -> runBlocking {
+                other.select("u1"); other.pull(server)
+                assertTrue(other.store.saveRoutine(routine("routine_push", "Push Day", position = 0)) is GymResult.Ok)
+                assertTrue(other.store.saveRoutine(routine("routine_pull", "Pull Day", position = 1)) is GymResult.Ok)
+                other.sync(server)
+                propose(other, "proposal_pull", "routine_pull", "Pull Day")
+                other.sync(server)
+                other.now += 8_000
+                propose(other, "proposal_push", "routine_push", "Push Day")
+                other.sync(server)
+            } }
+            runBlocking { room.select("u1"); room.pull(server); room.store.refreshEngine() }
+            val store = room.store
+            val reviewed = mutableListOf<String>()
+            compose.setContent {
+                RoutinesScreen(
+                    store = store,
+                    isSignedIn = true,
+                    lookedAt = emptySet(),
+                    seat = "s",
+                    onJustStart = {},
+                    onBuild = {},
+                    onOpenRoutine = {},
+                    onDeleteRoutine = {},
+                    onReview = { reviewed += it.id },
+                    onSignIn = {},
+                )
+            }
 
-        compose.runOnIdle {
-            assertEquals(listOf("prop_1", "prop_2"), store.pendingProposals.map { it.id })
-        }
-        compose.onNodeWithText("Proposal · Push Day").assertIsDisplayed()
-        compose.onNodeWithText("1 change").assertIsDisplayed()
-        compose.onAllNodesWithText("1 proposal").assertCountEquals(1)
+            compose.runOnIdle {
+                assertEquals(listOf("proposal_push", "proposal_pull"), store.pendingProposals.map { it.id })
+            }
+            compose.onNodeWithText("Proposal · Push Day").assertIsDisplayed()
+            compose.onNodeWithText("1 change").assertIsDisplayed()
+            compose.onAllNodesWithText("1 proposal").assertCountEquals(1)
 
-        compose.onNodeWithText("1 proposal").performClick()
-        compose.runOnIdle {
-            assertEquals("the one chip left belongs to the routine without the card",
-                listOf("prop_2"), reviewed)
-        }
-        scope.cancel()
+            compose.onNodeWithText("1 proposal").performClick()
+            compose.runOnIdle {
+                assertEquals("the one chip left belongs to the routine without the card",
+                    listOf("proposal_pull"), reviewed)
+            }
+        } } finally { scope.cancel() }
     }
 
     @Test
     fun testARoutineTilesBodyTapOpensTheRoutineAndStartsNothing() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json")),
-            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
-            localLog = LocalLog(File(tmp.root, "local.json")),
-            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
-            scope = scope,
-            sync = { null },
-        )
-        val kept = runBlocking {
-            store.connect(Account(
-                api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
-                user = null,
-            ))
-            (store.saveRoutine(RoutineDraft(name = "Push Day")
-                .adding("bench-press")) as GymResult.Ok).value
-        }
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val store = room.store
+            val kept = runBlocking {
+                room.select(null)
+                (store.saveRoutine(RoutineDraft(name = "Push Day")
+                    .adding("bench-press")) as GymResult.Ok).value
+            }
 
-        val doors = mutableListOf<String>()
-        compose.setContent {
-            RoutinesScreen(
-                store = store,
-                isSignedIn = false,
-                lookedAt = emptySet(),
-                seat = "",
-                onJustStart = { doors += "start" },
-                onBuild = { doors += "build" },
-                onOpenRoutine = { doors += "open:$it" },
-                onDeleteRoutine = { doors += "delete:$it" },
-                onReview = { doors += "review" },
-                onSignIn = { doors += "signIn" },
-            )
-        }
+            val doors = mutableListOf<String>()
+            compose.setContent {
+                RoutinesScreen(
+                    store = store,
+                    isSignedIn = false,
+                    lookedAt = emptySet(),
+                    seat = "",
+                    onJustStart = { doors += "start" },
+                    onBuild = { doors += "build" },
+                    onOpenRoutine = { doors += "open:$it" },
+                    onDeleteRoutine = { doors += "delete:$it" },
+                    onReview = { doors += "review" },
+                    onSignIn = { doors += "signIn" },
+                )
+            }
 
-        compose.onNodeWithText("Push Day").performClick()
+            compose.onNodeWithText("Push Day").performClick()
 
-        compose.runOnIdle {
-            assertEquals("the tile's body opens the routine, and nothing else fires",
-                listOf("open:${kept.id}"), doors)
-        }
-        scope.cancel()
+            compose.runOnIdle {
+                assertEquals("the tile's body opens the routine, and nothing else fires",
+                    listOf("open:${kept.id}"), doors)
+            }
+        } } finally { scope.cancel() }
     }
 
     @Test
     fun testStartWorkoutIsPinnedOutOfTheScrollAndStartsTheRoutine() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val started = mutableListOf<String>()
-        val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json")),
-            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
-            localLog = LocalLog(File(tmp.root, "local.json")),
-            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
-            scope = scope,
-            sync = { null },
-        )
-        runBlocking {
-            store.connect(Account(
-                api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
-                user = null,
-            ))
-            store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press").adding("barbell-row"))
-        }
-        val routineId = store.routines.single().id
-        compose.setContent {
-            RoutineSheet(
-                routineId = routineId,
-                store = store,
-                onDismiss = {},
-                onStart = { started += it },
-                onBuild = {},
-            )
-        }
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val started = mutableListOf<String>()
+            val store = room.store
+            runBlocking {
+                room.select(null)
+                store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press").adding("barbell-row"))
+            }
+            val routineId = store.routines.single().id
+            compose.setContent {
+                RoutineSheet(
+                    routineId = routineId,
+                    store = store,
+                    onDismiss = {},
+                    onStart = { started += it },
+                    onBuild = {},
+                )
+            }
 
-        compose.onNodeWithText("Start workout").assertIsDisplayed()
-        compose.onNode(hasText("Start workout") and hasAnyAncestor(hasScrollAction())).assertDoesNotExist()
-        compose.onNode(hasText("Bench Press") and hasAnyAncestor(hasScrollAction())).assertExists()
-        val band = compose.onNodeWithText("Start workout").fetchSemanticsNode()
-        val body = compose.onNodeWithText("Bench Press").fetchSemanticsNode()
-        assertTrue("the band sits under the body", band.positionInRoot.y > body.positionInRoot.y)
-        val first = compose.onNodeWithText("Bench Press").getBoundsInRoot()
-        val second = compose.onNodeWithText("Barbell Row").getBoundsInRoot()
-        assertTrue("compact movement rows retain their target", first.height >= 68.dp)
-        assertTrue("the detail uses compact row rhythm", second.top - first.top < 105.dp)
+            compose.onNodeWithText("Start workout").assertIsDisplayed()
+            compose.onNode(hasText("Start workout") and hasAnyAncestor(hasScrollAction())).assertDoesNotExist()
+            compose.onNode(hasText("Bench Press") and hasAnyAncestor(hasScrollAction())).assertExists()
+            val band = compose.onNodeWithText("Start workout").fetchSemanticsNode()
+            val body = compose.onNodeWithText("Bench Press").fetchSemanticsNode()
+            assertTrue("the band sits under the body", band.positionInRoot.y > body.positionInRoot.y)
+            val first = compose.onNodeWithText("Bench Press").getBoundsInRoot()
+            val second = compose.onNodeWithText("Barbell Row").getBoundsInRoot()
+            assertTrue("compact movement rows retain their target", first.height >= 68.dp)
+            assertTrue("the detail uses compact row rhythm", second.top - first.top < 105.dp)
 
-        compose.onNodeWithText("Start workout").performClick()
-        compose.runOnIdle { assertEquals(listOf(routineId), started) }
-        scope.cancel()
+            compose.onNodeWithText("Start workout").performClick()
+            compose.runOnIdle { assertEquals(listOf(routineId), started) }
+        } } finally { scope.cancel() }
     }
 
     @Test
@@ -339,25 +294,26 @@ class RoutinesScreenTests {
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun compactDetailGrowsForLongMovementNamesAtDoubleTextAndKeepsPinnedActions() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        try {
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
             val firstName = "Single arm supported dumbbell row with a long movement name"
             val secondName = "Standing overhead press with a long movement name"
-            val server = FakeTraining().apply {
-                catalog = listOf(Exercise("long-row", firstName), Exercise("long-press", secondName))
-                written["rt_compact"] = Routine("rt_compact", "Compact detail", 0, 1, entries = listOf(
-                    RoutineEntry(1, "long-row", listOf(SetTarget(8, 20.0))),
-                    RoutineEntry(2, "long-press", listOf(SetTarget(6, 10.0))),
-                ))
-            }
-            val store = TrainingStore(SetQueue(File(tmp.root, "queue.json")), DeviceCopy(File(tmp.root, "catalog.json")),
-                LocalLog(File(tmp.root, "local.json")), LocalPreferences(File(tmp.root, "prefs.json")),
-                LocalBodyweight(File(tmp.root, "bodyweight.json")), scope, sync = { server })
-            runBlocking { store.connect(Account(WindmillApi("https://windmill.works".toHttpUrl(), { null }),
-                User("u1", "sam@example.com", "Sam"))) }
+            val server = EngineRoomFixture.server()
+            EngineRoomFixture(tmp.newFolder(), scope).use { other -> runBlocking {
+                other.select("u1"); other.pull(server)
+                assertTrue(other.store.create(firstName, "barbell", id = "long-row") is GymResult.Ok)
+                assertTrue(other.store.create(secondName, "barbell", id = "long-press") is GymResult.Ok)
+                assertTrue(other.store.saveRoutine(RoutineDraft(name = "Compact detail", position = 0, creationId = "routine_compact",
+                    entries = listOf(
+                        RoutineEntry(1, "long-row", listOf(SetTarget(8, 20.0))),
+                        RoutineEntry(2, "long-press", listOf(SetTarget(6, 10.0))),
+                    ))) is GymResult.Ok)
+                other.sync(server)
+            } }
+            runBlocking { room.select("u1"); room.pull(server); room.store.refreshEngine() }
             val edited = mutableListOf<RoutineDraft>()
             compose.setContent {
                 CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, 2f)) {
-                    RoutineSheet("rt_compact", store, {}, {}, { edited += it })
+                    RoutineSheet("routine_compact", room.store, {}, {}, { edited += it })
                 }
             }
             val first = compose.onNodeWithText(firstName).performScrollTo().assertIsDisplayed()
@@ -367,7 +323,9 @@ class RoutinesScreenTests {
             compose.onNodeWithText(secondName).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText("Start workout").assertIsDisplayed()
             compose.onNodeWithText("Edit routine").assertIsDisplayed().performClick()
-            compose.runOnIdle { assertEquals(listOf(RoutineDraft.of(server.written.getValue("rt_compact"))), edited) }
-        } finally { scope.cancel() }
+            compose.runOnIdle {
+                assertEquals(listOf(RoutineDraft.of(room.training.program().single { it.id == "routine_compact" })), edited)
+            }
+        } } finally { scope.cancel() }
     }
 }

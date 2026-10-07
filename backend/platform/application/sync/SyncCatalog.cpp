@@ -49,12 +49,6 @@ void SyncCatalog::seal() {
   sealed_ = true;
 }
 
-void SyncCatalog::bindReadiness(const std::string& product, ScopeReadiness& readiness) {
-  if (sealed_) throw CatalogError("scope readiness was bound after the catalog was sealed");
-  if (!registry_.products().contains(product)) throw CatalogError("the registry declares no product " + product);
-  if (!readiness_.emplace(product, &readiness).second) throw CatalogError("the product " + product + " readiness is bound twice");
-}
-
 void SyncCatalog::requireSealed() const {
   if (!sealed_) throw CatalogError("the sync catalog is used before it is sealed");
 }
@@ -102,20 +96,6 @@ std::string SyncCatalog::observationOutcome(const Json::Value& result) const {
     if (std::find(product.codes.begin(), product.codes.end(), refusal) != product.codes.end()) return refusal;
   }
   return "failed";
-}
-
-void SyncCatalog::requireReady(SyncTxn& txn, const ScopeKey& scope) const {
-  requireSealed();
-  if (scope.kind() != ScopeKind::product) return;
-  const auto ready = readiness_.find(scope.registryScope().product);
-  if (ready != readiness_.end()) ready->second->requireReady(txn, scope);
-}
-
-void SyncCatalog::requireWritable(SyncTxn& txn, const ScopeKey& scope) const {
-  requireSealed();
-  if (scope.kind() != ScopeKind::product) return;
-  const auto ready = readiness_.find(scope.registryScope().product);
-  if (ready != readiness_.end()) ready->second->requireWritable(txn, scope);
 }
 
 std::timed_mutex& SyncCatalog::scopeMutex(const ScopeKey& scope) const {

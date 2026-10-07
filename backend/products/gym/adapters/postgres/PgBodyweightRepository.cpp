@@ -57,34 +57,4 @@ std::optional<Bodyweight> PgBodyweightRepository::latest(const UserId& user) {
   return bodyweightFrom(rows[0]);
 }
 
-Bodyweight PgBodyweightRepository::save(const Bodyweight& incoming) {
-  // The UPDATE arm runs only when the incoming instant is at or after the stored one, so an older
-  // write changes nothing and the read-back below answers with the row that stands either way.
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  txn.exec_params(
-      "INSERT INTO gym_bodyweight (user_id, date_local, weight_kg, recorded_at) "
-      "VALUES ($1::uuid, $2::date, $3, $4) "
-      "ON CONFLICT (user_id, date_local) DO UPDATE "
-      "  SET weight_kg = excluded.weight_kg, recorded_at = excluded.recorded_at, "
-      "      updated_at = now() "
-      "  WHERE gym_bodyweight.recorded_at <= excluded.recorded_at",
-      incoming.user.str(), incoming.dateLocal, incoming.weightKg,
-      static_cast<long long>(incoming.recordedAtMs));
-  pqxx::result stored = txn.exec_params(
-      "SELECT " + std::string(kBodyweightColumns) +
-          " FROM gym_bodyweight WHERE user_id = $1::uuid AND date_local = $2::date",
-      incoming.user.str(), incoming.dateLocal);
-  const Bodyweight answer = bodyweightFrom(stored[0]);
-  txn.commit();
-  return answer;
-}
-
-void PgBodyweightRepository::remove(const UserId& user, const std::string& dateLocal) {
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  txn.exec_params("DELETE FROM gym_bodyweight WHERE user_id = $1::uuid AND date_local = $2::date",
-                  user.str(), dateLocal);
-  txn.commit();
-}
 }

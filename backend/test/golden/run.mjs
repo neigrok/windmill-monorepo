@@ -16,7 +16,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const load = (name) => JSON.parse(readFileSync(join(here, name), 'utf8'));
 
 // --- the reference semantics, restated here (they mirror backend/platform/domain/Ids.h and
-// backend/platform/domain/Crdt.h; nothing checks that the restatement stayed faithful) ---
+// backend/products/roadmap/domain/Crdt.h; nothing checks that the restatement stayed faithful) ---
 
 function parseHlc(text) {
   const first = text.indexOf(':');

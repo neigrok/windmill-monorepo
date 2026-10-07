@@ -13,12 +13,12 @@ GymPreferences settings(std::optional<int> restSeconds = 120, Unit units = Unit:
   return GymPreferences{wm::UserId{"u1"}, units, restSeconds, true, true, false};
 }
 
-std::string refusalCode(const std::function<void()>& build) {
+std::string refusalOf(const std::function<void()>& build) {
   try {
     build();
     return "";
-  } catch (const InvalidPreference& refused) {
-    return refused.code;
+  } catch (const InvalidTraining& refused) {
+    return refused.what();
   }
 }
 }
@@ -34,15 +34,9 @@ TEST(gym_preferences_default_to_kg_no_timer_and_confirmation_on) {
   CHECK_EQ(fresh.confirmSound, false);
 }
 
-TEST(gym_units_parse_strictly_and_refuse_an_unknown_word) {
-  CHECK(parseUnit("kg") == Unit::kg);
-  CHECK(parseUnit("lb") == Unit::lb);
+TEST(gym_units_name_themselves_on_the_wire) {
   CHECK_EQ(toString(Unit::kg), std::string("kg"));
   CHECK_EQ(toString(Unit::lb), std::string("lb"));
-
-  CHECK_EQ(refusalCode([] { parseUnit("st"); }), std::string("unknown-unit"));
-  CHECK_EQ(refusalCode([] { parseUnit("KG"); }), std::string("unknown-unit"));
-  CHECK_EQ(refusalCode([] { parseUnit(""); }), std::string("unknown-unit"));
 }
 
 TEST(gym_units_clamp_to_kg_when_the_store_holds_a_word_this_build_does_not_know) {
@@ -59,9 +53,9 @@ TEST(gym_preferences_accept_the_full_legal_range) {
   CHECK(settings(120, Unit::lb).units == Unit::lb);
 }
 
-TEST(gym_preferences_refuse_every_value_a_column_could_not_hold_and_name_which) {
-  CHECK_EQ(refusalCode([] { settings(14); }), std::string("rest-target"));
-  CHECK_EQ(refusalCode([] { settings(901); }), std::string("rest-target"));
+TEST(gym_preferences_refuse_a_rest_target_off_the_band) {
+  CHECK_EQ(refusalOf([] { settings(14); }), std::string("a rest target runs from 15 to 900 seconds — send none for no timer"));
+  CHECK_EQ(refusalOf([] { settings(901); }), std::string("a rest target runs from 15 to 900 seconds — send none for no timer"));
 }
 
 TEST(gym_preferences_belong_to_an_account) {

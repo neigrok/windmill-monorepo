@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
-import { failureReason } from '../gymApi.js';
+import { failureReason } from '../errors.js';
 import { HistoryFilter, HistoryIndex } from '../Log.jsx';
 import { groupByExercise } from '../log.js';
 import { historyQuery, historyTotals } from '../logbook/history.js';
@@ -13,7 +13,7 @@ import { consistencyLine } from '../progress/progress.js';
 import { useGymRead } from '../useGymRead.js';
 import { useGymApi } from '../gymSync.js';
 import { logShareDescription, logShareRequest, publicLogHref, shareHistoryScope, sharedSetScheme, shareDateLabel } from './logShare.js';
-import { logShareApi } from './logShareApi.js';
+import { gymApi } from '../gymApi.js';
 import './logShare.css';
 
 export function LogShareScreen() {
@@ -25,15 +25,15 @@ export function LogShareScreen() {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
   const [copied, setCopied] = useState(false);
-  const active = useGymRead(() => logShareApi.list(), []);
+  const active = useGymRead(() => gymApi.logShares(), []);
   const historyCount = useGymRead(() => {
     const scope = logShareRequest(draft, 'preview-count');
     if (scope.error) return Promise.resolve(null);
     return api.history({ ...shareHistoryScope(scope.value, { limit: 1 }), projection: 'progress' });
-  }, [draft.scope, draft.from, draft.until], { sync: true, ready: api.ready !== false });
+  }, [draft.scope, draft.from, draft.until], { sync: true, ready: Boolean(api?.ready) });
   const identity = useRef(null);
   const previewBox = useRef(null);
-  const detailHistory = useGymRead(() => detail?.token && !detail.revoked ? logShareApi.read(detail.token, { limit: 1 }) : Promise.resolve(null), [detail?.id, detail?.revoked]);
+  const detailHistory = useGymRead(() => detail?.token && !detail.revoked ? gymApi.sharedLog(detail.token, { limit: 1 }) : Promise.resolve(null), [detail?.id, detail?.revoked]);
   useEffect(() => {
     if (!preview) return;
     const opener = document.activeElement;
@@ -65,7 +65,7 @@ export function LogShareScreen() {
     if (!preview || !previewReady || busy) return;
     setBusy(true); setNote('');
     try {
-      const share = await logShareApi.create(preview);
+      const share = await gymApi.createLogShare(preview);
       setDetail(share); setPreview(null); active.refresh();
     } catch (error) { setNote(`The link wasn’t created — ${failureReason(error)}.`); }
     setBusy(false);
@@ -73,7 +73,7 @@ export function LogShareScreen() {
   const revoke = async () => {
     if (busy) return;
     setBusy(true); setNote('');
-    try { await logShareApi.revoke(detail.id); setDetail({ ...detail, revoked: true }); active.refresh(); }
+    try { await gymApi.revokeLogShare(detail.id); setDetail({ ...detail, revoked: true }); active.refresh(); }
     catch (error) { setNote(`The link wasn’t revoked — ${failureReason(error)}.`); }
     setBusy(false);
   };
@@ -150,13 +150,13 @@ export function ReadOnlyLog({ token = null, preview = null, hash = '', onReady =
   const filters = preview ? localFilters : historyQuery(hash);
   const wide = globalThis.window?.matchMedia?.('(min-width: 800px)')?.matches === true;
   const api = useMemo(() => ({ history: (query) => {
-    if (!preview) return logShareApi.read(token, query);
+    if (!preview) return gymApi.sharedLog(token, query);
     const scope = shareHistoryScope(preview, query);
     if (scope.from >= scope.until) return Promise.resolve({ sessions: [], summary: { sessions: 0, sets: 0, reps: 0, tonnageKg: 0 }, months: [], exercises: [], routines: [], next: null });
     return localApi.history({ ...scope, projection: 'progress' });
-  }, sync: Boolean(preview), ready: !preview || localApi.ready !== false }), [token, preview, localApi]);
-  const history = useHistory(filters, 0, api);
-  const dates = useHistoryDates(filters, 0, api);
+  }, live: Boolean(preview), ready: !preview || Boolean(localApi?.ready) }), [token, preview, localApi]);
+  const history = useHistory(filters, api);
+  const dates = useHistoryDates(filters, api);
   useEffect(() => { onReady?.(history.phase === 'ready'); }, [history.phase, onReady]);
   useEffect(() => {
     if (preview && history.phase === 'ready' && !initialSelection.current && wide) {

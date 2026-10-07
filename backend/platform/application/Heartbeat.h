@@ -34,7 +34,11 @@ public:
       {
         std::lock_guard lock{mutex_};
         stopping_ = true;
-        thread_.getLoop()->queueInLoop([this] { thread_.getLoop()->quit(); });
+        thread_.getLoop()->queueInLoop([this] {
+          // queueInLoop must finish waking the loop before quit can close its wakeup pipe.
+          std::lock_guard lock{mutex_};
+          thread_.getLoop()->quit();
+        });
       }
       thread_.wait();
     });

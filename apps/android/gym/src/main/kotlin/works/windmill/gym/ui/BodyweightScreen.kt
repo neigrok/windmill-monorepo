@@ -255,17 +255,11 @@ fun BodyweightScreen(store: TrainingStore, backTo: String, onBack: () -> Unit, s
     GymScreen(title = Bodyweight.title, onBack = onBack, backTo = backTo) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)) {
-            if (store.bodyweightLoading || (!store.bodyweightRead && store.bodyweightFailure == null)) {
+            if (!store.bodyweightRead) {
                 Text("Reading your weigh-ins…", style = WindmillFont.body(16), color = skin.inkDim)
             }
-            store.bodyweightFailure?.let { failure ->
-                Text(failure.line("your weigh-ins didn’t load"), style = WindmillFont.body(16), color = skin.inkDim)
-                TextButton(onClick = { scope.launch { store.loadBodyweight() } }, enabled = !store.bodyweightLoading) {
-                    Text("Try again")
-                }
-            }
             if (standing.isEmpty()) {
-                if (store.bodyweightRead && !store.bodyweightLoading && store.bodyweightFailure == null) {
+                if (store.bodyweightRead) {
                     Text(Bodyweight.nothingYet, style = WindmillFont.body(16), color = skin.inkDim)
                 }
             } else {
@@ -299,8 +293,7 @@ fun BodyweightScreen(store: TrainingStore, backTo: String, onBack: () -> Unit, s
                                     else "no weigh-in · ${Bodyweight.listDay(first)} – ${Bodyweight.listDay(last)}"
                                 },
                                 onSelect = { point -> repairing = rows.firstOrNull { it.dateLocal == point.id } })
-                        } else if (window == ChartWindow.Ninety && store.bodyweightRead && !store.bodyweightLoading &&
-                            store.bodyweightFailure == null && Bodyweight.windowed(standing, window, today).isEmpty()) {
+                        } else if (window == ChartWindow.Ninety && Bodyweight.windowed(standing, window, today).isEmpty()) {
                             Text(Bodyweight.noneInWindow, style = WindmillFont.body(16), color = skin.inkDim)
                         }
                         Text(Bodyweight.windowLine(window, shown.size), style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)

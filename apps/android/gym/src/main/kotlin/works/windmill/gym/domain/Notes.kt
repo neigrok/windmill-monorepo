@@ -3,8 +3,8 @@ package works.windmill.gym.domain
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-// /v1/gym/notes, owner-scoped: title-and-body pairs the lifter writes and Coach reads, in precedence
-// order. Account-only — this phone keeps no copy and the claim replays none.
+// Title-and-body pairs the lifter writes and Coach reads, in precedence order. Notes live with the
+// account: signed out, there is no notebook.
 
 @Serializable
 data class Note(
@@ -19,13 +19,7 @@ data class Note(
         get() = body.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }
 }
 
-// Both fields carry NO DEFAULT: encodeDefaults is off, so an empty body would travel as an absent key
-// and the route reads an absent key as a note it cannot read.
-@Serializable
 data class NoteWrite(val title: String, val body: String)
-
-@Serializable
-data class NotesOrder(val order: List<String>)
 
 object Notes {
     const val title = "Notes"

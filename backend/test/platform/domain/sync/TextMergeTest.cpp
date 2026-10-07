@@ -35,6 +35,16 @@ TEST(tokenize_splits_runs_of_ascii_and_unicode_whitespace) {
   CHECK_EQ(tokenize(""), std::vector<std::string>{});
 }
 
+TEST(is_blank_is_every_code_point_whitespace_by_the_same_set) {
+  const std::vector<std::string> blank{"", " ", "\t\n\v\f\r", "\xC2\xA0" "\xE3\x80\x80",   // U+00A0, U+3000
+                                       "\xE1\x9A\x80" "\xE2\x80\x8A" "\xE2\x80\xA8" "\xE2\x80\xA9",   // U+1680, U+200A, U+2028, U+2029
+                                       "\xE2\x80\xAF" "\xE2\x81\x9F" "\xEF\xBB\xBF"};   // U+202F, U+205F, U+FEFF
+  const std::vector<std::string> named{"a", " Prowler ", "\xE2\x80\x8B",   // U+200B is not whitespace
+                                       "\xC2\x85", "\xE1\xA0\x8E", " \xC2"};   // U+0085, U+180E, and a byte starting no sequence
+  for (const std::string& text : blank) CHECK(isBlank(text));
+  for (const std::string& text : named) CHECK_FALSE(isBlank(text));
+}
+
 TEST(edit_script_keeps_equal_tokens_and_deletes_before_it_inserts) {
   const std::vector<Edit> script = editScript(tokenize("the cat sat"), tokenize("the dog sat down"));
   CHECK_EQ(scriptText(script), "=[the] =[ ] -[cat] +[dog] =[ ] =[sat] +[ ] +[down]");

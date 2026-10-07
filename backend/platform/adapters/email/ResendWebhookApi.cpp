@@ -94,14 +94,6 @@ void ResendWebhookApi::webhook(const drogon::HttpRequestPtr& req, HttpCallback&&
     return;
   }
 
-  for (const MailStream& stream : streams_) {
-    if (!stream.writeRefusal) continue;
-    if (const auto refusal = stream.writeRefusal()) {
-      callback(error(drogon::k503ServiceUnavailable, *refusal));
-      return;
-    }
-  }
-
   // Best-effort ACROSS the streams and all-or-nothing OVER TIME: a stream that throws never
   // short-circuits the rest, and the 500 afterwards asks Svix to redeliver the whole event.
   std::string unwritten;

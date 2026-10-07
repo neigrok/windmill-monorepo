@@ -29,10 +29,9 @@ acceptance. Figma review tasks below need a fresh file inspection before editing
 
 ### Sync engine
 
-Spec: [Windmill sync engine](../foundation/engine.md), built in the server and the Swift client and adopted by the rebuilt iOS journal. Canon
-states the owner's rulings of 2026-09-26 on its lifecycle; each app keeps the behavior below until
-its product adopts the engine. The apps are rewritten onto the engine, not migrated: nothing today's
-apps store carries across.
+Spec: [Windmill sync engine](../foundation/engine.md), built in the server and the web, iOS and
+Android clients; every gym and journal surface writes through it. Canon states the owner's rulings
+of 2026-09-26 on its lifecycle; the entries below are where an app still differs from them.
 
 - **7a · Leaving the app.** Canon (`gym/briefs/13-gestures.md` "Leaving the app"; owner ruling
   2026-09-26): a held delete is stored on the device. Leaving the app — Android to the background,
@@ -40,33 +39,34 @@ apps store carries across.
   the last tab closing — lets it go into the queue, which sends it when it can, and Undo is not
   offered on return. A screen recreated in place keeps the Undo with its remaining time; sign-in lets
   holds go before its question, and a discarded room's go with it unsent; a hold cut off by the
-  process dying is let go on the next start. The apps let holds go the other way, putting the rows
-  back and sending nothing: the web when the document hides or the room unmounts
-  (`useTrainingLog.js`), Android on `ON_STOP` and on disposal (`GymRoom.kt`, `abandonWithheld`).
-  Every hold is in memory.
+  process dying is let go on the next start. The web's engine-held deletes follow this: the engine
+  stores and releases them, and the gym room draws their Undo from the engine's offers
+  (`useTrainingLog.js`). These holds still go the other way, putting the row back and sending
+  nothing: the web's Coach conversation delete, a REST call held in the gym room's memory, when the
+  document hides or the room unmounts; iOS's withheld Coach deletes when the scene goes to the
+  background (`CoachHistory.swift`); and Android's holds, which are in memory, on `ON_STOP` and on
+  disposal (`GymRoom.kt`, `abandonWithheld`).
 - **7b · Notes reorder.** Canon (`gym/briefs/10-notes.md` "A move writes one note",
   `13-gestures.md`; owner ruling 2026-09-26): moving a note writes that note's position only, right
   after the row drawn above the drop point in stored order, so a note inside a delete window keeps
-  its stored place. Web and Android send the complete order, mapping the drawn order onto the
-  stored one (`Notes.jsx`, `TrainingStore.kt` `reorderNotes(drawn)`), and the backend refuses an
-  order that does not name every note (`400 notes-order-mismatch`, `PgNotesRepository::reorderNotes`).
+  its stored place. The web writes the one moved note (`gymSync.js` `reorderNotes`, one `move`).
+  Android writes a `move` for every note, in the drawn order, so a reorder restamps notes that did
+  not move.
 - **7c · Sign-out.** Canon (`guidelines/superapp-flow.md` §3 and §7, `roadmap/guidelines/auth.md`
   §4, `roadmap/guidelines/front-door.md` §2; owner ruling 2026-09-26): signing out takes the
   account's synced data off the device. When the account has not confirmed some changes, the
   confirmation states how many and offers **Keep** (hidden on the device, sent at the same
   account's next sign-in) or **Discard** (destructive, from this device only), and Where to
-  start?'s signed-out line has a kept-changes variant. No app counts unconfirmed changes or offers
-  Keep or Discard.
+  start?'s signed-out line has a kept-changes variant.
   - The copy must stay within what the engine can guarantee. The count is ready plus sent entries,
     and a sent change may already be in the account, which Discard cannot recall; so the alert
     says *haven't been confirmed* and *discard them from this phone*, never *for good*.
   - Android signs out from the You sheet with no confirmation (`YouSheet.kt`).
-  - The web signs out at once, and on sign-out or any change of account wipes the account's roadmap
-    trees from the browser, unsynced edits included, with no warning: `accountChange.js` calls each
-    product's `forgetDevice`, and the roadmap's (`routes.js`) runs `forgetDeviceTrees`
-    (`localTrees.js`), which deletes every account-stamped registry row, sync blob and per-tree
-    store. The web journal keeps the account's pages on disk under their own key, hidden
-    (`pageStore.js` `forget`, `pageCache.js`); web gym keeps no local log.
+  - The web asks for journal and gym with the count, Keep and Discard (`SyncDecisions.jsx`), but on
+    sign-out or any change of account it wipes the account's roadmap trees from the browser,
+    unsynced edits included, with no warning: `accountChange.js` calls each product's
+    `forgetDevice`, and the roadmap's (`routes.js`) runs `forgetDeviceTrees` (`localTrees.js`),
+    which deletes every account-stamped registry row, sync blob and per-tree store.
   - Figma: board [16c](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=152-2661) draws only the base alert and needs the unconfirmed-changes variant;
     board [16d](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=152-2780) needs the kept-changes line; the first-run READ ME (`128:1151`) still
     lists sign-out with unsent changes as open question 6; the Android *Account / Profile* board
@@ -79,17 +79,13 @@ apps store carries across.
   default and no "later". **Discard** opens a destructive second confirmation whose Cancel returns
   to the question. Another account's work never joins. The apps differ:
   - Silent adoption where canon asks. The web roadmap adopts every signed-out tree on this device,
-    adding it beside the account's (`claimLocalTrees.js`). The web journal joins signed-out drafts
-    into the account's pages for those days (`pageStore.js` `claimAnonymousDrafts`, `joinBodies`).
+    adding it beside the account's (`claimLocalTrees.js`).
   - Android uses the engine's one-time **Add** / **Discard** sign-in decision with real pinned
-    counts, including retained refused workouts. Its old claim rows and replay path are removed.
-    Finished anonymous workouts become durable strict imports before adoption; an account's open
-    workout does not block them. Unfinished workouts never join another automatically: they stay
-    inspectable with explicit **Keep**, importing them finished at their last set. Refusals survive
-    restart and remain retryable; dismissing a notice never removes workout content.
-  - Android's migrated pending appends replay in performed order per session, then stable identity
-    order; the server assigns set numbers. Only the same confirmed session identity reconciles
-    automatically, and attempted append reconciliation never overwrites an unowed correction.
+    counts, including retained refused workouts. Finished anonymous workouts become durable strict
+    imports before adoption; an account's open workout does not block them. Unfinished workouts
+    never join another automatically: they stay inspectable with explicit **Keep**, importing them
+    finished at their last set. Refusals survive restart and remain retryable; dismissing a notice
+    never removes workout content.
   - Figma: the Gym board *Account · Sign-in and connections* (`678:11123`) draws the claim row
     *Unclaimed log* (`678:11183`, These are mine / Not mine) and its *Local log removed* Undo
     (`678:11192`), which the sign-in question replaces; the Android *Account / Sign in* board
@@ -103,17 +99,27 @@ apps store carries across.
 - **7g · Notes account-only.** `10-notes.md` makes notes account-only (signed out, Notes is a
   sign-in door); `../foundation/mobile/gym_coach.md` Appendix C gives `save_note` `seats: any`, so a
   signed-out Coach turn could write one. Rule which holds.
-- **7h · Weigh-in conflicts.** `gym/briefs/11-bodyweight.md` ("The wire", and the paragraph on a
-  weigh-in written again inside its delete window) says the write with the later `recordedAt` wins.
-  Under the engine (A.2 `weighin`, a `wholePut` type; owner ruling 2026-09-26, newest wins per field
-  by stamp), each save writes every field and presence at one stamp, so the newest save wins whole by
-  its stamp, whatever `recordedAt` holds: a save made later on a device whose clock runs behind beats
-  an earlier save that carries a later `recordedAt`, and a save newer than a delete, held or not,
-  keeps the weigh-in. The engine rule stands; restate the brief's two sentences by it.
+- **7h · A weigh-in's day written again on iOS.** `gym/briefs/11-bodyweight.md` names the one seam
+  on the web and Android that retires a held delete's Undo when the lifter writes that day again.
+  The iOS app saves a weigh-in as a domain draft (`BodyweightScreen.swift` `logSaveWeighIn`), and
+  the brief names no iOS seam; the engine keeps the newer save over the held delete either way. Rule
+  what iOS's Undo offer does when the day is written again, and name its seam in the brief.
 - **7i · A weight at the bound.** Web and Android refuse 19.996 kg against the 20 kg minimum. Under
   the engine a commit rounds to the quantum (0.01) and admission checks the rounded value (A.2
   `weighin` `kg` 20–400; engine §7.1 step 4), so 19.996 is saved as 20.00. Rule whether the sheet
   accepts such an entry as 20 or refuses it before rounding, and align the clients.
+- **7j · A write this device cannot store.** Canon names no sentence for an engine write that the
+  device's own store fails (a full, closed or failing IndexedDB). The web gym ends the act's sentence
+  with *this device couldn’t store it* (*That set is still in the log — this device couldn’t store
+  it.*; `web/src/products/gym/errors.js` `failureReason`) and keeps *the log didn’t answer. Try again
+  when you have signal* for its REST doors. The journal says *not saved — no room on this device*
+  (`Canvas.jsx`) for every failed save, which claims a full store when the store may be closed or
+  failing instead. Confirm one storage sentence for both products. `gym/briefs/11-bodyweight.md`
+  still says the web's weigh-in delete reaches the log and pins *That weigh-in wasn’t deleted. Try
+  again in a moment.*; the web holds that delete on the device like the phones, and says *That
+  weigh-in wasn’t deleted — this device couldn’t store it.* when its store fails. The same brief has
+  the web's window come down before a day written again goes in; the web's save retires the held
+  delete in its own write.
 
 ### Sign-in doors
 
@@ -206,12 +212,6 @@ exception to `guidelines/superapp-flow.md` §3 and §8. Nothing is built.
   journal and *Web · iOS · Android* for gym; the shipped `landing.root.platforms` in each product's
   `routes.js` reads *Web* and *Web · Android*, and the onboarding's per-phone tags follow the code.
   Redraw the boards from the code, or change the code when the iOS app ships.
-- **9b · What the iOS app is.** `STRUCTURE.md` says `apps/ios` has *no product app yet* in its tree
-  and names *the journal app (apps/ios/App), not yet released* a paragraph later; the iOS first-run
-  board 02a (`121:99`) offers two doors, Journal and Gym, while the app holds one room (6v). The
-  onboarding's iOS tags (*Journal · In this app*, *Gym · On the web and Android*) state the built
-  truth. Fix the STRUCTURE line, and keep Where to start?'s door count equal to the rooms the app
-  ships.
 - **9c · The roadmap glimpse.** `_Glimpse / Roadmap` (`210:2`) fans the sail tree from the root to
   the right, like the landing boards; the product renders radially (0k). The glimpse is an
   illustration, not a layout specimen; if it is ever drawn from the product, draw it from a live
@@ -248,10 +248,7 @@ exception to `guidelines/superapp-flow.md` §3 and §8. Nothing is built.
 
 ## Journal
 
-- **iOS journal first run · R117.** The rebuilt app carries Journal only. Boards 02a and 21a/21b
-  draw a Gym choice; iOS omits that choice and its introduction until a working gym exists.
-  Account controls appear only for a configured engine server; production sync is not live.
-  AX3 keeps the longer privacy fact and scales in a scrollable page.
+- **iOS journal first run · R117.** AX3 keeps the longer privacy fact and scales in a scrollable page.
 
 - **Mood and energy entry.** [Input alternatives](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=176-837)
   compare quiet rails, a folded picker and a number ribbon. The folded picker is the recommendation,

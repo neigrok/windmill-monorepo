@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Button } from '../../../design-system';
-import { buildExportArchive } from './buildExportArchive.js';
+import { buildExportArchive } from './exportArchive.js';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
 
 export function YourDataSection() {

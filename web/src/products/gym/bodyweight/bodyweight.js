@@ -3,6 +3,7 @@
 // IS the identity, kilograms on the wire, the display unit on the screen. Nothing here trends,
 // projects or grades a series: the chart draws the numbers the lifter typed and no others.
 
+import { failureReason, isStoreFailure } from '../errors.js';
 import { agoLabel, shortDayLabel } from '../log.js';
 import { fromDisplayUnit, inDisplayUnit, LB, weightUnit } from '../units.js';
 
@@ -197,11 +198,16 @@ export function axisDate(ms) {
   return shortDayLabel(ms);
 }
 
-// Save was refused: the store's sentence where it sent one, the wordless fallback otherwise.
+// Save was refused: the store's sentence where it sent one, the failure's reason otherwise.
 export function saveRefusal(error) {
-  if (typeof error?.detail === 'string' && error.detail !== '') return error.detail;
-  if (error?.status === 401) return 'You’re signed out. Sign in and try again.';
-  return 'That weigh-in wasn’t saved — the log didn’t answer. Try again when you have signal.';
+  if (error?.sentence) return error.sentence;
+  return `That weigh-in wasn’t saved — ${failureReason(error)}.`;
 }
 
 export const DELETE_FAILED = 'That weigh-in wasn’t deleted. Try again in a moment.';
+
+// A delete this device could not store says so; any other failure is the brief's sentence.
+export function deleteRefusal(error) {
+  if (isStoreFailure(error)) return `That weigh-in wasn’t deleted — ${failureReason(error)}.`;
+  return DELETE_FAILED;
+}

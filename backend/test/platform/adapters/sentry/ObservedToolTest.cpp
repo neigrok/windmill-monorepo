@@ -74,7 +74,7 @@ TEST(observability_lifecycle_covers_every_binary_composition_root) {
   auto backend = std::filesystem::path(__FILE__);
   for (int parent = 0; parent < 5; ++parent) backend = backend.parent_path();
   const std::regex main(R"(int\s+main\s*\([^)]*\)\s*\{)");
-  const std::regex lifecycle(R"(\b(ObservabilityLifetime|runObservedTool)\b)");
+  const std::regex lifecycle(R"(\bObservabilityLifetime\b)");
   std::size_t binaries = 0;
   for (const auto& file : std::filesystem::directory_iterator(backend / "platform/infra")) {
     if (file.path().extension() != ".cpp") continue;
@@ -85,9 +85,8 @@ TEST(observability_lifecycle_covers_every_binary_composition_root) {
     const std::string composition = code.substr(static_cast<std::size_t>(match.position()));
     CHECK(std::regex_search(composition, lifecycle));
   }
-  CHECK_EQ(binaries, std::size_t{9});
+  CHECK_EQ(binaries, std::size_t{3});
   const std::string shared = source(backend / "platform/adapters/sentry/ObservedTool.cpp");
-  CHECK(shared.find("ObservabilityLifetime lifetime") != std::string::npos);
   CHECK(shared.find("stopLogTee()") != std::string::npos);
   CHECK(shared.find("toolReporter->drain()") != std::string::npos);
   std::cout << "observability lifecycle inventory: " << binaries << " binary composition roots\n";

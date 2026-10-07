@@ -5,6 +5,7 @@ import { IndexedDBStore } from '../../../src/platform/sync/store.js';
 import { commit } from '../../../src/platform/sync/client/commit.js';
 import { reidentify } from '../../../src/platform/sync/client/lifecycle.js';
 import { registry } from './oracle-adapters/fixtures.js';
+import { versionOneFixture } from './store-v1.js';
 
 const id = 'rp_00000000000000000000000000000001';
 const context = (device) => ({ registry, device, actor: 'r_aaaaaaaaaaaa', deviceNow: 100,
@@ -145,28 +146,28 @@ test('governing-type index reads omit unrelated product rows and preserve them o
   store.close();
 });
 
-test('the version-one cache migrates atomically into indexed generation pointers', async () => {
+test('every version-one row survives migration and a second open', async () => {
   const indexedDB = new IDBFactory();
-  const database = await new Promise((resolve) => {
+  const { records, expected } = versionOneFixture();
+  const database = await new Promise((resolve, reject) => {
     const request = indexedDB.open('migration', 1);
     request.onupgradeneeded = () => request.result.createObjectStore('records', { keyPath: 'key' });
     request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
   });
-  await new Promise((resolve) => {
-    const transaction = database.transaction('records', 'readwrite'), records = transaction.objectStore('records');
-    records.put({ key: '["head"]', value: { active: id, meta: {}, revision: 9 } });
-    records.put({ key: JSON.stringify(['replica', id]), value: { replica: id, state: 'anon', authPaused: false } });
-    records.put({ key: JSON.stringify(['confirmed', id, 'self/probe', '["card","card0001"]']), value: { t: 'card', id: 'card0001', seq: 1 } });
-    records.put({ key: JSON.stringify(['staging', id, 'self/probe']), value: 'digest' });
-    records.put({ key: JSON.stringify(['stagedRow', id, 'self/probe', '["card","card0002"]']), value: { t: 'card', id: 'card0002', seq: 2 } });
+  await new Promise((resolve, reject) => {
+    const transaction = database.transaction('records', 'readwrite');
+    for (const record of records) transaction.objectStore('records').put(record);
     transaction.oncomplete = resolve;
+    transaction.onabort = () => reject(transaction.error);
   });
   database.close();
-  const store = await IndexedDBStore.open({ indexedDB, name: 'migration', newReplicaId: () => assert.fail() });
-  const replica = (await store.read()).device.activeReplica;
-  assert.deepEqual(replica.confirmedRows('self/probe'), [{ t: 'card', id: 'card0001', seq: 1 }]);
-  assert.deepEqual(Object.values(replica.staging['self/probe'].rows), [{ t: 'card', id: 'card0002', seq: 2 }]);
-  assert.equal(replica.staging['self/probe'].digest, 'digest');
-  assert.equal((await store.read([{ scope: 'self/probe', type: 'card' }])).measurement.rowReads, 2);
-  store.close();
+  for (let opened = 0; opened < 2; opened++) {
+    const store = await IndexedDBStore.open({ indexedDB, name: 'migration', newReplicaId: () => assert.fail('existing device must survive') });
+    try {
+      assert.equal(store.database.version, 2);
+      assert.deepEqual((await store.read()).device.toJSON(), expected);
+      assert.equal((await store.read([{ scope: 'self/probe', type: 'card' }])).measurement.rowReads, 12);
+    } finally { store.close(); }
+  }
 });

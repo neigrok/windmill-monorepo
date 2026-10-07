@@ -1,5 +1,7 @@
 #include "products/gym/domain/Proposal.h"
 
+#include "platform/domain/sync/TextMerge.h"
+
 #include <algorithm>
 #include <cstddef>
 #include <utility>
@@ -49,6 +51,14 @@ EntryTargets targetsOf(const RoutineEntry& entry) {
 
 RoutineProposal::RoutineProposal(ProposalHead head, int baseRevision, std::string baseName,
                                  std::string proposedName, std::vector<RoutineChange> changes)
+    : RoutineProposal(Stored{}, std::move(head), baseRevision, std::move(baseName),
+                      std::move(proposedName), std::move(changes)) {
+  if (this->head.intent == ProposalIntent::revise && sync::isBlank(this->proposedName))
+    throw InvalidTraining("a revision proposal needs a name");
+}
+
+RoutineProposal::RoutineProposal(Stored, ProposalHead head, int baseRevision, std::string baseName,
+                                 std::string proposedName, std::vector<RoutineChange> changes)
     : head(std::move(head)), baseRevision(baseRevision), baseName(trimmedName(std::move(baseName))),
       proposedName(trimmedName(std::move(proposedName))), changes(std::move(changes)) {
   if (!wellFormedId(this->head.id.str())) throw InvalidTraining("bad proposal id");
@@ -64,9 +74,6 @@ RoutineProposal::RoutineProposal(ProposalHead head, int baseRevision, std::strin
       (*this->head.settledAtMs == 0 || *this->head.settledAtMs > kMaxInstantMs))
     throw InvalidTraining("a proposal was settled at an instant");
   if (baseRevision < 1) throw InvalidTraining("a proposal stands on a revision from 1");
-  // Both names are display names and go through the display-name rule, then the column's ceiling.
-  if (this->baseName.empty() || this->proposedName.empty())
-    throw InvalidTraining("a proposal names the routine on both sides");
   if (this->baseName.size() > kMaxNameLength || this->proposedName.size() > kMaxNameLength)
     throw InvalidTraining("routine name too long");
   if (!storableText(this->proposedName))
@@ -184,23 +191,6 @@ bool isReplayOf(const RoutineProposal& stored, const RoutineProposal& incoming) 
     if (held.before != sent.before || held.after != sent.after) return false;
   }
   return true;
-}
-
-std::vector<RoutineEntry> documentOf(const RoutineProposal& proposal) {
-  std::vector<RoutineEntry> entries;
-  for (const RoutineChange& change : proposal.changes) {
-    if (change.kind == ChangeKind::removed) break;   // the rows past here are what it takes away
-    entries.push_back(RoutineEntry{static_cast<int>(entries.size()) + 1, change.exercise,
-                                   change.after->sets, change.after->restSeconds});
-  }
-  return entries;
-}
-
-// The id, the owner, where the day sits in the week and when it was last trained stay the base's; a
-// proposal changes the document and the name and nothing else.
-Routine appliedTo(const Routine& base, const RoutineProposal& proposal) {
-  return Routine{base.id,          base.user,          proposal.proposedName, base.position,
-                 documentOf(proposal), base.lastTrainedAtMs, base.revision + 1};
 }
 
 }

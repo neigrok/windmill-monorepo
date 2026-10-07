@@ -2,7 +2,7 @@
 // Read-only, over the account's pages and this device's (pages.js `corpus`). A year it could not read
 // says so rather than drawing a grid of empty squares.
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { corpus, SCOPE } from '../pages.js';
 import { useSyncRecords } from '../../../platform/sync/react.js';
 import { useToday } from '../usePages.js';
@@ -27,15 +27,9 @@ function dow(iso) {
 
 export function ZoomView({ onClose, onPick, account = null }) {
   const records = useSyncRecords(SCOPE);
-  const [read, setRead] = useState(null);
-  const pages = read?.pages ?? null;
+  const read = useMemo(() => corpus({ account }), [account, records]);
+  const { pages } = read;
   const today = useToday();
-
-  useEffect(() => {
-    let cancelled = false;
-    corpus({ account }).then((loaded) => { if (!cancelled) setRead(loaded); });
-    return () => { cancelled = true; };
-  }, [account, records]);
 
   useEffect(() => {
     const onKey = (event) => { if (event.key === 'Escape') onClose(); };
@@ -43,8 +37,8 @@ export function ZoomView({ onClose, onPick, account = null }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const months = useMemo(() => (pages ? buildYear(pages) : []), [pages]);
-  const week = useMemo(() => (pages ? weekReadout(pages, today) : null), [pages, today]);
+  const months = useMemo(() => buildYear(pages), [pages]);
+  const week = useMemo(() => weekReadout(pages, today), [pages, today]);
 
   return (
     <div className="journal-zoom" role="dialog" aria-label="Zoom out">
@@ -74,14 +68,13 @@ export function ZoomView({ onClose, onPick, account = null }) {
         </section>
       )}
 
-      {read?.source === 'failed' && (
+      {read.source === 'failed' && (
         <p className="journal-zoom-unread">
           Couldn’t reach your journal — these are only the days on this device.
         </p>
       )}
 
       <div className="journal-zoom-grid">
-        {pages === null && <p className="journal-zoom-loading">drawing your year…</p>}
         {months.map((month) => (
           <div key={month.key} className="journal-zoom-month">
             <span className="journal-zoom-mlabel">{MONTHS[month.month - 1]}{month.month === 1 ? ` ’${String(month.year).slice(2)}` : ''}</span>

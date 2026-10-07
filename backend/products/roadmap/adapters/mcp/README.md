@@ -43,12 +43,13 @@ platform/infra/
   mcp_http_main.cpp        `windmill_mcp_http` — standalone HTTP transport (local/standalone).
 ```
 
-The HTTP roots register roadmap and gym; the local stdio root registers roadmap. Each uses
-`CompositeToolHost` and `windmillServerInfo()`. Public names are `roadmap_<local>` and `gym_<local>`;
-only canonical names appear in `tools/list`. Unambiguous unprefixed names remain compatibility
-aliases and use the same permission and argument gate. Product-only hosts retain local names for
-in-process agents. Canonical descriptions and initialize instructions use the owning product's
-tool names; schema literals and call payloads are never rewritten.
+`windmill_server`'s `/mcp` registers roadmap and gym; `windmill_mcp_http` and the local stdio root
+register roadmap. Each uses `CompositeToolHost` and `windmillServerInfo()`. Public names are
+`roadmap_<local>` and `gym_<local>`; only canonical names appear in `tools/list`. Unambiguous
+unprefixed names remain compatibility aliases and use the same permission and argument gate.
+Product-only hosts retain local names for in-process agents. Canonical descriptions and initialize
+instructions use the owning product's tool names; schema literals and call payloads are never
+rewritten.
 
 Legacy edit tools reuse the `commandFromJson` codec: their argument names are the command payload
 keys, save for the node handle, which the tool layer normalizes (`nodeId` → the codec's `id`)
@@ -436,7 +437,8 @@ owner. `WINDMILL_MCP_USER` is the fallback identity only.
 - Session DELETE lacks POST's authentication and Origin checks, and session entries store expiry
   without caller ownership. These are source findings, not reproduced transport exploits.
 - Tool lists are grant-filtered; combined initialize instructions and static roadmap resources
-  are not. HTTP registers roadmap and gym; stdio registers roadmap only.
+  are not. `windmill_server` registers roadmap and gym; `windmill_mcp_http` and stdio register
+  roadmap only.
 - Legacy tools do not all expose output schemas and structured results. Extend both from one
   result object. Description-bearing legacy read pages still allow 4 MiB; exact selected reads
   provide the smaller bounded path.

@@ -22,13 +22,11 @@ import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextReplacement
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -40,14 +38,7 @@ import org.robolectric.annotation.Config
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.TargetEntry
-import works.windmill.gym.store.DeviceCopy
-import works.windmill.gym.store.LocalBodyweight
-import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
-import works.windmill.gym.store.SetQueue
-import works.windmill.gym.store.TrainingStore
-import works.windmill.platform.Account
-import works.windmill.platform.net.WindmillApi
+import works.windmill.gym.store.EngineRoomFixture
 
 // 17-set-targets: the sheet's two zooms — the head that speaks about every set at once and the
 // ladder with a row per set — on the brief's two fixtures, the ramp and the straight scheme.
@@ -68,30 +59,14 @@ class TargetSheetLadderTests {
     private val pushA = RoutineDraft(name = "Push A").adding("bench-press")
         .targeting("bench-press", List(3) { SetTarget(8, 60.0) })
 
-    // Connected for nobody, so the catalog holds the six by name and equipment.
-    private fun store(scope: CoroutineScope): TrainingStore {
-        val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json")),
-            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
-            localLog = LocalLog(File(tmp.root, "local.json")),
-            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
-            scope = scope,
-            sync = { null },
-        )
-        runBlocking {
-            store.connect(Account(api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }), user = null))
-        }
-        return store
-    }
-
-    private fun editor(scope: CoroutineScope, opening: RoutineDraft, movement: String): () -> RoutineDraft {
-        val store = store(scope)
+    // Signed out, so the catalog is the anonymous replica's: the seeds by name and equipment.
+    private fun editor(room: EngineRoomFixture, opening: RoutineDraft, movement: String): () -> RoutineDraft {
+        runBlocking { room.select(null) }
         var draft by mutableStateOf(opening)
         compose.setContent {
             RoutineBuilder(
                 draft = draft,
-                store = store,
+                store = room.store,
                 saving = false,
                 onDraft = { draft = it },
                 onSave = {},
@@ -137,58 +112,62 @@ class TargetSheetLadderTests {
     @Test
     fun testTheRampOpensWithTheHeadSayingVariesAndFiveRowsUnderIt() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        editor(scope, lowerA, "Back Squat")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            editor(room, lowerA, "Back Squat")
 
-        assertEquals(listOf("5", "", ""), head())
-        compose.onAllNodesWithText(TargetEntry.varies, useUnmergedTree = true).assertCountEquals(2)
-        assertEquals(listOf("5" to "60", "5" to "80", "3" to "90", "1" to "100", "5" to "80"), ladder())
-        compose.onNodeWithText("1 of 2 · Lower A").assertIsDisplayed()
-        commit().assertIsEnabled()
-        compose.onNodeWithText("Set · 5 sets").assertIsDisplayed()
-        scope.cancel()
+            assertEquals(listOf("5", "", ""), head())
+            compose.onAllNodesWithText(TargetEntry.varies, useUnmergedTree = true).assertCountEquals(2)
+            assertEquals(listOf("5" to "60", "5" to "80", "3" to "90", "1" to "100", "5" to "80"), ladder())
+            compose.onNodeWithText("1 of 2 · Lower A").assertIsDisplayed()
+            commit().assertIsEnabled()
+            compose.onNodeWithText("Set · 5 sets").assertIsDisplayed()
+        } } finally { scope.cancel() }
     }
 
     @Test
     fun testTheStraightSchemeOpensWithItsThreeNumbersInTheHeadAndTheRowsAgreeing() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        editor(scope, pushA, "Bench Press")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            editor(room, pushA, "Bench Press")
 
-        assertEquals(listOf("3", "8", "60"), head())
-        compose.onAllNodesWithText(TargetEntry.varies, useUnmergedTree = true).assertCountEquals(0)
-        assertEquals(List(3) { "8" to "60" }, ladder())
-        compose.onNodeWithText("Set · 3 × 8 · 60").assertIsDisplayed()
-        scope.cancel()
+            assertEquals(listOf("3", "8", "60"), head())
+            compose.onAllNodesWithText(TargetEntry.varies, useUnmergedTree = true).assertCountEquals(0)
+            assertEquals(List(3) { "8" to "60" }, ladder())
+            compose.onNodeWithText("Set · 3 × 8 · 60").assertIsDisplayed()
+        } } finally { scope.cancel() }
     }
 
     // A new row copies the row above it: `5 → 6` on a ramp adds a sixth set at the last set's numbers.
     @Test
     fun testGrowingSetsCopiesTheRowAboveAndTheDraftCommitsSixSets() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val draft = editor(scope, lowerA, "Back Squat")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val draft = editor(room, lowerA, "Back Squat")
 
-        compose.onNodeWithContentDescription("Sets target").performTextReplacement("6")
-        assertEquals(ramp.map { "${it.reps}" to "${it.weightKg!!.toInt()}" } + ("5" to "80"), ladder())
-        compose.onNodeWithText("Set · 6 sets").performClick()
-        compose.runOnIdle {
-            assertEquals(ramp + SetTarget(5, 80.0), draft().entry("back-squat")!!.sets)
-        }
-        scope.cancel()
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("6")
+            assertEquals(ramp.map { "${it.reps}" to "${it.weightKg!!.toInt()}" } + ("5" to "80"), ladder())
+            compose.onNodeWithText("Set · 6 sets").performClick()
+            compose.runOnIdle {
+                assertEquals(ramp + SetTarget(5, 80.0), draft().entry("back-squat")!!.sets)
+            }
+        } } finally { scope.cancel() }
     }
 
     // The copy-down needs no control of its own: typing over `varies` writes every row.
     @Test
     fun testTypingTheHeadRepsWritesEveryRow() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val draft = editor(scope, lowerA, "Back Squat")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val draft = editor(room, lowerA, "Back Squat")
 
-        compose.onNodeWithContentDescription("Reps target").performTextReplacement("8")
-        assertEquals(listOf("8" to "60", "8" to "80", "8" to "90", "8" to "100", "8" to "80"), ladder())
-        assertEquals(listOf("5", "8", ""), head())
-        commit().performClick()
-        compose.runOnIdle {
-            assertEquals(ramp.map { it.copy(reps = 8) }, draft().entry("back-squat")!!.sets)
-        }
-        scope.cancel()
+            compose.onNodeWithContentDescription("Reps target").performTextReplacement("8")
+            assertEquals(listOf("8" to "60", "8" to "80", "8" to "90", "8" to "100", "8" to "80"), ladder())
+            assertEquals(listOf("5", "8", ""), head())
+            commit().performClick()
+            compose.runOnIdle {
+                assertEquals(ramp.map { it.copy(reps = 8) }, draft().entry("back-squat")!!.sets)
+            }
+        } } finally { scope.cancel() }
     }
 
     // The ladder is hidden, not thrown away: a cleared count disables the other two fields and
@@ -196,37 +175,39 @@ class TargetSheetLadderTests {
     @Test
     fun testClearingSetsHidesTheLadderWithoutDiscardingItAndRetypingBringsItBack() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val draft = editor(scope, lowerA, "Back Squat")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val draft = editor(room, lowerA, "Back Squat")
 
-        compose.onNodeWithContentDescription("Sets target").performTextClearance()
-        compose.onNodeWithContentDescription("Reps target").assertIsNotEnabled()
-        compose.onNodeWithContentDescription("Weight target").assertIsNotEnabled()
-        assertEquals(emptyList<Pair<String, String>>(), ladder())
-        compose.onNodeWithText(TargetEntry.setBySet).assertDoesNotExist()
-        compose.onNodeWithText(TargetEntry.openLine).assertIsDisplayed()
-        compose.onNodeWithText("Set · open").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Sets target").performTextClearance()
+            compose.onNodeWithContentDescription("Reps target").assertIsNotEnabled()
+            compose.onNodeWithContentDescription("Weight target").assertIsNotEnabled()
+            assertEquals(emptyList<Pair<String, String>>(), ladder())
+            compose.onNodeWithText(TargetEntry.setBySet).assertDoesNotExist()
+            compose.onNodeWithText(TargetEntry.openLine).assertIsDisplayed()
+            compose.onNodeWithText("Set · open").assertIsDisplayed()
 
-        compose.onNodeWithContentDescription("Sets target").performTextReplacement("5")
-        compose.onNodeWithText(TargetEntry.openLine).assertDoesNotExist()
-        assertEquals(listOf("5" to "60", "5" to "80", "3" to "90", "1" to "100", "5" to "80"), ladder())
-        compose.onNodeWithText("Set · 5 sets").performClick()
-        compose.runOnIdle { assertEquals(ramp, draft().entry("back-squat")!!.sets) }
-        scope.cancel()
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("5")
+            compose.onNodeWithText(TargetEntry.openLine).assertDoesNotExist()
+            assertEquals(listOf("5" to "60", "5" to "80", "3" to "90", "1" to "100", "5" to "80"), ladder())
+            compose.onNodeWithText("Set · 5 sets").performClick()
+            compose.runOnIdle { assertEquals(ramp, draft().entry("back-squat")!!.sets) }
+        } } finally { scope.cancel() }
     }
 
     // Only the commit of an open line drops the rows.
     @Test
     fun testCommittingWithSetsEmptyOpensTheLine() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val draft = editor(scope, lowerA, "Back Squat")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val draft = editor(room, lowerA, "Back Squat")
 
-        compose.onNodeWithContentDescription("Sets target").performTextClearance()
-        compose.onNodeWithText("Set · open").performClick()
-        compose.runOnIdle {
-            assertEquals(emptyList<SetTarget>(), draft().entry("back-squat")!!.sets)
-            assertTrue(draft().entry("back-squat")!!.isOpen)
-        }
-        scope.cancel()
+            compose.onNodeWithContentDescription("Sets target").performTextClearance()
+            compose.onNodeWithText("Set · open").performClick()
+            compose.runOnIdle {
+                assertEquals(emptyList<SetTarget>(), draft().entry("back-squat")!!.sets)
+                assertTrue(draft().entry("back-squat")!!.isOpen)
+            }
+        } } finally { scope.cancel() }
     }
 
     // The pyramid in two typed ends and one tap: the rows between are interpolated, loads onto the
@@ -234,79 +215,84 @@ class TargetSheetLadderTests {
     @Test
     fun testFillRampUpInterpolatesBetweenTheTwoEnds() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        editor(scope, lowerA, "Back Squat")
-        (2..4).forEach {
-            compose.onNodeWithContentDescription("Set $it reps").performTextClearance()
-            compose.onNodeWithContentDescription("Set $it load").performTextClearance()
-        }
-        assertEquals(listOf("5" to "60", "" to "", "" to "", "" to "", "5" to "80"), ladder())
-        compose.onNodeWithContentDescription("Set 5 reps").performTextReplacement("1")
-        compose.onNodeWithContentDescription("Set 5 load").performTextReplacement("100")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            editor(room, lowerA, "Back Squat")
+            (2..4).forEach {
+                compose.onNodeWithContentDescription("Set $it reps").performTextClearance()
+                compose.onNodeWithContentDescription("Set $it load").performTextClearance()
+            }
+            assertEquals(listOf("5" to "60", "" to "", "" to "", "" to "", "5" to "80"), ladder())
+            compose.onNodeWithContentDescription("Set 5 reps").performTextReplacement("1")
+            compose.onNodeWithContentDescription("Set 5 load").performTextReplacement("100")
 
-        compose.onNodeWithText(TargetEntry.fill).performClick()
-        compose.onAllNodesWithText(TargetEntry.rampUp).onLast().assertIsEnabled().performClick()
-        assertEquals(listOf("5" to "60", "4" to "70", "3" to "80", "2" to "90", "1" to "100"), ladder())
-        compose.onAllNodesWithText(TargetEntry.rampUp).assertCountEquals(1)
-        compose.onNodeWithText(TargetEntry.matchSetOne).assertDoesNotExist()
-        scope.cancel()
+            compose.onNodeWithText(TargetEntry.fill).performClick()
+            compose.onAllNodesWithText(TargetEntry.rampUp).onLast().assertIsEnabled().performClick()
+            assertEquals(listOf("5" to "60", "4" to "70", "3" to "80", "2" to "90", "1" to "100"), ladder())
+            compose.onAllNodesWithText(TargetEntry.rampUp).assertCountEquals(1)
+            compose.onNodeWithText(TargetEntry.matchSetOne).assertDoesNotExist()
+        } } finally { scope.cancel() }
     }
 
     // Nothing to ramp between ends that agree.
     @Test
     fun testRampUpIsDisabledWhileSetOneAndSetNAgree() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        editor(scope, pushA, "Bench Press")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            editor(room, pushA, "Bench Press")
 
-        compose.onNodeWithText(TargetEntry.fill).performClick()
-        compose.onAllNodesWithText(TargetEntry.rampUp).onLast().assertIsNotEnabled()
-        compose.onNodeWithText(TargetEntry.matchSetOne).assertIsEnabled()
-        scope.cancel()
+            compose.onNodeWithText(TargetEntry.fill).performClick()
+            compose.onAllNodesWithText(TargetEntry.rampUp).onLast().assertIsNotEnabled()
+            compose.onNodeWithText(TargetEntry.matchSetOne).assertIsEnabled()
+        } } finally { scope.cancel() }
     }
 
     // The way back from a ladder to a straight scheme without retyping the head.
     @Test
     fun testFillMatchSetOneWritesSetOneIntoEveryRow() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val draft = editor(scope, lowerA, "Back Squat")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val draft = editor(room, lowerA, "Back Squat")
 
-        compose.onNodeWithText(TargetEntry.fill).performClick()
-        compose.onNodeWithText(TargetEntry.matchSetOne).performClick()
-        assertEquals(List(5) { "5" to "60" }, ladder())
-        assertEquals(listOf("5", "5", "60"), head())
-        compose.onNodeWithText("Set · 5 × 5 · 60").performClick()
-        compose.runOnIdle { assertEquals(List(5) { SetTarget(5, 60.0) }, draft().entry("back-squat")!!.sets) }
-        scope.cancel()
+            compose.onNodeWithText(TargetEntry.fill).performClick()
+            compose.onNodeWithText(TargetEntry.matchSetOne).performClick()
+            assertEquals(List(5) { "5" to "60" }, ladder())
+            assertEquals(listOf("5", "5", "60"), head())
+            compose.onNodeWithText("Set · 5 × 5 · 60").performClick()
+            compose.runOnIdle { assertEquals(List(5) { SetTarget(5, 60.0) }, draft().entry("back-squat")!!.sets) }
+        } } finally { scope.cancel() }
     }
 
     @Test
     fun testAddSetAppendsACopyOfTheLastRowAndCountsIt() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        editor(scope, lowerA, "Back Squat")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            editor(room, lowerA, "Back Squat")
 
-        compose.onNodeWithText(TargetEntry.addSet).performScrollTo().performClick()
-        assertEquals(listOf("5" to "60", "5" to "80", "3" to "90", "1" to "100", "5" to "80", "5" to "80"), ladder())
-        assertEquals(listOf("6", "", ""), head())
-        compose.onNodeWithText(TargetEntry.outsideSets).assertDoesNotExist()
-        scope.cancel()
+            compose.onNodeWithText(TargetEntry.addSet).performScrollTo().performClick()
+            assertEquals(listOf("5" to "60", "5" to "80", "3" to "90", "1" to "100", "5" to "80", "5" to "80"), ladder())
+            assertEquals(listOf("6", "", ""), head())
+            compose.onNodeWithText(TargetEntry.outsideSets).assertDoesNotExist()
+        } } finally { scope.cancel() }
     }
 
     @Test
     fun testAddSetIsInertAtTwentyAndSaysTheBand() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val twenty = RoutineDraft(name = "Push A").adding("bench-press")
-            .targeting("bench-press", List(20) { SetTarget(8, 60.0) })
-        editor(scope, twenty, "Bench Press")
-        assertEquals("20", typed("Sets target"))
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val twenty = RoutineDraft(name = "Push A").adding("bench-press")
+                .targeting("bench-press", List(20) { SetTarget(8, 60.0) })
+            editor(room, twenty, "Bench Press")
+            assertEquals("20", typed("Sets target"))
 
-        // Twenty rows outrun the sheet: Add set is the body's last row, under the scroll.
-        compose.onNodeWithText(TargetEntry.addSet).performScrollTo().performClick()
-        compose.onNodeWithText(TargetEntry.outsideSets).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Set · 20 × 8 · 60").assertIsDisplayed()
+            // Twenty rows outrun the sheet: Add set is the body's last row, under the scroll.
+            compose.onNodeWithText(TargetEntry.addSet).performScrollTo().performClick()
+            compose.onNodeWithText(TargetEntry.outsideSets).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("Set · 20 × 8 · 60").assertIsDisplayed()
 
-        // The next keystroke anywhere on the sheet clears it.
-        compose.onNodeWithContentDescription("Set 1 reps").performScrollTo().performTextReplacement("9")
-        compose.onNodeWithText(TargetEntry.outsideSets).assertDoesNotExist()
-        scope.cancel()
+            // The next keystroke anywhere on the sheet clears it.
+            compose.onNodeWithContentDescription("Set 1 reps").performScrollTo().performTextReplacement("9")
+            compose.onNodeWithText(TargetEntry.outsideSets).assertDoesNotExist()
+        } } finally { scope.cancel() }
     }
 
     // The rows outlive the count typed over them: `5 → 1 → 12` keeps the ramp, the count is the
@@ -314,43 +300,45 @@ class TargetSheetLadderTests {
     @Test
     fun testACountTypedLowAndBackHighKeepsTheRamp() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val draft = editor(scope, lowerA, "Back Squat")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val draft = editor(room, lowerA, "Back Squat")
 
-        compose.onNodeWithContentDescription("Sets target").performTextReplacement("1")
-        assertEquals(listOf("5" to "60"), ladder())
-        assertEquals(listOf("1", "5", "60"), head())
-        compose.onNodeWithText("Set · 1 × 5 · 60").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("1")
+            assertEquals(listOf("5" to "60"), ladder())
+            assertEquals(listOf("1", "5", "60"), head())
+            compose.onNodeWithText("Set · 1 × 5 · 60").assertIsDisplayed()
 
-        compose.onNodeWithContentDescription("Sets target").performTextReplacement("12")
-        assertEquals(
-            listOf("5" to "60", "5" to "80", "3" to "90", "1" to "100", "5" to "80") + List(7) { "5" to "80" },
-            ladder(),
-        )
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("12")
+            assertEquals(
+                listOf("5" to "60", "5" to "80", "3" to "90", "1" to "100", "5" to "80") + List(7) { "5" to "80" },
+                ladder(),
+            )
 
-        compose.onNodeWithContentDescription("Sets target").performTextReplacement("3")
-        assertEquals(listOf("5" to "60", "5" to "80", "3" to "90"), ladder())
-        compose.onNodeWithText("Set · 3 sets").performClick()
-        compose.runOnIdle { assertEquals(ramp.take(3), draft().entry("back-squat")!!.sets) }
-        scope.cancel()
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("3")
+            assertEquals(listOf("5" to "60", "5" to "80", "3" to "90"), ladder())
+            compose.onNodeWithText("Set · 3 sets").performClick()
+            compose.runOnIdle { assertEquals(ramp.take(3), draft().entry("back-squat")!!.sets) }
+        } } finally { scope.cancel() }
     }
 
     // Add set reveals the next hidden row while there is one, and copies the last shown row after.
     @Test
     fun testAddSetRevealsTheNextHiddenRowBeforeCopyingTheLastShown() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        editor(scope, lowerA, "Back Squat")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            editor(room, lowerA, "Back Squat")
 
-        compose.onNodeWithContentDescription("Sets target").performTextReplacement("2")
-        assertEquals(listOf("5" to "60", "5" to "80"), ladder())
-        compose.onNodeWithText(TargetEntry.addSet).performScrollTo().performClick()
-        assertEquals(listOf("5" to "60", "5" to "80", "3" to "90"), ladder())
-        assertEquals("3", typed("Sets target"))
-        repeat(2) { compose.onNodeWithText(TargetEntry.addSet).performScrollTo().performClick() }
-        assertEquals(listOf("5" to "60", "5" to "80", "3" to "90", "1" to "100", "5" to "80"), ladder())
-        compose.onNodeWithText(TargetEntry.addSet).performScrollTo().performClick()
-        assertEquals(listOf("5" to "60", "5" to "80", "3" to "90", "1" to "100", "5" to "80", "5" to "80"), ladder())
-        assertEquals("6", typed("Sets target"))
-        scope.cancel()
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("2")
+            assertEquals(listOf("5" to "60", "5" to "80"), ladder())
+            compose.onNodeWithText(TargetEntry.addSet).performScrollTo().performClick()
+            assertEquals(listOf("5" to "60", "5" to "80", "3" to "90"), ladder())
+            assertEquals("3", typed("Sets target"))
+            repeat(2) { compose.onNodeWithText(TargetEntry.addSet).performScrollTo().performClick() }
+            assertEquals(listOf("5" to "60", "5" to "80", "3" to "90", "1" to "100", "5" to "80"), ladder())
+            compose.onNodeWithText(TargetEntry.addSet).performScrollTo().performClick()
+            assertEquals(listOf("5" to "60", "5" to "80", "3" to "90", "1" to "100", "5" to "80", "5" to "80"), ladder())
+            assertEquals("6", typed("Sets target"))
+        } } finally { scope.cancel() }
     }
 
     // A swipe-Delete takes that row out of the array and the count down by one; the hidden tail
@@ -358,16 +346,17 @@ class TargetSheetLadderTests {
     @Test
     fun testDeletingAShownRowKeepsTheHiddenTail() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        editor(scope, lowerA, "Back Squat")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            editor(room, lowerA, "Back Squat")
 
-        compose.onNodeWithContentDescription("Sets target").performTextReplacement("3")
-        val delete = deleteAction(2)
-        compose.runOnIdle { delete() }
-        assertEquals(listOf("5" to "60", "3" to "90"), ladder())
-        assertEquals("2", typed("Sets target"))
-        compose.onNodeWithContentDescription("Sets target").performTextReplacement("4")
-        assertEquals(listOf("5" to "60", "3" to "90", "1" to "100", "5" to "80"), ladder())
-        scope.cancel()
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("3")
+            val delete = deleteAction(2)
+            compose.runOnIdle { delete() }
+            assertEquals(listOf("5" to "60", "3" to "90"), ladder())
+            assertEquals("2", typed("Sets target"))
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("4")
+            assertEquals(listOf("5" to "60", "3" to "90", "1" to "100", "5" to "80"), ladder())
+        } } finally { scope.cancel() }
     }
 
     // A refusal typed in the head is said under the head field — the field itself in the error
@@ -375,102 +364,107 @@ class TargetSheetLadderTests {
     @Test
     fun testARefusalTypedInTheHeadIsSaidUnderTheHeadField() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        editor(scope, lowerA, "Back Squat")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            editor(room, lowerA, "Back Squat")
 
-        compose.onNodeWithContentDescription("Reps target").performTextReplacement("101")
-        val said = compose.onNodeWithText(TargetEntry.outsideReps).assertIsDisplayed().fetchSemanticsNode().positionInRoot.y
-        assertTrue("under the head", said > yOf("Reps target"))
-        assertTrue("and above row 1", said < yOf("Set 1 reps"))
-        compose.onNodeWithContentDescription("Reps target").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Error))
-        compose.onNodeWithContentDescription("Set 1 reps").assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Error))
-        commit().assertIsNotEnabled()
-        commit().assertIsDisplayed()
+            compose.onNodeWithContentDescription("Reps target").performTextReplacement("101")
+            val said = compose.onNodeWithText(TargetEntry.outsideReps).assertIsDisplayed().fetchSemanticsNode().positionInRoot.y
+            assertTrue("under the head", said > yOf("Reps target"))
+            assertTrue("and above row 1", said < yOf("Set 1 reps"))
+            compose.onNodeWithContentDescription("Reps target").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Error))
+            compose.onNodeWithContentDescription("Set 1 reps").assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Error))
+            commit().assertIsNotEnabled()
+            commit().assertIsDisplayed()
 
-        compose.onNodeWithContentDescription("Weight target").performTextReplacement("501")
-        compose.onNodeWithContentDescription("Reps target").performTextReplacement("8")
-        val load = compose.onNodeWithText(TargetEntry.overWeight).assertIsDisplayed().fetchSemanticsNode().positionInRoot.y
-        assertTrue(load > yOf("Weight target") && load < yOf("Set 1 load"))
-        compose.onNodeWithContentDescription("Weight target").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Error))
-        scope.cancel()
+            compose.onNodeWithContentDescription("Weight target").performTextReplacement("501")
+            compose.onNodeWithContentDescription("Reps target").performTextReplacement("8")
+            val load = compose.onNodeWithText(TargetEntry.overWeight).assertIsDisplayed().fetchSemanticsNode().positionInRoot.y
+            assertTrue(load > yOf("Weight target") && load < yOf("Set 1 load"))
+            compose.onNodeWithContentDescription("Weight target").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Error))
+        } } finally { scope.cancel() }
     }
 
     // Law 1: the row's swipe is half-built until its custom action exists. Deleting decrements Sets.
     @Test
     fun testTheRowsDeleteActionRemovesItAndDecrementsSets() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val draft = editor(scope, lowerA, "Back Squat")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val draft = editor(room, lowerA, "Back Squat")
 
-        val delete = deleteAction(2)
-        compose.runOnIdle { delete() }
-        assertEquals(listOf("5" to "60", "3" to "90", "1" to "100", "5" to "80"), ladder())
-        assertEquals(listOf("4", "", ""), head())
-        compose.onNodeWithText("Set · 4 sets").performClick()
-        compose.runOnIdle {
-            assertEquals(listOf(SetTarget(5, 60.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0)),
-                         draft().entry("back-squat")!!.sets)
-        }
-        scope.cancel()
+            val delete = deleteAction(2)
+            compose.runOnIdle { delete() }
+            assertEquals(listOf("5" to "60", "3" to "90", "1" to "100", "5" to "80"), ladder())
+            assertEquals(listOf("4", "", ""), head())
+            compose.onNodeWithText("Set · 4 sets").performClick()
+            compose.runOnIdle {
+                assertEquals(listOf(SetTarget(5, 60.0), SetTarget(3, 90.0), SetTarget(1, 100.0), SetTarget(5, 80.0)),
+                             draft().entry("back-squat")!!.sets)
+            }
+        } } finally { scope.cancel() }
     }
 
     // Deleting the last set is the same act as clearing Sets, and lands on the same open line.
     @Test
     fun testDeletingTheOnlyRowLandsOnTheOpenLine() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val one = RoutineDraft(name = "Push A").adding("bench-press").targeting("bench-press", listOf(SetTarget(8, 60.0)))
-        editor(scope, one, "Bench Press")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val one = RoutineDraft(name = "Push A").adding("bench-press").targeting("bench-press", listOf(SetTarget(8, 60.0)))
+            editor(room, one, "Bench Press")
 
-        val delete = deleteAction(1)
-        compose.runOnIdle { delete() }
-        assertEquals(listOf("", "", ""), head())
-        assertEquals(emptyList<Pair<String, String>>(), ladder())
-        compose.onNodeWithText(TargetEntry.openLine).assertIsDisplayed()
-        compose.onNodeWithText("Set · open").assertIsDisplayed()
-        scope.cancel()
+            val delete = deleteAction(1)
+            compose.runOnIdle { delete() }
+            assertEquals(listOf("", "", ""), head())
+            assertEquals(emptyList<Pair<String, String>>(), ladder())
+            compose.onNodeWithText(TargetEntry.openLine).assertIsDisplayed()
+            compose.onNodeWithText("Set · open").assertIsDisplayed()
+        } } finally { scope.cancel() }
     }
 
     // A row's fault is drawn under THAT row, in the pinned words, and holds the commit.
     @Test
     fun testARowsFaultIsSaidUnderItsOwnRowAndHoldsTheCommit() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        editor(scope, lowerA, "Back Squat")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            editor(room, lowerA, "Back Squat")
 
-        compose.onNodeWithContentDescription("Set 3 reps").performTextReplacement("0")
-        val said = compose.onNodeWithText(TargetEntry.zeroTarget).assertIsDisplayed().fetchSemanticsNode().positionInRoot.y
-        val row3 = compose.onNodeWithContentDescription("Set 3 reps").fetchSemanticsNode().positionInRoot.y
-        val row4 = compose.onNodeWithContentDescription("Set 4 reps").fetchSemanticsNode().positionInRoot.y
-        assertTrue("under row 3", said > row3)
-        assertTrue("and above row 4", said < row4)
-        commit().assertIsNotEnabled()
-        commit().assertIsDisplayed()
+            compose.onNodeWithContentDescription("Set 3 reps").performTextReplacement("0")
+            val said = compose.onNodeWithText(TargetEntry.zeroTarget).assertIsDisplayed().fetchSemanticsNode().positionInRoot.y
+            val row3 = compose.onNodeWithContentDescription("Set 3 reps").fetchSemanticsNode().positionInRoot.y
+            val row4 = compose.onNodeWithContentDescription("Set 4 reps").fetchSemanticsNode().positionInRoot.y
+            assertTrue("under row 3", said > row3)
+            assertTrue("and above row 4", said < row4)
+            commit().assertIsNotEnabled()
+            commit().assertIsDisplayed()
 
-        // Topmost first: a second fault lower down waits its turn.
-        compose.onNodeWithContentDescription("Set 5 load").performTextReplacement("501")
-        compose.onAllNodesWithText(TargetEntry.zeroTarget).assertCountEquals(1)
-        compose.onNodeWithText(TargetEntry.overWeight).assertDoesNotExist()
-        compose.onNodeWithContentDescription("Set 3 reps").performTextReplacement("3")
-        compose.onNodeWithText(TargetEntry.overWeight).assertIsDisplayed()
-        scope.cancel()
+            // Topmost first: a second fault lower down waits its turn.
+            compose.onNodeWithContentDescription("Set 5 load").performTextReplacement("501")
+            compose.onAllNodesWithText(TargetEntry.zeroTarget).assertCountEquals(1)
+            compose.onNodeWithText(TargetEntry.overWeight).assertDoesNotExist()
+            compose.onNodeWithContentDescription("Set 3 reps").performTextReplacement("3")
+            compose.onNodeWithText(TargetEntry.overWeight).assertIsDisplayed()
+        } } finally { scope.cancel() }
     }
 
     @Test
     fun stepperAndLadderNamesExposeBothLevelsOfTheTarget() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        editor(scope, lowerA, "Back Squat")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            editor(room, lowerA, "Back Squat")
 
-        compose.onNodeWithContentDescription("Increase Sets").assertExists()
-        compose.onNodeWithContentDescription("Decrease Reps").assertExists()
-        compose.onNodeWithContentDescription("Increase kg").assertExists()
-        compose.onNodeWithText("Vary by set").assertExists()
-        compose.onNodeWithText("Ramp up").assertExists()
-        compose.onNodeWithContentDescription("Set 5 load").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Set · 5 sets").assertIsDisplayed()
-        scope.cancel()
+            compose.onNodeWithContentDescription("Increase Sets").assertExists()
+            compose.onNodeWithContentDescription("Decrease Reps").assertExists()
+            compose.onNodeWithContentDescription("Increase kg").assertExists()
+            compose.onNodeWithText("Vary by set").assertExists()
+            compose.onNodeWithText("Ramp up").assertExists()
+            compose.onNodeWithContentDescription("Set 5 load").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("Set · 5 sets").assertIsDisplayed()
+        } } finally { scope.cancel() }
     }
     @Test
     fun integralDecimalCountsGrowEditableRowsAndKeepTheFifthTargetThroughAHiddenTail() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        try {
-            val draft = editor(scope, pushA, "Bench Press")
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val draft = editor(room, pushA, "Bench Press")
             compose.onNodeWithContentDescription("Sets target").performTextReplacement("5.0")
             assertEquals(List(5) { "8" to "60" }, ladder())
             compose.onNodeWithContentDescription("Set 5 load").performScrollTo().performTextReplacement("85")
@@ -483,7 +477,7 @@ class TargetSheetLadderTests {
                 assertEquals(List(4) { SetTarget(8, 60.0) } + SetTarget(5, 85.0),
                     draft().entry("bench-press")!!.sets)
             }
-        } finally { scope.cancel() }
+        } } finally { scope.cancel() }
     }
 
 }

@@ -104,7 +104,7 @@ private:
   AdmitOutcome runAttempt() {
     if (std::optional<AdmitOutcome> answered = answeredCall()) return *answered;
     try {
-      shaped_.emplace(shapeIntent(registry_, wire_, Sender{caller_.account, caller_.server}, now_, a_.limits_.maxSkewMs));
+      shaped_.emplace(shapeIntent(registry_, wire_, caller_, now_, a_.limits_.maxSkewMs));
     } catch (const Refusal& refusal) {
       return answerRefusal(refusal.refused);
     } catch (const std::exception& error) {
@@ -211,7 +211,6 @@ private:
   AdmitOutcome admitUnderLock() {
     txn_ = store().begin(TxnMode::write);                                 // 3.2
     if (std::optional<OutOfTurn> out = lockOrigin()) return *out;         // 3.3
-    if (!builder_) a_.catalog_.requireWritable(*txn_, scope());
     lockScopes();                                                         // 3.4, 3.5
     lockFreshIds();                                                       // 3.6
     checkAccess();                                                        // 3.7
@@ -600,7 +599,6 @@ private:
   // row, done, in one transaction, unless the store already holds this admit's answer.
   AdmitOutcome answerFault(const std::exception& error) {
     const bool transient = dynamic_cast<const ScopeLockTimeout*>(&error) || dynamic_cast<const WorkerPoolStopping*>(&error) ||
-                           dynamic_cast<const ProductScopeUnavailable*>(&error) ||
                            a_.store_.classify(error) == FaultClass::transient;
     if (transient) return Retry{Retry::kTransientMs};
     report(error);
@@ -719,7 +717,7 @@ private:
   const Json::Value& wire_;
   std::optional<Json::Value> builtWire_;
   const Ms now_;
-  const Caller caller_;
+  const Sender caller_;
   const ServerBuilder* builder_;
   WriteObservation observation_;
   WriteContext context_;

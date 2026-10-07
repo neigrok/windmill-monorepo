@@ -1,12 +1,11 @@
 // gym/admit.json: §6.1 admission of one intent against a gym server state, under gym.registry.json and
-// gym's binding (A.2); gym/backfill.json: Appendix C's backfill of one account's legacy rows.
+// gym's binding (A.2).
 
 import { fileURLToPath } from 'node:url';
 import { CONSTANTS } from '../core/constants.js';
 import { ZERO_DIGEST, replaceRow } from '../core/digest.js';
 import { Registry } from '../core/registry.js';
 import { compactRow, isAlive } from '../core/rows.js';
-import { backfill, upgradeMetadata } from '../gym/backfill.js';
 import { GymProduct } from '../gym/product.js';
 import { admit } from '../server/admit.js';
 import { ServerState } from '../server/state.js';
@@ -97,7 +96,7 @@ function weighins() {
   const stored = rec('weighin', day, { stamp: s(T + 5 * H), seq: 6, born: false, f: { kg: 82.4, recordedAt: T + 5 * H } });
   const put = (id, stamp, kg, recordedAt) => ({ t: 'weighin', id, life: ['alive', stamp], f: regs(stamp, { kg, recordedAt }) });
   return [
-    admitted('a server-origin weigh-in put is admitted: REST writes weigh-ins as the server', { state: base(), origin: SERVER_A, intent: gym([put(day, null, 82.4, T + 9 * H)]) }),
+    admitted('a server-origin weigh-in put is admitted', { state: base(), origin: SERVER_A, intent: gym([put(day, null, 82.4, T + 9 * H)]) }),
     admitted('a server-origin put out-stamps the stored weigh-in and replaces it whole', { state: base({ a: [stored] }), origin: SERVER_A, intent: gym([put(day, null, 81.9, T + 9 * H)]) }),
     admitted('a replica put older than the stored weigh-in loses whole', { state: base({ a: [stored] }), intent: gym([put(day, s(T + 4 * H), 90, T + 4 * H)]) }),
     admitted('a weigh-in dated the day after serverNow\'s UTC date is admitted', { state: base(), intent: gym([put('2025-10-10', s(T + 9 * H), 82, T + 9 * H)]) }),
@@ -278,7 +277,6 @@ function sessions() {
   ];
 }
 
-// M7: notes order by `ord`; the cap counts alive notes.
 function adversarial() {
   const phone = (extra = {}) => create('proposal', 'proposal003', s(T + 9 * H), {
     routineId: 'routine0001', intent: 'revise', proposedName: 'Lower A', summary: 'Heavier',
@@ -366,6 +364,70 @@ function adversarial() {
   ];
 }
 
+// M8: a display name holds more than whitespace once a writer names it; a stored one that does not stands
+// until it is next changed.
+function names() {
+  const blank = '  　 ';
+  const rename = (name, origin = A) => gym([update('exercise', 'sledpush01', s(T), origin === SERVER_A ? null : s(T + 9 * H), { name })]);
+  const blankRoutine = rec('routine', 'routine0001', { stamp: s(T + 1), seq: 2, f: { name: '  ', position: 0, entries: SQUAT, revision: 1, createdEntries: 1 } });
+  const titled = gymState({ rows: { [GYM_A]: [rec('note', 'note0000001', { stamp: s(T), seq: 1, f: { title: 'Grip', body: '', ord: 'a0', updatedAt: T } })], [GYM_B]: [] } });
+  const proposal = (proposedName) => gym([{ t: 'proposal', id: 'proposal003', born: null, life: ['alive', null], f: regs(null, {
+    routineId: 'routine0001', intent: 'revise', proposedName, summary: 'Lighter', changes: CHANGES, door: 'mcp', connection: 'conn-1', agent: 'Claude',
+  }) }]);
+  return [
+    admitted('a custom movement renamed to whitespace is invalid', { state: base(), intent: rename('   ') }),
+    admitted('a server-origin rename to whitespace is invalid alike', { state: base(), origin: SERVER_A, intent: rename(blank, SERVER_A) }),
+    admitted('a custom movement created with a whitespace name is invalid', { state: base(), intent: gym([create('exercise', 'kbswing001', s(T + 9 * H), { name: '\t', pattern: 'hinge', equipment: 'kettlebell', stepKg: 4 })]) }),
+    admitted('a seed renamed to whitespace is invalid', { state: base(), intent: gym([{ t: 'exerciseName', id: 'back-squat', f: regs(s(T + 9 * H), { name: blank }) }]) }),
+    admitted('a name padded with whitespace is admitted as written: clients trim, admission refuses only a blank one', { state: base(), intent: rename(' Prowler ') }),
+    admitted('a zero-width space is not whitespace: a name of one is admitted', { state: base(), intent: rename('​') }),
+    admitted('a routine created with a whitespace name is invalid', { state: base(), intent: gym([create('routine', 'routine0002', s(T + 9 * H), { name: ' ', entries: [{ exerciseId: 'dip' }] })]) }),
+    admitted('a routine renamed to whitespace is invalid', { state: base(), intent: gym([update('routine', 'routine0001', s(T + 1), s(T + 9 * H), { name: '\n' })]) }),
+    admitted('a stored whitespace routine name stands through a position-only change', {
+      state: gymState({ rows: { [GYM_A]: [EXERCISE, blankRoutine], [GYM_B]: [] } }),
+      intent: gym([update('routine', 'routine0001', s(T + 1), s(T + 9 * H), { position: 4 })]) }),
+    admitted('a note created with a whitespace title is invalid', { state: base(), intent: gym([create('note', 'note0000002', s(T + 9 * H), { title: blank, body: '', ord: 'a0' })]) }),
+    admitted('a note retitled to whitespace is invalid', { state: titled, intent: gym([update('note', 'note0000001', s(T), s(T + 9 * H), { title: '  ' })]) }),
+    admitted('a revision proposal whose proposedName is whitespace is invalid', { state: base(), origin: SERVER_A, intent: proposal('  ') }),
+  ];
+}
+
+function historicalNames() {
+  return [['empty', ''], ['ASCII blank', ' \t '], ['Unicode blank', '\u00a0\u2003\u202f\u3000\ufeff']].flatMap(([label, name]) => {
+    const routine = rec('routine', 'routine0001', { stamp: s(T + 1), seq: 1,
+      f: { name, position: 0, entries: SQUAT, revision: 1, createdEntries: 1 } });
+    const state = gymState({ rows: { [GYM_A]: [routine] } });
+    const propose = (intent, proposedName, origin) => gym([create('proposal', 'proposal003', origin === SERVER_A ? null : s(T + 9 * H), {
+      routineId: routine.id, intent, proposedName, summary: '',
+      changes: intent === 'remove' ? CHANGES.map(({ exerciseId, before }) => ({ kind: 'removed', exerciseId, before })) : CHANGES,
+      door: origin === SERVER_A ? 'mcp' : 'ask', connection: '', agent: '',
+    })], origin === A ? { guard: ROUTINE_GUARDS } : {});
+    return [
+      admitted(`historical ${label} routine accepts an entries-only edit`, { state,
+        intent: gym([update('routine', routine.id, routine.born, s(T + 9 * H), { entries: [{ exerciseId: 'dip' }] })]) }),
+      admitted(`historical ${label} routine accepts a valid rename`, { state,
+        intent: gym([update('routine', routine.id, routine.born, s(T + 9 * H), { name: 'Readable name' })]) }),
+      admitted(`historical ${label} routine remains readable when starting a workout`, { state,
+        intent: cmd('gym.start', { id: 'session0002', routineId: routine.id, startedAt: NOW, joinOpenSession: true }) }),
+      admitted(`historical ${label} routine refuses a new blank revision proposal`, { state, origin: SERVER_A,
+        intent: propose('revise', name, SERVER_A) }),
+      ...[A, SERVER_A].flatMap((origin) => {
+        const input = { state, origin, serverNow: NOW,
+          intent: gym([update('routine', routine.id, routine.born, origin === SERVER_A ? null : s(T + 9 * H), { name })]) };
+        return [
+          admitted(`historical ${label} routine accepts a ${origin.kind} rename proposal`, { state, origin,
+            intent: propose('revise', 'Readable name', origin) }),
+          admitted(`historical ${label} routine accepts a ${origin.kind} removal proposal`, { state, origin,
+            intent: propose('remove', name, origin) }),
+          vector(`historical ${label} routine refuses a ${origin.kind} write setting the same blank name`, input,
+            { result: { s: 'refused', code: 'invalid' }, state }),
+        ];
+      }),
+    ];
+  });
+}
+
+// M7: notes order by `ord`; the cap counts alive notes.
 function notes() {
   const note = (id, seq, ord) => rec('note', id, { stamp: s(T + seq), seq, f: { title: `Note ${seq}`, body: '', ord, updatedAt: T } });
   const ten = gymState({ rows: { [GYM_A]: Array.from({ length: 10 }, (_, i) => note(`note000000${i}`, i + 1, `a${i}`)), [GYM_B]: [] } });
@@ -446,112 +508,8 @@ function metadata() {
   ];
 }
 
-// Appendix C: legacy rows → the account's scope at one stamp.
-const M = T + 20 * H;
-const LEGACY = {
-  exercises: [{ id: 'sledpush01', name: 'Sled Push', pattern: 'carry', equipment: 'machine', stepKg: 5, createdAt: T }],
-  exerciseNames: [{ exerciseId: 'back-squat', name: 'Squat', updatedAt: T + 2 * H }],
-  aliases: [
-    { exerciseId: 'back-squat', name: 'Back Squat', createdAt: T + 2 * H },
-    { exerciseId: 'sledpush01', name: 'Prowler', createdAt: T + H },
-    { exerciseId: 'sledpush01', name: 'Sled', createdAt: T + H },
-    { exerciseId: 'dip', name: 'Parallel Dip', createdAt: T + 3 * H },
-  ],
-  routines: [{
-    id: 'routine0001', name: 'Lower A', position: 3, revision: 4, createdAt: T, createdDoor: 'ask',
-    entries: [
-      { position: 2, exerciseId: 'dip' },
-      { position: 1, exerciseId: 'back-squat', restSeconds: 180, sets: [{ setIndex: 2, reps: 3, weightKg: 90 }, { setIndex: 1, reps: 5, weightKg: 80 }, { setIndex: 3 }] },
-    ],
-  }],
-  routineCreations: ['routine0001', 'routine0002'],
-  proposals: [{
-    id: 'proposal001', routineId: 'routine0001', intent: 'revise', baseRevision: 3, baseName: 'Lower', proposedName: 'Lower A', summary: 'Rename',
-    state: 'superseded', door: 'ask', connection: '', agent: '', threadId: 'thread00001', supersededBy: null, createdAt: T + H, settledAt: T + 2 * H,
-    changes: [
-      { position: 2, kind: 'removed', exerciseId: 'bench-press', beforeSets: null, beforeRestSeconds: 120 },
-      { position: 1, kind: 'kept', exerciseId: 'back-squat', beforeSets: [{ reps: 5, weightKg: 80 }], beforeRestSeconds: 180, afterSets: [{ reps: 5, weightKg: 80 }], afterRestSeconds: 180 },
-    ],
-  }],
-  sessions: [
-    { id: 'session0001', routineId: null, historyRoutineId: 'routine0009', plan: { routine: 'Old', entries: [] }, startedAt: T, finishedAt: T + H, closedBy: null, displayName: null },
-    { id: 'session0002', routineId: 'routine0001', historyRoutineId: 'routine0001', plan: null, startedAt: T + 3 * H, finishedAt: null, closedBy: null, displayName: null },
-  ],
-  sets: [
-    { id: 'set00000001', sessionId: 'session0001', exerciseId: 'back-squat', setNumber: 1, weightKg: 80, reps: 5, kind: 'working', rpe: null, note: '', completedAt: T + 600_000 },
-    { id: 'set00000003', sessionId: 'session0001', exerciseId: 'back-squat', setNumber: 3, weightKg: -10, reps: 8, kind: 'warmup', rpe: 7.5, note: 'band', completedAt: T + 900_000 },
-  ],
-  setRevisions: [{ setId: 'set00000002', deleted: true }, { setId: 'set00000003', deleted: false }],
-  writeReceipts: [
-    { kind: 'session', id: 'session0001', sessionId: 'session0001' },
-    { kind: 'session', id: 'session0004', sessionId: 'session0004' },
-    { kind: 'set', id: 'set00000001', sessionId: 'session0001' },
-    { kind: 'set', id: 'set00000005', sessionId: 'session0004' },
-  ],
-  notes: [
-    { id: 'note0000002', position: 1, title: 'Knees', body: 'No deep lunges', createdAt: T + H, updatedAt: T + 4 * H },
-    { id: 'note0000001', position: 0, title: 'Grip', body: '', createdAt: T, updatedAt: T },
-  ],
-  noteSaves: ['note0000001', 'note0000009'],
-  bodyweight: [{ dateLocal: '2025-10-08', weightKg: 82.4, recordedAt: T - 20 * H, updatedAt: T - 19 * H }],
-  preferences: { units: 'lb', restSeconds: null, restSound: true, confirmHaptic: false, confirmSound: false, updatedAt: T - 50 * H },
-};
-
-function backfilled(name, { state, account = 'A', legacy }) {
-  const next = backfill({ state: new ServerState(state), registry: gymRegistry, account, legacy, M });
-  return vector(name, { state, account, legacy, M }, { state: next.toJSON() });
-}
-
-function backfills() {
-  const empty = new ServerState({ epoch: 'ep-1', clock: { ms: 0, counter: 0 }, product: { seeds: SEEDS } }).toJSON();
-  const adopted = backfill({ state: new ServerState(empty), registry: gymRegistry, account: 'A', legacy: LEGACY, M }).toJSON();
-  return [
-    backfilled('an account\'s gym rows become its scope at one stamp, with seqs in registry type order, spent ids, receipts, projections, the note counter and the digest', { state: empty, legacy: LEGACY }),
-    backfilled('a second run leaves an adopted account as it is', { state: adopted, legacy: LEGACY }),
-    backfilled('an account with no gym row gets no scope', { state: empty, legacy: {} }),
-    backfilled('a seed renamed back to its own name, its aliases left, becomes an exerciseName holding aliases alone', { state: empty, legacy: { aliases: [{ exerciseId: 'dip', name: 'Ring Dip', createdAt: T }] } }),
-    backfilled('an account holding only spent ids gets a scope of spent ids', { state: empty, legacy: { writeReceipts: [{ kind: 'set', id: 'set00000007', sessionId: 'session0007' }] } }),
-  ];
-}
-
-function metadataUpgrades() {
-  const empty = new ServerState({ epoch: 'ep-1', clock: { ms: 0, counter: 0 }, product: { seeds: SEEDS } });
-  const frozen = backfill({ state: empty, registry: gymRegistry, account: 'A', legacy: LEGACY, M: T + 19 * H });
-  const source = {
-    routines: [{ id: 'routine0001', revision: 4, createdEntries: 5 }],
-    proposals: [{ id: 'proposal001', baseRevision: 3, baseName: 'Lower', changeCount: 7 }],
-    notes: LEGACY.notes.map(({ id, updatedAt }) => ({ id, updatedAt })),
-    routineCreations: [
-      { id: 'routine0001', snapshot: { id: 'routine0001', name: 'Original', position: 0, revision: 1, entries: [{ position: 1, exerciseId: 'dip' }] } },
-      { id: 'routine0002', snapshot: { id: 'routine0002', name: 'Deleted', position: 0, revision: 1, entries: [{ position: 1, exerciseId: 'dip' }] } },
-    ],
-  };
-  const upgraded = upgradeMetadata({ state: frozen, registry: gymRegistry, account: 'A', source, M });
-  const run = (name, state, columns) => vector(name, { state: state.toJSON(), account: 'A', source: columns, M },
-    { state: upgradeMetadata({ state, registry: gymRegistry, account: 'A', source: columns, M }).toJSON() });
-  const refused = (name, state, columns, time = M) => vector(name, { state: state.toJSON(), account: 'A', source: columns, M: time }, { error: true });
-  return [
-    run('R118 adopted metadata copies existing columns and snapshots including a spent routine', frozen, source),
-    run('R118 a matching committed upgrade is a no-op', upgraded, source),
-    run('R118 an unknown original count stays absent and no snapshot is invented',
-      backfill({ state: empty, registry: gymRegistry, account: 'A', legacy: { ...LEGACY, routineCreations: [] }, M: T + 19 * H }),
-      { ...source, routines: [{ id: 'routine0001', revision: 4, createdEntries: null }], routineCreations: [] }),
-    run('R118 an empty account stays empty', empty, {}),
-    run('R118 a spent-only scope gains only its existing snapshot', backfill({ state: empty, registry: gymRegistry, account: 'A', legacy: { routineCreations: ['routine0002'] }, M: T + 19 * H }),
-      { routineCreations: [source.routineCreations[1]] }),
-    refused('R118 an interrupted account resumes only with the original frozen roster', frozen, { ...source, notes: [] }),
-    refused('R118 a missing required source value refuses without partial writes', frozen, { ...source, routines: [{ id: 'routine0001', revision: null }] }),
-    refused('R118 duplicate source snapshots refuse without partial writes', frozen, { ...source, routineCreations: [source.routineCreations[0], source.routineCreations[0]] }),
-    refused('R118 an unadopted snapshot account fails the gate', empty, { routineCreations: source.routineCreations }),
-    refused('R118 a committed upgrade rejects a changed clock', upgraded, source, M + 1),
-    refused('R118 a committed upgrade rejects changed source columns', upgraded, { ...source, routines: [{ id: 'routine0001', revision: 99 }] }),
-  ];
-}
-
 export function files() {
   return {
-    'gym/admit.json': [...weighins(), ...catalog(), ...sets(), ...routines(), ...proposals(), ...sessions(), ...notes(), ...adversarial(), ...metadata()],
-    'gym/backfill.json': backfills(),
-    'gym/metadata.json': metadataUpgrades(),
+    'gym/admit.json': [...weighins(), ...catalog(), ...sets(), ...routines(), ...proposals(), ...sessions(), ...notes(), ...names(), ...historicalNames(), ...adversarial(), ...metadata()],
   };
 }

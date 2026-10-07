@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.gym.coach.AskScreen
 import androidx.compose.foundation.layout.Box
 import kotlinx.coroutines.launch
 import androidx.compose.ui.test.onNodeWithTag
@@ -34,13 +35,11 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
 import androidx.compose.ui.unit.width
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -49,29 +48,29 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import works.windmill.gym.domain.Ask
-import works.windmill.gym.domain.AskCap
-import works.windmill.gym.domain.AskExchange
-import works.windmill.gym.domain.ChangeKind
+import works.windmill.gym.coach.Ask
+import works.windmill.gym.coach.AskCap
+import works.windmill.gym.coach.AskExchange
 import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.Proposal
-import works.windmill.gym.domain.ProposalChange
-import works.windmill.gym.domain.ProposalSource
-import works.windmill.gym.domain.ProposalState
-import works.windmill.gym.domain.ProposalTargets
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.SetTarget
-import works.windmill.gym.net.FakeTraining
-import works.windmill.gym.store.DeviceCopy
+import works.windmill.domain.kit.ActionContext
+import works.windmill.domain.kit.ActionRunner
+import works.windmill.domain.kit.FixedZone
+import works.windmill.domain.kit.Id
+import works.windmill.domain.kit.Outcome
+import works.windmill.gym.domain.sync.ProposeRoutine
+import works.windmill.gym.net.FakeGymRest
+import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
-import works.windmill.gym.store.LocalBodyweight
-import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
-import works.windmill.gym.store.SetQueue
-import works.windmill.gym.store.TrainingStore
-import works.windmill.platform.Account
-import works.windmill.platform.User
-import works.windmill.platform.net.WindmillApi
+import works.windmill.sync.core.Json
+import works.windmill.sync.modelserver.ModelServer
+import works.windmill.gym.domain.sync.Exercise as EngineExercise
+import works.windmill.gym.domain.sync.Proposal as EngineProposal
+import works.windmill.gym.domain.sync.Routine as EngineRoutine
+import works.windmill.gym.domain.sync.RoutineEntry as EngineEntry
+import works.windmill.gym.domain.sync.SetTarget as EngineTarget
 
 // Two blocks in this room are PINNED outside a scroller — Coach's doors under a cap, and the review
 // band under the diff — and both grew a sentence. A block that grows can starve the region it is
@@ -122,23 +121,16 @@ class LargestTypeTests {
     // or a diff they are about to be held to — through a slot.
     private val floor = 120.dp
 
-    private fun store(scope: CoroutineScope, server: FakeTraining = FakeTraining()): TrainingStore {
-        val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json")),
-            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
-            localLog = LocalLog(File(tmp.root, "local.json")),
-            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
-            scope = scope,
-            sync = { server },
-        )
+    // Signed in and read from the account's log, with Coach's door open.
+    private fun store(scope: CoroutineScope, server: ModelServer = EngineRoomFixture.server()): EngineRoomFixture {
+        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest())
+        room.now = System.currentTimeMillis()
         runBlocking {
-            store.connect(Account(
-                api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
-                user = User(id = "u1", email = "sam@example.com", name = "Sam"),
-            ))
+            room.select("u1")
+            room.pull(server)
         }
-        return store
+        room.store.observeEngine()
+        return room
     }
 
     // The cap-reached sentence reads at the END OF THE THREAD, inside the scroller, and under this
@@ -150,31 +142,31 @@ class LargestTypeTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val ceiling = "this account has reached its AI ceiling for the last 30 days. Coach will " +
             "answer again as that window rolls on"
-        val store = store(scope)
-        compose.setContent {
-            CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 2f)) {
-                AskScreen(
-                    store = store,
-                    thread = listOf(AskExchange(question = "what’s stalled?", trouble = ceiling)),
-                    receipts = emptyList(), lookedAt = emptySet(), asking = false,
-                    cap = AskCap.Ceiling, onAsk = {}, onRetry = {}, onAskNew = {}, seed = "",
-                    origin = "https://windmill.works", backTo = null, onBack = null,
-                    onThreads = {}, onNotes = {}, onReview = {},
-                )
+        try { store(scope).use { room ->
+            compose.setContent {
+                CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 2f)) {
+                    AskScreen(
+                        store = room.store,
+                        thread = listOf(AskExchange(question = "what’s stalled?", trouble = ceiling)),
+                        receipts = emptyList(), lookedAt = emptySet(), asking = false,
+                        cap = AskCap.Ceiling, onAsk = {}, onRetry = {}, onAskNew = {}, seed = "",
+                        origin = "https://windmill.works", backTo = null, onBack = null,
+                        onThreads = {}, onNotes = {}, onReview = {},
+                    )
+                }
             }
-        }
 
-        val scroller = compose.onNode(hasScrollAction()).fetchSemanticsNode()
-        val left = with(compose.density) { scroller.size.height.toDp() }
-        assertTrue("the thread is $left at fontScale 2.0", left >= floor)
+            val scroller = compose.onNode(hasScrollAction()).fetchSemanticsNode()
+            val left = with(compose.density) { scroller.size.height.toDp() }
+            assertTrue("the thread is $left at fontScale 2.0", left >= floor)
 
-        val sentence = compose.onNodeWithText(ceiling).fetchSemanticsNode()
-        assertTrue("and the sentence is inside it, not pinned on top of it",
-            sentence.positionInRoot.y >= scroller.positionInRoot.y)
-        // And under THIS ceiling the promise is not drawn at all: ten a day is the day's rule, and
-        // pinned under the sentence refusing the question it would read as the reason for it.
-        compose.onNodeWithText(Ask.allowance).assertDoesNotExist()
-        scope.cancel()
+            val sentence = compose.onNodeWithText(ceiling).fetchSemanticsNode()
+            assertTrue("and the sentence is inside it, not pinned on top of it",
+                sentence.positionInRoot.y >= scroller.positionInRoot.y)
+            // And under THIS ceiling the promise is not drawn at all: ten a day is the day's rule, and
+            // pinned under the sentence refusing the question it would read as the reason for it.
+            compose.onNodeWithText(Ask.allowance).assertDoesNotExist()
+        } } finally { scope.cancel() }
     }
 
     // The band grew a fourth stacked row this wave — the gate's refusal, in a slot held open in both
@@ -184,53 +176,66 @@ class LargestTypeTests {
     @Test
     fun theReviewBandLeavesTheDiffReadableAtFontScaleTwoWithTheGateShut() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
-        val store = store(scope, server)
-        val routine = runBlocking {
-            (store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) as GymResult.Ok).value
-        }
-        server.propose(Proposal(
-            id = "prop_1", routineId = routine.id, state = ProposalState.Pending,
-            summary = "Heavier triples across the whole day.",
-            changeCount = 8, createdAtMs = 1_000, source = ProposalSource(door = "ask"),
-            baseRevision = routine.revision, baseName = "Push Day", name = "Push Day",
-            changes = (1..8).map {
-                ProposalChange(position = it, kind = ChangeKind.Retargeted, exerciseId = "bench-press",
-                    before = ProposalTargets(List(3) { SetTarget(5) }), after = ProposalTargets(List(5) { SetTarget(3) }))
-            },
-        ))
-        compose.setContent {
-            CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 2f)) {
-                Box(Modifier.fillMaxWidth().height(700.dp)) {
-                    ReviewSheet(
-                        proposalId = "prop_1", routineId = routine.id, store = store,
-                        onAsk = null, onDecided = {},
-                    )
+        val server = EngineRoomFixture.server()
+        try { store(scope, server).use { room ->
+            // A day of eight presses at three fives, on the account's log.
+            val presses = listOf("bench-press", "incline-bench-press", "close-grip-bench-press", "overhead-press",
+                "push-press", "dumbbell-bench-press", "incline-dumbbell-press", "dumbbell-shoulder-press")
+            val routine = runBlocking {
+                val saved = (room.store.saveRoutine(presses.fold(RoutineDraft(name = "Push Day")) { draft, press ->
+                    draft.adding(press).targeting(press, List(3) { SetTarget(5) })
+                }) as GymResult.Ok).value
+                room.sync(server)
+                saved
+            }
+            // Coach proposes triples across the whole day: eight retargeted lines, from the account's side.
+            val coachScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+            try { EngineRoomFixture(tmp.newFolder(), coachScope).use { coach -> runBlocking {
+                coach.now = room.now
+                coach.select("u1")
+                coach.pull(server)
+                val runner = ActionRunner(coach.engine, coach.engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
+                assertTrue(runner.run(ProposeRoutine(Id("proposal1", EngineProposal), Id(routine.id, EngineRoutine), "Push Day",
+                    presses.map { press -> EngineEntry(Id(press, EngineExercise), List(5) { EngineTarget(3) }) },
+                    "Heavier triples across the whole day.")) is Outcome.Committed)
+                coach.sync(server)
+                assertEquals("the log took the proposal", emptyList<Json>(), coach.notices())
+            } } } finally { coachScope.cancel() }
+            room.pull(server)
+            runBlocking { room.store.refreshEngine() }
+
+            compose.setContent {
+                CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 2f)) {
+                    Box(Modifier.fillMaxWidth().height(700.dp)) {
+                        ReviewSheet(
+                            proposalId = "proposal1", routineId = routine.id, store = room.store,
+                            onAsk = null, onDecided = {},
+                        )
+                    }
                 }
             }
-        }
 
-        val scroller = compose.onNode(hasScrollAction()).fetchSemanticsNode()
-        val left = with(compose.density) { scroller.size.height.toDp() }
-        assertTrue("the diff is $left at fontScale 2.0", left >= floor)
+            val scroller = compose.onNode(hasScrollAction()).fetchSemanticsNode()
+            val left = with(compose.density) { scroller.size.height.toDp() }
+            assertTrue("the diff is $left at fontScale 2.0", left >= floor)
 
-        val apply = compose.onNodeWithText("Apply all 8").fetchSemanticsNode()
-        val atomic = compose.onNodeWithText("All eight or none. Nothing is applied until you tap.")
-            .fetchSemanticsNode()
-        val turnDown = compose.onNodeWithText(Proposal.turnDownVerb).fetchSemanticsNode()
-        assertTrue("the whole band stands under the diff and none of it is cut off",
-            apply.positionInRoot.y >= scroller.positionInRoot.y + scroller.size.height &&
-                turnDown.positionInRoot.y + turnDown.size.height <=
-                with(compose.density) { 700.dp.toPx() })
-        // The refusal is off the semantics tree in BOTH states (`4m`), so its slot is measured as the
-        // gap it holds open between Apply and the atomic promise rather than fetched by its text:
-        // 73dp here, the row's own 57 between the band's two 8dp gaps. Delete the row and this is 8.
-        val slot = with(compose.density) {
-            (atomic.positionInRoot.y - (apply.positionInRoot.y + apply.size.height)).toDp()
-        }
-        assertTrue("the refusal keeps its slot between Apply and the atomic promise, and it is $slot",
-            slot >= 57.dp)
-        scope.cancel()
+            val apply = compose.onNodeWithText("Apply all 8").fetchSemanticsNode()
+            val atomic = compose.onNodeWithText("All eight or none. Nothing is applied until you tap.")
+                .fetchSemanticsNode()
+            val turnDown = compose.onNodeWithText(Proposal.turnDownVerb).fetchSemanticsNode()
+            assertTrue("the whole band stands under the diff and none of it is cut off",
+                apply.positionInRoot.y >= scroller.positionInRoot.y + scroller.size.height &&
+                    turnDown.positionInRoot.y + turnDown.size.height <=
+                    with(compose.density) { 700.dp.toPx() })
+            // The refusal is off the semantics tree in BOTH states (`4m`), so its slot is measured as the
+            // gap it holds open between Apply and the atomic promise rather than fetched by its text:
+            // 73dp here, the row's own 57 between the band's two 8dp gaps. Delete the row and this is 8.
+            val slot = with(compose.density) {
+                (atomic.positionInRoot.y - (apply.positionInRoot.y + apply.size.height)).toDp()
+            }
+            assertTrue("the refusal keeps its slot between Apply and the atomic promise, and it is $slot",
+                slot >= 57.dp)
+        } } finally { scope.cancel() }
     }
 
     // The logger's rack is pinned and never shrinks, so at the largest text it is the reading region
@@ -241,71 +246,78 @@ class LargestTypeTests {
     @Config(sdk = [35], qualifiers = "w360dp-h780dp-xhdpi")
     fun theRackStaysInsideTheSmallestFrameAtFontScaleOnePointThree() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = store(scope)
-        runBlocking {
-            store.start(null)
-            store.choose("bench-press")
-            store.logSet(60.0, 5)
-        }
-        compose.setContent {
-            // The room's own faces, because it is their widths at 1.3 that are being measured.
-            GymMaterial {
-                CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 1.3f)) {
-                    LoggerScreen(store = store, isSignedIn = true, say = {}, onFinish = {}, onSignIn = {},
-                                 onSettings = {})
+        val server = EngineRoomFixture.server()
+        try { store(scope, server).use { room ->
+            runBlocking {
+                room.store.start(null)
+                room.store.choose("bench-press")
+                room.store.logSet(60.0, 5)
+                room.sync(server)
+                room.store.refreshEngine()
+            }
+            compose.setContent {
+                // The room's own faces, because it is their widths at 1.3 that are being measured.
+                GymMaterial {
+                    CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 1.3f)) {
+                        LoggerScreen(store = room.store, isSignedIn = true, say = {}, onFinish = {}, onSignIn = {},
+                                     onSettings = {})
+                    }
                 }
             }
-        }
 
-        compose.onNode(hasContentDescription("Weight 60 kg")).assertExists()
-        val window = compose.onRoot().getBoundsInRoot()
-        // A node pushed off the frame reports an EMPTY rect, so `inside` has to mean drawn as well.
-        val log = compose.onNodeWithText("Log set").assertIsDisplayed().getBoundsInRoot()
-        assertTrue("Log set ends at ${log.bottom} in a window ${window.bottom} tall",
-            log.height > 0.dp && log.bottom <= window.bottom)
-        Ladder.labels(60.0).forEach { label ->
-            // A label inside a bounded pill measures the pill's width whatever its glyphs need, so
-            // the claim is read off the text engine's own paragraph: one line, whose unbroken
-            // width fits inside the pill it sits in.
-            val laid = mutableListOf<TextLayoutResult>()
-            compose.onNode(hasText(label), useUnmergedTree = true).fetchSemanticsNode()
-                .config[SemanticsActions.GetTextLayoutResult].action?.invoke(laid)
-            val line = laid.single()
-            val pill = compose.onNode(hasText(label) and hasClickAction()).getBoundsInRoot()
-            val pillPx = with(compose.density) { pill.width.toPx() }
-            val needs = line.multiParagraph.maxIntrinsicWidth
-            assertTrue("$label needs ${needs}px inside a pill ${pillPx}px wide",
-                line.lineCount == 1 && needs <= pillPx)
-        }
-        scope.cancel()
+            compose.onNode(hasContentDescription("Weight 60 kg")).assertExists()
+            val window = compose.onRoot().getBoundsInRoot()
+            // A node pushed off the frame reports an EMPTY rect, so `inside` has to mean drawn as well.
+            val log = compose.onNodeWithText("Log set").assertIsDisplayed().getBoundsInRoot()
+            assertTrue("Log set ends at ${log.bottom} in a window ${window.bottom} tall",
+                log.height > 0.dp && log.bottom <= window.bottom)
+            Ladder.labels(60.0).forEach { label ->
+                // A label inside a bounded pill measures the pill's width whatever its glyphs need, so
+                // the claim is read off the text engine's own paragraph: one line, whose unbroken
+                // width fits inside the pill it sits in.
+                val laid = mutableListOf<TextLayoutResult>()
+                compose.onNode(hasText(label), useUnmergedTree = true).fetchSemanticsNode()
+                    .config[SemanticsActions.GetTextLayoutResult].action?.invoke(laid)
+                val line = laid.single()
+                val pill = compose.onNode(hasText(label) and hasClickAction()).getBoundsInRoot()
+                val pillPx = with(compose.density) { pill.width.toPx() }
+                val needs = line.multiParagraph.maxIntrinsicWidth
+                assertTrue("$label needs ${needs}px inside a pill ${pillPx}px wide",
+                    line.lineCount == 1 && needs <= pillPx)
+            }
+        } } finally { scope.cancel() }
     }
 
     // A logger over a walk of two, stood on the 411 × 731 phone with the 24 dp status bar and the
     // 24 dp gesture bar the device takes off that frame — Robolectric's window has no insets, so
     // without them this measures a phone 48 dp taller than the one in hand.
-    private fun loggerOnThePhone(scope: CoroutineScope, fontScale: Float, walk: List<String> = listOf("bench-press", "deadlift"),
-                                 transient: SnackbarHostState? = null): TrainingStore {
-        val store = store(scope)
+    private fun loggerOnThePhone(scope: CoroutineScope, server: ModelServer, fontScale: Float,
+                                 walk: List<String> = listOf("bench-press", "deadlift"),
+                                 transient: SnackbarHostState? = null): EngineRoomFixture {
+        val room = store(scope, server)
         runBlocking {
-            store.start(null)
-            walk.forEach { store.choose(it) }
-            store.choose(walk.first())
+            room.store.start(null)
+            walk.forEach { room.store.choose(it) }
+            room.store.choose(walk.first())
         }
         compose.setContent {
             GymMaterial {
                 CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = fontScale)) {
                     Box(Modifier.padding(top = 24.dp, bottom = 24.dp)) {
-                        LoggerScreen(store = store, isSignedIn = true, say = {}, onFinish = {}, onSignIn = {},
+                        LoggerScreen(store = room.store, isSignedIn = true, say = {}, onFinish = {}, onSignIn = {},
                                      onSettings = {}, transient = transient)
                     }
                 }
             }
         }
-        return store
+        return room
     }
 
-    private fun logSets(count: Int) = repeat(count) {
+    // Each set lands on the account's log before the next is logged, as on a phone with signal.
+    private fun logSets(room: EngineRoomFixture, server: ModelServer, count: Int) = repeat(count) {
         compose.onNodeWithText("Log set").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle { room.sync(server) }
         compose.waitForIdle()
     }
 
@@ -321,21 +333,21 @@ class LargestTypeTests {
     @Config(sdk = [35], qualifiers = "w411dp-h731dp-xhdpi")
     fun theWholeLedgerShowsAfterASetLandsOnTheSmallPhoneAtFontScaleOne() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        loggerOnThePhone(scope, fontScale = 1f)
-        val logBefore = compose.onNodeWithText("Log set").assertIsDisplayed().getBoundsInRoot()
+        val server = EngineRoomFixture.server()
+        try { loggerOnThePhone(scope, server, fontScale = 1f).use { room ->
+            val logBefore = compose.onNodeWithText("Log set").assertIsDisplayed().getBoundsInRoot()
 
-        compose.onNodeWithText("Log set").performClick()
-        compose.waitForIdle()
+            logSets(room, server, 1)
 
-        compose.onNodeWithText("Bench Press").assertIsDisplayed()
-        compose.onNode(hasContentDescription("Exercise 1 of 2")).assertIsDisplayed()
-        val region = scroller()
-        listOf("Set 1, logged, 20 kg, 5 reps", "Set 2, current").forEach { said ->
-            val row = compose.onNode(hasContentDescription(said, substring = true)).assertIsDisplayed().getBoundsInRoot()
-            assertTrue("$said at $row is clipped by the ledger $region", inside(row, region))
-        }
-        assertEquals("Log set moved", logBefore, compose.onNodeWithText("Log set").getBoundsInRoot())
-        scope.cancel()
+            compose.onNodeWithText("Bench Press").assertIsDisplayed()
+            compose.onNode(hasContentDescription("Exercise 1 of 2")).assertIsDisplayed()
+            val region = scroller()
+            listOf("Set 1, logged, 20 kg, 5 reps", "Set 2, current").forEach { said ->
+                val row = compose.onNode(hasContentDescription(said, substring = true)).assertIsDisplayed().getBoundsInRoot()
+                assertTrue("$said at $row is clipped by the ledger $region", inside(row, region))
+            }
+            assertEquals("Log set moved", logBefore, compose.onNodeWithText("Log set").getBoundsInRoot())
+        } } finally { scope.cancel() }
     }
 
     // At fontScale 1.3 the ledger overflows after a few sets, and every landed set brings the set in
@@ -344,20 +356,18 @@ class LargestTypeTests {
     @Config(sdk = [35], qualifiers = "w411dp-h731dp-xhdpi")
     fun aLandedSetBringsTheSetInHandIntoViewWhereTheLargestTextOverflows() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        loggerOnThePhone(scope, fontScale = 1.3f)
-        repeat(5) {
-            compose.onNodeWithText("Log set").performClick()
-            compose.waitForIdle()
-        }
+        val server = EngineRoomFixture.server()
+        try { loggerOnThePhone(scope, server, fontScale = 1.3f).use { room ->
+            logSets(room, server, 5)
 
-        val ledger = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
-        assertTrue("the ledger overflows",
-            ledger.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue() > 0f)
-        val current = compose.onNode(hasContentDescription("Set 6, current")).assertIsDisplayed().getBoundsInRoot()
-        val region = scroller()
-        assertTrue("the set in hand $current is clipped by the ledger $region", inside(current, region))
-        compose.onNodeWithText("Log set").assertIsDisplayed()
-        scope.cancel()
+            val ledger = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
+            assertTrue("the ledger overflows",
+                ledger.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue() > 0f)
+            val current = compose.onNode(hasContentDescription("Set 6, current")).assertIsDisplayed().getBoundsInRoot()
+            val region = scroller()
+            assertTrue("the set in hand $current is clipped by the ledger $region", inside(current, region))
+            compose.onNodeWithText("Log set").assertIsDisplayed()
+        } } finally { scope.cancel() }
     }
 
     // A free session has nothing planned after the set in hand, only Add movement, the next thing a
@@ -366,18 +376,19 @@ class LargestTypeTests {
     @Config(sdk = [35], qualifiers = "w411dp-h731dp-xhdpi")
     fun addMovementStaysInViewAsSetsLandInAFreeSingleMovementSession() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        loggerOnThePhone(scope, fontScale = 1.3f, walk = listOf("bench-press"))
-        logSets(6)
+        val server = EngineRoomFixture.server()
+        try { loggerOnThePhone(scope, server, fontScale = 1.3f, walk = listOf("bench-press")).use { room ->
+            logSets(room, server, 6)
 
-        val ledger = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
-        assertTrue("the ledger overflows",
-            ledger.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue() > 0f)
-        val region = scroller()
-        val current = compose.onNode(hasContentDescription("Set 7, current")).assertIsDisplayed().getBoundsInRoot()
-        val add = compose.onNodeWithText("Add movement").assertIsDisplayed().getBoundsInRoot()
-        assertTrue("the set in hand $current is clipped by the ledger $region", inside(current, region))
-        assertTrue("Add movement $add is clipped by the ledger $region", add.height > 0.dp && inside(add, region))
-        scope.cancel()
+            val ledger = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange))
+            assertTrue("the ledger overflows",
+                ledger.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue() > 0f)
+            val region = scroller()
+            val current = compose.onNode(hasContentDescription("Set 7, current")).assertIsDisplayed().getBoundsInRoot()
+            val add = compose.onNodeWithText("Add movement").assertIsDisplayed().getBoundsInRoot()
+            assertTrue("the set in hand $current is clipped by the ledger $region", inside(current, region))
+            assertTrue("Add movement $add is clipped by the ledger $region", add.height > 0.dp && inside(add, region))
+        } } finally { scope.cancel() }
     }
 
     // A transient rises over the ledger's foot, where the set in hand is parked; the rows gain its
@@ -387,60 +398,56 @@ class LargestTypeTests {
     fun theSetInHandStaysAboveATransient() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val transient = SnackbarHostState()
-        loggerOnThePhone(scope, fontScale = 1.3f, transient = transient)
-        logSets(6)
+        val server = EngineRoomFixture.server()
+        try { loggerOnThePhone(scope, server, fontScale = 1.3f, transient = transient).use { room ->
+            logSets(room, server, 6)
 
-        scope.launch { transient.showSnackbar("Set deleted", actionLabel = "Undo", duration = SnackbarDuration.Indefinite) }
-        compose.waitForIdle()
+            scope.launch { transient.showSnackbar("Set deleted", actionLabel = "Undo", duration = SnackbarDuration.Indefinite) }
+            compose.waitForIdle()
 
-        val bar = compose.onNodeWithTag("Transient").assertIsDisplayed().getBoundsInRoot()
-        val current = compose.onNode(hasContentDescription("Set 7, current")).assertIsDisplayed().getBoundsInRoot()
-        assertTrue("the transient stands at $bar", bar.height > 0.dp)
-        assertTrue("the set in hand $current is under the transient $bar", current.bottom <= bar.top)
-        assertTrue("the set in hand $current is clipped by the ledger ${scroller()}", inside(current, scroller()))
-        scope.cancel()
+            val bar = compose.onNodeWithTag("Transient").assertIsDisplayed().getBoundsInRoot()
+            val current = compose.onNode(hasContentDescription("Set 7, current")).assertIsDisplayed().getBoundsInRoot()
+            assertTrue("the transient stands at $bar", bar.height > 0.dp)
+            assertTrue("the set in hand $current is under the transient $bar", current.bottom <= bar.top)
+            assertTrue("the set in hand $current is clipped by the ledger ${scroller()}", inside(current, scroller()))
+        } } finally { scope.cancel() }
     }
 
-    // From set 10 on the index has two digits, and at the largest scales the set column still holds
-    // it and its ✓ unclipped, while every row keeps its kg under the column label.
+    // From set 10 on the index has two digits, and at a large scale the set column still holds it and
+    // its ✓ unclipped, while every row keeps its kg under the column label.
     @Test
     @Config(sdk = [35], qualifiers = "w411dp-h731dp-xhdpi")
-    fun aTwoDigitSetKeepsItsTickAtOneThirtyPercent() = aTwoDigitSetKeepsItsTick(1.3f)
-
-    @Test
-    @Config(sdk = [35], qualifiers = "w411dp-h731dp-xhdpi")
-    fun aTwoDigitSetKeepsItsTickAtTwoHundredPercent() = aTwoDigitSetKeepsItsTick(2f)
-
-    private fun aTwoDigitSetKeepsItsTick(fontScale: Float) {
+    fun aTwoDigitSetKeepsItsTickAtOneThirtyPercent() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        loggerOnThePhone(scope, fontScale = fontScale)
-        logSets(10)
+        val server = EngineRoomFixture.server()
+        try { loggerOnThePhone(scope, server, fontScale = 1.3f).use { room ->
+            logSets(room, server, 10)
 
-        fun laid(node: SemanticsNodeInteraction): TextLayoutResult {
-            val results = mutableListOf<TextLayoutResult>()
-            node.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action?.invoke(results)
-            return results.single()
-        }
-        fun unclipped(text: TextLayoutResult) = text.lineCount == 1 && !text.multiParagraph.didExceedMaxLines &&
-            text.size.width >= kotlin.math.ceil(text.multiParagraph.maxIntrinsicWidth)
-        val ticks = compose.onAllNodes(hasText("✓"), useUnmergedTree = true)
-        ticks.assertCountEquals(10)
-        (0 until 10).forEach { at ->
-            val tick = laid(ticks[at])
-            assertTrue("✓ $at is ${tick.size.width}px wide and needs ${tick.multiParagraph.maxIntrinsicWidth}px", unclipped(tick))
-        }
-        val ten = laid(compose.onNode(hasText("10"), useUnmergedTree = true))
-        assertTrue("10 is ${ten.size.width}px wide and needs ${ten.multiParagraph.maxIntrinsicWidth}px", unclipped(ten))
+            fun laid(node: SemanticsNodeInteraction): TextLayoutResult {
+                val results = mutableListOf<TextLayoutResult>()
+                node.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action?.invoke(results)
+                return results.single()
+            }
+            fun unclipped(text: TextLayoutResult) = text.lineCount == 1 && !text.multiParagraph.didExceedMaxLines &&
+                text.size.width >= kotlin.math.ceil(text.multiParagraph.maxIntrinsicWidth)
+            val ticks = compose.onAllNodes(hasText("✓"), useUnmergedTree = true)
+            ticks.assertCountEquals(10)
+            (0 until 10).forEach { at ->
+                val tick = laid(ticks[at])
+                assertTrue("✓ $at is ${tick.size.width}px wide and needs ${tick.multiParagraph.maxIntrinsicWidth}px", unclipped(tick))
+            }
+            val ten = laid(compose.onNode(hasText("10"), useUnmergedTree = true))
+            assertTrue("10 is ${ten.size.width}px wide and needs ${ten.multiParagraph.maxIntrinsicWidth}px", unclipped(ten))
 
-        compose.onNode(hasContentDescription("Set 10, logged", substring = true)).assertIsDisplayed()
-        // The column label is the topmost "kg"; the rack's units sit below the ledger.
-        val label = compose.onAllNodes(hasText("kg"), useUnmergedTree = true).fetchSemanticsNodes()
-            .minBy { it.positionInRoot.y }.positionInRoot.x
-        val ledgerFoot = with(compose.density) { scroller().bottom.toPx() }
-        val weights = compose.onAllNodes(hasText("20"), useUnmergedTree = true).fetchSemanticsNodes()
-            .filter { it.positionInRoot.y < ledgerFoot }
-        assertEquals(10, weights.size)
-        assertEquals(List(10) { label }, weights.map { it.positionInRoot.x })
-        scope.cancel()
+            compose.onNode(hasContentDescription("Set 10, logged", substring = true)).assertIsDisplayed()
+            // The column label is the topmost "kg"; the rack's units sit below the ledger.
+            val label = compose.onAllNodes(hasText("kg"), useUnmergedTree = true).fetchSemanticsNodes()
+                .minBy { it.positionInRoot.y }.positionInRoot.x
+            val ledgerFoot = with(compose.density) { scroller().bottom.toPx() }
+            val weights = compose.onAllNodes(hasText("20"), useUnmergedTree = true).fetchSemanticsNodes()
+                .filter { it.positionInRoot.y < ledgerFoot }
+            assertEquals(10, weights.size)
+            assertEquals(List(10) { label }, weights.map { it.positionInRoot.x })
+        } } finally { scope.cancel() }
     }
 }

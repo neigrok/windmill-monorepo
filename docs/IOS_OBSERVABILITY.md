@@ -119,7 +119,10 @@ adoption approvals use `room_adoption_answered`, without workout counts, content
 
 Screen and choice events also record visits when the same screens are revisited after first run.
 Apple auth operations use static labels `auth_apple`, `auth_apple_create`, `auth_verify_code`,
-`auth_methods` and `auth_apple_remove`. Removal uses method `DELETE`; reading methods uses `GET`. Gym preferences and corrections use `PUT`.
+`auth_methods` and `auth_apple_remove`. Removal uses method `DELETE`; reading methods uses `GET`.
+Gym REST uses `GET` for reads, `POST` for Ask, Stop and share creation, `PUT` for Coach attachments
+and `DELETE` for share revocation and Coach conversations; gym records are written only through the
+engine.
 The simulator model follows the same auth-boundary failure reporting, without secrets in diagnostics.
 A legacy Apple door returning `created: true` is a decode failure; its session never reaches the engine.
 `auth_pending` marks authenticated sign-in awaiting engine recovery; `retry` resumes the retained

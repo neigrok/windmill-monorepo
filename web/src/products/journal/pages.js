@@ -2,7 +2,7 @@ import { syncSession } from '../../platform/sync/session.js';
 import { compareDocumentStamps, nextDocumentStamp } from '../../platform/sync/core/content.js';
 import { commit } from '../../platform/sync/client/commit.js';
 import { drawn } from '../../platform/sync/client/views.js';
-import { queueClaim, editPendingClaim, pendingClaimKey, reconcilePendingClaim } from '../../platform/sync/journal/client.js';
+import { queueClaim, editPendingClaim, pendingClaimKey, reconcilePendingClaim } from './claims.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
 
@@ -135,7 +135,8 @@ export function watchClaims(engine) {
   reconcile();
 }
 
-export async function corpus({ account = null, engine = syncSession.engine } = {}) {
+export function corpus({ account = null } = {}) {
+  const { engine } = syncSession;
   if (!engine || !syncSession.snapshot.ready) return { pages: [], source: 'failed' };
   const meta = engine.device.activeReplica.meta;
   if ((account ?? null) !== (meta.state === 'bound' ? meta.account : null)) return { pages: [], source: 'failed' };

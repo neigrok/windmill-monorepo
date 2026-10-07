@@ -147,7 +147,7 @@
     }
   },
   {
-    "name": "server REST-origin whole page",
+    "name": "server-origin whole page",
     "input": {
       "state": {
         "epoch": "ep-1",
@@ -10748,13 +10748,6 @@
           ]
         },
         "product": {
-          "journalAdoptions": {
-            "acct:A/journal": {
-              "M": 1760000000000,
-              "manifest": "858b2e698e525eedb9dfa86fff62eb613196c3946f5443936745d7c31663da6f",
-              "firstRunPolicy": "retire-existing"
-            }
-          },
           "journalPages": {
             "acct:A/journal": {
               "2026-10-01": {
@@ -10886,13 +10879,6 @@
           ]
         },
         "product": {
-          "journalAdoptions": {
-            "acct:A/journal": {
-              "M": 1760000000000,
-              "manifest": "858b2e698e525eedb9dfa86fff62eb613196c3946f5443936745d7c31663da6f",
-              "firstRunPolicy": "retire-existing"
-            }
-          },
           "journalPages": {
             "acct:A/journal": {
               "2026-10-01": {

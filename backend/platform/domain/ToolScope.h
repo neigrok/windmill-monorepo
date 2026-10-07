@@ -11,7 +11,7 @@
 
 namespace wm {
 
-// How far a CREDENTIAL reaches, enforced at the tool boundary; Access.h answers ownership instead.
+// How far a CREDENTIAL reaches, enforced at the tool boundary; ownership is checked by the product.
 // No level implies another: naming `write` grants neither `read` nor `delete`.
 enum class Access { read, write, del };  // `del` because `delete` is a keyword; the wire spells it out
 
@@ -75,8 +75,7 @@ private:
 };
 
 // Space-delimited `<product>:<level>` tokens. A malformed token or unknown level confers nothing,
-// so a typo at rest can only narrow a grant. The empty string means the account-wide grant: that is
-// what every code and token at rest carries.
+// so a typo at rest can only narrow a grant. The empty string means the account-wide grant.
 inline ToolScope parseToolScope(const std::string& spaceDelimited) {
   std::vector<std::string> tokens;
   std::istringstream stream(spaceDelimited);

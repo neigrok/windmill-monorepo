@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { failureReason, gymApi } from '../gymApi.js';
+import { failureReason } from '../errors.js';
+import { gymApi } from '../gymApi.js';
 import { expiryLine, SHARE_OFFER, SHARE_OFFER_LINE, SHARE_TERMS, shareLink } from './share.js';
 
 export function ShareWorkout({ sessionId }) {

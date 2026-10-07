@@ -15,13 +15,11 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -33,8 +31,6 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 import works.windmill.gym.domain.*
 import works.windmill.gym.store.*
-import works.windmill.platform.Account
-import works.windmill.platform.net.WindmillApi
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -52,43 +48,37 @@ class PlanningLargeTextTests {
     @get:Rule(order = 1) val compose = createComposeRule()
     @get:Rule(order = 2) val tmp = TemporaryFolder()
 
-    private fun store(scope: CoroutineScope): TrainingStore {
-        val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json")),
-            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
-            localLog = LocalLog(File(tmp.root, "local.json")),
-            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
-            scope = scope, sync = { null },
-        )
-        runBlocking { store.connect(Account(WindmillApi("https://windmill.works".toHttpUrl(), credential = { null }), null)) }
-        return store
+    // Signed out: the anonymous replica's store.
+    private fun store(room: EngineRoomFixture): TrainingStore {
+        runBlocking { room.select(null) }
+        return room.store
     }
 
     @Test
     fun largeTextUsesAFullWidthSignedLoadForTheOpenPlaceholder() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = store(scope)
-        var draft by mutableStateOf(RoutineDraft(name = "Pull").adding("chin-up"))
-        compose.setContent {
-            contentView = LocalView.current
-            RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {})
-        }
-        compose.onNodeWithText("Chin Up").performClick()
-        val sets = compose.onNodeWithContentDescription("Sets target").fetchSemanticsNode().positionInRoot
-        val reps = compose.onNodeWithContentDescription("Reps target").fetchSemanticsNode().positionInRoot
-        val weight = compose.onNodeWithContentDescription("Weight target").fetchSemanticsNode().positionInRoot
-        assertTrue(reps.y > sets.y)
-        assertTrue(weight.y > reps.y)
-        compose.onNodeWithContentDescription("Weight target").performScrollTo()
-        val layout = mutableListOf<TextLayoutResult>()
-        compose.onNodeWithText("—", useUnmergedTree = true)
-            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layout) }
-        assertTrue("the placeholder gets a full load field, beyond the old narrow column", layout.single().layoutInput.constraints.maxWidth >= 100)
-        assertEquals(1, layout.single().lineCount)
-        compose.onNodeWithContentDescription("Weight target").performScrollTo().assertIsNotEnabled()
-        compose.onNodeWithText("Set · open").assertIsDisplayed()
-        scope.cancel()
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val store = store(room)
+            var draft by mutableStateOf(RoutineDraft(name = "Pull").adding("chin-up"))
+            compose.setContent {
+                contentView = LocalView.current
+                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {})
+            }
+            compose.onNodeWithText("Chin Up").performClick()
+            val sets = compose.onNodeWithContentDescription("Sets target").fetchSemanticsNode().positionInRoot
+            val reps = compose.onNodeWithContentDescription("Reps target").fetchSemanticsNode().positionInRoot
+            val weight = compose.onNodeWithContentDescription("Weight target").fetchSemanticsNode().positionInRoot
+            assertTrue(reps.y > sets.y)
+            assertTrue(weight.y > reps.y)
+            compose.onNodeWithContentDescription("Weight target").performScrollTo()
+            val layout = mutableListOf<TextLayoutResult>()
+            compose.onNodeWithText("—", useUnmergedTree = true)
+                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layout) }
+            assertTrue("the placeholder gets a full load field, beyond the old narrow column", layout.single().layoutInput.constraints.maxWidth >= 100)
+            assertEquals(1, layout.single().lineCount)
+            compose.onNodeWithContentDescription("Weight target").performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithText("Set · open").assertIsDisplayed()
+        } } finally { scope.cancel() }
     }
 
     @Test

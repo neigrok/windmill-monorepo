@@ -1,5 +1,7 @@
 #include "products/gym/domain/Training.h"
 
+#include "platform/domain/sync/TextMerge.h"
+
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -156,11 +158,16 @@ double defaultStepKg(Equipment equipment) {
 
 Exercise::Exercise(ExerciseId id, std::string name, Pattern pattern, Equipment equipment,
                    double stepKg, bool custom, std::vector<std::string> aliases)
+    : Exercise(Stored{}, std::move(id), std::move(name), pattern, equipment, stepKg, custom,
+               std::move(aliases)) {
+  if (sync::isBlank(this->name)) throw InvalidTraining("an exercise needs a name");
+}
+
+Exercise::Exercise(Stored, ExerciseId id, std::string name, Pattern pattern, Equipment equipment,
+                   double stepKg, bool custom, std::vector<std::string> aliases)
     : id(std::move(id)), name(trimmedName(std::move(name))), pattern(pattern),
       equipment(equipment), stepKg(stepKg), custom(custom), aliases(std::move(aliases)) {
   if (this->id.empty()) throw InvalidTraining("an exercise needs an id");
-  // Trimmed first, so a name of nothing but blanks is refused here.
-  if (this->name.empty()) throw InvalidTraining("an exercise needs a name");
   if (this->name.size() > kMaxNameLength) throw InvalidTraining("exercise name too long");
   // A NUL truncates a name to its own head; non-UTF-8 bytes are refused by Postgres mid-transaction,
   // which would leave as a retryable 500 for a name that can never land.
@@ -250,28 +257,6 @@ void SetBatch::checkInterval(const Session& session, bool completedSession) cons
   }
 }
 
-Set corrected(const Set& stored, const SetFix& fix) {
-  return Set{stored.id,
-             stored.session,
-             stored.exercise,
-             stored.setNumber,
-             fix.weightKg.value_or(stored.weightKg),
-             fix.reps.value_or(stored.reps),
-             fix.kind.value_or(stored.kind),
-             fix.rpeNamed ? fix.rpe : stored.rpe,
-             fix.note.value_or(stored.note),
-             stored.completedAtMs};
-}
-
-std::optional<std::uint64_t> autoCloseAt(const Session& session,
-                                         std::optional<std::uint64_t> lastSetAtMs,
-                                         std::uint64_t nowMs) {
-  if (session.finishedAtMs) return std::nullopt;
-  const std::uint64_t lastActivityMs = lastSetAtMs.value_or(session.startedAtMs);
-  if (nowMs < lastActivityMs + kAutoCloseMs) return std::nullopt;
-  return lastActivityMs;
-}
-
 bool canFinishAt(const Session& session, std::uint64_t finishedAtMs) {
   if (finishedAtMs == 0 || finishedAtMs > kMaxInstantMs) return false;
   return finishedAtMs >= session.startedAtMs;
@@ -291,32 +276,16 @@ std::optional<ClosedBy> closedByFromStored(std::string_view text) {
   return std::nullopt;
 }
 
-std::uint64_t finishAfterStaleClose(const Session& staleClosed, std::uint64_t finishedAtMs) {
-  const std::uint64_t lastActivityMs = staleClosed.finishedAtMs.value_or(staleClosed.startedAtMs);
-  if (finishedAtMs > lastActivityMs + kAutoCloseMs) return lastActivityMs;
-  return std::max(lastActivityMs, finishedAtMs);
+bool isStale(const Session& open, const std::vector<Set>& sets, std::uint64_t nowMs) {
+  std::optional<std::uint64_t> latestSetMs;
+  for (const Set& set : sets) latestSetMs = std::max(latestSetMs.value_or(set.completedAtMs), set.completedAtMs);
+  const std::uint64_t lastActivityMs = latestSetMs.value_or(open.startedAtMs);
+  return nowMs >= lastActivityMs && nowMs - lastActivityMs >= kAutoCloseMs;
 }
 
 bool lateSetLands(const Session& session, std::uint64_t completedAtMs) {
   if (!session.finishedAtMs || session.closedBy != ClosedBy::stale) return false;
   return completedAtMs <= *session.finishedAtMs + kAutoCloseMs;
-}
-
-std::optional<Session> crossedBy(const Session& incoming, const std::vector<Session>& logged) {
-  // An empty span still takes up its instant, so it cannot slip in at a session's first moment.
-  const auto endOf = [](const Session& session) {
-    return std::max(session.finishedAtMs.value_or(session.startedAtMs), session.startedAtMs + 1);
-  };
-  std::optional<Session> earliest;
-  for (const Session& session : logged) {
-    if (session.id == incoming.id || !session.finishedAtMs) continue;
-    const bool crosses = session.startedAtMs < endOf(incoming) && incoming.startedAtMs < endOf(session);
-    if (!crosses) continue;
-    if (!earliest || session.startedAtMs < earliest->startedAtMs ||
-        (session.startedAtMs == earliest->startedAtMs && session.id < earliest->id))
-      earliest = session;
-  }
-  return earliest;
 }
 
 std::uint64_t shareExpiryAt(std::uint64_t nowMs) {

@@ -39,7 +39,7 @@ for (const [path, run] of [
 
 const server = new Set(['identity/table.json', 'envelope/credentials.json', 'push/serve.json',
   'pull/serve.json', 'pull/hello.json', 'live/death.json', 'machine/scope.json',
-  'gym/admit.json', 'gym/backfill.json', 'gym/metadata.json', 'journal/admit.json', 'journal/backfill.json', 'journal/revisions.json']);
+  'gym/admit.json', 'journal/admit.json', 'journal/revisions.json']);
 function inventory(directory = corpus, prefix = '') {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => entry.isDirectory()
     ? inventory(new URL(`${entry.name}/`, directory), `${prefix}${entry.name}/`)

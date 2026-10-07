@@ -8,8 +8,7 @@
 
 namespace wm {
 
-// One guarded upsert per write, every query scoped to the owner. A superseded non-empty body is
-// copied into journal_page_revision in the same transaction, and that trail is bounded there too.
+// The pages as the engine stores them, read; every query is scoped to the owner.
 class PgJournalRepository : public JournalRepository {
 public:
   explicit PgJournalRepository(std::shared_ptr<PgPool> pool);
@@ -18,7 +17,6 @@ public:
   std::vector<Page> range(const UserId& user, const LocalDate& from, const LocalDate& to) override;
   std::vector<Page> since(const UserId& user, const Hlc& cursor, int limit) override;
   std::vector<Page> all(const UserId& user) override;
-  PageWrite save(const Page& incoming) override;
 
 private:
   std::shared_ptr<PgPool> pool_;

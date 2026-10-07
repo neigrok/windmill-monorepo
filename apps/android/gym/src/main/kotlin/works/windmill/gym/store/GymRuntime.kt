@@ -4,7 +4,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import works.windmill.platform.Account
 import works.windmill.gym.domain.LogSetAcceptance
 import works.windmill.gym.domain.LogSetCommand
 import works.windmill.gym.domain.WorkoutChange
@@ -24,7 +23,6 @@ class GymRuntime(
     private val cachedOwner: () -> String?,
     private val authorityAvailable: () -> Boolean,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
-    private val cachedAccount: () -> Account? = { null },
     private val authorityRevision: () -> Long = { 0 },
 ) : WorkoutCommands {
     override val notification: StateFlow<WorkoutNotification?> get() = store.notification
@@ -34,7 +32,7 @@ class GymRuntime(
     override suspend fun restoreLocal() = withContext(dispatcher) {
         val current = Triple(cachedOwner(), authorityAvailable(), authorityRevision())
         if (!restored) {
-            store.restoreWorkout(current.first, current.second, cachedAccount())
+            store.restoreWorkout(current.first, current.second)
             restored = true
         } else if (current != authority) store.revokeWorkoutAuthority()
         authority = current

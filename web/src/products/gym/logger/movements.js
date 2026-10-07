@@ -96,9 +96,6 @@ export function movementOptions({ catalog = [], order = [], query = '', sessions
   const rows = (term === '' ? rest : rest.slice(0, PICKER_MATCHES)).map((each) => rowOf(each, term));
   const six = featured.map((each) => rowOf(each, term));
   if (rows.length > 0 || six.length > 0) return { featured: six, matches: rows, empty: null, create: null };
-  if (catalog.length === 0) {
-    return { featured: six, matches: rows, empty: 'The catalog didn’t load. It comes back when you have signal.', create: null };
-  }
   if (available.length === 0) {
     return { featured: six, matches: rows, empty: 'Every movement in the catalog is already in this session.', create: null };
   }

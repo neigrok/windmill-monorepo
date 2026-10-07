@@ -1,14 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { GymError } from '../../../../src/products/gym/gymApi.js';
+import { CommitError } from '../../../../src/platform/sync/client/commit.js';
+import { GymRefusal } from '../../../../src/products/gym/errors.js';
 import { BODY_COUNT_FROM as NAME_TWIN } from '../../../../src/products/gym/notes/notes.js';
 import { NAME_COUNT_FROM, NAME_MAX } from '../../../../src/products/gym/log.js';
 import {
   ADD_VERB, BODY_BYTES, BODY_COUNT_FROM, bodyBytes, byteCountLabel, DELETE_VERB,
   firstLineOf, FULL_LINE, HEAD_LINE, HONESTY_LINE, NOTES_TITLE, isBodyOverCap, isFull, mintNoteId, NOTE_DELETED,
   NOTE_PREFIX,
-  noteRefusal, NOTES_MAX, orderOf, PLACEHOLDER_TITLES, PRECEDENCE_CAPTION, reorderNotes,
+  noteAbove, noteRefusal, NOTES_MAX, PLACEHOLDER_TITLES, PRECEDENCE_CAPTION, reorderNotes,
   isTitleOverCap, showsByteCount, showsTitleCount,
   TITLE_COUNT_FROM, titleChars, titleCountLabel, TITLE_MAX,
 } from '../../../../src/products/gym/notes/notes.js';
@@ -106,12 +107,18 @@ test('reorderNotes moves one row, renumbers every position, and clamps to the li
   assert.deepEqual(reorderNotes(notes, 1, -4).map((each) => each.id), ['note_b', 'note_a', 'note_c']);
   assert.equal(reorderNotes(notes, 1, 1), notes);
   assert.equal(reorderNotes(notes, 7, 0), notes);
-  assert.deepEqual(orderOf(reorderNotes(notes, 2, 0)), ['note_c', 'note_a', 'note_b']);
+});
+
+test('a moved note is placed after the row drawn above it, so a held note keeps its own place', () => {
+  const moved = [note('note_c', 0), note('note_a', 1), note('note_held', 2), note('note_b', 3)];
+  assert.equal(noteAbove(moved, 'note_c', new Set()), null);
+  assert.equal(noteAbove(moved, 'note_b', new Set()), 'note_held');
+  assert.equal(noteAbove(moved, 'note_b', new Set(['note_held'])), 'note_a');
 });
 
 test('a refusal speaks in the store’s own words where it sent any, and finishes itself otherwise', () => {
-  assert.equal(noteRefusal(new GymError(400, 'a note runs to 500 bytes'), 'saved'), 'a note runs to 500 bytes');
-  assert.equal(noteRefusal(new GymError(409, '10 of 10 notes. Delete one to add another.', 'notes-full'), 'saved'), '10 of 10 notes. Delete one to add another.');
-  assert.equal(noteRefusal(new GymError(503, ''), 'saved'), 'That note wasn’t saved — the log didn’t answer. Try again when you have signal.');
+  assert.equal(noteRefusal(new GymRefusal('invalid', { sentence: 'a note runs to 500 bytes' }), 'saved'), 'a note runs to 500 bytes');
+  assert.equal(noteRefusal(new GymRefusal('cap', { sentence: '10 of 10 notes. Delete one to add another.' }), 'saved'), '10 of 10 notes. Delete one to add another.');
+  assert.equal(noteRefusal(new CommitError('the device store did not commit', 'store', { cause: new DOMException('storage refused', 'QuotaExceededError') }), 'saved'), 'That note wasn’t saved — this device couldn’t store it.');
   assert.equal(noteRefusal(undefined, 'deleted'), 'That note wasn’t deleted — the log didn’t answer. Try again when you have signal.');
 });

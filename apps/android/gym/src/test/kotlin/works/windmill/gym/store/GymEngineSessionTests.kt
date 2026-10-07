@@ -67,7 +67,7 @@ class GymEngineSessionTests {
     private suspend fun accountWorkout(room: EngineRoomFixture, server: ModelServer) {
         room.select("A")
         room.now += 1_000_000
-        room.training.startSession(SessionStart("remote01", room.now - 10_000, joinOpenSession = false))
+        room.training.startSession(SessionStart("remote01", room.now - 10_000))
         room.training.appendSet("remote01", SetWrite("remoteset", "back-squat", 60.0, 5, SetKind.Working, room.now - 9_000))
         room.sync(server)
     }
@@ -81,8 +81,8 @@ class GymEngineSessionTests {
                 val workout = source.workout()
                 val original = source.training.session(workout.id)!!
                 source.now = remote.now
-                GymEngineSession(source.engine, SyncRuntime(source.engine, transport(server) { source.now }, Tokens(), "test")).use { session ->
-                    session.beforeAccountChange = source.store::prepareEngineTransition
+                GymEngineSession(source.engine, SyncRuntime(source.engine, transport(server) { source.now }, Tokens(), "test"),
+                        beforeAccountChange = source.store::prepareEngineTransition).use { session ->
                     signIn(session)
                     source.selected = "A"
                     val workoutIntents = source.outbox().filter { entry ->
@@ -114,8 +114,8 @@ class GymEngineSessionTests {
                 val workout = source.workout(finish = false)
                 original = source.training.session(workout.id)!!
                 source.now = remote.now
-                GymEngineSession(source.engine, SyncRuntime(source.engine, transport(server) { source.now }, Tokens(), "test")).use { session ->
-                    session.beforeAccountChange = source.store::prepareEngineTransition
+                GymEngineSession(source.engine, SyncRuntime(source.engine, transport(server) { source.now }, Tokens(), "test"),
+                        beforeAccountChange = source.store::prepareEngineTransition).use { session ->
                     signIn(session); source.selected = "A"
                     source.store.connect(source.account())
                     assertEquals(original.session.id, source.store.session!!.id)
@@ -133,7 +133,7 @@ class GymEngineSessionTests {
             }
             EngineRoomFixture(directory, this, snapshot).use { restarted ->
                 assertEquals(original, restarted.training.session(original.session.id))
-                assertTrue(LegacyGymMigration.refusals(restarted.engine).any { it.id == original.session.id })
+                assertTrue(WorkoutImports(restarted.engine).refusals().any { it.id == original.session.id })
             }
         }
     }
@@ -150,8 +150,8 @@ class GymEngineSessionTests {
                 val workout = source.workout()
                 original = source.training.session(workout.id)!!
                 source.now = remote.now
-                GymEngineSession(source.engine, SyncRuntime(source.engine, transport(server) { source.now }, Tokens(), "test")).use { session ->
-                    session.beforeAccountChange = source.store::prepareEngineTransition
+                GymEngineSession(source.engine, SyncRuntime(source.engine, transport(server) { source.now }, Tokens(), "test"),
+                        beforeAccountChange = source.store::prepareEngineTransition).use { session ->
                     signIn(session); source.selected = "A"
                     server.refuse(code = Gym.Codes.payloadConflict)
                     source.sync(server)
@@ -164,7 +164,7 @@ class GymEngineSessionTests {
             }
             EngineRoomFixture(directory, this, snapshot).use { restarted ->
                 assertEquals(original, restarted.training.session(original.session.id))
-                assertTrue(LegacyGymMigration.refusals(restarted.engine).any { it.id == original.session.id })
+                assertTrue(WorkoutImports(restarted.engine).refusals().any { it.id == original.session.id })
             }
         }
     }

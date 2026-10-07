@@ -6,7 +6,7 @@ export function closingDeal(productLabels) {
   return [
     'Every device signs out and every connected tool loses its access, immediately.',
     `It closes the whole account, not one room — ${joinLabels(productLabels)} alike.`,
-    'Anything held only on this device stays on this device.',
+    'This account’s data on this device is discarded, including changes that haven’t reached the account.',
     'Export what you want to keep first — every export Windmill has is on this page.',
     'Signing in again is the undo, and it brings the account back whole.',
   ];

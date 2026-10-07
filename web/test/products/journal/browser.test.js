@@ -13,7 +13,7 @@ const fixture = `
   import { registry } from '/src/platform/sync/schema.js';
   import { syncSession } from '/src/platform/sync/session.js';
   import { usePages } from '/src/products/journal/usePages.js';
-  import { localDay } from '/src/products/journal/hlc.js';
+  import { localDay } from '/src/products/journal/localDay.js';
   export async function open(name) {
     window.engine = await BrowserSyncEngine.open({ name, registry,
       transport: { request() { throw new Error('offline'); }, openLive() { throw new Error('offline'); } },

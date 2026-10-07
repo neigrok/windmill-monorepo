@@ -34,11 +34,6 @@ struct ClientRole {
   std::string reason;
 };
 
-// A server file exercised by a named binary against its required store.
-struct ExternalRunner {
-  std::string binary;
-};
-
 // A file that is one value rather than a list of vectors (constants.json), checked whole in one case.
 struct FileCheck {
   std::function<void(const Json::Value& file)> check;
@@ -51,7 +46,7 @@ struct Transcript {
 
 // Keyed by a file's path under the corpus ("jcs/values.json"), or by a directory ("admit/") for every
 // file in it; a file's own key wins over its directory's.
-using Claims = std::map<std::string, std::variant<Runner, Pending, ClientRole, ExternalRunner, FileCheck, Transcript>>;
+using Claims = std::map<std::string, std::variant<Runner, Pending, ClientRole, FileCheck, Transcript>>;
 
 // `{"error": true}` when `answer` throws `Refusal`, the corpus's shape for a function that must fail.
 template <typename Refusal, typename Answer>
@@ -176,11 +171,6 @@ inline void registerCorpus(const std::filesystem::path& directory, const Claims&
     }
     if (const ClientRole* client = std::get_if<ClientRole>(&claim->second)) {
       const std::string reason = "client role: " + client->reason;
-      ::testing::Register{"sync_corpus/" + file, [reason] { SKIP(reason); }};
-      continue;
-    }
-    if (const ExternalRunner* external = std::get_if<ExternalRunner>(&claim->second)) {
-      const std::string reason = "external runner: " + external->binary;
       ::testing::Register{"sync_corpus/" + file, [reason] { SKIP(reason); }};
       continue;
     }

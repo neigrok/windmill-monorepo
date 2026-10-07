@@ -122,6 +122,8 @@ struct RoutineProposal {
 
   RoutineProposal(ProposalHead head, int baseRevision, std::string baseName,
                   std::string proposedName, std::vector<RoutineChange> changes);
+  RoutineProposal(Stored, ProposalHead head, int baseRevision, std::string baseName,
+                  std::string proposedName, std::vector<RoutineChange> changes);
 
   bool operator==(const RoutineProposal&) const = default;
 };
@@ -141,12 +143,5 @@ int countedChanges(const std::vector<RoutineEntry>& base, const std::vector<Rout
 // `loggedSets` are not the caller's to match. A replay answers with the stored proposal; anything
 // else must be refused.
 bool isReplayOf(const RoutineProposal& stored, const RoutineProposal& incoming);
-
-// The run rows `1..k` describe, renumbered 1..n — the document an Apply writes.
-std::vector<RoutineEntry> documentOf(const RoutineProposal& proposal);
-
-// Built from the base through the Routine constructor, so a proposal that could not be stored as a
-// plan is refused there. The revision moves.
-Routine appliedTo(const Routine& base, const RoutineProposal& proposal);
 
 }

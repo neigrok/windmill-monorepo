@@ -2,7 +2,6 @@
 
 #include "products/journal/domain/Passage.h"
 #include "products/journal/domain/SpanReconcile.h"
-#include "products/journal/application/JournalSwitches.h"
 
 #include <trantor/utils/Logger.h>
 
@@ -17,7 +16,7 @@
 namespace wm {
 
 EchoExplainer::EchoExplainer(EchoRepository& echoes, Segmenter& segmenter, Embedder& embedder,
-                             Curator& curator, PageService& pages)
+                             Curator& curator, JournalRepository& pages)
     : echoes_(echoes), segmenter_(segmenter), embedder_(embedder), curator_(curator), pages_(pages),
       heartbeat_("journal-echo-explain", "journal") {}
 
@@ -53,7 +52,7 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
   explained.curatorVersion = curator_.version();
   explained.persisted = echoes_.echoesFor(user, request.day, request.day);
 
-  const std::optional<Page> page = pages_.page(user, request.day);
+  const std::optional<Page> page = pages_.load(user, request.day);
   if (!page) return explained;
   explained.pageFound = true;
   explained.body = page->body;
@@ -86,13 +85,13 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
     for (const StoredSpan& span : stored) texts.push_back(span.text);
     explained.passages = locateUnits(page->body, texts);
     explained.unitsFromStorage = true;
-  } else if (explained.segmenterConfigured && !journal::journalWriteFrozen()) {
+  } else if (explained.segmenterConfigured) {
     const Segmentation cut = segmenter_.unitsOf(user, page->body);
     explained.passages = cut.passages;
     explained.unitsDiscarded = cut.discarded;
     if (!cut.ok) explained.error = "segmenter: " + cut.failure;
   }
-  if (journal::journalWriteFrozen() || !explained.embedderConfigured || explained.passages.empty()) return explained;
+  if (!explained.embedderConfigured || explained.passages.empty()) return explained;
 
   // 2 — embed. The vendor call this door always pays for.
   std::vector<std::string> texts;

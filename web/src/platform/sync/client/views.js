@@ -13,7 +13,8 @@ function pendingEntries(replica, scope, withHeld) {
   return replica.entries(scope).filter((entry) => PENDING.has(entry.state) || (withHeld && entry.state === 'held'));
 }
 
-function viewRecord(row) {
+// A confirmed row as a view record: texts as plain strings, serials copied.
+export function viewRecord(row) {
   const record = { t: row.t, id: row.id, ...latticeOf(row) };
   if (row.x) record.x = Object.fromEntries(Object.entries(row.x).map(([name, text]) => [name, text.text]));
   if (row.v) record.v = { ...row.v };

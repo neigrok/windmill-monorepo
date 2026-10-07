@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import works.windmill.gym.coach.AskThread
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
@@ -9,401 +10,463 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.*
-import works.windmill.gym.net.FakeTraining
-import works.windmill.gym.net.TrainingSyncing
-import works.windmill.platform.Account
-import works.windmill.platform.User
-import works.windmill.platform.net.WindmillApi
+import works.windmill.gym.net.FakeGymRest
+import works.windmill.gym.net.GymRest
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.*
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class TrainingFinishTests {
     @get:Rule val tmp = TemporaryFolder()
 
-    private fun TestScope.store(logs: Map<String, TrainingSyncing>, undoMs: Long = 9_000,
-        mintSession: () -> String = { "ses_mine" },
-    ): TrainingStore {
-        val folder = tmp.newFolder()
-        var nextSetId = 0
-        return TrainingStore(
-        queue = SetQueue(File(folder, "queue")),
-        deviceCopy = DeviceCopy(File(folder, "catalog")),
-        localLog = LocalLog(File(folder, "local")),
-        localPreferences = LocalPreferences(File(folder, "prefs")),
-        localBodyweight = LocalBodyweight(File(folder, "body")),
-        scope = backgroundScope,
-        now = { testScheduler.currentTime + 1_000 },
-        mintSession = mintSession, mintSet = { "set_${++nextSetId}" },
-        undoWindowMs = undoMs,
-        sync = { logs[it.user?.id] },
-        )
-    }
+    @Test fun finishRecoversAnAcceptedSetAfterATransientEngineCommitFailure() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            room.store.editRack(82.5, 5)
+            val offer = room.store.notification.value!!.offer!!
+            room.engine.failNextCommit()
+            assertTrue(room.store.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Unavailable)
+            val accepted = WorkoutControls(room.controlsFile).sets(live.id).single()
+            assertEquals(offer.id, accepted.id)
+            assertEquals(emptyList<TrainingSet>(), room.training.session(live.id)!!.sets)
 
-    private fun account(id: String = "a") = Account(
-        api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
-        user = User(id = id, email = "$id@example.com", name = id),
-    )
-
-    @Test fun finishCarriesCanonicalRowsAndKeepsTheHeldDeletionDeadline() = runTest {
-        val server = FakeTraining()
-        val log = object : TrainingSyncing by server {
-            override suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet {
-                val stored = server.appendSet(sessionId, write).copy(id = "set_canonical", setNumber = 7)
-                server.sets[sessionId] = mutableListOf(stored)
-                return stored
-            }
-        }
-        val store = store(mapOf("a" to log))
-        store.connect(account())
-        store.start()
-        store.choose("bench-press")
-        store.logSet(60.0, 8)
-        val local = store.sets.single()
-        store.withhold(Deletion.Set("ses_mine", local))
-        val deadline = store.withheld.single().untilMs
-        val closed = store.finish() as FinishOutcome.Closed
-        val canonical = local.copy(id = "set_canonical", setNumber = 7)
-        assertEquals(SessionDetail(server.stored.getValue("ses_mine"), listOf(canonical)), closed.detail)
-        assertEquals(listOf(WithheldDelete(Deletion.Set("ses_mine", canonical), deadline)), store.withheld)
-        assertEquals(store.withheld.single(), store.keepWithheld())
-        assertEquals(closed.detail, store.retainedSession(closed.detail))
-        assertTrue(server.removed.isEmpty())
-        assertNull(store.session)
-    }
-
-    @Test fun aFinishedWorkoutsQueuedOrPendingRefreshCannotReadOrReplaceTheNextAccount() = runTest {
-        for (startRefresh in listOf(false, true)) {
-            val first = FakeTraining()
-            val second = FakeTraining()
-            val secondSession = Session("ses_b", startedAtMs = 500, finishedAtMs = 800)
-            val secondSet = TrainingSet("set_b", "back-squat", 1, 80.0, 5, completedAtMs = 600)
-            second.open(secondSession)
-            second.sets[secondSession.id] = mutableListOf(secondSet)
-            val gate = CompletableDeferred<Unit>()
-            var closed = false
-            var refreshes = 0
-            val log = object : TrainingSyncing by first {
-                override suspend fun finishSession(sessionId: String, finishedAtMs: Long): Session =
-                    first.finishSession(sessionId, finishedAtMs).also { closed = true }
-
-                override suspend fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> {
-                    val rows = first.sessions(limit, before, beforeId)
-                    if (closed) { refreshes++; gate.await() }
-                    return rows
-                }
-            }
-            val store = store(mapOf("a" to log, "b" to second))
-            store.connect(account())
-            store.start()
-            store.choose("bench-press")
-            store.logSet(60.0, 8)
-            val performed = store.sets.single().copy(setNumber = 1)
-            val receipt = store.finish() as FinishOutcome.Closed
-            assertEquals(SessionDetail(first.stored.getValue("ses_mine"), listOf(performed)), receipt.detail)
-            assertEquals(receipt.detail, store.retainedSession(receipt.detail))
-            assertNull(store.session)
-            assertFalse(store.isFinishing)
-            if (startRefresh) runCurrent()
-            store.connect(account("b"))
-            val secondHistory = listOf(SessionSummary(secondSession, listOf(secondSet)))
-            assertEquals(secondHistory, store.allSessions)
-            gate.complete(Unit)
+            room.now += 60_000
+            val closed = room.store.finish() as FinishOutcome.Closed
             runCurrent()
-            assertEquals(if (startRefresh) 1 else 0, refreshes)
-            assertEquals(secondHistory, store.allSessions)
-            assertEquals(mapOf(secondSession.id to secondSession), second.stored)
-            assertEquals(mapOf(secondSession.id to listOf(secondSet)), second.sets)
-            assertEquals(mapOf(receipt.detail.session.id to receipt.detail.session), first.stored)
-            assertEquals(mapOf(receipt.detail.session.id to listOf(performed)), first.sets)
-            assertNull(store.session)
-            assertEquals(emptyList<TrainingSet>(), store.sets)
+            assertEquals("the receipt must come from the committed replica", room.training.session(live.id), closed.detail)
+            assertEquals("the durable accepted set must survive", listOf(accepted), closed.detail.sets)
+            assertNull(WorkoutControls(room.controlsFile).session)
+            assertEquals(emptyList<TrainingSet>(), WorkoutControls(room.controlsFile).sets(live.id))
         }
     }
 
-    @Test fun aDelayedFinishedPageCannotCloseTheNextWorkoutOrReplaceItsOffer() = runTest {
-        val server = FakeTraining()
-        val gate = CompletableDeferred<Unit>()
-        var holdRefresh = false
-        val log = object : TrainingSyncing by server {
-            override suspend fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> {
-                val page = server.sessions(limit, before, beforeId)
-                if (holdRefresh) { holdRefresh = false; gate.await() }
-                return page
+    @Test fun finishKeepsTheDurableAcceptedSetWhenEngineFailurePersistsUntilRetry() = runTest {
+        val events = mutableListOf<String>()
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
+            room.select(null)
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            room.store.editRack(82.5, 5)
+            val offer = room.store.notification.value!!.offer!!
+            room.engine.failNextCommit()
+            assertTrue(room.store.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Unavailable)
+            val accepted = WorkoutControls(room.controlsFile).sets(live.id).single()
+            room.now += 60_000
+
+            repeat(2) {
+                room.engine.failNextCommit()
+                assertEquals(FinishOutcome.Failed(WriteFailure.NoAnswer), room.store.finish())
+                runCurrent()
+                assertEquals(SessionDetail(live, emptyList()), room.training.session(live.id))
+                val durable = WorkoutControls(room.controlsFile)
+                assertEquals(live, durable.session)
+                assertEquals(listOf(accepted), durable.sets(live.id))
+                assertEquals(setOf(accepted.id), durable.workout.consumed)
+                assertEquals(live, room.store.session)
+                assertFalse(room.store.isFinishing)
+            }
+            assertEquals(listOf("gym.acceptSet", "gym.finish", "gym.finish"), failures)
+            assertEquals(listOf("gym_session_started"), events)
+
+            val closed = room.store.finish() as FinishOutcome.Closed
+            runCurrent()
+            assertEquals(listOf(accepted), closed.detail.sets)
+            assertEquals(room.training.session(live.id), closed.detail)
+            assertEquals(emptyList<TrainingSet>(), WorkoutControls(room.controlsFile).sets(live.id))
+            assertEquals(listOf("gym_session_started", "gym_session_finished"), events)
+        }
+    }
+
+    @Test fun restartBeforeFinishRecoversTheAcceptedSetFromDisk() = runTest {
+        for (owner in listOf(null, "alice")) {
+            val directory = tmp.newFolder()
+            val (snapshot, accepted, at) = EngineRoomFixture(directory, backgroundScope).use { room ->
+                room.select(owner)
+                val live = (room.store.start() as GymResult.Ok).value
+                room.store.choose("bench-press")
+                room.store.editRack(82.5, 5)
+                val offer = room.store.notification.value!!.offer!!
+                room.engine.failNextCommit()
+                assertTrue(room.store.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Unavailable)
+                assertEquals(emptyList<TrainingSet>(), room.training.session(live.id)!!.sets)
+                Triple(room.engine.snapshot(), WorkoutControls(room.controlsFile, owner).sets(live.id).single(), room.now)
+            }
+            EngineRoomFixture(directory, backgroundScope, snapshot).use { cold ->
+                cold.now = at + 60_000
+                cold.selected = owner
+                cold.store.restoreWorkout(owner, authorized = true)
+                cold.store.connect(cold.account())
+                assertEquals(listOf(accepted), cold.store.sets)
+                val closed = cold.store.finish() as FinishOutcome.Closed
+                runCurrent()
+                assertEquals(listOf(accepted), closed.detail.sets)
+                assertEquals(closed.detail, cold.training.session(closed.session.id))
+                val durable = WorkoutControls(cold.controlsFile, owner)
+                assertNull(durable.session)
+                assertEquals(emptyList<TrainingSet>(), durable.sets(closed.session.id))
             }
         }
-        val ids = mutableListOf("ses_first", "ses_next")
-        val store = store(mapOf("a" to log), mintSession = { ids.removeAt(0) })
-        store.connect(account())
-        store.start()
-        store.choose("bench-press")
-        store.logSet(60.0, 8)
-        holdRefresh = true
-        val receipt = store.finish() as FinishOutcome.Closed
-        runCurrent()
-        assertFalse(holdRefresh)
-        advanceTimeBy(1_000)
-        store.start()
-        store.choose("back-squat")
-        store.logSet(100.0, 5)
-        runCurrent()
-        val live = store.session!!
-        val rows = store.sets.toList()
-        val notification = store.notification.value!!
-        val queueFile = tmp.root.walkTopDown().single { it.name == "queue" }
-        val queue = queueFile.readText()
-        gate.complete(Unit)
-        runCurrent()
-
-        assertEquals("ses_next", live.id)
-        assertEquals(live, store.session)
-        assertEquals(rows, store.sets)
-        assertEquals(notification, store.notification.value)
-        assertEquals(queue, queueFile.readText())
-        assertEquals(receipt.detail, store.retainedSession(receipt.detail))
-        assertEquals(mapOf(receipt.detail.session.id to receipt.detail.session, live.id to live), server.stored)
-        assertTrue(server.stored.getValue(live.id).isOpen)
     }
 
-    @Test fun aNewerHistoryReadWinsOverTheDelayedPostFinishSnapshot() = runTest {
-        val server = FakeTraining()
-        val gate = CompletableDeferred<Unit>()
-        var holdRefresh = false
-        val log = object : TrainingSyncing by server {
-            override suspend fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> {
-                val page = server.sessions(limit, before, beforeId)
-                if (holdRefresh) { holdRefresh = false; gate.await() }
-                return page
+    @Test fun finishReadsEngineCorrectionsAndDeletionsWithoutRevivingStaleControls() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            room.store.logSet(60.0, 8)
+            room.store.logSet(62.5, 6)
+            val (kept, deleted) = room.store.sets
+            val corrected = room.training.fixSet(live.id, kept.id, SetFix(reps = 9))
+            room.training.deleteSet(live.id, deleted.id)
+            val added = room.training.appendSet(live.id,
+                SetWrite("engineSet", "back-squat", 100.0, 5, SetKind.Working, ++room.now))
+            assertEquals(listOf(kept, deleted), room.store.sets)
+
+            room.now += 60_000
+            val closed = room.store.finish() as FinishOutcome.Closed
+            runCurrent()
+            assertEquals(listOf(corrected, added), closed.detail.sets)
+            assertEquals(room.training.session(live.id), closed.detail)
+        }
+    }
+
+    @Test fun refreshAndAccountChangeRecoverAnAcceptedSetAfterEngineFailure() = runTest {
+        for (changeAccount in listOf(false, true)) EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            val offer = room.store.notification.value!!.offer!!
+            room.engine.failNextCommit()
+            assertTrue(room.store.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Unavailable)
+            val accepted = WorkoutControls(room.controlsFile).sets(live.id).single()
+
+            if (changeAccount) room.select("alice") else room.store.refreshEngine()
+            assertEquals(listOf(accepted), WorkoutControls(room.controlsFile, room.selected).sets(live.id))
+            assertEquals(listOf(accepted), room.store.sets)
+            assertEquals(listOf(accepted), room.training.session(live.id)!!.sets)
+            room.now += 60_000
+            val closed = room.store.finish() as FinishOutcome.Closed
+            assertEquals(listOf(accepted), closed.detail.sets)
+            assertEquals(room.training.session(live.id), closed.detail)
+        }
+    }
+
+    @Test fun startingAfterAutoCloseRecoversThePreviousWorkoutsAcceptedSet() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            val offer = room.store.notification.value!!.offer!!
+            room.engine.failNextCommit()
+            assertTrue(room.store.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Unavailable)
+            val accepted = WorkoutControls(room.controlsFile).sets(live.id).single()
+            room.now += AutoClose.AFTER_MS + 60_000
+
+            val next = (room.store.start() as GymResult.Ok).value
+            assertNotEquals(live.id, next.id)
+            assertEquals(SessionDetail(live.copy(finishedAtMs = accepted.completedAtMs), listOf(accepted)), room.training.session(live.id))
+            assertEquals(next, room.store.session)
+            assertEquals(emptyList<TrainingSet>(), room.store.sets)
+        }
+    }
+
+    @Test fun autoCloseKeepsTheAcceptedSetUntilRecoverySucceeds() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            val offer = room.store.notification.value!!.offer!!
+            room.engine.failNextCommit()
+            assertTrue(room.store.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Unavailable)
+            val accepted = WorkoutControls(room.controlsFile).sets(live.id).single()
+
+            room.now += AutoClose.AFTER_MS + 60_000
+            room.engine.failNextCommit()
+            room.store.reconcileWorkoutTime()
+            assertEquals(live, room.store.session)
+            assertEquals(listOf(accepted), WorkoutControls(room.controlsFile).sets(live.id))
+            assertEquals(emptyList<TrainingSet>(), room.training.session(live.id)!!.sets)
+            room.store.reconcileWorkoutTime()
+            assertEquals(SessionDetail(live.copy(finishedAtMs = accepted.completedAtMs), listOf(accepted)), room.training.session(live.id))
+            assertNull(room.store.session)
+            assertEquals(emptyList<TrainingSet>(), WorkoutControls(room.controlsFile).sets(live.id))
+        }
+    }
+
+    @Test fun aRefusedRecoveryKeepsTheAcceptedSetEvenIfItsWorkoutIsGone() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            val offer = room.store.notification.value!!.offer!!
+            room.engine.failNextCommit()
+            assertTrue(room.store.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Unavailable)
+            val accepted = WorkoutControls(room.controlsFile).sets(live.id).single()
+            room.now += AutoClose.AFTER_MS + 60_000
+            room.training.discardSession(live.id)
+
+            assertEquals(FinishOutcome.Failed(WriteFailure.Refused("That is no longer on the log.")), room.store.finish())
+            assertNull(room.training.session(live.id))
+            assertEquals(listOf(accepted), WorkoutControls(room.controlsFile).sets(live.id))
+            assertEquals(live, room.store.session)
+        }
+    }
+
+    @Test fun finishCarriesItsRowsAndKeepsTheHeldDeletionDeadline() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("a")
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            room.store.logSet(60.0, 8)
+            val local = room.store.sets.single()
+            room.store.withhold(Deletion.Set(live.id, local))
+            val deadline = room.store.withheld.single().untilMs
+            val closed = room.store.finish() as FinishOutcome.Closed
+            assertEquals(room.training.session(live.id), closed.detail)
+            assertEquals(listOf(local), closed.detail.sets)
+            assertEquals(listOf(WithheldDelete(Deletion.Set(live.id, local), deadline)), room.store.withheld)
+            assertEquals(room.store.withheld.single(), room.store.keepWithheld())
+            assertEquals(closed.detail, room.store.retainedSession(closed.detail))
+            assertEquals("nothing was deleted", listOf(local), room.training.session(live.id)!!.sets)
+            assertNull(room.store.session)
+        }
+    }
+
+    @Test fun aFinishedWorkoutsQueuedRefreshCannotReadOrReplaceTheNextAccount() = runTest {
+        val server = EngineRoomFixture.server()
+        val secondHistory = EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
+            other.select("b")
+            other.training.startSession(SessionStart("remote01", other.now - 10_000))
+            other.training.appendSet("remote01", SetWrite("remoteset", "back-squat", 80.0, 5, SetKind.Working, other.now - 9_000))
+            other.training.finishSession("remote01", other.now - 5_000)
+            other.sync(server)
+            other.training.sessions(TrainingStore.logPage, null, null)
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("a")
+            room.store.start()
+            room.store.choose("bench-press")
+            room.store.logSet(60.0, 8)
+            val performed = room.store.sets.single()
+            room.now += 60_000
+            val receipt = room.store.finish() as FinishOutcome.Closed
+            assertEquals(listOf(performed), receipt.detail.sets)
+            assertEquals(receipt.detail, room.store.retainedSession(receipt.detail))
+            assertNull(room.store.session)
+            assertFalse(room.store.isFinishing)
+            assertEquals("the finish's refresh is still queued", emptyList<SessionSummary>(), room.store.logged)
+            room.select("b"); room.pull(server); room.store.refreshEngine()
+            assertEquals(secondHistory, room.store.allSessions)
+            runCurrent()
+            assertEquals(secondHistory, room.store.allSessions)
+            assertEquals(listOf("remote01"), room.training.details().map { it.session.id })
+            assertNull(room.store.session)
+            assertEquals(emptyList<TrainingSet>(), room.store.sets)
+            room.select("a")
+            assertEquals(listOf(receipt.detail), room.training.details())
+        }
+    }
+
+    @Test fun aQueuedFinishRefreshCannotCloseTheNextWorkoutOrReplaceItsOffer() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("a")
+            room.store.start()
+            room.store.choose("bench-press")
+            room.store.logSet(60.0, 8)
+            room.now += 60_000
+            val receipt = room.store.finish() as FinishOutcome.Closed
+            room.store.start()
+            room.store.choose("back-squat")
+            room.store.logSet(100.0, 5)
+            val live = room.store.session!!
+            val rows = room.store.sets.toList()
+            val notification = room.store.notification.value!!
+            val queueFile = File(room.directory, "control.json")
+            val queue = queueFile.readText()
+            assertEquals("the finish's refresh is still queued", emptyList<SessionSummary>(), room.store.logged)
+            runCurrent()
+
+            assertEquals("session02", live.id)
+            assertEquals(live, room.store.session)
+            assertEquals(rows, room.store.sets)
+            assertEquals(notification, room.store.notification.value)
+            assertEquals(queue, queueFile.readText())
+            assertEquals(receipt.detail, room.store.retainedSession(receipt.detail))
+            assertEquals(mapOf(receipt.detail.session.id to receipt.detail.session, live.id to live),
+                room.training.details().associate { it.session.id to it.session })
+            assertTrue(room.training.session(live.id)!!.session.isOpen)
+        }
+    }
+
+    @Test fun aNewerHistoryReadWinsOverTheQueuedPostFinishRefresh() = runTest {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
+                room.select("a")
+                other.now = room.now + 600_000
+                other.select("a")
+                room.store.start()
+                room.store.choose("bench-press")
+                room.store.logSet(60.0, 8)
+                room.now += 60_000
+                val receipt = room.store.finish() as FinishOutcome.Closed
+                other.training.startSession(SessionStart("remote01", other.now - 10_000))
+                other.training.appendSet("remote01", SetWrite("remoteset", "back-squat", 100.0, 5, SetKind.Working, other.now - 9_000))
+                other.training.finishSession("remote01", other.now - 5_000)
+                other.sync(server)
+                room.sync(server)
+                assertEquals("the finish's refresh is still queued", emptyList<SessionSummary>(), room.store.logged)
+                room.store.refreshEngine()
+                val expected = room.training.sessions(TrainingStore.logPage, null, null)
+                assertEquals(listOf("remote01", receipt.detail.session.id), expected.map { it.id })
+                assertEquals(expected, room.store.allSessions)
+                runCurrent()
+                assertEquals(expected, room.store.allSessions)
+                assertEquals(Older.End, room.store.older)
+                assertEquals(room.training.session(receipt.detail.session.id), room.store.retainedSession(receipt.detail))
+                assertEquals(receipt.detail.sets.map { it.id }, room.store.retainedSession(receipt.detail).sets.map { it.id })
+                assertNull(room.store.session)
             }
         }
-        val store = store(mapOf("a" to log))
-        store.connect(account())
-        store.start()
-        store.choose("bench-press")
-        store.logSet(60.0, 8)
-        holdRefresh = true
-        val receipt = store.finish() as FinishOutcome.Closed
-        runCurrent()
-        val later = Session("ses_later", startedAtMs = 2_000, finishedAtMs = 3_000)
-        val laterSet = TrainingSet("set_later", "back-squat", 1, 100.0, 5, completedAtMs = 2_500)
-        server.open(later)
-        server.sets[later.id] = mutableListOf(laterSet)
-        store.connect(account())
-        val expected = listOf(SessionSummary(later, listOf(laterSet)), SessionSummary(receipt.detail.session, receipt.detail.sets))
-        assertEquals(expected, store.allSessions)
-        gate.complete(Unit)
-        runCurrent()
-        assertEquals(expected, store.allSessions)
-        assertEquals(Older.End, store.older)
-        assertEquals(receipt.detail, store.retainedSession(receipt.detail))
-        assertNull(store.session)
     }
 
-    @Test fun aPostFinishOpenDetailCannotReplaceAWorkoutAdoptedByANewerRead() = runTest {
-        val server = FakeTraining()
-        val gate = CompletableDeferred<Unit>()
-        var detailPending = false
-        val log = object : TrainingSyncing by server {
-            override suspend fun session(id: String): SessionDetail? {
-                val detail = server.session(id)?.let { it.copy(sets = it.sets.toList()) }
-                if (id == "ses_remote") { detailPending = true; gate.await() }
-                return detail
+    @Test fun aQueuedPostFinishRefreshCannotReplaceAWorkoutAdoptedByANewerRead() = runTest {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
+                room.select("a")
+                other.now = room.now + 600_000
+                other.select("a")
+                room.store.start()
+                room.store.choose("bench-press")
+                room.store.logSet(60.0, 8)
+                room.now += 60_000
+                room.store.finish()
+                other.training.startSession(SessionStart("remote01", other.now - 10_000))
+                other.training.appendSet("remote01", SetWrite("remoteset", "bench-press", 80.0, 5, SetKind.Working, other.now - 9_000))
+                other.training.finishSession("remote01", other.now - 8_000)
+                other.training.startSession(SessionStart("remote02", other.now - 5_000))
+                other.training.appendSet("remote02", SetWrite("remotenext", "back-squat", 100.0, 5, SetKind.Working, other.now - 4_000))
+                other.sync(server)
+                room.sync(server)
+                assertEquals("the finish's refresh is still queued", emptyList<SessionSummary>(), room.store.logged)
+                room.store.refreshEngine()
+                val next = room.training.session("remote02")!!
+                assertEquals(next.session, room.store.session)
+                assertEquals(next.sets, room.store.sets)
+                val notification = room.store.notification.value!!
+                val history = room.store.allSessions.toList()
+                val queueFile = File(room.directory, "control.json")
+                val queue = queueFile.readText()
+                runCurrent()
+
+                assertEquals(next.session, room.store.session)
+                assertEquals(next.sets, room.store.sets)
+                assertEquals(notification, room.store.notification.value)
+                assertEquals(history, room.store.allSessions)
+                assertEquals(queue, queueFile.readText())
+                assertEquals(next, room.training.session("remote02"))
+                assertTrue(next.session.isOpen)
             }
         }
-        val store = store(mapOf("a" to log))
-        store.connect(account())
-        store.start()
-        store.choose("bench-press")
-        store.logSet(60.0, 8)
-        store.finish()
-        val remote = Session("ses_remote", startedAtMs = 1_000)
-        server.open(remote)
-        server.sets[remote.id] = mutableListOf(TrainingSet("remote_set", "bench-press", 1, 80.0, 5, completedAtMs = 1_000))
-        runCurrent()
-        assertTrue(detailPending)
-        server.stored[remote.id] = remote.copy(finishedAtMs = 1_000)
-        val next = Session("ses_next", startedAtMs = 1_000)
-        val nextSet = TrainingSet("next_set", "back-squat", 1, 100.0, 5, completedAtMs = 1_000)
-        server.open(next)
-        server.sets[next.id] = mutableListOf(nextSet)
-        store.connect(account())
-        val notification = store.notification.value!!
-        val history = store.allSessions.toList()
-        val queueFile = tmp.root.walkTopDown().single { it.name == "queue" }
-        val queue = queueFile.readText()
-        gate.complete(Unit)
-        runCurrent()
-
-        assertEquals(next, store.session)
-        assertEquals(listOf(nextSet), store.sets)
-        assertEquals(notification, store.notification.value)
-        assertEquals(history, store.allSessions)
-        assertEquals(queue, queueFile.readText())
-        assertEquals(next, server.stored.getValue(next.id))
-        assertEquals(listOf(nextSet), server.sets.getValue(next.id))
     }
 
-    @Test fun aCorrectionFiledDuringTheAppendPatchesItsCanonicalId() = runTest {
-        val server = FakeTraining()
-        val gate = CompletableDeferred<Unit>()
-        val log = object : TrainingSyncing by server {
-            override suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet {
-                gate.await()
-                val stored = server.appendSet(sessionId, write).copy(id = "set_canonical", setNumber = 7)
-                server.sets[sessionId] = mutableListOf(stored)
-                return stored
-            }
+    @Test fun aCorrectionNotYetOnTheLogStaysOwedAndLandsOnTheNextSync() = runTest {
+        val server = EngineRoomFixture.server()
+        val (sessionId, corrected) = EngineRoomFixture(tmp.newFolder(), backgroundScope, undoWindowMs = 0).use { room ->
+            room.select("a")
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            room.store.logSet(60.0, 8)
+            val logged = room.store.sets.single()
+            val fix = SetFix(reps = 9, note = "kept input")
+            assertEquals(FixOutcome.Corrected(fix.corrected(logged)), room.store.fixSet(live.id, logged.id, fix))
+            runCurrent()
+            assertEquals(listOf(fix.corrected(logged)), room.store.sets)
+            assertEquals(listOf(fix.corrected(logged)), room.training.session(live.id)!!.sets)
+            assertEquals(1, room.store.strandedCount)
+            room.sync(server); room.store.refreshEngine()
+            val numbered = fix.corrected(logged).copy(setNumber = 1)
+            assertEquals("the log numbers the set it took", listOf(numbered), room.store.sets)
+            assertEquals(0, room.store.strandedCount)
+            live.id to numbered
         }
-        val store = store(mapOf("a" to log), undoMs = 0)
-        store.connect(account())
-        store.start()
-        store.choose("bench-press")
-        val append = launch { store.logSet(60.0, 8) }
-        runCurrent()
-        val filed = TrainingSet("set_2", "bench-press", null, 60.0, 9, completedAtMs = 1_000)
-        assertEquals(FixOutcome.Corrected(filed), store.fixSet("ses_mine", "set_2", SetFix(reps = 9)))
-        assertEquals(listOf(filed), store.sets)
-        assertTrue(server.fixes.isEmpty())
-        gate.complete(Unit)
-        append.join()
-        runCurrent()
-        val expected = TrainingSet("set_canonical", "bench-press", 7, 60.0, 9, completedAtMs = 1_000)
-        assertEquals(listOf(Triple("ses_mine", "set_canonical", SetFix(expected))), server.fixes)
-        assertEquals(listOf(expected), server.sets.getValue("ses_mine"))
-        assertEquals(listOf(expected), store.sets)
-        assertEquals(listOf(expected), (store.finish() as FinishOutcome.Closed).detail.sets)
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { other ->
+            other.select("a"); other.pull(server)
+            assertEquals(listOf(corrected), other.training.session(sessionId)!!.sets)
+        }
     }
 
-    @Test fun aCorrectionTheLogCannotTakeYetStaysOwedAndLandsOnTheNextWalk() = runTest {
-        val server = FakeTraining()
-        val gate = CompletableDeferred<Unit>()
-        server.onAppend = { gate.await() }
-        val store = store(mapOf("a" to server), undoMs = 0)
-        store.connect(account())
-        store.start()
-        store.choose("bench-press")
-        val append = launch { store.logSet(60.0, 8) }
-        runCurrent()
-        val fix = SetFix(reps = 9, note = "kept input")
-        val logged = TrainingSet("set_2", "bench-press", null, 60.0, 8, completedAtMs = 1_000)
-        server.refuseFix = { IOException("offline") }
-        assertEquals(FixOutcome.Corrected(fix.corrected(logged)), store.fixSet("ses_mine", "set_2", fix))
-        gate.complete(Unit)
-        append.join()
-        runCurrent()
-        val stored = TrainingSet("set_2", "bench-press", 1, 60.0, 8, completedAtMs = 1_000)
-        assertEquals(listOf(stored), server.sets.getValue("ses_mine"))
-        assertEquals(listOf(fix.corrected(stored)), store.sets)
-        assertEquals(1, store.strandedCount)
-        server.refuseFix = { null }
-        store.flushPendingSets()
-        assertEquals("every attempt carried the one correction",
-            setOf(Triple("ses_mine", "set_2", SetFix(fix.corrected(stored)))), server.fixes.toSet())
-        assertEquals(listOf(fix.corrected(stored)), server.sets.getValue("ses_mine"))
-        assertEquals(listOf(fix.corrected(stored)), store.sets)
-        assertEquals(0, store.strandedCount)
+    // A correction filed on the live session lands before the finish closes it, so the closed
+    // workout shows it.
+    @Test fun finishCarriesAnOwedCorrectionAndTheClosedWorkoutShowsIt() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, undoWindowMs = 0).use { room ->
+            room.select("a")
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            room.store.logSet(60.0, 8)
+            val logged = room.store.sets.single()
+            assertEquals(FixOutcome.Corrected(logged.copy(reps = 9)), room.store.fixSet(live.id, logged.id, SetFix(reps = 9)))
+            val fixed = logged.copy(reps = 9)
+            val closed = room.store.finish() as FinishOutcome.Closed
+            assertEquals(listOf(fixed), closed.detail.sets)
+            assertEquals(listOf(fixed), room.training.session(live.id)!!.sets)
+            assertEquals(listOf(fixed), (room.store.sessionDetail(live.id) as GymResult.Ok).value.sets)
+        }
     }
 
-    // A correction still owed keeps the session open: the closed workout is drawn from the log, and
-    // a PATCH landing after the finish would race any later fix of the past session.
-    @Test fun finishWaitsForAnOwedCorrectionAndTheClosedWorkoutShowsIt() = runTest {
-        val server = FakeTraining()
-        val store = store(mapOf("a" to server), undoMs = 0)
-        store.connect(account())
-        store.start()
-        store.choose("bench-press")
-        store.logSet(60.0, 8)
-        val logged = TrainingSet("set_2", "bench-press", 1, 60.0, 8, completedAtMs = 1_000)
-        assertEquals(listOf(logged), store.sets)
-        server.refuseFix = { IOException("offline") }
-        store.fixSet("ses_mine", "set_2", SetFix(reps = 9))
-        runCurrent()
-
-        assertEquals(FinishOutcome.Stranded(1), store.finish())
-        assertEquals(emptyList<Pair<String, Long>>(), server.finished)
-        assertEquals(listOf(logged), server.sets.getValue("ses_mine"))
-
-        server.refuseFix = { null }
-        val fixed = logged.copy(reps = 9)
-        val closed = store.finish() as FinishOutcome.Closed
-        assertEquals(listOf(fixed), closed.detail.sets)
-        assertEquals(listOf(fixed), server.sets.getValue("ses_mine"))
-        assertEquals(listOf(fixed), (store.sessionDetail("ses_mine") as GymResult.Ok).value.sets)
+    @Test fun finishCarriesAnOwedDeleteAndTheClosedWorkoutLacksTheRow() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, undoWindowMs = 0).use { room ->
+            room.select("a")
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            room.store.logSet(60.0, 8)
+            room.store.logSet(62.5, 6)
+            val (kept, deleted) = room.store.sets
+            assertNull(room.store.deleteSet(live.id, deleted.id))
+            val closed = room.store.finish() as FinishOutcome.Closed
+            assertEquals(listOf(kept), closed.detail.sets)
+            assertEquals(listOf(kept), room.training.session(live.id)!!.sets)
+            assertEquals(listOf(kept), (room.store.sessionDetail(live.id) as GymResult.Ok).value.sets)
+        }
     }
 
-    @Test fun finishWaitsForAnOwedDeleteAndTheClosedWorkoutLacksTheRow() = runTest {
-        val server = FakeTraining()
-        val store = store(mapOf("a" to server), undoMs = 0)
-        store.connect(account())
-        store.start()
-        store.choose("bench-press")
-        store.logSet(60.0, 8)
-        store.logSet(62.5, 6)
-        val (kept, deleted) = store.sets
-        server.refuseDelete = IOException("offline")
-        assertNull(store.deleteSet("ses_mine", deleted.id))
-        runCurrent()
-
-        assertEquals(FinishOutcome.Stranded(1), store.finish())
-        assertEquals(emptyList<Pair<String, Long>>(), server.finished)
-        assertEquals(listOf(kept, deleted), server.sets.getValue("ses_mine"))
-
-        server.refuseDelete = null
-        val closed = store.finish() as FinishOutcome.Closed
-        assertEquals(listOf(kept), closed.detail.sets)
-        assertEquals(listOf(kept), server.sets.getValue("ses_mine"))
-        assertEquals(listOf(kept), (store.sessionDetail("ses_mine") as GymResult.Ok).value.sets)
+    @Test fun anAccountChangeAfterACorrectionKeepsItWithItsOwnAccount() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, undoWindowMs = 0).use { room ->
+            room.select("a")
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            room.store.logSet(60.0, 8)
+            val logged = room.store.sets.single()
+            assertEquals(FixOutcome.Corrected(logged.copy(reps = 9)), room.store.fixSet(live.id, logged.id, SetFix(reps = 9)))
+            assertEquals("the correction is in the replica at once", listOf(logged.copy(reps = 9)), room.training.session(live.id)!!.sets)
+            room.select("b")
+            runCurrent()
+            assertEquals(emptyList<TrainingSet>(), room.store.sets)
+            assertNull(room.store.session)
+            assertEquals(emptyList<SessionDetail>(), room.training.details())
+            room.select("a")
+            assertEquals(live.id, room.store.session!!.id)
+            assertEquals(listOf(logged.copy(reps = 9)), room.store.sets)
+            assertEquals(listOf(logged.copy(reps = 9)), room.training.session(live.id)!!.sets)
+        }
     }
 
-    @Test fun accountChangeDuringAppendDiscardsItsReplyAndSendsNoCorrection() = runTest {
-        val first = FakeTraining()
-        val second = FakeTraining()
-        val gate = CompletableDeferred<Unit>()
-        first.onAppend = { gate.await() }
-        val store = store(mapOf("a" to first, "b" to second), undoMs = 0)
-        store.connect(account())
-        store.start()
-        store.choose("bench-press")
-        val append = launch { store.logSet(60.0, 8) }
-        runCurrent()
-        val correction = async { store.fixSet("ses_mine", "set_2", SetFix(reps = 9)) }
-        val arrival = launch { store.connect(account("b")) }
-        runCurrent()
-        gate.complete(Unit)
-        append.join()
-        arrival.join()
-        assertEquals(FixOutcome.Corrected(TrainingSet("set_2", "bench-press", null, 60.0, 9, completedAtMs = 1_000)),
-            correction.await())
-        assertEquals(emptyList<TrainingSet>(), store.sets)
-        assertTrue(first.fixes.isEmpty())
-        assertTrue(second.appended.isEmpty())
-        assertNull(store.session)
-    }
-
-    @Test fun strandedSetsPreventTheServerFinishAndRetainTheLiveWorkout() = runTest {
-        val server = FakeTraining()
-        val store = store(mapOf("a" to server))
-        store.connect(account())
-        store.start()
-        store.choose("bench-press")
-        server.online = false
-        store.logSet(60.0, 8)
-        val live = store.session
-        val sets = store.sets
-        assertEquals(FinishOutcome.Stranded(1), store.finish())
-        assertTrue(server.finished.isEmpty())
-        assertEquals(live, store.session)
-        assertEquals(sets, store.sets)
-    }
     @Test fun aReceiptAlreadyShownKeepsItsIdentityAndDeletionDeadlineDuringEngineDelivery() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice")
@@ -459,169 +522,114 @@ class TrainingFinishTests {
             assertNull(room.store.session)
         }
     }
-    @Test fun aStartReplyOrLostReplyCannotAdoptIntoTheNextAccount() = runTest {
-        for (lost in listOf(false, true)) {
-            val first = FakeTraining()
-            val second = FakeTraining()
-            val gate = CompletableDeferred<Unit>()
-            val log = object : TrainingSyncing by first {
-                override suspend fun startSession(start: SessionStart): Session {
-                    gate.await()
-                    val session = first.startSession(start)
-                    if (lost) throw IOException("lost reply")
-                    return session
-                }
-            }
-            val store = store(mapOf("a" to log, "b" to second))
-            store.connect(account())
-            val start = async { store.start() }
+    @Test fun theHeldDeletionFiresAtItsOriginalDeadlineAfterTheFinish() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("a")
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            room.store.logSet(60.0, 8)
+            val set = room.store.sets.single()
+            room.store.withhold(Deletion.Set(live.id, set))
             runCurrent()
-            store.connect(account("b"))
-            gate.complete(Unit)
-            assertEquals(GymResult.Failed(WriteFailure.Refused("the account changed while starting")), start.await())
-            assertNull(store.session)
-            assertTrue(store.sets.isEmpty())
-            assertTrue(second.started.isEmpty())
-        }
-    }
-
-    @Test fun theRemappedDeletionFiresAtItsOriginalDeadlineAndFailureRestoresTheSavedFacts() = runTest {
-        for (failed in listOf(false, true)) {
-            val server = FakeTraining()
-            val log = object : TrainingSyncing by server {
-                override suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet {
-                    val stored = server.appendSet(sessionId, write).copy(id = "set_canonical", setNumber = 7)
-                    server.sets[sessionId] = mutableListOf(stored)
-                    return stored
-                }
-            }
-            val store = store(mapOf("a" to log))
-            store.connect(account())
-            store.start()
-            store.choose("bench-press")
-            store.logSet(60.0, 8)
-            store.withhold(Deletion.Set("ses_mine", store.sets.single()))
-            val receipt = (store.finish() as FinishOutcome.Closed).detail
-            if (failed) server.refuseDelete = IOException("offline")
-            advanceTimeBy(8_999)
+            val window = room.store.withheld.single().untilMs - room.now
+            room.now += 60_000
+            val receipt = (room.store.finish() as FinishOutcome.Closed).detail
+            advanceTimeBy(window - 1)
             runCurrent()
-            assertTrue(server.removed.isEmpty())
+            assertEquals(listOf(set), room.training.session(live.id)!!.sets)
             advanceTimeBy(1)
             runCurrent()
-            assertEquals(listOf("ses_mine" to "set_canonical"), server.removed)
-            assertTrue(store.withheld.isEmpty())
-            assertEquals(if (failed) receipt.sets else emptyList<TrainingSet>(), store.retainedSession(receipt).sets)
-            assertEquals(if (failed) receipt.sets else emptyList<TrainingSet>(), server.sets.getValue("ses_mine"))
+            assertTrue(room.store.withheld.isEmpty())
+            assertEquals(emptyList<TrainingSet>(), room.store.retainedSession(receipt).sets)
+            assertEquals(emptyList<TrainingSet>(), room.training.session(live.id)!!.sets)
         }
     }
 
-    @Test fun aDeletionTimerCannotPublishItsOldAccountsFailureIntoTheNextSeat() = runTest {
-        val first = FakeTraining()
-        val second = FakeTraining()
+    @Test fun aConversationDeleteTimerCannotPublishItsOldAccountsFailureIntoTheNextSeat() = runTest {
+        val fake = FakeGymRest()
+        fake.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
         val gate = CompletableDeferred<Unit>()
-        val log = object : TrainingSyncing by first {
-            override suspend fun deleteSet(sessionId: String, setId: String) {
+        val log = object : GymRest by fake {
+            override suspend fun deleteThread(id: String) {
                 gate.await()
                 throw IOException("offline")
             }
         }
-        val store = store(mapOf("a" to log, "b" to second))
-        store.connect(account())
-        store.start()
-        store.choose("bench-press")
-        store.logSet(60.0, 8)
-        val receipt = (store.finish() as FinishOutcome.Closed).detail
-        store.withhold(Deletion.Set(receipt.session.id, receipt.sets.single()))
-        advanceTimeBy(9_000)
-        runCurrent()
-        val arrival = launch { store.connect(account("b")) }
-        runCurrent()
-        gate.complete(Unit)
-        arrival.join()
-        runCurrent()
-        assertNull(store.deleteRefused)
-        assertTrue(store.withheld.isEmpty())
-        assertTrue(second.removed.isEmpty())
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = log).use { room ->
+            room.select("a")
+            room.store.withhold(Deletion.Thread("thr_1"))
+            advanceTimeBy(Withheld.windowMs)
+            runCurrent()
+            assertFalse("the delete is on the wire", room.store.withheld.single().takeable)
+            val arrival = launch { room.select("b") }
+            runCurrent()
+            gate.complete(Unit)
+            arrival.join()
+            runCurrent()
+            assertNull(room.store.deleteRefused)
+            assertTrue(room.store.withheld.isEmpty())
+            assertEquals(setOf("thr_1"), fake.conversations.keys)
+        }
     }
 
-    @Test fun aSeededReadCannotOverwriteACorrectionAcceptedWhileItWasInFlight() = runTest {
-        val server = FakeTraining()
-        val gate = CompletableDeferred<Unit>()
-        var deferNextRead = false
-        val log = object : TrainingSyncing by server {
-            override suspend fun session(id: String): SessionDetail? {
-                val result = server.session(id)?.let { it.copy(sets = it.sets.toList()) }
-                if (deferNextRead) { deferNextRead = false; gate.await() }
-                return result
-            }
+    @Test fun aStaleSeedCannotOverwriteAnAcceptedCorrection() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("a")
+            room.store.start(); room.store.choose("bench-press"); room.store.logSet(60.0, 8)
+            room.now += 60_000
+            val receipt = (room.store.finish() as FinishOutcome.Closed).detail
+            val fixed = room.store.fixSet(receipt.session.id, receipt.sets.single().id, SetFix(weightKg = 62.5, note = "steady"))
+            val expected = receipt.copy(sets = listOf((fixed as FixOutcome.Corrected).set))
+            assertEquals(GymResult.Ok(expected), room.store.sessionDetail(receipt.session.id, receipt))
+            assertEquals(expected, room.store.retainedSession(receipt))
+            assertEquals(expected.sets, room.training.session(receipt.session.id)!!.sets)
         }
-        val store = store(mapOf("a" to log))
-        store.connect(account()); store.start(); store.choose("bench-press"); store.logSet(60.0, 8)
-        val receipt = (store.finish() as FinishOutcome.Closed).detail
-        deferNextRead = true
-        val read = async { store.sessionDetail(receipt.session.id, receipt) }
-        runCurrent()
-        val fixed = store.fixSet(receipt.session.id, receipt.sets.single().id, SetFix(weightKg = 62.5, note = "steady"))
-        val expected = receipt.copy(sets = listOf((fixed as FixOutcome.Corrected).set))
-        gate.complete(Unit)
-        assertEquals(GymResult.Ok(expected), read.await())
-        assertEquals(expected, store.retainedSession(receipt))
-        assertEquals(expected.sets, server.sets.getValue(receipt.session.id))
     }
 
     @Test fun eachAccountResumesItsOwnCursorWhenTheirMovementOrdersOverlap() = runTest {
-        val plan = PlanSnapshot("Push A", listOf(PlanEntry("bench-press"), PlanEntry("overhead-press")))
-        val a = FakeTraining().apply { open(Session("live_a", startedAtMs = 1_000, plan = plan)) }
-        val b = FakeTraining().apply { open(Session("live_b", startedAtMs = 1_000, plan = plan)) }
-        val store = store(mapOf("a" to a, "b" to b))
-        store.connect(account("a")); store.choose("overhead-press")
-        store.connect(account("b")); store.choose("bench-press")
-        store.connect(account("a"))
-        assertEquals("overhead-press", store.exerciseId)
-        store.connect(account("b"))
-        assertEquals("bench-press", store.exerciseId)
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("a")
+            val pushA = (room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press").adding("overhead-press"))
+                as GymResult.Ok).value
+            assertTrue(room.store.start(pushA.id) is GymResult.Ok)
+            room.store.choose("overhead-press")
+            room.select("b")
+            val pushB = (room.store.saveRoutine(RoutineDraft(name = "Push A").adding("bench-press").adding("overhead-press"))
+                as GymResult.Ok).value
+            assertTrue(room.store.start(pushB.id) is GymResult.Ok)
+            room.store.choose("bench-press")
+            room.select("a")
+            assertEquals("overhead-press", room.store.exerciseId)
+            room.select("b")
+            assertEquals("bench-press", room.store.exerciseId)
+        }
     }
 
     @Test fun keepingTheReceiptRetriesOneCreationDocumentEvenAfterTheProgramGrows() = runTest {
-        val server = FakeTraining()
-        var lost = true
-        val log = object : TrainingSyncing by server {
-            override suspend fun createRoutine(write: RoutineWrite): Routine {
-                val made = server.createRoutine(write)
-                if (lost) { lost = false; throw IOException("accepted reply lost") }
-                return made
-            }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("a")
+            val rows = listOf(TrainingSet("set_a", "bench-press", weightKg = 60.0, reps = 8, completedAtMs = 1_000))
+            val first = room.store.keep(rows, "Push A", "rt_receipt", position = 0)
+            val retried = room.store.keep(rows, "Push A", "rt_receipt", position = 0)
+            assertEquals(first, retried)
+            assertEquals(listOf("rt_receipt"), room.training.program().map { it.id })
+            assertEquals(listOf("rt_receipt"), room.store.allRoutines.map { it.id })
+            assertEquals(listOf(RoutineEntry(exerciseId = "bench-press", position = 1, sets = listOf(SetTarget(8, 60.0)))),
+                room.training.program().single().entries)
         }
-        val store = store(mapOf("a" to log))
-        store.connect(account())
-        val rows = listOf(TrainingSet("set_a", "bench-press", weightKg = 60.0, reps = 8, completedAtMs = 1_000))
-        val first = store.keep(rows, "Push A", "rt_receipt", position = 0)
-        val retried = store.keep(rows, "Push A", "rt_receipt", position = 0)
-        assertEquals(first, retried)
-        assertEquals(listOf("rt_receipt"), server.written.keys.toList())
-        assertEquals(listOf("rt_receipt"), store.allRoutines.map { it.id })
-        assertEquals(listOf(RoutineEntry(exerciseId = "bench-press", position = 1, sets = listOf(SetTarget(8, 60.0)))),
-            server.written.getValue("rt_receipt").entries)
     }
 
-    @Test fun anInterruptedKeepCannotClaimADifferentNameUnderItsOriginalIdentity() = runTest {
-        val server = FakeTraining()
-        val log = object : TrainingSyncing by server {
-            override suspend fun createRoutine(write: RoutineWrite): Routine {
-                server.createRoutine(write)
-                throw IOException("accepted reply lost")
-            }
+    @Test fun aRetriedKeepCannotClaimADifferentNameUnderItsOriginalIdentity() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("a")
+            val rows = listOf(TrainingSet("set_a", "bench-press", weightKg = 60.0, reps = 8, completedAtMs = 1_000))
+            val kept = room.store.keep(rows, "Push A", "rt_receipt", position = 0) as GymResult.Ok
+            val retry = room.store.keep(rows, "Push B", "rt_receipt", position = 0)
+            assertEquals(GymResult.Failed(WriteFailure.Refused(
+                "this save already holds different details — reopen the saved routine to edit it")), retry)
+            assertEquals(listOf(kept.value), room.training.program())
+            assertEquals(listOf(kept.value), room.store.allRoutines)
+            assertEquals("Push A", kept.value.name)
         }
-        val store = store(mapOf("a" to log))
-        store.connect(account())
-        val rows = listOf(TrainingSet("set_a", "bench-press", weightKg = 60.0, reps = 8, completedAtMs = 1_000))
-        val kept = store.keep(rows, "Push A", "rt_receipt", position = 0) as GymResult.Ok
-        val retry = store.keep(rows, "Push B", "rt_receipt", position = 0)
-        assertEquals(GymResult.Failed(WriteFailure.Refused(
-            "this save already holds different details — reopen the saved routine to edit it")), retry)
-        assertEquals(listOf(kept.value), server.written.values.toList())
-        assertEquals(listOf(kept.value), store.allRoutines)
-        assertEquals("Push A", kept.value.name)
     }
-
 }

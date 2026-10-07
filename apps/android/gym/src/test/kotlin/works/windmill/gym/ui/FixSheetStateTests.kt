@@ -117,7 +117,7 @@ class FixSheetStateTests {
         }
     }
     @Test
-    fun canonicalSetIdDoesNotReplaceTheBodyOrOpenKeypadDraft() {
+    fun theDraftKeyNotTheSetDecidesTheBodyAndOpenKeypadDraft() {
         var set by mutableStateOf(TrainingSet(id = "local_set", exerciseId = "bench-press", setNumber = 3,
             weightKg = 60.0, reps = 8, kind = SetKind.Working, completedAtMs = 0))
         val attempts = mutableListOf<SetFix>()
@@ -146,7 +146,7 @@ class FixSheetStateTests {
     }
 
     @Test
-    fun canonicalSetIdKeepsAnInFlightSaveLockedAndItsRefusalEditable() {
+    fun theDraftKeyKeepsAnInFlightSaveLockedAndItsRefusalEditable() {
         var set by mutableStateOf(TrainingSet(id = "local_set", exerciseId = "bench-press", setNumber = 3,
             weightKg = 60.0, reps = 8, kind = SetKind.Working, completedAtMs = 0))
         val answer = CompletableDeferred<FixOutcome>()

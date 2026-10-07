@@ -5,6 +5,7 @@
 #include "platform/domain/sync/Record.h"
 #include "platform/domain/sync/Registry.h"
 #include "platform/domain/sync/Scope.h"
+#include "platform/domain/sync/Shape.h"
 #include "platform/domain/sync/Wire.h"
 #include "platform/ports/SyncStore.h"
 
@@ -22,18 +23,6 @@
 // one set of product rules and commands runs over Postgres and over the test fakes alike.
 
 namespace wm::sync {
-
-// An incomplete adoption or product write freeze retries without advancing the replica.
-struct ProductScopeUnavailable : std::runtime_error {
-  using std::runtime_error::runtime_error;
-};
-
-class ScopeReadiness {
-public:
-  virtual ~ScopeReadiness() = default;
-  virtual void requireReady(SyncTxn&, const ScopeKey&) = 0;
-  virtual void requireWritable(SyncTxn& txn, const ScopeKey& scope) { requireReady(txn, scope); }
-};
 
 // One type's typed rows (§2.2). Every method works inside the engine's transaction.
 class TypeStore {
@@ -75,16 +64,10 @@ public:
   virtual std::vector<Row> scanScope(const ScopeKey& key, const std::string& type, const FeedQuery& query = {}) = 0;
 };
 
-// Who admits the intent, as a product's rules and commands see it.
-struct Caller {
-  UserId account;
-  bool server = false;
-};
-
 struct CheckCtx {
   const Registry& registry;
   const ScopeRow& scope;
-  const Caller& caller;
+  const Sender& caller;
   Ms serverNow = 0;
   SyncReader& read;
   SyncTxn& txn;
@@ -103,7 +86,7 @@ public:
 struct CommandCtx {
   const Registry& registry;
   const ScopeRow& scope;
-  const Caller& caller;
+  const Sender& caller;
   Ms serverNow = 0;
   const Json::Value& args;
   SyncReader& read;

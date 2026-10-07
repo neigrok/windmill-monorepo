@@ -31,22 +31,8 @@ services:
         condition: service_healthy
     environment:
       PGCONNECT_TIMEOUT: "10"
-    command:
-      - bash
-      - -ec
-      - |
-        if [ -f /app/deploy/gym-migration/schema-compatibility.sh ]; then
-          exec bash /app/deploy/gym-migration/schema-compatibility.sh apply "$$1" /app/db/schema.sql
-        fi
-        adopted=$$(psql "$$1" -XAtq -v ON_ERROR_STOP=1 -c \
-          "SELECT to_regclass('public.gym_sync_adoptions') IS NOT NULL OR to_regclass('public.journal_sync_adoptions') IS NOT NULL")
-        if [ "$$adopted" = t ]; then
-          echo "schema is not adoption-compatible; adopted database requires a compatible image" >&2
-          exit 1
-        fi
-        exec psql "$$1" -Xq -v ON_ERROR_STOP=1 -f /app/db/schema.sql
-      - schema
-      - postgresql://windmill:${POSTGRES_PASSWORD}@db:5432/windmill
+    command: ["psql", "postgresql://windmill:${POSTGRES_PASSWORD}@db:5432/windmill",
+              "-Xq", "-v", "ON_ERROR_STOP=1", "-f", "/app/db/schema.sql"]
 
   server:
     image: ghcr.io/neigrok/windmill-monorepo:${IMAGE_TAG:-latest}
@@ -59,14 +45,8 @@ services:
       embedder:
         condition: service_started
     environment:
-      GYM_ENGINE_WRITES: ${GYM_ENGINE_WRITES:-0}
-      SYNC_ENABLED: ${SYNC_ENABLED:-0}
       APPLE_NATIVE_ENABLED: ${APPLE_NATIVE_ENABLED:-0}
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
-      GYM_WRITE_FREEZE: ${GYM_WRITE_FREEZE:-0}
-      JOURNAL_ENGINE_WRITES: ${JOURNAL_ENGINE_WRITES:-0}
-      JOURNAL_WRITE_FREEZE: ${JOURNAL_WRITE_FREEZE:-0}
-      LEGACY_REST_WRITES_RETIRED: ${LEGACY_REST_WRITES_RETIRED:-0}
       DATABASE_URL: postgresql://windmill:${POSTGRES_PASSWORD}@db:5432/windmill
       PORT: "8080"
       RESEND_API_KEY: ${RESEND_API_KEY:-}

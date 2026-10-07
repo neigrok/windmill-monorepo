@@ -30,17 +30,15 @@ struct Note {
   int position = 0;
   std::uint64_t updatedAtMs = 0;
 
-  // Trims both ends, then refuses: an empty title, a title past kMaxNoteTitleChars, a body past
+  // Trims both ends, then refuses: a blank title, a title past kMaxNoteTitleChars, a body past
   // kMaxNoteBodyBytes, text a `text` column cannot hold, a malformed id, a position off the list.
-  // The three bound sentences are the wire's own 400s, forwarded verbatim by NotesApi.
+  // The three bound sentences are what `save_note` answers, verbatim.
   Note(NoteId id, UserId user, std::string title, std::string body, int position = 0,
+       std::uint64_t updatedAtMs = 0);
+  Note(Stored, NoteId id, UserId user, std::string title, std::string body, int position = 0,
        std::uint64_t updatedAtMs = 0);
 
   bool operator==(const Note&) const = default;
 };
-
-// Whether `order` names every note in `standing` exactly once — the rule a whole-order replace is
-// refused against. Pure, so the fake and the SQL adapter decide it one way.
-bool namesEveryNoteOnce(const std::vector<Note>& standing, const std::vector<NoteId>& order);
 
 }

@@ -156,6 +156,14 @@ class Engine internal constructor(val registry: Registry, internal val store: En
         catch (_: StoreFailure) { telemetry.offer(EngineOperation.read, EngineOutcome.failure, "store-failure"); throw CommitFailure(CommitFailure.Kind.storeFailure, "read") }
         finally { reader.end() }
     }
+    // Refused source remains durable after its notice is dismissed, even without a drawn record.
+    fun retainsRecord(scope: ScopeRef, key: RecordKey): Boolean = read(scope) { reader ->
+        fun carries(content: Json): Boolean = content.items("d").any { it.recordKey == key } ||
+            content.items("dependents").any(::carries)
+        reader.drawn(key.type, key.id) != null || device.current().notices.any {
+            ScopeRef(it.member("scope")) == scope && carries(it.member("content"))
+        } || device.current().spent[scope.text]?.arr()?.any { it.recordKey == key } == true
+    }
     override fun mintID(type: String): RecordID = lock.withLock {
         ensureOpen(); RecordID((registry.type(type)?.mint ?: throw CommitFailure.malformed("not-minted")).id(::draw))
     }

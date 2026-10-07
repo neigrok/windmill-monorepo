@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import { Button, Input } from '../../design-system';
 import { useAuth } from '../auth/AuthProvider.jsx';
-import { closeAccount } from '../auth/AccountClient.js';
 import { PRODUCTS } from '../products.js';
 import { closingDeal } from './accountClosure.js';
 import { Section, styles } from './Section.jsx';
@@ -11,11 +10,10 @@ import { Section, styles } from './Section.jsx';
 const DEAL = closingDeal(PRODUCTS.map((product) => product.label));
 
 export function CloseAccountSection() {
-  const { user, signOut } = useAuth();
+  const { user, closeAccount } = useAuth();
   const [expanded, setExpanded] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState('');
   const [closing, setClosing] = useState(false);
-  const [closed, setClosed] = useState(false);
   const [closeError, setCloseError] = useState(null);
 
   const emailMatches = confirmEmail.trim().toLowerCase() === user.email.toLowerCase();
@@ -25,24 +23,13 @@ export function CloseAccountSection() {
     setClosing(true);
     setCloseError(null);
     try {
-      await closeAccount();
-      setClosed(true);
-      await signOut();
-      setTimeout(() => { window.location.hash = '#/'; }, 1800);
+      await closeAccount(user.id);
+      window.location.hash = '#/';
     } catch {
       setClosing(false);
-      setCloseError("Couldn't close your account just now — try again.");
+      setCloseError("Couldn’t finish closing your account on this device. Try again.");
     }
   };
-
-  if (closed) {
-    return (
-      <Section title="Close your account">
-        <p style={{ ...styles.primaryText, whiteSpace: 'normal' }}>Closed. Every device is signed out.</p>
-        <p style={{ ...styles.calmLine, marginTop: 4 }}>Sign in again whenever you want it back.</p>
-      </Section>
-    );
-  }
 
   return (
     <Section title="Close your account">
@@ -67,7 +54,7 @@ export function CloseAccountSection() {
             <Button variant="danger" size="sm" disabled={!emailMatches || closing} onClick={confirmClose}>
               {closing ? 'Closing…' : 'Close my account'}
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => { setExpanded(false); setConfirmEmail(''); setCloseError(null); }}>
+            <Button variant="ghost" size="sm" disabled={closing} onClick={() => { setExpanded(false); setConfirmEmail(''); setCloseError(null); }}>
               Cancel
             </Button>
           </div>

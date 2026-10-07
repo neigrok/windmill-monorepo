@@ -19,14 +19,17 @@ Set set(double weightKg, int reps, SetKind kind = SetKind::working,
              weightKg, reps, kind, rpe, std::move(note), 1'700'000'000'000};
 }
 
-bool rejects(const std::function<void()>& build) {
+// The sentence the constructor refused with, or empty when it built.
+std::string refusal(const std::function<void()>& build) {
   try {
     build();
-    return false;
-  } catch (const InvalidTraining&) {
-    return true;
+    return "";
+  } catch (const InvalidTraining& refused) {
+    return refused.what();
   }
 }
+
+bool rejects(const std::function<void()>& build) { return !refusal(build).empty(); }
 
 Session openSession(std::uint64_t startedAtMs) {
   return Session{SessionId{"ses_00000001"}, wm::UserId{"u1"}, startedAtMs};
@@ -196,6 +199,30 @@ TEST(exercise_construction_guards_the_name_and_the_step) {
            ExerciseId{"dip"});
 }
 
+// A write refuses a name blank by admission's own test, past the ASCII trim; a read builds what the store holds.
+TEST(exercise_write_refuses_a_blank_name_and_a_stored_one_reads_as_it_trims) {
+  const auto written = [](const std::string& name) {
+    return refusal([&] { Exercise{ExerciseId{"ex_11111111"}, name, Pattern::squat, Equipment::barbell, 2.5, true}; });
+  };
+  const auto stored = [](const std::string& name) {
+    return Exercise{Stored{}, ExerciseId{"ex_11111111"}, name, Pattern::squat, Equipment::barbell, 2.5, true};
+  };
+  CHECK_EQ(written(""), std::string("an exercise needs a name"));
+  CHECK_EQ(written(" \t\n"), std::string("an exercise needs a name"));
+  CHECK_EQ(written("\xC2\xA0\xE3\x80\x80"), std::string("an exercise needs a name"));   // U+00A0, U+3000
+  CHECK_EQ(written("\xE2\x80\x8B"), std::string(""));                                    // U+200B is not whitespace
+
+  CHECK_EQ(stored("   "), Exercise(Stored{}, ExerciseId{"ex_11111111"}, "", Pattern::squat, Equipment::barbell, 2.5, true));
+  CHECK_EQ(stored("   ").name, std::string(""));
+  CHECK_EQ(stored("\xC2\xA0").name, std::string("\xC2\xA0"));
+  CHECK_EQ(stored(" Prowler "), Exercise(ExerciseId{"ex_11111111"}, "Prowler", Pattern::squat, Equipment::barbell, 2.5, true));
+  // Every other check still stands on a read.
+  CHECK_EQ(refusal([] { Exercise{Stored{}, ExerciseId{""}, "", Pattern::squat, Equipment::barbell, 2.5, true}; }),
+           std::string("an exercise needs an id"));
+  CHECK_EQ(refusal([] { Exercise{Stored{}, ExerciseId{"ex_11111111"}, "", Pattern::squat, Equipment::barbell, 0, true}; }),
+           std::string("step out of range"));
+}
+
 // step_kg is numeric(4,2): above the ceiling the column overflows, below 0.01 it rounds to 0.00.
 TEST(exercise_step_is_bounded_by_what_its_column_can_hold) {
   const auto stepOf = [](double stepKg) {
@@ -239,34 +266,6 @@ TEST(exercise_name_is_capped_at_the_same_bytes_a_routine_name_is) {
   }));
 }
 
-TEST(auto_close_leaves_a_finished_session_alone) {
-  Session session{SessionId{"ses_00000001"}, wm::UserId{"u1"}, 1'000, 2'000};
-  CHECK_EQ(autoCloseAt(session, std::nullopt, 1'000 + 10 * kAutoCloseMs),
-           std::optional<std::uint64_t>());
-}
-
-TEST(auto_close_leaves_a_fresh_open_session_alone) {
-  Session session = openSession(1'000);
-  CHECK_EQ(autoCloseAt(session, std::nullopt, 1'000), std::optional<std::uint64_t>());
-  CHECK_EQ(autoCloseAt(session, std::nullopt, 1'000 + kAutoCloseMs - 1),
-           std::optional<std::uint64_t>());   // one ms shy of stale
-}
-
-TEST(auto_close_of_a_setless_session_closes_at_its_start) {
-  Session session = openSession(1'000);
-  CHECK_EQ(autoCloseAt(session, std::nullopt, 1'000 + kAutoCloseMs),
-           std::optional<std::uint64_t>(1'000));
-}
-
-TEST(auto_close_with_sets_closes_at_the_last_set_not_at_notice_time) {
-  Session session = openSession(1'000);
-  const std::uint64_t lastSetAt = 5'000'000;
-  CHECK_EQ(autoCloseAt(session, lastSetAt, lastSetAt + kAutoCloseMs - 1),
-           std::optional<std::uint64_t>());   // the last set keeps it alive
-  CHECK_EQ(autoCloseAt(session, lastSetAt, lastSetAt + 10 * kAutoCloseMs),
-           std::optional<std::uint64_t>(lastSetAt));   // ended at the rep, not the read
-}
-
 TEST(can_finish_at_any_instant_from_the_start_onward) {
   Session session = openSession(1'700'000'000'000);
   CHECK(canFinishAt(session, 1'700'000'000'000));            // a session with one rep in it
@@ -296,6 +295,27 @@ TEST(can_start_at_refuses_a_start_past_the_clocks_allowance) {
   CHECK_FALSE(canStartAt(now + 24ull * 60 * 60 * 1000, now)); // "tomorrow"
 }
 
+// GymRules' rule: four hours past the last set, else past the start; a clock behind it is never stale.
+TEST(is_stale_counts_four_hours_from_the_last_activity) {
+  const std::uint64_t t = 1'700'000'000'000;
+  const Session open = openSession(t);
+  const auto setAt = [](std::uint64_t completedAtMs, const char* id) {
+    return Set{SetId{id}, SessionId{"ses_00000001"}, ExerciseId{"bench-press"}, 1, 60, 5, SetKind::working,
+               std::nullopt, "", completedAtMs};
+  };
+  CHECK_FALSE(isStale(open, {}, t + kAutoCloseMs - 1));   // just under, counted from the start
+  CHECK(isStale(open, {}, t + kAutoCloseMs));              // exactly four hours
+  CHECK_FALSE(isStale(open, {}, t - 1));                   // now before the last activity
+
+  const std::vector<Set> sets{setAt(t + 3'600'000, "set_00000002"), setAt(t + 60'000, "set_00000001")};
+  CHECK_FALSE(isStale(open, sets, t + kAutoCloseMs));                    // the latest set, not the start
+  CHECK_FALSE(isStale(open, sets, t + 3'600'000 + kAutoCloseMs - 1));
+  CHECK(isStale(open, sets, t + 3'600'000 + kAutoCloseMs));
+  CHECK_FALSE(isStale(open, sets, t + 3'600'000 - 1));                   // the clock behind the last set
+  // A set stamped before the start is still the last activity, as the engine reads it.
+  CHECK(isStale(open, {setAt(t - 60'000, "set_00000003")}, t - 60'000 + kAutoCloseMs));
+}
+
 // A set lands in a STALE close within four hours of it; an absent closedBy reads as a finish.
 TEST(late_set_lands_only_in_a_stale_close_within_the_window) {
   const std::uint64_t t = 1'700'000'000'000;
@@ -314,128 +334,6 @@ TEST(late_set_lands_only_in_a_stale_close_within_the_window) {
   legacy.closedBy = std::nullopt;
   CHECK_FALSE(lateSetLands(legacy, t + 3'600'000 + 1));
   CHECK_FALSE(lateSetLands(openSession(t), t + 1));                   // open: nothing to continue
-}
-
-TEST(finish_after_a_stale_close_is_believed_only_inside_the_window) {
-  const std::uint64_t t = 1'700'000'000'000;
-  Session stale = openSession(t);
-  stale.finishedAtMs = t + 600'000;   // closed at its last set, ten minutes in
-  stale.closedBy = ClosedBy::stale;
-  CHECK_EQ(finishAfterStaleClose(stale, t + 3'600'000), t + 3'600'000);              // an hour later: believed
-  CHECK_EQ(finishAfterStaleClose(stale, t + 600'000 + kAutoCloseMs), t + 600'000 + kAutoCloseMs);
-  CHECK_EQ(finishAfterStaleClose(stale, t + 600'000 + kAutoCloseMs + 1), t + 600'000); // five hours on: the last set stands
-  CHECK_EQ(finishAfterStaleClose(stale, t + 60'000), t + 600'000);                    // earlier than the set that stands
-}
-
-TEST(a_fix_that_names_nothing_leaves_the_set_exactly_as_it_was) {
-  const Set stored = set(82.5, 8, SetKind::working, 8.5, "felt heavy");
-
-  CHECK_EQ(corrected(stored, SetFix{}), stored);
-}
-
-TEST(a_fix_replaces_only_the_fields_it_names) {
-  const Set stored = set(82.5, 8, SetKind::working, 8.5, "felt heavy");
-
-  SetFix weight;
-  weight.weightKg = 80.0;
-  CHECK_EQ(corrected(stored, weight), set(80.0, 8, SetKind::working, 8.5, "felt heavy"));
-
-  SetFix reps;
-  reps.reps = 4;
-  CHECK_EQ(corrected(stored, reps), set(82.5, 4, SetKind::working, 8.5, "felt heavy"));
-
-  SetFix kind;
-  kind.kind = SetKind::warmup;
-  CHECK_EQ(corrected(stored, kind), set(82.5, 8, SetKind::warmup, 8.5, "felt heavy"));
-
-  SetFix note;
-  note.note = "";
-  CHECK_EQ(corrected(stored, note), set(82.5, 8, SetKind::working, 8.5, ""));
-
-  SetFix everything;
-  everything.weightKg = 47.5;
-  everything.reps = 5;
-  everything.kind = SetKind::drop;
-  everything.note = "back-off";
-  CHECK_EQ(corrected(stored, everything), set(47.5, 5, SetKind::drop, 8.5, "back-off"));
-}
-
-// rpe takes two fields: unnamed keeps what is stored, named-and-empty clears it.
-TEST(a_fix_clears_an_rpe_only_when_it_names_it) {
-  const Set stored = set(82.5, 8, SetKind::working, 8.5);
-
-  SetFix unnamed;
-  CHECK_EQ(corrected(stored, unnamed).rpe, std::optional<double>(8.5));
-
-  SetFix cleared;
-  cleared.rpeNamed = true;
-  CHECK_EQ(corrected(stored, cleared).rpe, std::optional<double>());
-
-  SetFix replaced;
-  replaced.rpeNamed = true;
-  replaced.rpe = 9.5;
-  CHECK_EQ(corrected(stored, replaced).rpe, std::optional<double>(9.5));
-}
-
-TEST(a_fix_never_moves_the_identity_the_log_is_ordered_by) {
-  const Set stored{SetId{"set_00000001"}, SessionId{"ses_00000001"}, ExerciseId{"bench-press"}, 3,
-                   82.5, 8, SetKind::working, std::nullopt, "", 1'700'000'000'000};
-  SetFix fix;
-  fix.weightKg = 60.0;
-  fix.reps = 12;
-  fix.kind = SetKind::failure;
-
-  const Set fixed = corrected(stored, fix);
-
-  CHECK_EQ(fixed.id, stored.id);
-  CHECK_EQ(fixed.session, stored.session);
-  CHECK_EQ(fixed.exercise, stored.exercise);
-  CHECK_EQ(fixed.setNumber, 3);
-  CHECK_EQ(fixed.completedAtMs, 1'700'000'000'000ull);
-  CHECK_EQ(fixed.weightKg, 60.0);
-  CHECK_EQ(fixed.reps, 12);
-  CHECK(fixed.kind == SetKind::failure);
-}
-
-TEST(a_fix_to_a_value_the_store_cannot_hold_is_refused_by_the_construction) {
-  const Set stored = set(82.5, 8);
-
-  CHECK(rejects([&] {
-    SetFix fix;
-    fix.reps = 0;
-    corrected(stored, fix);
-  }));
-  CHECK(rejects([&] {
-    SetFix fix;
-    fix.reps = 501;
-    corrected(stored, fix);
-  }));
-  CHECK(rejects([&] {
-    SetFix fix;
-    fix.weightKg = 500.5;
-    corrected(stored, fix);
-  }));
-  CHECK(rejects([&] {
-    SetFix fix;
-    fix.rpeNamed = true;
-    fix.rpe = 10.5;
-    corrected(stored, fix);
-  }));
-  CHECK(rejects([&] {
-    SetFix fix;
-    fix.note = std::string(4001, 'x');
-    corrected(stored, fix);
-  }));
-  CHECK(rejects([&] {
-    SetFix fix;
-    fix.note = std::string("x") + '\0' + "y";
-    corrected(stored, fix);
-  }));
-  CHECK(rejects([&] {
-    SetFix fix;
-    fix.note = "ok \xED\xA0\x80 bad";
-    corrected(stored, fix);
-  }));
 }
 
 // One rule for every piece of free text: Postgres takes only UTF-8, and `text` stops at a NUL.
@@ -470,30 +368,3 @@ TEST(storable_text_is_what_a_text_column_can_take_and_nothing_else) {
   }));
 }
 
-TEST(a_past_workout_crosses_the_earliest_finished_session_its_half_open_span_meets) {
-  const auto session = [](std::string id, std::uint64_t startedAtMs,
-                          std::optional<std::uint64_t> finishedAtMs) {
-    return Session{SessionId{std::move(id)}, wm::UserId{"u1"}, startedAtMs, finishedAtMs};
-  };
-  const std::vector<Session> logged{session("ses_bbbbbbbb", 3'000, 4'000),
-                                    session("ses_aaaaaaaa", 1'000, 2'000),
-                                    session("ses_open0001", 5'000, std::nullopt)};
-
-  // Ends touching is no crossing: [2000, 3000) sits exactly between the two.
-  CHECK_EQ(crossedBy(session("ses_import01", 2'000, 3'000), logged), std::optional<Session>());
-  // Crossing both answers the earlier one, whatever order the log arrived in.
-  CHECK_EQ(crossedBy(session("ses_import01", 1'999, 3'001), logged), std::optional<Session>{logged[1]});
-  CHECK_EQ(crossedBy(session("ses_import01", 3'500, 3'600), logged), std::optional<Session>{logged[0]});
-  // An empty span holds its one instant: inside a session, or at its very first moment, is inside it;
-  // at its end, where the half-open span stops, is not.
-  CHECK_EQ(crossedBy(session("ses_import01", 1'500, 1'500), logged), std::optional<Session>{logged[1]});
-  CHECK_EQ(crossedBy(session("ses_import01", 1'000, 1'000), logged), std::optional<Session>{logged[1]});
-  CHECK_EQ(crossedBy(session("ses_import01", 2'000, 2'000), logged), std::optional<Session>());
-  // An empty logged session holds its instant too.
-  CHECK_EQ(crossedBy(session("ses_import01", 6'000, 7'000), {session("ses_empty001", 6'500, 6'500)}),
-           std::optional<Session>{session("ses_empty001", 6'500, 6'500)});
-  // The open session is still being lifted and has no end: nothing is refused on its account.
-  CHECK_EQ(crossedBy(session("ses_import01", 4'500, 9'000), logged), std::optional<Session>());
-  // A session never crosses itself, so a replay of its own id passes.
-  CHECK_EQ(crossedBy(session("ses_aaaaaaaa", 1'000, 2'000), logged), std::optional<Session>());
-}

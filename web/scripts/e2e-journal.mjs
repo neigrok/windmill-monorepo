@@ -8,12 +8,14 @@ import { chromium } from 'playwright';
 
 const repo = resolve('..');
 const binaries = resolve(process.argv[2] ?? '../backend/build');
-const database = `wm_web_b2_${process.pid}`;
+const database = `${process.env.WM_E2E_DB_PREFIX ?? 'wm_web_'}journal_${process.pid}`;
+const backendPort = Number(process.env.WM_E2E_PORT ?? 8094);
+const webPort = Number(process.env.WM_E2E_WEB_PORT ?? 5181);
 const host = process.env.PGHOST ?? (process.platform === 'darwin' ? '/tmp' : '127.0.0.1');
 const url = `postgresql:///${database}?host=${encodeURIComponent(host)}`;
-const origin = 'http://127.0.0.1:5181';
-const backend = 'http://127.0.0.1:8094';
-const scratch = mkdtempSync(resolve(tmpdir(), 'wm-web-b2-'));
+const origin = `http://127.0.0.1:${webPort}`;
+const backend = `http://127.0.0.1:${backendPort}`;
+const scratch = mkdtempSync(resolve(tmpdir(), 'wm-web-journal-'));
 const logPath = resolve(scratch, 'stack.log');
 const log = createWriteStream(logPath);
 const account = randomUUID();
@@ -44,34 +46,34 @@ async function waitForServer(address, child) {
 async function check(name, run) {
   await run(); passed++; console.log(`PASS ${name}`);
 }
-async function cookie(context) {
-  await context.addCookies([{ name: 'wm_session', value: token, url: backend, httpOnly: true, sameSite: 'Lax' }]);
+async function cookie(context, value = token) {
+  await context.addCookies([{ name: 'wm_session', value, url: backend, httpOnly: true, sameSite: 'Lax' }]);
 }
 async function ready(page) {
   await page.evaluate(async () => {
-    window.b2 = { ...(await import('/src/platform/sync/session.js')), ...(await import('/src/products/journal/pages.js')) };
+    window.journal = { ...(await import('/src/platform/sync/session.js')), ...(await import('/src/products/journal/pages.js')) };
   });
-  try { await page.waitForFunction(() => window.b2.syncSession.getSnapshot().ready); }
+  try { await page.waitForFunction(() => window.journal.syncSession.getSnapshot().ready); }
   catch (error) {
-    console.error(await page.evaluate(() => ({ session: { ready: b2.syncSession.snapshot.ready, error: b2.syncSession.snapshot.error },
-      document: document.readyState, online: navigator.onLine, engineClosed: b2.syncSession.engine?.closed })));
+    console.error(await page.evaluate(() => ({ session: { ready: journal.syncSession.snapshot.ready, error: journal.syncSession.snapshot.error },
+      document: document.readyState, online: navigator.onLine, engineClosed: journal.syncSession.engine?.closed })));
     throw error;
   }
   await page.getByRole('textbox', { name: 'Write today' }).waitFor();
 }
 async function saved(page, text) {
   await page.waitForFunction(({ text, today }) => {
-    const engine = b2.syncSession.engine;
-    return engine && b2.pagesOf(engine).find((page) => page.day === today)?.body === text;
+    const engine = journal.syncSession.engine;
+    return engine && journal.pagesOf(engine).find((page) => page.day === today)?.body === text;
   }, { text, today });
 }
 async function converged(page, text) {
   try { await page.waitForFunction(({ text, today }) => {
-    const engine = b2.syncSession.engine;
+    const engine = journal.syncSession.engine;
     return engine?.device.activeReplica.confirmedRow('self/journal', 'page', today)?.x.body.text === text
       && engine.device.activeReplica.entries('self/journal').length === 0;
   }, { text, today }); } catch (error) {
-    console.error(await page.evaluate(() => { const e = b2.syncSession.engine; return { session: b2.syncSession.snapshot.signedIn, state: e.getSnapshot(), leader: e.leader, closed: e.closed, started: e.started, base: e.transport.base, entries: e.device.activeReplica.outbox.map((entry) => ({ state: entry.state, command: entry.intent.cmd?.name })) }; }));
+    console.error(await page.evaluate(() => { const e = journal.syncSession.engine; return { session: journal.syncSession.snapshot.signedIn, state: e.getSnapshot(), leader: e.leader, closed: e.closed, started: e.started, base: e.transport.base, entries: e.device.activeReplica.outbox.map((entry) => ({ state: entry.state, command: entry.intent.cmd?.name })) }; }));
     throw error;
   }
   const result = await page.request.get(`${backend}/v1/journal/page/${today}`);
@@ -97,26 +99,46 @@ async function offlineReady(page) {
   console.error(await page.evaluate(async () => ({ controller: !!navigator.serviceWorker.controller, registrations: (await navigator.serviceWorker.getRegistrations()).map((r) => ({ active: r.active?.state, installing: r.installing?.state })), caches: await caches.keys(), assets: (await (await caches.open('windmill-assets-v2')).keys()).map((r) => new URL(r.url).pathname), resources: performance.getEntriesByType('resource').filter((e) => e.name.includes('GymApp')).map((e) => e.name) })));
   throw new Error('offline shell warming timed out');
 }
+async function pendingAccount(context, label) {
+  const id = randomUUID();
+  const secret = randomBytes(24).toString('hex');
+  const email = `journal-${label}@example.com`;
+  sql(`insert into users(id,email,name) values('${id}','${email}','Journal ${label}');
+    insert into sessions(token_hash,user_id,expires_ms) values('${hash(secret)}','${id}',99999999999999);`);
+  await cookie(context, secret);
+  const page = await context.newPage();
+  await page.goto(`${origin}/app/journal`); await ready(page);
+  await page.getByRole('textbox', { name: 'Write today' }).fill(`confirmed ${label}`);
+  await converged(page, `confirmed ${label}`);
+  await page.reload(); await ready(page);
+  await converged(page, `confirmed ${label}`);
+  const epoch = await page.evaluate(() => journal.syncSession.engine.device.activeReplica.meta.serverEpoch);
+  await page.route('**/v1/sync/push', (route) => route.fulfill({ status: 503,
+    contentType: 'application/json', body: JSON.stringify({ epoch, retryAfterMs: 60000 }) }));
+  await page.getByRole('textbox', { name: 'Write today' }).fill(`pending ${label}`);
+  await saved(page, `pending ${label}`);
+  await page.waitForFunction(() => journal.syncSession.engine.device.activeReplica.entries('self/journal').length === 1);
+  await page.getByRole('button', { name: `Account — Journal ${label}`, exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Account settings', exact: true }).click();
+  await page.getByRole('heading', { name: 'Sessions & devices', exact: true }).waitFor();
+  return { page, id, email, secret };
+}
 try {
   // Own the chosen ports only when they are free; never stop somebody else's stack.
-  for (const port of [8094, 5181]) {
+  for (const port of [backendPort, webPort]) {
     try { execFileSync('lsof', ['-tiTCP:' + port, '-sTCP:LISTEN']); throw new Error(`port ${port} is occupied`); }
     catch (error) { if (error.status !== 1) throw error; }
   }
   execFileSync('createdb', ['-h', host, database]); created = true;
-  execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-q', '-f', resolve(repo, 'backend/db/schema.sql'), '-f', resolve(repo, 'backend/db/gym_sync.sql'), '-f', resolve(repo, 'backend/db/journal_sync.sql')], { stdio: ['ignore', 'pipe', 'pipe'] });
-  sql(`insert into users(id,email,name) values('${account}','web-b2@example.com','Web B2'); insert into sessions(token_hash,user_id,expires_ms) values('${hash(token)}','${account}',99999999999999);`);
-  for (const binary of ['windmill_gym_backfill', 'windmill_journal_backfill']) execFileSync(resolve(binaries, binary), [], { env: { ...process.env, DATABASE_URL: url }, stdio: ['ignore', 'pipe', 'pipe'] });
-  execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-q', '-f', resolve(repo, 'backend/db/gym_sync_v5.sql')], { stdio: ['ignore', 'pipe', 'pipe'] });
-  for (const mode of ['--upgrade-v5', '--audit-v5']) execFileSync(resolve(binaries, 'windmill_gym_backfill'), [mode], { env: { ...process.env, DATABASE_URL: url }, stdio: ['ignore', 'pipe', 'pipe'] });
+  execFileSync('psql', [url, '-X', '-v', 'ON_ERROR_STOP=1', '-q', '-f', resolve(repo, 'backend/db/schema.sql')], { stdio: ['ignore', 'pipe', 'pipe'] });
+  sql(`insert into users(id,email,name) values('${account}','web-journal@example.com','Web Journal'); insert into sessions(token_hash,user_id,expires_ms) values('${hash(token)}','${account}',99999999999999);`);
   server = launch(resolve(binaries, 'windmill_server'), [], { cwd: resolve(repo, 'backend'), env: { ...process.env, DATABASE_URL: url,
-    PORT: '8094', WINDMILL_HOST: '127.0.0.1', WINDMILL_APP_URL: origin, WINDMILL_ALLOWED_ORIGINS: origin,
-    SYNC_ENABLED: '1', GYM_ENGINE_WRITES: '1', JOURNAL_ENGINE_WRITES: '1',
+    PORT: String(backendPort), WINDMILL_HOST: '127.0.0.1', WINDMILL_APP_URL: origin, WINDMILL_ALLOWED_ORIGINS: origin,
     RESEND_API_KEY: '', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', JOURNAL_EMBEDDER_URL: '', SENTRY_DSN: '', AMPLITUDE_API_KEY: '' } });
-  vite = launch(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '5181', '--strictPort'],
+  vite = launch(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'],
     { cwd: process.cwd(), env: { ...process.env, VITE_API_BASE_URL: backend, WINDMILL_ALLOWED_ORIGINS: origin } });
   await Promise.all([waitForServer(`${backend}/v1/me`, server), waitForServer(origin, vite)]);
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ channel: 'chromium', headless: true });
   browser.on('disconnected', () => { if (!passed) console.error('Browser disconnected before acceptance completed'); });
   await check('journal write → offline reload → write → reconnect → convergence', async () => {
     const context = await browser.newContext(); await cookie(context);
@@ -157,7 +179,7 @@ try {
         await page.getByRole('dialog').getByRole('button', { name: 'Discard', exact: true }).click();
         await page.getByRole('dialog').getByRole('button', { name: 'Discard', exact: true }).click();
       }
-      await page.waitForFunction(() => b2.syncSession.getSnapshot().signedIn);
+      await page.waitForFunction(() => journal.syncSession.getSnapshot().signedIn);
       const expected = 'offline page\n\nanonymous Add';
       await converged(page, expected);
     } finally { await context.close(); }
@@ -179,8 +201,165 @@ try {
       await page.reload(); await ready(page); await converged(page, 'legacy owed page');
     } finally { await context.close(); }
   });
+  for (const choice of ['Keep', 'Discard']) await check(`revoke this session → Cancel → ${choice} → completed sign-out`, async () => {
+    const context = await browser.newContext();
+    let release, page;
+    try {
+      const fixture = await pendingAccount(context, choice.toLowerCase());
+      page = fixture.page;
+      const { id } = fixture;
+      const settings = page.url();
+      const sessions = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Sessions & devices', exact: true }) });
+      const revoke = sessions.getByRole('button', { name: /^Revoke / });
+      await revoke.click();
+      const question = page.getByRole('dialog');
+      await question.waitFor();
+      assert.equal(await question.getByText('Sign out?', { exact: true }).count(), 1);
+      assert.equal(page.url(), settings, 'the question must not navigate');
+      assert.equal(await question.getByText('1 change hasn’t been confirmed', { exact: false }).count(), 1);
+      await question.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await question.waitFor({ state: 'hidden' });
+      assert.equal(page.url(), settings, 'Cancel stays in settings');
+      assert.equal((await page.request.get(`${backend}/v1/me`)).status(), 200, 'Cancel keeps this session');
+      assert.equal(await page.evaluate(() => journal.syncSession.getSnapshot().signedIn), true);
+      const finishing = new Promise((resolve) => { release = resolve; });
+      await page.route('**/v1/auth/logout', async (route) => { await finishing; await route.continue(); });
+      const logout = page.waitForRequest((request) => request.url() === `${backend}/v1/auth/logout`);
+      logout.catch(() => {});
+      await revoke.click(); await question.waitFor();
+      const beacon = page.waitForResponse((response) => response.url() === `${backend}/v1/events`
+        && response.request().postDataJSON()?.events?.some((event) => event.name === 'sync_signout' && event.props?.outcome === 'ok'));
+      beacon.catch(() => {});
+      await question.getByRole('button', { name: choice, exact: true }).click();
+      await logout;
+      assert.equal(page.url(), settings, 'navigation waits for credential cleanup');
+      assert.equal(await page.evaluate(() => journal.syncSession.getSnapshot().signedIn), true);
+      release();
+      await page.waitForFunction(() => !journal.syncSession.getSnapshot().signedIn);
+      await page.waitForURL((url) => url.pathname === '/');
+      const retained = await page.evaluate(async (id) => {
+        const { device } = await journal.syncSession.engine.store.read();
+        return { active: device.activeReplica.meta.state, accounts: device.replicas.filter((replica) => replica.meta.account === id)
+          .map((replica) => ({ state: replica.meta.state, entries: replica.entries('self/journal').length })) };
+      }, id);
+      assert.deepEqual(retained, { active: 'anon', accounts: choice === 'Keep' ? [{ state: 'dormant', entries: 1 }] : [] });
+      assert.equal((await page.request.get(`${backend}/v1/me`)).status(), 401);
+      assert.ok((await beacon).ok(), 'completed sign-out beacon was accepted');
+    } finally {
+      release?.();
+      try { await page?.unrouteAll({ behavior: 'wait' }); } finally { await context.close(); }
+    }
+  });
+  await check('two tabs: account A closure refuses B’s replacement cookie and preserves both accounts', async () => {
+    const context = await browser.newContext();
+    try {
+      const { page, id, email, secret } = await pendingAccount(context, 'cookie-race');
+      const settings = page.url();
+      const successor = randomUUID();
+      const link = randomBytes(24).toString('hex');
+      const nextEmail = 'journal-cookie-successor@example.com';
+      const now = Date.now();
+      sql(`insert into users(id,email,name) values('${successor}','${nextEmail}','Successor');
+        insert into magic_links(token_hash,email,created_ms,expires_ms)
+          values('${hash(link)}','${nextEmail}',${now},${now + 900000});`);
+      const other = await context.newPage();
+      await other.goto(`${origin}/privacy.html`);
+      let sessionReads = 0;
+      await page.route('**/v1/sessions', async (route) => {
+        const response = await route.fetch();
+        if (++sessionReads === 2) {
+          const signedIn = await other.evaluate(async (token) => {
+            const { verifyToken } = await import('/src/shell/auth/AuthClient.js');
+            return verifyToken(token);
+          }, link);
+          assert.equal(signedIn.user.id, successor, 'the second tab signs in as B using the real server');
+        }
+        await route.fulfill({ response });
+      });
+      const deletion = page.waitForResponse((response) => response.url() === `${backend}/v1/me`
+        && response.request().method() === 'DELETE');
+      deletion.catch(() => {});
+      const closing = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Close your account', exact: true }) });
+      await closing.getByRole('button', { name: 'Close my account', exact: true }).click();
+      await closing.getByRole('textbox').fill(email);
+      await closing.getByRole('button', { name: 'Close my account', exact: true }).click();
+      const response = await deletion;
+      const intended = await fetch(`${backend}/v1/me`, { headers: { Authorization: `Bearer ${secret}` } });
+      const successorMe = await other.evaluate(async (backend) => {
+        const response = await fetch(`${backend}/v1/me`, { credentials: 'include' });
+        return { status: response.status, body: await response.json() };
+      }, backend);
+      const closed = JSON.parse(execFileSync('psql', [url, '-X', '-At', '-v', 'ON_ERROR_STOP=1', '-c',
+        `select json_build_object('A', (select deleted_at is not null from users where id='${id}'),
+          'B', (select deleted_at is not null from users where id='${successor}'))`], { encoding: 'utf8' }));
+      console.log(`Account closure race: ${JSON.stringify({ tabs: context.pages().length, sessionReads,
+        status: response.status(), credentialStatus: { A: intended.status, B: successorMe.status }, closed })}`);
+      assert.equal(sessionReads, 2);
+      assert.equal(response.status(), 409);
+      assert.deepEqual(await response.json(), { error: 'the signed-in account changed; no account was closed', code: 'account-mismatch' });
+      assert.deepEqual(response.request().postDataJSON(), { account: id });
+      assert.equal(intended.status, 200);
+      assert.equal((await intended.json()).user.id, id);
+      assert.equal(successorMe.status, 200);
+      assert.equal(successorMe.body.user.id, successor);
+      assert.deepEqual(closed, { A: false, B: false });
+      await closing.getByText('Couldn’t finish closing your account on this device. Try again.').waitFor();
+      assert.equal(page.url(), settings);
+      assert.deepEqual(await page.evaluate(() => {
+        const engine = journal.syncSession.engine;
+        return { account: engine.device.activeReplica.meta.account, entries: engine.device.activeReplica.entries('self/journal').length,
+          closing: engine.device.meta.closingAccount, signingOut: engine.signingOut };
+      }), { account: id, entries: 1, closing: undefined, signingOut: false });
+    } finally { await context.close(); }
+  });
+  await check('close account → discard device data without a question → completed sign-out', async () => {
+    const context = await browser.newContext();
+    let release, page;
+    try {
+      const fixture = await pendingAccount(context, 'closing');
+      page = fixture.page;
+      const { id, email } = fixture;
+      const settings = page.url();
+      const finishing = new Promise((resolve) => { release = resolve; });
+      await page.route('**/v1/me', async (route) => {
+        if (route.request().method() === 'DELETE') {
+          const response = await route.fetch();
+          assert.equal(response.status(), 200);
+          await finishing;
+          await route.fulfill({ response });
+          return;
+        }
+        await route.continue();
+      });
+      const deletion = page.waitForRequest((request) => request.url() === `${backend}/v1/me` && request.method() === 'DELETE');
+      deletion.catch(() => {});
+      const closing = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Close your account', exact: true }) });
+      await closing.getByRole('button', { name: 'Close my account', exact: true }).click();
+      await closing.getByRole('textbox').fill(email);
+      const beacon = page.waitForResponse((response) => response.url() === `${backend}/v1/events`
+        && response.request().postDataJSON()?.events?.some((event) => event.name === 'sync_signout' && event.props?.outcome === 'ok'));
+      beacon.catch(() => {});
+      await closing.getByRole('button', { name: 'Close my account', exact: true }).click();
+      await deletion;
+      assert.equal(page.url(), settings, 'closing waits for local sign-out to finish');
+      assert.equal(await page.getByRole('dialog').count(), 0, 'account closure needs no Keep/Discard question');
+      assert.equal(await page.evaluate(() => journal.syncSession.getSnapshot().signedIn), true);
+      release();
+      await page.waitForFunction(() => !journal.syncSession.getSnapshot().signedIn);
+      await page.waitForURL((url) => url.pathname === '/');
+      assert.equal(await page.evaluate(async (id) => (await journal.syncSession.engine.store.read()).device.replicas
+        .filter((replica) => replica.meta.account === id).length, id), 0, 'the closed account has no device replica');
+      assert.equal((await page.request.get(`${backend}/v1/me`)).status(), 401);
+      assert.ok((await beacon).ok(), 'completed account closure beacon was accepted');
+    } finally {
+      release?.();
+      try { await page?.unrouteAll({ behavior: 'wait' }); } finally { await context.close(); }
+    }
+  });
   assert.ok(Number(sql("select count(*) from events where name in ('sync_commit','sync_signin','sync_signout','sync_writer')").toString().match(/\n\s*(\d+)\s*\n/)?.[1] ?? 0) > 0, 'sync beacons reached the local intake');
-  console.log(`Journal local-stack e2e: ${passed}/4 passed, 0 skipped; local beacon intake verified`);
+  assert.ok(Number(sql("select count(*) from events where name = 'sync_signout' and props->>'outcome' = 'ok'").toString().match(/\n\s*(\d+)\s*\n/)?.[1] ?? 0) >= 3,
+    'all three completed sign-outs reached the local beacon intake');
+  console.log(`Journal local-stack e2e: ${passed}/8 passed, 0 skipped; local beacon intake verified`);
 } catch (error) {
   console.error(error);
   console.error(`Stack diagnostics: ${logPath}`);
@@ -188,8 +367,8 @@ try {
 } finally {
   const cleanup = [];
   try { await browser?.close(); } catch (error) { cleanup.push(error); }
-  if (vite) { stopPort(5181); vite.kill('SIGTERM'); }
-  if (server) { stopPort(8094); server.kill('SIGTERM'); }
+  if (vite) { stopPort(webPort); vite.kill('SIGTERM'); }
+  if (server) { stopPort(backendPort); server.kill('SIGTERM'); }
   const exits = await Promise.allSettled([server, vite].filter(Boolean).map((child) => child.exitCode !== null || child.signalCode !== null ? null
     : Promise.race([new Promise((resolve) => child.once('exit', resolve)), new Promise((_, reject) => setTimeout(() => reject(new Error('stack shutdown timed out')), 5000).unref())])));
   for (const result of exits) if (result.status === 'rejected') cleanup.push(result.reason);

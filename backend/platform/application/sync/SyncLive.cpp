@@ -98,15 +98,14 @@ std::vector<SyncLive::Wanted> SyncLive::watch(const LiveSocket& socket, const Js
   return wanted;
 }
 
-// One snapshot of the tree each tree or overlay ref answers as and each product's adoption boundary.
+// One snapshot of the tree each tree or overlay ref answers as.
 std::map<ScopeKey, std::optional<ScopeRow>> SyncLive::readTrees(const std::vector<Wanted>& wanted) {
   std::map<ScopeKey, std::optional<ScopeRow>> trees;
   for (const Wanted& one : wanted) {
     if (one.key && one.key->kind() != ScopeKind::product) trees.emplace(one.key->governingTree(), std::nullopt);
   }
-  if (wanted.empty()) return trees;
+  if (trees.empty()) return trees;
   const std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::snapshot);
-  for (const Wanted& one : wanted) if (one.key) catalog_.requireReady(*txn, *one.key);
   for (auto& [tree, row] : trees) row = store_.scope(*txn, tree, RowLock::none);
   return trees;
 }

@@ -6,17 +6,10 @@ import kotlin.math.max
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.buildClassSerialDescriptor
-import kotlinx.serialization.descriptors.element
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
-import kotlinx.serialization.json.JsonEncoder
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 // Wire conventions: instants are epoch-ms Longs, weights are signed kg (negative = band-assisted),
 // ids are client-minted, absent optionals are omitted rather than null, reads default rather than throw.
@@ -65,9 +58,6 @@ object TheSix {
         Exercise("barbell-row", "Barbell Row", "pull", "barbell", 2.5),
         Exercise("chin-up", "Chin Up", "pull", "bodyweight", 2.5),
     )
-
-    fun missingFrom(catalog: List<Exercise>): List<Exercise> =
-        movements.filter { six -> catalog.none { it.id == six.id } }
 }
 
 // One set of a scheme. No `reps` is max; no `weightKg` is last time's Nth working set.
@@ -214,6 +204,16 @@ data class SessionSummary(
     )
 
     val session: Session get() = Session(id, startedAtMs, finishedAtMs, routineId, plan)
+
+    companion object {
+        // Read against the account's history: its best estimate, and the dot when a session full
+        // enough to count earned a record.
+        fun of(detail: SessionDetail, history: List<SessionDetail>): SessionSummary {
+            val sets = working(detail)
+            return SessionSummary(detail.session, detail.sets).copy(topE1rm = sets.mapNotNull(::estimate).maxOrNull(),
+                record = sets.size >= Review.slightWorkingSets && earned(detail, history) != null)
+        }
+    }
 }
 
 @Serializable
@@ -312,8 +312,8 @@ data class Routine(
         },
     )
 
-    // Addressed by POSITION (plan index + 1), never by movement name; a PUT of an unchanged document
-    // still supersedes pending proposals. An open line stays open: nothing is written onto it.
+    // Addressed by POSITION (plan index + 1), never by movement name. An open line stays open:
+    // nothing is written onto it.
     fun retargeting(position: Int, exerciseId: String, sets: List<SetTarget>): Routine? {
         val row = entries.firstOrNull { it.position == position } ?: return null
         if (row.exerciseId != exerciseId) return null
@@ -393,90 +393,94 @@ data class Review(
                 slight = working < slightWorkingSets,
             )
         }
+
+        // Read against the account's history: the record the session earned, and the routine's
+        // previous session movement by movement, with what the frozen plan asked.
+        fun of(detail: SessionDetail, history: List<SessionDetail>): Review {
+            val working = working(detail)
+            val base = of(detail).let { it.copy(stats = it.stats.copy(topE1rm = working.mapNotNull(::estimate).maxOrNull())) }
+            if (base.slight) return base
+            val previous = detail.session.routineId?.let { id -> prior(detail, history).lastOrNull { it.session.routineId == id } }
+            val against = previous?.let { before -> Against(before.session.id, before.session.plan?.routine, before.session.startedAtMs,
+                working.groupBy { it.exerciseId }.map { (id, sets) -> AgainstMovement(id, effort(sets)!!,
+                    effort(working(before).filter { it.exerciseId == id }), detail.session.plan?.entry(id)?.let { PlannedLine(it.sets) }) }) }
+            return base.copy(record = earned(detail, history), against = against)
+        }
     }
 }
 
-// `e1rm` is absent exactly where Epley is undefined — at or below zero load — and never a zero.
-@Serializable
-data class RecordMark(
-    val weightKg: Double,
-    val reps: Int,
-    @SerialName("at") val atMs: Long,
-    val e1rm: Double? = null,
-)
+// What a review and a summary read off the account's history. The estimate is Epley's, rounded to
+// a tenth, and absent at or below zero load.
+private fun estimate(set: TrainingSet): Double? = if (set.weightKg > 0) floor(set.weightKg * (1 + set.reps / 30.0) * 10 + .5) / 10 else null
+private fun working(detail: SessionDetail) = detail.sets.filter { it.kind == SetKind.Working }.sortedWith(compareBy({ it.completedAtMs }, { it.id }))
+private fun prior(detail: SessionDetail, history: List<SessionDetail>) = history.filter {
+    !it.session.isOpen && it.session.startedAtMs < detail.session.startedAtMs
+}.sortedWith(compareBy({ it.session.startedAtMs }, { it.session.id }))
+private fun marks(history: List<SessionDetail>): List<Pair<TrainingSet, Long>> = history.flatMap { detail -> working(detail).map { it to it.completedAtMs } }
+    .groupBy { it.first.exerciseId to it.first.weightKg }.values.map { values ->
+        values.sortedWith(compareByDescending<Pair<TrainingSet, Long>> { it.first.reps }.thenBy { it.second }).first()
+    }
+private fun earned(detail: SessionDetail, history: List<SessionDetail>): PersonalRecord? {
+    data class Candidate(val rank: Int, val record: PersonalRecord, val set: TrainingSet)
+    val before = marks(prior(detail, history))
+    val candidates = mutableListOf<Candidate>()
+    for ((exercise, sets) in working(detail).groupBy { it.exerciseId }) {
+        val earlier = before.filter { it.first.exerciseId == exercise }
+        val best = sets.filter { estimate(it) != null }.maxByOrNull { estimate(it)!! }
+        val priorBest = earlier.filter { estimate(it.first) != null }.maxByOrNull { estimate(it.first)!! }
+        if (best != null && priorBest != null && estimate(best)!! > estimate(priorBest.first)!!) candidates += Candidate(0,
+            PersonalRecord("e1rm", exercise, estimate(best)!!, best.weightKg, best.reps, estimate(priorBest.first), priorBest.second), best)
+        val heavy = sets.sortedWith(compareByDescending<TrainingSet> { it.weightKg }.thenByDescending { it.reps }
+            .thenBy { it.completedAtMs }.thenBy { it.id }).first()
+        val priorHeavy = earlier.maxWithOrNull(compareBy({ it.first.weightKg }, { it.first.reps }))
+        if (priorHeavy != null && heavy.weightKg > priorHeavy.first.weightKg) candidates += Candidate(1,
+            PersonalRecord("heaviest", exercise, heavy.weightKg, heavy.weightKg, heavy.reps, priorHeavy.first.weightKg, priorHeavy.second), heavy)
+        for (set in sets.groupBy { it.weightKg }.values.map { it.maxBy { set -> set.reps } }) {
+            val priorLoad = earlier.firstOrNull { it.first.weightKg == set.weightKg } ?: continue
+            if (set.reps > priorLoad.first.reps) candidates += Candidate(2,
+                PersonalRecord("reps-at-weight", exercise, set.reps.toDouble(), set.weightKg, set.reps, priorLoad.first.reps.toDouble(), priorLoad.second), set)
+        }
+    }
+    return candidates.sortedWith(compareBy<Candidate> { it.rank }.thenByDescending { estimate(it.set) ?: 0.0 }
+        .thenByDescending { it.set.weightKg }.thenBy { it.set.completedAtMs }).firstOrNull()?.record
+}
+private fun effort(sets: List<TrainingSet>): Effort? {
+    val top = sets.maxWithOrNull(compareBy({ it.weightKg }, { it.reps })) ?: return null
+    return Effort(sets.count { it.weightKg == top.weightKg }, top.reps, top.weightKg)
+}
 
-@Serializable
+// One closed session's sets of a movement, warmups aside.
 data class RecordDay(
     val sessionId: String,
-    @SerialName("startedAt") val startedAtMs: Long,
+    val startedAtMs: Long,
     val sets: List<TrainingSet> = emptyList(),
 )
 
-// The two counts are OPTIONAL, never defaulted to 0; zero itself is a real answer. The three e1RM
-// fields are absent together where the estimator has nothing to say.
-@Serializable
+// A movement's page: the movement and its newest days. Its estimates and bests are read from
+// `StatsProgress`.
 data class MovementRecord(
     val exercise: Exercise,
-    val routineCount: Int? = null,
-    // Which routines, by name, in program order — exactly `routineCount` long, omitted rather than empty.
-    val routines: List<String> = emptyList(),
-    val sessionCount: Int? = null,
-    val bestE1rm: RecordMark? = null,
-    val heaviest: RecordMark? = null,
-    val e1rmSeries: List<RecordMark> = emptyList(),   // oldest first, the last twelve weeks
-    val records: List<RecordMark> = emptyList(),      // NEWEST first, lifetime
     val recentDays: List<RecordDay> = emptyList(),    // newest first, at most ten
 ) {
     companion object {
         const val recentDaysShown = 10
 
-        // The server's rules: a session counts when it holds a WORKING set, and ties on the heaviest
-        // go to more reps.
-        fun of(exercise: Exercise, history: List<SessionDetail>, routines: List<Routine>): MovementRecord {
-            val closed = history.filter { it.session.finishedAtMs != null }
-            val worked = closed.filter { detail ->
-                detail.sets.any { it.exerciseId == exercise.id && it.kind == SetKind.Working }
-            }
-            val heaviest = worked
-                .flatMap { detail ->
-                    detail.sets
-                        .filter { it.exerciseId == exercise.id && it.kind == SetKind.Working }
-                        .map { RecordMark(it.weightKg, it.reps, detail.session.startedAtMs) }
+        // A day is a closed session that holds a set of the movement other than a warmup.
+        fun of(exercise: Exercise, history: List<SessionDetail>): MovementRecord = MovementRecord(exercise,
+            history.filter { it.session.finishedAtMs != null }
+                .sortedByDescending { it.session.startedAtMs }
+                .mapNotNull { detail ->
+                    val performed = detail.sets
+                        .filter { it.exerciseId == exercise.id && it.kind != SetKind.Warmup }
+                        .sortedBy { it.completedAtMs }
+                    if (performed.isEmpty()) return@mapNotNull null
+                    RecordDay(detail.session.id, detail.session.startedAtMs, performed)
                 }
-                .maxWithOrNull(compareBy({ it.weightKg }, { it.reps }))
-
-            val named = routines
-                .filter { routine -> routine.entries.any { it.exerciseId == exercise.id } }
-                .map { it.name }
-            return MovementRecord(
-                exercise = exercise,
-                routineCount = named.size,
-                routines = named,
-                sessionCount = worked.size,
-                heaviest = heaviest,
-                recentDays = closed
-                    .sortedByDescending { it.session.startedAtMs }
-                    .mapNotNull { detail ->
-                        val performed = detail.sets
-                            .filter { it.exerciseId == exercise.id && it.kind != SetKind.Warmup }
-                            .sortedBy { it.completedAtMs }
-                        if (performed.isEmpty()) return@mapNotNull null
-                        RecordDay(detail.session.id, detail.session.startedAtMs, performed)
-                    }
-                    .take(recentDaysShown),
-            )
-        }
+                .take(recentDaysShown))
     }
 }
 
-@Serializable
-data class SessionShare(
-    val token: String,
-    val url: String? = null,
-    @SerialName("expiresAt") val expiresAtMs: Long,
-)
 
-@Serializable
 data class SetWrite(
     val id: String,
     val exerciseId: String,
@@ -490,10 +494,9 @@ data class SetWrite(
 }
 
 // `exerciseId`, `completedAt` and `setNumber` belong to the log, and none of them is a correction.
-// A fix names ONLY what it changes: an absent field reads on the server as "leave what is stored",
-// `note: ""` clears a note and `rpe: null` clears an rpe. Those two clears are VALUES and not
-// omissions, which is why `rpeNamed` rides beside `rpe` and why this writes its own wire object.
-@Serializable(with = SetFixWire::class)
+// A fix names ONLY what it changes: an absent field leaves what is stored, `note: ""` clears a note
+// and `rpe: null` clears an rpe. Clearing an rpe is a value and not an omission, which is why
+// `rpeNamed` rides beside `rpe`.
 data class SetFix(
     val weightKg: Double? = null,
     val reps: Int? = null,
@@ -514,8 +517,8 @@ data class SetFix(
             rpe = rpe.takeIf { it != stored.rpe },
         )
 
-    // The claim's replay restates the whole stored row, rpe included — an absent rpe there would
-    // leave the account's copy of a set the shelf has corrected saying something else.
+    // An owed correction restates the whole saved row, rpe included, so the account's copy of the
+    // set ends up saying exactly what this phone says.
     constructor(set: TrainingSet) :
         this(set.weightKg, set.reps, set.kind, set.note, rpeNamed = true, rpe = set.rpe)
 
@@ -534,32 +537,6 @@ data class SetFix(
         return after.reps != set.reps || after.kind != set.kind ||
             after.note != set.note || after.rpe != set.rpe
     }
-}
-
-// The wire shape is a DIFF, so the encoder's absent-is-null rule cannot carry it: `rpe: null` is the
-// one field whose explicit null is a value, and an omitted field is the only way to say "leave it".
-object SetFixWire : KSerializer<SetFix> {
-    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("SetFix") {
-        element<Double>("weightKg", isOptional = true)
-        element<Int>("reps", isOptional = true)
-        element<String>("kind", isOptional = true)
-        element<String>("note", isOptional = true)
-        element<Double?>("rpe", isOptional = true)
-    }
-
-    override fun serialize(encoder: Encoder, value: SetFix) {
-        val json = encoder as? JsonEncoder ?: throw SerializationException("a fix is json or nothing")
-        json.encodeJsonElement(buildJsonObject {
-            value.weightKg?.let { put("weightKg", it) }
-            value.reps?.let { put("reps", it) }
-            value.kind?.let { put("kind", it.wire) }
-            value.note?.let { put("note", it) }
-            if (value.rpeNamed) put("rpe", value.rpe)
-        })
-    }
-
-    override fun deserialize(decoder: Decoder): SetFix =
-        throw SerializationException("a fix is written, never read")
 }
 
 // The two things a lifter can say about a set that are not the set. RPE is the log's 1–10 and the
@@ -610,20 +587,12 @@ object SetEffort {
     }
 }
 
-// `joinOpenSession` is stated explicitly false: an omitted flag means "join whatever is open".
-@Serializable
 data class SessionStart(
     val id: String,
     val startedAt: Long,
     val routineId: String? = null,
-    val joinOpenSession: Boolean? = null,
 )
 
-@Serializable
-data class SessionFinish(val finishedAt: Long)
-
-// No defaults on pattern/equipment: a defaulted value vanishes from the wire and the server refuses it.
-@Serializable
 data class ExerciseWrite(
     val id: String,
     val name: String,
@@ -632,12 +601,7 @@ data class ExerciseWrite(
     val stepKg: Double? = null,
 )
 
-// The one field a rename may carry: the server refuses any other key outright. The id never changes.
-@Serializable
-data class ExerciseRename(val name: String)
-
-// An empty scheme is the default and so leaves the wire (encodeDefaults is off): an open line
-// travels as no `sets` key, never as `[]`, which the log refuses.
+// An open line has no targets: its scheme is empty.
 @Serializable
 data class RoutineEntryWrite(
     val exerciseId: String,
@@ -652,7 +616,7 @@ data class RoutineWrite(
     val entries: List<RoutineEntryWrite>,
     @SerialName("revision") val expectedRevision: Int? = null,
 ) {
-    // The whole document in position order: a PUT of only the changed line would delete the rest.
+    // The whole routine in position order: a save writes every line, and an omitted line is deleted.
     constructor(routine: Routine, expectedRevision: Int? = null) : this(
         routine.id,
         routine.name,
@@ -712,13 +676,6 @@ data class Prefill(val weightKg: Double, val reps: Int) {
             return Prefill(weight, max(1, reps))
         }
     }
-}
-
-// The server's bound on any instant is (0, 253402300799000]; outside it is a terminal 400.
-object Instants {
-    const val MAX_MS = 253_402_300_799_000L
-
-    fun repaired(ms: Long): Long = ms.coerceIn(1, MAX_MS)
 }
 
 // The idempotency key: 8 random bytes as hex behind a noun prefix, inside the server's 8..64 rule.

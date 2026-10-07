@@ -5,7 +5,7 @@ import unittest
 
 
 WORKFLOW = Path(__file__).resolve().parents[3] / ".github/workflows/deploy.yml"
-SETTINGS = {"SYNC_ENABLED": "0", "APPLE_NATIVE_ENABLED": "0", "APPLE_CLIENT_ID": ""}
+SETTINGS = {"APPLE_NATIVE_ENABLED": "0", "APPLE_CLIENT_ID": ""}
 
 
 class DeployAuthEnvironmentTest(unittest.TestCase):

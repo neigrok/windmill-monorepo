@@ -4,8 +4,8 @@
 request. `start()` installs tab coordination and lifecycle hooks, releases holds on the first tab,
 requests persistent storage and starts synchronization. No product or UI imports this engine.
 
-The registry composes the shared gym and journal registries at version 5, minimum 4. The deterministic core,
-replica rules and journal claim helpers are browser ports of `packages/api-contract/sync/reference`.
+The registry composes the shared gym and journal registries at version 5, minimum 4. The deterministic
+core and replica rules are browser ports of `packages/api-contract/sync/reference`.
 UTF-8 uses `TextEncoder`, canonical cursor encoding uses browser base64 APIs and synchronous SHA-256
 uses `@noble/hashes`. Test oracles stay outside the shipping dependency graph.
 
@@ -18,15 +18,20 @@ await engine.start();
 
 `commit` accepts either changes/options or the reference's synchronous read-and-commit callback.
 Its Promise resolves after the IndexedDB transaction commits; publication failures report separately and do not reject a durable save. The callback runs inside the
-transaction and must not return a Promise. `observe` exposes drawn/stored records, notices and
-`firstPullComplete`, retaining confirmed `seq`, `rc` and `ru` envelope metadata. `observeEngine` exposes replica/auth/upgrade state; `onEvent` delivers active
+transaction and must not return a Promise; its views carry `drawn`, `stored`, `now`, `replica`, the
+product's `devices` rows and the scope's `firstPullComplete`. A rejection is one of §7.1's three failures, a
+`CommitError` of kind `not-writable`, `malformed` or `store`, or the callback's own throw, passed
+through unchanged. `newGestureId()` mints the id a caller passes as `opts.gestureId` when it must know it
+before the commit; the domain kit's runner (`src/platform/domain-kit/runner.js`) does. `observe` exposes
+drawn/stored records, notices, `undoOffers` (the scope's held gestures, each with its `id`, `releaseAt` and
+the records it changes) and `firstPullComplete`, retaining confirmed `seq`, `rc` and `ru` envelope metadata. `observeEngine` exposes replica/auth/upgrade state; `onEvent` delivers active
 replica changes after durable commits and persisted-page suspension, restoration and restore failure.
 Persisted restores reopen IndexedDB and coordination with the same observations and listeners;
 the shell refreshes account state after restoration. Views and transport are injectable and product-neutral.
 
-HTTP uses the session cookie; anonymous pulls explicitly omit credentials. The `credentials` port
-belongs to the session owner: `clear(account)` removes the credential after a completed sign-out,
-and optional `retainAccounts(accounts)` removes credentials outside bound/pending lineages on start.
+HTTP goes to the `base` origin the engine's owner passes (same-origin when none) and uses the session
+cookie; anonymous pulls explicitly omit credentials. The `credentials` port
+belongs to the session owner: `clear(account)` removes the credential after a completed sign-out.
 The engine stores no tokens. The shell owns the cookie session and pinned account decisions. Finished sign-out durably records cookie cleanup until the credentials port succeeds. Sign-in uses a fresh
 hello and pins Add/Discard decisions. Same-account refreshes preserve held work until its deadline
 or a lifecycle transition. `beginSignOut`, `finishSignOut` and `cancelSignOut` expose the
@@ -41,7 +46,19 @@ only their requested scopes or row keys and the governing record type. Control r
 and durable device work are separate from cached rows. Replica handles stay fixed across wire-ID
 changes. Each cache has a generation pointer; completed boots transfer the staging pointer, and
 forget/sign-out invalidate pointers atomically. Old generations are deleted in batches of 128.
-The version-one store migrates in an atomic IndexedDB upgrade transaction.
+
+IndexedDB store versions are independent of the wire registry version:
+
+| Store version | Layout | Release evidence |
+|---|---|---|
+| 1 | Control and cache rows together in `records` | Legacy upgrade input; its shipping date is not recorded in the retained Git history. |
+| 2 | Control records plus generation-indexed `rows` | The browser sync release, `082e971d`, dated 2026-10-05; the earliest retained implementation, `76b82e9c` on 2026-10-04, already opens version 2. |
+
+A version-one database upgrades in one atomic IndexedDB version-change transaction. Every replica's
+confirmed, spent and staged rows move to their cache generations; controls, outboxes, notices and device
+work survive unchanged. An aborted upgrade retains the complete version-one store for retry. Native
+Chromium regressions open real version-one databases, verify every row after upgrade and reopen,
+and interrupt an upgrade after a migrated row to verify rollback.
 
 Offline open hydrates the active replica's cache once. Subsequent observation reads hydrate observed
 scopes; unobserved cache generations are invalidated, and a later observation reloads them locally.
@@ -66,42 +83,19 @@ persisted replay and a 20-seed persisted fault campaign. Every campaign seed exe
 convergence, counters/caps, digest, existence and outbox checks.
 
 `npm run test:sync:server -- /absolute/backend/build` runs an isolated port-8090 server, creates a
-unique database, applies both adoption schemas and the gym v5 upgrade, backfills/audits both products, mints a local session,
-and replays gym/journal writes with a lost push reply. It requires the three production backend
-binaries and Postgres client tools from `backend/RUNNING.md` (set `PGHOST` outside macOS). It stops
-its listener by port and drops its database. The repository's nightly workflow is outside web
+unique database, applies `schema.sql`, mints a local session, and replays gym/journal writes with a
+lost push reply. It requires `windmill_server` and Postgres client tools from `backend/RUNNING.md`
+(set `PGHOST` outside macOS). It stops its listener by port and drops its database. The repository's nightly workflow is outside web
 territory; scheduling this script there remains an integration task. `npm run build` also bundles
 the browser engine separately and rejects Node builtins. The app shell caches the built room assets for offline reload; product adapters own their projections and migration.
 
 `react.js` exports `useSyncEngine()` (the open bound engine, or null during boot/sign-out) and
 `useSyncRecords(scope)` (stable drawn/stored records, notices and first-pull state through
 `useSyncExternalStore`). Records can observe the anonymous replica; only the session owner opens
-and starts the engine. Product `prepareSync(engine)` registrations run before its first network request.
-
-Journal's `prepareSync` imports v1/v2 cached pages and owed writes, preserving account lineages and
-anonymous snapshots. Durable source digests prevent replay after a crash between the import and
-source deletion. Invalid/blocked storage fails visibly and leaves source keys intact. Unattributable
-pages stay quarantined until an explicit restore. The product's result hook records claim receipts
-inside the result transaction; observations reconcile edited claims only after a covering pull.
-Writing a day before its first account read uses a claim, retaining unseen prose. Terminal refusal
-notices keep their documents visible after reload; corrected saves retire their older notices.
-
-`npm run test:journal:server -- /absolute/backend/build` runs the journal Playwright acceptance on
-ports 8094/5181 with its own database and all three schemas/switches. Build `windmill_server`,
-`windmill_gym_backfill` and `windmill_journal_backfill` using `backend/RUNNING.md` first. It requires
-Postgres client tools (`/tmp` on macOS), stops its listeners by port and drops its database.
-The server acceptance script is callable in CI with those same binaries and Postgres tools;
-the existing web workflow runs the complete tests/build, but has no backend-stack step.
-
-Outside web territory, `backend/products/journal/ARCHITECTURE.md:157` and
-`docs/design/consistency.md:69,83` still describe the deleted silent claim/localStorage path.
-`backend/test/products/journal/adapters/postgres/PgEchoRepositoryTest.cpp:255` and
-`backend/test/products/journal/application/EchoSweepTest.cpp:647` cite the deleted store in comments.
-Their behavior/REST contracts remain unchanged; their documentation needs the engine adapter names.
+and starts the engine. Each product's route table carries a `sync` group — `prepare(engine)`,
+`onPushResult`, `pendingDeviceWork`, `liveHint(engine, replica)` and `signedOutWork`, the record type a
+sign-in question counts — and the session owner composes every group into the engine options;
+`prepare` runs before the first network request.
 
 Command predictions may include local deaths and serial values; only the command arguments go on
-the wire. Outside web territory, the reference/native prediction descriptions in
-`packages/api-contract/sync/reference/client/commit.js`, `apps/ios/Sync/Sources/SyncReplica/Commit.swift`
-and `docs/foundation/engine.md` still restrict these local predictions. They do not consume the
-browser's persisted entries. Gym's registry/backend metadata gaps and full-stack CI integration
-are listed in `../../products/gym/README.md` and above.
+the wire.

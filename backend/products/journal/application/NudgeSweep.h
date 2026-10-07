@@ -26,7 +26,6 @@ public:
 
   void start();                                          // arm the ticker (fixed first tick, then periodic)
   void stop() { heartbeat_.stop(); }
-  MailSweepReport run(std::uint64_t nowMs, bool dryRun);
 
   // Queued onto the sweep's own loop, which also serialises an operator's pass behind the
   // heartbeat's.

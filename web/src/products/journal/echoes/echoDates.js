@@ -3,11 +3,6 @@
 
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const SHORT_MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'];
-
-const SPELLED = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
-  'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
 
 function parts(iso) {
   const [year, month, day] = iso.split('-').map(Number);
@@ -43,12 +38,6 @@ export function stampCompact(iso) {
 export function stampPlain(iso) {
   const { year, month, day } = parts(iso);
   return `${pad(day)} ${SHORT_MONTHS[month - 1]} ${year}`;
-}
-
-// 14 March — the free path names the page by day and month.
-export function proseDayMonth(iso) {
-  const { month, day } = parts(iso);
-  return `${day} ${MONTHS[month - 1]}`;
 }
 
 // Months between two days, older first, to the nearest month. Rounding is on the calendar, not on an
@@ -89,18 +78,3 @@ export function distanceTrail(matchDay, triggerDay) {
   return `${months} MO`;
 }
 
-// "two and a half years", from the oldest match and the trigger day. Under half a month it counts weeks;
-// it never says "zero months".
-export function reachInWords(oldestDay, triggerDay) {
-  const months = monthsApart(oldestDay, triggerDay);
-  const spell = (n) => SPELLED[n] ?? String(n);
-  if (!months) {
-    const weeks = weeksApart(oldestDay, triggerDay);
-    return `${spell(weeks)} ${weeks === 1 ? 'week' : 'weeks'}`;
-  }
-  if (months < 12) return `${spell(months)} ${months === 1 ? 'month' : 'months'}`;
-  const halves = Math.round(months / 6) / 2;
-  const whole = Math.floor(halves);
-  if (halves === whole) return `${spell(whole)} ${whole === 1 ? 'year' : 'years'}`;
-  return `${spell(whole)} and a half years`;
-}

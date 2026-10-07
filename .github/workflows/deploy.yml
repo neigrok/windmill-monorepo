@@ -87,14 +87,8 @@ jobs:
           # Same rule for nudges; naming an id also reveals journal's nudge settings panel to that account.
           JOURNAL_NUDGE_ENABLED: ${{ vars.JOURNAL_NUDGE_ENABLED }}
           JOURNAL_NUDGE_ALLOWLIST: ${{ vars.JOURNAL_NUDGE_ALLOWLIST }}
-          GYM_ENGINE_WRITES: ${{ vars.GYM_ENGINE_WRITES || '0' }}
-          GYM_WRITE_FREEZE: ${{ vars.GYM_WRITE_FREEZE || '0' }}
-          SYNC_ENABLED: ${{ vars.SYNC_ENABLED || '0' }}
           APPLE_NATIVE_ENABLED: ${{ vars.APPLE_NATIVE_ENABLED || '0' }}
           APPLE_CLIENT_ID: ${{ vars.APPLE_CLIENT_ID || '' }}
-          JOURNAL_ENGINE_WRITES: ${{ vars.JOURNAL_ENGINE_WRITES || '0' }}
-          JOURNAL_WRITE_FREEZE: ${{ vars.JOURNAL_WRITE_FREEZE || '0' }}
-          LEGACY_REST_WRITES_RETIRED: ${{ vars.LEGACY_REST_WRITES_RETIRED || '0' }}
           WINDMILL_MCP_ALLOWED_ORIGINS: ${{ vars.WINDMILL_MCP_ALLOWED_ORIGINS }}
           IMAGE_TAG: ${{ inputs.image_tag || github.event.workflow_run.head_sha }}
         run: |
@@ -147,9 +141,7 @@ jobs:
                        REMINDERS_ENABLED REMINDERS_ALLOWLIST REMINDERS_ADMIN_TOKEN \
                        JOURNAL_NUDGE_ENABLED JOURNAL_NUDGE_ALLOWLIST JOURNAL_NUDGE_ADMIN_TOKEN \
                        JOURNAL_ECHO_ADMIN_TOKEN \
-                       SYNC_ENABLED APPLE_NATIVE_ENABLED APPLE_CLIENT_ID \
-                       GYM_ENGINE_WRITES GYM_WRITE_FREEZE JOURNAL_ENGINE_WRITES JOURNAL_WRITE_FREEZE \
-                       LEGACY_REST_WRITES_RETIRED \
+                       APPLE_NATIVE_ENABLED APPLE_CLIENT_ID \
                        WINDMILL_OWNER_EMAILS WINDMILL_COOKIE_RETIRED_DOMAINS \
                        WINDMILL_MCP_ALLOWED_ORIGINS WINDMILL_MCP_TOKEN; do
               printf '%s=%s\n' "$key" "${!key}"

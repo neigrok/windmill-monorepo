@@ -270,6 +270,7 @@ export function projectGym(rows, { now = Date.now(), timeZone = 'UTC', catalog =
     exercises: () => exercises,
     sessions: ({ before = MAX_INSTANT, beforeId = '', limit = 50 } = {}) => sessions.filter((session) => session.startedAt < Number(before) || (session.startedAt === Number(before) && lexical(session.id, beforeId) < 0)).slice(0, Math.min(200, limit > 0 ? Number(limit) : 50)).map(summaryOf),
     session: (id) => { const session = sessions.find((session) => session.id === id); return session ? { session, sets: setsFor(id) } : null; },
+    set: (id) => { const row = ofType('set').find((each) => each.id === id); return row ? setOf(row) : null; },
     review: (id) => reviewOf(sessions.find((session) => session.id === id)),
     preferences: () => {
       const row = ofType('prefs')[0];

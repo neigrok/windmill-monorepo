@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -31,7 +30,7 @@ class SignInDoorTests {
     @Before fun start() { server.start() }
     @After fun stop() { server.shutdown() }
 
-    @Test fun rawRefusalsAndTheExactFlowSurviveRestorationBeforeCodeRetry() {
+    @Test fun rawRefusalsSurviveRestorationBeforeCodeRetry() {
         val auth = AuthStore(server.url("/"), MemorySessions())
         runBlocking { auth.restore() }
         server.enqueue(MockResponse().setResponseCode(400).setBody("""{"error":"Use a valid email."}"""))
@@ -39,11 +38,10 @@ class SignInDoorTests {
         server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"expired"}"""))
         server.enqueue(MockResponse().setBody("""{"user":{"id":"A","email":"a@example.com","name":"Ana"}}""")
             .addHeader("Set-Cookie", "wm_session=fresh; Path=/; HttpOnly"))
-        val accepted = mutableListOf<Pair<User, String?>>()
         var done = 0
         val restoration = StateRestorationTester(compose)
         restoration.setContent { WindmillMaterial { Box(Modifier.height(700.dp)) {
-            SignInDoor(auth, { done++ }, "claim-flow", { user, flow -> accepted += user to flow })
+            SignInDoor(auth, { done++ })
         } } }
         compose.onNodeWithContentDescription("Email field").performTextReplacement("  a@example.com  ")
         compose.onNodeWithText("Send code").performClick()
@@ -63,7 +61,7 @@ class SignInDoorTests {
         compose.runOnIdle { finalClick() }
         compose.waitUntil(5_000) { done == 1 }
         compose.runOnIdle { finalClick(); assertEquals(4, server.requestCount) }
-        assertEquals(listOf(User("A", "a@example.com", "Ana") to "claim-flow"), accepted)
+        assertEquals(AuthStatus.SignedIn(User("A", "a@example.com", "Ana")), auth.status)
         assertEquals(listOf("""{"email":"a@example.com","door":"app"}""", """{"email":"a@example.com","door":"app"}""",
             """{"email":"a@example.com","code":"123456"}""", """{"email":"a@example.com","code":"123456"}"""),
             List(4) { server.takeRequest().body.readUtf8() })
@@ -79,7 +77,7 @@ class SignInDoorTests {
         var clock by mutableLongStateOf(1_000L)
         var done = 0
         val restoration = StateRestorationTester(compose)
-        restoration.setContent { WindmillMaterial { SignInDoor(auth, { done++ }, "flow", now = { clock }) } }
+        restoration.setContent { WindmillMaterial { SignInDoor(auth, { done++ }, now = { clock }) } }
         compose.onNodeWithContentDescription("Email field").performTextReplacement("a@example.com")
         compose.onNodeWithText("Send code").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Resend in 30s").fetchSemanticsNodes().isNotEmpty() }
@@ -100,7 +98,7 @@ class SignInDoorTests {
         assertEquals("""{"token":"exact-token"}""", request.body.readUtf8())
     }
 
-    @Test fun pendingRequestIsSingleFlightAndReplacedFlowCannotReceiveItsReply() {
+    @Test fun pendingRequestIsSingleFlightAndAReplacedAuthStoreCannotReceiveItsReply() {
         val release = CountDownLatch(1)
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
@@ -108,42 +106,43 @@ class SignInDoorTests {
                 return MockResponse().setBody("{}")
             }
         }
-        val auth = AuthStore(server.url("/"), MemorySessions())
-        runBlocking { auth.restore() }
-        var flow by mutableStateOf("old")
+        val old = AuthStore(server.url("/"), MemorySessions())
+        runBlocking { old.restore() }
+        var auth by mutableStateOf(old)
         var busy = false
-        compose.setContent { WindmillMaterial { SignInDoor(auth, flowId = flow, onBusy = { busy = it }) } }
+        compose.setContent { WindmillMaterial { SignInDoor(auth, onBusy = { busy = it }) } }
         compose.onNodeWithContentDescription("Email field").performTextReplacement("old@example.com")
         val click = compose.onNodeWithText("Send code").fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
         compose.runOnIdle { click(); click() }
         compose.waitUntil(5_000) { server.requestCount == 1 }
         compose.onNodeWithText("Sending…").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Email field").assertIsNotEnabled()
-        compose.runOnIdle { assertTrue(busy); flow = "new" }
-        assertEquals("", compose.onNodeWithContentDescription("Email field").fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
-        compose.runOnIdle { release.countDown() }
-        compose.waitUntil(5_000) { auth.linkSentTo != null }
+        compose.runOnIdle { assertTrue(busy); auth = AuthStore(server.url("/"), MemorySessions()) }
+        compose.runOnIdle { assertFalse(busy); release.countDown() }
+        compose.waitUntil(5_000) { old.linkSentTo != null }
         compose.onNodeWithText("Check your email").assertDoesNotExist()
-        compose.onNodeWithText("Send code").assertIsNotEnabled()
         compose.runOnIdle { assertFalse(busy); assertEquals(1, server.requestCount) }
     }
 
-    @Test fun aFailedDurableCheckpointKeepsTheCodeAndDoesNotCommitCredentials() {
-        val sessions = MemorySessions()
+    @Test fun aFailedSessionWriteKeepsTheCodeAndDoesNotCommitCredentials() {
+        val memory = MemorySessions()
+        var stages = 0
+        val sessions = object : SessionStore by memory {
+            override fun stage(proposed: ProposedSignIn) {
+                assertEquals(ProposedSignIn("fresh", User("A", "a@example.com", "Ana")), proposed)
+                assertNull(memory.read())
+                stages++
+                if (stages == 1) throw IOException("disk full")
+                memory.stage(proposed)
+            }
+        }
         val auth = AuthStore(server.url("/"), sessions)
         runBlocking { auth.restore() }
         server.enqueue(MockResponse().setBody("{}"))
         repeat(2) { server.enqueue(MockResponse().setBody("""{"user":{"id":"A","email":"a@example.com","name":"Ana"}}""")
             .addHeader("Set-Cookie", "wm_session=fresh; Path=/; HttpOnly")) }
-        var checkpoint = 0
         var done = 0
-        compose.setContent { WindmillMaterial { SignInDoor(auth, { done++ }, "claim-flow", onSignedIn = { user, flow ->
-            assertEquals(User("A", "a@example.com", "Ana"), user)
-            assertEquals("claim-flow", flow)
-            assertNull(sessions.read())
-            checkpoint++
-            if (checkpoint == 1) throw IOException("disk full")
-        }) } }
+        compose.setContent { WindmillMaterial { SignInDoor(auth, { done++ }) } }
         compose.onNodeWithContentDescription("Email field").performTextReplacement("a@example.com")
         compose.onNodeWithText("Send code").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Check your email").fetchSemanticsNodes().isNotEmpty() }
@@ -157,6 +156,6 @@ class SignInDoorTests {
         compose.onNodeWithText("Sign in").performClick()
         compose.waitUntil(5_000) { done == 1 }
         assertEquals("fresh", sessions.read())
-        assertEquals(2, checkpoint)
+        assertEquals(2, stages)
     }
 }

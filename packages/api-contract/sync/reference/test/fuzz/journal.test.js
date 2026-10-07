@@ -4,7 +4,6 @@ import test from "node:test";
 import { ZERO_DIGEST, replaceRow } from "../../core/digest.js";
 import { jcs } from "../../core/jcs.js";
 import { stampsOf } from "../../core/rows.js";
-import { audit, backfill } from "../../journal/backfill.js";
 import { claimBody, JOURNAL_STATE_FIELDS } from "../../journal/product.js";
 import { admit } from "../../server/admit.js";
 import { ServerState } from "../../server/state.js";
@@ -20,49 +19,58 @@ function simulate(seed) {
     oracle = new Map(),
     receipts = new Map(),
     pending = [];
+  // Appendix D's adopted shape at M = T: a page over its one retained revision, and the first run retired.
+  const at = `${T}:0:srv`;
+  const seeded = {
+    day: "2026-10-01",
+    body: "Legacy seed words.",
+    mood: 6,
+    energy: null,
+    source: "typed",
+    stamp: { ms: T + (seed % 3) * 1000000, counter: 2, actor: "legacy:writer" },
+  };
+  const archived = { ms: T - 1000, counter: 0, actor: "legacy:writer" };
   let state = ServerState.empty({
     epoch: "ep-1",
     accounts: { A: { name: "Ann" } },
   });
-  const legacy = {
-    pages: [
-      {
-        day: "2026-10-01",
-        body: "Legacy seed words.",
-        mood: 6,
-        energy: null,
-        source: "typed",
-        stamp: {
-          ms: T + (seed % 3) * 1000000,
-          counter: 2,
-          actor: "legacy:writer",
-        },
-        updatedAt: T - 500,
+  const scope = state.insertScope(key, { kind: "product", owner: "A" });
+  for (const row of [
+    {
+      t: "page",
+      id: seeded.day,
+      f: {
+        mood: [seeded.mood, at],
+        energy: [seeded.energy, at],
+        source: [seeded.source, at],
+        documentStamp: [seeded.stamp, at],
       },
-    ],
-    revisions: [
-      {
-        migrationId: 1,
-        day: "2026-10-01",
-        body: "Old seed words.",
-        stamp: { ms: T - 1000, counter: 0, actor: "legacy:writer" },
-        supersededAt: T - 1000,
-      },
-    ],
+      x: { body: { text: seeded.body, rev: 2, merged: false } },
+      seq: 2,
+      rc: T - 500,
+      ru: T - 500,
+    },
+    {
+      t: "journalState",
+      id: "journalState",
+      f: Object.fromEntries(JOURNAL_STATE_FIELDS.map((name) => [name, ["retired", at]])),
+      seq: 3,
+      rc: T,
+      ru: T,
+    },
+  ]) {
+    state.putRow(key, row);
+    scope.digest = replaceRow(scope.digest, undefined, state.row(key, row.t, row.id));
+  }
+  scope.seq = 3;
+  state.revisions[key] = [
+    { t: "page", id: seeded.day, field: "body", rev: 1, text: "Old seed words.", archivedAt: T - 1000, documentStamp: archived },
+  ];
+  state.product = {
+    journalRevisionProjection: { [key]: { 1: { migrationId: 1, stamp: archived, supersededAt: T - 1000 } } },
+    journalPages: { [key]: { [seeded.day]: { updatedAt: T - 500 } } },
   };
-  const adoption = {
-    registry: journalRegistry,
-    account: "A",
-    legacy,
-    M: T,
-    firstRunPolicy: seed % 2 ? "retire-existing" : undefined,
-  };
-  state = backfill({ ...adoption, state });
-  assert.equal(audit({ ...adoption, state }), true);
-  assert.deepEqual(state.row(key, "journalState", "journalState").f,
-    Object.fromEntries(JOURNAL_STATE_FIELDS.map((name) => [name, ["retired", `${T}:0:srv`]])));
-  assert.deepEqual(backfill({ ...adoption, state }).toJSON(), state.toJSON());
-  oracle.set(legacy.pages[0].day, legacy.pages[0]);
+  oracle.set(seeded.day, seeded);
   const seen = {
     save: 0,
     stale: 0,

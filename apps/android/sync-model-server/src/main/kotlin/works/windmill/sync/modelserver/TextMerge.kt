@@ -8,6 +8,7 @@ object TextMerge {
     data class Result(val text: String, val conflict: Boolean)
     data class Merged(val text: String, val conflict: Boolean, val merged: Boolean, val baseText: String)
     fun isWhitespace(c: Int) = c in 9..13 || c in listOf(32, 0xA0, 0x1680, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF) || c in 0x2000..0x200A
+    fun isBlank(text: String) = text.codePoints().allMatch(::isWhitespace)
     fun tokens(text: String): List<String> {
         val tokens = mutableListOf<String>(); var start = 0; var previous: Boolean? = null
         var at = 0
@@ -36,7 +37,7 @@ object TextMerge {
         }
     }
     internal data class Hunk(val start: Int, val end: Int, val inserted: List<String>, val deleted: List<String>, val head: Boolean) {
-        val whitespace get() = (inserted + deleted).all { it.codePoints().allMatch(::isWhitespace) }
+        val whitespace get() = (inserted + deleted).all(::isBlank)
     }
     internal fun hunks(base: List<String>, side: List<String>, head: Boolean): List<Hunk> {
         val result = mutableListOf<Hunk>(); var index = 0; var start: Int? = null

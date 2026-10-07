@@ -5,6 +5,7 @@ import { lazy } from 'react';
 import { journalLandingHead } from './marketing/landingHead.js';
 import { migratePages } from './migrate.js';
 import { onSyncResult, watchClaims } from './pages.js';
+import { pendingClaimWork } from './claims.js';
 
 const importJournalApp = () => import('./JournalApp.jsx').then((m) => ({ default: m.JournalApp }));
 const JournalApp = lazy(importJournalApp);
@@ -28,14 +29,7 @@ function landingAfterSignIn() {
   return home();
 }
 
-// `import.meta.env.DEV` is a literal false in a production build, so neither the route nor the fixtures
-// reach a shipped bundle.
-const EchoLab = import.meta.env && import.meta.env.DEV
-  ? lazy(() => import('./echoes/EchoLab.jsx').then((m) => ({ default: m.EchoLab })))
-  : null;
-
 function render({ hash }) {
-  if (EchoLab && hash.startsWith('#/journal/echoes-lab')) return { Component: EchoLab, props: { hash } };
   if (hash.startsWith('#/journal')) return { Component: JournalApp, props: { hash } };
   return null;
 }
@@ -48,8 +42,14 @@ export const journalRoutes = {
   landingAfterSignIn,
   render,
   preloadApp: importJournalApp,
-  prepareSync: async (engine) => { await migratePages(engine); watchClaims(engine); },
-  onSyncResult,
+  // How the journal rides the browser engine; the shell composes every product's hooks into it.
+  sync: {
+    prepare: async (engine) => { await migratePages(engine); watchClaims(engine); },
+    onPushResult: onSyncResult,
+    pendingDeviceWork: pendingClaimWork,
+    // The work a sign-in question counts from before sign-in: the journal's pages.
+    signedOutWork: { type: 'page', one: 'page', many: 'pages' },
+  },
   settingsSections: {
     data: [YourJournalSection],
   },

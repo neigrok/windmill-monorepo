@@ -1,5 +1,6 @@
 // The write is the WHOLE document, not a patch, so two screens open at once is last-write-wins.
 
+import { failureReason, isStoreFailure } from '../errors.js';
 import { KG, LB } from '../units.js';
 
 export const DEFAULT_PREFERENCES = {
@@ -38,6 +39,7 @@ export function preferencesWrite(preferences) {
 }
 
 export function preferenceRefusal(error) {
-  if (error?.detail) return error.detail;
+  if (error?.sentence) return error.sentence;
+  if (isStoreFailure(error)) return `that setting didn’t save — ${failureReason(error)}`;
   return 'that setting didn’t save — the log didn’t answer. Try again in a moment';
 }

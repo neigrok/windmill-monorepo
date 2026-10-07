@@ -3,7 +3,7 @@ package works.windmill.gym.ui
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import works.windmill.gym.domain.Exercise
-import works.windmill.gym.store.RefusedClaim
+import works.windmill.gym.store.RefusedChange
 import works.windmill.gym.store.RefusedSet
 
 class RefusalBannerTests {
@@ -16,6 +16,6 @@ class RefusalBannerTests {
                 reps = 5, reason = "the session closed before this set reached it"), catalog))
 
         assertEquals("“Push Day” stays on this phone",
-            refusalHeadline(RefusedClaim(id = "rt_push", name = "Push Day", reason = "that document is unclaimable"), catalog))
+            refusalHeadline(RefusedChange(id = "rt_push", name = "Push Day", reason = "that document is unclaimable"), catalog))
     }
 }

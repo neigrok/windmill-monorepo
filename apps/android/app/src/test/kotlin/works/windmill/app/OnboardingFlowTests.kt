@@ -31,9 +31,8 @@ import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import org.robolectric.util.ReflectionHelpers
 import works.windmill.gym.domain.Session
-import works.windmill.gym.domain.SessionDetail
 import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.store.LocalLog
+import works.windmill.gym.store.WorkoutControls
 import androidx.test.core.app.ActivityScenario
 import works.windmill.platform.telemetry.Telemetry
 
@@ -274,10 +273,10 @@ class OnboardingExistingDataTests {
     fun anExistingWorkoutOnAnotherShelfOpensGymWithoutTheIntroduction() {
         val context = RuntimeEnvironment.getApplication()
         context.deleteSharedPreferences(OnboardingLaunch.preferencesName)
-        val file = File(context.filesDir, LocalLog.fileName)
-        val workout = Session("retained-workout", startedAtMs = 10L, finishedAtMs = 20L)
+        val file = File(context.filesDir, WorkoutControls.fileName)
+        val workout = Session("retained-workout", startedAtMs = 10L)
         val sets = listOf(TrainingSet("retained-set", "squat", weightKg = 100.0, reps = 5, completedAtMs = 15L))
-        LocalLog(file, deviceOwner = "other").hold(LocalLog.FinishedSession(workout, sets))
+        WorkoutControls(file, deviceOwner = "other").apply { hold(workout); store(sets.single(), workout.id) }
         val runtime = RuntimeEnvironment.getApplication() as WindmillApplication
         runtime.onCreate()
         val introduction = runtime.onboardingLaunch.firstLaunch(hasAccount = false, deepLink = false)
@@ -285,7 +284,7 @@ class OnboardingExistingDataTests {
         compose.runOnUiThread { compose.activity.setContent { Root(runtime, introduction, onIntroductionExit = {}) } }
         compose.onNodeWithTag("onboarding").assertDoesNotExist()
         compose.onNodeWithText("Start logging").assertIsDisplayed()
-        assertEquals(SessionDetail(workout, sets), LocalLog(file, deviceOwner = "other").detail(workout.id))
+        assertEquals(sets, WorkoutControls(file, deviceOwner = "other").sets(workout.id))
     }
 
     @Test

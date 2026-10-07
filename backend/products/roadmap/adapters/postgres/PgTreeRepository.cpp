@@ -3,7 +3,7 @@
 
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "platform/adapters/postgres/PgPool.h"
-#include "platform/domain/Crdt.h"
+#include "products/roadmap/domain/Crdt.h"
 #include "products/roadmap/domain/LooseGraph.h"
 
 #include <pqxx/pqxx>

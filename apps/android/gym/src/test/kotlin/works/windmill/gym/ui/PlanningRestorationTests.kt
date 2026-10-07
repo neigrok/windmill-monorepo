@@ -15,14 +15,12 @@ import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
-import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -33,8 +31,6 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowDialog
 import works.windmill.gym.domain.*
 import works.windmill.gym.store.*
-import works.windmill.platform.Account
-import works.windmill.platform.net.WindmillApi
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -44,17 +40,10 @@ class PlanningRestorationTests {
     @get:Rule val compose = createComposeRule()
     @get:Rule val tmp = TemporaryFolder()
 
-    private fun store(scope: CoroutineScope): TrainingStore {
-        val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json")),
-            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
-            localLog = LocalLog(File(tmp.root, "local.json")),
-            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
-            scope = scope, sync = { null },
-        )
-        runBlocking { store.connect(Account(WindmillApi("https://windmill.works".toHttpUrl(), credential = { null }), null)) }
-        return store
+    // Signed out: the anonymous replica's store.
+    private fun store(room: EngineRoomFixture): TrainingStore {
+        runBlocking { room.select(null) }
+        return room.store
     }
 
     private fun hideSearchIme() {
@@ -76,97 +65,101 @@ class PlanningRestorationTests {
     @Test
     fun builderRestoresRawInvalidAndHiddenTargetRowsButCancelLeavesTheRoutineUntouched() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = store(scope)
-        val original = RoutineDraft(name = "Push").adding("bench-press")
-            .targeting("bench-press", listOf(SetTarget(8, 60.0), SetTarget(6, 65.0), SetTarget(4, 70.0)))
-        var draft by mutableStateOf(original)
-        val restorer = StateRestorationTester(compose)
-        restorer.setContent {
-            contentView = LocalView.current
-            RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {})
-        }
-        compose.onNodeWithText("Bench Press").performClick()
-        compose.onNodeWithContentDescription("Set 3 load").performTextReplacement("82..5")
-        compose.onNodeWithContentDescription("Sets target").performTextReplacement("1")
-        compose.onNodeWithContentDescription("Set 1 reps").performTextReplacement("no")
-        restorer.emulateSavedInstanceStateRestore()
-        hideSearchIme()
-        compose.onNodeWithContentDescription("Sets target").assertTextEquals("1")
-        compose.onNodeWithContentDescription("Set 1 reps").assertTextEquals("no")
-        compose.onNodeWithContentDescription("Sets target").performTextReplacement("3")
-        compose.onNodeWithContentDescription("Set 3 load").assertTextEquals("82..5")
-        compose.onNode(hasText("Set") and hasClickAction()).assertIsNotEnabled()
-        compose.onNodeWithText("Cancel").performClick()
-        compose.waitForIdle()
-        assertEquals(original, draft)
-        compose.onNodeWithText("Bench Press").performClick()
-        compose.onNodeWithContentDescription("Set 3 load").assertTextEquals("70")
-        scope.cancel()
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val store = store(room)
+            val original = RoutineDraft(name = "Push").adding("bench-press")
+                .targeting("bench-press", listOf(SetTarget(8, 60.0), SetTarget(6, 65.0), SetTarget(4, 70.0)))
+            var draft by mutableStateOf(original)
+            val restorer = StateRestorationTester(compose)
+            restorer.setContent {
+                contentView = LocalView.current
+                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {})
+            }
+            compose.onNodeWithText("Bench Press").performClick()
+            compose.onNodeWithContentDescription("Set 3 load").performTextReplacement("82..5")
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("1")
+            compose.onNodeWithContentDescription("Set 1 reps").performTextReplacement("no")
+            restorer.emulateSavedInstanceStateRestore()
+            hideSearchIme()
+            compose.onNodeWithContentDescription("Sets target").assertTextEquals("1")
+            compose.onNodeWithContentDescription("Set 1 reps").assertTextEquals("no")
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("3")
+            compose.onNodeWithContentDescription("Set 3 load").assertTextEquals("82..5")
+            compose.onNode(hasText("Set") and hasClickAction()).assertIsNotEnabled()
+            compose.onNodeWithText("Cancel").performClick()
+            compose.waitForIdle()
+            assertEquals(original, draft)
+            compose.onNodeWithText("Bench Press").performClick()
+            compose.onNodeWithContentDescription("Set 3 load").assertTextEquals("70")
+        } } finally { scope.cancel() }
     }
 
     @Test
     fun routinePickerRestoresTheCreateRouteAndRetainsInputAfterCancelAndReopen() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = store(scope)
-        var draft by mutableStateOf(RoutineDraft(name = "Push"))
-        val restorer = StateRestorationTester(compose)
-        restorer.setContent {
-            contentView = LocalView.current
-            RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {})
-        }
-        compose.onNodeWithText("Add movement").performClick()
-        compose.onNode(hasSetTextAction() and hasText("Search movements")).performTextReplacement("Zercher")
-        compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
-        hideSearchIme()
-        compose.onNodeWithContentDescription("Movement name").performTextReplacement("Zercher 🏋 carry")
-        compose.onNodeWithText("Dumbbell").performClick()
-        restorer.emulateSavedInstanceStateRestore()
-        hideSearchIme()
-        compose.onNodeWithContentDescription("Movement name").assertTextEquals("Zercher 🏋 carry")
-        compose.onNodeWithText("Dumbbell").assertIsSelected()
-        compose.onAllNodesWithText("Cancel").onLast().performClick()
-        compose.waitForIdle()
-        compose.onNode(hasSetTextAction() and hasText("Zercher")).assertIsDisplayed()
-        compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
-        hideSearchIme()
-        compose.onNodeWithContentDescription("Movement name").assertTextEquals("Zercher 🏋 carry")
-        compose.onNodeWithText("Dumbbell").assertIsSelected()
-        compose.onNodeWithText("Add to routine").performClick()
-        compose.waitForIdle()
-        assertEquals(listOf("Zercher 🏋 carry"), draft.entries.map { id -> store.catalog.single { it.id == id.exerciseId }.name })
-        assertEquals(listOf("dumbbell"), store.catalog.filter { it.custom }.map { it.equipment })
-        scope.cancel()
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val store = store(room)
+            var draft by mutableStateOf(RoutineDraft(name = "Push"))
+            val restorer = StateRestorationTester(compose)
+            restorer.setContent {
+                contentView = LocalView.current
+                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {})
+            }
+            compose.onNodeWithText("Add movement").performClick()
+            compose.onNode(hasSetTextAction() and hasText("Search movements")).performTextReplacement("Zercher")
+            compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
+            hideSearchIme()
+            compose.onNodeWithContentDescription("Movement name").performTextReplacement("Zercher 🏋 carry")
+            compose.onNodeWithText("Dumbbell").performClick()
+            restorer.emulateSavedInstanceStateRestore()
+            hideSearchIme()
+            compose.onNodeWithContentDescription("Movement name").assertTextEquals("Zercher 🏋 carry")
+            compose.onNodeWithText("Dumbbell").assertIsSelected()
+            compose.onAllNodesWithText("Cancel").onLast().performClick()
+            compose.waitForIdle()
+            compose.onNode(hasSetTextAction() and hasText("Zercher")).assertIsDisplayed()
+            compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
+            hideSearchIme()
+            compose.onNodeWithContentDescription("Movement name").assertTextEquals("Zercher 🏋 carry")
+            compose.onNodeWithText("Dumbbell").assertIsSelected()
+            compose.onNodeWithText("Add to routine").performClick()
+            compose.waitForIdle()
+            assertEquals(listOf("Zercher 🏋 carry"), draft.entries.map { id -> store.catalog.single { it.id == id.exerciseId }.name })
+            assertEquals(listOf("dumbbell"), store.catalog.filter { it.custom }.map { it.equipment })
+        } } finally { scope.cancel() }
     }
 
     @Test
     fun quickSessionRestoresItsCreateRouteAndAddsToTheInvokingSession() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = store(scope)
-        runBlocking { store.start(null) }
-        val session = store.session!!.id
-        val restorer = StateRestorationTester(compose)
-        restorer.setContent {
-            contentView = LocalView.current
-            LoggerScreen(store, false, {}, {}, {}, {})
-        }
-        compose.onNode(hasSetTextAction()).performTextReplacement("Carry")
-        compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
-        hideSearchIme()
-        compose.onNodeWithContentDescription("Movement name").performTextReplacement("Farmer carry")
-        compose.onNodeWithText("Dumbbell").performClick()
-        restorer.emulateSavedInstanceStateRestore()
-        hideSearchIme()
-        compose.onNodeWithContentDescription("Movement name").assertTextEquals("Farmer carry")
-        compose.onNodeWithText("Dumbbell").assertIsSelected()
-        compose.onNodeWithText("Create and add").performClick()
-        compose.waitForIdle()
-        assertEquals(session, store.session?.id)
-        val exercise = store.catalog.single { it.custom }
-        assertEquals("Farmer carry", exercise.name)
-        assertEquals("dumbbell", exercise.equipment)
-        assertEquals(listOf(exercise.id), store.order)
-        assertEquals(exercise.id, store.exerciseId)
-        scope.cancel()
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val store = store(room)
+            runBlocking { store.start(null) }
+            val session = store.session!!.id
+            val restorer = StateRestorationTester(compose)
+            restorer.setContent {
+                contentView = LocalView.current
+                LoggerScreen(store, false, {}, {}, {}, {})
+            }
+            compose.onNode(hasSetTextAction()).performTextReplacement("Carry")
+            compose.onNode(hasText("Create movement") and hasClickAction()).performClick()
+            hideSearchIme()
+            compose.onNodeWithContentDescription("Movement name").performTextReplacement("Farmer carry")
+            val dumbbell = hasText("Dumbbell") and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton)
+            compose.onNode(dumbbell).performClick()
+            restorer.emulateSavedInstanceStateRestore()
+            hideSearchIme()
+            compose.onNodeWithContentDescription("Movement name").assertTextEquals("Farmer carry")
+            compose.onNode(dumbbell).assertIsSelected()
+            compose.onNodeWithText("Create and add").performClick()
+            compose.waitForIdle()
+            assertEquals(session, store.session?.id)
+            val exercise = store.catalog.single { it.custom }
+            assertEquals("Farmer carry", exercise.name)
+            assertEquals("dumbbell", exercise.equipment)
+            assertEquals(listOf(exercise.id), store.order)
+            assertEquals(exercise.id, store.exerciseId)
+        } } finally { scope.cancel() }
     }
 
     @Test
@@ -206,27 +199,28 @@ class PlanningRestorationTests {
     @Test
     fun openBodyweightTargetsDisableSignAndRestoreTheHiddenAssistedLoads() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = store(scope)
-        val original = RoutineDraft(name = "Pull").adding("chin-up")
-            .targeting("chin-up", listOf(SetTarget(8, -10.0), SetTarget(6, -5.0)))
-        var draft by mutableStateOf(original)
-        val restorer = StateRestorationTester(compose)
-        restorer.setContent {
-            contentView = LocalView.current
-            RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {})
-        }
-        compose.onNodeWithText("Chin Up").performClick()
-        compose.onNodeWithContentDescription("Sets target").performTextReplacement("")
-        compose.onNodeWithContentDescription(KeypadEntry.signName).assertIsNotEnabled().performClick()
-        restorer.emulateSavedInstanceStateRestore()
-        hideSearchIme()
-        compose.onNodeWithContentDescription(KeypadEntry.signName).assertIsNotEnabled()
-        compose.onNodeWithContentDescription("Sets target").performTextReplacement("2")
-        compose.onNodeWithContentDescription("Set 1 load").assertTextEquals("−10")
-        compose.onNodeWithContentDescription("Set 2 load").assertTextEquals("−5")
-        compose.onNodeWithText("Cancel").performClick()
-        assertEquals(original, draft)
-        scope.cancel()
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val store = store(room)
+            val original = RoutineDraft(name = "Pull").adding("chin-up")
+                .targeting("chin-up", listOf(SetTarget(8, -10.0), SetTarget(6, -5.0)))
+            var draft by mutableStateOf(original)
+            val restorer = StateRestorationTester(compose)
+            restorer.setContent {
+                contentView = LocalView.current
+                RoutineBuilder(draft, store, false, { draft = it }, {}, {}, {})
+            }
+            compose.onNodeWithText("Chin Up").performClick()
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("")
+            compose.onNodeWithContentDescription(KeypadEntry.signName).assertIsNotEnabled().performClick()
+            restorer.emulateSavedInstanceStateRestore()
+            hideSearchIme()
+            compose.onNodeWithContentDescription(KeypadEntry.signName).assertIsNotEnabled()
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("2")
+            compose.onNodeWithContentDescription("Set 1 load").assertTextEquals("−10")
+            compose.onNodeWithContentDescription("Set 2 load").assertTextEquals("−5")
+            compose.onNodeWithText("Cancel").performClick()
+            assertEquals(original, draft)
+        } } finally { scope.cancel() }
     }
 
     @Test

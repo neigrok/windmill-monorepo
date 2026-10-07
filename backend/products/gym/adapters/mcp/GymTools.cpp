@@ -1,8 +1,7 @@
 #include "products/gym/adapters/mcp/GymTools.h"
 #include "platform/application/WriteObservation.h"
-#include "products/gym/application/GymSwitches.h"
 
-#include "products/gym/adapters/json/TrainingJson.h"
+#include "products/gym/adapters/json/GymJson.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 
 #include <algorithm>
@@ -68,7 +67,7 @@ std::vector<std::string> batchIds(const Json::Value& args, const char* field) {
   return ids;
 }
 
-ToolResult batchLog(TrainingService& training, const UserId& caller, const Json::Value& args, bool imported) {
+ToolResult batchLog(GymWriteDoor& door, const UserId& caller, const Json::Value& args, bool imported) {
   std::string sessionId;
   std::vector<SetWrite> sets;
   BatchLogOutcome outcome;
@@ -76,7 +75,7 @@ ToolResult batchLog(TrainingService& training, const UserId& caller, const Json:
     const SessionImport incoming = parseSessionImport(args);
     sessionId = incoming.id.str();
     sets = incoming.sets;
-    outcome = training.importSession(caller, incoming);
+    outcome = door.importSession(caller, incoming);
   } else {
     if (!args["sets"].isArray() || args["sets"].empty() || args["sets"].size() > kMaxSetBatch)
       return ToolResult::failure("sets must contain 1 to 200 rows");
@@ -86,7 +85,7 @@ ToolResult batchLog(TrainingService& training, const UserId& caller, const Json:
     }
     if (const auto bad = idArgument(args, "sessionId", "Call list_sessions or start_session.", sessionId))
       return ToolResult::failure(*bad);
-    outcome = training.appendSets(caller, SessionId{sessionId}, sets);
+    outcome = door.appendSets(caller, SessionId{sessionId}, sets);
   }
   if (outcome.error != BatchLogError::none) {
     std::string reason;
@@ -180,7 +179,7 @@ ToolResult getLastTimes(TrainingService& training, const UserId& caller, const J
 
 // --- The reads -------------------------------------------------------------------------------
 
-ToolResult listExercises(CatalogService& catalog, const UserId& caller) {
+ToolResult listExercises(CatalogRepository& catalog, const UserId& caller) {
   Json::Value out(Json::objectValue);
   out["exercises"] = toJson(catalog.catalog(caller));
   return ToolResult::json(out);
@@ -278,9 +277,9 @@ ToolResult lastTime(TrainingService& training, const UserId& caller, const Json:
 
 // The list and the single read share one wrapper. Pending proposals ride along as heads alone,
 // never their diff rows.
-ToolResult listRoutines(ProgramService& program, const UserId& caller, const Json::Value& args) {
+ToolResult listRoutines(ProgramRepository& program, const UserId& caller, const Json::Value& args) {
   Json::Value out(Json::objectValue);
-  const std::vector<ProposalHead> pending = program.proposals(caller, ProposalQuery{std::nullopt, true});
+  const std::vector<ProposalHead> pending = program.proposalHeads(caller, ProposalQuery{std::nullopt, true});
   if (args["routineId"].isNull()) {
     out["routines"] = toJson(program.routines(caller), pending);
     return ToolResult::json(out);
@@ -320,7 +319,7 @@ ToolResult getStats(TrainingService& training, const UserId& caller, const Json:
 
 // Precedence order, the wire's shape minus the id and the instant an agent has no use for. No
 // receipt: a note is the lifter's instruction, not a log row, and the tally claims log rows only.
-ToolResult listNotes(NotesService& notes, const UserId& caller) {
+ToolResult listNotes(NotesRepository& notes, const UserId& caller) {
   Json::Value rows(Json::arrayValue);
   for (const Note& note : notes.notes(caller)) {
     Json::Value row(Json::objectValue);
@@ -341,11 +340,11 @@ ToolResult noteReceipt(const Note& note) {
   return ToolResult::json(out);
 }
 
-ToolResult saveNote(NotesService& notes, const UserId& caller, const Json::Value& args) {
+ToolResult saveNote(GymWriteDoor& door, const UserId& caller, const Json::Value& args) {
   std::string id;
   if (auto bad = idArgument(args, "id", "Use one stable id for this note save.", id))
     return ToolResult::failure(*bad);
-  const auto outcome = notes.saveInsight(parseNoteWrite(args, NoteId{id}, caller));
+  const auto outcome = door.saveInsight(parseNoteWrite(args, NoteId{id}, caller));
   if (outcome.error == NoteWriteError::full)
     return ToolResult::failure("Notes already holds ten notes. Nothing was saved; the user can make room in Notes.");
   if (outcome.error == NoteWriteError::idTaken)
@@ -356,7 +355,7 @@ ToolResult saveNote(NotesService& notes, const UserId& caller, const Json::Value
 // Day ascending, the wire's shape minus the device instant an agent has no use for. No receipt:
 // a weigh-in is not a log row. A bound that is not a calendar day is refused before the store is
 // asked, in the sentence the schema's description already gives.
-ToolResult listBodyweight(BodyweightService& bodyweight, const UserId& caller,
+ToolResult listBodyweight(BodyweightRepository& bodyweight, const UserId& caller,
                           const Json::Value& args) {
   BodyweightRange range;
   for (const char* bound : {"from", "to"}) {
@@ -381,8 +380,8 @@ ToolResult listBodyweight(BodyweightService& bodyweight, const UserId& caller,
 
 // --- The writes ------------------------------------------------------------------------------
 
-ToolResult startSession(TrainingService& training, const UserId& caller, const Json::Value& args) {
-  StartOutcome outcome = training.start(caller, parseSessionStart(args));
+ToolResult startSession(GymWriteDoor& door, const UserId& caller, const Json::Value& args) {
+  StartOutcome outcome = door.start(caller, parseSessionStart(args));
   if (outcome.error == StartError::idTaken)
     return ToolResult::failure("that workout id is already spent. Inspect list_sessions to reconcile the log; "
                                "preserve deleted workouts. Retry only with the original id and body. "
@@ -406,13 +405,13 @@ ToolResult startSession(TrainingService& training, const UserId& caller, const J
   return ToolResult::json(toJson(*outcome.session));
 }
 
-ToolResult logSet(TrainingService& training, const UserId& caller, const Json::Value& args) {
+ToolResult logSet(GymWriteDoor& door, const UserId& caller, const Json::Value& args) {
   std::string session;
   if (std::optional<std::string> bad =
           idArgument(args, "sessionId", "Call list_sessions, or start_session to open one.", session))
     return ToolResult::failure(*bad);
 
-  AppendOutcome outcome = training.append(caller, SessionId{session}, parseSetWrite(args));
+  AppendOutcome outcome = door.append(caller, SessionId{session}, parseSetWrite(args));
   if (outcome.error == AppendError::notFound) return ToolResult::failure(kNoSession);
   if (outcome.error == AppendError::finished)
     // A set that already landed still replays; this answers new ids only.
@@ -430,13 +429,13 @@ ToolResult logSet(TrainingService& training, const UserId& caller, const Json::V
   return ToolResult::json(toJson(*outcome.set));
 }
 
-ToolResult finishSession(TrainingService& training, const UserId& caller, const Json::Value& args) {
+ToolResult finishSession(GymWriteDoor& door, const UserId& caller, const Json::Value& args) {
   std::string session;
   if (std::optional<std::string> bad =
           idArgument(args, "sessionId", "Call list_sessions for the ids you own.", session))
     return ToolResult::failure(*bad);
 
-  FinishOutcome outcome = training.finish(caller, SessionId{session}, parseFinish(args));
+  FinishOutcome outcome = door.finish(caller, SessionId{session}, parseFinish(args));
   if (outcome.error == FinishError::notFound) return ToolResult::failure(kNoSession);
   if (outcome.error == FinishError::badInstant)
     return ToolResult::failure("that workout cannot end at that instant — a workout ends at or "
@@ -446,11 +445,11 @@ ToolResult finishSession(TrainingService& training, const UserId& caller, const 
 
 // The routine is resolved first to tell a replay from an edit: a stored routine the incoming
 // document matches exactly replays; one it does not match is refused.
-ToolResult createRoutine(ProgramService& program, const UserId& caller, const Json::Value& args,
-                         ProposalDoor door) {
+ToolResult createRoutine(ProgramRepository& program, GymWriteDoor& door, const UserId& caller,
+                         const Json::Value& args, ProposalDoor source) {
   static_assert(classify(Subject::program, Standing::fresh) == Mutation::record);
   const RoutineWrite incoming = parseRoutineWrite(args);
-  if (door == ProposalDoor::ask)
+  if (source == ProposalDoor::ask)
     if (const auto creation = program.routineCreation(caller, incoming.id))
       return ToolResult::json(toJson(*creation));
   if (std::optional<Routine> standing = program.routine(caller, incoming.id)) {
@@ -466,7 +465,7 @@ ToolResult createRoutine(ProgramService& program, const UserId& caller, const Js
   }
 
   // The door rides onto the creation row of the routine's history.
-  RoutineWriteOutcome outcome = program.createRoutine(caller, incoming, door);
+  RoutineWriteOutcome outcome = door.createRoutine(caller, incoming, source);
   if (outcome.error == RoutineWriteError::idTaken)
     return ToolResult::failure("that routine id is already spent. Mint a different one and send it "
                                "again.");
@@ -531,18 +530,18 @@ ToolResult mintOutcome(const ProposalMintOutcome& outcome, const std::string& ap
   return proposalReceipt(*outcome.proposal, appBaseUrl);
 }
 
-ToolResult proposeRoutineChange(ProgramService& program, const UserId& caller, const Json::Value& args,
+ToolResult proposeRoutineChange(ProgramRepository& program, GymWriteDoor& door, const UserId& caller, const Json::Value& args,
                                 const ProposalSource& source, const std::string& appBaseUrl) {
   static_assert(classify(Subject::program, Standing::existing) == Mutation::intent);
   if (source.door == ProposalDoor::ask && args["id"].isString())
     if (const auto proposal = program.proposal(caller, ProposalId{args["id"].asString()}))
       return proposalReceipt(*proposal, appBaseUrl);
 
-  return mintOutcome(program.propose(caller, parseProposalWrite(args, source)), appBaseUrl);
+  return mintOutcome(door.propose(caller, parseProposalWrite(args, source)), appBaseUrl);
 }
 
-ToolResult createExercise(CatalogService& catalog, const UserId& caller, const Json::Value& args) {
-  ExerciseInsertOutcome outcome = catalog.createExercise(caller, parseExerciseWrite(args));
+ToolResult createExercise(GymWriteDoor& door, const UserId& caller, const Json::Value& args) {
+  ExerciseInsertOutcome outcome = door.createExercise(caller, parseExerciseWrite(args));
   if (outcome.error == ExerciseInsertError::idTaken)
     return ToolResult::failure("that movement id is already spent. Mint a different one and send it "
                                "again — and read list_exercises first, in case the movement itself "
@@ -568,13 +567,13 @@ ToolResult shareSession(TrainingService& training, const UserId& caller, const J
 
 // --- The deletes -----------------------------------------------------------------------------
 
-ToolResult discardSession(TrainingService& training, const UserId& caller, const Json::Value& args) {
+ToolResult discardSession(GymWriteDoor& door, const UserId& caller, const Json::Value& args) {
   std::string session;
   if (std::optional<std::string> bad =
           idArgument(args, "sessionId", "Call list_sessions for the ids you own.", session))
     return ToolResult::failure(*bad);
 
-  const DiscardOutcome outcome = training.discard(caller, SessionId{session});
+  const DiscardOutcome outcome = door.discard(caller, SessionId{session});
   if (outcome == DiscardOutcome::notFound) return ToolResult::failure(kNoSession);
   if (outcome == DiscardOutcome::open)
     return ToolResult::failure("that workout is still running, and deleting one somebody is logging "
@@ -587,7 +586,7 @@ ToolResult discardSession(TrainingService& training, const UserId& caller, const
 }
 
 // `gym:delete` buys the right to propose a destructive change and nothing else.
-ToolResult proposeRoutineRemoval(ProgramService& program, const UserId& caller, const Json::Value& args,
+ToolResult proposeRoutineRemoval(ProgramRepository& program, GymWriteDoor& door, const UserId& caller, const Json::Value& args,
                                  const ProposalSource& source, const std::string& appBaseUrl) {
   static_assert(classify(Subject::program, Standing::existing) == Mutation::intent);
   if (source.door == ProposalDoor::ask && args["id"].isString())
@@ -611,7 +610,7 @@ ToolResult proposeRoutineRemoval(ProgramService& program, const UserId& caller, 
   }
 
   return mintOutcome(
-      program.proposeRemoval(caller, ProposalId{id}, RoutineId{routine}, summary, source), appBaseUrl);
+      door.proposeRemoval(caller, ProposalId{id}, RoutineId{routine}, summary, source), appBaseUrl);
 }
 
 ToolResult revokeShare(TrainingService& training, const UserId& caller, const Json::Value& args) {
@@ -641,9 +640,9 @@ std::optional<ToolResult> GymTools::completedAction(const UserId& user, const st
   return std::nullopt;
 }
 
-GymTools::GymTools(TrainingService& training, CatalogService& catalog, ProgramService& program,
-                   NotesService& notes, BodyweightService& bodyweight, std::string appBaseUrl)
-    : training_(training), catalog_(catalog), program_(program), notes_(notes),
+GymTools::GymTools(TrainingService& training, GymWriteDoor& door, CatalogRepository& catalog, ProgramRepository& program,
+                   NotesRepository& notes, BodyweightRepository& bodyweight, std::string appBaseUrl)
+    : training_(training), door_(door), catalog_(catalog), program_(program), notes_(notes),
       bodyweight_(bodyweight), appBaseUrl_(std::move(appBaseUrl)) {}
 
 std::vector<ToolRetirement> GymTools::retiredTools() const {
@@ -682,8 +681,6 @@ ToolResult GymTools::callTool(const std::string& name, const Json::Value& argume
                               ReadReceipt& run) {
   ReadReceipt served;
   try {
-    for (const auto& tool : gymToolCatalog())
-      if (tool.name() == name && tool.access != Access::read) requireGymWrite();
     ToolResult outcome = dispatch(name, arguments, caller.user, source, served);
     // A refusal served nothing, so it counts nothing; the throw paths below skip the merge too.
     if (outcome.isError) return ToolResult::failure(name + ": " + outcome.content[0]["text"].asString(), toolWriteOutcome(outcome));
@@ -737,23 +734,23 @@ ToolResult GymTools::dispatch(const std::string& name, const Json::Value& argume
   if (name == "list_routines")   return listRoutines(program_, caller, arguments);
   if (name == "get_stats")       return getStats(training_, caller, arguments, served);
   if (name == "list_notes")      return listNotes(notes_, caller);
-  if (name == "save_note")       return saveNote(notes_, caller, arguments);
+  if (name == "save_note")       return saveNote(door_, caller, arguments);
   if (name == "list_bodyweight") return listBodyweight(bodyweight_, caller, arguments);
 
-  if (name == "start_session")   return startSession(training_, caller, arguments);
+  if (name == "start_session")   return startSession(door_, caller, arguments);
   if (name == "log_sets" || name == "import_session")
-    return batchLog(training_, caller, arguments, name == "import_session");
-  if (name == "log_set")         return logSet(training_, caller, arguments);
-  if (name == "finish_session")  return finishSession(training_, caller, arguments);
-  if (name == "create_routine")  return createRoutine(program_, caller, arguments, source.door);
+    return batchLog(door_, caller, arguments, name == "import_session");
+  if (name == "log_set")         return logSet(door_, caller, arguments);
+  if (name == "finish_session")  return finishSession(door_, caller, arguments);
+  if (name == "create_routine")  return createRoutine(program_, door_, caller, arguments, source.door);
   if (name == "propose_routine_change")
-    return proposeRoutineChange(program_, caller, arguments, source, appBaseUrl_);
-  if (name == "create_exercise") return createExercise(catalog_, caller, arguments);
+    return proposeRoutineChange(program_, door_, caller, arguments, source, appBaseUrl_);
+  if (name == "create_exercise") return createExercise(door_, caller, arguments);
   if (name == "share_session")   return shareSession(training_, caller, arguments, appBaseUrl_);
 
-  if (name == "discard_session") return discardSession(training_, caller, arguments);
+  if (name == "discard_session") return discardSession(door_, caller, arguments);
   if (name == "propose_routine_removal")
-    return proposeRoutineRemoval(program_, caller, arguments, source, appBaseUrl_);
+    return proposeRoutineRemoval(program_, door_, caller, arguments, source, appBaseUrl_);
   if (name == "revoke_share")    return revokeShare(training_, caller, arguments);
 
   // A retired name never reaches here; the host answers retiredTools() first.

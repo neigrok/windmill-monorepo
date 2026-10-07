@@ -11,14 +11,16 @@ telemetry, access, the HTTP host, and the AI spend meter (`domain/AiUsage`, `dom
 rows the owner page does).
 
 `products/<p>/` is one product each (roadmap, journal, gym, and the sync engine's test-only probe),
-and every product repeats the same four layers: `domain/` (pure), `application/` (services over
+with four shared layers: `domain/` (pure), `application/` (services over
 ports), `ports/` (the abstractions), `adapters/` (one subfolder per messy edge — `http` and `postgres`
-everywhere, plus `ws`/`mcp`/`llm`/`email` where a product needs them).
+everywhere, plus `ws`/`mcp`/`llm`/`email` where a product needs them). Gym and journal each keep their
+small engine binding together in `sync/`: rules, state port, product registry/binding and Postgres
+stores, plus gym's server write door and journal's change feed. Each builds into its product library.
 
-Composition roots: `platform/infra/main.cpp` (REST, the collab socket and MCP in one process),
-`mcp_main.cpp` (stdio transport), `mcp_http_main.cpp` (standalone HTTP transport, for local runs),
-and the gym and journal migration tools (`{gym,journal}_{backfill,snapshot,rehearsal_seed}_main.cpp`;
-the combined rehearsal and cutover live in `deploy/gym-migration/README.md`).
+Composition roots: `platform/infra/main.cpp` (REST, the collab socket, MCP and the sync engine in one
+process; it builds `windmill_server`, the harness-clocked `windmill_server_test_clock` and the probe's
+`windmill_server_probe`), `mcp_main.cpp` (stdio transport) and `mcp_http_main.cpp` (standalone HTTP
+transport, for local runs).
 
 ## How a product plugs in
 
@@ -34,15 +36,18 @@ filters `tools/list` by the caller's scope, refuses an out-of-scope call, and re
 tool name at boot. Roadmap and gym are registered. Tending is wired to roadmap's host directly,
 never the composite, so a prompt-injection-exposed agent cannot reach another product's tools.
 
-`db/schema.sql` is one file for every product, applied in order and idempotent
-(`create … if not exists`); the deploy re-applies it every time.
+`db/schema.sql` is one file for every product and builds the whole database, the sync engine's tables
+and envelope columns included. It is applied in order and idempotent (`create … if not exists`); the
+deploy re-applies it every time. The adoption records (`gym_sync_adoptions`, `journal_sync_adoptions`,
+`gym_sync_metadata_upgrade_runs`, `gym_sync_metadata_upgrades`, `journal_page_revision.migration_id`)
+stay in it, immutable, and no server code reads them.
 
 ## Build and test
 
 ```sh
 cmake -S . -B build                             # RelWithDebInfo by default (CMakeLists.txt:12)
 cmake --build build -j8
-ctest --test-dir build --output-on-failure      # four C++ suites, deploy check and differential comparator tests
+ctest --test-dir build --output-on-failure      # four C++ suites and four script checks (RUNNING.md §7)
 ```
 
 Drogon and libpqxx are the two vendor dependencies, and the configure fails without either. libpqxx
@@ -74,56 +79,35 @@ skipped case, and a file nobody claims fails. They also load every product regis
 (`RegistryTest.cpp`), and run the gym and journal bindings against registry v5/minimum 4 and composition.json. `windmill_sync_tests` replays the server's files again
 over Postgres under `WM_PG_TEST` (`RUNNING.md` §7).
 
-`products/gym/sync/` binds gym's ten types and seven commands over its adopted tables. `windmill_server`,
-the test binaries and `windmill_gym_backfill` link `windmill_gym_sync`. `GYM_ENGINE_WRITES` routes the REST,
-MCP and Coach gym writes through the engine as server-origin intents and defaults off; `GYM_WRITE_FREEZE`
-defaults off and blocks every gym write door and the lazy staleness settlement (engine.md C.7). Tests apply
-`db/gym_sync.sql` after `schema.sql` only in the isolated `WM_SYNC_DATABASE_URL` database; legacy repository
-Postgres cases use plain `schema.sql` at `DATABASE_URL`, admitted door cases the sync database. The admission
-corpus runs over fakes and Postgres, and all five base-backfill vectors and eleven metadata-upgrade vectors over Postgres. The backfill tool requires the
-adopted schema and migrates each account in one transaction; `deploy/gym-migration/` holds the offline
-rehearsal. `db/gym_sync_v5.sql` and `windmill_gym_backfill --upgrade-v5` add the six server-authored
-metadata fields and immutable routine creation feed without changing REST bytes or the epoch. The
-v5 binary serves an adopted v4 database before this separate migration; startup and scope readiness
-refuse incomplete upgrades, and ordinary deployment checks the image metadata capability.
+`products/gym/sync/` binds gym's ten types and seven commands, and `products/journal/sync/` binds
+journal's `page` and `journalState` and its two commands, `journal.savePage` and `journal.claimPage`.
+`platform/infra/SyncProducts` seals the two into the gym + journal v5/minimum-4 catalog. `windmill_server`
+always serves it at `/v1/sync/hello`, `push`, `pull` and `/v1/sync/live`, and the engine is the only
+writer of gym and journal client data. Every gym write the server makes for a lifter — the MCP gym
+tools, Coach, `POST /v1/gym/sessions/import`, the lazy close of a workout walked away from, and the
+proposal unlink a Coach conversation's delete makes — goes through `GymDoor`, the one `GymWriteDoor`,
+as a server-origin intent; it builds its own admission stack and four-thread worker pool beside the
+engine's. `GymTools` and the import handler take the door directly; `TrainingService` uses it for
+stale closes and `ThreadService` for proposal unlinking. Catalog, program, notes, settings and
+weigh-in reads use repository ports directly. The gym repositories only read, but for shares and
+Coach threads. No server door writes a journal page: `JournalRepository` only reads, and `JournalFeed` hands each committed page to the
+`PageWatcher` (echo derivation) after the live feed, reporting a failure of either after the commit.
 
-`products/journal/sync/` binds `page`, `journalState`, `journal.savePage` and `journal.claimPage` over
-adopted journal tables. `platform/infra/SyncProducts` seals the gym + journal v5/minimum-4 catalog and injects it
-into both products' doors; products remain independent. `JOURNAL_ENGINE_WRITES` routes page writes
-through `ServerCall` and defaults off; reads and off-engine features keep their existing repositories.
-`JOURNAL_WRITE_FREEZE` defaults off and blocks journal mutations, echo/nudge workers and provider
-suppression. `db/journal_sync.sql` is applied after `schema.sql` in the isolated sync database and
-explicitly during stopped-service adoption; regular deployment does not apply it. Admission and revision
-retention run over fakes and Postgres, and all journal migration
-vectors run over Postgres. The migration retains frozen input, exact receipt times and stable revision
-identities for its independent audit. `JournalFeed` announces committed winning pages to the existing
-watcher; watcher or live-feed failures are reported after commit.
+The admission corpus of both products runs over fakes and over Postgres, and so do journal's revision
+retention vectors. Postgres cases run under `WM_PG_TEST` against two databases that `db/schema.sql`
+builds: `DATABASE_URL`, and `WM_SYNC_DATABASE_URL` with `db/probe.sql` beside it, which the `sync` suite
+and every gym case that writes through `GymDoor` use (`RUNNING.md` §7).
 
-`test/e2e/gym_write_differential.py` runs the production composition with a test-only shared clock,
-creates and drops its own databases, and compares gym REST/MCP writes, retries and reads in two
-modes: origin/main against switches-off, and switches-off against adopted engine writes.
-`test/e2e/journal_write_differential.py` compares origin/main against switches-off, and switches-off
-against adopted engine writes and the shared freeze. Both products' main-vs-off comparisons are
-local pre-merge gates. CI's Postgres job runs both products' off-vs-on
-comparisons from the tested builder image. Production ignores the test clock environment.
-The runtime ships both products' backfill and snapshot binaries, adoption schemas and the combined
-rehearsal; the probe symbol gate remains mandatory.
-The dispatch-only `gym-backup.yml`, `gym-rehearsal.yml` and `products-cutover.yml` retain all
-production data on the VPS and serialize with backend and frontend deployments. Backup and rehearsal
-are optional preparation. One cutover workflow validates the compatible running image and repository switches,
-stops all compose database writers, takes a verified rollback backup, adopts and audits both
-products, and starts engine writes. The whole site, roadmap included, is down during this window.
-Failure before the persisted startup boundary restores the database and old configuration; once
-startup is attempted, recovery is forward-only. Fault fixtures run only on marked disposable restores.
-Ordinary deployment refuses engine writes on an unadopted/incomplete database and incompatible images on any adopted
-database before changing the live configuration or containers. Operator recovery and rerun
-instructions live in `deploy/gym-migration/README.md`.
+`windmill_server_test_clock` is the production composition with a clock the harness sets through
+`WM_TEST_CLOCK_FILE`; `test/e2e/auth_differential.py` runs it beside `origin/main`'s server
+(`test/e2e/README.md`). `windmill_server` compiles no test clock, and the runtime image does not carry
+`windmill_server_test_clock`.
 
 `products/probe/` is the engine's test and dev product (`probe.registry.json`, `db/probe.sql`) and the
 worked example of a product on the engine. Only the test binaries and `windmill_server_probe` link it:
-`windmill_server` mounts the gym + journal engine HTTP and live routes only with `SYNC_ENABLED`;
-the switch and both products' engine doors default off, and the
-Dockerfile fails the image if a probe symbol reaches it.
+that server mounts the engine over the probe instead of gym and journal and refuses to start where
+`WINDMILL_APP_URL` is https, and the Dockerfile fails the image if a probe symbol reaches
+`windmill_server` or `windmill_mcp_http`.
 
 `RUNNING.md` is the local walkthrough, `deploy/README.md` the production runbook. `SPEC.md` is the
 roadmap tree engine: the loose-graph model, the sync contract, the socket frames and the tables.

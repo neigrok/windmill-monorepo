@@ -6,7 +6,7 @@ session gates the tree, WebSocket and MCP surfaces.
 ## The model
 
 Visibility-gated read, owner-only write, per-user progress. The two predicates are `canRead` and
-`canWrite` in `platform/domain/Access.h`, and every surface calls those and no parallel copy.
+`canWrite` in `products/roadmap/domain/Access.h`, and every surface calls those and no parallel copy.
 
 - **Reads** (`GET` tree/progress/diagnostics/activity, WS `subscribe`/presence, MCP `get_tree`) gate
   on `canRead`: a `private` tree is its owner's alone, an `unlisted` or `public` one is readable by
@@ -39,7 +39,7 @@ rolls the session. Every surface reuses it, and none trusts a client-supplied us
 
 ### REST
 
-The caller is resolved per request. `HttpApi::callerOf` delegates to `wm::callerOf(req, auth)`
+The caller is resolved per request. `TreeApi::callerOf` delegates to `wm::callerOf(req, auth)`
 (`platform/adapters/http/Caller.h`), which reads the `wm_session` cookie, falls back to
 `Authorization: Bearer`, and hands the secret to `AuthService::authenticate`.
 
@@ -81,7 +81,7 @@ sessions there costs one serial lookup per subscriber per minute with the strand
 thread, and on the sweeper's. `Principal::authenticated` and `checkedAtMs` are `std::atomic` because
 of that sweeper.
 
-`subscribe`, the write frame, the progress mark, `HttpApi::readRoom` and both `ForkService` entries
+`subscribe`, the write frame, the progress mark, `TreeApi::readRoom` and both `ForkService` entries
 (`fork`, and `describe`, the unauthenticated magic-link invite) decide on `RoomRegistry::accessOf` —
 the stored `owner` + `visibility` row — **before** `open()` builds a room: a caller about to be
 refused must not be the reason a whole lattice is loaded, since with a bounded room table that load

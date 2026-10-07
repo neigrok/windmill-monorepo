@@ -47,33 +47,4 @@ std::optional<GymPreferences> PgPreferencesRepository::preferences(const UserId&
   return preferencesFrom(rows[0]);
 }
 
-GymPreferences PgPreferencesRepository::savePreferences(const GymPreferences& incoming) {
-  // One row per account: no client-minted id, nothing to replay against, last write wins. RETURNING
-  // reads the stored row back in the same statement, since a column rounding a numeric makes the two
-  // differ.
-  PgLease conn{*pool_};
-  pqxx::work txn{*conn};
-  pqxx::params params;
-  params.append(incoming.user.str());
-  params.append(toString(incoming.units));
-  if (incoming.restSeconds) params.append(*incoming.restSeconds);
-  else params.append();
-  params.append(incoming.restSound);
-  params.append(incoming.confirmHaptic);
-  params.append(incoming.confirmSound);
-  pqxx::result rows = txn.exec(
-      "INSERT INTO gym_preferences (user_id, units, rest_seconds, "
-      "                             rest_sound, confirm_haptic, confirm_sound) "
-      "VALUES ($1::uuid, $2, $3, $4, $5, $6) "
-      "ON CONFLICT (user_id) DO UPDATE SET units = excluded.units, "
-      "  rest_seconds = excluded.rest_seconds, rest_sound = excluded.rest_sound, "
-      "  confirm_haptic = excluded.confirm_haptic, confirm_sound = excluded.confirm_sound, "
-      "  updated_at = now() "
-      "RETURNING " + std::string(kPreferenceColumns),
-      params);
-  GymPreferences stored = preferencesFrom(rows[0]);
-  txn.commit();
-  return stored;
-}
-
 }

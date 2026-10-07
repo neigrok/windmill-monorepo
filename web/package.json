@@ -11,14 +11,15 @@
     "test:sync:properties": "node --test --test-timeout=30000 test/platform/sync/core/merge.test.js test/platform/sync/core/fracindex.test.js test/platform/sync/core/digest.test.js test/platform/sync/client/convergence.test.js test/platform/sync/client/refusal.test.js test/platform/sync/properties.test.js",
     "test:sync:fuzz": "FUZZ_N=500 FUZZ_SEED=1 FUZZ_STEPS=300 node scripts/test.mjs test/platform/sync/fuzz",
     "prebuild": "node scripts/fetch-model.mjs",
-    "build": "node scripts/install-sync-browser.mjs && node scripts/test.mjs && node scripts/check-sync-browser.mjs && vite build && node scripts/build-landing-shells.mjs",
+    "build": "node scripts/install-sync-browser.mjs && node scripts/test.mjs && npm run check:domain && node scripts/check-sync-browser.mjs && vite build && node scripts/build-landing-shells.mjs",
     "preview": "vite preview",
     "test:model": "node scripts/verify-model.mjs",
     "pretest": "node scripts/install-sync-browser.mjs",
     "pretest:sync": "node scripts/install-sync-browser.mjs",
     "test:sync:browser": "node scripts/install-sync-browser.mjs && node --test --test-timeout=30000 test/platform/sync/browser.test.js test/platform/sync/transport-browser.test.js",
     "test:sync:server": "node scripts/replay-sync-server.mjs",
-    "test:journal:server": "node scripts/install-sync-browser.mjs && node scripts/e2e-journal.mjs"
+    "test:journal:server": "node scripts/install-sync-browser.mjs && node scripts/e2e-journal.mjs",
+    "check:domain": "tsc -p tsconfig.domain.json"
   },
   "dependencies": {
     "@fontsource/baloo-2": "^5.2.7",
@@ -31,9 +32,12 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@types/node": "^20.19.43",
     "@vitejs/plugin-react": "^4.3.4",
+    "acorn": "^8.19.0",
     "fake-indexeddb": "^6.2.4",
     "playwright": "^1.58.2",
+    "typescript": "^7.0.2",
     "vite": "^5.4.11"
   }
 }

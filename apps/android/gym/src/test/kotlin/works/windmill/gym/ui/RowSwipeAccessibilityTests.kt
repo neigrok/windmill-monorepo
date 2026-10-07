@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.gym.coach.ThreadsScreen
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.getOrNull
@@ -8,34 +9,24 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.AskThread
+import works.windmill.gym.coach.AskThread
 import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.net.FakeTraining
-import works.windmill.gym.store.DeviceCopy
-import works.windmill.gym.store.LocalBodyweight
-import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
+import works.windmill.gym.net.FakeGymRest
+import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.RefusedSet
-import works.windmill.gym.store.SetQueue
-import works.windmill.gym.store.TrainingStore
-import works.windmill.gym.store.Withheld
-import works.windmill.platform.Account
-import works.windmill.platform.User
-import works.windmill.platform.net.WindmillApi
 
 // 13-gestures Law 1 is a PER-ROW test on Android, not a blanket cost, and this file is where the
 // check lives for the three rows this wave gave a swipe to besides the set row.
@@ -50,25 +41,18 @@ class RowSwipeAccessibilityTests {
     @get:Rule
     val compose = createComposeRule()
 
-    private fun store(scope: CoroutineScope, server: FakeTraining?): TrainingStore {
-        val root = File(System.getProperty("java.io.tmpdir"), "rows-${System.nanoTime()}")
-        root.mkdirs()
-        val store = TrainingStore(
-            queue = SetQueue(File(root, "queue.json")),
-            deviceCopy = DeviceCopy(File(root, "catalog.json")),
-            localLog = LocalLog(File(root, "local.json")),
-            localPreferences = LocalPreferences(File(root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(root, "bodyweight.json")),
-            scope = scope,
-            undoWindowMs = Withheld.windowMs,
-            sync = { if (it.isSignedIn) server else null },
-        )
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    private fun store(scope: CoroutineScope, rest: FakeGymRest = FakeGymRest()): EngineRoomFixture {
+        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = rest)
+        room.now = System.currentTimeMillis()
         runBlocking {
-            store.connect(Account(
-                api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
-                user = User(id = "u1", email = "sam@example.com", name = "Sam")))
+            room.select("u1")
+            room.pull(EngineRoomFixture.server())
         }
-        return store
+        room.store.observeEngine()
+        return room
     }
 
     private fun actionsAround(node: SemanticsNode): List<String> =
@@ -81,59 +65,59 @@ class RowSwipeAccessibilityTests {
     @Test
     fun theRoutineRowSwipesToDeleteAndDeclaresThatActionByHandNamedWithTheRoutine() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = store(scope, FakeTraining())
-        runBlocking { store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) }
-        val deleted = mutableListOf<String>()
-        compose.setContent {
-            RoutinesScreen(
-                store = store, isSignedIn = true, lookedAt = emptySet(), seat = "s",
-                onJustStart = {}, onBuild = {}, onOpenRoutine = {},
-                onDeleteRoutine = { deleted += it }, onReview = {}, onSignIn = {},
-            )
-        }
+        try { store(scope).use { room ->
+            runBlocking { room.store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")) }
+            val deleted = mutableListOf<String>()
+            compose.setContent {
+                RoutinesScreen(
+                    store = room.store, isSignedIn = true, lookedAt = emptySet(), seat = "s",
+                    onJustStart = {}, onBuild = {}, onOpenRoutine = {},
+                    onDeleteRoutine = { deleted += it }, onReview = {}, onSignIn = {},
+                )
+            }
 
-        compose.onNodeWithText("Push Day").performTouchInput { swipeRight() }
-        compose.runOnIdle { assertEquals("nothing on the leading edge", emptyList<String>(), deleted) }
+            compose.onNodeWithText("Push Day").performTouchInput { swipeRight() }
+            compose.runOnIdle { assertEquals("nothing on the leading edge", emptyList<String>(), deleted) }
 
-        assertEquals("the row draws no control for Delete, so the swipe's one act is declared by hand",
-            listOf("Delete Push Day"), actionsAround(compose.onNodeWithText("Push Day").fetchSemanticsNode()))
+            assertEquals("the row draws no control for Delete, so the swipe's one act is declared by hand",
+                listOf("Delete Push Day"), actionsAround(compose.onNodeWithText("Push Day").fetchSemanticsNode()))
 
-        compose.onNodeWithText("Push Day").performTouchInput { swipeLeft() }
-        compose.runOnIdle {
-            assertEquals(listOf(store.routines.single().id), deleted)
-            assertEquals("the screen asks; the room is what withholds it",
-                emptySet<String>(), store.withheldIds)
-        }
-        scope.cancel()
+            compose.onNodeWithText("Push Day").performTouchInput { swipeLeft() }
+            compose.runOnIdle {
+                assertEquals(listOf(room.store.routines.single().id), deleted)
+                assertEquals("the screen asks; the room is what withholds it",
+                    emptySet<String>(), room.store.withheldIds)
+            }
+        } } finally { scope.cancel() }
     }
 
     @Test
     fun theThreadRowSwipesToDeleteAndDeclaresThatActionByHand() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
-        server.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
-        val store = store(scope, server)
-        val deleted = mutableListOf<String>()
-        compose.setContent {
-            ThreadsScreen(
-                store = store, backTo = "Coach", onBack = {}, onOpen = {},
-                onDelete = { deleted += it }, onAskNew = {},
-            )
-        }
+        val rest = FakeGymRest()
+        rest.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
+        try { store(scope, rest).use { room ->
+            val deleted = mutableListOf<String>()
+            compose.setContent {
+                ThreadsScreen(
+                    store = room.store, backTo = "Coach", onBack = {}, onOpen = {},
+                    onDelete = { deleted += it }, onAskNew = {},
+                )
+            }
 
-        val row = compose.onNodeWithText("why is my bench stalled?").fetchSemanticsNode()
-        assertEquals("no overflow on this row, so the swipe declares its own alternative",
-            listOf("Delete"), actionsAround(row))
+            val row = compose.onNodeWithText("why is my bench stalled?").fetchSemanticsNode()
+            assertEquals("no overflow on this row, so the swipe declares its own alternative",
+                listOf("Delete"), actionsAround(row))
 
-        compose.onNodeWithText("why is my bench stalled?").performTouchInput { swipeRight() }
-        compose.runOnIdle { assertEquals(emptyList<String>(), deleted) }
+            compose.onNodeWithText("why is my bench stalled?").performTouchInput { swipeRight() }
+            compose.runOnIdle { assertEquals(emptyList<String>(), deleted) }
 
-        compose.onNodeWithText("why is my bench stalled?").performTouchInput { swipeLeft() }
-        compose.runOnIdle {
-            assertEquals(listOf("thr_1"), deleted)
-            assertTrue("and nothing reached the log", "deleteThread" !in server.calls)
-        }
-        scope.cancel()
+            compose.onNodeWithText("why is my bench stalled?").performTouchInput { swipeLeft() }
+            compose.runOnIdle {
+                assertEquals(listOf("thr_1"), deleted)
+                assertTrue("and nothing reached the log", "deleteThread" !in rest.calls)
+            }
+        } } finally { scope.cancel() }
     }
 
     // Safe in both directions, because it discards a notice and not data.

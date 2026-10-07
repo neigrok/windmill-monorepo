@@ -37,9 +37,9 @@ export async function signOutEverywhere() {
   throw await errorFrom(response);
 }
 
-// DELETE /v1/me → { closingOn: <iso>, closesMs: <ms> }.
-export async function closeAccount() {
-  const response = await send('/v1/me', 'DELETE');
+// DELETE /v1/me {account} → { closingOn: <iso>, closesMs: <ms> }.
+export async function closeAccount(account) {
+  const response = await send('/v1/me', 'DELETE', { account });
   if (response.ok) return response.json();
   if (response.status === 401) throw new AuthError('Session lapsed', { code: 'unauthenticated', status: 401 });
   throw await errorFrom(response);

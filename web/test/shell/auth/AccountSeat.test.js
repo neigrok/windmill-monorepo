@@ -126,3 +126,21 @@ test('with `appearance` false the pop-up draws no Appearance row, signed out or 
     order: ['menu'],
   });
 });
+
+test('signing in wakes the account avatar without claiming its work has synced', async (t) => {
+  browser();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { AccountSeat } = await loadScreen('shell/auth/AccountSeat.jsx');
+  const props = { status: 'ghost', user: null };
+  const view = renderHook(t, () => AccountSeat(props));
+  props.status = 'signed-in';
+  props.user = { name: 'Ada', email: 'ada@example.com' };
+  view.redraw();
+  const seat = () => elementsOf(view.tree).find((each) => each.type === 'button');
+  assert.equal(seat().props['aria-label'], 'Account — Ada');
+  for (const elapsed of [0, 1200, 1350]) {
+    t.mock.timers.tick(elapsed);
+    assert.equal(textOf(view.tree).includes('Syncing'), false);
+    assert.equal(textOf(view.tree).includes('Synced'), false);
+  }
+});

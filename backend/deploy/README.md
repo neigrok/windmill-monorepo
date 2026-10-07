@@ -33,6 +33,7 @@ also the rollback: dispatch with the older commit's sha.
 | Build + test + publish the image (on push to `main`) | `/.github/workflows/backend.yml` |
 | Deploy to the VPS (automatic on a green Backend CI/CD; renders `~/windmill/.env`) | `/.github/workflows/deploy.yml` |
 | VPS runtime topology | `deploy/docker-compose.yml` |
+| Promote the candidate files and prove Caddy loaded them (runs on the VPS) | `deploy/deploy-production.sh` |
 | TLS + reverse proxy | `deploy/Caddyfile` |
 | Env keys the deploy renders | `deploy/.env.example` |
 
@@ -112,29 +113,21 @@ must be public.
 - **Logs**: `cd ~/windmill && docker compose logs -f server` (or `caddy`, `db`, `embedder`).
 - **Status**: `docker compose ps`.
 - **Rollback**: dispatch the deploy workflow with `image_tag` set to the chosen commit SHA. Both
-  the server and `embedder-<sha>` images must exist.
-- **Migrations**: `db/schema.sql` is idempotent and re-applied by the `migrate` one-shot on every
-  deploy.
-  Product adoption uses one explicit stop-the-world workflow; follow
-  [the combined cutover runbook](gym-migration/README.md). `SYNC_ENABLED` defaults to `0` and
-  exposes the composed gym + journal engine only when enabled. Native Apple identity-token
-  exchange also defaults off (`APPLE_NATIVE_ENABLED=0`); [AUTH.md](../AUTH.md) names its audience
-  and app configuration. All four engine-write/freeze switches
-  default to `0` in Compose and deployment variables. The dispatch-only backup and rehearsal
-  workflows cover both products without changing production data or switches. The dispatch-only
-  `products-cutover.yml` stops all compose database writers, takes a new verified rollback backup,
-  adopts and audits both products, and starts engine writes in the same run. **The whole site,
-  roadmap included, is down for the few minutes it takes.** Failure before the persisted startup
-  boundary restores the backup and old configuration. Once startup is attempted, recovery is
-  forward-only and no automatic restore occurs. Cutover and adopted-database deployments require
-  the image's `gym-journal-v1` compatibility declaration and matching bundled schema marker. Gym metadata
-  v5 also requires `io.windmill.gym-sync-metadata-version=5`, the bundled v5 schema marker and completion
-  audit whenever either upgrade table exists. The same cutover workflow upgrades metadata under its
-  verified stopped-writer backup and recovery discipline; ordinary deploy does not apply v5 DDL. Ordinary deploy
-  refuses engine writes without complete adoption, either engine writer disabled after adoption,
-  and incompatible images on adopted databases
-  before changing the live `.env`, compose files or containers. Production runs no fault fixtures;
-  the final schema reapply checks both products' catalogs and digest audits.
+  the server and `embedder-<sha>` images must exist. Only the image goes back: the run renders `.env`
+  and ships `docker-compose.yml`, the Caddyfile and `deploy-production.sh` from the branch it is
+  dispatched on (`main` unless another is chosen), and `migrate` applies the older image's own
+  `db/schema.sql`.
+- **Rollback floor**: the oldest image that is safe to run is the first one built from a commit
+  containing `backend · the retired REST writes are gone, and the engine is the only gym and journal
+  writer`. Every older image reads six engine and freeze switches that the deploy no longer renders,
+  so each one defaults off: `/v1/sync` is unmounted, taking every engine client down with it, and the
+  legacy REST, MCP and Coach writers write the engine's gym and journal tables again.
+- **Migrations**: `db/schema.sql` is idempotent and re-applied on every deploy by the `migrate`
+  one-shot, a plain `psql`.
+- **Native Apple sign-in**: the identity-token exchange defaults off (`APPLE_NATIVE_ENABLED=0`);
+  [AUTH.md](../AUTH.md) names its audience and app configuration.
+- **Backup**: the dispatch-only `gym-backup.yml` writes a custom-format dump of the whole database to
+  `~/windmill/backups/` on the VPS, checks that `pg_restore` can list it, and records its sha256.
 - **DB shell**: `docker compose exec db psql -U windmill windmill`.
 
 ## Frontend

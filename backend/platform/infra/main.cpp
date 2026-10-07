@@ -70,20 +70,15 @@
 #include "products/journal/adapters/email/ResendNudgeSender.h"
 #include "platform/adapters/llm/AnthropicClient.h"
 #include "products/journal/adapters/llm/AnthropicCurator.h"
+#include "products/journal/adapters/llm/UnconfiguredModels.h"
 #include "products/journal/adapters/llm/AnthropicSegmenter.h"
 #include "products/journal/adapters/llm/HttpEmbedder.h"
-#include "products/journal/adapters/llm/NullCurator.h"
-#include "products/journal/adapters/llm/NullEmbedder.h"
-#include "products/journal/adapters/llm/NullTranscriber.h"
 #include "products/journal/adapters/llm/OpenAiTranscriber.h"
 #include "products/journal/adapters/postgres/PgEchoRepository.h"
 #include "products/journal/adapters/postgres/PgJournalRepository.h"
 #include "products/journal/adapters/postgres/PgNudgeRepository.h"
 #include "products/journal/application/EchoDerivations.h"
-#include "products/journal/application/PageService.h"
-#include "products/journal/application/JournalSwitches.h"
-#include "products/journal/sync/adapters/postgres/JournalDoor.h"
-#include "products/journal/sync/application/JournalFeed.h"
+#include "products/journal/sync/JournalFeed.h"
 #include "products/journal/application/WarmEchoRepository.h"
 #include "products/journal/routes.h"
 #include "products/gym/adapters/llm/AnthropicAsk.h"
@@ -97,16 +92,9 @@
 #include "products/gym/adapters/postgres/PgPreferencesRepository.h"
 #include "products/gym/adapters/postgres/PgProgramRepository.h"
 #include "products/gym/application/AskService.h"
-#include "products/gym/application/BodyweightService.h"
-#include "products/gym/application/CatalogService.h"
-#include "products/gym/application/NotesService.h"
-#include "products/gym/application/PreferencesService.h"
-#include "products/gym/application/ProgramService.h"
 #include "products/gym/application/ThreadService.h"
 #include "products/gym/application/TrainingService.h"
-#include "products/gym/sync/adapters/postgres/GymDoor.h"
-#include "products/gym/sync/adapters/postgres/PgGymBackfill.h"
-#include "products/gym/sync/adapters/postgres/PgGymMetadataUpgrade.h"
+#include "products/gym/sync/GymDoor.h"
 #include "platform/infra/SyncProducts.h"
 #include "products/gym/routes.h"
 
@@ -368,8 +356,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                                            googleClient, appBaseUrl, appleClient, appleNativeVerifier, allowedOrigins);
   auto mcpKeyApi = std::make_shared<McpKeyApi>(authService, mcpKeyService);
 
-
-
   auto ogImages = std::make_shared<PgOgImageRepository>(pool);
 
   // Built before the share page, which advertises og:video only for a tree that carries one.
@@ -423,13 +409,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   installLogTee(sentry, logLevelFromEnv(std::getenv("SENTRY_LOG_LEVEL")));
   installWriteReporter(sentry);
 
-  {
-    sync::PgSyncStore startupStore(pool, sync::Limits{}.lockTimeoutMs);
-    const auto txn = startupStore.begin(sync::TxnMode::snapshot);
-    gym::engine::PgGymMetadataUpgrade::requireComplete(*txn);
-    if (sync::sqlOf(*txn).exec("select to_regclass('gym_sync_metadata_upgrades') is not null")[0][0].as<bool>())
-      gym::engine::PgGymBackfill(pool).auditCurrent();
-  }
   auto productsCatalog = sync::productCatalog();
 #ifdef WM_SYNC_PROBE
   auto syncCatalog = std::make_shared<sync::SyncCatalog>(probe::registry());
@@ -437,16 +416,10 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   probeTables.bindTo(*syncCatalog);
   syncCatalog->seal();
 #else
-  const char* syncEnabledEnv = std::getenv("SYNC_ENABLED");
-  const std::string syncEnabledFlag = syncEnabledEnv ? syncEnabledEnv : "";
-  auto syncCatalog = syncEnabledFlag == "1" || syncEnabledFlag == "true" || syncEnabledFlag == "on"
-      ? productsCatalog : nullptr;
+  auto syncCatalog = productsCatalog;
 #endif
-  std::shared_ptr<SyncEngine> syncEngine;
-  if (syncCatalog) {
-    syncEngine = std::make_shared<SyncEngine>(syncCatalog, pool, *systemClock, *sentry, kSyncWorkers, kSyncQueueCeiling);
-    lifetime.watch(syncEngine, systemClock, sentry);
-  }
+  auto syncEngine = std::make_shared<SyncEngine>(syncCatalog, pool, *systemClock, *sentry, kSyncWorkers, kSyncQueueCeiling);
+  lifetime.watch(syncEngine, systemClock, sentry);
 
   // Accepted funnel events forward to Amplitude with the session-resolved user_id when
   // AMPLITUDE_API_KEY is set. AMPLITUDE_HOST overrides the region (api.eu.amplitude.com for EU).
@@ -462,7 +435,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   auto eventRepo = std::make_shared<PgEventRepository>(pool);
   auto eventsApi = std::make_shared<EventsApi>(eventRepo, authService, amplitude, sentry);
-
 
   auto feedbackRepo = std::make_shared<PgFeedbackRepository>(pool);
   auto feedbackApi = std::make_shared<FeedbackApi>(feedbackRepo, authService);
@@ -577,19 +549,12 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto gymNotes = std::make_shared<gym::PgNotesRepository>(pool);
   auto gymBodyweight = std::make_shared<gym::PgBodyweightRepository>(pool);
   auto gymDoor = std::make_shared<gym::GymDoor>(pool, *systemClock, *sentry, *gymLog, *gymProgram,
-      *gymCatalog, *gymNotes, *gymBodyweight, *gymPreferences, productsCatalog,
-      syncEngine ? syncEngine->live.get() : nullptr);
-  auto gymTrainingService =
-      std::make_shared<gym::TrainingService>(*gymLog, *gymProgram, *systemClock, *tokens, gymDoor.get());
-  auto gymCatalogService = std::make_shared<gym::CatalogService>(*gymCatalog, gymDoor.get());
-  auto gymProgramService = std::make_shared<gym::ProgramService>(*gymProgram, *systemClock, gymDoor.get());
-  auto gymThreadService = std::make_shared<gym::ThreadService>(*gymThreads, *systemClock, gymDoor.get());
-  auto gymPreferencesService = std::make_shared<gym::PreferencesService>(*gymPreferences, gymDoor.get());
-  auto gymNotesService = std::make_shared<gym::NotesService>(*gymNotes, *systemClock, gymDoor.get());
-  auto gymBodyweightService = std::make_shared<gym::BodyweightService>(*gymBodyweight, gymDoor.get());
-  auto gymTools = std::make_shared<gym::GymTools>(*gymTrainingService, *gymCatalogService,
-                                                  *gymProgramService, *gymNotesService,
-                                                  *gymBodyweightService, appBaseUrl);
+      *gymCatalog, productsCatalog, *syncEngine->live);
+  auto gymTrainingService = std::make_shared<gym::TrainingService>(*gymLog, *systemClock, *tokens, *gymDoor);
+  auto gymThreadService = std::make_shared<gym::ThreadService>(*gymThreads, *systemClock, *gymDoor);
+  auto gymTools = std::make_shared<gym::GymTools>(*gymTrainingService, *gymDoor, *gymCatalog,
+                                                  *gymProgram, *gymNotes,
+                                                  *gymBodyweight, appBaseUrl);
 
   // AskService retains Stop/recovery without a vendor key; only new asks require configuration.
   auto gymAskAgent = std::make_shared<gym::AnthropicAsk>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink,
@@ -597,8 +562,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto gymAsk = std::make_shared<gym::AskService>(*gymTrainingService, *gymThreads, *systemClock, *gymAskAgent,
                                                *gymTools, *entitlements, sentry);
   lifetime.watch(gymAsk, gymTrainingService, gymThreads, systemClock, gymAskAgent, gymTools, entitlements,
-                 subscriptionRepo, aiUsageRepo, gymLog, gymProgramService, gymProgram, gymCatalogService, gymCatalog,
-                 gymNotesService, gymNotes, gymBodyweightService, gymBodyweight, tokens, gymDoor, gymPreferences);
+                 subscriptionRepo, aiUsageRepo, gymLog, gymProgram, gymCatalog, gymNotes, gymBodyweight, tokens, gymDoor, gymPreferences);
 
   // Every product's module behind one host, filtered by the grant the credential carries. A
   // duplicate tool name across two products refuses to boot. Tending is deliberately NOT given this
@@ -619,7 +583,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto oauthApi = std::make_shared<OAuthApi>(oauthService, authService, apiBaseUrl, appBaseUrl,
                                              "/#/oauth/authorize", supportedScopes(mcpComposite->products()));
 
-
   WriteRoutes routes(app, "platform");
   WriteRoutes mcpRoutes(app, "platform", "mcp");
   app.registerSyncAdvice([](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
@@ -629,7 +592,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   // Registered first, so it wraps everything registered after it.
   installAccessLog(app);
-
 
   // Allow-Credentials only ever rides an allow-listed Origin, never a reflected one.
   auto writeCors = [allowedOrigins](const drogon::HttpRequestPtr& req, const drogon::HttpResponsePtr& resp) {
@@ -670,7 +632,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
       [apiLimiter, magicPerIp, magicGlobal, codePerIp, composePerIp, composeGlobal, tendPerIp,
        tendGlobal, writeCors](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
         if (req->method() == drogon::Options) return nullptr;  // preflight already answered above
-        if (legacyRestWriteRetired(req)) return nullptr;
+        if (retiredRoute(req)) return nullptr;
         const std::string ip = clientIp(req);
         if (ip.empty()) return nullptr;  // internal / health-check traffic
         // Per-IP before global, so a hammering client never drains the shared ceiling. Drogon routes
@@ -702,7 +664,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
         finishWriteRequest(req, resp);
         return resp;
       });
-
 
   app.registerPostHandlingAdvice(
       [writeCors, mcpPath](const drogon::HttpRequestPtr& req, const drogon::HttpResponsePtr& resp) {
@@ -891,21 +852,16 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
       },
       {drogon::Delete});
 
-
-
-
   routes.registerHandler(
       "/v1/events",
       [eventsApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { eventsApi->ingest(req, std::move(cb)); },
       {drogon::Post});
-
 
   // Anonymous allowed.
   routes.registerHandler(
       "/v1/feedback",
       [feedbackApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { feedbackApi->submit(req, std::move(cb)); },
       {drogon::Post});
-
 
   // Its own preflight, advertising the MCP headers the generic one skips.
   mcpRoutes.registerWriteHandler("mcp.transport",
@@ -964,7 +920,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   registerRoutes(app, roadmapDeps);
 
   auto journalPages = std::make_shared<PgJournalRepository>(pool);
-  // PageService is built after the echo stack, because a save triggers a derivation.
   // JOURNAL_NUDGE_ENABLED must say so AND the user be named in JOURNAL_NUDGE_ALLOWLIST before any
   // mail leaves; both gates are read at send time.
   const char* journalNudgeEnabledEnv = std::getenv("JOURNAL_NUDGE_ENABLED");
@@ -980,10 +935,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   lifetime.watch(journalNudgeSweep, journalNudges, journalNudgeMail, tokens, systemClock, resendClient);
   journalNudgeSweep->start();
   // Any boundary unwired makes an echo pass a no-op: NullEmbedder and NullCurator answer
-  // configured() false. This used to add that the sidecar must run the same weights the browser
-  // downloads "or the vectors stop being interchangeable" — deleted rather than softened, because
-  // it was never true and would be read as a constraint on the model: nothing serves a vector to
-  // any client, the browser embeds page bodies on the device, and the two indexes never meet.
+  // configured() false. No vector reaches a client: the browser embeds page bodies on the device.
   const char* embedderUrlEnv = std::getenv("JOURNAL_EMBEDDER_URL");
   std::shared_ptr<Embedder> journalEmbedder;
   if (embedderUrlEnv && *embedderUrlEnv) {
@@ -993,18 +945,17 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   } else
     journalEmbedder = std::make_shared<NullEmbedder>();
 
-  const char* anthropicKeyEnv = std::getenv("ANTHROPIC_API_KEY");
   std::shared_ptr<Curator> journalCurator;
-  if (anthropicKeyEnv && *anthropicKeyEnv) {
-    auto transport = std::make_shared<AnthropicClient>(anthropicKeyEnv);
+  if (anthropicKey && *anthropicKey) {
+    auto transport = std::make_shared<AnthropicClient>(anthropicKey);
     lifetime.watch(transport);
     journalCurator = std::make_shared<AnthropicCurator>(transport, "claude-sonnet-5", "low", aiFuse, aiSpendSink);
   } else
     journalCurator = std::make_shared<NullCurator>();
   // Without an Anthropic key, the line-and-sentence rule cuts the page instead.
   std::shared_ptr<Segmenter> journalSegmenter;
-  if (anthropicKeyEnv && *anthropicKeyEnv) {
-    auto transport = std::make_shared<AnthropicClient>(anthropicKeyEnv);
+  if (anthropicKey && *anthropicKey) {
+    auto transport = std::make_shared<AnthropicClient>(anthropicKey);
     lifetime.watch(transport);
     journalSegmenter = std::make_shared<AnthropicSegmenter>(transport, "claude-sonnet-5", "low", aiFuse, aiSpendSink);
   } else
@@ -1026,19 +977,14 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
       std::make_shared<EchoDerivations>(*journalEchoSweep, *systemClock, LiveDerivationRules{});
   lifetime.watch(journalEchoDerivations, journalEchoSweep, systemClock);
   journalEchoDerivations->start();
-  if (syncEngine) {
-    syncEngine->watcher = journalEchoDerivations;
-    syncEngine->changes.target = std::make_shared<journal::engine::JournalFeed>(
-        *journalEchoDerivations, *syncEngine->live);
-  }
-  auto journalDoor = std::make_shared<journal::JournalDoor>(pool, *systemClock, *sentry,
-      *journalEchoDerivations, productsCatalog, syncEngine ? syncEngine->live.get() : nullptr);
-  auto pageService = std::make_shared<PageService>(*journalPages, journalEchoDerivations.get(), journalDoor.get());
+  syncEngine->watcher = journalEchoDerivations;
+  syncEngine->changes.target = std::make_shared<journal::engine::JournalFeed>(
+      *journalEchoDerivations, *syncEngine->live);
   // Writes nothing; holds the same corpus, embedder and curator the live path does.
   auto journalEchoExplainer = std::make_shared<EchoExplainer>(
-      *journalEchoes, *journalSegmenter, *journalEmbedder, *journalCurator, *pageService);
+      *journalEchoes, *journalSegmenter, *journalEmbedder, *journalCurator, *journalPages);
   lifetime.watch(journalEchoExplainer, journalEchoes, journalSegmenter, journalEmbedder, journalCurator,
-                 pageService, journalPages, journalDoor);
+                 journalPages);
   // Without OPENAI_API_KEY the transcriber is null and the endpoint answers 503.
   const char* openaiKeyEnv = std::getenv("OPENAI_API_KEY");
   std::shared_ptr<Transcriber> journalTranscriber;
@@ -1047,7 +993,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
     lifetime.watch(transport);
     journalTranscriber = transport;
   } else journalTranscriber = std::make_shared<NullTranscriber>();
-  journal::JournalDeps journalDeps{.pageService = pageService, .authService = authService,
+  journal::JournalDeps journalDeps{.pages = journalPages, .authService = authService,
                                    .nudges = journalNudges, .nudgeSweep = journalNudgeSweep,
                                    .tokens = tokens, .clock = systemClock,
                                    .nudgeAdminToken = journalNudgeAdminEnv ? journalNudgeAdminEnv : "",
@@ -1058,39 +1004,39 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   journal::registerRoutes(app, journalDeps);
 
   gym::GymDeps gymDeps{.trainingService = gymTrainingService,
-                       .catalogService = gymCatalogService,
-                       .programService = gymProgramService,
-                       .preferencesService = gymPreferencesService,
+                       .door = gymDoor,
+                       .catalog = gymCatalog,
+                       .program = gymProgram,
                        .threadService = gymThreadService,
-                       .notesService = gymNotesService,
-                       .bodyweightService = gymBodyweightService,
+                       .notes = gymNotes,
+                       .preferences = gymPreferences,
+                       .bodyweight = gymBodyweight,
                        .authService = authService,
-                       .clock = systemClock,
                        .askService = gymAsk,
                        .appBaseUrl = appBaseUrl,
                        .onShutdown = [&lifetime](std::function<void()> stop) { lifetime.onStop(std::move(stop)); }};
   gym::registerRoutes(app, gymDeps);
 
-  if (syncEngine) {
-    const auto& syncRegistry = syncCatalog->registry();
+  const auto& syncRegistry = syncCatalog->registry();
+  const std::string syncEpoch = [&] {
     const auto txn = syncEngine->store.begin(sync::TxnMode::snapshot);
-    const std::string syncEpoch = syncEngine->store.epoch(*txn);
-    sync::registerSyncRoutes(app, std::make_shared<sync::SyncApi>(sync::SyncDeps{.service = syncEngine->service,
-                                                                               .auth = authService,
-                                                                               .workers = syncEngine->workers,
-                                                                               .clock = syncEngine->physicalClock,
-                                                                               .minSchema = syncRegistry.minVersion(),
-                                                                               .epoch = syncEpoch,
-                                                                               .limits = syncEngine->limits}));
-    sync::installSyncSocket(sync::SyncSocketDeps{.live = syncEngine->live,
-                                               .workers = syncEngine->workers,
-                                               .auth = authService,
-                                               .sessions = liveSessions,
-                                               .clock = syncEngine->physicalClock,
-                                               .allowedOrigins = allowedOrigins,
-                                               .minSchema = syncRegistry.minVersion(),
-                                               .epoch = syncEpoch});
-  }
+    return syncEngine->store.epoch(*txn);
+  }();
+  sync::registerSyncRoutes(app, std::make_shared<sync::SyncApi>(sync::SyncDeps{.service = syncEngine->service,
+                                                                             .auth = authService,
+                                                                             .workers = syncEngine->workers,
+                                                                             .clock = syncEngine->physicalClock,
+                                                                             .minSchema = syncRegistry.minVersion(),
+                                                                             .epoch = syncEpoch,
+                                                                             .limits = syncEngine->limits}));
+  sync::installSyncSocket(sync::SyncSocketDeps{.live = syncEngine->live,
+                                             .workers = syncEngine->workers,
+                                             .auth = authService,
+                                             .sessions = liveSessions,
+                                             .clock = syncEngine->physicalClock,
+                                             .allowedOrigins = allowedOrigins,
+                                             .minSchema = syncRegistry.minVersion(),
+                                             .epoch = syncEpoch});
 #ifdef WM_SYNC_PROBE
   probe::registerDevRoutes(app, std::make_shared<probe::DevApi>(*authService, *authRepo, *tokens, *systemClock, syncEngine->store));
 #endif
@@ -1100,11 +1046,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // the secret FIRST, then register the endpoint in Resend, or every genuine delivery burns a retry.
   const char* resendWebhookSecretEnv = std::getenv("RESEND_WEBHOOK_SECRET");
   auto resendWebhookApi = std::make_shared<ResendWebhookApi>(
-      std::vector<MailStream>{{"roadmap reminder", reminderRepo}, {"journal nudge", journalNudges,
-          []() -> std::optional<std::string> {
-            if (journal::journalWriteFrozen()) return "journal-frozen";
-            return std::nullopt;
-          }}},
+      std::vector<MailStream>{{"roadmap reminder", reminderRepo}, {"journal nudge", journalNudges}},
       systemClock, resendWebhookSecretEnv ? resendWebhookSecretEnv : "");
   routes.registerHandler(
       "/v1/resend/webhook",
@@ -1127,7 +1069,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   app.setThreadNum(ioThreads).run();
   return 0;
 }
-
 
 int main() {
   using namespace wm;

@@ -102,9 +102,8 @@ test('routineFromSession — every working set is its own slot, as lifted: no mo
   assert.equal(JSON.stringify(routineWrite(kept).entries[0]), RAMP_WIRE.replace(',"restSeconds":180', ''));
 });
 
-test('routineWrite — carries the read revision only when the caller names it', () => {
+test('routineWrite — the store’s revision does not travel back', () => {
   const stored = { id: 'rt_push_a', name: 'Push A', position: 0, revision: 4, entries: [] };
-  assert.deepEqual(routineWrite(stored, 4), { id: 'rt_push_a', name: 'Push A', position: 0, entries: [], revision: 4 });
   assert.deepEqual(routineWrite(stored), { id: 'rt_push_a', name: 'Push A', position: 0, entries: [] });
 });
 

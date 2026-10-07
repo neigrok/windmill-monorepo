@@ -1,4 +1,4 @@
-import { failureReason } from '../gymApi.js';
+import { failureReason } from '../errors.js';
 import { agoLabel, shortDayLabel } from '../log.js';
 import { changeLabel } from '../proposals.js';
 

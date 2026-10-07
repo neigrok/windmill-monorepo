@@ -4,7 +4,7 @@
 #include "products/roadmap/domain/GraphState.h"
 #include "products/roadmap/domain/Legend.h"
 #include "products/roadmap/domain/LooseGraph.h"
-#include "platform/domain/Access.h"
+#include "products/roadmap/domain/Access.h"
 
 #include <map>
 #include <mutex>
