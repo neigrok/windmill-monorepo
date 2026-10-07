@@ -28,6 +28,7 @@ import './planning/planning.css';
 export function RoutinesList({ log, reviewing = null }) {
   const api = useGymApi();
   const view = useGymRead(() => api.routines(), [], { sync: true, ready: Boolean(api?.ready) });
+  const removals = useGymRead(() => api.removalReceipts(), [], { sync: true, ready: Boolean(api?.ready) });
   const [reviewId, setReviewId] = useState(reviewing);
   useEffect(() => setReviewId(reviewing), [reviewing]);
 
@@ -55,6 +56,13 @@ export function RoutinesList({ log, reviewing = null }) {
       {log.session && <LiveMirror log={log} />}
 
       {reviewId && <ProposalPanel key={reviewId} id={reviewId} log={log} onChanged={view.refresh} />}
+      {removals.phase === 'ready' && removals.data.filter((proposal) => proposal.id !== reviewId).map((proposal) =>
+        <section className="gym-routine-review" key={proposal.id}>
+          <header><span className="gym-proposal-name">{proposal.baseName || 'Routine removal'}</span>
+            <button className="gym-proposal-review" type="button" onClick={() => setReviewId(proposal.id)}>View receipt</button></header>
+          <p className="gym-proposal-line">{proposal.removalOutcome === 'pending' ? 'Removal waiting to sync.'
+            : proposal.removalOutcome === 'applied' ? 'Routine removed.' : 'Nothing was applied.'}</p>
+        </section>)}
       {view.phase === 'loading' && <p className="gym-quiet">Opening your routines…</p>}
       {view.phase === 'failed' && (
         <p className="gym-read-failed">

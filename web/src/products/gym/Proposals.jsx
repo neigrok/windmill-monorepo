@@ -31,22 +31,39 @@ export function ProposalPanel({ id, log, onChanged = null, onSettled = null, inC
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(() => new Set());
   const [refusal, setRefusal] = useState('');
+  const [receiptNode, setReceiptNode] = useState(null);
   const proposal = settled ?? (view.phase === 'ready' ? view.data : null);
   const pending = proposal ? isPending(proposal) : false;
+  const waitingRemoval = proposal?.removalOutcome === 'pending';
   const rows = proposal ? collapseKept(diffRows(proposal), expanded) : [];
 
+  useEffect(() => {
+    if (!receiptNode || !proposal?.removalOutcome || waitingRemoval) return;
+    let visible = false;
+    let showing = false;
+    const shown = () => {
+      if (!visible || document.visibilityState !== 'visible' || showing) return;
+      showing = true;
+      api.removalReceiptShown(id, proposal.removalOwner, proposal.removalOutcome).catch(() => { showing = false; });
+    };
+    const observer = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; shown(); });
+    observer.observe(receiptNode);
+    document.addEventListener('visibilitychange', shown);
+    return () => { observer.disconnect(); document.removeEventListener('visibilitychange', shown); };
+  }, [api, id, receiptNode, proposal?.removalOutcome, proposal?.removalOwner, waitingRemoval]);
+
   const decide = async (verb) => {
-    if (busy || !pending) return;
+    if (busy || !pending || waitingRemoval) return;
     setBusy(true);
     setRefusal('');
     try {
       const answer = verb === 'apply' ? await api.applyProposal(id) : await api.dismissProposal(id);
-      const stored = answer?.proposal ?? { ...proposal, state: verb === 'apply' ? 'applied' : 'dismissed' };
+      const stored = answer?.proposal ?? proposal;
       setSettled(stored);
       onSettled?.({ verb, proposal: stored });
       onChanged?.();
     } catch (error) {
-      if (['proposal-superseded', 'proposal-settled', 'unknown-record'].includes(error.code)) {
+      if (['proposal-superseded', 'proposal-settled', 'unknown-record', 'record-dead'].includes(error.code)) {
         view.refresh();
         onChanged?.();
       }
@@ -70,14 +87,15 @@ export function ProposalPanel({ id, log, onChanged = null, onSettled = null, inC
     <ul className="gym-diff">{rows.map((row, index) => row.kind === 'kept-run'
       ? <li className="gym-diff-row is-kept-run" key={`run-${row.at}`}><button className="gym-diff-unfold" type="button" onClick={() => setExpanded((held) => new Set([...held, row.at]))}>{keptRunLabel(row.rows.length)} ›</button></li>
       : <li className={`gym-diff-row is-${row.kind}`} key={`${index}-${row.exerciseId ?? row.kind}`}><DiffRow row={row} catalog={log.catalog} unfold /></li>)}</ul>
-    {pending ? <div className="gym-proposal-band">
+    {waitingRemoval ? <p className="gym-coach-receipt" role="status">Removal waiting to sync.</p> : pending ? <div className="gym-proposal-band">
       <Button disabled={busy} onClick={() => decide('apply')}>{busy ? 'Saving…' : 'Apply'}</Button>
       <p className="gym-proposal-atomic">{proposal.intent === 'revise' ? 'Logged sets stay unchanged.' : atomicLine(proposal)}</p>
       <button type="button" className="gym-proposal-turn-down" disabled={busy} onClick={() => decide('dismiss')}>{TURN_DOWN_VERB}</button>
-    </div> : <p className="gym-coach-receipt" role="status">{proposal.state === 'applied'
+    </div> : <p className="gym-coach-receipt" role="status" ref={setReceiptNode}>{proposal.state === 'applied'
       ? receiptLine({ verb: 'apply', proposal }) : proposal.state === 'dismissed'
         ? receiptLine({ verb: 'dismiss', proposal }) : `${stateChip(proposal)} · nothing applied.`}</p>}
-    {refusal && <p className="gym-proposal-refusal" role="alert">{refusal}</p>}
+    {(refusal || proposal.removalRefusal) && <p className="gym-proposal-refusal" role="alert"
+      ref={proposal.removalOutcome === 'refused' ? setReceiptNode : null}>{refusal || proposal.removalRefusal}</p>}
   </article>;
 }
 

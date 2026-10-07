@@ -1,10 +1,11 @@
-import { DecodeError } from '../../platform/domain-kit/entities.js';
+import { DecodeError, Id } from '../../platform/domain-kit/entities.js';
 import { Reader, Views } from '../../platform/domain-kit/reading.js';
 import { Instant, Moment } from '../../platform/domain-kit/time.js';
 import { registry } from '../../platform/sync/schema.js';
-import { bodyweightDocument, exerciseDocument, gymFailure, namedZone, notesDocument, preferencesDocument, routineDocument } from './gymRuntime.js';
+import { bodyweightDocument, exerciseDocument, gymFailure, namedZone, notesDocument, preferencesDocument, proposalDocument, proposalsDocument, routineDocument } from './gymRuntime.js';
 import { Catalogue } from './domain/catalogue.js';
 import { PlanSnapshot, Routine } from './domain/routines.js';
+import { Proposal } from './domain/proposals.js';
 
 const MAX_INSTANT = 253402300799000;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -18,14 +19,6 @@ const field = (row, name) => row?.f?.[name]?.[0] ?? row?.v?.[name];
 const defined = (value) => value !== undefined && value !== null;
 const topSet = (sets) => sets.reduce((top, set) => !top || set.weightKg > top.weightKg || (set.weightKg === top.weightKg && set.reps > top.reps) ? set : top, null);
 const volumeOf = (sets) => sets.reduce((cents, set) => cents + Math.max(0, Math.round(set.weightKg * 100)) * set.reps, 0) / 100;
-
-function targets(entry) {
-  const scheme = Array.isArray(entry.sets) && entry.sets.every((set) => set && typeof set === 'object' && !Array.isArray(set) && (!defined(set.reps) || (Number.isInteger(set.reps) && set.reps >= 1 && set.reps <= 100)) && (!defined(set.weightKg) || (typeof set.weightKg === 'number' && set.weightKg >= -500 && set.weightKg <= 500))) ? entry.sets : [];
-  return {
-    ...(scheme.length ? { sets: scheme.map((set) => ({ ...(defined(set.reps) ? { reps: set.reps } : {}), ...(defined(set.weightKg) ? { weightKg: set.weightKg } : {}) })) } : {}),
-    ...(defined(entry.restSeconds) ? { restSeconds: entry.restSeconds } : {}),
-  };
-}
 
 function sessionOf(row, failure) {
   const session = { id: row.id, startedAt: field(row, 'startedAt') };
@@ -134,17 +127,7 @@ export function projectGym(rows, { now = Date.now(), timeZone = 'UTC', failure =
     .sort((a, b) => lexical(a.pattern, b.pattern) || lexical(a.name, b.name) || lexical(a.id, b.id));
   const exerciseById = new Map(exercises.map((exercise) => [exercise.id, exercise]));
   const routineRows = ofType('routine');
-  const proposalRows = ofType('proposal').sort((a, b) => (b.rc ?? 0) - (a.rc ?? 0) || lexical(b.id, a.id));
-  const proposalHead = (row) => {
-    const source = { door: field(row, 'door') };
-    for (const name of ['connection', 'agent']) if (field(row, name)) source[name] = field(row, name);
-    if (field(row, 'threadId')) source.thread = field(row, 'threadId');
-    const head = { id: row.id, routineId: field(row, 'routineId'), intent: field(row, 'intent'), state: field(row, 'state') ?? 'pending', summary: field(row, 'summary') ?? '', ...(defined(row.rc) ? { createdAt: row.rc } : {}), source };
-    if (defined(field(row, 'changeCount'))) head.changeCount = field(row, 'changeCount');
-    if (defined(field(row, 'settledAt'))) head.settledAt = field(row, 'settledAt');
-    return head;
-  };
-  const proposalHeads = proposalRows.map(proposalHead);
+  const proposalHeads = proposalsDocument(read());
   const routines = read().repository(Routine).all('drawn').filter((value) => value.entries.length).map((value) => {
     const routine = routineDocument(value);
     routine.entries = routine.entries.map((entry, index) => ({ position: index + 1, ...entry }));
@@ -217,15 +200,8 @@ export function projectGym(rows, { now = Date.now(), timeZone = 'UTC', failure =
       if (defined(field(row, 'createdEntries'))) created.movements = field(row, 'createdEntries');
       return { ...routine, history: [...proposalHeads.filter((head) => head.routineId === id).slice(0, 20).map((proposal) => ({ kind: 'proposal', ...(defined(proposal.createdAt) ? { at: proposal.createdAt } : {}), proposal })), created] };
     },
-    proposals: ({ routineId, state } = {}) => proposalHeads.filter((head) => (routineId === undefined || head.routineId === routineId) && (state !== 'pending' || head.state === 'pending')),
-    proposal: (id) => {
-      const row = proposalRows.find((row) => row.id === id);
-      if (!row) return null;
-      const changes = (field(row, 'changes') ?? []).map((change, index) => ({ position: index + 1, kind: change.kind, exerciseId: change.exerciseId, ...(change.kind !== 'added' ? { before: targets(change.before ?? {}) } : {}), ...(change.kind !== 'removed' ? { after: targets(change.after ?? {}) } : {}), ...(change.kind === 'removed' ? { loggedSets: sets.filter((set) => field(set, 'exerciseId') === change.exerciseId).length } : {}) }));
-      return { ...proposalHead(row), name: field(row, 'proposedName'), changes,
-        ...(defined(field(row, 'baseRevision')) ? { baseRevision: field(row, 'baseRevision') } : {}),
-        ...(defined(field(row, 'baseName')) ? { baseName: field(row, 'baseName') } : {}) };
-    },
+    proposals: (filter) => proposalsDocument(read(), filter),
+    proposal: (id) => proposalDocument(read(), read().repository(Proposal).find(new Id(id, Proposal), 'drawn')),
     notes: () => notesDocument(read()),
     bodyweight: (bounds) => bodyweightDocument(read(), bounds),
     lastTime: (exerciseId) => {

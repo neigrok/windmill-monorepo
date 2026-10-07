@@ -9,15 +9,13 @@ export { gymStep, gymFailure } from './gymRuntime.js';
 
 const SCOPE = 'self/gym';
 const READS = ['exercises', 'sessions', 'session', 'review', 'routines', 'routine',
-  'proposals', 'proposal', 'history', 'progress', 'record', 'lastTime', 'lastSets'];
+  'history', 'progress', 'record', 'lastTime', 'lastSets'];
 const SENTENCES = {
   stale: 'This changed on another device. Read it again before saving.',
   'session-open': 'that session is still running',
   'session-overlap': 'these times cross a session already in the log',
   'bad-instant': 'These times run past now or outside the workout.',
   'not-writable': 'Sign in to save to your training log.',
-  'proposal-superseded': 'That proposal has been superseded.',
-  'proposal-settled': 'That proposal has already been settled.',
 };
 
 const refusal = (code, { sentence = SENTENCES[code], overlapping = null } = {}) => new GymRefusal(code, { sentence, overlapping });
@@ -126,18 +124,6 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
       ];
     }, () => ({ session: { id: sessionId, startedAt: args.startedAt, finishedAt: args.finishedAt }, sets: args.sets }));
   };
-  for (const verb of ['apply', 'dismiss']) api[`${verb}Proposal`] = (id) => command(`proposal-${verb}`, `gym.${verb}Proposal`, { proposalId: id }, (views) => {
-    const projection = project([...views.drawn.values()], views.now);
-    const proposal = projection.proposal(id);
-    if (!proposal) throw refusal('unknown-record');
-    if (proposal.state === 'superseded') throw refusal('proposal-superseded');
-    if (proposal.state === (verb === 'apply' ? 'dismissed' : 'applied')) throw refusal('proposal-settled');
-    const predict = [{ op: 'update', t: 'proposal', id, f: { state: verb === 'apply' ? 'applied' : 'dismissed', settledAt: views.now } }];
-    if (verb === 'dismiss') return predict;
-    if (proposal.intent === 'remove') return [...predict, { op: 'delete', t: 'routine', id: proposal.routineId }];
-    return [...predict, { op: 'update', t: 'routine', id: proposal.routineId,
-      f: { name: proposal.name, entries: proposal.changes.filter((change) => change.kind !== 'removed').map((change) => ({ exerciseId: change.exerciseId, ...change.after })) } }];
-  }, (views) => ({ proposal: { ...project([...views.drawn.values()], views.now).proposal(id), state: verb === 'apply' ? 'applied' : 'dismissed' } }));
   return api;
 }
 

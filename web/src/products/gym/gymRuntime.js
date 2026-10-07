@@ -1,6 +1,8 @@
+import { Decision } from '../../platform/domain-kit/actions.js';
 import { Draft } from '../../platform/domain-kit/drafts.js';
 import { Fields, Id } from '../../platform/domain-kit/entities.js';
 import { Placement } from '../../platform/domain-kit/reading.js';
+import { Refused } from '../../platform/domain-kit/refusals.js';
 import { ActionRunner, EngineReplica } from '../../platform/domain-kit/runner.js';
 import { Instant, LocalDay, Moment } from '../../platform/domain-kit/time.js';
 import { Valid } from '../../platform/domain-kit/validation.js';
@@ -14,6 +16,8 @@ import { GymRefusals } from './domain/gymRules.js';
 import { DeleteNote, MoveNote, Note, NoteRules, NoteValue } from './domain/notes.js';
 import { ChangePreferences, Preferences, PreferencesValue, restSettings } from './domain/preferences.js';
 import { DeleteRoutine, Routine, RoutineValue } from './domain/routines.js';
+import { AcknowledgeRoutineRemoval, ApplyProposalKeepingReceipt, DismissProposal, Proposal,
+  REMOVAL_RECEIPTS, removalReceipts } from './domain/proposals.js';
 import { SeedExercises } from './domain/seedExercises.js';
 import { GymRefusal, isStoreFailure } from './errors.js';
 import { REFUSALS } from './bodyweight/bodyweight.js';
@@ -26,6 +30,7 @@ const OPERATIONS = new Set(['routine-create', 'routine-save', 'exercise-create',
   'preferences-save', 'note-save', 'note-reorder', 'bodyweight-save', 'set-correct', 'delete', 'undo',
   'session-import', 'session-correct', 'proposal-apply', 'proposal-dismiss', 'refusal']);
 const OUTCOMES = new Set(['saved-local', 'unchanged', 'failed', 'held', 'undone', 'closed', 'refused']);
+const shownRemovals = new WeakMap();
 
 export function gymStep(operation, outcome) {
   if (!OPERATIONS.has(operation) || !OUTCOMES.has(outcome)) return;
@@ -67,6 +72,8 @@ export function gymRefusalError(refused) {
   }
   if (refused.kind === 'future') return new GymRefusal('bad-instant', { sentence: REFUSALS.future });
   if (refused.kind === 'full' && refused.type === 'note') return new GymRefusal('cap', { sentence: FULL_LINE });
+  if (refused.kind === 'proposalSuperseded') return new GymRefusal('proposal-superseded', { sentence: 'That proposal has been superseded.' });
+  if (refused.kind === 'proposalSettled') return new GymRefusal('proposal-settled', { sentence: 'That proposal has already been settled.' });
   const code = refused.refused?.code ?? ({ gone: 'record-dead', taken: 'id-taken', full: 'cap' }[refused.kind] ?? refused.kind);
   return new GymRefusal(code, code === 'stale' ? { sentence: 'This changed on another device. Read it again before saving.' } : {});
 }
@@ -82,6 +89,47 @@ export function routineValue(document) {
 
 export function routineDocument(value) {
   return { id: value.id.record, ...value.fields() };
+}
+
+export function proposalHead(read, value) {
+  const createdAt = read.repository(Proposal).record(value.id.record, 'stored')?.rc;
+  const source = { door: value.door, ...(value.connection ? { connection: value.connection } : {}),
+    ...(value.agent ? { agent: value.agent } : {}), ...(value.threadId ? { thread: value.threadId } : {}) };
+  return { id: value.id.record, routineId: value.routineId.record, intent: value.intent, state: value.state,
+    summary: value.summary, ...(createdAt == null ? {} : { createdAt }), source,
+    ...(value.changeCount === null ? {} : { changeCount: value.changeCount }),
+    ...(value.settledAt === null ? {} : { settledAt: value.settledAt.ms }) };
+}
+
+export function proposalsDocument(read, { routineId, state } = {}) {
+  return read.repository(Proposal).all('drawn').map((value) => proposalHead(read, value))
+    .filter((head) => (routineId === undefined || head.routineId === routineId) && (state !== 'pending' || head.state === 'pending'))
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+}
+
+export function proposalDocument(read, value) {
+  if (!value) return null;
+  const sessions = new Set(read.views.visible('drawn', 'session').map((row) => row.id));
+  const sets = read.views.visible('drawn', 'set').filter((row) => sessions.has(row.f.sessionId?.[0]));
+  return { ...proposalHead(read, value), name: value.proposedName,
+    changes: value.changes.map((change, index) => ({ position: index + 1, ...change.json,
+      ...(change.kind !== 'added' ? { before: change.before?.json ?? {} } : {}),
+      ...(change.kind !== 'removed' ? { after: change.after?.json ?? {} } : {}),
+      ...(change.kind === 'removed' ? { loggedSets: sets.filter((row) => row.f.exerciseId?.[0] === change.exerciseId.record).length } : {}) })),
+    ...(value.baseRevision === null ? {} : { baseRevision: value.baseRevision }),
+    ...(value.baseName === null ? {} : { baseName: value.baseName }) };
+}
+
+// Command results and the snapshot commit together, before the engine retires the queued command.
+export function gymProposalResult(replica, context, result) {
+  const entry = replica.entries(SCOPE).find((entry) => entry.state === 'sent' && entry.n === result.n);
+  if (entry?.intent.cmd?.name !== 'gym.applyProposal') return;
+  const receipt = replica.deviceRows('gym')[REMOVAL_RECEIPTS]?.[entry.intent.cmd.args.proposalId];
+  if (!receipt) return;
+  if (result.s === 'ok') receipt.status = 'applied';
+  if (result.s === 'refused' && !['clock-skew', 'base-unknown'].includes(result.code)) {
+    receipt.status = 'refused'; receipt.code = result.code; receipt.detail = result.detail ?? null;
+  }
 }
 
 export function routineFromWorkout({ id, ...workout }) {
@@ -139,6 +187,8 @@ export function noteDraft(note) {
 
 export function createGymRuntime(engine, { event = gymStep, failure = gymFailure, zone = deviceZone } = {}) {
   const owner = engine.activeReplica();
+  if (shownRemovals.get(engine)?.owner !== owner) shownRemovals.set(engine, { owner, proposals: new Map() });
+  const shown = shownRemovals.get(engine).proposals;
   const port = new EngineReplica(engine);
   const checkOwner = (replica = engine.activeReplica()) => {
     if (replica !== owner) throw new GymRefusal('not-writable', { sentence: 'Sign in to save to your training log.' });
@@ -175,8 +225,56 @@ export function createGymRuntime(engine, { event = gymStep, failure = gymFailure
     event(operation, saved.result.receipt ? 'saved-local' : 'unchanged');
     return routineDocument(saved.draft.current);
   };
+  const removalDocument = (reader, receipt) => ({ ...proposalDocument(reader, receipt.proposal),
+    removalOutcome: receipt.outcome, removalOwner: owner,
+    ...(receipt.outcome === 'refused' ? { removalRefusal: gymRefusalError(GymRefusals.ofRefused(new Refused(
+      receipt.code, receipt.proposal.id.ref, receipt.detail, 'notice'))).sentence } : {}) });
+  const proposal = (reader, record) => {
+    const receipt = removalReceipts(reader).find((receipt) => receipt.proposal.id.record === record);
+    if (receipt) return removalDocument(reader, receipt);
+    return proposalDocument(reader, reader.repository(Proposal).find(new Id(record, Proposal), 'drawn')) ?? shown.get(record) ?? null;
+  };
+  const decideProposal = (record, applying) => boundary(applying ? 'proposal-apply' : 'proposal-dismiss', async () => {
+    const id = new Id(record, Proposal);
+    const action = applying ? ApplyProposalKeepingReceipt(id) : DismissProposal(id);
+    const outcome = await runner.run({ ...action,
+      load: (reader) => ({ loaded: action.load(reader), current: proposal(reader, record) }),
+      decide: ({ loaded, current }) => {
+        const decided = action.decide(loaded);
+        return decided.kind === 'unchanged' ? Decision.unchanged(current) : decided;
+      },
+    });
+    if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
+    event(applying ? 'proposal-apply' : 'proposal-dismiss', outcome.kind === 'committed' ? 'saved-local' : 'unchanged');
+    const observed = read((reader) => proposal(reader, record));
+    // An unchanged commit may precede publication; only the frozen creation time comes from the observation.
+    return { proposal: outcome.kind === 'unchanged' && outcome.result
+      ? { ...outcome.result, ...(observed?.createdAt === undefined ? {} : { createdAt: observed.createdAt }) } : observed };
+  });
   return {
     read,
+    proposals: async (filter) => read((reader) => proposalsDocument(reader, filter)),
+    proposal: async (record) => read((reader) => proposal(reader, record)),
+    applyProposal: (record) => decideProposal(record, true),
+    dismissProposal: (record) => decideProposal(record, false),
+    removalReceipts: async () => read((reader) => removalReceipts(reader).map((receipt) => removalDocument(reader, receipt))),
+    removalReceiptShown: (record, replica, expectedOutcome = null) => boundary('proposal-apply', async () => {
+      if (replica !== owner) return;
+      const value = read((reader) => proposal(reader, record));
+      if (!value?.removalOutcome || value.removalOutcome === 'pending'
+        || (expectedOutcome !== null && value.removalOutcome !== expectedOutcome)) return;
+      const previous = shown.get(record);
+      shown.set(record, value);
+      let acknowledged = false;
+      try {
+        const outcome = await runner.run(AcknowledgeRoutineRemoval(new Id(record, Proposal), value.removalOutcome));
+        if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
+        acknowledged = outcome.kind === 'committed';
+        if (acknowledged) event('proposal-apply', 'closed');
+      } finally {
+        if (!acknowledged) { if (previous) shown.set(record, previous); else shown.delete(record); }
+      }
+    }),
     notes: async () => read(notesDocument),
     mintNote: () => { checkOwner(); return runner.mint(Note).record; },
     saveNote: (id, { title, body }, base) => boundary('note-save', async () => {

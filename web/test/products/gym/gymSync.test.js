@@ -273,7 +273,8 @@ test('an offline removal proposal hides its routine durably before the authorita
   const resumed = await reopen();
   assert.equal(await resumed.routine(routine.id), null);
   assert.deepEqual(await resumed.routines(), []);
-  assert.equal((await resumed.proposal('proposal0001')).state, 'applied');
+  const proposal = await resumed.proposal('proposal0001');
+  assert.deepEqual({ state: proposal.state, removalOutcome: proposal.removalOutcome }, { state: 'pending', removalOutcome: 'pending' });
 });
 
 test('a store that cannot commit leaves no partial write, is the device’s failure, and the engine alone reports it', async (t) => {

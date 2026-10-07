@@ -59,3 +59,7 @@ other records remain readable, and its stored plan is preserved. A gym refusal a
 failure report no `gym-<operation>`: engine telemetry owns transport, storage, authentication and
 admission failures. No workout or note content, identifiers, field values, refusal details or raw
 exception messages are reported.
+
+Proposal decisions run through the gym domain. Removal snapshots persist in the account replica
+until their outcome is visible; acknowledging one emits `gym_action` with `proposal-apply` and
+`closed`. Failed acknowledgment uses `gym-proposal-apply`; a storage failure remains engine-owned.
