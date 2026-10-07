@@ -35,9 +35,10 @@ import XCTest
       }
       let distance = frame.minY <= top ? top + 8 - frame.minY : bottom - 8 - frame.maxY
       let limit = min(150, (bottom - top) / 2 - 8)
+      let movement = min(limit, max(40, abs(distance))) * (distance < 0 ? -1 : 1)
       let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0))
-        .withOffset(CGVector(dx: 0, dy: (top + bottom) / 2))
-      start.press(forDuration: 0.01, thenDragTo: start.withOffset(CGVector(dx: 0, dy: max(-limit, min(limit, distance)))),
+        .withOffset(CGVector(dx: 0, dy: max(top + 8, min(bottom - 8, frame.midY))))
+      start.press(forDuration: 0.01, thenDragTo: start.withOffset(CGVector(dx: 0, dy: movement)),
         withVelocity: .slow, thenHoldForDuration: 0.1)
     }
     XCTAssertTrue(row.isHittable)
