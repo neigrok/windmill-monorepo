@@ -138,17 +138,21 @@ must be public.
 
 ## Restore a database backup
 
-Keep deployments paused and all database writers stopped until this procedure succeeds. Use an
-image compatible with the dump and containing `windmill_rotate_sync_epoch`. From `~/windmill`,
-verify the backup's recorded sha256 and `pg_restore --list` before replacing the database.
-Each actual restore, including another restore of the same dump, needs a fresh random epoch.
+Keep deployments paused and stop any database writers outside this Compose stack. Close client
+ingress first; restore, migrate, rotate and verify the epoch with the server stopped, then restart
+the server before reopening ingress. This avoids serving the restored database under its saved
+epoch, but cannot force a reconnecting client to pull before pushing. Use an image compatible with
+the dump and containing `windmill_rotate_sync_epoch`. From `~/windmill`, verify the backup's recorded
+sha256 and `pg_restore --list` before replacing the database. Each actual restore, including another
+restore of the same dump, needs a fresh random epoch.
 
 ```sh
 set -eu
 RESTORE_DUMP="$PWD/backups/<backup>.dump"
 RESTORE_DIR=$(mktemp -d "$PWD/backups/restore-XXXXXXXX")
 openssl rand -hex 16 > "$RESTORE_DIR/new-epoch"
-docker compose stop caddy server migrate
+docker compose stop caddy
+docker compose stop server migrate
 docker compose exec -T db dropdb -U windmill windmill
 docker compose exec -T db createdb -U windmill -O windmill windmill
 docker compose exec -T db pg_restore -U windmill -d windmill \
@@ -162,7 +166,8 @@ docker compose run --rm --no-deps -T server windmill_rotate_sync_epoch \
 cat "$RESTORE_DIR/epoch.log"
 test "$(docker compose exec -T db psql -U windmill -d windmill -XAt \
   -v ON_ERROR_STOP=1 -c 'select epoch from sync_meta')" = "$(cat "$RESTORE_DIR/new-epoch")"
-docker compose up -d server caddy
+docker compose up -d server
+docker compose up -d caddy
 ```
 
 Keep the restore directory as the receipt. If rotation times out, is interrupted or its answer is
@@ -176,10 +181,23 @@ and process restarts never rotate the epoch.
 
 The tool uses `DATABASE_URL` and the server's Sentry settings. It emits a structured
 `sync.epoch.rotate` completion (`ok`, `already-applied`, or a refusal/failure) with duration, without
-credentials or epoch values. Clients see the new epoch on their next sync response, clear cursors
-and staging, re-identify, and rebootstrap. Pending work survives; old-epoch acknowledgements return
-to ready and are replayed (engine spec §7.5). Fully settled server writes newer than the backup are
-lost with that backup; rotation does not reconstruct them.
+credentials or epoch values. Rotation changes only `sync_meta.epoch`, leaving restored rows intact.
+When a client processes the epoch change, it clears cursors and staging, re-identifies and
+rebootstraps. That transition retains unsent entries and returns still-pending old-epoch
+acknowledgements to ready at their original commit positions.
+
+A restore is outside the engine's INV-3 guarantee ([spec §7.5](../../docs/foundation/engine.md#75-puller-reset-and-epoch-change)).
+Fully settled server writes newer than the backup are lost; rotation cannot reconstruct them.
+Retained intents may replay against missing records or records recreated with a different `born`:
+dependent edits/deletes can be refused or acknowledged as no-ops, so their intended effects can be
+lost. A no-op acknowledgement produces no refusal notice.
+
+Even after rotation, a push-first reconnect can lose an offline delete of a record absent from the
+backup: after `409 gap`, the delete can be acknowledged as a no-op before its old acknowledged
+create is replayed. The record then reappears with an empty outbox and no notice. The supplied
+restore proof covers pull-first recovery of independent creates, not this dependent-delete case
+or every reconnect ordering. Keeping ingress closed until rotation is verified limits exposure;
+it does not remove this client recovery limitation.
 
 ## Frontend
 

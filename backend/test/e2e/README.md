@@ -7,7 +7,7 @@
 | `deployment_conformance.mjs` | what engine.md asks of a deployment, directly and through the production Caddyfile |
 | `deploy_auth_env_test.py` | that `deploy.yml` forwards the native-auth settings |
 | `sync_probe.sh` | the sync engine against `windmill_server_probe` |
-| `sync_epoch_restore.mjs` | a real dump/restore and epoch rotation against the browser engine and production server, retaining pending work |
+| `sync_epoch_restore.mjs` | a real dump/restore and epoch rotation against the browser engine and production server; pull-first replay of independent acknowledged and unsent creates |
 | `journal_echo.sh`, `journal_nudge.sh` | journal echoes and nudges against the local stack |
 
 Each shell and Node script's header names its prerequisites and how to run it.
