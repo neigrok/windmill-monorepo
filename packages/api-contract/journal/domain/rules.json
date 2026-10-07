@@ -1,0 +1,200 @@
+{
+  "entities": [
+    {
+      "type": "journalState",
+      "guarded": false,
+      "held": false,
+      "ordered": false,
+      "removable": false
+    },
+    {
+      "type": "page",
+      "guarded": false,
+      "held": false,
+      "ordered": false,
+      "removable": false
+    }
+  ],
+  "rules": [
+    {
+      "kind": "server",
+      "name": "journal.claim",
+      "subject": "page",
+      "codes": [
+        "claim-conflict"
+      ]
+    },
+    {
+      "kind": "local",
+      "name": "journal.claimPage.body",
+      "subject": "journal",
+      "spec": {
+        "path": "journal.claimPage.body",
+        "kind": "text",
+        "unit": "bytes",
+        "min": 0,
+        "max": 131072,
+        "trim": false,
+        "nfc": false
+      }
+    },
+    {
+      "kind": "local",
+      "name": "journal.claimPage.claimId",
+      "subject": "journal",
+      "spec": {
+        "path": "journal.claimPage.claimId",
+        "kind": "text",
+        "unit": "bytes",
+        "min": 1,
+        "max": 128,
+        "trim": false,
+        "nfc": false
+      }
+    },
+    {
+      "kind": "local",
+      "name": "journal.claimPage.source",
+      "subject": "journal",
+      "spec": {
+        "path": "journal.claimPage.source",
+        "kind": "choice",
+        "values": [
+          "typed",
+          "spoken"
+        ]
+      }
+    },
+    {
+      "kind": "local",
+      "name": "journal.contentClock",
+      "subject": "page"
+    },
+    {
+      "kind": "local",
+      "name": "journal.day",
+      "subject": "page"
+    },
+    {
+      "kind": "local",
+      "name": "journal.documentStamp",
+      "subject": "page"
+    },
+    {
+      "kind": "local",
+      "name": "journal.energy",
+      "subject": "page"
+    },
+    {
+      "kind": "local",
+      "name": "journal.mood",
+      "subject": "page"
+    },
+    {
+      "kind": "local",
+      "name": "journal.savePage.body",
+      "subject": "journal",
+      "spec": {
+        "path": "journal.savePage.body",
+        "kind": "text",
+        "unit": "bytes",
+        "min": 0,
+        "max": 131072,
+        "trim": false,
+        "nfc": false
+      }
+    },
+    {
+      "kind": "local",
+      "name": "journal.savePage.source",
+      "subject": "journal",
+      "spec": {
+        "path": "journal.savePage.source",
+        "kind": "choice",
+        "values": [
+          "typed",
+          "spoken"
+        ]
+      }
+    },
+    {
+      "kind": "local",
+      "name": "journal.savePage.stamp.actor",
+      "subject": "journal",
+      "spec": {
+        "path": "journal.savePage.stamp.actor",
+        "kind": "text",
+        "unit": "bytes",
+        "min": 0,
+        "max": 64,
+        "trim": false,
+        "nfc": false
+      }
+    },
+    {
+      "kind": "local",
+      "name": "journalState",
+      "subject": "journalState"
+    },
+    {
+      "kind": "local",
+      "name": "journalState.firstPage",
+      "subject": "journalState",
+      "spec": {
+        "path": "journalState.firstPage",
+        "kind": "choice",
+        "values": [
+          "pending",
+          "retired"
+        ]
+      }
+    },
+    {
+      "kind": "local",
+      "name": "journalState.placeholder",
+      "subject": "journalState",
+      "spec": {
+        "path": "journalState.placeholder",
+        "kind": "choice",
+        "values": [
+          "pending",
+          "retired"
+        ]
+      }
+    },
+    {
+      "kind": "local",
+      "name": "journalState.privacyLine",
+      "subject": "journalState",
+      "spec": {
+        "path": "journalState.privacyLine",
+        "kind": "choice",
+        "values": [
+          "pending",
+          "retired"
+        ]
+      }
+    },
+    {
+      "kind": "local",
+      "name": "journalState.scales",
+      "subject": "journalState",
+      "spec": {
+        "path": "journalState.scales",
+        "kind": "choice",
+        "values": [
+          "pending",
+          "retired"
+        ]
+      }
+    },
+    {
+      "kind": "server",
+      "name": "page.size",
+      "subject": "page",
+      "codes": [
+        "too-large"
+      ]
+    }
+  ]
+}

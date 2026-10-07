@@ -120,6 +120,24 @@ struct JournalDomainTests {
     #expect(try d.pending().isEmpty)
   }
 
+  @Test(arguments: ["anonymous", "bound", "pending"])
+  func aFailedSaveKeepsTheEditorDraftAndOnlyACommittedSaveClearsIt(_ mode: String) throws {
+    let d = try Device()
+    if mode == "pending" { _ = try d.runner.run(SavePage(day: Self.day, document: PageDocument(body: "first"))) }
+    if mode != "anonymous" { try d.bind() }
+    let document = PageDocument(body: "new words", mood: 0)
+    _ = try d.runner.run(PreserveEditorDraft(day: Self.day, document: document))
+    let before = try d.runner.read(Journal.scope) { try $0.devices(prefix: "pendingClaim:") }
+    let clock = try d.runner.read(Journal.scope) { try $0.device("contentClock") }
+    d.faults.failNextCommit()
+    #expect(throws: CommitFailure.self) { try d.runner.run(SavePage(day: Self.day, document: document)) }
+    #expect(try d.runner.read(Journal.scope) { try $0.devices(prefix: "pendingClaim:") } == before)
+    #expect(try d.runner.read(Journal.scope) { try $0.device("contentClock") } == clock)
+    _ = try d.runner.run(SavePage(day: Self.day, document: document))
+    #expect(try d.runner.read(Journal.scope) { try $0.device(EditorDraft.key) } == nil)
+    #expect(try d.runner.read(Journal.scope) { try JournalRoom($0).days.first?.document } == document)
+  }
+
   @Test func anonymousSnapshotsCoalesceWithCumulativeStateAndClockRollback() throws {
     let d = try Device()
     let first = try d.runner.run(SavePage(day: Self.day, document: PageDocument(body: "first")))
