@@ -149,7 +149,8 @@ async function run() {
     await phoneGym.createRoutine({ id: 'rt_fixture_main', name: 'Fixture Lower', position: 0, entries: [
       { exerciseId: 'back-squat', sets: ramp, restSeconds: 180 }, { exerciseId: 'pull-up' },
       { exerciseId: 'ex_fixture_custom', sets: [{ reps: 10, weightKg: 24 }], restSeconds: 60 }] });
-    await phoneGym.savePreferences({ units: 'kg', restSeconds: 180, restSound: false, confirmHaptic: false, confirmSound: true });
+    await phone.commit('self/gym', [{ op: 'write', t: 'prefs', id: 'prefs', f: { restSeconds: 180, restSound: false } }]);
+    await phoneGym.savePreferences({ units: 'kg', confirmHaptic: false, confirmSound: true });
     for (const [id, title, body] of [['note_fixture_a', 'Fixture goal', 'Synthetic fixture note'], ['note_fixture_b', 'Fixture cue', '']]) {
       await phoneGym.saveNote(id, { title, body });
     }
@@ -290,7 +291,27 @@ async function run() {
       assert.ok(imported.session.finishedAt <= Date.now());
       assert.ok(commandsSeen.includes('gym.importSession'), 'backfill must use the engine command'); e2e++;
 
-      await waitUntil(() => sql(`SELECT count(DISTINCT props->>'operation') FROM events WHERE user_id='${account}' AND name='gym_action' AND props->>'operation' IN ('routine-save','session-import') AND props->>'outcome'='saved-local';`) === '2',
+      await goto('#/gym/log');
+      await page.getByRole('button', { name: 'Weigh in', exact: true }).first().click();
+      await page.getByRole('textbox', { name: 'Bodyweight in kg' }).fill('81,234');
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await waitUntil(async () => (await request('/v1/gym/bodyweight')).latest?.weightKg === 81.23,
+        { processes: [vite, backend], label: 'bodyweight domain convergence' }); e2e++;
+
+      await goto('#/gym/bodyweight');
+      await page.getByRole('button', { name: /^81\.23 kg ·/ }).click();
+      await page.getByRole('button', { name: 'Delete weigh-in', exact: true }).click();
+      await page.getByRole('button', { name: /^81\.23 kg ·/ }).waitFor({ state: 'detached' });
+      await page.getByRole('button', { name: 'Undo', exact: true }).click();
+      await page.getByRole('button', { name: /^81\.23 kg ·/ }).waitFor(); e2e++;
+
+      await page.goto(`${origin}/app/settings`);
+      await page.getByRole('group', { name: 'Weight units' }).getByRole('button', { name: 'lb', exact: true }).click();
+      await waitUntil(async () => (await request('/v1/gym/preferences')).units === 'lb',
+        { processes: [vite, backend], label: 'preference domain convergence' });
+      assert.deepEqual(await request('/v1/gym/preferences'), { units: 'lb', restSeconds: 180, restSound: false, confirmHaptic: false, confirmSound: true }); e2e++;
+
+      await waitUntil(() => sql(`SELECT count(DISTINCT props->>'operation') FROM events WHERE user_id='${account}' AND name='gym_action' AND props->>'operation' IN ('routine-save','session-import','bodyweight-save','preferences-save') AND props->>'outcome'='saved-local';`) === '4',
         { processes: [vite, backend], label: 'gym product telemetry' });
       const writeLog = readFileSync(join(temporary, 'stack.log'), 'utf8');
       assert.ok(writeLog.includes('"operation":"sync.push"'), 'engine admission must emit its write log');
@@ -319,7 +340,7 @@ async function run() {
       assert.deepEqual(pageErrors, []);
       assert.deepEqual(gymRequests.filter((request) => request !== 'GET /v1/gym/threads'), [], 'web mirror and engine writes must use no replaced REST door');
       await context.close();
-      console.log(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 6, pending: 0, persistedGymOperations: 2, syncWriteLog: true, ports: [backendPort, webPort] }));
+      console.log(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 9, pending: 0, persistedGymOperations: 4, syncWriteLog: true, ports: [backendPort, webPort] }));
     }
     completed = true;
   } catch (error) {
@@ -332,7 +353,7 @@ async function run() {
           replicaState: engine?.device.activeReplica.meta.state, online: engine?.online, leader: engine?.leader };
       }).catch(() => null);
       console.error(JSON.stringify({ browserErrors: pageErrors, url: lastPage.url(), sync }));
-      console.error(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 6, status: 'failed' }));
+      console.error(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 9, status: 'failed' }));
     }
     throw error;
   } finally {

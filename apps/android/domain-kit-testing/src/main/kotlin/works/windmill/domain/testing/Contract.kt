@@ -124,6 +124,7 @@ val Change.form: Json get() {
     val fields = linkedMapOf("op" to Json.of(op), "t" to Json.of(type), "id" to (id?.json ?: Json.Null))
     if (values.isNotEmpty()) fields["f"] = Json.Obj(values.toList())
     if (texts.isNotEmpty()) fields["x"] = Json.Obj(texts.map { (name, edit) -> name to Json.objectOf("text" to Json.of(edit.text), "from" to (edit.editedFrom?.let(Json::of) ?: Json.Null)) })
+    if (serials.isNotEmpty()) fields["v"] = Json.Obj(serials.toList())
     (operation as? Change.Operation.Put)?.let { fields["present"] = it.present?.let(Json::of) ?: Json.Null }
     anchor?.let { fields["anchor"] = Json.objectOf("field" to Json.of(it.field), "below" to (it.below?.json ?: Json.Null)) }
     return Json.Obj(fields.toList())

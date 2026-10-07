@@ -28,7 +28,7 @@ export function inDisplayUnit(weightKg, unit = spelling) {
 }
 
 // A number typed in the display unit, as the kilograms the wire takes: two decimals, half away from zero.
-export function fromDisplayUnit(shown) {
-  const kg = spelling === LB ? shown * KILOGRAMS_PER_POUND : shown;
+export function fromDisplayUnit(shown, unit = spelling) {
+  const kg = unit === LB ? shown * KILOGRAMS_PER_POUND : shown;
   return Math.sign(kg) * Math.round(Math.abs(kg) * 100) / 100;
 }

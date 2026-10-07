@@ -363,17 +363,27 @@ struct DeltaBuilder {
     }
   }
 
-  // A command's prediction may write server fields and text, including a lifeless document.
+  // A command's prediction stays local, including deaths and server-assigned serial values.
   func predicted(_ change: Change) throws -> Delta {
     let type = try typeOf(change.type)
     guard let id = change.id else { throw CommitFailure.malformed("a prediction names its record") }
+    for (name, value) in change.serials {
+      guard let field = type.field(name), case .serial = field.kind else {
+        throw CommitFailure.malformed("\(type.name).\(name) is not a serial field")
+      }
+      guard (try? value.asInteger(atLeast: 1)) != nil else {
+        throw CommitFailure.malformed("\(type.name).\(name) is not a positive serial value")
+      }
+    }
     let key = RecordKey(type.name, id)
     let current = drawn.record(key)
     var delta = Delta(key: key)
     switch change.operation {
     case .create:
-      delta.lattice.born = stamp
-      delta.lattice.life = Life(.alive, stamp)
+      if type.life {
+        delta.lattice.born = stamp
+        delta.lattice.life = Life(.alive, stamp)
+      }
       delta.lattice.fields = try fields(type, change.values, current: nil, server: true)
     case .delete:
       guard type.life else { throw CommitFailure.malformed("\(type.name) has no life") }
@@ -412,6 +422,7 @@ struct DeltaBuilder {
       let base: TextBase = if let confirmed, confirmed.text.utf8.elementsEqual(from.utf8) { .rev(confirmed.rev) } else { .text(from) }
       delta.texts[name] = TextWrite(text: edit.text, base: base)
     }
+    delta.serials = change.serials
     return delta
   }
 

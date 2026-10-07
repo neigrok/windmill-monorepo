@@ -5,7 +5,7 @@ import { useSyncRecords } from '../../../platform/sync/react.js';
 import { NOTES_HREF } from '../log.js';
 import { HEAD_LINE } from '../notes/notes.js';
 import { LB, spellWeightsIn, UNITS } from '../units.js';
-import { preferenceRefusal, preferencesWrite, readPreferences } from './preferences.js';
+import { preferenceRefusal } from './preferences.js';
 
 export function GymSettingsSection() {
   const api = useGymApi();
@@ -24,7 +24,7 @@ export function GymSettingsSection() {
     api.preferences()
       .then((document) => {
         if (!live) return;
-        const held = readPreferences(document);
+        const held = document;
         loadedReplica.current = records.replica;
         stored.current = held;
         setPreferences(held);
@@ -43,7 +43,7 @@ export function GymSettingsSection() {
     setRefused('');
     const account = records.replica;
     try {
-      await api.savePreferences(preferencesWrite(next));
+      await api.savePreferences({ units });
     } catch (error) {
       if (replica.current !== account) return;
       setPreferences(stored.current);

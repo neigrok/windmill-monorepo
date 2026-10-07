@@ -97,29 +97,30 @@ object ClientCorpus {
             "view/drawn.json" to { input: Json -> view(probe, input, ViewMode.drawn) },
             "view/stored.json" to { input: Json -> view(probe, input, ViewMode.stored) })
     }
-    fun change(json: Json): Change {
+    fun change(json: Json, prediction: Boolean = false): Change {
         val type = json.member("t").str()
         val op = json.member("op").str()
         val values = json["f"]?.obj().orEmpty()
+        val serials = if (prediction) json["v"]?.orNull()?.obj().orEmpty() else emptyMap()
         val texts = json["x"]?.obj()?.mapValues { (_, value) ->
             if (value is Json.Str) TextEdit(value.value) else TextEdit(value.member("text").str(), value["from"]?.str())
         }.orEmpty()
         val anchor = json["anchor"]?.let { OrderAnchor(it.member("field").str(), it.member("below").orNull()?.let(::RecordID)) }
-        if (op == "create") return Change.create(type, json["id"]?.let { NewID.Given(RecordID(it)) } ?: json["label"]?.let { NewID.Derived(it.str()) } ?: NewID.Minted, values, texts, anchor)
+        if (op == "create") return Change.create(type, json["id"]?.let { NewID.Given(RecordID(it)) } ?: json["label"]?.let { NewID.Derived(it.str()) } ?: NewID.Minted, values, texts, anchor).copy(serials = serials)
         val id = RecordID(json.member("id"))
         val operation = when (op) {
             "update" -> Change.Operation.Update(id); "delete" -> Change.Operation.Delete(id); "revive" -> Change.Operation.Revive(id)
-            "put" -> Change.Operation.Put(id, json["present"]?.bool() ?: true); "write" -> Change.Operation.Write(id); "move" -> Change.Operation.Move(id)
+            "put" -> Change.Operation.Put(id, json["present"]?.bool() ?: if (prediction) null else true); "write" -> Change.Operation.Write(id); "move" -> Change.Operation.Move(id)
             else -> throw CommitFailure.malformed("operation")
         }
-        return Change(type, operation, values, texts, anchor)
+        return Change(type, operation, values, texts, anchor, serials)
     }
     fun gesture(changes: Json, opts: Json = Json.objectOf()): Gesture = Gesture(changes.arr().map(::change),
         opts["atomic"]?.bool() ?: false, opts["hold"]?.bool() ?: false,
         opts["guard"]?.arr()?.map { RegisterRef(it.member("t").str(), RecordID(it.member("id")), it.member("field").str()) }.orEmpty(),
         opts["retire"]?.arr()?.map { RecordRef(it.member("t").str(), RecordID(it.member("id"))) }.orEmpty(),
         opts["supersede"]?.arr()?.map { it.str() }.orEmpty(), opts["cmd"]?.let(::Command),
-        opts["predict"]?.arr()?.map(::change).orEmpty(), opts["local"]?.obj()?.map { DeviceWrite(it.key, it.value.orNull()) }.orEmpty(), opts["gestureId"]?.str())
+        opts["predict"]?.arr()?.map { change(it, prediction = true) }.orEmpty(), opts["local"]?.obj()?.map { DeviceWrite(it.key, it.value.orNull()) }.orEmpty(), opts["gestureId"]?.str())
     fun outcome(result: CommitOutcome): Json = when (result) {
         is CommitOutcome.Committed -> Json.Obj(buildList {
             add("localIds" to Json.Arr(result.receipt.localIds.map(Json::of))); add("retired" to Json.Arr(result.receipt.retired.map(Json::of))); add("stamp" to result.receipt.stamp.json)

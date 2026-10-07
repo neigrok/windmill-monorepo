@@ -19,7 +19,7 @@ sealed interface NewID {
 data class TextEdit(var text: String, var editedFrom: String? = null)
 
 data class Change(val type: String, val operation: Operation, val values: Map<String, Json> = emptyMap(),
-    val texts: Map<String, TextEdit> = emptyMap(), val anchor: OrderAnchor? = null) {
+    val texts: Map<String, TextEdit> = emptyMap(), val anchor: OrderAnchor? = null, val serials: Map<String, Json> = emptyMap()) {
     sealed interface Operation {
         data class Create(val id: NewID) : Operation
         data class Update(val id: RecordID) : Operation

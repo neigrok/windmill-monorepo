@@ -116,6 +116,24 @@ function releases() {
 
 function undos() {
   return [
+    ...[false, true].map((predicted) => {
+      const day = { t: 'day', id: '2026-09-01' };
+      const deletion = { op: 'delete', ...day };
+      const cmd = { name: 'probe.end', args: { runId: 'run00001', endedAt: 6000 } };
+      return stepsVector(`Undo of ${predicted ? 'a predicted' : 'an intent'} death folds commands inheriting its life and keeps independent deltas`, {
+        device: device({ 'self/probe': [row({ ...day, life: ['alive', st(1000)], f: { score: [1, st(1000)] }, seq: 1 })] }),
+        steps: [
+          probe(predicted ? [] : [deletion], { hold: true, gestureId: 'death', ...(predicted ? { cmd, predict: [deletion] } : {}) }, 5000),
+          probe([{ op: 'put', t: 'day', id: '2026-09-02', f: { score: 9 } }], { cmd, predict: [{ op: 'put', ...day, f: { score: 2 } }] }, 5001),
+          probe([], { cmd, predict: [{ op: 'put', ...day, f: { score: 3 } }] }, 5002),
+          { op: 'view', scope: 'self/probe', withHeld: true },
+          { op: 'push', deviceNow: 5003 },
+          { op: 'undo', gestureId: 'death' },
+          { op: 'view', scope: 'self/probe', withHeld: true },
+          { op: 'push', deviceNow: 5004 },
+        ],
+      });
+    }),
     stepsVector('undo while the gesture is held removes it', {
       device: device(),
       steps: [holdDelete('card0001', 5000, 'del'), { op: 'undo', gestureId: 'del' }],

@@ -85,7 +85,7 @@ TEST(observability_lifecycle_covers_every_binary_composition_root) {
     const std::string composition = code.substr(static_cast<std::size_t>(match.position()));
     CHECK(std::regex_search(composition, lifecycle));
   }
-  CHECK_EQ(binaries, std::size_t{3});
+  CHECK_EQ(binaries, std::size_t{4});
   const std::string shared = source(backend / "platform/adapters/sentry/ObservedTool.cpp");
   CHECK(shared.find("stopLogTee()") != std::string::npos);
   CHECK(shared.find("toolReporter->drain()") != std::string::npos);

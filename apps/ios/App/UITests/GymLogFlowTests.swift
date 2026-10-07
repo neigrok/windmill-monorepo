@@ -22,6 +22,33 @@ import XCTest
   func sessionRow(_ app: XCUIApplication) -> XCUIElement {
     app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-log-session-")).firstMatch
   }
+  func visibleSessionRow(_ app: XCUIApplication) -> XCUIElement {
+    let first = sessionRow(app)
+    XCTAssertTrue(first.waitForExistence(timeout: 20))
+    let row = app.buttons[first.identifier]
+    for _ in 0..<8 {
+      let frame = row.frame, top = app.navigationBars.firstMatch.frame.maxY + 8
+      let bottom = app.buttons["gym-weigh-in"].frame.minY - 12
+      guard bottom > top + 16 else { break }
+      if frame.minY > top && frame.maxY < bottom {
+        if row.isHittable { break }
+        continue
+      }
+      let movement = min(150, (bottom - top) / 2 - 8) * (frame.minY <= top ? 1 : -1)
+      let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
+        .withOffset(CGVector(dx: 0, dy: max(top + 8, min(bottom - 8, frame.midY))))
+      start.press(forDuration: 0.01, thenDragTo: start.withOffset(CGVector(dx: 0, dy: movement)),
+        withVelocity: .slow, thenHoldForDuration: 0.1)
+    }
+    XCTAssertTrue(row.isHittable)
+    XCTAssertGreaterThan(row.frame.minY, app.navigationBars.firstMatch.frame.maxY + 8)
+    XCTAssertLessThan(row.frame.maxY, app.buttons["gym-weigh-in"].frame.minY - 12)
+    return row
+  }
+  func openFirstSession(_ app: XCUIApplication) {
+    visibleSessionRow(app).tap()
+    XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 10))
+  }
   func firstSet(_ app: XCUIApplication) -> XCUIElement {
     app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-finished-set-")).firstMatch
   }
@@ -49,8 +76,9 @@ import XCTest
 
   func testMovementRecordWindows() {
     let app = launch("dark")
-    sessionRow(app).tap()
-    app.buttons["gym-session-movement"].firstMatch.tap()
+    openFirstSession(app)
+    let movement = app.buttons["gym-session-movement"].firstMatch
+    XCTAssertTrue(movement.waitForExistence(timeout: 10)); movement.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
     let picker = app.segmentedControls["gym-record-window"]
     XCTAssertTrue(picker.waitForExistence(timeout: 5))
@@ -70,8 +98,9 @@ import XCTest
 
   func testBothChartDateAxesFollowOverflowingHistoryPans() {
     let app = launch("light", overflowingCharts: true)
-    sessionRow(app).tap()
-    app.buttons["gym-session-movement"].firstMatch.tap()
+    openFirstSession(app)
+    let movement = app.buttons["gym-session-movement"].firstMatch
+    XCTAssertTrue(movement.waitForExistence(timeout: 10)); movement.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
     let window = app.segmentedControls["gym-record-window"]
     XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -80,8 +109,20 @@ import XCTest
     XCTAssertTrue(app.staticTexts["All · 35 sessions"].waitForExistence(timeout: 5))
     assertDateAxisFollowsPan(app, chartID: "gym-record-chart")
     back(app); back(app)
-    for _ in 0..<3 where !app.buttons["gym-bodyweight-door"].isHittable { app.swipeDown() }
-    app.buttons["gym-bodyweight-door"].tap()
+    let bodyweight = app.buttons["gym-bodyweight-door"]
+    let top = app.navigationBars.firstMatch.frame.maxY + 8
+    let bottom = app.buttons["gym-weigh-in"].frame.minY - 12
+    for _ in 0..<3 {
+      if bodyweight.exists {
+        let frame = bodyweight.frame
+        if frame.minY > top && frame.maxY < bottom && bodyweight.isHittable { break }
+      }
+      app.swipeDown()
+    }
+    XCTAssertTrue(bodyweight.isHittable)
+    XCTAssertGreaterThan(bodyweight.frame.minY, top)
+    XCTAssertLessThan(bodyweight.frame.maxY, bottom)
+    bodyweight.tap()
     let weightsWindow = app.segmentedControls["gym-bodyweight-window"]
     XCTAssertTrue(weightsWindow.waitForExistence(timeout: 5))
     selectAllChartHistory(weightsWindow, app: app)
@@ -107,7 +148,8 @@ import XCTest
     let viewport = chart.descendants(matching: .any)["gym-chart-viewport"]
     for _ in 0..<3 where !viewport.isHittable || viewport.frame.maxY > app.frame.maxY - 60 { app.swipeUp(velocity: .slow) }
     XCTAssertTrue(viewport.isHittable)
-    let dates = chart.descendants(matching: .any)["gym-chart-dates"]
+    let dateLabels = chart.descendants(matching: .any).matching(identifier: "gym-chart-dates")
+    let dates = dateLabels.firstMatch
     XCTAssertTrue(dates.exists)
     let latest = dates.value as? String
     XCTAssertNotNil(latest)
@@ -118,18 +160,15 @@ import XCTest
     let left = origin.withOffset(CGVector(dx: visible.minX + visible.width * 0.2, dy: visible.midY))
     let right = origin.withOffset(CGVector(dx: visible.minX + visible.width * 0.85, dy: visible.midY))
     left.press(forDuration: 0.01, thenDragTo: right, withVelocity: .fast, thenHoldForDuration: 0)
-    let shifted = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      dates.exists && dates.value as? String != latest
-    }, object: dates)
-    XCTAssertEqual(XCTWaiter.wait(for: [shifted], timeout: 5), .completed)
+    XCTAssertTrue(dateLabels.matching(NSPredicate(format: "value != nil AND value != %@", latest ?? ""))
+      .firstMatch.waitForExistence(timeout: 10))
     let earlier = dates.value as? String
+    XCTAssertNotNil(earlier)
     XCTAssertNotEqual(earlier, latest)
     snapshot("\(chartID)-earlier-dates", app: app)
     right.press(forDuration: 0.01, thenDragTo: left, withVelocity: .fast, thenHoldForDuration: 0)
-    let returned = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      dates.exists && dates.value as? String != earlier
-    }, object: dates)
-    XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 5), .completed)
+    XCTAssertTrue(dateLabels.matching(NSPredicate(format: "value != nil AND value != %@", earlier ?? ""))
+      .firstMatch.waitForExistence(timeout: 10))
     XCTAssertNotEqual(dates.value as? String, earlier)
   }
 
@@ -178,37 +217,25 @@ import XCTest
       }
       app.swipeUp(velocity: .slow)
     }
-    let moment = app.buttons.matching(identifier: "gym-best-moment")
-      .matching(NSPredicate(format: "label == %@", momentHeader.label)).firstMatch
+    let momentLabel = momentHeader.label
+    let moments = app.buttons.matching(identifier: "gym-best-moment")
+      .matching(NSPredicate(format: "label == %@", momentLabel))
+    let moment = moments.firstMatch
     XCTAssertTrue(moment.isHittable)
     moment.tap()
-    let expanded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      moment.exists && moment.value as? String == "Expanded"
-    }, object: moment)
-    XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 5), .completed)
+    XCTAssertTrue(moments.matching(NSPredicate(format: "value == %@", "Expanded"))
+      .firstMatch.waitForExistence(timeout: 5))
     // The native disclosure applies its identifier to the expanded List rows.
     let openRecord = app.buttons["Open record"]
     XCTAssertTrue(openRecord.waitForExistence(timeout: 5))
     XCTAssertTrue(openRecord.isHittable)
     snapshot("moment-\(appearance)", app: app)
     moment.tap()
-    let collapsed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      moment.exists && moment.value as? String == "Collapsed"
-    }, object: moment)
-    XCTAssertEqual(XCTWaiter.wait(for: [collapsed], timeout: 5), .completed)
+    XCTAssertTrue(moments.matching(NSPredicate(format: "value == %@", "Collapsed"))
+      .firstMatch.waitForExistence(timeout: 5))
     XCTAssertTrue(openRecord.waitForNonExistence(timeout: 5))
     snapshot("moment-collapsed-\(appearance)", app: app)
-    let workoutRow = sessionRow(app)
-    for _ in 0..<8 {
-      let frame = workoutRow.frame, top = app.navigationBars.firstMatch.frame.maxY + 8
-      if frame.minY > top && frame.maxY < app.buttons["gym-weigh-in"].frame.minY - 12 && workoutRow.isHittable { break }
-      if frame.minY <= top { app.swipeDown(velocity: .slow) } else { app.swipeUp(velocity: .slow) }
-    }
-    XCTAssertTrue(workoutRow.isHittable)
-    XCTAssertGreaterThan(workoutRow.frame.minY, app.navigationBars.firstMatch.frame.maxY + 8)
-    XCTAssertLessThan(workoutRow.frame.maxY, app.buttons["gym-weigh-in"].frame.minY - 12)
-    workoutRow.tap()
-    XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
+    openFirstSession(app)
     XCTAssertTrue(app.staticTexts["Plan saved at start"].exists)
     snapshot("session-\(appearance)", app: app)
     let correctedSet = firstSet(app)
@@ -217,7 +244,9 @@ import XCTest
     snapshot("fix-\(appearance)", app: app)
     let weight = app.textFields["gym-fix-weight"]
     weight.doubleTap()
-    let cut = app.menuItems["Cut"].exists ? app.menuItems["Cut"] : app.buttons["Cut"]
+    let cut = app.descendants(matching: .any).matching(NSPredicate(
+      format: "(label == %@ OR identifier == %@) AND elementType IN %@", "Cut", "Cut",
+      [XCUIElement.ElementType.menuItem.rawValue, XCUIElement.ElementType.button.rawValue])).firstMatch
     XCTAssertTrue(cut.waitForExistence(timeout: 5))
     cut.tap()
     let cleared = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
@@ -264,11 +293,14 @@ import XCTest
     app.buttons["gym-bodyweight-door"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-bodyweight"].waitForExistence(timeout: 5))
     snapshot("bodyweight-\(appearance)", app: app)
-    app.buttons["82.6 kg · 20 Sep"].tap()
+    let crowdedPoint = app.buttons["gym-chart-point-2026-09-20"]
+    XCTAssertTrue(crowdedPoint.waitForExistence(timeout: 5)); crowdedPoint.tap()
     let fixedDate = app.descendants(matching: .any)["gym-weigh-in-fixed-date"]
     XCTAssertTrue(fixedDate.waitForExistence(timeout: 5))
     snapshot("weigh-in-crowded-\(appearance)", app: app)
-    XCTAssertTrue(fixedDate.label.contains("20 September") || (fixedDate.value as? String ?? "").contains("20 September") || fixedDate.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "20 September")).firstMatch.exists)
+    let expectedDate = Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 9, day: 20))!
+      .formatted(.dateTime.day().month(.wide).year())
+    XCTAssertTrue(fixedDate.label.contains(expectedDate) || (fixedDate.value as? String ?? "").contains(expectedDate) || fixedDate.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", expectedDate)).firstMatch.exists)
     app.buttons["Cancel"].tap()
     app.segmentedControls["gym-bodyweight-window"].buttons["All"].tap()
     XCTAssertTrue(app.staticTexts["All · 6 weigh-ins"].waitForExistence(timeout: 5))
@@ -282,14 +314,17 @@ import XCTest
     XCTAssertTrue(app.buttons["gym-log-undo"].waitForExistence(timeout: 5))
     app.buttons["gym-log-undo"].firstMatch.tap()
     XCTAssertTrue(row.waitForExistence(timeout: 5))
-    app.buttons["82.4 kg · 26 Sep"].tap()
+    app.buttons["gym-chart-point-2026-09-26"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-weigh-in-fixed-date"].waitForExistence(timeout: 5))
     app.buttons["Cancel"].tap()
     back(app)
-    sessionRow(app).press(forDuration: 1)
+    visibleSessionRow(app).press(forDuration: 1)
+    XCTAssertFalse(app.descendants(matching: .any)["gym-session-detail"].exists)
     XCTAssertTrue(app.buttons["Share this workout"].waitForExistence(timeout: 5))
+    let discard = app.buttons["Discard workout"]
+    XCTAssertTrue(discard.wait(for: \.isHittable, toEqual: true, timeout: 5))
     snapshot("log-actions-\(appearance)", app: app)
-    app.buttons["Discard workout"].tap()
+    discard.tap()
     XCTAssertTrue(app.buttons["gym-log-undo"].waitForExistence(timeout: 5))
     app.buttons["gym-log-undo"].firstMatch.tap()
   }

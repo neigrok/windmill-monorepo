@@ -74,7 +74,8 @@ struct LogDatedChart: View {
                     if let select {
                       Button { select(point.id) } label: { Color.clear.frame(width: 44, height: 44) }
                         .buttonStyle(.plain).allowsHitTesting(false)
-                        .accessibilityLabel(point.label).accessibilityAction { select(point.id) }.position(p).id(point.id)
+                        .accessibilityLabel(point.label).accessibilityIdentifier("gym-chart-point-\(point.id)")
+                        .accessibilityAction { select(point.id) }.position(p).id(point.id)
                     } else {
                       Color.clear.frame(width: 1, height: 1).accessibilityElement().accessibilityHidden(false)
                         .accessibilityLabel(point.label).position(p).id(point.id)

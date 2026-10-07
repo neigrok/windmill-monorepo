@@ -72,7 +72,7 @@ Raw design tokens are mirrored in `web/src/styles/tokens/` and
 |---|---|
 | `backend.yml` | build and run C++ tests in Docker, then the Postgres cases, the pattern fuzz and the sync deployment conformance (directly and through the production Caddyfile) in that image against a Postgres service; publish server and embedder images |
 | `web.yml` | install, test and build web; rsync trusted builds to the VPS |
-| `ios.yml` | `swift test` of the Sync, Domain and SyncTestingSurface packages on macOS; simulator builds of the engine and the SyncProbe app; build and test of the app |
+| `ios.yml` | parallel packages/builds, App unit tests and three class-based UI shards; Sync, Domain and SyncTestingSurface tests, engine/SyncProbe simulator builds, and App Debug/Release builds with Xcode 26.3 |
 | `ios-release.yml` | archive the app and upload it to App Store Connect, dispatched by hand |
 | `android.yml` | build and test; tags and versioned dispatches produce unpublished signing inputs |
 | `embedder.yml` | check pinned vectors and the sidecar HTTP process |

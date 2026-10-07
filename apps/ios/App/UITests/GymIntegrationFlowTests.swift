@@ -238,8 +238,21 @@ import XCTest
     let share = signed.buttons["workout-share-coach"]
     for _ in 0..<4 where !share.isHittable { signed.swipeUp() }
     XCTAssertTrue(share.waitForExistence(timeout: 5)); share.tap()
-    XCTAssertTrue(signed.staticTexts["Check my last session."].waitForExistence(timeout: 15))
-    XCTAssertTrue(signed.buttons["Review"].waitForExistence(timeout: 10))
+    XCTAssertTrue(signed.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 15))
+    let review = signed.buttons["Review"]
+    for _ in 0..<4 {
+      if review.waitForExistence(timeout: 3), review.isHittable { break }
+      signed.swipeUp()
+    }
+    XCTAssertTrue(review.waitForExistence(timeout: 10)); XCTAssertTrue(review.isHittable)
+    XCTAssertTrue(signed.buttons["coach-stop"].waitForNonExistence(timeout: 10))
+    let question = signed.staticTexts["Check my last session."]
+    for _ in 0..<4 {
+      if question.waitForExistence(timeout: 3), question.isHittable { break }
+      signed.swipeDown()
+    }
+    XCTAssertTrue(question.waitForExistence(timeout: 5))
+    XCTAssertTrue(question.wait(for: \.isHittable, toEqual: true, timeout: 5))
     signed.terminate()
     let anonymous = launch(anonymous: true)
     anonymous.buttons["Just start logging"].tap()

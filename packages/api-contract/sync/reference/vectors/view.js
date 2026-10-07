@@ -114,6 +114,20 @@ function scenarios() {
     },
     { op: 'commit', scope: 'self/probe', changes: [{ op: 'create', t: 'lap', id: 'lap00002', f: { runId: 'run00002', weight: 30 } }], deviceNow: 5001 },
   ]);
+  const serials = after(base, [
+    { op: 'commit', scope: 'self/probe', deviceNow: 5000, opts: {
+      cmd: { name: 'probe.end', args: { runId: 'run00001', endedAt: 5000 } },
+      predict: [{ op: 'update', t: 'lap', id: LAP.id, v: { no: 3 } },
+        { op: 'create', t: 'lap', id: 'lap00002', f: { runId: RUN.id, weight: 30 }, v: { no: 2 } }],
+    } },
+    { op: 'commit', scope: 'self/probe', changes: [{ op: 'update', t: 'lap', id: LAP.id, f: { weight: 25 } }], deviceNow: 5001 },
+  ]);
+  const heldSerials = after(serials, [
+    { op: 'commit', scope: 'self/probe', deviceNow: 5002, opts: {
+      hold: true, cmd: { name: 'probe.end', args: { runId: 'run00001', endedAt: 5002 } },
+      predict: [{ op: 'update', t: 'lap', id: LAP.id, v: { no: 4 } }, { op: 'delete', t: 'lap', id: 'lap00002' }],
+    } },
+  ]);
   const overlay = `self/overlay/${BOARD}`;
   const marks = bound({
     [overlay]: [
@@ -140,7 +154,7 @@ function scenarios() {
     { op: 'commit', scope: tree, changes: [{ op: 'put', t: 'link', id: ['elm', 'oak'] }], deviceNow: 5001 },
     { op: 'commit', scope: tree, changes: [{ op: 'delete', t: 'tag', id: 'elm' }], opts: { hold: true }, deviceNow: 5002 },
   ]);
-  return { base, withUnknown, pendingUpdate, staleEntry, deletedUnderEdit, ranked, heldDelete, acked, command, texts, links, overlay, tree };
+  return { base, withUnknown, pendingUpdate, staleEntry, deletedUnderEdit, ranked, heldDelete, acked, command, serials, heldSerials, texts, links, overlay, tree };
 }
 
 export function files() {
@@ -155,6 +169,8 @@ export function files() {
     viewVector('a held delete is drawn dead', s.heldDelete, 'self/probe', false),
     viewVector('an acked entry stays in the view until its result resolves', s.acked, 'self/probe', false),
     viewVector('a command entry draws its prediction, and a later create draws without a serial', s.command, 'self/probe', false),
+    viewVector('predicted serials overlay confirmed and created rows and survive a later field delta', s.serials, 'self/probe', false),
+    viewVector('held predictions overlay serials in commit order and hide predicted deaths', s.heldSerials, 'self/probe', false),
     viewVector('the newest pending text replaces the confirmed text; visibleWhen decides mark visibility', s.texts, s.overlay, false),
     viewVector('keyed puts draw link presence; a singleton is always visible', s.links, s.tree, false),
   ];
@@ -162,6 +178,7 @@ export function files() {
     viewVector('stored without holds equals drawn', s.pendingUpdate, 'self/probe', true),
     viewVector('a held delete leaves the record alive in stored and in the cap count', s.heldDelete, 'self/probe', true),
     viewVector('stored keeps the prediction of a ready command entry', s.command, 'self/probe', true),
+    viewVector('stored keeps ready predicted serials and excludes held serials and deaths', s.heldSerials, 'self/probe', true),
     viewVector('a held tag delete is alive in stored', s.links, s.tree, true),
     viewVector('stored of confirmed rows alone', s.base, 'self/probe', true),
     viewVector('a lifeless record left by a pending update over a server delete is not counted against the cap', s.deletedUnderEdit, 'self/probe', true),

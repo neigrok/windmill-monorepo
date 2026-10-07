@@ -6,7 +6,8 @@ import { useGymApi, gymStep } from './gymSync.js';
 import { projectGym } from './syncProjections.js';
 import { mintId } from './mint.js';
 import { CREATED_PATTERN } from './logger/movements.js';
-import { readPreferences } from './settings/preferences.js';
+import { useDomainRead } from './useDomainRead.js';
+import { preferencesDocument } from './gymRuntime.js';
 import { spellWeightsIn } from './units.js';
 import {
   deleteLineOf, goneIds, HELD_KINDS, HELD_TYPES, hiddenIds, openHeld, transientOf, UNDO_LABEL, WINDOW_CLOSED, withheldKey,
@@ -35,9 +36,9 @@ export function useTrainingLog() {
   const session = detail?.session.finishedAt == null ? detail?.session ?? null : null;
   const sets = session ? detail.sets : [];
   const catalog = projection.exercises();
-  const preferences = readPreferences(projection.preferences());
+  const preferences = useDomainRead(preferencesDocument).data;
   const progress = ready ? { phase: 'ready', data: projection.progress() } : { phase: 'loading', data: null };
-  useEffect(() => { spellWeightsIn(preferences.units); }, [preferences.units]);
+  useEffect(() => { spellWeightsIn(preferences?.units); }, [preferences?.units]);
   useEffect(() => {
     const open = records.stored.find((row) => row.t === 'session' && row.life?.[0] !== 'dead' && row.f?.finishedAt === undefined);
     if (!open) return undefined;
@@ -118,7 +119,7 @@ export function useTrainingLog() {
     if (!api?.ready || holds(key)) return;
     spoke.current += 1;
     const at = spoke.current;
-    const pending = api.holdDeath(HELD_TYPES[kind], id);
+    const pending = kind === 'bodyweight' ? api.deleteBodyweight(id) : api.holdDeath(HELD_TYPES[kind], id);
     asking.current = [...asking.current, { key, kind, id, pending, at, settling: false }];
     redraw();
     const answered = () => {

@@ -33,6 +33,7 @@ function commitStep(scope, changes, opts, deviceNow = 5000, actor) {
 const CARD = row({ t: 'card', id: 'card0001', life: ['alive', st(1000)], born: st(1000), f: { ord: ['a0', st(1000)], size: [2.5, st(1000)], tier: ['review', st(1000)], title: ['One', st(1000)] }, seq: 1 });
 const CARD2 = row({ t: 'card', id: 'card0002', life: ['alive', st(1100)], born: st(1100), f: { title: ['Two', st(1100)] }, seq: 2 });
 const RUN = row({ t: 'run', id: 'run00001', life: ['alive', st(1300, 0, 'srv')], born: st(1300, 0, 'srv'), f: { startedAt: [1300, st(1300, 0, 'srv')] }, seq: 3 });
+const LAP = row({ t: 'lap', id: 'lap00001', life: ['alive', st(1400)], born: st(1400), f: { runId: [RUN.id, st(1400)] }, v: { no: 1 }, seq: 5 });
 const BOARD_ROW = row({ t: 'board', id: BOARD, life: ['alive', st(900)], born: st(900), seq: 4 });
 const PROBE = { 'self/probe': [CARD, CARD2, RUN, BOARD_ROW] };
 const CARD3 = row({ t: 'card', id: 'card0003', life: ['alive', st(1200)], born: st(1200), f: { title: ['Three', st(1200)] }, seq: 5 });
@@ -55,9 +56,23 @@ const FACT_ROW = row({ t: 'fact', id: DAY, life: ['alive', st(1000)], f: { at: [
 const FACTS = { 'self/probe': [CARD, CARD2, RUN, BOARD_ROW, FACT_ROW] };
 const saveFact = (value, at, opts, deviceNow) => commitStep('self/probe', [{ op: 'put', t: 'fact', id: DAY, f: { value, at } }], opts, deviceNow);
 const below = (id) => ({ field: 'ord', below: id });
+const COMMAND = { name: 'probe.end', args: { runId: RUN.id, endedAt: 6000 } };
 
 function deltas() {
   return [
+    stepsVector('a predicted delete validates its serials but emits only death and born', {
+      device: device(bound({ confirmed: { 'self/probe': [RUN, LAP] } })),
+      steps: [commitStep('self/probe', [], { cmd: COMMAND, predict: [{ op: 'delete', t: 'lap', id: LAP.id, v: { no: 2 } }] })],
+    }),
+    stepsVector('predicted keyed puts create, keep alive, remove, keep dead and revive without a born', {
+      device: device(bound()),
+      steps: [
+        { present: true, f: { score: 1 } }, { f: { score: 2 } }, { present: false }, { f: { score: 3 } }, { present: true },
+      ].flatMap((change, index) => [
+        commitStep('self/probe', [], { cmd: COMMAND, predict: [{ op: 'put', t: 'day', id: DAY, ...change }] }, 5000 + index),
+        { op: 'view', scope: 'self/probe', withHeld: true },
+      ]),
+    }),
     stepsVector('a whole put writes every field, changed or not, and asserts presence with a fresh life, all at the gesture\'s stamp', {
       device: device(bound({ confirmed: FACTS })),
       steps: [saveFact(80, 5000)],
@@ -505,6 +520,39 @@ function grouping() {
 
 function throws() {
   return [
+    ...[
+      ['unknown serial field', { unknown: 1 }], ['zero serial', { no: 0 }],
+    ].map(([name, v]) => stepsVector(`a predicted delete with a ${name} throws before any write or push`, {
+      device: device(bound({ confirmed: { 'self/probe': [CARD, RUN, LAP] } })),
+      steps: [
+        commitStep('self/probe', [{ op: 'update', t: 'card', id: CARD.id, f: { title: 'Lost' } }], {
+          cmd: COMMAND, predict: [{ op: 'delete', t: 'lap', id: LAP.id, v }],
+        }),
+        { op: 'push' },
+      ],
+    })),
+    ...[
+      ['unknown serial field', { unknown: 1 }], ['nonserial field', { weight: 1 }],
+      ['zero serial', { no: 0 }], ['negative serial', { no: -1 }], ['fractional serial', { no: 1.5 }],
+      ['unsafe serial', { no: Number.MAX_SAFE_INTEGER + 1 }], ['string serial', { no: '2' }], ['null serial', { no: null }],
+    ].map(([name, v]) => stepsVector(`a prediction with a ${name} throws without writing its gesture or clock`, {
+      device: device(bound({ confirmed: PROBE })),
+      steps: [commitStep('self/probe', [{ op: 'update', t: 'card', id: CARD.id, f: { title: 'Lost' } }], {
+        cmd: COMMAND, predict: [{ op: 'create', t: 'lap', id: 'lap00009', v }],
+      })],
+    })),
+    ...[
+      ['delete of an absent minted record', { op: 'delete', t: 'lap', id: 'lap00009' }],
+      ['put keeping absent keyed presence', { op: 'put', t: 'day', id: DAY }],
+      ['unsupported operation', { op: 'revive', t: 'card', id: CARD.id }],
+    ].map(([name, prediction]) => stepsVector(`a predicted ${name} throws atomically`, {
+      device: device(bound({ confirmed: PROBE })),
+      steps: [commitStep('self/probe', [{ op: 'update', t: 'card', id: CARD.id, f: { title: 'Lost' } }], { cmd: COMMAND, predict: [prediction] })],
+    })),
+    stepsVector('a predicted delete of a lifeless record throws', {
+      device: device(bound({ confirmed: { [OVERLAY]: [MARK] } })),
+      steps: [commitStep(OVERLAY, [], { cmd: COMMAND, predict: [{ op: 'delete', t: 'mark', id: MARK.id }] })],
+    }),
     stepsVector('an update of a record absent from drawn throws', {
       device: device(bound()),
       steps: [commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Uno' } }])],

@@ -3,35 +3,19 @@ import { useSyncEngine, useSyncRecords } from '../../platform/sync/react.js';
 import { recordKey } from '../../platform/sync/core/rows.js';
 import { jcs } from '../../platform/sync/core/jcs.js';
 import { CommitError } from '../../platform/sync/client/commit.js';
-import { captureError } from '../../telemetry/sentry.js';
-import { track } from '../../telemetry/beacon.js';
 import { GymRefusal, isStoreFailure } from './errors.js';
 import { isNameOverCap, NAME_MAX } from './log.js';
 import { BODY_BYTES, FULL_LINE, isBodyOverCap, isTitleOverCap, TITLE_MAX } from './notes/notes.js';
 import { NAME_IT_TO_SAVE_IT } from './routines.js';
 import { projectGym } from './syncProjections.js';
-import { readPreferences } from './settings/preferences.js';
+import { createGymRuntime, gymStep, gymFailure } from './gymRuntime.js';
+export { gymStep, gymFailure } from './gymRuntime.js';
 
 const SCOPE = 'self/gym';
 const BASE = Symbol('gym-editor-base');
-const READS = ['exercises', 'sessions', 'session', 'review', 'preferences', 'routines', 'routine',
-  'proposals', 'proposal', 'notes', 'bodyweight', 'history', 'progress', 'record', 'lastTime', 'lastSets'];
+const READS = ['exercises', 'sessions', 'session', 'review', 'routines', 'routine',
+  'proposals', 'proposal', 'notes', 'history', 'progress', 'record', 'lastTime', 'lastSets'];
 const STEPS = { barbell: 2.5, dumbbell: 2, machine: 5, cable: 2.5, bodyweight: 2.5, kettlebell: 4 };
-const OPERATIONS = new Set(['routine-create', 'routine-save', 'exercise-create', 'exercise-rename',
-  'preferences-save', 'note-save', 'note-reorder', 'bodyweight-save', 'set-correct', 'delete', 'undo',
-  'session-import', 'session-correct', 'proposal-apply', 'proposal-dismiss', 'refusal']);
-const OUTCOMES = new Set(['saved-local', 'unchanged', 'failed', 'held', 'undone', 'closed', 'refused']);
-
-export function gymStep(operation, outcome) {
-  if (!OPERATIONS.has(operation) || !OUTCOMES.has(outcome)) return;
-  try { track('gym_action', { operation, outcome }); } catch { /* reporting cannot stop a save */ }
-}
-
-export function gymFailure(operation) {
-  if (!OPERATIONS.has(operation) && operation !== 'projection') return;
-  try { captureError('gym', `gym-${operation}`, '', '/gym'); } catch { /* reporting cannot stop a save */ }
-}
-
 const SENTENCES = {
   stale: 'This changed on another device. Read it again before saving.',
   cap: FULL_LINE,
@@ -100,7 +84,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
   const fieldsOfRoutine = ({ name, position = 0, entries }) => ({ name, position,
     entries: entries.map(({ exerciseId, sets, restSeconds }) => ({ exerciseId,
       ...(sets === undefined ? {} : { sets }), ...(restSeconds == null ? {} : { restSeconds }) })) });
-  const api = {};
+  const api = createGymRuntime(engine, { event, failure });
   for (const name of READS) api[name] = async (...args) => {
     try {
     const value = project()[name](...args);
@@ -135,9 +119,6 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
     return { gesture: { changes: [{ op: custom ? 'update' : 'write', t: custom ? 'exercise' : 'exerciseName', id, f: { name } }] },
       value: { ...exercise, name } };
   });
-  api.savePreferences = (document) => commit('preferences-save', () => ({
-    gesture: { changes: [{ op: 'write', t: 'prefs', id: 'prefs', f: readPreferences(document) }] }, value: readPreferences(document),
-  }));
   api.saveNote = (id, note, base) => commit('note-save', (views) => {
     const title = displayName(note.title, NAMES.note);
     if (isBodyOverCap(note.body)) throw refusal('invalid', { sentence: `a note runs to ${BODY_BYTES} bytes` });
@@ -156,10 +137,6 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
     return { gesture: { changes: [{ op: 'move', t: 'note', id, anchor: { field: 'ord', below } }] },
       value: [...rest.slice(0, at), notes.find((note) => note.id === id), ...rest.slice(at)].map((note, position) => ({ ...note, position })) };
   });
-  api.saveBodyweight = (id, { weightKg }) => commit('bodyweight-save', (views) => ({
-    gesture: { changes: [{ op: 'put', t: 'weighin', id, f: { kg: weightKg, recordedAt: views.now } }], opts: { retire: [{ t: 'weighin', id }] } },
-    value: { dateLocal: id, weightKg, recordedAt: views.now },
-  }));
   api.fixSet = (sessionId, id, fix) => commit('set-correct', (views) => {
     const row = views.drawn.get(recordKey('set', id));
     if (!row || row.life?.[0] === 'dead' || row.f?.sessionId?.[0] !== sessionId) throw refusal('unknown-record');
@@ -167,6 +144,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
     return { gesture: { changes: [{ op: 'update', t: 'set', id, f: fix }] }, value: { ...old, ...fix } };
   });
   api.holdDeath = async (t, id) => {
+    if (t === 'weighin') return api.deleteBodyweight(id);
     try {
       const answer = await engine.commit(SCOPE, (views) => {
         if (views.replica !== replica) throw refusal('not-writable');

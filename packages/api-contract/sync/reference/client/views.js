@@ -1,5 +1,5 @@
 // §7.6 views: confirmed rows joined with pending deltas and predictions in commit order; `drawn` has
-// held entries, `stored` does not. Texts are plain strings; serials come only from confirmed rows.
+// held entries, `stored` does not. Texts are plain strings; command predictions may overlay serials.
 // `except` leaves out the deltas a commit retires or folds with a retire (§7.1 step 4).
 
 import { joinRecord } from '../core/merge.js';
@@ -13,7 +13,8 @@ function pendingEntries(replica, scope, withHeld) {
   return replica.entries(scope).filter((entry) => PENDING.has(entry.state) || (withHeld && entry.state === 'held'));
 }
 
-function viewRecord(row) {
+// A confirmed row as a view record: texts as plain strings, serials copied.
+export function viewRecord(row) {
   const record = { t: row.t, id: row.id, ...latticeOf(row) };
   if (row.x) record.x = Object.fromEntries(Object.entries(row.x).map(([name, text]) => [name, text.text]));
   if (row.v) record.v = { ...row.v };
@@ -29,7 +30,7 @@ export function foldDelta(records, registry, delta) {
     next.x = { ...(current.x ?? {}) };
     for (const [name, write] of Object.entries(delta.x ?? {})) next.x[name] = write.text;
   }
-  if (current.v) next.v = current.v;
+  if (current.v || delta.v) next.v = { ...(current.v ?? {}), ...(delta.v ?? {}) };
   records.set(key, next);
 }
 
