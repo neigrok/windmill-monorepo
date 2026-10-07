@@ -1,7 +1,8 @@
+import { DecodeError } from '../../platform/domain-kit/entities.js';
 import { Reader, Views } from '../../platform/domain-kit/reading.js';
 import { Instant, Moment } from '../../platform/domain-kit/time.js';
 import { registry } from '../../platform/sync/schema.js';
-import { bodyweightDocument, exerciseDocument, namedZone, notesDocument, preferencesDocument, routineDocument } from './gymRuntime.js';
+import { bodyweightDocument, exerciseDocument, gymFailure, namedZone, notesDocument, preferencesDocument, routineDocument } from './gymRuntime.js';
 import { Catalogue } from './domain/catalogue.js';
 import { PlanSnapshot, Routine } from './domain/routines.js';
 
@@ -26,11 +27,16 @@ function targets(entry) {
   };
 }
 
-function sessionOf(row) {
+function sessionOf(row, failure) {
   const session = { id: row.id, startedAt: field(row, 'startedAt') };
   for (const name of ['finishedAt', 'routineId']) if (defined(field(row, name))) session[name] = field(row, name);
-  const plan = PlanSnapshot.decode(field(row, 'plan'));
-  if (plan) session.plan = plan.json;
+  try {
+    const plan = PlanSnapshot.decode(field(row, 'plan'));
+    if (plan) session.plan = plan.json;
+  } catch (error) {
+    if (!(error instanceof DecodeError)) throw error;
+    failure('projection');
+  }
   if (defined(field(row, 'displayName'))) session.routineName = field(row, 'displayName');
   return session;
 }
@@ -99,12 +105,12 @@ function progressOf(sessions, setsFor, now) {
 }
 
 // Server-authored fields stay absent until admission; local predictions cannot invent historical metadata.
-export function projectGym(rows, { now = Date.now(), timeZone = 'UTC' } = {}) {
+export function projectGym(rows, { now = Date.now(), timeZone = 'UTC', failure = gymFailure } = {}) {
   const read = () => new Reader(Views.ofRecords(registry, { drawn: rows, stored: rows }), 'self/gym', new Moment(new Instant(now), namedZone(timeZone)));
   const alive = rows.filter((row) => row.life === undefined || row.life[0] === 'alive');
   const ofType = (type) => alive.filter((row) => row.t === type);
   const sessionRows = new Map(ofType('session').map((row) => [row.id, row]));
-  const sessions = ofType('session').map(sessionOf).sort((a, b) => ascending(b, a));
+  const sessions = ofType('session').map((row) => sessionOf(row, failure)).sort((a, b) => ascending(b, a));
   const sets = ofType('set').filter((row) => sessionRows.has(field(row, 'sessionId')));
   const setsBySession = new Map();
   for (const row of sets) {

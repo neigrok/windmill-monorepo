@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../design-system/index.js';
 import { lengthIn } from '../../../platform/sync/core/values.js';
 import '../coach/coach.css';
@@ -24,7 +24,7 @@ function countReadout(label) {
   return label.split(/(\d+)/).map((part, index) => index % 2 ? <span key={index}>{part}</span> : part);
 }
 
-// The kit draws visible notes and counts stored ones, including an open delete window.
+// Pending deletes leave the screen before persistence; the kit counts them through the delete window.
 export function Notes({ log }) {
   const api = useGymApi();
   const view = useDomainRead((read) => ({ notes: notesDocument(read), capacity: read.repository(Note).capacity(),
@@ -33,7 +33,10 @@ export function Notes({ log }) {
   // Keep the rail's selected index aligned until every queued move has published.
   const [order, setOrder] = useState(null);
   const pendingMoves = useRef(0);
-  const drawn = view.data?.notes ?? [];
+  const hidden = log.hidden('note');
+  const editingHidden = editing !== null && hidden.has(editing.id);
+  useEffect(() => { if (editingHidden) setEditing(null); }, [editingHidden]);
+  const drawn = (view.data?.notes ?? []).filter((note) => !hidden.has(note.id));
   const notes = order === null ? drawn : [
     ...order.flatMap((id) => drawn.filter((note) => note.id === id)),
     ...drawn.filter((note) => !order.includes(note.id)),
@@ -75,7 +78,7 @@ export function Notes({ log }) {
     setEditing(null);
   };
 
-  if (editing) {
+  if (editing && !editingHidden) {
     return (
       <NoteEditor
         note={editing}

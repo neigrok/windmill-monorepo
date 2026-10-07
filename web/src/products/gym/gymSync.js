@@ -33,7 +33,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
   const replica = engine.activeReplica();
   const snapshot = () => engine.observe(SCOPE).getSnapshot();
   const project = (rows = snapshot().stored, now = Date.now()) => projectGym(rows, {
-    now, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    now, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, failure,
   });
   const commit = async (operation, build) => {
     try {

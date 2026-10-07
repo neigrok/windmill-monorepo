@@ -721,7 +721,6 @@ test('the Notes screen is its own room off #/gym/notes, titled as a room with th
   // The cap is the STORE's count and the rows are the drawn list: a note held for deletion is off
   // the screen and still counted, so the cap line stands and `Add a note` never opens a refusal.
   assert.equal(notes.includes('{capacity.isFull'), true);
-  assert.equal(notes.includes("log.hidden('note')"), false);
   assert.equal(notes.includes('notes: notesDocument(read), capacity: read.repository(Note).capacity()'), true);
   assert.equal(/savePreferences|preferences\(/.test(notes), false, 'notes never ride the preferences document');
   assert.equal(/gym-sheet|Keypad/.test(notes), false);

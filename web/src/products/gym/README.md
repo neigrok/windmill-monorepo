@@ -16,8 +16,10 @@ conversation stays. The account gate remains in `GymApp`.
 Notes, catalogue, routines, bodyweight and preferences use the domain kit through `gymRuntime.js`.
 Catalogue reads combine `domain/seedExercises.js` with custom movements and seed-name overrides.
 Routine drafts preserve target absences and order; saved-workout routines and frozen plans use the
-values in `domain/routines.js`. Notes draw the kit's
-`drawn` list and take capacity and empty-room stance from `stored`. Their guarded drafts save only
+values in `domain/routines.js`. The plan decoder refuses malformed shapes; the projection reports
+`gym-projection` and omits that plan while retaining the workout's recorded facts and stored data.
+Notes mask pending deletes from the kit's `drawn` list and close an editor when its note is hidden.
+Undo restores the row. Capacity and empty-room stance come from `stored`. Their guarded drafts save only
 touched fields, with character and byte bounds declared in `domain/notes.js`. Moves write only the
 selected note's order key; a drop in its drawn place writes nothing. Coach saves reuse a stored
 note with the same normalised words and count held deletes against capacity.

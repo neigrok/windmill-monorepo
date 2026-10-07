@@ -49,7 +49,9 @@ note save/reorder, bodyweight save, set/session correction, session import, prop
 delete, Undo and refusal. Outcomes are `saved-local`, `unchanged` (a clean draft or a rename to the
 name the store holds writes nothing), `failed`, `held`, `undone`, `closed` and `refused`. A local save
 records durability, not server admission. Unexpected product boundary failures use static
-`gym-<operation>` Sentry names; projection failures use `gym-projection`. A gym refusal and a store
+`gym-<operation>` Sentry names; projection failures use `gym-projection`. A malformed frozen plan
+reports that static operation and is omitted from the display; the workout's recorded facts and
+other records remain readable, and its stored plan is preserved. A gym refusal and a store
 failure report no `gym-<operation>`: engine telemetry owns transport, storage, authentication and
 admission failures. No workout or note content, identifiers, field values, refusal details or raw
 exception messages are reported.

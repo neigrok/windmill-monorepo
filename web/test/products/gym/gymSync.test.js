@@ -31,6 +31,18 @@ async function confirm(engine) {
 }
 const routine = { id: 'routine00001', name: 'Lower A', position: 0, entries: [{ exerciseId: 'back-squat', sets: [{ reps: 5, weightKg: 60 }, { reps: 3, weightKg: 80 }] }] };
 
+test('a malformed stored plan preserves the session and reports through the API failure boundary', async (t) => {
+  const { api, engine, failures, events } = await open(t);
+  const row = { t: 'session', id: 'sessionPrivate', seq: 1, born: '1000:0:srv', life: ['alive', '1000:0:srv'],
+    f: { startedAt: [1000, '1000:0:srv'], finishedAt: [2000, '1000:0:srv'], plan: [{ routine: 42, entries: [] }, '1000:0:srv'] } };
+  await engine.write(null, (device) => device.activeReplica.putConfirmed('self/gym', row), ['self/gym']);
+  assert.deepEqual(await api.session(row.id), { session: { id: row.id, startedAt: 1000, finishedAt: 2000 }, sets: [] });
+  assert.deepEqual(failures, ['projection']);
+  assert.deepEqual(events, []);
+  assert.deepEqual(engine.device.activeReplica.outbox, []);
+  assert.deepEqual(engine.observe('self/gym').getSnapshot().stored[0].f.plan, row.f.plan);
+});
+
 test('authoritative gym fields and independent routine creation snapshots survive persisted engine restart', async (t) => {
   const opened = await open(t);
   const { api, engine, reopen } = opened;

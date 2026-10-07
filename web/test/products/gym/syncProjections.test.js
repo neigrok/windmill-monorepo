@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { projectGym } from '../../../src/products/gym/syncProjections.js';
 import { SeedExercises } from '../../../src/products/gym/domain/seedExercises.js';
-import { DecodeError } from '../../../src/platform/domain-kit/entities.js';
 import { exerciseDocument } from '../../../src/products/gym/gymRuntime.js';
 
 const at = Date.UTC(2026, 8, 21, 18);
@@ -31,12 +30,28 @@ test('session details keep frozen plan, corrected display name, serial numbers a
   assert.equal(projectGym(rows).session('missing'), null);
 });
 
-test('malformed frozen plans surface decode errors instead of discarding their content', () => {
-  for (const plan of [
-    { routine: 42, entries: [] },
-    { routine: 'Push', entries: [{ exerciseId: 'bench-press', sets: 'bad' }] },
-    { routine: 'Push', entries: [{ exerciseId: 'bench-press', sets: [{ reps: 'bad' }] }] },
-  ]) assert.throws(() => projectGym([sessionRow('session_a', at, { plan })]), DecodeError);
+test('malformed frozen plans report a static failure while the workout and other records stay readable', () => {
+  const vectors = JSON.parse(readFileSync(new URL('../../../../packages/api-contract/gym/domain/routines-actions.json', import.meta.url), 'utf8'));
+  for (const vector of vectors.filter((vector) => vector.input.read === 'SessionPlan' && vector.expect.decodeError)) {
+    const plan = vector.input.input.plan;
+    const rows = [sessionRow('session_a', at, { plan }), setRow('working_1', 'session_a'),
+      row('note', 'note_aaa', { title: 'Kept', body: 'Private', ord: 'a0' })];
+    const before = structuredClone(rows);
+    const failures = [];
+    const api = projectGym(rows, { failure: (...args) => failures.push(args) });
+    assert.deepEqual(api.session('session_a'), {
+      session: { id: 'session_a', startedAt: at, finishedAt: at + 3600000 },
+      sets: [{ id: 'working_1', exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 8,
+        kind: 'working', note: '', completedAt: at + 1000 }],
+    }, vector.name);
+    assert.deepEqual(api.history().summary, { sessions: 1, sets: 1, reps: 8, tonnageKg: 480 });
+    assert.deepEqual(api.notes(), [{ id: 'note_aaa', position: 0, title: 'Kept', body: 'Private' }]);
+    assert.deepEqual(failures, [['projection']]);
+    assert.deepEqual(rows, before, 'reading leaves the stored plan intact');
+  }
+});
+
+test('frozen plan reads preserve values outside editor bounds', () => {
   const plan = { routine: 'Push', entries: [{ exerciseId: 'bench-press', sets: [{ reps: 0, weightKg: 0 }], restSeconds: 1 }, { exerciseId: 'deadlift', sets: [] }] };
   assert.deepEqual(projectGym([sessionRow('session_a', at, { plan })]).session('session_a').session.plan, plan);
 });
