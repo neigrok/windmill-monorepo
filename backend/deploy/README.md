@@ -126,11 +126,6 @@ must be public.
 - **Migrations**: `db/schema.sql` is idempotent and re-applied on every deploy by the `migrate`
   one-shot, a plain `psql`. It removes the retired gym and journal cutover copies while keeping
   the engine tables and current user data.
-- **Cutover evidence purge**: dispatch `ops-purge-cutover-evidence.yml` with `confirm` set to
-  `PURGE_CUTOVER_EVIDENCE`. It lists safe top-level paths beneath `~/windmill/migration-evidence/`,
-  deletes every entry there, then lists again and reports recursive file, directory and byte counts.
-  Descendant names and unknown top-level names are redacted because they can contain user data.
-  The purge is irreversible. Remove this one-time workflow after its successful production run.
 - **Native Apple sign-in**: the identity-token exchange defaults off (`APPLE_NATIVE_ENABLED=0`);
   [AUTH.md](../AUTH.md) names its audience and app configuration.
 - **Backup**: the dispatch-only `gym-backup.yml` writes a custom-format dump of the whole database to

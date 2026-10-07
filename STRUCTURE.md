@@ -74,7 +74,6 @@ Raw design tokens are mirrored in `web/src/styles/tokens/` and
 | `web.yml` | install, test and build web; rsync trusted builds to the VPS |
 | `ios.yml` | `swift test` of the Sync, Domain and SyncTestingSurface packages on macOS; simulator builds of the engine and the SyncProbe app; build and test of the app |
 | `ios-release.yml` | archive the app and upload it to App Store Connect, dispatched by hand |
-| `ios-expire-builds.yml` | manually expire pre-engine TestFlight builds 1–5 after typed confirmation; protect builds 6 and later |
 | `android.yml` | build and test; tags and versioned dispatches produce unpublished signing inputs |
 | `embedder.yml` | check pinned vectors and the sidecar HTTP process |
 | `tools.yml` | run the Lift importer suite |
