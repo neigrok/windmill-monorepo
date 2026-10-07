@@ -12,29 +12,33 @@ nonisolated struct CoachReviewExtent: Equatable {
 nonisolated struct CoachReviewPosition: Equatable { let extent: CoachReviewExtent; let atEnd: Bool }
 
 extension GymModel {
-  func readCoachProposals(_ read: Reader) throws -> [Proposal] {
-    if proposalReadReplica != read.replica || read.isAnonymous {
-      shownCoachRemovals = [:]; coachRemovalReceipts = []
+  nonisolated static func readCoachProposals(_ read: Reader) throws -> (replica: String, receipts: [RoutineRemovalReceipt], proposals: [Proposal]) {
+    let receipts = try RoutineRemovalReceipt.read(read)
+    let decisions = try read.commands().filter { [Gym.Commands.applyProposal, Gym.Commands.dismissProposal].contains($0.command.name) }
+    let proposals = try read.repository(Proposal.self).all(in: .drawn).map { proposal in
+      if let receipt = receipts.first(where: { $0.proposal.id == proposal.id }) { return receipt.proposal }
+      guard decisions.contains(where: { $0.command.args["proposalId"] == proposal.id.json }),
+            let confirmed = try read.confirmed(Proposal.self, proposal.id) else { return proposal }
+      return try Proposal(Fields(confirmed))
     }
-    proposalReadReplica = read.replica
-    let previous = coachRemovalReceipts
-    coachRemovalReceipts = try RoutineRemovalReceipt.read(read)
+    return (read.replica, receipts, proposals)
+  }
+  func updateCoachProposals(replica: String, receipts: [RoutineRemovalReceipt], proposals: [Proposal]) {
+    let changedAccount = proposalReadReplica != replica || isAnonymous
+    let previous = changedAccount ? [] : coachRemovalReceipts
+    if changedAccount { shownCoachRemovals = [:] }
+    proposalReadReplica = replica
+    coachRemovalReceipts = receipts
+    var visible = proposals
+    for proposal in coachRemovalReceipts.map(\.proposal) + Array(shownCoachRemovals.values) where !visible.contains(where: { $0.id == proposal.id }) {
+      visible.append(proposal)
+    }
+    self.proposals = visible
     for receipt in coachRemovalReceipts where receipt.outcome != .pending {
       if previous.first(where: { $0.proposal.id == receipt.proposal.id })?.outcome != receipt.outcome {
         telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": "apply", "outcome": receipt.outcome == .applied ? "decided" : "failed"])
       }
     }
-    let decisions = try read.commands().filter { [Gym.Commands.applyProposal, Gym.Commands.dismissProposal].contains($0.command.name) }
-    var visible = try read.repository(Proposal.self).all(in: .drawn).map { proposal in
-      if let receipt = coachRemovalReceipts.first(where: { $0.proposal.id == proposal.id }) { return receipt.proposal }
-      guard decisions.contains(where: { $0.command.args["proposalId"] == proposal.id.json }),
-            let confirmed = try read.confirmed(Proposal.self, proposal.id) else { return proposal }
-      return try Proposal(Fields(confirmed))
-    }
-    for proposal in coachRemovalReceipts.map(\.proposal) + Array(shownCoachRemovals.values) where !visible.contains(where: { $0.id == proposal.id }) {
-      visible.append(proposal)
-    }
-    return visible
   }
   func coachProposalAwaitingReceipt(_ id: ID<Proposal>) -> Bool {
     if coachRemovalReceipts.contains(where: { $0.proposal.id == id && $0.outcome == .pending }) { return true }

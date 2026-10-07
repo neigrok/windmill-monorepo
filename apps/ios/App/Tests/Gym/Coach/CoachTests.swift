@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Testing
 import UIKit
 import SwiftUI
@@ -684,6 +685,31 @@ import SyncModelServer
     #expect(!ProposalReviewSheet(gym: gym, proposalId: proposal.id.record.string!).superseded)
     #expect(gym.routines.first?.entries.map(\.exerciseId) == [ID<Exercise>("custom-bench")])
     #expect(!gym.coachDecideProposal(proposal, apply: false))
+  }
+  @Test(arguments: [false, true])
+  func removalReceiptObserversCanReadTheEngine(settled: Bool) throws {
+    let (h, gym) = fixture(), runner = h.runner
+    #expect(gym.run(CreateExercise(Exercise(id: ID("removal-bench"), name: "Bench", pattern: "press", equipment: "barbell", stepKg: 2.5)))?.receipt != nil)
+    var routine = Draft(new: Routine(id: ID("removal-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("removal-bench"))]))
+    #expect(saved(gym.save(&routine)))
+    h.sync(); gym.refresh()
+    #expect(gym.run(ProposeRoutine(id: ID("removal-proposal"), routineId: routine.id, name: "", entries: [], summary: "Remove", removing: true))?.receipt != nil)
+    h.sync(); gym.refresh()
+    let proposal = try #require(gym.proposals.first)
+    #expect(try runner.run(ApplyProposalKeepingReceipt(proposal.id)).receipt != nil)
+    if settled { h.sync() }
+    let expected = try runner.read(Gym.scope) { try $0.device(RoutineRemovalReceipt.key) }
+    let observed = Mutex<[JSON?]>([])
+    withObservationTracking { _ = gym.coachRemovalReceipts } onChange: {
+      do {
+        let receipt = try runner.read(Gym.scope) { try $0.device(RoutineRemovalReceipt.key) }
+        observed.withLock { $0.append(receipt) }
+      } catch { Issue.record(error) }
+    }
+    gym.refresh()
+    #expect(observed.withLock { $0 } == [expected])
+    #expect(gym.coachRemovalReceipts.map(\.outcome) == [settled ? .applied : .pending])
+    #expect(gym.proposals.map(\.state) == [settled ? "applied" : "pending"])
   }
   @Test(arguments: [false, true])
   func removalReceiptWaitsForDeliveryAndAcknowledgesOnlyWhenShown(refused: Bool) async throws {
