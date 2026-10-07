@@ -2,13 +2,14 @@ import React, { useRef, useState } from 'react';
 import { Button } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import { failureReason } from './errors.js';
+import { routineFromWorkout } from './gymRuntime.js';
 import {
   cappedName, entryLabel, fromSession, isFirstSession, nameOfMovement, recordHref, routineNameOf, sessionHref,
   weekdayName,
 } from './log.js';
 import { mintId } from './mint.js';
 import { comparison, finishHead, RECORD_TITLE, recordSentence, statTiles } from './review.js';
-import { NAME_IT_TO_SAVE_IT, routineFromSession } from './routines.js';
+import { NAME_IT_TO_SAVE_IT } from './routines.js';
 import { ShareWorkout } from './share/ShareWorkout.jsx';
 import { useGymRead } from './useGymRead.js';
 import { useGymApi } from './gymSync.js';
@@ -143,7 +144,7 @@ function KeepAsRoutine({ session, sets, catalog, log }) {
   // The id is the idempotency key: mint once so a retried create is one routine.
   const minted = useRef(null);
   if (minted.current === null) minted.current = mintId('rt_');
-  const composed = routineFromSession({ id: minted.current, name: name.trim(), sets });
+  const composed = routineFromWorkout({ id: minted.current, name: name.trim(), sets });
   if (!offered || composed.entries.length === 0) return null;
 
   return (

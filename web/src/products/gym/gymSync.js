@@ -4,18 +4,15 @@ import { recordKey } from '../../platform/sync/core/rows.js';
 import { jcs } from '../../platform/sync/core/jcs.js';
 import { CommitError } from '../../platform/sync/client/commit.js';
 import { GymRefusal, isStoreFailure } from './errors.js';
-import { isNameOverCap, NAME_MAX } from './log.js';
 import { BODY_BYTES, FULL_LINE, isBodyOverCap, isTitleOverCap, TITLE_MAX } from './notes/notes.js';
-import { NAME_IT_TO_SAVE_IT } from './routines.js';
 import { projectGym } from './syncProjections.js';
-import { createGymRuntime, gymStep, gymFailure } from './gymRuntime.js';
+import { createGymRuntime, gymStep, gymFailure, routineValue } from './gymRuntime.js';
 export { gymStep, gymFailure } from './gymRuntime.js';
 
 const SCOPE = 'self/gym';
 const BASE = Symbol('gym-editor-base');
 const READS = ['exercises', 'sessions', 'session', 'review', 'routines', 'routine',
   'proposals', 'proposal', 'notes', 'history', 'progress', 'record', 'lastTime', 'lastSets'];
-const STEPS = { barbell: 2.5, dumbbell: 2, machine: 5, cable: 2.5, bodyweight: 2.5, kettlebell: 4 };
 const SENTENCES = {
   stale: 'This changed on another device. Read it again before saving.',
   cap: FULL_LINE,
@@ -31,8 +28,6 @@ const refusal = (code, { sentence = SENTENCES[code], overlapping = null } = {}) 
 
 // Display names follow domain-kit §4.3 (NFC, `trim`'s `\s` set, code points); blank is refused as engine A.2 refuses it.
 const NAMES = {
-  exercise: { blank: 'A movement needs a name.', tooLong: `A name runs to ${NAME_MAX} characters.`, isOverCap: isNameOverCap },
-  routine: { blank: NAME_IT_TO_SAVE_IT, tooLong: `A name runs to ${NAME_MAX} characters.`, isOverCap: isNameOverCap },
   note: { blank: 'a note needs a title', tooLong: `a title runs to ${TITLE_MAX} characters`, isOverCap: isTitleOverCap },
 };
 
@@ -81,44 +76,14 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
     for (const field of fields) if (jcs(original.row.f?.[field] ?? null) !== jcs(row.f?.[field] ?? null)) throw refusal('stale');
     return fields.map((field) => ({ t, id, field }));
   };
-  const fieldsOfRoutine = ({ name, position = 0, entries }) => ({ name, position,
-    entries: entries.map(({ exerciseId, sets, restSeconds }) => ({ exerciseId,
-      ...(sets === undefined ? {} : { sets }), ...(restSeconds == null ? {} : { restSeconds }) })) });
   const api = createGymRuntime(engine, { event, failure });
   for (const name of READS) api[name] = async (...args) => {
     try {
     const value = project()[name](...args);
-    if (name === 'routine') return attachBase(value, 'routine', args[0]);
-    if (name === 'routines') return value.map((routine) => attachBase(routine, 'routine', routine.id));
     if (name === 'notes') return value.map((note) => attachBase(note, 'note', note.id));
     return value;
     } catch (error) { failure('projection'); throw error; }
   };
-  api.createRoutine = (routine) => commit('routine-create', () => {
-    const named = { ...routine, name: displayName(routine.name, NAMES.routine) };
-    return { gesture: { changes: [{ op: 'create', t: 'routine', id: routine.id, f: fieldsOfRoutine(named) }] }, value: named };
-  });
-  api.replaceRoutine = (id, routine, base) => commit('routine-save', (views) => {
-    const named = { ...routine, name: displayName(routine.name, NAMES.routine) };
-    return { gesture: { changes: [{ op: 'update', t: 'routine', id, f: fieldsOfRoutine(named) }],
-      opts: { guard: guarded(views, 'routine', id, ['name', 'entries', 'position'], base) } }, value: named };
-  });
-  api.createExercise = (exercise) => commit('exercise-create', () => {
-    const name = displayName(exercise.name, NAMES.exercise);
-    return { gesture: { changes: [{ op: 'create', t: 'exercise', id: exercise.id,
-      f: { name, pattern: exercise.pattern, equipment: exercise.equipment, stepKg: STEPS[exercise.equipment] } }] },
-    value: { ...exercise, name, stepKg: STEPS[exercise.equipment], aliases: [] } };
-  });
-  // Compared with the name the store holds, the way the domain kit's RenameExercise compares it.
-  api.renameExercise = (id, typed) => commit('exercise-rename', (views) => {
-    const exercise = project([...views.stored.values()], views.now).exercises().find((each) => each.id === id);
-    if (!exercise) throw refusal('unknown-record');
-    const name = displayName(typed, NAMES.exercise);
-    if (name === exercise.name) return { gesture: null, value: exercise };
-    const custom = views.stored.has(recordKey('exercise', id));
-    return { gesture: { changes: [{ op: custom ? 'update' : 'write', t: custom ? 'exercise' : 'exerciseName', id, f: { name } }] },
-      value: { ...exercise, name } };
-  });
   api.saveNote = (id, note, base) => commit('note-save', (views) => {
     const title = displayName(note.title, NAMES.note);
     if (isBodyOverCap(note.body)) throw refusal('invalid', { sentence: `a note runs to ${BODY_BYTES} bytes` });
@@ -145,6 +110,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
   });
   api.holdDeath = async (t, id) => {
     if (t === 'weighin') return api.deleteBodyweight(id);
+    if (t === 'routine') return api.deleteRoutine(id);
     try {
       const answer = await engine.commit(SCOPE, (views) => {
         if (views.replica !== replica) throw refusal('not-writable');
@@ -181,7 +147,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
     const numbers = new Map();
     return [{ op: 'create', t: 'session', id: args.id, f: { startedAt: args.startedAt, finishedAt: args.finishedAt,
       closedBy: 'finish', routineId: routine?.id ?? null, historyRoutineId: routine?.id ?? null,
-      plan: routine ? { routine: routine.name, entries: fieldsOfRoutine(routine).entries } : null } },
+      plan: routine ? { routine: routine.name, entries: routineValue(routine).fields().entries } : null } },
     ...args.sets.map(({ id, ...set }) => {
       const setNumber = (numbers.get(set.exerciseId) ?? 0) + 1;
       numbers.set(set.exerciseId, setNumber);

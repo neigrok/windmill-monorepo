@@ -1,4 +1,5 @@
-import { Id } from '../../platform/domain-kit/entities.js';
+import { Draft } from '../../platform/domain-kit/drafts.js';
+import { Fields, Id } from '../../platform/domain-kit/entities.js';
 import { ActionRunner, EngineReplica } from '../../platform/domain-kit/runner.js';
 import { Instant, LocalDay, Moment } from '../../platform/domain-kit/time.js';
 import { Valid } from '../../platform/domain-kit/validation.js';
@@ -7,10 +8,14 @@ import { CommitError } from '../../platform/sync/client/commit.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
 import { Bodyweight, DeleteWeighIn, WeighIn, WeighInValue } from './domain/bodyweight.js';
+import { Catalogue, CreateExercise, Exercise, ExerciseValue, RenameExercise, defaultStepKg } from './domain/catalogue.js';
 import { GymRefusals } from './domain/gymRules.js';
 import { ChangePreferences, Preferences, PreferencesValue, restSettings } from './domain/preferences.js';
+import { DeleteRoutine, Routine, RoutineValue } from './domain/routines.js';
+import { SeedExercises } from './domain/seedExercises.js';
 import { GymRefusal, isStoreFailure } from './errors.js';
 import { REFUSALS } from './bodyweight/bodyweight.js';
+import { NAME_IT_TO_SAVE_IT } from './routines.js';
 import { fromDisplayUnit, weightUnit } from './units.js';
 
 const SCOPE = 'self/gym';
@@ -48,11 +53,32 @@ export function gymRefusalError(refused) {
     let sentence;
     if (violation.rule === 'weighin.day') sentence = violation.reason.custom === 'future' ? REFUSALS.future : 'could not read that date';
     if (violation.rule === 'weighin.kg') sentence = violation.reason.kind === 'notANumber' ? REFUSALS.notNumber : REFUSALS.bounds;
+    if (['exercise.name', 'exerciseName.name', 'routine.name'].includes(violation.rule)) {
+      if (['blank', 'tooShort'].includes(violation.reason.kind)) sentence = violation.rule === 'routine.name' ? NAME_IT_TO_SAVE_IT : 'A movement needs a name.';
+      if (violation.reason.kind === 'tooLong') sentence = 'A name runs to 60 characters.';
+    }
     return new GymRefusal('invalid', { sentence });
   }
   if (refused.kind === 'future') return new GymRefusal('bad-instant', { sentence: REFUSALS.future });
   const code = refused.refused?.code ?? ({ gone: 'record-dead', taken: 'id-taken', full: 'cap' }[refused.kind] ?? refused.kind);
-  return new GymRefusal(code);
+  return new GymRefusal(code, code === 'stale' ? { sentence: 'This changed on another device. Read it again before saving.' } : {});
+}
+
+export function exerciseDocument(value) {
+  return { id: value.id.record, ...value.fields(), custom: !SeedExercises.all.some((seed) => seed.id.equals(value.id)),
+    ...(value.aliases.length ? { aliases: [...value.aliases] } : {}) };
+}
+
+export function routineValue(document) {
+  return Routine.decode(Fields.values('routine', document.id, document));
+}
+
+export function routineDocument(value) {
+  return { id: value.id.record, ...value.fields() };
+}
+
+export function routineFromWorkout({ id, ...workout }) {
+  return routineDocument(RoutineValue.fromSession({ ...workout, id: new Id(id, Routine) }));
 }
 
 // Decimal syntax and units belong to the field; the domain validates the day and kilograms.
@@ -121,8 +147,44 @@ export function createGymRuntime(engine, { event = gymStep, failure = gymFailure
     try { return runner.read(SCOPE, body); }
     catch (error) { if (!(error instanceof GymRefusal)) failure('projection'); throw error; }
   };
+  const saveRoutine = async (operation, draft) => {
+    const saved = await runner.save(draft, GymRefusals);
+    if (saved.result.kind === 'failed') throw saved.result.error;
+    if (saved.result.kind === 'refused') throw gymRefusalError(saved.result.refusal);
+    event(operation, saved.result.receipt ? 'saved-local' : 'unchanged');
+    return routineDocument(saved.draft.current);
+  };
   return {
     read,
+    createRoutine: (document) => boundary('routine-create', () => {
+      const value = routineValue(document);
+      return saveRoutine('routine-create', Draft.new(new RoutineValue(value.id)).edit(() => value));
+    }),
+    replaceRoutine: (id, document, base) => boundary('routine-save', () => {
+      if (!base || base.id !== id) throw new GymRefusal('stale');
+      return saveRoutine('routine-save', Draft.opening(routineValue(base)).edit(() => routineValue({ ...document, id })));
+    }),
+    createExercise: (document) => boundary('exercise-create', async () => {
+      const id = new Id(document.id, Exercise);
+      const outcome = await runner.run(new CreateExercise(new ExerciseValue(id, document.name,
+        document.pattern, document.equipment, document.stepKg === undefined ? defaultStepKg(document.equipment) : document.stepKg)));
+      if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
+      event('exercise-create', outcome.kind === 'committed' ? 'saved-local' : 'unchanged');
+      return read((reader) => ({ ...exerciseDocument(new Catalogue(reader).find(id)), aliases: [] }));
+    }),
+    renameExercise: (record, name) => boundary('exercise-rename', async () => {
+      const id = new Id(record, Exercise);
+      const outcome = await runner.run(new RenameExercise(id, name));
+      if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
+      event('exercise-rename', outcome.kind === 'committed' ? 'saved-local' : 'unchanged');
+      return read((reader) => exerciseDocument(new Catalogue(reader).find(id)));
+    }),
+    deleteRoutine: (record) => boundary('delete', async () => {
+      const outcome = await runner.run(DeleteRoutine(new Id(record, Routine)));
+      if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
+      event('delete', outcome.kind === 'committed' ? 'held' : 'unchanged');
+      return outcome.kind === 'committed' ? outcome.receipt.gestureId : null;
+    }),
     bodyweight: async (bounds) => read((reader) => bodyweightDocument(reader, bounds)),
     preferences: async () => read(preferencesDocument),
     saveBodyweight: (date, { weightKg }) => boundary('bodyweight-save', async () => {

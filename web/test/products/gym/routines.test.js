@@ -2,17 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  ADD_SET, blankRoutine, commitLabel, draftFrom,
+  ADD_SET, commitLabel, draftFrom,
   ENTRY_REPS_MAX, ENTRY_REPS_MIN, ENTRY_SETS_MAX, ENTRY_SETS_MIN, entryPlaceLabel, EVERY_SET, FILL, headOf,
   isOpenEntry, LAST_TIME_PLACEHOLDER, MATCH_SET_ONE, MAX_PLACEHOLDER, ONE_DECIMAL,
   OPEN_LINE, OPEN_PLACEHOLDER, NOT_A_NUMBER, OVER_MAX_LOAD, RAMP_UP, rampDisabled, refusalOf, reorderEntries,
-  REPS_BAND, routineFromSession, routineWrite, saysNeverLogged, SET_BY_SET, SETS_BAND, SHEET_CHROME,
+  REPS_BAND, saysNeverLogged, SET_BY_SET, SETS_BAND, SHEET_CHROME,
   targetEntryOf, targetFieldsOf, targetRefusal, VARIES_PLACEHOLDER, withEntryAdded, withEntryRemoved,
   withEntrySet, withHead, withMatchedToFirst, withRampUp, withRow, withRowAdded, withRowRemoved, withSets,
   ladderOf,
   ZERO_TARGET,
 } from '../../../src/products/gym/routines.js';
 import { entryLabel, NAME_MAX } from '../../../src/products/gym/log.js';
+import { Id } from '../../../src/platform/domain-kit/entities.js';
+import { Routine, RoutineValue } from '../../../src/products/gym/domain/routines.js';
+import { routineDocument, routineValue } from '../../../src/products/gym/gymRuntime.js';
+
+const routineFields = (document) => routineDocument(routineValue(document));
+const sessionRoutine = ({ id, ...input }) => routineDocument(RoutineValue.fromSession({ id: new Id(id, Routine), ...input }));
 
 // The fixtures every surface shares (briefs/17-set-targets.md).
 const RAMP = [
@@ -38,7 +44,7 @@ function set(exerciseId, weightKg, reps, minute, kind = 'working') {
   };
 }
 
-test('routineFromSession — the session becomes the routine, in the order it was performed', () => {
+test('RoutineValue.fromSession — the session becomes the routine, in the order it was performed', () => {
   const sets = [
     set('back-squat', 60, 5, 1, 'warmup'),
     set('back-squat', 100, 5, 5),
@@ -48,7 +54,7 @@ test('routineFromSession — the session becomes the routine, in the order it wa
     set('romanian-deadlift', 80, 8, 24),
     set('romanian-deadlift', 80, 7, 28),
   ];
-  assert.deepEqual(routineFromSession({ id: 'rt_1', name: 'Legs', sets }), {
+  assert.deepEqual(sessionRoutine({ id: 'rt_1', name: 'Legs', sets }), {
     id: 'rt_1',
     name: 'Legs',
     position: 0,
@@ -59,7 +65,7 @@ test('routineFromSession — the session becomes the routine, in the order it wa
   });
 });
 
-test('routineFromSession — the three other kinds count toward nothing, and can cost a movement', () => {
+test('RoutineValue.fromSession — the three other kinds count toward nothing, and can cost a movement', () => {
   const sets = [
     set('bench-press', 82.5, 5, 3),
     set('bench-press', 82.5, 5, 7),
@@ -67,7 +73,7 @@ test('routineFromSession — the three other kinds count toward nothing, and can
     set('bench-press', 82.5, 2, 15, 'failure'),
     set('cable-fly', 20, 12, 20, 'warmup'),
   ];
-  assert.deepEqual(routineFromSession({ id: 'rt_2', name: 'Push A', position: 2, sets }), {
+  assert.deepEqual(sessionRoutine({ id: 'rt_2', name: 'Push A', position: 2, sets }), {
     id: 'rt_2',
     name: 'Push A',
     position: 2,
@@ -75,14 +81,14 @@ test('routineFromSession — the three other kinds count toward nothing, and can
   });
 });
 
-test('routineFromSession — every working set is its own slot, as lifted: no modal reps, no heaviest load', () => {
+test('RoutineValue.fromSession — every working set is its own slot, as lifted: no modal reps, no heaviest load', () => {
   const sets = [
     set('overhead-press', 45, 8, 2),
     set('overhead-press', 47.5, 8, 6),
     set('overhead-press', 45, 6, 10),
     set('overhead-press', 40, 6, 14),
   ];
-  const composed = routineFromSession({ id: 'rt_3', name: 'Push B', sets }).entries;
+  const composed = sessionRoutine({ id: 'rt_3', name: 'Push B', sets }).entries;
   assert.deepEqual(composed, [{
     exerciseId: 'overhead-press',
     sets: [{ reps: 8, weightKg: 45 }, { reps: 8, weightKg: 47.5 }, { reps: 6, weightKg: 45 }, { reps: 6, weightKg: 40 }],
@@ -91,23 +97,23 @@ test('routineFromSession — every working set is its own slot, as lifted: no mo
 
   // A bodyweight day keeps its zero: the load as lifted, never `last time`.
   const clear = [set('chin-up', 0, 9, 2), set('chin-up', 0, 7, 6), set('chin-up', 0, 7, 10)];
-  const pull = routineFromSession({ id: 'rt_4', name: 'Pull A', sets: clear }).entries;
+  const pull = sessionRoutine({ id: 'rt_4', name: 'Pull A', sets: clear }).entries;
   assert.deepEqual(pull, [{ exerciseId: 'chin-up', sets: [{ reps: 9, weightKg: 0 }, { reps: 7, weightKg: 0 }, { reps: 7, weightKg: 0 }] }]);
   assert.equal(entryLabel(pull[0]), '3 × 7–9');
 
   // The ramp lifted as planned comes back as the ramp, key for key.
   const ramp = RAMP.map((slot, index) => set('back-squat', slot.weightKg, slot.reps, index + 1));
-  const kept = routineFromSession({ id: 'rt_5', name: 'Lower A', sets: ramp });
+  const kept = sessionRoutine({ id: 'rt_5', name: 'Lower A', sets: ramp });
   assert.deepEqual(kept.entries, [{ exerciseId: 'back-squat', sets: RAMP }]);
-  assert.equal(JSON.stringify(routineWrite(kept).entries[0]), RAMP_WIRE.replace(',"restSeconds":180', ''));
+  assert.equal(JSON.stringify(routineFields(kept).entries[0]), RAMP_WIRE.replace(',"restSeconds":180', ''));
 });
 
-test('routineWrite — the store’s revision does not travel back', () => {
+test('RoutineValue.fields — the store’s revision does not travel back', () => {
   const stored = { id: 'rt_push_a', name: 'Push A', position: 0, revision: 4, entries: [] };
-  assert.deepEqual(routineWrite(stored), { id: 'rt_push_a', name: 'Push A', position: 0, entries: [] });
+  assert.deepEqual(routineFields(stored), { id: 'rt_push_a', name: 'Push A', position: 0, entries: [] });
 });
 
-test('routineWrite — entry positions and lastTrainedAt do not travel back', () => {
+test('RoutineValue.fields — entry positions and lastTrainedAt do not travel back', () => {
   const stored = {
     id: 'rt_push_a',
     name: 'Push A',
@@ -118,7 +124,7 @@ test('routineWrite — entry positions and lastTrainedAt do not travel back', ()
       { position: 2, exerciseId: 'chin-up', sets: [{}, {}, {}] },
     ],
   };
-  assert.deepEqual(routineWrite(stored), {
+  assert.deepEqual(routineFields(stored), {
     id: 'rt_push_a',
     name: 'Push A',
     position: 0,
@@ -129,8 +135,8 @@ test('routineWrite — entry positions and lastTrainedAt do not travel back', ()
   });
 });
 
-test('routineWrite — an absent target is omitted, never sent as null and never as zero', () => {
-  const write = routineWrite({
+test('RoutineValue.fields — an absent target is omitted, never sent as null and never as zero', () => {
+  const write = routineFields({
     id: 'rt_1',
     name: 'Pull A',
     position: 1,
@@ -144,13 +150,13 @@ test('routineWrite — an absent target is omitted, never sent as null and never
 test('the ramp round-trips the sheet byte-exact, in the pinned key order', () => {
   const stored = { position: 1, exerciseId: 'back-squat', sets: RAMP, restSeconds: 180 };
   const held = targetEntryOf(stored, targetFieldsOf(stored));
-  const write = routineWrite({ id: 'rt_lower_a', name: 'Lower A', position: 0, entries: [held] });
+  const write = routineFields({ id: 'rt_lower_a', name: 'Lower A', position: 0, entries: [held] });
   assert.equal(JSON.stringify(write.entries[0]), RAMP_WIRE);
   assert.deepEqual(Object.keys(write.entries[0]), ['exerciseId', 'sets', 'restSeconds']);
   for (const each of write.entries[0].sets) assert.deepEqual(Object.keys(each), ['reps', 'weightKg']);
   // A set that names one side keeps that order too: reps before weightKg, absent keys gone.
   const partial = targetEntryOf({ exerciseId: 'dip' }, fields({ sets: '2', rows: [row('', '20'), row('8', '')] }));
-  assert.equal(JSON.stringify(routineWrite({ id: 'rt_1', name: 'x', position: 0, entries: [partial] }).entries[0]),
+  assert.equal(JSON.stringify(routineFields({ id: 'rt_1', name: 'x', position: 0, entries: [partial] }).entries[0]),
     '{"exerciseId":"dip","sets":[{"weightKg":20},{"reps":8}]}');
 });
 
@@ -209,7 +215,7 @@ test('draftFrom — the draft is a whole routine, and editing it leaves the orig
   assert.equal(routine.entries.length, 2);
   assert.equal(routine.entries[0].sets[0].weightKg, 82.5);
 
-  assert.deepEqual(routineWrite(draft), {
+  assert.deepEqual(routineFields(draft), {
     id: 'rt_9f2c',
     name: 'Push A (heavy)',
     position: 0,
@@ -235,7 +241,7 @@ test('withEntrySet — the sheet hands back a whole row, and the row it replaces
   // The open row: every target goes together, because the store refuses a line asking for reps of nothing.
   const opened = withEntrySet(entries, 1, { exerciseId: 'chin-up', restSeconds: 120 });
   assert.deepEqual(opened[1], { exerciseId: 'chin-up', restSeconds: 120 });
-  const write = routineWrite({ id: 'rt_1', name: 'Push A', position: 0, entries: opened });
+  const write = routineFields({ id: 'rt_1', name: 'Push A', position: 0, entries: opened });
   assert.deepEqual(write.entries[1], { exerciseId: 'chin-up', restSeconds: 120 });
   assert.deepEqual(Object.keys(write.entries[1]), ['exerciseId', 'restSeconds']);
   assert.deepEqual(withEntrySet(entries, 9, { exerciseId: 'nothing' }), entries);
@@ -485,22 +491,22 @@ test('the sheet’s chrome is the pinned fourteen words', () => {
   assert.equal(words.length, 14);
 });
 
-test('routineFromSession — a session too big to ask for is clamped to what a routine may ask for', () => {
+test('RoutineValue.fromSession — a session too big to ask for is clamped to what a routine may ask for', () => {
   const many = Array.from({ length: 25 }, (each, index) => set('chin-up', 0, 8, index));
-  const composed = routineFromSession({ id: 'rt_1', name: 'Wednesday', sets: many });
+  const composed = sessionRoutine({ id: 'rt_1', name: 'Wednesday', sets: many });
   assert.deepEqual(composed.entries, [
     { exerciseId: 'chin-up', sets: Array.from({ length: ENTRY_SETS_MAX }, () => ({ reps: 8, weightKg: 0 })) },
   ]);
   assert.equal(ENTRY_SETS_MAX, 20);
   assert.equal(ENTRY_REPS_MAX, 100);
 
-  const marathon = routineFromSession({ id: 'rt_2', name: 'Thursday', sets: [set('chin-up', 0, 400, 1), set('chin-up', 0, 400, 2)] });
+  const marathon = sessionRoutine({ id: 'rt_2', name: 'Thursday', sets: [set('chin-up', 0, 400, 1), set('chin-up', 0, 400, 2)] });
   assert.deepEqual(marathon.entries[0].sets, [{ reps: ENTRY_REPS_MAX, weightKg: 0 }, { reps: ENTRY_REPS_MAX, weightKg: 0 }]);
 });
 
-test('blankRoutine, withEntryAdded and withEntryRemoved — the editor’s three membership changes', () => {
-  assert.deepEqual(blankRoutine({ id: 'rt_new' }), { id: 'rt_new', name: '', position: 0, entries: [] });
-  assert.deepEqual(blankRoutine({ id: 'rt_new', position: 3 }).position, 3);
+test('RoutineValue, withEntryAdded and withEntryRemoved — the editor’s three membership changes', () => {
+  assert.deepEqual(routineDocument(new RoutineValue(new Id('rt_new', Routine))), { id: 'rt_new', name: '', position: 0, entries: [] });
+  assert.deepEqual(routineDocument(new RoutineValue(new Id('rt_new', Routine), '', 3)).position, 3);
 
   const one = withEntryAdded([], 'bench-press');
   assert.deepEqual(one, [{ exerciseId: 'bench-press' }]);
@@ -511,7 +517,7 @@ test('blankRoutine, withEntryAdded and withEntryRemoved — the editor’s three
   assert.deepEqual(two.map((entry) => entry.exerciseId), ['bench-press', 'chin-up']);
   assert.equal(one.length, 1);
 
-  assert.deepEqual(routineWrite({ id: 'rt_1', name: 'Heavy Thursday', position: 0, entries: two }).entries, [
+  assert.deepEqual(routineFields({ id: 'rt_1', name: 'Heavy Thursday', position: 0, entries: two }).entries, [
     { exerciseId: 'bench-press' },
     { exerciseId: 'chin-up' },
   ]);
@@ -524,7 +530,7 @@ test('blankRoutine, withEntryAdded and withEntryRemoved — the editor’s three
 
   const maxed = withEntrySet(two, 1, targetEntryOf(two[1], withSets(fields(), '3')));
   assert.deepEqual(maxed[1], { exerciseId: 'chin-up', sets: [{}, {}, {}] });
-  assert.deepEqual(routineWrite({ id: 'rt_1', name: 'Push A', position: 0, entries: maxed }).entries[1], {
+  assert.deepEqual(routineFields({ id: 'rt_1', name: 'Push A', position: 0, entries: maxed }).entries[1], {
     exerciseId: 'chin-up', sets: [{}, {}, {}],
   });
   assert.equal(entryLabel(maxed[1]), '3 × max');
@@ -539,7 +545,7 @@ test('saysNeverLogged — a routine never trained, and a row that has not been f
   assert.equal(saysNeverLogged(kept, { exerciseId: 'back-squat', sets: [{ reps: 3, weightKg: 110 }] }), false);
   assert.equal(saysNeverLogged(trained, { exerciseId: 'deadlift' }), false);
   assert.equal(saysNeverLogged(trained, { exerciseId: 'deadlift', sets: [{ reps: 5 }] }), false);
-  assert.equal(saysNeverLogged(blankRoutine({ id: 'rt_new' }), { exerciseId: 'deadlift' }), true);
+  assert.equal(saysNeverLogged(routineDocument(new RoutineValue(new Id('rt_new', Routine))), { exerciseId: 'deadlift' }), true);
 });
 
 test('the open row carries the one pinned sentence, and a row with a target carries none', () => {
