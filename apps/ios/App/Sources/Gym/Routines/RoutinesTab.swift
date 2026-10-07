@@ -24,6 +24,16 @@ struct RoutinesTab: View {
       if gym.readFailed {
         Section { Text("Your routines could not be read. Try again."); Button("Try again") { gym.refresh() } }
       }
+      ForEach(gym.coachRemovalReceipts.filter { $0.outcome != .pending }, id: \.proposal.id) { receipt in
+        Section {
+          Button { onReviewProposal?(receipt.proposal.id) } label: {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(receipt.proposal.baseName ?? "Routine removal").font(.headline)
+              Text(receipt.outcome == .applied ? "Removed · View receipt" : "Nothing was applied · View receipt").font(.subheadline)
+            }
+          }.accessibilityIdentifier("routine-removal-receipt")
+        }
+      }
       if let pending = waiting.first {
         Section {
           Button { onReviewProposal?(pending.id) } label: {

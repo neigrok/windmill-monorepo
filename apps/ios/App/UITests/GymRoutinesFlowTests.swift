@@ -12,9 +12,11 @@ import UIKit
     app.launchArguments = ["-model-server", "-board", "shell-last-room", "-onboarding-appearance", appearance]
     if proposal { app.launchArguments.append("-routines-proposal-fixture") }
     app.launch()
+    XCTAssertTrue(app.textViews["journal-editor"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons["room-menu"].waitForExistence(timeout: 10))
     app.buttons["room-menu"].tap()
-    app.buttons["room-gym"].tap()
+    let gym = app.buttons["room-gym"]
+    XCTAssertTrue(gym.waitForExistence(timeout: 5)); gym.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 10))
     return app
   }

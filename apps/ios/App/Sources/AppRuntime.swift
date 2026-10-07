@@ -1,6 +1,7 @@
 import Foundation
 import DomainKit
 import JournalDomain
+import GymDomain
 import SyncAPI
 import SyncCore
 import SyncEngine
@@ -96,7 +97,7 @@ final class AppRuntime {
     let storage = try ProtectedStorage(directory: storageDirectory, telemetry: telemetry)
     do {
       store = try Store(path: storage.databasePath, registry: SyncSchema.registry,
-                        commandResultWrites: JournalWriting.resultWrites, pendingDeviceWork: JournalWriting.pendingWork)
+                        commandResultWrites: Self.commandResultWrites, pendingDeviceWork: JournalWriting.pendingWork)
     } catch {
       telemetry.failure("storage_open", kind: Store.failureKind(error) ?? "storage")
       throw error
@@ -144,6 +145,10 @@ final class AppRuntime {
     self.tokens = tokens; self.revocations = revocations
     hadInstallHistory = true
     lifecycle = AppLifecycle(engine: engine, signals: .application, time: ApplicationBackgroundTime())
+  }
+
+  nonisolated static let commandResultWrites: CommandResultDeviceWrites = { command, result, epoch, rows in
+    JournalWriting.resultWrites(command, result, epoch, rows) + RoutineRemovalReceipt.resultWrites(command, result, epoch, rows)
   }
 
   func prepareRevocation(account: String) throws -> String? {

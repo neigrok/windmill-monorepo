@@ -2,8 +2,10 @@ package works.windmill.gym.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
@@ -13,6 +15,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
@@ -47,6 +50,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import works.windmill.domain.kit.Id
 import works.windmill.gym.domain.ChangeKind
 import works.windmill.gym.domain.Proposal
@@ -755,6 +762,59 @@ class ReviewSheetTests {
             assertEquals(history, cold.training.details())
             assertEquals(logged, cold.store.logged)
         }
+        scope.cancel()
+    }
+
+    @Test
+    fun aLateRemovalReceiptClearsTimeoutCopyAndWaitsForVisibleResumedPresentation() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val room = signedIn(scope)
+        val changes = listOf(ProposalChange(position = 1, kind = ChangeKind.Removed, exerciseId = "bench-press",
+            before = ProposalTargets(listOf(SetTarget(5, 80.0))), loggedSets = 0))
+        val routine = routineFor(room, server, "Push Day", changes)
+        val pending = requireNotNull(propose(room, server, routine, changes, intent = ProposalIntent.Remove))
+        val owner = object : LifecycleOwner {
+            override val lifecycle = LifecycleRegistry.createUnsafe(this)
+        }
+        owner.lifecycle.currentState = Lifecycle.State.STARTED
+        val offscreen = mutableStateOf(false)
+        var busy = false
+        compose.setContent {
+            CompositionLocalProvider(LocalLifecycleOwner provides owner) {
+                Box(Modifier.height(900.dp).offset(y = if (offscreen.value) 2000.dp else 0.dp)) {
+                    ReviewSheet(pending.id, routine.id, room.store, null, {}, onBusy = { busy = it })
+                }
+            }
+        }
+        compose.onNode(hasText("Remove Push Day") and hasClickAction()).performClick()
+        compose.waitUntil(5_000) {
+            shadowOf(Looper.getMainLooper()).idle()
+            decisions(room).isNotEmpty()
+        }
+        compose.waitUntil(20_000) {
+            shadowOf(Looper.getMainLooper()).idle()
+            !busy
+        }
+        val waiting = "Still waiting for the log. Retry to check this removal."
+        compose.onNodeWithText(waiting).assertExists()
+        compose.runOnIdle { offscreen.value = true }
+        compose.runOnIdle { room.sync(server); runBlocking { room.store.refreshEngine() } }
+        val settled = pending.copy(state = ProposalState.Applied)
+        compose.onNodeWithText(waiting).assertDoesNotExist()
+        compose.onNodeWithText(requireNotNull(settled.receipt)).assertIsNotDisplayed()
+        compose.runOnIdle {
+            assertEquals(mapOf(pending.id to settled), room.store.unseenRemovalReceipts)
+            offscreen.value = false
+        }
+        compose.onNodeWithText(requireNotNull(settled.receipt)).assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(mapOf(pending.id to settled), room.store.unseenRemovalReceipts)
+            owner.lifecycle.currentState = Lifecycle.State.RESUMED
+        }
+        compose.waitUntil(5_000) { room.store.unseenRemovalReceipts.isEmpty() }
+        compose.onNodeWithText(requireNotNull(settled.receipt)).assertIsDisplayed()
+        compose.runOnIdle { runBlocking { assertEquals(ProposalRead.Found(settled), room.store.proposal(pending.id)) } }
         scope.cancel()
     }
 

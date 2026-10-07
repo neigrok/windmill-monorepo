@@ -45,6 +45,13 @@ local until adoption. Occupied accounts ask Journal then Gym with counts by kind
 answers persist against the exact counted work and complete together. Changed work asks again.
 Sign-out flushes both rooms, releases held deletes, and keeps dormant work only for its account.
 
+Routine-removal reviews commit their proposal snapshot beside the Apply command in the replica's
+`rack:removalReceipts` device row. `AppRuntime.commandResultWrites` composes Journal's claim binding
+and Gym's durable removal outcomes; test stores which host these reviews install that same binding.
+Retries reuse the pending decision. Pending and settled receipts survive engine/store relaunch and
+account switches. Routines exposes unseen settled receipts; an active, visible review acknowledges
+its receipt after showing the outcome, while the current model keeps the successful review available.
+
 The Gym UI contract is `Sources/Gym/GymModel.swift` plus `GymRoom.swift`. `GymRoom(gym:app:)` owns a
 native TabView (Routines · The log · Coach), independent NavigationStacks and full-screen
 `WorkoutScreen` while logging, finishing or showing its receipt. Hidden workouts restore from Gym settings. Each UI track owns its folder and root view:

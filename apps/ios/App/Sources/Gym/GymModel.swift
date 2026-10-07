@@ -41,7 +41,8 @@ final class GymModel {
   @ObservationIgnored var scopeViews: [RecordsView] = []
   @ObservationIgnored var observationGeneration = 0
   @ObservationIgnored var proposalReadReplica: String?
-  @ObservationIgnored var coachRemovalDecisions: [String: (proposal: Proposal, resolved: Bool?)] = [:]
+  var coachRemovalReceipts: [RoutineRemovalReceipt] = []
+  @ObservationIgnored var shownCoachRemovals: [String: Proposal] = [:]
 
   init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry()) {
     self.runner = runner; self.runtime = runtime; self.telemetry = telemetry
@@ -80,11 +81,8 @@ final class GymModel {
     observeScopes(observationGeneration)
     let events = runtime.engine.events()
     observationTask = Task { [weak self] in
-      for await event in events {
+      for await _ in events {
         guard !Task.isCancelled else { return }
-        if case .ended(let localId, let outcome, _, _) = event {
-          self?.coachRemovalDecisions[localId]?.resolved = outcome == .resolved
-        }
         self?.refresh()
       }
     }

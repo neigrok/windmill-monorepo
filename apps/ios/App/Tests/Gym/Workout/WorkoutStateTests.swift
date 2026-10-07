@@ -385,7 +385,7 @@ import SyncTesting
   }
 
   static func faultRuntime(_ fault: WorkoutFaultTransport, clock: EngineClock = .system, drivesLoops: Bool = false) throws -> AppRuntime {
-    let store = try Store.inMemory(registry: SyncSchema.registry), tokens = InMemoryTokenStore()
+    let store = try Store.inMemory(registry: SyncSchema.registry, commandResultWrites: AppRuntime.commandResultWrites), tokens = InMemoryTokenStore()
     let engine = try SyncEngine(config: EngineConfig(appVersion: "test", surface: .ios, drivesLoops: drivesLoops), store: store,
                                 transport: fault, tokens: tokens, forkGuard: InMemoryForkGuardStore(), clock: clock,
                                 random: SeededRandomSource(seed: 73), connectivity: SwitchedConnectivity())

@@ -7,9 +7,11 @@ import UIKit
     app.launchArguments = ["-model-server", "-board", "shell-last-room", "-onboarding-appearance", appearance.lowercased()] + arguments
     if fixture { app.launchArguments.append("-coach-fixture") }
     app.launch()
+    XCTAssertTrue(app.textViews["journal-editor"].waitForExistence(timeout: 10))
     let menu = app.buttons["room-menu"]
     XCTAssertTrue(menu.waitForExistence(timeout: 10)); menu.tap()
-    app.buttons["room-gym"].tap()
+    let gym = app.buttons["room-gym"]
+    XCTAssertTrue(gym.waitForExistence(timeout: 5)); gym.tap()
     app.tabBars.buttons["Coach"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 10))
     return app

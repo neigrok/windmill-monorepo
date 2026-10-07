@@ -9,6 +9,7 @@ import GymDomain
 import SyncCore
 import SyncSchema
 import SyncEngine
+import enum SyncEngine.Reply
 import SyncModelServer
 @testable import Windmill
 
@@ -30,7 +31,7 @@ import SyncModelServer
 
   func fixture() -> (Harness, GymModel) {
     let h = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: "coach-owner",
-                    rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
+                    rules: ComposedServerRules.windmill(registry: SyncSchema.registry), commandResultWrites: AppRuntime.commandResultWrites)
     let gym = GymModel(runner: h.runner); gym.account = "coach-owner"
     return (h, gym)
   }
@@ -606,10 +607,10 @@ import SyncModelServer
     #expect(!gym.coachDecideProposal(proposal, apply: false))
   }
   @Test(arguments: [false, true])
-  func removalReceiptKeepsTheConfirmedDecisionAndPerformedLogUntilRelaunch(refused: Bool) async throws {
-    let transport = JournalModelTransport(), telemetry = TelemetryRecorder()
-    let runtime = try GymModelTests().runtime(telemetry: telemetry, transport: transport, drivesLoops: true)
-    let owner = transport.identity(email: "removal-owner@example.com")
+  func removalReceiptWaitsForDeliveryAndAcknowledgesOnlyWhenShown(refused: Bool) async throws {
+    let transport = RemovalDeliveryTransport(), telemetry = TelemetryRecorder(), fault = GymStoreFault()
+    let runtime = try GymModelTests().runtime(failing: fault, telemetry: telemetry, transport: transport, drivesLoops: true)
+    let owner = transport.model.identity(email: "removal-owner@example.com")
     #expect(try await runtime.engine.signIn(account: owner.account, token: owner.token).isComplete)
     await runtime.engine.start()
     let gym = GymModel(runner: runtime.runner, runtime: runtime, telemetry: telemetry)
@@ -631,12 +632,21 @@ import SyncModelServer
     let proposal = try #require(gym.proposals.first), logged = gym.sets
     let review = ProposalReviewSheet(gym: gym, proposalId: proposal.id.description)
     #expect(review.applyLabel == "Remove Push A" && proposal.state == "pending" && proposal.settledAt == nil)
-    if refused { transport.state.withLock { $0.server.refuse(code: .invalid) } }
+    await transport.delivery.hold()
+    defer { Task { await transport.delivery.release() } }
+    if refused { transport.model.state.withLock { $0.server.refuse(code: .invalid) } }
     #expect(gym.coachDecideProposal(proposal, apply: true))
     #expect(gym.routines.isEmpty && gym.sets == logged)
     try expectProposal(review.proposal, equals: proposal)
     #expect(gym.proposals.count == 1 && review.pending && !review.decidable)
     #expect(try runtime.runner.read(Gym.scope) { try $0.confirmed(Proposal.self, proposal.id).map { try Proposal(Fields($0)).state } } == "pending")
+    fault.point.withLock { $0 = .beforeCommit(.results) }
+    await transport.delivery.release()
+    try await settle { runtime.engine.status.failedPushes[Gym.scope]?.isEmpty == false }
+    gym.refresh()
+    #expect(gym.coachRemovalReceipts.first?.outcome == .pending && review.pending)
+    #expect(try runtime.runner.read(Gym.scope) { try $0.commands().count } == 1)
+    fault.point.withLock { $0 = nil }
     await runtime.engine.flushOnLeave(); runtime.engine.foreground()
     try await settle { gym.refresh(); return !review.pending && (refused ? !gym.notices.isEmpty : review.proposal?.state == "applied") }
     let answer = try #require(review.proposal)
@@ -655,10 +665,91 @@ import SyncModelServer
       try expectProposal(gym.proposals.first, equals: answer)
       #expect(gym.proposals.count == 1)
       let cold = GymModel(runner: runtime.runner, runtime: runtime)
-      #expect(cold.proposals.isEmpty && cold.sets == logged && cold.routines.isEmpty)
-      #expect(ProposalReviewSheet(gym: cold, proposalId: proposal.id.description).proposal == nil)
+      #expect(cold.proposals.first?.state == "applied" && cold.sets == logged && cold.routines.isEmpty)
+      #expect(cold.coachRemovalReceipts.count == 1)
     }
+    let window = UIWindow(frame: UIScreen.main.bounds)
+    let host = RemovalReceiptHost(rootView: review.environment(\.scenePhase, .background))
+    window.rootViewController = host; window.makeKeyAndVisible()
+    defer { window.isHidden = true }
+    try await settle { host.appeared }
+    #expect(try runtime.runner.read(Gym.scope) { try RoutineRemovalReceipt.read($0).count } == 1)
+    fault.point.withLock { $0 = .beforeCommit(.commit) }
+    host.rootView = review.environment(\.scenePhase, .active)
+    try await settle { telemetry.entries.withLock { $0.contains { $0.name == "client_error" && $0.properties["operation"] == "gym_action" } } }
+    #expect(try runtime.runner.read(Gym.scope) { try RoutineRemovalReceipt.read($0).count } == 1)
+    fault.point.withLock { $0 = nil }
+    window.rootViewController = nil
+    window.rootViewController = RemovalReceiptHost(rootView: review.environment(\.scenePhase, .active))
+    try await settle { (try? runtime.runner.read(Gym.scope) { try RoutineRemovalReceipt.read($0).isEmpty }) == true }
+    #expect(review.proposal?.state == (refused ? "pending" : "applied"))
+    let shownCold = GymModel(runner: runtime.runner, runtime: runtime)
+    #expect(shownCold.proposals.count == (refused ? 1 : 0) && shownCold.coachRemovalReceipts.isEmpty)
     #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map { $0.properties["outcome"] } } == [refused ? "failed" : "decided"])
+  }
+  @Test(arguments: [false, true], [false, true])
+  func removalReceiptSurvivesAStoreRelaunch(resolvedBeforeRelaunch: Bool, refused: Bool) async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    let service = "works.windmill.test-removal." + UUID().uuidString
+    let transport = WorkoutFaultTransport()
+    let settings = AppSettings(arguments: ["app", "-server", "https://gym.invalid"])
+    let owner = transport.model.identity(email: "durable-removal@example.com")
+    var runtime: AppRuntime? = try AppRuntime(settings: settings, directory: directory, service: service, syncTransport: transport)
+    #expect(try await runtime!.engine.signIn(account: owner.account, token: owner.token).isComplete)
+    await runtime!.engine.start()
+    var warm: GymModel? = GymModel(runner: runtime!.runner, runtime: runtime!)
+    var draft = Draft(new: Routine(id: ID("durable-routine"), name: "Retained plan", entries: [RoutineEntry(exerciseId: ID("bench-press"))]))
+    #expect(saved(warm!.save(&draft)))
+    await runtime!.engine.flushOnLeave(); runtime!.engine.foreground()
+    try await settle { warm!.refresh(); return warm!.routines.first?.revision != nil }
+    #expect(warm!.run(ProposeRoutine(id: ID("durable-proposal"), routineId: draft.id, name: "", entries: [], summary: "Remove", removing: true))?.receipt != nil)
+    await runtime!.engine.flushOnLeave(); runtime!.engine.foreground()
+    try await settle { warm!.refresh(); return warm!.proposals.first?.baseRevision != nil }
+    let proposal = try #require(warm!.proposals.first)
+    transport.failure.withLock { $0 = 503 }
+    #expect(warm!.coachDecideProposal(proposal, apply: true))
+    try await settle { runtime!.engine.status.failedPushes[Gym.scope]?.isEmpty == false }
+    await runtime!.engine.flushOnLeave()
+    if refused { transport.model.state.withLock { $0.server.refuse(code: .invalid) } }
+    if resolvedBeforeRelaunch {
+      transport.failure.withLock { $0 = nil }
+      await runtime!.engine.flushOnLeave(); runtime!.engine.foreground()
+      try await settle { warm!.refresh(); return warm!.coachRemovalReceipts.first?.outcome == (refused ? .refused : .applied) && (try? runtime!.runner.read(Gym.scope) { try $0.commands().isEmpty }) == true }
+      #expect(warm!.proposals.first?.state == (refused ? "pending" : "applied"))
+    }
+    let closed = { [weak oldRuntime = runtime, weak oldEngine = runtime!.engine, weak oldStore = runtime!.store] in
+      oldRuntime == nil && oldEngine == nil && oldStore == nil
+    }
+    warm!.stop(); warm = nil; runtime = nil
+    try await settle { closed() }
+    try #require(closed())
+    let closedReopened: () -> Bool
+    do {
+      let reopened = try AppRuntime(settings: settings, directory: directory, service: service, syncTransport: transport)
+      await reopened.engine.start()
+      let gym = GymModel(runner: reopened.runner, runtime: reopened)
+      gym.start()
+      closedReopened = { [weak gym, weak runtime = reopened, weak engine = reopened.engine, weak store = reopened.store] in
+        gym == nil && runtime == nil && engine == nil && store == nil
+      }
+      defer { gym.stop(); try? reopened.tokens.delete(for: owner.account) }
+      let review = ProposalReviewSheet(gym: gym, proposalId: proposal.id.description)
+      if !resolvedBeforeRelaunch {
+        #expect(review.proposal?.state == "pending" && review.pending)
+        #expect(gym.coachDecideProposal(proposal, apply: true))
+        #expect(try reopened.runner.read(Gym.scope) { try $0.commands().count } == 1)
+        transport.failure.withLock { $0 = nil }
+        await reopened.engine.flushOnLeave(); reopened.engine.foreground()
+      }
+      try await settle { gym.refresh(); return (try? reopened.runner.read(Gym.scope) { try $0.commands().isEmpty }) == true }
+      #expect(gym.routines.count == (refused ? 1 : 0))
+      #expect(review.proposal?.state == (refused ? "pending" : "applied") && !review.pending)
+      #expect(gym.coachRemovalReceipts.first?.outcome == (refused ? .refused : .applied))
+      #expect(review.proposal?.summary == proposal.summary && review.proposal?.baseName == proposal.baseName)
+    }
+    try await settle { closedReopened() }
+    try #require(closedReopened())
+    try FileManager.default.removeItem(at: directory)
   }
   @Test func failedRemovalDeliveryWaitsForReceiptAndAccountSwitchClearsIt() async throws {
     let transport = WorkoutFaultTransport(), runtime = try WorkoutStateTests.faultRuntime(transport, drivesLoops: true)
@@ -698,7 +789,8 @@ import SyncModelServer
     _ = try await runtime.engine.signOut().finish(.keep)
     #expect(try await runtime.engine.signIn(account: owner.account, token: owner.token).isComplete)
     gym.refresh()
-    #expect(gym.proposals.isEmpty && gym.account == owner.account && gym.routines.isEmpty)
+    #expect(gym.proposals.first?.state == "applied" && gym.account == owner.account && gym.routines.isEmpty)
+    #expect(gym.coachRemovalReceipts.count == 1)
   }
   @Test(arguments: [false, true])
   func routineDeletionDoesNotInventARemovalReceipt(dismissed: Bool) throws {
@@ -761,4 +853,36 @@ nonisolated final class CoachTestProtocol: URLProtocol, @unchecked Sendable {
     client?.urlProtocol(self, didLoad: Data(body.utf8)); client?.urlProtocolDidFinishLoading(self)
   }
   override func stopLoading() { Self.state.withLock { if $0.active === self { $0.active = nil }; if $0.activeByPath[request.url!.path] === self { $0.activeByPath[request.url!.path] = nil } } }
+}
+
+nonisolated final class RemovalDeliveryTransport: SyncTransport {
+  let model = JournalModelTransport()
+  let delivery = RemovalDeliveryGate()
+  func hello(token: SessionToken?) async -> Reply<HelloResponse> { await model.hello(token: token) }
+  func push(_ request: PushRequest, token: SessionToken) async -> Reply<PushResponse> {
+    await delivery.wait()
+    return await model.push(request, token: token)
+  }
+  func pull(_ request: PullRequest, token: SessionToken?) async -> Reply<PullResponse> { await model.pull(request, token: token) }
+  func openLive(token: SessionToken) async -> Reply<any LiveConnection> { await model.openLive(token: token) }
+}
+
+actor RemovalDeliveryGate {
+  var held = false
+  var waiting: [CheckedContinuation<Void, Never>] = []
+  func hold() { held = true }
+  func wait() async {
+    guard held else { return }
+    await withCheckedContinuation { waiting.append($0) }
+  }
+  func release() {
+    held = false
+    let resumed = waiting; waiting = []
+    for continuation in resumed { continuation.resume() }
+  }
+}
+
+@MainActor final class RemovalReceiptHost<Content: View>: UIHostingController<Content> {
+  var appeared = false
+  override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); appeared = true }
 }

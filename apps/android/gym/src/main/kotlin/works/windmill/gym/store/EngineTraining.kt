@@ -47,6 +47,17 @@ import works.windmill.gym.domain.StatsProgress
 private val <E : Entity<E>> Id<E>.text: String get() = record.string ?: error("gym-string-identity")
 
 class EngineTraining(val engine: Engine) {
+    companion object {
+        val intentResultWrites: works.windmill.sync.api.IntentResultDeviceWrites = { intent, result, epoch, gestureId, values ->
+            WorkoutImports.intentResultWrites(intent, result, epoch, gestureId, values) +
+                RemovalReceipts.intentResultWrites(intent, result, epoch, gestureId, values)
+        }
+    }
+    private val removalReceipts = RemovalReceipts(engine)
+    fun removalReceipts(): Map<String, Proposal> = removalReceipts.confirmed()
+    fun removalProposals(): Map<String, Proposal> = removalReceipts.proposals()
+    fun removalPending(id: String): Boolean = removalReceipts.pending(id)
+    fun removalReceiptShown(proposal: Proposal, replica: String) = removalReceipts.shown(proposal, replica)
     private val deliveryBlockers = mutableMapOf<String, Blocker>()
     val deliveryBlocker: Blocker? get() = synchronized(deliveryBlockers) { deliveryBlockers[engine.activeReplica()] }
     fun reportDelivery(replica: String, reply: Reply<SyncResponse>): Boolean = synchronized(deliveryBlockers) {
@@ -314,32 +325,41 @@ class EngineTraining(val engine: Engine) {
         val queued = reader.commands().any { it.command.name in setOf(Gym.Commands.applyProposal, Gym.Commands.dismissProposal) && it.command.args["proposalId"] == identity.json }
         if (queued) reader.confirmed(EngineProposal, identity)?.takeIf { it.isVisible }?.let { EngineProposal.decode(Fields(it)).ui(reader) }
         else reader.repository(EngineProposal).find(identity, ViewMode.drawn)?.ui(reader)
-    }
+    } ?: removalReceipts.proposals()[id]?.takeIf { it.isPending }
     suspend fun applyProposal(id: String) = decideProposal(id, applying = true)
     suspend fun dismissProposal(id: String) = decideProposal(id, applying = false)
     private suspend fun decideProposal(id: String, applying: Boolean): ProposalDecision {
         val replica = engine.activeReplica()
         val status = engine.status.state.value
         if (anonymous || status.authPaused) throw TrainingRefused("sign-in", "Sign in again to decide this proposal.")
+        if (applying) removalReceipts.result(id, replica)?.let { return ProposalDecision(it) }
         if (!status.online) throw TrainingUnanswered
         val before = engine.notices("gym").notices.value.map { it.id }.toSet()
         val removal = if (applying) proposal(id)?.takeIf { it.isPending && it.intent == ProposalIntent.Remove } else null
-        val written = writing { runner ->
-            if (applying) runner.run(ApplyProposal(Id(id, EngineProposal))) else runner.run(DismissProposal(Id(id, EngineProposal)))
+        val trackingRemoval = applying && (removal != null || removalReceipts.contains(id))
+        if (trackingRemoval) {
+            removalReceipts.begin(id, replica, zone) { reader ->
+                reader.confirmed(EngineProposal, Id(id, EngineProposal))?.takeIf { it.isVisible }
+                    ?.let { EngineProposal.decode(Fields(it)).ui(reader) }
+                    ?.takeIf { it.isPending && it.intent == ProposalIntent.Remove }
+            }?.let { throw refusal(it) }
+        } else {
+            val written = writing { runner ->
+                if (applying) runner.run(ApplyProposal(Id(id, EngineProposal))) else runner.run(DismissProposal(Id(id, EngineProposal)))
+            }
+            if (written is Outcome.Refused) throw refusal(written.refusal)
         }
-        if (written is Outcome.Refused) throw refusal(written.refusal)
-        val localId = written.receipt?.localIds?.singleOrNull()
         return withTimeoutOrNull(15_000) {
             while (true) {
                 if (engine.activeReplica() != replica) throw TrainingRefused("account-changed", "The account changed. Open this again.")
-                engine.notices("gym").notices.value.firstOrNull { notice -> notice.id !in before &&
+                if (applying) {
+                    removalReceipts.refusal(id, replica)?.let { throw refusal(it) }
+                    removalReceipts.result(id, replica)?.let { return@withTimeoutOrNull ProposalDecision(it) }
+                }
+                engine.notices("gym").notices.value.firstOrNull { notice -> !trackingRemoval && notice.id !in before &&
                     notice.content.command?.args?.get("proposalId") == Json.of(id) }?.let {
                     throw refusal(DomainNotice(it, engine.registry, GymRefusal).refusal)
                 }
-                // A removal's confirmed rows are gone after pull; only this command's resolution is its receipt.
-                if (removal != null && localId != null && engine.ended().any {
-                    it["localId"] == Json.of(localId) && it["outcome"] == Json.of("resolved")
-                }) return@withTimeoutOrNull ProposalDecision(removal.copy(state = ProposalState.Applied, settledAtMs = null))
                 val confirmed = read { reader ->
                     val identity = Id(id, EngineProposal)
                     val record = reader.confirmed(EngineProposal, identity)?.takeIf { it.isVisible }
@@ -513,7 +533,11 @@ class EngineTraining(val engine: Engine) {
         val title = domain.values(subject)["title"]?.str().orEmpty()
         RefusedChange(notice.id, "Note: $title", refusal(domain.refusal).line)
     }
-    fun dismissRefusals() { for (notice in engine.notices("gym").notices.value) engine.dismissNotice(notice.id) }
+    fun dismissRefusals() {
+        val notices = engine.notices("gym").notices.value
+        removalReceipts.dismissRefused(notices.mapNotNull { it.content.command?.args?.get("proposalId")?.str() }.toSet())
+        for (notice in notices) engine.dismissNotice(notice.id)
+    }
 
     // A set the logger accepted, committed together with the controls that consumed its offer.
     fun commitAccepted(controls: WorkoutControls, set: TrainingSet, sessionId: String): TrainingSet {

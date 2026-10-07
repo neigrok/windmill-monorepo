@@ -371,3 +371,87 @@ public struct DismissProposal: Action {
     return .write(try Plan(running: Command(proposalId: id), predicting: [settled]))
   }
 }
+
+public struct RoutineRemovalReceipt: Sendable {
+  public enum Outcome: String, Sendable { case pending, applied, refused }
+  public static let key = "rack:removalReceipts"
+  public let proposal: Proposal
+  public let outcome: Outcome
+  let json: JSON
+
+  init(_ proposal: Proposal) {
+    self.proposal = proposal; outcome = .pending
+    var snapshot = proposal.fields
+    snapshot["state"] = .string(proposal.state)
+    snapshot["supersededBy"] = proposal.supersededBy?.json
+    snapshot["baseRevision"] = proposal.baseRevision.map(JSON.init)
+    snapshot["baseName"] = proposal.baseName.map(JSON.string)
+    snapshot["changeCount"] = proposal.changeCount.map(JSON.init)
+    snapshot["threadId"] = proposal.threadId.map(JSON.string)
+    json = ["snapshot": .object(JSON.Object(uniqueKeysWithValues: snapshot.map { ($0.key, $0.value) })), "status": "pending"]
+  }
+
+  init(id: String, json: JSON, commands: [QueuedCommand]) throws {
+    let stored = try json.member("status").asString()
+    guard let status = Outcome(rawValue: stored) else { throw DecodeError(type: Proposal.type, field: "receipt", reason: "unknown outcome") }
+    outcome = status == .applied && commands.contains(where: { $0.command.name == Gym.Commands.applyProposal && $0.command.args["proposalId"] == .string(id) }) ? .pending : status
+    var values = try json.member("snapshot").asObject()
+    if outcome == .applied { values["state"] = "applied" }
+    proposal = try Proposal(Fields(type: Proposal.type, id: RecordID(id), values: Dictionary(uniqueKeysWithValues: values.members)))
+    self.json = json
+  }
+
+  public static func read(_ read: Reader) throws -> [RoutineRemovalReceipt] {
+    guard !read.isAnonymous else { return [] }
+    let commands = try read.commands()
+    return try (read.device(key)?.asObject().members ?? []).map { try RoutineRemovalReceipt(id: $0.key, json: $0.value, commands: commands) }
+      .sorted { $0.proposal.id < $1.proposal.id }
+  }
+
+  public static let resultWrites: CommandResultDeviceWrites = { command, result, epoch, rows in
+    guard command.name == Gym.Commands.applyProposal, let id = try? command.args.member("proposalId").asString(),
+          var receipts = try? rows[key]?.asObject(), var receipt = try? receipts[id]?.asObject() else { return [] }
+    switch result.verdict {
+    case .ok(let seq, _):
+      receipt["status"] = "applied"; receipt["seq"] = JSON(seq); receipt["epoch"] = .string(epoch)
+    case .refused(let code) where code != .clockSkew && code != .baseUnknown:
+      receipt["status"] = "refused"; receipt["code"] = code.json
+    case .refused: return []
+    }
+    receipts[id] = .object(receipt)
+    return [DeviceWrite(key: key, value: .object(receipts))]
+  }
+}
+
+public struct ApplyProposalKeepingReceipt: Action {
+  public let id: ID<Proposal>
+  public var scope: ScopeRef { Gym.scope }
+  public init(_ id: ID<Proposal>) { self.id = id }
+  public func load(_ read: Reader) throws -> (ProposalState, JSON.Object) {
+    (try ApplyProposal(id).load(read), try read.device(RoutineRemovalReceipt.key)?.asObject() ?? [:])
+  }
+  public func decide(_ loaded: (ProposalState, JSON.Object), ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
+    if let receipt = loaded.1[id.description], receipt["status"] != "refused" { return .unchanged(()) }
+    let decision = try ApplyProposal(id).decide(loaded.0, ids: ids)
+    guard let proposal = loaded.0.proposal, proposal.intent == "remove", case .write(var plan, _) = decision else { return decision }
+    var receipts = loaded.1; receipts[id.description] = RoutineRemovalReceipt(proposal).json
+    plan.device(RoutineRemovalReceipt.key, .object(receipts))
+    return .write(plan)
+  }
+}
+
+public struct AcknowledgeRoutineRemoval: Action {
+  public let id: ID<Proposal>
+  public let replica: String
+  public var scope: ScopeRef { Gym.scope }
+  public init(_ id: ID<Proposal>, replica: String) { self.id = id; self.replica = replica }
+  public func load(_ read: Reader) throws -> (String, JSON.Object, [RoutineRemovalReceipt]) {
+    (read.replica, try read.device(RoutineRemovalReceipt.key)?.asObject() ?? [:], try RoutineRemovalReceipt.read(read))
+  }
+  public func decide(_ loaded: (String, JSON.Object, [RoutineRemovalReceipt]), ids: IDSource) -> Decision<Void, GymRefusal> {
+    guard loaded.0 == replica, loaded.2.contains(where: { $0.proposal.id == id && $0.outcome != .pending }) else { return .unchanged(()) }
+    var receipts = loaded.1; receipts[id.description] = nil
+    var plan = Plan(); plan.device(RoutineRemovalReceipt.key, receipts.isEmpty ? nil : .object(receipts))
+    return .write(plan)
+  }
+}

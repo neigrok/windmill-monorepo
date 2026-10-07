@@ -90,7 +90,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
         val engine = AndroidSqlite.open(File(filesDir, "sync-replica.sqlite"), SyncSchema.registry, initial,
             AndroidClock(this), identities, identities.actorID(), telemetry = engineTelemetry,
             rewriteDeviceValue = WorkoutImports.rewriteDeviceValue,
-            intentResultWrites = WorkoutImports.intentResultWrites,
+            intentResultWrites = EngineTraining.intentResultWrites,
             pendingDeviceWork = WorkoutImports.pendingDeviceWork)
         val engineStorage = EngineStorage(this, SecretVault.onThisDevice(telemetry))
         if (owner != null) sessions.read()?.let { engineStorage.save(owner, it) }

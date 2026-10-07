@@ -25,7 +25,7 @@ import SyncTesting
   func runtime(failing: GymStoreFault = GymStoreFault(), telemetry: any Telemetry = NoopTelemetry(), transport: any SyncTransport = JournalModelTransport(), drivesLoops: Bool = false) throws -> AppRuntime {
     let store = try Store.inMemory(registry: SyncSchema.registry, crashPoints: CrashPoints { point in
       if failing.point.withLock({ $0 == point }) { throw AppFailure(message: "private injected storage detail") }
-    })
+    }, commandResultWrites: AppRuntime.commandResultWrites)
     let tokens = InMemoryTokenStore()
     let engine = try SyncEngine(config: EngineConfig(appVersion: "test", surface: .ios, drivesLoops: drivesLoops), store: store,
                                 transport: transport, tokens: tokens, forkGuard: InMemoryForkGuardStore(),

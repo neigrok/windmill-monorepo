@@ -115,6 +115,15 @@ retry retains identity and Stop preserves completed work. Shared HTTP framing li
 Notes live with the account. They retain an unread state until the account's first pull
 completes; subsequent pulls refresh the open notebook, and refused saves show their refusal.
 
+Applying a routine removal saves its proposal snapshot and command identity together in the
+account replica's device journal. Retry and reopening use that same command. Its explicit server
+result survives interrupted waits, timeouts and relaunch; the receipt stays durable until its review
+footer is visible while the app is resumed. Routines keeps an unshown removal review reachable
+after the routine disappears. Refusals retain their engine notice; dismissing it clears the refused
+journal entry. Receipt acknowledgment failures keep the receipt available and report
+`gym.proposal_receipt_shown`; successful presentation emits `gym_proposal_receipt_shown` with
+`outcome=applied`.
+
 Workout logging persists consumed actions and timestamps. Rack, movement, account and finish
 changes invalidate stale actions. Notification logging requires unlock and current identity;
 native paging must settle before rack edits or logging. The silent ongoing notification can become

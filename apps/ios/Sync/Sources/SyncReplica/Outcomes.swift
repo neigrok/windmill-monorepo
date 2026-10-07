@@ -241,6 +241,7 @@ public struct PushPlanner: Sendable {
       guard let entry = replica.outbox.first(where: { $0.state == .sent && $0.n == n }) else { return }
       replica.update { $0.nextN = n }
       for later in replica.outbox where later.state == .sent && later.n! > n { try replica.move(later.localId, .rewind) }
+      try writeCommandRefusal(entry, code: malformed ? .invalid : .tooLarge, in: &replica)
       try refuse(entry.localId, code: malformed ? .invalid : .tooLarge, detail: nil, lastN: n - 1, in: &replica, instance: instance)
     case .results(let batch):
       // A replica with no epoch takes the answer's with its first result, or with ackThrough (§7.4).
@@ -260,15 +261,7 @@ public struct PushPlanner: Sendable {
   // (§7.5 step 2).
   func apply(_ result: PushResult, lastN: Int64, epoch: String, to replica: inout LoadedReplica, instance: Instance) throws {
     guard let entry = replica.sentEntry(numbered: result.n) else { return }
-    if let command = entry.intent.command, let product = registry.product(of: entry.scope) {
-      for write in commandResultWrites(command, result, epoch, replica.deviceRows[product] ?? [:]) {
-        guard registry.product(product)?.device.contains(where: { $0.keyPattern.matches(write.key) }) == true else {
-          throw CommitFailure.malformed("a command result wrote an undeclared device row")
-        }
-        if let value = write.value { replica.apply(.putDeviceRow(product: product, key: write.key, value)) }
-        else { replica.apply(.deleteDeviceRow(product: product, key: write.key)) }
-      }
-    }
+    try writeCommandResult(entry, result: result, epoch: epoch, in: &replica)
     switch result.verdict {
     case .refused(let code):
       try refuse(entry.localId, code: code, detail: result.detail, lastN: lastN, in: &replica, instance: instance)
@@ -281,6 +274,24 @@ public struct PushPlanner: Sendable {
       if let write { try applyWriteMap(write, of: entry.localId, in: &replica, instance: instance) }
       if let acked = replica.entry(entry.localId), replica.covers(acked) { try replica.move(entry.localId, .resolve) }
     }
+  }
+
+  func writeCommandResult(_ entry: OutboxEntry, result: PushResult, epoch: String, in replica: inout LoadedReplica) throws {
+    if let command = entry.intent.command, let product = registry.product(of: entry.scope) {
+      for write in commandResultWrites(command, result, epoch, replica.deviceRows[product] ?? [:]) {
+        guard registry.product(product)?.device.contains(where: { $0.keyPattern.matches(write.key) }) == true else {
+          throw CommitFailure.malformed("a command result wrote an undeclared device row")
+        }
+        if let value = write.value { replica.apply(.putDeviceRow(product: product, key: write.key, value)) }
+        else { replica.apply(.deleteDeviceRow(product: product, key: write.key)) }
+      }
+    }
+  }
+
+  func writeCommandRefusal(_ entry: OutboxEntry, code: RefusalCode, in replica: inout LoadedReplica) throws {
+    guard entry.intent.command != nil else { return }
+    let result = try PushResult(json: ["n": JSON(entry.n ?? 0), "s": "refused", "code": code.json])
+    try writeCommandResult(entry, result: result, epoch: replica.meta.serverEpoch ?? "", in: &replica)
   }
 
   // §7.7: an orphan's refusal ends it into its origin's notice; clock-skew and base-unknown recover automatically; any
@@ -297,6 +308,7 @@ public struct PushPlanner: Sendable {
   // §7.4: a ready entry too large for a request alone ends too-large by §7.7 before it is numbered, as a one-intent 413
   // would end it: an orphan into its origin's notice, any other entry with a notice of its own.
   func refuseOutgrown(_ entry: OutboxEntry, in replica: inout LoadedReplica, at deviceNow: Int64) throws {
+    try writeCommandRefusal(entry, code: .tooLarge, in: &replica)
     if let origin = entry.orphanOf { return try refuseOrphan(entry, of: origin, by: .outgrown, in: &replica) }
     try remove(entry, by: .outgrown, code: .tooLarge, detail: nil, in: &replica, at: deviceNow)
   }
@@ -355,6 +367,7 @@ public struct PushPlanner: Sendable {
       guard entry.isQueued else { continue }
       dependents.absorb(part, of: entry)
       var removed = NoticeContent()
+      if part.commandGone { try writeCommandRefusal(entry, code: .parentDead, in: &replica) }
       replica.update(entry: entry.localId) { removed = Dependents.remove(part, from: &$0) }
       folded.append(removed)
       if replica.entry(entry.localId)!.isEmpty {
@@ -424,6 +437,7 @@ public struct PushPlanner: Sendable {
         for queued in replica.outbox where queued.isQueued {
           guard let entry = replica.entry(queued.localId) else { continue }
           if entry.intent.deltas.contains(where: { $0.key == fromKey && $0.removes }) {
+            try writeCommandRefusal(entry, code: .targetMerged, in: &replica)
             try remove(entry, by: .targetMerged, code: .targetMerged, detail: nil, in: &replica, at: instance.deviceNow)
             continue
           }

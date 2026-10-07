@@ -119,6 +119,10 @@ fun RoutinesScreen(
                     Refusals(store.refusals, store.catalog, onDismiss = { store.clearRefusals() })
                 }
 
+                items(store.unseenRemovalReceipts.values.toList(), key = { "receipt:${it.id}" }) { receipt ->
+                    ProposalCard(receipt, receipt.routineName, nowMs, false) { onReview(receipt) }
+                }
+
                 // The newest waiting card, one at a time; the others keep their dot on their
                 // routine's row, and the routine this card is about draws no dot of its own.
                 standing?.let { waiting ->

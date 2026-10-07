@@ -50,7 +50,7 @@ class AndroidTelemetryTest {
                 "android-test", "verification", "123")
             val telemetry = AndroidTelemetry(context, events.url("/"), "android-test", "verification",
                 "test", "123", null, { null }, backgroundScope)
-            telemetry.failure("telemetry_smoke", IllegalStateException("private message secret@example.com"),
+            telemetry.failure("gym.proposal_receipt_shown", IllegalStateException("private message secret@example.com"),
                 mapOf("question" to "private question", "duration_ms" to "123", "network_phase" to "response_body"))
             telemetry.failure("http_request", WindmillApiException.Malformed,
                 mapOf("network_phase" to "private-host.example"))
@@ -78,6 +78,7 @@ class AndroidTelemetryTest {
                 assertTrue(envelope.contains("\"stacktrace\""))
             }
             assertEquals(3, envelopes.size)
+            assertEquals(1, envelopes.count { it.contains("\"operation\":\"gym.proposal_receipt_shown\"") })
             assertEquals(1, envelopes.count { it.contains("\"network_phase\":\"response_body\"") })
             val request = withContext(Dispatchers.IO) { events.takeRequest(10, TimeUnit.SECONDS) }
             assertNotNull(request)
@@ -91,6 +92,19 @@ class AndroidTelemetryTest {
             assertTrue(body.contains("\"network_phase\":\"response_body\""))
             assertFalse(body.contains("private"))
             assertTrue(batch.events.all { it.id.isNotBlank() })
+
+            telemetry.event("gym_proposal_receipt_shown", mapOf("outcome" to "applied", "proposal" to "private-proposal", "routine" to "private-routine"))
+            runCurrent()
+            val receiptRequest = withContext(Dispatchers.IO) { events.takeRequest(10, TimeUnit.SECONDS) }
+            assertNotNull(receiptRequest)
+            assertEquals("/v1/events", receiptRequest!!.path)
+            val receiptBody = receiptRequest.body.readUtf8()
+            val receiptBatch = WindmillJson.decodeFromString<EventBatchIn>(receiptBody)
+            assertEquals(listOf("gym_proposal_receipt_shown"), receiptBatch.events.map { it.name })
+            assertEquals("applied", (receiptBatch.events.single().props.getValue("outcome") as kotlinx.serialization.json.JsonPrimitive).content)
+            assertFalse(receiptBody.contains("private"))
+            assertFalse(receiptBody.contains("\"proposal\""))
+            assertFalse(receiptBody.contains("\"routine\""))
         } finally {
             Sentry.close()
             errors.shutdown()

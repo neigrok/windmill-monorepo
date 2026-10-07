@@ -112,7 +112,7 @@ python3 tools/schema_gen.py --check
 | Full build | `./gradlew --max-workers=4 build`: green; 474 tasks. App/platform/gym debug+release assembly and normal lint pass. |
 | Client corpus | 52/52 files, 740/740 cases, 0 unclaimed. All seven protocol transcripts generate requests through Engine, use actual model replies, and compare client returns and final devices/ended/server state. JSONL transcripts each count once. |
 | Server corpus | 27 server-role files / 760 cases, plus 7 protocol transcripts. |
-| Kit corpus | 12/12 files, 475/475 cases, 0 unclaimed. Gym domain corpus: 12/12 files, 489 cases. |
+| Kit corpus | 12/12 files, 475/475 cases, 0 unclaimed. Gym domain corpus: 12/12 files, 492 cases. |
 | API and engine | API 13/13; engine 156/156 per debug/release variant, 0 skips/errors/failures. Includes native SQLite on SDK26/27/28/29/35 and transport/runtime failure paths. |
 | Kit and model units | Kit 24/24; kit-testing 508/508; gym-domain 63/63; model-server 5/5. |
 | Test execution | Sync-testing: 1494/1494 ordinary tests + 258/258 mandatory-property tests, 0 skips/errors/failures. App: 40/40 and platform: 108/108 per variant; gym: 1102 tests per variant, the 13 live-wire tests skipped without their environment, 0 failures. |

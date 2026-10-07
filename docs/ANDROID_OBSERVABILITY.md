@@ -121,13 +121,17 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Coach | `gym_ask_started`, `gym_ask_outcome` | outcome, failure_kind, status, duration_ms, cap |
 | Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged` | common metadata only |
 | Bodyweight/notes | `gym_bodyweight_saved`, `gym_note_moved` | common metadata only; successful local commits, no event for an unchanged drop |
-| Routines/proposals | `gym_routine_saved`, `gym_proposal_outcome` | action, outcome |
+| Routines/proposals | `gym_routine_saved`, `gym_proposal_outcome`, `gym_proposal_receipt_shown` | action, outcome |
 | Engine refusals/failures | `sync_engine` | operation, outcome, failure_kind |
 | Workout imports | `gym_import_recovery` | action, state, outcome |
 | Account decisions | `gym_sign_in_decision`, `gym_sign_out` | state, action, outcome |
 | Connectivity | `sync_connectivity` | state |
 | Update | `client_update_required` | state, action, status, outcome |
 | Reliability | `api_request_failed`, `client_error` | operation, method, route, status, failure_kind, duration_ms, network_phase |
+
+`gym_proposal_receipt_shown` carries `outcome=applied` after a visible removal receipt's durable
+acknowledgment succeeds. A failed acknowledgment reports under `gym.proposal_receipt_shown` and
+retains the receipt for retry. Receipt snapshots, proposal IDs and routine names stay on the phone.
 
 Onboarding records first launch and replay from **About Windmill**. It emits an open, each settled
 page, navigation actions and an exit. `state` is `first_launch` or `replay`; `screen` is `windmill`,

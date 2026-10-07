@@ -18,10 +18,10 @@ class WorkoutImportsTests {
     private val timing get() = RequestTiming(ClockReading(testNow, testNow, "boot"), ClockReading(testNow, testNow, "boot"))
     private fun engine(snapshot: Json? = null, pushMaxBytes: Int? = null) = if (pushMaxBytes == null) Engine.memory(SyncSchema.registry, snapshot,
         clock = object : EngineClock { override fun now() = testNow },
-        intentResultWrites = WorkoutImports.intentResultWrites,
+        intentResultWrites = EngineTraining.intentResultWrites,
         pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue)
         else Engine.memory(SyncSchema.registry, snapshot, clock = object : EngineClock { override fun now() = testNow }, pushMaxBytes = pushMaxBytes,
-        intentResultWrites = WorkoutImports.intentResultWrites,
+        intentResultWrites = EngineTraining.intentResultWrites,
         pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue)
     private fun finished(id: String = "session01", start: Long = 1_000, finish: Long = 3_000) =
         SavedWorkout(Session(id, start, finish), listOf(TrainingSet("set00001", "back-squat", weightKg = 60.0,

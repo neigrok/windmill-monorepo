@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -37,6 +38,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.draw.alpha
@@ -51,6 +54,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.launch
 import works.windmill.gym.domain.ChangeKind
 import works.windmill.gym.domain.DocumentRow
@@ -106,12 +111,13 @@ fun ReviewSheet(
     }
     val seen = seenDocument == document
 
-    LaunchedEffect(proposalId, asked) {
+    LaunchedEffect(proposalId, asked, store.settledProposals[proposalId]) {
         gone = false
         proposal = null
         when (val read = store.proposal(proposalId)) {
             is ProposalRead.Found -> {
                 proposal = read.proposal
+                if (read.proposal.receipt != null) said = null
                 overtaken = false
             }
             ProposalRead.Gone -> gone = true
@@ -157,8 +163,9 @@ fun ReviewSheet(
                         proposal = null
                         gone = true
                     }
-                    is ProposalOutcome.Failed ->
-                        said = outcome.why.line(if (apply) "nothing was applied" else "it is still waiting")
+                    is ProposalOutcome.Failed -> said = if (apply && store.removalPending(open.id))
+                        "Still waiting for the log. Retry to check this removal."
+                        else outcome.why.line(if (apply) "nothing was applied" else "it is still waiting")
                 }
             } finally {
                 deciding = false
@@ -202,7 +209,16 @@ fun ReviewSheet(
                 }
             }
         }
-        standing?.let { Foot(it, decidable, deciding, seen, said, onDecide = ::decide) }
+        standing?.let { proposal ->
+            var receiptVisible by remember(proposal.id) { mutableStateOf(false) }
+            val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
+            val seat = store.accountKey
+            LaunchedEffect(proposal, receiptVisible, lifecycle, seat) {
+                if (receiptVisible && lifecycle == Lifecycle.State.RESUMED) store.proposalReceiptShown(proposal, seat)
+            }
+            Foot(proposal, decidable, deciding, seen, said, onDecide = ::decide,
+                receiptModifier = Modifier.onGloballyPositioned { receiptVisible = !it.boundsInWindow().isEmpty })
+        }
     }
 }
 
@@ -400,6 +416,7 @@ private fun Foot(
     seen: Boolean,
     said: String?,
     onDecide: (Boolean) -> Unit,
+    receiptModifier: Modifier,
 ) {
     val skin = LocalGymColors.current
     Column(
@@ -411,7 +428,8 @@ private fun Foot(
     ) {
         said?.let { Text(it, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim) }
         if (!decidable) {
-            proposal.receipt?.let { Text(it, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.accent) }
+            proposal.receipt?.let { Text(it, style = WindmillFont.body(16, FontWeight.Bold).copy(lineHeight = 22.sp), color = skin.accent,
+                modifier = receiptModifier) }
             return@Column
         }
         var turningDown by remember { mutableStateOf(false) }

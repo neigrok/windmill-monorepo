@@ -349,6 +349,8 @@ class TrainingStore(
     // reads off this before the copy it was minted with, so a settled one never keeps saying waiting.
     var settledProposals: Map<String, Proposal> by mutableStateOf(emptyMap())
         private set
+    private var removalProposals: Map<String, Proposal> by mutableStateOf(emptyMap())
+    val unseenRemovalReceipts: Map<String, Proposal> get() = removalProposals.filterValues { !it.isPending }
     private var program: List<Routine> by mutableStateOf(emptyList())
     // The whole program, a withheld routine included. The routines home reads its empty stance and
     // the position it writes a new routine at from here: a window decides which ROWS are drawn and
@@ -465,9 +467,10 @@ class TrainingStore(
     val deviceOnlySessionIds: Set<String>
         get() = shelved.mapTo(mutableSetOf()) { it.id } + enginePendingSessions
 
-    // A routine carries its own pending proposal, so nothing polls and nothing pushes. Newest first.
+    // A pending removal remains reviewable even when pull gets ahead of its command receipt.
     val pendingProposals: List<Proposal>
-        get() = routines.mapNotNull { it.pendingProposal }.sortedByDescending { it.createdAtMs }
+        get() = (routines.mapNotNull { it.pendingProposal } + removalProposals.values.filter { it.isPending })
+            .distinctBy { it.id }.sortedByDescending { it.createdAtMs }
 
     fun routine(id: String): Routine? = routines.firstOrNull { it.id == id }
 
@@ -540,7 +543,8 @@ class TrainingStore(
         progressLoading = false
         // The last-time cache dies with the seat; the picker's meta goes with it.
         lastTimes.clear()
-        settledProposals = emptyMap()
+        removalProposals = training.removalProposals()
+        settledProposals = unseenRemovalReceipts
         lastSets = null
         // The pages go with the seat, and this is the one place they do: `loadLog` keeps whatever walk
         // is under a thumb, which it may only do while every row belongs to the account now asking.
@@ -629,6 +633,8 @@ class TrainingStore(
         }
         catalog = training.catalogue()
         routines = training.program()
+        removalProposals = training.removalProposals()
+        settledProposals = settledProposals + unseenRemovalReceipts
         preferences = training.settings()
         notebookWrite.withLock {
             if (seat != owner) return@withLock
@@ -931,10 +937,24 @@ class TrainingStore(
         }
     }
 
-    // Nothing is held: a second visit asks again, because a proposal moves the moment anybody decides
-    // anything. Answers with a REASON and never with null.
+    // Pending removals and unshown receipts remain readable after their synced rows disappear.
     suspend fun proposal(id: String): ProposalRead {
-        return (training.proposal(id) ?: settledProposals[id])?.let { ProposalRead.Found(it) } ?: ProposalRead.Gone
+        return (training.proposal(id) ?: training.removalReceipts()[id] ?: settledProposals[id])?.let { ProposalRead.Found(it) } ?: ProposalRead.Gone
+    }
+
+    fun removalPending(id: String): Boolean = training.removalPending(id)
+
+    fun proposalReceiptShown(proposal: Proposal, seat: String) {
+        if (seat != accountKey) return
+        try {
+            if (training.removalReceiptShown(proposal, controls.engineReplica ?: return)) {
+                settledProposals = settledProposals + (proposal.id to proposal)
+                telemetry.event("gym_proposal_receipt_shown", mapOf("outcome" to "applied"))
+            }
+            removalProposals = training.removalProposals()
+        } catch (failure: Exception) {
+            reportFailure("gym.proposal_receipt_shown", failure)
+        }
     }
 
     // Atomic against the base the diff was written on. Nothing here merges, retries or applies part
@@ -987,6 +1007,7 @@ class TrainingStore(
             }
         }
         settledProposals = settledProposals + (settled.id to settled)
+        removalProposals = training.removalProposals()
         return ProposalOutcome.Decided(settled)
     }
 

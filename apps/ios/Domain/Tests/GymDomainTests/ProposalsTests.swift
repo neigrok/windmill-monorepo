@@ -17,7 +17,7 @@ struct ProposalsTests {
   static let after = [RoutineEntry(exerciseId: exerciseId, sets: [SetTarget(reps: 5, weightKg: 85)], restSeconds: 120)]
 
   static func phone() throws -> Harness {
-    let h = Harness(registry: SyncSchema.registry, start: Instant(ms: now), rules: GymServerRules())
+    let h = Harness(registry: SyncSchema.registry, start: Instant(ms: now), rules: GymServerRules(), commandResultWrites: RoutineRemovalReceipt.resultWrites)
     _ = try h.runner.run(CreateExercise(Exercise(id: exerciseId, name: "Bench", pattern: "press", equipment: "barbell", stepKg: 2.5)))
     var routine = Draft(new: Routine(id: routineId, name: "Strength", entries: before))
     try #require(saved(h.runner.save(&routine, SaveRoutine.self)))
@@ -31,6 +31,35 @@ struct ProposalsTests {
     h.sync()
     #expect(try h.drawn(Proposal.self).map(\.id) == [proposalId])
     #expect(try h.notices(GymRefusal.self).isEmpty)
+  }
+
+  @Test(arguments: [false, true])
+  func receiptCommitsWithItsCommandAndSurvivesUntilAcknowledged(refused: Bool) throws {
+    let h = try Self.phone(); try Self.propose(h, removing: true)
+    let proposal = try #require(try h.stored(Proposal.self).first)
+    h.failNextCommit()
+    #expect(throws: (any Error).self) { try h.runner.run(ApplyProposalKeepingReceipt(Self.proposalId)) }
+    #expect(try h.runner.read(Gym.scope) { try RoutineRemovalReceipt.read($0).isEmpty && $0.commands().isEmpty })
+    #expect(try h.stored(Routine.self).map(\.id) == [Self.routineId])
+    #expect(try h.runner.run(ApplyProposalKeepingReceipt(Self.proposalId)).receipt != nil)
+    #expect(try unchanged(h.runner.run(ApplyProposalKeepingReceipt(Self.proposalId))) != nil)
+    let replica = try h.runner.read(Gym.scope) { $0.replica }
+    #expect(try unchanged(h.runner.run(AcknowledgeRoutineRemoval(Self.proposalId, replica: replica))) != nil)
+    #expect(try h.runner.read(Gym.scope) { try $0.commands().count } == 1)
+    let pending = try #require(try h.runner.read(Gym.scope) { try RoutineRemovalReceipt.read($0).first })
+    #expect(pending.outcome == .pending && pending.proposal.fields == proposal.fields && pending.proposal.state == "pending")
+    if refused { h.server.refuse(code: .invalid) }
+    h.sync()
+    let receipt = try #require(try h.runner.read(Gym.scope) { try RoutineRemovalReceipt.read($0).first })
+    #expect(receipt.outcome == (refused ? .refused : .applied))
+    #expect(receipt.proposal.fields == proposal.fields && receipt.proposal.baseName == proposal.baseName && receipt.proposal.settledAt == nil)
+    #expect(try unchanged(h.runner.run(AcknowledgeRoutineRemoval(Self.proposalId, replica: "another-replica"))) != nil)
+    #expect(try h.runner.read(Gym.scope) { try RoutineRemovalReceipt.read($0).count } == 1)
+    h.failNextCommit()
+    #expect(throws: (any Error).self) { try h.runner.run(AcknowledgeRoutineRemoval(Self.proposalId, replica: replica)) }
+    #expect(try h.runner.read(Gym.scope) { try RoutineRemovalReceipt.read($0).count } == 1)
+    #expect(try h.runner.run(AcknowledgeRoutineRemoval(Self.proposalId, replica: replica)).receipt != nil)
+    #expect(try h.runner.read(Gym.scope) { try RoutineRemovalReceipt.read($0).isEmpty })
   }
 
   @Test func proposalGuardsAdmitItsDiffAndApplyPredictsBothRecordsWhilePending() throws {

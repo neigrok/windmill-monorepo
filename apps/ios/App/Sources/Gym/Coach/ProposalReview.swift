@@ -13,49 +13,55 @@ nonisolated struct CoachReviewPosition: Equatable { let extent: CoachReviewExten
 
 extension GymModel {
   func readCoachProposals(_ read: Reader) throws -> [Proposal] {
-    if proposalReadReplica != read.replica || read.isAnonymous { coachRemovalDecisions = [:] }
+    if proposalReadReplica != read.replica || read.isAnonymous {
+      shownCoachRemovals = [:]; coachRemovalReceipts = []
+    }
     proposalReadReplica = read.replica
-    for (localId, decision) in coachRemovalDecisions {
-      guard let resolved = decision.resolved else { continue }
-      let proposal = decision.proposal
-      // Pull deletes the proposal with its routine. The resolved command is the warm review's receipt;
-      // no server settlement timestamp survives, so do not turn the predicted time into a confirmed one.
-      coachRemovalDecisions[localId] = resolved ? (Proposal(id: proposal.id, routineId: proposal.routineId, intent: proposal.intent,
-        proposedName: proposal.proposedName, summary: proposal.summary, changes: proposal.changes, door: proposal.door,
-        connection: proposal.connection, agent: proposal.agent, state: "applied", supersededBy: proposal.supersededBy,
-        baseRevision: proposal.baseRevision, baseName: proposal.baseName, changeCount: proposal.changeCount, threadId: proposal.threadId), nil) : nil
-      telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": "apply", "outcome": resolved ? "decided" : "failed"])
+    let previous = coachRemovalReceipts
+    coachRemovalReceipts = try RoutineRemovalReceipt.read(read)
+    for receipt in coachRemovalReceipts where receipt.outcome != .pending {
+      if previous.first(where: { $0.proposal.id == receipt.proposal.id })?.outcome != receipt.outcome {
+        telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": "apply", "outcome": receipt.outcome == .applied ? "decided" : "failed"])
+      }
     }
     let decisions = try read.commands().filter { [Gym.Commands.applyProposal, Gym.Commands.dismissProposal].contains($0.command.name) }
     var visible = try read.repository(Proposal.self).all(in: .drawn).map { proposal in
-      if let pending = coachRemovalDecisions.values.first(where: { $0.proposal.id == proposal.id && $0.proposal.state == "pending" }) { return pending.proposal }
+      if let receipt = coachRemovalReceipts.first(where: { $0.proposal.id == proposal.id }) { return receipt.proposal }
       guard decisions.contains(where: { $0.command.args["proposalId"] == proposal.id.json }),
             let confirmed = try read.confirmed(Proposal.self, proposal.id) else { return proposal }
       return try Proposal(Fields(confirmed))
     }
-    for decision in coachRemovalDecisions.values where !visible.contains(where: { $0.id == decision.proposal.id }) {
-      visible.append(decision.proposal)
+    for proposal in coachRemovalReceipts.map(\.proposal) + Array(shownCoachRemovals.values) where !visible.contains(where: { $0.id == proposal.id }) {
+      visible.append(proposal)
     }
     return visible
   }
   func coachProposalAwaitingReceipt(_ id: ID<Proposal>) -> Bool {
-    if coachRemovalDecisions.values.contains(where: { $0.proposal.id == id && $0.proposal.state == "pending" }) { return true }
+    if coachRemovalReceipts.contains(where: { $0.proposal.id == id && $0.outcome == .pending }) { return true }
     return (try? runner.read(Gym.scope) { read in
       try read.commands().contains { queued in
         [Gym.Commands.applyProposal, Gym.Commands.dismissProposal].contains(queued.command.name) && queued.command.args["proposalId"] == id.json
       }
     }) ?? true
   }
+  func coachRemovalReceiptShown(_ id: ID<Proposal>, owner: String?) {
+    guard owner == account, coachAccountAvailable, !readFailed, let replica = proposalReadReplica,
+          let receipt = coachRemovalReceipts.first(where: { $0.proposal.id == id && $0.outcome != .pending }) else { return }
+    do {
+      _ = try runner.run(AcknowledgeRoutineRemoval(id, replica: replica))
+      if receipt.outcome == .applied { shownCoachRemovals[id.description] = receipt.proposal }
+      refresh()
+    } catch { report("gym_action", error) }
+  }
   func coachDecideProposal(_ proposal: Proposal, apply: Bool) -> Bool {
     guard coachAccountAvailable, !authPaused else { error = "Sign in to review this proposal."; return false }
     guard openSession == nil else { error = "Finish this session"; return false }
     start()
-    let outcome = apply ? run(ApplyProposal(proposal.id)) : run(DismissProposal(proposal.id))
+    let outcome = apply ? run(ApplyProposalKeepingReceipt(proposal.id)) : run(DismissProposal(proposal.id))
     let ok = outcome != nil && outcome?.refusal == nil
-    let removal = apply && proposal.intent == "remove" && runtime != nil && outcome?.receipt?.localIds.first != nil
-    if removal, let localId = outcome?.receipt?.localIds.first { coachRemovalDecisions[localId] = (proposal, nil) }
+    let removal = apply && proposal.intent == "remove"
     let awaiting = coachProposalAwaitingReceipt(proposal.id)
-    if !ok || !awaiting {
+    if !ok || (!awaiting && !removal) {
       telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": apply ? "apply" : "dismiss", "outcome": ok ? "decided" : "failed"])
     }
     if ok, let runtime {
@@ -97,6 +103,7 @@ struct ProposalReviewSheet: View {
   @State var extent: CoachReviewExtent?
   @State var submitted = false
   @Environment(\.dismiss) var dismiss
+  @Environment(\.scenePhase) var phase
   init(gym: GymModel, proposalId: String, ask: ((String) -> Void)? = nil) {
     self.gym = gym; self.proposalId = proposalId; self.ask = ask; owner = gym.account
   }
@@ -188,6 +195,11 @@ struct ProposalReviewSheet: View {
   }
   @ViewBuilder var band: some View {
     VStack(spacing: 10) {
+      if gym.coachRemovalReceipts.contains(where: { $0.proposal.id.description == proposalId && $0.outcome == .refused }) {
+        Text("Nothing was applied.").font(.body.weight(.semibold))
+          .onAppear { acknowledgeReceipt() }
+          .onChange(of: phase) { _, _ in acknowledgeReceipt() }
+      }
       if decidable {
         Button { if let proposal { submitted = gym.coachDecideProposal(proposal, apply: true) } } label: { Text(applyLabel).foregroundStyle(CoachPalette.onAccent).frame(maxWidth: .infinity) }
           .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
@@ -200,9 +212,15 @@ struct ProposalReviewSheet: View {
       else if pending { ProgressView("Waiting for the log to confirm…") }
       else if let proposal {
         Text(proposal.state == "applied" ? "Applied" : proposal.state == "dismissed" ? "Turned down" : "Still waiting").font(.body.weight(.semibold))
+          .onAppear { acknowledgeReceipt() }
+          .onChange(of: phase) { _, _ in acknowledgeReceipt() }
       }
       if let error = gym.error { Text(error).font(.callout).foregroundStyle(.red) }
     }.padding(16).frame(maxWidth: .infinity).background(CoachPalette.surface).tint(CoachPalette.accent)
+  }
+  func acknowledgeReceipt() {
+    guard phase == .active, !pending, let proposal else { return }
+    gym.coachRemovalReceiptShown(proposal.id, owner: owner)
   }
   func name(_ id: ID<Exercise>) -> String { gym.catalogue.find(id)?.name ?? "Movement unavailable" }
   func targets(_ value: EntryTargets?) -> String { CoachCopy.targets(value?.sets) }

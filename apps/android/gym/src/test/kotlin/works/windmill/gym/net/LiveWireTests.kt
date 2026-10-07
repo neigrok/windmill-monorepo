@@ -57,7 +57,9 @@ class LiveWireTests {
         private val api by lazy { WindmillApi(base, { bearer }) }
         private val transport by lazy { HTTPTransport(base.toString(), SyncSchema.registry.version.toInt()) }
         private val probeClock = object : EngineClock { override fun now() = System.currentTimeMillis() }
-        private val engine by lazy { Engine.memory(SyncSchema.registry, clock = probeClock) }
+        private val engine by lazy { Engine.memory(SyncSchema.registry, clock = probeClock,
+            intentResultWrites = EngineTraining.intentResultWrites,
+            pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue) }
         private val adapter by lazy { EngineTraining(engine) }
         private var connected = false
         private suspend fun response(reply: Reply<SyncResponse>): SyncResponse = when (reply) {
@@ -418,7 +420,7 @@ class LiveWireTests {
     // with the phone's own ids.
     @Test
     fun t12_aSignedOutWorkoutLandsOnTheAccountAsAnImportAtSignIn() = runBlocking {
-        Engine.memory(SyncSchema.registry, clock = probeClock, intentResultWrites = WorkoutImports.intentResultWrites,
+        Engine.memory(SyncSchema.registry, clock = probeClock, intentResultWrites = EngineTraining.intentResultWrites,
             pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
             val signedOut = EngineTraining(phone)
             signedOut.startSession(SessionStart(importedId, startC))
@@ -448,7 +450,7 @@ class LiveWireTests {
             val id = "ses_adopted_${tag}_$pullFirst"
             val setId = "set_adopted_${tag}_$pullFirst"
             val at = System.currentTimeMillis() - 60_000
-            Engine.memory(SyncSchema.registry, clock = probeClock, intentResultWrites = WorkoutImports.intentResultWrites,
+            Engine.memory(SyncSchema.registry, clock = probeClock, intentResultWrites = EngineTraining.intentResultWrites,
                 pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
                 val training = EngineTraining(phone)
                 training.startSession(SessionStart(id, at))
@@ -488,7 +490,7 @@ class LiveWireTests {
         val id = "ses_recovered_$tag"
         val setId = "set_recovered_$tag"
         val at = System.currentTimeMillis() - 60_000
-        val snapshot = Engine.memory(SyncSchema.registry, clock = probeClock, intentResultWrites = WorkoutImports.intentResultWrites,
+        val snapshot = Engine.memory(SyncSchema.registry, clock = probeClock, intentResultWrites = EngineTraining.intentResultWrites,
             pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
             val training = EngineTraining(phone)
             training.startSession(SessionStart(id, at))
@@ -502,7 +504,7 @@ class LiveWireTests {
             training.imports.refuseOperation(training.imports.operations().single(), Gym.Codes.sessionFinished)
             phone.snapshot()
         }
-        Engine.memory(SyncSchema.registry, snapshot, clock = probeClock, intentResultWrites = WorkoutImports.intentResultWrites,
+        Engine.memory(SyncSchema.registry, snapshot, clock = probeClock, intentResultWrites = EngineTraining.intentResultWrites,
             pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
             val training = EngineTraining(phone)
             training.imports.retry(setId)
@@ -531,7 +533,7 @@ class LiveWireTests {
         val note = "Late finish $tag"
         lateinit var accepted: TrainingSet
         try {
-            val snapshot = Engine.memory(SyncSchema.registry, clock = probeClock, intentResultWrites = WorkoutImports.intentResultWrites,
+            val snapshot = Engine.memory(SyncSchema.registry, clock = probeClock, intentResultWrites = EngineTraining.intentResultWrites,
                 pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
                 val training = EngineTraining(phone)
                 training.startSession(SessionStart(id, at))
@@ -569,7 +571,7 @@ class LiveWireTests {
                 assertTrue(training.imports.hasOwedSets(id))
                 phone.snapshot()
             }
-            Engine.memory(SyncSchema.registry, snapshot, clock = probeClock, intentResultWrites = WorkoutImports.intentResultWrites,
+            Engine.memory(SyncSchema.registry, snapshot, clock = probeClock, intentResultWrites = EngineTraining.intentResultWrites,
                 pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
                 val training = EngineTraining(phone)
                 assertEquals(snapshot.member("active").str(), phone.activeReplica())

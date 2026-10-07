@@ -31,6 +31,7 @@ internal class EngineRoomFixture(
     private val mintRoutine: () -> String = Ids::routine,
     private val mintExercise: () -> String = Ids::exercise,
     private val controlsWrite: (File, String) -> Unit = AtomicDocument::write,
+    private val createEngine: ((Json?, EngineClock) -> Engine)? = null,
 ) : AutoCloseable {
     companion object {
         fun server(): ModelServer {
@@ -65,8 +66,9 @@ internal class EngineRoomFixture(
     var now = 1_800_000_000_000L
     var selected: String? = null
     private var nextSession = 0
-    val engine = Engine.memory(SyncSchema.registry, snapshot, clock = object : EngineClock { override fun now() = now },
-        intentResultWrites = WorkoutImports.intentResultWrites, pendingDeviceWork = WorkoutImports.pendingDeviceWork,
+    private val engineClock = object : EngineClock { override fun now() = now }
+    val engine = createEngine?.invoke(snapshot, engineClock) ?: Engine.memory(SyncSchema.registry, snapshot, clock = engineClock,
+        intentResultWrites = EngineTraining.intentResultWrites, pendingDeviceWork = WorkoutImports.pendingDeviceWork,
         rewriteDeviceValue = WorkoutImports.rewriteDeviceValue)
     val training = EngineTraining(engine)
     val controlsFile = File(directory, "control.json")

@@ -109,6 +109,9 @@ the work they captured. Send reuses the retained request ID after a lost respons
 attachments are unchanged. These local identifiers remain outside event properties.
 Gym engine notices retain typed refusals for local UI only. No movement/routine names, set values,
 notes, Coach messages, counts, IDs or REST bodies enter telemetry.
+Removal receipts emit the same bounded proposal outcome when their durable result is observed,
+including after relaunch. Reading their local journal reports through `gym_read`; failure to
+acknowledge a shown receipt reports through `gym_action` and leaves it available for retry.
 
 Gym adoption uses the verified account's explicit per-product Add/Discard decision. Finished
 signed-out workouts use one whole-session import, with their original set identities and values.

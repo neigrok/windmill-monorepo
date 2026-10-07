@@ -26,7 +26,7 @@ class EngineLifecycleStoreTests {
         Account("https://windmill.works", id?.let { User(it, "$it@example.com") }, verified = verified)
     private fun engine(snapshot: Json? = null) = Engine.memory(SyncSchema.registry, snapshot,
         clock = object : EngineClock { override fun now() = clockMs },
-        intentResultWrites = WorkoutImports.intentResultWrites,
+        intentResultWrites = EngineTraining.intentResultWrites,
         pendingDeviceWork = WorkoutImports.pendingDeviceWork,
         rewriteDeviceValue = WorkoutImports.rewriteDeviceValue)
     private data class Room(val gym: EngineTraining, val store: TrainingStore)

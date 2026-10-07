@@ -298,8 +298,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     // Reviews opened and closed with nothing decided: their cards read `still waiting`. Saved as the
     // string it is, ids joined by a space.
     var lookedAt by rememberSaveable { mutableStateOf("") }
-    // Receipts by the door they landed in. NOT saved and not stored anywhere: a receipt is derived
-    // from the server's apply reply and vanishes with the screen, and nothing pretends otherwise.
+    // The room keeps shown receipts with their doors; unseen removal receipts live in the replica.
     var receipts by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
     // Lives here rather than on the screen that draws it: the ask outlives the screen. The log keeps
     // the turns and receipts; unanswered submissions also live in the account’s local journal.
@@ -855,8 +854,11 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             null
                         },
                         onDecided = { settled ->
-                            settled.receipt?.let { landReceipt(open.door, it) }
-                            closeReview()
+                            if (settled.intent != works.windmill.gym.domain.ProposalIntent.Remove ||
+                                settled.state != works.windmill.gym.domain.ProposalState.Applied) {
+                                settled.receipt?.let { landReceipt(open.door, it) }
+                                closeReview()
+                            }
                         },
                     )
                 }

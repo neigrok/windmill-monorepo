@@ -193,14 +193,21 @@ merged over. All of it lands or none of it does.
 ### Four · the return
 
 On web, the inline proposal replaces its actions with the stored outcome. Reopening the conversation
-reloads that proposal's state and renders the same outcome. On the phones, the sheet closes onto
-what opened it and a receipt line lands under the proposal card or stored-thread row:
+reloads that proposal's state and renders the same outcome. On iOS, decisions remain in Review
+until the person closes it. Android keeps removals there and returns other decisions to what
+opened them. The proposal card or stored-thread row carries the receipt line:
 
 > **Applied · Push A · 4 changes**
 
 *1 change* when one; **Applied · Push A · routine removed** for a removal. Turning down writes
-*"Turned down · nothing changed."* A phone proposal opened outside a thread uses the room's
-transient for that return receipt.
+*"Turned down · nothing changed."* Other Android decisions opened outside a thread use the room's
+transient for their return receipt.
+
+A removal applied on either phone keeps its receipt state with the account until the receipt is
+shown. Retries, timeouts and relaunch preserve the pending decision and its confirmed outcome;
+an unseen receipt remains reachable from Routines after relaunch. Showing the confirmed receipt
+in the foreground acknowledges it; reading or refreshing the model does not consume it. A refused
+removal shows its refusal, never an applied receipt.
 
 The receipt is **derived from the server's reply, never from the model's prose** — the routine's name
 as it now stands (else the name it had) and the store's own change count. A model that mis-states

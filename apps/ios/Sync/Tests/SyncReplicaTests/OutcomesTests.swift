@@ -29,6 +29,26 @@ struct OutcomesTests {
     return taken
   }
 
+  @Test(arguments: [false, true])
+  func localCommandRefusalCommitsItsProductReceipt(malformed: Bool) throws {
+    var instance = Instance(actor: try Stamp.Actor("r_aaaaaaaaaaaa"), deviceNow: 5000, appVersion: "1")
+    let identities = try QueuedIdentities([:])
+    var replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .bound, account: "A"), wholeScopes: true)
+    let start = Gesture(changes: [], command: Command(name: "probe.start", args: ["id": "runmine1", "startedAt": 5000, "join": true]),
+      predict: [.create("run", id: .given("runmine1"), ["startedAt": 5000])], local: [DeviceWrite(key: "rack", value: ["deliveries": 0])], gestureId: "start")
+    _ = try CommitPlanner(registry: Self.probe).commit(start, in: .product("probe"), to: &replica, as: instance, identities: identities, gestureIdTaken: false)
+    let planner = PushPlanner(registry: Self.probe, commandResultWrites: { _, result, _, rows in
+      guard case .refused(let code) = result.verdict else { return [] }
+      return [DeviceWrite(key: "rack", value: ["deliveries": JSON(((try? rows["rack"]?["deliveries"]?.asInteger()) ?? 0) + 1), "code": code.json])]
+    })
+    _ = try #require(try planner.number(&replica, at: 5000))
+    try planner.apply(.refuseLocally(n: 1, malformed: malformed), to: &replica, instance: &instance,
+      timing: .steady(send: 5000, recv: 5010), identities: identities)
+    #expect(replica.outbox.isEmpty)
+    #expect(replica.deviceRows["probe"]?["rack"] == ["deliveries": 1, "code": (malformed ? RefusalCode.invalid : .tooLarge).json])
+    #expect(replica.notices.map(\.code) == [malformed ? .invalid : .tooLarge])
+  }
+
   @Test func aJoinRewritesTheCalledIdInDeviceRowsThroughTheProductHook() throws {
     let rewrite: DeviceValueRewrite = { product, key, value, type, from, to in
       guard product == "probe", key == "rack", type == "run", value["run"] == from.json else { return value }
