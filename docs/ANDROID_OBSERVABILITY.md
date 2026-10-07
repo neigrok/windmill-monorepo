@@ -52,7 +52,9 @@ Handled storage, synchronization, notification, authentication and UI boundary f
 Accepted-set recovery failures report at the calling training or account boundary, including
 `gym.finish`, `gym.start`, `gym.restoreWorkout`, `gym.connect`, `gym.loadLog` and
 `gym.reconcileWorkoutTime`. Failed Finish keeps the durable sets, returns a visible failure and
-emits no `gym_session_finished`; a successful retry emits it once.
+emits no `gym_session_finished`; a successful retry emits it once. Waiting for an adopted workout's
+start and sets is an expected unanswered Finish, without a Sentry issue. Recovery of a stranded
+adopted set uses the existing import reconciliation and Retry boundaries below.
 The first-launch onboarding gate reports unreadable workout presence, unreadable first-launch state
 and failed launch-marker writes under the static operation `onboarding_storage`; failed inspection or
 flag persistence skips automatic onboarding rather than treating an unknown phone as empty.
@@ -91,6 +93,10 @@ refusal reasons are not telemetry. An unexpected reconciliation failure reports 
 failures report under `gym_import_fix`, `gym_import_keep` and `gym_import_retry`. Account decisions
 include pending retained work, pin revisions and preserve unsent account work with Keep. A training
 write the log's rules refuse is said on screen and never becomes a Sentry issue.
+Settings Retry and a corrected set kind enter import reconciliation before their
+`gym_import_recovery` completed event. Completion means the local retry was scheduled, not that
+the server accepted it. A scheduling failure retains the source, reports at the Settings boundary
+and emits no completed event; cancellation propagates without a failure report.
 
 The update dialog responds to an engine 426 without deleting local work.
 `-Pwindmill.updateUrl=<public Android update URL>` configures its destination. With no

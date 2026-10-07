@@ -22,7 +22,9 @@ createdb windmill
 psql windmill -f db/schema.sql
 ```
 
-`db/schema.sql` is one file for every product and idempotent — re-run it after pulling.
+`db/schema.sql` builds every product and the sync engine and is idempotent — re-run it after
+pulling. It also removes retired gym and journal cutover copies; current user rows and engine
+tables remain. The server-file purge and backup retention are in [the production runbook](deploy/README.md#day-to-day).
 
 ## 3. Build
 
@@ -86,8 +88,8 @@ curl -sS "http://127.0.0.1:$WM_ENGINE_PORT/v1/auth/verify-code" \
 
 The code sign-in creates the account on first use. The response's `session` is the bearer secret and
 `user.id` is the engine account. The app stores the secret in its Keychain and sends
-`Authorization: Bearer <session>` with `Sync-Schema: 5`, its registry's version, on hello, push and
-pull; live uses `/v1/sync/live?schema=5`. Existing web and Android callers omit `sessionTransport` and
+`Authorization: Bearer <session>` with `Sync-Schema: 6`, its registry's version, on hello, push and
+pull; live uses `/v1/sync/live?schema=6`. Existing web and Android callers omit `sessionTransport` and
 receive their existing bodies. Read [AUTH.md](AUTH.md) for native Apple configuration and its
 identity-token/nonce exchange.
 
@@ -143,7 +145,7 @@ resolves to `http://localhost:8088` outside a production build. Run the server o
 
 ```sh
 cmake --build build -j8
-ctest --test-dir build --output-on-failure       # four C++ suites and four script checks
+ctest --test-dir build --output-on-failure       # four C++ suites and five script checks
 ctest --test-dir build -V                        # …and their summary lines
 ```
 
@@ -152,6 +154,8 @@ Caddyfile forwards every credential line as received, `deploy_production` runs
 `deploy/deploy-production.sh` against a modeled Docker host, `auth_differential` tests the
 authentication differential's comparator (`test/e2e/README.md`), and `log_lifecycle` drives
 `windmill_mcp`'s log shutdown at stdin EOF, on a fatal signal and with stalled stderr.
+`sync_epoch` checks the restore tool's refusals and bounded logging; under `WM_PG_TEST` it also
+checks committed rotation, concurrent retries, rollback and lock timeouts using `psql`.
 
 Each binary ends with one line — `N/M cases passed, X stopped before the end, Y skipped, Z
 assertion(s) failed`. *Stopped before the end* counts cases a failing `REQUIRE` cut short; *skipped*
@@ -173,7 +177,7 @@ psql -h /tmp -d wm_rest_test -v ON_ERROR_STOP=1 -f db/schema.sql
 psql -h /tmp -d wm_sync_test -v ON_ERROR_STOP=1 -f db/schema.sql -f db/probe.sql
 WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
   WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" \
-  ctest --test-dir build -R '^(domain|sync|adapters|mcp)$' -V
+  ctest --test-dir build -R '^(domain|sync|adapters|mcp|sync_epoch)$' -V
 ```
 
 `windmill_server_probe` is `windmill_server` with the sync engine mounted over the probe product
@@ -229,14 +233,15 @@ dropdb -h /tmp wm_sync_test
 
 The Docker build runs `ctest` with no database beside it, so its Postgres cases skip. Backend CI's
 `postgres` job runs them: it loads the builder stage the `test` job built and runs the `domain`,
-`mcp`, `sync` and `adapters` tests in one `ctest` run under `WM_PG_TEST` against a Postgres 16 service
+`mcp`, `sync`, `adapters` and `sync_epoch` tests in one `ctest` run under `WM_PG_TEST` against a Postgres 16 service
 with the same two-database setup above (`windmill_test` for `DATABASE_URL`, `windmill_sync_test` for
 `WM_SYNC_DATABASE_URL`). It then serves the stage's own `windmill_server_probe` on the sync database
 and runs `test/e2e/deployment_conformance.mjs` against it, and serves `windmill_server` on a third
 database holding `db/schema.sql` alone, where `WM_E2E_CATALOG=products` runs the same direct and edge
-suite over the gym + journal catalog (schema 5, minimum 4) and both product scopes. On the runner
+suite over the gym + journal catalog (schema 6, minimum 4) and both product scopes. On the runner
 itself, `test/deploy/schema_reapplication_test.py` checks that re-applying `db/schema.sql`, as every
-deploy does, changes nothing.
+deploy does, changes nothing, and that repeated application removes retired cutover storage while
+preserving live rows.
 
 The domain suite's pattern fuzz matches the sync registry's `Pattern` against the JS reference
 (`packages/api-contract/sync/reference/core/registry.js`) on patterns and values the reference

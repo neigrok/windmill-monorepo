@@ -1301,10 +1301,10 @@ TEST(gym_atomic_correction_keeps_the_frozen_plan_clears_rpe_and_refreshes_the_na
   REQUIRE_EQ(GymDoor::refusal(h.door.command(h.user, "gym.correctSession", correction)), std::string());
   const auto renamed = readSession(h.trainingApi, id.str(), "s-door", after->getHeader("ETag"));
   CHECK_EQ(renamed->statusCode(), drogon::k200OK);
-  // A correction set naming its kind is refused whole: nothing it carried lands.
+  // An unknown set kind refuses the whole correction.
   correction["requestId"] = "fix_bad00001";
   correction["routineName"] = "Never lands";
-  correction["sets"][0]["kind"] = "working";
+  correction["sets"][0]["kind"] = "unknown";
   CHECK_EQ(GymDoor::refusal(h.door.command(h.user, "gym.correctSession", correction)), std::string("invalid"));
   CHECK_EQ(readSession(h.trainingApi, id.str(), "s-door", renamed->getHeader("ETag"))->statusCode(),
            drogon::k304NotModified);

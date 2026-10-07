@@ -16,12 +16,34 @@ class EngineTests {
     private val registry = Registry(Json.parse(File(System.getProperty("windmill.contract"), "sync/probe.registry.json").readBytes()))
     private val identities = object : IdentitySource {
         var number = 0
+        var replicas = 0
         override fun opaqueID() = "id${++number}"
         override fun draw(bound: Int) = 0
+        override fun replicaID() = "rp_${(++replicas).toString(16).padStart(32, '0')}"
     }
     private val scope = ScopeRef.product("probe")
     private fun engine(telemetry: EngineTelemetry = NoEngineTelemetry) = Engine.memory(registry, clock = object : EngineClock { override fun now() = 5_000L }, identities = identities, actor = "actor", telemetry = telemetry)
     private fun create(id: String) = Gesture(listOf(Change.create("card", NewID.Given(RecordID(id)), mapOf("title" to Json.of(id)))))
+    @Test fun advertisedServerSchemaIsDurableAccountLocalAndPublished() = runBlocking {
+        engine().use { engine ->
+            assertNull(engine.read(scope) { it.serverSchema() })
+            engine.signIn("A", emptyMap(), serverSchema = 6)
+            val status = engine.status.state
+            assertEquals(6L, engine.read(scope) { it.serverSchema() })
+            withTimeout(2_000) { status.first { it.serverSchema == 6L } }
+            Engine.memory(registry, engine.snapshot(), clock = engine.clock).use { restarted ->
+                assertEquals(6L, restarted.read(scope) { it.serverSchema() })
+            }
+            engine.signOut("keep")
+            assertNull(engine.read(scope) { it.serverSchema() })
+            engine.signIn("B", emptyMap(), serverSchema = 5)
+            assertEquals(5L, engine.read(scope) { it.serverSchema() })
+            engine.signOut("keep"); engine.signIn("A", emptyMap(), serverSchema = 4)
+            assertEquals(4L, engine.read(scope) { it.serverSchema() })
+            withTimeout(2_000) { status.first { it.serverSchema == 4L } }
+            Unit
+        }
+    }
     @Test fun bodyAndStoreFailuresLeaveNoClockIntentDeviceOrObservationChanges() {
         engine().use { engine ->
             val before = engine.snapshot()

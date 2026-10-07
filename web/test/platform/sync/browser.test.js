@@ -117,11 +117,12 @@ for (const abort of [false, true]) test(`Chromium: every real v1 row survives ${
       });
       database.close();
       const newReplicaId = () => { throw new Error('existing device must survive'); };
-      let aborted = null, migratedRows = 0;
+      let aborted = null, migratedRows = 0, interrupted;
       if (abort) {
         const interrupt = { open(name, version) {
           const request = indexedDB.open(name, version);
           request.addEventListener('upgradeneeded', () => {
+            interrupted = request.result;
             const transaction = request.transaction;
             const cursor = transaction.objectStore('records').openCursor();
             cursor.onsuccess = () => {
@@ -137,17 +138,23 @@ for (const abort of [false, true]) test(`Chromium: every real v1 row survives ${
         } };
         try { await IndexedDBStore.open({ indexedDB: interrupt, name, newReplicaId }); }
         catch (error) { aborted = error.name; }
+        let closed;
+        try { interrupted.transaction('records'); } catch (error) { closed = error.name; }
+        if (closed !== 'InvalidStateError') throw new Error('an aborted upgrade left its connection open');
         const original = await new Promise((resolve, reject) => {
           const request = indexedDB.open(name, 1);
           request.onsuccess = () => resolve(request.result);
           request.onerror = () => reject(request.error);
         });
-        const retained = await new Promise((resolve, reject) => {
-          const request = original.transaction('records').objectStore('records').getAll();
-          request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error);
-        });
-        original.close();
+        let retained;
+        try {
+          retained = await new Promise((resolve, reject) => {
+            const transaction = original.transaction('records');
+            const request = transaction.objectStore('records').getAll();
+            transaction.oncomplete = () => resolve(request.result);
+            transaction.onabort = () => reject(transaction.error);
+          });
+        } finally { original.close(); }
         if (!migratedRows) throw new Error('the upgrade must abort after migrating a row');
         if (JSON.stringify(retained.sort((a, b) => a.key.localeCompare(b.key))) !== JSON.stringify(records.toSorted((a, b) => a.key.localeCompare(b.key)))) throw new Error('an aborted upgrade lost v1 rows');
       }
@@ -160,6 +167,90 @@ for (const abort of [false, true]) test(`Chromium: every real v1 row survives ${
       return { aborted, snapshots };
     }, { records, abort });
     assert.deepEqual(result, { aborted: abort ? 'AbortError' : null, snapshots: [{ version: 2, device: expected }, { version: 2, device: expected }] });
+  } finally { await context.close(); }
+});
+
+test('Chromium: a blocked open abandons its upgrade, preserves v1 rows and releases retry connections on versionchange', async () => {
+  const context = await freshContext();
+  try {
+    const page = await context.newPage();
+    await page.goto(`${origin}/sync-test`);
+    const { records, expected } = versionOneFixture();
+    const result = await page.evaluate(async ({ records }) => {
+      const { IndexedDBStore } = await import('/src/platform/sync/store.js');
+      const { BrowserSyncEngine } = await import('/src/platform/sync/engine.js');
+      const name = 'blocked-migration';
+      const database = await new Promise((resolve, reject) => {
+        const request = indexedDB.open(name, 1);
+        request.onupgradeneeded = () => request.result.createObjectStore('records', { keyPath: 'key' });
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      await new Promise((resolve, reject) => {
+        const transaction = database.transaction('records', 'readwrite');
+        for (const record of records) transaction.objectStore('records').put(record);
+        transaction.oncomplete = resolve;
+        transaction.onabort = () => reject(transaction.error);
+      });
+      const newReplicaId = () => { throw new Error('existing device must survive'); };
+      const failures = [];
+      let releaseInspection = false;
+      const inspected = new Promise((resolve, reject) => {
+        const transaction = database.transaction('records');
+        const read = () => {
+          const request = transaction.objectStore('records').count();
+          request.onsuccess = () => { if (!releaseInspection) read(); };
+        };
+        read();
+        transaction.oncomplete = resolve;
+        transaction.onabort = () => reject(transaction.error);
+      });
+      database.close();
+      let request, abandoned, blocked;
+      try {
+        await BrowserSyncEngine.open({ name, newReplicaId, telemetry: { failure: (operation) => failures.push(operation), event() {} },
+          indexedDB: { open(name, version) {
+            request = indexedDB.open(name, version);
+            request.addEventListener('blocked', () => { releaseInspection = true; });
+            request.addEventListener('upgradeneeded', () => { abandoned = request.result; });
+            return request;
+          } } });
+      } catch (error) { blocked = error.message; }
+      const finished = new Promise((resolve) => {
+        request.addEventListener('success', () => resolve('success'));
+        request.addEventListener('error', () => resolve(request.error.name));
+      });
+      const abandonedResult = await finished;
+      await inspected;
+      let closed;
+      try { abandoned.transaction('records'); } catch (error) { closed = error.name; }
+      const original = await new Promise((resolve, reject) => {
+        const request = indexedDB.open(name, 1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      let retained;
+      try {
+        retained = await new Promise((resolve, reject) => {
+          const transaction = original.transaction('records');
+          const request = transaction.objectStore('records').getAll();
+          transaction.oncomplete = () => resolve(request.result);
+          transaction.onabort = () => reject(transaction.error);
+        });
+      } finally { original.close(); }
+      const stores = await Promise.all([1, 2].map(() => IndexedDBStore.open({ name, newReplicaId })));
+      const snapshots = await Promise.all(stores.map(async (store) => (await store.read()).device.toJSON()));
+      await new Promise((resolve, reject) => {
+        const request = indexedDB.open(name, 3);
+        request.onsuccess = () => { request.result.close(); resolve(); };
+        request.onerror = () => reject(request.error);
+        request.onblocked = () => reject(new Error('retry connections did not close on versionchange'));
+      });
+      return { blocked, failures, abandonedResult, closed, retained, snapshots, storesClosed: stores.map((store) => store.closed) };
+    }, { records });
+    assert.deepEqual(result, { blocked: 'sync storage blocked', failures: ['storage'], abandonedResult: 'AbortError',
+      closed: 'InvalidStateError', retained: records.toSorted((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+      snapshots: [expected, expected], storesClosed: [true, true] });
   } finally { await context.close(); }
 });
 

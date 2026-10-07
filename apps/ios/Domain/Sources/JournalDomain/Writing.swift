@@ -29,10 +29,13 @@ public struct PreserveEditorDraft: Action {
 
 public struct SavePageCommand: ServerCommand {
   public static let name = Journal.Commands.savePage
-  public static let specs: [any ValueSpec] = [JournalRules.body]
+  public static let source = ChoiceSpec("journal.savePage.source", values: ["typed", "spoken"])
+  public static let actor = TextSpec("journal.savePage.stamp.actor", unit: .bytes, min: 0, max: 64, trim: false, nfc: false)
+  public static let specs: [any ValueSpec] = [JournalRules.body, source, actor]
   public let args: [String: JSON]
   public init(day: LocalDay, document: PageDocument, stamp: JSON) throws(Violation) {
     try JournalRules.check(document)
+    if case .string(let actor)? = stamp["actor"] { _ = try Self.actor.apply(actor, at: "stamp.actor") as String }
     guard ContentClock.valid(stamp) else { throw Violation(rule: "journal.documentStamp", path: "stamp", reason: .custom("invalidStamp")) }
     args = document.fields.merging(["day": .string(day.text), "stamp": stamp]) { $1 }
   }
@@ -41,11 +44,13 @@ public struct SavePageCommand: ServerCommand {
 public struct ClaimPageCommand: ServerCommand {
   public static let name = Journal.Commands.claimPage
   public static let body = TextSpec("journal.claimPage.body", unit: .bytes, min: 0, max: 131_072, trim: false, nfc: false)
-  public static let specs: [any ValueSpec] = [body]
+  public static let source = ChoiceSpec("journal.claimPage.source", values: ["typed", "spoken"])
+  public static let claimId = TextSpec("journal.claimPage.claimId", unit: .bytes, min: 1, max: 128, trim: false, nfc: false)
+  public static let specs: [any ValueSpec] = [body, source, claimId]
   public let args: [String: JSON]
   public init(day: LocalDay, document: PageDocument, claimId: String) throws(Violation) {
-    try JournalRules.check(document)
-    guard !claimId.isEmpty, claimId.utf8.count <= 128, !claimId.utf8.contains(0) else { throw Violation(rule: "journal.claimId", path: "claimId", reason: .custom("invalidClaimId")) }
+    try JournalRules.check(document, body: Self.body, source: Self.source)
+    _ = try Self.claimId.apply(claimId, at: "claimId") as String
     args = document.fields.merging(["day": .string(day.text), "claimId": .string(claimId)]) { $1 }
   }
 }
@@ -98,6 +103,7 @@ public struct JournalWriteState: Sendable {
   let page: Record?
   let state: JournalState
   let pending: [PendingClaim]
+  let hasEditorDraft: Bool
   let commands: [QueuedCommand]
   let checkpoint: ScopeCheckpoint
 
@@ -105,7 +111,9 @@ public struct JournalWriteState: Sendable {
     moment = read.moment; actor = read.actor; anonymous = read.isAnonymous
     clock = try read.device("contentClock"); page = try read.confirmed(Page.self, ID(day))
     state = try read.repository(JournalState.self).find(ID(RecordID("journalState")), in: .drawn) ?? JournalState()
-    pending = try read.devices(prefix: "pendingClaim:").members.filter { $0.key != EditorDraft.key }.map { try PendingClaim(json: $0.value) }
+    let deviceRows = try read.devices(prefix: "pendingClaim:")
+    pending = try deviceRows.members.filter { $0.key != EditorDraft.key }.map { try PendingClaim(json: $0.value) }
+    hasEditorDraft = deviceRows[EditorDraft.key] != nil
     commands = try read.commands(); checkpoint = try read.checkpoint()
   }
 }
@@ -122,7 +130,8 @@ public struct SavePage: Action {
 
   public func decide(_ loaded: JournalWriteState, ids: IDSource) throws(Violation) -> Decision<String?, JournalRefusal> {
     guard day == loaded.moment.today else { throw Violation(rule: "journal.day", path: "day", reason: .custom("readOnlyDay")) }
-    try JournalRules.check(document)
+    try JournalRules.check(document, body: loaded.anonymous ? ClaimPageCommand.body : JournalRules.body,
+      source: loaded.anonymous ? ClaimPageCommand.source : SavePageCommand.source)
     var retiring = JournalWriting.retired(loaded.state)
     for field in retirements {
       guard loaded.state.fields[field] != nil else { throw Violation(rule: "journalState", path: Path(field), reason: .custom("unknownState")) }
@@ -133,7 +142,8 @@ public struct SavePage: Action {
     if document.mood != nil || document.energy != nil { retiring["scales"] = "retired" }
     if !loaded.anonymous, var pending = loaded.pending.first(where: { $0.day == day }) {
       pending.edit(document, retiring: retiring)
-      var plan = Plan(); plan.device(pending.key, pending.json); plan.device(EditorDraft.key, nil)
+      var plan = Plan(); plan.device(pending.key, pending.json)
+      if loaded.hasEditorDraft { plan.device(EditorDraft.key, nil) }
       return .write(plan, pending.claimId)
     }
     if loaded.anonymous {
@@ -146,14 +156,16 @@ public struct SavePage: Action {
       plan.supersede(prior.map(\.gestureId))
       for pending in loaded.pending where pending.day == day { plan.device(pending.key, nil) }
       let pending = PendingClaim(day: day, claimId: claimId, document: document, retirements: retiring)
-      plan.device(pending.key, pending.json); plan.device(EditorDraft.key, nil)
+      plan.device(pending.key, pending.json)
+      if loaded.hasEditorDraft { plan.device(EditorDraft.key, nil) }
       try JournalWriting.retire(retiring, in: &plan, at: loaded.moment)
       return .write(plan, claimId)
     }
     let stamp = try JournalWriting.stamp(loaded, observed: loaded.page?.values["documentStamp"])
     var plan = try Plan(running: SavePageCommand(day: day, document: document, stamp: stamp),
       predicting: [JournalWriting.prediction(day: day, document: document, stamp: stamp)])
-    plan.device("contentClock", ContentClock.pair(stamp)); plan.device(EditorDraft.key, nil)
+    plan.device("contentClock", ContentClock.pair(stamp))
+    if loaded.hasEditorDraft { plan.device(EditorDraft.key, nil) }
     try JournalWriting.retire(retiring, in: &plan, at: loaded.moment)
     return .write(plan, nil)
   }

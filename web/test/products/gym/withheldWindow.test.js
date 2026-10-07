@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { UNDO_MS } from '../../../src/products/gym/fix.js';
 import { WINDOW_CLOSED } from '../../../src/products/gym/withheld.js';
-import { dateLocalOf } from '../../../src/products/gym/bodyweight/bodyweight.js';
+import { gymMoment } from '../../../src/products/gym/gymRuntime.js';
 import {
   browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomAndScreen, roomLog, settle,
   textOf,
@@ -1024,7 +1024,7 @@ async function weighInRoom(t, entries) {
 test('a weigh-in delete is one press, closes the sheet over the transient, and drops the dot AND the log’s head reading together', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const today = dateLocalOf(Date.now());
+  const today = gymMoment(Date.now()).today.text;
   const room = await weighInRoom(t, [
     { dateLocal: '2026-08-20', weightKg: 83.1, recordedAt: 1 },
     { dateLocal: today, weightKg: 82.4, recordedAt: 2 },
@@ -1054,7 +1054,7 @@ test('a weigh-in delete is one press, closes the sheet over the transient, and d
 test('a weigh-in delete taken back puts the dot and the reading back, and never reaches the store', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const today = dateLocalOf(Date.now());
+  const today = gymMoment(Date.now()).today.text;
   const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }]);
 
   room.chart().props.onPick(room.chart().props.points[0]);
@@ -1079,7 +1079,7 @@ test('a weigh-in delete taken back puts the dot and the reading back, and never 
 test('the chart’s empty stance reads the store, so a held delete of the only weigh-in draws no invitation and the settled one does', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const today = dateLocalOf(Date.now());
+  const today = gymMoment(Date.now()).today.text;
   const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }]);
   assert.deepEqual(room.quiet(), []);
 
@@ -1098,7 +1098,7 @@ test('the chart’s empty stance reads the store, so a held delete of the only w
 
 test('a weigh-in delete the device cannot keep is said in the screen’s own words', async (t) => {
   browserWith();
-  const today = dateLocalOf(Date.now());
+  const today = gymMoment(Date.now()).today.text;
   const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }]);
   room.refuseWrites();
 
@@ -1121,7 +1121,7 @@ test('a weigh-in delete the device cannot keep is said in the screen’s own wor
 test('a weigh-in written again on a day whose delete is still holding takes that delete back, and nothing is sent', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const today = dateLocalOf(Date.now());
+  const today = gymMoment(Date.now()).today.text;
   const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }]);
 
   room.chart().props.onPick(room.chart().props.points[0]);
@@ -1146,7 +1146,7 @@ test('a weigh-in written again on a day whose delete is still holding takes that
 test('a weigh-in written again on a day whose delete already settled is drawn: the dot and the head reading both come back', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const today = dateLocalOf(Date.now());
+  const today = gymMoment(Date.now()).today.text;
   const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }]);
 
   room.chart().props.onPick(room.chart().props.points[0]);
@@ -1173,7 +1173,7 @@ test('a weigh-in written again on a day whose delete already settled is drawn: t
 test('a weigh-in written again while the delete’s release is still landing is drawn: the room records nothing gone', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
-  const today = dateLocalOf(Date.now());
+  const today = gymMoment(Date.now()).today.text;
   const room = await weighInRoom(t, [{ dateLocal: today, weightKg: 82.4, recordedAt: 2 }]);
 
   room.chart().props.onPick(room.chart().props.points[0]);

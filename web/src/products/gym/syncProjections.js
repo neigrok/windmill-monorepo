@@ -1,3 +1,8 @@
+import { Reader, Views } from '../../platform/domain-kit/reading.js';
+import { Instant, Moment } from '../../platform/domain-kit/time.js';
+import { registry } from '../../platform/sync/schema.js';
+import { bodyweightDocument, namedZone, preferencesDocument } from './gymRuntime.js';
+
 // Global seed movements are outside sync scopes (engine A.2). Kept equal to schema.sql.
 export const GYM_SEED_CATALOG = [
   { id: 'back-squat', name: 'Back Squat', pattern: 'squat', equipment: 'barbell', stepKg: 2.5, custom: false },
@@ -163,6 +168,7 @@ function progressOf(sessions, setsFor, now) {
 
 // Server-authored fields stay absent until admission; local predictions cannot invent historical metadata.
 export function projectGym(rows, { now = Date.now(), timeZone = 'UTC', catalog = GYM_SEED_CATALOG } = {}) {
+  const read = () => new Reader(Views.ofRecords(registry, { drawn: rows, stored: rows }), 'self/gym', new Moment(new Instant(now), namedZone(timeZone)));
   const alive = rows.filter((row) => row.life === undefined || row.life[0] === 'alive');
   const ofType = (type) => alive.filter((row) => row.t === type);
   const sessionRows = new Map(ofType('session').map((row) => [row.id, row]));
@@ -272,12 +278,7 @@ export function projectGym(rows, { now = Date.now(), timeZone = 'UTC', catalog =
     session: (id) => { const session = sessions.find((session) => session.id === id); return session ? { session, sets: setsFor(id) } : null; },
     set: (id) => { const row = ofType('set').find((each) => each.id === id); return row ? setOf(row) : null; },
     review: (id) => reviewOf(sessions.find((session) => session.id === id)),
-    preferences: () => {
-      const row = ofType('prefs')[0];
-      const prefs = { units: field(row, 'units') ?? 'kg', restSound: field(row, 'restSound') ?? true, confirmHaptic: field(row, 'confirmHaptic') ?? true, confirmSound: field(row, 'confirmSound') ?? false };
-      if (defined(field(row, 'restSeconds'))) prefs.restSeconds = field(row, 'restSeconds');
-      return prefs;
-    },
+    preferences: () => preferencesDocument(read()),
     routines: () => routines,
     routine: (id) => {
       const routine = routines.find((routine) => routine.id === id);
@@ -298,10 +299,7 @@ export function projectGym(rows, { now = Date.now(), timeZone = 'UTC', catalog =
     },
     notes: () => ofType('note').slice().sort((a, b) => lexical(field(a, 'ord'), field(b, 'ord')) || lexical(a.id, b.id)).map((row, position) => ({ id: row.id, position, title: field(row, 'title'), body: field(row, 'body'),
       ...(defined(field(row, 'updatedAt')) ? { updatedAt: field(row, 'updatedAt') } : {}) })),
-    bodyweight: ({ from, to } = {}) => {
-      const entries = ofType('weighin').map((row) => ({ dateLocal: row.id, weightKg: field(row, 'kg'), recordedAt: field(row, 'recordedAt') })).sort((a, b) => lexical(a.dateLocal, b.dateLocal));
-      return { entries: entries.filter((entry) => (!from || entry.dateLocal >= from) && (!to || entry.dateLocal <= to)), latest: entries.at(-1) ?? null };
-    },
+    bodyweight: (bounds) => bodyweightDocument(read(), bounds),
     lastTime: (exerciseId) => {
       const session = finished.find((session) => setsFor(session.id).some((set) => set.exerciseId === exerciseId && set.kind !== 'warmup'));
       if (!session) return { exerciseId };

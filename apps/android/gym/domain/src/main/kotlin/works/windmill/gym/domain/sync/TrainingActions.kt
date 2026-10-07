@@ -22,6 +22,7 @@ internal class GymCommand(override val name: String, override val args: Map<Stri
                 TextSpec("gym.correctSession.sets.id", works.windmill.sync.core.MeasureUnit.chars, 8, 64, false, false),
                 TextSpec("gym.correctSession.sets.exerciseId", works.windmill.sync.core.MeasureUnit.chars, 1, 64, false, false),
                 TextSpec("gym.correctSession.sets.note", works.windmill.sync.core.MeasureUnit.bytes, 0, 4000, false, false),
+                ChoiceSpec("gym.correctSession.sets.kind", listOf("warmup", "working", "drop", "failure")),
             ),
         )
     }
@@ -159,10 +160,10 @@ class ImportSession(val id: Id<Session>, val startedAt: Instant, val finishedAt:
 }
 
 data class CorrectedSet(val id: Id<TrainingSet>, val exerciseId: Id<Exercise>, val setNumber: Long, val weightKg: Double, val reps: Int,
-    val completedAt: Instant, val rpe: Double? = null, val note: String? = null, val rpeNamed: Boolean = rpe != null)
+    val completedAt: Instant, val rpe: Double? = null, val note: String? = null, val rpeNamed: Boolean = rpe != null, val kind: String? = null)
 
 class CorrectSession(val id: Id<Session>, val requestId: String, val startedAt: Instant, val finishedAt: Instant,
-    val routineName: String?, val sets: List<CorrectedSet>) : Action<TrainingState, Unit, GymRefusal> {
+    val routineName: String?, val sets: List<CorrectedSet>, val preserveOtherSets: Boolean = false) : Action<TrainingState, Unit, GymRefusal> {
     override val scope = Session.scope
     override val refusals = GymRefusal
     override fun load(read: Reader) = TrainingState(read)
@@ -177,9 +178,14 @@ class CorrectSession(val id: Id<Session>, val requestId: String, val startedAt: 
         if (finishedAt < startedAt || sets.any { it.completedAt !in startedAt..finishedAt })
             return Decision.Refuse(GymRefusal.of(Refused(RefusalCode(Gym.Codes.badInstant), id.ref, path = Refused.Path.predicted)))
         val old = loaded.sets.filter { it.sessionId == id }
+        val retained = if (preserveOtherSets) old.filter { prior -> sets.none { it.id == prior.id } } else emptyList()
+        if (retained.any { it.completedAt !in startedAt..finishedAt })
+            return Decision.Refuse(GymRefusal.of(Refused(RefusalCode(Gym.Codes.badInstant), id.ref, path = Refused.Path.predicted)))
+        if (sets.any { named -> retained.any { it.exerciseId == named.exerciseId && it.setNumber?.toLong() == named.setNumber } })
+            throw Violation("session.sets", Path("sets"), Violation.Reason.Custom("invalid"))
         val checked = sets.map { set ->
             val previous = loaded.sets.firstOrNull { it.id == set.id }
-            val current = TrainingSet(set.id, id, set.exerciseId, set.weightKg, set.reps, previous?.kind ?: "working",
+            val current = TrainingSet(set.id, id, set.exerciseId, set.weightKg, set.reps, previous?.kind ?: set.kind ?: "working",
                 if (set.rpeNamed) set.rpe else previous?.rpe, set.note ?: previous?.note ?: "", set.completedAt, set.setNumber.toInt())
             Valid(current, TrainingSet, at = loaded.moment).value
         }
@@ -189,12 +195,13 @@ class CorrectSession(val id: Id<Session>, val requestId: String, val startedAt: 
             "routineName" to (name?.let(Json::of) ?: Json.Null), "sets" to Json.Arr(sets.zip(checked).map { (input, value) -> Json.Obj(buildList {
                 add("id" to value.id.json); add("exerciseId" to value.exerciseId.json); add("setNumber" to Json.of(input.setNumber))
                 add("weightKg" to Json.of(input.weightKg)); add("reps" to Json.of(input.reps)); add("completedAt" to Json.of(input.completedAt.ms))
+                input.kind?.let { add("kind" to Json.of(it)) }
                 if (input.rpeNamed) add("rpe" to (input.rpe?.let(Json::of) ?: Json.Null)); input.note?.let { add("note" to Json.of(it)) }
-            }) }))
+            }) })) + if (preserveOtherSets) mapOf("preserveOtherSets" to Json.of(true)) else emptyMap()
         val predictions = (predicted?.let { listOf(Prediction.update(Session, id, it.fields())) } ?: emptyList()) + checked.map { set ->
             if (old.any { it.id == set.id }) Prediction.update(TrainingSet, set.id, set.fields())
             else Prediction.create(TrainingSet, set.id, set.fields())
-        } + old.filter { prior -> checked.none { it.id == prior.id } }.map { Prediction.remove(TrainingSet, it.id) }
+        } + if (preserveOtherSets) emptyList() else old.filter { prior -> checked.none { it.id == prior.id } }.map { Prediction.remove(TrainingSet, it.id) }
         return Decision.Write(Plan(GymCommand(Gym.Commands.correctSession, args), predictions), Unit)
     }
 }

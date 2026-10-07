@@ -1,4 +1,4 @@
-import { dateLocalOf } from '../bodyweight/bodyweight.js';
+import { gymMoment } from '../gymRuntime.js';
 import { setNoteRefusal } from '../fix.js';
 import { routineNameOf, timeLabel } from '../log.js';
 
@@ -23,16 +23,16 @@ export function readSetFields(fields) {
 
 export function correctionDraft(session, sets) {
   return {
-    routineName: routineNameOf(session) ?? '', date: dateLocalOf(session.startedAt), time: timeLabel(session.startedAt),
+    routineName: routineNameOf(session) ?? '', date: gymMoment(session.startedAt).today.text, time: timeLabel(session.startedAt),
     sets: sets.map((set) => ({ ...set, fields: setFields(set) })),
   };
 }
 
 export function correctionWrite(session, draft, requestId, now = Date.now()) {
   const minute = new Date(`${draft.date}T${draft.time}`).getTime();
-  const sameDate = draft.date === dateLocalOf(session.startedAt);
+  const sameDate = draft.date === gymMoment(session.startedAt).today.text;
   const sameTime = draft.time === timeLabel(session.startedAt);
-  if (!Number.isFinite(minute) || dateLocalOf(minute) !== draft.date || timeLabel(minute) !== draft.time) return { field: 'date', reason: 'Enter a valid local date and time for this workout.' };
+  if (!Number.isFinite(minute) || gymMoment(minute).today.text !== draft.date || timeLabel(minute) !== draft.time) return { field: 'date', reason: 'Enter a valid local date and time for this workout.' };
   const startedAt = sameDate && sameTime ? session.startedAt : minute + (sameTime ? session.startedAt % 60000 : 0);
   const finishedAt = startedAt + session.finishedAt - session.startedAt;
   if (finishedAt > now) return { field: 'date', reason: 'These times run past now.' };

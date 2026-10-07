@@ -13,9 +13,10 @@ journal), iOS (journal, gym) and Android (gym) write through replicas, and MCP, 
 import door admit as the server (A.2). Production's gym and journal rows were adopted in place
 (Appendices C and D). `windmill_server_probe` carries the test-only contract.
 
-**R118 contract:** The composed registry has version 5 and minimum version 4, so installed v4
-journal clients remain supported. A.2 specifies gym's metadata, and C.8 how the adopted rows took
-it. `composition.json` composes gym and journal, whose versions rise together (§2.4); journal's
+**Registry contract:** The composed registry has version 6 and minimum version 4, so installed v4
+and v5 clients remain supported. A.2 specifies gym's metadata and additive corrections; a server
+advertising v6 accepts correction-set `kind` and `preserveOtherSets`. C.8 specifies how the adopted
+rows took their metadata. `composition.json` composes gym and journal, whose versions rise together (§2.4); journal's
 field shape is unchanged. Every other product starts from empty stores.
 
 **Retired REST writes:** gym's former REST write paths answer `410`
@@ -341,8 +342,8 @@ composition, and a type its product's registry, in the change that binds it on t
 composition's `version` rises with it (§9.1). `minVersion` MUST rise above every incompatible
 version when the envelope shape changes, a declared product or type is dropped, or a rule enforced
 by clients changes. Additive products, types and fields do not raise `minVersion`: clients retain
-and hash unknown fields and types harmlessly (§7.6). R118 is additive, so v5 accepts v4 clients;
-the installed journal client reads no gym records and is never refused `426` for this upgrade.
+and hash unknown fields and types harmlessly (§7.6). The v6 correction arguments are additive, so
+v6 accepts v4 and v5 requests unchanged; clients use them only when the server advertises v6 or newer.
 
 - **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern`,
   `key` (a keyed type's natural key: an id of another type, or a tuple of such ids, whose types, and
@@ -2670,19 +2671,21 @@ It is the only writer of `closedBy = stale`.
   - A routine the owner cannot read → `plan = null` and `routineId = null`.
 
   Sets are numbered in argument order. Predicts the session and its sets.
-- **`gym.correctSession {sessionId: ref<session>, requestId, startedAt: instant, finishedAt: instant, routineName, sets}`.**
-  Each set is `{id, exerciseId, setNumber, weightKg, reps, rpe?, note?, completedAt}`, with a set's
+- **`gym.correctSession {sessionId: ref<session>, requestId, startedAt: instant, finishedAt: instant, routineName, sets, preserveOtherSets?}`.**
+  Each set is `{id, exerciseId, setNumber, weightKg, reps, kind?, rpe?, note?, completedAt}`, with a set's
   bounds and quanta, its `completedAt` bounded by the command's check as `gym.importSession`'s is. `requestId` matches the gym id pattern, and `routineName` is ≤240 bytes or
-  null. It replaces a finished workout:
+  null. It corrects a finished workout; `preserveOtherSets` is an optional boolean, default false:
   - The session is alive and the owner's; otherwise `unknown-record` or `record-dead`.
   - The `requestId` was applied to it with equal arguments → ok; otherwise → `payload-conflict`.
   - Its `finishedAt` is unset → `session-open`.
   - 1–200 sets with unique ids; set numbers 1–2 147 483 647 and unique per movement; every instant within
     `[startedAt, finishedAt]` and not in the future → otherwise `bad-instant` or `invalid`.
   - Crossing another finished session → `session-overlap`.
-  - An existing set whose `exerciseId` changes → `invalid`. A set keeps its kind; new sets are
-    `working`. Set numbers are taken as given, and a kept set takes its `completedAt`. Omitted `rpe`
-    and `note` keep their values. Missing prior sets die. A reused or spent set id → `id-taken` or
+  - An existing set whose `exerciseId` changes → `invalid`. A set keeps its kind; a new set takes
+    `kind`, default `working`. Set numbers are taken as given, and a kept set takes its `completedAt`. Omitted `rpe`
+    and `note` keep their values. Unnamed prior sets die unless `preserveOtherSets` is true, which
+    leaves those rows unchanged. Their numbers must not collide with named sets, and their times
+    must remain within the interval; the 200-set limit applies only to the argument. A reused or spent set id → `id-taken` or
     `id-spent`.
   - `startedAt`, `finishedAt`, `closedBy := finish`, and `displayName := routineName`.
 
@@ -2955,9 +2958,8 @@ it. No tool adopts a database again, so production is never restored from a back
 the adoption. Journal's adopted base is Appendix D; every other product starts from empty stores.
 
 **C.1 Adopted tables.**
-- Each account that held a gym row, or an id C.3 spends, has one scope, `acct:<A>/gym`, alive, and
-  a row in `gym_sync_adoptions`. A scope born by admission has none. The seed catalog, the
-  `gym_exercises` rows whose `created_by` is null, is in no scope (A.2).
+- Each account that held a gym row, or an id C.3 spends, has one scope, `acct:<A>/gym`, alive.
+  The seed catalog, the `gym_exercises` rows whose `created_by` is null, is in no scope (A.2).
 - The adopted tables:
 
   | Type | Rows |
@@ -2991,9 +2993,8 @@ the adoption. Journal's adopted base is Appendix D; every other product starts f
   (A.2).
 
 **C.2 Stamps and registers.**
-- The adoption read the server clock once, as it started: `M`, recorded per account in
-  `gym_sync_adoptions.migration_ms`. Every born, life and field register it wrote carries the stamp
-  `M:0:srv` until an admission replaces it.
+- The adoption read the server clock once, as it started: `M`. Every born, life and field register
+  it wrote carries the stamp `M:0:srv` until an admission replaces it.
 - A record's registers are its non-null columns, as the fields A.2 names them (`date_local` is a
   weigh-in's id, `set_number` a set's serial value), instants as epoch ms and `numeric` values as
   numbers. The R118 metadata is C.8's, not the base's. Beyond the columns of the same name:
@@ -3068,8 +3069,7 @@ change since is an admission, except C.8's supplement.
 
 **C.8 R118 metadata.** A.2's six scalar registers and the `routineCreation` records were added to
 the adopted rows by one supplement, which replayed no write. It read the server clock once as
-`M118`, recorded in `gym_sync_metadata_upgrade_runs`; each account's completion is a row of
-`gym_sync_metadata_upgrades`. A scope born by admission after the adoption took the same supplement.
+`M118`. A scope born by admission after the adoption took the same supplement.
 
 | Register | Source, copied verbatim |
 |---|---|
@@ -3106,8 +3106,7 @@ D.1–D.6 define the base, and D.7 the invariants that start from it.
 
 **D.1 Adoption and envelope.**
 - Each account that held `journal_page` or `journal_page_revision` rows has one alive scope,
-  `acct:<A>/journal`, and a row in `journal_sync_adoptions`. Any other account gets its scope at its
-  first admission.
+  `acct:<A>/journal`. Any other account gets its scope at its first admission.
 - `page` is `journal_page`, keyed by its `(user_id, day)`. It carries `seq`, `rc`, `ru`,
   `mood_stamp`, `energy_stamp`, `source_stamp`, `document_stamp_stamp`, `body_rev` and
   `body_merged`; the scope is taken from `user_id`, with index `(user_id, seq)` (§2.2). There is no
@@ -3116,23 +3115,20 @@ D.1–D.6 define the base, and D.7 the invariants that start from it.
 - `journalState` uses one companion table `journal_sync_state`, keyed by `user_id`, with its four
   ranked values and their stamps, `seq`, `rc`, `ru`, and index `(user_id, seq)`. It is not a second
   page store and exposes no REST resource.
-- `journal_page_revision` is the revision table. Each row retained at adoption holds an immutable
-  `migration_id`, its ordinal in the original `ctid` order within the account, and every row holds
-  `engine_rev`; uniqueness is `(user_id, engine_rev)`. Body, outgoing HLC and `superseded_at` are
-  kept; no revision becomes a visible record or enters the digest.
-- The adoption marker holds the account, the adoption's `M`, the first-run policy D.4 names and the
-  manifest digest. The native claim receipt table `journal_claim_receipts` holds `(user_id,
-  claim_id, arguments_digest, day)` for A.3's `claimPage` and lives for the scope's lifetime. Both
-  tables are outside `feed`.
+- `journal_page_revision` is the revision table. Every row holds `engine_rev`; uniqueness is
+  `(user_id, engine_rev)`. Body, outgoing HLC and `superseded_at` are kept; no revision becomes a
+  visible record or enters the digest.
+- The native claim receipt table `journal_claim_receipts` holds `(user_id, claim_id,
+  arguments_digest, day)` for A.3's `claimPage` and lives for the scope's lifetime, outside `feed`.
 - Account deletion purges every account scope, revisions, state and claim receipts (§2.3). There is
   no page-to-page foreign-key consequence or trigger. A schema statement, trigger or repair job
   MUST NOT write a page's value or envelope outside admission. Echo and nudge tables keep their own
   writers.
 
 **D.2 Stamps, values and receipt times.**
-- The adoption read the server clock once, as it started: `M`, recorded in its marker. Every
-  envelope register of every adopted page and derived state row carries `M:0:srv` until an
-  admission replaces it. No legacy content HLC was observed into the server clock: a page carrying
+- The adoption read the server clock once, as it started: `M`. Every envelope register of every
+  adopted page and derived state row carries `M:0:srv` until an admission replaces it. No legacy
+  content HLC was observed into the server clock: a page carrying
   a future `stamp_ms`, or `0:0:`, keeps that value without weakening INV-14.
 - Body is unchanged UTF-8 text. Mood and energy took the read normalization: null or outside 0–10
   reads null; source reads spoken only when stored spoken, otherwise typed. A historical body
@@ -3142,11 +3138,11 @@ D.1–D.6 define the base, and D.7 the invariants that start from it.
   derived state row has `rc = ru = M`. No stamp is derived from those receipt times.
 
 **D.3 Adopted revisions and the engine text field.**
-- Revisions 1, 2, … are reserved for the retained audit rows, in ascending `migration_id` order
+- Revisions 1, 2, … are reserved for the retained audit rows, in their original tuple order
   across the account, including duplicate bodies. Each maps to `(page, day, body, engine_rev,
   text)` and retains its outgoing content stamp and archive time. These are synthetic engine
-  revisions, not content stamps. Their ordinal keeps the original `ctid` tie-break across days as
-  well as within a day.
+  revisions, not content stamps. `engine_rev` keeps that tie-break across days as well as within
+  a day.
 - After that reserved prefix, the adopted pages are numbered in ascending day order; each body's
   head has `rev = page.seq` and `merged = false`, and is exactly the body it had, including empty
   text. A derived `journalState` row is numbered last. Every historical rev is below every adopted
@@ -3157,10 +3153,10 @@ D.1–D.6 define the base, and D.7 the invariants that start from it.
 - Admission writes body heads and audit revisions in this same table, keeping the old HLC and time
   metadata beside the unique engine rev.
 
-**D.4 First-run state derivation.** `firstRunPolicy = retire-existing`, recorded in each adoption
-marker. An account that had at least one written page (body not `""`, or a non-null normalized
-scale) has `journalState` with `placeholder`, `privacyLine`, `firstPage` and `scales` retired, so a
-person with written pages sees no re-onboarding. Retirement is not an inference of whether an
+**D.4 First-run state derivation.** `firstRunPolicy = retire-existing`: an account that had at least
+one written page (body not `""`, or a non-null normalized scale) has `journalState` with
+`placeholder`, `privacyLine`, `firstPage` and `scales` retired, so a person with written pages sees no
+re-onboarding. Retirement is not an inference of whether an
 invitation was answered. An account with only blank resources or only revisions has no state row;
 all defaults read pending. An install's ink-notes flag is outside the account data.
 
@@ -3176,8 +3172,7 @@ projections, not engine records.
   revision prefix. No primary record exists for an account with only revisions. Counters and
   `sync_spent` stay empty: journal has no cap or life.
 - The base digest is the sum over the exact `feed` rows, including `journalState` when derived
-  (§6.12). Historic revisions, claim receipts, the adoption marker and REST-only projections are
-  outside it.
+  (§6.12). Historic revisions, claim receipts and REST-only projections are outside it.
 
 **D.7 Invariants of an adopted journal scope.**
 - **INV-14.** Base: every envelope stamp is `M:0:srv`, stored when the monotone process clock was at

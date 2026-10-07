@@ -118,17 +118,86 @@ must be public.
   dispatched on (`main` unless another is chosen), and `migrate` applies the older image's own
   `db/schema.sql`.
 - **Rollback floor**: the oldest image that is safe to run is the first one built from a commit
-  containing `backend · the retired REST writes are gone, and the engine is the only gym and journal
-  writer`. Every older image reads six engine and freeze switches that the deploy no longer renders,
-  so each one defaults off: `/v1/sync` is unmounted, taking every engine client down with it, and the
-  legacy REST, MCP and Coach writers write the engine's gym and journal tables again.
+  containing `backend · purge the retired gym and journal cutover copies`. After the purge, use only
+  that image or its descendants: earlier image schemas recreate retired cutover storage and their
+  binaries depend on it. Restoring a pre-engine backup is unsupported. A restore from an engine-era
+  backup must apply the current schema before starting writers and regenerate `sync_meta.epoch`
+  as [the engine restore contract](../../docs/foundation/engine.md) requires.
 - **Migrations**: `db/schema.sql` is idempotent and re-applied on every deploy by the `migrate`
-  one-shot, a plain `psql`.
+  one-shot, a plain `psql`. It removes the retired gym and journal cutover copies while keeping
+  the engine tables and current user data.
 - **Native Apple sign-in**: the identity-token exchange defaults off (`APPLE_NATIVE_ENABLED=0`);
   [AUTH.md](../AUTH.md) names its audience and app configuration.
 - **Backup**: the dispatch-only `gym-backup.yml` writes a custom-format dump of the whole database to
   `~/windmill/backups/` on the VPS, checks that `pg_restore` can list it, and records its sha256.
+  Dumps made before the cutover-copy purge retain those copies. The repository defines no scheduled
+  database backup or backup rotation; this workflow keeps each dump until it is removed manually.
+  The cutover evidence purge does not touch this directory. Host-managed cron jobs and provider
+  backup policies must be checked on the host and with the provider.
 - **DB shell**: `docker compose exec db psql -U windmill windmill`.
+
+## Restore a database backup
+
+Keep deployments paused and stop any database writers outside this Compose stack. Close client
+ingress first; restore, migrate, rotate and verify the epoch with the server stopped, then restart
+the server before reopening ingress. This avoids serving the restored database under its saved
+epoch, but cannot force a reconnecting client to pull before pushing. Use an image compatible with
+the dump and containing `windmill_rotate_sync_epoch`. From `~/windmill`, verify the backup's recorded
+sha256 and `pg_restore --list` before replacing the database. Each actual restore, including another
+restore of the same dump, needs a fresh random epoch.
+
+```sh
+set -eu
+RESTORE_DUMP="$PWD/backups/<backup>.dump"
+RESTORE_DIR=$(mktemp -d "$PWD/backups/restore-XXXXXXXX")
+openssl rand -hex 16 > "$RESTORE_DIR/new-epoch"
+docker compose stop caddy
+docker compose stop server migrate
+docker compose exec -T db dropdb -U windmill windmill
+docker compose exec -T db createdb -U windmill -O windmill windmill
+docker compose exec -T db pg_restore -U windmill -d windmill \
+  --single-transaction --exit-on-error --no-owner --no-acl < "$RESTORE_DUMP"
+docker compose run --rm migrate
+docker compose exec -T db psql -U windmill -d windmill -XAt \
+  -v ON_ERROR_STOP=1 -c 'select epoch from sync_meta' > "$RESTORE_DIR/old-epoch"
+docker compose run --rm --no-deps -T server windmill_rotate_sync_epoch \
+  "$(cat "$RESTORE_DIR/old-epoch")" "$(cat "$RESTORE_DIR/new-epoch")" \
+  >> "$RESTORE_DIR/epoch.log" 2>&1
+cat "$RESTORE_DIR/epoch.log"
+test "$(docker compose exec -T db psql -U windmill -d windmill -XAt \
+  -v ON_ERROR_STOP=1 -c 'select epoch from sync_meta')" = "$(cat "$RESTORE_DIR/new-epoch")"
+docker compose up -d server
+docker compose up -d caddy
+```
+
+Keep the restore directory as the receipt. If rotation times out, is interrupted or its answer is
+lost, retry **only the tool command** with those same two saved epochs. It locks `sync_meta` and
+commits one update; concurrent/repeated calls with the same pair return `already-applied` without
+writing. An unexpected current epoch refuses with `epoch-mismatch`. Exit 0 means rotated or already
+applied, 2 means invalid arguments/configuration or a mismatch, and 1 means an unexpected failure.
+On any failure, keep the server stopped; inspect the completion before retrying. Do not regenerate
+the receipt, read a new expected epoch, or rerun `pg_restore` as a rotation retry. Ordinary deploys
+and process restarts never rotate the epoch.
+
+The tool uses `DATABASE_URL` and the server's Sentry settings. It emits a structured
+`sync.epoch.rotate` completion (`ok`, `already-applied`, or a refusal/failure) with duration, without
+credentials or epoch values. Rotation changes only `sync_meta.epoch`, leaving restored rows intact.
+When a client processes the epoch change, it clears cursors and staging, re-identifies and
+rebootstraps. That transition retains unsent entries and returns still-pending old-epoch
+acknowledgements to ready at their original commit positions.
+
+A restore is outside the engine's INV-3 guarantee ([spec §7.5](../../docs/foundation/engine.md#75-puller-reset-and-epoch-change)).
+Fully settled server writes newer than the backup are lost; rotation cannot reconstruct them.
+Retained intents may replay against missing records or records recreated with a different `born`:
+dependent edits/deletes can be refused or acknowledged as no-ops, so their intended effects can be
+lost. A no-op acknowledgement produces no refusal notice.
+
+Even after rotation, a push-first reconnect can lose an offline delete of a record absent from the
+backup: after `409 gap`, the delete can be acknowledged as a no-op before its old acknowledged
+create is replayed. The record then reappears with an empty outbox and no notice. The supplied
+restore proof covers pull-first recovery of independent creates, not this dependent-delete case
+or every reconnect ordering. Keeping ingress closed until rotation is verified limits exposure;
+it does not remove this client recovery limitation.
 
 ## Frontend
 

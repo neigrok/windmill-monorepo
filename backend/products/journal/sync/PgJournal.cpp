@@ -184,7 +184,7 @@ std::optional<std::string> PgJournalType::revisionText(SyncTxn& txn, const Scope
 
 void PgJournalType::purge(SyncTxn& txn, const ScopeKey& scope) {
   auto& sql = sqlOf(txn);
-  for (const std::string& table : {table_, std::string("journal_page_revision"), std::string("journal_claim_receipts"), std::string("journal_content_clock"), std::string("journal_sync_adoptions")})
+  for (const std::string& table : {table_, std::string("journal_page_revision"), std::string("journal_claim_receipts"), std::string("journal_content_clock")})
     sql.exec("delete from " + table + " where user_id=$1::uuid", pqxx::params{scope.account().str()});
 }
 

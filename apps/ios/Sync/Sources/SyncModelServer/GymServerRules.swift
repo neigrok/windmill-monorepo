@@ -165,6 +165,15 @@ public struct GymServerRules: ServerRules {
     guard !isOpen(session) else { throw refuse("session-open") }
     try checkSets(sets, command: command, correction: true, in: context)
     let standing = context.storedRecords(ofType: "set").filter { $0.isAlive && value($0, "sessionId") == .string(id) }
+    let named = Set(sets.map { $0["id"]! })
+    let preserve = command.args["preserveOtherSets"] == .bool(true)
+    if preserve {
+      for prior in standing where !named.contains(prior.key.id.json) {
+        let completed = value(prior, "completedAt")!.integerValue
+        guard completed >= command.args["startedAt"]!.integerValue, completed <= command.args["finishedAt"]!.integerValue else { throw refuse("bad-instant") }
+        guard !sets.contains(where: { $0["exerciseId"] == value(prior, "exerciseId") && $0["setNumber"] == prior.serials["setNumber"] }) else { throw Refusal(.invalid) }
+      }
+    }
     let fields: [String: JSON] = ["startedAt": command.args["startedAt"]!, "finishedAt": command.args["finishedAt"]!,
       "closedBy": "finish", "displayName": command.args["routineName"]!]
     var deltas: [PlannedDelta] = [.serverUpdate(session.key, born: session.lattice.born, fields: fields)]
@@ -182,15 +191,13 @@ public struct GymServerRules: ServerRules {
         claims.append(WriteClaim(key: setKey, fields: fields.keys.sorted()))
         continue
       }
-      var fields = setFields(id, set: set)
-      fields["kind"] = "working"
+      let fields = setFields(id, set: set)
       var delta = PlannedDelta.serverCreate(setKey, fields: fields)
       delta.serials = ["setNumber": set["setNumber"]!]
       deltas.append(delta)
       claims.append(WriteClaim(key: setKey, born: .minted, fields: fields.keys.sorted()))
     }
-    let named = Set(sets.map { $0["id"]! })
-    deltas += standing.filter { !named.contains($0.key.id.json) }.map { .serverDelete($0.key, born: $0.lattice.born) }
+    if !preserve { deltas += standing.filter { !named.contains($0.key.id.json) }.map { .serverDelete($0.key, born: $0.lattice.born) } }
     store(["sessionId": .string(id), "args": .object(command.args)], table: "corrections", id: request, scope: context.scope, in: &product)
     return CommandOutcome(deltas: deltas, write: claims, product: product)
   }

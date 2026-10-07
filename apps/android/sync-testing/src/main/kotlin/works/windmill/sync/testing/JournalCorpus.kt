@@ -28,7 +28,8 @@ object JournalCorpus {
         return answer
     }
 
-    private val resultWrites: CommandResultDeviceWrites = { command, result, epoch, rows ->
+    private val resultWrites: IntentResultDeviceWrites = callback@ { intent, result, epoch, _, rows ->
+        val command = intent.command ?: return@callback emptyList()
         val key = command.args["claimId"]?.str()?.let { "pendingClaim:$it" }
         val pending = key?.let(rows::get)
         if (command.name != "journal.claimPage" || key == null || pending == null) emptyList()
@@ -68,7 +69,7 @@ object JournalCorpus {
             "nextN" to Json.of(1), "hlc" to Hlc().json, "hlcHigh" to Stamp.UNSET.json, "admittedHigh" to Stamp.UNSET.json,
             "serverOffsetMs" to Json.of(0), "offsetSamples" to Json.array(), "serverEpoch" to Json.Null, "ackThrough" to Json.of(0), "authPaused" to Json.of(false)))
         fun make(snapshot: Json, limit: Int = Constants.PUSH_MAX_BYTES) = Engine.memory(registry, snapshot, clock, identities, actor, limit,
-            commandResultWrites = resultWrites, pendingDeviceWork = pendingWork)
+            intentResultWrites = resultWrites, pendingDeviceWork = pendingWork)
         var engine = make(Json.objectOf("active" to input.member("replica"), "replicas" to Json.array(replica)))
         val server = ModelServer(registry, JournalServerRules(), ServerState(input.member("server")))
         val trace = mutableListOf<Json>()

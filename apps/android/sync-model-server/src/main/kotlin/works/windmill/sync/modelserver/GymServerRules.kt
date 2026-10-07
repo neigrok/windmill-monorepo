@@ -79,6 +79,12 @@ class GymServerRules : ServerRules {
         if (isOpen(session)) throw Refusal("session-open")
         checkSets(sets, cmd, true, c)
         val standing = c.storedRecords("set").filter { it.isAlive && value(it, "sessionId") == Json.of(id) }
+        val named = sets.map { it.member("id") }.toSet()
+        val preserve = cmd.args["preserveOtherSets"] == Json.of(true)
+        if (preserve) for (prior in standing.filter { it.key.id.json !in named }) {
+            if (value(prior, "completedAt")!!.long() !in cmd.args.getValue("startedAt").long()..cmd.args.getValue("finishedAt").long()) throw Refusal("bad-instant")
+            if (sets.any { it["exerciseId"] == value(prior, "exerciseId") && it["setNumber"] == prior.serials["setNumber"] }) throw Refusal("invalid")
+        }
         val fields = mapOf("startedAt" to cmd.args.getValue("startedAt"), "finishedAt" to cmd.args.getValue("finishedAt"), "closedBy" to Json.of("finish"), "displayName" to cmd.args.getValue("routineName"))
         val deltas = mutableListOf(PlannedDelta.update(session.key, session.lattice.born, fields)); val claims = mutableListOf(WriteClaim(session.key, fields = fields.keys.sorted()))
         for (set in sets) {
@@ -89,11 +95,11 @@ class GymServerRules : ServerRules {
                 deltas.add(PlannedDelta.update(setKey, prior.lattice.born, sf).copy(serials = mapOf("setNumber" to set.member("setNumber"))))
                 claims.add(WriteClaim(setKey, fields = sf.keys.sorted()))
             } else {
-                val sf = setFields(id, set) + ("kind" to Json.of("working")); deltas.add(PlannedDelta.create(setKey, sf).copy(serials = mapOf("setNumber" to set.member("setNumber"))))
+                val sf = setFields(id, set); deltas.add(PlannedDelta.create(setKey, sf).copy(serials = mapOf("setNumber" to set.member("setNumber"))))
                 claims.add(WriteClaim(setKey, mintedBorn = true, fields = sf.keys.sorted()))
             }
         }
-        val named = sets.map { it.member("id") }.toSet(); deltas.addAll(standing.filter { it.key.id.json !in named }.map { PlannedDelta.delete(it.key, it.lattice.born) })
+        if (!preserve) deltas.addAll(standing.filter { it.key.id.json !in named }.map { PlannedDelta.delete(it.key, it.lattice.born) })
         c.store("corrections", request, Json.objectOf("sessionId" to Json.of(id), "args" to Json.Obj(cmd.args.toList())))
         return CommandOutcome(deltas, claims, product = c.product)
     }

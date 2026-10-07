@@ -15,6 +15,7 @@ interface ScopeReader {
     fun firstPullComplete(): Boolean
     fun confirmed(type: String, id: RecordID): Record?
     fun checkpoint(): ScopeCheckpoint
+    fun serverSchema(): Long? = null
     fun devices(prefix: String): Map<String, Json>
 }
 

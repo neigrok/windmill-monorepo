@@ -14,13 +14,14 @@ import works.windmill.sync.schema.SyncSchema
 
 class WorkoutImportsTests {
     private val scope = WorkoutImports.scope
-    private val timing = RequestTiming(ClockReading(100_000, 100_000, "boot"), ClockReading(100_000, 100_000, "boot"))
+    private var testNow = 100_000L
+    private val timing get() = RequestTiming(ClockReading(testNow, testNow, "boot"), ClockReading(testNow, testNow, "boot"))
     private fun engine(snapshot: Json? = null, pushMaxBytes: Int? = null) = if (pushMaxBytes == null) Engine.memory(SyncSchema.registry, snapshot,
-        clock = object : EngineClock { override fun now() = 100_000L },
-        commandResultWrites = WorkoutImports.commandResultWrites,
+        clock = object : EngineClock { override fun now() = testNow },
+        intentResultWrites = WorkoutImports.intentResultWrites,
         pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue)
-        else Engine.memory(SyncSchema.registry, snapshot, clock = object : EngineClock { override fun now() = 100_000L }, pushMaxBytes = pushMaxBytes,
-        commandResultWrites = WorkoutImports.commandResultWrites,
+        else Engine.memory(SyncSchema.registry, snapshot, clock = object : EngineClock { override fun now() = testNow }, pushMaxBytes = pushMaxBytes,
+        intentResultWrites = WorkoutImports.intentResultWrites,
         pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue)
     private fun finished(id: String = "session01", start: Long = 1_000, finish: Long = 3_000) =
         SavedWorkout(Session(id, start, finish), listOf(TrainingSet("set00001", "back-squat", weightKg = 60.0,
@@ -29,9 +30,270 @@ class WorkoutImportsTests {
     private fun sources(engine: Engine) = engine.read(scope) { reader -> reader.devices(WorkoutImports.journalPrefix).values
         .flatMap { it.member("items").obj().values } }
 
+    @Test fun aLateServerFinishRefusalKeepsTheAdoptedSetRecoverableAcrossRestart() = runBlocking {
+        val server = EngineRoomFixture.server()
+        lateinit var original: TrainingSet
+        val snapshot = engine().use { local ->
+            val gym = EngineTraining(local)
+            gym.startSession(SessionStart("session01", 1_000))
+            gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, SetKind.Warmup, 2_000))
+            gym.fixSet("session01", "set00001", SetFix(note = "Original", rpe = 7.0, rpeNamed = true))
+            gym.prepareAdoption()
+            signIn(local, server); pull(local, server); push(local, server)
+            original = gym.imports.operations().single().entry.set
+            engine().use { other ->
+                signIn(other, server); pull(other, server)
+                EngineTraining(other).finishSession("session01", 3_000); push(other, server)
+            }
+            gym.finishSession("session01", 4_000)
+            push(local, server)
+            local.snapshot()
+        }
+        engine(snapshot).use { reopened ->
+            val gym = EngineTraining(reopened)
+            gym.imports.retry(original.id)
+            repeat(12) { gym.reconcileImports(); push(reopened, server); pull(reopened, server) }
+            engine().use { account ->
+                signIn(account, server); pull(account, server)
+                val accepted = EngineTraining(account).details().flatMap { it.sets }
+                assertEquals("A server refusal must not strand an accepted adopted set", 1, accepted.size)
+                assertEquals(original, accepted.single().copy(id = original.id, setNumber = original.setNumber))
+            }
+            assertTrue(gym.imports.refusals().isEmpty())
+            assertFalse(gym.imports.hasOwedSets("session01"))
+        }
+    }
+
+    @Test fun recoveryAgainstAnAdvertisedV5ServerUsesAnAcceptedFallback() = runBlocking {
+        val server = EngineRoomFixture.oldServer()
+        engine(stranded(server)).use { local ->
+            val hello = server.hello(Credential.Account("A"), 100_000)
+            local.onHello(SyncResponse(hello.status, hello.body), timing)
+            val gym = EngineTraining(local)
+            val original = gym.imports.refusals().single().sets.single()
+            val standing = gym.session("session01")!!.sets.single()
+            gym.imports.retry(original.id)
+            repeat(12) { gym.reconcileImports(); push(local, server); pull(local, server) }
+            engine().use { account ->
+                signIn(account, server); pull(account, server)
+                val accepted = EngineTraining(account).details().flatMap { it.sets }
+                assertEquals("Old servers must receive an accepted recovery, not unsupported correction arguments", 2, accepted.size)
+                assertEquals(standing, accepted.single { it.id == standing.id })
+                assertEquals(original, accepted.single { it.id != standing.id }.copy(id = original.id, setNumber = original.setNumber))
+            }
+            assertTrue(gym.imports.refusals().isEmpty())
+            assertFalse(gym.imports.hasOwedSets("session01"))
+        }
+    }
+
+    @Test fun lateRefusalsOfSeveralSetsRecoverWithoutStartingCompetingWorkouts() = runBlocking {
+        val server = EngineRoomFixture.server()
+        engine().use { local ->
+            val gym = EngineTraining(local)
+            gym.startSession(SessionStart("session01", 1_000))
+            for (n in 1..3) gym.appendSet("session01", SetWrite("set0000$n", "back-squat", 60.0 + n, n,
+                SetKind.Warmup, 2_000L + n))
+            val original = gym.session("session01")!!.sets
+            gym.prepareAdoption()
+            signIn(local, server); pull(local, server); push(local, server)
+            engine().use { other ->
+                signIn(other, server); pull(other, server)
+                EngineTraining(other).finishSession("session01", 3_000); push(other, server)
+            }
+            gym.finishSession("session01", 4_000); push(local, server)
+            repeat(20) { gym.reconcileImports(); push(local, server); pull(local, server) }
+            assertTrue(gym.imports.refusals().map { it.code }.toString(), gym.imports.refusals().isEmpty())
+            assertFalse(gym.imports.hasOwedSets("session01"))
+            val sets = gym.details().flatMap { it.sets }.sortedBy { it.completedAtMs }
+            assertEquals(original, sets.mapIndexed { i, set -> set.copy(id = original[i].id, setNumber = original[i].setNumber) })
+            assertTrue(gym.details().all { !it.session.isOpen })
+        }
+    }
+
+    @Test fun anAlreadyPulledFinishBeforeTheSavedSetUsesASeparateWorkoutWithoutChangingItsTime() = runBlocking {
+        val server = EngineRoomFixture.server()
+        engine().use { local ->
+            val gym = EngineTraining(local)
+            gym.startSession(SessionStart("session01", 1_000))
+            gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, SetKind.Warmup, 2_000))
+            gym.fixSet("session01", "set00001", SetFix(note = "Original", rpe = 7.0, rpeNamed = true))
+            val original = gym.session("session01")!!.sets.single()
+            gym.prepareAdoption()
+            signIn(local, server); pull(local, server); push(local, server)
+            engine().use { other ->
+                signIn(other, server); pull(other, server)
+                EngineTraining(other).finishSession("session01", 1_500); push(other, server)
+            }
+            pull(local, server)
+            repeat(12) {
+                gym.imports.refusals().forEach { gym.imports.retry(it.id) }
+                gym.reconcileImports(); push(local, server); pull(local, server)
+            }
+            val accepted = gym.details().flatMap { it.sets }
+            assertEquals("A confirmed remote finish must not trap a valid saved set in bad-instant retries", 1, accepted.size)
+            assertEquals(original, accepted.single().copy(id = original.id, setNumber = original.setNumber))
+            assertEquals(1_500L, gym.session("session01")!!.session.finishedAtMs)
+            assertTrue(gym.details().all { !it.session.isOpen })
+            assertFalse(gym.imports.hasOwedSets("session01"))
+            assertTrue(gym.imports.refusals().isEmpty())
+        }
+    }
+
+    @Test fun aCorrectionOverlapRefusalCanRetryThroughASeparateWorkout() = runBlocking {
+        val server = EngineRoomFixture.server()
+        engine(stranded(server)).use { local ->
+            val gym = EngineTraining(local)
+            val original = gym.imports.refusals().single().sets.single()
+            val standing = gym.session("session01")!!.sets.single()
+            engine().use { other ->
+                signIn(other, server); pull(other, server)
+                val remote = EngineTraining(other)
+                remote.startSession(SessionStart("overlap01", 1_500)); push(other, server)
+                remote.finishSession("overlap01", 2_900); push(other, server)
+            }
+            pull(local, server)
+            gym.imports.retry(original.id)
+            gym.reconcileImports(); push(local, server)
+            assertEquals(1, gym.imports.refusals().size)
+            repeat(12) {
+                gym.imports.refusals().forEach { gym.imports.retry(it.id) }
+                gym.reconcileImports(); push(local, server); pull(local, server)
+            }
+            val sets = gym.details().flatMap { it.sets }
+            assertEquals("An overlapping workout must not strand the saved set", 2, sets.size)
+            assertEquals(standing, sets.single { it.id == standing.id })
+            assertEquals(original, sets.single { it.id != standing.id }.copy(id = original.id, setNumber = original.setNumber))
+            assertTrue(gym.details().all { !it.session.isOpen })
+            assertFalse(gym.imports.hasOwedSets("session01"))
+            assertTrue(gym.imports.refusals().isEmpty())
+        }
+    }
+
+    @Test fun anAutomaticCloseBeforeALaterAcceptedSetUsesASeparateWorkout() = runBlocking {
+        testNow = 20_000_000
+        val server = EngineRoomFixture.server()
+        engine().use { local ->
+            val gym = EngineTraining(local)
+            gym.startSession(SessionStart("session01", 1_000))
+            gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, SetKind.Warmup, testNow - 1_000))
+            val original = gym.session("session01")!!.sets.single()
+            gym.prepareAdoption()
+            signIn(local, server); pull(local, server); push(local, server)
+            assertEquals(Json.of("stale"), local.read(scope) { it.confirmed("session", RecordID("session01")) }!!.values["closedBy"])
+            repeat(12) { gym.reconcileImports(); push(local, server); pull(local, server) }
+            val accepted = gym.details().flatMap { it.sets }
+            assertEquals(original, accepted.single().copy(id = original.id, setNumber = original.setNumber))
+            assertEquals(1_000L, gym.session("session01")!!.session.finishedAtMs)
+            assertTrue(gym.details().all { !it.session.isOpen })
+            assertFalse(gym.imports.hasOwedSets("session01"))
+            assertTrue(gym.imports.refusals().isEmpty())
+        }
+    }
+
+    @Test fun anOlderAppsDismissedSetRefusalIsRecoveredOnceWithItsCompleteSavedSource() = runBlocking {
+        val server = EngineRoomFixture.server()
+        lateinit var original: TrainingSet
+        val submitted = engine().use { local ->
+            val gym = EngineTraining(local)
+            gym.startSession(SessionStart("session01", 1_000))
+            gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, SetKind.Warmup, 2_000))
+            gym.fixSet("session01", "set00001", SetFix(note = "Original", rpe = 7.0, rpeNamed = true))
+            gym.prepareAdoption()
+            signIn(local, server); pull(local, server); push(local, server)
+            original = gym.imports.operations().single().entry.set
+            engine().use { other ->
+                signIn(other, server); pull(other, server)
+                EngineTraining(other).finishSession("session01", 3_000); push(other, server)
+            }
+            // Released adoption queued SetWrite without the source's note or RPE and resolved immediately.
+            gym.appendSet("session01", SetWrite(original))
+            local.commit(scope) { context ->
+                val writes = context.devices(WorkoutImports.journalPrefix).map { (key, journal) ->
+                    val items = journal.member("items").obj().mapValues { (_, item) ->
+                        if (item["kind"] == Json.of("operation")) Json.Obj((item.obj() + ("state" to Json.of("resolved"))).toList()) else item
+                    }
+                    works.windmill.sync.api.DeviceWrite(key, Json.Obj((journal.obj() + ("items" to Json.Obj(items.toList()))).toList()))
+                }
+                works.windmill.sync.api.Gesture(emptyList(), local = writes) to Unit
+            }
+            gym.finishSession("session01", 4_000)
+            local.snapshot()
+        }
+        val refused = Engine.memory(SyncSchema.registry, submitted, clock = object : EngineClock { override fun now() = 100_000L }).use { old ->
+            push(old, server)
+            assertTrue(EngineTraining(old).details().flatMap { it.sets }.isEmpty())
+            assertTrue(old.notices("gym").notices.value.any { it.code.text == "session-finished" })
+            old.notices("gym").notices.value.forEach { old.dismissNotice(it.id) }
+            old.snapshot()
+        }
+        val recovered = engine(refused).use { upgraded ->
+            repeat(12) { EngineTraining(upgraded).reconcileImports(); push(upgraded, server); pull(upgraded, server) }
+            assertFalse(WorkoutImports(upgraded).hasOwedSets("session01"))
+            upgraded.snapshot()
+        }
+        engine(recovered).use { reopened ->
+            repeat(12) { EngineTraining(reopened).reconcileImports(); push(reopened, server); pull(reopened, server) }
+            val sets = EngineTraining(reopened).details().flatMap { it.sets }
+            assertEquals(original, sets.single().copy(id = original.id, setNumber = original.setNumber))
+            assertEquals(2, EngineTraining(reopened).details().size)
+            assertTrue(EngineTraining(reopened).details().all { !it.session.isOpen })
+            assertTrue(outbox(reopened).isEmpty())
+            assertTrue(WorkoutImports(reopened).refusals().isEmpty())
+        }
+    }
+
+    @Test fun v5RecoverySurvivesLostReceiptsAndRestartAtEveryPhaseAndWaitsForTheStartPull() = runBlocking {
+        val server = EngineRoomFixture.oldServer()
+        var snapshot = stranded(server)
+        lateinit var original: TrainingSet
+        engine(snapshot).use { local ->
+            original = WorkoutImports(local).refusals().single().sets.single()
+            WorkoutImports(local).retry(original.id)
+            snapshot = local.snapshot()
+        }
+        listOf("gym.start", null, "gym.finish").forEachIndexed { phase, command ->
+            engine(snapshot).use { local ->
+                pull(local, server)
+                EngineTraining(local).reconcileImports()
+                val request = local.nextPush()!!
+                assertEquals(command, request.member("intents").arr().single()["cmd"]?.get("name")?.str())
+                assertEquals(200, server.push(request, Credential.Account("A"), 100_000).status)
+                snapshot = local.snapshot()
+            }
+            engine(snapshot).use { restarted ->
+                val replay = restarted.nextPush()!!
+                val reply = server.push(replay, Credential.Account("A"), 100_000)
+                restarted.onPushResponse(replay, SyncResponse(reply.status, reply.body), timing)
+                EngineTraining(restarted).reconcileImports()
+                if (phase == 0) {
+                    assertNull("Start acknowledgment alone cannot queue the set", restarted.nextPush())
+                    assertEquals("set", sources(restarted).single { it["kind"] == Json.of("operation") }.member("recoveryPhase").str())
+                }
+                assertTrue(WorkoutImports(restarted).refusals().isEmpty())
+                snapshot = restarted.snapshot()
+            }
+        }
+        engine(snapshot).use { local ->
+            pull(local, server)
+            repeat(3) { EngineTraining(local).reconcileImports(); push(local, server) }
+            val workouts = EngineTraining(local).details()
+            assertEquals(2, workouts.size)
+            assertTrue(workouts.all { !it.session.isOpen })
+            assertEquals(original, workouts.flatMap { it.sets }.single { it.id != "standing1" }.copy(id = original.id, setNumber = original.setNumber))
+            assertFalse(WorkoutImports(local).hasOwedSets("session01"))
+            assertTrue(outbox(local).isEmpty())
+        }
+    }
+
+    private fun signIn(engine: Engine, server: ModelServer) {
+        val hello = server.hello(Credential.Account("A"), testNow)
+        engine.onHello(SyncResponse(hello.status, hello.body), timing)
+        assertTrue(engine.signIn("A", emptyMap(), serverSchema = hello.body!!.member("schema").long()).member("complete").bool())
+    }
+
     private fun pull(engine: Engine, server: ModelServer) {
         val request = engine.pullRequest(listOf(scope))!!
-        val reply = server.pull(request, Credential.Account("A"), 100_000)
+        val reply = server.pull(request, Credential.Account("A"), testNow)
         assertEquals(200, reply.status)
         engine.onPullResponse(request, SyncResponse(reply.status, reply.body), timing)
     }
@@ -39,7 +301,7 @@ class WorkoutImportsTests {
     private fun push(engine: Engine, server: ModelServer) {
         while (true) {
             val request = engine.nextPush() ?: break
-            val reply = server.push(request, Credential.Account("A"), 100_000)
+            val reply = server.push(request, Credential.Account("A"), testNow)
             assertEquals(200, reply.status)
             engine.onPushResponse(request, SyncResponse(reply.status, reply.body), timing)
             pull(engine, server)
@@ -55,8 +317,296 @@ class WorkoutImportsTests {
 
     // The account holds an open workout of its own before the phone signs in.
     private suspend fun accountWorkout(server: ModelServer) = engine().use { remote ->
-        remote.signIn("A", emptyMap()); pull(remote, server)
+        signIn(remote, server); pull(remote, server)
         EngineTraining(remote).startSession(SessionStart("existing1", 500)); push(remote, server)
+    }
+
+    private suspend fun stranded(server: ModelServer, write: Owed = Owed.Append, standingCount: Int = 1): Json = engine().use { local ->
+        val gym = EngineTraining(local)
+        gym.startSession(SessionStart("session01", 1_000))
+        gym.appendSet("session01", SetWrite("set00001", "back-squat", 60.0, 5, SetKind.Warmup, 2_000))
+        gym.fixSet("session01", "set00001", SetFix(note = "Original", rpe = 7.0, rpeNamed = true))
+        gym.prepareAdoption()
+        signIn(local, server); pull(local, server); push(local, server)
+        gym.appendSet("session01", SetWrite("standing1", "back-squat", 80.0, 8, SetKind.Drop, 2_500))
+        gym.fixSet("session01", "standing1", SetFix(note = "Standing", rpe = 8.0, rpeNamed = true))
+        if (standingCount > 1) local.commit(scope, works.windmill.sync.api.Gesture((2..standingCount).map { number ->
+            works.windmill.sync.api.Change.create("set", works.windmill.sync.api.NewID.Given(RecordID("standing$number")), mapOf(
+                "sessionId" to Json.of("session01"), "exerciseId" to Json.of("back-squat"), "weightKg" to Json.of(80.0),
+                "reps" to Json.of(8), "kind" to Json.of("working"), "completedAt" to Json.of(2_500)))
+        }, atomic = true))
+        push(local, server)
+        local.commit(scope, works.windmill.sync.api.Gesture(emptyList(), command = works.windmill.sync.core.Command("gym.finish",
+            Json.objectOf("sessionId" to Json.of("session01"), "finishedAt" to Json.of(3_000)))))
+        push(local, server)
+        if (standingCount <= 200) { correct(local, gym.session("session01")!!.sets, "Evening"); push(local, server) }
+        repeat(10) { if (local.read(scope) { it.checkpoint().cleanSeq == null }) pull(local, server) }
+        assertNotNull(local.read(scope) { it.checkpoint().cleanSeq })
+        val imports = WorkoutImports(local)
+        val operation = imports.operations().single()
+        if (write != Owed.Append) local.commit(scope) { context ->
+            val saved = context.devices(WorkoutImports.journalPrefix).entries.single { operation.token in it.value.member("items").obj() }
+            val items = saved.value.member("items").obj().toMutableMap()
+            val item = items.getValue(operation.token)
+            val source = Json.Obj((item.member("source").obj() + ("write" to Json.of(write.name))).toList())
+            items[operation.token] = Json.Obj((item.obj() + ("source" to source)).toList())
+            works.windmill.sync.api.Gesture(emptyList(), local = listOf(works.windmill.sync.api.DeviceWrite(saved.key,
+                Json.Obj((saved.value.obj() + ("items" to Json.Obj(items.toList()))).toList())))) to Unit
+        }
+        imports.refuseOperation(imports.operations().single(), "session-finished")
+        local.snapshot()
+    }
+
+    private fun correct(local: Engine, sets: List<TrainingSet>, name: String) {
+        local.commit(scope) { context -> works.windmill.sync.api.Gesture(emptyList(), command = works.windmill.sync.core.Command("gym.correctSession",
+            Json.objectOf("sessionId" to Json.of("session01"), "requestId" to Json.of(context.opaqueID()),
+                "startedAt" to Json.of(1_000), "finishedAt" to Json.of(3_000), "routineName" to Json.of(name),
+                "sets" to Json.Arr(sets.map { set -> Json.objectOf("id" to Json.of(set.id), "exerciseId" to Json.of(set.exerciseId),
+                    "setNumber" to Json.of(set.setNumber ?: 2), "weightKg" to Json.of(set.weightKg), "reps" to Json.of(set.reps),
+                    "completedAt" to Json.of(set.completedAtMs), "note" to Json.of(set.note), "rpe" to (set.rpe?.let(Json::of) ?: Json.Null)) })))) to Unit }
+    }
+
+    @Test fun aFinishedSetRefusalSurvivesRestartAndRetryPreservesBothSetsAndNewerEdits() = runBlocking {
+        val server = EngineRoomFixture.server()
+        engine(stranded(server, Owed.Fix)).use { local ->
+            val imports = WorkoutImports(local)
+            val original = imports.refusals().single().sets.single()
+            val standing = EngineTraining(local).session("session01")!!.sets.single()
+            assertEquals(setOf(original.id), imports.retainedOperationSetIds())
+            imports.retry(original.id)
+            EngineTraining(local).reconcileImports()
+            assertTrue(imports.hasOwedSets("session01"))
+            assertTrue(imports.operations().isEmpty())
+            assertEquals("recovering", sources(local).single { it["kind"] == Json.of("operation") }.member("state").str())
+            assertEquals("gym.correctSession", outbox(local).single().member("intent").member("cmd").member("name").str())
+            engine(local.snapshot()).use { reopened ->
+                push(reopened, server)
+                assertTrue(WorkoutImports(reopened).operations().isEmpty())
+                assertEquals(original.copy(setNumber = 2), EngineTraining(reopened).session("session01")!!.sets.first())
+                engine().use { other ->
+                    signIn(other, server); pull(other, server)
+                    EngineTraining(other).fixSet("session01", original.id, SetFix(weightKg = 62.5, kind = SetKind.Failure,
+                        note = "Newer", rpe = 9.0, rpeNamed = true))
+                    push(other, server)
+                }
+                pull(reopened, server)
+                val restored = EngineTraining(reopened)
+                restored.reconcileImports(); push(reopened, server)
+                assertEquals(listOf(original.copy(weightKg = 62.5, kind = SetKind.Failure, note = "Newer", rpe = 9.0, setNumber = 2), standing), restored.session("session01")!!.sets)
+                assertEquals(Json.of("Evening"), reopened.read(scope) { it.confirmed("session", RecordID("session01")) }!!.values["displayName"])
+                assertEquals(3_000L, restored.session("session01")!!.session.finishedAtMs)
+                assertFalse(WorkoutImports(reopened).hasOwedSets("session01"))
+                assertEquals(emptySet<String>(), WorkoutImports(reopened).retainedOperationSetIds())
+                assertTrue(WorkoutImports(reopened).refusals().isEmpty())
+            }
+        }
+    }
+
+    @Test fun recoveryCommitFailureRollsBackAndACrashAfterCommitRetainsTheQueuedCorrection() = runBlocking {
+        val server = EngineRoomFixture.server()
+        engine(stranded(server)).use { local ->
+            val imports = WorkoutImports(local)
+            imports.retry("set00001")
+            val operation = imports.operations().single()
+            val before = local.snapshot()
+            local.failNextCommit()
+            assertThrows(CommitFailure::class.java) { imports.recoverFinishedOperation(operation) }
+            assertEquals(before, local.snapshot())
+            local.crashAfterTransactions(1)
+            assertThrows(EngineCrash::class.java) { imports.recoverFinishedOperation(operation) }
+            engine(local.snapshot()).use { reopened ->
+                assertEquals(setOf("set00001"), WorkoutImports(reopened).retainedOperationSetIds())
+                assertEquals(1, outbox(reopened).size)
+                push(reopened, server)
+                EngineTraining(reopened).reconcileImports(); push(reopened, server)
+                assertEquals(operation.entry.set.copy(setNumber = 2), EngineTraining(reopened).session("session01")!!.sets.first())
+                assertTrue(outbox(reopened).isEmpty())
+                assertFalse(WorkoutImports(reopened).hasOwedSets("session01"))
+            }
+        }
+    }
+
+    @Test fun recoveryPreservesConcurrentSetEditsAndRetriesConcurrentAdditionsFromTheLatestWorkout() = runBlocking {
+        for (adding in listOf(false, true)) {
+            val server = EngineRoomFixture.server()
+            engine(stranded(server)).use { local ->
+                val imports = WorkoutImports(local)
+                imports.retry("set00001")
+                EngineTraining(local).reconcileImports()
+                val priorRequest = outbox(local).single().member("intent").member("cmd").member("args").member("requestId")
+                engine().use { other ->
+                    signIn(other, server); pull(other, server)
+                    val remote = EngineTraining(other)
+                    if (adding) correct(other, remote.session("session01")!!.sets + TrainingSet("another01", "bench-press", setNumber = 1,
+                        weightKg = 45.0, reps = 10, completedAtMs = 2_600), "Changed")
+                    else remote.fixSet("session01", "standing1", SetFix(weightKg = 82.5, note = "Changed"))
+                    push(other, server)
+                }
+                push(local, server)
+                if (adding) {
+                    assertEquals("recovery-stale", imports.refusals().single().code)
+                    assertEquals(setOf("set00001"), imports.retainedOperationSetIds())
+                    assertFalse(EngineTraining(local).session("session01")!!.sets.any { it.id == "set00001" })
+                    imports.retry("set00001")
+                    EngineTraining(local).reconcileImports()
+                    assertNotEquals(priorRequest, outbox(local).single().member("intent").member("cmd").member("args").member("requestId"))
+                    push(local, server)
+                }
+                EngineTraining(local).reconcileImports(); push(local, server)
+                val restored = EngineTraining(local).session("session01")!!.sets
+                assertEquals(SetKind.Warmup, restored.single { it.id == "set00001" }.kind)
+                if (adding) {
+                    assertEquals(setOf("set00001", "standing1", "another01"), restored.map { it.id }.toSet())
+                    assertEquals(Json.of("Changed"), local.read(scope) { it.confirmed("session", RecordID("session01")) }!!.values["displayName"])
+                } else {
+                    assertEquals(82.5, restored.single { it.id == "standing1" }.weightKg, 0.0)
+                    assertEquals("Changed", restored.single { it.id == "standing1" }.note)
+                }
+                assertTrue(imports.refusals().isEmpty())
+                assertFalse(imports.hasOwedSets("session01"))
+            }
+        }
+    }
+
+    @Test fun staleOperationSnapshotsCannotResolveAQueuedRepairOrRefuseAnAcknowledgedOne() = runBlocking {
+        val server = EngineRoomFixture.server()
+        engine(stranded(server)).use { local ->
+            val imports = WorkoutImports(local)
+            imports.retry("set00001")
+            val operation = imports.operations().single()
+            assertTrue(imports.recoverFinishedOperation(operation))
+            val queued = local.snapshot()
+            EngineTraining(local).reconcileOperation(operation)
+            imports.refuseOperation(operation, "session-finished")
+            assertEquals(queued, local.snapshot())
+            push(local, server)
+            EngineTraining(local).reconcileOperation(operation)
+            imports.refuseOperation(operation, "session-finished")
+            assertTrue(imports.operations().isEmpty())
+            assertTrue(imports.refusals().isEmpty())
+            EngineTraining(local).reconcileImports(); push(local, server)
+            assertFalse(imports.hasOwedSets("session01"))
+            assertEquals(SetKind.Warmup, EngineTraining(local).session("session01")!!.sets.first().kind)
+        }
+    }
+
+    @Test fun recoveryAddsASetToAWorkoutAlreadyHoldingMoreThanTwoHundredSets() = runBlocking {
+        val server = EngineRoomFixture.server()
+        engine(stranded(server, standingCount = 201)).use { local ->
+            val gym = EngineTraining(local)
+            val standing = gym.session("session01")!!.sets
+            assertEquals(201, standing.size)
+            val imports = WorkoutImports(local)
+            val original = imports.refusals().single().sets.single()
+            imports.retry(original.id)
+            gym.reconcileImports()
+            val command = outbox(local).single().member("intent").member("cmd").member("args")
+            assertEquals(Json.of(true), command.member("preserveOtherSets"))
+            assertEquals(listOf(original.id), command.member("sets").arr().map { it.member("id").str() })
+            push(local, server)
+            assertEquals(listOf(original.copy(setNumber = 202)) + standing, gym.session("session01")!!.sets)
+            assertTrue(imports.refusals().isEmpty())
+            assertFalse(imports.hasOwedSets("session01"))
+        }
+    }
+
+    @Test fun transportRefusalsWithoutACommandReceiptKeepRecoveryRetryableAfterRestart() = runBlocking {
+        for (status in listOf(400, 413)) {
+            val server = EngineRoomFixture.server()
+            engine(stranded(server)).use { local ->
+                val imports = WorkoutImports(local)
+                imports.retry("set00001")
+                EngineTraining(local).reconcileImports()
+                val source = sources(local).single { it["kind"] == Json.of("operation") }.member("source")
+                val request = local.nextPush()!!
+                local.onPushResponse(request, SyncResponse(status), timing)
+                assertTrue(outbox(local).isEmpty())
+                imports.reconcileConfirmed()
+                assertEquals("recovery-retry", imports.refusals().single().code)
+                assertEquals(source, sources(local).single { it["kind"] == Json.of("operation") }.member("source"))
+                engine(local.snapshot()).use { reopened ->
+                    WorkoutImports(reopened).retry("set00001")
+                    repeat(8) { EngineTraining(reopened).reconcileImports(); push(reopened, server); pull(reopened, server) }
+                    val recovered = EngineTraining(reopened).details().flatMap { it.sets }.single { it.id != "standing1" }
+                    assertEquals(diskJson.decodeFromString(OwedSet.serializer(), source.jcs).set,
+                        recovered.copy(id = "set00001", setNumber = null))
+                    assertFalse(WorkoutImports(reopened).hasOwedSets("session01"))
+                    assertTrue(WorkoutImports(reopened).refusals().isEmpty())
+                }
+            }
+        }
+    }
+
+    @Test fun aLostRecoveryReceiptReplaysWithoutChangingANewerSetKind() = runBlocking {
+        val server = EngineRoomFixture.server()
+        engine(stranded(server)).use { local ->
+            WorkoutImports(local).retry("set00001")
+            EngineTraining(local).reconcileImports()
+            val request = local.nextPush()!!
+            val reply = server.push(request, Credential.Account("A"), 100_000)
+            assertEquals(200, reply.status)
+            engine().use { other ->
+                signIn(other, server); pull(other, server)
+                EngineTraining(other).fixSet("session01", "set00001", SetFix(kind = SetKind.Failure, note = "Newer"))
+                push(other, server)
+            }
+            engine(local.snapshot()).use { reopened ->
+                push(reopened, server)
+                EngineTraining(reopened).reconcileImports(); push(reopened, server)
+                val recovered = EngineTraining(reopened).session("session01")!!.sets.single { it.id == "set00001" }
+                assertEquals(SetKind.Failure, recovered.kind)
+                assertEquals("Newer", recovered.note)
+                assertFalse(WorkoutImports(reopened).hasOwedSets("session01"))
+                assertTrue(WorkoutImports(reopened).refusals().isEmpty())
+                assertEquals(2, EngineTraining(reopened).session("session01")!!.sets.size)
+            }
+        }
+    }
+
+    @Test fun aStaleFixCannotWriteAfterRecoveryAcknowledgmentAndNewerEdits() = runBlocking {
+        val server = EngineRoomFixture.server()
+        engine(stranded(server, Owed.Fix)).use { local ->
+            val imports = WorkoutImports(local)
+            val gym = EngineTraining(local)
+            imports.retry("set00001")
+            val stale = imports.operations().single()
+            gym.reconcileImports(); push(local, server)
+            engine().use { other ->
+                signIn(other, server); pull(other, server)
+                EngineTraining(other).fixSet("session01", "set00001", SetFix(weightKg = 92.5, reps = 12,
+                    kind = SetKind.Failure, rpe = 9.0, rpeNamed = true, note = "Newer"))
+                push(other, server)
+            }
+            pull(local, server)
+            val before = local.snapshot()
+            gym.reconcileOperation(stale)
+            imports.refuseOperation(stale, "session-finished")
+            assertTrue(imports.recoverFinishedOperation(stale))
+            assertEquals(before, local.snapshot())
+            assertEquals(stale.entry.set.copy(setNumber = 2, weightKg = 92.5, reps = 12, kind = SetKind.Failure,
+                rpe = 9.0, note = "Newer"), gym.session("session01")!!.sets.first())
+        }
+    }
+
+    @Test fun aStaleFixCannotResolveOrRefuseACorrectedRetrySource() = runBlocking {
+        val server = EngineRoomFixture.server()
+        engine(stranded(server, Owed.Fix)).use { local ->
+            val imports = WorkoutImports(local)
+            val gym = EngineTraining(local)
+            imports.retry("set00001")
+            val stale = imports.operations().single()
+            imports.refuseOperation(stale, "source-kind")
+            imports.replaceOperationKindAndRetry("set00001", SetKind.Drop)
+            val before = local.snapshot()
+            gym.reconcileOperation(stale)
+            imports.refuseOperation(stale, "session-finished")
+            assertTrue(imports.recoverFinishedOperation(stale))
+            assertEquals(before, local.snapshot())
+            assertEquals(SetKind.Drop, imports.operations().single().entry.set.kind)
+            gym.reconcileImports(); push(local, server)
+            assertEquals(stale.entry.set.copy(setNumber = 2, kind = SetKind.Drop), gym.session("session01")!!.sets.first())
+            assertFalse(imports.hasOwedSets("session01"))
+        }
     }
 
     @Test fun repackagingLinkedAnonymousHistoryRollsBackOnCrashAndResumesWithOneDurableImport() = runBlocking {
@@ -95,7 +645,7 @@ class WorkoutImportsTests {
             }
             gym.prepareAdoption()
             assertEquals(4, WorkoutImports(local).retainedWorkouts().single().sets.size)
-            local.signIn("A", emptyMap()); pull(local, server); push(local, server)
+            signIn(local, server); pull(local, server); push(local, server)
             local.notices("gym").notices.value.forEach { local.dismissNotice(it.id) }
             engine(local.snapshot()).use { reopened ->
                 val imports = WorkoutImports(reopened)
@@ -123,7 +673,7 @@ class WorkoutImportsTests {
             gym.fixSet("session01", "set00001", SetFix(note = "n".repeat(3_000)))
             val set = gym.session("session01")!!.sets.single()
             gym.prepareAdoption()
-            local.signIn("A", emptyMap()); pull(local, server); push(local, server)
+            signIn(local, server); pull(local, server); push(local, server)
             assertEquals("session-open", WorkoutImports(local).refusals().single().code)
             set to local.snapshot()
         }

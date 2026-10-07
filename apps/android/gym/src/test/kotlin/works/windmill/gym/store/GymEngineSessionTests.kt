@@ -36,7 +36,7 @@ class GymEngineSessionTests {
     }
     private fun transport(holdsRecords: Boolean) = object : SyncTransport {
         override suspend fun hello(token: String?) = Reply.Answer(SyncResponse(200, Json.objectOf(
-            "serverTime" to Json.of(System.currentTimeMillis()), "epoch" to Json.of("epoch"), "schema" to Json.of(5), "minSchema" to Json.of(5),
+            "serverTime" to Json.of(System.currentTimeMillis()), "epoch" to Json.of("epoch"), "schema" to Json.of(SyncSchema.registry.version), "minSchema" to Json.of(SyncSchema.registry.minVersion),
             "as" to Json.of("A"), "holdsRecords" to Json.objectOf("gym" to Json.of(holdsRecords), "journal" to Json.of(false)))))
         override suspend fun push(request: Json, token: String) = Reply.Unreachable
         override suspend fun pull(request: Json, token: String?) = Reply.Unreachable
@@ -226,7 +226,7 @@ class GymEngineSessionTests {
         val anonymous = engine.activeReplica()
         val tokens = Tokens()
         val session = GymEngineSession(engine, SyncRuntime(engine,
-            refusingTransport(Reply.Answer(SyncResponse(426, Json.objectOf("minSchema" to Json.of(6))))), tokens, "test"))
+            refusingTransport(Reply.Answer(SyncResponse(426, Json.objectOf("minSchema" to Json.of(SyncSchema.registry.version + 1))))), tokens, "test"))
         try {
             val failure = runCatching { session.signedIn(User("A", "a@example.com"), "token-A", false) }.exceptionOrNull()
             assertEquals(426, (failure as WindmillApiException.Refused).status)

@@ -26,6 +26,39 @@ test('gym/admit.json replays through admit under gym.registry.json and gym\'s bi
   }
 });
 
+test('additive corrections preserve unnamed rows and restore kind without changing existing kinds', () => {
+  const cases = load('admit.json').filter(({ name }) => name.startsWith('an additive correction'));
+  assert.equal(cases.length, 6);
+  for (const { name, input, expect } of cases) {
+    if (name.includes('checks ')) {
+      assert.deepEqual(expect.result, name.includes('overlap')
+        ? { s: 'refused', code: 'session-overlap', detail: { sessionId: 'other00001' } }
+        : { s: 'refused', code: 'bad-instant' }, name);
+      assert.deepEqual(expect.state, new ServerState(input.state).toJSON(), name);
+      continue;
+    }
+    if (name.includes('refuses')) {
+      assert.equal(expect.result.s, 'refused', name);
+      assert.equal(expect.result.code, name.includes('number') ? 'invalid' : 'bad-instant', name);
+      assert.deepEqual(expect.state, input.state, name);
+      continue;
+    }
+    assert.equal(expect.result.s, 'ok', name);
+    const named = new Set(input.intent.cmd.args.sets.map((set) => set.id));
+    const sets = expect.state.rows['acct:A/gym'].filter((row) => row.t === 'set');
+    for (const prior of input.state.rows['acct:A/gym'].filter((row) => row.t === 'set' && !named.has(row.id))) {
+      assert.deepEqual(sets.find((row) => row.id === prior.id), prior, name);
+    }
+    const restored = sets.find((row) => named.has(row.id));
+    assert.equal(restored.f.kind[0], 'warmup', name);
+    if (name.includes('missing')) {
+      assert.equal(sets.length, 3);
+      assert.equal(restored.f.rpe[0], 7);
+      assert.equal(restored.f.note[0], 'Saved');
+    }
+  }
+});
+
 test('historical blank names remain readable and repairable while new blank names are refused', () => {
   const vectors = load('admit.json').filter(({ name }) => name.startsWith('historical '));
   assert.equal(vectors.length, 30);

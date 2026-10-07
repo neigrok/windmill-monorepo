@@ -25,7 +25,10 @@ generated schema. The schema generator and its tests contain 356 Python lines.
 | `:gym:domain` | 1014 | 1226 |
 | Total | 12430 | 6633 |
 
-SyncAPI's public surface is unchanged from `c1e1125b`. `ActionRunner` now requires an injected
+`ScopeReader.serverSchema()` reads the account's last successful hello version, or null before it
+is known. The engine persists it with account metadata, replaces it on downgrade and clears it
+after an unauthenticated hello. `SyncStatus` publishes changes; sign-in, bound-account restoration
+and reconnection refresh the advertisement. `ActionRunner` requires an injected
 `ActionContext`: the synchronous pure kit reads its nesting flag through that port. The testing
 coroutine-context element and entry helper live in `:domain-kit-testing`; the shipping adapter is
 `gym/store/EngineTraining.kt`. Child contexts copy the flag, dispatcher hops retain it, and
@@ -48,7 +51,7 @@ including failed reads. HTTP hello/push/pull and bounded live frames
 use strict JSON, account checks and cancellation. The runtime owns sender/puller/live workers,
 request deadlines, server waits, backoff, heartbeat, holds, subscriptions and cleanup. Sign-in/out
 sessions pin decisions, account and hold generation. Lineage, fork guards, reidentification, epoch
-changes, refusal folding, restamping, write maps and command-result/device hooks are transactional.
+changes, refusal folding, restamping, write maps and intent-result/device hooks are transactional.
 
 The release timer retries recoverable commit failures after a fixed, bounded one-second delay and
 preserves cancellation. Removal predictions stamp life dead, retain a minted/derived record's born,
@@ -70,7 +73,7 @@ Step mode leaves sender waits pending until the caller advances its virtual cloc
 retry, and live/pull answers remain bound to the requested replica across lineage changes. Live
 channels close on replica renewal, leave, authentication pause and shutdown.
 
-Gym consumes registry v5/minimum 4. The model server authors routine revision/original count,
+Gym consumes registry v6/minimum 4. The model server authors routine revision/original count,
 proposal base revision/name/change count, note content time and immutable Coach creation snapshots.
 The gym domain decodes that metadata without including it in client fields, plans or guards;
 `RoutineCreation` is an independent read-only entity. Note positions are dense ranks from zero;
@@ -132,7 +135,7 @@ commits and forbids pushing.
 
 ## Interpretations and discrepancies
 
-- Generate full gym+journal composition v5/minVersion 4; production automatic subscriptions remain
+- Generate full gym+journal composition v6/minVersion 4; production automatic subscriptions remain
   gym-only. Journal client vectors and fuzz are mandatory. The corpus README includes
   `journal/claim-edit.json`, which §11.1's table omits; the client runner therefore counts 52 files.
 - The runner guard follows Kotlin's coroutine context through an injected pure port. It cannot
@@ -177,7 +180,7 @@ require cooperative suspension; synchronous commit bodies cannot be preempted.
 
 Whole-repository searches found no external Kotlin consumer of changed runtime/testing surfaces.
 All ActionRunner construction sites and test display consumers were updated. Wire/schema/corpus
-formats and SyncAPI are unchanged. Outside-territory documentation inventories remain for their
+formats are unchanged. Outside-territory documentation inventories remain for their
 owners: root `CLAUDE.md:11`, `STRUCTURE.md:33`, `STRUCTURE.md:106` and the model-server module inventory in
 `docs/foundation/domain-kit.md:166`/`:182`; A2 observability/flow inventory
 belongs in `docs/ANDROID_OBSERVABILITY.md`. R118's delivery notes in

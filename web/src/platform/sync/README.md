@@ -4,7 +4,7 @@
 request. `start()` installs tab coordination and lifecycle hooks, releases holds on the first tab,
 requests persistent storage and starts synchronization. No product or UI imports this engine.
 
-The registry composes the shared gym and journal registries at version 5, minimum 4. The deterministic
+The registry composes the shared gym and journal registries at version 6, minimum 4. The deterministic
 core and replica rules are browser ports of `packages/api-contract/sync/reference`.
 UTF-8 uses `TextEncoder`, canonical cursor encoding uses browser base64 APIs and synchronous SHA-256
 uses `@noble/hashes`. Test oracles stay outside the shipping dependency graph.
@@ -56,9 +56,11 @@ IndexedDB store versions are independent of the wire registry version:
 
 A version-one database upgrades in one atomic IndexedDB version-change transaction. Every replica's
 confirmed, spent and staged rows move to their cache generations; controls, outboxes, notices and device
-work survive unchanged. An aborted upgrade retains the complete version-one store for retry. Native
-Chromium regressions open real version-one databases, verify every row after upgrade and reopen,
-and interrupt an upgrade after a migrated row to verify rollback.
+work survive unchanged. An aborted upgrade closes its connection and retains the complete version-one
+store for retry. A blocked open rejects and abandons its request: a later upgrade aborts before migration,
+and a late successful connection closes. Open stores close on `versionchange`. Native Chromium
+regressions verify every row after upgrade, abort, blocked-open retry and reopen, and exercise real
+version changes. Fixture reads wait for transaction completion before closing their connections.
 
 Offline open hydrates the active replica's cache once. Subsequent observation reads hydrate observed
 scopes; unobserved cache generations are invalidated, and a later observation reloads them locally.

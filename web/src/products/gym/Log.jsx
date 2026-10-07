@@ -135,12 +135,12 @@ export function LogList({ log, hash = '#/gym/log', sessionId = null, fixSetId = 
           <ProgressCards log={log} from={{ screen: 'log', href: from }} /></>}
         </div>
       </div>}
-      {!noMatches && <><details className="gym-log-options"><summary>Log options</summary><BodyweightReading latest={weights.latest} /><button type="button" className="gym-clear-filters" aria-pressed={filters.density === 'compact'} onClick={() => { window.location.hash = historyHref(filters, { density: filters.density === 'compact' ? 'comfortable' : 'compact' }); }}>{filters.density === 'compact' ? 'Comfortable rows' : 'Compact rows'}</button></details>
+      {!noMatches && <><details className="gym-log-options"><summary>Log options</summary><BodyweightReading latest={weights.latest} unit={weights.unit} /><button type="button" className="gym-clear-filters" aria-pressed={filters.density === 'compact'} onClick={() => { window.location.hash = historyHref(filters, { density: filters.density === 'compact' ? 'comfortable' : 'compact' }); }}>{filters.density === 'compact' ? 'Comfortable rows' : 'Compact rows'}</button></details>
       <footer className="gym-log-footer">
         <button type="button" className="gym-history-weigh" onClick={() => setWeighing(true)}>{WEIGH_IN_VERB}</button>
         <a className="gym-door-past" href={BACKFILL_HREF}>Add past workout</a>
       </footer></>}
-      {weighing && <WeighInSheet onSave={async (write) => { const refused = await weights.save(write); if (!refused) setWeighing(false); return refused; }} onClose={() => setWeighing(false)} />}
+      {weighing && <WeighInSheet unit={weights.unit} onSave={async (write) => { const refused = await weights.save(write); if (!refused) setWeighing(false); return refused; }} onClose={() => setWeighing(false)} />}
     </section>
   );
 }

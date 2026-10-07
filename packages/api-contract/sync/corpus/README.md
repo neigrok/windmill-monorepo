@@ -167,7 +167,7 @@ outside every scope. A proposal's unset `state` reads as `pending`, the registry
   4. Otherwise create the session finished (`closedBy: finish`, `routineId` and `plan` as `gym.start`
      gives them) and its sets, `kind` default `working`, `note` default `""`, numbered in argument
      order; record the receipt.
-- `gym.correctSession {sessionId, requestId, startedAt, finishedAt, routineName, sets}`: no close.
+- `gym.correctSession {sessionId, requestId, startedAt, finishedAt, routineName, sets, preserveOtherSets?}`: no close.
   1. The session absent or `foreign` → `unknown-record`; dead → `record-dead`.
   2. A correction receipt for `requestId`: same session and equal arguments → `ok`, writing the
      session and its named sets still alive; otherwise `payload-conflict`.
@@ -177,7 +177,10 @@ outside every scope. A proposal's unset `state` reads as `pending`, the registry
   4. The session takes `startedAt`, `finishedAt`, `closedBy: finish` and `displayName := routineName`.
      A named set standing in the session keeps its movement (another → `invalid`) and its kind, takes
      `weightKg`, `reps`, `completedAt` and `setNumber`, and `rpe` and `note` only when named. A new one
-     is created `working`, with its `setNumber`. Every standing set left out dies. Record the receipt.
+     takes optional `kind`, default `working`, with its `setNumber`. Every standing set left out dies
+     unless optional `preserveOtherSets` is true. That mode leaves unnamed rows unchanged; their
+     numbers must not collide with named sets, and their times must remain within the interval.
+     The 200-set limit applies to the argument. Record the receipt.
 - `gym.finish {sessionId, finishedAt}`: absent or `foreign` → `unknown-record`; dead → `record-dead`;
   `finishedAt` zero or before `startedAt` → `bad-instant`. Unfinished → `finishedAt` and `closedBy:
   finish`. Closed `stale` at `f` → `closedBy: finish` and `finishedAt := f` when `finishedAt > f + 4 h`,
@@ -246,12 +249,12 @@ Its R118 vectors pin mixed-intent joined bases, forging refusals, no-op and losi
 time after reorder and snapshot retention after routine death. `reference/test/gym/product.test.js`
 boots a v4 store on the input state of each R118 admission that writes, then pulls the state it
 admitted: ordinary live pulls retain the unknown fields and `routineCreation` through restart and
-converge on the v5 digest.
+converge on the current service digest.
 
 ## The journal product
 
 `reference/test/journal/claim-edit.test.js` covers the installed v4 journal registry against a
-composed v5 service with minimum version 4. Ready/sent/acked saves and pending claims survive gym
+composed v6 service with minimum version 4. Ready/sent/acked saves and pending claims survive gym
 writes through MCP/ask doors, client relaunch and a lost claim response; retained typing reconciles
 once, with no epoch change and no gym subscription.
 

@@ -210,9 +210,10 @@ class CorpusTests {
                 val sets = input.member("sets").arr().map { raw ->
                     val s = Fields(raw)
                     CorrectedSet(s.ref("id", TrainingSet), s.ref("exerciseId", Exercise), raw.member("setNumber").long(), s.double("weightKg"), s.int("reps"), s.instant("completedAt"),
-                        s.optionalDouble("rpe"), s.optionalString("note"), raw["rpe"] != null)
+                        s.optionalDouble("rpe"), s.optionalString("note"), raw["rpe"] != null, s.optionalString("kind"))
                 }
-                corpus.decision(CorrectSession(f.ref("sessionId", Session), f.string("requestId"), f.instant("startedAt"), f.instant("finishedAt"), f.optionalString("routineName"), sets), vector, { Json.Null }, ::refusalForm)
+                corpus.decision(CorrectSession(f.ref("sessionId", Session), f.string("requestId"), f.instant("startedAt"), f.instant("finishedAt"), f.optionalString("routineName"), sets,
+                    input["preserveOtherSets"] == Json.of(true)), vector, { Json.Null }, ::refusalForm)
             }
             else -> error("unclaimed training action")
         }

@@ -30,10 +30,10 @@ async function confirm(engine) {
 }
 const routine = { id: 'routine00001', name: 'Lower A', position: 0, entries: [{ exerciseId: 'back-squat', sets: [{ reps: 5, weightKg: 60 }, { reps: 3, weightKg: 80 }] }] };
 
-test('v5 authoritative gym fields and independent routine creation snapshots survive persisted engine restart', async (t) => {
+test('authoritative gym fields and independent routine creation snapshots survive persisted engine restart', async (t) => {
   const opened = await open(t);
   const { api, engine, reopen } = opened;
-  assert.equal(registry.version, 5);
+  assert.equal(registry.version, 6);
   assert.equal(registry.minVersion, 4);
   const receipt = { id: routine.id, name: 'Original lower', position: 0, revision: 1, entries: [{ position: 1, exerciseId: 'bench-press' }] };
   const rows = [
@@ -210,6 +210,42 @@ test('offline corrections retain only named sets and their replacement serial nu
   });
 });
 
+test('additive corrections retain unnamed sets and exact kinds through offline restart', async (t) => {
+  const opened = await open(t);
+  const { api, engine, reopen } = opened;
+  const existing = { id: 'set00000001', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: 600, kind: 'drop' };
+  const unnamed = { id: 'set00000002', exerciseId: 'bench-press', weightKg: 80, reps: 3, completedAt: 700, kind: 'failure', note: 'Kept', rpe: 9 };
+  await api.importSession({ id: 'session00001', startedAt: 100, finishedAt: 900, sets: [existing, unnamed] });
+  await confirm(engine);
+  const before = engine.observe('self/gym').getSnapshot().drawn.find((row) => row.id === unnamed.id);
+  const added = { id: 'set00000003', exerciseId: 'bench-press', setNumber: 3, weightKg: 40, reps: 8, completedAt: 800, kind: 'warmup', note: 'Recovered', rpe: 6 };
+  await api.correctSession('session00001', { requestId: 'request00001', startedAt: 100, finishedAt: 900,
+    routineName: 'Kept', sets: [{ ...existing, setNumber: 1, kind: 'failure' }, added], preserveOtherSets: true });
+  const resumed = await reopen();
+  const { sets } = await resumed.session('session00001');
+  assert.deepEqual(sets.map(({ id, kind }) => ({ id, kind })), [
+    { id: existing.id, kind: 'drop' }, { id: unnamed.id, kind: 'failure' }, { id: added.id, kind: 'warmup' },
+  ]);
+  assert.deepEqual(sets.find((set) => set.id === added.id), added);
+  assert.deepEqual(opened.engine.observe('self/gym').getSnapshot().drawn.find((row) => row.id === unnamed.id), before);
+});
+
+test('additive correction refuses collisions and intervals excluding retained sets without partial work', async (t) => {
+  const { api, engine } = await open(t);
+  await api.importSession({ id: 'session00001', startedAt: 100, finishedAt: 900,
+    sets: [{ id: 'set00000001', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: 600 }] });
+  await confirm(engine);
+  const before = structuredClone(engine.device.activeReplica.outbox);
+  const correction = { requestId: 'request00001', startedAt: 100, finishedAt: 900, routineName: '', preserveOtherSets: true,
+    sets: [{ id: 'set00000002', exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 5, completedAt: 800 }] };
+  await assert.rejects(api.correctSession('session00001', correction), { code: 'invalid' });
+  correction.startedAt = 700;
+  correction.sets[0].setNumber = 2;
+  await assert.rejects(api.correctSession('session00001', correction), { code: 'bad-instant' });
+  assert.deepEqual(engine.device.activeReplica.outbox, before);
+  assert.equal((await api.session('session00001')).sets.length, 1);
+});
+
 test('an offline removal proposal hides its routine durably before the authoritative pull', async (t) => {
   const { api, engine, reopen } = await open(t);
   await api.createRoutine(routine);
@@ -330,4 +366,89 @@ test('a tombstoned set cannot be corrected as if its value were saved', async (t
   const before = structuredClone(engine.device.activeReplica.outbox);
   await assert.rejects(api.fixSet('session00001', 'set00000001', { reps: 6 }), { code: 'unknown-record' });
   assert.deepEqual(engine.device.activeReplica.outbox, before);
+});
+
+test('domain preferences save only client fields, keep untouched registers, and report unchanged and refused outcomes', async (t) => {
+  const { api, engine, events, failures } = await open(t);
+  await api.savePreferences({ units: 'lb', confirmHaptic: false, restSeconds: 180, restSound: false });
+  assert.deepEqual(engine.device.activeReplica.entries().map(({ intent }) => intent.d.map(({ f }) => Object.keys(f).sort())),
+    [[['confirmHaptic', 'units']]]);
+  assert.deepEqual(await api.preferences(), { units: 'lb', confirmHaptic: false, confirmSound: false, restSound: true });
+  await api.savePreferences({ units: 'lb' });
+  await assert.rejects(api.savePreferences({ units: 'stone' }), { code: 'invalid' });
+  assert.deepEqual(events, [
+    { operation: 'preferences-save', outcome: 'saved-local' },
+    { operation: 'preferences-save', outcome: 'unchanged' },
+    { operation: 'preferences-save', outcome: 'refused' },
+  ]);
+  assert.deepEqual(failures, []);
+});
+
+test('domain weigh-in refusals write nothing and emit no Sentry failures', async (t) => {
+  const { api, engine, events, failures } = await open(t);
+  for (const [day, weightKg] of [['1970-01-02', 80], ['1970-02-30', 80], ['1970-01-01', 19]]) {
+    await assert.rejects(api.saveBodyweight(day, { weightKg }), { code: 'invalid' });
+  }
+  assert.equal(await api.deleteBodyweight('1970-01-01'), null);
+  assert.deepEqual(engine.device.activeReplica.outbox, []);
+  assert.deepEqual(events, [
+    ...Array.from({ length: 3 }, () => ({ operation: 'bodyweight-save', outcome: 'refused' })),
+    { operation: 'delete', outcome: 'unchanged' },
+  ]);
+  assert.deepEqual(failures, []);
+});
+
+for (const [operation, write] of [
+  ['bodyweight-save', (api) => api.saveBodyweight('1970-01-01', { weightKg: 80 })],
+  ['preferences-save', (api) => api.savePreferences({ units: 'lb' })],
+  ['delete', (api) => api.deleteBodyweight('1970-01-01')],
+]) {
+  test(`${operation}: a failed store keeps all data and is reported only at the storage boundary`, async (t) => {
+    const { api, engine, env, failures, events } = await open(t);
+    await api.saveBodyweight('1970-01-01', { weightKg: 82 });
+    const before = structuredClone(engine.device.activeReplica.toJSON());
+    events.length = 0;
+    t.mock.method(engine.store, 'transact', async () => { throw new Error('SECRET record values'); });
+    await assert.rejects(write(api), isStoreFailure);
+    assert.deepEqual(engine.device.activeReplica.toJSON(), before);
+    assert.deepEqual(failures, []);
+    assert.deepEqual(env.failures, ['storage']);
+    assert.deepEqual(events, [{ operation, outcome: 'failed' }]);
+  });
+  test(`${operation}: unexpected boundary errors report only the static operation`, async (t) => {
+    const { api, engine, failures, events } = await open(t);
+    t.mock.method(engine, 'commit', async () => { throw new Error('SECRET record values'); });
+    await assert.rejects(write(api));
+    assert.deepEqual(failures, [operation]);
+    assert.deepEqual(events, [{ operation, outcome: 'failed' }]);
+  });
+  test(`${operation}: an old account adapter refuses writes after a replica switch`, async (t) => {
+    const { api, engine, failures, events } = await open(t);
+    const commit = engine.commit.bind(engine);
+    t.mock.method(engine, 'commit', (scope, build) => commit(scope, (views) => build({ ...views, replica: 'another-account' })));
+    await assert.rejects(write(api), { code: 'not-writable' });
+    assert.deepEqual(engine.device.activeReplica.outbox, []);
+    assert.deepEqual(failures, []);
+    assert.deepEqual(events, [{ operation, outcome: 'refused' }]);
+  });
+}
+
+
+test('rapid preference changes compare against the previous commit and keep the last choice', async (t) => {
+  const { api, events, failures } = await open(t);
+  await Promise.all([api.savePreferences({ units: 'lb' }), api.savePreferences({ units: 'kg' })]);
+  assert.deepEqual(await api.preferences(), { units: 'kg', confirmHaptic: true, confirmSound: false, restSound: true });
+  assert.deepEqual(events, [
+    { operation: 'preferences-save', outcome: 'saved-local' },
+    { operation: 'preferences-save', outcome: 'saved-local' },
+  ]);
+  assert.deepEqual(failures, []);
+});
+
+test('domain read handles cannot follow the engine into another account', async (t) => {
+  const { api, engine, failures } = await open(t);
+  t.mock.method(engine, 'activeReplica', () => 'another-account');
+  await assert.rejects(api.preferences(), { code: 'not-writable' });
+  await assert.rejects(api.bodyweight(), { code: 'not-writable' });
+  assert.deepEqual(failures, []);
 });

@@ -20,7 +20,8 @@ stores, plus gym's server write door and journal's change feed. Each builds into
 Composition roots: `platform/infra/main.cpp` (REST, the collab socket, MCP and the sync engine in one
 process; it builds `windmill_server`, the harness-clocked `windmill_server_test_clock` and the probe's
 `windmill_server_probe`), `mcp_main.cpp` (stdio transport) and `mcp_http_main.cpp` (standalone HTTP
-transport, for local runs).
+transport, for local runs). `rotate_sync_epoch.cpp` is the offline restore tool; its saved epoch
+pair makes a repeated rotation idempotent (`deploy/README.md`).
 
 ## How a product plugs in
 
@@ -38,16 +39,15 @@ never the composite, so a prompt-injection-exposed agent cannot reach another pr
 
 `db/schema.sql` is one file for every product and builds the whole database, the sync engine's tables
 and envelope columns included. It is applied in order and idempotent (`create … if not exists`); the
-deploy re-applies it every time. The adoption records (`gym_sync_adoptions`, `journal_sync_adoptions`,
-`gym_sync_metadata_upgrade_runs`, `gym_sync_metadata_upgrades`, `journal_page_revision.migration_id`)
-stay in it, immutable, and no server code reads them.
+deploy re-applies it every time. It removes cutover snapshots and their guards; engine registers,
+receipts and retained journal revisions stay in place.
 
 ## Build and test
 
 ```sh
 cmake -S . -B build                             # RelWithDebInfo by default (CMakeLists.txt:12)
 cmake --build build -j8
-ctest --test-dir build --output-on-failure      # four C++ suites and four script checks (RUNNING.md §7)
+ctest --test-dir build --output-on-failure      # four C++ suites and five script checks (RUNNING.md §7)
 ```
 
 Drogon and libpqxx are the two vendor dependencies, and the configure fails without either. libpqxx
@@ -76,12 +76,12 @@ against the sync contract in `../packages/api-contract/sync`, which CMake finds 
 `.github/workflows/backend.yml`). The domain tests replay its golden corpus over in-memory fakes, one
 case per vector (`test/platform/domain/sync/CorpusTest.cpp`); a corpus file with no runner is a named
 skipped case, and a file nobody claims fails. They also load every product registry the contract ships
-(`RegistryTest.cpp`), and run the gym and journal bindings against registry v5/minimum 4 and composition.json. `windmill_sync_tests` replays the server's files again
+(`RegistryTest.cpp`), and run the gym and journal bindings against registry v6/minimum 4 and composition.json. `windmill_sync_tests` replays the server's files again
 over Postgres under `WM_PG_TEST` (`RUNNING.md` §7).
 
 `products/gym/sync/` binds gym's ten types and seven commands, and `products/journal/sync/` binds
 journal's `page` and `journalState` and its two commands, `journal.savePage` and `journal.claimPage`.
-`platform/infra/SyncProducts` seals the two into the gym + journal v5/minimum-4 catalog. `windmill_server`
+`platform/infra/SyncProducts` seals the two into the gym + journal v6/minimum-4 catalog. `windmill_server`
 always serves it at `/v1/sync/hello`, `push`, `pull` and `/v1/sync/live`, and the engine is the only
 writer of gym and journal client data. Every gym write the server makes for a lifter — the MCP gym
 tools, Coach, `POST /v1/gym/sessions/import`, the lazy close of a workout walked away from, and the

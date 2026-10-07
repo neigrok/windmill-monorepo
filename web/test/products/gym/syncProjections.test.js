@@ -122,7 +122,7 @@ test('terminal deaths and orphan sets cannot reappear in any projection', () => 
   assert.deepEqual(api.history().summary, { sessions: 0, sets: 0, reps: 0, tonnageKg: 0 });
 });
 
-test('v5 server registers supply frozen metadata and zero-based notes without treating reorder receipts as content times', () => {
+test('server registers supply frozen metadata and zero-based notes without treating reorder receipts as content times', () => {
   const rows = [
     row('routine', 'routine_a', { name: 'Push', entries: [{ exerciseId: 'bench-press' }], revision: 7, createdEntries: 3 }),
     row('proposal', 'proposal_a', { routineId: 'routine_a', intent: 'revise', proposedName: 'Push B', summary: 'Change', door: 'ask', changes: [], baseRevision: 6, baseName: 'Push A', changeCount: 2 }),

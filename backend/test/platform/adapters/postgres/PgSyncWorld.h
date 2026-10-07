@@ -19,7 +19,7 @@
 #include <vector>
 
 // The sync engine over the isolated WM_SYNC_DATABASE_URL database (RUNNING.md §7).
-// Seeding wipes sync, probe and gym rows; schema.sql and probe.sql must be applied.
+// Seeding wipes sync, probe and product rows; schema.sql and probe.sql must be applied.
 
 namespace wm::sync::test {
 
@@ -204,8 +204,6 @@ public:
 
     }
     if (journal_) {
-      for (const auto& key : product["journalRevisionProjection"].getMemberNames()) for (const auto& rev : product["journalRevisionProjection"][key].getMemberNames())
-        sql.exec("update journal_page_revision set migration_id=$3 where user_id=$1::uuid and engine_rev=$2", pqxx::params{storeKey(key).account().str(), std::stoll(rev), product["journalRevisionProjection"][key][rev]["migrationId"].asInt64()});
       wm::journal::engine::PgJournalState journalState;
       for (const auto& key : product["journalClaims"].getMemberNames())
         for (const auto& id : product["journalClaims"][key].getMemberNames()) journalState.receipt(*txn, storeKey(key), id, product["journalClaims"][key][id]);
@@ -321,10 +319,13 @@ public:
     if (journal_) {
       state["product"] = productSeed_.isNull() ? Json::Value(Json::objectValue) : productSeed_;
       for (const char* kind : {"journalClaims", "journalContentClocks", "journalPages", "journalRevisionProjection"}) state["product"].removeMember(kind);
-      for (const auto& row : sql.exec("select user_id::text,engine_rev,migration_id,stamp_ms,stamp_counter,stamp_actor,floor(extract(epoch from superseded_at)*1000)::bigint as archived_at from journal_page_revision where migration_id is not null order by user_id,engine_rev")) {
+      // Corpus-only provenance follows retained revisions; it is not stored in Postgres.
+      for (const auto& row : sql.exec("select user_id::text,engine_rev,stamp_ms,stamp_counter,stamp_actor,floor(extract(epoch from superseded_at)*1000)::bigint as archived_at from journal_page_revision order by user_id,engine_rev")) {
         const auto key = aliasKey(ScopeKey::product(UserId(row["user_id"].template as<std::string>()), "journal"));
-        auto& value = state["product"]["journalRevisionProjection"][key][std::to_string(row["engine_rev"].template as<Seq>())];
-        value["migrationId"] = Json::UInt64(row["migration_id"].template as<Seq>());
+        const auto rev = std::to_string(row["engine_rev"].template as<Seq>());
+        if (!productSeed_["journalRevisionProjection"][key].isMember(rev)) continue;
+        auto& value = state["product"]["journalRevisionProjection"][key][rev];
+        value["migrationId"] = productSeed_["journalRevisionProjection"][key][rev]["migrationId"];
         value["stamp"]["ms"] = Json::UInt64(row["stamp_ms"].template as<Ms>());
         value["stamp"]["counter"] = Json::UInt64(row["stamp_counter"].template as<Ms>());
         value["stamp"]["actor"] = row["stamp_actor"].template as<std::string>();

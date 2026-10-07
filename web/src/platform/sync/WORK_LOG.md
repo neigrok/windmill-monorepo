@@ -9,6 +9,12 @@ Store schema compatibility belongs to the IndexedDB upgrade transaction: migrati
 cache generations there preserves control rows and permits a complete retry after abort. The native
 browser migration test covers both completion and failure after the first migrated row.
 
+An IndexedDB request's success does not finish its transaction; closing the connection then can leave
+an upgrade blocked until that transaction completes. Migration fixtures use transaction completion as
+their read barrier. Rejecting a blocked open cannot cancel its native request, so the store abandons
+later upgrades and closes late successful connections. Native lifecycle regressions also check that
+aborted upgrades close, retries retain every row, and version changes release all open stores.
+
 The domain kit's nesting guard covers the synchronous execution context across runner instances and
 checks before queueing storage work. Holding it across the outer Promise would mistake independent
 queued actions for nested calls; checking only inside a queued transaction lets an inner write escape

@@ -64,11 +64,16 @@ public struct JournalState: Writable, Equatable {
   }
 
   public var fields: [String: JSON] { ["placeholder": .string(placeholder), "privacyLine": .string(privacyLine), "firstPage": .string(firstPage), "scales": .string(scales)] }
-  public static let checks: [Check<JournalState>] = ["placeholder", "privacyLine", "firstPage", "scales"].map { name in
-    Check(name) { state, _ in
-      guard let value = state.fields[name], value == "pending" || value == "retired" else {
-        throw Violation(rule: "journalState.\(name)", path: Path(name), reason: .custom("invalidState"))
+  static let specs = ["placeholder", "privacyLine", "firstPage", "scales"].map {
+    ChoiceSpec("journalState.\($0)", values: ["pending", "retired"])
+  }
+  public static let checks: [Check<JournalState>] = specs.map { spec in
+    let name = String(spec.path.dropFirst(type.count + 1))
+    return Check(name) { state, _ in
+      guard case .string(let value)? = state.fields[name] else {
+        throw Violation(rule: spec.path, path: Path(name), reason: .notOneOf)
       }
+      _ = try spec.apply(value, at: Path(name)) as String
     }
   }
 
@@ -78,16 +83,25 @@ public struct JournalState: Writable, Equatable {
 
 public enum JournalRules {
   public static let body = TextSpec("journal.savePage.body", unit: .bytes, min: 0, max: 131_072, trim: false, nfc: false)
-  public static let book = RuleBook(registry: SyncSchema.registry, entities: [Page.self, JournalState.self], rules: [.local(body), .local(ClaimPageCommand.body),
+  public static let book = RuleBook(registry: SyncSchema.registry, entities: [Page.self, JournalState.self], rules: [
+      .local(body), .local(SavePageCommand.source), .local(SavePageCommand.actor),
+      .local(ClaimPageCommand.body), .local(ClaimPageCommand.source), .local(ClaimPageCommand.claimId),
       .local("journal.day", subject: Page.type), .local("journal.documentStamp", subject: Page.type),
-      .serverDecided("journal.claim", codes: [Journal.Codes.claimConflict], subject: Page.type)])
+      .local("journal.mood", subject: Page.type), .local("journal.energy", subject: Page.type),
+      .local("journal.contentClock", subject: Page.type), .local("journalState", subject: JournalState.type),
+      .serverDecided("journal.claim", codes: [Journal.Codes.claimConflict], subject: Page.type),
+    ] + JournalState.specs.map { .local($0) })
 
   public static func check(_ document: PageDocument) throws(Violation) {
+    try check(document, body: body, source: SavePageCommand.source)
+  }
+
+  static func check(_ document: PageDocument, body: TextSpec, source: ChoiceSpec) throws(Violation) {
     _ = try body.apply(document.body, at: "body") as String
     for (name, value) in [("mood", document.mood), ("energy", document.energy)] {
       if let value, !(0...10).contains(value) { throw Violation(rule: "journal.\(name)", path: Path(name), reason: .custom("invalidScale")) }
     }
-    guard ["typed", "spoken"].contains(document.source) else { throw Violation(rule: "journal.source", path: "source", reason: .custom("invalidSource")) }
+    _ = try source.apply(document.source, at: "source") as String
   }
 }
 

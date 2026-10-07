@@ -3,9 +3,9 @@ name: iOS CI
 # Tests and builds the Swift packages under apps/ios — the sync engine (Sync), the domain kit (Domain)
 # and the engine's public-surface test (SyncTestingSurface) — and builds the product and dev-only SyncProbe apps for
 # the simulator. App unit tests and three class-based UI shards run in parallel; ships nothing. The corpus runners read
-# packages/api-contract/sync and packages/api-contract/domain-kit by walking up from #filePath, and the
+# packages/api-contract/{sync,domain-kit,gym,journal} by walking up from #filePath, and the
 # SyncSchema target is generated from the registries there, so the whole repository is checked out and a
-# change to either contract runs this workflow too.
+# change to any of those contracts runs this workflow too.
 
 on:
   push:
@@ -15,6 +15,7 @@ on:
       - 'packages/api-contract/sync/**'
       - 'packages/api-contract/domain-kit/**'
       - 'packages/api-contract/gym/**'
+      - 'packages/api-contract/journal/**'
       - 'packages/api-contract/gym-ladder.json'
       - '.github/workflows/ios.yml'
       - '!apps/ios/**/*.md'
@@ -24,6 +25,7 @@ on:
       - 'packages/api-contract/sync/**'
       - 'packages/api-contract/domain-kit/**'
       - 'packages/api-contract/gym/**'
+      - 'packages/api-contract/journal/**'
       - 'packages/api-contract/gym-ladder.json'
       - '.github/workflows/ios.yml'
       - '!apps/ios/**/*.md'

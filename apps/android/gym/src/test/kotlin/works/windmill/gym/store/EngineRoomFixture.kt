@@ -43,13 +43,30 @@ internal class EngineRoomFixture(
             }
             return ModelServer(SyncSchema.registry, GymServerRules(), state)
         }
+
+        fun oldServer(): ModelServer {
+            fun Json.with(name: String, value: Json) = Json.Obj((obj() + (name to value)).toList())
+            val registry = SyncSchema.registry.json
+            val commands = registry.member("commands").arr().map { command ->
+                if (command.member("name") != Json.of("gym.correctSession")) command else {
+                    val args = command.member("args")
+                    val sets = args.member("sets")
+                    val domain = sets.member("domain")
+                    val item = domain.member("items")
+                    command.with("args", Json.Obj((args.obj() - "preserveOtherSets").toList()).with("sets",
+                        sets.with("domain", domain.with("items", item.with("properties",
+                            Json.Obj((item.member("properties").obj() - "kind").toList()))))))
+                }
+            }
+            return ModelServer(Registry(registry.with("version", Json.of(5)).with("commands", Json.Arr(commands))),
+                GymServerRules(), server().state)
+        }
     }
     var now = 1_800_000_000_000L
     var selected: String? = null
     private var nextSession = 0
-    private var nextSet = 0
     val engine = Engine.memory(SyncSchema.registry, snapshot, clock = object : EngineClock { override fun now() = now },
-        commandResultWrites = WorkoutImports.commandResultWrites, pendingDeviceWork = WorkoutImports.pendingDeviceWork,
+        intentResultWrites = WorkoutImports.intentResultWrites, pendingDeviceWork = WorkoutImports.pendingDeviceWork,
         rewriteDeviceValue = WorkoutImports.rewriteDeviceValue)
     val training = EngineTraining(engine)
     val controlsFile = File(directory, "control.json")
@@ -57,7 +74,7 @@ internal class EngineRoomFixture(
     // As in the application: the REST doors answer only while an account is signed in.
     fun freshStore(scope: CoroutineScope = this.scope) = TrainingStore(WorkoutControls(controlsFile, write = controlsWrite), training,
         scope, rest = { rest.takeIf { selected != null } }, now = { ++now }, mintSession = { "session${(++nextSession).toString().padStart(2, '0')}" },
-        mintSet = { "set${(++nextSet).toString().padStart(5, '0')}" }, mintRoutine = mintRoutine, mintExercise = mintExercise,
+        mintSet = Ids::set, mintRoutine = mintRoutine, mintExercise = mintExercise,
         undoWindowMs = undoWindowMs, workoutClock = workoutClock ?: WorkoutClock { val at = ++now; WorkoutMoment(at, at, "local") },
         workoutAuthority = workoutAuthority, telemetry = telemetry, elapsedNanos = elapsedNanos, localCoach = localCoach)
     fun account(id: String? = selected) = Account("https://windmill.works",
@@ -69,10 +86,10 @@ internal class EngineRoomFixture(
             selected = null
         }
         if (id != null && selected != id) {
-            val question = engine.signIn(id, mapOf("gym" to true))
+            val question = engine.signIn(id, mapOf("gym" to true), serverSchema = SyncSchema.registry.version)
             if (!question.member("complete").bool()) {
                 val pins = question.member("due").arr().associate { due -> due.member("product").str() to due.member("counted").arr().map(Json::str) }
-                assertTrue(engine.signIn(id, mapOf("gym" to true), mapOf("gym" to "add"), pins).member("complete").bool())
+                assertTrue(engine.signIn(id, mapOf("gym" to true), mapOf("gym" to "add"), pins, serverSchema = SyncSchema.registry.version).member("complete").bool())
             }
             selected = id
         }

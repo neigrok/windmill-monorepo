@@ -186,8 +186,13 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     }
     fun enter() { foreground = true; launchWorker(EngineOperation.sync) { senderTurn.withLock { wait.kick(mono()) }; engine.subscriptions(products).forEach(pullWanted::add); wakeAll() } }
     fun connectivity(online: Boolean) {
+        val reconnected = online && !this.online
         this.online = online; engine.networkStatus(online = online)
         if (!online) { socket?.close(); socket = null }
+        if (reconnected) launchWorker(EngineOperation.hello) {
+            val account = engine.lock.withLock { engine.device.current().takeIf { it.state == "bound" }?.account }
+            account?.let { storageIO { tokens.token(it) } }?.let { hello(it) }
+        }
         launchWorker(EngineOperation.sync) { senderTurn.withLock { wait.kick(mono()) }; engine.subscriptions(products).forEach(pullWanted::add); wakeAll() }
     }
     suspend fun leave() {
@@ -203,7 +208,17 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         if (response != null) {
             val sameReplica = engine.lock.withLock { engine.device.current().let { it.id == sentFor.first && it.account == sentFor.second } }
             val sameToken = sentFor.second == null || storageIO { tokens.token(sentFor.second!!) } == token
-            if (sameReplica && sameToken) engine.onHello(response, RequestTiming(send, recv))
+            if (sameReplica && sameToken) engine.lock.withLock {
+                val active = engine.device.current()
+                if (active.id == sentFor.first && active.account == sentFor.second) {
+                    engine.onHello(response, RequestTiming(send, recv))
+                    engine.write(EngineOperation.hello) { replica ->
+                        if (replica.unauthenticated(response)) replica.meta = replica.meta.with("serverSchema" to null)
+                        else if (response.status == 200 && replica.account != null && response.body?.get("as") == Json.of(replica.account!!))
+                            response.body["schema"]?.let { replica.meta = replica.meta.with("serverSchema" to it) }
+                    }
+                }
+            }
             else response.body?.get("serverTime")?.let { time -> engine.write(EngineOperation.hello) { engine.offset(it, time.long(), RequestTiming(send, recv)) } }
             if (response.status == 426 || response.body?.get("minSchema")?.long()?.let { it > engine.registry.version } == true) { upgradeRequired = true; engine.networkStatus(upgradeRequired = true) }
         }
@@ -225,7 +240,11 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             }
             bound
         }
-        if (alreadyBound) { engine.reauthenticate(); socket?.close(); socket = null; wakeAll(); return SignInSession(this, account, emptyMap(), Json.objectOf("complete" to Json.of(true), "due" to Json.array())) }
+        if (alreadyBound) {
+            engine.reauthenticate(); socket?.close(); socket = null; wakeAll()
+            launchWorker(EngineOperation.hello) { hello(token) }
+            return SignInSession(this, account, emptyMap(), Json.objectOf("complete" to Json.of(true), "due" to Json.array()))
+        }
         return continueSignIn(account, token)
     }
     suspend fun resumeSignIn(): SignInSession? {
@@ -242,17 +261,18 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         if (response.status != 200) throw EngineError(EngineError.Code.unreachable)
         if (response.body?.get("as") != Json.of(account) || response.body["holdsRecords"] == null) throw EngineError(EngineError.Code.unauthenticated)
         val holds = response.body.member("holdsRecords").obj().mapValues { it.value.bool() }
+        val serverSchema = response.body.member("schema").long()
         val result = engine.lock.withLock {
             if (engine.device.meta["pendingSignIn"]?.get("account") != Json.of(account)) throw EngineError(EngineError.Code.signInEnded)
-            engine.signIn(account, holds)
+            engine.signIn(account, holds, serverSchema = serverSchema)
         }
         socket?.close(); socket = null
-        wakeAll(); return SignInSession(this, account, holds, result)
+        wakeAll(); return SignInSession(this, account, holds, result, serverSchema)
     }
     internal fun finishSignIn(session: SignInSession, answers: Map<String, LineageAnswer>) {
         val result = engine.lock.withLock {
             if (engine.device.meta["pendingSignIn"]?.get("account") != Json.of(session.account)) throw EngineError(EngineError.Code.signInEnded)
-            engine.signIn(session.account, session.holdsRecords, answers.mapValues { it.value.name }, session.decisions.associate { it.product to it.counted })
+            engine.signIn(session.account, session.holdsRecords, answers.mapValues { it.value.name }, session.decisions.associate { it.product to it.counted }, session.serverSchema)
         }
         if (!result.member("complete").bool()) throw EngineError(EngineError.Code.signInChanged)
         socket?.close(); socket = null; wakeAll()
@@ -322,6 +342,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     fun reauthenticate(token: String) {
         val account = engine.lock.withLock { engine.device.current().account } ?: throw EngineError(EngineError.Code.notSignedIn)
         storageIO { tokens.save(account, token) }; engine.reauthenticate(); socket?.close(); socket = null; launchWorker(EngineOperation.lifecycle) { senderTurn.withLock { wait.kick(mono()) }; wakeAll() }
+        launchWorker(EngineOperation.hello) { hello(token) }
     }
     suspend fun senderStep(leaving: Boolean = false): Boolean = runSenderStep(leaving, false)
     private suspend fun runSenderStep(leaving: Boolean, draining: Boolean): Boolean {

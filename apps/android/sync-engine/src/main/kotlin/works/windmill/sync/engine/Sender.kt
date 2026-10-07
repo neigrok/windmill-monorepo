@@ -101,10 +101,9 @@ fun Engine.onPushResponse(request: Json, response: SyncResponse, timing: Request
             for (result in results.subList(from, to)) {
                 val entry = replica.entries().firstOrNull { it.state == "sent" && it.json.member("n") == result.member("n") } ?: continue
                 if (replica.meta["serverEpoch"] === Json.Null) replica.meta = replica.meta.with("serverEpoch" to body.member("epoch"))
-                entry.intent.command?.let { command -> applyCommandResultDeviceWrites(replica, entry.scope,
-                    command, PushResult(result), body.member("epoch").str()) }
                 if (result.member("s").str() == "refused") onRefused(replica, entry, result, body)
                 else {
+                    applyIntentResultDeviceWrites(replica, entry.intent, entry.gestureId, PushResult(result), body.member("epoch").str())
                     replica.move(entry, "ok", ended)
                     entry.json = entry.json.with("resultSeq" to result.member("seq"), "resultEpoch" to body.member("epoch"))
                     raiseAdmittedHigh(replica, entry.intent.deltas.flatMap { it.lattice.stamps })
@@ -148,11 +147,11 @@ class SenderWait {
     fun leaveMayPush(now: Long) = now >= floor
 }
 
-internal fun Engine.applyCommandResultDeviceWrites(replica: ReplicaState, scope: ScopeRef,
-    command: Command, result: PushResult, epoch: String) {
-    val product = registry.product(scope) ?: return
+internal fun Engine.applyIntentResultDeviceWrites(replica: ReplicaState, intent: Intent, gestureId: String,
+    result: PushResult, epoch: String) {
+    val product = registry.product(intent.scope) ?: return
     val rows = replica.device[product]?.obj().orEmpty().toMutableMap()
-    for (write in commandResultWrites(command, result, epoch, rows.toMap())) {
+    for (write in intentResultWrites(intent, result, epoch, gestureId, rows.toMap())) {
         if (registry.products[product]?.get("device")?.obj()?.values?.none { Pattern(it.member("keyPattern").str()).matches(write.key) } != false)
             throw works.windmill.sync.api.CommitFailure.malformed("device-key")
         if (write.value == null) rows.remove(write.key) else rows[write.key] = write.value!!

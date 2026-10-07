@@ -182,7 +182,7 @@ test("pending journal refusals record terminal failures and exclude both automat
 const journalJson = JSON.parse(readFileSync(new URL("../../../journal.registry.json", import.meta.url)));
 const gymJson = JSON.parse(readFileSync(new URL("../../../gym.registry.json", import.meta.url)));
 const v4JournalRegistry = new Registry({ ...journalJson, version: 4, minVersion: 4 });
-const v5Registry = new Registry({ registry: "windmill", version: 5, minVersion: 4,
+const composedRegistry = new Registry({ registry: "windmill", version: gymJson.version, minVersion: gymJson.minVersion,
   products: { ...gymJson.products, ...journalJson.products },
   types: [...gymJson.types, ...journalJson.types], commands: [...gymJson.commands, ...journalJson.commands] });
 
@@ -191,7 +191,7 @@ function gymDoorWrites(state, now) {
     revisions: state.revisions["acct:A/journal"], claims: state.product.journalClaims });
   state.product.seeds = { dip: { name: "Dip" } };
   for (const [i, door] of ["mcp", "ask"].entries()) {
-    const created = admit({ state, registry: v5Registry, product: gymProduct, origin: { kind: "server", account: "A" },
+    const created = admit({ state, registry: composedRegistry, product: gymProduct, origin: { kind: "server", account: "A" },
       serverNow: now + i, intent: { scope: "self/gym", d: [{ t: "routine", id: `routine000${i + 1}`,
         born: null, life: ["alive", null], f: { name: ["Dips", null], entries: [[{ exerciseId: "dip" }], null], createdDoor: [door, null] } }] } });
     assert.equal(created.result.s, "ok");
@@ -204,7 +204,7 @@ function gymDoorWrites(state, now) {
   return state;
 }
 
-test("v4 journal ready, sent and acked saves survive v5 service and gym door writes without an epoch reset", () => {
+test("v4 journal ready, sent and acked saves survive v6 service and gym door writes without an epoch reset", () => {
   const sample = vectors.find((v) => v.input.occupied && !v.input.strategy).input;
   for (const phase of ["ready", "sent", "acked"]) {
     let state = new ServerState(sample.server);
@@ -232,14 +232,14 @@ test("v4 journal ready, sent and acked saves survive v5 service and gym door wri
     state = gymDoorWrites(state, sample.now + 4);
     device = new Device(device.toJSON());
     assert.deepEqual(device.activeReplica.entries()[0], pending);
-    const greeting = hello({ state, registry: v5Registry, account: "A", serverTime: sample.now + 6 });
+    const greeting = hello({ state, registry: composedRegistry, account: "A", serverTime: sample.now + 6 });
     assert.equal(greeting.status, 200);
-    assert.equal(greeting.body.schema, 5);
+    assert.equal(greeting.body.schema, 6);
     assert.equal(greeting.body.minSchema, v4JournalRegistry.version);
     if (phase !== "acked") {
       request = nextPush(device.activeReplica, ctx(7));
       assert.deepEqual(request.intents[0].cmd.args, args);
-      const saved = push({ state, registry: v5Registry, product: journalProduct,
+      const saved = push({ state, registry: composedRegistry, product: journalProduct,
         account: "A", request, serverNow: sample.now + 7 });
       state = saved.state;
       assert.equal(saved.response.status, 200);
@@ -247,7 +247,7 @@ test("v4 journal ready, sent and acked saves survive v5 service and gym door wri
       onPushResponse(device.activeReplica, ctx(7), request, saved.response, steadyTiming(sample.now + 7, sample.now + 7));
     }
     const pulledRequest = pullRequest(device.activeReplica, v4JournalRegistry, ["self/journal"]);
-    const pulled = pull({ state, registry: v5Registry, product: journalProduct,
+    const pulled = pull({ state, registry: composedRegistry, product: journalProduct,
       account: "A", request: pulledRequest, serverNow: sample.now + 8 });
     onPullResponse(device.activeReplica, ctx(8), pulledRequest, pulled.response, steadyTiming(sample.now + 8, sample.now + 8));
     assert.equal(state.epoch, epoch);
@@ -260,7 +260,7 @@ test("v4 journal ready, sent and acked saves survive v5 service and gym door wri
   }
 });
 
-test("v4 journal pending claim and retained typing survive v5 gym writes, a lost answer and relaunch", () => {
+test("v4 journal pending claim and retained typing survive v6 gym writes, a lost answer and relaunch", () => {
   const sample = vectors.find((v) => v.input.occupied && !v.input.strategy).input;
   let state = new ServerState(sample.server);
   let device = new Device({ active: sample.replica, replicas: [Replica.fresh({ replica: sample.replica }).toJSON()] });
@@ -275,7 +275,7 @@ test("v4 journal pending claim and retained typing survive v5 gym writes, a lost
   const retained = structuredClone(device.activeReplica.deviceRows("journal")[pendingClaimKey(sample.claim.claimId)]);
   const epoch = state.epoch;
   state = gymDoorWrites(state, sample.now + 4);
-  const admitted = push({ state, registry: v5Registry, product: journalProduct,
+  const admitted = push({ state, registry: composedRegistry, product: journalProduct,
     account: "A", request, serverNow: sample.now + 6 });
   state = admitted.state;
   assert.equal(admitted.response.body.results[0].s, "ok");
@@ -284,19 +284,19 @@ test("v4 journal pending claim and retained typing survive v5 gym writes, a lost
   assert.deepEqual(device.activeReplica.deviceRows("journal")[pendingClaimKey(sample.claim.claimId)], retained);
   const retry = nextPush(device.activeReplica, ctx(7));
   assert.deepEqual(retry, request);
-  const replayed = push({ state, registry: v5Registry, product: journalProduct,
+  const replayed = push({ state, registry: composedRegistry, product: journalProduct,
     account: "A", request: retry, serverNow: sample.now + 7 });
   assert.deepEqual(replayed.state.toJSON(), state.toJSON());
   assert.equal(replayed.state.row("acct:A/journal", "page", sample.day).x.body.text, joined);
   onClaimPushResponse(device.activeReplica, ctx(7), retry, replayed.response, steadyTiming(sample.now + 7, sample.now + 7));
   const req = pullRequest(device.activeReplica, v4JournalRegistry, ["self/journal"]);
-  const pulled = pull({ state, registry: v5Registry, product: journalProduct,
+  const pulled = pull({ state, registry: composedRegistry, product: journalProduct,
     account: "A", request: req, serverNow: sample.now + 8 });
   onPullResponse(device.activeReplica, ctx(8), req, pulled.response, steadyTiming(sample.now + 8, sample.now + 8));
   device = new Device(device.toJSON());
   assert.ok(reconcilePendingClaim(device.activeReplica, ctx(9), sample.claim.claimId));
   const saveRequest = nextPush(device.activeReplica, ctx(10));
-  const saved = push({ state, registry: v5Registry, product: journalProduct,
+  const saved = push({ state, registry: composedRegistry, product: journalProduct,
     account: "A", request: saveRequest, serverNow: sample.now + 10 });
   assert.equal(saved.response.body.results[0].s, "ok");
   assert.equal(saved.state.row("acct:A/journal", "page", sample.day).x.body.text,

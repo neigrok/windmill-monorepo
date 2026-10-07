@@ -451,12 +451,18 @@ target_sources(windmill_gym PRIVATE
 add_executable(windmill_server platform/infra/main.cpp)
 target_link_libraries(windmill_server PRIVATE windmill_roadmap windmill_product_sync)
 
+add_executable(windmill_rotate_sync_epoch platform/infra/rotate_sync_epoch.cpp)
+target_link_libraries(windmill_rotate_sync_epoch PRIVATE windmill_platform)
+
 # The real composition with a harness-controlled clock; never copied to the runtime image.
 add_executable(windmill_server_test_clock platform/infra/main.cpp)
 target_compile_definitions(windmill_server_test_clock PRIVATE WM_TEST_CLOCK=1)
 target_link_libraries(windmill_server_test_clock PRIVATE windmill_roadmap windmill_product_sync)
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_test(NAME sync_epoch COMMAND ${Python3_EXECUTABLE}
+  ${CMAKE_SOURCE_DIR}/test/platform/infra/sync_epoch_test.py $<TARGET_FILE:windmill_rotate_sync_epoch>)
+set_tests_properties(sync_epoch PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE)
 add_test(NAME auth_differential COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/e2e/auth_differential_test.py)
 # deploy-production.sh against a modeled Docker host: promotion, the kept database password, Caddy's proof and refusals.

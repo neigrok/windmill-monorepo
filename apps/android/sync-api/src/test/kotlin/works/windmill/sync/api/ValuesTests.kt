@@ -126,16 +126,18 @@ class ValuesTests {
         assertEquals(CommitFailure.Kind.malformed, CommitFailure.malformed("misuse").kind)
     }
 
-    @Test fun resultCallbacksRetainCommandResultAndProductDeviceRows() {
+    @Test fun resultCallbacksRetainIntentResultGestureAndProductDeviceRows() {
         val command = Command("probe.run", Json.objectOf())
+        val intent = Intent(ScopeRef.product("probe"), n = 3, command = command)
         val result = PushResult(Json.parse("{\"n\":3,\"s\":\"refused\",\"code\":\"stale\",\"detail\":{\"reason\":\"newer\"}}"))
         val rows = mapOf("draft" to Json.of("present"))
-        val writes: CommandResultDeviceWrites = { cmd, response, product, device ->
-            assertEquals(command, cmd); assertEquals(result, response); assertEquals("probe", product); assertEquals(rows, device)
+        val writes: IntentResultDeviceWrites = { submitted, response, epoch, gestureId, device ->
+            assertEquals(intent, submitted); assertEquals(result, response); assertEquals("ep-1", epoch)
+            assertEquals("gesture-1", gestureId); assertEquals(rows, device)
             listOf(DeviceWrite("draft", null))
         }
         val pending: PendingDeviceWork = { product, device -> assertEquals("probe", product); device.keys.toList() }
-        assertEquals(listOf(DeviceWrite("draft", null)), writes(command, result, "probe", rows))
+        assertEquals(listOf(DeviceWrite("draft", null)), writes(intent, result, "ep-1", "gesture-1", rows))
         assertEquals(listOf("draft"), pending("probe", rows))
         assertEquals(PushResult.Verdict.Refused(RefusalCode.stale), result.verdict)
     }

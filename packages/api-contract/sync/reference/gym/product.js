@@ -242,8 +242,7 @@ export class GymProduct {
     return f;
   }
 
-  // Replaces a finished workout whole: its interval and name, every set it names, and the death of the
-  // sets it leaves out. A kept set keeps its movement and kind, and its rpe and note unless named.
+  // Corrects a finished workout; preserveOtherSets keeps the sets it leaves out.
   correctSession(ctx, args) {
     const state = ctx.idState('session', args.sessionId);
     if (state.state === 'none' || state.state === 'foreign') throw new Refusal('unknown-record');
@@ -267,6 +266,16 @@ export class GymProduct {
     const standing = new Map(ctx.rowsOf('set')
       .filter((set) => isAlive(set) && valueOf(set, 'sessionId') === args.sessionId)
       .map((set) => [set.id, set]));
+    const named = new Set(args.sets.map((set) => set.id));
+    if (args.preserveOtherSets === true) {
+      for (const [id, set] of standing) {
+        if (named.has(id)) continue;
+        if (valueOf(set, 'completedAt') < args.startedAt || valueOf(set, 'completedAt') > args.finishedAt) throw new Refusal('bad-instant');
+        const number = `${valueOf(set, 'exerciseId')}#${set.v.setNumber}`;
+        if (numbers.includes(number)) throw new Refusal('invalid');
+        numbers.push(number);
+      }
+    }
     const deltas = [];
     const write = [];
     const sessionFields = {
@@ -287,13 +296,12 @@ export class GymProduct {
         deltas.push({ t: 'set', id: set.id, born: prior.born, f, v: { setNumber: set.setNumber } });
         write.push({ t: 'set', id: set.id, f: Object.fromEntries(Object.keys(f).map((name) => [name, null])) });
       } else {
-        const f = this.setFields(args.sessionId, { ...set, kind: 'working' }, 'working');
+        const f = this.setFields(args.sessionId, set, 'working');
         deltas.push({ t: 'set', id: set.id, life: ['alive', null], born: null, f, v: { setNumber: set.setNumber } });
         write.push({ t: 'set', id: set.id, born: null, f: Object.fromEntries(Object.keys(f).map((name) => [name, null])) });
       }
     }
-    const named = new Set(args.sets.map((set) => set.id));
-    for (const [id, set] of standing) {
+    if (args.preserveOtherSets !== true) for (const [id, set] of standing) {
       if (!named.has(id)) deltas.push({ t: 'set', id, born: set.born, life: ['dead', null] });
     }
     setOwn(corrections, args.requestId, { sessionId: args.sessionId, args: structuredClone(args) });

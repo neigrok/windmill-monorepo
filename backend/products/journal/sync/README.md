@@ -1,6 +1,6 @@
 # Journal sync binding
 
-`platform/infra/SyncProducts` seals gym and journal into one catalog at registry version 5, minimum
+`platform/infra/SyncProducts` seals gym and journal into one catalog at registry version 6, minimum
 version 4 (`packages/api-contract/sync/composition.json`), and `windmill_server` always serves it at
 `/v1/sync`. Journal binds its two types and two commands independently, over the same rules on fakes
 and Postgres: `page`, keyed by the local day, the `journalState` singleton, `journal.savePage` and
@@ -14,10 +14,8 @@ id is `claim-conflict`.
 
 `PgJournal` stores `page` in `journal_page` and `journalState` in `journal_sync_state`, claim
 receipts in `journal_claim_receipts` and each account's content clock in `journal_content_clock`.
-Purging a scope deletes the account's pages, revisions, state, claim receipts, content clock and
-adoption record. The production tables were adopted in place (engine Appendix D); `db/schema.sql`
-builds that shape, and the adoption's record, `journal_sync_adoptions` and
-`journal_page_revision.migration_id`, is never updated, and no server code reads it.
+Purging a scope deletes the account's pages, revisions, state, claim receipts and content clock.
+`db/schema.sql` builds that shape; engine Appendix D defines the adopted base's invariants.
 
 Revision pruning runs only when an admission archives a revision: each affected day keeps its
 newest ten, then the account keeps its newest prefix bounded by 500 rows and 8 MiB, and nothing older

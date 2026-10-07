@@ -43,9 +43,9 @@ struct CorpusTests {
     #expect(written == ["routine.revision", "routine.createdEntries", "proposal.baseRevision", "proposal.baseName",
       "proposal.changeCount", "note.updatedAt", "routineCreation"])
   }
-  @Test(arguments: metadata, [4, 5])
+  @Test(arguments: metadata, [4, 5, 6])
   func metadataArrivesThroughOrdinaryPullsAndSurvivesSQLiteRestart(_ vector: CorpusVector, _ version: Int) throws {
-    let v5 = try Registry(json: Corpus.registryFile("gym"))
+    let current = try Registry(json: Corpus.registryFile("gym"))
     var json = try Corpus.registryFile("gym").asObject()
     json["version"] = JSON(version)
     if version == 4 {
@@ -62,7 +62,7 @@ struct CorpusTests {
     let key = ScopeKey(scope, account: account)!, replica = "rp_00000000000000000000000000000001"
     let initial = try ServerState(json: vector.input.member("state"))
     let admitted = try ServerState(json: vector.expect.member("state"))
-    var server = ModelServer(registry: v5, rules: MetadataFeedRules(), state: initial)
+    var server = ModelServer(registry: current, rules: MetadataFeedRules(), state: initial)
     var instance = Instance(actor: try Stamp.Actor(ClientSteps.actor), deviceNow: try vector.input.member("serverNow").asInteger(),
       appVersion: "\(version)")
     let identities = try QueuedIdentities([:])
@@ -104,7 +104,7 @@ struct CorpusTests {
     #expect(loaded.spentIDs(scope) == [:])
     #expect(loaded.cursor(scope)?.digest == (admitted.scopes[key]?.digest ?? .zero))
     #expect(loaded.outbox == [])
-    if version == 5 {
+    if version >= 5 {
       for row in loaded.rows(scope).all {
         let fields: Set<String> = row.key.type == "routineCreation" ? ["snapshot"] : Self.serverAuthored[row.key.type] ?? []
         for field in fields {

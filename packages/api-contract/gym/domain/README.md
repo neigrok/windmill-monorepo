@@ -1,7 +1,7 @@
 # Gym domain corpus
 
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
-Swift `GymDomain` and Kotlin `:gym:domain` run every case over the shared v5/minimum-4 registry
+Swift `GymDomain` and Kotlin `:gym:domain` run every case over the shared v6/minimum-4 registry
 composition and reproduce each `expect` by JCS equality. R118 metadata reads remain optional
 for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCreation` decodes separately.
 
@@ -43,8 +43,9 @@ A `SetTarget` has optional `reps` and `weightKg`; omission means max reps or las
 Absent sets mean an open line. `SessionPlan` freezes `{routine,entries}`.
 
 `ImportedSet` carries `id,exerciseId,weightKg,reps,completedAt` and optional `kind,rpe,note`.
-`CorrectedSet` adds required `setNumber` and omits `kind`: kept sets keep their kind; new ones are
-working. Command arguments retain their raw loads and omitted versus explicit null `rpe` for
+`CorrectedSet` adds required `setNumber`: kept sets keep their kind; new ones take optional `kind`,
+default working. `CorrectSession` can preserve unnamed sets with `preserveOtherSets: true`.
+Command arguments retain their raw loads and omitted versus explicit null `rpe` for
 receipt identity. Predictions use checked, rounded values and never invent serials.
 
 Optional read-only fields are `Routine.revision/createdEntries/createdDoor`,
@@ -67,7 +68,7 @@ separately and is outside the v4 rule book because v4 has no such type.
 | `AppendSet`, `CorrectSet` | `{set:{id,fields}}` | Set id or `null` |
 | `DiscardSession` | `{id}` | `null`; held, refuses an active non-stale session |
 | `ImportSession` | `{id,routineId?,startedAt,finishedAt,sets:[ImportedSet]}` | Session id |
-| `CorrectSession` | `{sessionId,requestId,startedAt,finishedAt,routineName,sets:[CorrectedSet]}` | `null` |
+| `CorrectSession` | `{sessionId,requestId,startedAt,finishedAt,routineName,sets:[CorrectedSet],preserveOtherSets?}` | `null` |
 | `ProposeRoutine` | `{id,routineId,name,entries,summary,removing?}` | Proposal id; guards routine name and entries |
 | `ApplyProposal`, `DismissProposal` | `{id}` | `null` |
 

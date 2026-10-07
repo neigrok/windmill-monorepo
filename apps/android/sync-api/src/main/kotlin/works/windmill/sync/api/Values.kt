@@ -67,5 +67,5 @@ data class Notice(val id: String, val product: String, val scope: ScopeRef, val 
     val content: NoticeContent, val at: Long, val isDismissed: Boolean = false)
 data class UndoOffer(val id: String, val scope: ScopeRef, val releaseAt: Long)
 
-typealias CommandResultDeviceWrites = (Command, PushResult, String, Map<String, Json>) -> List<DeviceWrite>
+typealias IntentResultDeviceWrites = (Intent, PushResult, String, String, Map<String, Json>) -> List<DeviceWrite>
 typealias PendingDeviceWork = (String, Map<String, Json>) -> List<String>

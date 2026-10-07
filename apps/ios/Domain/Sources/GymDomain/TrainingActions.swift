@@ -45,11 +45,14 @@ public struct CorrectSessionCommand: ServerCommand {
     TextSpec("gym.correctSession.sets.id", unit: .chars, min: 8, max: 64, trim: false, nfc: false),
     TextSpec("gym.correctSession.sets.exerciseId", unit: .chars, min: 1, max: 64, trim: false, nfc: false),
     TextSpec("gym.correctSession.sets.note", unit: .bytes, min: 0, max: 4000, trim: false, nfc: false),
+    ChoiceSpec("gym.correctSession.sets.kind", values: ["warmup", "working", "drop", "failure"]),
   ]
   public let args: [String: JSON]
-  public init(id: ID<Session>, requestId: String, startedAt: Instant, finishedAt: Instant, routineName: String?, sets: [CorrectedSet]) {
-    args = ["sessionId": id.json, "requestId": .string(requestId), "startedAt": .of(startedAt), "finishedAt": .of(finishedAt),
+  public init(id: ID<Session>, requestId: String, startedAt: Instant, finishedAt: Instant, routineName: String?, sets: [CorrectedSet], preserveOtherSets: Bool = false) {
+    var args: [String: JSON] = ["sessionId": id.json, "requestId": .string(requestId), "startedAt": .of(startedAt), "finishedAt": .of(finishedAt),
             "routineName": .of(routineName), "sets": .array(sets.map(\.json))]
+    if preserveOtherSets { args["preserveOtherSets"] = .bool(true) }
+    self.args = args
   }
 }
 
@@ -252,13 +255,16 @@ public struct CorrectedSet: Sendable {
   public let rpe: Double?
   public let note: String?
   public let rpeNamed: Bool
+  public let kind: String?
   public init(id: ID<TrainingSet>, exerciseId: ID<Exercise>, setNumber: Int, weightKg: Double, reps: Int, completedAt: Instant,
-              rpe: Double? = nil, note: String? = nil, rpeNamed: Bool? = nil) {
+              rpe: Double? = nil, note: String? = nil, rpeNamed: Bool? = nil, kind: String? = nil) {
     self.id = id; self.exerciseId = exerciseId; self.setNumber = setNumber; self.weightKg = weightKg; self.reps = reps
     self.completedAt = completedAt; self.rpe = rpe; self.note = note; self.rpeNamed = rpeNamed ?? (rpe != nil)
+    self.kind = kind
   }
   public var json: JSON {
     var members: JSON.Object = ["id": id.json, "exerciseId": exerciseId.json, "setNumber": JSON(setNumber), "weightKg": .of(weightKg), "reps": JSON(reps), "completedAt": .of(completedAt)]
+    if let kind { members["kind"] = .string(kind) }
     if let note { members["note"] = .string(note) }; if rpeNamed { members["rpe"] = .of(rpe) }; return .object(members)
   }
 }
@@ -270,8 +276,10 @@ public struct CorrectSession: Action {
   public let finishedAt: Instant
   public let routineName: String?
   public let sets: [CorrectedSet]
-  public init(id: ID<Session>, requestId: String, startedAt: Instant, finishedAt: Instant, routineName: String?, sets: [CorrectedSet]) {
+  public let preserveOtherSets: Bool
+  public init(id: ID<Session>, requestId: String, startedAt: Instant, finishedAt: Instant, routineName: String?, sets: [CorrectedSet], preserveOtherSets: Bool = false) {
     self.id = id; self.requestId = requestId; self.startedAt = startedAt; self.finishedAt = finishedAt; self.routineName = routineName; self.sets = sets
+    self.preserveOtherSets = preserveOtherSets
   }
   public var scope: ScopeRef { Session.scope }
   public func load(_ read: Reader) throws -> TrainingState { try TrainingState(read) }
@@ -291,11 +299,18 @@ public struct CorrectSession: Action {
       return .refuse(.badInstant(Refused(Gym.Codes.badInstant, subject: id.ref, path: .predicted)))
     }
     let old = loaded.sets.filter { $0.sessionId == id }
+    let retained = preserveOtherSets ? old.filter { prior in !sets.contains(where: { $0.id == prior.id }) } : []
+    guard retained.allSatisfy({ $0.completedAt >= startedAt && $0.completedAt <= finishedAt }) else {
+      return .refuse(.badInstant(Refused(Gym.Codes.badInstant, subject: id.ref, path: .predicted)))
+    }
+    if sets.contains(where: { named in retained.contains(where: { $0.exerciseId == named.exerciseId && $0.setNumber == named.setNumber }) }) {
+      throw Violation(rule: "session.sets", path: "sets", reason: .custom("invalid"))
+    }
     var checked: [TrainingSet] = []
     for set in sets {
       let previous = loaded.sets.first { $0.id == set.id }
       let value = TrainingSet(id: set.id, sessionId: id, exerciseId: set.exerciseId, weightKg: set.weightKg, reps: set.reps,
-        kind: previous?.kind ?? "working", rpe: set.rpeNamed ? set.rpe : previous?.rpe,
+        kind: previous?.kind ?? set.kind ?? "working", rpe: set.rpeNamed ? set.rpe : previous?.rpe,
         note: set.note ?? previous?.note ?? "", completedAt: set.completedAt, setNumber: set.setNumber)
       checked.append(try Valid(value, at: loaded.moment).value)
     }
@@ -304,10 +319,10 @@ public struct CorrectSession: Action {
       predicted.closedBy = "finish"; predicted.displayName = routineName
       return Prediction.update(Session.self, id, predicted.fields)
     }
-    let command = CorrectSessionCommand(id: id, requestId: requestId, startedAt: startedAt, finishedAt: finishedAt, routineName: routineName, sets: sets)
+    let command = CorrectSessionCommand(id: id, requestId: requestId, startedAt: startedAt, finishedAt: finishedAt, routineName: routineName, sets: sets, preserveOtherSets: preserveOtherSets)
     let predictions = (predicted.map { [$0] } ?? []) + checked.map { set in
       old.contains(where: { $0.id == set.id }) ? .update(TrainingSet.self, set.id, set.fields) : .create(TrainingSet.self, set.id, set.fields)
-    } + old.filter { prior in !checked.contains(where: { $0.id == prior.id }) }.map { .remove(TrainingSet.self, $0.id) }
+    } + (preserveOtherSets ? [] : old.filter { prior in !checked.contains(where: { $0.id == prior.id }) }.map { .remove(TrainingSet.self, $0.id) })
     return .write(try Plan(running: command, predicting: predictions))
   }
 }
