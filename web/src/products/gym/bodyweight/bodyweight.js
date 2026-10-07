@@ -45,22 +45,22 @@ export function msOfDateLocal(text) {
 
 // The number in the display unit: kilograms to the two decimals the wire carries, trailing zeros
 // dropped; pounds to a tenth (units.js). Never rounded past what was typed.
-export function weightReading(weightKg) {
-  const shown = inDisplayUnit(weightKg);
-  if (weightUnit() === LB) return String(shown);
+export function weightReading(weightKg, unit = weightUnit()) {
+  const shown = inDisplayUnit(weightKg, unit);
+  if (unit === LB) return String(shown);
   return String(Math.round(shown * 100) / 100);
 }
 
 // `82.4 kg · 3 days ago`. Null with no weigh-in: the head then draws nothing, not a dash.
-export function readingLine(latest, now = Date.now()) {
+export function readingLine(latest, now = Date.now(), unit = weightUnit()) {
   if (!latest) return null;
   const at = msOfDateLocal(latest.dateLocal);
   if (at == null) return null;
-  return `${weightReading(latest.weightKg)} ${weightUnit()} · ${agoLabel(at, now)}`;
+  return `${weightReading(latest.weightKg, unit)} ${unit} · ${agoLabel(at, now)}`;
 }
 
-export function fieldValueOf(weightKg) {
-  return weightReading(weightKg);
+export function fieldValueOf(weightKg, unit = weightUnit()) {
+  return weightReading(weightKg, unit);
 }
 
 export function windowById(id) {
@@ -73,12 +73,12 @@ export function chartDomainOf(weights, windowId) {
 }
 
 // One dot per row, in the display unit, each carrying the words a reader or a screen reader gets.
-export function chartPointsOf(entries) {
+export function chartPointsOf(entries, unit = weightUnit()) {
   return (entries ?? []).map((entry) => ({
     key: entry.dateLocal,
     at: msOfDateLocal(entry.dateLocal),
-    value: inDisplayUnit(entry.weightKg),
-    label: `${weightReading(entry.weightKg)} ${weightUnit()} · ${shortDayLabel(msOfDateLocal(entry.dateLocal))}`,
+    value: inDisplayUnit(entry.weightKg, unit),
+    label: `${weightReading(entry.weightKg, unit)} ${unit} · ${shortDayLabel(msOfDateLocal(entry.dateLocal))}`,
     dateLocal: entry.dateLocal,
   })).filter((point) => point.at != null);
 }
@@ -95,8 +95,8 @@ export function chartCaption(windowId, count) {
 }
 
 // The unit lives on the axis, in the display unit the dots are in.
-export function axisValue(value) {
-  return `${Math.round(value * 10) / 10} ${weightUnit()}`;
+export function axisValue(value, unit = weightUnit()) {
+  return `${Math.round(value * 10) / 10} ${unit}`;
 }
 
 export function axisDate(ms) {

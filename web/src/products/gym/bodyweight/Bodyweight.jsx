@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Button, DotChart, Tabs } from '../../../design-system/index.js';
+import { Reader, Views } from '../../../platform/domain-kit/reading.js';
 import { Back } from '../Back.jsx';
 
 import { BODYWEIGHT_HREF, dayLabel } from '../log.js';
 import { weightUnit } from '../units.js';
 import { useDomainRead } from '../useDomainRead.js';
 import { Bodyweight } from '../domain/bodyweight.js';
-import { bodyweightDocument, gymMoment, gymStep, weighInInput } from '../gymRuntime.js';
+import { bodyweightDocument, gymMoment, gymStep, preferencesDocument, weighInInput, weighInKilograms } from '../gymRuntime.js';
 import { useGymApi } from '../gymSync.js';
 import {
   axisDate, axisValue, BODYWEIGHT_TITLE, chartCaption, chartDomainOf, chartPointsOf, DATE_LABEL,
@@ -18,9 +19,14 @@ import {
 
 export function useBodyweight(log) {
   const api = useGymApi();
+  const hidden = log.hidden('bodyweight');
   const view = useDomainRead((read) => {
+    // The room hides a requested delete before storage can publish the engine's held view.
+    if (hidden.size > 0) read = new Reader(new Views(read.registry, { ...read.views,
+      drawn: new Map([...read.views.drawn].filter(([, row]) => row.t !== 'weighin' || !hidden.has(row.id))),
+    }), read.scope, read.moment);
     const weights = new Bodyweight(read);
-    return { weights, ...bodyweightDocument(read, {}, weights) };
+    return { weights, unit: preferencesDocument(read).units, ...bodyweightDocument(read, {}, weights) };
   });
   const save = async (write) => {
     try { await api.saveBodyweight(write.dateLocal, write); return null; }
@@ -30,13 +36,13 @@ export function useBodyweight(log) {
     kind: 'bodyweight', id: dateLocal, refused: (error) => log.say(deleteRefusal(error)),
   });
   return { phase: view.data?.weights.stance === 'unknown' ? 'loading' : view.phase,
-    weights: view.data?.weights, rows: view.data?.entries ?? [], latest: view.data?.latest ?? null,
+    weights: view.data?.weights, unit: view.data?.unit ?? 'kg', rows: view.data?.entries ?? [], latest: view.data?.latest ?? null,
     retry: view.retry, save, remove };
 }
 
 // The latest recorded weight and its age, shown in the log options.
-export function BodyweightReading({ latest, now = Date.now() }) {
-  const line = readingLine(latest, now);
+export function BodyweightReading({ latest, now = Date.now(), unit = weightUnit() }) {
+  const line = readingLine(latest, now, unit);
   if (!line) return null;
   return <a className="gym-bodyweight-reading" href={BODYWEIGHT_HREF}>{line}</a>;
 }
@@ -44,15 +50,18 @@ export function BodyweightReading({ latest, now = Date.now() }) {
 // One sheet for entering, correcting and deleting: a plain decimal field in the account's unit, a
 // date that defaults to today, reaches no later than today and is fixed when the sheet opens on a dot. `onSave` and `onDelete`
 // answer null when the write landed and the refusal to draw when it did not.
-export function WeighInSheet({ entry = null, fixedDate = null, onSave, onDelete = null, onClose, now = Date.now() }) {
-  const [text, setText] = useState(() => (entry ? fieldValueOf(entry.weightKg) : ''));
+export function WeighInSheet({ entry = null, fixedDate = null, onSave, onDelete = null, onClose, now = Date.now(), unit = weightUnit() }) {
+  const [field, setField] = useState(() => ({ text: entry ? fieldValueOf(entry.weightKg, unit) : '', unit }));
+  const parsed = weighInKilograms(field.text, field.unit);
+  const text = field.unit === unit || parsed.refusal ? field.text : fieldValueOf(parsed.weightKg, unit);
   const [date, setDate] = useState(() => fixedDate ?? entry?.dateLocal ?? gymMoment(now).today.text);
   const [refusal, setRefusal] = useState('');
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
     if (busy) return;
-    const write = weighInInput(text, date);
+    // A setting change only respells the input; saving keeps the amount the person typed.
+    const write = weighInInput(field.text, date, undefined, field.unit);
     if (write.refusal) {
       gymStep('bodyweight-save', 'refused');
       setRefusal(write.refusal);
@@ -81,12 +90,12 @@ export function WeighInSheet({ entry = null, fixedDate = null, onSave, onDelete 
             inputMode="decimal"
             autoComplete="off"
             value={text}
-            aria-label={`${BODYWEIGHT_TITLE} in ${weightUnit()}`}
-            onChange={(event) => { setText(event.target.value); setRefusal(''); }}
+            aria-label={`${BODYWEIGHT_TITLE} in ${unit}`}
+            onChange={(event) => { setField({ text: event.target.value, unit }); setRefusal(''); }}
             onKeyDown={(event) => { if (event.key === 'Enter') save(); }}
             autoFocus
           />
-          <span className="gym-weigh-unit">{weightUnit()}</span>
+          <span className="gym-weigh-unit">{unit}</span>
         </div>
 
         {fixedDate ? (
@@ -166,11 +175,11 @@ export function BodyweightScreen({ log }) {
       {shown.length > 0 && (
         <div className="gym-bodyweight-chart">
           <DotChart
-            points={chartPointsOf(shown)}
+            points={chartPointsOf(shown, weights.unit)}
             domain={chartDomainOf(weights.weights, windowId)}
             joins={(from, to) => !chart.gaps.some((gap) => gap.after.text === from.dateLocal && gap.before.text === to.dateLocal)}
             gapLabel={gapLabel}
-            formatValue={axisValue}
+            formatValue={(value) => axisValue(value, weights.unit)}
             formatDate={axisDate}
             caption={chartCaption(windowId, shown.length)}
             ariaLabel={BODYWEIGHT_TITLE}
@@ -183,6 +192,7 @@ export function BodyweightScreen({ log }) {
         <WeighInSheet
           key={entry.dateLocal}
           entry={entry}
+          unit={weights.unit}
           fixedDate={entry.dateLocal}
           onSave={async (write) => {
             const refused = await weights.save(write);

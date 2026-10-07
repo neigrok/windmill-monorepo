@@ -956,7 +956,7 @@ test('a routine’s name moves with its own document, and claims nothing about w
 
 test('bodyweight: the log actions open one sheet, the reading stays in options, and the chart is the design system’s', () => {
   const log = read('Log.jsx');
-  assert.equal(log.includes('<BodyweightReading latest={weights.latest} />'), true);
+  assert.equal(log.includes('<BodyweightReading latest={weights.latest} unit={weights.unit} />'), true);
   assert.ok(log.indexOf('gym-log-options') < log.indexOf('<BodyweightReading'), 'the reading is in log options');
   assert.equal((log.match(/className="gym-history-weigh"/g) ?? []).length, 2);
   assert.equal((log.match(/<WeighInSheet/g) ?? []).length, 1);

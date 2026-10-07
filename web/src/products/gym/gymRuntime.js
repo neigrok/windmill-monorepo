@@ -11,7 +11,7 @@ import { GymRefusals } from './domain/gymRules.js';
 import { ChangePreferences, Preferences, PreferencesValue, restSettings } from './domain/preferences.js';
 import { GymRefusal, isStoreFailure } from './errors.js';
 import { REFUSALS } from './bodyweight/bodyweight.js';
-import { fromDisplayUnit } from './units.js';
+import { fromDisplayUnit, weightUnit } from './units.js';
 
 const SCOPE = 'self/gym';
 const OPERATIONS = new Set(['routine-create', 'routine-save', 'exercise-create', 'exercise-rename',
@@ -56,12 +56,18 @@ export function gymRefusalError(refused) {
 }
 
 // Decimal syntax and units belong to the field; the domain validates the day and kilograms.
-export function weighInInput(text, date, moment = gymMoment()) {
+export function weighInKilograms(text, unit = weightUnit()) {
   const raw = (text ?? '').trim().replace(/,/g, '.');
   if ((raw.match(/\./g) ?? []).length > 1) return { refusal: REFUSALS.decimals };
   if (!/^\d*\.?\d*$/.test(raw) || !/\d/.test(raw)) return { refusal: REFUSALS.notNumber };
+  return { weightKg: fromDisplayUnit(Number(raw), unit) };
+}
+
+export function weighInInput(text, date, moment = gymMoment(), unit = weightUnit()) {
+  const parsed = weighInKilograms(text, unit);
+  if (parsed.refusal) return parsed;
   try {
-    const valid = new Valid(new WeighInValue(new Id(date, WeighIn), fromDisplayUnit(Number(raw))), moment);
+    const valid = new Valid(new WeighInValue(new Id(date, WeighIn), parsed.weightKg), moment);
     return { dateLocal: date, weightKg: valid.value.kg };
   } catch (error) {
     if (error instanceof Violation) return { refusal: gymRefusalError(GymRefusals.ofViolation(error)).sentence };

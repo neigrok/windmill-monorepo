@@ -136,6 +136,24 @@ test('the sheet: a plain decimal field with no hint, a date defaulting to today,
   assert.equal(saved[0].recordedAt, undefined, 'the commit supplies its own timestamp');
 });
 
+test('a unit change converts an edited field without changing its kilogram amount on Save', async (t) => {
+  browserWith();
+  const { WeighInSheet } = await loadScreen('products/gym/bodyweight/Bodyweight.jsx');
+  const saved = [];
+  let unit = 'kg';
+  const screen = renderHook(t, () => WeighInSheet({ unit, fixedDate: '2026-08-20',
+    onSave: async (write) => { saved.push(write); return null; }, onClose: () => {},
+  }));
+  const input = () => findByClass(screen.tree, 'gym-weigh-input')[0];
+  input().props.onChange({ target: { value: '80' } });
+  unit = 'lb';
+  screen.redraw();
+  assert.equal(input().props.value, '176.4');
+  assert.equal(input().props['aria-label'], 'Bodyweight in lb');
+  await findByClass(screen.tree, 'gym-weigh-save')[0].props.onClick();
+  assert.deepEqual(saved, [{ dateLocal: '2026-08-20', weightKg: 80 }]);
+});
+
 test('the same sheet from a dot: the date fixed, the number prefilled, and a delete that is one press', async (t) => {
   browserWith();
   const { WeighInSheet } = await loadScreen('products/gym/bodyweight/Bodyweight.jsx');
@@ -235,3 +253,105 @@ test('the chart screen with nothing to draw says so in words and draws no frame'
   const quiet = findByClass(screen.tree, 'gym-quiet').map(textOf);
   assert.deepEqual(quiet, ['No weigh-ins yet.', 'Weigh in from the log and the number lands here.']);
 });
+
+for (const renderAfterMidnight of ['changing the window', 'resuming the tab', 'the active tab reaches midnight']) {
+  test(`an offline chart follows the real local day after midnight when ${renderAfterMidnight}`, async (t) => {
+    const automatic = renderAfterMidnight === 'the active tab reaches midnight';
+    t.mock.timers.enable({ apis: automatic ? ['Date', 'setTimeout'] : ['Date'], now: new Date(2027, 0, 15, 23, 59).getTime() });
+    const browser = browserWith();
+    navigator.onLine = false;
+    const gym = await gymAccount(t, [
+      confirmed('weighin', '2026-10-18', { kg: 80, recordedAt: 1 }),
+      confirmed('weighin', '2027-01-15', { kg: 81, recordedAt: 2 }),
+      confirmed('weighin', '2027-01-16', { kg: 82, recordedAt: 3 }),
+    ]);
+    const { BodyweightScreen } = await loadScreen('products/gym/bodyweight/Bodyweight.jsx');
+    const screen = renderHook(t, () => BodyweightScreen({ log: quietLog() }), { live: true });
+    const snapshot = gym.engine.observe('self/gym').getSnapshot();
+    const chart = () => {
+      const { points, domain } = chartOf(screen.tree).props;
+      return { to: domain.to, days: points.map((point) => point.dateLocal) };
+    };
+    assert.deepEqual(chart(), { to: new Date(2027, 0, 15).getTime(), days: ['2026-10-18', '2027-01-15'] });
+
+    if (automatic) t.mock.timers.tick(120_000);
+    else {
+      browser.hide();
+      t.mock.timers.setTime(new Date(2027, 0, 16, 0, 1).getTime());
+      if (renderAfterMidnight === 'resuming the tab') browser.show();
+      else {
+        const tabs = () => elementsOf(screen.tree).find((each) => typeof each.type === 'function' && each.type.name === 'Tabs');
+        tabs().props.onChange('all');
+        tabs().props.onChange('90');
+      }
+    }
+
+    assert.equal(gym.engine.observe('self/gym').getSnapshot(), snapshot, 'no sync update caused this render');
+    assert.deepEqual(chart(), { to: new Date(2027, 0, 16).getTime(), days: ['2027-01-15', '2027-01-16'] });
+  });
+}
+
+for (const outcome of ['commits', 'fails']) {
+  test(`a stalled weigh-in delete hides both the dot and log reading until it ${outcome}`, async (t) => {
+    t.mock.timers.enable({ apis: ['Date'], now: new Date(2027, 0, 15, 12).getTime() });
+    browserWith();
+    const entry = { dateLocal: '2027-01-15', weightKg: 80, recordedAt: 1 };
+    const gym = await gymAccount(t, weighIns([entry]));
+    const { useTrainingLog } = await loadScreen('products/gym/useTrainingLog.js');
+    const { BodyweightScreen, useBodyweight } = await loadScreen('products/gym/bodyweight/Bodyweight.jsx');
+    const { LogList } = await loadScreen('products/gym/Log.jsx');
+    const room = renderHook(t, () => {
+      const log = useTrainingLog();
+      return { log, screen: BodyweightScreen({ log }), logScreen: LogList({ log }), weights: useBodyweight(log) };
+    }, { live: true });
+    await settle();
+    const drawn = () => ({
+      days: chartOf(room.tree.screen)?.props.points.map((point) => point.dateLocal) ?? [],
+      latest: elementsOf(room.tree.logScreen).find((each) => typeof each.type === 'function' && each.type.name === 'BodyweightReading').props.latest,
+      stance: room.tree.weights.weights.stance,
+      quiet: findByClass(room.tree.screen, 'gym-quiet').map(textOf),
+    });
+    const shown = { days: [entry.dateLocal], latest: entry, stance: 'holding', quiet: [] };
+    const hidden = { days: [], latest: null, stance: 'holding', quiet: [] };
+    assert.deepEqual(drawn(), shown);
+
+    let release;
+    let entered;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const started = new Promise((resolve) => { entered = resolve; });
+    const transact = gym.engine.store.transact.bind(gym.engine.store);
+    const stalled = t.mock.method(gym.engine.store, 'transact', async (...args) => {
+      entered();
+      await gate;
+      if (outcome === 'fails') throw new DOMException('storage refused', 'QuotaExceededError');
+      return transact(...args);
+    });
+    chartOf(room.tree.screen).props.onPick(chartOf(room.tree.screen).props.points[0]);
+    sheetOf(room.tree.screen).props.onDelete(entry.dateLocal);
+    try {
+      await started;
+      assert.deepEqual(gym.owed(), [], 'the delete has not reached durable storage');
+      assert.deepEqual([room.tree.log.transient.text, room.tree.log.transient.action.label], ['Weigh-in deleted.', 'Undo']);
+      assert.equal(sheetOf(room.tree.screen), undefined);
+      assert.deepEqual(drawn(), hidden);
+    } finally {
+      release();
+      await settle();
+      stalled.mock.restore();
+    }
+
+    if (outcome === 'commits') {
+      assert.deepEqual(gym.owed(), [`held delete weighin ${entry.dateLocal}`]);
+      assert.deepEqual(drawn(), hidden);
+      await room.tree.log.transient.action.run();
+      await settle();
+      assert.equal(room.tree.log.transient, null);
+    } else {
+      assert.equal(room.tree.log.held.length, 0);
+      assert.equal(room.tree.log.transient.text, 'That weigh-in wasn’t deleted — this device couldn’t store it.');
+      assert.equal(room.tree.log.transient.action, null);
+    }
+    assert.deepEqual(gym.owed(), []);
+    assert.deepEqual(drawn(), shown, 'Undo or a failed commit restores the dot and reading together');
+  });
+}

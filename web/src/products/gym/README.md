@@ -13,7 +13,10 @@ room's own clock, and when the room unmounts or the document hides it is dropped
 conversation stays. The account gate remains in `GymApp`.
 
 Bodyweight and preferences use the domain kit through `gymRuntime.js`. The bodyweight stance reads
-`stored`; its reading, dots and gaps read `drawn`. Its saves validate the local day and kilograms, stamp
+`stored`; its reading, dots and gaps read `drawn`, with the room's pending deletes hidden before storage
+settles. Reads refresh on render, at local midnight and when the tab resumes. Bodyweight labels and fields
+take the current preference unit directly; changing units preserves the amount in an open field.
+Its saves validate the local day and kilograms, stamp
 the commit moment and retire a held delete of that day. Preference saves write only touched client fields
 (units, confirmation haptic and sound); rest settings are read-only.
 
