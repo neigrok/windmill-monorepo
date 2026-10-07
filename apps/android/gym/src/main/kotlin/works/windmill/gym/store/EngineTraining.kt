@@ -16,6 +16,9 @@ import works.windmill.domain.kit.*
 import works.windmill.gym.domain.*
 import works.windmill.gym.domain.sync.*
 import works.windmill.platform.net.WindmillJson
+import works.windmill.sync.api.Change
+import works.windmill.sync.api.CommitOutcome
+import works.windmill.sync.api.Gesture
 import works.windmill.sync.api.ViewMode
 import works.windmill.sync.core.*
 import works.windmill.sync.engine.Engine
@@ -321,7 +324,12 @@ class EngineTraining(val engine: Engine) {
         if (anonymous || status.authPaused) throw TrainingRefused("sign-in", "Sign in again to decide this proposal.")
         if (!status.online) throw TrainingUnanswered
         val before = engine.notices("gym").notices.value.map { it.id }.toSet()
-        if (applying) apply(ApplyProposal(Id(id, EngineProposal))) else apply(DismissProposal(Id(id, EngineProposal)))
+        val removal = if (applying) proposal(id)?.takeIf { it.isPending && it.intent == ProposalIntent.Remove } else null
+        val written = writing { runner ->
+            if (applying) runner.run(ApplyProposal(Id(id, EngineProposal))) else runner.run(DismissProposal(Id(id, EngineProposal)))
+        }
+        if (written is Outcome.Refused) throw refusal(written.refusal)
+        val localId = written.receipt?.localIds?.singleOrNull()
         return withTimeoutOrNull(15_000) {
             while (true) {
                 if (engine.activeReplica() != replica) throw TrainingRefused("account-changed", "The account changed. Open this again.")
@@ -329,6 +337,10 @@ class EngineTraining(val engine: Engine) {
                     notice.content.command?.args?.get("proposalId") == Json.of(id) }?.let {
                     throw refusal(DomainNotice(it, engine.registry, GymRefusal).refusal)
                 }
+                // A removal's confirmed rows are gone after pull; only this command's resolution is its receipt.
+                if (removal != null && localId != null && engine.ended().any {
+                    it["localId"] == Json.of(localId) && it["outcome"] == Json.of("resolved")
+                }) return@withTimeoutOrNull ProposalDecision(removal.copy(state = ProposalState.Applied, settledAtMs = null))
                 val confirmed = read { reader ->
                     val identity = Id(id, EngineProposal)
                     val record = reader.confirmed(EngineProposal, identity)?.takeIf { it.isVisible }
@@ -379,19 +391,23 @@ class EngineTraining(val engine: Engine) {
     }
     suspend fun deleteNote(id: String) { apply(deleteNote(Id(id, EngineNote))) }
     suspend fun reorderNotes(order: List<String>): List<Note> {
-        if (order.distinct().size != order.size || order.toSet() != notes().map { it.id }.toSet())
-            throw TrainingRefused("stale", "The notes changed. Read them again.")
-        apply(object : Action<List<EngineNote>, Unit, GymRefusal> {
-            override val scope = EngineNote.scope
-            override val refusals = GymRefusal
-            override fun load(read: Reader) = read.repository(EngineNote).all(ViewMode.drawn)
-            override fun decide(loaded: List<EngineNote>, ids: IDSource): Decision<Unit, GymRefusal> {
-                if (loaded.map { it.id.text }.toSet() != order.toSet()) return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.stale, null, path = Refused.Path.predicted)))
-                val plan = Plan()
-                for ((index, id) in order.withIndex()) plan.move(Id(id, EngineNote), order.getOrNull(index - 1)?.let { Id(it, EngineNote) })
-                return Decision.Write(plan, Unit)
+        val (outcome, current) = engine.commit(EngineNote.scope) { reader ->
+            val held = Repository.ordered(EngineNote, reader.drawn(EngineNote.type).filter { it.isVisible })
+            val identities = held.map { it.id.toString() }
+            if (order.distinct().size != order.size || order.toSet() != identities.toSet()) return@commit null to false
+            if (order == identities) return@commit null to true
+            var previous: FractionalKey? = null
+            // Relative moves share the original snapshot; explicit keys make the whole order one write.
+            val changes = order.map { id ->
+                val key = FractionalKey.between(previous, null)
+                previous = key
+                Change.update(EngineNote.type, RecordID(id), mapOf(EngineNote.orderField to Json.of(key.text)))
             }
-        })
+            Gesture(changes, atomic = true) to true
+        }
+        if (!current) throw TrainingRefused("stale", "The notes changed. Read them again.")
+        if (outcome is CommitOutcome.Refused) throw refusal(GymRefusal.of(
+            Refused(outcome.code, null, outcome.detail, Refused.Path.predicted)))
         return notes()
     }
     fun weighins(from: String? = null, to: String? = null): List<WeighIn> = read { reader ->

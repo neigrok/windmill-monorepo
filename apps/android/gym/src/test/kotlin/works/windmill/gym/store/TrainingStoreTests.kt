@@ -568,6 +568,7 @@ class TrainingStoreTests {
     fun testSignedInWithNoSignalAStartComposesOnTheDeviceAndTheEngineSyncsIt() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             room.select("alice")
+            room.training.reportDelivery(room.engine.activeReplica(), Reply.Unreachable)
             val routine = (room.store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press")
                 .targeting("bench-press", List(3) { SetTarget(5, 100.0) })) as GymResult.Ok).value
             room.store.refreshEngine()
@@ -1322,6 +1323,36 @@ class TrainingStoreTests {
     }
 
     @Test
+    fun testTheFirstAccountWorkoutStaysFirstThroughDeliveryAndRelaunch() = runTest {
+        val server = EngineRoomFixture.server()
+        val directory = tmp.newFolder()
+        val snapshot = EngineRoomFixture(directory, backgroundScope).use { room ->
+            room.select("alice")
+            assertFalse("the account has not answered yet", room.store.firstSession)
+            room.pull(server); room.store.refreshEngine()
+            assertTrue(room.store.firstSession)
+            val opened = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press"); room.store.logSet(60.0, 5)
+            assertNotNull(room.engine.nextPush())
+            room.store.refreshEngine()
+            assertEquals(listOf(opened.id), room.store.allSessions.map { it.id })
+            assertTrue("the workout in flight is still the person's first", room.store.firstSession)
+            room.sync(server); room.store.refreshEngine()
+            assertTrue("delivery does not turn the current workout into prior history", room.store.firstSession)
+            room.engine.snapshot()
+        }
+        EngineRoomFixture(directory, backgroundScope, snapshot).use { room ->
+            room.selected = "alice"
+            room.store.connect(room.account())
+            assertTrue("relaunch keeps the current workout first", room.store.firstSession)
+            val routine = (room.store.saveRoutine(RoutineDraft(name = "Push").adding("bench-press")) as GymResult.Ok).value
+            assertFalse("a program is not a fresh room", room.store.firstSession)
+            room.store.withhold(Deletion.Routine(routine.id, routine.name))
+            assertFalse("an undo window does not remove the program", room.store.firstSession)
+        }
+    }
+
+    @Test
     fun testAReorderMovesTheWalkAndASwipeRefusesAMovementWithASetInIt() = runTest {
         val folder = tmp.newFolder()
         val snapshot: Json
@@ -1333,6 +1364,8 @@ class TrainingStoreTests {
             room.store.logSet(weightKg = 100.0, reps = 5)
             room.store.choose("bench-press")
             room.store.logSet(weightKg = 80.0, reps = 8)
+            room.store.refreshEngine()
+            assertTrue(room.store.firstSession)
             room.store.choose("romanian-deadlift")
             assertEquals(listOf("back-squat", "bench-press", "romanian-deadlift"), room.store.order)
 
@@ -2208,4 +2241,239 @@ class TrainingStoreTests {
             runCurrent()
         }
     }
+
+    @Test
+    fun testAStartFromARoutineDeletedElsewhereKeepsTheWorkoutWithoutInventingAPlan() = runTest {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("alice"); room.pull(server)
+
+            val opened = (room.store.start(routineId = "rt_deleted_elsewhere") as GymResult.Ok).value
+            assertNull(opened.routineId)
+            assertNull(opened.plan)
+            room.sync(server); room.store.refreshEngine()
+
+            assertEquals(opened, room.store.session)
+            assertEquals(opened, room.training.session(opened.id)?.session)
+            assertTrue(room.store.refusals.isEmpty())
+            assertTrue(room.outbox().isEmpty())
+            runCurrent()
+        }
+    }
+
+    // A row deleted elsewhere is gone from the strip once the log answers, and the refusal row says
+    // why rather than letting it vanish.
+    @Test
+    fun testAFixOfARowDeletedElsewhereTakesItOffTheStripAndSaysSo() = runTest {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("alice"); room.pull(server)
+            val opened = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            room.store.logSet(weightKg = 82.5, reps = 5)
+            runCurrent()
+            room.sync(server); room.store.refreshEngine()
+            val logged = room.store.sets.single()
+            anotherPhone(server, room.now) { phone ->
+                assertNull(phone.store.deleteSet(opened.id, logged.id))
+                runCurrent()
+                phone.sync(server)
+            }
+
+            val fixed = (room.store.fixSet(opened.id, logged.id, SetFix(reps = 4)) as FixOutcome.Corrected).set
+            runCurrent()
+            room.sync(server); noticed(room); room.store.refreshEngine()
+
+            assertEquals(emptyList<TrainingSet>(), room.store.sets)
+            assertEquals(listOf(fixed.id to "That is no longer on the log."), room.store.refusals.map { it.id to it.reason })
+            assertEquals(listOf(mapOf("reps" to Json.of(4))), room.engine.notices("gym").notices.value.map {
+                it.content.deltas.single().lattice.fields.mapValues { field -> field.value.value }
+            })
+            assertTrue(room.outbox().isEmpty())
+            runCurrent()
+        }
+    }
+
+    // A correction the log will never take owes nothing more: the log's numbers replace it, and the
+    // refusal is said.
+    @Test
+    fun testAFixTheLogRefusesGivesTheRowBackItsLoggedNumbersAndSaysSo() = runTest {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("alice"); room.pull(server)
+            val opened = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            room.store.logSet(weightKg = 82.5, reps = 5)
+            runCurrent()
+            room.sync(server); room.store.refreshEngine()
+            val logged = room.store.sets.single()
+
+            val fixed = (room.store.fixSet(opened.id, logged.id, SetFix(reps = 4)) as FixOutcome.Corrected).set
+            runCurrent()
+            assertEquals("the correction is drawn while it is owed", listOf(fixed), room.store.sets)
+
+            server.refuse(code = "invalid")
+            room.sync(server); noticed(room); room.store.refreshEngine()
+
+            assertEquals("the log's numbers replace the refused ones", listOf(logged), room.store.sets)
+            assertEquals(listOf(fixed.id to "That change could not be saved."), room.store.refusals.map { it.id to it.reason })
+            assertEquals(listOf(mapOf("reps" to Json.of(4))), room.engine.notices("gym").notices.value.map {
+                it.content.deltas.single().lattice.fields.mapValues { field -> field.value.value }
+            })
+            assertTrue(room.outbox().isEmpty())
+            runCurrent()
+        }
+    }
+
+    @Test
+    fun testADeleteTheLogCouldNotTakeIsSaidAndTheRowStands() = runTest {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("alice"); room.pull(server)
+            val opened = room.workout()
+            runCurrent()
+            room.sync(server); room.store.refreshEngine()
+            val shown = (room.store.sessionDetail(opened.id) as GymResult.Ok).value
+            val taken = shown.sets.single()
+
+            room.store.withhold(Deletion.Set(opened.id, taken))
+            assertNull(room.store.settleWithheld(taken.id))
+            server.refuse(code = "invalid")
+            room.sync(server); noticed(room); room.store.refreshEngine()
+
+            assertEquals(listOf(taken.id to "That change could not be saved."), room.store.refusals.map { it.id to it.reason })
+            assertEquals(listOf(emptyMap<String, Json>()), room.engine.notices("gym").notices.value.map {
+                it.content.deltas.single().lattice.fields.mapValues { field -> field.value.value }
+            })
+            assertEquals(emptySet<String>(), room.store.deletedSets)
+            assertEquals(listOf(taken), room.training.session(opened.id)!!.sets)
+            assertEquals("the retained screen draws the restored row", listOf(taken),
+                room.store.retainedSession(shown).sets.filterNot { it.id in room.store.deletedSets || it.id in room.store.withheldIds })
+
+            room.store.withhold(Deletion.Set(opened.id, taken))
+            assertNull(room.store.settleWithheld(taken.id))
+            room.store.refreshEngine()
+            assertEquals("the previous refusal does not unmask a pending retry", setOf(taken.id), room.store.deletedSets)
+            assertTrue(room.store.retainedSession(shown).sets.filterNot { it.id in room.store.deletedSets || it.id in room.store.withheldIds }.isEmpty())
+            room.sync(server); room.store.refreshEngine()
+            assertTrue(room.training.session(opened.id)!!.sets.isEmpty())
+            assertEquals("an accepted delete stays hidden in older reads", setOf(taken.id), room.store.deletedSets)
+            runCurrent()
+        }
+    }
+
+    @Test
+    fun testAFreshArrivalLogsFourSetsAndARelaunchLosesNoneOfThem() = runTest {
+        val folder = tmp.newFolder()
+        val snapshot: Json
+        val clock: Long
+        val opened: Session
+        EngineRoomFixture(folder, backgroundScope).use { room ->
+            room.select(null)
+
+            assertTrue("nothing has ever happened in this room", room.store.firstSession)
+            opened = (room.store.start() as GymResult.Ok).value
+            room.store.refreshEngine()
+            assertNotNull("the tap opened it", room.store.session)
+            assertTrue("the picker stands over it, with the six — the session in hand is not counted",
+                room.store.firstSession)
+            assertNull("nothing is chosen yet — that is what the picker is for", room.store.exerciseId)
+
+            room.store.choose("back-squat")
+            room.store.logSet(weightKg = 100.0, reps = 5)
+            room.store.logSet(weightKg = 100.0, reps = 5)
+            room.store.logSet(weightKg = 102.5, reps = 5)
+            room.store.choose("bench-press")
+            room.store.logSet(weightKg = 80.0, reps = 8)
+
+            assertEquals("the whole workout is on this device and nowhere else",
+                4, room.training.session(opened.id)!!.sets.size)
+            runCurrent()
+            snapshot = room.engine.snapshot(); clock = room.now
+        }
+
+        EngineRoomFixture(folder, backgroundScope, snapshot).use { reopened ->
+            reopened.now = clock; reopened.engine.start()
+            reopened.select(null)
+
+            assertEquals(opened.id, reopened.store.session?.id)
+            assertTrue(reopened.store.firstSession)
+            assertEquals(listOf(100.0, 100.0, 102.5, 80.0), reopened.store.sets.map { it.weightKg })
+            assertEquals(listOf(5, 5, 5, 8), reopened.store.sets.map { it.reps })
+            assertEquals(listOf("back-squat", "bench-press"), reopened.store.order)
+            assertEquals("it stands where the last set went, not in the picker over a session of sets",
+                "bench-press", reopened.store.exerciseId)
+            runCurrent()
+        }
+    }
+
+    @Test
+    fun testAnAppliedRemovalTakesTheRoutineOffTheProgram() = runTest {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            val pushA = pushAWaitingOnADiff(room, server, removing = true)
+            assertEquals(1, room.store.routines.size)
+
+            val decided = deciding(room, server) { room.store.applyProposal("proposal1") }
+
+            assertTrue(decided is ProposalOutcome.Decided)
+            assertNull(room.store.routine(pushA.id))
+            assertTrue(room.store.routines.isEmpty())
+            assertTrue(room.store.pendingProposals.isEmpty())
+            runCurrent()
+        }
+    }
+
+    @Test
+    fun testAccountNotesStayWithTheirOwnerAndSignedOutReadsNeverPush() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            val server = EngineRoomFixture.server()
+            room.select("alice"); room.pull(server)
+            assertTrue(room.store.saveNote("note_1", NoteWrite("Tone", "blunt")) is GymResult.Ok)
+            room.sync(server)
+            val notes = room.store.readNotes()
+            room.select(null)
+
+            assertEquals(GymResult.Ok(emptyList<Note>()), room.store.readNotes())
+            assertEquals(emptyList<Note>(), room.store.notes)
+            assertNull(room.engine.nextPush())
+            assertTrue(room.store.saveNote("note_1", NoteWrite("Device", "local")) is GymResult.Ok)
+            assertTrue(room.store.saveNote("note_2", NoteWrite("Second", "local")) is GymResult.Ok)
+            assertTrue(room.store.saveNote("note_1", NoteWrite("Device", "edited")) is GymResult.Ok)
+            assertTrue(room.store.reorderNotes(listOf("note_2", "note_1")) is GymResult.Ok)
+            assertEquals(listOf("note_2", "note_1"), room.store.notes.map { it.id })
+            assertNull("signed-out edits do not produce an account request", room.engine.nextPush())
+            assertNull(room.store.deleteNote("note_1"))
+            assertNull(room.store.deleteNote("note_2"))
+            assertEquals(GymResult.Ok(emptyList<Note>()), room.store.readNotes())
+            assertNull("signed-out deletes do not produce an account request", room.engine.nextPush())
+            room.select("bob"); room.pull(server)
+            assertEquals(GymResult.Ok(emptyList<Note>()), room.store.readNotes())
+            room.select("alice")
+            assertEquals(notes, room.store.readNotes())
+            runCurrent()
+        }
+    }
+
+    @Test
+    fun testNoteBoundsAndStaleOrderRefusalsReachTheScreen() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("alice"); room.pull(EngineRoomFixture.server())
+            repeat(10) { room.store.saveNote("note_$it", NoteWrite("note $it", "")) }
+
+            assertEquals(GymResult.Failed(WriteFailure.Refused("The log has reached its limit. Remove an entry first.")),
+                room.store.saveNote("note_more", NoteWrite("eleven", "")))
+            assertEquals(GymResult.Failed(WriteFailure.Refused("Check body.")),
+                room.store.saveNote("note_0", NoteWrite("note 0", "x".repeat(501))))
+            assertEquals(GymResult.Failed(WriteFailure.Refused("Check title.")),
+                room.store.saveNote("note_0", NoteWrite("t".repeat(61), "")))
+            // A short order is the ordinary case — the drawn rows, with a note inside its undo window
+            // left out — and the store names the rest back in. An order naming a note outside the
+            // current notebook is refused before anything is written.
+            assertEquals(GymResult.Failed(WriteFailure.Refused("The notes changed. Read them again before reordering.")),
+                room.store.reorderNotes(listOf("note_gone")))
+            runCurrent()
+        }
+    }
+
 }

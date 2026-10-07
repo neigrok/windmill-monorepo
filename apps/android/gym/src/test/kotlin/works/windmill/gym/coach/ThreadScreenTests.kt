@@ -2,6 +2,7 @@ package works.windmill.gym.coach
 
 import works.windmill.gym.ui.*
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
@@ -279,4 +280,88 @@ class ThreadScreenTests {
         }
         scope.cancel()
     }
+
+    @Test
+    fun aConfirmedRemovalReceiptStaysVisibleAfterTheThreadLosesItsProposalHeader() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val rest = FakeGymRest()
+        val room = signedIn(scope, rest)
+        val routine = pushDay(room, server)
+        fun entry(exerciseId: String, sets: List<SetTarget>) =
+            SyncEntry(Id(exerciseId, SyncExercise), sets.takeIf { it.isNotEmpty() }?.map { SyncTarget(it.reps, it.weightKg) })
+        fun slot(value: Json) = Json.array(value, Json.Null)
+        val diff = ProposalRules.changesBetween(routine.entries.map { entry(it.exerciseId, it.sets) }, emptyList())
+        val written = Json.objectOf("t" to Json.of("proposal"), "id" to Json.of("proposal1"), "born" to Json.Null,
+            "life" to Json.array(Json.of("alive"), Json.Null), "f" to Json.objectOf(
+                "routineId" to slot(Json.of(routine.id)), "intent" to slot(Json.of("remove")), "proposedName" to slot(Json.of("")),
+                "summary" to slot(Json.of("Remove this routine.")), "changes" to slot(Json.Arr(diff.map { it.json })),
+                "door" to slot(Json.of("ask")), "connection" to slot(Json.of("")), "agent" to slot(Json.of("")),
+                "threadId" to slot(Json.of("thread0001"))))
+        assertEquals(Json.of("ok"), server.call(ServerCall("u1", null, "propose", Json.objectOf(),
+            listOf(Json.objectOf("scope" to Json.of("self/gym"), "d" to Json.array(written)))), room.now)?.get("s"))
+        room.pull(server)
+        val thread = aThread(routine.id).copy(turns = listOf(AskTurn("coach", "The original removal explanation.",
+            receipt = AnswerReceipt(1, ReadTally(0, 0, 0), proposals = listOf("proposal1")))))
+        rest.conversations[thread.id] = thread
+        var receipts by mutableStateOf<List<String>>(emptyList())
+        var visit by mutableStateOf(0)
+        val reviewed = mutableListOf<String>()
+        compose.setContent {
+            key(visit) { ThreadScreen(thread.id, room.store, receipts, emptySet(), "Coach", {}, { reviewed += it.id }, {}) }
+        }
+        compose.onNodeWithText("Remove this routine.").assertIsDisplayed()
+        compose.onNodeWithText("Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal.")
+            .performScrollTo().assertIsDisplayed()
+        val settled = applied(room, server)
+        compose.runOnIdle {
+            rest.conversations[thread.id] = thread.copy(proposals = emptyList(), outcome = ThreadOutcome("unknown"))
+            receipts = listOf(requireNotNull(settled.proposal.receipt))
+            visit++
+        }
+        compose.onNodeWithText(requireNotNull(settled.proposal.receipt)).assertIsDisplayed()
+        compose.onNodeWithText("Remove this routine.").assertIsDisplayed()
+        compose.onNodeWithText("Review").performClick()
+        compose.onNodeWithText(ProposalRead.Gone.line).assertDoesNotExist()
+        compose.onNodeWithText(Ask.promise).assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(listOf("proposal1"), reviewed)
+            assertEquals(ProposalRead.Found(settled.proposal), runBlocking { room.store.proposal("proposal1") })
+            assertEquals(thread.turns, rest.conversations.getValue(thread.id).turns)
+        }
+        scope.cancel()
+    }
+
+    @Test
+    fun aReceiptOnlyProposalAppearsWhenTheThreadReopensAfterPull() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val rest = FakeGymRest()
+        val room = signedIn(scope, rest)
+        val routine = pushDay(room, server)
+        EngineRoomFixture(tmp.newFolder(), scope).use { coach ->
+            runBlocking { coach.select("u1") }
+            coach.pull(server)
+            propose(coach, server, routine)
+        }
+        val thread = AskThread("thread0001", "My question", outcome = ThreadOutcome("unknown"),
+            turns = listOf(AskTurn("coach", "The original answer.",
+                receipt = AnswerReceipt(1, ReadTally(0, 0, 0), proposals = listOf("proposal1")))))
+        rest.conversations[thread.id] = thread
+        var visit by mutableStateOf(0)
+        compose.setContent {
+            key(visit) { ThreadScreen(thread.id, room.store, emptyList(), emptySet(), "Coach", {}, {}, {}) }
+        }
+        compose.onNodeWithText("The original answer.").assertIsDisplayed()
+        compose.onNodeWithText("Review").assertDoesNotExist()
+        compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
+        compose.onNodeWithText("Try again").assertDoesNotExist()
+        compose.runOnIdle { room.pull(server); visit++ }
+        compose.onNodeWithText("Heavier triples.").assertIsDisplayed()
+        compose.onNodeWithText("Review").assertIsDisplayed()
+        compose.onNodeWithText("Try again").assertDoesNotExist()
+        compose.runOnIdle { assertEquals(mapOf(thread.id to thread), rest.conversations) }
+        scope.cancel()
+    }
+
 }
