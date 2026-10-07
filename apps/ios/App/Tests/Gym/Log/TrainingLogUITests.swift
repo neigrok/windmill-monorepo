@@ -216,6 +216,16 @@ import SyncTesting
     #expect(progress.logPlotPoints.count == 4)
   }
 
+  @Test func bodyweightProgressRemainsVisibleBesideLoadedSets() throws {
+    let (_, gym) = fixture()
+    let zero = try session(gym, daysAgo: 2, kg: 0, reps: 12)
+    _ = try session(gym, daysAgo: 1, kg: 10, reps: 12)
+    let progress = try #require(gym.log).progress.movement(SeedExercises.all.first!.id)
+    let zeroSet = try #require(gym.sets.first { $0.sessionId == zero.id })
+    #expect(LogPresentation.progressEfforts(progress).last == PerformedFact(zeroSet))
+    #expect(LogPresentation.progressEfforts(progress).map(\.weightKg) == [10, 0])
+  }
+
   @Test func dateAxesDescribeOnlyTheVisibleCanvasAndClampOverscroll() {
     let first = Date(timeIntervalSince1970: 0)
     let thirtyDays = first.addingTimeInterval(2_592_000)

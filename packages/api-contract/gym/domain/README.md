@@ -89,10 +89,16 @@ finish behavior, start bounds and half-open overlap. `SetRules` pins next-number
 `LastTime` selects the latest finished movement session. `Prefill` follows ordered targets,
 last-time rows and today's working-set override. `SessionReadout` provides duration, working-set
 and movement counts, positive working tonnage and the session estimate. `StatsProgress` groups
-finished working facts in total order, with unrounded estimates for ranking. `MovementProgress`
+finished working facts in total order, with full-precision estimate values. `MovementProgress`
 provides twelve-week/all windows, best, heaviest, most reps, record steps, sparse-chart eligibility
 and gaps. All estimates use `GymEstimate`: positive working load, 1–10 reps, supplied RPE ≥7;
 one rep is the load itself, otherwise Epley. Incomplete history does not assert a best or absence.
+Estimate ordering compares exact cent-load scores: load in cents multiplied by 30 for one rep or
+by `30 + reps` otherwise. Equal scores retain the earliest session, then lowest session identity;
+within a session, the lowest set identity wins.
+`BodyweightReps` exposes the independent zero-load repetition fact of each session and its best
+in the requested window. Higher assisted repetitions or equally repeated added load never replace
+that fact; the all-load `mostReps` read retains its own ordering. Partial history has facts but no best.
 
 `TrainingHistory` composes the mirror documents through the same entities and reads. Its vectors use
 `input:{method,args}` and preserve catalogue and routine joins, proposal provenance, last-set selection,
@@ -100,7 +106,7 @@ session summaries, reviews, record details and weekly totals. History filters ap
 facet aggregation; only the returned session page uses the cursor and limit. Equal session timestamps
 sort by ascending identity, and the next page excludes identities through `beforeId`. Tonnage sums
 loads in their storage quanta; estimates retain full precision. Record steps include the first baseline.
-The 99 training-read cases include 36 complete mirror documents and nine adversarial read scenes.
+The 112 training-read cases include 36 complete mirror documents and 22 adversarial read scenes.
 
 The engines accept create/update/write/removal predictions. Omitted sets in completed-session
 replacement and a proposal-removed routine disappear locally while their command is pending;

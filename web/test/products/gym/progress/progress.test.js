@@ -7,6 +7,44 @@ import { historyTotals } from '../../../../src/products/gym/logbook/history.js';
 import { tonnageLabel } from '../../../../src/products/gym/log.js';
 import { consistencyLine, joinsSessions, movementProgress, progressCards, recordProgress, sessionGapLabel } from '../../../../src/products/gym/progress/progress.js';
 
+for (const lifts of [[[70, 10], [80, 5]], [[80, 5], [70, 10]]]) {
+  test(`equivalent estimates retain the earliest record for ${lifts.map(([kg, reps]) => `${kg}x${reps}`).join(' then ')}`, () => {
+    const now = new Date(2026, 8, 25, 12).getTime();
+    const rows = lifts.flatMap(([weightKg, reps], index) => {
+      const sessionId = `session_${index}`;
+      const startedAt = now - (2 - index) * 86400000;
+      return [confirmed('session', sessionId, { startedAt, finishedAt: startedAt + 3600000 }),
+        ...Array.from({ length: 4 }, (_, set) => confirmed('set', `set_${index}_${set}`, {
+          sessionId, exerciseId: 'bench-press', weightKg, reps, kind: 'working', completedAt: startedAt + set + 1,
+        }))];
+    });
+    const history = gymReadView({ drawn: rows, stored: rows, firstPullComplete: true }, { now });
+    const model = movementProgress(history.log.progress, 'bench-press', { now, equipment: 'barbell', window: 'all' });
+    assert.equal(model.best.sessionId, 'session_0');
+    assert.deepEqual(model.points.map(({ color }) => color), ['var(--pr-ink)', 'var(--color-brand)']);
+    assert.equal(recordProgress(history.log.progress, 'bench-press', 'barbell').records.length, 1);
+    assert.equal(history.review('session_1').record?.kind, lifts[1][0] > lifts[0][0] ? 'heaviest' : undefined);
+  });
+}
+
+for (const [weightKg, reps] of [[-20, 15], [10, 12]]) for (const separate of [false, true]) {
+  test(`bodyweight rep records survive ${weightKg}kg sets ${separate ? 'across sessions' : 'in the same session'}`, () => {
+    const now = new Date(2026, 8, 25, 12).getTime();
+    const rows = [
+      confirmed('session', 'session_bodyweight', { startedAt: now - 3600000, finishedAt: now - 1000 }),
+      confirmed('set', 'set_bodyweight', { sessionId: 'session_bodyweight', exerciseId: 'chin-up', weightKg: 0, reps: 12, completedAt: now - 2000 }),
+      ...(separate ? [confirmed('session', 'session_mixed', { startedAt: now - 86400000, finishedAt: now - 82800000 })] : []),
+      confirmed('set', 'set_mixed', { sessionId: separate ? 'session_mixed' : 'session_bodyweight', exerciseId: 'chin-up', weightKg, reps,
+        completedAt: now - (separate ? 84000000 : 3000) }),
+    ];
+    const snapshot = gymReadView({ drawn: rows, stored: rows, firstPullComplete: true }, { now }).log.progress;
+    const model = movementProgress(snapshot, 'chin-up', { now, equipment: 'bodyweight' });
+    const cards = progressCards(snapshot, [{ id: 'chin-up', name: 'Chin-up', equipment: 'bodyweight' }], now);
+    assert.equal(model.mostRepsLine, 'most reps 12 · bodyweight · 25 Sep');
+    assert.equal(cards[0].mostRepsLine, model.mostRepsLine);
+  });
+}
+
 test('all is the full qualified snapshot, with one earliest standing mark and true time gaps', () => {
   const day = (month, date) => new Date(2026, month - 1, date, 12).getTime();
   const sessions = [

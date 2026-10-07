@@ -5,7 +5,8 @@ import { LocalDay } from '../../../platform/domain-kit/time.js';
 import { precondition } from '../../../platform/domain-kit/values.js';
 import { jcs } from '../../../platform/sync/core/jcs.js';
 import { roundHalfAway, roundToQuantum } from '../../../platform/sync/core/values.js';
-import { Session, SessionRules, TrainingSet } from './training.js';
+import { Exercise } from './catalogue.js';
+import { GymEstimate, Session, SessionRules, TrainingSet } from './training.js';
 import { GymUnits, WeightLadder } from './units.js';
 export { GymEstimate, SessionRules, SetRules } from './training.js';
 
@@ -20,29 +21,37 @@ export { GymEstimate, SessionRules, SetRules } from './training.js';
 /** @typedef {import('./training.js').TrainingSetValue} TrainingSetValue */
 
 export class TrainingLog {
+  /** @type {Map<string, readonly TrainingSetValue[]>} */
+  #setsBySession;
+  /** @type {Map<string, SessionValue>} */
+  #drawnById;
+  /** @type {StatsProgress | null} */
+  #progress = null;
+
   /** @param {Reader} read */
   constructor(read) {
     this.sessions = Object.freeze(read.repository(Session).all('drawn'));
     this.sets = Object.freeze(read.repository(TrainingSet).all('drawn'));
     this.moment = read.moment;
     this.firstPullComplete = read.firstPullComplete();
-    Object.freeze(this);
-  }
-
-  get drawnSessions() {
-    return Object.freeze(this.sessions.map((session) => SessionRules.drawn(session, this.sets, this.moment.now))
+    /** @type {Map<string, TrainingSetValue[]>} */
+    const groups = new Map(this.sessions.map((session) => [jcs(session.id.json), []]));
+    for (const set of this.sets) groups.get(jcs(set.sessionId.json))?.push(set);
+    this.#setsBySession = new Map([...groups].map(([id, sets]) => [id,
+      Object.freeze(sets.sort((a, b) => a.completedAt.ms - b.completedAt.ms || Id.compare(a.id, b.id)))]));
+    this.drawnSessions = Object.freeze(this.sessions.map((session) => SessionRules.drawn(session, this.setsFor(session.id), this.moment.now))
       .sort((a, b) => b.startedAt.ms - a.startedAt.ms || Id.compare(a.id, b.id)));
+    this.#drawnById = new Map(this.drawnSessions.map((session) => [jcs(session.id.json), session]));
+    Object.freeze(this);
   }
 
   get open() { return this.drawnSessions.find((session) => session.isOpen) ?? null; }
   get liveHint() { return this.open !== null; }
-  get progress() { return new StatsProgress(this); }
+  get progress() { return this.#progress ??= new StatsProgress(this); }
 
   /** @param {Id<SessionValue>} sessionId */
   setsFor(sessionId) {
-    if (!this.sessions.some((session) => session.id.equals(sessionId))) return Object.freeze([]);
-    return Object.freeze(this.sets.filter((set) => set.sessionId.equals(sessionId))
-      .sort((a, b) => a.completedAt.ms - b.completedAt.ms || Id.compare(a.id, b.id)));
+    return sessionId.entity.type === Session.type ? this.#setsBySession.get(jcs(sessionId.json)) ?? Object.freeze([]) : Object.freeze([]);
   }
 
   /** @param {Id<SessionValue>} sessionId */
@@ -56,7 +65,7 @@ export class TrainingLog {
 
   /** @param {Id<SessionValue>} sessionId */
   readout(sessionId) {
-    const session = this.drawnSessions.find((value) => value.id.equals(sessionId));
+    const session = sessionId.entity.type === Session.type ? this.#drawnById.get(jcs(sessionId.json)) : null;
     return session ? new SessionReadout(session, this.setsFor(sessionId)) : null;
   }
 
@@ -155,6 +164,7 @@ export class EstimatedFact {
   constructor(set, e1rm) {
     this.performed = new PerformedFact(set);
     this.e1rm = e1rm;
+    this.score = GymEstimate.score(set.weightKg, set.reps, 'working', set.rpe) ?? 0;
     Object.freeze(this);
   }
 
@@ -166,13 +176,14 @@ export class EstimatedFact {
 }
 
 export class MovementSessionFact {
-  /** @param {Id<ExerciseValue>} exerciseId @param {number} workingSetCount @param {PerformedFact} heaviest @param {PerformedFact} mostReps @param {EstimatedFact | null} estimate */
-  constructor(exerciseId, workingSetCount, heaviest, mostReps, estimate = null) {
+  /** @param {Id<ExerciseValue>} exerciseId @param {number} workingSetCount @param {PerformedFact} heaviest @param {PerformedFact} mostReps @param {EstimatedFact | null} estimate @param {PerformedFact | null} bodyweightReps */
+  constructor(exerciseId, workingSetCount, heaviest, mostReps, estimate = null, bodyweightReps = null) {
     this.exerciseId = exerciseId;
     this.workingSetCount = workingSetCount;
     this.heaviest = heaviest;
     this.mostReps = mostReps;
     this.estimate = estimate;
+    this.bodyweightReps = bodyweightReps;
     Object.freeze(this);
   }
 
@@ -195,6 +206,11 @@ export class ProgressSession {
 }
 
 export class StatsProgress {
+  /** @type {Map<string, ProgressSession>} */
+  #sessionsById = new Map();
+  /** @type {Map<string, MovementProgress>} */
+  #movements = new Map();
+
   /** @param {TrainingLog | readonly ProgressSession[]} source @param {Instant | null} asOf @param {boolean} isComplete */
   constructor(source, asOf = null, isComplete = true) {
     if (!(source instanceof TrainingLog)) {
@@ -202,31 +218,44 @@ export class StatsProgress {
       this.asOf = asOf;
       this.isComplete = isComplete;
       this.sessions = Object.freeze([...source].sort((a, b) => a.startedAt.ms - b.startedAt.ms || Id.compare(a.sessionId, b.sessionId)));
-      Object.freeze(this);
-      return;
+    } else {
+      const log = source;
+      this.asOf = asOf ?? log.moment.now;
+      this.isComplete = log.firstPullComplete;
+      this.sessions = Object.freeze(log.drawnSessions.filter((session) => !session.isOpen).flatMap((session) => {
+        /** @type {Map<string, TrainingSetValue[]>} */
+        const groups = new Map();
+        for (const set of log.setsFor(session.id).filter((set) => set.kind === 'working')) {
+          const key = jcs(set.exerciseId.json);
+          const group = groups.get(key);
+          if (group) group.push(set);
+          else groups.set(key, [set]);
+        }
+        const movements = [...groups.values()].flatMap((sets) => {
+          const heaviest = [...sets].sort((a, b) => b.weightKg - a.weightKg || b.reps - a.reps || Id.compare(a.id, b.id))[0];
+          const mostReps = [...sets].sort((a, b) => b.reps - a.reps || b.weightKg - a.weightKg || Id.compare(a.id, b.id))[0];
+          if (!heaviest || !mostReps) return [];
+          const bodyweight = sets.filter((set) => set.weightKg === 0).sort((a, b) => b.reps - a.reps || Id.compare(a.id, b.id))[0];
+          const estimate = sets.flatMap((set) => set.e1rm === null ? [] : [new EstimatedFact(set, set.e1rm)])
+            .sort((a, b) => b.score - a.score || Id.compare(a.setId, b.setId))[0] ?? null;
+          return [new MovementSessionFact(heaviest.exerciseId, sets.length, new PerformedFact(heaviest), new PerformedFact(mostReps), estimate,
+            bodyweight ? new PerformedFact(bodyweight) : null)];
+        }).sort((a, b) => Id.compare(a.exerciseId, b.exerciseId));
+        return movements.length === 0 ? [] : [new ProgressSession(session.id, session.startedAt, movements)];
+      }).sort((a, b) => a.startedAt.ms - b.startedAt.ms || Id.compare(a.sessionId, b.sessionId)));
     }
-    const log = source;
-    this.asOf = asOf ?? log.moment.now;
-    this.isComplete = log.firstPullComplete;
-    this.sessions = Object.freeze(log.drawnSessions.filter((session) => !session.isOpen).flatMap((session) => {
-      /** @type {Map<string, TrainingSetValue[]>} */
-      const groups = new Map();
-      for (const set of log.setsFor(session.id).filter((set) => set.kind === 'working')) {
-        const key = jcs(set.exerciseId.json);
-        const group = groups.get(key);
-        if (group) group.push(set);
-        else groups.set(key, [set]);
+    /** @type {Map<string, { id: Id<ExerciseValue>, points: MovementPoint[] }>} */
+    const movements = new Map();
+    for (const session of this.sessions) {
+      this.#sessionsById.set(jcs(session.sessionId.json), session);
+      for (const fact of session.movements) {
+        const key = jcs(fact.exerciseId.json);
+        const group = movements.get(key) ?? { id: fact.exerciseId, points: [] };
+        group.points.push(Object.freeze({ id: session.sessionId, startedAt: session.startedAt, fact }));
+        movements.set(key, group);
       }
-      const movements = [...groups.values()].flatMap((sets) => {
-        const heaviest = [...sets].sort((a, b) => b.weightKg - a.weightKg || b.reps - a.reps || Id.compare(a.id, b.id))[0];
-        const mostReps = [...sets].sort((a, b) => b.reps - a.reps || b.weightKg - a.weightKg || Id.compare(a.id, b.id))[0];
-        if (!heaviest || !mostReps) return [];
-        const estimate = sets.flatMap((set) => set.e1rm === null ? [] : [new EstimatedFact(set, set.e1rm)])
-          .sort((a, b) => b.e1rm - a.e1rm || Id.compare(a.setId, b.setId))[0] ?? null;
-        return [new MovementSessionFact(heaviest.exerciseId, sets.length, new PerformedFact(heaviest), new PerformedFact(mostReps), estimate)];
-      }).sort((a, b) => Id.compare(a.exerciseId, b.exerciseId));
-      return movements.length === 0 ? [] : [new ProgressSession(session.id, session.startedAt, movements)];
-    }).sort((a, b) => a.startedAt.ms - b.startedAt.ms || Id.compare(a.sessionId, b.sessionId)));
+    }
+    for (const [key, group] of movements) this.#movements.set(key, new MovementProgress(group.id, group.points, this.isComplete));
     Object.freeze(this);
   }
 
@@ -237,15 +266,14 @@ export class StatsProgress {
 
   /** @param {Id<ExerciseValue>} exerciseId */
   movement(exerciseId) {
-    return new MovementProgress(exerciseId, this.sessions.flatMap((session) => {
-      const fact = session.movements.find((movement) => movement.exerciseId.equals(exerciseId));
-      return fact ? [Object.freeze({ id: session.sessionId, startedAt: session.startedAt, fact })] : [];
-    }), this.isComplete);
+    return (exerciseId.entity.type === Exercise.type ? this.#movements.get(jcs(exerciseId.json)) : null)
+      ?? new MovementProgress(exerciseId, [], this.isComplete);
   }
 
   /** @param {Id<SessionValue>} id */
   sessionEstimate(id) {
-    const estimates = this.sessions.find((session) => session.sessionId.equals(id))?.movements
+    if (id.entity.type !== Session.type) return null;
+    const estimates = this.#sessionsById.get(jcs(id.json))?.movements
       .flatMap((movement) => movement.estimate === null ? [] : [movement.estimate.e1rm]) ?? [];
     return estimates.length === 0 ? null : Math.max(...estimates);
   }
@@ -283,7 +311,7 @@ export class MovementProgress {
 
   get best() {
     if (!this.isComplete) return null;
-    return [...this.estimates].sort((a, b) => (b.fact.estimate?.e1rm ?? 0) - (a.fact.estimate?.e1rm ?? 0)
+    return [...this.estimates].sort((a, b) => (b.fact.estimate?.score ?? 0) - (a.fact.estimate?.score ?? 0)
       || a.startedAt.ms - b.startedAt.ms || Id.compare(a.id, b.id))[0] ?? null;
   }
 
@@ -299,12 +327,19 @@ export class MovementProgress {
       || b.fact.mostReps.weightKg - a.fact.mostReps.weightKg || a.startedAt.ms - b.startedAt.ms || Id.compare(a.id, b.id))[0] ?? null;
   }
 
+  get bodyweightReps() {
+    if (!this.isComplete) return null;
+    return this.sessions.filter((point) => point.fact.bodyweightReps !== null)
+      .sort((a, b) => (b.fact.bodyweightReps?.reps ?? 0) - (a.fact.bodyweightReps?.reps ?? 0)
+        || a.startedAt.ms - b.startedAt.ms || Id.compare(a.id, b.id))[0] ?? null;
+  }
+
   get records() {
     /** @type {MovementPoint[]} */
     const records = [];
     if (!this.isComplete) return Object.freeze(records);
     for (const point of this.estimates) {
-      if ((point.fact.estimate?.e1rm ?? 0) > (records.at(-1)?.fact.estimate?.e1rm ?? 0)) records.push(point);
+      if ((point.fact.estimate?.score ?? 0) > (records.at(-1)?.fact.estimate?.score ?? 0)) records.push(point);
     }
     return Object.freeze(records);
   }

@@ -60,8 +60,9 @@ Its session estimate is the shared rule for qualification, ranking and display.
 > row's number — is the largest session estimate over the movements it worked.
 
 Sets outside the estimate's qualification still count for records, tonnage and the weekly count.
-RPE is a filter, never a multiplier. Retain the unrounded estimate for ranking; format only the
-displayed value. A one-rep estimate is exactly the logged load.
+RPE is a filter, never a multiplier. Retain the full-precision estimate and format only the
+displayed value. Rank by the exact integer score: load in cents times 30 for one rep, or times
+`30 + reps` otherwise. Equivalent Epley estimates tie. A one-rep estimate is exactly the logged load.
 
 ## The chart is the room's one primitive, and bars have left
 

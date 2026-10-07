@@ -1,0 +1,97 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { performance } from 'node:perf_hooks';
+import { Reader, Views } from '../../../src/platform/domain-kit/reading.js';
+import { FixedZone, Instant, Moment } from '../../../src/platform/domain-kit/time.js';
+import { registry } from '../../../src/platform/sync/schema.js';
+import { syncSession } from '../../../src/platform/sync/session.js';
+import { Session } from '../../../src/products/gym/domain/training.js';
+import { TrainingHistory } from '../../../src/products/gym/domain/trainingHistory.js';
+import { useTrainingLog } from '../../../src/products/gym/useTrainingLog.js';
+import { browserWith, renderHook } from './harness.mjs';
+
+const stamp = '1000:0:r_aaaaaaaaaaaa';
+const row = (t, id, fields) => ({ t, id, born: stamp, life: ['alive', stamp], f: Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, [value, stamp]])) });
+const cpuMs = (start) => { const { user, system } = process.cpuUsage(start); return (user + system) / 1000; };
+function log(t, rows = []) {
+  browserWith();
+  let records = { replica: 'bound', drawn: rows, stored: rows, notices: [], undoOffers: [], firstPullComplete: true };
+  const observation = { subscribe: () => () => {}, getSnapshot: () => records };
+  const engine = { registry, now: () => Date.now(), device: { activeReplica: { meta: { serverOffsetMs: 0 } } },
+    readMetadata: () => ({ firstPullComplete: records.firstPullComplete }), activeReplica: () => 'bound', observe: () => observation,
+    getSnapshot: () => ({ state: 'bound' }), observeEngine: () => () => {} };
+  const session = { ready: true, signedIn: true, engine };
+  t.mock.method(syncSession, 'getSnapshot', () => session);
+  const view = renderHook(t, () => useTrainingLog());
+  return { view, update: (change) => { records = { ...records, ...change }; view.redraw(); }, engine };
+}
+
+for (const workouts of [250, 1000]) test(`training reads stay within the render budget for ${workouts} populated workouts`, (t) => {
+  const now = Date.UTC(2026, 9, 8, 12);
+  t.mock.timers.enable({ apis: ['Date'], now });
+  const rows = [];
+  for (let index = 0; index < workouts; index += 1) {
+    const id = `session_${String(index).padStart(5, '0')}`;
+    const at = now - (workouts - index) * 86400000;
+    rows.push(row('session', id, { startedAt: at, finishedAt: at + 3600000, closedBy: 'finish' }));
+    for (let set = 0; set < 20; set += 1) rows.push({
+      ...row('set', `${id}_set_${set}`, { sessionId: id,
+        exerciseId: ['bench-press', 'back-squat', 'deadlift', 'pull-up'][Math.floor(set / 5)],
+        weightKg: 60 + index % 20, reps: 8, kind: 'working', completedAt: at + 60000 * (set + 1) }),
+      v: { setNumber: set % 5 + 1 },
+    });
+  }
+  const started = performance.now(), mountCpu = process.cpuUsage();
+  const { view, update } = log(t, rows);
+  const mountedMs = performance.now() - started;
+  const mountedCpuMs = cpuMs(mountCpu);
+  assert.equal(view.log.summaries.length, 50);
+  const summaries = view.log.summaries;
+  const progress = view.log.progress.data;
+  const redrawAt = performance.now(), redrawCpu = process.cpuUsage();
+  view.redraw();
+  const redrawnMs = performance.now() - redrawAt;
+  const redrawnCpuMs = cpuMs(redrawCpu);
+  t.diagnostic(`${workouts} workouts: mount ${mountedMs.toFixed(1)} ms (${mountedCpuMs.toFixed(1)} CPU); unchanged render ${redrawnMs.toFixed(1)} ms (${redrawnCpuMs.toFixed(1)} CPU)`);
+  assert.equal(view.log.summaries, summaries, 'unchanged replica reuses the training read');
+  assert.equal(view.log.progress.data, progress, 'unchanged replica reuses progress facts');
+  // CPU budgets exclude time waiting for other test workers; wall time remains visible in the gate.
+  const budgetMs = workouts === 250 ? 250 : 500;
+  assert.ok(mountedCpuMs < budgetMs, `mount ${mountedCpuMs.toFixed(1)} CPU ms exceeds the ${budgetMs} ms budget`);
+  assert.ok(redrawnCpuMs < 25, `unchanged render ${redrawnCpuMs.toFixed(1)} CPU ms exceeds the 25 ms budget`);
+  const changed = [...rows, row('session', 'session_new', { startedAt: now - 1000, finishedAt: now, closedBy: 'finish' })];
+  const changedAt = performance.now(), changeCpu = process.cpuUsage();
+  update({ drawn: changed, stored: changed });
+  const changedMs = performance.now() - changedAt;
+  const changedCpuMs = cpuMs(changeCpu);
+  t.diagnostic(`${workouts} workouts: changed replica ${changedMs.toFixed(1)} ms (${changedCpuMs.toFixed(1)} CPU)`);
+  assert.equal(view.log.summaries[0].id, 'session_new');
+  assert.notEqual(view.log.summaries, summaries);
+  assert.notEqual(view.log.progress.data, progress);
+  assert.ok(changedCpuMs < budgetMs, `changed replica ${changedCpuMs.toFixed(1)} CPU ms exceeds the ${budgetMs} ms budget`);
+});
+
+const moment = new Moment(new Instant(1_800_000_000_000), new FixedZone(0));
+
+for (const workouts of [250, 1000]) test(`stored history presence stays within budget for an untrained movement across ${workouts} workouts`, (t) => {
+  /** @param {string} type @param {string} id @param {Record<string, import('../../../src/platform/domain-kit/values.js').Json>} fields */
+  const row = (type, id, fields) => ({ t: type, id, born: '1000:0:srv', life: /** @type {[string, string]} */ (['alive', '1000:0:srv']),
+    f: Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, /** @type {[import('../../../src/platform/domain-kit/values.js').Json, string]} */ ([value, '1000:0:srv'])])) });
+  const rows = [];
+  for (let index = 0; index < workouts; index += 1) {
+    const id = `session_${index}`;
+    const at = moment.now.ms - (workouts - index) * 86400000;
+    rows.push(row('session', id, { startedAt: at, finishedAt: at + 3600000 }));
+    for (let set = 0; set < 20; set += 1) rows.push(row('set', `${id}_set_${set}`,
+      { sessionId: id, exerciseId: 'bench-press', weightKg: 60, reps: 8, completedAt: at + set + 1 }));
+  }
+  const history = new TrainingHistory(new Reader(Views.ofRecords(registry, { drawn: rows, stored: rows }), Session.scope, moment));
+  const cpu = process.cpuUsage();
+  const wall = performance.now();
+  const found = history.hasStoredSessions({ exercise: 'chin-up' });
+  const elapsed = process.cpuUsage(cpu);
+  const milliseconds = (elapsed.user + elapsed.system) / 1000;
+  t.diagnostic(`${workouts} workouts: stored absence ${milliseconds.toFixed(1)} ms CPU, ${(performance.now() - wall).toFixed(1)} ms wall`);
+  assert.equal(found, false);
+  assert.ok(milliseconds < (workouts === 250 ? 100 : 300), `stored absence ${milliseconds.toFixed(1)} ms CPU exceeds budget`);
+});

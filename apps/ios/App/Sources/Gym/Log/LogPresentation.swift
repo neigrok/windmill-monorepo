@@ -17,6 +17,10 @@ struct LogPalette {
 }
 
 nonisolated enum LogPresentation {
+  static func progressEfforts(_ progress: MovementProgress) -> [PerformedFact] {
+    let heaviest = progress.heaviest?.fact.heaviest
+    return [heaviest.flatMap { $0.weightKg == 0 ? nil : $0 }, progress.bodyweightReps?.fact.bodyweightReps].compactMap { $0 }
+  }
   static func date(_ instant: Instant) -> Date { Date(timeIntervalSince1970: Double(instant.ms) / 1000) }
   static func date(_ day: LocalDay) -> Date { Calendar(identifier: .gregorian).date(from: DateComponents(year: day.year, month: day.month, day: day.day))! }
   static func instant(_ day: LocalDay, in zone: any Zone) -> Instant {

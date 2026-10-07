@@ -37,7 +37,7 @@ export function LogList({ log, hash = '#/gym/log', sessionId = null, fixSetId = 
   const dates = useHistoryDates(filters);
   const stored = useDomainRead((read) => ({
     hasSessions: new TrainingHistory(read).hasStoredSessions(historyScope(filters)), isComplete: read.firstPullComplete(),
-  }));
+  }), [filters.year, filters.month, filters.exercise, filters.routine, log.progress?.data]);
   const hidden = log.hidden('session');
   const sessions = (history.data?.sessions ?? []).filter((session) => !hidden.has(session.id));
   const selected = sessionId ?? filters.selected ?? null;
@@ -188,7 +188,7 @@ function SessionRow({ summary, selected, href, unit }) {
 export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', edit = false, fixSetId = null }) {
   const api = useGymApi();
   const { say, holdDelete } = log;
-  const storedSets = useDomainRead((read) => read.repository(TrainingSet).children(new Id(id, Session), 'sessionId', 'stored').map(setDocument));
+  const storedSets = useDomainRead((read) => read.repository(TrainingSet).children(new Id(id, Session), 'sessionId', 'stored').map(setDocument), [id]);
   const view = useGymRead(
     () => Promise.all([api.session(id), api.exercises()])
       .then(([detail, catalog]) => (detail ? { detail, catalog } : null)),

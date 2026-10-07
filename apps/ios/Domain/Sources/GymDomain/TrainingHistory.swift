@@ -304,11 +304,11 @@ public struct TrainingHistory {
     let current = StatsProgress(log: TrainingLog(sessions: [value], sets: log.sets, moment: read.moment))
     struct Candidate {
       let rank: Int, kind: String, exercise: ID<Exercise>, fact: PerformedFact, amount: Double, before: Double, beforeAt: Instant
-      var estimate: Double { GymEstimate.value(weightKg: fact.weightKg, reps: fact.reps, rpe: fact.rpe) ?? 0 }
+      var score: Double { GymEstimate.score(weightKg: fact.weightKg, reps: fact.reps, rpe: fact.rpe) ?? 0 }
     }
     var candidates: [Candidate] = []
     for fact in current.sessions.flatMap(\.movements) {
-      if let now = fact.estimate, let before = prior.movement(fact.exerciseId).best, now.e1rm > before.fact.estimate!.e1rm {
+      if let now = fact.estimate, let before = prior.movement(fact.exerciseId).best, now.score > before.fact.estimate!.score {
         candidates.append(Candidate(rank: 0, kind: "e1rm", exercise: fact.exerciseId, fact: now.performed, amount: now.e1rm, before: before.fact.estimate!.e1rm, beforeAt: before.startedAt))
       }
       let today = log.sets(session: value.id).filter { $0.exerciseId == fact.exerciseId && $0.kind == "working" }
@@ -336,7 +336,7 @@ public struct TrainingHistory {
     }
     guard let best = candidates.sorted(by: { a, b in
       if a.rank != b.rank { return a.rank < b.rank }
-      if a.estimate != b.estimate { return a.estimate > b.estimate }
+      if a.score != b.score { return a.score > b.score }
       if a.fact.weightKg != b.fact.weightKg { return a.fact.weightKg > b.fact.weightKg }
       return a.exercise < b.exercise
     }).first else { return nil }

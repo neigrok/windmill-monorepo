@@ -8,11 +8,28 @@ import org.junit.Test
 
 class ProgressTests {
     @Test
+    fun equivalentEstimatesKeepTheFirstSessionAndLowestSetIdentity() {
+        fun detail(id: String, at: Long, kg: Double, reps: Int) = SessionDetail(
+            Session(id, at, finishedAtMs = at + 1),
+            listOf(TrainingSet("set-$id", "bench", weightKg = kg, reps = reps, completedAtMs = at)))
+        for (lifts in listOf(listOf(70.0 to 10, 80.0 to 5), listOf(80.0 to 5, 70.0 to 10))) {
+            val details = lifts.mapIndexed { index, (kg, reps) -> detail("s$index", 100L + index * 10, kg, reps) }
+            val movement = StatsProgress.of(details, 200).movement("bench")
+            assertEquals("s0", movement.best?.id)
+            assertEquals(listOf("s0"), movement.records.map { it.id })
+        }
+        val combined = detail("same", 100, 70.0, 10).copy(sets = listOf(
+            TrainingSet("a", "bench", weightKg = 70.0, reps = 10, completedAtMs = 100),
+            TrainingSet("z", "bench", weightKg = 80.0, reps = 5, completedAtMs = 100)))
+        assertEquals("a", StatsProgress.of(listOf(combined), 200).movement("bench").best?.fact?.estimate?.setId)
+    }
+
+    @Test
     fun completeWireKeepsSessionSetEffortAndNoEstimateIdentities() {
-        val raw = """{"asOf":500,"sessions":[{"sessionId":"a","startedAt":100,"movements":[{"exerciseId":"bench","workingSetCount":3,"heaviest":{"setId":"heavy","weightKg":100,"reps":12,"rpe":6.5},"estimate":{"setId":"best","weightKg":80,"reps":8,"e1rm":101.33333333333333}},{"exerciseId":"pull","workingSetCount":1,"heaviest":{"setId":"assisted","weightKg":-20,"reps":8}}]}]}"""
+        val raw = """{"asOf":500,"sessions":[{"sessionId":"a","startedAt":100,"movements":[{"exerciseId":"bench","workingSetCount":3,"heaviest":{"setId":"heavy","weightKg":100,"reps":12,"rpe":6.5},"estimate":{"setId":"best","weightKg":80,"reps":8,"e1rm":101.33333333333333}},{"exerciseId":"pull","workingSetCount":2,"heaviest":{"setId":"loaded","weightKg":10,"reps":12},"mostReps":{"setId":"zero","weightKg":0,"reps":12}}]}]}"""
         assertEquals(StatsProgress(500, listOf(ProgressSession("a", 100, listOf(
             MovementSessionFact("bench", 3, PerformedFact("heavy", 100.0, 12, 6.5), EstimatedFact("best", 80.0, 8, null, 101.33333333333333)),
-            MovementSessionFact("pull", 1, PerformedFact("assisted", -20.0, 8)))))), Json.decodeFromString<StatsProgress>(raw))
+            MovementSessionFact("pull", 2, PerformedFact("loaded", 10.0, 12), bodyweightReps = PerformedFact("zero", 0.0, 12)))))), Json.decodeFromString<StatsProgress>(raw))
     }
 
     @Test

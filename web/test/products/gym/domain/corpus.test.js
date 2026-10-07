@@ -104,6 +104,14 @@ function trainingReadsForm(vector, read) {
         mostReps: series.mostReps?.id.json ?? null, records: series.records.map((point) => point.id.json),
         hasChart: series.hasChart(read.moment.zone), gaps: series.gaps(read.moment.zone).map((gap) => ({ before: gap.before.id.json, after: gap.after.id.json })) };
     }
+    case 'BodyweightReps': {
+      const progress = log.progress.movement(f.ref('exerciseId', Exercise));
+      const series = f.bool('window', false) ? progress.chartWindow(read.moment.now, read.moment.zone) : progress;
+      const best = series.bodyweightReps;
+      return { sessions: series.sessions.map((point) => ({ sessionId: point.id.json, mostReps: point.fact.mostReps.json,
+        bodyweightReps: point.fact.bodyweightReps?.json ?? null })),
+      best: best === null ? null : { sessionId: best.id.json, fact: best.fact.bodyweightReps?.json ?? null } };
+    }
     case 'Readout': {
       switch (f.string('operation')) {
         case 'estimate': return Readout.estimate(f.double('value'));

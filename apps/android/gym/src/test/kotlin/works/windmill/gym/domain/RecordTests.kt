@@ -22,6 +22,18 @@ class RecordTests {
         SessionDetail(Session(id = id, startedAtMs = at, finishedAtMs = if (open) null else at + 3_600_000), sets)
 
     @Test
+    fun bodyweightRepsStayVisibleBesideLoadedAndAssistedSets() {
+        for ((kg, reps) in listOf(10.0 to 12, -20.0 to 15)) for (combined in listOf(true, false)) {
+            val zero = set("bodyweight", 0.0, 12, today, exerciseId = chin.id)
+            val other = set("other", kg, reps, today, exerciseId = chin.id)
+            val details = if (combined) listOf(session("mixed", today, listOf(zero, other)))
+                else listOf(session("zero", today - 86_400_000, listOf(zero)), session("other", today, listOf(other)))
+            val page = Record.page(MovementRecord.of(chin, details), today, StatsProgress.of(details, today).movement(chin.id))
+            assertEquals(Record.Tile("Most reps", "12", "reps · no added load", false), page.tiles.last())
+        }
+    }
+
+    @Test
     fun testARecordReadsItsClosedDaysNewestFirstWithoutWarmups() {
         val history = listOf(
             session("ses_1", julyThirteenth, listOf(set("s1", 60.0, 10, julyThirteenth, SetKind.Warmup),

@@ -29,7 +29,7 @@ selected note's order key; a drop in its drawn place writes nothing. Coach saves
 note with the same normalised words and count held deletes against capacity.
 The bodyweight stance reads
 `stored`; its reading, dots and gaps read `drawn`, with the room's pending deletes hidden before storage
-settles. Reads refresh on render, at local midnight and when the tab resumes. Bodyweight labels and fields
+settles. Reads refresh with the observation or selector inputs, at local midnight and when the tab resumes. Bodyweight labels and fields
 take the current preference unit directly; changing units preserves the amount in an open field.
 Its saves validate the local day and kilograms, stamp
 the commit moment and retire a held delete of that day. Preference saves write only touched client fields
@@ -44,7 +44,11 @@ naming this device when its store could not keep the write and the network only 
 
 `TrainingHistory` composes typed domain reads into screen documents. The global seed catalogue
 is outside sync and is checked against `schema.sql` in CI. Observation updates refresh local reads
-and preserve history depth and editor drafts.
+and preserve history depth and editor drafts. Hook reads reuse results while the observation and
+selector inputs stay unchanged; retry and clock refreshes invalidate them. Live sessions refresh at
+their idle deadline. Each training read indexes sets by session and caches progress; record receipts
+come from one chronological pass. Equal cent-load estimate scores keep the earliest record, and
+bodyweight repetition records remain independent of assisted and loaded sets.
 Creation and proposal chronology use the confirmed record's authoritative `rc` envelope. Command
 predictions persist per-exercise set numbers, correction removals and replacement numbers, and
 routine deaths from removal proposals through offline restart.
@@ -69,8 +73,10 @@ unresolved notices.
 ## Gates
 
 Gym tests run through the existing `npm test`, `npm run test:sync` and `npm run build` scripts.
-The gym domain claims 12 of 13 corpus files and 448 vectors, compared by JCS and with reversed record
-order. Training reads claim 99 vectors (including 36 promoted REST samples and nine regression cases),
+The full suite runs performance cases after the parallel test workers exit. Training reads cover
+250 and 1,000 populated workouts, requiring unchanged renders to reuse their results within 25 ms CPU.
+The gym domain claims 12 of 13 corpus files and 461 vectors, compared by JCS and with reversed record
+order. Training reads claim 112 vectors (including 36 promoted REST samples and 22 regression cases),
 proposals claim 44, units claim 57 and the weight ladder claims 36. Training actions remain pending.
 Screen tests run over a real browser engine for a signed-in account (`gymAccount` in
 `test/products/gym/harness.mjs`) and assert what the account still owes the server. Shared training

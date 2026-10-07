@@ -3,6 +3,7 @@
 import { EntityType, Id } from '../../../platform/domain-kit/entities.js';
 import { Check } from '../../../platform/domain-kit/validation.js';
 import { ChoiceSpec, NumberSpec, Path, TextSpec, Violation } from '../../../platform/domain-kit/values.js';
+import { roundHalfAway } from '../../../platform/sync/core/values.js';
 import { Exercise } from './catalogue.js';
 import { PlanSnapshot, Routine } from './routines.js';
 
@@ -57,6 +58,11 @@ export const GymEstimate = Object.freeze({
     if (kind !== 'working' || !Number.isFinite(weightKg) || weightKg <= 0 || !Number.isInteger(reps) || reps < 1 || reps > 10
       || (rpe !== null && (!Number.isFinite(rpe) || rpe < 7))) return null;
     return reps === 1 ? weightKg : weightKg * (1 + reps / 30);
+  },
+  /** @param {number} weightKg @param {number} reps @param {string} kind @param {number | null} rpe */
+  score(weightKg, reps, kind = 'working', rpe = null) {
+    if (GymEstimate.value(weightKg, reps, kind, rpe) === null) return null;
+    return roundHalfAway(weightKg * 100) * (reps === 1 ? 30 : 30 + reps);
   },
 });
 

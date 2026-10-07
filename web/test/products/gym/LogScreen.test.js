@@ -89,6 +89,25 @@ test('the log draws arrived sessions without claiming the initial history has en
   assert.deepEqual(findByClass(view.tree, 'gym-history-end').map(textOf), ['End of history']);
 });
 
+test('the cached stored log stance advances when the room reaches a session idle deadline', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
+  browserWith();
+  await gymAccount(t, [confirmed('session', 'session_open', { startedAt: NOW - 4 * 3600000 + 1000 })]);
+  const { useTrainingLog } = await loadScreen('products/gym/useTrainingLog.js');
+  const { LogList } = await loadScreen('products/gym/Log.jsx');
+  const view = renderHook(t, () => {
+    const log = useTrainingLog();
+    return { log, screen: LogList({ log }) };
+  }, { live: true });
+  await settle();
+  assert.deepEqual(findByClass(view.tree.screen, 'gym-quiet').map(textOf), ['No sessions yet.']);
+  t.mock.timers.tick(1000);
+  await settle();
+  assert.equal(view.tree.log.session, null);
+  assert.equal(view.tree.log.summaries[0].closedItself, true);
+  assert.deepEqual(findByClass(view.tree.screen, 'gym-quiet').map(textOf), []);
+});
+
 test('a held delete goes when its clock runs out, and the transient retires with the window', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();

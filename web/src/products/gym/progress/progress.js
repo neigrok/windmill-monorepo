@@ -18,9 +18,11 @@ function progressSnapshot(snapshot, now) {
   const sessions = (snapshot?.sessions ?? []).flatMap((session) => {
     const movements = session.movements.filter((movement) => movement.workingSetCount > 0).map((movement) => {
       const fact = (value) => ({ id: new Id(value.setId, TrainingSet), weightKg: value.weightKg, reps: value.reps, rpe: value.rpe ?? null });
+      const bodyweight = movement.bodyweightReps ?? [movement.mostReps, movement.heaviest].find((value) => value?.weightKg === 0);
       return new MovementSessionFact(new Id(movement.exerciseId, Exercise), movement.workingSetCount,
         new PerformedFact(fact(movement.heaviest)), new PerformedFact(fact(movement.mostReps ?? movement.heaviest)),
-        movement.estimate ? new EstimatedFact(fact(movement.estimate), movement.estimate.e1rm) : null);
+        movement.estimate ? new EstimatedFact(fact(movement.estimate), movement.estimate.e1rm) : null,
+        bodyweight ? new PerformedFact(fact(bodyweight)) : null);
     });
     return movements.length ? [new ProgressSession(new Id(session.sessionId, Session), new Instant(session.startedAt), movements)] : [];
   });
@@ -32,7 +34,7 @@ function movementRead(snapshot, exerciseId, equipment, now) {
   const estimatesAllowed = ['barbell', 'dumbbell', 'machine', 'cable', 'kettlebell'].includes(equipment);
   return new MovementProgress(read.exerciseId, read.sessions.filter((point) => point.startedAt.ms <= now).map((point) =>
     estimatesAllowed ? point : { ...point, fact: new MovementSessionFact(point.fact.exerciseId, point.fact.workingSetCount,
-      point.fact.heaviest, point.fact.mostReps) }), read.isComplete);
+      point.fact.heaviest, point.fact.mostReps, null, point.fact.bodyweightReps) }), read.isComplete);
 }
 
 function sessionFact(point) {
@@ -59,7 +61,7 @@ export function movementProgress(snapshot, exerciseId, { window = '12', now = Da
   const latest = sessionFact(read.latest);
   const best = sessionFact(read.best);
   const heaviest = sessionFact(read.heaviest);
-  const mostReps = read.mostReps;
+  const bodyweight = read.bodyweightReps;
   const assisted = equipment === 'bodyweight' || (!best && visible.some((row) => row.heaviest.weightKg <= 0));
   const showYears = new Date(visible[0]?.at ?? now).getFullYear() !== new Date(now).getFullYear();
   const dateLabel = (at) => progressDateLabel(at, showYears);
@@ -79,7 +81,7 @@ export function movementProgress(snapshot, exerciseId, { window = '12', now = Da
   const start = LocalDay.in(new Instant(now), deviceZone).adding(-84);
   return {
     exerciseId, sessions: visible, points, latest, best, heaviest, windowLabel, sparseLine, assisted, showYears,
-    mostRepsLine: mostReps?.fact.mostReps.weightKg === 0 ? `most reps ${mostReps.fact.mostReps.reps} · bodyweight · ${dateLabel(mostReps.startedAt.ms)}` : null,
+    mostRepsLine: bodyweight ? `most reps ${bodyweight.fact.bodyweightReps.reps} · bodyweight · ${dateLabel(bodyweight.startedAt.ms)}` : null,
     signedLoadLine: heaviest && heaviest.heaviest.weightKg !== 0 ? `heaviest ${heaviest.heaviest.weightKg > 0 ? 'added +' : 'assisted −'}${fmt(Math.abs(heaviest.heaviest.weightKg), unit)} · ${dateLabel(heaviest.at)}` : null,
     domain: { from: window === 'all' ? all.sessions[0]?.startedAt.ms ?? now : new Date(start.year, start.month - 1, start.day).getTime(), to: now },
     chartReady: read.hasChart(deviceZone),

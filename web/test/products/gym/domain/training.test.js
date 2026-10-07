@@ -10,7 +10,7 @@ import { Path, Violation } from '../../../../src/platform/domain-kit/values.js';
 import { registry } from '../../../../src/platform/sync/schema.js';
 import { Exercise } from '../../../../src/products/gym/domain/catalogue.js';
 import { Session, SessionRules, SessionValue, SetRules, TrainingSet, TrainingSetValue } from '../../../../src/products/gym/domain/training.js';
-import { GymEstimate } from '../../../../src/products/gym/domain/trainingReads.js';
+import { EstimatedFact, GymEstimate, MovementSessionFact, PerformedFact, ProgressSession, StatsProgress } from '../../../../src/products/gym/domain/trainingReads.js';
 import { SignedOutWorkout } from '../../../../src/products/gym/domain/workoutAdoption.js';
 
 const sessionId = new Id('session1', Session);
@@ -21,6 +21,19 @@ const moment = new Moment(new Instant(1_800_000_000_000), new FixedZone(0));
 function performed(id = 'set00001', session = sessionId, at = 2000, number = null, exercise = exerciseId) {
   return new TrainingSetValue(new Id(id, TrainingSet), session, exercise, 80, 5, new Instant(at), 'working', null, '', number);
 }
+
+test('indexed progress keeps session and exercise identities separate when their record IDs match', () => {
+  const session = new Id('same', Session), exercise = new Id('same', Exercise);
+  const set = performed('set00001', session, 2000, null, exercise);
+  const fact = new PerformedFact(set);
+  const progress = StatsProgress.fromSessions([new ProgressSession(session, new Instant(1000), [
+    new MovementSessionFact(exercise, 1, fact, fact, new EstimatedFact(set, /** @type {number} */ (set.e1rm))),
+  ])], moment.now);
+  assert.equal(progress.movement(exercise).sessions.length, 1);
+  assert.equal(progress.sessionEstimate(session), set.e1rm);
+  assert.deepEqual(progress.movement(/** @type {any} */ (session)).sessions, []);
+  assert.equal(progress.sessionEstimate(/** @type {any} */ (exercise)), null);
+});
 
 test('stale closure uses its own last activity and includes the four-hour boundary', () => {
   const session = new SessionValue(sessionId, new Instant(1000));

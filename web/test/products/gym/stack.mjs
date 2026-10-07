@@ -321,6 +321,9 @@ async function run() {
       await waitUntil(async () => (await request('/v1/gym/preferences')).units === 'lb',
         { processes: [vite, backend], label: 'preference domain convergence' });
       assert.deepEqual(await request('/v1/gym/preferences'), { units: 'lb', restSeconds: 180, restSound: false, confirmHaptic: false, confirmSound: true }); e2e++;
+      // Observe the save's batch before a hard navigation can abort the best-effort unload beacon.
+      await waitUntil(() => sql(`SELECT count(*) FROM events WHERE user_id='${account}' AND name='gym_action' AND props->>'operation'='preferences-save' AND props->>'outcome'='saved-local';`) !== '0',
+        { processes: [vite, backend], label: 'preferences product telemetry' });
 
       await agent('gym_propose_routine_change', { id: 'prop_fixture_dismiss', routineId: 'rt_fixture_main', name: 'Fixture Next',
         entries: [{ exerciseId: 'back-squat', sets: [{ reps: 5, weightKg: 85 }] }] });

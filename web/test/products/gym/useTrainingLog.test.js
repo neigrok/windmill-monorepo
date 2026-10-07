@@ -142,3 +142,17 @@ test('live session lookup is independent of the displayed history page', (t) => 
   assert.equal(view.log.summaries.some((summary) => summary.id === 'phoneSession00'), false);
   assert.equal(view.log.session.id, 'phoneSession00');
 });
+
+test('a memoized live session closes at its idle deadline without a replica update', (t) => {
+  const now = Date.UTC(2026, 9, 8, 12);
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now });
+  const { view } = log(t, [row('session', 'phoneSession00', { startedAt: now - 4 * 3600000 + 1000 })]);
+  assert.equal(view.log.session.id, 'phoneSession00');
+  const progress = view.log.progress.data;
+  view.redraw();
+  assert.equal(view.log.progress.data, progress);
+  t.mock.timers.tick(1000);
+  assert.equal(view.log.session, null);
+  assert.equal(view.log.summaries[0].closedItself, true);
+  assert.notEqual(view.log.progress.data, progress);
+});

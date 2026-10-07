@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSyncRecords } from '../../platform/sync/react.js';
 import { UNDO_MS } from './fix.js';
 import { failureReason } from './errors.js';
@@ -22,7 +22,6 @@ const TOAST_MS = 9000;
 export function useTrainingLog() {
   const api = useGymApi();
   const records = useSyncRecords('self/gym');
-  const [, expire] = useState(0);
   const [toast, setToast] = useState(null);
   const [, redrawWindow] = useState(0);
   const spoke = useRef(0);
@@ -47,9 +46,9 @@ export function useTrainingLog() {
   useEffect(() => {
     const remaining = training?.staleIn;
     if (remaining == null || remaining <= 0) return undefined;
-    const timer = setTimeout(() => expire((count) => count + 1), remaining);
+    const timer = setTimeout(view.retry, remaining);
     return () => clearTimeout(timer);
-  }, [records, session?.id, session?.startedAt]);
+  }, [training, view.retry]);
 
   const say = useCallback((text, { action = null } = {}) => {
     spoke.current += 1;
@@ -226,8 +225,11 @@ export function useTrainingLog() {
   const dead = (kind, rows = records.drawn) => rows.filter((row) => row.t === HELD_TYPES[kind] && row.life?.[0] === 'dead')
     .map((row) => ({ kind, id: row.id }));
   // An engine delete is named from the store, which keeps its record until the delete is released.
-  const held = heldNow().map((each) => (each.line === undefined
-    ? { ...each, line: deleteLineOf(each.kind, each.id, gymReadView({ drawn: records.stored, stored: records.stored })), detail: null } : each));
+  const holding = heldNow();
+  const needsLabels = holding.some((each) => each.line === undefined);
+  const stored = useMemo(() => needsLabels ? gymReadView({ drawn: records.stored, stored: records.stored }) : null, [records, needsLabels]);
+  const held = holding.map((each) => (each.line === undefined
+    ? { ...each, line: deleteLineOf(each.kind, each.id, stored), detail: null } : each));
   const hidden = (kind) => hiddenIds(held, [...settled.current, ...dead(kind)], kind);
   const gone = (kind) => goneIds([...settled.current, ...dead(kind, records.stored)], kind);
   const spoken = transientOf(toast, held);

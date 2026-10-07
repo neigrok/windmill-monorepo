@@ -250,13 +250,13 @@ class TrainingHistory(private val read: Reader) {
         val prior = StatsProgress(TrainingLog(previous, log.sets, read.moment))
         val current = StatsProgress(TrainingLog(listOf(value), log.sets, read.moment))
         data class Candidate(val rank: Int, val kind: String, val exercise: Id<Exercise>, val fact: PerformedFact, val amount: Double, val before: Double, val beforeAt: Instant) {
-            val estimate get() = GymEstimate.value(fact.weightKg, fact.reps, rpe = fact.rpe) ?: 0.0
+            val score get() = GymEstimate.score(fact.weightKg, fact.reps, rpe = fact.rpe) ?: 0.0
         }
         val candidates = mutableListOf<Candidate>()
         for (fact in current.sessions.flatMap { it.movements }) {
             val now = fact.estimate
             val before = prior.movement(fact.exerciseId).best
-            if (now != null && before != null && now.e1rm > before.fact.estimate!!.e1rm)
+            if (now != null && before != null && now.score > before.fact.estimate!!.score)
                 candidates += Candidate(0, "e1rm", fact.exerciseId, now.performed, now.e1rm, before.fact.estimate!!.e1rm, before.startedAt)
             val today = log.sets(value.id).filter { it.exerciseId == fact.exerciseId && it.kind == "working" }
             val priors = previous.flatMap { session -> log.sets(session.id).filter { it.exerciseId == fact.exerciseId && it.kind == "working" }.map { it to session } }
@@ -271,7 +271,7 @@ class TrainingHistory(private val read: Reader) {
                     candidates += Candidate(2, "reps-at-weight", fact.exerciseId, PerformedFact(atLoad), atLoad.reps.toDouble(), earlier.first.reps.toDouble(), earlier.second.startedAt)
             }
         }
-        val best = candidates.sortedWith(compareBy<Candidate> { it.rank }.thenByDescending { it.estimate }.thenByDescending { it.fact.weightKg }.thenBy { it.exercise }).firstOrNull() ?: return null
+        val best = candidates.sortedWith(compareBy<Candidate> { it.rank }.thenByDescending { it.score }.thenByDescending { it.fact.weightKg }.thenBy { it.exercise }).firstOrNull() ?: return null
         return Json.objectOf("kind" to Json.of(best.kind), "exerciseId" to best.exercise.json, "value" to Json.of(best.amount), "weightKg" to Json.of(best.fact.weightKg),
             "reps" to Json.of(best.fact.reps), "previous" to Json.of(best.before), "previousAt" to Json.of(best.beforeAt.ms))
     }

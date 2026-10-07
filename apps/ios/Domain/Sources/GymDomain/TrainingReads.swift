@@ -8,6 +8,11 @@ public enum GymEstimate {
           rpe.map({ $0.isFinite && $0 >= 7 }) ?? true else { return nil }
     return reps == 1 ? weightKg : weightKg * (1 + Double(reps) / 30)
   }
+
+  public static func score(weightKg: Double, reps: Int, kind: String = "working", rpe: Double? = nil) -> Double? {
+    guard value(weightKg: weightKg, reps: reps, kind: kind, rpe: rpe) != nil else { return nil }
+    return Quantum(1)!.rounded(weightKg * 100) * Double(reps == 1 ? 30 : 30 + reps)
+  }
 }
 
 public struct SessionReadout: Equatable, Sendable {
@@ -104,6 +109,7 @@ public struct EstimatedFact: Equatable, Sendable {
   public var weightKg: Double { performed.weightKg }
   public var reps: Int { performed.reps }
   public var rpe: Double? { performed.rpe }
+  public var score: Double { GymEstimate.score(weightKg: weightKg, reps: reps, rpe: rpe) ?? 0 }
 
   public init(_ set: TrainingSet, e1rm: Double) { performed = PerformedFact(set); self.e1rm = e1rm }
   public var json: JSON {
@@ -117,6 +123,7 @@ public struct MovementSessionFact: Equatable, Sendable {
   public let heaviest: PerformedFact
   public let mostReps: PerformedFact
   public let estimate: EstimatedFact?
+  public let bodyweightReps: PerformedFact?
   public var json: JSON {
     .object(omittingNil: ["exerciseId": exerciseId.json, "workingSetCount": JSON(workingSetCount), "heaviest": heaviest.json, "estimate": estimate?.json])
   }
@@ -151,9 +158,11 @@ public struct StatsProgress: Equatable, Sendable {
           return a.weightKg == b.weightKg ? a.id < b.id : a.weightKg > b.weightKg
         }).first else { continue }
         let estimates = sets.compactMap { set in set.e1rm.map { EstimatedFact(set, e1rm: $0) } }
-        let estimate = estimates.sorted { $0.e1rm == $1.e1rm ? $0.setId < $1.setId : $0.e1rm > $1.e1rm }.first
+        let estimate = estimates.sorted { $0.score == $1.score ? $0.setId < $1.setId : $0.score > $1.score }.first
+        let bodyweightReps = sets.filter { $0.weightKg == 0 }.sorted { $0.reps == $1.reps ? $0.id < $1.id : $0.reps > $1.reps }.first
         movements.append(MovementSessionFact(exerciseId: exerciseId, workingSetCount: sets.count,
-                                             heaviest: PerformedFact(heaviest), mostReps: PerformedFact(mostReps), estimate: estimate))
+                                             heaviest: PerformedFact(heaviest), mostReps: PerformedFact(mostReps), estimate: estimate,
+                                             bodyweightReps: bodyweightReps.map(PerformedFact.init)))
       }
       if !movements.isEmpty { sessions.append(ProgressSession(sessionId: session.id, startedAt: session.startedAt, movements: movements)) }
     }
@@ -216,7 +225,7 @@ public struct MovementProgress: Equatable, Sendable {
   public var best: Point? {
     guard isComplete else { return nil }
     return estimates.sorted { a, b in
-      let left = a.fact.estimate!.e1rm, right = b.fact.estimate!.e1rm
+      let left = a.fact.estimate!.score, right = b.fact.estimate!.score
       if left != right { return left > right }
       return a.startedAt == b.startedAt ? a.id < b.id : a.startedAt < b.startedAt
     }.first
@@ -237,10 +246,18 @@ public struct MovementProgress: Equatable, Sendable {
       return a.startedAt == b.startedAt ? a.id < b.id : a.startedAt < b.startedAt
     }.first
   }
+  public var bodyweightReps: Point? {
+    guard isComplete else { return nil }
+    return sessions.filter { $0.fact.bodyweightReps != nil }.sorted { a, b in
+      let left = a.fact.bodyweightReps!.reps, right = b.fact.bodyweightReps!.reps
+      if left != right { return left > right }
+      return a.startedAt == b.startedAt ? a.id < b.id : a.startedAt < b.startedAt
+    }.first
+  }
   public var records: [Point] {
     guard isComplete else { return [] }
     var records: [Point] = []
-    for point in estimates where point.fact.estimate!.e1rm > (records.last?.fact.estimate?.e1rm ?? 0) { records.append(point) }
+    for point in estimates where point.fact.estimate!.score > (records.last?.fact.estimate?.score ?? 0) { records.append(point) }
     return records
   }
 

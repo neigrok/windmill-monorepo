@@ -23,7 +23,7 @@ export function FinishScreen({ id, log }) {
     const sets = read.repository(TrainingSet).all('stored');
     return { isComplete: read.firstPullComplete(),
       sessions: read.repository(Session).all('stored').map((session) => sessionDocument(SessionRules.drawn(session, sets, read.moment.now))) };
-  });
+  }, [log.progress?.data]);
   const view = useGymRead(
     () => Promise.all([
       api.session(id),

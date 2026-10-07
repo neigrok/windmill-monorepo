@@ -136,7 +136,7 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
   const stored = useDomainRead((read) => {
     const sets = read.repository(TrainingSet).all('stored');
     return read.repository(Session).all('stored').map((session) => sessionDocument(SessionRules.drawn(session, sets, read.moment.now)));
-  });
+  }, [log.progress?.data]);
   // One clock for the life of the form, so the same form always builds the same request.
   const [now] = useState(() => Date.now());
   const [sessionId] = useState(() => mintId('ses_'));

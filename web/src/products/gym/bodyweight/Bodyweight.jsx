@@ -27,7 +27,7 @@ export function useBodyweight(log) {
     }), read.scope, read.moment);
     const weights = new Bodyweight(read);
     return { weights, unit: preferencesDocument(read).units, ...bodyweightDocument(read, {}, weights) };
-  });
+  }, [JSON.stringify([...hidden].sort())]);
   const save = async (write) => {
     try { await api.saveBodyweight(write.dateLocal, write); return null; }
     catch (error) { return saveRefusal(error); }

@@ -58,6 +58,14 @@ struct TrainingReadsTests {
         let prefill = Prefill.of(todaySets: today, planEntry: try fields.optionalValue("planEntry", of: RoutineEntry.self), lastTime: last)
         return ["weightKg": .of(prefill.weightKg), "reps": JSON(prefill.reps)]
       case "StatsProgress": return log.progress.json
+      case "BodyweightReps":
+        let progress = log.progress.movement(try fields.ref("exerciseId", Exercise.self))
+        let series = try fields.bool("window", default: false) ? progress.window(now: read.moment.now, zone: read.moment.zone) : progress
+        let best = series.bodyweightReps
+        return ["sessions": .array(series.sessions.map { point in
+          ["sessionId": point.id.json, "mostReps": point.fact.mostReps.json,
+           "bodyweightReps": point.fact.bodyweightReps?.json ?? .null]
+        }), "best": best.map { ["sessionId": $0.id.json, "fact": $0.fact.bodyweightReps!.json] } ?? .null]
       case "ProgressCompleteness": return ["isComplete": .bool(log.progress.isComplete)]
       case "Consistency": return .of(log.progress.consistency(now: read.moment.now, zone: read.moment.zone))
       case "MovementProgress":

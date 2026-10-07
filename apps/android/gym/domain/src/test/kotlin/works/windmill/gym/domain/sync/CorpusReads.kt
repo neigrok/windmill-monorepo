@@ -54,6 +54,15 @@ fun trainingReadsForm(vector: Vector, read: Reader): Json {
             Json.objectOf("weightKg" to Json.of(prefill.weightKg), "reps" to Json.of(prefill.reps))
         }
         "StatsProgress" -> log.progress.json
+        "BodyweightReps" -> {
+            val progress = log.progress.movement(f.ref("exerciseId", Exercise))
+            val series = if (f.bool("window", false)) progress.window(read.moment.now, read.moment.zone) else progress
+            val best = series.bodyweightReps
+            Json.objectOf("sessions" to Json.Arr(series.sessions.map { point ->
+                Json.objectOf("sessionId" to point.id.json, "mostReps" to point.fact.mostReps.json,
+                    "bodyweightReps" to (point.fact.bodyweightReps?.json ?: Json.Null))
+            }), "best" to (best?.let { Json.objectOf("sessionId" to it.id.json, "fact" to it.fact.bodyweightReps!!.json) } ?: Json.Null))
+        }
         "ProgressCompleteness" -> Json.objectOf("isComplete" to Json.of(log.progress.isComplete))
         "Consistency" -> nullable(log.progress.consistency(read.moment.now, read.moment.zone))
         "MovementProgress" -> {
