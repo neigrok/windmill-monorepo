@@ -202,6 +202,19 @@ App Store Connect and uploads. Build number is the workflow run number. It never
 identity onto SPM targets. dSYMs are retained as CI artifacts; uploading them to Sentry requires
 authentication beyond the DSN and is not configured with the existing secrets.
 
+`.github/workflows/ios-expire-builds.yml` manually expires builds of `works.windmill.app` through
+Apple's [build update API](https://developer.apple.com/documentation/appstoreconnectapi/patch-v1-builds-_id_).
+`max_build` defaults to 5 and accepts only integers 1–5. `confirm` must be exactly
+`EXPIRE works.windmill.app builds 1-5`, with its final number matching `max_build`. The workflow shares
+the release concurrency group and uses the same App Store Connect key secrets. Before any PATCH, it
+checks every inventory page, the app identity, iOS version/build metadata and expiration flags;
+an already-expired build above the limit also stops the operation. It prints before/after tables,
+skips already-expired targets, and verifies that protected builds remain unchanged. A failed PATCH
+stops further writes without retrying and triggers a final inventory read; earlier PATCHes may have
+succeeded. Request timeouts bound stalled responses. The temporary signing key is always removed.
+The workflow runs its mocked API suite before accessing credentials; live Apple acceptance requires
+the GitHub secrets and an authorized dispatch.
+
 ## Local checks
 
 Always use `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` locally.
@@ -222,7 +235,8 @@ swift test # Sync (twice), Domain and SyncTestingSurface
 # From Sync:
 xcodebuild build -scheme WindmillSync-Package -destination 'generic/platform=iOS Simulator'
 # From the repository root:
-actionlint .github/workflows/ios.yml .github/workflows/ios-release.yml
+actionlint .github/workflows/ios.yml .github/workflows/ios-release.yml .github/workflows/ios-expire-builds.yml
+node --test .github/scripts/tests/ios-expire-builds.test.mjs
 ```
 
 Regression tests block the technical sink while committing and subscribing, proving it does not

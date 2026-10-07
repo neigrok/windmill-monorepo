@@ -1,0 +1,65 @@
+name: iOS expire pre-engine TestFlight builds
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_build:
+        description: 'Last pre-engine build to expire (1–5; builds 6 and later are protected)'
+        required: true
+        type: string
+        default: '5'
+      confirm:
+        description: 'Type EXPIRE works.windmill.app builds 1-5 (replace 5 with max_build)'
+        required: true
+        type: string
+
+concurrency:
+  group: ios-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  expire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MAX_BUILD: ${{ inputs.max_build }}
+      CONFIRM: ${{ inputs.confirm }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      - name: Test expiration logic without credentials
+        run: node --test .github/scripts/tests/ios-expire-builds.test.mjs
+
+      - name: Validate the expiration request
+        run: |
+          node --input-type=module -e 'import { validateInputs } from "./.github/scripts/ios-expire-builds.mjs"; validateInputs(process.env.MAX_BUILD, process.env.CONFIRM);'
+
+      - name: Write the App Store Connect key
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          test -n "$ASC_KEY_ID" || { echo 'ASC_KEY_ID is required.'; exit 1; }
+          test -n "$ASC_ISSUER_ID" || { echo 'ASC_ISSUER_ID is required.'; exit 1; }
+          test -n "$ASC_KEY_P8_BASE64" || { echo 'ASC_KEY_P8_BASE64 is required.'; exit 1; }
+          umask 077
+          printf '%s' "$ASC_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+          openssl pkey -in "$RUNNER_TEMP/AuthKey.p8" -noout
+
+      - name: Expire the approved builds and verify the result
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: node .github/scripts/ios-expire-builds.mjs
+
+      - name: Remove the App Store Connect key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/AuthKey.p8"
