@@ -155,7 +155,9 @@ import UIKit
       }, object: control)
       XCTAssertEqual(XCTWaiter.wait(for: [visibleVary], timeout: 5), .completed)
       XCTAssertTrue(control.wait(for: \.isHittable, toEqual: true, timeout: 5))
-      control.swipeRight()
+      control.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).press(forDuration: 0.1,
+        thenDragTo: control.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)),
+        withVelocity: .slow, thenHoldForDuration: 0.1)
       let varied = app.switches.matching(NSPredicate(format: "label == %@ AND value == %@", "Vary by set", "1")).firstMatch
       XCTAssertTrue(varied.waitForExistence(timeout: 5))
       XCTAssertEqual(vary.value as? String, "1")
@@ -313,7 +315,11 @@ import UIKit
     XCTAssertTrue(deadliftHandle.waitForNonExistence(timeout: 5))
     let deadlift = app.cells.containing(.button, identifier: "builder-movement-deadlift").firstMatch
     XCTAssertTrue(deadlift.wait(for: \.isHittable, toEqual: true, timeout: 5))
-    deadlift.swipeLeft()
+    let row = deadlift.frame
+    XCTAssertTrue(row.width > 0 && row.height > 0 && viewport.contains(row))
+    let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: row.maxX - 40, dy: row.midY))
+    start.press(forDuration: 0.01, thenDragTo: start.withOffset(CGVector(dx: -min(150, row.width / 2), dy: 0)),
+      withVelocity: .slow, thenHoldForDuration: 0.1)
     let remove = app.buttons["Remove"]
     XCTAssertTrue(remove.wait(for: \.isHittable, toEqual: true, timeout: 5)); remove.tap()
     app.buttons["Undo movement removal"].tap()
