@@ -67,8 +67,11 @@ export class IndexedDBStore {
     if (!indexedDB) throw new Error('sync storage unavailable');
     const database = await new Promise((resolve, reject) => {
       const request = indexedDB.open(name, 2);
+      let abandoned = false;
       request.onupgradeneeded = ({ oldVersion }) => {
         const database = request.result, transaction = request.transaction;
+        transaction.onabort = () => database.close();
+        if (abandoned) { transaction.abort(); return; }
         const records = oldVersion === 0 ? database.createObjectStore('records', { keyPath: 'key' }) : transaction.objectStore('records');
         const rows = database.createObjectStore('rows', { keyPath: 'key' });
         rows.createIndex('generation', 'generation');
@@ -99,9 +102,12 @@ export class IndexedDBStore {
           cursor.continue();
         };
       };
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        if (abandoned) { request.result.close(); return; }
+        resolve(request.result);
+      };
       request.onerror = () => reject(request.error);
-      request.onblocked = () => reject(new Error('sync storage blocked'));
+      request.onblocked = () => { abandoned = true; reject(new Error('sync storage blocked')); };
     });
     const store = new IndexedDBStore(database);
     store.reopen = () => IndexedDBStore.open({ indexedDB, name, newReplicaId });
