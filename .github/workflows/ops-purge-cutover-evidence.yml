@@ -61,6 +61,11 @@ jobs:
             [[ -d migration-evidence ]]
             cd -P -- migration-evidence
             [[ "$PWD" == "$HOME/windmill/migration-evidence" ]]
+            if awk -v root="$PWD" '{mp = $5; gsub(/\\040/, " ", mp)
+                if (mp == root || index(mp, root "/") == 1) found = 1} END {exit !found}' /proc/self/mountinfo; then
+              printf 'FAIL cutover evidence is or contains a mount point\n' >&2
+              return 1
+            fi
             device=$(stat -c '%d' .)
             if ! find -P . -xdev -mindepth 1 -printf '%D\n' 2>/dev/null |
               awk -v device="$device" '$1 != device {different = 1} END {exit different}'; then
