@@ -93,6 +93,10 @@ refusal reasons are not telemetry. An unexpected reconciliation failure reports 
 failures report under `gym_import_fix`, `gym_import_keep` and `gym_import_retry`. Account decisions
 include pending retained work, pin revisions and preserve unsent account work with Keep. A training
 write the log's rules refuse is said on screen and never becomes a Sentry issue.
+Settings Retry and a corrected set kind enter import reconciliation before their
+`gym_import_recovery` completed event. Completion means the local retry was scheduled, not that
+the server accepted it. A scheduling failure retains the source, reports at the Settings boundary
+and emits no completed event; cancellation propagates without a failure report.
 
 The update dialog responds to an engine 426 without deleting local work.
 `-Pwindmill.updateUrl=<public Android update URL>` configures its destination. With no

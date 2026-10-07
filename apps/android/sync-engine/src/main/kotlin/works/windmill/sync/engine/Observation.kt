@@ -90,7 +90,7 @@ class UndoOffers internal constructor(initial: List<UndoOffer>) {
 
 class SyncStatus internal constructor(initial: Snapshot = Snapshot()) {
     data class Snapshot(val account: String? = null, val authPaused: Boolean = false, val upgradeRequired: Boolean = false,
-        val online: Boolean = true, val pendingSignIn: String? = null, val ready: Int = 0, val sent: Int = 0)
+        val online: Boolean = true, val pendingSignIn: String? = null, val ready: Int = 0, val sent: Int = 0, val serverSchema: Long? = null)
     private val mutableState = MutableStateFlow(initial)
     val state: StateFlow<Snapshot> = ViewState(this, mutableState)
     internal fun land(next: Snapshot) { mutableState.value = next }
@@ -159,7 +159,8 @@ internal class ObservationHub(private val engine: Engine) : AutoCloseable {
         val pending = engine.device.meta["pendingSignIn"]
         return SyncStatus.Snapshot(if (replica.state == "bound") replica.account else null, replica.meta.flag("authPaused"),
             engine.networkUpgradeRequired, engine.networkOnline, pending?.get("account")?.str(),
-            replica.outbox.count { it.state == "ready" }, replica.outbox.count { it.state == "sent" })
+            replica.outbox.count { it.state == "ready" }, replica.outbox.count { it.state == "sent" },
+            if (replica.state == "bound") replica.meta["serverSchema"]?.long() else null)
     }
     fun notices(product: String): NoticesView {
         if (product !in engine.registry.products) throw CommitFailure.malformed("product")

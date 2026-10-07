@@ -12,10 +12,10 @@ class EngineHooksTests {
     private val registry = Registry(Json.parse(File(System.getProperty("windmill.contract"), "sync/probe.registry.json").readBytes()))
     private val scope = ScopeRef.product("probe")
     private val timing = RequestTiming(ClockReading(5_000, 5_000, "boot"), ClockReading(5_000, 5_000, "boot"))
-    private fun engine(writes: CommandResultDeviceWrites = { _, _, _, _ -> emptyList() },
+    private fun engine(writes: IntentResultDeviceWrites = { _, _, _, _, _ -> emptyList() },
         rewrite: DeviceValueRewrite = { _, _, value, _, _, _ -> value }) = Engine.memory(registry,
         clock = object : EngineClock { override fun now() = 5_000L }, actor = "r_aaaaaaaaaaaa",
-        commandResultWrites = writes, rewriteDeviceValue = rewrite).also { it.signIn("A", mapOf("probe" to false)) }
+        intentResultWrites = writes, rewriteDeviceValue = rewrite).also { it.signIn("A", mapOf("probe" to false)) }
     private fun number(engine: Engine): Json {
         engine.commit(scope, Gesture(emptyList(), command = Command("probe.start", Json.objectOf(
             "id" to Json.of("run00001"), "startedAt" to Json.of(5_000), "join" to Json.of(false))),
@@ -29,6 +29,89 @@ class EngineHooksTests {
         else Json.objectOf("n" to n, "s" to Json.of("ok"), "seq" to Json.of(1)).with("write" to if (write)
             Json.array(Json.objectOf("t" to Json.of("run"), "id" to Json.of("run00002"), "from" to Json.of("run00001"), "f" to Json.objectOf())) else null)
         return SyncResponse(200, Json.objectOf("epoch" to Json.of("ep-1"), "as" to Json.of("A"), "lastN" to n, "results" to Json.array(result)))
+    }
+
+    private fun saveDelta(engine: Engine) {
+        val gesture = Gesture(listOf(Change.create("run", NewID.Given(RecordID("run00001")), mapOf("label" to Json.of("Run")))),
+            local = listOf(DeviceWrite("rack", Json.of("pending"))))
+        gesture.gestureId = "delta-create"
+        assertTrue(engine.commit(scope, gesture) is CommitOutcome.Committed)
+    }
+
+    @Test fun deltaVerdictsAndDeviceWritesSurviveCommitFailureAndACrashWithoutReplayingTheHook() {
+        for (refused in listOf(false, true)) {
+            var calls = 0
+            lateinit var instance: Engine
+            val writes: IntentResultDeviceWrites = { intent, result, epoch, gestureId, rows ->
+                assertNull(intent.command)
+                assertEquals(listOf(RecordKey("run", RecordID("run00001"))), intent.deltas.map { it.key })
+                assertEquals("delta-create", gestureId)
+                assertEquals(1L, result.n)
+                assertEquals("ep-1", epoch)
+                assertEquals(mapOf("rack" to Json.of("pending")), rows)
+                if (++calls == 1) instance.failNextCommit()
+                listOf(DeviceWrite("rack", Json.of(if (result.verdict is PushResult.Verdict.Refused) "refused" else "accepted")))
+            }
+            instance = engine(writes = writes)
+            instance.use { local ->
+                saveDelta(local)
+                val request = local.nextPush()!!
+                val before = local.snapshot()
+                assertThrows(CommitFailure::class.java) { local.onPushResponse(request, response(request, refused), timing) }
+                assertEquals(before, local.snapshot())
+                local.crashAfterTransactions(2)
+                assertThrows(EngineCrash::class.java) { local.onPushResponse(request, response(request, refused), timing) }
+                Engine.memory(registry, local.snapshot(), intentResultWrites = writes).use { reopened ->
+                    assertEquals(Json.of(if (refused) "refused" else "accepted"), reopened.read(scope) { it.device("rack") })
+                    assertEquals(if (refused) emptyList<String>() else listOf("acked"), reopened.device.current().entries().map { it.state })
+                    assertEquals(if (refused) listOf("invalid") else emptyList<String>(), reopened.device.current().notices.map { it.member("code").str() })
+                    assertEquals(1L, reopened.device.current().meta.member("ackThrough").long())
+                    reopened.onPushResponse(request, response(request, refused), timing)
+                    assertEquals(2, calls)
+                }
+            }
+        }
+    }
+
+    @Test fun terminalWireRefusalsAndOutgrownDeltasUpdateTheirJournalWithoutACommand() {
+        for ((status, code) in listOf(400 to "invalid", 413 to "too-large")) {
+            var calls = 0
+            engine(writes = { intent, result, _, gestureId, rows ->
+                calls++
+                assertNull(intent.command)
+                assertEquals("delta-create", gestureId)
+                assertEquals(1L, result.n)
+                assertEquals(RefusalCode(code), (result.verdict as PushResult.Verdict.Refused).code)
+                assertEquals(mapOf("rack" to Json.of("pending")), rows)
+                listOf(DeviceWrite("rack", Json.of(code)))
+            }).use { local ->
+                saveDelta(local)
+                val request = local.nextPush()!!
+                local.onPushResponse(request, SyncResponse(status), timing)
+                assertEquals(1, calls)
+                assertEquals(Json.of(code), local.read(scope) { it.device("rack") })
+                assertTrue(local.device.current().entries().isEmpty())
+                assertEquals(listOf(code), local.device.current().notices.map { it.member("code").str() })
+            }
+        }
+        val snapshot = engine().use { local -> saveDelta(local); local.snapshot() }
+        var calls = 0
+        Engine.memory(registry, snapshot, pushMaxBytes = 1, intentResultWrites = { intent, result, _, gestureId, rows ->
+            calls++
+            assertNull(intent.command)
+            assertNull(intent.n)
+            assertEquals("delta-create", gestureId)
+            assertEquals(0L, result.n)
+            assertEquals(RefusalCode.tooLarge, (result.verdict as PushResult.Verdict.Refused).code)
+            assertEquals(mapOf("rack" to Json.of("pending")), rows)
+            listOf(DeviceWrite("rack", Json.of("too-large")))
+        }).use { reopened ->
+            assertNull(reopened.nextPush())
+            assertEquals(1, calls)
+            assertEquals(Json.of("too-large"), reopened.read(scope) { it.device("rack") })
+            assertTrue(reopened.device.current().entries().isEmpty())
+            assertEquals(listOf("too-large"), reopened.device.current().notices.map { it.member("code").str() })
+        }
     }
 
     @Test fun aBornOnlyPrerequisiteThatExceedsTheFinalPushLimitRollsBackTheCommandAndJournal() {
@@ -65,11 +148,12 @@ class EngineHooksTests {
         }
     }
 
-    @Test fun commandResultReceivesDeviceSnapshotAndCommitsItsWritesWithTheVerdict() {
+    @Test fun intentResultReceivesDeviceSnapshotAndCommitsItsWritesWithTheVerdict() {
         var calls = 0
-        engine(writes = { command, result, epoch, rows ->
+        engine(writes = { intent, result, epoch, gestureId, rows ->
             calls++
-            assertEquals("probe.start", command.name)
+            assertEquals("probe.start", intent.command!!.name)
+            assertTrue(gestureId.isNotBlank())
             assertEquals(1L, result.n)
             assertEquals("ep-1", epoch)
             assertEquals(mapOf("rack" to Json.objectOf("run" to Json.of("run00001"))), rows)
@@ -85,7 +169,7 @@ class EngineHooksTests {
     }
 
     @Test fun refusedCommandMayDeleteItsDeviceStateInTheSameResultTransaction() {
-        engine(writes = { _, result, _, _ ->
+        engine(writes = { _, result, _, _, _ ->
             assertTrue(result.verdict is PushResult.Verdict.Refused)
             listOf(DeviceWrite("rack", null))
         }).use { engine ->
@@ -98,7 +182,7 @@ class EngineHooksTests {
     }
 
     @Test fun undeclaredDeviceKeyRollsBackTheResultAndEveryEarlierHookWrite() {
-        engine(writes = { _, _, _, _ -> listOf(DeviceWrite("rack", Json.of("changed")), DeviceWrite("private-key", Json.of(true))) }).use { engine ->
+        engine(writes = { _, _, _, _, _ -> listOf(DeviceWrite("rack", Json.of("changed")), DeviceWrite("private-key", Json.of(true))) }).use { engine ->
             val request = number(engine)
             val before = engine.snapshot()
             val failure = assertThrows(CommitFailure::class.java) { engine.onPushResponse(request, response(request), timing) }
@@ -110,7 +194,7 @@ class EngineHooksTests {
     @Test fun failedResultCommitRollsBackDeviceWritesAndCanRetryTheSameSentCommand() {
         var calls = 0
         lateinit var instance: Engine
-        instance = engine(writes = { _, _, _, _ ->
+        instance = engine(writes = { _, _, _, _, _ ->
             if (++calls == 1) (instance.store as MemoryStore).failNextCommit = true
             listOf(DeviceWrite("rack", Json.objectOf("saved" to Json.of(true))))
         })
@@ -130,7 +214,8 @@ class EngineHooksTests {
     @Test fun throwingFoldedCommandHookRollsBackSourceRefusalDependentsAndDeviceJournal() {
         val failure = IllegalStateException("journal unavailable")
         var fail = true
-        engine(writes = { command, result, _, rows ->
+        engine(writes = callback@ { intent, result, _, _, rows ->
+            val command = intent.command ?: return@callback emptyList()
             assertEquals("probe.end", command.name)
             assertEquals(0L, result.n)
             assertEquals(RefusalCode.parentDead, (result.verdict as PushResult.Verdict.Refused).code)
@@ -154,9 +239,9 @@ class EngineHooksTests {
         }
     }
 
-    @Test fun writeMapRewritesTheDeviceValueAfterApplyingCommandResultWrites() {
+    @Test fun writeMapRewritesTheDeviceValueAfterApplyingIntentResultWrites() {
         var calls = 0
-        engine(writes = { _, _, _, _ -> listOf(DeviceWrite("rack", Json.objectOf("run" to Json.of("run00001"), "saved" to Json.of(true)))) },
+        engine(writes = { _, _, _, _, _ -> listOf(DeviceWrite("rack", Json.objectOf("run" to Json.of("run00001"), "saved" to Json.of(true)))) },
             rewrite = { product, key, value, type, from, to ->
                 calls++
                 assertEquals("probe", product); assertEquals("rack", key); assertEquals("run", type)
@@ -172,9 +257,9 @@ class EngineHooksTests {
         }
     }
 
-    @Test fun throwingDeviceRewriteRollsBackPredictionVerdictAndCommandResultWrites() {
+    @Test fun throwingDeviceRewriteRollsBackPredictionVerdictAndIntentResultWrites() {
         val failure = IllegalStateException("private device contents")
-        engine(writes = { _, _, _, _ -> listOf(DeviceWrite("rack", Json.of("changed"))) }, rewrite = { _, _, _, _, _, _ -> throw failure }).use { engine ->
+        engine(writes = { _, _, _, _, _ -> listOf(DeviceWrite("rack", Json.of("changed"))) }, rewrite = { _, _, _, _, _, _ -> throw failure }).use { engine ->
             val request = number(engine)
             val before = engine.snapshot()
             assertSame(failure, assertThrows(IllegalStateException::class.java) { engine.onPushResponse(request, response(request, write = true), timing) })

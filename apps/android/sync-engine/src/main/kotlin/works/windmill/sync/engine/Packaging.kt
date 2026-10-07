@@ -13,6 +13,17 @@ import works.windmill.sync.core.RecordKey
 import works.windmill.sync.api.Record
 import kotlin.concurrent.withLock
 
+fun Engine.pendingGesture(context: CommitContext, scope: ScopeRef, gestureId: String): Boolean = lock.withLock {
+    ensureOpen()
+    device.replicas.single { it.id == context.replica }.entries().any { it.scope == scope && it.gestureId == gestureId }
+}
+
+fun Engine.refusedDeltas(context: CommitContext, scope: ScopeRef, code: String): List<Pair<String, Delta>> = lock.withLock {
+    ensureOpen()
+    device.replicas.single { it.id == context.replica }.notices.filter { it["scope"] == scope.json && it["code"] == works.windmill.sync.core.Json.of(code) }
+        .flatMap { notice -> notice.member("content").items("d").map { notice.member("id").str() to Delta(it) } }
+}
+
 fun Engine.confirmedRecords(context: CommitContext, scope: ScopeRef, type: String): List<Record> = lock.withLock {
     ensureOpen()
     store.rows(context.replica, scope).filter { it.key.type == type }.mapNotNull { context.confirmed(type, it.key.id) }

@@ -96,9 +96,14 @@ when the replica changes. It also retains accepted sets until their engine commi
 Finish and projection refreshes recover those sets before clearing the controls; a failed recovery
 keeps them for retry. An adopted workout's Finish also waits for its start acknowledgment and
 commits its owed sets before the finish command; while waiting, it retains the controls for Retry.
-Finish receipts read the committed replica. A stranded adopted set refused with `session-finished`
-can be retried into the finished workout through a guarded correction. Its original identity, values,
-time and kind survive; concurrent changes leave the source available for another retry.
+Finish receipts read the committed replica. The adoption journal retains submitted sets until their
+server results arrive. A locally stranded set can be retried into the finished workout through a
+guarded correction when the server advertises registry 6. A late `session-finished` refusal, a
+finish or overlap that prevents correction, or a server advertising an older registry uses a
+separate workout with new account identities: its
+start, complete saved set and finish are acknowledged in order. The original source, values, time
+and kind survive; concurrent changes leave the source available for another retry. Settings Retry
+schedules reconciliation before reporting completion.
 The bundled movement catalogue uses backend seed identities. Only Coach
 threads, attachments, shares and connected-log credentials use REST, through `GymRest`.
 `coach/` groups conversation models, storage, photos and screens. `CoachStore` owns thread reads,

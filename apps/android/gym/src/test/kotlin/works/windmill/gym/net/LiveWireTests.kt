@@ -22,6 +22,7 @@ import works.windmill.gym.domain.RoutineWrite
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SetKind
+import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TopSet
 import works.windmill.gym.domain.TrainingSet
@@ -96,11 +97,11 @@ class LiveWireTests {
             val body = checkNotNull(hello.body)
             val account = body.member("as").str()
             val holds = body.member("holdsRecords").obj().mapValues { it.value.bool() }
-            val question = phone.signIn(account, holds)
+            val question = phone.signIn(account, holds, serverSchema = body.member("schema").long())
             if (!question.member("complete").bool()) {
                 val pins = question.member("due").arr().associate { due ->
                     due.member("product").str() to due.member("counted").arr().map { it.str() } }
-                assertTrue(phone.signIn(account, holds, mapOf("gym" to "add"), pins).member("complete").bool())
+                assertTrue(phone.signIn(account, holds, mapOf("gym" to "add"), pins, serverSchema = body.member("schema").long()).member("complete").bool())
             }
             phone.subscribe(ScopeRef(Gym.scope))
         }
@@ -416,7 +417,7 @@ class LiveWireTests {
     // with the phone's own ids.
     @Test
     fun t12_aSignedOutWorkoutLandsOnTheAccountAsAnImportAtSignIn() = runBlocking {
-        Engine.memory(SyncSchema.registry, clock = probeClock, commandResultWrites = WorkoutImports.commandResultWrites,
+        Engine.memory(SyncSchema.registry, clock = probeClock, intentResultWrites = WorkoutImports.intentResultWrites,
             pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
             val signedOut = EngineTraining(phone)
             signedOut.startSession(SessionStart(importedId, startC))
@@ -446,7 +447,7 @@ class LiveWireTests {
             val id = "ses_adopted_${tag}_$pullFirst"
             val setId = "set_adopted_${tag}_$pullFirst"
             val at = System.currentTimeMillis() - 60_000
-            Engine.memory(SyncSchema.registry, clock = probeClock, commandResultWrites = WorkoutImports.commandResultWrites,
+            Engine.memory(SyncSchema.registry, clock = probeClock, intentResultWrites = WorkoutImports.intentResultWrites,
                 pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
                 val training = EngineTraining(phone)
                 training.startSession(SessionStart(id, at))
@@ -486,7 +487,7 @@ class LiveWireTests {
         val id = "ses_recovered_$tag"
         val setId = "set_recovered_$tag"
         val at = System.currentTimeMillis() - 60_000
-        val snapshot = Engine.memory(SyncSchema.registry, clock = probeClock, commandResultWrites = WorkoutImports.commandResultWrites,
+        val snapshot = Engine.memory(SyncSchema.registry, clock = probeClock, intentResultWrites = WorkoutImports.intentResultWrites,
             pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
             val training = EngineTraining(phone)
             training.startSession(SessionStart(id, at))
@@ -500,7 +501,7 @@ class LiveWireTests {
             training.imports.refuseOperation(training.imports.operations().single(), Gym.Codes.sessionFinished)
             phone.snapshot()
         }
-        Engine.memory(SyncSchema.registry, snapshot, clock = probeClock, commandResultWrites = WorkoutImports.commandResultWrites,
+        Engine.memory(SyncSchema.registry, snapshot, clock = probeClock, intentResultWrites = WorkoutImports.intentResultWrites,
             pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
             val training = EngineTraining(phone)
             training.imports.retry(setId)
@@ -518,6 +519,85 @@ class LiveWireTests {
         assertEquals(works.windmill.gym.domain.SessionDetail(Session(id, at, at + 30_000), listOf(
             TrainingSet(setId, "bench-press", 1, 80.0, 5, SetKind.Warmup, null, "", at + 10_000))), adapter.session(id))
         discardSession(id)
+    }
+
+    @Test
+    fun t15_aLateServerFinishRefusalRecoversTheAdoptedSetExactlyOnceAfterRestart() = runBlocking {
+        val id = "ses_late_finish_$tag"
+        val setId = "set_late_finish_$tag"
+        val at = System.currentTimeMillis() - 90_000
+        val completedAt = at + 10_000
+        val note = "Late finish $tag"
+        lateinit var accepted: TrainingSet
+        try {
+            val snapshot = Engine.memory(SyncSchema.registry, clock = probeClock, intentResultWrites = WorkoutImports.intentResultWrites,
+                pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
+                val training = EngineTraining(phone)
+                training.startSession(SessionStart(id, at))
+                training.appendSet(id, SetWrite(setId, "back-squat", 62.5, 6, SetKind.Warmup, completedAt))
+                training.fixSet(id, setId, SetFix(note = note, rpe = 7.5, rpeNamed = true))
+                accepted = training.session(id)!!.sets.single()
+                training.prepareAdoption()
+                signIn(phone)
+                drain(phone) { training.firstPullComplete && phone.read(ScopeRef(Gym.scope)) {
+                    it.confirmed(Gym.Types.session, RecordID(id))?.isVisible == true &&
+                        it.drawn(Gym.Types.session, RecordID(id))?.isPending == false
+                } }
+                assertEquals(listOf(accepted), training.imports.operations().map { it.entry.set })
+                Engine.memory(SyncSchema.registry, clock = probeClock).use { other ->
+                    val remote = EngineTraining(other)
+                    signIn(other)
+                    drain(other) { remote.firstPullComplete }
+                    remote.finishSession(id, at + 30_000)
+                    drain(other) { other.read(ScopeRef(Gym.scope)) {
+                        it.drawn(Gym.Types.session, RecordID(id))?.isPending == false
+                    } }
+                }
+                training.finishSession(id, at + 40_000)
+                assertTrue(training.imports.hasOwedSets(id))
+                val request = checkNotNull(phone.nextPush())
+                val send = probeClock.reading()
+                val reply = response(transport.push(request, checkNotNull(bearer)))
+                assertEquals(200, reply.status)
+                assertEquals(listOf("session-finished", "ok"), reply.body!!.member("results").arr().map {
+                    it["code"]?.str() ?: it.member("s").str()
+                })
+                phone.onPushResponse(request, reply, RequestTiming(send, probeClock.reading()))
+                drain(phone) { training.session(id)?.session?.finishedAtMs == at + 30_000 }
+                assertTrue(training.session(id)!!.sets.isEmpty())
+                assertTrue(training.imports.hasOwedSets(id))
+                phone.snapshot()
+            }
+            Engine.memory(SyncSchema.registry, snapshot, clock = probeClock, intentResultWrites = WorkoutImports.intentResultWrites,
+                pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
+                val training = EngineTraining(phone)
+                assertEquals(snapshot.member("active").str(), phone.activeReplica())
+                assertTrue(!training.anonymous)
+                assertTrue(training.imports.hasOwedSets(id))
+                training.imports.retry(setId)
+                repeat(12) {
+                    training.reconcileImports()
+                    drain(phone) { phone.snapshot().member("replicas").arr().flatMap { it["outbox"]?.arr().orEmpty() }
+                        .none { it.member("state").str() in setOf("ready", "sent", "held") } }
+                }
+                assertTrue(training.imports.refusals().isEmpty())
+                assertTrue(!training.imports.hasOwedSets(id))
+            }
+            drain(engine) { engine.read(ScopeRef(Gym.scope)) { it.checkpoint().cleanSeq != null } }
+            assertEquals(Session(id, at, at + 30_000), adapter.session(id)!!.session)
+            assertTrue(adapter.session(id)!!.sets.isEmpty())
+            val recovered = adapter.details().single { it.sets.any { set -> set.note == note } }
+            assertEquals(Session(recovered.session.id, completedAt, completedAt), recovered.session)
+            assertEquals(listOf(accepted.copy(id = recovered.sets.single().id, setNumber = 1)), recovered.sets)
+            assertEquals(1, adapter.details().flatMap { it.sets }.count { it.note == note })
+        } finally {
+            drain(engine) { engine.read(ScopeRef(Gym.scope)) { it.checkpoint().cleanSeq != null } }
+            for (detail in adapter.details().filter { it.session.id == id || it.session.startedAtMs == completedAt }) {
+                if (detail.session.isOpen) finishSession(detail.session.id,
+                    detail.sets.maxOfOrNull { it.completedAtMs } ?: detail.session.startedAtMs)
+                discardSession(detail.session.id)
+            }
+        }
     }
 
     @Test

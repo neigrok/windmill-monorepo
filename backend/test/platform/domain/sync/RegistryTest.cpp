@@ -519,7 +519,7 @@ TEST(the_gym_registry_reads_as_declared) {
   std::vector<std::string> deviceRows;
   for (const auto& [name, row] : device) deviceRows.push_back(name);
   CHECK_EQ(deviceRows, (std::vector<std::string>{"movement", "movementOrder", "offer", "rack"}));
-  CHECK_EQ(gym.version(), 5);
+  CHECK_EQ(gym.version(), 6);
   CHECK_EQ(gym.minVersion(), 4);
   CHECK(gym.type("thread") == nullptr);
   CHECK(gym.type("message") == nullptr);
@@ -541,10 +541,10 @@ TEST(the_gym_registry_reads_as_declared) {
 
 // The product registries ship as one registry: one version and minVersion, and no product, type, command or
 // refusal code a second registry declares again.
-TEST(the_deployment_composition_embeds_gym_and_journal_v5) {
+TEST(the_deployment_composition_embeds_gym_and_journal_v6) {
   const Json::Value composition = parseJson(compositionText());
   CHECK_EQ(jcs(composition), jcs(parseJson(R"({"composition":"windmill","registries":["gym.registry.json","journal.registry.json"]})")));
-  CHECK_EQ(productRegistry().version(), 5);
+  CHECK_EQ(productRegistry().version(), 6);
   CHECK_EQ(productRegistry().minVersion(), 4);
   const std::vector<Registry> registries{wm::gym::engine::registry(), wm::journal::engine::registry()};
   const auto catalog = productCatalog();

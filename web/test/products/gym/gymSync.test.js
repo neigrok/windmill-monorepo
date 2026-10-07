@@ -30,10 +30,10 @@ async function confirm(engine) {
 }
 const routine = { id: 'routine00001', name: 'Lower A', position: 0, entries: [{ exerciseId: 'back-squat', sets: [{ reps: 5, weightKg: 60 }, { reps: 3, weightKg: 80 }] }] };
 
-test('v5 authoritative gym fields and independent routine creation snapshots survive persisted engine restart', async (t) => {
+test('authoritative gym fields and independent routine creation snapshots survive persisted engine restart', async (t) => {
   const opened = await open(t);
   const { api, engine, reopen } = opened;
-  assert.equal(registry.version, 5);
+  assert.equal(registry.version, 6);
   assert.equal(registry.minVersion, 4);
   const receipt = { id: routine.id, name: 'Original lower', position: 0, revision: 1, entries: [{ position: 1, exerciseId: 'bench-press' }] };
   const rows = [

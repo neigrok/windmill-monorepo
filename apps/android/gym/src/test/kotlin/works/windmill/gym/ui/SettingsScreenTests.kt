@@ -24,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -47,6 +48,8 @@ import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.SavedWorkout
 import works.windmill.gym.store.TrainingStore
 import works.windmill.platform.design.WindmillMaterial
+import works.windmill.platform.telemetry.LocalTelemetry
+import works.windmill.platform.telemetry.Telemetry
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -187,6 +190,97 @@ class SettingsScreenTests {
 
     @Test
     fun anEmptyOpenWorkoutConflictCanBeKeptSeparatelyAtItsOriginalStart() = openConflict(false)
+
+    @Test
+    fun retrySchedulesAStrandedSetBeforeReportingCompletionWithProductionObservers() = retryStrandedSet(false)
+
+    @Test
+    fun retryReportsSchedulingFailureAndKeepsTheSourceForTheNextTap() = retryStrandedSet(true)
+
+    @Test
+    fun retryAgainstV5FinishesTheRecoveredWorkoutThroughProductionObservers() = retryStrandedSet(false, true)
+
+    private fun retryStrandedSet(failScheduling: Boolean, legacyServer: Boolean = false) = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = if (legacyServer) EngineRoomFixture.oldServer() else EngineRoomFixture.server()
+        try {
+            val snapshot = EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+                room.now = 100_000
+                room.training.startSession(works.windmill.gym.domain.SessionStart("session01", 1_000))
+                room.training.appendSet("session01", works.windmill.gym.domain.SetWrite("set00001", "back-squat", 60.0, 5,
+                    works.windmill.gym.domain.SetKind.Warmup, 2_000))
+                room.training.fixSet("session01", "set00001", SetFix(note = "Original", rpe = 7.0, rpeNamed = true))
+                room.training.prepareAdoption()
+                val hello = server.hello(works.windmill.sync.modelserver.Credential.Account("A"), room.now)
+                assertTrue(room.engine.signIn("A", emptyMap(), serverSchema = hello.body!!.member("schema").long()).member("complete").bool())
+                room.selected = "A"
+                room.pull(server); room.sync(server)
+                room.training.appendSet("session01", works.windmill.gym.domain.SetWrite("standing1", "back-squat", 80.0, 8,
+                    works.windmill.gym.domain.SetKind.Drop, 2_500))
+                room.sync(server)
+                room.engine.commit(works.windmill.gym.store.WorkoutImports.scope,
+                    works.windmill.sync.api.Gesture(emptyList(), command = works.windmill.sync.core.Command("gym.finish",
+                        Json.objectOf("sessionId" to Json.of("session01"), "finishedAt" to Json.of(3_000)))))
+                room.sync(server)
+                room.training.imports.refuseOperation(room.training.imports.operations().single(), "session-finished")
+                room.engine.snapshot()
+            }
+            EngineRoomFixture(tmp.newFolder(), scope, snapshot, rest = FakeGymRest()).use { room ->
+                room.selected = "A"; room.now = 100_000
+                room.store.connect(room.account())
+                room.store.observeEngine()
+                val original = room.training.imports.refusals().single().sets.single()
+                val standing = room.training.session("session01")!!.sets.single()
+                val completedCommands = mutableListOf<List<String>>()
+                val failures = mutableListOf<String>()
+                val messages = mutableListOf<String?>()
+                val telemetry = object : Telemetry {
+                    override fun event(name: String, properties: Map<String, String>) {
+                        if (name == "gym_import_recovery" && properties == mapOf("action" to "retry", "outcome" to "completed"))
+                            completedCommands += room.outbox().map { it.member("intent").member("cmd").member("name").str() }
+                    }
+                    override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+                }
+                GymEngineSession(room.engine, SyncRuntime(room.engine, unavailableTransport, memoryTokens, "test")).use { session ->
+                    val visible = mutableStateOf(true)
+                    try {
+                        compose.setContent { if (visible.value) WindmillMaterial { GymMaterial {
+                            CompositionLocalProvider(LocalGymEngineSession provides session, LocalTelemetry provides telemetry) {
+                                SettingsScreen(room.store, true, "routines", {}, {}, {}, say = { messages += it })
+                            }
+                        } } }
+                        delay(1_000); compose.waitForIdle()
+                        assertTrue(room.outbox().isEmpty())
+                        assertEquals(listOf("session-finished"), room.training.imports.refusals().map { it.code })
+                        if (failScheduling) {
+                            room.engine.crashAfterTransactions(2)
+                            compose.onNodeWithText("Retry").performScrollTo().performClick()
+                            compose.waitForIdle()
+                            assertEquals(listOf("gym_import_retry"), failures)
+                            assertEquals(emptyList<List<String>>(), completedCommands)
+                            assertEquals(setOf("set00001"), room.training.imports.retainedOperationSetIds())
+                            assertEquals("The workout is still saved on this phone. Retry could not be completed.", messages.last())
+                        }
+                        compose.onNodeWithText("Retry").performScrollTo().performClick()
+                        compose.waitForIdle()
+                        repeat(12) { room.sync(server); delay(100); compose.waitForIdle() }
+                        assertEquals(listOf(listOf(if (legacyServer) "gym.start" else "gym.correctSession")), completedCommands)
+                        assertEquals(if (failScheduling) listOf("gym_import_retry") else emptyList<String>(), failures)
+                        assertNull(messages.last())
+                        if (legacyServer) {
+                            assertEquals(listOf(standing), room.training.session("session01")!!.sets)
+                            val recovered = room.training.details().single { it.session.id != "session01" }
+                            assertEquals(original.completedAtMs, recovered.session.startedAtMs)
+                            assertEquals(original.completedAtMs, recovered.session.finishedAtMs)
+                            assertEquals(original, recovered.sets.single().copy(id = original.id, setNumber = original.setNumber))
+                        } else assertEquals(listOf(original.copy(setNumber = 2), standing), room.training.session("session01")!!.sets)
+                        assertTrue(room.training.imports.refusals().isEmpty())
+                        assertTrue(room.training.imports.retainedOperationSetIds().isEmpty())
+                    } finally { compose.runOnIdle { visible.value = false }; compose.waitForIdle(); scope.cancel() }
+                }
+            }
+        } finally { scope.cancel() }
+    }
 
     // Signed-out training meets an account that already has a workout open: the phone's own open
     // workout is refused rather than joined, and Settings is where it is inspected and kept.

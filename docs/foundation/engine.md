@@ -13,9 +13,10 @@ journal), iOS (journal, gym) and Android (gym) write through replicas, and MCP, 
 import door admit as the server (A.2). Production's gym and journal rows were adopted in place
 (Appendices C and D). `windmill_server_probe` carries the test-only contract.
 
-**R118 contract:** The composed registry has version 5 and minimum version 4, so installed v4
-journal clients remain supported. A.2 specifies gym's metadata, and C.8 how the adopted rows took
-it. `composition.json` composes gym and journal, whose versions rise together (§2.4); journal's
+**Registry contract:** The composed registry has version 6 and minimum version 4, so installed v4
+and v5 clients remain supported. A.2 specifies gym's metadata and additive corrections; a server
+advertising v6 accepts correction-set `kind` and `preserveOtherSets`. C.8 specifies how the adopted
+rows took their metadata. `composition.json` composes gym and journal, whose versions rise together (§2.4); journal's
 field shape is unchanged. Every other product starts from empty stores.
 
 **Retired REST writes:** gym's former REST write paths answer `410`
@@ -341,8 +342,8 @@ composition, and a type its product's registry, in the change that binds it on t
 composition's `version` rises with it (§9.1). `minVersion` MUST rise above every incompatible
 version when the envelope shape changes, a declared product or type is dropped, or a rule enforced
 by clients changes. Additive products, types and fields do not raise `minVersion`: clients retain
-and hash unknown fields and types harmlessly (§7.6). R118 is additive, so v5 accepts v4 clients;
-the installed journal client reads no gym records and is never refused `426` for this upgrade.
+and hash unknown fields and types harmlessly (§7.6). The v6 correction arguments are additive, so
+v6 accepts v4 and v5 requests unchanged; clients use them only when the server advertises v6 or newer.
 
 - **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern`,
   `key` (a keyed type's natural key: an id of another type, or a tuple of such ids, whose types, and

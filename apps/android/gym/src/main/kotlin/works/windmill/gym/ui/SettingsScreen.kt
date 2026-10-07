@@ -243,10 +243,10 @@ private fun DeviceTrainingRow(store: TrainingStore, isSignedIn: Boolean, onAccou
             TextButton(onClick = { scope.launch {
                 telemetry.event("gym_import_recovery", mapOf("action" to "retry", "state" to "started"))
                 try {
-                    imports.retry(refusal.id); revision++; say(null)
+                    store.retryImport(refusal.id); revision++; say(null)
                     telemetry.event("gym_import_recovery", mapOf("action" to "retry", "outcome" to "completed"))
-                }
-                catch (failure: Exception) {
+                } catch (cancelled: CancellationException) { throw cancelled
+                } catch (failure: Exception) {
                     telemetry.failure("gym_import_retry", failure)
                     say("The workout is still saved on this phone. Retry could not be completed.")
                 }
@@ -293,16 +293,18 @@ private fun DeviceTrainingRow(store: TrainingStore, isSignedIn: Boolean, onAccou
     fixingKind?.let { refusal -> AlertDialog(onDismissRequest = { fixingKind = null },
         title = { Text("Choose set kind") }, text = { Text("The original set stays saved. Choose its kind to retry the saved operation.") },
         confirmButton = { Column {
-            works.windmill.gym.domain.SetKind.entries.forEach { kind -> TextButton(onClick = {
+            works.windmill.gym.domain.SetKind.entries.forEach { kind -> TextButton(onClick = { scope.launch {
                 try {
                     imports.replaceOperationKindAndRetry(refusal.id, kind)
+                    store.retryImport(refusal.id)
                     revision++; fixingKind = null; say(null)
                     telemetry.event("gym_import_recovery", mapOf("action" to "fix", "outcome" to "completed"))
+                } catch (cancelled: CancellationException) { throw cancelled
                 } catch (failure: Exception) {
                     telemetry.failure("gym_import_fix", failure)
                     say("The original set is still saved on this phone. The correction could not be saved.")
                 }
-            }) { Text(kind.name) } }
+            } }) { Text(kind.name) } }
         } }, dismissButton = { TextButton(onClick = { fixingKind = null }) { Text("Cancel") } }) }
 }
 

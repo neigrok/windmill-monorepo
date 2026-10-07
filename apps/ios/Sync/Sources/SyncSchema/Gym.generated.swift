@@ -653,6 +653,6 @@ public enum Gym {
         "type": "proposal",
       ],
     ],
-    "version": 5,
+    "version": 6,
   ]
 }

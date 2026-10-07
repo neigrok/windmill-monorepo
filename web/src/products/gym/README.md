@@ -26,7 +26,7 @@ and preserve history depth and editor drafts.
 Creation and proposal chronology use the engine observation's authoritative `rc` envelope. Command
 predictions persist per-exercise set numbers, correction removals and replacement numbers, and
 routine deaths from removal proposals through offline restart.
-The composition is schema v5 with minimum v4. Routine `revision` and `createdEntries`, proposal
+The composition is schema v6 with minimum v4. Routine `revision` and `createdEntries`, proposal
 `baseRevision`, `baseName` and `changeCount`, and note `updatedAt` come from server-authored registers.
 Editors never write them. Note positions are zero-based; a move writes the moved note's `ord` alone,
 right after the row drawn above it. The independent `routineCreation.snapshot` record is read-only

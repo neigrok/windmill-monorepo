@@ -20,7 +20,7 @@ data class DormantReplica(val account: String, val ready: Int, val sent: Int, va
 }
 
 class SignInSession internal constructor(private val runtime: SyncRuntime, val account: String,
-    internal val holdsRecords: Map<String, Boolean>, result: Json) {
+    internal val holdsRecords: Map<String, Boolean>, result: Json, internal val serverSchema: Long? = null) {
     val decisions = result.items("due").map { question -> SignedOutDecision(question.member("product").str(),
         question.member("count").obj().mapValues { it.value.long().toInt() }, question.member("counted").arr().map(Json::str)) }
     @Volatile var isComplete = result.member("complete").bool(); private set
@@ -129,7 +129,7 @@ internal fun Engine.anonCount(replica: ReplicaState, product: String): Json {
     return Json.Obj(counts.map { it.key to Json.of(it.value) })
 }
 fun Engine.anonCount(replica: String, product: String): Json = lock.withLock { ensureOpen(); anonCount(device.replicas.single { it.id == replica }, product) }
-fun Engine.signIn(account: String, holdsRecords: Map<String, Boolean>, decisions: Map<String, String> = emptyMap(), counted: Map<String, List<String>> = emptyMap()): Json = write(EngineOperation.lifecycle) {
+fun Engine.signIn(account: String, holdsRecords: Map<String, Boolean>, decisions: Map<String, String> = emptyMap(), counted: Map<String, List<String>> = emptyMap(), serverSchema: Long? = null): Json = write(EngineOperation.lifecycle) {
     val previous = device.active
     val anon = device.replicas.firstOrNull { it.state == "anon" }
     anon?.entries()?.filter { it.state == "held" }?.forEach { anon.move(it, "release", ended) }
@@ -174,6 +174,7 @@ fun Engine.signIn(account: String, holdsRecords: Map<String, Boolean>, decisions
     target.outbox.forEach { it.json = it.json.with("lineage" to Json.of(account)) }
     observe(target, target.entries().flatMap { listOf(it.stamp) + it.deltas.flatMap { delta -> delta.lattice.stamps } })
     target.meta = target.meta.with("authPaused" to Json.of(false))
+    serverSchema?.let { target.meta = target.meta.with("serverSchema" to Json.of(it)) }
     device.meta = device.meta.with("pendingSignIn" to null); activate(previous, target)
     Json.objectOf("complete" to Json.of(true), "due" to Json.Arr(due))
 }

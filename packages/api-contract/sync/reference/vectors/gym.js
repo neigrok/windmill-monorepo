@@ -240,6 +240,11 @@ function sessions() {
   const twoSets = gymState({
     rows: { [GYM_A]: [EXERCISE, ROUTINE, FINISHED, SET, rec('set', 'set00000002', { stamp: s(T + 4), seq: 6, f: { sessionId: 'session0001', exerciseId: 'back-squat', weightKg: 60, reps: 8, kind: 'warmup', note: 'easy', rpe: 6, completedAt: T + 300_000 }, v: { setNumber: 2 } })], [GYM_B]: [] },
   });
+  const overlapping = structuredClone(twoSets);
+  const overlap = structuredClone(FINISHED);
+  overlap.id = 'other00001'; overlap.f.startedAt[0] = T - 61_000; overlap.f.finishedAt[0] = T - 59_000;
+  overlapping.rows[GYM_A].push(overlap);
+  overlapping.scopes[GYM_A].digest = replaceRow(overlapping.scopes[GYM_A].digest, undefined, overlap);
   return [
     admitted('a start naming a routine freezes its plan and records historyRoutineId', { state: base(), intent: start('session0002', { routineId: 'routine0001' }) }),
     admitted('a start naming a routine that is gone starts with routineId and plan null', { state: base({ spent: { [GYM_A]: [{ t: 'routine', id: 'routine0009', born: s(T), lifeStamp: s(T + H), seq: 6 }] } }), intent: start('session0002', { routineId: 'routine0009' }) }),
@@ -273,6 +278,8 @@ function sessions() {
     admitted('an additive correction keeps an existing kind even when a different kind is named', { state: twoSets, intent: cmd('gym.correctSession', correction({ preserveOtherSets: true, sets: [{ id: 'set00000002', exerciseId: 'back-squat', setNumber: 2, weightKg: 62.5, reps: 8, kind: 'failure', completedAt: T + 300_000 }] })) }),
     admitted('an additive correction refuses a number used by an unnamed set', { state: twoSets, intent: cmd('gym.correctSession', correction({ preserveOtherSets: true, sets: [{ id: 'set00000009', exerciseId: 'back-squat', setNumber: 1, weightKg: 45, reps: 8, kind: 'warmup', completedAt: T + 900_000 }] })) }),
     admitted('an additive correction refuses an interval excluding an unnamed set', { state: twoSets, intent: cmd('gym.correctSession', correction({ preserveOtherSets: true, startedAt: T + 500_000, sets: [{ id: 'set00000009', exerciseId: 'back-squat', setNumber: 3, weightKg: 45, reps: 8, kind: 'warmup', completedAt: T + 900_000 }] })) }),
+    admitted('an additive correction checks the named set interval before retained number collisions', { state: twoSets, intent: cmd('gym.correctSession', correction({ preserveOtherSets: true, sets: [{ id: 'set00000009', exerciseId: 'back-squat', setNumber: 1, weightKg: 45, reps: 8, kind: 'warmup', rpe: 7, note: 'Saved', completedAt: T + H + 1 }] })) }),
+    admitted('an additive correction checks overlap before retained number collisions', { state: overlapping, intent: cmd('gym.correctSession', correction({ preserveOtherSets: true, sets: [{ id: 'set00000009', exerciseId: 'back-squat', setNumber: 1, weightKg: 45, reps: 8, kind: 'warmup', rpe: 7, note: 'Saved', completedAt: T + 900_000 }] })) }),
     admitted('a correction of an open session is refused session-open', { state: withOpen(T + 8 * H), intent: cmd('gym.correctSession', correction({ sessionId: 'session0002', startedAt: T + 8 * H, finishedAt: T + 9 * H, sets: [{ id: 'set00000009', exerciseId: 'dip', setNumber: 1, weightKg: 0, reps: 5, completedAt: T + 8 * H }] })) }),
     admitted('a correction that moves a set to another movement is invalid', { state: twoSets, intent: cmd('gym.correctSession', correction({ sets: [{ id: 'set00000001', exerciseId: 'dip', setNumber: 1, weightKg: 0, reps: 5, completedAt: T + 900_000 }] })) }),
     admitted('a correction replayed with equal arguments is ok', { state: gymState({ rows: { [GYM_A]: [EXERCISE, ROUTINE, FINISHED, SET], [GYM_B]: [] }, product: { corrections: { [GYM_A]: { 'fix-000001': { sessionId: 'session0001', args: correction() } } } } }), intent: cmd('gym.correctSession', correction()) }),

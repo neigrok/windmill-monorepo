@@ -605,6 +605,11 @@ class TrainingStore(
             scope.launch { engine.records(works.windmill.sync.core.ScopeRef.product("gym"), type).state.collect { refreshEngine() } }
     }
 
+    suspend fun retryImport(id: String) {
+        training.imports.retry(id)
+        training.reconcileImports()
+    }
+
     suspend fun refreshEngine() {
         if (controls.engineReplica != training.engine.activeReplica()) return
         val seat = owner

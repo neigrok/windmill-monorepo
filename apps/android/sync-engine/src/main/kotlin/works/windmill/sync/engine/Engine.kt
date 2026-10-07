@@ -33,7 +33,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     internal val clock: EngineClock, internal val identities: IdentitySource, var actor: String,
     internal val pushMaxBytes: Int = Constants.PUSH_MAX_BYTES, telemetry: EngineTelemetry = NoEngineTelemetry,
     internal val rewriteDeviceValue: DeviceValueRewrite = { _, _, value, _, _, _ -> value },
-    internal val commandResultWrites: CommandResultDeviceWrites = { _, _, _, _ -> emptyList() },
+    internal val intentResultWrites: IntentResultDeviceWrites = { _, _, _, _, _ -> emptyList() },
     internal val pendingDeviceWork: PendingDeviceWork = { _, _ -> emptyList() }) : Replica, AutoCloseable {
     internal val lock = ReentrantLock(true)
     internal var device = DeviceState(store.metadata()).also { device -> device.replicas.forEach { replica -> replica.staging.replaceAll { _, stage -> stage.with("rows" to null) } } }
@@ -293,6 +293,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
         override fun device(key: String): Json? = checked { registry.product(scope)?.let { replicaState.device[it]?.get(key) } }
         override fun devices(prefix: String): Map<String, Json> = checked { registry.product(scope)?.let { replicaState.device[it]?.obj()?.filterKeys { key -> key.startsWith(prefix) } }.orEmpty() }
         override fun firstPullComplete() = checked { scope !in (selectedScopes ?: (subscriptionsOf(replicaState) + openedScopes)) || replicaState.cursors[scope.text]?.flag("booted") == true }
+        override fun serverSchema(): Long? = checked { if (isAnonymous) null else replicaState.meta["serverSchema"]?.long() }
         override fun checkpoint(): ScopeCheckpoint = checked {
             val state = replicaState.cursors[scope.text]
             val cursor = state?.get("cursor")?.orNull()?.str()?.let { WireCursor.decode(it) }
@@ -352,11 +353,11 @@ class Engine internal constructor(val registry: Registry, internal val store: En
                 override fun draw(bound: Int) = random.nextInt(bound)
             }, actor: String = "r_" + identities.opaqueID().take(12), pushMaxBytes: Int = Constants.PUSH_MAX_BYTES, telemetry: EngineTelemetry = NoEngineTelemetry,
             rewriteDeviceValue: DeviceValueRewrite = { _, _, value, _, _, _ -> value },
-            commandResultWrites: CommandResultDeviceWrites = { _, _, _, _ -> emptyList() },
+            intentResultWrites: IntentResultDeviceWrites = { _, _, _, _, _ -> emptyList() },
             pendingDeviceWork: PendingDeviceWork = { _, _ -> emptyList() }): Engine {
             val device = snapshot ?: Json.objectOf("active" to Json.of("rp_" + buildString { repeat(32) { append("0123456789abcdef"[identities.draw(16)]) } }), "replicas" to Json.array())
             val initial = if (snapshot != null) device else device.with("replicas" to Json.array(freshReplica(device.member("active").str()).json()))
-            return Engine(registry, MemoryStore(registry, initial), clock, identities, actor, pushMaxBytes, telemetry, rewriteDeviceValue, commandResultWrites, pendingDeviceWork)
+            return Engine(registry, MemoryStore(registry, initial), clock, identities, actor, pushMaxBytes, telemetry, rewriteDeviceValue, intentResultWrites, pendingDeviceWork)
         }
     }
 }

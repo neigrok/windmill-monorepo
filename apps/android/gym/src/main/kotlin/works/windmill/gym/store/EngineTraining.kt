@@ -196,7 +196,7 @@ class EngineTraining(val engine: Engine) {
     }
     suspend fun finishSession(sessionId: String, finishedAtMs: Long): Session {
         reconcileImports()
-        if (imports.hasOwedSets(sessionId)) throw TrainingUnanswered
+        if (imports.hasUnsubmittedSets(sessionId)) throw TrainingUnanswered
         apply(FinishSession(Id(sessionId, EngineSession), Instant(finishedAtMs)))
         return session(sessionId)?.session ?: throw missing("That workout is no longer on the log.")
     }
@@ -419,6 +419,10 @@ class EngineTraining(val engine: Engine) {
         }
         for (operation in imports.operations()) {
             if (!anonymous && !firstPullComplete) continue
+            if (imports.continuesRecovery(operation)) {
+                imports.recoverFinishedOperation(operation)
+                continue
+            }
             if (imports.refusals().any { it.id == operation.sessionId && it.session?.isOpen == true }) continue
             if (!anonymous && read { it.confirmed(EngineSession, Id(operation.sessionId, EngineSession))?.isVisible != true }) continue
             try {
@@ -433,13 +437,12 @@ class EngineTraining(val engine: Engine) {
     internal suspend fun reconcileOperation(operation: ImportOperation) {
         val entry = operation.entry
         val value = engineSet(operation.sessionId, SetWrite(entry.set)).copy(rpe = entry.set.rpe, note = entry.set.note)
-        apply(object : Action<Pair<TrainingState, works.windmill.sync.api.DeviceWrite?>, Unit, GymRefusal> {
-            override val scope = EngineSet.scope
-            override val refusals = GymRefusal
-            override fun load(read: Reader) = TrainingState(read) to imports.operationResolution(operation, read.source)
-            override fun decide(loaded: Pair<TrainingState, works.windmill.sync.api.DeviceWrite?>, ids: IDSource): Decision<Unit, GymRefusal> {
-                val resolution = loaded.second ?: return Decision.Unchanged(Unit)
-                val state = loaded.first
+        writing {
+            val outcome = engine.commit(EngineSet.scope) { context ->
+                if (imports.operationSubmission(operation, context, null) == null) return@commit null to Unit
+                val read = Reader(context, EngineSet.scope, Moment(Instant(context.now), zone), engine.registry)
+                val state = TrainingState(read)
+                val ids = IDSource(context)
                 val known = state.drawnSets.firstOrNull { it.id == value.id }
                 if (known != null && (known.sessionId != value.sessionId || entry.write == Owed.Append &&
                         (known.exerciseId != value.exerciseId || known.completedAt != value.completedAt)))
@@ -454,14 +457,20 @@ class EngineTraining(val engine: Engine) {
                 val plan = when (decision) {
                     is Decision.Write -> decision.plan
                     is Decision.Unchanged -> Plan()
-                    is Decision.Refuse -> return decision
+                    is Decision.Refuse -> throw refusal(decision.refusal)
                 }
                 if (entry.write == Owed.Delete && known != null) plan.device("rack:deletedSet${Sha256.hex(entry.set.id.toByteArray()).take(32)}",
                     Json.objectOf("setId" to Json.of(entry.set.id), "sessionId" to Json.of(operation.sessionId)))
-                plan.device(resolution.key, resolution.value)
-                return Decision.Write(plan, Unit)
-            }
-        })
+                val gesture = plan.gesture(EngineSet.scope, engine.registry)
+                val submission = if (gesture.changes.isEmpty() || context.isAnonymous) null else context.opaqueID()
+                if (submission == null && context.stored(Gym.Types.set, value.id.record)?.isPending == true) return@commit null to Unit
+                gesture.gestureId = submission
+                gesture.local += checkNotNull(imports.operationSubmission(operation, context, submission))
+                gesture to Unit
+            }.first
+            if (outcome is works.windmill.sync.api.CommitOutcome.Refused)
+                throw refusal(GymRefusal.of(Refused(outcome.code, subject = null, detail = outcome.detail, path = Refused.Path.predicted)))
+        }
     }
     fun refusedWrites(): List<RefusedWrite> = engine.notices("gym").notices.value.map { notice ->
         val domain = DomainNotice(notice, engine.registry, GymRefusal)

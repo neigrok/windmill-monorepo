@@ -86,8 +86,8 @@ curl -sS "http://127.0.0.1:$WM_ENGINE_PORT/v1/auth/verify-code" \
 
 The code sign-in creates the account on first use. The response's `session` is the bearer secret and
 `user.id` is the engine account. The app stores the secret in its Keychain and sends
-`Authorization: Bearer <session>` with `Sync-Schema: 5`, its registry's version, on hello, push and
-pull; live uses `/v1/sync/live?schema=5`. Existing web and Android callers omit `sessionTransport` and
+`Authorization: Bearer <session>` with `Sync-Schema: 6`, its registry's version, on hello, push and
+pull; live uses `/v1/sync/live?schema=6`. Existing web and Android callers omit `sessionTransport` and
 receive their existing bodies. Read [AUTH.md](AUTH.md) for native Apple configuration and its
 identity-token/nonce exchange.
 
@@ -234,7 +234,7 @@ with the same two-database setup above (`windmill_test` for `DATABASE_URL`, `win
 `WM_SYNC_DATABASE_URL`). It then serves the stage's own `windmill_server_probe` on the sync database
 and runs `test/e2e/deployment_conformance.mjs` against it, and serves `windmill_server` on a third
 database holding `db/schema.sql` alone, where `WM_E2E_CATALOG=products` runs the same direct and edge
-suite over the gym + journal catalog (schema 5, minimum 4) and both product scopes. On the runner
+suite over the gym + journal catalog (schema 6, minimum 4) and both product scopes. On the runner
 itself, `test/deploy/schema_reapplication_test.py` checks that re-applying `db/schema.sql`, as every
 deploy does, changes nothing.
 

@@ -28,8 +28,15 @@ test('gym/admit.json replays through admit under gym.registry.json and gym\'s bi
 
 test('additive corrections preserve unnamed rows and restore kind without changing existing kinds', () => {
   const cases = load('admit.json').filter(({ name }) => name.startsWith('an additive correction'));
-  assert.equal(cases.length, 4);
+  assert.equal(cases.length, 6);
   for (const { name, input, expect } of cases) {
+    if (name.includes('checks ')) {
+      assert.deepEqual(expect.result, name.includes('overlap')
+        ? { s: 'refused', code: 'session-overlap', detail: { sessionId: 'other00001' } }
+        : { s: 'refused', code: 'bad-instant' }, name);
+      assert.deepEqual(expect.state, new ServerState(input.state).toJSON(), name);
+      continue;
+    }
     if (name.includes('refuses')) {
       assert.equal(expect.result.s, 'refused', name);
       assert.equal(expect.result.code, name.includes('number') ? 'invalid' : 'bad-instant', name);

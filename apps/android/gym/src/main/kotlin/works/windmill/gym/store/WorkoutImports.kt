@@ -10,6 +10,7 @@ import works.windmill.gym.domain.sync.ImportedSet
 import works.windmill.gym.domain.sync.CorrectSession
 import works.windmill.gym.domain.sync.CorrectedSet
 import works.windmill.gym.domain.sync.GymRefusal
+import works.windmill.gym.domain.sync.AppendSet
 import works.windmill.sync.api.*
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.PushResult
@@ -22,6 +23,8 @@ import works.windmill.sync.engine.confirmedRecords
 import works.windmill.sync.engine.commitWithPrerequisites
 import works.windmill.sync.engine.unsubmittedGestures
 import works.windmill.sync.engine.reconcileConfirmedCommand
+import works.windmill.sync.engine.pendingGesture
+import works.windmill.sync.engine.refusedDeltas
 import works.windmill.sync.schema.Gym
 import works.windmill.gym.domain.sync.Session as SyncSession
 import works.windmill.gym.domain.sync.TrainingSet as SyncSet
@@ -310,18 +313,26 @@ class WorkoutImports(private val engine: Engine) {
         } }
     }
 
+    fun hasUnsubmittedSets(sessionId: String): Boolean = engine.read(scope) { reader ->
+        reader.devices(journalPrefix).values.any { journal -> journal["items"]?.obj().orEmpty().values.any { item ->
+            item["kind"] == Json.of("operation") && item["state"] !in setOf(Json.of("submitted"), Json.of("resolved"), Json.of("discarded")) &&
+                (item["targetSessionId"] ?: item["source"]?.get("sessionId")) == Json.of(sessionId)
+        } }
+    }
+
     fun retainedOperationSetIds(): Set<String> = engine.read(scope) { reader ->
         reader.devices(journalPrefix).values.flatMap { journal -> journal["items"]?.obj().orEmpty().values.filter { item ->
             item["kind"] == Json.of("operation") && item["state"] !in setOf(Json.of("resolved"), Json.of("discarded"))
         }.map { it.member("id").str() } }.toSet()
     }
 
-    internal fun operationResolution(operation: ImportOperation, reader: ScopeReader): DeviceWrite? {
+    internal fun operationSubmission(operation: ImportOperation, reader: ScopeReader, gestureId: String?): DeviceWrite? {
         val saved = reader.devices(journalPrefix).entries.firstOrNull { operation.token in it.value["items"]?.obj().orEmpty() } ?: return null
         val items = saved.value.member("items").obj().toMutableMap()
         val item = items.getValue(operation.token)
         if (!pendingOperation(item, operation)) return null
-        items[operation.token] = item.changed("state" to Json.of("resolved"))
+        items[operation.token] = item.changed("state" to Json.of(if (gestureId == null) "resolved" else "submitted"),
+            "submissionGesture" to gestureId?.let(Json::of))
         return DeviceWrite(saved.key, withItems(saved.value, items))
     }
 
@@ -331,7 +342,13 @@ class WorkoutImports(private val engine: Engine) {
         return entry == operation.entry && (item["targetSessionId"]?.str() ?: entry.sessionId) == operation.sessionId
     }
 
-    // A finished workout's missing adopted set is restored through the guarded correction door.
+    fun continuesRecovery(operation: ImportOperation): Boolean = engine.read(scope) { reader ->
+        reader.devices(journalPrefix).values.any { journal ->
+            journal["items"]?.get(operation.token)?.let { it["recoveryPhase"] != null || it["fallback"] == Json.of(true) } == true
+        }
+    }
+
+    // A finished workout's missing adopted set retains its source until the account accepts it.
     fun recoverFinishedOperation(operation: ImportOperation): Boolean {
         val result = engine.commit(scope) { context ->
             val saved = context.devices(journalPrefix).entries.firstOrNull { operation.token in it.value["items"]?.obj().orEmpty() }
@@ -342,16 +359,45 @@ class WorkoutImports(private val engine: Engine) {
             val entry = decode(item.member("source"), OwedSet.serializer())
             val sessionId = item["targetSessionId"]?.str() ?: entry.sessionId
             if (context.isAnonymous || entry.write == Owed.Delete) return@commit null to false
-            if (!context.firstPullComplete() || context.checkpoint().cleanSeq == null) return@commit null to true
+            if (!context.firstPullComplete()) return@commit null to true
+            val schema = context.serverSchema() ?: return@commit null to true
             val session = context.confirmed(Gym.Types.session, RecordID(sessionId))?.takeIf { it.isVisible }
-                ?.let { SyncSession.decode(Fields(it)) } ?: return@commit null to false
-            val finishedAt = session.finishedAt ?: return@commit null to false
-            if (session.closedBy != "finish") return@commit null to false
-            if (context.drawn(Gym.Types.session, session.id.record)?.isVisible != true) return@commit null to false
+                ?.let { SyncSession.decode(Fields(it)) }
+            val finishedAt = session?.finishedAt
+            val standing = session?.let { context.stored(Gym.Types.set, "sessionId", it.id.record) }.orEmpty()
+            if (session != null && context.drawn(Gym.Types.session, session.id.record)?.isVisible != true) return@commit null to false
+            if (standing.any { it.isPending || context.drawn(Gym.Types.set, it.id)?.isVisible != true }) return@commit null to true
+            val separateWorkout = session != null && finishedAt != null && (session.closedBy != "finish" ||
+                entry.set.completedAtMs !in session.startedAt.ms..finishedAt.ms || standing.any {
+                    it.values["completedAt"]?.long()?.let { at -> at !in session.startedAt.ms..finishedAt.ms } == true
+                })
+            if (schema < 6 || item["fallback"] == Json.of(true) || item["recoveryPhase"] != null || separateWorkout) {
+                if (item["recoveryPhase"] == null || item["recoveryPhase"] == Json.of("start")) {
+                    val active = context.devices(journalPrefix).values.any { journal -> journal.member("items").obj().any { (token, other) ->
+                        token != operation.token && other["recoveryPhase"] != null &&
+                            (other["state"] == Json.of("recovering") ||
+                                other["state"] == Json.of("pending") && other["recoveryPhase"] != Json.of("start"))
+                    } }
+                    if (active) return@commit null to true
+                }
+                if (item["recoveryPhase"] == Json.of("set")) {
+                    val parent = context.confirmed(Gym.Types.session, RecordID(item.member("recoverySessionId")))
+                        ?: return@commit null to true
+                    if (!parent.isVisible) {
+                        items[operation.token] = item.changed("state" to Json.of("refused"), "code" to Json.of("record-dead"),
+                            "recoveryPhase" to null, "recoverySessionId" to null, "recoverySetId" to null)
+                        return@commit Gesture(emptyList(), local = listOf(DeviceWrite(saved.key, withItems(saved.value, items)))) to true
+                    }
+                }
+                val recovery = recoveryGesture(item, entry, context)
+                items[operation.token] = recovery.second
+                recovery.first.local += DeviceWrite(saved.key, withItems(saved.value, items))
+                return@commit recovery.first to true
+            }
+            if (context.checkpoint().cleanSeq == null) return@commit null to true
+            if (session == null || finishedAt == null) return@commit null to false
             if (context.commands().any { it.command.name == Gym.Commands.correctSession &&
                     it.command.args["sessionId"] == Json.of(sessionId) }) return@commit null to true
-            val standing = context.stored(Gym.Types.set, "sessionId", session.id.record)
-            if (standing.any { it.isPending || context.drawn(Gym.Types.set, it.id)?.isVisible != true }) return@commit null to true
             val set = entry.set
             val gesture = try {
                 if (context.stored(Gym.Types.set, RecordID(set.id)) != null) throw RefusedImport("record-dead")
@@ -389,6 +435,51 @@ class WorkoutImports(private val engine: Engine) {
         }
         (result.first as? CommitOutcome.Refused)?.let { refuseOperation(operation, it.code.text) }
         return result.second
+    }
+
+    private fun recoveryGesture(item: Json, entry: OwedSet, context: CommitContext): Pair<Gesture, Json> {
+        val sessionId = item["recoverySessionId"]?.str() ?: context.mintID(Gym.Types.session).string!!
+        val setId = item["recoverySetId"]?.str() ?: context.mintID(Gym.Types.set).string!!
+        val phase = item["recoveryPhase"]?.str() ?: "start"
+        val source = entry.set
+        var saved = item.changed("recoverySessionId" to Json.of(sessionId), "recoverySetId" to Json.of(setId),
+            "recoveryPhase" to Json.of(phase), "fallback" to Json.of(true))
+        val gesture = try {
+            if (phase == "start" && context.stored(Gym.Types.set, RecordID(source.id)) != null) throw RefusedImport("record-dead")
+            if (unknownKind(item.member("source").member("set"))) throw RefusedImport("source-kind")
+            val reader = Reader(context, scope, Moment(Instant(context.now), FixedZone(0)), engine.registry)
+            val plan = when (phase) {
+                "start" -> null
+                "set" -> {
+                    val action = AppendSet(SyncSet(Id(setId, SyncSet), Id(sessionId, SyncSession), Id(source.exerciseId, SyncExercise),
+                        source.weightKg, source.reps, source.kind.wire, source.rpe, source.note, Instant(source.completedAtMs)))
+                    when (val decision = action.decision(action.load(reader), IDSource(context))) {
+                        is Decision.Write -> decision.plan
+                        is Decision.Refuse -> throw RefusedImport(if (decision.refusal is GymRefusal.SessionFinished) "session-finished" else "recovery-retry")
+                        is Decision.Unchanged -> Plan()
+                    }
+                }
+                else -> null
+            }
+            val queued = plan?.gesture(scope, engine.registry) ?: if (phase == "start") Gesture(emptyList(), command = Command(Gym.Commands.start,
+                Json.objectOf("id" to Json.of(sessionId), "startedAt" to Json.of(source.completedAtMs), "joinOpenSession" to Json.of(false))))
+                else Gesture(emptyList(), command = Command(Gym.Commands.finish,
+                    Json.objectOf("sessionId" to Json.of(sessionId), "finishedAt" to Json.of(source.completedAtMs))))
+            val gestureId = context.opaqueID()
+            queued.gestureId = gestureId
+            saved = saved.changed("state" to Json.of("recovering"), "code" to null,
+                "recoveryGestures" to Json.Arr(item["recoveryGestures"]?.arr().orEmpty() + Json.of(gestureId)))
+            queued
+        } catch (refusal: RefusedImport) {
+            saved = if (refusal.code == "session-finished") saved.changed("state" to Json.of("pending"), "code" to null,
+                "recoverySessionId" to null, "recoverySetId" to null, "recoveryPhase" to null)
+                else saved.changed("state" to Json.of("refused"), "code" to Json.of(refusal.code))
+            Gesture(emptyList())
+        } catch (_: Violation) {
+            saved = saved.changed("state" to Json.of("refused"), "code" to Json.of("source-needs-correction"))
+            Gesture(emptyList())
+        }
+        return gesture to saved
     }
 
     fun refuseOperation(operation: ImportOperation, code: String) { engine.commit(scope) { context ->
@@ -487,13 +578,22 @@ class WorkoutImports(private val engine: Engine) {
     fun reconcileConfirmed() {
         engine.commitWithPrerequisites(scope) { context ->
             if (context.isAnonymous || !context.firstPullComplete() || context.checkpoint().cleanSeq == null) return@commitWithPrerequisites null to Unit
-            val commands = context.commands()
+            val legacyRefusals = engine.refusedDeltas(context, scope, Gym.Codes.sessionFinished)
             val writes = context.devices(journalPrefix).mapNotNull { (key, journal) ->
                 val before = journal["items"]?.obj().orEmpty()
                 val items = before.mapValues { (_, item) ->
-                    if (item["kind"] == Json.of("operation") && item["state"] == Json.of("recovering") && commands.none {
-                            it.command.name == Gym.Commands.correctSession && it.command.args["requestId"] == item["recoveryRequestId"]
-                        }) item.changed("state" to Json.of("refused"), "code" to Json.of("recovery-retry"))
+                    val refused = if (item["state"] == Json.of("resolved") && item["submissionGesture"] == null)
+                        legacyRefusals.firstOrNull { matchesSubmittedSet(item, listOf(it.second)) } else null
+                    if (refused != null) {
+                        val gestureId = refused.first.removePrefix("notice:").substringBeforeLast('/')
+                        val restored = context.confirmed(Gym.Types.set, refused.second.key.id) != null
+                        item.changed("state" to Json.of(if (restored) "resolved" else "pending"), "fallback" to Json.of(true),
+                            "submissionGesture" to Json.of(gestureId),
+                            "recoveryGestures" to Json.Arr(item["recoveryGestures"]?.arr().orEmpty() + Json.of(gestureId)))
+                    }
+                    else if (item["kind"] == Json.of("operation") && item["state"] == Json.of("recovering") &&
+                        item["recoveryGestures"]?.arr()?.lastOrNull()?.str()?.let { engine.pendingGesture(context, scope, it) } != true)
+                        item.changed("state" to Json.of("refused"), "code" to Json.of("recovery-retry"))
                     else if (item["kind"] != Json.of("start") || item["state"] != Json.of("queued")) item else {
                         val session = decode(item.member("source").member("session"), Session.serializer())
                         val known = context.confirmed(Gym.Types.session, RecordID(session.id))?.takeIf { it.isVisible && it.born != null }
@@ -711,26 +811,72 @@ class WorkoutImports(private val engine: Engine) {
             return source.changed("session" to session.changed("id" to target), "entries" to Json.Obj(entries.toList()))
         }
 
-        val commandResultWrites: CommandResultDeviceWrites = { command, result, _, values ->
-            if (command.name !in setOf(Gym.Commands.importSession, Gym.Commands.start, Gym.Commands.correctSession)) emptyList() else values.filterKeys { it.startsWith(journalPrefix) }.map { (key, journal) ->
+        private fun matchesSubmittedSet(item: Json, deltas: List<works.windmill.sync.core.Delta>): Boolean {
+            if (item["kind"] != Json.of("operation")) return false
+            val entry = decode(item.member("source"), OwedSet.serializer())
+            if (entry.write == Owed.Delete) return false
+            val set = entry.set
+            return deltas.any { delta ->
+                val fields = delta.lattice.fields.mapValues { it.value.value }
+                val rpe = fields["rpe"] ?: Json.Null
+                val note = fields["note"] ?: Json.of("")
+                delta.key == RecordKey(Gym.Types.set, RecordID(set.id)) && delta.lattice.life?.isAlive == true &&
+                    delta.lattice.born == delta.lattice.life?.stamp &&
+                    fields["sessionId"] == (item["targetSessionId"] ?: Json.of(entry.sessionId)) &&
+                    fields["exerciseId"] == Json.of(set.exerciseId) && fields["completedAt"] == Json.of(set.completedAtMs) &&
+                    fields["weightKg"] == Json.of(set.weightKg) && fields["reps"] == Json.of(set.reps) &&
+                    (fields["kind"] ?: Json.of("working")) == Json.of(set.kind.wire) &&
+                    (rpe == (set.rpe?.let(Json::of) ?: Json.Null) && note == Json.of(set.note) ||
+                        rpe == Json.Null && note == Json.of(""))
+            }
+        }
+
+        val intentResultWrites: IntentResultDeviceWrites = { intent, result, _, gestureId, values ->
+            val command = intent.command
+            values.filterKeys { it.startsWith(journalPrefix) }.map { (key, journal) ->
                 val items = journal["items"]?.obj().orEmpty().mapValues { (_, item) ->
-                    val kind = if (command.name == Gym.Commands.importSession) "finished" else "start"
-                    if (command.name == Gym.Commands.correctSession) {
-                        if (item["kind"] != Json.of("operation") || item["state"] != Json.of("recovering") ||
-                            item["recoveryRequestId"] != command.args["requestId"]) item
-                        else when (val verdict = result.verdict) {
-                            is PushResult.Verdict.Ok -> item.changed("state" to Json.of("resolved"), "code" to null)
-                            is PushResult.Verdict.Refused -> if (verdict.code.text in setOf("clock-skew", "base-unknown")) item
-                                else item.changed("state" to Json.of("refused"), "code" to Json.of(if (verdict.code.text == "stale") "recovery-stale" else verdict.code.text))
+                    val submitted = item["state"] == Json.of("submitted") && item["submissionGesture"] == Json.of(gestureId)
+                    val legacy = item["state"] == Json.of("resolved") && item["submissionGesture"] == null && matchesSubmittedSet(item, intent.deltas)
+                    val recovering = item["kind"] == Json.of("operation") && item["state"] == Json.of("recovering") &&
+                        item["recoveryGestures"]?.arr()?.lastOrNull() == Json.of(gestureId)
+                    if (submitted || legacy || recovering) {
+                        when (val verdict = result.verdict) {
+                            is PushResult.Verdict.Ok -> {
+                                val next = if (recovering) when (item["recoveryPhase"]?.str()) { "start" -> "set"; "set" -> "finish"; else -> null } else null
+                                item.changed("state" to Json.of(if (next == null) "resolved" else "pending"), "code" to null,
+                                    "submissionGesture" to (if (legacy) Json.of(gestureId) else item["submissionGesture"]),
+                                    "recoveryPhase" to next?.let(Json::of))
+                            }
+                            is PushResult.Verdict.Refused -> {
+                                val code = verdict.code.text
+                                when {
+                                    code in setOf("clock-skew", "base-unknown") -> item
+                                    code == "session-finished" -> item.changed("state" to Json.of("pending"), "code" to null,
+                                        "submissionGesture" to (if (legacy) Json.of(gestureId) else item["submissionGesture"]),
+                                        "fallback" to Json.of(true), "recoveryPhase" to null, "recoverySessionId" to null, "recoverySetId" to null,
+                                        "recoveryGestures" to Json.Arr(item["recoveryGestures"]?.arr().orEmpty() + Json.of(gestureId)))
+                                    recovering && command?.name == Gym.Commands.correctSession && code in setOf("invalid", "too-large", "bad-instant", "session-overlap") ->
+                                        item.changed("state" to Json.of("refused"), "code" to Json.of("recovery-retry"), "fallback" to Json.of(true))
+                                    else -> item.changed("state" to Json.of("refused"), "code" to Json.of(when {
+                                        recovering && code == "stale" -> "recovery-stale"
+                                        recovering && code == "session-open" -> "recovery-session-open"
+                                        else -> code
+                                    }))
+                                }
+                            }
                         }
-                    } else if (item["kind"] != Json.of(kind) || item["id"] != command.args["id"] || item["state"] != Json.of("queued")) item
-                    else when (val verdict = result.verdict) {
-                        is PushResult.Verdict.Ok -> if (command.name == Gym.Commands.start && verdict.write.orEmpty().any {
-                            it.key.type == Gym.Types.session && it.from == RecordID(item.member("id")) && it.key.id != it.from
-                        }) item.changed("state" to Json.of("refused"), "code" to Json.of("session-open"), "targetSessionId" to null)
-                            else item.changed("state" to Json.of("admitted"))
-                        is PushResult.Verdict.Refused -> if (verdict.code.text in setOf("clock-skew", "base-unknown")) item
-                            else item.changed("state" to Json.of("refused"), "code" to Json.of(verdict.code.text))
+                    } else if (command == null || command.name !in setOf(Gym.Commands.importSession, Gym.Commands.start)) item
+                    else {
+                        val kind = if (command.name == Gym.Commands.importSession) "finished" else "start"
+                        if (item["kind"] != Json.of(kind) || item["id"] != command.args["id"] || item["state"] != Json.of("queued")) item
+                        else when (val verdict = result.verdict) {
+                            is PushResult.Verdict.Ok -> if (command.name == Gym.Commands.start && verdict.write.orEmpty().any {
+                                it.key.type == Gym.Types.session && it.from == RecordID(item.member("id")) && it.key.id != it.from
+                            }) item.changed("state" to Json.of("refused"), "code" to Json.of("session-open"), "targetSessionId" to null)
+                                else item.changed("state" to Json.of("admitted"))
+                            is PushResult.Verdict.Refused -> if (verdict.code.text in setOf("clock-skew", "base-unknown")) item
+                                else item.changed("state" to Json.of("refused"), "code" to Json.of(verdict.code.text))
+                        }
                     }
                 }
                 DeviceWrite(key, withItems(journal, items))
@@ -771,9 +917,10 @@ class WorkoutImports(private val engine: Engine) {
             "source-unreadable" -> "This saved training cannot be read by this build. Keep it on this phone and update the app."
             "unknown-exercise" -> "A movement is missing. Restore the movement, then retry."
             "parent-dead" -> "A linked movement or routine was refused. Restore it, then retry this workout."
-            "session-finished" -> "This set is saved on this phone. Retry restores it to the finished workout."
+            "session-finished" -> "This set is saved on this phone. Retry restores it to the account, in a separate workout when needed."
+            "recovery-session-open" -> "Finish the account’s open workout, then retry saving this set as a separate workout."
             "recovery-stale" -> "This workout changed while its saved set was being restored. Retry uses the latest workout."
-            "recovery-retry" -> "This set is still saved on this phone. Retry restoring it to the workout."
+            "recovery-retry" -> "This set is still saved on this phone. Retry saving it to the account."
             else -> "This workout was refused ($code). Correct the saved workout, then retry."
         }
     }

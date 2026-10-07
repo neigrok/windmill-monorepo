@@ -56,7 +56,7 @@ object Gym {
         listOf(
             "{",
             "  \"registry\": \"gym\",",
-            "  \"version\": 5,",
+            "  \"version\": 6,",
             "  \"minVersion\": 4,",
             "  \"products\": {",
             "    \"gym\": {",

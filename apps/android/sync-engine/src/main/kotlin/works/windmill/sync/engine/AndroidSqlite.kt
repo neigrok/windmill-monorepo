@@ -338,7 +338,7 @@ object AndroidSqlite {
     fun open(file: File, registry: Registry, initial: Json, clock: EngineClock, identities: IdentitySource, actor: String,
         telemetry: EngineTelemetry = NoEngineTelemetry,
         rewriteDeviceValue: DeviceValueRewrite = { _, _, value, _, _, _ -> value },
-        commandResultWrites: works.windmill.sync.api.CommandResultDeviceWrites = { _, _, _, _ -> emptyList() },
+        intentResultWrites: works.windmill.sync.api.IntentResultDeviceWrites = { _, _, _, _, _ -> emptyList() },
         pendingDeviceWork: works.windmill.sync.api.PendingDeviceWork = { _, _ -> emptyList() }): Engine {
         val db = try {
             val handler = DatabaseErrorHandler { }
@@ -362,7 +362,7 @@ object AndroidSqlite {
                     }
                 }
             }
-            return Engine(registry, store, clock, identities, actor, telemetry = telemetry, rewriteDeviceValue = rewriteDeviceValue, commandResultWrites = commandResultWrites, pendingDeviceWork = pendingDeviceWork)
+            return Engine(registry, store, clock, identities, actor, telemetry = telemetry, rewriteDeviceValue = rewriteDeviceValue, intentResultWrites = intentResultWrites, pendingDeviceWork = pendingDeviceWork)
         } catch (failure: Throwable) {
             db.close()
             if (failure is StoreFailure || failure is SQLiteException || failure is IllegalArgumentException) {

@@ -1,7 +1,7 @@
 # Gym domain corpus
 
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
-Swift `GymDomain` and Kotlin `:gym:domain` run every case over the shared v5/minimum-4 registry
+Swift `GymDomain` and Kotlin `:gym:domain` run every case over the shared v6/minimum-4 registry
 composition and reproduce each `expect` by JCS equality. R118 metadata reads remain optional
 for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCreation` decodes separately.
 

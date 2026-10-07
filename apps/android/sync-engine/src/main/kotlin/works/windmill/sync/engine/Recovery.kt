@@ -154,12 +154,12 @@ private fun Engine.foldDependents(replica: ReplicaState, source: Entry, origin: 
             }
             if (!entry.queued()) continue
             dependents.absorb(entry, part)
-            if (part.commandGone) entry.intent.command?.let { command ->
-                applyCommandResultDeviceWrites(replica, entry.scope, command,
-                    PushResult(entry.intent.n ?: 0, PushResult.Verdict.Refused(RefusalCode.parentDead)),
-                    replica.meta["serverEpoch"]?.orNull()?.str() ?: "")
-            }
+            val original = entry.intent
             add(removeDependent(entry, part))
+            if (part.commandGone || entry.intent.deltas.isEmpty() && entry.intent.command == null)
+                applyIntentResultDeviceWrites(replica, original, entry.gestureId,
+                    PushResult(original.n ?: 0, PushResult.Verdict.Refused(RefusalCode.parentDead)),
+                    replica.meta["serverEpoch"]?.orNull()?.str() ?: "")
             if (entry.intent.deltas.isEmpty() && entry.intent.command == null) {
                 entry.json = entry.json.with("orphanOf" to Json.of(origin))
                 replica.move(entry, "fold", ended, origin)
@@ -169,6 +169,9 @@ private fun Engine.foldDependents(replica: ReplicaState, source: Entry, origin: 
 }
 
 internal fun Engine.refuse(replica: ReplicaState, entry: Entry, event: String, code: String, detail: Json? = null) {
+    applyIntentResultDeviceWrites(replica, entry.intent, entry.gestureId,
+        PushResult(entry.intent.n ?: 0, PushResult.Verdict.Refused(RefusalCode(code))),
+        replica.meta["serverEpoch"]?.orNull()?.str() ?: "")
     val orphan = entry.json["orphanOf"]?.str()
     replica.move(entry, event, ended, orphan)
     val folded = foldDependents(replica, entry, orphan ?: entry.id)

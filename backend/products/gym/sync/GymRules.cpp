@@ -518,6 +518,7 @@ GymOutcome runGym(const std::string& name, const Json::Value& args, const Json::
     uniqueIds(args["sets"]);
     std::set<std::pair<std::string, std::int64_t>> numbers;
     for (const Json::Value& set : args["sets"]) if (!numbers.emplace(set["exerciseId"].asString(), set["setNumber"].asInt64()).second) throw Refusal(code::invalid);
+    checkInterval(facts, id, args, now);
     const bool preserve = args.get("preserveOtherSets", false).asBool();
     std::set<std::string> named;
     for (const Json::Value& set : args["sets"]) named.insert(set["id"].asString());
@@ -527,7 +528,6 @@ GymOutcome runGym(const std::string& name, const Json::Value& args, const Json::
       if (completed < args["startedAt"].asUInt64() || completed > args["finishedAt"].asUInt64()) throw Refusal("bad-instant");
       if (!numbers.emplace(value(&row, "exerciseId").asString(), row.v.at("setNumber").asInt64()).second) throw Refusal(code::invalid);
     }
-    checkInterval(facts, id, args, now);
     append(outcome, fields(session, object({{"startedAt", args["startedAt"]}, {"finishedAt", args["finishedAt"]}, {"closedBy", "finish"}, {"displayName", args["routineName"]}})));
     for (const Json::Value& set : args["sets"]) {
       const std::string setId = set["id"].asString();
