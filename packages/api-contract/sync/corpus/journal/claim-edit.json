@@ -491,7 +491,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   },
                   {
                     "localId": "g2/0",
@@ -2028,7 +2035,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -2156,7 +2170,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -2640,7 +2661,14 @@
                     "n": 2,
                     "digest": "77e2b42080f621b60f9fa637295a6871a23fa70bbcaed7576604ef2fb1d2935a",
                     "resultSeq": 3,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -3865,7 +3893,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 1,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -3993,7 +4028,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 1,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -4477,7 +4519,14 @@
                     "n": 2,
                     "digest": "045f7c5ed837c3e1dda8aa671b51f3c31fdb57da9d2ca8747e80ad6283ac57d5",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -6412,7 +6461,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -6558,7 +6614,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -7096,7 +7159,14 @@
                     "n": 2,
                     "digest": "77e2b42080f621b60f9fa637295a6871a23fa70bbcaed7576604ef2fb1d2935a",
                     "resultSeq": 3,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -8416,7 +8486,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -8544,7 +8621,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -9610,7 +9694,14 @@
                     "n": 2,
                     "digest": "0af9bcd2593a6e685a349fb3104ac681feb51a8c7c54df518fb8e45bf8a4de81",
                     "resultSeq": 3,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -12317,7 +12408,14 @@
                     "n": 2,
                     "digest": "acfe6b4fe6d0b1ce6402d3d3e82b3c05fcef38f561ee261ea1191b588ff5f464",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -12463,7 +12561,14 @@
                     "n": 2,
                     "digest": "acfe6b4fe6d0b1ce6402d3d3e82b3c05fcef38f561ee261ea1191b588ff5f464",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -13002,7 +13107,14 @@
                     "n": 3,
                     "digest": "34854b4402e5ad772adb8c6bec89622cf39bb3d2168eed5621cc6dc1f6718a05",
                     "resultSeq": 3,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -15011,7 +15123,14 @@
                     "n": 2,
                     "digest": "a3c875fb3d07b1723b7131a61c396808069572ecc384dd6acaf0999001cb90e4",
                     "resultSeq": 3,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -16934,7 +17053,8 @@
                     "n": 1,
                     "digest": "359f8d0ba10998fffef458a96391ab0ef06a48f170fa644d8f38dcd53f63df7d",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-2"
+                    "resultEpoch": "ep-2",
+                    "writeTargets": []
                   }
                 ],
                 "device": {
@@ -17442,7 +17562,14 @@
                     "n": 2,
                     "digest": "ee694d243743fe3c8f79027c09bd62f0ce7ac73c3762fc47b5e213a0f5a3dedb",
                     "resultSeq": 3,
-                    "resultEpoch": "ep-2"
+                    "resultEpoch": "ep-2",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -18751,7 +18878,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -18879,7 +19013,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -19534,7 +19675,14 @@
                     "n": 2,
                     "digest": "ee694d243743fe3c8f79027c09bd62f0ce7ac73c3762fc47b5e213a0f5a3dedb",
                     "resultSeq": 3,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "notices": [
@@ -20763,7 +20911,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -20892,7 +21047,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -21386,7 +21548,14 @@
                     "n": 2,
                     "digest": "56c59a962fa92e86ee2895f2cc41662750c8fe97e0edcab1fa64b219727f930a",
                     "resultSeq": 3,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -22648,7 +22817,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -22775,7 +22951,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -25106,7 +25289,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -25251,7 +25441,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -26901,7 +27098,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -27029,7 +27233,14 @@
                     "n": 1,
                     "digest": "8fe984bce121bc836e70a58f0eb9004a33ce4883a13de1710572c8b452098885",
                     "resultSeq": 2,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {
@@ -27513,7 +27724,14 @@
                     "n": 2,
                     "digest": "318dc59b76ed614fa284611d320e6c02c62b977fef68ac7aeeaba8007d97728f",
                     "resultSeq": 3,
-                    "resultEpoch": "ep-1"
+                    "resultEpoch": "ep-1",
+                    "writeTargets": [
+                      {
+                        "t": "page",
+                        "from": "2026-10-01",
+                        "id": "2026-10-01"
+                      }
+                    ]
                   }
                 ],
                 "device": {

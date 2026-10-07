@@ -13,7 +13,7 @@ import { anonCount, discardUnsent, engineStart, epochChange, reidentify, renewAc
 import { onFrame, onPullResponse, pullRequest } from '../../../../src/platform/sync/client/puller.js';
 import { dismiss } from '../../../../src/platform/sync/client/refusal.js';
 import { Device } from '../../../../src/platform/sync/client/replica.js';
-import { nextPush, onHello, onPushResponse } from '../../../../src/platform/sync/client/sender.js';
+import { nextPush, onHello, onPushResponse, ResponseError } from '../../../../src/platform/sync/client/sender.js';
 import { reconcile, subscribe, subscriptionsOf } from '../../../../src/platform/sync/client/subscriptions.js';
 import { capCount, view } from '../../../../src/platform/sync/client/views.js';
 import { ACTOR, registry } from './fixtures.js';
@@ -215,7 +215,7 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
       }
       if (ctx.actor !== stepActor) current = ctx.actor;
     } catch (error) {
-      if (!(error instanceof CommitError) && !(error instanceof TransitionError)) throw error;
+      if (!(error instanceof CommitError) && !(error instanceof TransitionError) && !(error instanceof ResponseError)) throw error;
       device = new Device(before.device);
       if (pulledFor) pulledFor = device.replica(pulledFor.id);
       ended.length = before.ended;

@@ -7,6 +7,7 @@ import { hashText } from '../core/encoding.js';
 import { jcs } from '../core/jcs.js';
 import { recordKey, stampsOf } from '../core/rows.js';
 import { releaseAll } from './hold.js';
+import { commandRefs } from './dependents.js';
 import { Replica } from './replica.js';
 
 // §7.12: `activeReplica()` answers `replica` where it answered `previous`.
@@ -34,7 +35,16 @@ export function epochChange(replica, ctx, epoch) {
   for (const cursor of Object.values(replica.cursors)) cursor.cursor = null;
   replica.staging = {};
   for (const entry of replica.entries()) {
-    if (entry.state === 'acked' && entry.resultEpoch !== epoch) moveEntry(replica, ctx.ended, entry, 'epoch');
+    if (entry.state !== 'acked' || entry.resultEpoch === epoch) continue;
+    if (entry.intent.cmd && entry.writeTargets === undefined) {
+      const refs = commandRefs(ctx.registry, entry.intent.cmd);
+      entry.writeTargets = (entry.predict ?? []).flatMap((delta) => {
+        const sources = refs.filter((ref) => ref.t === delta.t);
+        if (sources.length !== 1 || entry.predict.filter((other) => other.t === delta.t).length !== 1) return [];
+        return [{ t: delta.t, from: sources[0].id, id: delta.id, ...(delta.born === undefined ? {} : { born: delta.born }) }];
+      });
+    }
+    moveEntry(replica, ctx.ended, entry, 'epoch');
   }
   reidentify(replica, ctx);
   renewActor(ctx);

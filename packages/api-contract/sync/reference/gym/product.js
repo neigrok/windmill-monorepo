@@ -102,6 +102,8 @@ export class GymProduct {
         return Object.hasOwn(book(ctx, 'imports'), cmd.args.id);
       case 'gym.correctSession':
         return Object.hasOwn(book(ctx, 'corrections'), cmd.args.requestId);
+      case 'gym.applyProposal':
+        return Object.hasOwn(book(ctx, 'proposalApplies'), cmd.args.proposalId);
       default:
         return false;
     }
@@ -340,14 +342,20 @@ export class GymProduct {
   }
 
   applyProposal(ctx, { proposalId }) {
+    const receipts = book(ctx, 'proposalApplies');
+    if (Object.hasOwn(receipts, proposalId)) return { deltas: [], write: [] };
     const proposal = this.settleable(ctx, proposalId);
     const state = stateOf(proposal);
-    if (state === 'applied') return { deltas: [], write: [] };
+    if (state === 'applied') {
+      setOwn(receipts, proposalId, true);
+      return { deltas: [], write: [] };
+    }
     if (state === 'dismissed') throw new Refusal('proposal-settled', { state });
     if (state === 'superseded') throw new Refusal('proposal-superseded', { reason: this.supersededReason(ctx, proposal) });
     const routineId = valueOf(proposal, 'routineId');
     if (valueOf(ctx.stored('routine', routineId), 'revision') !== valueOf(proposal, 'baseRevision')) throw new Refusal('proposal-superseded', { reason: 'routine-changed' });
     const routine = ctx.stored('routine', routineId);
+    setOwn(receipts, proposalId, true);
     const settle = { t: 'proposal', id: proposalId, born: proposal.born, f: { state: ['applied', null], settledAt: [ctx.serverNow, null] } };
     if (valueOf(proposal, 'intent') === 'remove') {
       return { deltas: [settle, { t: 'routine', id: routineId, born: routine.born, life: ['dead', null] }], write: [] };

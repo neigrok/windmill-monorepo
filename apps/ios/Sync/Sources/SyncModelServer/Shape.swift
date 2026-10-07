@@ -358,8 +358,10 @@ public enum IdentityRules {
     case (.update, .none), (.update, .foreign): return .refuse(.unknownRecord)
     case (.update, .alive(let row)): return sameBorn(row) ? .apply : .refuse(.unknownRecord)
     case (.update, .dead(let row)): return sameBorn(row) ? .refuse(.recordDead) : .refuse(.unknownRecord)
-    case (.delete, .none), (.delete, .foreign): return .ok
-    case (.delete, .alive(let row)), (.delete, .dead(let row)): return sameBorn(row) ? .apply : .ok
+    case (.delete, .none): return .apply
+    case (.delete, .foreign): return .ok
+    case (.delete, .alive(let row)): return sameBorn(row) ? .apply : .refuse(.unknownRecord)
+    case (.delete, .dead(let row)): return sameBorn(row) ? .apply : .ok
     case (.revive, .none), (.revive, .foreign): return .refuse(.unknownRecord)
     case (.revive, .alive(let row)): return sameBorn(row) ? .apply : .refuse(.unknownRecord)
     case (.revive, .dead(let row)):

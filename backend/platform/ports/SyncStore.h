@@ -151,7 +151,7 @@ public:
   virtual std::vector<Row> feedSpent(SyncTxn&, const ScopeKey& scope, const TypeDef& type, const FeedQuery& query) = 0;
   virtual std::uint64_t countSpent(SyncTxn&, const ScopeKey& scope, const TypeDef& type, const FeedQuery& query) = 0;
 
-  // §6.1 step 3.6: fresh global ids by (type, id), in the ascending order given.
+  // §6.1 step 3.6: global ids being created, deleted or named by a command, in ascending (type, id) order.
   virtual void lockIds(SyncTxn&, const std::vector<std::pair<std::string, std::string>>& typeIds) = 0;
   // §6.1 step 3.3 and §6.3: one call of an account's requestId at a time.
   virtual void lockRequest(SyncTxn&, const UserId& account, const std::string& requestId) = 0;

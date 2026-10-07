@@ -47,7 +47,7 @@ object IdentityRules {
             "put", "write" -> "apply"
             "create" -> when (state.state) { "none" -> "apply"; "foreign" -> "id-taken"; "alive" -> if (same) "apply" else "id-taken"; else -> if (same) "ok" else "id-spent" }
             "update" -> when { state.state in listOf("none", "foreign") || !same -> "unknown-record"; state.isAlive -> "apply"; else -> "record-dead" }
-            "delete" -> if (same) "apply" else "ok"
+            "delete" -> when { state.state == "none" || same -> "apply"; state.isAlive -> "unknown-record"; else -> "ok" }
             "revive" -> when { !same -> "unknown-record"; state.isAlive || revivable -> "apply"; else -> "id-spent" }
             else -> "invalid"
         }

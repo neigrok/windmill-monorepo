@@ -2,6 +2,7 @@
 // §6.3 server-origin calls. Every vector's expect.state is the full next state; a refusal leaves it
 // equal to input.state.
 
+import assert from 'node:assert/strict';
 import { CONSTANTS } from '../core/constants.js';
 import { jcs } from '../core/jcs.js';
 import { admit } from '../server/admit.js';
@@ -349,6 +350,33 @@ function access() {
   ];
 }
 
+function deletesBeforeCreates() {
+  return [
+    { t: 'card', id: 'card0005', f: { title: 'Late' } },
+    { t: 'board', id: 'b_00000005' },
+    { t: 'tag', id: 'yew', f: { label: 'Yew' }, scope: `tree/${BOARD}`, key: TREE },
+    { t: 'lap', id: 'lap00005', f: { runId: 'run00001', weight: 10 } },
+  ].flatMap(({ t, id, f, scope = 'self/probe', key = PROBE_A }) => {
+    const deleted = admitted(`absent ${t} delete persists its death before another replica replays the create`, {
+      state: t === 'tag' ? treeState() : baseState(),
+      intent: intent(scope, [{ t, id, born: s(4000), life: ['dead', s(5000)] }]),
+    });
+    assert.equal(deleted.expect.result.s, 'ok');
+    const stored = new ServerState(deleted.expect.state).stored(key, t, id);
+    assert.deepEqual(stored.life, ['dead', s(5000)]);
+    assert.equal(stored.born, s(4000));
+    assert.equal(stored.v, undefined, 'an absent death must not allocate a serial');
+    const replayed = admitted(`a replayed ${t} create cannot revive an earlier absent delete`, {
+      state: deleted.expect.state,
+      origin: { ...A, replica: 'rp_0000000000000000000000000000000c' },
+      intent: intent(scope, [create(t, id, s(4000), f)]),
+    });
+    assert.equal(replayed.expect.result.s, 'ok');
+    assert.deepEqual(replayed.expect.state, deleted.expect.state);
+    return [deleted, replayed];
+  });
+}
+
 function identity() {
   const base = baseState();
   const born = s(1000);
@@ -393,10 +421,10 @@ function identity() {
     admitted('update of alive with another born is unknown-record', { state: base, intent: cmd([update('card', 'card0001', s(999), s(5000), { title: 'Hey' })]) }),
     admitted('update of dead with equal born is record-dead', { state: spentCard, intent: cmd([update('card', 'card0002', s(1500), s(5000), { title: 'x' })]) }),
     admitted('update of dead with another born is unknown-record', { state: spentCard, intent: cmd([update('card', 'card0002', s(1400), s(5000), { title: 'x' })]) }),
-    admitted('delete of none is ok without a change', { state: base, intent: cmd([{ t: 'card', id: 'card0005', born: s(4000), life: ['dead', s(5000)] }]) }),
+    admitted('delete of none persists its death and spends the id', { state: base, intent: cmd([{ t: 'card', id: 'card0005', born: s(4000), life: ['dead', s(5000)] }]) }),
     admitted('delete of a foreign id is ok without a change', { state: base, intent: cmd([{ t: 'card', id: 'cardbbbb', born: s(1000), life: ['dead', s(5000)] }]) }),
     admitted('delete of alive with equal born applies and spends the id', { state: base, intent: cmd([{ t: 'card', id: 'card0001', born, life: ['dead', s(5000)] }]) }),
-    admitted('delete of alive with another born is ok without a change', { state: base, intent: cmd([{ t: 'card', id: 'card0001', born: s(999), life: ['dead', s(5000)] }]) }),
+    admitted('delete of alive with another born is unknown-record', { state: base, intent: cmd([{ t: 'card', id: 'card0001', born: s(999), life: ['dead', s(5000)] }]) }),
     admitted('delete of dead with equal born joins: a newer death stamp moves the spent row', { state: spentCard, intent: cmd([{ t: 'card', id: 'card0002', born: s(1500), life: ['dead', s(5000)] }]) }),
     admitted('delete of dead with equal born joins: an older death stamp leaves it, ok without a change', { state: spentCard, intent: cmd([{ t: 'card', id: 'card0002', born: s(1500), life: ['dead', s(1600)] }]) }),
     admitted('delete of a dead revivable record joins: a newer death stamp moves the kept row', { state: deadTag, intent: intent(`tree/${BOARD}`, [{ t: 'tag', id: 'elm', born: s(2100), life: ['dead', s(5000)] }]) }),
@@ -938,7 +966,7 @@ export function files() {
   return {
     'admit/shape.json': shape(),
     'admit/access.json': access(),
-    'admit/identity.json': identity(),
+    'admit/identity.json': [...identity(), ...deletesBeforeCreates()],
     'admit/guards.json': guards(),
     'admit/commands.json': commands(),
     'admit/check.json': check(),

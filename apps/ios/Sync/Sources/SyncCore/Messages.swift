@@ -98,6 +98,12 @@ public struct HTTPFailure: Sendable, Hashable, Served {
   }
 
   public init(status: Int, body: JSON?) throws(JSONError) {
+    // Keep the principal readable even when a conflict's recovery envelope is malformed.
+    if status == 409 {
+      self.init(status: status, error: try? body?["error"]?.asString(), serverTime: try? body?["serverTime"]?.asInteger(),
+                epoch: try? body?["epoch"]?.asString(), retryAfterMs: try? body?["retryAfterMs"]?.asInteger(), servedAs: body?.servedAs)
+      return
+    }
     self.init(
       status: status,
       error: try body?["error"]?.asString(),
@@ -109,6 +115,12 @@ public struct HTTPFailure: Sendable, Hashable, Served {
 
   // §9.6: a push naming an account other than the one it was served as.
   public var isAccountMismatch: Bool { status == 409 && error.map { $0.utf8.elementsEqual("account-mismatch".utf8) } == true }
+
+  public var isRecoveryConflict: Bool {
+    guard status == 409, let error, ["gap", "replica-forked", "replica-foreign"].contains(where: { $0.utf8.elementsEqual(error.utf8) }),
+          let epoch, !epoch.isEmpty, let serverTime, serverTime >= 0, serverTime <= JSON.maxSafeInteger else { return false }
+    return true
+  }
 
   public static func == (lhs: HTTPFailure, rhs: HTTPFailure) -> Bool {
     lhs.status == rhs.status && lhs.error.map { Array($0.utf8) } == rhs.error.map { Array($0.utf8) }
@@ -304,8 +316,9 @@ public struct PushResponse: Hashable, ResponseBody {
   }
 
   public init(json: JSON) throws {
-    serverTime = try json.member("serverTime").asInteger()
+    serverTime = try json.member("serverTime").asInteger(atLeast: 0)
     epoch = try json.member("epoch").asString()
+    guard !epoch.isEmpty else { throw JSONError.shape("a push response epoch is empty") }
     servedAs = json.servedAs
     lastN = try json.member("lastN").asInteger()
     results = try json.member("results").asArray().map { try PushResult(json: $0) }.sorted { $0.n < $1.n }

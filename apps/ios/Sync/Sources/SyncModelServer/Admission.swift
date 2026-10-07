@@ -438,7 +438,7 @@ struct AdmissionRun {
     }
   }
 
-  // MARK: - Step 11: serials for new records, in admission order
+  // MARK: - Step 11: serials for new alive records, in admission order
 
   mutating func assignSerials() {
     var numbered: [ScopeKey: [Row]] = [:]

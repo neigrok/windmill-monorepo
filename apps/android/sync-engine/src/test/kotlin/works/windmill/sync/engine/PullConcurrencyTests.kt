@@ -7,6 +7,9 @@ import java.util.concurrent.TimeUnit
 import kotlin.concurrent.withLock
 import org.junit.Assert.*
 import org.junit.Test
+import works.windmill.sync.api.Change
+import works.windmill.sync.api.Gesture
+import works.windmill.sync.api.NewID
 import works.windmill.sync.core.*
 import works.windmill.sync.core.RecordID
 
@@ -123,4 +126,61 @@ class PullConcurrencyTests {
         assertEquals(Json.of("gone"), engine.device.current().known[scope.text])
         assertTrue(scope in engine.selectedScopes.orEmpty())
     })
+
+    @Test fun pullAdoptingFirstEpochBeforePushResultsCannotStrandAnOldEpochAcknowledgement() {
+        val seed = Engine.memory(registry, clock = clock, actor = "r_aaaaaaaaaaaa")
+        val identities = seed.identities
+        val initial = seed.use {
+            it.signIn("A", mapOf("probe" to false))
+            it.commit(ScopeRef.product("probe"), Gesture(listOf(Change.create("card", NewID.Given(RecordID("card0001")), mapOf("title" to Json.of("Created"))))))
+            it.snapshot()
+        }
+        val delegate = MemoryStore(registry, initial)
+        val store = object : EngineStore by delegate {
+            val committed = CountDownLatch(1)
+            val resume = CountDownLatch(1)
+            var armed = false
+            override fun <T> transaction(body: () -> T): T {
+                val result = delegate.transaction(body)
+                if (armed) {
+                    armed = false; committed.countDown()
+                    check(resume.await(5, TimeUnit.SECONDS)) { "push-boundary-timeout" }
+                }
+                return result
+            }
+        }
+        Engine(registry, store, clock, identities, "r_aaaaaaaaaaaa").use { engine ->
+            val request = engine.nextPush()!!
+            val pull = engine.pullRequest(listOf(ScopeRef.product("probe")))!!
+            val answer = SyncResponse(200, Json.parse("""{"serverTime":100,"epoch":"ep-1","as":"A","lastN":1,"results":[{"n":1,"s":"ok","seq":1}]}"""))
+            val returned = FutureTask { engine.onPushResponse(request, answer, timing) }
+            val mutation = FutureTask { engine.lock.withLock {
+                engine.onPullResponse(pull, SyncResponse(200, Json.parse("""{"serverTime":100,"epoch":"ep-2","as":"A","pages":[]}""")), timing)
+            } }
+            val pushing = Thread(returned, "push-results")
+            val pulling = Thread(mutation, "between-push-results")
+            try {
+                store.armed = true; pushing.start()
+                assertTrue("push preflight committed", store.committed.await(5, TimeUnit.SECONDS))
+                pulling.start()
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                while (!engine.lock.hasQueuedThread(pulling) && pulling.isAlive && System.nanoTime() < deadline) Thread.yield()
+                assertTrue("pull queued before the first result", engine.lock.hasQueuedThread(pulling))
+                store.resume.countDown()
+                mutation.get(5, TimeUnit.SECONDS)
+                assertNull(returned.get(5, TimeUnit.SECONDS))
+                val replica = engine.device.current()
+                assertNotEquals(request.member("replica"), Json.of(replica.id))
+                assertEquals(Json.of("ep-1"), replica.meta["serverEpoch"])
+                assertEquals(Json.of(0), replica.meta["ackThrough"])
+                assertEquals(listOf("acked"), replica.entries().map { it.state })
+                assertEquals(Json.of("ep-1"), replica.entries().single().json["resultEpoch"])
+            } finally {
+                store.resume.countDown()
+                pushing.join(5_000); pulling.join(5_000)
+                assertFalse("push completed", pushing.isAlive)
+                assertFalse("pull completed", pulling.isAlive)
+            }
+        }
+    }
 }

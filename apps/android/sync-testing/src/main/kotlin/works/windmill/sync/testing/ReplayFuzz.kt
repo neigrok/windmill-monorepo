@@ -93,12 +93,14 @@ object ReplayFuzz {
                     val intent = request.member("intents").arr().single { it["n"] == result["n"] }
                     val digest = Sha256.hex(intent.jcs.encodeToByteArray())
                     val seat = engine.snapshot().member("replicas").arr().firstOrNull { it.member("meta").member("replica") == request.member("replica") }
+                    val epoch = seat?.member("meta")?.get("serverEpoch")?.orNull()
                     val entry = seat?.get("outbox")?.arr()?.firstOrNull { it["n"] == result["n"] && it["state"] == Json.of("sent") && it["digest"] == Json.of(digest) }
-                    if (entry != null && skewAdmissions.add(Triple(request.member("replica").str(), result.member("n").long(), digest))) {
+                    if (!wrong && (epoch == null || epoch == reply.body["epoch"]) && entry != null &&
+                        skewAdmissions.add(Triple(request.member("replica").str(), result.member("n").long(), digest))) {
                         count("refused clock-skew")
                         val id = entry.member("localId").str()
                         skewRefusals[id] = (skewRefusals[id] ?: 0) + 1
-                        check(skewRefusals.getValue(id) == 1) { "seed=$seed entry=$id refused clock-skew twice under distinct admissions: request=${request.jcs} entry=${entry.jcs}" }
+                        check(skewRefusals.getValue(id) == 1) { "seed=$seed entry=$id required clock-skew recovery twice: request=${request.jcs} entry=${entry.jcs}" }
                     }
                 }
                 if (result["code"] == Json.of("internal")) count("refused internal")

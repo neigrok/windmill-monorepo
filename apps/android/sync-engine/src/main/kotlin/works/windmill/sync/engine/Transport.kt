@@ -29,11 +29,13 @@ interface LiveConnection : AutoCloseable {
 }
 
 internal fun validateResponse(kind: String, json: Json) {
-    json.member("serverTime").long(); json.member("epoch").str()
+    json.member("serverTime").long(0)
+    if (json.member("epoch").str().isEmpty()) throw JsonError("epoch")
     json["as"]?.orNull()?.str()
     when (kind) {
         "hello" -> { json.member("schema").long(); json.member("minSchema").long(); json["holdsRecords"]?.obj()?.values?.forEach { it.bool() } }
         "push" -> { json.member("lastN").long(); json.member("results").arr().forEach { PushResult(it) }; json["retry"]?.let { it.member("n").long(); it.member("retryAfterMs").long() } }
+        "push-conflict" -> if (json["error"] !in listOf(Json.of("gap"), Json.of("replica-forked"), Json.of("replica-foreign"))) throw JsonError("push-conflict")
         "pull" -> json.member("pages").arr().forEach { page ->
             ScopeRef(page.member("scope"))
             when (page.member("kind").str()) {
@@ -100,7 +102,12 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
                                 if (it.code == 200) {
                                     if (json == null) throw JsonError("response")
                                     validateResponse(kind, json)
-                                } else if (current()) telemetry.offer(operation(kind), if (it.code in setOf(400, 401, 403, 404, 409, 410, 422, 426, 429)) EngineOutcome.refused else EngineOutcome.failure)
+                                } else {
+                                    if (kind == "push" && it.code == 409 && body?.get("account") != null &&
+                                        json?.get("as") == body["account"] && json?.get("error") != Json.of("account-mismatch"))
+                                        validateResponse("push-conflict", json!!)
+                                    if (current()) telemetry.offer(operation(kind), if (it.code in setOf(400, 401, 403, 404, 409, 410, 422, 426, 429)) EngineOutcome.refused else EngineOutcome.failure)
+                                }
                                 Reply.Answer(SyncResponse(it.code, json))
                             } catch (_: Exception) { if (current()) telemetry.offer(operation(kind), EngineOutcome.failure); Reply.Unreachable }
                         }

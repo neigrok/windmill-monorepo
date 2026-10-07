@@ -9,6 +9,7 @@ import { Cursor } from '../../../src/platform/sync/core/wire.js';
 import { scopeDigest } from '../../../src/platform/sync/core/digest.js';
 import { hashText } from '../../../src/platform/sync/core/encoding.js';
 import { jcs } from '../../../src/platform/sync/core/jcs.js';
+import { ServerState } from '../../../../packages/api-contract/sync/reference/server/state.js';
 import { environment, until, tick } from './fakes.js';
 
 const card = (id = 'card0001') => [{ op: 'create', t: 'card', id, f: { title: 'secret' } }];
@@ -479,6 +480,136 @@ test('a delayed push result for an old wire replica cannot acknowledge a renumbe
   engine.close();
 });
 
+for (const first of ['gap', 'success']) test(`a restore learned from ${first} durably replays an acknowledged create before its offline delete`, async () => {
+  const env = environment();
+  let engine = await open(env);
+  env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+  await engine.commit('self/probe', card());
+  await engine.send();
+  assert.deepEqual(engine.device.activeReplica.entries().map(({ state }) => state), ['acked']);
+  await engine.commit('self/probe', [{ op: 'delete', t: 'card', id: 'card0001' }]);
+  env.state = ServerState.empty({ epoch: 'ep-2', accounts: { A: { name: 'A' } } });
+  if (first === 'success') {
+    await engine.write(null, (device, ctx) => reidentify(device.activeReplica, ctx));
+    await until(() => engine.leader);
+  }
+  const previous = engine.activeReplica();
+  let results = 0;
+  engine.onPushResult = () => results++;
+  await engine.send();
+  assert.equal(results, 0, 'results wait for earlier acknowledgements to replay');
+  assert.notEqual(engine.activeReplica(), previous);
+  assert.equal(engine.device.activeReplica.meta.serverEpoch, 'ep-2');
+  assert.deepEqual(engine.device.activeReplica.entries().map(({ state, commitOrder }) => [state, commitOrder]), [['ready', 1], ['ready', 2]]);
+  engine.close();
+  engine = await open(env);
+  await engine.send();
+  assert.deepEqual(env.requests.filter(({ endpoint }) => endpoint === 'push').at(-1).request.intents.map(({ d }) => d[0].life[0]), ['alive', 'dead']);
+  await engine.pull();
+  assert.deepEqual(engine.device.activeReplica.entries(), []);
+  assert.deepEqual(engine.device.activeReplica.notices, []);
+  assert.deepEqual(engine.device.activeReplica.confirmedRows('self/probe'), []);
+  assert.deepEqual(engine.observe('self/probe').getSnapshot().drawn, []);
+  assert.deepEqual(env.failures, []);
+  engine.close();
+});
+
+test('a malformed authenticated gap backs off as a transport failure without altering persisted work', async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+  await engine.commit('self/probe', card());
+  await engine.send();
+  await engine.commit('self/probe', [{ op: 'delete', t: 'card', id: 'card0001' }]);
+  await engine.write(null, (device, ctx) => nextPush(device.activeReplica, ctx));
+  const before = engine.device.toJSON();
+  env.transport.response = () => ({ response: { status: 409, body: { as: 'A', serverTime: 1000, error: 'gap' } }, timing: {} });
+  await engine.send();
+  assert.deepEqual(engine.device.toJSON(), before);
+  assert.deepEqual((await engine.store.read()).device.toJSON(), before);
+  assert.deepEqual(env.failures, ['transport']);
+  assert.equal(engine.wait.due(env.timers.time), false);
+  engine.close();
+});
+
+test('changed-epoch successes and product receipts commit together, survive reload, and discard only untrusted refusals', async () => {
+  const env = environment();
+  let engine = await open(env);
+  env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+  await engine.write(null, (device) => { device.activeReplica.meta.serverEpoch = 'ep-1'; });
+  for (const id of ['card0001', 'card0002', 'card0003']) await engine.commit('self/probe', card(id));
+  const request = await engine.write(null, (device, ctx) => nextPush(device.activeReplica, ctx));
+  const handle = engine.device.activeReplica.storageHandle;
+  const response = { status: 200, body: { as: 'A', epoch: 'ep-2', serverTime: 1000, lastN: 3, results: [
+    { n: 1, s: 'ok', seq: 1 }, { n: 2, s: 'refused', code: 'unknown-record' }, { n: 3, s: 'ok', seq: 2 },
+  ] } };
+  const before = engine.device.activeReplica.toJSON();
+  const timing = { send: { wall: 1000, mono: 1000, boot: 'test' }, recv: { wall: 1000, mono: 1000, boot: 'test' } };
+  const receipt = (replica, _ctx, result, body) => {
+    replica.deviceRows('probe')[`receipt${result.n}`] = { state: result.s, epoch: body.epoch };
+  };
+  const crash = new Error('recovery transaction failed');
+  engine.onPushResult = (...args) => {
+    receipt(...args);
+    if (args[2].n === 3) throw crash;
+  };
+  await assert.rejects(engine.pushResults(handle, request, response, timing), (error) => error === crash);
+  const rolledBack = (await engine.store.read()).device.activeReplica.toJSON();
+  assert.deepEqual(rolledBack.outbox, before.outbox, 'no success escapes the aborted recovery');
+  assert.deepEqual(rolledBack.device, before.device, 'no product receipt escapes the aborted recovery');
+  assert.equal(rolledBack.meta.replica, before.meta.replica);
+  assert.equal(rolledBack.meta.serverEpoch, 'ep-1');
+  engine.close();
+  engine = await open(env);
+  engine.onPushResult = receipt;
+  await engine.pushResults(handle, request, response, timing);
+  const recovered = engine.device.toJSON();
+  assert.deepEqual(engine.device.activeReplica.entries().map(({ state, resultEpoch }) => [state, resultEpoch]),
+    [['acked', 'ep-2'], ['ready', undefined], ['acked', 'ep-2']]);
+  assert.deepEqual(engine.device.activeReplica.deviceRows('probe'), {
+    receipt1: { state: 'ok', epoch: 'ep-2' }, receipt3: { state: 'ok', epoch: 'ep-2' },
+  });
+  assert.equal(engine.device.activeReplica.meta.ackThrough, 0);
+  assert.equal(engine.device.activeReplica.meta.nextN, 1);
+  assert.deepEqual(engine.device.activeReplica.notices, []);
+  assert.deepEqual(env.events.filter(({ name }) => name === 'sync-refused'), []);
+  engine.close();
+  engine = await BrowserSyncEngine.open(env.options);
+  assert.deepEqual(engine.device.toJSON(), recovered);
+  assert.deepEqual(env.failures, ['storage']);
+  engine.close();
+});
+
+test('a pull adopting the first epoch between push transactions cannot leave an acknowledgement in another epoch', async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+  await engine.commit('self/probe', card());
+  const request = await engine.write(null, (device, ctx) => nextPush(device.activeReplica, ctx));
+  const handle = engine.device.activeReplica.storageHandle;
+  assert.equal(engine.device.activeReplica.meta.serverEpoch, null);
+  const write = engine.write.bind(engine);
+  let transactions = 0;
+  engine.write = async (...args) => {
+    if (++transactions === 2) await write(null, (device) => { device.activeReplica.meta.serverEpoch = 'ep-2'; });
+    return write(...args);
+  };
+  let results = 0;
+  engine.onPushResult = () => results++;
+  await engine.pushResults(handle, request, { status: 200, body: { as: 'A', epoch: 'ep-1', serverTime: 1000,
+    lastN: 1, results: [{ n: 1, s: 'ok', seq: 1 }] } }, {
+    send: { wall: 1000, mono: 1000, boot: 'test' }, recv: { wall: 1000, mono: 1000, boot: 'test' },
+  });
+  assert.equal(results, 1);
+  assert.deepEqual(engine.device.activeReplica.entries().map(({ state, resultEpoch }) => [state, resultEpoch]), [['acked', 'ep-1']]);
+  assert.equal(engine.device.activeReplica.meta.ackThrough, 0);
+  assert.notEqual(engine.activeReplica(), request.replica);
+  env.state = ServerState.empty({ epoch: 'ep-2', accounts: { A: { name: 'A' } } });
+  await until(() => engine.leader);
+  engine.kickPull();
+  await engine.pull();
+  assert.deepEqual(engine.device.activeReplica.entries().map(({ state }) => state), ['ready']);
+  engine.close();
+});
+
 test('anonymous replicas reject authenticated scope answers without caching existence or rows', async () => {
   const env = environment(), engine = await open(env);
   await engine.subscribe('tree/b_00000001');
@@ -623,6 +754,27 @@ test('durable commit returns its IDs when publication fails, and an offline reop
   assert.ok(env.failures.includes('storage')); reopened.close();
 });
 
+test('closing during publication retains the committed work without reporting the closed store as a failure', async () => {
+  const env = environment(), engine = await open(env);
+  const read = engine.store.read.bind(engine.store);
+  let finish;
+  engine.store.read = async (...args) => {
+    await read(...args);
+    return new Promise((_resolve, reject) => { finish = reject; });
+  };
+  const committing = engine.commit('self/probe', card(), { hold: true });
+  await until(() => !!finish);
+  engine.close();
+  finish(new DOMException('connection closed', 'InvalidStateError'));
+  const result = await committing;
+  assert.deepEqual(env.failures, []);
+  env.options.navigator.onLine = false;
+  const reopened = await BrowserSyncEngine.open(env.options);
+  assert.equal(reopened.device.activeReplica.entry(result.localIds[0]).state, 'held');
+  assert.equal(reopened.observe('self/probe').getSnapshot().drawn[0].f.title[0], 'secret');
+  reopened.close();
+});
+
 test('426 is durable without channel delivery; all requests including hello stop until build changes', async () => {
   const env = environment(), a = await open(env), b = await peer(env);
   a.coordination.post = () => {};
@@ -653,6 +805,30 @@ test('sign-out owner death resumes pulls when the outbox is empty; overlapping b
   env.timers.advance(0); await until(() => env.requests.filter(({ endpoint }) => endpoint === 'pull').length > pulls);
   assert.equal((await env.locks.query()).held.filter(({ name }) => name.startsWith('wm-signout:')).length, 0);
   leader.close();
+});
+
+for (const endpoint of ['push', 'pull']) test(`a ${endpoint} paused on its writer cannot start networking after going offline`, async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+  await engine.commit('self/probe', card());
+  const count = env.requests.length;
+  const write = engine.write.bind(engine);
+  let release, paused = false;
+  const gate = new Promise((resolve) => { release = resolve; });
+  engine.write = async (...args) => {
+    const result = await write(...args);
+    if (!paused) { paused = true; await gate; }
+    return result;
+  };
+  const attempt = endpoint === 'push' ? engine.send() : engine.pull();
+  await until(() => paused);
+  engine.setOnline(false);
+  release();
+  await attempt;
+  assert.equal(env.requests.length, count);
+  assert.deepEqual(env.failures, []);
+  if (endpoint === 'push') assert.deepEqual(engine.device.activeReplica.entries().map(({ state }) => state), ['sent']);
+  engine.close();
 });
 
 for (const stop of ['close', 'handoff']) test(`a request stalled on storage does not start networking after ${stop}`, async () => {

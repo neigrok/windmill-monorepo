@@ -6,6 +6,71 @@ import Testing
 // §6.1 properties the corpus pins only by example: the digest and the counters admission keeps, and step R's rollback.
 
 struct AdmissionTests {
+  @Test(arguments: [("card", "card0001"), ("board", "b_00000001"), ("tag", "oak")])
+  func anAbsentDeleteSurvivesReloadAndPreventsALaterReplayedCreate_4_3(_ type: String, _ id: String) throws {
+    let registry = try Corpus.probeRegistry()
+    let admission = Admission(registry: registry, rules: ProbeServerRules())
+    var state = ServerState(epoch: "ep-2")
+    if type == "tag" {
+      let board: JSON = ["scope": "self/probe", "d": [["t": "board", "id": "b_00000001", "born": "5:0:r_aaaaaaaaaaaa",
+                                                       "life": ["alive", "5:0:r_aaaaaaaaaaaa"]]]]
+      _ = try admission.admit(board, from: .replica(account: "A", replica: "rp_a", n: 1), at: 900, in: &state)
+    }
+    let scope = type == "tag" ? ScopeKey(.tree("b_00000001")) : ScopeKey(.product(account: "A", name: "probe"))
+    let key = RecordKey(type, RecordID(id))
+    let born = try Stamp("10:0:r_aaaaaaaaaaaa")
+    let life = try Stamp("20:0:r_bbbbbbbbbbbb")
+    let intent: JSON = ["scope": scope.ref.json, "d": [["t": .string(type), "id": .string(id), "born": born.json,
+                                                      "life": ["dead", life.json]]]]
+    let deleted = try admission.admit(intent, from: .replica(account: "A", replica: "rp_b", n: 1), at: 1_000, in: &state)
+    let row = Row(key: key, lattice: Lattice(life: Life(.dead, life), born: born), seq: 1, rc: 1_000, ru: 1_000)
+    #expect(deleted.result == .ok(seq: 1, write: nil, detail: nil))
+    #expect(deleted.events == [.change(scope, frame: [
+      "op": "change", "scope": scope.ref.json, "epoch": "ep-2", "seq": 1, "digest": .string(ScopeDigest.zero.hex),
+      "rows": [["t": .string(type), "id": .string(id), "born": born.json, "life": ["dead", life.json], "seq": 1]],
+    ])])
+    #expect(state.scopes[scope]?.seq == 1)
+    #expect(state.scopes[scope]?.digest == .zero)
+    #expect(state.scopes[scope]?.counters == [:])
+    if registry.type(type)?.deadRows == .spent {
+      #expect(state.rows[scope]?[key] == nil)
+      #expect(state.spent[scope]?[key] == SpentRow(born: born, lifeStamp: life, seq: 1))
+    } else {
+      #expect(state.rows[scope]?[key] == row)
+      #expect(state.spent[scope]?[key] == nil)
+    }
+    let persisted = state
+    state = try ServerState(json: JSON(parsing: state.json.jcs))
+    #expect(state == persisted)
+    let create: JSON = ["scope": scope.ref.json, "d": [["t": .string(type), "id": .string(id), "born": born.json,
+                                                      "life": ["alive", born.json]]]]
+    let replayed = try admission.admit(create, from: .replica(account: "A", replica: "rp_a", n: 1), at: 1_100, in: &state)
+    #expect(replayed.result == .ok(seq: 1, write: nil, detail: nil))
+    #expect(replayed.events == [])
+    #expect(state == persisted)
+    let repeated = try admission.admit(intent, from: .replica(account: "A", replica: "rp_b", n: 2), at: 1_200, in: &state)
+    #expect(repeated.result == .ok(seq: 1, write: nil, detail: nil))
+    #expect(repeated.events == [])
+    #expect(state == persisted)
+  }
+
+  @Test func aDeleteOfAnotherLiveBornRefusesTheWholeIntent_4_3() throws {
+    let admission = Admission(registry: try Corpus.probeRegistry(), rules: ProbeServerRules())
+    var state = ServerState(epoch: "ep-2")
+    let create: JSON = ["scope": "self/probe", "d": [["t": "card", "id": "card0001", "born": "10:0:r_aaaaaaaaaaaa",
+                                                     "life": ["alive", "10:0:r_aaaaaaaaaaaa"], "f": ["title": ["New", "10:0:r_aaaaaaaaaaaa"]]]]]
+    _ = try admission.admit(create, from: .replica(account: "A", replica: "rp_a", n: 1), at: 1_000, in: &state)
+    let before = state
+    let intent: JSON = ["scope": "self/probe", "d": [
+      ["t": "card", "id": "card0002", "born": "20:0:r_bbbbbbbbbbbb", "life": ["alive", "20:0:r_bbbbbbbbbbbb"]],
+      ["t": "card", "id": "card0001", "born": "9:0:r_aaaaaaaaaaaa", "life": ["dead", "20:0:r_bbbbbbbbbbbb"]],
+    ]]
+    let refused = try admission.admit(intent, from: .replica(account: "A", replica: "rp_b", n: 1), at: 1_100, in: &state)
+    #expect(refused.result == .refused(Refusal(.unknownRecord)))
+    #expect(refused.events == [])
+    #expect(state == before)
+  }
+
   @Test func everyScopeDigestIsTheSumOverItsAliveRowsAndEveryCounterTheirCount_6_5_6_12() throws {
     let registry = try Corpus.probeRegistry()
     let admission = Admission(registry: registry, rules: ProbeServerRules())
@@ -264,39 +329,45 @@ extension AdmissionTests {
 extension AdmissionTests {
   // Review F4: a client delta §4.3 answers `ok` writes nothing, so the server stamp does not observe it (§10.3).
   @Test func aClientDeltaAnsweredOkIsNotObservedByTheServerStamp_10_3() throws {
+    struct AdvanceDeath: ServerRules {
+      func check(_ changes: [RecordChange], in context: inout RuleContext) throws(Refusal) -> [PlannedDelta] {
+        [.serverDelete(RecordKey("card", "card0001"), born: try! Stamp("200:0:r_aaaaaaaaaaaa"))]
+      }
+    }
     let admission = Admission(registry: try Corpus.probeRegistry(), rules: ProbeServerRules())
     var state = ServerState(epoch: "ep-1")
-    let start: JSON = ["scope": "self/probe", "cmd": ["name": "probe.start", "args": ["id": "run00001", "startedAt": 100, "join": true]]]
-    _ = try admission.admit(start, from: .replica(account: "A", replica: "rp_a", n: 1), at: 1_000_000, in: &state)
-    let lap: JSON = ["scope": "self/probe", "d": [["t": "lap", "id": "lap00001", "born": "200:0:r_aaaaaaaaaaaa",
-                                                  "life": ["alive", "200:0:r_aaaaaaaaaaaa"],
-                                                  "f": ["runId": ["run00001", "200:0:r_aaaaaaaaaaaa"], "at": [200, "200:0:r_aaaaaaaaaaaa"],
-                                                        "weight": [1, "200:0:r_aaaaaaaaaaaa"]]]]]
-    _ = try admission.admit(lap, from: .replica(account: "A", replica: "rp_a", n: 2), at: 1_000_000, in: &state)
+    let dead: JSON = ["scope": "self/probe", "d": [["t": "card", "id": "card0001", "born": "200:0:r_aaaaaaaaaaaa",
+                                                   "life": ["dead", "201:0:r_aaaaaaaaaaaa"]]]]
+    _ = try admission.admit(dead, from: .replica(account: "A", replica: "rp_a", n: 1), at: 1_000_000, in: &state)
     let scope = ScopeKey(.product(account: "A", name: "probe"))
-    let runBorn = try #require(state.rows[scope]?[RecordKey("run", "run00001")]?.lattice.born)
-    let intent: JSON = ["scope": "self/probe", "d": [
-      ["t": "run", "id": "run00001", "born": runBorn.json, "life": ["dead", "1000001:0:r_aaaaaaaaaaaa"]],
-      ["t": "lap", "id": "lap00001", "born": "199:0:r_aaaaaaaaaaaa", "life": ["dead", "1250000:0:r_aaaaaaaaaaaa"]],
-    ]]
-    _ = try admission.admit(intent, from: .replica(account: "A", replica: "rp_a", n: 3), at: 1_000_000, in: &state)
-    #expect(state.spent[scope]?[RecordKey("lap", "lap00001")]?.lifeStamp == (try Stamp("1000000:1:srv")))
-    #expect(state.clock == HLC(ms: 1_000_000, counter: 1))
+    let intent: JSON = ["scope": "self/probe", "d": [["t": "card", "id": "card0001", "born": "199:0:r_aaaaaaaaaaaa",
+                                                     "life": ["dead", "1250000:0:r_aaaaaaaaaaaa"]]]]
+    let advancing = Admission(registry: admission.registry, rules: AdvanceDeath())
+    let admitted = try advancing.admit(intent, from: .replica(account: "A", replica: "rp_a", n: 2), at: 1_000_000, in: &state)
+    #expect(admitted.result == .ok(seq: 2, write: nil, detail: nil))
+    #expect(state.spent[scope]?[RecordKey("card", "card0001")]?.lifeStamp == (try Stamp("1000000:0:srv")))
+    #expect(state.clock == HLC(ms: 1_000_000, counter: 0))
   }
 
   // Same cause as F4: a guard holds through the stamp this intent writes, and a delta answered `ok` writes nothing.
   @Test func aGuardDoesNotHoldThroughADeltaAnsweredOk_6_1_step7() throws {
     let admission = Admission(registry: try Corpus.probeRegistry(), rules: ProbeServerRules())
     var state = ServerState(epoch: "ep-1")
-    let create: JSON = ["scope": "self/probe", "d": [["t": "card", "id": "card0001", "born": "10:0:r_aaaaaaaaaaaa",
-                                                     "life": ["alive", "10:0:r_aaaaaaaaaaaa"], "f": ["title": ["Hi", "10:0:r_aaaaaaaaaaaa"]]]]]
-    _ = try admission.admit(create, from: .replica(account: "A", replica: "rp_a", n: 1), at: 1_000_000, in: &state)
-    let otherBorn: JSON = ["scope": "self/probe",
-                           "d": [["t": "card", "id": "card0001", "born": "9:0:r_aaaaaaaaaaaa", "life": ["dead", "20:0:r_aaaaaaaaaaaa"],
-                                  "f": ["title": ["Hi", "10:0:r_aaaaaaaaaaaa"]]]],
-                           "guard": [["t": "card", "id": "card0001", "field": "title", "stamp": "5:0:r_aaaaaaaaaaaa"]]]
-    let admitted = try admission.admit(otherBorn, from: .replica(account: "A", replica: "rp_a", n: 2), at: 1_000_000, in: &state)
-    #expect(admitted.result == .refused(Refusal(.stale, detail: ["t": "card", "id": "card0001", "field": "title", "current": "10:0:r_aaaaaaaaaaaa"])))
+    let board: JSON = ["scope": "self/probe", "d": [["t": "board", "id": "b_00000001", "born": "1:0:r_aaaaaaaaaaaa",
+                                                     "life": ["alive", "1:0:r_aaaaaaaaaaaa"]]]]
+    _ = try admission.admit(board, from: .replica(account: "A", replica: "rp_a", n: 1), at: 1_000_000, in: &state)
+    let dead: JSON = ["scope": "tree/b_00000001", "d": [["t": "tag", "id": "oak", "born": "10:0:r_aaaaaaaaaaaa",
+                                                        "life": ["dead", "11:0:r_aaaaaaaaaaaa"], "f": ["label": ["Hi", "10:0:r_aaaaaaaaaaaa"]]]]]
+    _ = try admission.admit(dead, from: .replica(account: "A", replica: "rp_a", n: 2), at: 1_000_000, in: &state)
+    let before = state
+    let otherBorn: JSON = ["scope": "tree/b_00000001",
+                           "d": [["t": "tag", "id": "oak", "born": "9:0:r_aaaaaaaaaaaa", "life": ["dead", "20:0:r_aaaaaaaaaaaa"],
+                                  "f": ["label": ["Hi", "10:0:r_aaaaaaaaaaaa"]]]],
+                           "guard": [["t": "tag", "id": "oak", "field": "label", "stamp": "5:0:r_aaaaaaaaaaaa"]]]
+    let admitted = try admission.admit(otherBorn, from: .replica(account: "A", replica: "rp_a", n: 3), at: 1_000_000, in: &state)
+    #expect(admitted.result == .refused(Refusal(.stale, detail: ["t": "tag", "id": "oak", "field": "label", "current": "10:0:r_aaaaaaaaaaaa"])))
+    #expect(admitted.events == [])
+    #expect(state == before)
   }
 
   // Review F5 and D-20: the write map gives the record's born, the smaller one when a client create joined it.

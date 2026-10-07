@@ -107,7 +107,9 @@ Decision decide(const TypeDef& type, Op op, const IdState& state, const std::opt
       if (elsewhere || !sameBorn) return refuse(code::unknownRecord);
       return alive ? apply : refuse(code::recordDead);
     case Op::remove:
-      if (elsewhere || !sameBorn) return ok;
+      if (state.kind == Kind::none) return apply;
+      if (state.kind == Kind::foreign) return ok;
+      if (!sameBorn) return alive ? refuse(code::unknownRecord) : ok;
       return apply;
     case Op::revive:
       if (elsewhere || !sameBorn) return refuse(code::unknownRecord);

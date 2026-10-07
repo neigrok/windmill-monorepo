@@ -46,6 +46,7 @@ public:
     if (name_ == "gym.start") return books["starts"].isMember(ctx.args["id"].asString());
     if (name_ == "gym.importSession") return books["imports"].isMember(ctx.args["id"].asString()) || books["importHashes"].isMember(ctx.args["id"].asString());
     if (name_ == "gym.correctSession") return books["corrections"].isMember(ctx.args["requestId"].asString());
+    if (name_ == "gym.applyProposal") return books["proposalApplies"].isMember(ctx.args["proposalId"].asString());
     return false;
   }
 

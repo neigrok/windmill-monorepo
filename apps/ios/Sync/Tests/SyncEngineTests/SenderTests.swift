@@ -263,7 +263,94 @@ struct SenderTests {
     let meta = try rig.meta()
     #expect(meta.replica != before)
     #expect((meta.serverEpoch, meta.nextN, meta.ackThrough) == ("ep-2", 1, 0))
-    #expect(try rig.outbox() == ["g1/0 ready", "g2/0 acked 2"])
+    #expect(try rig.outbox() == ["g1/0 ready", "g2/0 ready"])
+  }
+
+  @Test(arguments: ["gap", "replica-forked", "replica-foreign"])
+  func aConflictFromARestoredEpochReplaysTheCreateBeforeItsDelete(_ code: String) async throws {
+    let rig = try Rig(account: "A")
+    try rig.commit(Self.card1)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]))
+    #expect(await rig.engine.sender.step() == .again)
+    try rig.commit(Gesture(changes: [.delete("card", "card0001")], gestureId: "delete"))
+    let before = try rig.meta().replica
+    rig.transport.willAnswerPush(409, ["error": .string(code), "serverTime": JSON(Rig.startMs), "epoch": "ep-2", "as": "A"])
+    #expect(await rig.engine.sender.step() == .again)
+    let meta = try rig.meta()
+    #expect(meta.replica != before)
+    #expect((meta.serverEpoch, meta.nextN, meta.ackThrough) == ("ep-2", 1, 0))
+    #expect(try rig.outbox() == ["g1/0 ready", "delete/0 ready"])
+    #expect(rig.announced.filter { $0 == "\(before) -> \(meta.replica)" }.count == 1)
+    rig.transport.willDropPush()
+    _ = await rig.engine.sender.step()
+    let replay = try #require(rig.transport.pushes.last)
+    #expect(replay.replica == meta.replica)
+    #expect(replay.intents.map(\.n) == [1, 2])
+    #expect(replay.intents.map { $0.deltas.map(\.creates) } == [[true], [false]])
+    #expect(replay.intents.map { $0.deltas.map(\.removes) } == [[false], [true]])
+  }
+
+  @Test(arguments: [(200, false), (200, true), (409, false), (409, true)])
+  func aDeathAtEpochRecoveryKeepsBothTheCreateAndItsDelete(_ status: Int, _ afterCommit: Bool) async throws {
+    let kill = Mutex<CrashPoint?>(nil)
+    let rig = try Rig(account: "A", crashPoints: CrashPoints { point in
+      if kill.withLock({ wanted in
+        guard wanted == point else { return false }
+        wanted = nil
+        return true
+      }) { throw RigError("the process died") }
+    })
+    try rig.commit(Self.card1)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]))
+    #expect(await rig.engine.sender.step() == .again)
+    try rig.commit(Gesture(changes: [.delete("card", "card0001")], gestureId: "delete"))
+    let response: JSON = status == 200 ? Rig.ok(lastN: 2, [Rig.admitted(2, seq: 1)], epoch: "ep-2")
+      : ["error": "gap", "serverTime": JSON(Rig.startMs), "epoch": "ep-2", "as": "A"]
+    let transaction: TxName = status == 200 ? .results : .reidentify
+    kill.withLock { $0 = afterCommit ? .afterCommit(transaction) : .beforeCommit(transaction) }
+    rig.transport.willAnswerPush(status, response)
+    guard case .backoff = await rig.engine.sender.step() else { throw RigError("the process did not die") }
+    #expect(try rig.outbox() == (afterCommit ? ["g1/0 ready", "delete/0 ready"] : ["g1/0 acked 1", "delete/0 sent 2"]))
+    #expect(try rig.meta().serverEpoch == (afterCommit ? "ep-2" : "ep-1"))
+    let relaunched = try rig.relaunch()
+    if !afterCommit {
+      rig.transport.willAnswerPush(status, response)
+      #expect(await relaunched.sender.step() == .again)
+    }
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 2, [Rig.admitted(1, seq: 1), Rig.admitted(2, seq: 2)], epoch: "ep-2"))
+    #expect(await relaunched.sender.step() == .again)
+    #expect(try rig.outbox() == ["g1/0 acked 1", "delete/0 acked 2"])
+    let replay = try #require(rig.transport.pushes.last)
+    #expect(replay.ackThrough == 0)
+    #expect(replay.intents.map(\.n) == [1, 2])
+    #expect(replay.intents.map { $0.deltas.map(\.creates) } == [[true], [false]])
+    #expect(replay.intents.map { $0.deltas.map(\.removes) } == [[false], [true]])
+  }
+
+  @Test(arguments: [
+    ("epoch", nil as JSON?), ("epoch", .null), ("epoch", ""), ("epoch", 2),
+    ("serverTime", nil), ("serverTime", .null), ("serverTime", -1), ("serverTime", "5000"),
+    ("serverTime", JSON(JSON.maxSafeInteger + 1)), ("serverTime", 1.5), ("error", "unknown-conflict"),
+  ])
+  func aMalformedAuthenticatedConflictLeavesTheReplicaUnchanged(_ member: String, _ value: JSON?) async throws {
+    let rig = try Rig(account: "A")
+    try rig.commit(Self.card1)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]))
+    #expect(await rig.engine.sender.step() == .again)
+    try rig.commit(Gesture(changes: [.delete("card", "card0001")], gestureId: "delete"))
+    rig.transport.willDropPush()
+    _ = await rig.engine.sender.step()
+    let before = try rig.active()
+    var body: JSON.Object = ["error": "gap", "serverTime": JSON(Rig.startMs), "epoch": "ep-2", "as": "A"]
+    body[member] = value
+    rig.transport.willAnswerPush(409, .object(body))
+    guard case .backoff = await rig.engine.sender.step() else { throw RigError("a malformed conflict did not back off") }
+    let after = try rig.active()
+    #expect(after.meta == before.meta)
+    #expect(after.outbox == before.outbox)
+    #expect(after.cursors == before.cursors)
+    #expect(after.staging == before.staging)
+    #expect(after.notices == before.notices)
   }
 
   // A server that answers none of the request's intents and asks for no retry would bring the same push straight
@@ -436,6 +523,8 @@ struct SenderTests {
     (409, Rig.failure("replica-foreign", as: nil)),
     (409, ["error": "replica-foreign", "serverTime": JSON(Rig.startMs), "epoch": "ep-1"] as JSON),
     (409, Rig.failure("gap", as: "B")),
+    (409, ["error": "gap", "serverTime": JSON(Rig.startMs), "epoch": "ep-2", "as": "B"] as JSON),
+    (409, ["error": "gap", "serverTime": -1, "epoch": 2, "as": "B"] as JSON),
     (409, Rig.failure("replica-forked", as: "B")),
     (409, Rig.failure("account-mismatch", as: "B")),
     (409, Rig.failure("account-mismatch", as: "A")),
