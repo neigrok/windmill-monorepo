@@ -90,7 +90,7 @@ class TrainingStore(
     localCoach: LocalCoach? = null,
 ) {
     val coach = CoachStore(
-        accountOwner = { owner }, withheldIds = { withheldIds }, onProgramChanged = ::reread,
+        accountOwner = { owner }, withheldIds = { withheldIds }, onProgramChanged = { routines = training.program() },
         rest = rest, localCoach = localCoach, telemetry = telemetry, elapsedNanos = elapsedNanos,
     )
 
@@ -978,22 +978,12 @@ class TrainingStore(
     private fun refused(error: Throwable): ProposalOutcome {
         val refusal = error as? TrainingRefused
         if (refusal == null || refusal.code == "sign-in") return ProposalOutcome.Failed(WriteFailure(error))
-        reread()
+        routines = training.program()
         return when (refusal.code) {
             Gym.Codes.proposalSuperseded -> ProposalOutcome.Moved(refusal.line)
             "unknown-record" -> ProposalOutcome.Gone("that proposal is no longer on the log")
             else -> ProposalOutcome.Settled(refusal.line)
         }
-    }
-
-    // A re-read keeps what this room changed and dropped since the last one.
-    private fun reread() {
-        val before = program.associateBy { it.id }
-        val written = training.program()
-        val changed = program.filter { before[it.id] != it }.associateBy { it.id }
-        val deleted = before.keys - program.map { it.id }.toSet()
-        val fetched = written.filterNot { it.id in deleted }
-        routines = fetched.map { changed[it.id] ?: it } + changed.values.filter { row -> fetched.none { it.id == row.id } }
     }
 
     // What a screen asks on the way in: the answer already held for this seat, or the read that

@@ -5,9 +5,7 @@ import works.windmill.gym.domain.Readout
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-// Coach requests retain their identity across retries; generations record durable actions.
-// The wire still says `ask` and its verdict codes stay `ask-*`; the room a lifter sees is Coach.
-// No outgoing field may carry a default: encodeDefaults is off, so a defaulted field travels absent.
+// Request identities survive retries; generation snapshots retain completed actions.
 
 // A step is drawn in the lifter's words or not at all: a tool this build cannot name prints NOTHING,
 // and the receipt beside the list still says what was read.

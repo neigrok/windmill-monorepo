@@ -16,8 +16,7 @@ import works.windmill.sync.engine.*
 import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
 
-// These are the former TrainingStore claim cases. The room still draws the same workout,
-// catalogue, settings and history; the engine now owns admission and account decisions.
+// The room projects workouts, catalogue, settings and history across engine account decisions.
 class EngineLifecycleStoreTests {
     @get:Rule val tmp = TemporaryFolder()
     private var clockMs = 1_800_000_000_000L

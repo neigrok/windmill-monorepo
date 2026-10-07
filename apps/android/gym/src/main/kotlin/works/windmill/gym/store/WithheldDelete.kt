@@ -51,8 +51,7 @@ sealed interface Deletion {
     data class Thread(val threadId: String) : Deletion {
         override val subjectId: String get() = threadId
         override val line: String get() = "Conversation deleted."
-        // What deleting a conversation does NOT take with it. It used to be a standing caption three
-        // screens deep, where nobody stood at the moment they deleted anything.
+        // Applied routine changes survive conversation deletion.
         override val detail: String get() = "your routine keeps what you applied"
         override val stillThere: String get() = "that conversation is still here"
     }

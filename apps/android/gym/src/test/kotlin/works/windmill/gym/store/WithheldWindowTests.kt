@@ -21,7 +21,7 @@ import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.sync.engine.signIn
 
-// One window over FOUR verbs, and the property the whole gesture wave stands on: withheld means NOT
+// One window over six verbs, and the property the whole gesture wave stands on: withheld means NOT
 // SENT. A server-only delete — a conversation — is as unsent as a set until its own clock runs out,
 // so an Undo can never arrive after the wire.
 //
@@ -91,8 +91,7 @@ class WithheldWindowTests {
         }
     }
 
-    // A verb whose delete lands on THIS DEVICE and owes the log a claim has no terminal refusal, so
-    // there is nothing to say after the window. Inventing a sentence would pin words no path reaches.
+    // A weigh-in delete commits locally; later sync refusals do not report through the Undo window.
     @Test
     fun onlyTheVerbsTheLogCanRefuseCarryASentenceForAfterTheWindow() {
         assertEquals("that set is still on the log", Deletion.Set("ses_1", loggedSet()).stillThere)

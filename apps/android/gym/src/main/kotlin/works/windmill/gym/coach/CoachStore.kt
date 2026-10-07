@@ -48,13 +48,9 @@ class CoachStore internal constructor(
         const val noSuchThread = "that conversation is no longer on the log"
     }
 
-    // The account's conversations as the log last answered them, newest first. Held by the ROOM for
-    // exactly the reason the notes are: a screen keeping a snapshot of its own would draw a
-    // conversation back the moment its window settled. Writes go to `conversations`.
+    // Newest first; every screen reads the same list so settled deletes stay removed.
     private var conversations: List<AskThread> by mutableStateOf(emptyList())
-    // A conversation inside its undo window is off the list; `allThreads` still holds it, because the
-    // account does. A window decides which ROWS are drawn and never what state a screen is in, so the
-    // threads room reads its empty stance from `allThreads`.
+    // Undo hides rows; the empty stance still counts everything the account holds.
     val threads: List<AskThread> get() = conversations.filterNot { it.id in withheldIds() }
     val allThreads: List<AskThread> get() = conversations
 
