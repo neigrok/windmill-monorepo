@@ -70,7 +70,7 @@ threshold buys smoothness by implying a fortnight of measurements that do not ex
 
 A connecting segment is still a connection and not data, and the chart draws **no legend for the
 rule**: a gap in the line reads as a gap, and a caption explaining an absence is chrome. The threshold
-lives in one constant per surface (`GAP_DAYS` in `bodyweight.js`, `Bodyweight.gapDays` in
+lives in one constant per surface (`Bodyweight.gapDays` in the web's `domain/bodyweight.js` and in
 `Bodyweight.swift`, `Bodyweight.maxGapDays` in `Bodyweight.kt`) and in no sentence.
 
 **A window holding no weigh-in says that it is empty and nothing else.** Not gated on whether
