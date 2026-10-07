@@ -366,14 +366,11 @@ class EngineTrainingTests {
             (1..4).map { TrainingSet("set$id$it", "back-squat", weightKg = kg, reps = 5, completedAtMs = at + it) })
         val earlier = detail("session1", 1000, 80.0)
         val later = detail("session2", 2000, 90.0)
-        val review = EngineReadouts.review(later, listOf(earlier, later))
+        val review = Review.of(later, listOf(earlier, later))
         assertEquals("e1rm", review.record!!.kind)
         assertEquals("session1", review.against!!.sessionId)
         assertEquals(PlannedLine(listOf(SetTarget(5, 80.0))), review.against!!.movements.single().planned)
-        assertTrue(EngineReadouts.summary(later, listOf(earlier, later)).record)
-        val record = EngineReadouts.record(TheSix.movements.first(), listOf(earlier, later), emptyList(), 3000)
-        assertEquals(105.0, record.bestE1rm!!.e1rm!!, 0.0)
-        assertEquals(listOf(RecordMark(90.0, 5, 2000, 105.0)), record.records)
+        assertTrue(SessionSummary.of(later, listOf(earlier, later)).record)
     }
     @Test fun trainingStoreUsesEngineForAnonymousAndNotificationLogThenFinish() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
@@ -443,7 +440,7 @@ class EngineTrainingTests {
         }
     }
 
-    @Test fun reviewPriorMarksUseCompletedTimeAcrossMidnightAndRecordProgramsKeepPositionOrder() {
+    @Test fun reviewPriorMarksUseCompletedTimeAcrossMidnight() {
         val midnight = 1_800_057_600_000L
         fun detail(id: String, started: Long, completed: Long, load: Double, count: Int = 1) = SessionDetail(
             Session(id, started, completed + 1, "routine1", PlanSnapshot("Frozen", listOf(PlanEntry("bench-press", listOf(SetTarget(5, load)))))),
@@ -452,14 +449,9 @@ class EngineTrainingTests {
         val tied = detail("session2", midnight - 10_000, midnight + 10_000, 100.0)
         val today = detail("session3", midnight + 60_000, midnight + 70_000, 110.0, 5)
         val history = listOf(today, first, tied)
-        val review = EngineReadouts.review(today, history)
+        val review = Review.of(today, history)
         assertEquals(midnight + 10_000, review.record!!.previousAtMs)
         assertEquals("e1rm", review.record!!.kind)
         assertEquals("Frozen", review.against!!.routine)
-        val programs = listOf(Routine("routine2", "Second", 2, midnight + 60_000,
-            listOf(RoutineEntry(1, "bench-press"))), Routine("routine1", "First", 1, midnight,
-            listOf(RoutineEntry(1, "bench-press"))))
-        val record = EngineReadouts.record(TheSix.movements.first { it.id == "bench-press" }, history, programs, midnight + 100_000)
-        assertEquals(listOf("First", "Second"), record.routines)
     }
 }

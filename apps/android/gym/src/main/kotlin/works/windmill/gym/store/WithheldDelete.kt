@@ -4,19 +4,17 @@ import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.TrainingSet
 
 // Everything a lifter can delete in this room, behind one window. They share no verb — a set leaves
-// through the log or through the shelf, a device-held routine leaves through `orphanRoutine` and an
-// account's through the wire, a conversation and a note are server-only, a weigh-in and the
-// unclaimed shelf leave this device first — so this is one abstraction over seven verbs and not a
-// widened data class. What they DO share is the only thing that matters here: nothing is sent while
-// the window is open, so an Undo can never arrive after the wire, and none of them asks a question
-// first, because an act with a way back on screen does not get a dialog.
+// the replica or a refused import kept on this phone, a routine, a session, a note and a weigh-in
+// leave the replica, and a conversation leaves over REST — so this is one abstraction over six verbs
+// and not a widened data class. What they DO share is the only thing that matters here: nothing is
+// written while the window is open, so an Undo can never arrive after the write, and none of them
+// asks a question first, because an act with a way back on screen does not get a dialog.
 //
 // And every one of them is held by the ROOM alone: this list, in this process, with nothing on disk,
 // no queue and no retry behind it. So leaving the room lets them all go the same way — a delete a
-// backgrounded app fired has nobody to read what the log answered, and one that timed out would be
-// dropped in silence. That means a weigh-in delete abandoned on backgrounding puts the dot back, the
-// same as every other verb here, a set's delete included, and this file is the one place it is
-// decided.
+// backgrounded app fired has nobody to read what came back. That means a weigh-in delete abandoned
+// on backgrounding puts the dot back, the same as every other verb here, a set's delete included,
+// and this file is the one place it is decided.
 sealed interface Deletion {
     // What the window is keyed on. One window per subject, and the id every list filters against.
     val subjectId: String
@@ -53,8 +51,7 @@ sealed interface Deletion {
     data class Thread(val threadId: String) : Deletion {
         override val subjectId: String get() = threadId
         override val line: String get() = "Conversation deleted."
-        // What deleting a conversation does NOT take with it. It used to be a standing caption three
-        // screens deep, where nobody stood at the moment they deleted anything.
+        // Applied routine changes survive conversation deletion.
         override val detail: String get() = "your routine keeps what you applied"
         override val stillThere: String get() = "that conversation is still here"
     }
@@ -71,8 +68,9 @@ sealed interface Deletion {
         override val stillThere: String get() = "that note is still here"
     }
 
-    // Keyed by the day, which is what the series is keyed on. The delete lands on THIS DEVICE and
-    // the log is owed it by the claim, so there is no terminal refusal to say.
+    // Keyed by the day, which is what the series is keyed on. The delete lands in the replica, which
+    // carries it to the account and answers nothing back to this window, so there is no terminal
+    // refusal to say.
     //
     // The one subject here a later write can name AGAIN: every other key is a minted id nothing
     // reuses. So `TrainingStore.weighIn` takes this window down before it records — weighing the day

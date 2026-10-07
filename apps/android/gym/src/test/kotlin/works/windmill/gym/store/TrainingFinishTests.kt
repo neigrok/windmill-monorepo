@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import works.windmill.gym.coach.AskThread
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
@@ -19,11 +20,212 @@ import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.*
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.net.GymRest
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.engine.*
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class TrainingFinishTests {
     @get:Rule val tmp = TemporaryFolder()
+
+    @Test fun finishRecoversAnAcceptedSetAfterATransientEngineCommitFailure() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            room.store.editRack(82.5, 5)
+            val offer = room.store.notification.value!!.offer!!
+            room.engine.failNextCommit()
+            assertTrue(room.store.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Unavailable)
+            val accepted = WorkoutControls(room.controlsFile).sets(live.id).single()
+            assertEquals(offer.id, accepted.id)
+            assertEquals(emptyList<TrainingSet>(), room.training.session(live.id)!!.sets)
+
+            room.now += 60_000
+            val closed = room.store.finish() as FinishOutcome.Closed
+            runCurrent()
+            assertEquals("the receipt must come from the committed replica", room.training.session(live.id), closed.detail)
+            assertEquals("the durable accepted set must survive", listOf(accepted), closed.detail.sets)
+            assertNull(WorkoutControls(room.controlsFile).session)
+            assertEquals(emptyList<TrainingSet>(), WorkoutControls(room.controlsFile).sets(live.id))
+        }
+    }
+
+    @Test fun finishKeepsTheDurableAcceptedSetWhenEngineFailurePersistsUntilRetry() = runTest {
+        val events = mutableListOf<String>()
+        val failures = mutableListOf<String>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
+            room.select(null)
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            room.store.editRack(82.5, 5)
+            val offer = room.store.notification.value!!.offer!!
+            room.engine.failNextCommit()
+            assertTrue(room.store.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Unavailable)
+            val accepted = WorkoutControls(room.controlsFile).sets(live.id).single()
+            room.now += 60_000
+
+            repeat(2) {
+                room.engine.failNextCommit()
+                assertEquals(FinishOutcome.Failed(WriteFailure.NoAnswer), room.store.finish())
+                runCurrent()
+                assertEquals(SessionDetail(live, emptyList()), room.training.session(live.id))
+                val durable = WorkoutControls(room.controlsFile)
+                assertEquals(live, durable.session)
+                assertEquals(listOf(accepted), durable.sets(live.id))
+                assertEquals(setOf(accepted.id), durable.workout.consumed)
+                assertEquals(live, room.store.session)
+                assertFalse(room.store.isFinishing)
+            }
+            assertEquals(listOf("gym.acceptSet", "gym.finish", "gym.finish"), failures)
+            assertEquals(listOf("gym_session_started"), events)
+
+            val closed = room.store.finish() as FinishOutcome.Closed
+            runCurrent()
+            assertEquals(listOf(accepted), closed.detail.sets)
+            assertEquals(room.training.session(live.id), closed.detail)
+            assertEquals(emptyList<TrainingSet>(), WorkoutControls(room.controlsFile).sets(live.id))
+            assertEquals(listOf("gym_session_started", "gym_session_finished"), events)
+        }
+    }
+
+    @Test fun restartBeforeFinishRecoversTheAcceptedSetFromDisk() = runTest {
+        for (owner in listOf(null, "alice")) {
+            val directory = tmp.newFolder()
+            val (snapshot, accepted, at) = EngineRoomFixture(directory, backgroundScope).use { room ->
+                room.select(owner)
+                val live = (room.store.start() as GymResult.Ok).value
+                room.store.choose("bench-press")
+                room.store.editRack(82.5, 5)
+                val offer = room.store.notification.value!!.offer!!
+                room.engine.failNextCommit()
+                assertTrue(room.store.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Unavailable)
+                assertEquals(emptyList<TrainingSet>(), room.training.session(live.id)!!.sets)
+                Triple(room.engine.snapshot(), WorkoutControls(room.controlsFile, owner).sets(live.id).single(), room.now)
+            }
+            EngineRoomFixture(directory, backgroundScope, snapshot).use { cold ->
+                cold.now = at + 60_000
+                cold.selected = owner
+                cold.store.restoreWorkout(owner, authorized = true)
+                cold.store.connect(cold.account())
+                assertEquals(listOf(accepted), cold.store.sets)
+                val closed = cold.store.finish() as FinishOutcome.Closed
+                runCurrent()
+                assertEquals(listOf(accepted), closed.detail.sets)
+                assertEquals(closed.detail, cold.training.session(closed.session.id))
+                val durable = WorkoutControls(cold.controlsFile, owner)
+                assertNull(durable.session)
+                assertEquals(emptyList<TrainingSet>(), durable.sets(closed.session.id))
+            }
+        }
+    }
+
+    @Test fun finishReadsEngineCorrectionsAndDeletionsWithoutRevivingStaleControls() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            room.store.logSet(60.0, 8)
+            room.store.logSet(62.5, 6)
+            val (kept, deleted) = room.store.sets
+            val corrected = room.training.fixSet(live.id, kept.id, SetFix(reps = 9))
+            room.training.deleteSet(live.id, deleted.id)
+            val added = room.training.appendSet(live.id,
+                SetWrite("engineSet", "back-squat", 100.0, 5, SetKind.Working, ++room.now))
+            assertEquals(listOf(kept, deleted), room.store.sets)
+
+            room.now += 60_000
+            val closed = room.store.finish() as FinishOutcome.Closed
+            runCurrent()
+            assertEquals(listOf(corrected, added), closed.detail.sets)
+            assertEquals(room.training.session(live.id), closed.detail)
+        }
+    }
+
+    @Test fun refreshAndAccountChangeRecoverAnAcceptedSetAfterEngineFailure() = runTest {
+        for (changeAccount in listOf(false, true)) EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            val offer = room.store.notification.value!!.offer!!
+            room.engine.failNextCommit()
+            assertTrue(room.store.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Unavailable)
+            val accepted = WorkoutControls(room.controlsFile).sets(live.id).single()
+
+            if (changeAccount) room.select("alice") else room.store.refreshEngine()
+            assertEquals(listOf(accepted), WorkoutControls(room.controlsFile, room.selected).sets(live.id))
+            assertEquals(listOf(accepted), room.store.sets)
+            assertEquals(listOf(accepted), room.training.session(live.id)!!.sets)
+            room.now += 60_000
+            val closed = room.store.finish() as FinishOutcome.Closed
+            assertEquals(listOf(accepted), closed.detail.sets)
+            assertEquals(room.training.session(live.id), closed.detail)
+        }
+    }
+
+    @Test fun startingAfterAutoCloseRecoversThePreviousWorkoutsAcceptedSet() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            val offer = room.store.notification.value!!.offer!!
+            room.engine.failNextCommit()
+            assertTrue(room.store.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Unavailable)
+            val accepted = WorkoutControls(room.controlsFile).sets(live.id).single()
+            room.now += AutoClose.AFTER_MS + 60_000
+
+            val next = (room.store.start() as GymResult.Ok).value
+            assertNotEquals(live.id, next.id)
+            assertEquals(SessionDetail(live.copy(finishedAtMs = accepted.completedAtMs), listOf(accepted)), room.training.session(live.id))
+            assertEquals(next, room.store.session)
+            assertEquals(emptyList<TrainingSet>(), room.store.sets)
+        }
+    }
+
+    @Test fun autoCloseKeepsTheAcceptedSetUntilRecoverySucceeds() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            val offer = room.store.notification.value!!.offer!!
+            room.engine.failNextCommit()
+            assertTrue(room.store.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Unavailable)
+            val accepted = WorkoutControls(room.controlsFile).sets(live.id).single()
+
+            room.now += AutoClose.AFTER_MS + 60_000
+            room.engine.failNextCommit()
+            room.store.reconcileWorkoutTime()
+            assertEquals(live, room.store.session)
+            assertEquals(listOf(accepted), WorkoutControls(room.controlsFile).sets(live.id))
+            assertEquals(emptyList<TrainingSet>(), room.training.session(live.id)!!.sets)
+            room.store.reconcileWorkoutTime()
+            assertEquals(SessionDetail(live.copy(finishedAtMs = accepted.completedAtMs), listOf(accepted)), room.training.session(live.id))
+            assertNull(room.store.session)
+            assertEquals(emptyList<TrainingSet>(), WorkoutControls(room.controlsFile).sets(live.id))
+        }
+    }
+
+    @Test fun aRefusedRecoveryKeepsTheAcceptedSetEvenIfItsWorkoutIsGone() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val live = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press")
+            val offer = room.store.notification.value!!.offer!!
+            room.engine.failNextCommit()
+            assertTrue(room.store.acceptSet(LogSetCommand(offer.key, offer.id)) is LogSetAcceptance.Unavailable)
+            val accepted = WorkoutControls(room.controlsFile).sets(live.id).single()
+            room.now += AutoClose.AFTER_MS + 60_000
+            room.training.discardSession(live.id)
+
+            assertEquals(FinishOutcome.Failed(WriteFailure.Refused("That is no longer on the log.")), room.store.finish())
+            assertNull(room.training.session(live.id))
+            assertEquals(listOf(accepted), WorkoutControls(room.controlsFile).sets(live.id))
+            assertEquals(live, room.store.session)
+        }
+    }
 
     @Test fun finishCarriesItsRowsAndKeepsTheHeldDeletionDeadline() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->

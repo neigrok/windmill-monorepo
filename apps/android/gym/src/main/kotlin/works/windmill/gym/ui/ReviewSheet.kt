@@ -1,5 +1,7 @@
 package works.windmill.gym.ui
 
+import works.windmill.gym.coach.CoachProposalCard
+import works.windmill.gym.coach.Ask
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
@@ -63,7 +65,6 @@ import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.store.ProposalOutcome
 import works.windmill.gym.store.ProposalRead
 import works.windmill.gym.store.TrainingStore
-import works.windmill.gym.store.WriteFailure
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
@@ -86,7 +87,6 @@ fun ReviewSheet(
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     var proposal by remember(proposalId) { mutableStateOf<Proposal?>(null) }
-    var failure by remember(proposalId) { mutableStateOf<WriteFailure?>(null) }
     var gone by remember(proposalId) { mutableStateOf(false) }
     var asked by remember(proposalId) { mutableIntStateOf(0) }
     var deciding by remember(proposalId) { mutableStateOf(false) }
@@ -107,7 +107,6 @@ fun ReviewSheet(
     val seen = seenDocument == document
 
     LaunchedEffect(proposalId, asked) {
-        failure = null
         gone = false
         proposal = null
         when (val read = store.proposal(proposalId)) {
@@ -116,7 +115,6 @@ fun ReviewSheet(
                 overtaken = false
             }
             ProposalRead.Gone -> gone = true
-            is ProposalRead.Failed -> failure = read.why
         }
     }
 
@@ -181,14 +179,6 @@ fun ReviewSheet(
                 .padding(horizontal = WindmillSpace.x5)
                 .padding(bottom = WindmillSpace.x4),
         ) {
-            failure?.let { why ->
-                Text(
-                    why.line("that proposal could not be read"),
-                    style = WindmillFont.body(15).copy(lineHeight = 22.sp),
-                    color = skin.inkDim,
-                )
-            }
-            if (failure != null) CoachAction("Try again", { asked++ })
             if (gone) Text(ProposalRead.Gone.line, style = WindmillFont.body(15).copy(lineHeight = 22.sp), color = skin.inkDim)
             if (store.session != null) Text("Finish this session", style = WindmillFont.body(20, FontWeight.Bold), color = skin.ink)
             if (store.session == null) standing?.let { Body(it, store.catalog, superseded) }

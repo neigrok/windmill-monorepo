@@ -3,7 +3,7 @@ package works.windmill.app
 import android.content.Context
 import java.io.File
 import java.io.IOException
-import works.windmill.gym.store.LocalCoach
+import works.windmill.gym.coach.LocalCoach
 import works.windmill.gym.store.WorkoutControls
 import works.windmill.platform.telemetry.Telemetry
 

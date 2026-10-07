@@ -268,12 +268,12 @@ class WorkoutRecoveryTests {
             compose.onNodeWithText("40 × 8").performClick()
             compose.onNodeWithText("Set note").performTextInput("private note")
             restored.emulateSavedInstanceStateRestore()
-            compose.runOnIdle { account = Account(signedIn.api, null, resolved = false) }
+            compose.runOnIdle { account = Account(signedIn.origin, null, resolved = false) }
             compose.onNodeWithText("private note").assertDoesNotExist()
             compose.onNodeWithText("Push A").assertDoesNotExist()
             compose.runOnIdle { account = signedIn }
             compose.onNodeWithText("private note").assertIsDisplayed()
-            compose.runOnIdle { account = Account(signedIn.api, null, resolved = false) }
+            compose.runOnIdle { account = Account(signedIn.origin, null, resolved = false) }
             compose.runOnIdle {
                 switchAccount(room, current, null)
                 account = room.account(null)
@@ -318,7 +318,7 @@ class WorkoutRecoveryTests {
             compose.onNode(hasText("Log") and hasClickAction()).performClick(); compose.onNodeWithText("A workout").performClick()
             compose.onNodeWithText("40 × 8").performClick()
             compose.onNodeWithText("Set note").performTextInput("A private note")
-            compose.runOnIdle { account = Account(account.api, null, resolved = false) }
+            compose.runOnIdle { account = Account(account.origin, null, resolved = false) }
             restored.emulateSavedInstanceStateRestore()
             compose.onNodeWithText("A private note").assertDoesNotExist()
             compose.runOnIdle {

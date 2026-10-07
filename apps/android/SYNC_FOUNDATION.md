@@ -28,7 +28,7 @@ generated schema. The schema generator and its tests contain 356 Python lines.
 SyncAPI's public surface is unchanged from `c1e1125b`. `ActionRunner` now requires an injected
 `ActionContext`: the synchronous pure kit reads its nesting flag through that port. The testing
 coroutine-context element and entry helper live in `:domain-kit-testing`; the shipping adapter is
-`gym/store/GymActionContext.kt`. Child contexts copy the flag, dispatcher hops retain it, and
+`gym/store/EngineTraining.kt`. Child contexts copy the flag, dispatcher hops retain it, and
 independent entries are isolated. No coroutine owner exception is used.
 
 The engine has normalized device, stable replica-handle, row-set, row/reference, spent, cursor,

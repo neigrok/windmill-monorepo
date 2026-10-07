@@ -1,13 +1,12 @@
 package works.windmill.gym.store
 
+import works.windmill.gym.coach.LocalCoach
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.*
 import works.windmill.gym.domain.*
 import works.windmill.platform.Account
 import works.windmill.platform.User
-import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.*
@@ -61,7 +60,7 @@ internal class EngineRoomFixture(
         mintSet = { "set${(++nextSet).toString().padStart(5, '0')}" }, mintRoutine = mintRoutine, mintExercise = mintExercise,
         undoWindowMs = undoWindowMs, workoutClock = workoutClock ?: WorkoutClock { val at = ++now; WorkoutMoment(at, at, "local") },
         workoutAuthority = workoutAuthority, telemetry = telemetry, elapsedNanos = elapsedNanos, localCoach = localCoach)
-    fun account(id: String? = selected) = Account(WindmillApi("https://windmill.works".toHttpUrl(), { null }),
+    fun account(id: String? = selected) = Account("https://windmill.works",
         id?.let { User(it, "$it@example.com") }, verified = true)
     suspend fun select(id: String?) {
         store.prepareEngineTransition()
@@ -106,5 +105,10 @@ internal class EngineRoomFixture(
         pull(server)
     }
     fun outbox() = engine.snapshot().member("replicas").arr().flatMap { it["outbox"]?.arr().orEmpty() }
+    // The selected replica's refusal notices as the engine holds them. `engine.notices(...)` is an
+    // observation the engine refreshes on its own thread, so it can trail the sync that just ran.
+    fun notices(): List<Json> = engine.snapshot().let { device ->
+        device.member("replicas").arr().first { it.member("meta").member("replica") == device.member("active") }["notices"]?.arr().orEmpty()
+    }
     override fun close() = engine.close()
 }

@@ -14,10 +14,7 @@ import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.SessionSummary
 
-// C18: the fifty-session window the six are ranked from is read ONCE. The log behind an open picker
-// keeps moving — a poll lands a finished session, a claim replays the shelf — and six rows may not
-// reorder under a thumb already reaching for one of them. C20 says WHICH read is the one: the first
-// non-empty one, so a picker raised before the log answered still gets a ranking.
+// The picker freezes its first non-empty ranking even as the replica receives more sessions.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class PickerWindowFreezeTests {

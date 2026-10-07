@@ -10,7 +10,6 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import works.windmill.platform.User
 import works.windmill.platform.auth.AuthLifecycle
-import works.windmill.platform.net.ClientUpdate
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.telemetry.Telemetry
@@ -28,6 +27,8 @@ class GymEngineSession(
     val runtime: SyncRuntime,
     private val telemetry: Telemetry = Telemetry.None,
     private val transport: AutoCloseable? = null,
+    // Settles what the training store owes the replica in hand before another one is selected.
+    private val beforeAccountChange: suspend () -> Unit = {},
 ) : AuthLifecycle, AutoCloseable {
     var decision: SignInSession? by mutableStateOf(null)
         private set
@@ -36,7 +37,6 @@ class GymEngineSession(
     var decisionBusy by mutableStateOf(false)
         private set
     private var answer: CompletableDeferred<Unit>? = null
-    var beforeAccountChange: suspend () -> Unit = {}
 
     val anonymousCounts: Map<String, Int> get() {
         val snapshot = engine.snapshot()
@@ -69,7 +69,6 @@ class GymEngineSession(
             throw cancelled
         }
         catch (failure: EngineError) {
-            if (failure.code == EngineError.Code.upgradeRequired) ClientUpdate.required()
             telemetry.event("gym_sign_in_decision", mapOf("outcome" to failure.code.name))
             if (failure.code == EngineError.Code.unreachable) throw WindmillApiException.Offline
             if (failure.code == EngineError.Code.upgradeRequired)

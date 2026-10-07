@@ -1,17 +1,14 @@
 package works.windmill.gym.net
 
 import java.io.IOException
-import works.windmill.gym.domain.AskAnswer
-import works.windmill.gym.domain.AskQuestion
-import works.windmill.gym.domain.AskThread
+import works.windmill.gym.coach.AskAnswer
+import works.windmill.gym.coach.AskQuestion
+import works.windmill.gym.coach.AskThread
 import works.windmill.gym.domain.McpKey
 import works.windmill.gym.domain.OAuthGrant
-import works.windmill.gym.domain.Proposal
-import works.windmill.gym.domain.ProposalState
-import works.windmill.gym.domain.ReadTally
-import works.windmill.gym.domain.SessionShare
-import works.windmill.gym.domain.ThreadOutcome
-import works.windmill.gym.domain.ThreadProposal
+import works.windmill.gym.coach.ReadTally
+import works.windmill.gym.sharing.SessionShare
+import works.windmill.gym.coach.ThreadPage
 
 // The REST doors the gym keeps beside the engine: Coach conversations, session shares and the
 // connected-log credential lists. Every training read and write goes through the engine instead.
@@ -31,9 +28,6 @@ internal class FakeGymRest : GymRest {
 
     val conversations = mutableMapOf<String, AskThread>()
     var refuseThreads: Exception? = null
-    // What the server derives a thread's proposal rows and outcome from; a row it does not hold is
-    // served as the test wrote it.
-    val ledger = mutableMapOf<String, Proposal>()
 
     val grants = mutableListOf<OAuthGrant>()
     val keys = mutableListOf<McpKey>()
@@ -73,39 +67,19 @@ internal class FakeGymRest : GymRest {
         return answers.removeAt(0)
     }
 
-    override suspend fun threads(): List<AskThread> {
+    // One page holds every conversation.
+    override suspend fun threads(cursor: String?): ThreadPage {
         calls.add("threads")
         reachable()
         refuseThreads?.let { throw it }
-        return conversations.values
-            .sortedByDescending { it.askedAtMs }
-            .map { derived(it).copy(turns = emptyList()) }
+        return ThreadPage(conversations.values.sortedByDescending { it.askedAtMs }.map { it.copy(turns = emptyList()) })
     }
 
-    override suspend fun thread(id: String): AskThread? {
+    override suspend fun thread(id: String, before: String?): AskThread? {
         calls.add("thread")
         reachable()
         refuseThreads?.let { throw it }
-        return conversations[id]?.let { derived(it) }
-    }
-
-    private fun derived(held: AskThread): AskThread {
-        val rows = held.proposals.map { row ->
-            ledger[row.id]?.let { row.copy(state = it.state, changeCount = it.changeCount) } ?: row
-        }
-        if (held.proposals.none { ledger.containsKey(it.id) }) return held.copy(proposals = rows)
-        val about = rows.map { it.routineId }.distinct().singleOrNull()?.let { id -> rows.first { it.routineId == id } }
-        fun outcome(kind: String, counted: List<ThreadProposal>) =
-            ThreadOutcome(kind, counted.sumOf { it.changeCount }, about?.routineId, about?.routine)
-        val applied = rows.filter { it.state == ProposalState.Applied }
-        val pending = rows.filter { it.state == ProposalState.Pending }
-        val outcome = when {
-            applied.isNotEmpty() -> outcome(ThreadOutcome.applied, applied)
-            pending.isNotEmpty() -> outcome(ThreadOutcome.proposed, pending)
-            rows.all { it.state == ProposalState.Dismissed } -> outcome(ThreadOutcome.dismissed, rows)
-            else -> outcome(ThreadOutcome.superseded, rows)
-        }
-        return held.copy(proposals = rows, outcome = outcome)
+        return conversations[id]
     }
 
     override suspend fun deleteThread(id: String) {
@@ -113,9 +87,6 @@ internal class FakeGymRest : GymRest {
         reachable()
         refuseThreads?.let { throw it }
         conversations.remove(id)
-        ledger.values.filter { it.source.thread == id }.forEach { proposal ->
-            ledger[proposal.id] = proposal.copy(source = proposal.source.copy(thread = null))
-        }
     }
 
     override suspend fun grants(): List<OAuthGrant> {

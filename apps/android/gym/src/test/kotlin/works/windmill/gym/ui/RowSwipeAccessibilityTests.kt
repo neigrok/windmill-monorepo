@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.gym.coach.ThreadsScreen
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.getOrNull
@@ -21,7 +22,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.AskThread
+import works.windmill.gym.coach.AskThread
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.EngineRoomFixture

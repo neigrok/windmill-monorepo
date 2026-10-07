@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.gym.coach.ThreadsScreen
 import android.os.Looper
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -13,7 +14,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -26,10 +26,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import works.windmill.gym.GymRoom
-import works.windmill.gym.domain.AskThread
+import works.windmill.gym.coach.AskThread
 import works.windmill.gym.domain.Readout
 import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.domain.Threads
+import works.windmill.gym.coach.Threads
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.EngineRoomFixture
@@ -38,7 +38,6 @@ import works.windmill.gym.store.Withheld
 import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.net.Refusal
-import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
 
 // `13-gestures.md:214-215`: a window decides which ROWS are drawn; it never decides what state a
@@ -71,7 +70,7 @@ class StanceReadsTheAccountTests {
     // ONE seat for the whole test: the room re-connects on the way in, and a connect for a seat the
     // store does not already hold is an ARRIVAL, which abandons every open window.
     private val account = Account(
-        api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
+        origin = "https://windmill.works",
         user = User(id = "u1", email = "sam@example.com", name = "Sam"),
     )
 
@@ -190,15 +189,15 @@ class StanceReadsTheAccountTests {
         compose.onNodeWithText("why is my bench stalled?").assertDoesNotExist()
         compose.runOnIdle {
             assertEquals("the count captions rows, and there are none to caption",
-                emptyList<AskThread>(), store.threads)
+                emptyList<AskThread>(), store.coach.threads)
             assertEquals("while the account still holds the conversation",
-                listOf("thr_1"), store.allThreads.map { it.id })
+                listOf("thr_1"), store.coach.allThreads.map { it.id })
         }
 
         compose.runOnIdle { runBlocking { store.settleWithheld("thr_1") } }
         compose.runOnIdle {
             assertTrue("the log took it", "thr_1" !in server.conversations)
-            assertEquals("and the READ lost it with the row", emptyList<AskThread>(), store.allThreads)
+            assertEquals("and the READ lost it with the row", emptyList<AskThread>(), store.coach.allThreads)
         }
         compose.onNodeWithText(Threads.none).assertIsDisplayed()
         compose.onNodeWithText("why is my bench stalled?").assertDoesNotExist()
@@ -277,7 +276,7 @@ class StanceReadsTheAccountTests {
         val server = FakeGymRest()
         server.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
         val store = room(scope, server).store
-        runBlocking { store.readThreads() }
+        runBlocking { store.coach.readThreads() }
         server.refuseThreads = IOException("offline")
 
         compose.setContent {
@@ -293,7 +292,7 @@ class StanceReadsTheAccountTests {
         compose.onNodeWithText(Threads.none).assertDoesNotExist()
         compose.runOnIdle {
             assertEquals("the room keeps what it last read, and the screen declines to draw it",
-                listOf("thr_1"), store.allThreads.map { it.id })
+                listOf("thr_1"), store.coach.allThreads.map { it.id })
         }
         scope.cancel()
     }
@@ -307,19 +306,19 @@ class StanceReadsTheAccountTests {
         val server = FakeGymRest()
         server.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
         val store = room(scope, server).store
-        runBlocking { store.readThreads() }
+        runBlocking { store.coach.readThreads() }
         server.refuseThreads = WindmillApiException.Refused(
             404, Refusal(message = "no such conversation"))
 
         store.withhold(Deletion.Thread("thr_1"))
-        assertEquals("the row is off the screen", emptyList<AskThread>(), store.threads)
-        assertEquals("and still on the account", listOf("thr_1"), store.allThreads.map { it.id })
+        assertEquals("the row is off the screen", emptyList<AskThread>(), store.coach.threads)
+        assertEquals("and still on the account", listOf("thr_1"), store.coach.allThreads.map { it.id })
 
         val failure = runBlocking { store.settleWithheld("thr_1") }
 
         assertEquals("a conversation the log has already forgotten is not a refusal", null, failure)
         assertEquals("and the READ lost it just as it does on the 200",
-            emptyList<AskThread>(), store.allThreads)
+            emptyList<AskThread>(), store.coach.allThreads)
         scope.cancel()
     }
 

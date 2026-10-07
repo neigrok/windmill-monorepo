@@ -370,17 +370,8 @@ class LiveWireTests {
         assertEquals("Bench Press", bench.exercise.name)
         assertEquals("barbell", bench.exercise.equipment)
 
-        assertEquals(1, bench.sessionCount)
-        assertEquals(82.5, bench.heaviest!!.weightKg, 0.0)
-        assertEquals(5, bench.heaviest!!.reps)
-        assertEquals("a mark is stamped with its SESSION's start, never the set's clock",
-            startA, bench.heaviest!!.atMs)
-        assertNotNull("a barbell lift has an honest e1rm", bench.bestE1rm?.e1rm)
-        assertEquals(startA, bench.e1rmSeries.single().atMs)
-        assertNotNull("every point of this series carries an estimate", bench.e1rmSeries.single().e1rm)
-
         val day = bench.recentDays.first { it.sessionId == sessionAId }
-        assertEquals(startA, day.startedAtMs)
+        assertEquals("a day is stamped with its SESSION's start, never the set's clock", startA, day.startedAtMs)
         assertEquals(listOf(workingId), day.sets.map { it.id })
 
         assertNull("an absent movement folds to null, exactly as an absent session does",

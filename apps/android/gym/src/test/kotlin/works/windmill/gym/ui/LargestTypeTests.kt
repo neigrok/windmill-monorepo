@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.gym.coach.AskScreen
 import androidx.compose.foundation.layout.Box
 import kotlinx.coroutines.launch
 import androidx.compose.ui.test.onNodeWithTag
@@ -47,9 +48,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import works.windmill.gym.domain.Ask
-import works.windmill.gym.domain.AskCap
-import works.windmill.gym.domain.AskExchange
+import works.windmill.gym.coach.Ask
+import works.windmill.gym.coach.AskCap
+import works.windmill.gym.coach.AskExchange
 import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.Proposal
 import works.windmill.gym.domain.RoutineDraft
@@ -63,6 +64,7 @@ import works.windmill.gym.domain.sync.ProposeRoutine
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
+import works.windmill.sync.core.Json
 import works.windmill.sync.modelserver.ModelServer
 import works.windmill.gym.domain.sync.Exercise as EngineExercise
 import works.windmill.gym.domain.sync.Proposal as EngineProposal
@@ -197,7 +199,7 @@ class LargestTypeTests {
                     presses.map { press -> EngineEntry(Id(press, EngineExercise), List(5) { EngineTarget(3) }) },
                     "Heavier triples across the whole day.")) is Outcome.Committed)
                 coach.sync(server)
-                assertEquals("the log took the proposal", emptyList<Any>(), coach.engine.notices("gym").notices.value)
+                assertEquals("the log took the proposal", emptyList<Json>(), coach.notices())
             } } } finally { coachScope.cancel() }
             room.pull(server)
             runBlocking { room.store.refreshEngine() }

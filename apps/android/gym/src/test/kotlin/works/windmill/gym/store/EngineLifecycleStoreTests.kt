@@ -4,7 +4,6 @@ import kotlin.time.Duration.Companion.minutes
 import java.io.File
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -12,22 +11,19 @@ import org.junit.rules.TemporaryFolder
 import works.windmill.gym.domain.*
 import works.windmill.platform.Account
 import works.windmill.platform.User
-import works.windmill.platform.net.WindmillApi
 import works.windmill.sync.core.*
 import works.windmill.sync.engine.*
 import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
 
-// These are the former TrainingStore claim cases. The room still draws the same workout,
-// catalogue, settings and history; the engine now owns admission and account decisions.
+// The room projects workouts, catalogue, settings and history across engine account decisions.
 class EngineLifecycleStoreTests {
     @get:Rule val tmp = TemporaryFolder()
     private var clockMs = 1_800_000_000_000L
     private var nextSet = 0
     private var nextSession = 0
-    private val api = WindmillApi("https://windmill.works".toHttpUrl(), { null })
     private fun account(id: String? = null, verified: Boolean = true) =
-        Account(api, id?.let { User(it, "$it@example.com") }, verified = verified)
+        Account("https://windmill.works", id?.let { User(it, "$it@example.com") }, verified = verified)
     private fun engine(snapshot: Json? = null) = Engine.memory(SyncSchema.registry, snapshot,
         clock = object : EngineClock { override fun now() = clockMs },
         commandResultWrites = WorkoutImports.commandResultWrites,
@@ -312,7 +308,7 @@ class EngineLifecycleStoreTests {
             engine.releaseHeld(true); engine.nextPush()
             val record = (room.store.record("bench-press") as GymResult.Ok).value
             assertEquals(session.id, record.recentDays.single().sessionId)
-            assertEquals(82.5, record.bestE1rm!!.weightKg, 0.0)
+            assertEquals(listOf(82.5), record.recentDays.single().sets.map { it.weightKg })
         }
     }
 

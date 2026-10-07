@@ -100,6 +100,22 @@ class EngineRecoveryTests {
             assertEquals(firstNotice.member("content").items("dependents")[0], notice.member("content").items("dependents")[0])
             assertEquals(listOf("refuse", "refuse", "fold"), engine.ended().map { it.member("event").str() })
             assertEquals(listOf(Json.of("source/0"), Json.of("source/0")), engine.ended().drop(1).map { it.member("orphanOf") })
+            engine.dismissNotice("notice:source/0")
+            val scope = ScopeRef.product("probe")
+            val sourceKey = RecordKey("run", RecordID("run00001"))
+            val childKey = RecordKey("lap", RecordID("lap00001"))
+            assertNull(engine.read(scope) { it.drawn(sourceKey.type, sourceKey.id) })
+            assertNull(engine.read(scope) { it.drawn(childKey.type, childKey.id) })
+            assertTrue(engine.retainsRecord(scope, sourceKey))
+            assertTrue(engine.retainsRecord(scope, childKey))
+            assertFalse(engine.retainsRecord(scope, RecordKey("run", RecordID("run00002"))))
+            Engine.memory(registry, engine.snapshot()).use { restarted ->
+                assertTrue(restarted.retainsRecord(scope, sourceKey))
+                assertTrue(restarted.retainsRecord(scope, childKey))
+                restarted.signOut("keep")
+                assertFalse(restarted.retainsRecord(scope, sourceKey))
+                assertFalse(restarted.retainsRecord(scope, childKey))
+            }
         }
     }
 

@@ -11,7 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.domain.AskThread
+import works.windmill.gym.coach.AskThread
 import works.windmill.gym.domain.NoteWrite
 import works.windmill.gym.domain.Routine
 import works.windmill.gym.domain.RoutineDraft
@@ -21,7 +21,7 @@ import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.sync.engine.signIn
 
-// One window over FOUR verbs, and the property the whole gesture wave stands on: withheld means NOT
+// One window over six verbs, and the property the whole gesture wave stands on: withheld means NOT
 // SENT. A server-only delete — a conversation — is as unsent as a set until its own clock runs out,
 // so an Undo can never arrive after the wire.
 //
@@ -91,8 +91,7 @@ class WithheldWindowTests {
         }
     }
 
-    // A verb whose delete lands on THIS DEVICE and owes the log a claim has no terminal refusal, so
-    // there is nothing to say after the window. Inventing a sentence would pin words no path reaches.
+    // A weigh-in delete commits locally; later sync refusals do not report through the Undo window.
     @Test
     fun onlyTheVerbsTheLogCanRefuseCarryASentenceForAfterTheWindow() {
         assertEquals("that set is still on the log", Deletion.Set("ses_1", loggedSet()).stillThere)
@@ -434,7 +433,7 @@ class WithheldWindowTests {
         server.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
         EngineRoomFixture(tmp.newFolder(), backgroundScope, rest = server).use { room ->
             room.select("u1")
-            assertTrue(room.store.readThreads() is GymResult.Ok)
+            assertTrue(room.store.coach.readThreads() is GymResult.Ok)
             server.refuseThreads = WindmillApiException.Refused(500, Refusal(message = "internal error"))
 
             room.store.withhold(Deletion.Thread("thr_1"))
@@ -445,7 +444,7 @@ class WithheldWindowTests {
                 "internal error", room.store.deleteRefused)
             assertEquals("the window is closed either way", emptyList<WithheldDelete>(), room.store.withheld)
             assertEquals("and the row is back, because nothing local was crossed out",
-                listOf("thr_1"), room.store.threads.map { it.id })
+                listOf("thr_1"), room.store.coach.threads.map { it.id })
 
             room.store.clearDeleteRefused()
             assertNull("said once", room.store.deleteRefused)

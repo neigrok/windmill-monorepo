@@ -26,8 +26,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.AskThread
-import works.windmill.gym.domain.Threads
+import works.windmill.gym.coach.AskThread
+import works.windmill.gym.coach.Threads
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.net.GymRest
 import works.windmill.gym.store.EngineRoomFixture
@@ -115,7 +115,7 @@ class RefusedSettleTests {
 
             compose.runOnIdle {
                 assertEquals("asked once, not once every window", 1, deletes)
-                assertEquals("and the conversation is still the lifter's", listOf("thr_1"), store.threads.map { it.id })
+                assertEquals("and the conversation is still the lifter's", listOf("thr_1"), store.coach.threads.map { it.id })
             }
         } finally {
             compose.runOnIdle { showing = false }

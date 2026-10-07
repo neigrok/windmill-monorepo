@@ -81,8 +81,8 @@ class GymEngineSessionTests {
                 val workout = source.workout()
                 val original = source.training.session(workout.id)!!
                 source.now = remote.now
-                GymEngineSession(source.engine, SyncRuntime(source.engine, transport(server) { source.now }, Tokens(), "test")).use { session ->
-                    session.beforeAccountChange = source.store::prepareEngineTransition
+                GymEngineSession(source.engine, SyncRuntime(source.engine, transport(server) { source.now }, Tokens(), "test"),
+                        beforeAccountChange = source.store::prepareEngineTransition).use { session ->
                     signIn(session)
                     source.selected = "A"
                     val workoutIntents = source.outbox().filter { entry ->
@@ -114,8 +114,8 @@ class GymEngineSessionTests {
                 val workout = source.workout(finish = false)
                 original = source.training.session(workout.id)!!
                 source.now = remote.now
-                GymEngineSession(source.engine, SyncRuntime(source.engine, transport(server) { source.now }, Tokens(), "test")).use { session ->
-                    session.beforeAccountChange = source.store::prepareEngineTransition
+                GymEngineSession(source.engine, SyncRuntime(source.engine, transport(server) { source.now }, Tokens(), "test"),
+                        beforeAccountChange = source.store::prepareEngineTransition).use { session ->
                     signIn(session); source.selected = "A"
                     source.store.connect(source.account())
                     assertEquals(original.session.id, source.store.session!!.id)
@@ -150,8 +150,8 @@ class GymEngineSessionTests {
                 val workout = source.workout()
                 original = source.training.session(workout.id)!!
                 source.now = remote.now
-                GymEngineSession(source.engine, SyncRuntime(source.engine, transport(server) { source.now }, Tokens(), "test")).use { session ->
-                    session.beforeAccountChange = source.store::prepareEngineTransition
+                GymEngineSession(source.engine, SyncRuntime(source.engine, transport(server) { source.now }, Tokens(), "test"),
+                        beforeAccountChange = source.store::prepareEngineTransition).use { session ->
                     signIn(session); source.selected = "A"
                     server.refuse(code = Gym.Codes.payloadConflict)
                     source.sync(server)

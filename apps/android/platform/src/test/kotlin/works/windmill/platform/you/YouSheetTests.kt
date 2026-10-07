@@ -37,8 +37,7 @@ class YouSheetTests {
         val events = mutableListOf<String>()
         compose.setContent { WindmillMaterial { if (visible) YouSheet(auth,
             onDismiss = { events += "dismiss"; visible = false },
-            destinations = listOf(YouDestination("settings", "Product settings") { events += "settings" }),
-            onAuthDismiss = { events += "auth canceled" }) } }
+            destinations = listOf(YouDestination("settings", "Product settings") { events += "settings" })) } }
         compose.onNodeWithText("You").assertIsDisplayed()
         compose.onNodeWithText("Sign in").assertIsDisplayed()
         compose.onNodeWithContentDescription("Email field").assertDoesNotExist()
@@ -49,19 +48,18 @@ class YouSheetTests {
         compose.onNodeWithText("You").assertDoesNotExist()
     }
 
-    @Test fun authOnlyNativeBackCancelsItsExactFlowAfterFullDismissal() {
+    @Test fun authOnlyNativeBackDismissesTheSheetOnce() {
         val auth = AuthStore(server.url("/"), MemorySessions())
         runBlocking { auth.restore() }
         var visible by mutableStateOf(true)
         val events = mutableListOf<String>()
         compose.setContent { WindmillMaterial { if (visible) YouSheet(auth,
-            onDismiss = { events += "dismiss"; visible = false }, startSignIn = true, flowId = "claim-flow",
-            onAuthDismiss = { events += "cancel:$it" }) } }
+            onDismiss = { events += "dismiss"; visible = false }, startSignIn = true) } }
         compose.onNodeWithContentDescription("Email field").assertIsDisplayed()
         compose.onNodeWithText("You").assertDoesNotExist()
         compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
         compose.waitUntil(5_000) { !visible }
-        assertEquals(listOf("cancel:claim-flow", "dismiss"), events)
+        assertEquals(listOf("dismiss"), events)
     }
 
     @Test fun anUpwardDragInterruptsDismissalAndTheDestinationCanBeRetriedOnce() {
@@ -102,20 +100,20 @@ class YouSheetTests {
         val auth = AuthStore(server.url("/"), MemorySessions())
         runBlocking { auth.restore() }
         var visible by mutableStateOf(true)
-        val canceled = mutableListOf<String?>()
-        compose.setContent { WindmillMaterial { if (visible) YouSheet(auth, { visible = false },
-            startSignIn = true, flowId = "flow", onAuthDismiss = { canceled += it }) } }
+        var dismissed = 0
+        compose.setContent { WindmillMaterial { if (visible) YouSheet(auth, { dismissed += 1; visible = false },
+            startSignIn = true) } }
         compose.onNodeWithContentDescription("Email field").performTextReplacement("a@example.com")
         compose.onNodeWithText("Send code").performClick()
         compose.waitUntil(5_000) { server.requestCount == 1 }
         compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
         compose.onNodeWithText("Sending…").assertIsDisplayed().assertIsNotEnabled()
-        compose.runOnIdle { assertTrue(visible); assertTrue(canceled.isEmpty()); release.countDown() }
+        compose.runOnIdle { assertTrue(visible); assertEquals(0, dismissed); release.countDown() }
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Try another email.").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("Email field").assertTextContains("a@example.com")
         compose.runOnIdle { (ShadowDialog.getLatestDialog() as ComponentDialog).onBackPressedDispatcher.onBackPressed() }
         compose.waitUntil(5_000) { !visible }
-        assertEquals(listOf("flow"), canceled)
+        assertEquals(1, dismissed)
     }
 
     @Test fun modalBodyRestoresRawCodeAndRefusalWithAFreshAuthStore() {
@@ -124,7 +122,7 @@ class YouSheetTests {
         server.enqueue(MockResponse().setBody("{}"))
         server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"expired"}"""))
         val restoration = StateRestorationTester(compose)
-        restoration.setContent { WindmillMaterial { YouSheet(auth, {}, startSignIn = true, flowId = "flow") } }
+        restoration.setContent { WindmillMaterial { YouSheet(auth, {}, startSignIn = true) } }
         compose.onNodeWithContentDescription("Email field").performTextReplacement("a@example.com")
         compose.onNodeWithText("Send code").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Check your email").fetchSemanticsNodes().isNotEmpty() }

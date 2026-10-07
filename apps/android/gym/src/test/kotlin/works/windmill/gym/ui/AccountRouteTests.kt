@@ -280,14 +280,12 @@ private fun AccountRoot(auth: AuthStore, store: TrainingStore, onShell: (ShellAc
     }
     var youUp by rememberSaveable { mutableStateOf(false) }
     var signIn by rememberSaveable { mutableStateOf(false) }
-    var authFlow by rememberSaveable { mutableStateOf<String?>(null) }
     val shell = remember {
-        ShellActions(openYou = { signIn = false; authFlow = null; youUp = true },
-            openSignIn = { flow -> signIn = true; authFlow = flow; youUp = true })
+        ShellActions(openYou = { signIn = false; youUp = true }, openSignIn = { signIn = true; youUp = true })
     }
     val module = remember(store) { GymModule(store) }
     val standing = auth.status
-    val account = Account(auth.api, standing.user,
+    val account = Account(auth.baseUrl.toString(), standing.user,
         verified = (standing as? AuthStatus.SignedIn)?.verified ?: true,
         resolved = standing != AuthStatus.Unknown)
     CompositionLocalProvider(LocalShellActions provides shell) {
@@ -295,8 +293,7 @@ private fun AccountRoot(auth: AuthStore, store: TrainingStore, onShell: (ShellAc
             module.Skin {
                 module.Room(account)
                 if (youUp) YouSheet(auth, onDismiss = { youUp = false },
-                    destinations = shell.destinations, startSignIn = signIn, flowId = authFlow,
-                    onSignedIn = shell::authenticated, onAuthDismiss = shell::authDismissed)
+                    destinations = shell.destinations, startSignIn = signIn)
             }
         }
     }
