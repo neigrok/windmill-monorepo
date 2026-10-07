@@ -74,6 +74,61 @@ struct OutcomesTests {
                      identities: identities)
     #expect(replica.deviceRows["probe"]?["rack"] == ["run": "runtheir"])
     #expect(replica.outbox.first?.predict.first?.key == RecordKey("run", "runtheir"))
+
+    let end = Gesture(changes: [], command: Command(name: "probe.end", args: ["runId": "runtheir", "endedAt": 5020]),
+      predict: [.update("run", "runtheir", ["endedAt": 5020])], gestureId: "end")
+    _ = try CommitPlanner(registry: Self.probe).commit(end, in: .product("probe"), to: &replica, as: receiving,
+      identities: identities, gestureIdTaken: false)
+    let endRequest = try #require(try planner.number(&replica, at: 5020))
+    let ended = try PushResponse(json: ["serverTime": 5020, "epoch": "ep-1", "as": "A", "lastN": 2,
+      "results": [["n": 2, "s": "ok", "seq": 4, "write": [["t": "run", "id": "runtheir", "f": ["endedAt": "5020:0:srv"]]]]]])
+    try Self.receive(.ok(ended), to: endRequest, by: planner, in: &replica, instance: &receiving, timing: .steady(send: 5020, recv: 5020), identities: identities)
+    try ReplicaLifecycle(registry: Self.probe).changeEpoch(to: "ep-2", in: &replica, instance: &receiving,
+      identities: try QueuedIdentities(["ids": ["rp_2"], "actors": ["r_bbbbbbbbbbbb"]]))
+    let replayRequest = try #require(try planner.number(&replica, at: 5030))
+    let replayed = try PushResponse(json: ["serverTime": 5030, "epoch": "ep-2", "as": "A", "lastN": 1,
+      "results": [["n": 1, "s": "ok", "seq": 1, "write": [["t": "run", "id": "runmine1", "born": "5030:0:srv"]]]]])
+    try Self.receive(.ok(replayed), to: replayRequest, by: planner, in: &replica, instance: &receiving, timing: .steady(send: 5030, recv: 5030), identities: identities)
+    #expect(replica.deviceRows["probe"]?["rack"] == ["run": "runmine1"])
+    #expect(replica.entry("end/0")?.intent.command?.args["runId"] == "runmine1")
+    #expect(replica.entry("end/0")?.writeTargets == [WriteTarget(key: RecordKey("run", "runmine1"), from: "runmine1")])
+  }
+
+  @Test(arguments: ["run00001", "run00002"])
+  func retainedAliasesReuseTheFirstRecoveredTarget(_ recovered: String) throws {
+    let planner = PushPlanner(registry: Self.probe)
+    let commits = CommitPlanner(registry: Self.probe)
+    var instance = Instance(actor: try Stamp.Actor("r_aaaaaaaaaaaa"), deviceNow: 5000, appVersion: "1")
+    let none = try QueuedIdentities([:])
+    var replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .bound, account: "A"), wholeScopes: true)
+    for (index, id) in ["run00002", "run00003"].enumerated() {
+      let gesture = Gesture(changes: [], command: Command(name: "probe.start", args: ["id": .string(id), "startedAt": 5000, "join": true]),
+        predict: [.create("run", id: .given(RecordID(id)), ["startedAt": 5000])], gestureId: "start\(index)")
+      _ = try commits.commit(gesture, in: .product("probe"), to: &replica, as: instance, identities: none, gestureIdTaken: false)
+      let request = try #require(try planner.number(&replica, at: 5000))
+      let response = try PushResponse(json: ["serverTime": 5000, "epoch": "ep-1", "as": "A", "lastN": JSON(index + 1),
+        "results": [["n": JSON(index + 1), "s": "ok", "seq": 1,
+          "write": [["t": "run", "from": .string(id), "id": "run00001", "born": "4000:0:srv"]]]]])
+      try Self.receive(.ok(response), to: request, by: planner, in: &replica, instance: &instance, timing: .steady(send: 5000, recv: 5000), identities: none)
+    }
+    #expect(replica.outbox.compactMap { $0.intent.command?.args["id"] } == ["run00002", "run00003"])
+    _ = try commits.commit(Gesture(changes: [.delete("run", "run00001")], gestureId: "delete"), in: .product("probe"),
+      to: &replica, as: instance, identities: none, gestureIdTaken: false)
+    try ReplicaLifecycle(registry: Self.probe).changeEpoch(to: "ep-2", in: &replica, instance: &instance,
+      identities: try QueuedIdentities(["ids": ["rp_2"], "actors": ["r_bbbbbbbbbbbb"]]))
+    let request = try #require(try planner.number(&replica, at: 5010))
+    var map: JSON.Object = ["t": "run", "id": .string(recovered), "born": "5010:0:srv"]
+    if recovered != "run00002" { map["from"] = "run00002" }
+    let response = try PushResponse(json: ["serverTime": 5010, "epoch": "ep-2", "as": "A", "lastN": 1,
+      "results": [["n": 1, "s": "ok", "seq": 1, "write": [.object(map)]]]])
+    try Self.receive(.ok(response), to: request, by: planner, in: &replica, instance: &instance, timing: .steady(send: 5010, recv: 5010), identities: none)
+    let later = try #require(replica.entry("start1/0"))
+    #expect(later.intent.command?.args["id"] == .string(recovered))
+    #expect(later.writeTargets == [WriteTarget(key: RecordKey("run", RecordID(recovered)), from: RecordID(recovered), born: try Stamp("4000:0:srv"))])
+    #expect(replica.entry("delete/0")?.intent.deltas.first?.key == RecordKey("run", RecordID(recovered)))
+    #expect(replica.notices.isEmpty)
+    let replay = try #require(try planner.number(&replica, at: 5020))
+    #expect(replay.intents.map(\.command) == [Command(name: "probe.start", args: ["id": .string(recovered), "startedAt": 5000, "join": true])])
   }
 
   // §7.4: a replica with no epoch yet takes the answer's before its first result batch, so a death between batches leaves
@@ -191,8 +246,8 @@ struct OutcomesTests {
     #expect(replica.outbox.map { "\($0.localId) \($0.state.rawValue) \($0.resultEpoch ?? "-")" } == ["g1/0 acked ep-7"])
   }
 
-  // §7.4: a changed-epoch success resets before its first batch and drops every result, including later batches and lastN.
-  @Test func anOkFromARestoredEpochRequeuesBeforeAnyResult() throws {
+  // §7.4: without older acknowledgements, a changed epoch keeps all successes atomically before resetting numbering.
+  @Test func anOkFromARestoredEpochKeepsSuccessesAcrossResultSlices() throws {
     let instance = Instance(actor: try Stamp.Actor("r_aaaaaaaaaaaa"), deviceNow: 5000, appVersion: "1")
     var replica = LoadedReplica(
       meta: ReplicaMeta(replica: "rp_1", state: .bound, account: "A"),
@@ -210,7 +265,7 @@ struct OutcomesTests {
     for step in Self.steps(.ok(answer), to: request, by: planner, batch: 1) {
       try planner.apply(step, to: &replica, instance: &receiving, timing: .steady(send: 5000, recv: 5010), identities: identities)
     }
-    #expect(replica.outbox.map { "\($0.localId) \($0.state.rawValue) \($0.resultEpoch ?? "-")" } == ["g1/0 ready -", "g1/1 ready -"])
+    #expect(replica.outbox.map { "\($0.localId) \($0.state.rawValue) \($0.resultEpoch ?? "-")" } == ["g1/0 acked ep-2", "g1/1 acked ep-2"])
     #expect((replica.id, replica.meta.serverEpoch, replica.meta.nextN, replica.meta.ackThrough) == ("rp_2", "ep-2", 1, 0))
     #expect(replica.cursors[.product("probe")]?.cursor == nil)
   }

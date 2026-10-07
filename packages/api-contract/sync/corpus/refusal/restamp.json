@@ -6205,7 +6205,15 @@
                 "n": 2,
                 "digest": "2c809205f4ce935ebee6da53261c192de672c28153f11ecd6e8f6779c062dbd5",
                 "resultSeq": 5,
-                "resultEpoch": "ep-1"
+                "resultEpoch": "ep-1",
+                "writeTargets": [
+                  {
+                    "t": "run",
+                    "from": "run00009",
+                    "id": "run00009",
+                    "born": "5000:0:srv"
+                  }
+                ]
               },
               {
                 "localId": "g3/0",

@@ -537,7 +537,7 @@ function settling() {
     .add(put('2026-01-01', 1, 5003))
     .pushLost(5003);
   resentAfterDeath.input.actors = ['r_dddddddddddd'];
-  // A restored server's ok resets the epoch before results, retaining the put for replay.
+  // With no older acknowledgements, a restored server's ok stays acked across the epoch reset.
   const restored = bootedOnProbe().add(put('2026-01-02', 2, 5001));
   restored.server = new ServerState(serverState({ epoch: 'ep-2', scopes: { 'acct:A/probe': productScope('A') }, rows: { 'acct:A/probe': CARDS } }));
   restored.input.ids = ['rp_00000000000000000000000000000002'];
@@ -557,7 +557,7 @@ function settling() {
       .pushRound(5006)
       .vector('after a death between settling slices, a resent entry\'s ok that the cursor covers resolves its own entry and no other: the entry the death left stays acked for the next page'),
     restored.pushRound(5002).add(view(5003))
-      .vector('an ok from a restored epoch resets before results: its entry returns to ready and its put stays drawn'),
+      .vector('an ok from a restored epoch with no older acknowledgements stays acked and its put stays drawn'),
   ];
 }
 

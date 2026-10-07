@@ -150,19 +150,20 @@ struct BatchWriter {
     let baseTexts = JSON.object(from: Dictionary(uniqueKeysWithValues: entry.baseTexts.map { ($0.key.text, $0.value) })) { .string($0) }
     try db.cachedStatement(sql: """
       INSERT INTO outbox (replica, local_id, gesture_id, lineage, scope, state, commit_order, release_at, stamp, intent,
-        predict, base_texts, n, digest, result_seq, result_epoch, orphan_of)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        predict, base_texts, n, digest, result_seq, result_epoch, orphan_of, write_targets)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (local_id) DO UPDATE SET gesture_id = excluded.gesture_id, lineage = excluded.lineage,
         scope = excluded.scope, state = excluded.state, commit_order = excluded.commit_order, release_at = excluded.release_at,
         stamp = excluded.stamp, intent = excluded.intent, predict = excluded.predict,
         base_texts = excluded.base_texts, n = excluded.n, digest = excluded.digest, result_seq = excluded.result_seq,
-        result_epoch = excluded.result_epoch, orphan_of = excluded.orphan_of
+        result_epoch = excluded.result_epoch, orphan_of = excluded.orphan_of, write_targets = excluded.write_targets
       WHERE outbox.replica = excluded.replica AND outbox.commit_order = excluded.commit_order
       """).execute(arguments: [
         replica.value, entry.localId, entry.gestureId, entry.lineage, entry.scope.text, entry.state.rawValue, entry.commitOrder,
         entry.releaseAt, entry.stamp.text, Blob.of(entry.intent.json),
         entry.predict.isEmpty ? nil : Blob.of(.array(entry.predict.map(\.json))), baseTexts.map(Blob.of), entry.n,
         entry.digest.map { Data(Blob.hexBytes($0)) }, entry.resultSeq, entry.resultEpoch, entry.orphanOf,
+        entry.writeTargets.map { Blob.of(.array($0.map(\.json))) },
       ])
     guard db.changesCount == 1 else { throw StoreError.localIdTaken(entry.localId) }
     try db.cachedStatement(sql: "DELETE FROM outbox_touch WHERE local_id = ?").execute(arguments: [entry.localId])

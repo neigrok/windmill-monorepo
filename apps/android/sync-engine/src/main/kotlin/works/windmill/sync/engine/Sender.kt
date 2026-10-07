@@ -86,7 +86,7 @@ fun Engine.onPushResponse(request: Json, response: SyncResponse, timing: Request
         if (response.status == 200 && body != null && replica.meta["serverEpoch"] !== Json.Null && replica.meta["serverEpoch"] != body["epoch"]) {
             validateResponse("push", body)
             offset(replica, body.member("serverTime").long(), timing)
-            epochChange(replica, body.member("epoch").str())
+            recoverPushEpoch(replica, body)
             return@write false
         }
         body?.get("serverTime")?.let { offset(replica, it.long(), timing) }
@@ -118,7 +118,7 @@ fun Engine.onPushResponse(request: Json, response: SyncResponse, timing: Request
             val replica = device.replicas.firstOrNull { it.id == requestedReplica } ?: return@write null
             if (replica.meta["serverEpoch"] !== Json.Null && replica.meta["serverEpoch"] != body["epoch"]) {
                 validateResponse("push", body)
-                epochChange(replica, body.member("epoch").str())
+                recoverPushEpoch(replica, body)
                 return@write null
             }
             started = System.nanoTime()
@@ -128,11 +128,7 @@ fun Engine.onPushResponse(request: Json, response: SyncResponse, timing: Request
                 if (replica.meta["serverEpoch"] === Json.Null) replica.meta = replica.meta.with("serverEpoch" to body.member("epoch"))
                 if (result.member("s").str() == "refused") onRefused(replica, entry, result, body)
                 else {
-                    applyIntentResultDeviceWrites(replica, entry.intent, entry.gestureId, PushResult(result), body.member("epoch").str())
-                    replica.move(entry, "ok", ended)
-                    entry.json = entry.json.with("resultSeq" to result.member("seq"), "resultEpoch" to body.member("epoch"))
-                    raiseAdmittedHigh(replica, entry.intent.deltas.flatMap { it.lattice.stamps })
-                    result["write"]?.let { applyWriteMap(replica, entry, it.arr()) }
+                    acceptPushResult(replica, entry, result, body.member("epoch"))
                     resolveIfCovered(replica, entry)
                 }
                 recorded++
@@ -148,6 +144,26 @@ fun Engine.onPushResponse(request: Json, response: SyncResponse, timing: Request
         left -= handled; from = to
     } while (from < results.size)
     return null
+}
+
+private fun Engine.acceptPushResult(replica: ReplicaState, entry: Entry, result: Json, epoch: Json) {
+    applyIntentResultDeviceWrites(replica, entry.intent, entry.gestureId, PushResult(result), epoch.str())
+    replica.move(entry, "ok", ended)
+    entry.json = entry.json.with("resultSeq" to result.member("seq"), "resultEpoch" to epoch)
+    raiseAdmittedHigh(replica, entry.intent.deltas.flatMap { it.lattice.stamps })
+    result["write"]?.let { applyWriteMap(replica, entry, it.arr()) }
+}
+
+private fun Engine.recoverPushEpoch(replica: ReplicaState, body: Json) {
+    val epoch = body.member("epoch")
+    if (replica.entries().none { it.state == "acked" && it.json["resultEpoch"] != epoch }) {
+        for (result in body.items("results").sortedBy { it.member("n").long() }) {
+            if (result.member("s").str() != "ok") continue
+            val entry = replica.entries().firstOrNull { it.state == "sent" && it.json.member("n") == result.member("n") } ?: continue
+            acceptPushResult(replica, entry, result, epoch)
+        }
+    }
+    epochChange(replica, epoch.str())
 }
 
 class SenderWait {

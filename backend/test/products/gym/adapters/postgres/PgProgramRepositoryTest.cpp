@@ -712,7 +712,7 @@ TEST(pg_gym_a_removed_line_counts_the_sets_it_keeps_at_read_time) {
   CHECK_EQ(read->changes[0].loggedSets, 2);
 }
 
-// Applying a removal takes the day out of the program and its proposals with it; the tap again finds nothing.
+// Applying a removal takes the day and its proposals out of the program; another tap replays its receipt.
 TEST(pg_gym_applying_a_removal_takes_the_routine_and_its_ledger_with_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
@@ -728,8 +728,7 @@ TEST(pg_gym_applying_a_removal_takes_the_routine_and_its_ledger_with_it) {
   CHECK_EQ(h.repo.program.routine(h.user, RoutineId{"rt_pg000001"}), std::optional<Routine>());
   CHECK_EQ(h.repo.program.proposal(h.user, ProposalId{"prop_pg00001"}), std::optional<RoutineProposal>());
   CHECK(h.repo.program.proposalHeads(h.user, ProposalQuery{std::nullopt, false}).empty());
-  CHECK_EQ(settled(h, h.user, "gym.applyProposal", "prop_pg00001"),
-           parse(R"({"s":"refused","code":"record-dead"})"));
+  CHECK_EQ(settled(h, h.user, "gym.applyProposal", "prop_pg00001"), tapped);
 }
 
 // Absent, another account's and never-existed are ONE answer on every proposal door.

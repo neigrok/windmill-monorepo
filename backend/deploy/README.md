@@ -186,11 +186,17 @@ When a client processes the epoch change, it clears cursors and staging, re-iden
 rebootstraps. This single durable transition retains unsent entries and returns still-pending
 old-epoch acknowledgements to ready at their original commit positions, ahead of dependent edits
 and deletes. A validated, authenticated push success or replica conflict with a changed epoch
-triggers the transition before retry or result handling, including a `409 gap`, so recovery works
-whether push or pull arrives first. A replayed command's write map moves its pending dependents to
-the recreated record's `born`. If another replica's delete arrives before a retained create, the
-server stores the absent record's death so the later create cannot resurrect it. A delete aimed at
-a live record with a different `born` is refused `unknown-record`, keeping the delete in a notice.
+triggers recovery before retry, including a `409 gap`, so recovery works whether push or pull
+arrives first. When no older acknowledgement needs replay, a successful changed-epoch response is
+recorded atomically with that transition. Otherwise the older work replays first. A command retains
+its resolved identities so its next write map moves pending dependents to the recreated record's
+id and `born`, even when earlier starts joined a different session. Later retained commands that
+shared that target also follow it, preventing replay from creating a second session. Successful
+proposal applies have durable server receipts, so replay cannot turn an applied removal into a
+refusal after its routine and proposal have been deleted. If another replica's delete arrives before
+a retained create, the server stores the absent record's death so the later create cannot resurrect
+it. A delete aimed at a live record with a different `born` is refused `unknown-record`, keeping the
+delete in a notice.
 
 While the client's local store survives, work still owed by its outbox survives the restore
 ([spec §7.5](../../docs/foundation/engine.md#75-puller-reset-and-epoch-change)). Recovery replays it
@@ -199,7 +205,8 @@ settled server writes newer than the backup are lost; rotation cannot reconstruc
 still owes. Restoring a backup also cannot recover a cleared or lost client store.
 These guarantees require both the updated server and updated clients. Older clients can settle a
 dependent delete before replaying its source; older servers can acknowledge an absent delete
-without preserving its death. Epoch rotation alone cannot correct those implementations.
+without preserving its death or lack a successful command's durable replay receipt. Epoch rotation
+alone cannot correct those implementations.
 
 The [restore proof](../test/e2e/README.md) runs both pull-first and push-first reconnects against a
 real dump, restore and epoch rotation. It checks durable reload before and after the epoch
@@ -207,7 +214,11 @@ transition, independent acknowledged and unsent creates, dependent offline edits
 replayed command whose new `born` must reach its pending delete. Other replicas delete before a
 source replays and after a command without a prediction recreates its record. Bootstrap must leave
 the client and server in agreement; the wrong-incarnation delete must remain in a durable refusal
-notice, and all other fixture work must settle with its intended effect.
+notice, and all other fixture work must settle with its intended effect. Two more runs use the
+production composition's test clock: two starts that joined the same session must carry their offline
+delete through one changed replay target, and applied removals must retain success with and without
+an older acknowledgement to replay. The proof advances the clock five hours before deleting the
+joined session, and checks successful callbacks, receipt replay and durable reload.
 
 ## Frontend
 

@@ -73,4 +73,32 @@ class AndroidSqliteTests {
             assertTrue(store.matching(replica, scope, "lap", "runId", RecordID("run00002")).isEmpty())
         }
     }
+
+    @Test fun joinedCommandAndDependentDeleteKeepTheirIdentityThroughSqliteReopen() = database { file ->
+        val timing = RequestTiming(ClockReading(5_000, 5_000, "boot"), ClockReading(5_000, 5_000, "boot"))
+        val targets = Json.parse("""[{"t":"run","from":"run00001","id":"run00002","born":"5000:0:srv"}]""")
+        open(file).use { engine ->
+            engine.write { it.meta = it.meta.with("state" to Json.of("bound"), "account" to Json.of("A")) }
+            engine.commit(scope, Gesture(emptyList(), command = works.windmill.sync.core.Command("probe.start",
+                Json.parse("""{"id":"run00001","startedAt":5000,"join":true}""")),
+                predict = listOf(Change.create("run", NewID.Given(RecordID("run00001")), mapOf("label" to Json.of("Run"))))))
+            val request = engine.nextPush()!!
+            engine.onPushResponse(request, SyncResponse(200, Json.parse("""{"serverTime":5000,"epoch":"ep-1","as":"A","lastN":1,"results":[{"n":1,"s":"ok","seq":1,"write":[{"t":"run","from":"run00001","id":"run00002","born":"5000:0:srv"}]}]}""")), timing)
+            val deletion = Gesture(listOf(Change.delete("run", RecordID("run00002")))).also { it.gestureId = "delete" }
+            engine.commit(scope, deletion)
+            engine.epochChange("ep-2")
+        }
+        open(file).use { engine ->
+            assertEquals(targets, engine.device.current().entries().first().json["writeTargets"])
+            val request = engine.nextPush()!!
+            engine.onPushResponse(request, SyncResponse(200, Json.parse("""{"serverTime":5000,"epoch":"ep-2","as":"A","lastN":1,"results":[{"n":1,"s":"ok","seq":1,"write":[{"t":"run","id":"run00001","born":"5001:0:srv"}]}]}""")), timing)
+        }
+        open(file).use { engine ->
+            assertEquals(Json.parse("""[{"t":"run","from":"run00001","id":"run00001","born":"5001:0:srv"}]"""), engine.device.current().entries().first().json["writeTargets"])
+            val deletion = engine.nextPush()!!.items("intents").single().items("d").single()
+            assertEquals(Json.of("run00001"), deletion["id"])
+            assertEquals(Json.of("5001:0:srv"), deletion["born"])
+            assertTrue(engine.device.current().notices.isEmpty())
+        }
+    }
 }

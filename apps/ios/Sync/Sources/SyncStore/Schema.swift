@@ -20,6 +20,9 @@ enum Schema {
     migrator.registerMigration("v1") { db in
       try db.execute(sql: v1)
     }
+    migrator.registerMigration("v2") { db in
+      try db.execute(sql: "ALTER TABLE outbox ADD COLUMN write_targets BLOB NULL")
+    }
     return migrator
   }
 

@@ -90,7 +90,7 @@ function pushRequest(meta, intents) {
 // 409 or an epoch change the instance takes a new actor (§7.11). A 401, or a 200 or 409 served as anyone
 // but the replica's account, pauses sync with nothing applied (§9.1). With `dieAfter`, the process dies
 // once that many results are recorded: the rest stay sent and ackThrough holds. A changed epoch
-// resets before any result is recorded.
+// records safe successes and resets together, before ordinary result batches.
 export class ResponseError extends Error {}
 
 export function validatePushEnvelope({ status, body }) {
@@ -113,6 +113,11 @@ export function onPushResponse(replica, ctx, request, response, timing, { dieAft
     return undefined;
   }
   if ((status === 200 || status === 409) && meta.serverEpoch !== null && body.epoch !== meta.serverEpoch) {
+    if (status === 200 && !replica.entries().some((entry) => entry.state === 'acked' && entry.resultEpoch !== body.epoch)) {
+      for (const result of [...body.results].sort((a, b) => a.n - b.n)) {
+        if (result.s === 'ok') applyPushResult(replica, ctx, result, body);
+      }
+    }
     epochChange(replica, ctx, body.epoch);
     return undefined;
   }

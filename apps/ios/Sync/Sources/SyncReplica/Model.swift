@@ -158,6 +158,32 @@ public struct TextRef: Sendable, Hashable, Comparable {
   public static func < (lhs: TextRef, rhs: TextRef) -> Bool { lhs.text.utf8.lexicographicallyPrecedes(rhs.text.utf8) }
 }
 
+// A command's original output identity and its latest resolved target, retained until the command settles.
+public struct WriteTarget: Sendable, Hashable {
+  public var key: RecordKey
+  public var from: RecordID
+  public var born: Stamp?
+
+  public init(key: RecordKey, from: RecordID, born: Stamp? = nil) {
+    self.key = key
+    self.from = from
+    self.born = born
+  }
+
+  public init(json: JSON) throws {
+    let object = try json.asObject()
+    key = RecordKey(try object.member("t").asString(), try RecordID(json: object.member("id")))
+    from = try RecordID(json: object.member("from"))
+    born = try object["born"].map { try Stamp(json: $0) }
+  }
+
+  public var json: JSON {
+    var object: JSON.Object = ["t": .string(key.type), "from": from.json, "id": key.id.json]
+    object["born"] = born?.json
+    return .object(object)
+  }
+}
+
 // §2.5 one intent in the outbox; `n` lives in the intent, set iff sent or acked.
 public struct OutboxEntry: Sendable, Hashable {
   public var localId: String
@@ -175,6 +201,7 @@ public struct OutboxEntry: Sendable, Hashable {
   public var resultSeq: Int64?
   public var resultEpoch: String?
   public var orphanOf: String?
+  public var writeTargets: [WriteTarget]?
 
   public init(localId: String, gestureId: String, lineage: String, scope: ScopeRef, state: EntryState, commitOrder: Int64,
               releaseAt: Int64, stamp: Stamp, intent: Intent, predict: [Delta] = [], baseTexts: [TextRef: String] = [:]) {
@@ -220,6 +247,7 @@ public struct OutboxEntry: Sendable, Hashable {
     resultSeq = try object["resultSeq"].map { try $0.asInteger() }
     resultEpoch = try object["resultEpoch"]?.asString()
     orphanOf = try object["orphanOf"]?.asString()
+    writeTargets = try object["writeTargets"]?.asArray().map { try WriteTarget(json: $0) }
   }
 
   public var json: JSON {
@@ -235,6 +263,7 @@ public struct OutboxEntry: Sendable, Hashable {
     object["resultSeq"] = resultSeq.map { JSON($0) }
     object["resultEpoch"] = resultEpoch.map { .string($0) }
     object["orphanOf"] = orphanOf.map { .string($0) }
+    object["writeTargets"] = writeTargets.map { .array($0.map(\.json)) }
     return .object(object)
   }
 

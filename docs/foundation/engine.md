@@ -182,7 +182,7 @@ that an outbox entry's `orphanOf` names is never deleted.
 - `seq`: a per-scope counter, incremented once per committed intent that changes the scope.
 - `epoch`: one random string for the whole server database, regenerated when the database is
   restored from a backup. An authenticated push response carries it on conflicts as well as
-  successes; clients process a changed epoch before retrying or recording results (§7.4).
+  successes; clients coordinate a changed epoch with successful results before retrying (§7.4).
 - A cursor is `(epoch, mode ∈ {boot, live}, seq, key?, asOf?)`, encoded as §9.4 states; clients
   decode it.
 - The *scope digest*: a per-scope sum of the hashes of the scope's alive rows (§6.12).
@@ -430,7 +430,8 @@ type OutboxEntry = { localId, replica, gestureId, lineage: string /* account id 
                      state: 'held'|'ready'|'sent'|'acked', stamp: Stamp,
                      commitOrder: number, releaseAt: number, n?, digest?, intent: Intent,
                      predict?: Delta[], baseTexts?: Record<string, string>,   // (t, id, field) → text edited from
-                     resultSeq?: number, resultEpoch?: string, orphanOf?: string }
+                     resultSeq?: number, resultEpoch?: string, orphanOf?: string,
+                     writeTargets?: {t, from: Id, id: Id, born?: Stamp}[] }
 type Notice = { id, replica, scope, code: RefusalCode, detail?,
                 content: { d?: Delta[], cmd?: Cmd, dependents?: { d?: Delta[], cmd?: Cmd }[] }, at,
                 dismissed?: true }
@@ -457,6 +458,8 @@ type DeviceRow = { replica, product, key, value: Json }  // device/<product>
 - `OutboxEntry.stamp`: the gesture's stamp (§7.1 step 3), which only `clock-skew` recovery moves
   (§7.7). `localId` is `<gestureId>/<k>`, the gesture's k-th intent from 0; gesture ids, and so local
   ids, are unique on the device.
+- `OutboxEntry.writeTargets`: a command's retained source-to-resolved identities (§7.7). They
+  survive epoch recovery and an empty replay map; they are local metadata, never sent as intent data.
 - `DeviceMeta.forkGuard`: a random token for the whole local database, kept both in it and in
   storage excluded from device backups (iOS `isExcludedFromBackup`, Android `noBackupFilesDir`). Web
   runs no fork guard.
@@ -642,9 +645,9 @@ from an empty outbox; they are outside this invariant.
   `retry` never end an intent (§7.4).
 - The server stores one result per `(replica, n)`, in the transaction that sets `last_n` (§6.2).
   Poison ends in a stored `internal` result (§6.6).
-- After a restore, acked entries return to `ready` (§7.5): a replica with an acked entry holds an
-  epoch (§7.4), so the restore's epoch changes it. A push processes that change before results or
-  retries, returning sent entries too; retained acknowledgements replay ahead of later dependents.
+- After a restore, older acked entries return to `ready` (§7.5): a replica with an acked entry holds
+  an epoch (§7.4), so the restore's epoch changes it. A push processes that change atomically with
+  safe successes before retrying; old acknowledgements and remaining sent work replay in commit order.
 - An acked entry resolves once its scope's stored cursor covers it. A death between settling slices
   leaves it covered, and the scope's next stored cursor settles it (§7.5 step 2).
 - A refusal folds its dependents into the same notice: the removed content of held and ready
@@ -1485,7 +1488,7 @@ loop while state = bound ∧ ¬authPaused ∧ online:
                                   content
   authenticated 200, or 409 replica-forked | replica-foreign | gap:
     validate the response envelope (below)
-    if response epoch ≠ non-null serverEpoch → epoch change (§7.5); retry, recording no results
+    if response epoch ≠ non-null serverEpoch → epoch recovery (below); retry
   replica-forked | replica-foreign | gap → take the epoch if serverEpoch is null; re-identify (§7.11)
   in the first batch, before its first result: if serverEpoch is null → serverEpoch := the response
       epoch (an answer with no result takes it in the transaction that sets ackThrough)
@@ -1506,10 +1509,14 @@ server-requested wait: a 503's or a retry's retryAfterMs, from the response's re
 The principal check precedes epoch handling. A `409` used for recovery MUST carry a nonempty string
 `epoch`, a nonnegative safe-integer `serverTime`, and one of the three conflict codes above;
 a malformed envelope is a transport failure, leaving the replica, cursors and entries unchanged.
-An authenticated changed-epoch `200` triggers the same atomic recovery before any result batch,
-even if its results report success. Its results and `lastN` are not recorded: the request ran before
-the client's earlier acknowledged intents had replayed against the restored history. Every
-sent entry and retained old acknowledgement must replay in commit order under the new replica.
+An authenticated changed-epoch `200` triggers atomic recovery before ordinary result batches.
+If the replica has no retained acknowledgement from an older epoch, record its successful results
+and their product receipts in that same transaction before the epoch change; these acknowledgements
+belong to the response epoch and are not requeued. No already accepted removal is reported as a
+failure merely because its reply first revealed the restore. Otherwise, earlier acknowledged
+intents must replay first, so discard the response's results. In either case discard `lastN` and
+re-identify; remaining sent entries and old acknowledgements replay in commit order. Commands whose
+successful effects can delete their own replay evidence MUST retain a durable server receipt (A.2).
 An unchanged epoch keeps ordinary conflict recovery and result batching. A null epoch is adopted
 without an epoch reset; a success adopts it in the first result batch as below.
 
@@ -1575,11 +1582,14 @@ closes the socket. A re-authentication that clears `authPaused` opens the socket
    entries, never with its rows: a re-identify touches no row (§7.11), and a staging it drops is
    deleted afterwards (§2.5).
 
-   The sender processes this transaction before retrying a conflict or recording changed-epoch
-   success results (§7.4). Replayed commands keep their predictions and apply their new write maps
+   The sender coordinates this transaction with changed-epoch success results before retrying
+   (§7.4). Before requeueing an older command without `writeTargets`, recover a
+   target only when its type has exactly one command reference and exactly one predicted record;
+   retain that reference's id, the prediction's current id and born. Never guess between outputs.
+   Replayed commands keep their predictions and resolved identities and apply their new write maps
    before dependent entries are numbered; a recreated record's new `born` propagates to those
-   entries by §7.7. Without a retained prediction to map, a delete of the recreated incarnation
-   is refused `unknown-record` (§4.3). A dependent operation that cannot replay is retained in a
+   entries by §7.7 even without a prediction. An ambiguous legacy target is retained in a notice
+   rather than guessed (§7.7). A dependent operation that cannot replay is retained in a
    refusal notice, including its folded dependents. Already-settled writes newer than the backup
    have no retained entry to replay and can be lost; a notice may describe a record that a forked
    store later re-creates.
@@ -1787,9 +1797,26 @@ notice of its own, as step 3 states):
    business logic.
 
 **Write map.** An `ok` result's write map applies in the result's batch (§7.4). Let `s` be the
-command entry's stamp, which every register it predicted carries. Steps 1 and 2 run for each map
+command entry's stamp, which every register it predicted carries. Steps 0–2 run for each map
 entry `w`, then step 3 once for the map:
-1. `w.from` is present only when the resolved id differs from the id the command was called with,
+0. The stable source is `(w.t, w.from ?? w.id)`. If `writeTargets` already records this source,
+   first move its previous resolved id to `w.id` in the command's prediction and its later held or
+   ready dependents, including deletes, references, key parts and guards, and in device rows through
+   the product hook. This follows the same logical record through replay; it is not an initial join
+   and does not refuse `target-merged`.
+   A later retained command that resolved its own source to this same target must also move that
+   source argument to `w.id`, using its retained source-to-target mapping. Its next replay then
+   addresses the recovered record instead of recreating another alias. Do this even when the
+   resolved id did not change; the server may have restored the record without that later command's
+   receipt. Update the later command's retained source together with its argument.
+   Its old born follows `w.born`, including a dependent of a command with no prediction. An older
+   command whose target cannot be recovered unambiguously retains affected work in a notice rather
+   than silently acknowledging a delete of the wrong target. Record or update the source's current
+   id and born atomically with the result; preserve sources absent from this map, including an empty
+   map. A rewrite of a queued command's references also rewrites the corresponding retained source
+   and resolved ids, so a preceding command's mapping cannot detach this provenance.
+1. If this source had no retained target, apply its initial join: `w.from` is present only when the
+   resolved id differs from the id the command was called with,
    which means the record existed before the command (a join). It is replaced by `w.id` in every
    held and ready entry (delta ids, key parts, `ref<w.t>` fields and arguments), in `predict`, and
    in device rows (a product hook). The exception is an entry whose delta deletes `(w.t, w.from)`:
@@ -2731,8 +2758,12 @@ It is the only writer of `closedBy = stale`.
 
   Predicts `finishedAt` and `closedBy`.
 - **`gym.applyProposal {proposalId: ref<proposal>}`.**
-  - Absent or `foreign` → `unknown-record`; dead, having died with its routine → `record-dead`.
-  - `applied` → ok.
+  - A durable receipt for this account and proposal → ok, with no new writes and an empty write
+    map, before identity or guard checks. Every successful apply stores that receipt in the same
+    transaction as its effects. It survives proposal/routine death, replica changes and restores;
+    only account deletion removes it. An accepted removal must never become a refusal on replay.
+  - Without a receipt: absent or `foreign` → `unknown-record`; dead → `record-dead`.
+    `applied` → record the receipt and answer ok.
   - `dismissed` → `proposal-settled` with detail `{state}`; `superseded` → `proposal-superseded`
     with detail `{reason}`; pending while `routine.revision ≠ baseRevision` →
     `proposal-superseded` with detail `{reason: routine-changed}`. The refusal changes no state;
@@ -3006,7 +3037,7 @@ the adoption. Journal's adopted base is Appendix D; every other product starts f
   | `proposal` | `gym_proposals`, its `changes` register held by `gym_proposal_changes` |
 
 - Every other gym table is outside the engine and keeps its writers: the receipts
-  (`gym_write_receipts`, `gym_correction_receipts`, `gym_note_saves`), the projection
+  (`gym_write_receipts`, `gym_correction_receipts`, `gym_proposal_applies`, `gym_note_saves`), the projection
   `gym_set_revisions`, the shares (`gym_session_shares`, `gym_log_shares`, `gym_log_share_sessions`)
   and every Coach table (`gym_ask_*`). `gym_routine_creations` holds the read-only
   `routineCreation` records (C.8).
@@ -3058,6 +3089,8 @@ Routines keep theirs.
   created the session, `gym.importSession`'s. The rows of `gym_correction_receipts` are
   `gym.correctSession`'s. A receipt holds a request hash, and a replay compares its call by that
   hash, the digest of the raw arguments gym computes (§6.4).
+- `gym_proposal_applies` retains the account and proposal id of each successful `gym.applyProposal`,
+  including removals, independently of the proposal and routine's lifetimes (A.2).
 - Stored metadata keeps its columns, and C.8 binds the R118 registers to them: a routine's
   `revision`, `created_entries` and `created_at`, `gym_routine_creations`, a proposal's
   `base_revision`, `base_name`, `changes` and `created_at`, a note's `position` and `updated_at`,

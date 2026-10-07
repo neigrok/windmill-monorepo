@@ -140,7 +140,7 @@ export class BrowserSyncEngine {
         this.coordination?.rekey(answer.active);
       }
       this.armHolds();
-    } catch { this.telemetry.failure('storage'); }
+    } catch { if (!this.closed) this.telemetry.failure('storage'); }
     if (operation) this.telemetry.event(operation, { outcome: answer.result?.refused ? 'failed' : answer.result?.complete === false ? 'pending' : 'ok' });
     return answer.result;
   }
@@ -206,7 +206,7 @@ export class BrowserSyncEngine {
       this.scheduleSender();
       return this.device.activeReplica.id;
     } catch (error) {
-      this.telemetry.failure('storage');
+      if (!this.closed) this.telemetry.failure('storage');
       throw error;
     }
   }
@@ -447,7 +447,8 @@ export class BrowserSyncEngine {
     this.inFlight.add(controller);
     try {
       const { device } = await this.store.read([]);
-      if (this.closed || controller.signal.aborted) throw new DOMException('sync stopped', 'AbortError');
+      if (this.closed || controller.signal.aborted || (endpoint !== 'hello' && (!this.online || !this.leader)))
+        throw new DOMException('sync stopped', 'AbortError');
       if (device.meta.upgradeStops?.[`${this.appVersion}:${this.registry.version}`] === true)
         return { response: { status: 426 }, timing: {} };
       if (endpoint !== 'hello' && this.signOutPaused(device)) throw new Error('sync paused');
@@ -555,7 +556,7 @@ export class BrowserSyncEngine {
         this.kickPull();
       } else if (![400, 401, 409, 413].includes(response.status)) this.wait.backoff(time, this.draw, hint);
     } catch {
-      if (!this.closed && this.leader) {
+      if (this.canSync()) {
         this.telemetry.failure('transport');
         this.wait.backoff(this.monotonic(), this.draw, { liveHint: this.liveHint(this.device.activeReplica) });
       }
@@ -588,6 +589,13 @@ export class BrowserSyncEngine {
         const replica = device.replicas.find((replica) => replica.storageHandle === handle);
         if (!replica || replica.id !== request.replica) return;
         if (replica.meta.serverEpoch !== null && replica.meta.serverEpoch !== response.body.epoch) {
+          if (!replica.entries().some((entry) => entry.state === 'acked' && entry.resultEpoch !== response.body.epoch)) {
+            for (const result of results) {
+              if (result.s !== 'ok') continue;
+              this.onPushResult(replica, ctx, result, response.body);
+              applyPushResult(replica, ctx, result, response.body);
+            }
+          }
           epochChange(replica, ctx, response.body.epoch);
           return;
         }
@@ -672,7 +680,7 @@ export class BrowserSyncEngine {
       this.pullWait.results(['ok'], this.monotonic(), this.draw);
       this.follow();
     } catch {
-      if (!this.closed && this.leader) {
+      if (this.canSync()) {
         this.telemetry.failure('transport');
         this.pullWait.backoff(this.monotonic(), this.draw);
         for (const { scope } of request?.scopes ?? []) {

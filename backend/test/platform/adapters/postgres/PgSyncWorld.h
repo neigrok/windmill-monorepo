@@ -77,7 +77,7 @@ public:
       sql.exec(std::string("delete from ") + table);
     }
     if (gym_) {
-      sql.exec("truncate gym_exercises,gym_routines,gym_sessions,gym_notes,gym_bodyweight,gym_preferences,gym_write_receipts,gym_correction_receipts,gym_routine_creations,gym_note_saves,gym_ask_threads cascade");
+      sql.exec("truncate gym_exercises,gym_routines,gym_sessions,gym_notes,gym_bodyweight,gym_preferences,gym_write_receipts,gym_proposal_applies,gym_correction_receipts,gym_routine_creations,gym_note_saves,gym_ask_threads cascade");
       for (const auto& id : state["product"]["seeds"].getMemberNames()) {
         sql.exec("insert into gym_exercises(id,name,pattern,equipment) values($1,$2,'isolation','bodyweight')", pqxx::params{id, state["product"]["seeds"][id]["name"].asString()});
       }
@@ -196,7 +196,7 @@ public:
     if (gym_) {
       wm::gym::engine::PgGymState gymState;
       const Json::Value& product = state["product"];
-      for (const char* kind : {"starts", "imports", "corrections"}) {
+      for (const char* kind : {"starts", "imports", "corrections", "proposalApplies"}) {
         for (const std::string& key : product[kind].getMemberNames()) {
           for (const std::string& id : product[kind][key].getMemberNames()) gymState.receipt(*txn, storeKey(key), kind, id, product[kind][key][id]);
         }
@@ -309,7 +309,7 @@ public:
       wm::gym::engine::PgGymState gymState;
       for (const auto& key : state["scopes"].getMemberNames()) {
         Json::Value books = gymState.load(*txn, storeKey(key));
-        for (const char* kind : {"starts", "imports", "corrections"}) {
+        for (const char* kind : {"starts", "imports", "corrections", "proposalApplies"}) {
           if (books[kind].isNull() || books[kind].empty()) continue;
           state["product"][kind][key] = books[kind];
         }

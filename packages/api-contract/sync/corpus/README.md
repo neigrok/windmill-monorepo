@@ -131,7 +131,8 @@ product: {
   seeds: {[exerciseId]: {name}},                                  // the global catalog, outside every scope
   starts?: {[scopeKey]: {[calledSessionId]: resolvedSessionId}},   // gym.start: a create maps id → id, a join id → the open one
   imports?: {[scopeKey]: {[sessionId]: args}},                     // gym.importSession: the raw arguments
-  corrections?: {[scopeKey]: {[requestId]: {sessionId, args}}}     // gym.correctSession
+  corrections?: {[scopeKey]: {[requestId]: {sessionId, args}}},    // gym.correctSession
+  proposalApplies?: {[scopeKey]: {[proposalId]: true}}            // successful gym.applyProposal, retained after proposal death
 }
 ```
 
@@ -186,13 +187,15 @@ outside every scope. A proposal's unset `state` reads as `pending`, the registry
   finish`. Closed `stale` at `f` → `closedBy: finish` and `finishedAt := f` when `finishedAt > f + 4 h`,
   else `max(f, finishedAt)`. Otherwise (closed `finish`, or finished with `closedBy` unset) `ok`, write
   `[]`.
-- `gym.applyProposal {proposalId}`, `gym.dismissProposal {proposalId}`: absent or `foreign` →
-  `unknown-record`; dead → `record-dead`.
+- `gym.applyProposal {proposalId}`, `gym.dismissProposal {proposalId}`: an account-owned apply
+  receipt answers Apply `ok`, write `[]`, before guards or identity checks, including after proposal
+  death or an epoch change. Without that receipt, absent or `foreign` → `unknown-record`; dead → `record-dead`.
   - Apply: `applied` → `ok`, write `[]`; `dismissed` → `proposal-settled` `{state}`; `superseded` →
     `proposal-superseded` `{reason}`; pending with the routine's revision ≠ its base revision →
     `proposal-superseded` `{reason: "routine-changed"}`, leaving pending and `settledAt` unchanged. Otherwise `state := applied`, `settledAt := serverNow`, and a
     revise writes the routine's `name := proposedName` and `entries :=` its changes other than `removed`,
-    in order, each `{exerciseId, ...after}`; a removal kills the routine.
+    in order, each `{exerciseId, ...after}`; a removal kills the routine. Every successful Apply
+    records its receipt atomically with these effects; replay changes neither records nor receipts.
   - Dismiss: `dismissed` → `ok`, write `[]`; `applied` → `proposal-settled` `{state}`; `superseded` →
     `proposal-superseded` `{reason}`; otherwise `state := dismissed`, `settledAt := serverNow`. No revision check.
   - `reason`: `replaced` when `supersededBy` is set; else `routine-changed` when the routine's revision
@@ -915,8 +918,10 @@ Input: `{device, ids?, actors?, forkGuards?, draws?, actor?, limits?, steps}`.
     before the next page. Nothing after them applies, and the pages after the one cut short are not
     reported. `pushResponse` may carry
     `dieAfter`: the process dies once that many results are recorded, in ascending `n` (§7.4), and
-    `ackThrough` waits for the last. A changed epoch resets before results, ignoring that answer's
-    results and `lastN`. The offset sample and an epoch change the
+    `ackThrough` waits for the last. A changed epoch uses one atomic recovery transaction: with no
+    old-epoch acknowledgements, it records all successful results before resetting; otherwise its
+    old acknowledgements replay first and the answer's results are ignored. Both paths ignore
+    `lastN`, and remaining sent work returns to ready. The offset sample and an epoch change the
     answer carries come before any page (§7.5 step 1), and a `serverEpoch` that was null takes the
     answer's epoch with the first result recorded (§7.4). A runner whose engine sizes its own chunks
     and slices takes `chunk` and `settle` as those sizes.
@@ -1194,6 +1199,13 @@ Command results with the server's write map:
 - a join with `from`;
 - a replay by receipt;
 - an end.
+
+Each command retains `writeTargets`, keyed by the map's type and original `from ?? id`, with the
+current resolved id and born. Empty maps preserve earlier targets. A replay moves later dependencies
+from the previous resolved target to its new one. Later retained commands that shared the resolved
+target rebind their source arguments to it, even if its id stayed the same. The restore cases in
+`refusal/transport.json` exercise multiple joined targets, legacy prediction recovery, commands
+without predictions and partially restored receipts in both reconnect orders.
 
 The probe has no keyed type whose key names a command-resolved type, so no vector rewrites a key
 part through a write map. The reference does rewrite them.

@@ -1,11 +1,11 @@
-// Prerequisites: built production server/epoch tool, matching-major PostgreSQL CLI, lsof, and npm ci --prefix web.
+// Prerequisites: built production/test-clock servers and epoch tool, matching-major PostgreSQL CLI, lsof, and npm ci --prefix web.
 // Run from the repo: node backend/test/e2e/sync_epoch_restore.mjs --maintenance-db postgresql:///postgres?host=/tmp
 // Uses the production browser engine and HTTP transport with the web tests' IndexedDB and Web Locks substitutes.
 // Both reconnect orders retain work across replicas, including deletes before source replay and wrong-born notices.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
+import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -23,11 +23,13 @@ const requireWeb = createRequire(resolve(repo, 'web/package.json'));
 const { IDBFactory } = requireWeb('fake-indexeddb');
 const { values } = parseArgs({ options: {
   'server-bin': { type: 'string', default: resolve(repo, 'backend/build/windmill_server') },
+  'clock-server-bin': { type: 'string', default: resolve(repo, 'backend/build/windmill_server_test_clock') },
   'rotate-bin': { type: 'string', default: resolve(repo, 'backend/build/windmill_rotate_sync_epoch') },
   'maintenance-db': { type: 'string', default: 'postgresql:///postgres?host=/tmp' },
   port: { type: 'string' },
 } });
-async function prove(order) {
+async function prove(order, clocked = false) {
+  const label = `${clocked ? 'command ' : ''}${order}`;
   const database = `ep_restore_${process.pid}_${randomBytes(4).toString('hex')}`;
   const url = new URL(values['maintenance-db']);
   url.pathname = `/${database}`;
@@ -35,11 +37,12 @@ async function prove(order) {
   const scratch = mkdtempSync(resolve(tmpdir(), 'ep-restore-'));
   const logPath = resolve(scratch, 'server.log');
   const dumpPath = resolve(scratch, 'older.dump');
+  const clockPath = resolve(scratch, 'clock');
   const account = randomUUID();
   const token = randomBytes(24).toString('hex');
   const indexedDB = new IDBFactory();
   const scope = 'self/gym';
-  const failures = [], trace = [], events = [];
+  const failures = [], failureDetails = [], trace = [], events = [], callbacks = [];
   const fixture = {
     baseline: { id: 'ep_baseline', title: 'Backup note', body: 'Present in the older dump' },
     newer: { id: 'ep_newer_confirmed', title: 'Newer note', body: 'Confirmed after the older dump' },
@@ -48,24 +51,44 @@ async function prove(order) {
     edited: { id: 'ep_edited_pending', title: 'Edited note', body: 'Accepted before the offline edit' },
     deleted: { id: 'ep_deleted_pending', title: 'Deleted note', body: 'Accepted before the offline delete' },
     shared: { id: 'ep_shared_pending', title: 'Shared note', body: 'Another replica deletes this before replay' },
+    receiptAck: { id: 'ep_receipt_ack', title: 'Unpulled note', body: 'Accepted before the backup without a covering pull' },
   };
   const editedBody = 'Edited offline before the restore';
   const importedSession = { id: 'ep_imported_session', startedAt: 1000, finishedAt: 2000, sets: [] };
   const unpredictedSession = { id: 'ep_unpredicted_session', startedAt: 3000, finishedAt: 4000, sets: [] };
+  const joined = { source: 'ep_joined_source', requested: ['ep_joined_first', 'ep_joined_second'], commands: [] };
+  const joinedIds = [joined.source, ...joined.requested];
   const peers = [
     { name: `${database}-delete-first`, t: 'note', id: fixture.shared.id },
     { name: `${database}-delete-after-command`, t: 'session', id: unpredictedSession.id },
   ];
+  const removals = [false, true].map((owed) => ({ owed, name: `${database}-removal-${owed}`,
+    routine: `ep_removal_${owed}`, proposal: `ep_proposal_${owed}` }));
+  let clockOffset = 0;
+  const now = () => Date.now() + clockOffset;
+  const tickServer = () => { if (clocked) writeFileSync(clockPath, String(now())); };
   let server, engine, port, origin, created = false, passed = false, pausePull = false, pausePush = false;
   const commandOptions = { encoding: 'utf8', timeout: 30_000, maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] };
   const run = (command, args, options = {}) => execFileSync(command, args, { ...commandOptions, ...options });
   const sql = (statement) => run('psql', [databaseUrl, '-XAt', '-v', 'ON_ERROR_STOP=1', '-c', statement]).trim();
   const epoch = () => sql('select epoch from sync_meta');
   const notes = () => JSON.parse(sql(`select coalesce(json_agg(json_build_object('id', id, 'title', title, 'body', body) order by id), '[]') from gym_notes where user_id = '${account}'`));
-  const expectedNotes = (...names) => names.map((name) => fixture[name]).sort((a, b) => a.id.localeCompare(b.id));
+  const expectedNotes = (...names) => [...names, ...(clocked ? ['receiptAck'] : [])]
+    .map((name) => fixture[name]).sort((a, b) => a.id.localeCompare(b.id));
   const replica = () => engine.device.activeReplica;
   const pending = () => replica().entries(scope).map(({ localId, state, commitOrder }) => ({ localId, state, commitOrder }));
   const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+
+  async function raw(intent) {
+    tickServer();
+    const response = await fetch(`${origin}/v1/sync/push`, { method: 'POST',
+      headers: { 'Sync-Schema': String(registry.version), 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ account, replica: `rp_${randomBytes(16).toString('hex')}`, ackThrough: 0, intents: [{ ...intent, n: 1 }] }),
+      signal: AbortSignal.timeout(5000) });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body.results.map(({ s }) => s), ['ok']);
+  }
 
   async function until(label, condition, timeout = 15_000) {
     const deadline = Date.now() + timeout;
@@ -74,7 +97,8 @@ async function prove(order) {
       if (server && (server.exitCode !== null || server.signalCode !== null)) throw new Error(`${label}: server exited`);
       await sleep(25);
     }
-    throw new Error(`${label}: timed out; failures=${JSON.stringify(failures)} pending=${JSON.stringify(engine ? pending() : [])}`);
+    throw new Error(`${label}: timed out; failures=${JSON.stringify(failures)} pending=${JSON.stringify(engine ? pending() : [])}`
+      + ` network=${JSON.stringify(engine ? { sending: engine.sending, pulling: engine.pulling, inFlight: engine.inFlight.size } : {})}`);
   }
 
   function listeners() {
@@ -87,12 +111,14 @@ async function prove(order) {
 
   async function startServer() {
     assert.deepEqual(listeners(), [], `port ${port} is occupied`);
+    tickServer();
     const log = openSync(logPath, 'a');
-    server = spawn(resolve(values['server-bin']), [], { cwd: scratch, stdio: ['ignore', log, log], env: {
+    server = spawn(resolve(values[clocked ? 'clock-server-bin' : 'server-bin']), [], { cwd: scratch, stdio: ['ignore', log, log], env: {
       ...process.env, DATABASE_URL: databaseUrl, PORT: String(port), WINDMILL_HOST: '127.0.0.1',
       WINDMILL_APP_URL: origin, WINDMILL_ALLOWED_ORIGINS: origin, WINDMILL_COOKIE_DOMAIN: '',
       RESEND_API_KEY: '', ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', JOURNAL_EMBEDDER_URL: '',
       JOURNAL_NUDGE_ENABLED: '0', SENTRY_DSN: '', AMPLITUDE_API_KEY: '',
+      ...(clocked ? { WM_TEST_CLOCK_FILE: clockPath } : {}),
     } });
     closeSync(log);
     let launchError;
@@ -137,7 +163,7 @@ async function prove(order) {
 
   async function openClient(online, name = database) {
     const transport = new HttpTransport({ schema: registry.version, base: origin,
-      reading: () => ({ wall: Date.now(), mono: Math.floor(performance.now()), boot: 'restore-proof' }),
+      reading: () => ({ wall: now(), mono: Math.floor(performance.now()), boot: 'restore-proof' }),
       // Keep live disconnected so the production HTTP puller alone must recover.
       socket: () => ({ readyState: 0, close() { this.readyState = 3; } }),
       fetch: async (address, options) => {
@@ -150,6 +176,7 @@ async function prove(order) {
           });
         }
         const request = options.body ? JSON.parse(options.body) : undefined;
+        tickServer();
         const response = await fetch(address, { ...options, headers: { ...options.headers,
           ...(options.credentials === 'omit' ? {} : { Authorization: `Bearer ${token}` }),
         } });
@@ -161,7 +188,12 @@ async function prove(order) {
     });
     engine = await BrowserSyncEngine.open({ indexedDB, name, transport,
       navigator: { onLine: online, locks: new FakeLocks() }, document: null, window: null,
-      telemetry: { event: (name, props) => events.push({ name, props }), failure: (operation) => failures.push(operation) },
+      now,
+      telemetry: { event: (name, props) => events.push({ name, props }), failure: (operation) => {
+        failures.push(operation);
+        failureDetails.push({ client: name, operation, stack: new Error().stack });
+      } },
+      onPushResult: (_replica, _command, result) => callbacks.push({ client: name, result }),
     });
     engine.observe(scope);
   }
@@ -188,10 +220,10 @@ async function prove(order) {
       && (refused ? replica().notices.length === 1 && pending().length === 0
         : pending().length === 1 && pending()[0].state === 'acked'));
     const responses = trace.slice(started).filter(({ endpoint }) => endpoint === 'push');
-    assert.ok(responses.length >= 2);
+    assert.ok(responses.length >= (refused ? 2 : 1));
     assert.ok(responses.every(({ status, epoch }) => status === 200 && epoch === newEpoch));
     assert.equal(responses[0].request.replica, peer.replica);
-    assert.notEqual(responses.at(-1).request.replica, peer.replica);
+    if (refused) assert.notEqual(responses.at(-1).request.replica, peer.replica);
     if (refused) {
       assert.deepEqual(replica().notices.map(({ id, scope, code, content }) => ({ id, scope, code, content })),
         [{ id: `notice:${peer.entries[0].localId}`, scope, code: 'unknown-record', content: { d: peer.entries[0].intent.d } }]);
@@ -212,7 +244,71 @@ async function prove(order) {
     assert.deepEqual(replica().notices, savedNotices);
     assert.deepEqual(pending(), []);
     engine.close();
-    console.log(`PASS ${order}: ${refused ? 'wrong-born delete retained in a durable notice' : 'peer delete persisted before its retained source replays'}`);
+    console.log(`PASS ${label}: ${refused ? 'wrong-born delete retained in a durable notice' : 'peer delete persisted before its retained source replays'}`);
+  }
+
+  async function recoverRemoval(peer, newEpoch) {
+    pausePull = order === 'push-first';
+    pausePush = order === 'pull-first';
+    const started = trace.length, callbackStart = callbacks.length, eventStart = events.length;
+    await openClient(false, peer.name);
+    assert.deepEqual(replica().entries(scope), peer.entries);
+    let reset;
+    engine.onEvent((event) => {
+      if (event.event !== 'activeReplicaChanged' || event.previous !== peer.replica) return;
+      reset = structuredClone(replica().entries(scope));
+      engine.setOnline(false);
+    });
+    await engine.start();
+    engine.setOnline(true);
+    await until('removal observes the restored epoch', () => reset && !engine.sending && !engine.pulling);
+    assert.equal(replica().meta.serverEpoch, newEpoch);
+    const first = trace.slice(started);
+    if (order === 'push-first') {
+      assert.deepEqual(first.map(({ endpoint, status }) => ({ endpoint, status })), [{ endpoint: 'push', status: 200 }]);
+      assert.deepEqual(first[0].results.map(({ s }) => s), ['ok']);
+      assert.equal(first[0].request.intents[0].n, peer.owed ? 2 : 1);
+      assert.equal(sql(`select count(*) from gym_proposal_applies where id = '${peer.proposal}' and user_id = '${account}'`), '1');
+    } else assert.ok(first.every(({ endpoint }) => endpoint === 'pull'));
+    const accepted = order === 'push-first' && !peer.owed;
+    assert.deepEqual(reset.map(({ state }) => state), peer.owed ? ['ready', 'ready'] : [accepted ? 'acked' : 'ready']);
+    engine.close();
+    await openClient(false, peer.name);
+    assert.deepEqual(replica().entries(scope), reset);
+    pausePull = true;
+    pausePush = false;
+    await engine.start();
+    engine.setOnline(true);
+    await until('removal recovery records only successful outcomes', () => pending().length === peer.entries.length
+      && pending().every(({ state }) => state === 'acked'));
+    const pushes = trace.slice(started).filter(({ endpoint }) => endpoint === 'push');
+    assert.ok(pushes.every(({ status, results }) => status === 200 && results.every(({ s }) => s === 'ok')));
+    const applied = pushes.flatMap(({ request }) => request.intents).filter(({ cmd }) => cmd?.name === 'gym.applyProposal');
+    assert.equal(applied.length, order === 'push-first' && peer.owed ? 2 : 1);
+    assert.deepEqual(callbacks.slice(callbackStart).map(({ client, result }) => ({ client, s: result.s })),
+      peer.entries.map(() => ({ client: peer.name, s: 'ok' })));
+    assert.deepEqual(replica().notices, []);
+    assert.ok(events.slice(eventStart).every(({ name }) => name !== 'sync-refused'));
+    assert.equal(sql(`select count(*) from gym_routines where id = '${peer.routine}'`), '0');
+    assert.equal(sql(`select count(*) from gym_proposals where id = '${peer.proposal}'`), '0');
+    assert.equal(sql(`select count(*) from gym_proposal_applies where id = '${peer.proposal}' and user_id = '${account}'`), '1');
+    engine.setOnline(false);
+    await until('removal stalled pull aborted', () => !engine.sending && !engine.pulling && engine.inFlight.size === 0);
+    pausePull = false;
+    engine.setOnline(true);
+    await until('removal bootstrap settled', () => pending().length === 0
+      && Cursor.decode(replica().cursorOf(scope).cursor)?.e === newEpoch
+      && Cursor.decode(replica().cursorOf(scope).cursor)?.m === 'live');
+    assert.equal(replica().confirmedRow(scope, 'routine', peer.routine), undefined);
+    assert.equal(replica().confirmedRow(scope, 'proposal', peer.proposal), undefined);
+    engine.close();
+    await openClient(false, peer.name);
+    assert.deepEqual(pending(), []);
+    assert.deepEqual(replica().notices, []);
+    engine.close();
+    const outcome = order === 'push-first' ? peer.owed ? 'replayed from its durable receipt' : 'retained its known success'
+      : peer.owed ? 'followed its older acknowledgement' : 'applied after the epoch reset';
+    console.log(`PASS ${label}: applied removal ${outcome}, with no refusal`);
   }
 
   try {
@@ -233,6 +329,17 @@ async function prove(order) {
     sql(`insert into users(id,email,name) values('${account}','epoch-proof@example.com','Epoch proof');
       insert into sessions(token_hash,user_id,expires_ms) values('${tokenHash}','${account}',99999999999999)`);
     await startServer();
+    if (clocked) for (const peer of removals) {
+      const stamp = `${now()}:0:r_aaaaaaaaaaaa`;
+      const create = (t, id, fields) => ({ scope, d: [{ t, id, born: stamp, life: ['alive', stamp],
+        f: Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, [value, stamp]])) }] });
+      const line = { exerciseId: 'back-squat', sets: [{ reps: 5, weightKg: 80 }], restSeconds: 180 };
+      await raw(create('routine', peer.routine, { name: 'Restore routine', position: 0, entries: [line] }));
+      await raw({ ...create('proposal', peer.proposal, { routineId: peer.routine, intent: 'remove', proposedName: 'Restore routine',
+        summary: 'Remove this routine', changes: [{ kind: 'removed', exerciseId: line.exerciseId, before: { sets: line.sets, restSeconds: line.restSeconds } }],
+        door: 'ask', connection: '', agent: '' }),
+      guard: ['name', 'entries'].map((field) => ({ t: 'routine', id: peer.routine, field, stamp })) });
+    }
     await openClient(true);
     assert.equal((await engine.signIn(account)).complete, true);
     await engine.start();
@@ -240,11 +347,41 @@ async function prove(order) {
     await confirmed('baseline');
     const oldEpoch = epoch();
     assert.equal(replica().meta.serverEpoch, oldEpoch);
+    if (clocked) {
+      engine.close();
+      for (const peer of removals) {
+        await openClient(true, peer.name);
+        assert.equal((await engine.signIn(account)).complete, true);
+        await engine.start();
+        await until('removal replica learned its proposal', () => replica().confirmedRow(scope, 'proposal', peer.proposal));
+        engine.setOnline(false);
+        await until('removal replica offline', () => !engine.sending && !engine.pulling && engine.inFlight.size === 0);
+        if (peer.owed) {
+          pausePull = true;
+          engine.setOnline(true);
+          const ack = await createNote('receiptAck');
+          await until('old acknowledgement retained in the backup', () => replica().entry(ack.localIds[0])?.state === 'acked');
+          engine.setOnline(false);
+          await until('removal source pull aborted', () => !engine.sending && !engine.pulling && engine.inFlight.size === 0);
+          pausePull = false;
+        }
+        await engine.commit(scope, [], { cmd: { name: 'gym.applyProposal', args: { proposalId: peer.proposal } },
+          predict: [{ op: 'update', t: 'proposal', id: peer.proposal, f: { state: 'applied', settledAt: now() } },
+            { op: 'delete', t: 'routine', id: peer.routine }] });
+        peer.entries = structuredClone(replica().entries(scope));
+        peer.replica = replica().id;
+        assert.deepEqual(peer.entries.map(({ state }) => state), peer.owed ? ['acked', 'ready'] : ['ready']);
+        engine.close();
+      }
+      await openClient(true);
+      await engine.start();
+    }
     run('pg_dump', ['--format=custom', '--no-owner', '--no-privileges', '--file', dumpPath, databaseUrl]);
     console.log('PASS client synced; an older whole-database dump was saved');
 
     await createNote('newer');
     await confirmed('newer');
+    if (clocked) await raw({ scope, cmd: { name: 'gym.start', args: { id: joined.source, startedAt: now(), joinOpenSession: true } } });
     engine.setOnline(false);
     await until('network stopped', () => !engine.sending && !engine.pulling && engine.inFlight.size === 0);
     pausePull = true;
@@ -264,6 +401,15 @@ async function prove(order) {
     const unpredicted = await engine.commit(scope, [], { cmd: { name: 'gym.importSession', args: unpredictedSession } });
     await until('command without prediction retained', () => replica().entry(unpredicted.localIds[0])?.state === 'acked');
     const oldUnpredictedBorn = sql(`select born from gym_sessions where id = '${unpredictedSession.id}'`);
+    if (clocked) for (const id of joined.requested) {
+      const result = await engine.commit(scope, [], {
+        cmd: { name: 'gym.start', args: { id, startedAt: now(), joinOpenSession: true } },
+        predict: [{ op: 'create', t: 'session', id, f: { startedAt: now() } }],
+      });
+      await until('start retained its joined target', () => replica().entry(result.localIds[0])?.state === 'acked');
+      joined.commands.push(result.localIds[0]);
+      assert.equal(replica().entry(result.localIds[0]).predict[0].id, joined.source);
+    }
     engine.setOnline(false);
     await until('stalled pull aborted', () => !engine.sending && !engine.pulling && engine.inFlight.size === 0);
     engine.close();
@@ -282,6 +428,10 @@ async function prove(order) {
       assert.equal(peer.entries[0].state, 'ready');
       engine.close();
     }
+    if (clocked) {
+      clockOffset += 5 * 3600_000;
+      tickServer();
+    }
     await openClient(false);
     await engine.start();
     await createNote('unsent');
@@ -289,15 +439,20 @@ async function prove(order) {
     await engine.commit(scope, [{ op: 'delete', t: 'note', id: fixture.deleted.id }]);
     const commandDelete = await engine.commit(scope, [{ op: 'delete', t: 'session', id: importedSession.id }]);
     assert.equal(replica().entry(commandDelete.localIds[0]).intent.d[0].born, oldCommandBorn);
+    if (clocked) {
+      const result = await engine.commit(scope, [{ op: 'delete', t: 'session', id: joined.source }]);
+      joined.delete = result.localIds[0];
+      assert.equal(replica().entry(joined.delete).intent.d[0].id, joined.source);
+    }
     const savedPending = pending();
     const savedEntries = structuredClone(replica().entries(scope));
-    assert.deepEqual(savedPending.map(({ state }) => state), ['acked', 'acked', 'acked', 'acked', 'acked', 'acked', 'ready', 'ready', 'ready', 'ready']);
+    assert.deepEqual(savedPending.map(({ state }) => state), [...Array(clocked ? 8 : 6).fill('acked'), ...Array(clocked ? 5 : 4).fill('ready')]);
     assert.deepEqual(notes(), expectedNotes('baseline', 'newer', 'acked', 'edited', 'deleted', 'shared'));
     const oldReplica = replica().id;
     const oldCursor = replica().cursorOf(scope).cursor;
     assert.equal(Cursor.decode(oldCursor).e, oldEpoch);
     engine.close();
-    console.log(`PASS ${order}: unpulled creates/command and independent/dependent offline work are durable`);
+    console.log(`PASS ${label}: unpulled creates/command and independent/dependent offline work are durable`);
 
     await stopServer();
     run('pg_restore', ['--clean', '--if-exists', '--no-owner', '--no-privileges', '--exit-on-error', '--single-transaction', '--dbname', databaseUrl, dumpPath]);
@@ -325,6 +480,7 @@ async function prove(order) {
     console.log('PASS older dump restored; epoch rotated once; retry logged already-applied');
 
     await startServer();
+    if (clocked) for (const peer of removals) await recoverRemoval(peer, newEpoch);
     await recoverPeer(peers[0], newEpoch, false);
     pausePull = order === 'push-first';
     pausePush = order === 'pull-first';
@@ -365,7 +521,7 @@ async function prove(order) {
         && request.pages.some((page) => page.scope === scope && page.kind === 'reset')));
       assert.ok(recovery.every(({ endpoint }) => endpoint !== 'push'));
     }
-    console.log(`PASS ${order}: epoch transition precedes retry and returns every owed entry to commit order`);
+    console.log(`PASS ${label}: epoch transition precedes retry and returns every owed entry to commit order`);
 
     const resetEntries = structuredClone(replica().entries(scope));
     engine.close();
@@ -399,8 +555,22 @@ async function prove(order) {
     assert.equal(replica().entry(commandDelete.localIds[0]).intent.d[0].born, newCommandBorn);
     assert.equal(sql(`select count(*) from gym_sessions where id = '${importedSession.id}'`), '0');
     assert.equal(sql(`select count(*) from sync_spent where type = 'note' and id = '${fixture.deleted.id}'`), '1');
+    if (clocked) {
+      const deletion = replica().entry(joined.delete).intent.d[0];
+      const target = joined.requested[0];
+      const born = sql(`select born from sync_spent where type = 'session' and id = '${target}'`);
+      assert.equal(deletion.id, target);
+      assert.ok(born);
+      assert.equal(deletion.born, born);
+      for (const localId of joined.commands) {
+        assert.equal(replica().entry(localId).predict[0].id, target);
+        assert.equal(replica().entry(localId).intent.cmd.args.id, target);
+      }
+      assert.equal(sql(`select count(*) from gym_sessions where id in (${joinedIds.map((id) => `'${id}'`).join(', ')})`), '0');
+      console.log(`PASS ${label}: both joined starts and their delete followed one replayed target and born`);
+    }
     assert.deepEqual(replica().notices, []);
-    console.log(`PASS ${order}: reload retained recovery; replay moved the command delete to its new born`);
+    console.log(`PASS ${label}: reload retained recovery; replay moved the command delete to its new born`);
 
     engine.setOnline(false);
     await until('replay pull aborted', () => !engine.sending && !engine.pulling && engine.inFlight.size === 0);
@@ -412,6 +582,10 @@ async function prove(order) {
     assert.equal(replica().confirmedRow(scope, 'note', fixture.deleted.id), undefined);
     assert.equal(replica().confirmedRow(scope, 'note', fixture.shared.id), undefined);
     assert.equal(replica().confirmedRow(scope, 'session', importedSession.id), undefined);
+    if (clocked) for (const id of joinedIds) {
+      assert.equal(replica().confirmedRow(scope, 'session', id), undefined);
+      assert.ok(engine.observe(scope).getSnapshot().drawn.every((row) => row.t !== 'session' || row.id !== id));
+    }
     const recovered = engine.observe(scope).getSnapshot().stored.filter(({ t }) => t === 'note')
       .map(({ id, f }) => ({ id, title: f.title[0], body: f.body[0] })).sort((a, b) => a.id.localeCompare(b.id));
     assert.deepEqual(recovered, expectedNotes('baseline', 'acked', 'unsent', 'edited')
@@ -422,14 +596,24 @@ async function prove(order) {
     assert.ok(trace.some((request) => request.endpoint === 'pull' && request.epoch === newEpoch
       && request.request.scopes.some(({ scope: name, cursor }) => name === scope && cursor === null)));
     assert.deepEqual(replica().notices, []);
-    assert.ok(!failures.some((operation) => ['storage', 'auth', 'observer', 'leadership'].includes(operation)));
+    assert.ok(!failures.some((operation) => ['storage', 'auth', 'observer', 'leadership'].includes(operation)), JSON.stringify(failureDetails));
     assert.ok(events.some(({ name }) => name === 'sync-commit'));
-    console.log(`PASS ${order}: bootstrap settled every owed create/edit/delete; client and server agree, with no notices`);
+    console.log(`PASS ${label}: bootstrap settled every owed create/edit/delete; client and server agree, with no notices`);
     const newUnpredictedBorn = sql(`select born from gym_sessions where id = '${unpredictedSession.id}'`);
     assert.ok(newUnpredictedBorn);
     assert.notEqual(newUnpredictedBorn, oldUnpredictedBorn);
     assert.equal(replica().confirmedRow(scope, 'session', unpredictedSession.id).born, newUnpredictedBorn);
     engine.close();
+    if (clocked) {
+      await openClient(false);
+      assert.deepEqual(pending(), []);
+      assert.deepEqual(replica().notices, []);
+      for (const id of joinedIds) {
+        assert.equal(replica().confirmedRow(scope, 'session', id), undefined);
+        assert.ok(engine.observe(scope).getSnapshot().drawn.every((row) => row.t !== 'session' || row.id !== id));
+      }
+      engine.close();
+    }
     await recoverPeer(peers[1], newEpoch, true);
     assert.equal(sql(`select born from gym_sessions where id = '${unpredictedSession.id}'`), newUnpredictedBorn);
     assert.equal(replica().confirmedRow(scope, 'session', unpredictedSession.id).born, newUnpredictedBorn);
@@ -449,4 +633,4 @@ async function prove(order) {
   }
 }
 
-for (const order of ['pull-first', 'push-first']) await prove(order);
+for (const clocked of [false, true]) for (const order of ['pull-first', 'push-first']) await prove(order, clocked);

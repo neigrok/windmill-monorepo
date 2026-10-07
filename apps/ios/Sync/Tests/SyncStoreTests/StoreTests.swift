@@ -180,6 +180,58 @@ struct StoreTests {
       #expect(try store.read { try $0.device(rows: true).activeReplica.outbox.count } == (kept ? 1 : 0))
     }
   }
+
+  @Test(arguments: [false, true])
+  func changedEpochSuccessesAndTheirProductWritesCommitTogetherAcrossSlices(committed: Bool) throws {
+    let callbacks: CommandResultDeviceWrites = { _, result, _, rows in
+      let status: JSON = if case .ok = result.verdict { "ok" } else { "refused" }
+      return [DeviceWrite(key: "rack", value: .array(((try? rows["rack"]?.asArray()) ?? []) + [status]))]
+    }
+    try Self.inFreshDirectory { path in
+      let seed = try Store(path: path, registry: Self.probe, commandResultWrites: callbacks)
+      _ = try seed.write(.firstLaunch) { _ in Planned((), try Self.seed()) }
+      _ = try seed.commit(Gesture(changes: (1...2).map { .put("day", RecordID("2026-09-0\($0)"), present: true, ["score": JSON($0)]) }, gestureId: "days"),
+        in: Self.scope, instance: Self.at(5000), identities: try Self.none())
+      _ = try seed.commit(Gesture(changes: [], command: Command(name: "probe.start", args: ["id": "run00001", "startedAt": 5000, "join": true]),
+        predict: [.create("run", id: .given("run00001"), ["startedAt": 5000])], gestureId: "start"),
+        in: Self.scope, instance: Self.at(5001), identities: try Self.none())
+      let request = try #require(try seed.number(at: 5010).value)
+      let before = try seed.read { try $0.device(rows: true).json }
+      let answer = try PushResponse(json: ["as": "A", "epoch": "ep-2", "serverTime": 5020, "lastN": 3, "results": [
+        ["n": 1, "s": "ok", "seq": 1], ["n": 2, "s": "refused", "code": "invalid"],
+        ["n": 3, "s": "ok", "seq": 2, "write": [["t": "run", "id": "run00001", "born": "5020:0:srv"]]],
+      ]])
+      var steps = PushPlanner(registry: Self.probe).steps(for: .ok(answer), to: request)
+      let sizes = WriterSlices(.fixed(.init(resultsPerBatch: 1)))
+      _ = steps.next(sizes: sizes)
+      let resultStep = steps.next(sizes: sizes)
+      let first = try #require(resultStep)
+      let point: CrashPoint = committed ? .afterCommit(.results) : .beforeCommit(.results)
+      let killing = try Store(path: path, registry: Self.probe, crashPoints: CrashPoints { if $0 == point { throw Killed() } }, commandResultWrites: callbacks)
+      let identities = { try QueuedIdentities(["ids": ["rp_2"], "actors": ["r_bbbbbbbbbbbb"]]) }
+      var instance = Self.at(5020)
+      #expect(throws: Killed.self) {
+        try killing.apply(first, replica: "rp_1", instance: &instance, timing: .steady(send: 5010, recv: 5020), identities: identities())
+      }
+      let reopened = try Store(path: path, registry: Self.probe, commandResultWrites: callbacks)
+      if !committed {
+        #expect(try reopened.read { try $0.device(rows: true).json } == before)
+        _ = try reopened.apply(first, replica: "rp_1", instance: &instance, timing: .steady(send: 5010, recv: 5020), identities: identities())
+      }
+      while let step = steps.next(sizes: sizes) {
+        _ = try reopened.apply(step, replica: "rp_1", instance: &instance, timing: .steady(send: 5010, recv: 5020), identities: try Self.none())
+      }
+      let replica = try reopened.read { try $0.device(rows: true).activeReplica }
+      #expect(replica.outbox.map { "\($0.localId) \($0.state.rawValue) \($0.resultEpoch ?? "-")" }
+        == ["days/0 acked ep-2", "days/1 ready -", "start/0 acked ep-2"])
+      #expect((replica.id, replica.meta.serverEpoch, replica.meta.nextN, replica.meta.ackThrough) == ("rp_2", "ep-2", 1, 0))
+      #expect(replica.cursors[Self.scope]?.cursor == nil)
+      #expect(replica.deviceRows["probe"]?["rack"] == ["ok"])
+      #expect(replica.notices.isEmpty)
+      #expect(replica.entry("start/0")?.writeTargets == [WriteTarget(key: RecordKey("run", "run00001"), from: "run00001", born: try Stamp("5020:0:srv"))])
+      #expect(try reopened.number(at: 5030).value?.intents.map(\.gestureId) == ["days"])
+    }
+  }
 }
 
 extension CrashPoints {

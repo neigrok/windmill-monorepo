@@ -1096,6 +1096,13 @@ create unique index if not exists gym_proposals_one_pending
 create index if not exists gym_proposals_routine on gym_proposals (routine_id, created_at desc);
 create index if not exists gym_proposals_user on gym_proposals (user_id, state, created_at desc);
 
+-- Successful applies outlive the proposal and routine, including a removal's own cascade.
+create table if not exists gym_proposal_applies (
+  id      text primary key,
+  user_id uuid not null references users(id) on delete cascade
+);
+create index if not exists gym_proposal_applies_owner on gym_proposal_applies(user_id);
+
 -- Rows 1..k are the run the routine takes on, in order; rows k+1..n are the lines the proposal
 -- takes away. Each side is a line's scheme as jsonb — the wire's own `sets` array, null on an open
 -- line — beside its rest. The whole `before` side is null on an added line and the whole `after`

@@ -1,6 +1,8 @@
 package works.windmill.sync.engine
 
 import java.io.File
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.*
 import org.junit.Test
 import works.windmill.sync.api.*
@@ -13,9 +15,9 @@ class EngineHooksTests {
     private val scope = ScopeRef.product("probe")
     private val timing = RequestTiming(ClockReading(5_000, 5_000, "boot"), ClockReading(5_000, 5_000, "boot"))
     private fun engine(writes: IntentResultDeviceWrites = { _, _, _, _, _ -> emptyList() },
-        rewrite: DeviceValueRewrite = { _, _, value, _, _, _ -> value }) = Engine.memory(registry,
+        rewrite: DeviceValueRewrite = { _, _, value, _, _, _ -> value }, telemetry: EngineTelemetry = NoEngineTelemetry) = Engine.memory(registry,
         clock = object : EngineClock { override fun now() = 5_000L }, actor = "r_aaaaaaaaaaaa",
-        intentResultWrites = writes, rewriteDeviceValue = rewrite).also { it.signIn("A", mapOf("probe" to false)) }
+        intentResultWrites = writes, rewriteDeviceValue = rewrite, telemetry = telemetry).also { it.signIn("A", mapOf("probe" to false)) }
     private fun number(engine: Engine): Json {
         engine.commit(scope, Gesture(emptyList(), command = Command("probe.start", Json.objectOf(
             "id" to Json.of("run00001"), "startedAt" to Json.of(5_000), "join" to Json.of(false))),
@@ -69,6 +71,50 @@ class EngineHooksTests {
                     reopened.onPushResponse(request, response(request, refused), timing)
                     assertEquals(2, calls)
                 }
+            }
+        }
+    }
+
+    @Test fun changedEpochSuccessPersistsItsReceiptAndMapWithRecoveryOrRollsBackTogether() {
+        val events = LinkedBlockingQueue<EngineEvent>()
+        var calls = 0
+        val writes: IntentResultDeviceWrites = { _, result, epoch, _, _ ->
+            calls++
+            assertTrue(result.verdict is PushResult.Verdict.Ok)
+            assertEquals("ep-2", epoch)
+            listOf(DeviceWrite("rack", Json.of("accepted")))
+        }
+        engine(writes, telemetry = EngineTelemetry { events.add(it) }).use { local ->
+            local.write { it.meta = it.meta.with("serverEpoch" to Json.of("ep-1")) }
+            val request = number(local)
+            val response = response(request, write = true).let { it.copy(body = it.body!!.with("epoch" to Json.of("ep-2"), "serverTime" to Json.of(5_000))) }
+            val before = local.snapshot()
+            local.failNextCommit()
+            assertEquals(CommitFailure.Kind.storeFailure,
+                assertThrows(CommitFailure::class.java) { local.onPushResponse(request, response, timing) }.kind)
+            assertEquals(before, local.snapshot())
+            var failure: EngineEvent? = null
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (failure == null && System.nanoTime() < deadline) {
+                events.poll(100, TimeUnit.MILLISECONDS)?.let { if (it.outcome == EngineOutcome.failure) failure = it }
+            }
+            assertEquals(EngineEvent(EngineOperation.storage, EngineOutcome.failure, "store-failure"), failure)
+            local.crashAfterTransactions(1)
+            assertThrows(EngineCrash::class.java) { local.onPushResponse(request, response, timing) }
+            Engine.memory(registry, local.snapshot(), intentResultWrites = writes).use { reopened ->
+                assertEquals(Json.of("accepted"), reopened.read(scope) { it.device("rack") })
+                val replica = reopened.device.current()
+                assertEquals(Json.of("ep-2"), replica.meta["serverEpoch"])
+                assertEquals(Json.of(0), replica.meta["ackThrough"])
+                assertEquals(Json.of(1), replica.meta["nextN"])
+                val entry = replica.entries().single()
+                assertEquals("acked", entry.state)
+                assertEquals(Json.of("ep-2"), entry.json["resultEpoch"])
+                assertEquals(Json.parse("""[{"t":"run","from":"run00001","id":"run00002"}]"""), entry.json["writeTargets"])
+                assertTrue(replica.notices.isEmpty())
+                assertNull(reopened.nextPush())
+                reopened.onPushResponse(request, response, timing)
+                assertEquals(2, calls)
             }
         }
     }

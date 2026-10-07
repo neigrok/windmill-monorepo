@@ -76,7 +76,7 @@ checks the stop before using the network. CI uses `VITE_RELEASE` as the build id
 bound active plus pending work to 64 frames and 1 MiB; overflow closes the socket and recovers through
 pulls. A hidden leader yields to a visible peer. Unsupported coordination fails explicitly.
 
-`npm run test:sync` claims all 52 client/all corpus files (888 vectors/transcript steps) and runs the
+`npm run test:sync` claims all 52 client/all corpus files (897 vectors/transcript steps) and runs the
 persisted runtime, fake IndexedDB and real Chromium tests. Playwright is dev-only. Test/build scripts
 install Chromium automatically; Linux CI also installs its system dependencies. No browser test is
 skipped when Chromium is unavailable. `npm run test:sync:fuzz` runs 500×300 core replay, 20×80 random

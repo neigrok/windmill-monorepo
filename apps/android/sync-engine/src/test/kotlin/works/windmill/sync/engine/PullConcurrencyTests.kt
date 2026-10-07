@@ -173,8 +173,8 @@ class PullConcurrencyTests {
                 assertNotEquals(request.member("replica"), Json.of(replica.id))
                 assertEquals(Json.of("ep-1"), replica.meta["serverEpoch"])
                 assertEquals(Json.of(0), replica.meta["ackThrough"])
-                assertEquals(listOf("ready"), replica.entries().map { it.state })
-                assertNull(replica.entries().single().json["resultEpoch"])
+                assertEquals(listOf("acked"), replica.entries().map { it.state })
+                assertEquals(Json.of("ep-1"), replica.entries().single().json["resultEpoch"])
             } finally {
                 store.resume.countDown()
                 pushing.join(5_000); pulling.join(5_000)

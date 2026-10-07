@@ -12,7 +12,7 @@ public:
     Json::Value books(Json::objectValue);
     const auto& db = sync::fake::dbOf(txn);
     books["seeds"] = db.gym["seeds"];
-    for (const char* kind : {"starts", "imports", "corrections"}) books[kind] = db.gym[kind][scope.text()];
+    for (const char* kind : {"starts", "imports", "corrections", "proposalApplies"}) books[kind] = db.gym[kind][scope.text()];
     return books;
   }
   void receipt(sync::SyncTxn& txn, const sync::ScopeKey& scope, const std::string& kind,

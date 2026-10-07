@@ -593,7 +593,7 @@ function restoredOtherReplica() {
     .pullRound({ deviceNow: 5002, scopes: ['self/probe'] })
     .add(commitStep('self/probe', [{ op: 'delete', t: 'card', id: 'card0001' }], undefined, 5003));
   b.server = new ServerState(empty('ep-2'));
-  b.pushRound({ deviceNow: 5010 }).pushRound({ deviceNow: 5011 })
+  b.pushRound({ deviceNow: 5010 })
     .pullRound({ deviceNow: 5012, scopes: ['self/probe'] });
   a.server = b.server;
   a.pullRound({ deviceNow: 5020, scopes: ['self/probe'] }).pushRound({ deviceNow: 5021 })
@@ -623,13 +623,11 @@ function restoredUnpredictedCommand() {
   script.server = new ServerState(empty('ep-2'));
   script.pushRound({ deviceNow: 5010 }).pushRound({ deviceNow: 5011 }).pushRound({ deviceNow: 5012 })
     .pullRound({ deviceNow: 5013, scopes: ['self/probe'] });
-  const vector = script.vector('restore with an unpredicted command and a partial boot retains the old-birth delete in a notice');
+  const vector = script.vector('restore with an unpredicted command and a partial boot maps the retained target into its delete');
   const final = vector.expect.device.replicas[0];
   assert.deepEqual(final.outbox ?? [], []);
-  assert.equal(final.notices.length, 1);
-  assert.equal(final.notices[0].code, 'unknown-record');
-  assert.equal(final.notices[0].content.d[0].id, 'run00009');
-  assert.equal(final.notices[0].content.d[0].life[0], 'dead');
+  assert.deepEqual(final.notices ?? [], []);
+  assert.equal(final.confirmed['self/probe'].some((row) => row.t === 'run'), false);
   return [vector];
 }
 
@@ -659,6 +657,66 @@ function conflictEnvelopes() {
     assert.deepEqual(vector.expect.returns.at(-1), name === 'other principal' || name === 'account mismatch' ? null : { throws: true });
     return vector;
   });
+}
+
+function restoredJoinedDeletes() {
+  return ['pull', 'gap'].flatMap((first) => ['predicted', 'legacy', 'unpredicted', 'retained-target'].map((mode) => {
+    const scope = 'self/probe';
+    const empty = (epoch) => serverState({ epoch, scopes: { 'acct:A/probe': productScope('A') } });
+    const script = new ServerScript({ device: device(), server: serverState({
+      scopes: { 'acct:A/probe': productScope('A') },
+      rows: { 'acct:A/probe': [
+        row({ t: 'run', id: 'run00001', born: st(1300, 0, 'srv'), life: ['alive', st(1300, 0, 'srv')], f: { startedAt: [1300, st(1300, 0, 'srv')] }, seq: 1 }),
+        row({ t: 'card', id: 'card0001', born: st(1400), life: ['alive', st(1400)], f: { title: ['Other', st(1400)] }, seq: 2 }),
+      ] },
+    }) }).withIds(['rp_00000000000000000000000000000002']).withActors(['r_cccccccccccc', 'r_dddddddddddd'])
+      .add(commitStep(scope, [], { cmd: { name: 'probe.start', args: { id: 'run00002', startedAt: 5000, join: true } },
+        ...(mode === 'unpredicted' ? {} : { predict: [{ op: 'create', t: 'run', id: 'run00002', f: { startedAt: 5000 } }] }) }, 5000))
+      .pushRound({ deviceNow: 5001 });
+    const backup = script.server.toJSON();
+    script.add(commitStep(scope, [], { cmd: { name: 'probe.start', args: { id: 'run00003', startedAt: 5001, join: true } },
+      ...(mode === 'unpredicted' ? {} : { predict: [{ op: 'create', t: 'run', id: 'run00003', f: { startedAt: 5001 } }] }) }, 5001))
+      .pushRound({ deviceNow: 5002 });
+    if (mode === 'unpredicted') script.pullRound({ deviceNow: 5002, scopes: [scope], limits: { ...CONSTANTS, PULL_PAGE_BYTES: 1 } });
+    script.add(commitStep(scope, [{ op: 'delete', t: 'run', id: 'run00001' }], undefined, 5003));
+    if (mode === 'legacy') {
+      script.input.device = runSteps(script.input).device;
+      for (const entry of script.input.device.replicas[0].outbox) delete entry.writeTargets;
+      script.input.steps = [];
+    }
+    script.server = new ServerState(mode === 'retained-target' ? { ...backup, epoch: 'ep-2' } : empty('ep-2'));
+    if (first === 'pull') script.pullRound({ deviceNow: 5010, scopes: [scope] });
+    else script.pushRound({ deviceNow: 5010 });
+    script.add({ op: 'engineStart', deviceNow: 5011 }).pushRound({ deviceNow: 5020 }).pushRound({ deviceNow: 5030 });
+    const replay = runSteps(script.input).returns.filter((result) => result?.intents).at(-1);
+    assert.equal(replay.intents[0].cmd.args.id, mode === 'retained-target' ? 'run00001' : 'run00002',
+      'later joined commands must reuse the first recovered target rather than recreate their own aliases');
+    script.pushRound({ deviceNow: 5040 }).pullRound({ deviceNow: 5050, scopes: [scope] });
+    const vector = script.vector(`${mode} joined commands share their replay target before its delete after a ${first} restore`);
+    const final = vector.expect.device.replicas[0];
+    assert.deepEqual(final.outbox ?? [], []);
+    assert.deepEqual(final.notices ?? [], []);
+    assert.deepEqual((final.confirmed?.[scope] ?? []).filter((row) => row.t === 'run'), [], 'the joined session must stay deleted after replay');
+    return vector;
+  }));
+}
+
+function acceptedRestoreResult() {
+  const run = row({ t: 'run', id: 'run00001', born: st(1300, 0, 'srv'), life: ['alive', st(1300, 0, 'srv')], f: { startedAt: [1300, st(1300, 0, 'srv')] }, seq: 1 });
+  const vector = stepsVector('a successful changed-epoch command with no old acknowledgements stays accepted across restart', {
+    device: device({ 'self/probe': [run] }), ids: ['rp_00000000000000000000000000000002'], actors: ['r_cccccccccccc', 'r_dddddddddddd'],
+    steps: [commitStep('self/probe', [], { cmd: { name: 'probe.end', args: { runId: 'run00001', endedAt: 5000 } },
+      predict: [{ op: 'delete', t: 'run', id: 'run00001' }] }, 5000),
+    { op: 'push', deviceNow: 5001 },
+    { op: 'pushResponse', deviceNow: 5002, response: { status: 200, body: { as: 'A', epoch: 'ep-2', serverTime: 5002, lastN: 1, results: [{ n: 1, s: 'ok', seq: 2, write: [] }] } } },
+    { op: 'engineStart', deviceNow: 5003 }, { op: 'push', deviceNow: 5004 }],
+  });
+  const final = vector.expect.device.replicas[0];
+  assert.equal(final.outbox[0].state, 'acked', 'a known successful removal must not become a fresh command');
+  assert.equal(final.outbox[0].resultEpoch, 'ep-2');
+  assert.deepEqual(vector.expect.returns.at(-1), null);
+  assert.deepEqual(final.notices ?? [], []);
+  return [vector];
 }
 
 function transports() {
@@ -818,6 +876,6 @@ export function files() {
     ],
     'refusal/restamp.json': restamps(),
     'refusal/base-unknown.json': baseUnknowns(),
-    'refusal/transport.json': [...transports(), ...restoredDeletes(), ...restoredCommands(), ...restoredOtherReplica(), ...restoredUnpredictedCommand(), ...conflictEnvelopes()],
+    'refusal/transport.json': [...transports(), ...restoredDeletes(), ...restoredCommands(), ...restoredOtherReplica(), ...restoredUnpredictedCommand(), ...conflictEnvelopes(), ...acceptedRestoreResult(), ...restoredJoinedDeletes()],
   };
 }

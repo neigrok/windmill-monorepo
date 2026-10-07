@@ -11586,32 +11586,6 @@
           "tRecv": 5010
         },
         {
-          "op": "push",
-          "deviceNow": 5011
-        },
-        {
-          "op": "pushResponse",
-          "response": {
-            "status": 200,
-            "body": {
-              "serverTime": 5011,
-              "epoch": "ep-2",
-              "as": "A",
-              "lastN": 1,
-              "results": [
-                {
-                  "n": 1,
-                  "s": "ok",
-                  "seq": 1
-                }
-              ]
-            }
-          },
-          "deviceNow": 5011,
-          "tSend": 5011,
-          "tRecv": 5011
-        },
-        {
           "op": "pull",
           "scopes": [
             "self/probe"
@@ -11729,30 +11703,6 @@
         },
         null,
         {
-          "replica": "rp_00000000000000000000000000000004",
-          "account": "A",
-          "ackThrough": 0,
-          "intents": [
-            {
-              "scope": "self/probe",
-              "d": [
-                {
-                  "t": "card",
-                  "id": "card0001",
-                  "born": "5000:0:r_aaaaaaaaaaaa",
-                  "life": [
-                    "dead",
-                    "5003:0:r_aaaaaaaaaaaa"
-                  ]
-                }
-              ],
-              "gestureId": "g1",
-              "n": 1
-            }
-          ]
-        },
-        null,
-        {
           "scopes": [
             {
               "scope": "self/probe",
@@ -11788,7 +11738,7 @@
             "meta": {
               "replica": "rp_00000000000000000000000000000004",
               "state": "bound",
-              "nextN": 2,
+              "nextN": 1,
               "hlc": {
                 "ms": 5003,
                 "counter": 0
@@ -11812,14 +11762,10 @@
                 {
                   "offset": 0,
                   "rtt": 0
-                },
-                {
-                  "offset": 0,
-                  "rtt": 0
                 }
               ],
               "serverEpoch": "ep-2",
-              "ackThrough": 1,
+              "ackThrough": 0,
               "authPaused": false,
               "account": "A",
               "clockReading": {
@@ -11855,7 +11801,7 @@
     }
   },
   {
-    "name": "restore with an unpredicted command and a partial boot retains the old-birth delete in a notice",
+    "name": "restore with an unpredicted command and a partial boot maps the retained target into its delete",
     "input": {
       "device": {
         "active": "rp_00000000000000000000000000000001",
@@ -12119,8 +12065,8 @@
                 },
                 {
                   "n": 3,
-                  "s": "refused",
-                  "code": "unknown-record"
+                  "s": "ok",
+                  "seq": 3
                 }
               ]
             }
@@ -12150,24 +12096,6 @@
                   "kind": "rows",
                   "rows": [
                     {
-                      "t": "run",
-                      "id": "run00009",
-                      "life": [
-                        "alive",
-                        "5011:0:srv"
-                      ],
-                      "born": "5011:0:srv",
-                      "f": {
-                        "startedAt": [
-                          5000,
-                          "5011:0:srv"
-                        ]
-                      },
-                      "seq": 1,
-                      "rc": 5011,
-                      "ru": 5011
-                    },
-                    {
                       "t": "card",
                       "id": "card0001",
                       "life": [
@@ -12186,11 +12114,11 @@
                       "ru": 5012
                     }
                   ],
-                  "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6M30",
                   "more": false,
-                  "seq": 2,
-                  "digest": "89942e93c05e2ba7d33fc8533f3817c6f23afeadc4ad508fa1f23d1e3be9f2f0",
-                  "total": 2
+                  "seq": 3,
+                  "digest": "a0ca6929c5ef5ea903cfb010a6e82e444fcfce1ee2b24df382c63a29c97a3237",
+                  "total": 1
                 }
               ]
             }
@@ -12370,7 +12298,7 @@
                 {
                   "t": "run",
                   "id": "run00009",
-                  "born": "5001:0:srv",
+                  "born": "5011:0:srv",
                   "life": [
                     "dead",
                     "5011:1:r_cccccccccccc"
@@ -12411,7 +12339,7 @@
                 "counter": 1
               },
               "hlcHigh": "5011:1:r_cccccccccccc",
-              "admittedHigh": "5011:0:srv",
+              "admittedHigh": "5011:1:r_cccccccccccc",
               "serverOffsetMs": 0,
               "offsetSamples": [
                 {
@@ -12472,64 +12400,20 @@
                   "seq": 2,
                   "rc": 5012,
                   "ru": 5012
-                },
-                {
-                  "t": "run",
-                  "id": "run00009",
-                  "life": [
-                    "alive",
-                    "5011:0:srv"
-                  ],
-                  "born": "5011:0:srv",
-                  "f": {
-                    "startedAt": [
-                      5000,
-                      "5011:0:srv"
-                    ]
-                  },
-                  "seq": 1,
-                  "rc": 5011,
-                  "ru": 5011
                 }
               ]
             },
             "cursors": {
               "self/probe": {
-                "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6Mn0",
-                "digest": "89942e93c05e2ba7d33fc8533f3817c6f23afeadc4ad508fa1f23d1e3be9f2f0",
+                "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6M30",
+                "digest": "a0ca6929c5ef5ea903cfb010a6e82e444fcfce1ee2b24df382c63a29c97a3237",
                 "booted": true
               }
-            },
-            "notices": [
-              {
-                "id": "notice:g3/0",
-                "scope": "self/probe",
-                "code": "unknown-record",
-                "content": {
-                  "d": [
-                    {
-                      "t": "run",
-                      "id": "run00009",
-                      "born": "5001:0:srv",
-                      "life": [
-                        "dead",
-                        "5011:1:r_cccccccccccc"
-                      ]
-                    }
-                  ]
-                },
-                "at": 5012
-              }
-            ]
+            }
           }
         ]
       },
       "ended": [
-        {
-          "localId": "g3/0",
-          "outcome": "refused",
-          "event": "refuse"
-        },
         {
           "localId": "g1/0",
           "outcome": "resolved",
@@ -12537,6 +12421,11 @@
         },
         {
           "localId": "g2/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g3/0",
           "outcome": "resolved",
           "event": "resolve"
         }
@@ -14566,6 +14455,5067 @@
         ]
       },
       "ended": []
+    }
+  },
+  {
+    "name": "a successful changed-epoch command with no old acknowledgements stays accepted across restart",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "run",
+                  "id": "run00001",
+                  "life": [
+                    "alive",
+                    "1300:0:srv"
+                  ],
+                  "born": "1300:0:srv",
+                  "f": {
+                    "startedAt": [
+                      1300,
+                      "1300:0:srv"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                "digest": "e7e65a6fff37c30b27c05c2ad209760a4775ef3375abe63f6981b0eecbdff506",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ids": [
+        "rp_00000000000000000000000000000002"
+      ],
+      "actors": [
+        "r_cccccccccccc",
+        "r_dddddddddddd"
+      ],
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "probe.end",
+              "args": {
+                "runId": "run00001",
+                "endedAt": 5000
+              }
+            },
+            "predict": [
+              {
+                "op": "delete",
+                "t": "run",
+                "id": "run00001"
+              }
+            ]
+          },
+          "deviceNow": 5000
+        },
+        {
+          "op": "push",
+          "deviceNow": 5001
+        },
+        {
+          "op": "pushResponse",
+          "deviceNow": 5002,
+          "response": {
+            "status": 200,
+            "body": {
+              "as": "A",
+              "epoch": "ep-2",
+              "serverTime": 5002,
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": []
+                }
+              ]
+            }
+          }
+        },
+        {
+          "op": "engineStart",
+          "deviceNow": 5003
+        },
+        {
+          "op": "push",
+          "deviceNow": 5004
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.end",
+                "args": {
+                  "runId": "run00001",
+                  "endedAt": 5000
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "actor": "r_dddddddddddd",
+          "reidentified": false
+        },
+        null
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000002",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000002",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 5000,
+                "counter": 0
+              },
+              "hlcHigh": "5000:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-2",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 5002,
+                "mono": 5002,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "run",
+                  "id": "run00001",
+                  "life": [
+                    "alive",
+                    "1300:0:srv"
+                  ],
+                  "born": "1300:0:srv",
+                  "f": {
+                    "startedAt": [
+                      1300,
+                      "1300:0:srv"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": null,
+                "digest": "e7e65a6fff37c30b27c05c2ad209760a4775ef3375abe63f6981b0eecbdff506",
+                "booted": true
+              }
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "acked",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "5000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "cmd": {
+                    "name": "probe.end",
+                    "args": {
+                      "runId": "run00001",
+                      "endedAt": 5000
+                    }
+                  },
+                  "gestureId": "g1",
+                  "n": 1
+                },
+                "predict": [
+                  {
+                    "t": "run",
+                    "id": "run00001",
+                    "born": "1300:0:srv",
+                    "life": [
+                      "dead",
+                      "5000:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                ],
+                "n": 1,
+                "digest": "bc4a695c86bae670023a19de224e7b5b87843e6d5af257da86262db4257cf242",
+                "resultSeq": 2,
+                "resultEpoch": "ep-2",
+                "writeTargets": []
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_00000000000000000000000000000001",
+          "replica": "rp_00000000000000000000000000000002"
+        }
+      ]
+    }
+  },
+  {
+    "name": "predicted joined commands share their replay target before its delete after a pull restore",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {}
+          }
+        ]
+      },
+      "ids": [
+        "rp_00000000000000000000000000000002"
+      ],
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "probe.start",
+              "args": {
+                "id": "run00002",
+                "startedAt": 5000,
+                "join": true
+              }
+            },
+            "predict": [
+              {
+                "op": "create",
+                "t": "run",
+                "id": "run00002",
+                "f": {
+                  "startedAt": 5000
+                }
+              }
+            ]
+          },
+          "deviceNow": 5000
+        },
+        {
+          "op": "push",
+          "deviceNow": 5001
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5001,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "from": "run00002",
+                      "born": "1300:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5001,
+          "tSend": 5001,
+          "tRecv": 5001
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "probe.start",
+              "args": {
+                "id": "run00003",
+                "startedAt": 5001,
+                "join": true
+              }
+            },
+            "predict": [
+              {
+                "op": "create",
+                "t": "run",
+                "id": "run00003",
+                "f": {
+                  "startedAt": 5001
+                }
+              }
+            ]
+          },
+          "deviceNow": 5001
+        },
+        {
+          "op": "push",
+          "deviceNow": 5002
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5002,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "from": "run00003",
+                      "born": "1300:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5002,
+          "tSend": 5002,
+          "tRecv": 5002
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "delete",
+              "t": "run",
+              "id": "run00001"
+            }
+          ],
+          "deviceNow": 5003
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "self/probe"
+          ],
+          "deviceNow": 5010
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5010,
+              "epoch": "ep-2",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6MH0",
+                  "more": false,
+                  "seq": 0,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                  "total": 0
+                }
+              ]
+            }
+          },
+          "deviceNow": 5010,
+          "tSend": 5010,
+          "tRecv": 5010
+        },
+        {
+          "op": "engineStart",
+          "deviceNow": 5011
+        },
+        {
+          "op": "push",
+          "deviceNow": 5020
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5020,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 1,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00002",
+                      "born": "5020:0:srv",
+                      "f": {
+                        "startedAt": "5020:0:srv"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5020,
+          "tSend": 5020,
+          "tRecv": 5020
+        },
+        {
+          "op": "push",
+          "deviceNow": 5030
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5030,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 1,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00002",
+                      "born": "5020:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5030,
+          "tSend": 5030,
+          "tRecv": 5030
+        },
+        {
+          "op": "push",
+          "deviceNow": 5040
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5040,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 3,
+              "results": [
+                {
+                  "n": 3,
+                  "s": "ok",
+                  "seq": 2
+                }
+              ]
+            }
+          },
+          "deviceNow": 5040,
+          "tSend": 5040,
+          "tRecv": 5040
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "self/probe"
+          ],
+          "deviceNow": 5050
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5050,
+              "epoch": "ep-2",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "run",
+                      "id": "run00002",
+                      "life": [
+                        "dead",
+                        "5030:0:r_dddddddddddd"
+                      ],
+                      "born": "5020:0:srv",
+                      "seq": 2
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+                }
+              ]
+            }
+          },
+          "deviceNow": 5050,
+          "tSend": 5050,
+          "tRecv": 5050
+        }
+      ],
+      "actors": [
+        "r_cccccccccccc",
+        "r_dddddddddddd"
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5000,
+                  "join": true
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "localIds": [
+            "g2/0"
+          ],
+          "retired": [],
+          "stamp": "5001:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00003",
+                  "startedAt": 5001,
+                  "join": true
+                }
+              },
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "localIds": [
+            "g3/0"
+          ],
+          "retired": [],
+          "stamp": "5003:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "actor": "r_dddddddddddd",
+          "reidentified": false
+        },
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5000,
+                  "join": true
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5001,
+                  "join": true
+                }
+              },
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 2,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "run",
+                  "id": "run00002",
+                  "born": "5020:0:srv",
+                  "life": [
+                    "dead",
+                    "5030:0:r_dddddddddddd"
+                  ]
+                }
+              ],
+              "gestureId": "g3",
+              "n": 3
+            }
+          ]
+        },
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6MH0"
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          }
+        ]
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000002",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000002",
+              "state": "bound",
+              "nextN": 4,
+              "hlc": {
+                "ms": 5030,
+                "counter": 0
+              },
+              "hlcHigh": "5030:0:r_dddddddddddd",
+              "admittedHigh": "5030:0:r_dddddddddddd",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-2",
+              "ackThrough": 3,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 5050,
+                "mono": 5050,
+                "boot": "boot-1"
+              }
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g2/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g3/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_00000000000000000000000000000001",
+          "replica": "rp_00000000000000000000000000000002"
+        }
+      ]
+    }
+  },
+  {
+    "name": "legacy joined commands share their replay target before its delete after a pull restore",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 3,
+              "hlc": {
+                "ms": 5003,
+                "counter": 0
+              },
+              "hlcHigh": "5003:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "1300:0:srv",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 2,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 5002,
+                "mono": 5002,
+                "boot": "boot-1"
+              }
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "acked",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "5000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "cmd": {
+                    "name": "probe.start",
+                    "args": {
+                      "id": "run00002",
+                      "startedAt": 5000,
+                      "join": true
+                    }
+                  },
+                  "gestureId": "g1",
+                  "n": 1
+                },
+                "predict": [
+                  {
+                    "t": "run",
+                    "id": "run00001",
+                    "born": "1300:0:srv",
+                    "life": [
+                      "alive",
+                      "1300:0:srv"
+                    ],
+                    "f": {
+                      "startedAt": [
+                        5000,
+                        "5000:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  }
+                ],
+                "n": 1,
+                "digest": "3d14e6cb24d066ab31ebf9fafe4612c1213dbc50cd768271e6e4b9ee652f91c9",
+                "resultSeq": 2,
+                "resultEpoch": "ep-1"
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "acked",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "5001:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "cmd": {
+                    "name": "probe.start",
+                    "args": {
+                      "id": "run00003",
+                      "startedAt": 5001,
+                      "join": true
+                    }
+                  },
+                  "gestureId": "g2",
+                  "n": 2
+                },
+                "predict": [
+                  {
+                    "t": "run",
+                    "id": "run00001",
+                    "born": "1300:0:srv",
+                    "life": [
+                      "alive",
+                      "1300:0:srv"
+                    ],
+                    "f": {
+                      "startedAt": [
+                        5001,
+                        "5001:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  }
+                ],
+                "n": 2,
+                "digest": "b8568eeaf8e7ee01b7de3035cbf2f2ee3fbafb90b7ec83edb45282b4787324d4",
+                "resultSeq": 2,
+                "resultEpoch": "ep-1"
+              },
+              {
+                "localId": "g3/0",
+                "gestureId": "g3",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 3,
+                "releaseAt": 0,
+                "stamp": "5003:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "born": "1300:0:srv",
+                      "life": [
+                        "dead",
+                        "5003:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "g3"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "ids": [
+        "rp_00000000000000000000000000000002"
+      ],
+      "steps": [
+        {
+          "op": "pull",
+          "scopes": [
+            "self/probe"
+          ],
+          "deviceNow": 5010
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5010,
+              "epoch": "ep-2",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6MH0",
+                  "more": false,
+                  "seq": 0,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                  "total": 0
+                }
+              ]
+            }
+          },
+          "deviceNow": 5010,
+          "tSend": 5010,
+          "tRecv": 5010
+        },
+        {
+          "op": "engineStart",
+          "deviceNow": 5011
+        },
+        {
+          "op": "push",
+          "deviceNow": 5020
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5020,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 1,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00002",
+                      "born": "5020:0:srv",
+                      "f": {
+                        "startedAt": "5020:0:srv"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5020,
+          "tSend": 5020,
+          "tRecv": 5020
+        },
+        {
+          "op": "push",
+          "deviceNow": 5030
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5030,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 1,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00002",
+                      "born": "5020:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5030,
+          "tSend": 5030,
+          "tRecv": 5030
+        },
+        {
+          "op": "push",
+          "deviceNow": 5040
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5040,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 3,
+              "results": [
+                {
+                  "n": 3,
+                  "s": "ok",
+                  "seq": 2
+                }
+              ]
+            }
+          },
+          "deviceNow": 5040,
+          "tSend": 5040,
+          "tRecv": 5040
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "self/probe"
+          ],
+          "deviceNow": 5050
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5050,
+              "epoch": "ep-2",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "run",
+                      "id": "run00002",
+                      "life": [
+                        "dead",
+                        "5030:0:r_dddddddddddd"
+                      ],
+                      "born": "5020:0:srv",
+                      "seq": 2
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+                }
+              ]
+            }
+          },
+          "deviceNow": 5050,
+          "tSend": 5050,
+          "tRecv": 5050
+        }
+      ],
+      "actors": [
+        "r_cccccccccccc",
+        "r_dddddddddddd"
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "actor": "r_dddddddddddd",
+          "reidentified": false
+        },
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5000,
+                  "join": true
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5001,
+                  "join": true
+                }
+              },
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 2,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "run",
+                  "id": "run00002",
+                  "born": "5020:0:srv",
+                  "life": [
+                    "dead",
+                    "5030:0:r_dddddddddddd"
+                  ]
+                }
+              ],
+              "gestureId": "g3",
+              "n": 3
+            }
+          ]
+        },
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6MH0"
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          }
+        ]
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000002",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000002",
+              "state": "bound",
+              "nextN": 4,
+              "hlc": {
+                "ms": 5030,
+                "counter": 0
+              },
+              "hlcHigh": "5030:0:r_dddddddddddd",
+              "admittedHigh": "5030:0:r_dddddddddddd",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-2",
+              "ackThrough": 3,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 5050,
+                "mono": 5050,
+                "boot": "boot-1"
+              }
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g2/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g3/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_00000000000000000000000000000001",
+          "replica": "rp_00000000000000000000000000000002"
+        }
+      ]
+    }
+  },
+  {
+    "name": "unpredicted joined commands share their replay target before its delete after a pull restore",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {}
+          }
+        ]
+      },
+      "ids": [
+        "rp_00000000000000000000000000000002"
+      ],
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "probe.start",
+              "args": {
+                "id": "run00002",
+                "startedAt": 5000,
+                "join": true
+              }
+            }
+          },
+          "deviceNow": 5000
+        },
+        {
+          "op": "push",
+          "deviceNow": 5001
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5001,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "from": "run00002",
+                      "born": "1300:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5001,
+          "tSend": 5001,
+          "tRecv": 5001
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "probe.start",
+              "args": {
+                "id": "run00003",
+                "startedAt": 5001,
+                "join": true
+              }
+            }
+          },
+          "deviceNow": 5001
+        },
+        {
+          "op": "push",
+          "deviceNow": 5002
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5002,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "from": "run00003",
+                      "born": "1300:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5002,
+          "tSend": 5002,
+          "tRecv": 5002
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "self/probe"
+          ],
+          "deviceNow": 5002
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5002,
+              "epoch": "ep-1",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "life": [
+                        "alive",
+                        "1300:0:srv"
+                      ],
+                      "born": "1300:0:srv",
+                      "f": {
+                        "startedAt": [
+                          1300,
+                          "1300:0:srv"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 1000,
+                      "ru": 1000
+                    }
+                  ],
+                  "cursor": "eyJhIjoyLCJlIjoiZXAtMSIsImsiOlsicnVuIiwicnVuMDAwMDEiXSwibSI6ImJvb3QiLCJzIjoxfQ",
+                  "more": true,
+                  "seq": 2,
+                  "digest": "3ca45ad335076cc2f2639e809edea16011802aad477ff5b577093fa4e4b54471",
+                  "total": 2
+                }
+              ]
+            }
+          },
+          "deviceNow": 5002,
+          "tSend": 5002,
+          "tRecv": 5002
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "delete",
+              "t": "run",
+              "id": "run00001"
+            }
+          ],
+          "deviceNow": 5003
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "self/probe"
+          ],
+          "deviceNow": 5010
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5010,
+              "epoch": "ep-2",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "reset"
+                }
+              ]
+            }
+          },
+          "deviceNow": 5010,
+          "tSend": 5010,
+          "tRecv": 5010
+        },
+        {
+          "op": "engineStart",
+          "deviceNow": 5011
+        },
+        {
+          "op": "push",
+          "deviceNow": 5020
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5020,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 1,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00002",
+                      "born": "5020:0:srv",
+                      "f": {
+                        "startedAt": "5020:0:srv"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5020,
+          "tSend": 5020,
+          "tRecv": 5020
+        },
+        {
+          "op": "push",
+          "deviceNow": 5030
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5030,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 1,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00002",
+                      "born": "5020:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5030,
+          "tSend": 5030,
+          "tRecv": 5030
+        },
+        {
+          "op": "push",
+          "deviceNow": 5040
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5040,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 3,
+              "results": [
+                {
+                  "n": 3,
+                  "s": "ok",
+                  "seq": 2
+                }
+              ]
+            }
+          },
+          "deviceNow": 5040,
+          "tSend": 5040,
+          "tRecv": 5040
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "self/probe"
+          ],
+          "deviceNow": 5050
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5050,
+              "epoch": "ep-2",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                  "total": 0
+                }
+              ]
+            }
+          },
+          "deviceNow": 5050,
+          "tSend": 5050,
+          "tRecv": 5050
+        }
+      ],
+      "actors": [
+        "r_cccccccccccc",
+        "r_dddddddddddd"
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5000,
+                  "join": true
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "localIds": [
+            "g2/0"
+          ],
+          "retired": [],
+          "stamp": "5001:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00003",
+                  "startedAt": 5001,
+                  "join": true
+                }
+              },
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "localIds": [
+            "g3/0"
+          ],
+          "retired": [],
+          "stamp": "5003:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": "eyJhIjoyLCJlIjoiZXAtMSIsImsiOlsicnVuIiwicnVuMDAwMDEiXSwibSI6ImJvb3QiLCJzIjoxfQ"
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "stale"
+          }
+        ],
+        {
+          "actor": "r_dddddddddddd",
+          "reidentified": false
+        },
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5000,
+                  "join": true
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5001,
+                  "join": true
+                }
+              },
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 2,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "run",
+                  "id": "run00002",
+                  "born": "5020:0:srv",
+                  "life": [
+                    "dead",
+                    "5030:0:r_dddddddddddd"
+                  ]
+                }
+              ],
+              "gestureId": "g3",
+              "n": 3
+            }
+          ]
+        },
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          }
+        ]
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000002",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000002",
+              "state": "bound",
+              "nextN": 4,
+              "hlc": {
+                "ms": 5030,
+                "counter": 0
+              },
+              "hlcHigh": "5030:0:r_dddddddddddd",
+              "admittedHigh": "5030:0:r_dddddddddddd",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-2",
+              "ackThrough": 3,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 5050,
+                "mono": 5050,
+                "boot": "boot-1"
+              }
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g2/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g3/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_00000000000000000000000000000001",
+          "replica": "rp_00000000000000000000000000000002"
+        }
+      ]
+    }
+  },
+  {
+    "name": "retained-target joined commands share their replay target before its delete after a pull restore",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {}
+          }
+        ]
+      },
+      "ids": [
+        "rp_00000000000000000000000000000002"
+      ],
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "probe.start",
+              "args": {
+                "id": "run00002",
+                "startedAt": 5000,
+                "join": true
+              }
+            },
+            "predict": [
+              {
+                "op": "create",
+                "t": "run",
+                "id": "run00002",
+                "f": {
+                  "startedAt": 5000
+                }
+              }
+            ]
+          },
+          "deviceNow": 5000
+        },
+        {
+          "op": "push",
+          "deviceNow": 5001
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5001,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "from": "run00002",
+                      "born": "1300:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5001,
+          "tSend": 5001,
+          "tRecv": 5001
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "probe.start",
+              "args": {
+                "id": "run00003",
+                "startedAt": 5001,
+                "join": true
+              }
+            },
+            "predict": [
+              {
+                "op": "create",
+                "t": "run",
+                "id": "run00003",
+                "f": {
+                  "startedAt": 5001
+                }
+              }
+            ]
+          },
+          "deviceNow": 5001
+        },
+        {
+          "op": "push",
+          "deviceNow": 5002
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5002,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "from": "run00003",
+                      "born": "1300:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5002,
+          "tSend": 5002,
+          "tRecv": 5002
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "delete",
+              "t": "run",
+              "id": "run00001"
+            }
+          ],
+          "deviceNow": 5003
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "self/probe"
+          ],
+          "deviceNow": 5010
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5010,
+              "epoch": "ep-2",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "life": [
+                        "alive",
+                        "1300:0:srv"
+                      ],
+                      "born": "1300:0:srv",
+                      "f": {
+                        "startedAt": [
+                          1300,
+                          "1300:0:srv"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 1000,
+                      "ru": 1000
+                    },
+                    {
+                      "t": "card",
+                      "id": "card0001",
+                      "life": [
+                        "alive",
+                        "1400:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1400:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Other",
+                          "1400:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 2,
+                      "rc": 2000,
+                      "ru": 2000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "3ca45ad335076cc2f2639e809edea16011802aad477ff5b577093fa4e4b54471",
+                  "total": 2
+                }
+              ]
+            }
+          },
+          "deviceNow": 5010,
+          "tSend": 5010,
+          "tRecv": 5010
+        },
+        {
+          "op": "engineStart",
+          "deviceNow": 5011
+        },
+        {
+          "op": "push",
+          "deviceNow": 5020
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5020,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "born": "1300:0:srv",
+                      "from": "run00002"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5020,
+          "tSend": 5020,
+          "tRecv": 5020
+        },
+        {
+          "op": "push",
+          "deviceNow": 5030
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5030,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "from": "run00001",
+                      "born": "1300:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5030,
+          "tSend": 5030,
+          "tRecv": 5030
+        },
+        {
+          "op": "push",
+          "deviceNow": 5040
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5040,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 3,
+              "results": [
+                {
+                  "n": 3,
+                  "s": "ok",
+                  "seq": 3
+                }
+              ]
+            }
+          },
+          "deviceNow": 5040,
+          "tSend": 5040,
+          "tRecv": 5040
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "self/probe"
+          ],
+          "deviceNow": 5050
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5050,
+              "epoch": "ep-2",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "life": [
+                        "dead",
+                        "5030:0:r_dddddddddddd"
+                      ],
+                      "born": "1300:0:srv",
+                      "seq": 3
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6M30",
+                  "more": false,
+                  "seq": 3,
+                  "digest": "54be006335cfa9b7caa34255ccd52b55ca0a3b79d1d40f760d878eb618d54f6b"
+                }
+              ]
+            }
+          },
+          "deviceNow": 5050,
+          "tSend": 5050,
+          "tRecv": 5050
+        }
+      ],
+      "actors": [
+        "r_cccccccccccc",
+        "r_dddddddddddd"
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5000,
+                  "join": true
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "localIds": [
+            "g2/0"
+          ],
+          "retired": [],
+          "stamp": "5001:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00003",
+                  "startedAt": 5001,
+                  "join": true
+                }
+              },
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "localIds": [
+            "g3/0"
+          ],
+          "retired": [],
+          "stamp": "5003:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "actor": "r_dddddddddddd",
+          "reidentified": false
+        },
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5000,
+                  "join": true
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00001",
+                  "startedAt": 5001,
+                  "join": true
+                }
+              },
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 2,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "run",
+                  "id": "run00001",
+                  "born": "1300:0:srv",
+                  "life": [
+                    "dead",
+                    "5030:0:r_dddddddddddd"
+                  ]
+                }
+              ],
+              "gestureId": "g3",
+              "n": 3
+            }
+          ]
+        },
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6Mn0"
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          }
+        ]
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000002",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000002",
+              "state": "bound",
+              "nextN": 4,
+              "hlc": {
+                "ms": 5030,
+                "counter": 0
+              },
+              "hlcHigh": "5030:0:r_dddddddddddd",
+              "admittedHigh": "5030:0:r_dddddddddddd",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-2",
+              "ackThrough": 3,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 5050,
+                "mono": 5050,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "life": [
+                    "alive",
+                    "1400:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1400:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Other",
+                      "1400:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6M30",
+                "digest": "54be006335cfa9b7caa34255ccd52b55ca0a3b79d1d40f760d878eb618d54f6b",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g2/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g3/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_00000000000000000000000000000001",
+          "replica": "rp_00000000000000000000000000000002"
+        }
+      ]
+    }
+  },
+  {
+    "name": "predicted joined commands share their replay target before its delete after a gap restore",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {}
+          }
+        ]
+      },
+      "ids": [
+        "rp_00000000000000000000000000000002"
+      ],
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "probe.start",
+              "args": {
+                "id": "run00002",
+                "startedAt": 5000,
+                "join": true
+              }
+            },
+            "predict": [
+              {
+                "op": "create",
+                "t": "run",
+                "id": "run00002",
+                "f": {
+                  "startedAt": 5000
+                }
+              }
+            ]
+          },
+          "deviceNow": 5000
+        },
+        {
+          "op": "push",
+          "deviceNow": 5001
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5001,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "from": "run00002",
+                      "born": "1300:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5001,
+          "tSend": 5001,
+          "tRecv": 5001
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "probe.start",
+              "args": {
+                "id": "run00003",
+                "startedAt": 5001,
+                "join": true
+              }
+            },
+            "predict": [
+              {
+                "op": "create",
+                "t": "run",
+                "id": "run00003",
+                "f": {
+                  "startedAt": 5001
+                }
+              }
+            ]
+          },
+          "deviceNow": 5001
+        },
+        {
+          "op": "push",
+          "deviceNow": 5002
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5002,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "from": "run00003",
+                      "born": "1300:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5002,
+          "tSend": 5002,
+          "tRecv": 5002
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "delete",
+              "t": "run",
+              "id": "run00001"
+            }
+          ],
+          "deviceNow": 5003
+        },
+        {
+          "op": "push",
+          "deviceNow": 5010
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 409,
+            "body": {
+              "serverTime": 5010,
+              "epoch": "ep-2",
+              "as": "A",
+              "error": "gap"
+            }
+          },
+          "deviceNow": 5010,
+          "tSend": 5010,
+          "tRecv": 5010
+        },
+        {
+          "op": "engineStart",
+          "deviceNow": 5011
+        },
+        {
+          "op": "push",
+          "deviceNow": 5020
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5020,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 1,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00002",
+                      "born": "5020:0:srv",
+                      "f": {
+                        "startedAt": "5020:0:srv"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5020,
+          "tSend": 5020,
+          "tRecv": 5020
+        },
+        {
+          "op": "push",
+          "deviceNow": 5030
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5030,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 1,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00002",
+                      "born": "5020:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5030,
+          "tSend": 5030,
+          "tRecv": 5030
+        },
+        {
+          "op": "push",
+          "deviceNow": 5040
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5040,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 3,
+              "results": [
+                {
+                  "n": 3,
+                  "s": "ok",
+                  "seq": 2
+                }
+              ]
+            }
+          },
+          "deviceNow": 5040,
+          "tSend": 5040,
+          "tRecv": 5040
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "self/probe"
+          ],
+          "deviceNow": 5050
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5050,
+              "epoch": "ep-2",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                  "total": 0
+                }
+              ]
+            }
+          },
+          "deviceNow": 5050,
+          "tSend": 5050,
+          "tRecv": 5050
+        }
+      ],
+      "actors": [
+        "r_cccccccccccc",
+        "r_dddddddddddd"
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5000,
+                  "join": true
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "localIds": [
+            "g2/0"
+          ],
+          "retired": [],
+          "stamp": "5001:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00003",
+                  "startedAt": 5001,
+                  "join": true
+                }
+              },
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "localIds": [
+            "g3/0"
+          ],
+          "retired": [],
+          "stamp": "5003:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 2,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "run",
+                  "id": "run00001",
+                  "born": "1300:0:srv",
+                  "life": [
+                    "dead",
+                    "5003:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              ],
+              "gestureId": "g3",
+              "n": 3
+            }
+          ]
+        },
+        null,
+        {
+          "actor": "r_dddddddddddd",
+          "reidentified": false
+        },
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5000,
+                  "join": true
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5001,
+                  "join": true
+                }
+              },
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 2,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "run",
+                  "id": "run00002",
+                  "born": "5020:0:srv",
+                  "life": [
+                    "dead",
+                    "5030:0:r_dddddddddddd"
+                  ]
+                }
+              ],
+              "gestureId": "g3",
+              "n": 3
+            }
+          ]
+        },
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          }
+        ]
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000002",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000002",
+              "state": "bound",
+              "nextN": 4,
+              "hlc": {
+                "ms": 5030,
+                "counter": 0
+              },
+              "hlcHigh": "5030:0:r_dddddddddddd",
+              "admittedHigh": "5030:0:r_dddddddddddd",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-2",
+              "ackThrough": 3,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 5050,
+                "mono": 5050,
+                "boot": "boot-1"
+              }
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g2/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g3/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_00000000000000000000000000000001",
+          "replica": "rp_00000000000000000000000000000002"
+        }
+      ]
+    }
+  },
+  {
+    "name": "legacy joined commands share their replay target before its delete after a gap restore",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 3,
+              "hlc": {
+                "ms": 5003,
+                "counter": 0
+              },
+              "hlcHigh": "5003:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "1300:0:srv",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 2,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 5002,
+                "mono": 5002,
+                "boot": "boot-1"
+              }
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "acked",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "5000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "cmd": {
+                    "name": "probe.start",
+                    "args": {
+                      "id": "run00002",
+                      "startedAt": 5000,
+                      "join": true
+                    }
+                  },
+                  "gestureId": "g1",
+                  "n": 1
+                },
+                "predict": [
+                  {
+                    "t": "run",
+                    "id": "run00001",
+                    "born": "1300:0:srv",
+                    "life": [
+                      "alive",
+                      "1300:0:srv"
+                    ],
+                    "f": {
+                      "startedAt": [
+                        5000,
+                        "5000:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  }
+                ],
+                "n": 1,
+                "digest": "3d14e6cb24d066ab31ebf9fafe4612c1213dbc50cd768271e6e4b9ee652f91c9",
+                "resultSeq": 2,
+                "resultEpoch": "ep-1"
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "acked",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "5001:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "cmd": {
+                    "name": "probe.start",
+                    "args": {
+                      "id": "run00003",
+                      "startedAt": 5001,
+                      "join": true
+                    }
+                  },
+                  "gestureId": "g2",
+                  "n": 2
+                },
+                "predict": [
+                  {
+                    "t": "run",
+                    "id": "run00001",
+                    "born": "1300:0:srv",
+                    "life": [
+                      "alive",
+                      "1300:0:srv"
+                    ],
+                    "f": {
+                      "startedAt": [
+                        5001,
+                        "5001:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  }
+                ],
+                "n": 2,
+                "digest": "b8568eeaf8e7ee01b7de3035cbf2f2ee3fbafb90b7ec83edb45282b4787324d4",
+                "resultSeq": 2,
+                "resultEpoch": "ep-1"
+              },
+              {
+                "localId": "g3/0",
+                "gestureId": "g3",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 3,
+                "releaseAt": 0,
+                "stamp": "5003:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "born": "1300:0:srv",
+                      "life": [
+                        "dead",
+                        "5003:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "g3"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "ids": [
+        "rp_00000000000000000000000000000002"
+      ],
+      "steps": [
+        {
+          "op": "push",
+          "deviceNow": 5010
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 409,
+            "body": {
+              "serverTime": 5010,
+              "epoch": "ep-2",
+              "as": "A",
+              "error": "gap"
+            }
+          },
+          "deviceNow": 5010,
+          "tSend": 5010,
+          "tRecv": 5010
+        },
+        {
+          "op": "engineStart",
+          "deviceNow": 5011
+        },
+        {
+          "op": "push",
+          "deviceNow": 5020
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5020,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 1,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00002",
+                      "born": "5020:0:srv",
+                      "f": {
+                        "startedAt": "5020:0:srv"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5020,
+          "tSend": 5020,
+          "tRecv": 5020
+        },
+        {
+          "op": "push",
+          "deviceNow": 5030
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5030,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 1,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00002",
+                      "born": "5020:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5030,
+          "tSend": 5030,
+          "tRecv": 5030
+        },
+        {
+          "op": "push",
+          "deviceNow": 5040
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5040,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 3,
+              "results": [
+                {
+                  "n": 3,
+                  "s": "ok",
+                  "seq": 2
+                }
+              ]
+            }
+          },
+          "deviceNow": 5040,
+          "tSend": 5040,
+          "tRecv": 5040
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "self/probe"
+          ],
+          "deviceNow": 5050
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5050,
+              "epoch": "ep-2",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                  "total": 0
+                }
+              ]
+            }
+          },
+          "deviceNow": 5050,
+          "tSend": 5050,
+          "tRecv": 5050
+        }
+      ],
+      "actors": [
+        "r_cccccccccccc",
+        "r_dddddddddddd"
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 2,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "run",
+                  "id": "run00001",
+                  "born": "1300:0:srv",
+                  "life": [
+                    "dead",
+                    "5003:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              ],
+              "gestureId": "g3",
+              "n": 3
+            }
+          ]
+        },
+        null,
+        {
+          "actor": "r_dddddddddddd",
+          "reidentified": false
+        },
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5000,
+                  "join": true
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5001,
+                  "join": true
+                }
+              },
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 2,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "run",
+                  "id": "run00002",
+                  "born": "5020:0:srv",
+                  "life": [
+                    "dead",
+                    "5030:0:r_dddddddddddd"
+                  ]
+                }
+              ],
+              "gestureId": "g3",
+              "n": 3
+            }
+          ]
+        },
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          }
+        ]
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000002",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000002",
+              "state": "bound",
+              "nextN": 4,
+              "hlc": {
+                "ms": 5030,
+                "counter": 0
+              },
+              "hlcHigh": "5030:0:r_dddddddddddd",
+              "admittedHigh": "5030:0:r_dddddddddddd",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-2",
+              "ackThrough": 3,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 5050,
+                "mono": 5050,
+                "boot": "boot-1"
+              }
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g2/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g3/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_00000000000000000000000000000001",
+          "replica": "rp_00000000000000000000000000000002"
+        }
+      ]
+    }
+  },
+  {
+    "name": "unpredicted joined commands share their replay target before its delete after a gap restore",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {}
+          }
+        ]
+      },
+      "ids": [
+        "rp_00000000000000000000000000000002"
+      ],
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "probe.start",
+              "args": {
+                "id": "run00002",
+                "startedAt": 5000,
+                "join": true
+              }
+            }
+          },
+          "deviceNow": 5000
+        },
+        {
+          "op": "push",
+          "deviceNow": 5001
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5001,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "from": "run00002",
+                      "born": "1300:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5001,
+          "tSend": 5001,
+          "tRecv": 5001
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "probe.start",
+              "args": {
+                "id": "run00003",
+                "startedAt": 5001,
+                "join": true
+              }
+            }
+          },
+          "deviceNow": 5001
+        },
+        {
+          "op": "push",
+          "deviceNow": 5002
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5002,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "from": "run00003",
+                      "born": "1300:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5002,
+          "tSend": 5002,
+          "tRecv": 5002
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "self/probe"
+          ],
+          "deviceNow": 5002
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5002,
+              "epoch": "ep-1",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "life": [
+                        "alive",
+                        "1300:0:srv"
+                      ],
+                      "born": "1300:0:srv",
+                      "f": {
+                        "startedAt": [
+                          1300,
+                          "1300:0:srv"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 1000,
+                      "ru": 1000
+                    }
+                  ],
+                  "cursor": "eyJhIjoyLCJlIjoiZXAtMSIsImsiOlsicnVuIiwicnVuMDAwMDEiXSwibSI6ImJvb3QiLCJzIjoxfQ",
+                  "more": true,
+                  "seq": 2,
+                  "digest": "3ca45ad335076cc2f2639e809edea16011802aad477ff5b577093fa4e4b54471",
+                  "total": 2
+                }
+              ]
+            }
+          },
+          "deviceNow": 5002,
+          "tSend": 5002,
+          "tRecv": 5002
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "delete",
+              "t": "run",
+              "id": "run00001"
+            }
+          ],
+          "deviceNow": 5003
+        },
+        {
+          "op": "push",
+          "deviceNow": 5010
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 409,
+            "body": {
+              "serverTime": 5010,
+              "epoch": "ep-2",
+              "as": "A",
+              "error": "gap"
+            }
+          },
+          "deviceNow": 5010,
+          "tSend": 5010,
+          "tRecv": 5010
+        },
+        {
+          "op": "engineStart",
+          "deviceNow": 5011
+        },
+        {
+          "op": "push",
+          "deviceNow": 5020
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5020,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 1,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00002",
+                      "born": "5020:0:srv",
+                      "f": {
+                        "startedAt": "5020:0:srv"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5020,
+          "tSend": 5020,
+          "tRecv": 5020
+        },
+        {
+          "op": "push",
+          "deviceNow": 5030
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5030,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 1,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00002",
+                      "born": "5020:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5030,
+          "tSend": 5030,
+          "tRecv": 5030
+        },
+        {
+          "op": "push",
+          "deviceNow": 5040
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5040,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 3,
+              "results": [
+                {
+                  "n": 3,
+                  "s": "ok",
+                  "seq": 2
+                }
+              ]
+            }
+          },
+          "deviceNow": 5040,
+          "tSend": 5040,
+          "tRecv": 5040
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "self/probe"
+          ],
+          "deviceNow": 5050
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5050,
+              "epoch": "ep-2",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [],
+                  "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6Mn0",
+                  "more": false,
+                  "seq": 2,
+                  "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                  "total": 0
+                }
+              ]
+            }
+          },
+          "deviceNow": 5050,
+          "tSend": 5050,
+          "tRecv": 5050
+        }
+      ],
+      "actors": [
+        "r_cccccccccccc",
+        "r_dddddddddddd"
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5000,
+                  "join": true
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "localIds": [
+            "g2/0"
+          ],
+          "retired": [],
+          "stamp": "5001:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00003",
+                  "startedAt": 5001,
+                  "join": true
+                }
+              },
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "localIds": [
+            "g3/0"
+          ],
+          "retired": [],
+          "stamp": "5003:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 2,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "run",
+                  "id": "run00001",
+                  "born": "1300:0:srv",
+                  "life": [
+                    "dead",
+                    "5003:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              ],
+              "gestureId": "g3",
+              "n": 3
+            }
+          ]
+        },
+        null,
+        {
+          "actor": "r_dddddddddddd",
+          "reidentified": false
+        },
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5000,
+                  "join": true
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5001,
+                  "join": true
+                }
+              },
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 2,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "run",
+                  "id": "run00002",
+                  "born": "5020:0:srv",
+                  "life": [
+                    "dead",
+                    "5030:0:r_dddddddddddd"
+                  ]
+                }
+              ],
+              "gestureId": "g3",
+              "n": 3
+            }
+          ]
+        },
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          }
+        ]
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000002",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000002",
+              "state": "bound",
+              "nextN": 4,
+              "hlc": {
+                "ms": 5030,
+                "counter": 0
+              },
+              "hlcHigh": "5030:0:r_dddddddddddd",
+              "admittedHigh": "5030:0:r_dddddddddddd",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-2",
+              "ackThrough": 3,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 5050,
+                "mono": 5050,
+                "boot": "boot-1"
+              }
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g2/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g3/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_00000000000000000000000000000001",
+          "replica": "rp_00000000000000000000000000000002"
+        }
+      ]
+    }
+  },
+  {
+    "name": "retained-target joined commands share their replay target before its delete after a gap restore",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {}
+          }
+        ]
+      },
+      "ids": [
+        "rp_00000000000000000000000000000002"
+      ],
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "probe.start",
+              "args": {
+                "id": "run00002",
+                "startedAt": 5000,
+                "join": true
+              }
+            },
+            "predict": [
+              {
+                "op": "create",
+                "t": "run",
+                "id": "run00002",
+                "f": {
+                  "startedAt": 5000
+                }
+              }
+            ]
+          },
+          "deviceNow": 5000
+        },
+        {
+          "op": "push",
+          "deviceNow": 5001
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5001,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "from": "run00002",
+                      "born": "1300:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5001,
+          "tSend": 5001,
+          "tRecv": 5001
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "probe.start",
+              "args": {
+                "id": "run00003",
+                "startedAt": 5001,
+                "join": true
+              }
+            },
+            "predict": [
+              {
+                "op": "create",
+                "t": "run",
+                "id": "run00003",
+                "f": {
+                  "startedAt": 5001
+                }
+              }
+            ]
+          },
+          "deviceNow": 5001
+        },
+        {
+          "op": "push",
+          "deviceNow": 5002
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5002,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "from": "run00003",
+                      "born": "1300:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5002,
+          "tSend": 5002,
+          "tRecv": 5002
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "delete",
+              "t": "run",
+              "id": "run00001"
+            }
+          ],
+          "deviceNow": 5003
+        },
+        {
+          "op": "push",
+          "deviceNow": 5010
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 409,
+            "body": {
+              "serverTime": 5010,
+              "epoch": "ep-2",
+              "as": "A",
+              "error": "gap"
+            }
+          },
+          "deviceNow": 5010,
+          "tSend": 5010,
+          "tRecv": 5010
+        },
+        {
+          "op": "engineStart",
+          "deviceNow": 5011
+        },
+        {
+          "op": "push",
+          "deviceNow": 5020
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5020,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "born": "1300:0:srv",
+                      "from": "run00002"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5020,
+          "tSend": 5020,
+          "tRecv": 5020
+        },
+        {
+          "op": "push",
+          "deviceNow": 5030
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5030,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run00001",
+                      "from": "run00001",
+                      "born": "1300:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5030,
+          "tSend": 5030,
+          "tRecv": 5030
+        },
+        {
+          "op": "push",
+          "deviceNow": 5040
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5040,
+              "epoch": "ep-2",
+              "as": "A",
+              "lastN": 3,
+              "results": [
+                {
+                  "n": 3,
+                  "s": "ok",
+                  "seq": 3
+                }
+              ]
+            }
+          },
+          "deviceNow": 5040,
+          "tSend": 5040,
+          "tRecv": 5040
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "self/probe"
+          ],
+          "deviceNow": 5050
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5050,
+              "epoch": "ep-2",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "card",
+                      "id": "card0001",
+                      "life": [
+                        "alive",
+                        "1400:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1400:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Other",
+                          "1400:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 2,
+                      "rc": 2000,
+                      "ru": 2000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6M30",
+                  "more": false,
+                  "seq": 3,
+                  "digest": "54be006335cfa9b7caa34255ccd52b55ca0a3b79d1d40f760d878eb618d54f6b",
+                  "total": 1
+                }
+              ]
+            }
+          },
+          "deviceNow": 5050,
+          "tSend": 5050,
+          "tRecv": 5050
+        }
+      ],
+      "actors": [
+        "r_cccccccccccc",
+        "r_dddddddddddd"
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5000,
+                  "join": true
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "localIds": [
+            "g2/0"
+          ],
+          "retired": [],
+          "stamp": "5001:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00003",
+                  "startedAt": 5001,
+                  "join": true
+                }
+              },
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "localIds": [
+            "g3/0"
+          ],
+          "retired": [],
+          "stamp": "5003:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 2,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "run",
+                  "id": "run00001",
+                  "born": "1300:0:srv",
+                  "life": [
+                    "dead",
+                    "5003:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              ],
+              "gestureId": "g3",
+              "n": 3
+            }
+          ]
+        },
+        null,
+        {
+          "actor": "r_dddddddddddd",
+          "reidentified": false
+        },
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "startedAt": 5000,
+                  "join": true
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00001",
+                  "startedAt": 5001,
+                  "join": true
+                }
+              },
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
+          "ackThrough": 2,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "run",
+                  "id": "run00001",
+                  "born": "1300:0:srv",
+                  "life": [
+                    "dead",
+                    "5030:0:r_dddddddddddd"
+                  ]
+                }
+              ],
+              "gestureId": "g3",
+              "n": 3
+            }
+          ]
+        },
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          }
+        ]
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000002",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000002",
+              "state": "bound",
+              "nextN": 4,
+              "hlc": {
+                "ms": 5030,
+                "counter": 0
+              },
+              "hlcHigh": "5030:0:r_dddddddddddd",
+              "admittedHigh": "5030:0:r_dddddddddddd",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-2",
+              "ackThrough": 3,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 5050,
+                "mono": 5050,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "life": [
+                    "alive",
+                    "1400:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1400:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Other",
+                      "1400:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMiIsIm0iOiJsaXZlIiwicyI6M30",
+                "digest": "54be006335cfa9b7caa34255ccd52b55ca0a3b79d1d40f760d878eb618d54f6b",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g2/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g3/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_00000000000000000000000000000001",
+          "replica": "rp_00000000000000000000000000000002"
+        }
+      ]
     }
   }
 ]

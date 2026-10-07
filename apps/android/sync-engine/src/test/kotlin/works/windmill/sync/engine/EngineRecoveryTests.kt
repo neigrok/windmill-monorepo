@@ -192,6 +192,94 @@ class EngineRecoveryTests {
         }
     }
 
+    @Test fun replayedCommandRetainsItsJoinedIdentityAndMovesLaterDeletesAfterRestart() {
+        for (legacy in listOf(false, true)) {
+            val snapshot = engine().use { engine ->
+                val command = entry("command", 0, "acked", "101:0:old", intent(extras = """, "cmd":{"name":"probe.start","args":{"id":"run00001","startedAt":100,"join":true}}"""),
+                    json("""[{"t":"run","id":"run00001","born":"101:0:old","life":["alive","101:0:old"]}]"""))
+                engine.write { r ->
+                    replica(engine, listOf(command))
+                    engine.applyWriteMap(r, command, listOf(json("""{"t":"run","from":"run00001","id":"run00002","born":"200:0:srv"}""")))
+                    assertEquals(json("""[{"t":"run","from":"run00001","id":"run00002","born":"200:0:srv"}]"""), command.json["writeTargets"])
+                    engine.applyWriteMap(r, command, emptyList())
+                    if (legacy) command.json = command.json.with("writeTargets" to null)
+                    r.outbox.add(entry("delete", 1, "ready", "300:0:old", intent("""[{"t":"run","id":"run00002","born":"200:0:srv","life":["dead","300:0:old"]}]""")))
+                    val later = entry("later", 2, "ready", "301:0:old", intent(extras = """, "cmd":{"name":"probe.end","args":{"runId":"run00002","endedAt":300}}"""))
+                    later.json = later.json.with("writeTargets" to json("""[{"t":"run","from":"run00002","id":"run00002","born":"200:0:srv"}]"""))
+                    r.outbox.add(later)
+                    engine.epochChange(r, "ep-2")
+                }
+                engine.snapshot()
+            }
+            Engine.memory(registry, snapshot).use { reopened ->
+                val request = reopened.nextPush()!!
+                val response = SyncResponse(200, json("""{"serverTime":400,"epoch":"ep-2","as":"A","lastN":1,"results":[{"n":1,"s":"ok","seq":1,"write":[{"t":"run","id":"run00001","born":"400:0:srv"}]}]}"""))
+                val timing = RequestTiming(ClockReading(400, 400, "boot"), ClockReading(400, 400, "boot"))
+                reopened.crashAfterTransactions(2)
+                assertThrows(EngineCrash::class.java) { reopened.onPushResponse(request, response, timing) }
+                Engine.memory(registry, reopened.snapshot()).use { recovered ->
+                    val entries = recovered.device.current().entries()
+                    assertEquals(json("""[{"t":"run","from":"run00001","id":"run00001","born":"400:0:srv"}]"""), entries[0].json["writeTargets"])
+                    assertEquals(RecordKey("run", RecordID("run00001")), entries[1].intent.deltas.single().key)
+                    assertEquals(Stamp("400:0:srv"), entries[1].intent.deltas.single().lattice.born)
+                    assertTrue(entries[1].intent.deltas.single().lattice.life!!.stamp > Stamp("400:0:srv"))
+                    assertEquals(Json.of("run00001"), entries[2].intent.command!!.args["runId"])
+                    assertEquals(json("""[{"t":"run","from":"run00001","id":"run00001","born":"200:0:srv"}]"""), entries[2].json["writeTargets"])
+                    assertTrue(recovered.device.current().notices.isEmpty())
+                    val before = entries.map { it.json }
+                    recovered.onPushResponse(request, response, timing)
+                    assertEquals(before, recovered.device.current().entries().map { it.json })
+                }
+            }
+        }
+    }
+
+    @Test fun legacyCommandWithNoRecoverableTargetRetainsTheUnmappedDeleteInANotice() {
+        engine().use { engine ->
+            val command = entry("command", 0, "acked", "101:0:old", intent(extras = """, "cmd":{"name":"probe.start","args":{"id":"run00001","startedAt":100,"join":true}}"""))
+            val deletion = entry("delete", 1, "ready", "300:0:old", intent("""[{"t":"run","id":"run00002","born":"200:0:srv","life":["dead","300:0:old"]}]"""))
+            engine.write { r ->
+                replica(engine, listOf(command, deletion)); engine.epochChange(r, "ep-2")
+                assertEquals(Json.array(), command.json["writeTargets"])
+                command.state = "acked"
+                engine.applyWriteMap(r, command, listOf(json("""{"t":"run","id":"run00001","born":"400:0:srv"}""")))
+            }
+            val replica = engine.device.current()
+            assertEquals(listOf("command/0"), replica.entries().map { it.id })
+            assertEquals("target-merged", replica.notices.single().member("code").str())
+            assertEquals(deletion.intent.json.member("d"), replica.notices.single().member("content").member("d"))
+        }
+    }
+
+    @Test fun replayBindsLaterCommandAliasesEvenWhenTheResolvedIdStaysTheSame() {
+        for (target in listOf("run00001", "run00002")) engine().use { engine ->
+            val prediction = json("""[{"t":"run","id":"run00002","born":"200:0:srv","life":["alive","200:0:srv"]}]""")
+            val first = entry("first", 0, "acked", "100:0:old", intent(extras = """, "cmd":{"name":"probe.start","args":{"id":"run00001","startedAt":100,"join":true}}"""), prediction)
+            first.json = first.json.with("writeTargets" to json("""[{"t":"run","from":"run00001","id":"run00002","born":"200:0:srv"}]"""))
+            val later = entry("later", 1, "ready", "101:0:old", intent(extras = """, "cmd":{"name":"probe.start","args":{"id":"run00003","startedAt":101,"join":true}}"""), prediction)
+            later.json = later.json.with("writeTargets" to json("""[{"t":"run","from":"run00003","id":"run00002","born":"200:0:srv"}]"""))
+            val deletion = entry("delete", 2, "ready", "300:0:old", intent("""[{"t":"run","id":"run00002","born":"200:0:srv","life":["dead","300:0:old"]}]"""))
+            engine.write { replica(engine, listOf(first, later, deletion)) }
+            val map = Json.objectOf("t" to Json.of("run"), "id" to Json.of(target), "born" to Json.of("400:0:srv"))
+                .with("from" to if (target == "run00002") Json.of("run00001") else null)
+            val before = engine.snapshot()
+            engine.failNextCommit()
+            assertThrows(CommitFailure::class.java) { engine.write { r -> engine.applyWriteMap(r, r.entries().first(), listOf(map)) } }
+            assertEquals(before, engine.snapshot())
+            engine.crashAfterTransactions(1)
+            assertThrows(EngineCrash::class.java) { engine.write { r -> engine.applyWriteMap(r, r.entries().first(), listOf(map)) } }
+            Engine.memory(registry, engine.snapshot()).use { reopened ->
+                val rebound = reopened.device.current().entries()[1]
+                assertEquals(Json.of(target), rebound.intent.command!!.args["id"])
+                assertEquals(Json.of(target), rebound.json.items("writeTargets").single()["from"])
+                assertEquals(Json.of(target), rebound.json.items("writeTargets").single()["id"])
+                val command = reopened.nextPush()!!.items("intents").single().member("cmd")
+                assertEquals(Json.of(target), command.member("args")["id"])
+                assertTrue(reopened.device.current().notices.isEmpty())
+            }
+        }
+    }
+
     @Test fun storageFailureRollsBackNoticeFoldRestampAndEndingsTogether() {
         engine().use { engine ->
             engine.write { replica(engine, listOf(entry("source", 0, "sent", "101:0:old", intent("""[{"t":"run","id":"run00001","born":"101:0:old","life":["alive","101:0:old"]}]""")),
