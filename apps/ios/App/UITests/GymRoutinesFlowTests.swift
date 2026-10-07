@@ -331,10 +331,14 @@ import UIKit
     reorder.tap()
     XCTAssertTrue(reorder.wait(for: \.label, toEqual: "Reorder", timeout: 5))
     XCTAssertTrue(deadliftHandle.waitForNonExistence(timeout: 5))
-    let deadlift = app.cells.containing(.button, identifier: "builder-movement-deadlift").firstMatch
-    XCTAssertTrue(deadlift.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    let deadlift = app.buttons["builder-movement-deadlift"]
+    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      guard deadlift.exists, deadlift.isEnabled, deadlift.isHittable else { return false }
+      let frame = deadlift.frame
+      return !frame.isEmpty && self.viewport.contains(frame)
+    }, object: deadlift)
+    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
     let row = deadlift.frame
-    XCTAssertTrue(row.width > 0 && row.height > 0 && viewport.contains(row))
     let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: row.maxX - 40, dy: row.midY))
     start.press(forDuration: 0.01, thenDragTo: start.withOffset(CGVector(dx: -min(150, row.width / 2), dy: 0)),
       withVelocity: .slow, thenHoldForDuration: 0.1)

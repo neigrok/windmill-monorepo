@@ -160,6 +160,59 @@ import CoreText
     #expect(!editor.gestureRecognizer(editor.appendTap, shouldBeRequiredToFailBy: UIPanGestureRecognizer()))
   }
 
+  @Test func nativeEndEditsReportTheirBodyAndKeepMiddleSelections() throws {
+    let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+    let previousKeyWindow = scene.windows.first(where: \.isKeyWindow)
+    let window = UIWindow(windowScene: scene)
+    let controller = UIViewController()
+    window.rootViewController = controller
+    window.makeKeyAndVisible()
+    defer {
+      window.isHidden = true
+      window.rootViewController = nil
+      previousKeyWindow?.makeKeyAndVisible()
+    }
+    let edits: [(selection: NSRange, focused: Bool, body: String, report: String?)] = [
+      (NSRange(location: 4, length: 0), true, "aaaaa", "aaaaa"),
+      (NSRange(location: 2, length: 0), true, "aaaaa", nil),
+      (NSRange(location: 4, length: 0), false, "aaaaa", nil),
+      (NSRange(location: 3, length: 1), true, "aaaa", "aaaa"),
+    ]
+    for edit in edits {
+      let editor = editor(""), view = editor.textView
+      editor.frame = CGRect(x: 0, y: 0, width: 320, height: 300)
+      controller.view.addSubview(editor)
+      editor.layoutIfNeeded()
+      defer { view.resignFirstResponder(); editor.removeFromSuperview() }
+      var published = "aaaa", reports = [String?]()
+      var reportedBeforePublication = false
+      let binding = Binding(get: { published }, set: { value in
+        reportedBeforePublication = !reports.isEmpty
+        published = value
+      })
+      let coordinator = JournalBodyText(text: binding, focused: .constant(edit.focused), fontSize: 17,
+                                        didEditAtEnd: { reports.append($0) }).makeCoordinator()
+      coordinator.updateText(view, text: published, fontSize: 17)
+      view.delegate = coordinator
+      if edit.focused { #expect(view.becomeFirstResponder()) }
+      #expect(view.isFirstResponder == edit.focused)
+      view.selectedRange = edit.selection
+      withExtendedLifetime(coordinator) {
+        view.insertText("a")
+        #expect(published == edit.body)
+        #expect(reports == [edit.report])
+        #expect(reportedBeforePublication)
+        #expect(view.selectedRange == NSRange(location: edit.selection.location + 1, length: 0))
+        if edit.selection.length == 1 {
+          published = "An unrelated update."
+          coordinator.updateText(view, text: published, fontSize: 17)
+          #expect(view.text == published)
+          #expect(reports == ["aaaa"])
+        }
+      }
+    }
+  }
+
   @Test func reentrantBindingUpdateCannotRewindTyping() {
     let view = editor("A page.").textView
     var published = view.text ?? ""

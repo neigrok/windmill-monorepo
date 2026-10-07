@@ -9,6 +9,7 @@ struct JournalScreen: View {
   @State var focused = false
   @State var writeRequest = 0
   @State var appendRequest = 0
+  @State var editedBodyAtEnd: String?
   @State var inkMounted = false
   @State var inkFrames: [String: CGRect] = [:]
   @Environment(\.dynamicTypeSize) var typeSize
@@ -49,8 +50,9 @@ struct JournalScreen: View {
           }
           inkNotes(origin: geo.frame(in: .global).origin)
         }
-      }.onChange(of: model.document.body) { old, new in
-        if focused && new == old + "\n" { scroll.scrollTo("journal-today", anchor: .bottom) }
+      }.onChange(of: model.document.body) { _, new in
+        if focused && editedBodyAtEnd == new { scroll.scrollTo("journal-today", anchor: .bottom) }
+        editedBodyAtEnd = nil
       }.overlay(alignment: .bottomTrailing) {
         if !model.editorReadOnly && model.sheet == nil && !model.compactAccountSheet {
           Button {
@@ -127,7 +129,7 @@ struct JournalScreen: View {
           if model.firstKept && model.scalesDue { Image(systemName: "checkmark").font(.system(size: 10)).foregroundStyle(Design.lamp) }
         }.accessibilityElement(children: .combine).accessibilityIdentifier("journal-date").inkAnchor("date", enabled: inkMounted, frames: $inkFrames).padding(.bottom, 16)
         ZStack(alignment: .topLeading) {
-          JournalBodyText(text: Binding(get: { model.document.body }, set: { model.type($0) }), focused: $focused, fontSize: bodySize, editable: !model.editorReadOnly, appendRequest: appendRequest, inkVisible: inkMounted && model.inkVisible && !focused && model.sheet == nil)
+          JournalBodyText(text: Binding(get: { model.document.body }, set: { model.type($0) }), focused: $focused, fontSize: bodySize, editable: !model.editorReadOnly, appendRequest: appendRequest, inkVisible: inkMounted && model.inkVisible && !focused && model.sheet == nil, didEditAtEnd: { editedBodyAtEnd = $0 })
             .frame(height: editorHeight(width: width))
             .allowsHitTesting(focused || model.editorReadOnly)
           if model.document.body.isEmpty && !focused {
@@ -201,6 +203,7 @@ struct JournalBodyText: UIViewRepresentable {
   var editable = true
   var appendRequest = 0
   var inkVisible = false
+  var didEditAtEnd: (String?) -> Void = { _ in }
 
   static func attributes(fontSize: CGFloat) -> [NSAttributedString.Key: Any] {
     let paragraph = NSMutableParagraphStyle()
@@ -276,7 +279,11 @@ struct JournalBodyText: UIViewRepresentable {
     func textViewDidChange(_ textView: UITextView) {
       publishingText = true
       defer { publishingText = false }
-      parent.text = textView.text
+      // Native selection distinguishes end edits from insertions into repeated text.
+      let selection = textView.selectedRange
+      let text = textView.text ?? ""
+      parent.didEditAtEnd(textView.isFirstResponder && selection.length == 0 && selection.location == textView.textStorage.length ? text : nil)
+      parent.text = text
     }
     func textViewDidBeginEditing(_ textView: UITextView) { if !parent.focused { textView.resignFirstResponder() } }
     func textViewDidEndEditing(_ textView: UITextView) { if parent.focused { parent.focused = false } }
