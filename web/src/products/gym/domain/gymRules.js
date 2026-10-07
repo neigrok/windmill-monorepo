@@ -8,6 +8,10 @@ import { registry } from '../../../platform/sync/schema.js';
 import { WeighIn, WeighInRules } from './bodyweight.js';
 import { Preferences, PreferencesRules } from './preferences.js';
 import { Note, NoteRules } from './notes.js';
+import { Exercise, ExerciseName } from './catalogue.js';
+import { Routine } from './routines.js';
+export { Exercise, ExerciseName } from './catalogue.js';
+export { Routine } from './routines.js';
 
 /** @typedef {import('../../../platform/domain-kit/values.js').Json} Json */
 /** @typedef {import('../../../platform/domain-kit/entities.js').RecordRef} RecordRef */
@@ -147,9 +151,6 @@ function targetForm(f) { return omittingNull({ reps: f.optionalInt('reps'), weig
 function targetsForm(f) { return omittingNull({ sets: f.optionalList('sets', targetForm), restSeconds: f.optionalInt('restSeconds') }); }
 
 /** @param {Fields} f */
-function entryForm(f) { return { exerciseId: f.ref('exerciseId', Exercise).json, ...targetsForm(f) }; }
-
-/** @param {Fields} f */
 function changeForm(f) {
   return omittingNull({ kind: f.string('kind'), exerciseId: f.ref('exerciseId', Exercise).json,
     before: f.optionalValue('before', targetsForm), after: f.optionalValue('after', targetsForm) });
@@ -221,28 +222,6 @@ function entity(type, decode, checks, protocols = {}) {
   });
   return declared;
 }
-
-export const Exercise = entity('exercise', (f) => ({ name: f.string('name'), pattern: f.string('pattern'),
-  equipment: f.string('equipment'), stepKg: f.double('stepKg') }), {
-  name: (f, path) => ExerciseRules.name.apply(f.string('name'), path),
-  pattern: (f, path) => ExerciseRules.pattern.apply(f.string('pattern'), path),
-  equipment: (f, path) => ExerciseRules.equipment.apply(f.string('equipment'), path),
-  stepKg: (f, path) => ExerciseRules.stepKg.apply(f.double('stepKg'), path),
-});
-
-export const ExerciseName = entity('exerciseName', (f) => ({ name: f.optionalString('name') }), {
-  name: (f, path) => ExerciseRules.seedName.applyOptional(f.optionalString('name'), path),
-});
-
-export const Routine = entity('routine', (f) => ({ name: f.string('name'), position: f.optionalInt('position') ?? 0,
-  entries: f.list('entries', entryForm) }), {
-  name: (f, path) => RoutineRules.name.apply(f.string('name'), path),
-  position: (f, path) => RoutineRules.position.apply(f.int('position'), path),
-  entries: (f, path) => RoutineRules.entries.apply(f.list('entries', entryForm), path, (entry, at) => {
-    RoutineRules.exercise.apply(typeof entry.exerciseId === 'string' ? entry.exerciseId : '', at.plus('exerciseId'));
-    return { exerciseId: entry.exerciseId, ...validateTargets(entry, at, RoutineRules.targets, 'routine') };
-  }),
-}, { heldRemoval: true, savesGuarded: true });
 
 export const Session = entity('session', (f) => ({ startedAt: f.instant('startedAt').ms,
   finishedAt: f.optionalInstant('finishedAt')?.ms ?? null, closedBy: f.optionalString('closedBy'),

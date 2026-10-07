@@ -1,75 +1,9 @@
 import { Reader, Views } from '../../platform/domain-kit/reading.js';
 import { Instant, Moment } from '../../platform/domain-kit/time.js';
 import { registry } from '../../platform/sync/schema.js';
-import { bodyweightDocument, namedZone, notesDocument, preferencesDocument } from './gymRuntime.js';
-
-// Global seed movements are outside sync scopes (engine A.2). Kept equal to schema.sql.
-export const GYM_SEED_CATALOG = [
-  { id: 'back-squat', name: 'Back Squat', pattern: 'squat', equipment: 'barbell', stepKg: 2.5, custom: false },
-  { id: 'front-squat', name: 'Front Squat', pattern: 'squat', equipment: 'barbell', stepKg: 2.5, custom: false },
-  { id: 'goblet-squat', name: 'Goblet Squat', pattern: 'squat', equipment: 'dumbbell', stepKg: 2.0, custom: false },
-  { id: 'bulgarian-split-squat', name: 'Bulgarian Split Squat', pattern: 'squat', equipment: 'dumbbell', stepKg: 2.0, custom: false },
-  { id: 'walking-lunge', name: 'Walking Lunge', pattern: 'squat', equipment: 'dumbbell', stepKg: 2.0, custom: false },
-  { id: 'step-up', name: 'Step Up', pattern: 'squat', equipment: 'dumbbell', stepKg: 2.0, custom: false },
-  { id: 'leg-press', name: 'Leg Press', pattern: 'squat', equipment: 'machine', stepKg: 5.0, custom: false },
-  { id: 'hack-squat', name: 'Hack Squat', pattern: 'squat', equipment: 'machine', stepKg: 5.0, custom: false },
-  { id: 'deadlift', name: 'Deadlift', pattern: 'hinge', equipment: 'barbell', stepKg: 2.5, custom: false },
-  { id: 'sumo-deadlift', name: 'Sumo Deadlift', pattern: 'hinge', equipment: 'barbell', stepKg: 2.5, custom: false },
-  { id: 'romanian-deadlift', name: 'Romanian Deadlift', pattern: 'hinge', equipment: 'barbell', stepKg: 2.5, custom: false },
-  { id: 'trap-bar-deadlift', name: 'Trap Bar Deadlift', pattern: 'hinge', equipment: 'barbell', stepKg: 2.5, custom: false },
-  { id: 'good-morning', name: 'Good Morning', pattern: 'hinge', equipment: 'barbell', stepKg: 2.5, custom: false },
-  { id: 'hip-thrust', name: 'Hip Thrust', pattern: 'hinge', equipment: 'barbell', stepKg: 2.5, custom: false },
-  { id: 'back-extension', name: 'Back Extension', pattern: 'hinge', equipment: 'bodyweight', stepKg: 2.5, custom: false },
-  { id: 'kettlebell-swing', name: 'Kettlebell Swing', pattern: 'hinge', equipment: 'kettlebell', stepKg: 4.0, custom: false },
-  { id: 'bench-press', name: 'Bench Press', pattern: 'press', equipment: 'barbell', stepKg: 2.5, custom: false },
-  { id: 'incline-bench-press', name: 'Incline Bench Press', pattern: 'press', equipment: 'barbell', stepKg: 2.5, custom: false },
-  { id: 'close-grip-bench-press', name: 'Close Grip Bench Press', pattern: 'press', equipment: 'barbell', stepKg: 2.5, custom: false },
-  { id: 'overhead-press', name: 'Overhead Press', pattern: 'press', equipment: 'barbell', stepKg: 2.5, custom: false },
-  { id: 'push-press', name: 'Push Press', pattern: 'press', equipment: 'barbell', stepKg: 2.5, custom: false },
-  { id: 'dumbbell-bench-press', name: 'Dumbbell Bench Press', pattern: 'press', equipment: 'dumbbell', stepKg: 2.0, custom: false },
-  { id: 'incline-dumbbell-press', name: 'Incline Dumbbell Press', pattern: 'press', equipment: 'dumbbell', stepKg: 2.0, custom: false },
-  { id: 'dumbbell-shoulder-press', name: 'Dumbbell Shoulder Press', pattern: 'press', equipment: 'dumbbell', stepKg: 2.0, custom: false },
-  { id: 'machine-chest-press', name: 'Machine Chest Press', pattern: 'press', equipment: 'machine', stepKg: 5.0, custom: false },
-  { id: 'machine-shoulder-press', name: 'Machine Shoulder Press', pattern: 'press', equipment: 'machine', stepKg: 5.0, custom: false },
-  { id: 'dip', name: 'Dip', pattern: 'press', equipment: 'bodyweight', stepKg: 2.5, custom: false },
-  { id: 'push-up', name: 'Push Up', pattern: 'press', equipment: 'bodyweight', stepKg: 2.5, custom: false },
-  { id: 'pull-up', name: 'Pull Up', pattern: 'pull', equipment: 'bodyweight', stepKg: 2.5, custom: false },
-  { id: 'chin-up', name: 'Chin Up', pattern: 'pull', equipment: 'bodyweight', stepKg: 2.5, custom: false },
-  { id: 'muscle-up', name: 'Muscle Up', pattern: 'pull', equipment: 'bodyweight', stepKg: 2.5, custom: false },
-  { id: 'lat-pulldown', name: 'Lat Pulldown', pattern: 'pull', equipment: 'cable', stepKg: 2.5, custom: false },
-  { id: 'barbell-row', name: 'Barbell Row', pattern: 'pull', equipment: 'barbell', stepKg: 2.5, custom: false },
-  { id: 'dumbbell-row', name: 'Dumbbell Row', pattern: 'pull', equipment: 'dumbbell', stepKg: 2.0, custom: false },
-  { id: 'chest-supported-row', name: 'Chest Supported Row', pattern: 'pull', equipment: 'machine', stepKg: 5.0, custom: false },
-  { id: 'seated-cable-row', name: 'Seated Cable Row', pattern: 'pull', equipment: 'cable', stepKg: 2.5, custom: false },
-  { id: 'face-pull', name: 'Face Pull', pattern: 'pull', equipment: 'cable', stepKg: 2.5, custom: false },
-  { id: 'barbell-shrug', name: 'Barbell Shrug', pattern: 'pull', equipment: 'barbell', stepKg: 2.5, custom: false },
-  { id: 'inverted-row', name: 'Inverted Row', pattern: 'pull', equipment: 'bodyweight', stepKg: 2.5, custom: false },
-  { id: 'farmers-carry', name: 'Farmers Carry', pattern: 'carry', equipment: 'dumbbell', stepKg: 2.0, custom: false },
-  { id: 'suitcase-carry', name: 'Suitcase Carry', pattern: 'carry', equipment: 'dumbbell', stepKg: 2.0, custom: false },
-  { id: 'overhead-carry', name: 'Overhead Carry', pattern: 'carry', equipment: 'dumbbell', stepKg: 2.0, custom: false },
-  { id: 'plank', name: 'Plank', pattern: 'core', equipment: 'bodyweight', stepKg: 2.5, custom: false },
-  { id: 'hanging-leg-raise', name: 'Hanging Leg Raise', pattern: 'core', equipment: 'bodyweight', stepKg: 2.5, custom: false },
-  { id: 'ab-wheel-rollout', name: 'Ab Wheel Rollout', pattern: 'core', equipment: 'bodyweight', stepKg: 2.5, custom: false },
-  { id: 'cable-crunch', name: 'Cable Crunch', pattern: 'core', equipment: 'cable', stepKg: 2.5, custom: false },
-  { id: 'pallof-press', name: 'Pallof Press', pattern: 'core', equipment: 'cable', stepKg: 2.5, custom: false },
-  { id: 'weighted-sit-up', name: 'Weighted Sit Up', pattern: 'core', equipment: 'bodyweight', stepKg: 2.5, custom: false },
-  { id: 'barbell-curl', name: 'Barbell Curl', pattern: 'isolation', equipment: 'barbell', stepKg: 2.5, custom: false },
-  { id: 'dumbbell-curl', name: 'Dumbbell Curl', pattern: 'isolation', equipment: 'dumbbell', stepKg: 2.0, custom: false },
-  { id: 'hammer-curl', name: 'Hammer Curl', pattern: 'isolation', equipment: 'dumbbell', stepKg: 2.0, custom: false },
-  { id: 'triceps-pushdown', name: 'Triceps Pushdown', pattern: 'isolation', equipment: 'cable', stepKg: 2.5, custom: false },
-  { id: 'skull-crusher', name: 'Skull Crusher', pattern: 'isolation', equipment: 'barbell', stepKg: 2.5, custom: false },
-  { id: 'overhead-triceps-extension', name: 'Overhead Triceps Extension', pattern: 'isolation', equipment: 'dumbbell', stepKg: 2.0, custom: false },
-  { id: 'lateral-raise', name: 'Lateral Raise', pattern: 'isolation', equipment: 'dumbbell', stepKg: 2.0, custom: false },
-  { id: 'rear-delt-fly', name: 'Rear Delt Fly', pattern: 'isolation', equipment: 'dumbbell', stepKg: 2.0, custom: false },
-  { id: 'dumbbell-fly', name: 'Dumbbell Fly', pattern: 'isolation', equipment: 'dumbbell', stepKg: 2.0, custom: false },
-  { id: 'cable-fly', name: 'Cable Fly', pattern: 'isolation', equipment: 'cable', stepKg: 2.5, custom: false },
-  { id: 'leg-extension', name: 'Leg Extension', pattern: 'isolation', equipment: 'machine', stepKg: 5.0, custom: false },
-  { id: 'lying-leg-curl', name: 'Lying Leg Curl', pattern: 'isolation', equipment: 'machine', stepKg: 5.0, custom: false },
-  { id: 'standing-calf-raise', name: 'Standing Calf Raise', pattern: 'isolation', equipment: 'machine', stepKg: 5.0, custom: false },
-  { id: 'seated-calf-raise', name: 'Seated Calf Raise', pattern: 'isolation', equipment: 'machine', stepKg: 5.0, custom: false },
-  { id: 'wrist-curl', name: 'Wrist Curl', pattern: 'isolation', equipment: 'barbell', stepKg: 2.5, custom: false },
-  { id: 'hip-abduction', name: 'Hip Abduction', pattern: 'isolation', equipment: 'machine', stepKg: 5.0, custom: false },
-];
+import { bodyweightDocument, exerciseDocument, namedZone, notesDocument, preferencesDocument, routineDocument } from './gymRuntime.js';
+import { Catalogue } from './domain/catalogue.js';
+import { PlanSnapshot, Routine } from './domain/routines.js';
 
 const MAX_INSTANT = 253402300799000;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -95,10 +29,8 @@ function targets(entry) {
 function sessionOf(row) {
   const session = { id: row.id, startedAt: field(row, 'startedAt') };
   for (const name of ['finishedAt', 'routineId']) if (defined(field(row, name))) session[name] = field(row, name);
-  const plan = field(row, 'plan');
-  if (plan && typeof plan === 'object' && !Array.isArray(plan)) {
-    session.plan = { routine: typeof plan.routine === 'string' ? plan.routine : '', entries: (Array.isArray(plan.entries) ? plan.entries : []).filter((entry) => typeof entry?.exerciseId === 'string' && (!('sets' in entry) || Array.isArray(entry.sets))).map((entry) => ({ exerciseId: entry.exerciseId, ...targets(entry) })) };
-  }
+  const plan = PlanSnapshot.decode(field(row, 'plan'));
+  if (plan) session.plan = plan.json;
   if (defined(field(row, 'displayName'))) session.routineName = field(row, 'displayName');
   return session;
 }
@@ -167,7 +99,7 @@ function progressOf(sessions, setsFor, now) {
 }
 
 // Server-authored fields stay absent until admission; local predictions cannot invent historical metadata.
-export function projectGym(rows, { now = Date.now(), timeZone = 'UTC', catalog = GYM_SEED_CATALOG } = {}) {
+export function projectGym(rows, { now = Date.now(), timeZone = 'UTC' } = {}) {
   const read = () => new Reader(Views.ofRecords(registry, { drawn: rows, stored: rows }), 'self/gym', new Moment(new Instant(now), namedZone(timeZone)));
   const alive = rows.filter((row) => row.life === undefined || row.life[0] === 'alive');
   const ofType = (type) => alive.filter((row) => row.t === type);
@@ -192,18 +124,8 @@ export function projectGym(rows, { now = Date.now(), timeZone = 'UTC', catalog =
     staleSessions.add(session.id);
   }
   const finished = sessions.filter((session) => defined(session.finishedAt));
-  const nameRows = new Map(ofType('exerciseName').map((row) => [row.id, row]));
-  const exercises = catalog.filter((exercise) => !exercise.custom).map((seed) => {
-    const row = nameRows.get(seed.id);
-    const aliases = field(row, 'aliases');
-    return { ...seed, name: field(row, 'name') ?? seed.name, ...(aliases?.length ? { aliases } : {}) };
-  });
-  for (const row of ofType('exercise')) {
-    const exercise = { id: row.id, name: field(row, 'name'), pattern: field(row, 'pattern'), equipment: field(row, 'equipment'), stepKg: field(row, 'stepKg'), custom: true };
-    if (field(row, 'aliases')?.length) exercise.aliases = field(row, 'aliases');
-    exercises.push(exercise);
-  }
-  exercises.sort((a, b) => lexical(a.pattern, b.pattern) || lexical(a.name, b.name));
+  const exercises = new Catalogue(read()).exercises.map(exerciseDocument)
+    .sort((a, b) => lexical(a.pattern, b.pattern) || lexical(a.name, b.name) || lexical(a.id, b.id));
   const exerciseById = new Map(exercises.map((exercise) => [exercise.id, exercise]));
   const routineRows = ofType('routine');
   const proposalRows = ofType('proposal').sort((a, b) => (b.rc ?? 0) - (a.rc ?? 0) || lexical(b.id, a.id));
@@ -217,12 +139,13 @@ export function projectGym(rows, { now = Date.now(), timeZone = 'UTC', catalog =
     return head;
   };
   const proposalHeads = proposalRows.map(proposalHead);
-  const routines = routineRows.filter((row) => field(row, 'entries')?.length).map((row) => {
-    const routine = { id: row.id, name: field(row, 'name'), position: field(row, 'position') ?? 0, entries: field(row, 'entries').map((entry, index) => ({ position: index + 1, exerciseId: entry.exerciseId, ...targets(entry) })) };
-    if (defined(field(row, 'revision'))) routine.revision = field(row, 'revision');
-    const trained = sessions.filter((session) => session.routineId === row.id);
+  const routines = read().repository(Routine).all('drawn').filter((value) => value.entries.length).map((value) => {
+    const routine = routineDocument(value);
+    routine.entries = routine.entries.map((entry, index) => ({ position: index + 1, ...entry }));
+    if (value.revision !== null) routine.revision = value.revision;
+    const trained = sessions.filter((session) => session.routineId === value.id.record);
     if (trained.length) routine.lastTrainedAt = trained[0].startedAt;
-    const pending = proposalHeads.find((head) => head.routineId === row.id && head.state === 'pending');
+    const pending = proposalHeads.find((head) => head.routineId === value.id.record && head.state === 'pending');
     if (pending) routine.pendingProposal = pending;
     return routine;
   }).sort((a, b) => (b.lastTrainedAt ?? -1) - (a.lastTrainedAt ?? -1) || a.position - b.position || lexical(a.id, b.id));

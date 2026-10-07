@@ -88,6 +88,6 @@ test('a save over a routine nobody else moved writes only the draft’s changes,
   await settle();
   assert.deepEqual(gym.owed(), ['ready update routine routinePushA name']);
   assert.deepEqual(gym.engine.device.activeReplica.entries()[0].intent.guard.map(({ t: type, id, field }) => `${type} ${id} ${field}`),
-    ['routine routinePushA name', 'routine routinePushA entries', 'routine routinePushA position']);
+    ['routine routinePushA name']);
   assert.equal(window.location.hash, ROUTINES_HREF);
 });

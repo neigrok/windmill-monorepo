@@ -1,23 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { GYM_SEED_CATALOG, projectGym } from '../../../src/products/gym/syncProjections.js';
+import { projectGym } from '../../../src/products/gym/syncProjections.js';
+import { SeedExercises } from '../../../src/products/gym/domain/seedExercises.js';
+import { DecodeError } from '../../../src/platform/domain-kit/entities.js';
+import { exerciseDocument } from '../../../src/products/gym/gymRuntime.js';
 
 const at = Date.UTC(2026, 8, 21, 18);
 const row = (t, id, fields, extra = {}) => ({ t, id, ...(t === 'prefs' || t === 'exerciseName' ? {} : { life: ['alive', '1000:0:srv'], born: '1000:0:srv' }), f: Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, [value, '1000:0:srv']])), rc: at, ru: at, ...extra });
 const sessionRow = (id, start, fields = {}) => row('session', id, { startedAt: start, finishedAt: start + 60 * 60 * 1000, closedBy: 'finish', ...fields });
 const setRow = (id, sessionId, fields = {}) => row('set', id, { sessionId, exerciseId: 'bench-press', weightKg: 60, reps: 8, kind: 'working', note: '', completedAt: at + 1000, ...fields }, { v: { setNumber: 1 } });
-const seed = GYM_SEED_CATALOG.find((exercise) => exercise.id === 'bench-press');
+const seedsInDomain = SeedExercises.all.map(exerciseDocument);
+const seed = seedsInDomain.find((exercise) => exercise.id === 'bench-press');
 
 test('global catalog mirrors every schema seed, overrides seed names, and omits empty aliases', () => {
   const schema = readFileSync(new URL('../../../../backend/db/schema.sql', import.meta.url), 'utf8');
   const source = schema.split('insert into gym_exercises (id, name, pattern, equipment, step_kg) values\n')[1].split('on conflict (id) do nothing;')[0];
   const seeds = [...source.matchAll(/\('([^']+)',\s*'([^']+)',\s*'([^']+)',\s*'([^']+)',\s*([\d.]+)\)/g)].map(([, id, name, pattern, equipment, step]) => ({ id, name, pattern, equipment, stepKg: Number(step), custom: false }));
-  assert.deepEqual(GYM_SEED_CATALOG, seeds);
+  assert.deepEqual(seedsInDomain, seeds);
   const rows = [row('exerciseName', 'bench-press', { name: 'Flat Press', aliases: ['Bench Press'] }), row('exerciseName', 'deadlift', { aliases: [] }), row('exercise', 'custom_mv', { name: 'My Press', equipment: 'machine', pattern: 'press', stepKg: 5, aliases: [] })];
-  const api = projectGym(rows, { catalog: [seed] });
-  assert.deepEqual(api.exercises(), [{ ...seed, name: 'Flat Press', aliases: ['Bench Press'] }, { id: 'custom_mv', name: 'My Press', pattern: 'press', equipment: 'machine', stepKg: 5, custom: true }]);
-  assert.deepEqual(projectGym([row('exerciseName', 'bench-press', { aliases: ['Flat Press'] })], { catalog: [seed] }).exercises(), [{ ...seed, aliases: ['Flat Press'] }]);
+  const api = projectGym(rows);
+  assert.deepEqual(api.exercises().filter((exercise) => ['bench-press', 'custom_mv'].includes(exercise.id)), [{ ...seed, name: 'Flat Press', aliases: ['Bench Press'] }, { id: 'custom_mv', name: 'My Press', pattern: 'press', equipment: 'machine', stepKg: 5, custom: true }]);
+  assert.deepEqual(projectGym([row('exerciseName', 'bench-press', { aliases: ['Flat Press'] })]).exercises().filter((exercise) => exercise.id === 'bench-press'), [{ ...seed, aliases: ['Flat Press'] }]);
 });
 
 test('session details keep frozen plan, corrected display name, serial numbers and genuine absences', () => {
@@ -27,12 +31,14 @@ test('session details keep frozen plan, corrected display name, serial numbers a
   assert.equal(projectGym(rows).session('missing'), null);
 });
 
-test('an unreadable stored plan stays readable and invalid schemes open the complete line', () => {
-  const rows = [sessionRow('session_a', at, { plan: { routine: 42, entries: [{ exerciseId: 'bench-press', sets: [{ reps: 8 }, { reps: 0 }] }, { exerciseId: 'deadlift', sets: 'bad' }, { exerciseId: 'back-squat' }] } }), sessionRow('session_b', at, { plan: 'bad' }), sessionRow('session_c', at, { plan: { entries: null } })];
-  const api = projectGym(rows);
-  assert.deepEqual(api.session('session_a').session.plan, { routine: '', entries: [{ exerciseId: 'bench-press' }, { exerciseId: 'back-squat' }] });
-  assert.equal('plan' in api.session('session_b').session, false);
-  assert.deepEqual(api.session('session_c').session.plan, { routine: '', entries: [] });
+test('malformed frozen plans surface decode errors instead of discarding their content', () => {
+  for (const plan of [
+    { routine: 42, entries: [] },
+    { routine: 'Push', entries: [{ exerciseId: 'bench-press', sets: 'bad' }] },
+    { routine: 'Push', entries: [{ exerciseId: 'bench-press', sets: [{ reps: 'bad' }] }] },
+  ]) assert.throws(() => projectGym([sessionRow('session_a', at, { plan })]), DecodeError);
+  const plan = { routine: 'Push', entries: [{ exerciseId: 'bench-press', sets: [{ reps: 0, weightKg: 0 }], restSeconds: 1 }, { exerciseId: 'deadlift', sets: [] }] };
+  assert.deepEqual(projectGym([sessionRow('session_a', at, { plan })]).session('session_a').session.plan, plan);
 });
 
 test('summaries count only working facts, clamp assisted volume, and keyset page equal starts', () => {

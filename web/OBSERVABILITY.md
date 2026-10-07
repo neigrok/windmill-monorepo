@@ -46,8 +46,8 @@ gesture events. No page body, scales, date, claim identifier or account is repor
 Gym engine writes emit `gym_action` through the first-party events intake with only `operation`
 and `outcome`. Operations are routine create/save, exercise create/rename, preferences save,
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
-delete, Undo and refusal. Outcomes are `saved-local`, `unchanged` (a rename to the name the store
-holds, which writes nothing), `failed`, `held`, `undone`, `closed` and `refused`. A local save
+delete, Undo and refusal. Outcomes are `saved-local`, `unchanged` (a clean draft or a rename to the
+name the store holds writes nothing), `failed`, `held`, `undone`, `closed` and `refused`. A local save
 records durability, not server admission. Unexpected product boundary failures use static
 `gym-<operation>` Sentry names; projection failures use `gym-projection`. A gym refusal and a store
 failure report no `gym-<operation>`: engine telemetry owns transport, storage, authentication and

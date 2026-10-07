@@ -2,13 +2,17 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Fields, Id } from '../../../../src/platform/domain-kit/entities.js';
+import { SaveDraft } from '../../../../src/platform/domain-kit/drafts.js';
+import { DecodeError, Fields, Id } from '../../../../src/platform/domain-kit/entities.js';
 import { LocalDay } from '../../../../src/platform/domain-kit/time.js';
 import { jcs } from '../../../../src/platform/sync/core/jcs.js';
 import { Bodyweight, DeleteWeighIn, SaveWeighIn, WeighIn, WeighInValue } from '../../../../src/products/gym/domain/bodyweight.js';
+import { Catalogue, CreateExercise, Exercise, RenameExercise, defaultStepKg, renamedAliases } from '../../../../src/products/gym/domain/catalogue.js';
 import { GymRefusals, GymRules, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';
 import { MoveNote, Note, SaveNoteCall } from '../../../../src/products/gym/domain/notes.js';
 import { Preferences, PreferencesValue, SavePreferences, restSettings } from '../../../../src/products/gym/domain/preferences.js';
+import { DeleteRoutine, PlanSnapshot, ReorderRoutines, Routine, RoutineValue, SaveRoutine } from '../../../../src/products/gym/domain/routines.js';
+import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises.js';
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { RegistryCheck, RuleBookCheck, RuleBookParity } from '../../../platform/domain-kit/checks.js';
 import { Contract, savedForm, withRecordsReversed } from '../../../platform/domain-kit/vectors.js';
@@ -21,8 +25,6 @@ const corpus = new ProductCorpus(book, GymRules.spec);
 const rulesFile = 'gym/domain/rules.json';
 const valuesFile = 'gym/domain/values.json';
 const pending = [
-  'gym/domain/catalogue-actions.json',
-  'gym/domain/routines-actions.json',
   'gym/domain/proposals-actions.json',
   'gym/domain/training-reads.json',
   'gym/domain/training-actions.json',
@@ -32,6 +34,18 @@ const pending = [
 
 /** @param {{ day: LocalDay, kg: number }} value */
 const entryForm = (value) => ({ day: value.day.text, kg: value.kg });
+
+/** @param {import('../../../../src/products/gym/domain/catalogue.js').ExerciseValue} value */
+const exerciseForm = (value) => ({ id: value.id.json, fields: value.fields(), aliases: [...value.aliases] });
+
+/** @param {() => Json} body @returns {Json} */
+function decoded(body) {
+  try { return body(); }
+  catch (error) {
+    if (error instanceof DecodeError) return { decodeError: { type: error.type, field: error.field, reason: error.reason } };
+    throw error;
+  }
+}
 
 /** @param {Bodyweight} value @param {any} input @returns {Json} */
 function bodyweightForm(value, input) {
@@ -60,6 +74,57 @@ const handlers = {
     assert.equal(vector.input.action, 'SaveNoteCall', 'unclaimed notes action');
     const value = input.note;
     return corpus.decision(new SaveNoteCall(Note.decode(Fields.values('note', value.id, value.fields))), vector, (id) => id.json, refusalForm);
+  },
+  'gym/domain/catalogue-actions.json': (vector) => {
+    const input = vector.input.input;
+    if (vector.input.action === 'CreateExercise') {
+      const value = input.exercise;
+      return corpus.decision(new CreateExercise(Exercise.decode(Fields.values('exercise', value.id, value.fields))), vector,
+        (id) => id.json, refusalForm);
+    }
+    if (vector.input.action === 'RenameExercise') {
+      return corpus.decision(new RenameExercise(new Id(input.id, Exercise), input.name), vector, () => null, refusalForm);
+    }
+    assert.equal(vector.input.action, undefined, 'unclaimed catalogue action');
+    return decoded(() => corpus.read(vector, Exercise.scope, (read) => {
+      switch (vector.input.read) {
+        case 'SeedExercises': return SeedExercises.all.map(exerciseForm);
+        case 'Catalogue': {
+          const catalogue = new Catalogue(read);
+          const found = input.id === undefined ? null : catalogue.find(new Id(input.id, Exercise));
+          return (input.id === undefined ? catalogue.search(input.query ?? '') : found ? [found] : []).map(exerciseForm);
+        }
+        case 'RenamedAliases': return [...renamedAliases(input.previous, input.next, input.aliases)];
+        case 'DefaultStepKg': return Object.fromEntries(['barbell', 'dumbbell', 'machine', 'cable', 'bodyweight', 'kettlebell']
+          .map((equipment) => [equipment, defaultStepKg(equipment)]));
+        default: throw new Error(`unclaimed catalogue read ${vector.input.read}`);
+      }
+    }));
+  },
+  'gym/domain/routines-actions.json': (vector) => {
+    const input = vector.input.input;
+    if (vector.input.action === 'SaveRoutine' || vector.input.action === 'CreateRoutine') {
+      const value = Routine.decode(Fields.values('routine', input.routine.id, input.routine.fields));
+      return vector.input.action === 'CreateRoutine'
+        ? corpus.decision(SaveDraft.creating(value, GymRefusals), vector, savedForm, refusalForm)
+        : corpus.save(SaveRoutine, vector, new RoutineValue(value.id), () => value, savedForm, refusalForm);
+    }
+    if (vector.input.action === 'ReorderRoutines') return corpus.decision(ReorderRoutines(input.order.map((/** @type {string} */ id) => new Id(id, Routine))), vector, () => null, refusalForm);
+    if (vector.input.action === 'DeleteRoutine') return corpus.decision(DeleteRoutine(new Id(input.id, Routine)), vector, () => null, refusalForm);
+    assert.equal(vector.input.action, undefined, 'unclaimed routine action');
+    return decoded(() => corpus.read(vector, Routine.scope, (read) => {
+      switch (vector.input.read) {
+        case 'Routines': return RoutineValue.ordered(read.repository(Routine).all('drawn'))
+          .map((value) => ({ id: value.id.json, fields: value.fields() }));
+        case 'RoutineMetadata': {
+          const value = read.repository(Routine).find(new Id(input.id, Routine), 'drawn');
+          assert.ok(value);
+          return { revision: value.revision, createdEntries: value.createdEntries, createdDoor: value.createdDoor, fields: value.fields() };
+        }
+        case 'SessionPlan': return PlanSnapshot.decode(input.plan)?.json ?? null;
+        default: throw new Error(`unclaimed routine read ${vector.input.read}`);
+      }
+    }));
   },
   'gym/domain/bodyweight-actions.json': (vector) => {
     const input = vector.input.input;
@@ -96,9 +161,10 @@ test('the gym corpus is closed: each file is claimed or explicitly pending', (t)
   const files = [...Contract.files('gym'), 'gym-ladder.json'].sort();
   assert.equal(new Set([...claimed, ...pending]).size, claimed.length + pending.length, 'a file is claimed twice or still pending');
   assert.deepEqual([...claimed, ...pending].sort(), files);
-  assert.ok(pending.length <= 7, 'the W2 pending set can only shrink');
+  assert.ok(pending.length <= 5, 'the W2 + W3 pending set can only shrink');
   for (const path of [rulesFile, valuesFile, 'gym/domain/bodyweight-actions.json', 'gym/domain/preferences-actions.json', 'gym/rules/bodyweight.json']) assert.ok(claimed.includes(path), `W1 claim regressed: ${path}`);
   assert.ok(claimed.includes('gym/domain/notes-actions.json'), 'W2 notes claim regressed');
+  for (const path of ['gym/domain/catalogue-actions.json', 'gym/domain/routines-actions.json']) assert.ok(claimed.includes(path), `W3 claim regressed: ${path}`);
   const count = Object.keys(handlers).reduce((total, path) => total + Contract.vectors(path).length, 0);
   t.diagnostic(`gym corpus: ${claimed.length}/${files.length} files, ${count} vectors, ${pending.length} pending files`);
 });

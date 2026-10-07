@@ -1,11 +1,9 @@
-// Routines as pure rules. Writes and editor drafts keep the ordered entries and set targets of
-// the presentation document. The sync adapter strips presentation fields before committing. An absent
-// optional is omitted, never null. Nothing here mints an id, invents a name, or reads a routine out
-// of a plan snapshot: an edit is always a read of the routine itself, changed and written whole.
+// The routine editor's text fields, readouts and presentation drafts.
 
+import { SetTarget } from './domain/routines.js';
 import { round, snap } from './logger/ladder.js';
 import {
-  entryLabel, groupByExercise, isNeverTrained, OPEN_TARGET, schemeAgrees, workingSetsOf,
+  entryLabel, isNeverTrained, OPEN_TARGET, schemeAgrees,
 } from './log.js';
 
 // THE ROUTINE TARGET'S BANDS, and nothing else's. A set may ask for 1–100 reps (Routine.cpp:23) and a
@@ -17,65 +15,9 @@ export const ENTRY_SETS_MAX = 20;
 export const ENTRY_REPS_MIN = 1;
 export const ENTRY_REPS_MAX = 100;
 
-// An absent rep target is the wire's `max`, not a clamped one, and passes through.
-function clampReps(reps) {
-  if (reps == null) return null;
-  return Math.min(ENTRY_REPS_MAX, Math.max(ENTRY_REPS_MIN, reps));
-}
-
-// One set on the wire: `reps` then `weightKg`, each present only when named. The one place a set's
-// key order is written, so a draft set and a written set are the same bytes.
-function setWrite(set) {
-  return {
-    ...(set.reps == null ? {} : { reps: set.reps }),
-    ...(set.weightKg == null ? {} : { weightKg: set.weightKg }),
-  };
-}
-
-// An entry as a write carries no position. An open line carries nothing but its rest: an entry with
-// no `sets` key is the open line, and an empty list is refused by the store like a zero target.
-function entryWrite(entry) {
-  return {
-    exerciseId: entry.exerciseId,
-    ...(entry.sets == null ? {} : { sets: entry.sets.map(setWrite) }),
-    ...(entry.restSeconds == null ? {} : { restSeconds: entry.restSeconds }),
-  };
-}
-
-// `lastTrainedAt`, `revision` and the entry positions are the store's, so none of them travels back.
-export function routineWrite(routine) {
-  return {
-    id: routine.id,
-    name: routine.name,
-    position: routine.position,
-    entries: routine.entries.map(entryWrite),
-  };
-}
-
-// In the order performed, every working set transcribed as its own slot — the load as lifted, zero
-// included — clipped at the scheme's twenty. Rest is omitted. A movement with no working set is not
-// in it.
-export function routineFromSession({ id, name, position = 0, sets }) {
-  const performed = groupByExercise(workingSetsOf(sets));
-  return {
-    id,
-    name,
-    position,
-    entries: performed.map(([exerciseId, done]) => ({
-      exerciseId,
-      sets: done.slice(0, ENTRY_SETS_MAX).map((set) => ({ reps: clampReps(set.reps), weightKg: set.weightKg })),
-    })),
-  };
-}
-
-// Every change lands in this copy and nothing reaches the store until Save. The draft is a whole
-// routine, so `routineWrite` sends it whichever way it was born, and no target is invented here.
+// Every change lands in this copy and nothing reaches the store until Save.
 export function draftFrom(routine) {
   return { ...routine, entries: routine.entries.map((entry) => ({ ...entry })) };
-}
-
-export function blankRoutine({ id, position = 0 }) {
-  return { id, name: '', position, entries: [] };
 }
 
 // A movement joins open; the row reads `open` until it comes back through `Set`.
@@ -375,10 +317,10 @@ export function targetEntryOf(entry, fields) {
   }
   return {
     ...entry,
-    sets: ladderOf(fields).map((row) => setWrite({
-      reps: row.reps.trim() === '' ? null : clampReps(numberOf(row.reps)),
-      weightKg: row.weight.trim() === '' ? null : round(numberOf(row.weight)),
-    })),
+    sets: ladderOf(fields).map((row) => SetTarget.clampingReps(
+      row.reps.trim() === '' ? null : numberOf(row.reps),
+      row.weight.trim() === '' ? null : round(numberOf(row.weight)),
+    ).json),
   };
 }
 

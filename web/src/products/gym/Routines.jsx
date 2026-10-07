@@ -1,7 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Icon, Menu, Tag } from '../../design-system/index.js';
+import { Id } from '../../platform/domain-kit/entities.js';
 import { Back } from './Back.jsx';
+import { Routine, RoutineValue } from './domain/routines.js';
 import { failureReason } from './errors.js';
+import { routineDocument } from './gymRuntime.js';
 import {
   agoLabel, backfillHref, cappedName, entryLabel, FROM_ROUTINE_MENU, isNameOverCap, MOVEMENTS_HREF,
   movementOf, nameCountLabel, nameOfMovement, NEW_ROUTINE_ID, routineHref,
@@ -13,8 +16,8 @@ import { ProposalPreview, ProposalPanel } from './Proposals.jsx';
 import { useRail } from './rail.js';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import {
-  blankRoutine, draftFrom, entryDroppedLine, entryPlaceLabel,
-  NAME_IT_TO_SAVE_IT, reorderEntries, routineConflictRows, routineWrite, saysNeverLogged,
+  draftFrom, entryDroppedLine, entryPlaceLabel,
+  NAME_IT_TO_SAVE_IT, reorderEntries, routineConflictRows, saysNeverLogged,
   withEntryAdded, withEntryAt, withEntryRemoved, withEntrySet,
 } from './routines.js';
 import { useGymRead } from './useGymRead.js';
@@ -100,7 +103,7 @@ export function RoutineEditor({ id, log }) {
   const fresh = id === NEW_ROUTINE_ID;
 
   const projection = useGymRead(
-    () => (fresh ? Promise.resolve(blankRoutine({ id: minted.current })) : api.routine(id)),
+    () => (fresh ? Promise.resolve(routineDocument(new RoutineValue(new Id(minted.current, Routine)))) : api.routine(id)),
     [id],
     { sync: true, ready: Boolean(api?.ready) },
   );
@@ -163,8 +166,8 @@ export function RoutineEditor({ id, log }) {
   const commit = async () => {
     if (missing || saving) return false;
     setSaving(true);
-    // The draft retains the registers it read, even while the mirror receives newer data.
-    const write = routineWrite({ ...draft, name: draft.name.trim() });
+    // The draft retains the fields it read, even while the mirror receives newer data.
+    const write = { ...draft, name: draft.name.trim() };
     try {
       if (fresh) await api.createRoutine(write);
       else await api.replaceRoutine(draft.id, write, view.data);
@@ -200,7 +203,7 @@ export function RoutineEditor({ id, log }) {
       if (saving) return;
       setSaving(true);
       try {
-        await api.createRoutine(routineWrite({ ...draft, id: minted.current, name: draft.name.trim() }));
+        await api.createRoutine({ ...draft, id: minted.current, name: draft.name.trim() });
         window.location.hash = ROUTINES_HREF;
       } catch (error) { log.say(`Your draft is still here — ${failureReason(error)}.`); }
       setSaving(false);

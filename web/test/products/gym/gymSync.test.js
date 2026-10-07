@@ -86,7 +86,7 @@ test('routine saves persist schemes and guards; stale bases refuse without parti
   const base = await api.routine(routine.id);
   assert.deepEqual(base.entries[0].sets, routine.entries[0].sets);
   await api.replaceRoutine(routine.id, { ...routine, name: 'Lower B' }, base);
-  assert.deepEqual(engine.device.activeReplica.entries()[1].intent.guard.map(({ field }) => field).sort(), ['entries', 'name', 'position']);
+  assert.deepEqual(engine.device.activeReplica.entries()[1].intent.guard.map(({ field }) => field).sort(), ['name']);
   const before = structuredClone(engine.device.activeReplica.outbox);
   await assert.rejects(api.replaceRoutine(routine.id, { ...routine, name: 'Stale' }, base), { code: 'stale' });
   assert.deepEqual(engine.device.activeReplica.outbox, before);
@@ -290,7 +290,7 @@ test('a rename writes the name trimmed and composed, and a blank one is refused 
   await assert.rejects(api.renameExercise('back-squat', 'ü'.repeat(61)),
     (error) => error instanceof GymRefusal && error.code === 'invalid' && error.sentence === 'A name runs to 60 characters.');
   assert.deepEqual(namesWritten(engine), [['exerciseName', 'back-squat', 'Café squat']], 'nothing refused was written');
-  assert.deepEqual(events.map(({ outcome }) => outcome), ['saved-local', 'failed', 'failed', 'failed', 'failed', 'failed']);
+  assert.deepEqual(events.map(({ outcome }) => outcome), ['saved-local', 'refused', 'refused', 'refused', 'refused', 'refused']);
   assert.deepEqual(failures, [], 'a refusal is expected, and reports nothing');
 });
 
@@ -298,9 +298,9 @@ test('a rename to the name the store already holds writes nothing; an unknown mo
   const { api, engine, events } = await open(t);
   assert.deepEqual(await api.renameExercise('back-squat', ' Back Squat '),
     { id: 'back-squat', name: 'Back Squat', pattern: 'squat', equipment: 'barbell', stepKg: 2.5, custom: false });
-  await assert.rejects(api.renameExercise('ex_unknown', 'New'), (error) => error instanceof GymRefusal && error.code === 'unknown-record');
+  await assert.rejects(api.renameExercise('ex_unknown', 'New'), (error) => error instanceof GymRefusal && error.code === 'record-dead');
   assert.deepEqual(engine.device.activeReplica.outbox, []);
-  assert.deepEqual(events, [{ operation: 'exercise-rename', outcome: 'unchanged' }, { operation: 'exercise-rename', outcome: 'failed' }]);
+  assert.deepEqual(events, [{ operation: 'exercise-rename', outcome: 'unchanged' }, { operation: 'exercise-rename', outcome: 'refused' }]);
 });
 
 test('a movement, a routine and a note are each created with their name trimmed, and none is written blank', async (t) => {
@@ -326,6 +326,17 @@ test('a movement, a routine and a note are each created with their name trimmed,
     ['routine', 'routine00001', 'Lower B'],
     ['note', 'note000001', 'First'],
   ]);
+});
+
+test('custom exercise creation preserves a supplied step and validates it before committing', async (t) => {
+  const { api, engine, events, failures } = await open(t);
+  assert.deepEqual(await api.createExercise({ id: 'ex_custom01', name: 'Carry', pattern: 'carry', equipment: 'dumbbell', stepKg: 2.125 }),
+    { id: 'ex_custom01', name: 'Carry', pattern: 'carry', equipment: 'dumbbell', stepKg: 2.13, aliases: [], custom: true });
+  const before = structuredClone(engine.device.activeReplica.outbox);
+  await assert.rejects(api.createExercise({ id: 'ex_custom02', name: 'Carry', pattern: 'carry', equipment: 'dumbbell', stepKg: 0 }), { code: 'invalid' });
+  assert.deepEqual(engine.device.activeReplica.outbox, before);
+  assert.deepEqual(events, [{ operation: 'exercise-create', outcome: 'saved-local' }, { operation: 'exercise-create', outcome: 'refused' }]);
+  assert.deepEqual(failures, []);
 });
 
 test('an adapter pinned to a previous replica cannot write into another account', async (t) => {
