@@ -2,6 +2,8 @@ import XCTest
 import UIKit
 
 @MainActor final class GymRoutinesFlowTests: XCTestCase {
+  var viewport = CGRect.zero
+
   override func setUp() {
     super.setUp()
     continueAfterFailure = false
@@ -16,6 +18,7 @@ import UIKit
     app.buttons["room-menu"].tap()
     app.buttons["room-gym"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 10))
+    viewport = app.frame
     return app
   }
   func capture(_ app: XCUIApplication, _ name: String) {
@@ -31,16 +34,13 @@ import UIKit
     attachment.name = "routines-" + name; attachment.lifetime = .keepAlways; add(attachment)
   }
   func waitForPrimaryButton(_ button: XCUIElement) -> Bool {
-    let deadline = ProcessInfo.processInfo.systemUptime + 5
-    var remaining: TimeInterval { max(0, deadline - ProcessInfo.processInfo.systemUptime) }
-    guard button.waitForExistence(timeout: remaining) else { return false }
-    let viewport = XCUIApplication().frame
     let rendered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      let frame = button.frame
-      return frame.width > 100 && frame.height > 30 && viewport.contains(frame)
+      guard let snapshot = try? button.snapshot() else { return false }
+      let frame = snapshot.frame
+      return snapshot.isEnabled && frame.width > 100 && frame.height > 30 && self.viewport.contains(frame)
     }, object: button)
-    guard XCTWaiter.wait(for: [rendered], timeout: remaining) == .completed else { return false }
-    return button.wait(for: \.isHittable, toEqual: true, timeout: remaining)
+    guard XCTWaiter.wait(for: [rendered], timeout: 5) == .completed else { return false }
+    return button.wait(for: \.isHittable, toEqual: true, timeout: 5)
   }
   func assertPrimaryLabelContrast(_ button: XCUIElement, appearance: String, file: StaticString = #filePath, line: UInt = #line) {
     let previous = continueAfterFailure
@@ -291,7 +291,8 @@ import UIKit
     let benchHandle = app.buttons["Reorder Bench Press"]
     XCTAssertTrue(deadliftHandle.wait(for: \.isHittable, toEqual: true, timeout: 5))
     XCTAssertTrue(benchHandle.wait(for: \.isHittable, toEqual: true, timeout: 5))
-    deadliftHandle.press(forDuration: 0.5, thenDragTo: benchHandle)
+    deadliftHandle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.5,
+      thenDragTo: benchHandle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)))
     let firstMovement = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "builder-movement-")).element(boundBy: 0)
     XCTAssertTrue(firstMovement.wait(for: \.identifier, toEqual: "builder-movement-deadlift", timeout: 5))
     reorder.tap()

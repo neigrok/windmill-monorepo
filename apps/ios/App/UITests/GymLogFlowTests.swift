@@ -27,8 +27,18 @@ import XCTest
     XCTAssertTrue(row.waitForExistence(timeout: 20))
     for _ in 0..<8 {
       let frame = row.frame, top = app.navigationBars.firstMatch.frame.maxY + 8
-      if frame.minY > top && frame.maxY < app.buttons["gym-weigh-in"].frame.minY - 12 && row.isHittable { break }
-      if frame.minY <= top { app.swipeDown(velocity: .slow) } else { app.swipeUp(velocity: .slow) }
+      let bottom = app.buttons["gym-weigh-in"].frame.minY - 12
+      guard bottom > top + 16 else { break }
+      if frame.minY > top && frame.maxY < bottom {
+        if row.isHittable { break }
+        continue
+      }
+      let distance = frame.minY <= top ? top + 8 - frame.minY : bottom - 8 - frame.maxY
+      let limit = min(150, (bottom - top) / 2 - 8)
+      let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0))
+        .withOffset(CGVector(dx: 0, dy: (top + bottom) / 2))
+      start.press(forDuration: 0.01, thenDragTo: start.withOffset(CGVector(dx: 0, dy: max(-limit, min(limit, distance)))),
+        withVelocity: .slow, thenHoldForDuration: 0.1)
     }
     XCTAssertTrue(row.isHittable)
     XCTAssertGreaterThan(row.frame.minY, app.navigationBars.firstMatch.frame.maxY + 8)
@@ -224,7 +234,9 @@ import XCTest
     snapshot("fix-\(appearance)", app: app)
     let weight = app.textFields["gym-fix-weight"]
     weight.doubleTap()
-    let cut = app.menuItems["Cut"].exists ? app.menuItems["Cut"] : app.buttons["Cut"]
+    let cut = app.descendants(matching: .any).matching(NSPredicate(
+      format: "(label == %@ OR identifier == %@) AND elementType IN %@", "Cut", "Cut",
+      [XCUIElement.ElementType.menuItem.rawValue, XCUIElement.ElementType.button.rawValue])).firstMatch
     XCTAssertTrue(cut.waitForExistence(timeout: 5))
     cut.tap()
     let cleared = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
