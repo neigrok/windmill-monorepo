@@ -2,6 +2,8 @@ import XCTest
 import UIKit
 
 @MainActor final class GymCoachFlowTests: XCTestCase {
+  override func setUp() { continueAfterFailure = false }
+
   func launch(_ appearance: String, fixture: Bool = true, arguments: [String] = []) -> XCUIApplication {
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", "shell-last-room", "-onboarding-appearance", appearance.lowercased()] + arguments
@@ -29,10 +31,14 @@ import UIKit
     XCTAssertTrue(choices.waitForExistence(timeout: 5))
     if let snapshot { capture(snapshot, app) }
     let item = choices.buttons[name]
-    XCTAssertTrue(item.wait(for: \.isHittable, toEqual: true, timeout: 10))
-    let frame = item.frame
-    XCTAssertTrue(frame.minX.isFinite && frame.minY.isFinite && frame.width > 0 && frame.height > 0)
-    item.tap()
+    let viewport = app.frame
+    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      guard item.exists, item.isEnabled, item.isHittable else { return false }
+      let frame = item.frame
+      return !frame.isEmpty && viewport.contains(frame)
+    }, object: item)
+    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+    item.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1)
     XCTAssertTrue(choices.waitForNonExistence(timeout: 10))
     if ids[name] != nil { XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5)) }
   }
