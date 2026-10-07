@@ -628,12 +628,12 @@ for (const order of ['pull-before-result', 'result-before-pull']) test(`Chromium
       const Constructor = engine.constructor;
       engine.close();
       const { registry } = await import('/src/platform/sync/schema.js');
-      const { savePage, watchClaims, onSyncResult } = await import('/src/products/journal/pages.js');
-      const { pendingClaimWork } = await import('/src/products/journal/claims.js');
+      const { savePage, watchClaims, onSyncResult, pendingClaimWork } = await import('/src/products/journal/pages.js');
+      const { localDay } = await import('/src/products/journal/localDay.js');
       const { nextPush } = await import('/src/platform/sync/client/sender.js');
       const { Cursor } = await import('/src/platform/sync/core/wire.js');
       const { scopeDigest } = await import('/src/platform/sync/core/digest.js');
-      const scope = 'self/journal', day = '2026-10-01';
+      const scope = 'self/journal', day = localDay();
       const doc = (body) => ({ day, body, mood: 0, energy: null, source: 'typed' });
       const timing = () => {
         const wall = Date.now(), mono = Math.floor(performance.now());

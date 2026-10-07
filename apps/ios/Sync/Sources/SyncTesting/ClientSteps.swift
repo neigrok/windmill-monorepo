@@ -218,7 +218,7 @@ public enum ClientSteps {
       let before = (device: device, identities: context.identities.snapshot(), context: context)
       do {
         returns.append(try perform(step, on: &device, context: &context))
-      } catch let error where error is CommitFailure || error is TransitionError {
+      } catch let error where error is CommitFailure || error is TransitionError || (error is JSONError && step["op"] == "pushResponse") {
         device = before.device
         context = before.context
         context.identities.restore(before.identities)
@@ -350,6 +350,10 @@ public enum ClientSteps {
   static func receive<Device: ClientDevice>(_ answer: Answer<PushResponse>, to request: PushRequest, dieAfter: Int64?,
                                             on device: inout Device, instance: inout Instance, timing: Timing,
                                             context: StepContext) throws -> Int? {
+    if case .failed(let failure) = answer, failure.status == 409,
+       !answer.isUnauthenticated(for: request.account), !failure.isRecoveryConflict {
+      throw JSONError.shape("a push conflict has no recovery envelope")
+    }
     var left = dieAfter ?? .max
     var limit: Int?
     var steps = PushPlanner(registry: context.registry).steps(for: answer, to: request)

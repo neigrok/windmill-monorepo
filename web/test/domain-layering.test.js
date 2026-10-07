@@ -37,11 +37,11 @@ const EXEMPTIONS = { 'runner.js': ['async', 'await', 'Promise'] };
 
 const isNode = (value) => value !== null && typeof value === 'object' && typeof value.type === 'string';
 
-function walk(node, visit) {
-  visit(node);
+function walk(node, visit, parent = null) {
+  visit(node, parent);
   for (const value of Object.values(node)) {
-    if (Array.isArray(value)) value.forEach((item) => { if (isNode(item)) walk(item, visit); });
-    else if (isNode(value)) walk(value, visit);
+    if (Array.isArray(value)) value.forEach((item) => { if (isNode(item)) walk(item, visit, node); });
+    else if (isNode(value)) walk(value, visit, node);
   }
 }
 
@@ -72,7 +72,7 @@ function findings({ layer, name, text, directory }) {
     if (word.startsWith('_') && word !== '_') report(line, `identifier ${word} begins with an underscore`);
   };
 
-  walk(program, (node) => {
+  walk(program, (node, parent) => {
     const line = node.loc.start.line;
     switch (node.type) {
       case 'ImportDeclaration':
@@ -85,6 +85,10 @@ function findings({ layer, name, text, directory }) {
         else report(line, 'dynamic import of a computed specifier');
         break;
       case 'Identifier':
+        // A page's document is data; only a reference or binding can name the browser global.
+        if (node.name === 'document' && !parent?.computed &&
+          (parent?.type === 'MemberExpression' && parent.property === node ||
+            parent?.type === 'Property' && parent.key === node && !parent.shorthand)) break;
         checkName(node);
         break;
       case 'MemberExpression': {

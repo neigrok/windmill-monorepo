@@ -181,7 +181,8 @@ that an outbox entry's `orphanOf` names is never deleted.
 **D-18 Seq, epoch, cursor.**
 - `seq`: a per-scope counter, incremented once per committed intent that changes the scope.
 - `epoch`: one random string for the whole server database, regenerated when the database is
-  restored from a backup.
+  restored from a backup. An authenticated push response carries it on conflicts as well as
+  successes; clients coordinate a changed epoch with successful results before retrying (§7.4).
 - A cursor is `(epoch, mode ∈ {boot, live}, seq, key?, asOf?)`, encoded as §9.4 states; clients
   decode it.
 - The *scope digest*: a per-scope sum of the hashes of the scope's alive rows (§6.12).
@@ -429,7 +430,8 @@ type OutboxEntry = { localId, replica, gestureId, lineage: string /* account id 
                      state: 'held'|'ready'|'sent'|'acked', stamp: Stamp,
                      commitOrder: number, releaseAt: number, n?, digest?, intent: Intent,
                      predict?: Delta[], baseTexts?: Record<string, string>,   // (t, id, field) → text edited from
-                     resultSeq?: number, resultEpoch?: string, orphanOf?: string }
+                     resultSeq?: number, resultEpoch?: string, orphanOf?: string,
+                     writeTargets?: {t, from: Id, id: Id, born?: Stamp}[] }
 type Notice = { id, replica, scope, code: RefusalCode, detail?,
                 content: { d?: Delta[], cmd?: Cmd, dependents?: { d?: Delta[], cmd?: Cmd }[] }, at,
                 dismissed?: true }
@@ -456,6 +458,8 @@ type DeviceRow = { replica, product, key, value: Json }  // device/<product>
 - `OutboxEntry.stamp`: the gesture's stamp (§7.1 step 3), which only `clock-skew` recovery moves
   (§7.7). `localId` is `<gestureId>/<k>`, the gesture's k-th intent from 0; gesture ids, and so local
   ids, are unique on the device.
+- `OutboxEntry.writeTargets`: a command's retained source-to-resolved identities (§7.7). They
+  survive epoch recovery and an empty replay map; they are local metadata, never sent as intent data.
 - `DeviceMeta.forkGuard`: a random token for the whole local database, kept both in it and in
   storage excluded from device backups (iOS `isExcludedFromBackup`, Android `noBackupFilesDir`). Web
   runs no fork guard.
@@ -552,8 +556,8 @@ The engine composes the id state from `lock`, `elsewhere` and its own tables (§
 - `alive(b)`, `dead(b)`: alive or dead in this scope, with born `b` (a keyed type's spent row has
   no born).
 
-Before `lock`, admission locks each fresh id of a global id space the intent creates, by
-`(type, id)` in ascending order (§6.1 step 3.6), so two scopes creating one fresh id are serialized.
+Before `lock`, admission locks each fresh id of a global id space the intent creates or deletes, by
+`(type, id)` in ascending order (§6.1 step 3.6), so creates and deletes of one fresh id are serialized.
 An id that only a command's arguments or `check` reveal is locked on demand, just before its lookup.
 
 ### §4.3 Decision table (minted and derived)
@@ -564,11 +568,15 @@ An id that only a command's arguments or `check` reveal is locked on demand, jus
 |---|---|---|---|---|---|---|
 | `create` | apply | `id-taken` | apply (join) | `id-taken` | ok | `id-spent` |
 | `update` | `unknown-record` | `unknown-record` | apply | `unknown-record` | `record-dead` | `unknown-record` |
-| `delete` | ok | ok | apply | ok | apply (join) | ok |
+| `delete` | apply death | ok | apply | `unknown-record` | apply (join) | ok |
 | `revive` | `unknown-record` | `unknown-record` | apply | `unknown-record` | revivable: apply; else `id-spent` | `unknown-record` |
 
 - A governing `create` that applies creates the governed scope. A governing `delete` that applies
   kills it (§6.1 step 15).
+- A delete of an absent record stores its death and `born`, including its spent id when death is
+  terminal. A create retained on another replica may arrive after this delete during restore
+  recovery; it must not bring the record back. A delete of a live record with another `born` is
+  refused with its content retained, rather than silently settling against the wrong incarnation.
 - Keyed with life: `put` applies on every state (a join on `alive` and `dead`).
 - Keyed without life, and singleton: `write` applies (an implicit create on `none`).
 
@@ -619,13 +627,15 @@ through:
   mint a spent id (§4.4, §6.7).
 - **Scope death** refuses every write (INV-13).
 
-**INV-3 No silent loss.** While the replica's local store survives and the server's committed state
-survives, every committed intent ends in exactly one outcome of D-15. An intent that ends `refused`
-has a notice holding its content, written in the same local transaction; an orphan's content is in
-its origin's notice (§7.7).
+**INV-3 No silent loss.** While the replica's local store survives, every committed intent still
+owed in its outbox ends in exactly one outcome of D-15, including across a server restore. An intent
+that ends `refused` has a notice holding its content, written in the same local transaction; an
+orphan's content is in its origin's notice (§7.7).
 
 Storage loss is outside this invariant: uninstall, cleared site data, private windows, and Safari's
 deletion of script-writable storage after 7 days without interaction.
+Server writes already settled before a restore and absent from its backup cannot be reconstructed
+from an empty outbox; they are outside this invariant.
 - Web engines MUST call `navigator.storage.persist()`.
 - Signed-out product copy on web MUST NOT promise durability.
 
@@ -635,8 +645,9 @@ deletion of script-writable storage after 7 days without interaction.
   `retry` never end an intent (§7.4).
 - The server stores one result per `(replica, n)`, in the transaction that sets `last_n` (§6.2).
   Poison ends in a stored `internal` result (§6.6).
-- After a restore, acked entries return to `ready` (§7.5): a replica with an acked entry holds an
-  epoch (§7.4), so the restore's epoch changes it.
+- After a restore, older acked entries return to `ready` (§7.5): a replica with an acked entry holds
+  an epoch (§7.4), so the restore's epoch changes it. A push processes that change atomically with
+  safe successes before retrying; old acknowledgements and remaining sent work replay in commit order.
 - An acked entry resolves once its scope's stored cursor covers it. A death between settling slices
   leaves it covered, and the scope's next stored cursor settles it (§7.5 step 2).
 - A refusal folds its dependents into the same notice: the removed content of held and ready
@@ -897,7 +908,7 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
       `tree:<value>`, each row once in the stronger mode it needs: the scope row `FOR NO KEY
       UPDATE`, an argument tree `FOR SHARE`. A tree-scope intent's own row so takes its key's place
       among its argument trees. An id that no scope has yet locks nothing.
-   6. Each fresh id of a global id space that the intent creates is locked by `(type, id)` (§4.2).
+   6. Each fresh id of a global id space that the intent creates or deletes is locked by `(type, id)` (§4.2).
       An id that only a command's arguments or `check` reveal is locked on demand, just before its
       lookup.
    7. Refuse:
@@ -924,7 +935,7 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
    - `after = joinRecord(before, δ)` for each delta, in order.
    - Text fields are merged or replaced by a command's internal replacement (§6.11).
    - Each row the intent changes, in its scope or in one it creates, is measured as step 13 would
-     store it, before step 11 gives a new record its serial: an encoding over `MAX_RECORD_BYTES` →
+     store it, before step 11 gives a new alive record its serial: an encoding over `MAX_RECORD_BYTES` →
      `too-large`. Text bases do not count, and a row the intent leaves unchanged is not measured.
 10. **Product check.** `check` per type touched, on the joined records.
     - A create from a replica is re-checked like any write: `check` re-computes and validates every
@@ -935,7 +946,7 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
       `parent` reference is not alive among the joined records → `parent-dead`. A parent created in
       the same intent counts as alive. The reference is read from the join, before G1 (§6.10)
       drops a dead record's fields.
-11. **Serial.** A new record without a serial value gets 1 plus the maximum over alive records
+11. **Serial.** A new alive record without a serial value gets 1 plus the maximum over alive records
     sharing its `serialNext` fields, or 1 if there are none, in admission order (a command: in
     argument order). A value a command supplies is kept.
 12. **Caps.** For each capped type, `after = counters[type] + net alive change`. Refuse `cap`
@@ -1403,7 +1414,9 @@ After the commit: notify tabs (§7.8), kick the sender, and schedule release tim
 
 Every committed gesture is sent as its own entries, in commit order: `commit` enqueues one entry per
 intent (§7.1 step 7), and the sender numbers ready entries in commit order, passing over held and
-held-back entries (§7.4). Before its result, an entry changes only by a fold (§7.3, §7.7 step 3), a
+held-back entries (§7.4). An epoch change preserves those positions: old acknowledgements return
+ahead of later dependent edits and deletes, including entries already numbered before the change.
+Before its result, an entry changes only by a fold (§7.3, §7.7 step 3), a
 restamp or a write map (§7.7), or ends before binding by a supersede (§7.1 step 4).
 
 ### §7.3 Hold, release, undo
@@ -1473,14 +1486,16 @@ loop while state = bound ∧ ¬authPaused ∧ online:
                                   origin's notice), and dependents fold transitively
   every 400                     → also emit the telemetry event sync-push-malformed, with no intent
                                   content
-  replica-forked | replica-foreign | gap → re-identify (§7.11)
+  authenticated 200, or 409 replica-forked | replica-foreign | gap:
+    validate the response envelope (below)
+    if response epoch ≠ non-null serverEpoch → epoch recovery (below); retry
+  replica-forked | replica-foreign | gap → take the epoch if serverEpoch is null; re-identify (§7.11)
   in the first batch, before its first result: if serverEpoch is null → serverEpoch := the response
       epoch (an answer with no result takes it in the transaction that sets ackThrough)
   each result, in ascending n, in batches (below):
     ok      → acked, resultSeq := seq, resultEpoch := the response epoch; apply the write map (§7.7)
     refused → §7.7; after a `clock-skew` recovery, back off before the next push
   in the last batch, once every result is recorded: ackThrough := the response's lastN
-  then, if the response epoch ≠ serverEpoch → epoch change (§7.5)
 backoff: sleep random(0, min(ceiling, 1 s · 2^k)), then k += 1; ceiling = liveHint ? 30 s : 300 s; k resets
          on a response with results, unless one of them is `clock-skew`
          (liveHint: computed now by the product's view rule, Appendix A)
@@ -1490,6 +1505,20 @@ server-requested wait: a 503's or a retry's retryAfterMs, from the response's re
          starts before it ends: a kick wakes the sender no earlier, and a leave (§7.3) attempts no
          push during it
 ```
+
+The principal check precedes epoch handling. A `409` used for recovery MUST carry a nonempty string
+`epoch`, a nonnegative safe-integer `serverTime`, and one of the three conflict codes above;
+a malformed envelope is a transport failure, leaving the replica, cursors and entries unchanged.
+An authenticated changed-epoch `200` triggers atomic recovery before ordinary result batches.
+If the replica has no retained acknowledgement from an older epoch, record its successful results
+and their product receipts in that same transaction before the epoch change; these acknowledgements
+belong to the response epoch and are not requeued. No already accepted removal is reported as a
+failure merely because its reply first revealed the restore. Otherwise, earlier acknowledged
+intents must replay first, so discard the response's results. In either case discard `lastN` and
+re-identify; remaining sent entries and old acknowledgements replay in commit order. Commands whose
+successful effects can delete their own replay evidence MUST retain a durable server receipt (A.2).
+An unchanged epoch keeps ordinary conflict recovery and result batching. A null epoch is adopted
+without an epoch reset; a success adopts it in the first result batch as below.
 
 A ready entry is *held back* while it depends (§7.7 step 3) on a held or held-back entry or on an
 orphan awaiting its result (sent, or returned to ready), or touches, by a delta, a guard or a
@@ -1553,9 +1582,17 @@ closes the socket. A re-authentication that clears `authPaused` opens the socket
    entries, never with its rows: a re-identify touches no row (§7.11), and a staging it drops is
    deleted afterwards (§2.5).
 
-   A restore is outside INV-3's condition. For example, a re-sent command may create its record
-   again under a new `born`, and a pending delete already rewritten to the old `born` then ends as
-   a no-op; and a notice may describe a record that a forked store later re-creates.
+   The sender coordinates this transaction with changed-epoch success results before retrying
+   (§7.4). Before requeueing an older command without `writeTargets`, recover a
+   target only when its type has exactly one command reference and exactly one predicted record;
+   retain that reference's id, the prediction's current id and born. Never guess between outputs.
+   Replayed commands keep their predictions and resolved identities and apply their new write maps
+   before dependent entries are numbered; a recreated record's new `born` propagates to those
+   entries by §7.7 even without a prediction. An ambiguous legacy target is retained in a notice
+   rather than guessed (§7.7). A dependent operation that cannot replay is retained in a
+   refusal notice, including its folded dependents. Already-settled writes newer than the backup
+   have no retained entry to replay and can be lost; a notice may describe a record that a forked
+   store later re-creates.
 2. **Pages.** A `reset`, `gone` or `not-found` page applies in one local transaction. A rows page
    applies in one local transaction, or in several, its *chunks*, sized by §2.5's writer rule: each
    chunk takes the next rows of the page, whole and in the page's order. A page's chunks apply one
@@ -1760,9 +1797,26 @@ notice of its own, as step 3 states):
    business logic.
 
 **Write map.** An `ok` result's write map applies in the result's batch (§7.4). Let `s` be the
-command entry's stamp, which every register it predicted carries. Steps 1 and 2 run for each map
+command entry's stamp, which every register it predicted carries. Steps 0–2 run for each map
 entry `w`, then step 3 once for the map:
-1. `w.from` is present only when the resolved id differs from the id the command was called with,
+0. The stable source is `(w.t, w.from ?? w.id)`. If `writeTargets` already records this source,
+   first move its previous resolved id to `w.id` in the command's prediction and its later held or
+   ready dependents, including deletes, references, key parts and guards, and in device rows through
+   the product hook. This follows the same logical record through replay; it is not an initial join
+   and does not refuse `target-merged`.
+   A later retained command that resolved its own source to this same target must also move that
+   source argument to `w.id`, using its retained source-to-target mapping. Its next replay then
+   addresses the recovered record instead of recreating another alias. Do this even when the
+   resolved id did not change; the server may have restored the record without that later command's
+   receipt. Update the later command's retained source together with its argument.
+   Its old born follows `w.born`, including a dependent of a command with no prediction. An older
+   command whose target cannot be recovered unambiguously retains affected work in a notice rather
+   than silently acknowledging a delete of the wrong target. Record or update the source's current
+   id and born atomically with the result; preserve sources absent from this map, including an empty
+   map. A rewrite of a queued command's references also rewrites the corresponding retained source
+   and resolved ids, so a preceding command's mapping cannot detach this provenance.
+1. If this source had no retained target, apply its initial join: `w.from` is present only when the
+   resolved id differs from the id the command was called with,
    which means the record existed before the command (a join). It is replaced by `w.id` in every
    held and ready entry (delta ids, key parts, `ref<w.t>` fields and arguments), in `predict`, and
    in device rows (a product hook). The exception is an entry whose delta deletes `(w.t, w.from)`:
@@ -1900,14 +1954,15 @@ scope's; a tree or overlay scope's product is its governing type's. It first rel
 entry into the durable queue (Undo does not survive sign-in), before the decisions. While it is
 incomplete, `DeviceMeta.pendingSignIn` holds A.
 - Entries of lineage A, a `dormant(A)` replica's included, are sent without asking.
-- Entries of the `anon` replica are added to A without asking for each product in which A holds no
-  records.
-- For each product in which A holds records and the `anon` replica has entries, a **signed-out
-  decision** is due: an explicit add or discard of exactly those entries, of every type, with no
+- Entries and pending product device work of the `anon` replica are added to A without asking for
+  each product in which A holds no records.
+- For each product in which A holds records and the `anon` replica has entries or pending product
+  device work, a **signed-out decision** is due: an explicit add or discard of that work, of every type, with no
   default and no "later". The engine exposes `anonCount(product)` per decision: the count, by type,
-  of the distinct records `(scope, type, id)` its entries create or change. A decision covers exactly
-  the entries it counted: the engine pins their local ids, and when the product's entries differ at
-  the answer (a commit, an undo or a result in between), the decision is due again with the new
+  of the distinct records `(scope, type, id)` its entries create or change. Pending device work is
+  counted separately, one item per product-identified row. A decision covers exactly the work it
+  counted: the engine pins entry local ids and each pending device row's key and full value bytes.
+  When the entries or device work differ at the answer (a commit, edit, undo or result in between), the decision is due again with the new
   count. How the decisions are presented is product canon. Until every due decision is made the
   sign-in is not complete: the
   `anon` replica stays active, no replica changes and nothing is sent. Cancelling an incomplete
@@ -1921,12 +1976,18 @@ Then, in one local transaction:
    released at the start among them, and the product's device rows in the `anon` replica are
    deleted.
 2. **Bind.** A `dormant(A)` replica becomes `bound(A)`, with every cursor `null`. Otherwise the
-   `anon` replica, when entries are left in it, is rebound (`state := bound`, `account := A`).
+   `anon` replica, when entries or pending product device work remain, is rebound (`state := bound`, `account := A`).
    Otherwise a new `bound(A)` replica is created.
-3. **Add.** When `bound(A)` is not the rebound `anon` replica and entries are left in the `anon`
-   replica, they move, with its device rows and notices, into `bound(A)`, preserving local ids,
+3. **Add.** When `bound(A)` is not the rebound `anon` replica and entries or pending product device
+   work remain in the `anon` replica, they move, with its device rows and notices, into `bound(A)`, preserving local ids,
    gesture ids and stamps, after `bound(A)`'s own entries in their commit order. The `anon` replica
-   is then deleted. A moved device row whose key `bound(A)` already holds is dropped.
+   is then deleted. Products merge writing-bearing device-row collisions without dropping either
+   document; the destination's current draft stays current and incoming writing remains available
+   for recovery. If a differing pending-work collision cannot be merged, the local transaction fails
+   and retains the source replica and both documents. Other device-row collisions retain the
+   destination value. Web and the JS reference accept an optional
+   `adoptDeviceRows(product, incomingRows, keptRows)` hook returning the merged product rows, or
+   `undefined` when the product is unhandled.
 4. Every entry added to A, rebound or moved, takes lineage A, and `bound(A)` observes its stamps
    into `hlc` and `hlcHigh`. `authPaused := false`, and `pendingSignIn` is cleared.
 
@@ -2276,7 +2337,7 @@ Frames are at most `LIVE_FRAME_BYTES`.
 |---|---|---|
 | 400 | `malformed` | §7.4 |
 | 401 | `unauthenticated` | pause (§7.4) |
-| 409 | `replica-foreign`, `replica-forked`, `gap` | re-identify |
+| 409 | `replica-foreign`, `replica-forked`, `gap` | validate and process the epoch, then re-identify once (§7.4) |
 | 409 | `account-mismatch` | pause (§7.4) |
 | 413 | `request-too-large` | §7.4 |
 | 426 | `upgrade-required` | stop until upgraded |
@@ -2417,7 +2478,8 @@ Each property keeps its number wherever it is cited.
   counts of equal tokens.
 - **8.** Client: `clock-skew` recovery terminates (INV-14) under 409 and epoch returns, holds, undo,
   retire, keyed carriers, orphans and later gestures on the same records: with the server clock
-  held still, every entry is acked or ends, and none is refused `clock-skew` twice.
+  held still, every entry is acked or ends, and none requires a second `clock-skew` recovery.
+  Results discarded at an epoch change (§7.4) have not run recovery.
 
 ### §11.3 Replay fuzz
 
@@ -2703,8 +2765,12 @@ It is the only writer of `closedBy = stale`.
 
   Predicts `finishedAt` and `closedBy`.
 - **`gym.applyProposal {proposalId: ref<proposal>}`.**
-  - Absent or `foreign` → `unknown-record`; dead, having died with its routine → `record-dead`.
-  - `applied` → ok.
+  - A durable receipt for this account and proposal → ok, with no new writes and an empty write
+    map, before identity or guard checks. Every successful apply stores that receipt in the same
+    transaction as its effects. It survives proposal/routine death, replica changes and restores;
+    only account deletion removes it. An accepted removal must never become a refusal on replay.
+  - Without a receipt: absent or `foreign` → `unknown-record`; dead → `record-dead`.
+    `applied` → record the receipt and answer ok.
   - `dismissed` → `proposal-settled` with detail `{state}`; `superseded` → `proposal-superseded`
     with detail `{reason}`; pending while `routine.revision ≠ baseRevision` →
     `proposal-superseded` with detail `{reason: routine-changed}`. The refusal changes no state;
@@ -2978,7 +3044,7 @@ the adoption. Journal's adopted base is Appendix D; every other product starts f
   | `proposal` | `gym_proposals`, its `changes` register held by `gym_proposal_changes` |
 
 - Every other gym table is outside the engine and keeps its writers: the receipts
-  (`gym_write_receipts`, `gym_correction_receipts`, `gym_note_saves`), the projection
+  (`gym_write_receipts`, `gym_correction_receipts`, `gym_proposal_applies`, `gym_note_saves`), the projection
   `gym_set_revisions`, the shares (`gym_session_shares`, `gym_log_shares`, `gym_log_share_sessions`)
   and every Coach table (`gym_ask_*`). `gym_routine_creations` holds the read-only
   `routineCreation` records (C.8).
@@ -3030,6 +3096,8 @@ Routines keep theirs.
   created the session, `gym.importSession`'s. The rows of `gym_correction_receipts` are
   `gym.correctSession`'s. A receipt holds a request hash, and a replay compares its call by that
   hash, the digest of the raw arguments gym computes (§6.4).
+- `gym_proposal_applies` retains the account and proposal id of each successful `gym.applyProposal`,
+  including removals, independently of the proposal and routine's lifetimes (A.2).
 - Stored metadata keeps its columns, and C.8 binds the R118 registers to them: a routine's
   `revision`, `created_entries` and `created_at`, `gym_routine_creations`, a proposal's
   `base_revision`, `base_name`, `changes` and `created_at`, a note's `position` and `updated_at`,

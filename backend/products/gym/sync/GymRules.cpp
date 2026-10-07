@@ -562,10 +562,16 @@ GymOutcome runGym(const std::string& name, const Json::Value& args, const Json::
     return result;
   }
   const std::string id = args["proposalId"].asString();
+  const bool apply = name == "gym.applyProposal";
+  if (apply && facts.books["proposalApplies"].isMember(id)) return result;
   requireAlive(facts, "proposal", id);
   const Row& proposal = *facts.row("proposal", id);
-  const bool apply = name == "gym.applyProposal";
   const std::string state = stateOf(proposal);
+  if (apply) {
+    result.receiptKind = "proposalApplies";
+    result.receiptId = id;
+    result.receipt = true;
+  }
   if (state == (apply ? "applied" : "dismissed")) return result;
   if (state == "applied" || state == "dismissed") throw Refusal("proposal-settled", object({{"state", state}}));
   if (state == "superseded") throw Refusal("proposal-superseded", object({{"reason", supersededReason(facts, proposal)}}));

@@ -25042,7 +25042,7 @@
     }
   },
   {
-    "name": "an ok from a restored epoch at a seq the stored cursor of the old epoch has reached is not covered: its entry stays acked in the new epoch, and its put stays drawn",
+    "name": "an ok from a restored epoch with no older acknowledgements stays acked and its put stays drawn",
     "input": {
       "device": {
         "active": "rp_00000000000000000000000000000001",

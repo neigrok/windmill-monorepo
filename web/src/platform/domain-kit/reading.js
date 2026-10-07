@@ -16,6 +16,13 @@ import { precondition } from './values.js';
 /** @typedef {import('../sync/core/registry.js').Registry} Registry */
 /** @typedef {'drawn' | 'stored'} ViewMode */
 /** @typedef {{ kind: 'top' } | { kind: 'bottom' } | { kind: 'below', id: RecordID }} Placement */
+/** @typedef {{ gestureId: string, command: import('./plans.js').Command, canSupersede: boolean, isAdmitted?: boolean }} QueuedCommand */
+/** @typedef {{ epoch: string | null, cleanSeq: number | null }} ScopeCheckpoint */
+/**
+ * @typedef {{ devices?: Record<string, Json>, firstPullComplete?: boolean, actor?: string, isAnonymous?: boolean,
+ *   commands?: QueuedCommand[], checkpoint?: ScopeCheckpoint, mintId?: (type: string) => RecordID,
+ *   opaqueID?: () => string }} ViewMetadata
+ */
 
 export const Placement = Object.freeze({
   top: Object.freeze({ kind: /** @type {const} */ ('top') }),
@@ -24,32 +31,37 @@ export const Placement = Object.freeze({
   below: (id) => Object.freeze({ kind: /** @type {const} */ ('below'), id }),
 });
 
-// What a reader reads: the scope's `drawn` and `stored` records keyed as the engine keys them, the
-// product's device rows, the first-pull flag, and the id mint a commit offers.
+// What a reader reads: one scope's views, confirmed records, commands and checkpoint, with its
+// product's device rows and the identity mints a commit offers.
 export class Views {
   /**
    * @param {Registry} registry
-   * @param {{ drawn: Map<string, ViewRecord>, stored: Map<string, ViewRecord>, devices?: Record<string, Json>,
-   *   firstPullComplete?: boolean, mintId?: (type: string) => RecordID }} source
+   * @param {{ drawn: Map<string, ViewRecord>, stored: Map<string, ViewRecord>, confirmed?: Map<string, ViewRecord> } & ViewMetadata} source
    */
-  constructor(registry, { drawn, stored, devices = {}, firstPullComplete = true, mintId }) {
+  constructor(registry, { drawn, stored, confirmed = new Map(), devices = {}, firstPullComplete = true,
+    actor = '', isAnonymous = false, commands = [], checkpoint = { epoch: null, cleanSeq: null }, mintId, opaqueID }) {
     this.registry = registry;
     this.drawn = drawn;
     this.stored = stored;
+    this.confirmed = confirmed;
     this.devices = devices;
     this.firstPullComplete = firstPullComplete;
+    this.actor = actor;
+    this.isAnonymous = isAnonymous;
+    this.commands = commands;
+    this.checkpoint = checkpoint;
     this.mintId = mintId ?? null;
+    this.mintOpaqueId = opaqueID ?? null;
     Object.freeze(this);
   }
 
   /**
    * @param {Registry} registry
-   * @param {{ drawn: ViewRecord[], stored: ViewRecord[], devices?: Record<string, Json>, firstPullComplete?: boolean,
-   *   mintId?: (type: string) => RecordID }} source
+   * @param {{ drawn: ViewRecord[], stored: ViewRecord[], confirmed?: ViewRecord[] } & ViewMetadata} source
    */
-  static ofRecords(registry, { drawn, stored, ...rest }) {
+  static ofRecords(registry, { drawn, stored, confirmed = [], ...rest }) {
     const keyed = (/** @type {ViewRecord[]} */ records) => new Map(records.map((record) => [recordKey(record.t, record.id), record]));
-    return new Views(registry, { drawn: keyed(drawn), stored: keyed(stored), ...rest });
+    return new Views(registry, { drawn: keyed(drawn), stored: keyed(stored), confirmed: keyed(confirmed), ...rest });
   }
 
   // The record of a view, visible or not, or undefined.
@@ -82,6 +94,11 @@ export class Views {
     precondition(this.mintId !== null, 'ids are minted inside a commit only');
     return this.mintId(type);
   }
+
+  opaqueID() {
+    precondition(this.mintOpaqueId !== null, 'opaque ids are minted inside a commit only');
+    return this.mintOpaqueId();
+  }
 }
 
 // §7.1: valid only inside one run or read.
@@ -102,6 +119,9 @@ export class Reader {
     return this.views.registry;
   }
 
+  get actor() { return this.views.actor; }
+  get isAnonymous() { return this.views.isAnonymous; }
+
   /**
    * @template E
    * @param {import('./entities.js').EntityType<E>} type
@@ -117,6 +137,24 @@ export class Reader {
   device(key) {
     return this.views.device(key);
   }
+
+  /** @param {string} prefix */
+  devices(prefix) {
+    return Object.fromEntries(Object.entries(this.views.devices).filter(([key]) => key.startsWith(prefix)));
+  }
+
+  /**
+   * @template E
+   * @param {import('./entities.js').EntityType<E>} type
+   * @param {import('./entities.js').Id<E>} id
+   */
+  confirmed(type, id) {
+    this.repository(type);
+    return this.views.confirmed.get(recordKey(type.type, id.record)) ?? null;
+  }
+
+  commands() { return this.views.commands; }
+  checkpoint() { return this.views.checkpoint; }
 
   firstPullComplete() {
     return this.views.firstPullComplete;

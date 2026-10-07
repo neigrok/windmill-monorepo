@@ -49,10 +49,25 @@ runner in that synchronous execution context. Independent queued runs remain all
 web runner tests cover load, decide and refusal mapping: §15.2's pipeline vectors have no nested-call operation and use a
 loader that does nothing.
 
+`Reader.confirmed(type, id)` reads the confirmed record below pending predictions. `devices(prefix)`,
+`commands()`, `checkpoint()`, `actor` and `isAnonymous` carry the scope's reconciliation inputs;
+`IDSource.opaqueID()` mints a durable command identity through the engine's CSPRNG edge.
+`Plan.supersede(gestureIds)` replaces whole, never-numbered anonymous gestures in the same transaction
+as the new command and device writes. A receipt includes `superseded` when any were replaced. Device
+writes keep plan order; command text predictions carry `from: null` because they have no merge base.
+
 ## Binding
 
 `new ActionRunner(new EngineReplica(engine), engine.registry, zone)`, where `engine` is the shell's
 `BrowserSyncEngine`. The runner mints the gesture id through `engine.newGestureId()` and passes it as
 `opts.gestureId`, so a `too-large` refusal names the notice the commit wrote and the runner dismisses it;
 a held removal's receipt reads `releaseAt` from the gesture's entry. Reads outside a run come from
-`engine.observe(scope).getSnapshot()` and the product's device rows.
+`engine.observe(scope).getSnapshot()` and `engine.readMetadata(scope)`. Inside a run, confirmed rows,
+device rows, commands, actor, anonymity and checkpoint are loaded from the commit's own transaction.
+The checkpoint exposes `cleanSeq` only for a complete, same-epoch live cursor with no staging,
+lagging pull, digest reset or digest stop. `firstPullComplete` retains the engine's separate first-boot
+meaning; it does not establish that a command's result has been pulled in the current epoch.
+
+Persisted runner tests cover stale-tab transactional reads, predictions over confirmed records,
+checkpoint rejection states, opaque identities and anonymous supersession across an aborted commit
+and reopening.

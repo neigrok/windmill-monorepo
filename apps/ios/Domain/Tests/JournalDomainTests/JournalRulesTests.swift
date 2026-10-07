@@ -79,6 +79,11 @@ struct JournalRulesTests {
         return ["stamp": try ContentClock.next(pair: clock, observed: observed,
           now: input.member("now").asInteger(), actor: input.member("actor").asString())]
       } catch { return ["error": true] }
+    case "EditorDraft.adopt":
+      let incoming = try input.member("incoming"), current = try input.member("current")
+      let adopted = try EditorDraft.adopt(incoming.isNull ? nil : EditorDraft(json: incoming),
+        current: current.isNull ? nil : EditorDraft(json: current))
+      return ["current": adopted.current?.json ?? .null, "recovered": adopted.recovered?.json ?? .null]
     case "PendingClaim.reconcileBody":
       return ["body": .string(JournalWriting.reconcileBody(try input.member("joined").asString(),
         base: try input.member("base").asString(), latest: try input.member("latest").asString()))]

@@ -1,5 +1,6 @@
 // identity/seeded.json (D-8 seeded ids) and identity/table.json (§4.1 shapes and every §4.3 cell).
 
+import assert from 'node:assert/strict';
 import { parseSeeded, seededId } from '../core/derive.js';
 import { decide, opOf } from '../server/identity.js';
 import { registry, st, vector } from './fixtures.js';
@@ -39,6 +40,9 @@ function cell(name, type, delta, idState) {
   const def = registry.type(type);
   const op = opOf(def, delta);
   const decision = decide(def, op, idState, delta.born);
+  if (op === 'delete' && idState.state === 'none') assert.deepEqual(decision, { verdict: 'apply' }, 'an absent delete must survive a later replayed create');
+  if (op === 'delete' && idState.state === 'alive' && idState.born !== delta.born)
+    assert.deepEqual(decision, { verdict: 'refuse', code: 'unknown-record' }, 'a changed incarnation must retain the delete in a notice');
   const expect = { op, verdict: decision.verdict };
   if (decision.code) expect.code = decision.code;
   return vector(name, { type, delta, idState }, expect);

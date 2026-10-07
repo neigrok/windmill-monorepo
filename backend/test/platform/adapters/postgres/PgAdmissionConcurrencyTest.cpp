@@ -240,6 +240,92 @@ TEST(an_admission_holding_its_scope_never_holds_up_another_scope) {
   CHECK_EQ(held.get(), std::string("ok"));
 }
 
+TEST(an_absent_delete_and_cross_scope_create_serialize_on_the_global_id_in_both_orders) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  const Json::Value create = intentOf("self/probe", R"({"t":"card","id":"cardRACE","born":"1000:0:r_aaaaaaaaaaaa","life":["alive","1000:0:r_aaaaaaaaaaaa"],"f":{"title":["Retained","1000:0:r_aaaaaaaaaaaa"]}})");
+  const Json::Value remove = intentOf("self/probe", R"({"t":"card","id":"cardRACE","born":"1000:0:r_aaaaaaaaaaaa","life":["dead","2000:0:r_bbbbbbbbbbbb"]})");
+  for (const bool deleteFirst : {true, false}) {
+    world().seed(parseJson(R"({"epoch":"ep-1","clock":{"ms":0,"counter":0},"accounts":{"A":{"name":"Ann"},"B":{"name":"Bob"}}})"));
+    world().feed.published.clear();
+    world().failures.reports.clear();
+    GateStore gate(world().store(), ScopeKey::product(world().account("A"), "probe"));
+    Admission admission(world().catalog(), gate, world().feed, world().clock(), world().failures);
+    auto arrival = gate.arrival();
+    auto first = std::async(std::launch::async, [&] {
+      BlockingThread::Mark blocking;
+      return codeOf(admission.admit(ServerOrigin{world().account("A"), std::nullopt}, deleteFirst ? remove : create, kNow));
+    });
+    const bool arrived = arrival.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+    if (!arrived) {
+      gate.release();
+      CHECK(arrived);
+      CHECK_EQ(first.get(), std::string("ok"));
+      continue;
+    }
+    auto second = std::async(std::launch::async, [&] {
+      BlockingThread::Mark blocking;
+      return codeOf(admission.admit(ServerOrigin{world().account("B"), std::nullopt}, deleteFirst ? create : remove, kNow));
+    });
+    const bool waited = second.wait_for(std::chrono::milliseconds(100)) == std::future_status::timeout;
+    gate.release();
+    CHECK(waited);
+    CHECK_EQ(first.get(), std::string("ok"));
+    CHECK_EQ(second.get(), std::string(deleteFirst ? "id-taken" : "ok"));
+    const Json::Value state = world().dump();
+    if (deleteFirst) {
+      CHECK_FALSE(state.isMember("rows"));
+      CHECK_EQ(jcs(state["spent"]), jcs(parseJson(R"({"acct:A/probe":[{"t":"card","id":"cardRACE","born":"1000:0:r_aaaaaaaaaaaa","lifeStamp":"2000:0:r_bbbbbbbbbbbb","seq":1}]})")));
+      CHECK_EQ(state["scopes"]["acct:A/probe"]["counters"]["card"].asInt(), 0);
+      BlockingThread::Mark blocking;
+      CHECK_EQ(codeOf(admission.admit(ServerOrigin{world().account("A"), std::nullopt}, create, kNow)), std::string("ok"));
+      CHECK_FALSE(world().dump().isMember("rows"));
+    } else {
+      CHECK_FALSE(state.isMember("spent"));
+      CHECK_EQ(jcs(state["rows"]), jcs(parseJson(R"({"acct:A/probe":[{"t":"card","id":"cardRACE","born":"1000:0:r_aaaaaaaaaaaa","life":["alive","1000:0:r_aaaaaaaaaaaa"],"f":{"title":["Retained","1000:0:r_aaaaaaaaaaaa"]},"seq":1,"rc":1000000,"ru":1000000}]})")));
+    }
+    CHECK_EQ(state["scopes"]["acct:A/probe"]["seq"].asUInt64(), 1u);
+    test::checkDigests(world().dump());
+    CHECK(world().failures.reports.empty());
+  }
+}
+
+TEST(an_absent_delete_retries_after_id_lock_timeout_and_rolls_back_an_uncommitted_death) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  BlockingThread::Mark blocking;
+  world().seed(parseJson(R"({"epoch":"ep-1","clock":{"ms":0,"counter":0},"accounts":{"A":{"name":"Ann"}},"replicas":{"rp_0000000000000000000000000000000a":{"account":"A","lastN":0}}})"));
+  world().feed.published.clear();
+  world().failures.reports.clear();
+  const Json::Value before = world().dump();
+  const Json::Value remove = intentOf("self/probe", R"({"t":"card","id":"cardDEAD","born":"1000:0:r_aaaaaaaaaaaa","life":["dead","2000:0:r_bbbbbbbbbbbb"]})");
+  const ReplicaOrigin origin{world().account("A"), "rp_0000000000000000000000000000000a", 1, intentDigest(remove)};
+  PgSyncStore store(pgTestPool(), 20);
+  fake::FaultingStore fault(store, fake::FaultingStore::Faults{.intents = {{1, FaultClass::transient}}});
+  Admission failing(world().catalog(), fault, world().feed, world().clock(), world().failures);
+  auto held = world().store().begin(TxnMode::write);
+  world().store().lockIds(*held, {{"card", "cardDEAD"}});
+  const AdmitOutcome timedOut = failing.admit(origin, remove, kNow);
+  held.reset();
+  REQUIRE(std::holds_alternative<Retry>(timedOut));
+  CHECK_EQ(jcs(world().dump()), jcs(before));
+
+  const AdmitOutcome rolledBack = failing.admit(origin, remove, kNow);
+  REQUIRE(std::holds_alternative<Retry>(rolledBack));
+  CHECK_EQ(jcs(world().dump()), jcs(before));
+  CHECK(world().feed.published.empty());
+
+  Admission recovered(world().catalog(), store, world().feed, world().clock(), world().failures);
+  const AdmitOutcome retried = recovered.admit(origin, remove, kNow);
+  REQUIRE(std::holds_alternative<Admitted>(retried));
+  CHECK_EQ(jcs(std::get<Admitted>(retried).result), R"({"s":"ok","seq":1})");
+  const Json::Value state = world().dump();
+  CHECK_FALSE(state.isMember("rows"));
+  CHECK_EQ(jcs(state["spent"]), jcs(parseJson(R"({"acct:A/probe":[{"t":"card","id":"cardDEAD","born":"1000:0:r_aaaaaaaaaaaa","lifeStamp":"2000:0:r_bbbbbbbbbbbb","seq":1}]})")));
+  CHECK_EQ(state["replicas"][origin.replica]["lastN"].asUInt64(), 1u);
+  CHECK_EQ(world().feed.published.size(), 1u);
+  test::checkDigests(state);
+  CHECK(world().failures.reports.empty());
+}
+
 TEST(a_tree_write_never_waits_on_an_overlay_write_and_a_death_waits_for_it_then_kills_the_overlay) {
   if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
   seedBoard();

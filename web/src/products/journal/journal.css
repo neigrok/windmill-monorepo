@@ -336,6 +336,22 @@
   margin-top: 6px;
 }
 
+.journal-recoveries {
+  margin-block: 1.5rem;
+  color: var(--journal-ink-dim);
+}
+.journal-recoveries summary { cursor: pointer; padding-block: 0.5rem; }
+.journal-recoveries textarea {
+  width: 100%;
+  padding: 0.75rem;
+  color: var(--journal-ink);
+  background: transparent;
+  border: 1px solid var(--journal-swatch-edge);
+  border-radius: 0.5rem;
+  font: inherit;
+  resize: vertical;
+}
+
 .journal-unread {
   font-family: var(--font-body);
   font-size: 13px;

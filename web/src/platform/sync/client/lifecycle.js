@@ -7,6 +7,7 @@ import { hashText } from '../core/encoding.js';
 import { jcs } from '../core/jcs.js';
 import { recordKey, stampsOf } from '../core/rows.js';
 import { releaseAll } from './hold.js';
+import { commandRefs } from './dependents.js';
 import { Replica } from './replica.js';
 
 // §7.12: `activeReplica()` answers `replica` where it answered `previous`.
@@ -34,7 +35,16 @@ export function epochChange(replica, ctx, epoch) {
   for (const cursor of Object.values(replica.cursors)) cursor.cursor = null;
   replica.staging = {};
   for (const entry of replica.entries()) {
-    if (entry.state === 'acked' && entry.resultEpoch !== epoch) moveEntry(replica, ctx.ended, entry, 'epoch');
+    if (entry.state !== 'acked' || entry.resultEpoch === epoch) continue;
+    if (entry.intent.cmd && entry.writeTargets === undefined) {
+      const refs = commandRefs(ctx.registry, entry.intent.cmd);
+      entry.writeTargets = (entry.predict ?? []).flatMap((delta) => {
+        const sources = refs.filter((ref) => ref.t === delta.t);
+        if (sources.length !== 1 || entry.predict.filter((other) => other.t === delta.t).length !== 1) return [];
+        return [{ t: delta.t, from: sources[0].id, id: delta.id, ...(delta.born === undefined ? {} : { born: delta.born }) }];
+      });
+    }
+    moveEntry(replica, ctx.ended, entry, 'epoch');
   }
   reidentify(replica, ctx);
   renewActor(ctx);
@@ -82,24 +92,34 @@ function observeEntries(replica) {
   }
 }
 
-// Whether an answer's pinned local ids are the ones its question counts now; an answer without them
+// Whether an answer's pinned work is the work its question counts now; an answer without pins
 // is given to the question as it stands.
 function sameCounted(pinned, counted) {
   return pinned === undefined || (pinned.length === counted.length && pinned.every((localId, index) => localId === counted[index]));
 }
 
+function pendingDeviceRows(ctx, replica, product) {
+  const rows = replica.device[product] ?? {};
+  return (ctx.pendingDeviceWork?.(product, rows) ?? []).slice().sort().map((key) =>
+    `device:${product}:${key}:${hashText(jcs(rows[key]))}`);
+}
+
 // Sign-in as `account`, after a hello whose holdsRecords is given. `decisions[product]` is 'add' or
-// 'discard', answering the question whose local ids `counted[product]` pins. Answers {complete, due},
-// each due decision with the local ids it counts; an incomplete sign-in changes nothing past the
-// release of holds, and a decision whose entries changed since its question is due again.
+// 'discard', answering the question whose entry ids and device-work bytes `counted[product]` pins.
+// An incomplete sign-in changes nothing past the release of holds; changed work is asked again.
 export function signIn(device, ctx, { account, holdsRecords, decisions = {}, counted = {} }) {
   const { registry } = ctx;
   const previous = device.activeReplica?.id;
   const anon = device.anonReplica();
   if (anon) releaseAll(anon, registry, ctx.ended);
-  const due = Object.keys(registry.products).sort()
-    .filter((product) => holdsRecords[product] && anon && entriesOf(registry, anon, product).length > 0)
-    .map((product) => ({ kind: 'signed-out', product, count: anonCount(registry, anon, product), counted: entriesOf(registry, anon, product).map((entry) => entry.localId) }));
+  const due = Object.keys(registry.products).sort().flatMap((product) => {
+    if (!anon || !holdsRecords[product]) return [];
+    const entries = entriesOf(registry, anon, product);
+    const pending = pendingDeviceRows(ctx, anon, product);
+    if (!entries.length && !pending.length) return [];
+    return [{ kind: 'signed-out', product, count: anonCount(registry, anon, product),
+      counted: [...entries.map((entry) => entry.localId), ...pending], ...(pending.length ? { pending: pending.length } : {}) }];
+  });
   const answered = (decision) => (decisions[decision.product] === 'add' || decisions[decision.product] === 'discard')
     && sameCounted(counted[decision.product], decision.counted);
   if (!due.every(answered)) {
@@ -113,12 +133,13 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {}, cou
     delete anon.device[decision.product];
   }
 
+  const hasAnonWork = anon && (anon.outbox.length > 0 || Object.keys(anon.device).some((product) => pendingDeviceRows(ctx, anon, product).length > 0));
   let target = device.dormantOf(account);
   if (target) {
     target.meta.state = transition(REPLICA_MACHINE, 'dormant', 'sign-in', 'bound');
     target.cursors = {};
     target.staging = {};
-  } else if (anon && anon.outbox.length > 0) {
+  } else if (hasAnonWork) {
     target = anon;
     anon.meta.state = transition(REPLICA_MACHINE, 'anon', 'sign-in', 'bound');
     anon.meta.account = account;
@@ -126,13 +147,21 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {}, cou
     target = device.add(Replica.fresh({ replica: ctx.newReplicaId(), state: transition(REPLICA_MACHINE, null, 'sign-in', 'bound'), account }));
   }
 
-  if (anon && anon !== target && anon.outbox.length > 0) {
+  if (hasAnonWork && anon !== target) {
     for (const entry of anon.entries()) {
       entry.commitOrder = target.nextCommitOrder();
       target.outbox.push(entry);
     }
     for (const [product, rows] of Object.entries(anon.device)) {
       const kept = target.deviceRows(product);
+      const merged = ctx.adoptDeviceRows?.(product, rows, kept);
+      if (merged !== undefined) {
+        target.device[product] = merged;
+        continue;
+      }
+      const pending = ctx.pendingDeviceWork?.(product, rows) ?? [];
+      if (pending.some((key) => Object.hasOwn(kept, key) && jcs(kept[key]) !== jcs(rows[key])))
+        throw new Error('device-work-adoption-conflict');
       for (const [key, value] of Object.entries(rows)) if (!Object.hasOwn(kept, key)) kept[key] = value;
     }
     target.notices.push(...anon.notices);
@@ -162,8 +191,7 @@ export function signOut(device, ctx, { choice, counted } = {}) {
   // Products identify durable device work that has not yet become an outbox entry. Pin its bytes so
   // Discard asks again if typing changed after the question, even when its device key did not.
   const pending = Object.entries(bound.device).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
-    .flatMap(([product, rows]) => (ctx.pendingDeviceWork?.(product, rows) ?? []).slice().sort().map((key) =>
-      `device:${product}:${key}:${hashText(jcs(rows[key]))}`));
+    .flatMap(([product]) => pendingDeviceRows(ctx, bound, product));
   const question = {
     unsent: unsent.length + pending.length,
     ready: unsent.filter((entry) => entry.state === 'ready').length,

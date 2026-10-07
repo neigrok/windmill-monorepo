@@ -14,7 +14,7 @@ import { Violation } from './values.js';
 /** @typedef {import('./plans.js').Plan} Plan */
 /** @typedef {import('./reading.js').Reader} Reader */
 /** @typedef {import('./reading.js').Views} Views */
-/** @typedef {{ gestureId: string, localIds: string[], retired: string[], releaseAt: number | null }} CommitReceipt */
+/** @typedef {{ gestureId: string, localIds: string[], retired: string[], superseded?: string[], releaseAt: number | null }} CommitReceipt */
 /**
  * @template T, R
  * @typedef {{ kind: 'write', plan: Plan, result: T } | { kind: 'unchanged', result: T } | { kind: 'refuse', refusal: R }} Decision
@@ -88,6 +88,10 @@ export class IDSource {
    */
   mint(type) {
     return new Id(this.views.mint(type.type), type);
+  }
+
+  opaqueID() {
+    return this.views.opaqueID();
   }
 }
 

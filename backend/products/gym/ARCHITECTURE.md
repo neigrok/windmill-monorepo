@@ -270,7 +270,9 @@ routine is deleted.
   would apply it. Apply writes the proposal's standing rows into the routine's `entries` and its
   proposed name into `name`, or kills the routine for a removal; dismiss writes only the proposal's
   `state` and `settledAt`. Settling is a lifter's push through `/v1/sync`; no server door admits
-  either command.
+  either command. Every successful apply records its account and proposal id in
+  `gym_proposal_applies` in the same transaction. That receipt answers replay before identity and
+  guard checks, survives proposal and routine death, and is removed only with its account.
 - **The revision moves when the document or the name moves, and not otherwise.** A write that lands
   the bytes already standing moves nothing and supersedes nothing; neither does a `position` write,
   since `position` is not part of any proposal. A write that does move `name` or `entries` supersedes
@@ -306,7 +308,7 @@ routine is deleted.
 - **Every mint refusal is answered before anything is admitted**: the door decides it under the scope
   lock, and the supersede that clears the pending slot runs in the mint's own admission. A document
   identical to what the routine already says is `noChange`. An applied REMOVAL kills its own proposal
-  with the routine, so reading it back answers `404` and a second apply is refused `record-dead`.
+  with the routine, so reading it back answers `404`; a second apply answers `ok` from its receipt.
 - **`Apply all N` counts** every row that moves, one for a renamed routine, and one for a run the
   proposal reorders: `countedChanges` on the door, `proposalChangeCount` in GymRules, which writes it
   as `changeCount`. It is what `noChange` is decided off.
@@ -324,8 +326,8 @@ routine is deleted.
   from that diff is refused `invalid`. Moving one set of a ramp is one `retargeted` row whose two
   sides each carry the full list; the review sheet draws the one set that moved from those lists,
   not from the store.
-- Both tables are in `PgAccountFootprint`'s owned list. Every proposal route is owner-scoped and 401s
-  before it reads anything.
+- The proposal, change and apply-receipt tables are in `PgAccountFootprint`'s owned list. Every
+  proposal route is owner-scoped and 401s before it reads anything.
 
 ### 3.8 Coach's threads
 

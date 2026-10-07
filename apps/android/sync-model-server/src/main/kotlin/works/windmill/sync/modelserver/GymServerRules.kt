@@ -7,6 +7,7 @@ class GymServerRules : ServerRules {
     override fun replays(command: CheckedCommand, context: RuleContext) = when (command.name) {
         "gym.start" -> context.entry("starts", command.string("id")) != null
         "gym.importSession" -> context.entry("imports", command.string("id")) != null
+        "gym.applyProposal" -> context.entry("proposalApplies", command.string("proposalId")) != null
         "gym.correctSession" -> context.entry("corrections", command.string("requestId")) != null; else -> false
     }
     override fun run(command: CheckedCommand, context: RuleContext): CommandOutcome = when (command.name) {
@@ -112,12 +113,18 @@ class GymServerRules : ServerRules {
         return CommandOutcome(listOf(PlannedDelta.update(session.key, session.lattice.born, mapOf("finishedAt" to Json.of(at), "closedBy" to Json.of("finish")))), listOf(WriteClaim(session.key, fields = listOf("finishedAt", "closedBy"))), product = c.product)
     }
     private fun applyProposal(cmd: CheckedCommand, c: RuleContext): CommandOutcome {
-        val proposal = alive(key("proposal", cmd.string("proposalId")), c)
-        if (proposalState(proposal) == "applied") return CommandOutcome(product = c.product)
+        val id = cmd.string("proposalId")
+        if (c.entry("proposalApplies", id) != null) return CommandOutcome(product = c.product)
+        val proposal = alive(key("proposal", id), c)
+        if (proposalState(proposal) == "applied") {
+            c.store("proposalApplies", id, Json.of(true))
+            return CommandOutcome(product = c.product)
+        }
         unsettled(proposal, c)
         val routineId = value(proposal, "routineId")!!.str()
         if (value(c.idState(key("routine", routineId)).row, "revision") != value(proposal, "baseRevision")) throw superseded("routine-changed")
         val routine = alive(key("routine", routineId), c)
+        c.store("proposalApplies", id, Json.of(true))
         val settle = PlannedDelta.update(proposal.key, proposal.lattice.born, mapOf("state" to Json.of("applied"), "settledAt" to Json.of(c.serverNow)))
         if (value(proposal, "intent") == Json.of("remove")) return CommandOutcome(listOf(settle, PlannedDelta.delete(routine.key, routine.lattice.born)), product = c.product)
         val entries = value(proposal, "changes")!!.arr().filter { it["kind"] != Json.of("removed") }.map { (it["after"] ?: Json.objectOf()).with("exerciseId" to it["exerciseId"]) }

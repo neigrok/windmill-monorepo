@@ -250,6 +250,13 @@ export default function AuthProvider({ children }) {
       prepare: async (engine) => { for (const each of hooks) await each.prepare?.(engine); },
       onPushResult: (...args) => { for (const each of hooks) each.onPushResult?.(...args); },
       pendingDeviceWork: (product, rows) => hooks.flatMap((each) => each.pendingDeviceWork?.(product, rows) ?? []),
+      adoptDeviceRows: (product, incoming, kept) => {
+        for (const each of hooks) {
+          const merged = each.adoptDeviceRows?.(product, incoming, kept);
+          if (merged !== undefined) return merged;
+        }
+        return undefined;
+      },
       liveHint: (replica) => hooks.some((each) => each.liveHint?.(syncSession.engine, replica)),
     }).then(() => { if (alive) refresh().catch(() => {}); }).catch(() => {});
     const broadcast = new BroadcastChannel('wm-auth');

@@ -26,7 +26,7 @@ public enum PushStep: Sendable, Hashable {
   // §10.4, before any stamp of the answer is observed.
   case sample(serverTime: Int64)
   case pauseAuth
-  case reidentify
+  case reidentify(epoch: String)
   // A 400 or 413 on several intents: resend the first `limit` entries by n; a 400 also reports itself.
   case halve(limit: Int, malformed: Bool)
   // A 400 or 413 on one intent: rewind to its n, and refuse it `invalid` or `too-large`.
@@ -34,10 +34,10 @@ public enum PushStep: Sendable, Hashable {
   case results(ResultBatch)
   case epoch(String)
 
-  // A refusal may fold an orphan's dependents into its origin's stored notice, so its Action loads the notices.
+  // Refusals and write maps may fold an orphan into its origin's stored notice, so their Action loads the notices.
   public var readsNotices: Bool {
     switch self {
-    case .results(let batch): batch.results.contains { if case .refused = $0.verdict { true } else { false } }
+    case .results(let batch): batch.epochResults.contains { if case .ok(_, nil) = $0.verdict { false } else { true } }
     case .refuseLocally: true
     case .sample, .pauseAuth, .reidentify, .halve, .epoch: false
     }
@@ -51,6 +51,8 @@ public enum PushStep: Sendable, Hashable {
     case .sample, .pauseAuth, .halve:
       return EntrySelection()
     case .results(let batch):
+      guard batch.replica.utf8.elementsEqual(meta.replica.utf8) else { return EntrySelection() }
+      if let epoch = meta.serverEpoch, !epoch.utf8.elementsEqual(batch.epoch.utf8) { return .every }
       guard batch.results.allSatisfy({ if case .ok(_, nil) = $0.verdict { true } else { false } }) else { return .every }
       return EntrySelection(numbered: Set(batch.results.map(\.n)))
     case .epoch(let epoch):
@@ -62,27 +64,33 @@ public enum PushStep: Sendable, Hashable {
   }
 }
 
-// §7.4 the next results of an answer in ascending n, one transaction; the last, which may hold none, moves ackThrough.
+// §7.4 the next results of an answer in ascending n, pinned to the request's replica; an epoch reset drops the remaining batches.
+// The last batch, which may hold none, moves ackThrough.
 public struct ResultBatch: Sendable, Hashable {
+  public let replica: String
   public let results: [PushResult]
   public let lastN: Int64
   public let epoch: String
   public let isLast: Bool
+  // Every remaining result of the answer, for an atomic epoch recovery before ordinary result slicing.
+  public let epochResults: [PushResult]
 
-  public init(results: [PushResult], lastN: Int64, epoch: String, isLast: Bool) {
+  public init(replica: String, results: [PushResult], lastN: Int64, epoch: String, isLast: Bool, epochResults: [PushResult]? = nil) {
+    self.replica = replica
     self.results = results
     self.lastN = lastN
     self.epoch = epoch
     self.isLast = isLast
+    self.epochResults = epochResults ?? results
   }
 }
 
-// §7.4 a push answer's transactions in order: the sample, then a 401's pause, a 200's result batches and epoch, or a failure's own move.
+// §7.4 a push answer's transactions in order: the sample, then a 401's pause, a 200's epoch recovery or result batches, or a failure's own move.
 public struct PushSteps: Sendable {
   enum Part: Sendable {
     case step(PushStep)
     // A 200's results not yet taken, ascending by n.
-    case results(ArraySlice<PushResult>, lastN: Int64, epoch: String)
+    case results(ArraySlice<PushResult>, replica: String, lastN: Int64, epoch: String)
   }
 
   var parts: [Part]
@@ -94,11 +102,12 @@ public struct PushSteps: Sendable {
     case .step(let step):
       parts.removeFirst()
       return step
-    case .results(let results, let lastN, let epoch):
+    case .results(let results, let replica, let lastN, let epoch):
       let batch = results.prefix(sizes.size(.results))
       let rest = results.dropFirst(batch.count)
-      if rest.isEmpty { parts.removeFirst() } else { parts[0] = .results(rest, lastN: lastN, epoch: epoch) }
-      return .results(ResultBatch(results: Array(batch), lastN: lastN, epoch: epoch, isLast: rest.isEmpty))
+      if rest.isEmpty { parts.removeFirst() } else { parts[0] = .results(rest, replica: replica, lastN: lastN, epoch: epoch) }
+      return .results(ResultBatch(replica: replica, results: Array(batch), lastN: lastN, epoch: epoch, isLast: rest.isEmpty,
+                                  epochResults: Array(results)))
     }
   }
 }
@@ -207,11 +216,13 @@ public struct PushPlanner: Sendable {
     guard !answer.isUnauthenticated(for: request.account) else { return PushSteps(parts: sample + [.step(.pauseAuth)]) }
     switch answer {
     case .ok(let response):
-      let results = PushSteps.Part.results(response.results[...], lastN: response.lastN, epoch: response.epoch)
-      return PushSteps(parts: sample + [results, .step(.epoch(response.epoch))])
+      let results = PushSteps.Part.results(response.results[...], replica: request.replica, lastN: response.lastN, epoch: response.epoch)
+      return PushSteps(parts: sample + [results])
     case .failed(let failure):
       switch failure.status {
-      case 409: return PushSteps(parts: sample + [.step(.reidentify)])
+      case 409:
+        guard failure.isRecoveryConflict, let epoch = failure.epoch else { return PushSteps(parts: []) }
+        return PushSteps(parts: sample + [.step(.reidentify(epoch: epoch))])
       case 400, 413:
         let malformed = failure.status == 400
         if request.intents.count > 1 {
@@ -232,8 +243,10 @@ public struct PushPlanner: Sendable {
       replica.update { $0.sample(serverTime: serverTime, send: timing.send, recv: timing.recv) }
     case .pauseAuth:
       replica.update { $0.authPaused = true }
-    case .reidentify:
-      try lifecycle.reidentify(&replica, instance: &instance, identities: identities)
+    case .reidentify(let epoch):
+      let id = replica.id
+      try lifecycle.checkEpoch(epoch, in: &replica, instance: &instance, identities: identities)
+      if replica.id.utf8.elementsEqual(id.utf8) { try lifecycle.reidentify(&replica, instance: &instance, identities: identities) }
     case .halve(_, let malformed):
       if malformed { replica.record(.pushMalformed) }
     case .refuseLocally(let n, let malformed):
@@ -244,6 +257,16 @@ public struct PushPlanner: Sendable {
       try writeCommandRefusal(entry, code: malformed ? .invalid : .tooLarge, in: &replica)
       try refuse(entry.localId, code: malformed ? .invalid : .tooLarge, detail: nil, lastN: n - 1, in: &replica, instance: instance)
     case .results(let batch):
+      guard batch.replica.utf8.elementsEqual(replica.id.utf8) else { return }
+      if let epoch = replica.meta.serverEpoch, !epoch.utf8.elementsEqual(batch.epoch.utf8) {
+        if !replica.outbox.contains(where: { $0.state == .acked && $0.resultEpoch?.utf8.elementsEqual(batch.epoch.utf8) != true }) {
+          for result in batch.epochResults {
+            if case .ok = result.verdict { try apply(result, lastN: batch.lastN, epoch: batch.epoch, to: &replica, instance: instance) }
+          }
+        }
+        try lifecycle.changeEpoch(to: batch.epoch, in: &replica, instance: &instance, identities: identities)
+        return
+      }
       // A replica with no epoch takes the answer's with its first result, or with ackThrough (§7.4).
       let records = batch.results.contains { replica.sentEntry(numbered: $0.n) != nil }
       if replica.meta.serverEpoch == nil && (records || batch.isLast) { replica.update { $0.serverEpoch = batch.epoch } }
@@ -431,8 +454,45 @@ public struct PushPlanner: Sendable {
   // prediction takes the map's stamps; then queued writes of the mapped registers take fresh ticks of this instance's
   // clock after them.
   func applyWriteMap(_ write: [WriteMapEntry], of commandId: String, in replica: inout LoadedReplica, instance: Instance) throws {
+    guard let original = replica.entry(commandId) else { return }
+    let retained = original.writeTargets != nil
+    if !retained { replica.update(entry: commandId) { $0.writeTargets = [] } }
     for w in write {
-      if let from = w.from {
+      let source = w.from ?? w.key.id
+      let previous = replica.entry(commandId)?.writeTargets?.first { $0.key.type == w.key.type && $0.from == source }
+      if let previous {
+        for later in replica.outbox where later.commitOrder > original.commitOrder && later.isQueued {
+          replica.update(entry: later.localId) { rewrite(&$0, type: w.key.type, from: previous.key.id, to: w.key.id, replay: true) }
+        }
+        if previous.key.id != w.key.id {
+          replica.update(entry: commandId) { command in
+            for index in command.predict.indices { rewrite(&command.predict[index], type: w.key.type, from: previous.key.id, to: w.key.id) }
+          }
+          rewriteDeviceRows(of: commandId, type: w.key.type, from: previous.key.id, to: w.key.id, in: &replica)
+        }
+        if let old = previous.born, let born = w.born, old != born {
+          for later in replica.outbox where later.commitOrder > original.commitOrder && (later.isQueued || later.state == .sent) {
+            replica.update(entry: later.localId) { entry in
+              Restamp.follow(&entry.intent.deltas, key: w.key, from: old, to: born, born: true)
+              Restamp.follow(&entry.predict, key: w.key, from: old, to: born, born: true)
+            }
+          }
+        }
+      } else if retained && w.born != nil {
+        let predicted = replica.entry(commandId)?.predict.filter { $0.key.type == w.key.type } ?? []
+        for later in replica.outbox where later.commitOrder > original.commitOrder && later.isQueued {
+          guard let entry = replica.entry(later.localId) else { continue }
+          let unmapped = entry.intent.deltas.contains { delta in
+            delta.key.type == w.key.type && delta.removes && delta.key.id != source && delta.key.id != w.key.id
+              && (predicted.isEmpty || predicted.contains { $0.key.id == delta.key.id })
+          }
+          if unmapped {
+            try writeCommandRefusal(entry, code: .targetMerged, in: &replica)
+            try remove(entry, by: .targetMerged, code: .targetMerged, detail: nil, in: &replica, at: instance.deviceNow)
+          }
+        }
+      }
+      if previous == nil, let from = w.from {
         let fromKey = RecordKey(w.key.type, from)
         for queued in replica.outbox where queued.isQueued {
           guard let entry = replica.entry(queued.localId) else { continue }
@@ -452,6 +512,14 @@ public struct PushPlanner: Sendable {
       for (index, delta) in command.predict.enumerated() where delta.key == w.key {
         for (name, stamp) in w.fields { Restamp.move(.init(part: .predict(index), register: .field(name)), of: commandId, to: stamp, in: &replica) }
         if let born = w.born { Restamp.move(.init(part: .predict(index), register: .life), of: commandId, to: born, in: &replica) }
+      }
+      replica.update(entry: commandId) { command in
+        var target = previous ?? WriteTarget(key: w.key, from: source)
+        target.key = w.key
+        if let born = w.born { target.born = born }
+        if let index = command.writeTargets?.firstIndex(where: { $0.key.type == w.key.type && $0.from == source }) {
+          command.writeTargets?[index] = target
+        } else { command.writeTargets?.append(target) }
       }
     }
 
@@ -475,7 +543,16 @@ public struct PushPlanner: Sendable {
 
   // Replaces the id a join mapped `from` by `to` in an entry's deltas, predictions, guards, base texts and command
   // arguments: as a record's id, a key part, or a ref field's value.
-  func rewrite(_ entry: inout OutboxEntry, type: String, from: RecordID, to: RecordID) {
+  func rewrite(_ entry: inout OutboxEntry, type: String, from: RecordID, to: RecordID, replay: Bool = false) {
+    if replay {
+      for index in entry.writeTargets?.indices ?? 0..<0 where entry.writeTargets?[index].key == RecordKey(type, from) {
+        guard let command = entry.intent.command, case .object(var args) = command.args, let target = entry.writeTargets?[index] else { continue }
+        let refs = Dependents.references(of: command, registry: registry).filter { $0.key == RecordKey(type, target.from) }
+        for ref in refs { args[ref.argument] = to.json }
+        if !refs.isEmpty { entry.writeTargets?[index].from = to }
+        entry.intent.command = Command(name: command.name, args: .object(args))
+      }
+    }
     for index in entry.intent.deltas.indices { rewrite(&entry.intent.deltas[index], type: type, from: from, to: to) }
     for index in entry.predict.indices { rewrite(&entry.predict[index], type: type, from: from, to: to) }
     for index in entry.intent.guards.indices {
@@ -487,6 +564,10 @@ public struct PushPlanner: Sendable {
         args[reference.argument] = to.json
       }
       entry.intent.command = Command(name: command.name, args: .object(args))
+    }
+    for index in entry.writeTargets?.indices ?? 0..<0 where entry.writeTargets?[index].key.type == type {
+      if entry.writeTargets?[index].from == from { entry.writeTargets?[index].from = to }
+      if entry.writeTargets?[index].key.id == from { entry.writeTargets?[index].key = RecordKey(type, to) }
     }
   }
 

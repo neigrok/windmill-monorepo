@@ -438,12 +438,12 @@ class Admission {
     }
   }
 
-  // Step 11: a new record's serial field numbers 1 + the maximum over alive records sharing its
+  // Step 11: a new alive record's serial field numbers 1 + the maximum over alive records sharing its
   // serialNext values, in admission order; a value the command supplies is kept.
   assignSerials() {
     const numbered = [];
     for (const record of this.records.values()) {
-      if (!record.isNew) continue;
+      if (!record.isNew || !isAlive(record.after)) continue;
       const { after, type } = record;
       for (const name of type.serialFieldNames) {
         if (after.v?.[name] !== undefined) continue;

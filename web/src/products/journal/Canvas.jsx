@@ -26,7 +26,7 @@ const WHY_READ_MS = 2500;
 
 export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWriter = null }) {
   const {
-    today, history, loading, firstRun, readState,
+    today, history, recoveries, loading, firstRun, readState,
     body, mood, energy, saveState, saveTick,
     setBody, setMood, setEnergy, scalesInvitation, retireScales,
   } = usePages();
@@ -222,6 +222,20 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
             Couldn’t reach your journal just now — this is only what’s on this device.
             Anything you write is kept here until the rest can be read.
           </p>
+        )}
+
+        {!loading && recoveries.length > 0 && (
+          <details className="journal-recoveries">
+            <summary>Recovered drafts ({recoveries.length})</summary>
+            <p>These drafts are kept on this device. Copy any writing you want to keep into today’s page.</p>
+            {recoveries.map((draft, index) => (
+              <details key={draft.key}>
+                <summary>{draft.day} · draft {index + 1}</summary>
+                <textarea aria-label={`Recovered draft ${index + 1} from ${draft.day}`} readOnly value={draft.body} rows={6} />
+                <p>Mood: {draft.mood ?? 'not answered'} · Energy: {draft.energy ?? 'not answered'} · {draft.source}</p>
+              </details>
+            ))}
+          </details>
         )}
 
         <article className="journal-day journal-today" data-date={today}>

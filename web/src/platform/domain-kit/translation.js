@@ -14,7 +14,7 @@ import { PlanError } from './plans.js';
 /** @typedef {import('./plans.js').Plan} Plan */
 /** @typedef {import('./plans.js').Operation} Operation */
 /** @typedef {{ t: string, id: RecordID, field: string }} RegisterRef */
-/** @typedef {{ text: string, from: string }} TextEdit */
+/** @typedef {{ text: string, from: string | null }} TextEdit */
 /**
  * The engine's change language (engine corpus "Changes"), one change per plan operation.
  * @typedef {{ op: 'create' | 'update' | 'delete' | 'put' | 'write' | 'move', t: string, id: RecordID, f?: Record<string, Json>,
@@ -22,7 +22,7 @@ import { PlanError } from './plans.js';
  */
 /**
  * @typedef {{ changes: Change[], atomic: boolean, hold: boolean, guards: RegisterRef[], retire: RecordRef[],
- *   cmd: import('./plans.js').Command | null, predict: Change[], local: import('./plans.js').DeviceWrite[] }} Gesture
+ *   cmd: import('./plans.js').Command | null, predict: Change[], local: import('./plans.js').DeviceWrite[], supersede?: string[] }} Gesture
  */
 /** @typedef {import('./entities.js').Definition} Definition */
 
@@ -201,7 +201,7 @@ function predictionsOf(plan, registry) {
   return plan.predictions.map((prediction) => {
     const predicts = plan.command ? registry.command(plan.command.name)?.predicts ?? [] : [];
     if (!predicts.includes(prediction.type)) throw new PlanError(5, `the command does not predict ${prediction.type}`);
-    const texts = Object.fromEntries(Object.entries(prediction.texts).map(([name, text]) => [name, { text, from: '' }]));
+    const texts = Object.fromEntries(Object.entries(prediction.texts).map(([name, text]) => [name, { text, from: null }]));
     switch (prediction.kind) {
       case 'create':
         return withParts({ op: 'create', t: prediction.type, id: prediction.id }, prediction.values, {});
@@ -245,5 +245,6 @@ export function translate(plan, scope, registry) {
     cmd: plan.command,
     predict: predictionsOf(plan, registry),
     local: plan.deviceWrites.map((write) => ({ key: write.key, value: write.value })),
+    ...(plan.supersededGestures.length ? { supersede: [...plan.supersededGestures] } : {}),
   };
 }

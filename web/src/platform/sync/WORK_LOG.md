@@ -73,3 +73,23 @@ modules remain outside the copied core/client inventory.
 
 Predicted deletes validate supplied serial names and values before emitting only death and born.
 The shared corpus checks that malformed serials leave the whole device unchanged and nothing to push.
+
+Epoch recovery and authenticated success results commit together. Old acknowledgements replay in
+commit order before later work; without them, recovery records known successful results and product
+receipts before re-identifying. Shared cases cover both reconnect orders, command birth remapping
+and malformed conflicts. Persisted browser checks retain ordered replay across restart and report
+invalid recovery envelopes as transport failures.
+
+A command retains the source and resolved identity of each write map, even without a prediction.
+Replay can then move a delete of a joined session to the session recreated by the server. Legacy
+predictions recover unambiguous targets; unresolved targets keep affected work in a notice.
+Retained commands that shared a resolved target also rebind their source arguments to it, so a
+later replay cannot split one joined session into several recreated sessions before its delete.
+Account-owned proposal apply receipts survive removals so a successful removal can replay without
+becoming a durable refusal.
+
+Networking checks online state and leadership after awaited storage reads as well as before request
+planning. A push or pull paused on its writer cannot start a new request after going offline;
+deliberate cancellation emits no transport failure and retains numbered work for reconnect.
+Closing after a durable write may abandon its publication read; that shutdown emits no storage
+failure. Reopening still recovers the committed work, while an active publication failure reports.

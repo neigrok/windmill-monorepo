@@ -12,9 +12,9 @@ import { release, releaseAll, releaseDue, undo, undoOffers } from './client/hold
 import { engineStart, epochChange, signIn, signOut } from './client/lifecycle.js';
 import { applyChunk, applyPage, finishPage, onFrame, onPullResponse, pullRequest, settle } from './client/puller.js';
 import { dismiss } from './client/refusal.js';
-import { applyPushResult, nextPush, onHello, onPushResponse, SenderWait } from './client/sender.js';
+import { applyPushResult, nextPush, onHello, onPushResponse, SenderWait, validatePushEnvelope } from './client/sender.js';
 import { Doubts, firstPullComplete, reconcile, subscribe, subscriptionsOf } from './client/subscriptions.js';
-import { drawn, stored } from './client/views.js';
+import { drawn, stored, viewRecord } from './client/views.js';
 
 function secureDraw(bound) {
   if (!Number.isSafeInteger(bound) || bound <= 0 || bound > 2 ** 32) throw new Error('invalid random bound');
@@ -39,9 +39,9 @@ export class BrowserSyncEngine {
     document = globalThis.document, window = globalThis.window, timers = globalThis, now = Date.now,
     monotonic = () => Math.floor(performance.now()), newReplicaId = replicaId, newActor = actorId,
     draw = secureDraw, limits = CONSTANTS, appVersion = import.meta.env?.VITE_RELEASE ?? '1', liveHint = () => false,
-    pendingDeviceWork = () => [], onPushResult = () => {}, credentials, base }) {
+    pendingDeviceWork = () => [], adoptDeviceRows = () => undefined, onPushResult = () => {}, credentials, base }) {
     Object.assign(this, { store, registry, navigator, document, window, timers, now, monotonic,
-      newReplicaId, newActor, draw, appVersion, liveHint, pendingDeviceWork, onPushResult, credentials });
+      newReplicaId, newActor, draw, appVersion, liveHint, pendingDeviceWork, adoptDeviceRows, onPushResult, credentials });
     this.limits = { ...CONSTANTS, ...limits };
     this.telemetry = syncTelemetry(telemetry);
     this.actor = newActor();
@@ -97,7 +97,7 @@ export class BrowserSyncEngine {
     return { registry: this.registry, actor: this.actor, deviceNow: this.now(), appVersion: this.appVersion,
       device, ended: [], telemetry: [], events: [], limits: this.limits, draw: this.draw,
       newReplicaId: this.newReplicaId, newActor: this.newActor,
-      nextGestureId: () => this.newGestureId(), pendingDeviceWork: this.pendingDeviceWork };
+      nextGestureId: () => this.newGestureId(), pendingDeviceWork: this.pendingDeviceWork, adoptDeviceRows: this.adoptDeviceRows };
   }
 
   async write(operation, change, scopes = []) {
@@ -140,7 +140,7 @@ export class BrowserSyncEngine {
         this.coordination?.rekey(answer.active);
       }
       this.armHolds();
-    } catch { this.telemetry.failure('storage'); }
+    } catch { if (!this.closed) this.telemetry.failure('storage'); }
     if (operation) this.telemetry.event(operation, { outcome: answer.result?.refused ? 'failed' : answer.result?.complete === false ? 'pending' : 'ok' });
     return answer.result;
   }
@@ -206,7 +206,7 @@ export class BrowserSyncEngine {
       this.scheduleSender();
       return this.device.activeReplica.id;
     } catch (error) {
-      this.telemetry.failure('storage');
+      if (!this.closed) this.telemetry.failure('storage');
       throw error;
     }
   }
@@ -343,17 +343,36 @@ export class BrowserSyncEngine {
   // passes it as `opts.gestureId`.
   newGestureId() { return crypto.randomUUID(); }
 
+  // Confirmed rows and reconciliation metadata must come from the same replica as a commit's views.
+  readMetadata(scope, replica = this.device.activeReplica, actor = this.actor) {
+    const record = replica.cursorOf(scope);
+    const cursor = Cursor.decode(record.cursor);
+    const clean = cursor?.e === replica.meta.serverEpoch && cursor?.m === 'live' && cursor.k === undefined
+      && !record.behind && record.digestStop === undefined && !record.mismatchReset && !replica.staging[scope];
+    return {
+      confirmed: new Map(replica.confirmedRows(scope).map((row) => [recordKey(row.t, row.id), structuredClone(viewRecord(row))])),
+      devices: structuredClone(replica.deviceRows(this.registry.productOfRef(scope))),
+      firstPullComplete: firstPullComplete(replica, scope, this.scopes(replica)),
+      actor,
+      isAnonymous: replica.meta.state === 'anon',
+      commands: replica.entries(scope).filter((entry) => entry.intent.cmd !== undefined).map((entry) => ({
+        gestureId: entry.gestureId,
+        command: structuredClone(entry.intent.cmd),
+        canSupersede: replica.meta.state === 'anon' && ['held', 'ready'].includes(entry.state) && entry.n === undefined,
+        isAdmitted: entry.state === 'acked',
+      })),
+      checkpoint: { epoch: replica.meta.serverEpoch, cleanSeq: clean ? cursor.s : null },
+    };
+  }
+
   // The read-and-commit body (§7.12) also reads, in its transaction, the product's device rows and the
-  // scope's first-pull state: `{drawn, stored, now, replica, devices, firstPullComplete}`. The body's own
-  // throw is the caller's (§7.1), so it passes through unreported.
+  // scope's reconciliation metadata. The body's own throw is the caller's (§7.1), unreported.
   async commit(scope, changes, opts) {
     const result = await this.write('sync-commit', (device, ctx) => {
       const replica = device.activeReplica;
       const read = typeof changes === 'function'
         ? (views) => {
-          const seen = { ...views,
-            devices: structuredClone(replica.deviceRows(this.registry.productOfRef(scope))),
-            firstPullComplete: firstPullComplete(replica, scope, this.scopes(replica)) };
+          const seen = { ...views, ...this.readMetadata(scope, replica, ctx.actor) };
           try { return changes(seen); } catch (error) { ctx.callerError = error; throw error; }
         }
         : changes;
@@ -447,7 +466,8 @@ export class BrowserSyncEngine {
     this.inFlight.add(controller);
     try {
       const { device } = await this.store.read([]);
-      if (this.closed || controller.signal.aborted) throw new DOMException('sync stopped', 'AbortError');
+      if (this.closed || controller.signal.aborted || (endpoint !== 'hello' && (!this.online || !this.leader)))
+        throw new DOMException('sync stopped', 'AbortError');
       if (device.meta.upgradeStops?.[`${this.appVersion}:${this.registry.version}`] === true)
         return { response: { status: 426 }, timing: {} };
       if (endpoint !== 'hello' && this.signOutPaused(device)) throw new Error('sync paused');
@@ -459,13 +479,15 @@ export class BrowserSyncEngine {
   }
 
   validateResponse(endpoint, response, request) {
+    if (endpoint === 'push' && response.status === 409 && response.body?.as === request.account
+      && response.body?.error !== 'account-mismatch') validatePushEnvelope(response);
     if (response.status !== 200) return;
     const body = response.body;
     const expectedAccount = endpoint === 'push' ? request.account : this.device.activeReplica.meta.account;
     if (expectedAccount !== undefined && body?.as !== expectedAccount && endpoint !== 'hello') return;
     const integer = (value) => Number.isSafeInteger(value) && value >= 0;
     const valid = (condition) => { if (!condition) throw new Error('invalid sync response'); };
-    valid(body && integer(body.serverTime) && typeof body.epoch === 'string');
+    valid(body && integer(body.serverTime) && typeof body.epoch === 'string' && body.epoch.length > 0);
     if (endpoint === 'hello') {
       valid(integer(body.schema) && integer(body.minSchema));
       return;
@@ -553,7 +575,7 @@ export class BrowserSyncEngine {
         this.kickPull();
       } else if (![400, 401, 409, 413].includes(response.status)) this.wait.backoff(time, this.draw, hint);
     } catch {
-      if (!this.closed && this.leader) {
+      if (this.canSync()) {
         this.telemetry.failure('transport');
         this.wait.backoff(this.monotonic(), this.draw, { liveHint: this.liveHint(this.device.activeReplica) });
       }
@@ -585,6 +607,17 @@ export class BrowserSyncEngine {
       await this.write(null, (device, ctx) => {
         const replica = device.replicas.find((replica) => replica.storageHandle === handle);
         if (!replica || replica.id !== request.replica) return;
+        if (replica.meta.serverEpoch !== null && replica.meta.serverEpoch !== response.body.epoch) {
+          if (!replica.entries().some((entry) => entry.state === 'acked' && entry.resultEpoch !== response.body.epoch)) {
+            for (const result of results) {
+              if (result.s !== 'ok') continue;
+              this.onPushResult(replica, ctx, result, response.body);
+              applyPushResult(replica, ctx, result, response.body);
+            }
+          }
+          epochChange(replica, ctx, response.body.epoch);
+          return;
+        }
         if (results[index]) {
           this.onPushResult(replica, ctx, results[index], response.body);
           applyPushResult(replica, ctx, results[index], response.body);
@@ -592,7 +625,6 @@ export class BrowserSyncEngine {
         if (index === results.length - 1 || results.length === 0) {
           replica.meta.serverEpoch ??= response.body.epoch;
           replica.meta.ackThrough = response.body.lastN;
-          if (replica.meta.serverEpoch !== response.body.epoch) epochChange(replica, ctx, response.body.epoch);
         }
       });
     }
@@ -667,7 +699,7 @@ export class BrowserSyncEngine {
       this.pullWait.results(['ok'], this.monotonic(), this.draw);
       this.follow();
     } catch {
-      if (!this.closed && this.leader) {
+      if (this.canSync()) {
         this.telemetry.failure('transport');
         this.pullWait.backoff(this.monotonic(), this.draw);
         for (const { scope } of request?.scopes ?? []) {

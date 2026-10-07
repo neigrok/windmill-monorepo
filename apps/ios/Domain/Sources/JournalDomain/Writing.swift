@@ -13,6 +13,13 @@ public struct EditorDraft: Sendable {
     self.day = day; document = try PageDocument(json: json.member("document"))
   }
   public var json: JSON { ["day": .string(day.text), "document": .object(JSON.Object(uniqueKeysWithValues: document.fields.map { ($0.key, $0.value) }))] }
+
+  public static func adopt(_ incoming: EditorDraft?, current: EditorDraft?) -> (current: EditorDraft?, recovered: EditorDraft?) {
+    guard let current else { return (incoming, nil) }
+    guard let incoming else { return (current, nil) }
+    if current.day == incoming.day && current.document == incoming.document { return (current, nil) }
+    return (current, incoming)
+  }
 }
 
 public struct PreserveEditorDraft: Action {

@@ -178,3 +178,66 @@ TEST(gym_proposal_creates_supersede_once_in_the_same_intent_order) {
   }
   CHECK(false);
 }
+
+TEST(gym_apply_receipt_rolls_back_with_its_removal_and_survives_replay) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  BlockingThread::Mark blocking;
+  Json::Value input;
+  for (const auto& vector : corpus::readCorpusFile(WM_SYNC_CONTRACT_DIR "/corpus/gym/admit.json")) {
+    if (vector["name"] == "apply of a removal kills the routine and its proposals, and writes routineId null on its sessions") input = vector["input"];
+  }
+  REQUIRE(input.isObject());
+  const std::string replica = "rp_000000000000000000000000000000aa";
+  input["state"]["replicas"][replica] = test::object({{"account", "A"}, {"lastN", 0}});
+  test::PgWorld world(true);
+  world.seed(input["state"]);
+  Json::Value before = world.dump();
+  const Json::Value intent = input["intent"];
+  const Ms now = input["serverNow"].asUInt64();
+  const ReplicaOrigin origin{world.account("A"), replica, 1, intentDigest(intent)};
+  fake::FaultingStore fault(world.store(), fake::FaultingStore::Faults{.intents = {{1, FaultClass::transient}}});
+  Admission failing(world.catalog(), fault, world.feed, world.clock(), world.failures);
+  REQUIRE(std::holds_alternative<Retry>(failing.admit(origin, intent, now)));
+  Json::Value rolledBack = world.dump();
+  before.removeMember("clock");
+  rolledBack.removeMember("clock");
+  CHECK_EQ(jcs(rolledBack), jcs(before));
+  CHECK(world.feed.published.empty());
+
+  Admission recovered(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
+  const AdmitOutcome accepted = recovered.admit(origin, intent, now);
+  REQUIRE(std::holds_alternative<Admitted>(accepted));
+  CHECK_EQ(std::get<Admitted>(accepted).result["s"].asString(), "ok");
+  const Json::Value committed = world.dump();
+  const std::string proposal = intent["cmd"]["args"]["proposalId"].asString();
+  CHECK_EQ(jcs(committed["product"]["proposalApplies"]), jcs(test::object({{"acct:A/gym", test::object({{proposal.c_str(), true}})}})));
+  CHECK_EQ(world.feed.published.size(), 1u);
+
+  Json::Value guarded = intent;
+  guarded["guard"] = parseJson(R"([{"t":"routine","id":"routine0001","field":"name","stamp":"1000:0:r_aaaaaaaaaaaa"}])");
+  const AdmitOutcome replayed = recovered.admit(ServerOrigin{world.account("A"), std::nullopt}, guarded, now);
+  REQUIRE(std::holds_alternative<Admitted>(replayed));
+  CHECK_EQ(std::get<Admitted>(replayed).result["s"].asString(), "ok");
+  CHECK_EQ(jcs(std::get<Admitted>(replayed).result["write"]), "[]");
+  CHECK_EQ(jcs(world.dump()), jcs(committed));
+  CHECK_EQ(world.feed.published.size(), 1u);
+  const AdmitOutcome foreign = recovered.admit(ServerOrigin{world.account("B"), std::nullopt}, intent, now);
+  REQUIRE(std::holds_alternative<Admitted>(foreign));
+  CHECK_EQ(std::get<Admitted>(foreign).result["code"].asString(), "unknown-record");
+  CHECK(world.failures.reports.empty());
+  test::checkDigests(world.dump());
+}
+
+TEST(gym_apply_receipts_cascade_with_their_account) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  test::PgWorld world(true);
+  world.seed(parseJson(R"({"accounts":{"PURGE":{"name":"Receipt owner"}},"product":{"proposalApplies":{"acct:PURGE/gym":{"proposalPURGE":true}}}})"));
+  auto txn = world.store().begin(TxnMode::write);
+  const auto receipts = sqlOf(*txn).exec("select id,user_id::text from gym_proposal_applies");
+  REQUIRE_EQ(receipts.size(), 1u);
+  CHECK_EQ(receipts[0][0].as<std::string>(), "proposalPURGE");
+  CHECK_EQ(receipts[0][1].as<std::string>(), world.account("PURGE").str());
+  sqlOf(*txn).exec("delete from users where id=$1::uuid", pqxx::params{world.account("PURGE").str()});
+  CHECK_EQ(sqlOf(*txn).exec("select count(*) from gym_proposal_applies where id='proposalPURGE'")[0][0].as<int>(), 0);
+  txn->commit();
+}

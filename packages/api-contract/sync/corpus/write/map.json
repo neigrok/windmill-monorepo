@@ -275,7 +275,15 @@
                 "n": 1,
                 "digest": "177300124ab5a4c241db5e15f2b78e7678084ea28de55a395c685b9c79551030",
                 "resultSeq": 1,
-                "resultEpoch": "ep-1"
+                "resultEpoch": "ep-1",
+                "writeTargets": [
+                  {
+                    "t": "run",
+                    "from": "run00009",
+                    "id": "run00009",
+                    "born": "5010:0:srv"
+                  }
+                ]
               },
               {
                 "localId": "g2/0",
@@ -1046,7 +1054,15 @@
                 "n": 1,
                 "digest": "d15ebf249d0dcf9b32a68d0de76ffb202e6673118afc0b100e9eecfc6684a67a",
                 "resultSeq": 1,
-                "resultEpoch": "ep-1"
+                "resultEpoch": "ep-1",
+                "writeTargets": [
+                  {
+                    "t": "run",
+                    "from": "run00009",
+                    "id": "run00009",
+                    "born": "4000:0:srv"
+                  }
+                ]
               }
             ]
           }
@@ -1332,7 +1348,14 @@
                 "n": 1,
                 "digest": "b1ee7f55b48e0f77348aa3ae25d861b6dd5b5119d3dc2f9745c77349bedce7c3",
                 "resultSeq": 2,
-                "resultEpoch": "ep-1"
+                "resultEpoch": "ep-1",
+                "writeTargets": [
+                  {
+                    "t": "run",
+                    "from": "run00001",
+                    "id": "run00001"
+                  }
+                ]
               },
               {
                 "localId": "g2/0",
@@ -1608,7 +1631,15 @@
                 "n": 1,
                 "digest": "177300124ab5a4c241db5e15f2b78e7678084ea28de55a395c685b9c79551030",
                 "resultSeq": 1,
-                "resultEpoch": "ep-1"
+                "resultEpoch": "ep-1",
+                "writeTargets": [
+                  {
+                    "t": "run",
+                    "from": "run00009",
+                    "id": "run00009",
+                    "born": "5010:0:srv"
+                  }
+                ]
               },
               {
                 "localId": "g2/0",
@@ -1913,7 +1944,15 @@
                 "n": 1,
                 "digest": "177300124ab5a4c241db5e15f2b78e7678084ea28de55a395c685b9c79551030",
                 "resultSeq": 1,
-                "resultEpoch": "ep-1"
+                "resultEpoch": "ep-1",
+                "writeTargets": [
+                  {
+                    "t": "run",
+                    "from": "run00009",
+                    "id": "run00009",
+                    "born": "5010:0:srv"
+                  }
+                ]
               },
               {
                 "localId": "g2/0",
