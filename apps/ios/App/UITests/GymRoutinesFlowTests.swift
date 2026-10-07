@@ -147,13 +147,14 @@ import UIKit
       assertPrimaryLabelContrast(app.buttons["gym-target-set"], appearance: appearance)
       capture(app, "targets-straight-" + appearance)
       let vary = app.switches["Vary by set"]
+      let control = vary.descendants(matching: .switch).firstMatch
       let visibleVary = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-        guard let snapshot = try? vary.snapshot() else { return false }
+        guard let snapshot = try? control.snapshot() else { return false }
         return snapshot.isEnabled && !snapshot.frame.isEmpty && self.viewport.contains(snapshot.frame)
-      }, object: vary)
+      }, object: control)
       XCTAssertEqual(XCTWaiter.wait(for: [visibleVary], timeout: 5), .completed)
-      XCTAssertTrue(vary.wait(for: \.isHittable, toEqual: true, timeout: 5))
-      vary.coordinate(withNormalizedOffset: CGVector(dx: 0.88, dy: 0.5)).press(forDuration: 0.1)
+      XCTAssertTrue(control.wait(for: \.isHittable, toEqual: true, timeout: 5))
+      control.swipeRight()
       let varied = app.switches.matching(NSPredicate(format: "label == %@ AND value == %@", "Vary by set", "1")).firstMatch
       XCTAssertTrue(varied.waitForExistence(timeout: 5))
       XCTAssertEqual(vary.value as? String, "1")

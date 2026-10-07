@@ -36,7 +36,7 @@ import XCTest
       let distance = frame.minY <= top ? top + 8 - frame.minY : bottom - 8 - frame.maxY
       let limit = min(150, (bottom - top) / 2 - 8)
       let movement = min(limit, max(40, abs(distance))) * (distance < 0 ? -1 : 1)
-      let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0))
+      let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0))
         .withOffset(CGVector(dx: 0, dy: max(top + 8, min(bottom - 8, frame.midY))))
       start.press(forDuration: 0.01, thenDragTo: start.withOffset(CGVector(dx: 0, dy: movement)),
         withVelocity: .slow, thenHoldForDuration: 0.1)
@@ -206,12 +206,14 @@ import XCTest
       }
       app.swipeUp(velocity: .slow)
     }
+    let momentLabel = momentHeader.label
     let moment = app.buttons.matching(identifier: "gym-best-moment")
-      .matching(NSPredicate(format: "label == %@", momentHeader.label)).firstMatch
+      .matching(NSPredicate(format: "label == %@", momentLabel)).firstMatch
     XCTAssertTrue(moment.isHittable)
     moment.tap()
     let expanded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      moment.exists && moment.value as? String == "Expanded"
+      guard let snapshot = try? moment.snapshot() else { return false }
+      return snapshot.identifier == "gym-best-moment" && snapshot.label == momentLabel && snapshot.value as? String == "Expanded"
     }, object: moment)
     XCTAssertEqual(XCTWaiter.wait(for: [expanded], timeout: 5), .completed)
     // The native disclosure applies its identifier to the expanded List rows.
@@ -221,7 +223,8 @@ import XCTest
     snapshot("moment-\(appearance)", app: app)
     moment.tap()
     let collapsed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      moment.exists && moment.value as? String == "Collapsed"
+      guard let snapshot = try? moment.snapshot() else { return false }
+      return snapshot.identifier == "gym-best-moment" && snapshot.label == momentLabel && snapshot.value as? String == "Collapsed"
     }, object: moment)
     XCTAssertEqual(XCTWaiter.wait(for: [collapsed], timeout: 5), .completed)
     XCTAssertTrue(openRecord.waitForNonExistence(timeout: 5))
