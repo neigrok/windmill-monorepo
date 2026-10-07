@@ -21,6 +21,7 @@ import {
   withEntryAdded, withEntryAt, withEntryRemoved, withEntrySet,
 } from './routines.js';
 import { useGymRead } from './useGymRead.js';
+import { useDomainRead } from './useDomainRead.js';
 import { useGymApi } from './gymSync.js';
 import { TargetEditor } from './planning/TargetEditor.jsx';
 import './planning/planning.css';
@@ -28,13 +29,15 @@ import './planning/planning.css';
 export function RoutinesList({ log, reviewing = null }) {
   const api = useGymApi();
   const view = useGymRead(() => api.routines(), [], { sync: true, ready: Boolean(api?.ready) });
+  const program = useDomainRead((read) => ({ routines: read.repository(Routine).all('stored'), isComplete: read.firstPullComplete() }));
   const [reviewId, setReviewId] = useState(reviewing);
   useEffect(() => setReviewId(reviewing), [reviewing]);
 
   const gone = log.gone('routine');
   const hidden = log.hidden('routine');
-  const program = view.phase === 'ready' ? view.data.filter((routine) => !gone.has(routine.id)) : [];
-  const routines = program.filter((routine) => !hidden.has(routine.id));
+  const routines = view.phase === 'ready' ? view.data.filter((routine) => !gone.has(routine.id) && !hidden.has(routine.id)) : [];
+  const hasProgram = (program.data?.routines.length ?? 0) > 0;
+  const complete = program.phase === 'ready' && program.data.isComplete;
 
   const remove = (routine) => log.holdDelete({
     kind: 'routine',
@@ -49,7 +52,7 @@ export function RoutinesList({ log, reviewing = null }) {
 
         <span className="gym-head-doors">
           <a className="gym-door-past" href={MOVEMENTS_HREF}>Movements</a>
-          {program.length > 0 && <span className="gym-new-routine-wide"><Button href={routineHref(NEW_ROUTINE_ID)}>New routine</Button></span>}
+          {hasProgram && <span className="gym-new-routine-wide"><Button href={routineHref(NEW_ROUTINE_ID)}>New routine</Button></span>}
         </span>
       </header>
       {log.session && <LiveMirror log={log} />}
@@ -63,7 +66,7 @@ export function RoutinesList({ log, reviewing = null }) {
         </p>
       )}
 
-      {view.phase === 'ready' && program.length === 0 && (
+      {view.phase === 'ready' && complete && !hasProgram && (
         <section className="gym-plan-empty">
           <p>No routines yet. Build the first one.</p>
           <Button href={routineHref(NEW_ROUTINE_ID)}>New routine</Button>
@@ -74,7 +77,7 @@ export function RoutinesList({ log, reviewing = null }) {
           {routines.map((routine) => (
             <li className={`gym-routine${routine.pendingProposal ? ' has-proposal' : ''}`} key={routine.id}>
               <a className="gym-routine-open" href={routineHref(routine.id)}>
-                <span className="gym-routine-card-head"><span className="gym-routine-name">{routine.name}</span><span className="gym-routine-trained">{routine.lastTrainedAt ? <><span className="gym-routine-trained-prefix">Trained </span>{agoLabel(routine.lastTrainedAt)}</> : 'Never trained'}</span></span>
+                <span className="gym-routine-card-head"><span className="gym-routine-name">{routine.name}</span><span className="gym-routine-trained">{routine.lastTrainedAt ? <><span className="gym-routine-trained-prefix">Trained </span>{agoLabel(routine.lastTrainedAt)}</> : complete ? 'Never trained' : null}</span></span>
                 <span className="gym-routine-card-body"><span className="gym-routine-meta">{(routine.entries ?? []).map((entry) => nameOfMovement(log.catalog, entry.exerciseId)).join(' · ')}</span>
                 <span className="gym-routine-rails" aria-hidden="true">{(routine.entries ?? []).map((entry, index) => <span key={index}>{Array.from({ length: entry.sets?.length ?? 1 }, (_, tick) => <i key={tick} />)}</span>)}</span></span>
               </a>
@@ -90,7 +93,7 @@ export function RoutinesList({ log, reviewing = null }) {
           ))}
         </ul>
       )}
-      {program.length > 0 && <div className="gym-new-routine-small"><Button full href={routineHref(NEW_ROUTINE_ID)}>New routine</Button></div>}
+      {hasProgram && <div className="gym-new-routine-small"><Button full href={routineHref(NEW_ROUTINE_ID)}>New routine</Button></div>}
     </section>
   );
 }

@@ -7,6 +7,8 @@ import { hello } from '../../../../packages/api-contract/sync/reference/server/p
 import { GymRefusal, isStoreFailure } from '../../../src/products/gym/errors.js';
 import { Note } from '../../../src/products/gym/domain/notes.js';
 import { createGymApi, gymLiveHint } from '../../../src/products/gym/gymSync.js';
+import { StatsProgress } from '../../../src/products/gym/domain/trainingReads.js';
+import { confirmed } from './harness.mjs';
 
 async function open(t) {
   const env = environment();
@@ -30,6 +32,32 @@ async function confirm(engine) {
   }, ['self/gym']);
 }
 const routine = { id: 'routine00001', name: 'Lower A', position: 0, entries: [{ exerciseId: 'back-squat', sets: [{ reps: 5, weightKg: 60 }, { reps: 3, weightKg: 80 }] }] };
+
+test('a reader-source failure reports only the static projection operation', async (t) => {
+  const { api, engine, failures, events } = await open(t);
+  const error = new Error('private reader detail');
+  t.mock.method(engine, 'readMetadata', () => { throw error; });
+  await assert.rejects(api.sessions(), (thrown) => thrown === error);
+  assert.deepEqual(failures, ['projection']);
+  assert.deepEqual(events, []);
+});
+
+test('local shared-history previews retain typed rep facts and partial-pull completeness', async (t) => {
+  const { api, engine } = await open(t);
+  const records = [confirmed('session', 'sessionPartial', { startedAt: 1000, finishedAt: 2000 }),
+    confirmed('set', 'setHeavy', { sessionId: 'sessionPartial', exerciseId: 'pull-up', weightKg: 20, reps: 5, completedAt: 1100 }),
+    confirmed('set', 'setReps', { sessionId: 'sessionPartial', exerciseId: 'pull-up', weightKg: 0, reps: 10, completedAt: 1200 })];
+  await engine.write(null, (device) => {
+    records.forEach((record, index) => device.activeReplica.putConfirmed('self/gym', { ...record, seq: index + 1 }));
+    device.activeReplica.cursors['self/gym'] = { ...device.activeReplica.cursorOf('self/gym'), booted: false };
+  }, ['self/gym']);
+  const { progress } = await api.history({ projection: 'progress', timeZone: 'UTC' });
+  assert.equal(progress instanceof StatsProgress, true);
+  assert.equal(progress.isComplete, false);
+  const movement = progress.sessions[0].movements[0];
+  assert.deepEqual(movement.mostReps.json, { setId: 'setReps', weightKg: 0, reps: 10 });
+  assert.equal(progress.movement(movement.exerciseId).best, null);
+});
 
 test('a malformed stored plan preserves the session and reports through the API failure boundary', async (t) => {
   const { api, engine, failures, events } = await open(t);
@@ -86,7 +114,8 @@ test('authoritative gym fields and independent routine creation snapshots surviv
   assert.deepEqual((await resumed.notes()).map(({ id, position, title, body, updatedAt }) => ({ id, position, title, body, updatedAt })), [{ id: 'note000001', position: 0, title: 'Edited', body: '', updatedAt: 500 }]);
   await resumed.holdDeath('routine', routine.id);
   assert.equal(opened.engine.observe('self/gym').getSnapshot().drawn.find((row) => row.t === 'routine').life[0], 'dead');
-  assert.equal((await resumed.routine(routine.id)).id, routine.id, 'a held delete stays in the store until its release');
+  assert.equal(await resumed.routine(routine.id), null, 'a held delete is absent from the drawn read');
+  assert.equal(opened.engine.observe('self/gym').getSnapshot().stored.find((row) => row.t === 'routine').life[0], 'alive');
   assert.equal(registry.type('routineCreation').field('snapshot').writer, 'server');
   assert.deepEqual(opened.engine.observe('self/gym').getSnapshot().drawn.find((row) => row.t === 'routineCreation').f.snapshot[0], receipt);
   assert.equal(opened.engine.device.activeReplica.outbox.some((entry) => entry.intent.d.some((delta) => delta.t === 'routineCreation')), false);
@@ -360,12 +389,12 @@ test('an adapter pinned to a previous replica cannot write into another account'
 test('liveHint follows the phone session and expires after four idle hours', async (t) => {
   const { engine } = await open(t);
   const now = Date.now();
-  let rows = [{ t: 'session', id: 'session0001', life: ['alive', 's'], f: { startedAt: [now - 1000, 's'] } }];
-  t.mock.method(engine, 'observe', () => ({ getSnapshot: () => ({ drawn: rows }) }));
+  let rows = [{ t: 'session', id: 'session0001', born: '1000:0:srv', life: ['alive', '1000:0:srv'], f: { startedAt: [now - 1000, 's'] } }];
+  t.mock.method(engine, 'observe', () => ({ getSnapshot: () => ({ drawn: rows, stored: rows }) }));
   assert.equal(gymLiveHint(engine), true);
   rows[0] = { ...rows[0], f: { startedAt: [now - 4 * 3600_000, 's'] } };
   assert.equal(gymLiveHint(engine), false);
-  rows.push({ t: 'set', id: 'set0000001', f: { sessionId: ['session0001', 's'], completedAt: [now, 's'] } });
+  rows.push({ t: 'set', id: 'set0000001', born: '1000:0:srv', life: ['alive', '1000:0:srv'], f: { sessionId: ['session0001', 's'], exerciseId: ['bench-press', 's'], weightKg: [60, 's'], reps: [5, 's'], completedAt: [now, 's'] } });
   assert.equal(gymLiveHint(engine), true);
   rows = [];
   assert.equal(gymLiveHint(engine), false, 'no open workout, no live hint');

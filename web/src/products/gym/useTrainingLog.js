@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSyncRecords } from '../../platform/sync/react.js';
 import { UNDO_MS } from './fix.js';
 import { failureReason } from './errors.js';
 import { useGymApi, gymStep } from './gymSync.js';
-import { projectGym } from './syncProjections.js';
 import { mintId } from './mint.js';
 import { CREATED_PATTERN } from './logger/movements.js';
 import { useDomainRead } from './useDomainRead.js';
-import { preferencesDocument } from './gymRuntime.js';
+import { gymReadView, preferencesDocument } from './gymRuntime.js';
+import { TrainingHistory } from './domain/trainingHistory.js';
+import { SessionRules } from './domain/training.js';
 import { spellWeightsIn } from './units.js';
 import {
   deleteLineOf, goneIds, HELD_KINDS, HELD_TYPES, hiddenIds, openHeld, transientOf, UNDO_LABEL, WINDOW_CLOSED, withheldKey,
@@ -21,33 +22,34 @@ const TOAST_MS = 9000;
 export function useTrainingLog() {
   const api = useGymApi();
   const records = useSyncRecords('self/gym');
-  const [expiry, expire] = useState(0);
+  const [, expire] = useState(0);
   const [toast, setToast] = useState(null);
   const [, redrawWindow] = useState(0);
   const spoke = useRef(0);
-  const projection = useMemo(() => projectGym(records.stored, {
-    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-  }), [records, expiry]);
+  const view = useDomainRead((read) => {
+    const history = new TrainingHistory(read);
+    const open = history.log.open;
+    return { summaries: history.sessions({ limit: RECENT_SESSIONS }), catalog: history.exercises(),
+      progress: history.log.progress, detail: open ? history.session(open.id.record) : null,
+      staleIn: open ? SessionRules.lastActivity(open, history.log.sets).ms + SessionRules.staleAfterMs - read.moment.now.ms : null };
+  });
+  const training = view.data;
   const ready = Boolean(api?.ready);
-  const phase = ready ? 'ready' : 'loading';
-  const summaries = projection.sessions({ limit: RECENT_SESSIONS });
-  const open = records.stored.find((row) => row.t === 'session' && row.life?.[0] !== 'dead' && row.f?.finishedAt === undefined);
-  const detail = open ? projection.session(open.id) : null;
+  const phase = ready ? view.phase : 'loading';
+  const summaries = training?.summaries ?? [];
+  const detail = training?.detail;
   const session = detail?.session.finishedAt == null ? detail?.session ?? null : null;
   const sets = session ? detail.sets : [];
-  const catalog = projection.exercises();
+  const catalog = training?.catalog ?? [];
   const preferences = useDomainRead(preferencesDocument).data;
-  const progress = ready ? { phase: 'ready', data: projection.progress() } : { phase: 'loading', data: null };
+  const progress = { phase, data: ready ? training?.progress ?? null : null };
   useEffect(() => { spellWeightsIn(preferences?.units); }, [preferences?.units]);
   useEffect(() => {
-    const open = records.stored.find((row) => row.t === 'session' && row.life?.[0] !== 'dead' && row.f?.finishedAt === undefined);
-    if (!open) return undefined;
-    const activity = Math.max(open.f.startedAt[0], ...records.stored.filter((row) => row.t === 'set' && row.life?.[0] !== 'dead' && row.f?.sessionId?.[0] === open.id).map((row) => row.f.completedAt[0]));
-    const remaining = activity + 4 * 3600_000 - Date.now();
-    if (remaining <= 0) return undefined;
+    const remaining = training?.staleIn;
+    if (remaining == null || remaining <= 0) return undefined;
     const timer = setTimeout(() => expire((count) => count + 1), remaining);
     return () => clearTimeout(timer);
-  }, [records]);
+  }, [records, session?.id, session?.startedAt]);
 
   const say = useCallback((text, { action = null } = {}) => {
     spoke.current += 1;
@@ -225,7 +227,7 @@ export function useTrainingLog() {
     .map((row) => ({ kind, id: row.id }));
   // An engine delete is named from the store, which keeps its record until the delete is released.
   const held = heldNow().map((each) => (each.line === undefined
-    ? { ...each, line: deleteLineOf(each.kind, each.id, projection), detail: null } : each));
+    ? { ...each, line: deleteLineOf(each.kind, each.id, gymReadView({ drawn: records.stored, stored: records.stored })), detail: null } : each));
   const hidden = (kind) => hiddenIds(held, [...settled.current, ...dead(kind)], kind);
   const gone = (kind) => goneIds([...settled.current, ...dead(kind, records.stored)], kind);
   const spoken = transientOf(toast, held);

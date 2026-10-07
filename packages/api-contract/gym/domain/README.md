@@ -18,7 +18,7 @@ for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCr
 | `preferences-actions.json` | Draft preference saves and rest defaults |
 | `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
 | `proposals-actions.json` | Propose, apply/dismiss, ordered diff, change count, provenance and optional R118 metadata reads |
-| `training-reads.json` | Prefill, last time, readouts, the canonical estimate, complete progress projection, movement records and chart windows |
+| `training-reads.json` | Prefill, last time, readouts, the canonical estimate, complete progress projection, movement records, chart windows and shared history documents |
 | `units.json` | Units, signed weight ladder, formatting, rounding and rep steps |
 | `../rules/bodyweight.json` | Bodyweight stance, readings, chart windows and gaps |
 | `../../gym-ladder.json` | The existing cross-surface ladder, also run directly by both domains |
@@ -94,7 +94,15 @@ provides twelve-week/all windows, best, heaviest, most reps, record steps, spars
 and gaps. All estimates use `GymEstimate`: positive working load, 1–10 reps, supplied RPE ≥7;
 one rep is the load itself, otherwise Epley. Incomplete history does not assert a best or absence.
 
-Both engines accept create/update/write/removal predictions. Omitted sets in completed-session
+`TrainingHistory` composes the mirror documents through the same entities and reads. Its vectors use
+`input:{method,args}` and preserve catalogue and routine joins, proposal provenance, last-set selection,
+session summaries, reviews, record details and weekly totals. History filters apply before summary and
+facet aggregation; only the returned session page uses the cursor and limit. Equal session timestamps
+sort by ascending identity, and the next page excludes identities through `beforeId`. Tonnage sums
+loads in their storage quanta; estimates retain full precision. Record steps include the first baseline.
+The 99 training-read cases include 36 complete mirror documents and nine adversarial read scenes.
+
+The engines accept create/update/write/removal predictions. Omitted sets in completed-session
 replacement and a proposal-removed routine disappear locally while their command is pending;
 a refusal restores them. Joined session identities and pending
 set parents reconcile through the engine's write map. UI callers read the view again after resolution.

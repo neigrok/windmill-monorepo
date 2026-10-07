@@ -50,6 +50,27 @@ test('the back link stands on its own line above the name, and Rename shares the
   assert.deepEqual(page.head, [['Bench Press', 'Rename']]);
 });
 
+test('a partial initial pull never claims an observed catalogue movement was never trained', async (t) => {
+  browserWith();
+  const { engine } = await gymAccount(t, [pushA]);
+  await engine.write(null, (device) => {
+    device.activeReplica.cursors['self/gym'].booted = false;
+  }, ['self/gym']);
+  const { MovementRecord } = await loadScreen('products/gym/Record.jsx');
+  const outer = renderHook(t, () => MovementRecord({ id: 'bench-press', from: FROM_ROUTINES, log: roomLog() }));
+  const drawn = elementsOf(outer.tree)[0];
+  const screen = renderHook(t, () => drawn.type(drawn.props), { live: true });
+  await settle();
+  assert.deepEqual(findByClass(screen.tree, 'gym-quiet').map(textOf), ['Opening this movement’s history…']);
+  await engine.write(null, (device) => {
+    device.activeReplica.cursors['self/gym'].booted = true;
+  }, ['self/gym']);
+  await settle();
+  assert.deepEqual(findByClass(screen.tree, 'gym-quiet').map(textOf), [
+    'You haven’t worked this movement yet.', 'The first set you log against it lands here.',
+  ]);
+});
+
 // The record inside a real room, with its rename sheet open: a rename speaks through the room's transient.
 async function renameSheetIn(t) {
   browserWith();

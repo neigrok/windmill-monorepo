@@ -10,6 +10,8 @@ import { Preferences, PreferencesRules } from './preferences.js';
 import { Note, NoteRules } from './notes.js';
 import { Exercise, ExerciseName } from './catalogue.js';
 import { Routine } from './routines.js';
+import { Session, SetRules, TrainingSet } from './training.js';
+export { Session, SessionRules, SetRules, TrainingSet } from './training.js';
 export { Exercise, ExerciseName } from './catalogue.js';
 export { Routine } from './routines.js';
 
@@ -103,28 +105,6 @@ export const ProposalRules = Object.freeze({
   agent: new TextSpec('proposal.agent', { unit: 'chars', min: 0, max: 0, trim: false, nfc: false }),
   before: targetSpecs('proposal.changes.before'),
   after: targetSpecs('proposal.changes.after'),
-});
-
-export const SetRules = Object.freeze({
-  weightKg: new NumberSpec('set.weightKg', { min: -500, max: 500, quantum: 0.01 }),
-  reps: new NumberSpec('set.reps', { min: 1, max: 500, integer: true }),
-  kind: new ChoiceSpec('set.kind', ['warmup', 'working', 'drop', 'failure']),
-  rpe: new NumberSpec('set.rpe', { min: 1, max: 10, quantum: 0.1 }),
-  note: new TextSpec('set.note', { unit: 'bytes', min: 0, max: 4000, trim: false, nfc: false }),
-});
-
-export const SessionRules = Object.freeze({
-  maxInstantMs: 253_402_300_799_000,
-  /**
-   * @param {number} value
-   * @param {string} rule
-   * @param {Path} path
-   */
-  instant(value, rule, path) {
-    if (value < 1) throw new Violation(rule, path, { kind: 'below', min: 1 });
-    if (value > SessionRules.maxInstantMs) throw new Violation(rule, path, { kind: 'above', max: SessionRules.maxInstantMs });
-    return value;
-  },
 });
 
 export const CommandSpecs = Object.freeze([
@@ -223,23 +203,6 @@ function entity(type, decode, checks, protocols = {}) {
   return declared;
 }
 
-export const Session = entity('session', (f) => ({ startedAt: f.instant('startedAt').ms,
-  finishedAt: f.optionalInstant('finishedAt')?.ms ?? null, closedBy: f.optionalString('closedBy'),
-  routineId: f.optionalRef('routineId', Routine)?.json ?? null,
-  historyRoutineId: f.optionalRef('historyRoutineId', Routine)?.json ?? null,
-  plan: f.json('plan') ?? null, displayName: f.optionalString('displayName') }), null, { heldRemoval: true });
-
-export const TrainingSet = entity('set', (f) => ({ sessionId: f.ref('sessionId', Session).json,
-  exerciseId: f.ref('exerciseId', Exercise).json, weightKg: f.double('weightKg'), reps: f.int('reps'),
-  kind: f.string('kind', 'working'), rpe: f.optionalDouble('rpe'), note: f.string('note', ''), completedAt: f.instant('completedAt').ms }), {
-  weightKg: (f, path) => SetRules.weightKg.apply(f.double('weightKg'), path),
-  reps: (f, path) => SetRules.reps.apply(f.int('reps'), path),
-  kind: (f, path) => SetRules.kind.apply(f.string('kind'), path),
-  rpe: (f, path) => SetRules.rpe.applyOptional(f.optionalDouble('rpe'), path),
-  note: (f, path) => SetRules.note.apply(f.string('note'), path),
-  completedAt: (f, path) => SessionRules.instant(f.instant('completedAt').ms, 'set.completedAt', path),
-}, { heldRemoval: true });
-
 export const Proposal = entity('proposal', (f) => ({ routineId: f.ref('routineId', Routine).json,
   intent: f.string('intent'), proposedName: f.string('proposedName', ''), summary: f.string('summary', ''),
   changes: f.list('changes', changeForm), door: f.string('door', 'ask'), connection: f.string('connection', ''), agent: f.string('agent', '') }), {
@@ -281,7 +244,7 @@ export const GymRules = Object.freeze({
     const { before, after, ...proposal } = ProposalRules;
     return Object.freeze([...Object.values(NoteRules), WeighInRules.kg, PreferencesRules.units,
       ...Object.values(ExerciseRules), ...Object.values(routine), ...Object.values(targets),
-      ...Object.values(proposal), ...Object.values(before), ...Object.values(after), ...Object.values(SetRules), ...CommandSpecs]);
+      ...Object.values(proposal), ...Object.values(before), ...Object.values(after), SetRules.weightKg, SetRules.reps, SetRules.kind, SetRules.rpe, SetRules.note, ...CommandSpecs]);
   },
   /** @param {string} path */
   spec(path) { return GymRules.specs.find((spec) => spec.path === path) ?? null; },

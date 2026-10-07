@@ -14,7 +14,7 @@ import { Fault, precondition } from './values.js';
  * The engine's view record (engine §7.6): lattice registers `[value, stamp]`, texts as plain strings,
  * serials as numbers.
  * @typedef {{ t: string, id: RecordID, life?: [string, string], born?: string, f?: Record<string, [Json, string]>,
- *   x?: Record<string, string>, v?: Record<string, number> }} ViewRecord
+ *   x?: Record<string, string>, v?: Record<string, number>, rc?: number }} ViewRecord
  */
 /**
  * An entity value: its id, and when written, every client field as JSON.

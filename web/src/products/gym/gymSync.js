@@ -2,14 +2,16 @@ import { useMemo } from 'react';
 import { useSyncEngine, useSyncRecords } from '../../platform/sync/react.js';
 import { recordKey } from '../../platform/sync/core/rows.js';
 import { CommitError } from '../../platform/sync/client/commit.js';
+import { Reader } from '../../platform/domain-kit/reading.js';
+import { Moment } from '../../platform/domain-kit/time.js';
 import { GymRefusal, isStoreFailure } from './errors.js';
-import { projectGym } from './syncProjections.js';
-import { createGymRuntime, gymStep, gymFailure, routineValue } from './gymRuntime.js';
+import { createGymRuntime, deviceZone, gymReadView, gymStep, gymFailure, namedZone, routineValue } from './gymRuntime.js';
+import { TrainingHistory } from './domain/trainingHistory.js';
 export { gymStep, gymFailure } from './gymRuntime.js';
 
 const SCOPE = 'self/gym';
 const READS = ['exercises', 'sessions', 'session', 'review', 'routines', 'routine',
-  'proposals', 'proposal', 'history', 'progress', 'record', 'lastTime', 'lastSets'];
+  'proposals', 'proposal', 'history', 'progress', 'record', 'lastTime', 'lastSets', 'stats'];
 const SENTENCES = {
   stale: 'This changed on another device. Read it again before saving.',
   'session-open': 'that session is still running',
@@ -22,7 +24,7 @@ const SENTENCES = {
 
 const refusal = (code, { sentence = SENTENCES[code], overlapping = null } = {}) => new GymRefusal(code, { sentence, overlapping });
 
-export function createGymApi(engine, { event = gymStep, failure = gymFailure } = {}) {
+export function createGymApi(engine, { event = gymStep, failure = gymFailure, zone = deviceZone } = {}) {
   // Engine §7.1: an unwritable replica is a refusal, and a store failure is the device's, which the engine reports.
   const failed = (operation, thrown) => {
     const error = thrown instanceof CommitError && thrown.kind === 'not-writable' ? refusal('not-writable') : thrown;
@@ -31,10 +33,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
     return error;
   };
   const replica = engine.activeReplica();
-  const snapshot = () => engine.observe(SCOPE).getSnapshot();
-  const project = (rows = snapshot().stored, now = Date.now()) => projectGym(rows, {
-    now, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, failure,
-  });
+  const project = (rows, now) => gymReadView({ drawn: rows, stored: rows }, { now, zone, failure });
   const commit = async (operation, build) => {
     try {
       const result = await engine.commit(SCOPE, (views) => {
@@ -46,11 +45,15 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
       return result.value;
     } catch (error) { throw failed(operation, error); }
   };
-  const api = createGymRuntime(engine, { event, failure });
-  for (const name of READS) api[name] = async (...args) => {
-    try { return project()[name](...args); }
-    catch (error) { failure('projection'); throw error; }
-  };
+  const api = createGymRuntime(engine, { event, failure, zone });
+  for (const name of READS) api[name] = async (...args) => api.read((read) => {
+    const reader = name === 'history' && args[0]?.timeZone
+      ? new Reader(read.views, SCOPE, new Moment(read.moment.now, namedZone(args[0].timeZone))) : read;
+    const history = new TrainingHistory(reader);
+    const document = history[name](...args);
+    return name === 'history' && args[0]?.projection === 'progress'
+      ? { ...document, progress: history.progressIn(args[0]) } : document;
+  });
   api.fixSet = (sessionId, id, fix) => commit('set-correct', (views) => {
     const row = views.drawn.get(recordKey('set', id));
     if (!row || row.life?.[0] === 'dead' || row.f?.sessionId?.[0] !== sessionId) throw refusal('unknown-record');
@@ -150,9 +153,7 @@ export function useGymApi() {
 
 // A workout running on a phone keeps the mirror's sync close, until four idle hours close it.
 export function gymLiveHint(engine, replica) {
-  const rows = engine.observe(SCOPE).getSnapshot().drawn;
-  const session = rows.find((row) => row.t === 'session' && row.life?.[0] !== 'dead' && row.f?.finishedAt === undefined);
-  if (!session) return false;
-  const activity = Math.max(session.f.startedAt[0], ...rows.filter((row) => row.t === 'set' && row.life?.[0] !== 'dead' && row.f?.sessionId?.[0] === session.id).map((row) => row.f.completedAt[0]));
-  return Date.now() + (replica?.meta?.serverOffsetMs ?? 0) - activity < 4 * 3600_000;
+  return gymReadView(engine.observe(SCOPE).getSnapshot(), {
+    now: Date.now() + (replica?.meta?.serverOffsetMs ?? 0),
+  }).liveHint();
 }

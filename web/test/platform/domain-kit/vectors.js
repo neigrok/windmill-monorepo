@@ -86,7 +86,7 @@ export function momentOf(input) {
 
 /** @param {any[] | undefined} rows */
 export function viewRecords(rows) {
-  return (rows ?? []).map((row) => /** @type {ViewRecord} */ (viewRecord(row)));
+  return (rows ?? []).map((row) => /** @type {ViewRecord} */ ({ ...viewRecord(row), ...(row.rc === undefined ? {} : { rc: row.rc }) }));
 }
 
 // A vector's records as the kit's Views: rows become view records, ids are minted from the given list.
@@ -314,4 +314,3 @@ export function listsRecords(input) {
   if (input === null || typeof input !== 'object') return false;
   return Object.entries(input).some(([key, value]) => ((key === 'drawn' || key === 'stored') && Array.isArray(value) && value.length > 1) || listsRecords(value));
 }
-

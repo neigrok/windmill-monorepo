@@ -489,7 +489,7 @@ test('the empty routines home offers to build one, and this surface still starts
   assert.equal(source.includes('<Button href={routineHref(NEW_ROUTINE_ID)}>New routine</Button>'), true);
   // Over the ACCOUNT's program and never the drawn rows: the offer is an act, and an act may not be
   // offered over a store the window has only taken a routine off the screen of (13-gestures.md).
-  assert.equal(source.includes("view.phase === 'ready' && program.length === 0"), true);
+  assert.equal(source.includes("view.phase === 'ready' && complete && !hasProgram"), true);
   for (const file of gymFiles()) {
     if (!/\.(jsx?)$/.test(file)) continue;
     const said = spoken(fs.readFileSync(file, 'utf8'));

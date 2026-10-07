@@ -350,7 +350,8 @@ export class BrowserSyncEngine {
     const clean = cursor?.e === replica.meta.serverEpoch && cursor?.m === 'live' && cursor.k === undefined
       && !record.behind && record.digestStop === undefined && !record.mismatchReset && !replica.staging[scope];
     return {
-      confirmed: new Map(replica.confirmedRows(scope).map((row) => [recordKey(row.t, row.id), structuredClone(viewRecord(row))])),
+      confirmed: new Map(replica.confirmedRows(scope).map((row) => [recordKey(row.t, row.id),
+        structuredClone({ ...viewRecord(row), ...(row.rc === undefined ? {} : { rc: row.rc }) })])),
       devices: structuredClone(replica.deviceRows(this.registry.productOfRef(scope))),
       firstPullComplete: firstPullComplete(replica, scope, this.scopes(replica)),
       actor,

@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { projectGym } from '../../../../src/products/gym/syncProjections.js';
+import { gymReadView } from '../../../../src/products/gym/gymRuntime.js';
+const readView = (rows) => gymReadView({ drawn: rows, stored: rows });
 import {
   browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle, textOf,
 } from '../harness.mjs';
@@ -244,7 +245,7 @@ test('Save writes the whole workout in one command, reads Saved for 900ms, then 
   });
   assert.deepEqual(gym.owed(), [`ready gym.importSession ${stored.id}`], 'one command, whole or not at all, and the routine is never written');
   assert.deepEqual([textOf(saveButton(view.tree)), saveButton(view.tree).props['aria-disabled']], ['Saved · 10 sets', true]);
-  const { session, sets } = projectGym(gym.engine.observe('self/gym').getSnapshot().stored).session(stored.id);
+  const { session, sets } = readView(gym.engine.observe('self/gym').getSnapshot().stored).session(stored.id);
   assert.deepEqual([session.startedAt, session.finishedAt, sets.length], [at(24, 12), at(24, 13), 10], 'the store holds the workout the moment it is saved');
   // The room reads the saved workout into the log; the note keeps reading the span it stored.
   summaries.unshift({ id: stored.id, startedAt: stored.startedAt, finishedAt: stored.finishedAt });
@@ -295,9 +296,9 @@ test('a free session’s movement arrives with last time’s sets, and Save’s 
 test('a time the lifter sets is checked against the log — the open session included — and refused in place with its two doors', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();
-  await pushAAccount(t);
   const earlier = { id: 'sessionPull1', startedAt: at(24, 15), finishedAt: at(24, 16, 10), plan: { routine: 'Pull A', entries: [] } };
   const running = { id: 'sessionLive1', startedAt: at(24, 17, 40) };
+  await pushAAccount(t, [earlier, running].map(({ id, ...fields }) => confirmed('session', id, fields)));
   const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG, summaries: [running, earlier], session: running }));
   assert.deepEqual(findByClass(view.tree, 'gym-save-note').map(textOf), ['Today · 12:00–13:00']);
 
@@ -365,12 +366,11 @@ test('a lifter’s time that ends after now reads as running past now, and Save 
 test('the store’s own overlap refusal — the log moved under the form — is drawn like the form’s, until the time moves', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();
-  // The phone's workout reached the account; the room this form reads has not drawn it yet.
-  const gym = await pushAAccount(t, [
-    confirmed('session', 'sessionPhone', { startedAt: at(24, 11, 50), finishedAt: at(24, 12, 40), plan: { routine: 'Legs', entries: [] } }),
-  ]);
+  const gym = await pushAAccount(t);
   const said = [];
   const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG, say: (text) => said.push(text) }));
+  // The phone's workout reaches the account between the form's read and its Save.
+  await gym.land(confirmed('session', 'sessionPhone', { startedAt: at(24, 11, 50), finishedAt: at(24, 12, 40), plan: { routine: 'Legs', entries: [] } }));
   saveButton(view.tree).props.onClick();
   await settle();
   assert.deepEqual(findByClass(view.tree, 'gym-past-refusal-body').map(textOf), [

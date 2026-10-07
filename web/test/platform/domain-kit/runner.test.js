@@ -120,7 +120,7 @@ test('a commit reads the current tab transaction, including confirmed values ben
   assert.deepEqual(runner.read(PROBE_SCOPE, metadata), before, 'the first tab has received no peer refresh');
   const loaded = await runner.run(action(PROBE_SCOPE, metadata, (value) => Decision.unchanged(value)));
   assert.deepEqual(loaded, { kind: 'unchanged', result: {
-    confirmed,
+    confirmed: { ...confirmed, rc: 1 },
     drawn: { startedAt: 1, label: 'Pending' },
     devices: { 'picture:abcdefgh': { kept: true } },
     commands: [{ gestureId: receipt.gestureId, command: { name: command.name, args: command.args }, canSupersede: false, isAdmitted: true }],

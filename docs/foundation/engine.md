@@ -2649,7 +2649,7 @@ Clients render these fields from confirmed records, retain them through storage/
 display missing historical values as absent. They MUST NOT invent metadata in predictions,
 restamp server fields or use a creation snapshot's administrative `rc` as a historical creation
 date. Public write maps do not claim the binding's metadata fields. The scalar names match
-`web/src/products/gym/syncProjections.js`; creation receipts read the independent record by the
+`web/src/products/gym/domain/trainingHistory.js`; creation receipts read the independent record by the
 routine id, including when that routine is spent.
 
 **Evidence:** [gym architecture §§3.7–3.9](../../backend/products/gym/ARCHITECTURE.md),
@@ -2660,8 +2660,8 @@ routine id, including when that routine is spent.
 [nullable history count and creation replay](../../backend/products/gym/adapters/postgres/PgProgramRepository.cpp),
 and [Coach canon](../design/gym/briefs/09-coach.md) (creation receipts, Apply's store count and
 history from stored evidence), [Notes canon](../design/gym/briefs/10-notes.md).
-`web/test/products/gym/restParity.test.js` checks the web's projections against 36 captured REST
-reads.
+`packages/api-contract/gym/domain/training-reads.json` includes the 36 captured read cases; the
+web, Swift and Kotlin domain suites claim them alongside training-rule regressions.
 
 **Coach conversations** (gym Coach §9.1) are not engine records yet: they stay in the gym backend's
 Coach tables, and the phone Coach adds `thread` and `message` to gym's registry, with their binding

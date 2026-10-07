@@ -47,6 +47,48 @@ const deleteTheFirstSet = (room) => {
   sheet.props.onDelete();
 };
 
+test('the log waits for the initial pull before claiming an empty or unmatched history', async (t) => {
+  browserWith();
+  const { engine } = await gymAccount(t, [confirmed('note', 'note000001', { title: 'Note', body: '', ord: 'a', updatedAt: 0 })]);
+  await engine.write(null, (device) => { device.activeReplica.cursors['self/gym'].booted = false; }, ['self/gym']);
+  const { LogList } = await loadScreen('products/gym/Log.jsx');
+  const log = roomLog({ catalog: [{ id: 'chin', name: 'Chin-up' }] });
+  const view = renderHook(t, () => ({
+    empty: LogList({ log }),
+    filtered: LogList({ log, hash: '#/gym/log?year=2024&exercise=chin' }),
+    selected: LogList({ log, sessionId: 'sessionMissing' }),
+  }), { live: true });
+  await settle();
+  assert.deepEqual(findByClass(view.tree.empty, 'gym-quiet').map(textOf), []);
+  assert.deepEqual(findByClass(view.tree.filtered, 'gym-history-empty').map(textOf), []);
+  assert.deepEqual(findByClass(view.tree.selected, 'gym-quiet').map(textOf), []);
+
+  await engine.write(null, (device) => { device.activeReplica.cursors['self/gym'].booted = true; }, ['self/gym']);
+  await settle();
+  assert.deepEqual(findByClass(view.tree.empty, 'gym-quiet').map(textOf), ['No sessions yet.']);
+  assert.deepEqual(findByClass(view.tree.filtered, 'gym-history-empty').map(textOf), ['No Chin-up sessions in 2024.']);
+  assert.deepEqual(findByClass(view.tree.selected, 'gym-quiet').map(textOf), [
+    'No sessions yet.', 'This workout is outside these filters. Back to results',
+  ]);
+});
+
+test('the log draws arrived sessions without claiming the initial history has ended', async (t) => {
+  browserWith();
+  const { engine } = await gymAccount(t, sessionWithASet());
+  await engine.write(null, (device) => { device.activeReplica.cursors['self/gym'].booted = false; }, ['self/gym']);
+  const { LogList } = await loadScreen('products/gym/Log.jsx');
+  const view = renderHook(t, () => LogList({ log: roomLog() }), { live: true });
+  await settle();
+  const rows = () => elementsOf(view.tree).find((each) => typeof each.type === 'function' && each.type.name === 'HistoryIndex').props.sessions;
+  assert.deepEqual(rows().map(({ id }) => id), ['session0001']);
+  assert.deepEqual(findByClass(view.tree, 'gym-history-end').map(textOf), []);
+
+  await engine.write(null, (device) => { device.activeReplica.cursors['self/gym'].booted = true; }, ['self/gym']);
+  await settle();
+  assert.deepEqual(rows().map(({ id }) => id), ['session0001']);
+  assert.deepEqual(findByClass(view.tree, 'gym-history-end').map(textOf), ['End of history']);
+});
+
 test('a held delete goes when its clock runs out, and the transient retires with the window', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();

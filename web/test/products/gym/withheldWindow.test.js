@@ -180,6 +180,25 @@ const pushA = () => confirmed('routine', 'routinePushA', { name: 'Push A', posit
 const menuOf = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'Menu');
 const routinesHome = (t) => roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log }));
 
+test('the routines home waits for the initial pull before claiming an empty program or an untrained routine', async (t) => {
+  browserWith();
+  const gym = await gymAccount(t, [confirmed('note', 'note000001', { title: 'Note', body: '', ord: 'a', updatedAt: 0 })]);
+  await gym.engine.write(null, (device) => { device.activeReplica.cursors['self/gym'].booted = false; }, ['self/gym']);
+  const home = await routinesHome(t);
+  assert.deepEqual(findByClass(home.screen(), 'gym-plan-empty').map(textOf), []);
+
+  await gym.land(pushA());
+  await settle();
+  assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), ['Push A']);
+  assert.deepEqual(findByClass(home.screen(), 'gym-routine-trained').map(textOf), ['']);
+  assert.deepEqual(findByClass(home.screen(), 'gym-plan-empty').map(textOf), []);
+
+  await gym.engine.write(null, (device) => { device.activeReplica.cursors['self/gym'].booted = true; }, ['self/gym']);
+  await settle();
+  assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), ['Push A']);
+  assert.deepEqual(findByClass(home.screen(), 'gym-routine-trained').map(textOf), ['Never trained']);
+});
+
 test('a routine delete is in the row overflow, is held on the device until the window closes, and names the routine', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
@@ -554,6 +573,18 @@ const reviewWithShort = (review) => {
   const element = elementsOf(review).find((each) => typeof each.type === 'function' && each.type.name === 'ShortSession');
   return { review, short: element ? element.type(element.props) : null };
 };
+
+test('the finish screen waits for the initial pull before calling a workout the first session', async (t) => {
+  browserWith();
+  const { engine } = await gymAccount(t, [shortSession()]);
+  await engine.write(null, (device) => { device.activeReplica.cursors['self/gym'].booted = false; }, ['self/gym']);
+  const finish = await roomWith(t, 'products/gym/Finish.jsx', ({ FinishScreen }, log) => FinishScreen({ id: 'session0001', log }));
+  assert.deepEqual(findByClass(finish.screen(), 'gym-finish-subtitle').map(textOf), ['Free session']);
+
+  await engine.write(null, (device) => { device.activeReplica.cursors['self/gym'].booted = true; }, ['self/gym']);
+  await settle();
+  assert.deepEqual(findByClass(finish.screen(), 'gym-finish-subtitle').map(textOf), ['Your first session']);
+});
 
 test('Discard asks nothing, holds the session for the window, and only then lets it go to the store', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });

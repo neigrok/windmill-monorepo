@@ -1,13 +1,46 @@
+import { Id, compareText } from '../../../platform/domain-kit/entities.js';
+import { Instant, LocalDay } from '../../../platform/domain-kit/time.js';
+import { Exercise } from '../domain/catalogue.js';
+import { Session, TrainingSet } from '../domain/training.js';
+import { EstimatedFact, MovementProgress, MovementSessionFact, PerformedFact, ProgressSession, Readout, StatsProgress } from '../domain/trainingReads.js';
+import { GymUnits } from '../domain/units.js';
+import { deviceZone } from '../gymRuntime.js';
 import { agoLabel, fmt, setLoadLabel, shortDayLabel } from '../log.js';
 import { inDisplayUnit, weightUnit } from '../units.js';
 
-export const SESSION_GAP_DAYS = 21;
+export const SESSION_GAP_DAYS = MovementProgress.gapDays;
 export const SCRUB_HOLD_MS = 1500;
 export const POINT_PITCH_PT = 24;
-const DAY_MS = 86_400_000;
+
+// Public log shares carry JSON facts; the signed-in room carries the same typed domain read.
+function progressSnapshot(snapshot, now) {
+  if (snapshot instanceof StatsProgress) return snapshot;
+  const sessions = (snapshot?.sessions ?? []).flatMap((session) => {
+    const movements = session.movements.filter((movement) => movement.workingSetCount > 0).map((movement) => {
+      const fact = (value) => ({ id: new Id(value.setId, TrainingSet), weightKg: value.weightKg, reps: value.reps, rpe: value.rpe ?? null });
+      return new MovementSessionFact(new Id(movement.exerciseId, Exercise), movement.workingSetCount,
+        new PerformedFact(fact(movement.heaviest)), new PerformedFact(fact(movement.mostReps ?? movement.heaviest)),
+        movement.estimate ? new EstimatedFact(fact(movement.estimate), movement.estimate.e1rm) : null);
+    });
+    return movements.length ? [new ProgressSession(new Id(session.sessionId, Session), new Instant(session.startedAt), movements)] : [];
+  });
+  return StatsProgress.fromSessions(sessions, new Instant(snapshot?.asOf ?? now), snapshot?.isComplete ?? true);
+}
+
+function movementRead(snapshot, exerciseId, equipment, now) {
+  const read = progressSnapshot(snapshot, now).movement(new Id(exerciseId, Exercise));
+  const estimatesAllowed = ['barbell', 'dumbbell', 'machine', 'cable', 'kettlebell'].includes(equipment);
+  return new MovementProgress(read.exerciseId, read.sessions.filter((point) => point.startedAt.ms <= now).map((point) =>
+    estimatesAllowed ? point : { ...point, fact: new MovementSessionFact(point.fact.exerciseId, point.fact.workingSetCount,
+      point.fact.heaviest, point.fact.mostReps) }), read.isComplete);
+}
+
+function sessionFact(point) {
+  return point ? { ...point.fact.json, mostReps: point.fact.mostReps.json, at: point.startedAt.ms, sessionId: point.id.record } : null;
+}
 
 export function estimateValue(weightKg, unit = weightUnit()) {
-  return String(Math.round(inDisplayUnit(weightKg, unit) * 10) / 10);
+  return Readout.estimatedWeight(weightKg, GymUnits.reading(unit));
 }
 
 export function progressDateLabel(at, withYear = false) {
@@ -15,67 +48,41 @@ export function progressDateLabel(at, withYear = false) {
 }
 
 export function consistencyLine(snapshot, now = Date.now()) {
-  const weekOf = (at) => {
-    const date = new Date(at);
-    date.setHours(0, 0, 0, 0);
-    date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
-    return date.getTime();
-  };
-  const weeks = new Set((snapshot?.sessions ?? [])
-    .filter((session) => session.movements.some((movement) => movement.workingSetCount > 0))
-    .map((session) => weekOf(session.startedAt)));
-  if (weeks.size < 2) return null;
-  const first = new Date(weekOf(now));
-  first.setDate(first.getDate() - 21);
-  const count = [...weeks].filter((week) => week >= first.getTime() && week <= weekOf(now)).length;
-  return count ? `Trained ${count} of the last 4 weeks` : null;
+  const count = progressSnapshot(snapshot, now).consistency(new Instant(now), deviceZone);
+  return count === null ? null : `Trained ${count} of the last 4 weeks`;
 }
 
 export function movementProgress(snapshot, exerciseId, { window = '12', now = Date.now(), equipment, unit = weightUnit() } = {}) {
-  const estimatesAllowed = ['barbell', 'dumbbell', 'machine', 'cable', 'kettlebell'].includes(equipment);
-  const sessions = (snapshot?.sessions ?? []).flatMap((session) => {
-    const movement = session.movements.find((entry) => entry.exerciseId === exerciseId);
-    return movement ? [{ ...movement, estimate: estimatesAllowed ? movement.estimate : undefined, at: session.startedAt, sessionId: session.sessionId }] : [];
-  }).sort((a, b) => a.at - b.at || (a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0));
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - 84);
-  const visible = sessions.filter((session) => session.at <= now && (window === 'all' || session.at >= start.getTime()));
-  const estimates = sessions.filter((session) => session.estimate);
-  const standing = estimates.reduce((best, row) => !best || row.estimate.e1rm > best.estimate.e1rm ? row : best, null);
-  const plotted = visible.filter((session) => session.estimate);
-  const latest = plotted.at(-1) ?? null;
-  const best = plotted.reduce((top, row) => !top || row.estimate.e1rm > top.estimate.e1rm ? row : top, null);
-  const heaviest = visible.reduce((top, row) => {
-    if (!row.heaviest) return top;
-    if (!top || row.heaviest.weightKg > top.heaviest.weightKg) return row;
-    if (row.heaviest.weightKg === top.heaviest.weightKg && row.heaviest.reps > top.heaviest.reps) return row;
-    return top;
-  }, null);
-  const mostReps = visible.reduce((top, row) => {
-    const fact = row.mostReps ?? (row.heaviest?.weightKg === 0 ? row.heaviest : null);
-    if (!fact || (top && top.fact.reps >= fact.reps)) return top;
-    return { fact, at: row.at };
-  }, null);
-  const assisted = equipment === 'bodyweight' || (!best && visible.some((row) => row.heaviest?.weightKg <= 0));
+  const all = movementRead(snapshot, exerciseId, equipment, now);
+  const read = window === 'all' ? all : all.chartWindow(new Instant(now), deviceZone);
+  const visible = read.sessions.map(sessionFact);
+  const latest = sessionFact(read.latest);
+  const best = sessionFact(read.best);
+  const heaviest = sessionFact(read.heaviest);
+  const mostReps = read.mostReps;
+  const assisted = equipment === 'bodyweight' || (!best && visible.some((row) => row.heaviest.weightKg <= 0));
   const showYears = new Date(visible[0]?.at ?? now).getFullYear() !== new Date(now).getFullYear();
   const dateLabel = (at) => progressDateLabel(at, showYears);
-  const points = plotted.map((row) => ({
-    key: row.sessionId,
-    at: row.at,
-    value: inDisplayUnit(row.estimate.e1rm, unit),
-    color: row.sessionId === standing?.sessionId ? 'var(--pr-ink)' : 'var(--color-brand)',
-    label: `${estimateValue(row.estimate.e1rm, unit)} ${unit} est · ${dateLabel(row.at)} · ${setLoadLabel(row.estimate, unit)}`,
+  const standing = all.best;
+  const gaps = new Map(read.gaps(deviceZone).map(({ before, after }) => [before.id.record, after.id.record]));
+  const points = read.estimates.map((point) => ({
+    key: point.id.record,
+    at: point.startedAt.ms,
+    value: inDisplayUnit(point.fact.estimate.e1rm, unit),
+    color: standing && point.id.equals(standing.id) ? 'var(--pr-ink)' : 'var(--color-brand)',
+    gapAfter: gaps.get(point.id.record) ?? null,
+    label: `${estimateValue(point.fact.estimate.e1rm, unit)} ${unit} est · ${dateLabel(point.startedAt.ms)} · ${setLoadLabel(point.fact.estimate, unit)}`,
   }));
   const count = visible.length;
-  const windowLabel = `${window === 'all' ? 'the whole series' : 'last 12 weeks'} · ${plotted.length} ${plotted.length === 1 ? 'session' : 'sessions'}`;
+  const windowLabel = `${window === 'all' ? 'the whole series' : 'last 12 weeks'} · ${points.length} ${points.length === 1 ? 'session' : 'sessions'}`;
   const sparseLine = `${count} ${count === 1 ? 'session' : 'sessions'}${count ? ` · since ${dateLabel(visible[0].at)}` : ''}`;
+  const start = LocalDay.in(new Instant(now), deviceZone).adding(-84);
   return {
     exerciseId, sessions: visible, points, latest, best, heaviest, windowLabel, sparseLine, assisted, showYears,
-    mostRepsLine: mostReps ? `most reps ${mostReps.fact.reps} · bodyweight · ${dateLabel(mostReps.at)}` : null,
+    mostRepsLine: mostReps?.fact.mostReps.weightKg === 0 ? `most reps ${mostReps.fact.mostReps.reps} · bodyweight · ${dateLabel(mostReps.startedAt.ms)}` : null,
     signedLoadLine: heaviest && heaviest.heaviest.weightKg !== 0 ? `heaviest ${heaviest.heaviest.weightKg > 0 ? 'added +' : 'assisted −'}${fmt(Math.abs(heaviest.heaviest.weightKg), unit)} · ${dateLabel(heaviest.at)}` : null,
-    domain: { from: window === 'all' ? sessions[0]?.at ?? now : start.getTime(), to: now },
-    chartReady: points.length >= 4 && points.at(-1).at - points[0].at >= 21 * DAY_MS,
+    domain: { from: window === 'all' ? all.sessions[0]?.startedAt.ms ?? now : new Date(start.year, start.month - 1, start.day).getTime(), to: now },
+    chartReady: read.hasChart(deviceZone),
     latestLine: latest ? `e1RM ${estimateValue(latest.estimate.e1rm, unit)} · ${agoLabel(latest.at, now)}` : null,
     bestLine: best ? `best e1RM ${estimateValue(best.estimate.e1rm, unit)} · ${dateLabel(best.at)}` : null,
     sparseBest: best ? `Best so far: e1RM ${estimateValue(best.estimate.e1rm, unit)}, from ${setLoadLabel(best.estimate, unit)} on ${dateLabel(best.at)}.` : null,
@@ -84,15 +91,16 @@ export function movementProgress(snapshot, exerciseId, { window = '12', now = Da
 }
 
 export function progressCards(snapshot, catalog, now = Date.now(), unit = weightUnit()) {
-  const ids = new Set((snapshot?.sessions ?? []).flatMap((session) => session.movements.map((movement) => movement.exerciseId)));
+  const progress = progressSnapshot(snapshot, now);
+  const ids = new Set(progress.sessions.flatMap((session) => session.movements.map((movement) => movement.exerciseId.record)));
   const movements = new Map(catalog.map((movement) => [movement.id, movement]));
-  return [...ids].map((id) => ({ ...movementProgress(snapshot, id, { now, equipment: movements.get(id)?.equipment, unit }), name: movements.get(id)?.name ?? id }))
+  return [...ids].map((id) => ({ ...movementProgress(progress, id, { now, equipment: movements.get(id)?.equipment, unit }), name: movements.get(id)?.name ?? id }))
     .filter((card) => card.sessions.length > 0)
-    .sort((a, b) => Number(b.chartReady) - Number(a.chartReady) || b.sessions.at(-1).at - a.sessions.at(-1).at || Number(a.assisted) - Number(b.assisted) || (a.exerciseId < b.exerciseId ? -1 : a.exerciseId > b.exerciseId ? 1 : 0));
+    .sort((a, b) => Number(b.chartReady) - Number(a.chartReady) || b.sessions.at(-1).at - a.sessions.at(-1).at || Number(a.assisted) - Number(b.assisted) || compareText(a.exerciseId, b.exerciseId));
 }
 
 export function joinsSessions(from, to) {
-  return to.at - from.at <= SESSION_GAP_DAYS * DAY_MS;
+  return from.gapAfter !== to.key;
 }
 
 export function sessionGapLabel(from, to, withYear = new Date(from.at).getFullYear() !== new Date(to.at).getFullYear()) {
@@ -100,17 +108,11 @@ export function sessionGapLabel(from, to, withYear = new Date(from.at).getFullYe
 }
 
 export function recordProgress(snapshot, exerciseId, equipment) {
-  const model = movementProgress(snapshot, exerciseId, { window: 'all', equipment });
-  let top = null;
-  const records = [];
-  for (const session of model.sessions) {
-    if (!session.estimate || (top !== null && session.estimate.e1rm <= top)) continue;
-    top = session.estimate.e1rm;
-    records.push({ ...session.estimate, at: session.at });
-  }
+  const read = movementRead(snapshot, exerciseId, equipment, Date.now());
+  const estimate = (point) => ({ ...point.fact.estimate.json, at: point.startedAt.ms });
   return {
-    bestE1rm: model.best ? { ...model.best.estimate, at: model.best.at } : undefined,
-    heaviest: model.heaviest ? { ...model.heaviest.heaviest, at: model.heaviest.at } : undefined,
-    records: records.reverse(),
+    bestE1rm: read.best ? estimate(read.best) : undefined,
+    heaviest: read.heaviest ? { ...read.heaviest.fact.heaviest.json, at: read.heaviest.startedAt.ms } : undefined,
+    records: read.records.map(estimate).reverse(),
   };
 }

@@ -13,11 +13,13 @@ workout and log shares use their REST doors in `gymApi.js`; a Coach conversation
 room's own clock, and when the room unmounts or the document hides it is dropped unsent and the
 conversation stays. The account gate remains in `GymApp`.
 
-Notes, catalogue, routines, bodyweight and preferences use the domain kit through `gymRuntime.js`.
+Every local gym read uses the domain kit through `gymRuntime.js`. Training entities and rules live in
+`domain/training.js`; `trainingReads.js` owns prefill, last time, records and chart windows, and
+`trainingHistory.js` composes history, reviews and screen documents.
 Catalogue reads combine `domain/seedExercises.js` with custom movements and seed-name overrides.
 Routine drafts preserve target absences and order; saved-workout routines and frozen plans use the
-values in `domain/routines.js`. The plan decoder refuses malformed shapes; the projection reports
-`gym-projection` and omits that plan while retaining the workout's recorded facts and stored data.
+values in `domain/routines.js`. The plan decoder refuses malformed shapes; the read boundary reports
+`gym-projection` and omits the malformed plan from the read while retaining the workout facts and stored data.
 Notes mask pending deletes from the kit's `drawn` list and close an editor when its note is hidden.
 Undo restores the row. Capacity and empty-room stance come from `stored`. Their guarded drafts save only
 touched fields, with character and byte bounds declared in `domain/notes.js`. Moves write only the
@@ -31,19 +33,17 @@ Its saves validate the local day and kilograms, stamp
 the commit moment and retire a held delete of that day. Preference saves write only touched client fields
 (units, confirmation haptic and sound); rest settings are read-only.
 
-Other reads project the engine's stored view, so a held delete never changes what a screen says about the
-account. The window decides what is drawn through the room's `log.hidden`: rows, the screen of the
-held record itself, the count heading the log and the live session's sets. Records, last times and
-progress keep counting a held delete until its release. A write the log refuses before
+Training facts use the engine's drawn view: held session and set deletes leave records, last times,
+progress and history immediately, and Undo restores them. Account capacity and empty-room stance
+use stored facts. The room also hides a delete while the engine is still storing the hold. A write the log refuses before
 storing it is a `GymRefusal` (`errors.js`) carrying the engine's code, the sentence a screen shows
 and, for an overlap, the crossed session; `failureReason` finishes the sentence for any failure,
 naming this device when its store could not keep the write and the network only for a REST door.
 
-`syncProjections.js` maps records to the REST reads' presentation shapes, using the domain reads for
-notes, catalogue, routines, bodyweight and preferences. The global seed catalogue
+`TrainingHistory` composes typed domain reads into screen documents. The global seed catalogue
 is outside sync and is checked against `schema.sql` in CI. Observation updates refresh local reads
 and preserve history depth and editor drafts.
-Creation and proposal chronology use the engine observation's authoritative `rc` envelope. Command
+Creation and proposal chronology use the confirmed record's authoritative `rc` envelope. Command
 predictions persist per-exercise set numbers, correction removals and replacement numbers, and
 routine deaths from removal proposals through offline restart.
 The composition is schema v6 with minimum v4. Routine `revision` and `createdEntries`, proposal
@@ -67,18 +67,16 @@ unresolved notices.
 ## Gates
 
 Gym tests run through the existing `npm test`, `npm run test:sync` and `npm run build` scripts.
-The gym domain claims eight of 13 corpus files: the rule book and 212 vectors across values (122),
-bodyweight actions (10), preference actions and reads (8), notes (20), catalogue (24), routines (22)
-and bodyweight reads (6), compared by JCS and with reversed record order.
-The remaining five files are listed explicitly in the corpus runner.
+The gym domain claims 11 of 13 corpus files and 404 vectors, compared by JCS and with reversed record
+order. Training reads claim 99 vectors (including 36 promoted REST samples and nine regression cases),
+units claim 57 and the weight ladder claims 36. Proposals and training actions remain pending.
 Screen tests run over a real browser engine for a signed-in account (`gymAccount` in
-`test/products/gym/harness.mjs`) and assert what the account still owes the server. The REST parity
-fixture captures an actual disposable backend account and persisted browser-engine observations.
-The ordinary CI gate and the strict local-stack gate compare complete responses across all 36
-comparisons. Chromium acceptance has nine checks: a phone replica's `gym.start`, set and `gym.finish`
+`test/products/gym/harness.mjs`) and assert what the account still owes the server. Shared training
+reads run on web, Swift and Kotlin. The local stack checks domain reads over an actual disposable
+backend account and persisted browser-engine observations. Chromium acceptance has nine checks: a phone replica's `gym.start`, set and `gym.finish`
 pushes arrive live; web routine edits, backfills, weigh-ins and unit changes converge; a held weigh-in delete can be
 undone; the cached log survives an offline reload. Product events reach intake and sync writes emit their log.
-Run strict parity and local-stack Playwright with:
+Run domain-read and local-stack Playwright checks with:
 
 ```
 node web/test/products/gym/stack.mjs /absolute/backend/build

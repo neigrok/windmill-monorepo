@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { registry } from '../../../src/platform/sync/schema.js';
 import { syncSession } from '../../../src/platform/sync/session.js';
 import { useTrainingLog } from '../../../src/products/gym/useTrainingLog.js';
 import { browserWith, confirmed, gymAccount, renderHook, settle } from './harness.mjs';
@@ -10,7 +11,8 @@ function log(t, rows = []) {
   browserWith();
   let records = { replica: 'bound', drawn: rows, stored: rows, notices: [], undoOffers: [], firstPullComplete: true };
   const observation = { subscribe: () => () => {}, getSnapshot: () => records };
-  const engine = { activeReplica: () => 'bound', observe: () => observation,
+  const engine = { registry, now: () => Date.now(), device: { activeReplica: { meta: { serverOffsetMs: 0 } } },
+    readMetadata: () => ({ firstPullComplete: records.firstPullComplete }), activeReplica: () => 'bound', observe: () => observation,
     getSnapshot: () => ({ state: 'bound' }), observeEngine: () => () => {} };
   const session = { ready: true, signedIn: true, engine };
   t.mock.method(syncSession, 'getSnapshot', () => session);

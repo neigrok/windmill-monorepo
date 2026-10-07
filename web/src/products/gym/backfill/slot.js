@@ -1,4 +1,4 @@
-// When a past workout happened: the day in one tap, a default hour clear of the log the page holds, and
+// When a past workout happened: the day in one tap, a default hour clear of the stored log, and
 // the lifter's own time, which is the only one the form checks against the log.
 
 import { msOfDateLocal } from '../bodyweight/bodyweight.js';
@@ -98,8 +98,7 @@ function walked(from, busy, step, outside) {
 // crosses a session walks past the latest one it crosses, an hour long; if that runs past the
 // window it walks back before the earliest instead, and last it takes what is left after the latest,
 // down to fifteen minutes. Every walk stays inside the chosen day. Null when no slot fits: the lifter
-// sets the time. Free of every session the page has loaded — one older than the page is the store's
-// to refuse, as `session-overlap`.
+// sets the time. Every stored session occupies its span, including a session held for deletion.
 export function defaultSlot({ day, now, sessions, open }) {
   const busy = busySpans({ sessions, open, now });
   const within = windowOf(day, now);

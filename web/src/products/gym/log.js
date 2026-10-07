@@ -288,7 +288,7 @@ export function setCountLabel(count) {
   return count === 1 ? '1 set' : `${count} sets`;
 }
 
-// `topE1rm` comes off the wire; the web computes no estimate of its own.
+// The domain supplies `topE1rm`; this label only spells the current unit.
 export function e1rmLabel(topE1rm) {
   if (topE1rm == null) return null;
   return `e1RM ${fmt(topE1rm)}`;
@@ -462,7 +462,7 @@ export function isFirstSession(sessions, id) {
 }
 
 // The four-hour close stamps the end at the last set, or at the start when there was none; a Finish
-// is stamped after the set it follows. A listed session carries the store's `closedItself`.
+// is stamped after the set it follows. A listed session carries the domain read's `closedItself`.
 export const CLOSED_ITSELF_NOTE = 'closed on its own — no set for four hours';
 
 export function closedOnItsOwn(session, sets = null) {

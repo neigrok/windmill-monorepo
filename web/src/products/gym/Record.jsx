@@ -9,6 +9,7 @@ import { recordProgress } from './progress/progress.js';
 import { MovementChart } from './progress/Progress.jsx';
 import { useGymRead } from './useGymRead.js';
 import { useGymApi } from './gymSync.js';
+import { useDomainRead } from './useDomainRead.js';
 
 // `from` is where the record was opened (log.js `recordFromOf`); its back link returns there.
 export function MovementRecord({ id, from, log }) {
@@ -36,6 +37,7 @@ function MovementChooser({ log }) {
 // routine. A session read that fails costs the link its name, never the record.
 function OneMovement({ id, from, log }) {
   const api = useGymApi();
+  const complete = useDomainRead((read) => read.firstPullComplete()).data === true;
   const view = useGymRead(
     () => Promise.all([api.record(id), from.screen === 'session' ? api.session(from.id).catch(() => null) : null])
       .then(([record, detail]) => (record ? { record, session: detail?.session ?? null } : null)),
@@ -76,7 +78,8 @@ function OneMovement({ id, from, log }) {
       <p className="gym-record-sub">{view.data.record.exercise.equipment ? `${view.data.record.exercise.equipment[0].toUpperCase()}${view.data.record.exercise.equipment.slice(1)} · ` : ''}Movement record</p>
       {model.logged && <MovementChart id={id} log={log} equipment={view.data.record.exercise.equipment} />}
 
-      {!model.logged && (
+      {!model.logged && !complete && <p className="gym-quiet">Opening this movement’s history…</p>}
+      {!model.logged && complete && (
         <>
           <p className="gym-quiet">{NEVER_LOGGED}</p>
           <p className="gym-quiet">{NEVER_LOGGED_LINE}</p>

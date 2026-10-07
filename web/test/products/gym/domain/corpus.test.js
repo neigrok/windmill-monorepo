@@ -11,8 +11,12 @@ import { Catalogue, CreateExercise, Exercise, RenameExercise, defaultStepKg, ren
 import { GymRefusals, GymRules, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';
 import { MoveNote, Note, SaveNoteCall } from '../../../../src/products/gym/domain/notes.js';
 import { Preferences, PreferencesValue, SavePreferences, restSettings } from '../../../../src/products/gym/domain/preferences.js';
-import { DeleteRoutine, PlanSnapshot, ReorderRoutines, Routine, RoutineValue, SaveRoutine } from '../../../../src/products/gym/domain/routines.js';
+import { DeleteRoutine, PlanSnapshot, ReorderRoutines, Routine, RoutineEntry, RoutineValue, SaveRoutine, SetTarget } from '../../../../src/products/gym/domain/routines.js';
 import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises.js';
+import { Session } from '../../../../src/products/gym/domain/training.js';
+import { TrainingHistory } from '../../../../src/products/gym/domain/trainingHistory.js';
+import { GymEstimate, Prefill, Readout, TrainingLog } from '../../../../src/products/gym/domain/trainingReads.js';
+import { GymUnits, WeightLadder } from '../../../../src/products/gym/domain/units.js';
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { RegistryCheck, RuleBookCheck, RuleBookParity } from '../../../platform/domain-kit/checks.js';
 import { Contract, savedForm, withRecordsReversed } from '../../../platform/domain-kit/vectors.js';
@@ -24,12 +28,10 @@ const book = GymRules.book;
 const corpus = new ProductCorpus(book, GymRules.spec);
 const rulesFile = 'gym/domain/rules.json';
 const valuesFile = 'gym/domain/values.json';
+const ladderFile = 'gym-ladder.json';
 const pending = [
   'gym/domain/proposals-actions.json',
-  'gym/domain/training-reads.json',
   'gym/domain/training-actions.json',
-  'gym/domain/units.json',
-  'gym-ladder.json',
 ];
 
 /** @param {{ day: LocalDay, kg: number }} value */
@@ -62,9 +64,91 @@ function bodyweightForm(value, input) {
   };
 }
 
+/** @param {Vector} vector @param {import('../../../../src/platform/domain-kit/reading.js').Reader} read @returns {Json} */
+function trainingReadsForm(vector, read) {
+  const f = Fields.object(vector.input.input);
+  const log = new TrainingLog(read);
+  switch (vector.input.read) {
+    case 'GymEstimate': return GymEstimate.value(f.double('weightKg'), f.int('reps'), f.string('kind', 'working'), f.optionalDouble('rpe'));
+    case 'TrainingLog': {
+      const id = f.ref('sessionId', Session);
+      return { drawnSessions: log.drawnSessions.map((session) => session.id.json), open: log.open?.id.json ?? null,
+        liveHint: log.liveHint, sets: log.setsFor(id).map((set) => set.id.json), volumeKg: log.volumeKg(id), topE1rm: log.topE1rm(id) };
+    }
+    case 'SessionReadout': {
+      const value = log.readout(f.ref('sessionId', Session));
+      return value === null ? null : { sessionId: value.sessionId.json, name: value.name, durationMs: value.durationMs,
+        workingSetCount: value.workingSetCount, movementCount: value.movementCount, volumeKg: value.volumeKg, topE1rm: value.topE1rm };
+    }
+    case 'LastTime': {
+      const value = log.lastTime(f.ref('exerciseId', Exercise));
+      return { sessionId: value.session?.id.json ?? null, routine: value.routine, sets: value.sets.map((set) => set.id.json), isFirstTime: value.isFirstTime };
+    }
+    case 'Prefill': {
+      const last = log.lastTime(f.ref('exerciseId', Exercise));
+      const today = f.optionalRef('todaySessionId', Session);
+      const sets = today === null ? [] : log.setsFor(today).filter((set) => set.exerciseId.equals(last.exerciseId));
+      const value = Prefill.of(sets, f.optionalValue('planEntry', RoutineEntry.decode), last);
+      return { weightKg: value.weightKg, reps: value.reps };
+    }
+    case 'StatsProgress': return log.progress.json;
+    case 'ProgressCompleteness': return { isComplete: log.progress.isComplete };
+    case 'Consistency': return log.progress.consistency(read.moment.now, read.moment.zone);
+    case 'MovementProgress': {
+      const progress = log.progress.movement(f.ref('exerciseId', Exercise));
+      const series = f.bool('window', false) ? progress.chartWindow(read.moment.now, read.moment.zone) : progress;
+      return { sessions: series.sessions.map((point) => point.id.json), estimates: series.estimates.map((point) => point.id.json),
+        latest: series.latest?.id.json ?? null, best: series.best?.id.json ?? null, heaviest: series.heaviest?.id.json ?? null,
+        mostReps: series.mostReps?.id.json ?? null, records: series.records.map((point) => point.id.json),
+        hasChart: series.hasChart(read.moment.zone), gaps: series.gaps(read.moment.zone).map((gap) => ({ before: gap.before.id.json, after: gap.after.id.json })) };
+    }
+    case 'Readout': {
+      switch (f.string('operation')) {
+        case 'estimate': return Readout.estimate(f.double('value'));
+        case 'target': return Readout.target(f.optionalList('sets', SetTarget.decode));
+        case 'ladder': return Readout.ladder(f.list('sets', SetTarget.decode));
+        case 'tonnes': return Readout.tonnes(f.double('value'));
+        case 'duration': return Readout.duration(f.instant('value').ms);
+        case 'briefDay': return Readout.briefDay(f.instant('value'), read.moment.now, read.moment.zone);
+        case 'ago': return Readout.ago(f.instant('value'), read.moment.now, read.moment.zone);
+        default: throw new Error('unclaimed readout operation');
+      }
+    }
+    case 'TrainingHistory': {
+      const history = new TrainingHistory(read);
+      const method = f.string('method');
+      const body = /** @type {Record<string, (...args: any[]) => Json>} */ (/** @type {unknown} */ (history))[method];
+      assert.equal(typeof body, 'function', `unclaimed history read ${method}`);
+      assert.ok(body);
+      return body.apply(history, vector.input.input.args);
+    }
+    default: throw new Error(`unclaimed training read ${vector.input.read}`);
+  }
+}
+
+/** @param {any} input @returns {Json} */
+function unitsForm(input) {
+  const value = input.value;
+  const units = GymUnits.reading(input.units);
+  switch (input.operation) {
+    case 'ladder': return { labels: [...WeightLadder.labels(value)], down: WeightLadder.bump(value, -1), downBig: WeightLadder.bump(value, -1, true),
+      up: WeightLadder.bump(value, 1), upBig: WeightLadder.bump(value, 1, true) };
+    case 'round': return { rounded: WeightLadder.round(value) };
+    case 'grid': return { rounded: WeightLadder.onGrid(value) };
+    case 'reps': return { down: WeightLadder.bumpReps(value, -1), up: WeightLadder.bumpReps(value, 1) };
+    case 'display': return { value: units.display(value) };
+    case 'input': return { value: units.kilograms(value) };
+    case 'estimate': return { text: Readout.estimate(value, units) };
+    case 'weight': return { text: Readout.weight(value, units) };
+    default: throw new Error(`unclaimed units operation ${input.operation}`);
+  }
+}
+
 /** @type {Record<string, (vector: Vector) => unknown>} */
 const handlers = {
   [valuesFile]: (vector) => corpus.value(vector),
+  'gym/domain/training-reads.json': (vector) => corpus.read(vector, Session.scope, (read) => trainingReadsForm(vector, read)),
+  'gym/domain/units.json': (vector) => unitsForm(vector.input),
   'gym/domain/notes-actions.json': (vector) => {
     const input = vector.input.input;
     if (vector.input.action === 'MoveNote') {
@@ -157,16 +241,26 @@ const handlers = {
 };
 
 test('the gym corpus is closed: each file is claimed or explicitly pending', (t) => {
-  const claimed = [rulesFile, ...Object.keys(handlers)].sort();
-  const files = [...Contract.files('gym'), 'gym-ladder.json'].sort();
+  const claimed = [rulesFile, ladderFile, ...Object.keys(handlers)].sort();
+  const files = [...Contract.files('gym'), ladderFile].sort();
   assert.equal(new Set([...claimed, ...pending]).size, claimed.length + pending.length, 'a file is claimed twice or still pending');
   assert.deepEqual([...claimed, ...pending].sort(), files);
-  assert.ok(pending.length <= 5, 'the W2 + W3 pending set can only shrink');
+  assert.ok(pending.length <= 2, 'the W5a pending set can only shrink');
   for (const path of [rulesFile, valuesFile, 'gym/domain/bodyweight-actions.json', 'gym/domain/preferences-actions.json', 'gym/rules/bodyweight.json']) assert.ok(claimed.includes(path), `W1 claim regressed: ${path}`);
   assert.ok(claimed.includes('gym/domain/notes-actions.json'), 'W2 notes claim regressed');
   for (const path of ['gym/domain/catalogue-actions.json', 'gym/domain/routines-actions.json']) assert.ok(claimed.includes(path), `W3 claim regressed: ${path}`);
-  const count = Object.keys(handlers).reduce((total, path) => total + Contract.vectors(path).length, 0);
+  for (const path of ['gym/domain/training-reads.json', 'gym/domain/units.json', ladderFile]) assert.ok(claimed.includes(path), `W5a claim regressed: ${path}`);
+  const ladder = /** @type {{weightCases: Json[], roundCases: Json[], repCases: Json[]}} */ (Contract.json(ladderFile));
+  const count = Object.keys(handlers).reduce((total, path) => total + Contract.vectors(path).length, 0)
+    + ladder.weightCases.length + ladder.roundCases.length + ladder.repCases.length;
   t.diagnostic(`gym corpus: ${claimed.length}/${files.length} files, ${count} vectors, ${pending.length} pending files`);
+});
+
+test('gym-ladder.json runs byte for byte through the domain weight ladder', () => {
+  const ladder = /** @type {{weightCases: any[], roundCases: any[], repCases: any[]}} */ (Contract.json(ladderFile));
+  for (const { weight, ...expect } of ladder.weightCases) assert.equal(jcs(unitsForm({ operation: 'ladder', value: weight })), jcs(expect));
+  for (const { value, ...expect } of ladder.roundCases) assert.equal(jcs(unitsForm({ operation: 'round', value })), jcs(expect));
+  for (const { reps, ...expect } of ladder.repCases) assert.equal(jcs(unitsForm({ operation: 'reps', value: reps })), jcs(expect));
 });
 
 test('the complete nine-entity gym rule book equals the pinned bytes', () => RuleBookParity.check(book, rulesFile));

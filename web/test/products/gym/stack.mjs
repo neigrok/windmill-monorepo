@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -14,7 +14,6 @@ import { createGymApi } from '../../../src/products/gym/gymSync.js';
 import { environment } from '../../platform/sync/fakes.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
-const fixturePath = fileURLToPath(new URL('./rest-parity.fixture.json', import.meta.url));
 const day = 86400000;
 
 export async function waitUntil(check, { processes = [], timeout = 15000, interval = 50, label = 'condition' } = {}) {
@@ -52,21 +51,8 @@ export async function stopOwnedServer({ child, port }, listener, { kill = proces
   assert.equal(listener(port), '', `port ${port} remained occupied after shutdown`);
 }
 
-async function compareParity(fixture) {
-  const { projectGym } = await import('../../../src/products/gym/syncProjections.js');
-  const failures = [];
-  for (const sample of fixture.samples) {
-    const view = projectGym(fixture.rows, { now: sample.now ?? fixture.now, timeZone: 'UTC' });
-    try { assert.deepEqual(await view[sample.method](...sample.args), sample.expected); }
-    catch (error) { failures.push({ method: sample.method, args: sample.args, error }); }
-  }
-  return { passed: fixture.samples.length - failures.length, total: fixture.samples.length, failures };
-}
-
 async function run() {
   const binDir = resolve(process.argv[2] ?? join(root, 'backend/build'));
-  const capture = process.argv.includes('--capture');
-  const parityOnly = process.argv.includes('--parity');
   const database = `${process.env.WM_E2E_DB_PREFIX ?? 'wm_web_'}gym_${process.pid}`;
   const backendPort = Number(process.env.WM_E2E_PORT ?? 8094);
   const webPort = Number(process.env.WM_E2E_WEB_PORT ?? 5181);
@@ -182,56 +168,81 @@ async function run() {
         ({ id, exerciseId, setNumber, weightKg, reps, rpe: rpe ?? null, note, completedAt })) });
     await pushFromPhone();
 
-    const fixture = { now, timeZone: 'UTC', wireRows: [], rows: [], samples: [] };
+    const wireRows = [];
     let cursor = null;
     do {
       const reply = await request('/v1/sync/pull', { sync: true, body: { scopes: [{ scope: 'self/gym', cursor }] } });
       const page = reply.pages[0];
       assert.equal(page.kind, 'rows', 'the seeded gym is readable over sync');
-      fixture.wireRows.push(...page.rows);
+      wireRows.push(...page.rows);
       cursor = page.more ? page.cursor : null;
     } while (cursor !== null);
-    const persisted = await BrowserSyncEngine.open({ ...environment().options, registry });
+    const env = environment();
+    env.timers.time = now;
+    const persisted = await BrowserSyncEngine.open({ ...env.options, registry });
     try {
       await persisted.write(null, (device) => {
-        for (const row of fixture.wireRows) device.activeReplica.putConfirmed('self/gym', row);
+        const replica = device.activeReplica;
+        for (const row of wireRows) replica.putConfirmed('self/gym', row);
+        replica.cursors['self/gym'] = { ...replica.cursorOf('self/gym'), booted: true };
       }, ['self/gym']);
-      fixture.rows = persisted.observe('self/gym').getSnapshot().drawn;
+      const reads = createGymApi(persisted, { event() {}, failure(operation) { assert.fail(`domain read failed: ${operation}`); },
+        zone: { offsetSeconds: () => 0 } });
+      assert.equal((await reads.exercises()).find(({ id }) => id === 'back-squat').name, 'Fixture Squat');
+      assert.deepEqual(await reads.preferences(), { units: 'kg', restSeconds: 180, restSound: false, confirmHaptic: false, confirmSound: true });
+      assert.deepEqual((await reads.notes()).map(({ id, title, body }) => ({ id, title, body })), [
+        { id: 'note_fixture_a', title: 'Fixture goal', body: 'Synthetic fixture note' },
+        { id: 'note_fixture_b', title: 'Fixture cue', body: '' },
+      ]);
+      assert.equal((await reads.bodyweight()).latest.weightKg, 79.55);
+      assert.deepEqual((await reads.routines()).map(({ id }) => id), ['rt_fixture_main', 'rt_fixture_other']);
+      assert.deepEqual((await reads.routine('rt_fixture_main')).entries[0].sets, ramp);
+      assert.equal((await reads.proposal('prop_fixture_settled')).state, 'applied');
+      assert.deepEqual((await reads.proposals({ state: 'pending' })).map(({ id }) => id), ['prop_fixture_pending']);
+      assert.deepEqual((await reads.sessions()).map(({ id, setCount, workingSetCount, tonnageKg }) => ({ id, setCount, workingSetCount, tonnageKg })), [
+        { id: 'ses_fixture_3', setCount: 3, workingSetCount: 3, tonnageKg: 1160 },
+        { id: 'ses_fixture_2', setCount: 3, workingSetCount: 2, tonnageKg: 840 },
+        { id: 'ses_fixture_1', setCount: 3, workingSetCount: 2, tonnageKg: 400 },
+      ]);
+      assert.deepEqual((await reads.sessions({ limit: 1 })).map(({ id }) => id), ['ses_fixture_3']);
+      for (const index of [1, 2, 3]) {
+        assert.deepEqual(await reads.session(`ses_fixture_${index}`), await request(`/v1/gym/sessions/ses_fixture_${index}`));
+        const review = await reads.review(`ses_fixture_${index}`);
+        assert.equal(review.stats.workingSets, index === 3 ? 3 : 2);
+        assert.equal(review.slight, true);
+      }
+      assert.deepEqual((await reads.history({ timeZone: 'UTC' })).summary, { sessions: 3, sets: 7, reps: 50, tonnageKg: 2400 });
+      assert.deepEqual((await reads.history({ exercise: 'back-squat', timeZone: 'UTC' })).sessions.map(({ id }) => id), ['ses_fixture_3', 'ses_fixture_1']);
+      assert.deepEqual((await reads.history({ routine: 'rt_fixture_other', timeZone: 'UTC' })).sessions.map(({ id }) => id), ['ses_fixture_2']);
+      const firstPage = await reads.history({ limit: 1, timeZone: 'UTC' });
+      assert.deepEqual(firstPage.sessions.map(({ id }) => id), ['ses_fixture_3']);
+      assert.deepEqual(firstPage.next, { before: now - 5 * day, beforeId: 'ses_fixture_3' });
+      const last = await reads.lastTime('back-squat');
+      assert.equal(last.session.id, 'ses_fixture_3');
+      assert.deepEqual(last.sets.map(({ weightKg, reps }) => ({ weightKg, reps })), [{ weightKg: 85, reps: 5 }, { weightKg: 82.5, reps: 6 }]);
+      assert.deepEqual(await reads.lastTime('deadlift'), { exerciseId: 'deadlift' });
+      assert.deepEqual(await reads.lastSets(), [
+        { exerciseId: 'back-squat', weightKg: 82.5, reps: 6, at: now - 5 * day },
+        { exerciseId: 'bench-press', weightKg: 30, reps: 12, at: now - 12 * day },
+        { exerciseId: 'ex_fixture_custom', weightKg: 24, reps: 10, at: now - 5 * day },
+        { exerciseId: 'pull-up', weightKg: -10, reps: 8, at: now - 20 * day },
+      ]);
+      const squat = await reads.record('back-squat');
+      assert.equal(squat.sessionCount, 2);
+      assert.equal(squat.bestE1rm.e1rm, 85 * (1 + 5 / 30));
+      assert.equal(squat.heaviest.weightKg, 85);
+      assert.equal((await reads.record('pull-up')).bestE1rm, undefined);
+      assert.equal((await reads.record('deadlift')).sessionCount, 0);
+      const progress = await reads.progress();
+      assert.deepEqual(progress.sessions.map(({ sessionId }) => sessionId), ['ses_fixture_1', 'ses_fixture_2', 'ses_fixture_3']);
+      assert.equal(progress.sessions[2].movements.find(({ exerciseId }) => exerciseId === 'back-squat').estimate.e1rm, squat.bestE1rm.e1rm);
+      assert.equal(await reads.session('ses_fixture_missing'), null);
+      assert.equal(await reads.routine('rt_fixture_missing'), null);
+      assert.equal(await reads.proposal('prop_fixture_missing'), null);
+      console.log(JSON.stringify({ gate: 'Domain reads over backend sync rows', sessions: 3, sets: 9, rows: wireRows.length }));
     } finally { persisted.close(); }
-    const samples = [
-      ['exercises', [], '/exercises', 'exercises'], ['lastSets', [], '/exercises/last', 'movements'],
-      ['preferences', [], '/preferences'], ['notes', [], '/notes', 'notes'], ['bodyweight', [], '/bodyweight'],
-      ['routines', [], '/routines', 'routines'], ['routine', ['rt_fixture_main'], '/routines/rt_fixture_main'], ['routine', ['rt_fixture_other'], '/routines/rt_fixture_other'],
-      ['proposals', [], '/proposals', 'proposals'], ['proposals', [{ state: 'pending' }], '/proposals?state=pending', 'proposals'],
-      ['proposal', ['prop_fixture_pending'], '/proposals/prop_fixture_pending'], ['proposal', ['prop_fixture_settled'], '/proposals/prop_fixture_settled'],
-      ['sessions', [], '/sessions', 'sessions'], ['sessions', [{ limit: 1 }], '/sessions?limit=1', 'sessions'],
-      ['history', [{ timeZone: 'UTC' }], '/history?timeZone=UTC'], ['history', [{ exercise: 'back-squat', timeZone: 'UTC' }], '/history?exercise=back-squat&timeZone=UTC'],
-      ['history', [{ limit: 1, timeZone: 'UTC' }], '/history?limit=1&timeZone=UTC'],
-      ['history', [{ routine: 'rt_fixture_main', timeZone: 'UTC' }], '/history?routine=rt_fixture_main&timeZone=UTC'],
-      ['progress', [], '/stats?projection=progress'], ['stats', [], '/stats'],
-      ['lastTime', ['back-squat'], '/last?exercise=back-squat'], ['lastTime', ['pull-up'], '/last?exercise=pull-up'], ['lastTime', ['deadlift'], '/last?exercise=deadlift'],
-      ['record', ['back-squat'], '/exercises/back-squat/record'], ['record', ['pull-up'], '/exercises/pull-up/record'], ['record', ['ex_fixture_custom'], '/exercises/ex_fixture_custom/record'], ['record', ['deadlift'], '/exercises/deadlift/record'],
-      ...[1, 2, 3].flatMap((index) => [['session', [`ses_fixture_${index}`], `/sessions/ses_fixture_${index}`], ['review', [`ses_fixture_${index}`], `/sessions/ses_fixture_${index}/review`]]),
-      ['session', ['ses_fixture_missing'], '/sessions/ses_fixture_missing'], ['routine', ['rt_fixture_missing'], '/routines/rt_fixture_missing'], ['proposal', ['prop_fixture_missing'], '/proposals/prop_fixture_missing'],
-    ];
-    for (const [method, args, path, key] of samples) {
-      const body = await request(`/v1/gym${path}`);
-      const expected = key ? body[key] : body;
-      fixture.samples.push({ method, args, ...(expected?.asOf ? { now: expected.asOf } : {}), expected });
-    }
-    assert.equal(fixture.samples.length, 36, 'strict gym parity covers every comparison');
-    const parity = await compareParity(fixture);
-    console.log(JSON.stringify({ gate: 'REST parity', passed: parity.passed, total: parity.total, failedMethods: [...new Set(parity.failures.map(({ method }) => method))] }));
-    for (const failure of parity.failures) console.error(failure.error.message);
-    assert.equal(parity.failures.length, 0, `REST parity failed ${parity.failures.length}/${parity.total} comparisons`);
-    if (capture) {
-      writeFileSync(fixturePath, `${JSON.stringify(fixture, null, 2)}\n`);
-      console.log(JSON.stringify({ gate: 'REST fixture capture', projections: new Set(samples.map(([method]) => method)).size, comparisons: samples.length, rows: fixture.rows.length }));
-      completed = true;
-      return;
-    }
 
-    if (!parityOnly) {
+    {
       const vite = start(process.execPath, [join(root, 'web/node_modules/vite/bin/vite.js'), join(root, 'web'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webPort, { VITE_API_BASE_URL: base });
       await waitUntil(async () => { try { return (await fetch(origin, { signal: AbortSignal.timeout(1000) })).ok; } catch { return false; } }, { processes: [vite, backend], label: 'vite readiness' });
       browser = await chromium.launch({ headless: true });

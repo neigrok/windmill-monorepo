@@ -1,11 +1,12 @@
 import { Draft } from '../../platform/domain-kit/drafts.js';
-import { Fields, Id } from '../../platform/domain-kit/entities.js';
-import { Placement } from '../../platform/domain-kit/reading.js';
+import { DecodeError, Fields, Id } from '../../platform/domain-kit/entities.js';
+import { Placement, Reader, Views } from '../../platform/domain-kit/reading.js';
 import { ActionRunner, EngineReplica } from '../../platform/domain-kit/runner.js';
 import { Instant, LocalDay, Moment } from '../../platform/domain-kit/time.js';
 import { Valid } from '../../platform/domain-kit/validation.js';
 import { Violation } from '../../platform/domain-kit/values.js';
 import { CommitError } from '../../platform/sync/client/commit.js';
+import { registry } from '../../platform/sync/schema.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
 import { Bodyweight, DeleteWeighIn, WeighIn, WeighInValue } from './domain/bodyweight.js';
@@ -13,8 +14,9 @@ import { Catalogue, CreateExercise, Exercise, ExerciseValue, RenameExercise, def
 import { GymRefusals } from './domain/gymRules.js';
 import { DeleteNote, MoveNote, Note, NoteRules, NoteValue } from './domain/notes.js';
 import { ChangePreferences, Preferences, PreferencesValue, restSettings } from './domain/preferences.js';
-import { DeleteRoutine, Routine, RoutineValue } from './domain/routines.js';
+import { DeleteRoutine, PlanSnapshot, Routine, RoutineValue } from './domain/routines.js';
 import { SeedExercises } from './domain/seedExercises.js';
+import { TrainingHistory } from './domain/trainingHistory.js';
 import { GymRefusal, isStoreFailure } from './errors.js';
 import { REFUSALS } from './bodyweight/bodyweight.js';
 import { FULL_LINE } from './notes/notes.js';
@@ -39,6 +41,40 @@ export function gymFailure(operation) {
 
 export const deviceZone = { offsetSeconds: (instant) => -new Date(instant.ms).getTimezoneOffset() * 60 };
 export const gymMoment = (now = Date.now()) => new Moment(new Instant(now), deviceZone);
+
+function withoutMalformedPlans(read) {
+  let changed = false;
+  const clean = (records) => new Map([...records].map(([key, record]) => {
+    if (record.t !== 'session') return [key, record];
+    try { PlanSnapshot.decode(Fields.record(record).json('plan')); return [key, record]; }
+    catch (error) {
+      if (!(error instanceof DecodeError)) throw error;
+      changed = true;
+      const { plan, ...f } = record.f;
+      return [key, { ...record, f }];
+    }
+  }));
+  const drawn = clean(read.views.drawn); const stored = clean(read.views.stored);
+  return changed ? new Reader(new Views(read.registry, { ...read.views, drawn, stored }), SCOPE, read.moment) : null;
+}
+
+function readGym(load, body, failure) {
+  let read;
+  try { return load((reader) => { read = reader; return body(reader); }); }
+  catch (error) {
+    if (!(error instanceof GymRefusal)) failure('projection');
+    if (read && error instanceof DecodeError) {
+      const repaired = withoutMalformedPlans(read);
+      if (repaired) return body(repaired);
+    }
+    throw error;
+  }
+}
+
+export function gymReadView(snapshot, { now = Date.now(), zone = deviceZone, failure = gymFailure } = {}) {
+  return readGym((body) => body(new Reader(Views.ofRecords(registry, snapshot), SCOPE, new Moment(new Instant(now), zone))),
+    (reader) => new TrainingHistory(reader), failure);
+}
 
 // A projection's named zone uses the same Moment as a live device's zone.
 export function namedZone(timeZone) {
@@ -164,10 +200,7 @@ export function createGymRuntime(engine, { event = gymStep, failure = gymFailure
       throw error;
     }
   };
-  const read = (body) => {
-    try { return runner.read(SCOPE, body); }
-    catch (error) { if (!(error instanceof GymRefusal)) failure('projection'); throw error; }
-  };
+  const read = (body) => readGym((loaded) => runner.read(SCOPE, loaded), body, failure);
   const saveRoutine = async (operation, draft) => {
     const saved = await runner.save(draft, GymRefusals);
     if (saved.result.kind === 'failed') throw saved.result.error;

@@ -9,7 +9,10 @@ import {
 import { MovementPicker } from '../logger/MovementPicker.jsx';
 import { mintId } from '../mint.js';
 import { useGymRead } from '../useGymRead.js';
+import { useDomainRead } from '../useDomainRead.js';
 import { useGymApi } from '../gymSync.js';
+import { Session, SessionRules, TrainingSet } from '../domain/training.js';
+import { sessionDocument } from '../domain/trainingHistory.js';
 import { UNDO_LABEL } from '../withheld.js';
 import {
   collapses, draftFromRoutine, freeDraft, importOf, inTheLogLine, isOverLimit,
@@ -130,6 +133,10 @@ function ReadFailed({ back, onRetry, children }) {
 
 function PastWorkout({ opening, back, log, noRoutines = false }) {
   const api = useGymApi();
+  const stored = useDomainRead((read) => {
+    const sets = read.repository(TrainingSet).all('stored');
+    return read.repository(Session).all('stored').map((session) => sessionDocument(SessionRules.drawn(session, sets, read.moment.now)));
+  });
   // One clock for the life of the form, so the same form always builds the same request.
   const [now] = useState(() => Date.now());
   const [sessionId] = useState(() => mintId('ses_'));
@@ -161,8 +168,8 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
   }, [dropWithheld]);
 
   const settled = log.gone('session');
-  const sessions = log.summaries.filter((summary) => !settled.has(summary.id));
-  const running = log.session ?? sessions.find((summary) => !isFinished(summary)) ?? null;
+  const sessions = (stored.data ?? []).filter((summary) => !settled.has(summary.id));
+  const running = sessions.find((summary) => !isFinished(summary)) ?? null;
   const fallback = defaultSlot({ day, now, sessions, open: running });
   // No default fits the day: the time row stands open, waiting for a start.
   const opened = clock ?? (fallback ? null : { hour: null, minute: null, minutes: DEFAULT_MINUTES });

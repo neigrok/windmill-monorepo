@@ -70,7 +70,7 @@ test('the pound is defined in exactly one file in this product', () => {
   const carriers = sourceFiles(GYM)
     .filter((file) => /0\.45359237|2\.204\d*|2\.2046/.test(fs.readFileSync(file, 'utf8')))
     .map((file) => path.relative(GYM, file));
-  assert.deepEqual(carriers, ['units.js']);
+  assert.deepEqual(carriers, ['domain/units.js']);
 });
 
 test('only the spelling and the weigh-in call the conversion, and no module that writes a set imports it', () => {
