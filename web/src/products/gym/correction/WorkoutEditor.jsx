@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
 import { failureReason } from '../errors.js';
-import { useGymApi } from '../gymSync.js';
+import { useGymApi } from '../gymRuntime.js';
 import { dayLabel, fmtKg, groupByExercise, NO_ROUTINE, routineNameOf, sessionHref, shortDayLabel } from '../log.js';
 import { mintId } from '../mint.js';
 import { workoutTotals } from '../logbook/history.js';

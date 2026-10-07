@@ -8,7 +8,7 @@ import {
   sourceLabel, stateChip, summaryLine, TURN_DOWN_VERB,
 } from './proposals.js';
 import { useGymRead } from './useGymRead.js';
-import { useGymApi } from './gymSync.js';
+import { useGymApi } from './gymRuntime.js';
 import './coach/coach.css';
 
 export function ProposalPreview({ routine, onExpand, log }) {

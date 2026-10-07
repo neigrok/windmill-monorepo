@@ -2,18 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle, textOf } from '../harness.mjs';
 
-test('a refused correction retains the native date and set draft, then permits retry or delete', async (t) => {
+test('a failed correction retains the native date and set draft, then permits retry or delete', async (t) => {
   browserWith();
   const startedAt = new Date(2026, 0, 7, 18, 5).getTime();
   const session = { id: 'ses_correction', startedAt, finishedAt: startedAt + 3600000, routineName: 'Push A' };
   const lifted = { exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 8, kind: 'working', completedAt: startedAt + 60000, note: '' };
   const set = { id: 'set_correction', ...lifted };
-  // The next evening already holds a workout, so moving this one onto it crosses that one.
   const gym = await gymAccount(t, [
     confirmed('session', session.id, { startedAt, finishedAt: session.finishedAt, displayName: 'Push A' }),
     confirmed('set', set.id, { sessionId: session.id, ...lifted }),
-    confirmed('session', 'sessionNext1', { startedAt: new Date(2026, 0, 8, 18, 30).getTime(), finishedAt: new Date(2026, 0, 8, 19, 30).getTime() }),
   ]);
+  const transact = gym.engine.store.transact.bind(gym.engine.store);
+  let refusing = true;
+  gym.engine.store.transact = (change, options = {}) => refusing && !options.readonly
+    ? transact((device) => { change(device); throw new DOMException('storage refused', 'QuotaExceededError'); }, options)
+    : transact(change, options);
   const { WorkoutEditor } = await loadScreen('products/gym/correction/WorkoutEditor.jsx');
   window.location.hash = '#/gym/log/ses_correction/edit';
   const view = renderHook(t, () => WorkoutEditor({
@@ -34,9 +37,10 @@ test('a refused correction retains the native date and set draft, then permits r
   assert.equal(field('weightKg').props.value, '62.5');
   assert.deepEqual(findByClass(view.tree, 'gym-workout-local-value').map(textOf), ['8 Jan 2026', '18:05']);
   assert.equal(findByClass(view.tree, 'gym-short-discard')[0].props.disabled, false);
-  assert.equal(textOf(findByClass(view.tree, 'gym-read-failed')[0]), 'these times cross a session already in the log');
+  assert.equal(textOf(findByClass(view.tree, 'gym-read-failed')[0]), 'Those changes didn’t land — this device couldn’t store it.');
 
   // The retry writes the draft the refusal kept.
+  refusing = false;
   field('date').props.onChange({ target: { value: '2026-01-09' } });
   await findByClass(view.tree, 'gym-correction-form')[0].props.onSubmit({ preventDefault() {} });
   await settle();

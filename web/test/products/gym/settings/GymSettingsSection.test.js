@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { KG, LB, spellWeightsIn, weightUnit } from '../../../../src/products/gym/units.js';
-import { createGymApi } from '../../../../src/products/gym/gymSync.js';
+import { createGymApi } from '../../../../src/products/gym/gymRuntime.js';
 import { browserWith, confirmed, elementsOf, gymAccount, loadScreen, renderHook, settle, textOf } from '../harness.mjs';
 
 async function section(t, preferences) {

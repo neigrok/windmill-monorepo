@@ -4,7 +4,7 @@ import { Id } from '../../platform/domain-kit/entities.js';
 import { Back } from './Back.jsx';
 import { Routine, RoutineValue } from './domain/routines.js';
 import { failureReason } from './errors.js';
-import { routineDocument } from './gymRuntime.js';
+import { routineDocument, useGymApi } from './gymRuntime.js';
 import {
   agoLabel, backfillHref, cappedName, entryLabel, FROM_ROUTINE_MENU, isNameOverCap, MOVEMENTS_HREF,
   movementOf, nameCountLabel, nameOfMovement, NEW_ROUTINE_ID, routineHref,
@@ -22,7 +22,6 @@ import {
 } from './routines.js';
 import { useGymRead } from './useGymRead.js';
 import { useDomainRead } from './useDomainRead.js';
-import { useGymApi } from './gymSync.js';
 import { TargetEditor } from './planning/TargetEditor.jsx';
 import './planning/planning.css';
 

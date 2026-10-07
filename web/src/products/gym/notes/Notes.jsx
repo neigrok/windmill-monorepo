@@ -10,9 +10,8 @@ import { CoachNavigation } from '../coach/CoachNavigation.jsx';
 import { COACH_TITLE } from '../coach/coach.js';
 import { useRail } from '../rail.js';
 import { useDomainRead } from '../useDomainRead.js';
-import { useGymApi } from '../gymSync.js';
+import { useGymApi, noteDraft, notesDocument } from '../gymRuntime.js';
 import { Note, NoteRules } from '../domain/notes.js';
-import { noteDraft, notesDocument } from '../gymRuntime.js';
 import {
   ADD_VERB, byteCountLabel, DELETE_VERB, firstLineOf, FULL_LINE, HEAD_LINE, HONESTY_LINE,
   noteRefusal, NOTES_FAILED, NOTES_TITLE,

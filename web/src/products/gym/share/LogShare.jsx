@@ -11,7 +11,7 @@ import { mintId } from '../mint.js';
 import { ProgressCards } from '../progress/Progress.jsx';
 import { consistencyLine } from '../progress/progress.js';
 import { useGymRead } from '../useGymRead.js';
-import { useGymApi } from '../gymSync.js';
+import { useGymApi } from '../gymRuntime.js';
 import { logShareDescription, logShareRequest, publicLogHref, shareHistoryScope, sharedSetScheme, shareDateLabel } from './logShare.js';
 import { gymApi } from '../gymApi.js';
 import './logShare.css';

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { NOTES_HREF } from '../../../../src/products/gym/log.js';
-import { createGymApi } from '../../../../src/products/gym/gymSync.js';
+import { createGymApi } from '../../../../src/products/gym/gymRuntime.js';
 import { FULL_LINE } from '../../../../src/products/gym/notes/notes.js';
 import {
   browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle, textOf,

@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Button } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import { failureReason } from './errors.js';
-import { routineFromWorkout } from './gymRuntime.js';
+import { routineFromWorkout, useGymApi } from './gymRuntime.js';
 import { Session, SessionRules, TrainingSet } from './domain/training.js';
 import { sessionDocument } from './domain/trainingHistory.js';
 import {
@@ -15,7 +15,6 @@ import { NAME_IT_TO_SAVE_IT } from './routines.js';
 import { ShareWorkout } from './share/ShareWorkout.jsx';
 import { useGymRead } from './useGymRead.js';
 import { useDomainRead } from './useDomainRead.js';
-import { useGymApi } from './gymSync.js';
 
 export function FinishScreen({ id, log }) {
   const api = useGymApi();

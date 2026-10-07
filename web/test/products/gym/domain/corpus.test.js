@@ -16,7 +16,8 @@ import { Preferences, PreferencesValue, SavePreferences, restSettings } from '..
 import { ApplyProposal, DismissProposal, Proposal, ProposalState, ProposeRoutine, RoutineCreation, changesBetween } from '../../../../src/products/gym/domain/proposals.js';
 import { DeleteRoutine, PlanSnapshot, ReorderRoutines, Routine, RoutineEntry, RoutineValue, SaveRoutine, SetTarget } from '../../../../src/products/gym/domain/routines.js';
 import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises.js';
-import { Session } from '../../../../src/products/gym/domain/training.js';
+import { Session, SessionRules, SetRules, TrainingSet } from '../../../../src/products/gym/domain/training.js';
+import { AppendSet, CorrectedSet, CorrectSession, CorrectSet, DeleteSet, DiscardSession, FinishSession, ImportedSet, ImportSession, StartSession } from '../../../../src/products/gym/domain/trainingActions.js';
 import { TrainingHistory } from '../../../../src/products/gym/domain/trainingHistory.js';
 import { GymEstimate, Prefill, Readout, TrainingLog } from '../../../../src/products/gym/domain/trainingReads.js';
 import { GymUnits, WeightLadder } from '../../../../src/products/gym/domain/units.js';
@@ -32,9 +33,8 @@ const corpus = new ProductCorpus(book, GymRules.spec);
 const rulesFile = 'gym/domain/rules.json';
 const valuesFile = 'gym/domain/values.json';
 const ladderFile = 'gym-ladder.json';
-const pending = [
-  'gym/domain/training-actions.json',
-];
+/** @type {string[]} */
+const pending = [];
 
 /** @param {{ day: LocalDay, kg: number }} value */
 const entryForm = (value) => ({ day: value.day.text, kg: value.kg });
@@ -157,6 +157,69 @@ function unitsForm(input) {
 /** @type {Record<string, (vector: Vector) => unknown>} */
 const handlers = {
   [valuesFile]: (vector) => corpus.value(vector),
+  'gym/domain/training-actions.json': (vector) => {
+    const input = vector.input.input;
+    const f = Fields.object(input);
+    if (vector.input.read) return corpus.read(vector, Session.scope, (read) => {
+      switch (vector.input.read) {
+        case 'TrainingLog': {
+          const log = new TrainingLog(read);
+          const id = f.ref('sessionId', Session);
+          return { sessions: log.drawnSessions.map((value) => ({ id: value.id.json, fields: value.fields() })),
+            sets: log.setsFor(id).map((value) => ({ id: value.id.json, fields: { ...value.fields(),
+              ...(value.setNumber === null ? {} : { setNumber: value.setNumber }) } })),
+            open: log.open?.id.json ?? null, liveHint: log.liveHint, volumeKg: log.volumeKg(id), topE1rm: log.topE1rm(id) };
+        }
+        case 'SessionRules': {
+          const session = input.session ? Session.decode(Fields.values('session', input.session.id, input.session.fields)) : null;
+          if (f.string('operation') === 'canStartAt') return SessionRules.canStartAt(f.instant('startedAt'), read.moment.now);
+          assert.ok(session);
+          switch (f.string('operation')) {
+            case 'drawn': {
+              const value = SessionRules.drawn(session, read.repository(TrainingSet).all('drawn'), read.moment.now);
+              return { id: value.id.json, fields: value.fields() };
+            }
+            case 'crosses': return SessionRules.crosses(f.instant('startedAt'), f.instant('finishedAt'), session);
+            case 'canFinishAt': return SessionRules.canFinishAt(session, f.instant('finishedAt'));
+            default: throw new Error(`unclaimed session rule ${input.operation}`);
+          }
+        }
+        case 'SetRules': return SetRules.nextNumber(read.repository(TrainingSet).all('stored'), f.ref('sessionId', Session), f.ref('exerciseId', Exercise));
+        default: throw new Error(`unclaimed training action read ${vector.input.read}`);
+      }
+    });
+    switch (vector.input.action) {
+      case 'StartSession': return corpus.decision(StartSession({ id: f.ref('id', Session), routineId: f.optionalRef('routineId', Routine),
+        startedAt: f.optionalInstant('startedAt') }), vector, (id) => id.json, refusalForm);
+      case 'FinishSession': return corpus.decision(FinishSession({ id: f.ref('id', Session), finishedAt: f.optionalInstant('finishedAt') }), vector, () => null, refusalForm);
+      case 'AppendSet': return corpus.decision(AppendSet(TrainingSet.decode(Fields.values('set', input.set.id, input.set.fields))), vector, (id) => id.json, refusalForm);
+      case 'CorrectSet': return corpus.decision(CorrectSet(TrainingSet.decode(Fields.values('set', input.set.id, input.set.fields))), vector, () => null, refusalForm);
+      case 'DiscardSession': return corpus.decision(DiscardSession(f.ref('id', Session)), vector, () => null, refusalForm);
+      case 'DeleteSet': return corpus.decision(DeleteSet(f.ref('id', TrainingSet)), vector, () => null, refusalForm);
+      case 'ImportSession': {
+        const sets = input.sets.map((/** @type {any} */ raw) => {
+          const s = Fields.object(raw);
+          return new ImportedSet({ id: s.ref('id', TrainingSet), exerciseId: s.ref('exerciseId', Exercise), weightKg: s.double('weightKg'),
+            reps: s.int('reps'), completedAt: s.instant('completedAt'), kind: s.optionalString('kind'), rpe: s.optionalDouble('rpe'),
+            note: s.optionalString('note'), rpeNamed: Object.hasOwn(raw, 'rpe') });
+        });
+        return corpus.decision(ImportSession({ id: f.ref('id', Session), startedAt: f.instant('startedAt'), finishedAt: f.instant('finishedAt'),
+          sets, routineId: f.optionalRef('routineId', Routine) }), vector, (id) => id.json, refusalForm);
+      }
+      case 'CorrectSession': {
+        const sets = input.sets.map((/** @type {any} */ raw) => {
+          const s = Fields.object(raw);
+          return new CorrectedSet({ id: s.ref('id', TrainingSet), exerciseId: s.ref('exerciseId', Exercise), setNumber: s.int('setNumber'),
+            weightKg: s.double('weightKg'), reps: s.int('reps'), completedAt: s.instant('completedAt'), rpe: s.optionalDouble('rpe'),
+            note: s.optionalString('note'), rpeNamed: Object.hasOwn(raw, 'rpe'), kind: s.optionalString('kind') });
+        });
+        return corpus.decision(CorrectSession({ id: f.ref('sessionId', Session), requestId: f.string('requestId'), startedAt: f.instant('startedAt'),
+          finishedAt: f.instant('finishedAt'), routineName: f.optionalString('routineName'), sets, preserveOtherSets: input.preserveOtherSets === true }),
+        vector, () => null, refusalForm);
+      }
+      default: throw new Error(`unclaimed training action ${vector.input.action}`);
+    }
+  },
   'gym/domain/training-reads.json': (vector) => corpus.read(vector, Session.scope, (read) => trainingReadsForm(vector, read)),
   'gym/domain/units.json': (vector) => unitsForm(vector.input),
   'gym/domain/notes-actions.json': (vector) => {
@@ -293,17 +356,18 @@ const handlers = {
   }),
 };
 
-test('the gym corpus is closed: each file is claimed or explicitly pending', (t) => {
+test('the gym corpus is closed: every file is claimed and nothing is pending', (t) => {
   const claimed = [rulesFile, ladderFile, ...Object.keys(handlers)].sort();
   const files = [...Contract.files('gym'), ladderFile].sort();
   assert.equal(new Set([...claimed, ...pending]).size, claimed.length + pending.length, 'a file is claimed twice or still pending');
   assert.deepEqual([...claimed, ...pending].sort(), files);
-  assert.ok(pending.length <= 1, 'the pending set can only shrink');
+  assert.deepEqual(pending, [], 'the completed gym domain has no pending files');
   for (const path of [rulesFile, valuesFile, 'gym/domain/bodyweight-actions.json', 'gym/domain/preferences-actions.json', 'gym/rules/bodyweight.json']) assert.ok(claimed.includes(path), `W1 claim regressed: ${path}`);
   assert.ok(claimed.includes('gym/domain/notes-actions.json'), 'W2 notes claim regressed');
   for (const path of ['gym/domain/catalogue-actions.json', 'gym/domain/routines-actions.json']) assert.ok(claimed.includes(path), `W3 claim regressed: ${path}`);
   for (const path of ['gym/domain/training-reads.json', 'gym/domain/units.json', ladderFile]) assert.ok(claimed.includes(path), `W5a claim regressed: ${path}`);
   assert.ok(claimed.includes('gym/domain/proposals-actions.json'), 'W4 proposals claim regressed');
+  assert.ok(claimed.includes('gym/domain/training-actions.json'), 'W5b training actions claim regressed');
   const ladder = /** @type {{weightCases: Json[], roundCases: Json[], repCases: Json[]}} */ (Contract.json(ladderFile));
   const count = Object.keys(handlers).reduce((total, path) => total + Contract.vectors(path).length, 0)
     + ladder.weightCases.length + ladder.roundCases.length + ladder.repCases.length;

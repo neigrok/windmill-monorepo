@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSyncRecords } from '../../platform/sync/react.js';
-import { useGymApi } from './gymSync.js';
+import { useGymApi } from './gymRuntime.js';
 
 export function useDomainRead(read, inputs = []) {
   const api = useGymApi();

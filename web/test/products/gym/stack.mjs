@@ -10,7 +10,7 @@ import { chromium } from 'playwright';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { registry } from '../../../src/platform/sync/schema.js';
 import { HttpTransport } from '../../../src/platform/sync/transport.js';
-import { createGymApi } from '../../../src/products/gym/gymSync.js';
+import { createGymApi } from '../../../src/products/gym/gymRuntime.js';
 import { environment } from '../../platform/sync/fakes.js';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -162,6 +162,11 @@ async function run() {
         sets: sets.map(([exerciseId, weightKg, reps, kind], setIndex) => ({ id: `set_fixture_${index}_${setIndex}`, exerciseId, weightKg, reps, kind,
           rpe: kind === 'working' ? 8.5 : null, note: 'Fixture set note', completedAt: startedAt + (setIndex + 1) * 600000 })) });
     }
+    await pushFromPhone();
+    await waitUntil(async () => {
+      await pullToPhone();
+      return (await phoneGym.session('ses_fixture_3')).sets.every((set) => set.setNumber != null);
+    }, { processes: [backend], label: 'imported set serial admission' });
     const corrected = await phoneGym.session('ses_fixture_3');
     await phoneGym.correctSession('ses_fixture_3', { requestId: 'fix_fixture_3', startedAt: corrected.session.startedAt, finishedAt: corrected.session.finishedAt,
       routineName: 'Fixture corrected name', sets: corrected.sets.map(({ id, exerciseId, setNumber, weightKg, reps, rpe, note, completedAt }) =>
@@ -302,6 +307,21 @@ async function run() {
       assert.ok(imported.session.finishedAt <= Date.now());
       assert.ok(commandsSeen.includes('gym.importSession'), 'backfill must use the engine command'); e2e++;
 
+      const recoveredSet = { id: 'set_fixture_recovery', exerciseId: 'bench-press', setNumber: 1,
+        weightKg: 20, reps: 8, completedAt: imported.session.startedAt + 1, kind: 'warmup', rpe: 6, note: 'Recovered set' };
+      await page.evaluate(async ({ id, startedAt, finishedAt, set }) => {
+        const { syncSession } = await import('/src/platform/sync/session.js');
+        const { createGymApi } = await import('/src/products/gym/gymRuntime.js');
+        await createGymApi(syncSession.engine).correctSession(id, { requestId: 'fix_fixture_recovery', startedAt, finishedAt,
+          routineName: null, sets: [set], preserveOtherSets: true });
+      }, { ...imported.session, set: recoveredSet });
+      await waitUntil(async () => (await request(`/v1/gym/sessions/${importedId}`)).sets.length === imported.sets.length + 1,
+        { processes: [vite, backend], label: 'additive recovery convergence' });
+      const recovered = await request(`/v1/gym/sessions/${importedId}`);
+      assert.deepEqual(recovered.sets.filter((set) => set.id !== recoveredSet.id), imported.sets);
+      assert.deepEqual(recovered.sets.find((set) => set.id === recoveredSet.id), recoveredSet);
+      assert.ok(commandsSeen.includes('gym.correctSession')); e2e++;
+
       await goto('#/gym/log');
       await page.getByRole('button', { name: 'Weigh in', exact: true }).first().click();
       await page.getByRole('textbox', { name: 'Bodyweight in kg' }).fill('81,234');
@@ -347,7 +367,7 @@ async function run() {
       }), { processes: [vite, backend], label: 'visible removal receipt acknowledgment' }); e2e++;
       assert.ok(commandsSeen.includes('gym.applyProposal') && commandsSeen.includes('gym.dismissProposal'));
 
-      await waitUntil(() => sql(`SELECT count(DISTINCT props->>'operation') FROM events WHERE user_id='${account}' AND name='gym_action' AND props->>'operation' IN ('routine-save','session-import','bodyweight-save','preferences-save','proposal-apply','proposal-dismiss') AND props->>'outcome'='saved-local';`) === '6',
+      await waitUntil(() => sql(`SELECT count(DISTINCT props->>'operation') FROM events WHERE user_id='${account}' AND name='gym_action' AND props->>'operation' IN ('routine-save','session-import','session-correct','bodyweight-save','preferences-save','proposal-apply','proposal-dismiss') AND props->>'outcome'='saved-local';`) === '7',
         { processes: [vite, backend], label: 'gym product telemetry' });
       const writeLog = readFileSync(join(temporary, 'stack.log'), 'utf8');
       assert.ok(writeLog.includes('"operation":"sync.push"'), 'engine admission must emit its write log');
@@ -376,7 +396,7 @@ async function run() {
       assert.deepEqual(pageErrors, []);
       assert.deepEqual(gymRequests.filter((request) => request !== 'GET /v1/gym/threads'), [], 'web mirror and engine writes must use no replaced REST door');
       await context.close();
-      console.log(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 11, pending: 0, persistedGymOperations: 6, syncWriteLog: true, ports: [backendPort, webPort] }));
+      console.log(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 12, pending: 0, persistedGymOperations: 7, syncWriteLog: true, ports: [backendPort, webPort] }));
     }
     completed = true;
   } catch (error) {
@@ -394,7 +414,7 @@ async function run() {
           replicaState: engine?.device.activeReplica.meta.state, online: engine?.online, leader: engine?.leader };
       }).catch(() => null);
       console.error(JSON.stringify({ browserErrors: pageErrors, url: lastPage.url(), sync }));
-      console.error(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 11, status: 'failed' }));
+      console.error(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 12, status: 'failed' }));
     }
     throw error;
   } finally {

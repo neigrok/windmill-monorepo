@@ -363,7 +363,7 @@ test('a lifter’s time that ends after now reads as running past now, and Save 
   assert.equal(saveButton(view.tree).props['aria-disabled'], false);
 });
 
-test('the store’s own overlap refusal — the log moved under the form — is drawn like the form’s, until the time moves', async (t) => {
+test('a workout arriving after the form read leaves overlap admission to the server', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();
   const gym = await pushAAccount(t);
@@ -373,15 +373,13 @@ test('the store’s own overlap refusal — the log moved under the form — is 
   await gym.land(confirmed('session', 'sessionPhone', { startedAt: at(24, 11, 50), finishedAt: at(24, 12, 40), plan: { routine: 'Legs', entries: [] } }));
   saveButton(view.tree).props.onClick();
   await settle();
-  assert.deepEqual(findByClass(view.tree, 'gym-past-refusal-body').map(textOf), [
-    'Legs · today · 11:50 – 12:40 is already in the log. One visit is one session — if sets are missing from it, add them there instead.',
-  ]);
-  assert.deepEqual(findByClass(view.tree, 'gym-past-refusal-open').map((link) => link.props.href), ['#/gym/session/sessionPhone']);
-  assert.deepEqual([textOf(saveButton(view.tree)), saveButton(view.tree).props['aria-disabled']], ['Save · 9 sets', true]);
-  assert.deepEqual(said, []);
-  findByClass(view.tree, 'gym-past-refusal-fix')[0].props.onClick();
   assert.deepEqual(findByClass(view.tree, 'gym-past-refusal'), []);
-  assert.deepEqual(gym.owed(), [], 'the refused workout is not in the log, and changing the time writes nothing');
+  assert.deepEqual([textOf(saveButton(view.tree)), saveButton(view.tree).props['aria-disabled']], ['Saved · 9 sets', true]);
+  assert.deepEqual(said, [], 'the Saved beat precedes the room announcement');
+  const [command] = imported(gym);
+  assert.deepEqual(gym.owed(), [`ready gym.importSession ${command.id}`]);
+  assert.equal(command.sets.length, 9);
+  assert.equal(gym.engine.observe('self/gym').getSnapshot().stored.find((row) => row.id === 'sessionPhone').life[0], 'alive');
 });
 
 test('a press the browser could not keep is pressed again with the same request, ids and all, and lands once', async (t) => {

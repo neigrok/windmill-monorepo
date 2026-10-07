@@ -8,7 +8,7 @@ import { backOf, NEVER_LOGGED, NEVER_LOGGED_LINE, RENAME_PROOF, recordView, rena
 import { recordProgress } from './progress/progress.js';
 import { MovementChart } from './progress/Progress.jsx';
 import { useGymRead } from './useGymRead.js';
-import { useGymApi } from './gymSync.js';
+import { useGymApi } from './gymRuntime.js';
 import { useDomainRead } from './useDomainRead.js';
 
 // `from` is where the record was opened (log.js `recordFromOf`); its back link returns there.

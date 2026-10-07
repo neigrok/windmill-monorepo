@@ -17,7 +17,7 @@ import { useGymRead } from './useGymRead.js';
 import { useDomainRead } from './useDomainRead.js';
 import { Session, TrainingSet } from './domain/training.js';
 import { setDocument, TrainingHistory } from './domain/trainingHistory.js';
-import { useGymApi } from './gymSync.js';
+import { useGymApi } from './gymRuntime.js';
 import { collapsedScheme, emptyHistoryLine, historyHref, historyQuery, historyScope, historyTotals, withoutRows, workoutTotals, yearsOf } from './logbook/history.js';
 import { useHistory, useHistoryDates } from './logbook/useHistory.js';
 import { DateJump } from './logbook/DateJump.jsx';
@@ -232,7 +232,7 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
       setMoves((current) => new Map(current).set(set.id, stored));
       closeFix();
     } catch (error) {
-      if (error.code === 'unknown-record') { closeFix(); reread(); say(fixFailure(error)); return null; }
+      if (['unknown-record', 'record-dead'].includes(error.code)) { closeFix(); reread(); say(fixFailure(error)); return null; }
       return fixFailure(error);
     }
   };

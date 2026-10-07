@@ -73,14 +73,14 @@ test('the pound is defined in exactly one file in this product', () => {
   assert.deepEqual(carriers, ['domain/units.js']);
 });
 
-test('only the spelling and the weigh-in call the conversion, and no module that writes a set imports it', () => {
+test('only the spelling and the weigh-in call the conversion, and training actions and drafts never import it', () => {
   const callers = sourceFiles(GYM)
     .filter((file) => /\binDisplayUnit\b/.test(fs.readFileSync(file, 'utf8')))
     .map((file) => path.relative(GYM, file))
     .sort();
   assert.deepEqual(callers, ['bodyweight/bodyweight.js', 'log.js', 'progress/progress.js', 'units.js']);
 
-  const writers = ['gymSync.js', 'backfill/draft.js', 'fix.js', 'routines.js', 'logger/entry.js', 'mint.js'];
+  const writers = ['domain/trainingActions.js', 'backfill/draft.js', 'fix.js', 'routines.js', 'logger/entry.js', 'mint.js'];
   const reaching = writers.filter((file) => /from '\.\.?\/?[a-z/]*units\.js'/.test(read(file)));
   assert.deepEqual(reaching, []);
 

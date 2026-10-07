@@ -265,7 +265,7 @@ test('a number as the row draws it, as it is typed, and as ↑ and ↓ step it',
   assert.deepEqual([steppedValue(8, 'reps', 1), steppedValue(1, 'reps', -1), steppedValue(null, 'reps', 1), steppedValue(99, 'reps', 1)], [9, 1, 1, 99]);
 });
 
-test('importOf — one request built from the form alone: the span, the routine, and set ids that are the session’s own', () => {
+test('importOf — domain input from the form: the span, the routine, and stable set identities', () => {
   const draft = withValueSet(draftFromRoutine({
     id: 'rt_legs',
     name: 'Legs',

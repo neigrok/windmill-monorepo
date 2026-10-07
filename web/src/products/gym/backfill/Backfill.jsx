@@ -10,7 +10,7 @@ import { MovementPicker } from '../logger/MovementPicker.jsx';
 import { mintId } from '../mint.js';
 import { useGymRead } from '../useGymRead.js';
 import { useDomainRead } from '../useDomainRead.js';
-import { useGymApi } from '../gymSync.js';
+import { useGymApi } from '../gymRuntime.js';
 import { Session, SessionRules, TrainingSet } from '../domain/training.js';
 import { sessionDocument } from '../domain/trainingHistory.js';
 import { UNDO_LABEL } from '../withheld.js';

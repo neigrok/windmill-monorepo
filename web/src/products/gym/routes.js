@@ -4,8 +4,7 @@
 import { lazy } from 'react';
 import { gymLandingHead } from './marketing/landingHead.js';
 import { sharedLogTokenOf, sharedTokenOf } from './log.js';
-import { gymLiveHint } from './gymSync.js';
-import { gymProposalResult } from './gymRuntime.js';
+import { gymLiveHint, gymProposalResult } from './gymRuntime.js';
 
 const importGymApp = () => import('./GymApp.jsx').then((m) => ({ default: m.GymApp }));
 const GymApp = lazy(importGymApp);

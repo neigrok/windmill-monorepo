@@ -13,8 +13,11 @@ workout and log shares use their REST doors in `gymApi.js`; a Coach conversation
 room's own clock, and when the room unmounts or the document hides it is dropped unsent and the
 conversation stays. The account gate remains in `GymApp`.
 
-Every local gym read uses the domain kit through `gymRuntime.js`. Training entities and rules live in
-`domain/training.js`; `trainingReads.js` owns prefill, last time, records and chart windows, and
+Every local gym read and write uses the domain kit through `gymRuntime.js`. Training entities and rules live in
+`domain/training.js`; `trainingActions.js` owns imports, corrections, set deletion and the four phone-only
+actions. The web remains a live mirror and does not call StartSession, AppendSet, FinishSession or DiscardSession.
+Correction and backfill helpers parse fields and arrange draft rows into domain inputs.
+`trainingReads.js` owns prefill, last time, records and chart windows, and
 `trainingHistory.js` composes history, reviews and screen documents.
 Proposal values and decisions live in `domain/proposals.js`; their shared domain reads supply
 the proposal screen and routine history. Removal receipts survive sync and restart until shown.
@@ -50,8 +53,12 @@ their idle deadline. Each training read indexes sets by session and caches progr
 come from one chronological pass. Equal cent-load estimate scores keep the earliest record, and
 bodyweight repetition records remain independent of assisted and loaded sets.
 Creation and proposal chronology use the confirmed record's authoritative `rc` envelope. Command
-predictions persist per-exercise set numbers, correction removals and replacement numbers, and
-routine deaths from removal proposals through offline restart.
+predictions persist workout fields, correction removals and routine deaths from removal proposals
+through offline restart. Set numbers arrive with server admission; a pending correction retains the
+confirmed number until then. Import and correction plans preserve raw numbers and optional-key
+presence; predictions and committed commands use their declared numeric quantum. Additive corrections use
+`preserveOtherSets` to keep unnamed sets, their kinds and concurrent changes. Overlap, future-time
+and open-session admission are server-decided.
 The composition is schema v6 with minimum v4. Routine `revision` and `createdEntries`, proposal
 `baseRevision`, `baseName` and `changeCount`, and note `updatedAt` come from server-authored registers.
 Editors never write them. Note positions are zero-based; a move writes the moved note's `ord` alone,
@@ -75,16 +82,18 @@ unresolved notices.
 Gym tests run through the existing `npm test`, `npm run test:sync` and `npm run build` scripts.
 The full suite runs performance cases after the parallel test workers exit. Training reads cover
 250 and 1,000 populated workouts, requiring unchanged renders to reuse their results within 25 ms CPU.
-The gym domain claims 12 of 13 corpus files and 461 vectors, compared by JCS and with reversed record
+The gym domain claims all 13 corpus files and 587 vectors, compared by JCS and with reversed record
 order. Training reads claim 112 vectors (including 36 promoted REST samples and 22 regression cases),
-proposals claim 44, units claim 57 and the weight ladder claims 36. Training actions remain pending.
+proposals claim 44, units claim 57 and the weight ladder claims 36. Training actions claim 126;
+nothing remains pending. Harness tests exercise adopted-workout Finish, held set deletion and Undo,
+failed commits, command refusals, raw receipt replay and additive correction recovery.
 Screen tests run over a real browser engine for a signed-in account (`gymAccount` in
 `test/products/gym/harness.mjs`) and assert what the account still owes the server. Shared training
 reads run on web, Swift and Kotlin. The local stack checks domain reads over an actual disposable
-backend account and persisted browser-engine observations. Chromium acceptance has eleven checks: a phone replica's `gym.start`, set and `gym.finish`
-pushes arrive live; web routine edits, backfills, weigh-ins and unit changes converge; a held weigh-in delete can be
+backend account and persisted browser-engine observations. Chromium acceptance has twelve checks: a phone replica's `gym.start`, set and `gym.finish`
+pushes arrive live; web routine edits, backfills, additive recovery, weigh-ins and unit changes converge; a held weigh-in delete can be
 undone; proposal dismissal and routine removal settle with receipts; the cached log survives an offline reload.
-Six product operations reach event intake and sync writes emit their log.
+Seven product operations reach event intake and sync writes emit their log.
 Run domain-read and local-stack Playwright checks with:
 
 ```

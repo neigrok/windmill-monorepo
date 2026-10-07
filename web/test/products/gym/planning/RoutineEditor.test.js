@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ROUTINES_HREF } from '../../../../src/products/gym/log.js';
-import { createGymApi } from '../../../../src/products/gym/gymSync.js';
+import { createGymApi } from '../../../../src/products/gym/gymRuntime.js';
 import { browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle, textOf } from '../harness.mjs';
 
 function button(tree, label) {

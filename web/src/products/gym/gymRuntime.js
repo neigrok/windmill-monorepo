@@ -1,14 +1,17 @@
+import { useMemo } from 'react';
 import { Decision } from '../../platform/domain-kit/actions.js';
 import { Draft } from '../../platform/domain-kit/drafts.js';
 import { DecodeError, Fields, Id } from '../../platform/domain-kit/entities.js';
 import { Placement, Reader, Views } from '../../platform/domain-kit/reading.js';
 import { Refused } from '../../platform/domain-kit/refusals.js';
 import { ActionRunner, EngineReplica } from '../../platform/domain-kit/runner.js';
+import { Remove } from '../../platform/domain-kit/standardActions.js';
 import { Instant, LocalDay, Moment } from '../../platform/domain-kit/time.js';
 import { Valid } from '../../platform/domain-kit/validation.js';
 import { Violation } from '../../platform/domain-kit/values.js';
 import { CommitError } from '../../platform/sync/client/commit.js';
 import { registry } from '../../platform/sync/schema.js';
+import { useSyncEngine, useSyncRecords } from '../../platform/sync/react.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
 import { Bodyweight, DeleteWeighIn, WeighIn, WeighInValue } from './domain/bodyweight.js';
@@ -20,7 +23,9 @@ import { DeleteRoutine, PlanSnapshot, Routine, RoutineValue } from './domain/rou
 import { AcknowledgeRoutineRemoval, ApplyProposalKeepingReceipt, DismissProposal, Proposal,
   REMOVAL_RECEIPTS, removalReceipts } from './domain/proposals.js';
 import { SeedExercises } from './domain/seedExercises.js';
-import { proposalDocument, proposalsDocument, TrainingHistory } from './domain/trainingHistory.js';
+import { proposalDocument, proposalsDocument, setDocument, TrainingHistory } from './domain/trainingHistory.js';
+import { Session, TrainingSet } from './domain/training.js';
+import { CorrectedSet, CorrectSession, CorrectSet, DeleteSet, ImportedSet, ImportSession } from './domain/trainingActions.js';
 import { GymRefusal, isStoreFailure } from './errors.js';
 import { REFUSALS } from './bodyweight/bodyweight.js';
 import { FULL_LINE } from './notes/notes.js';
@@ -107,6 +112,11 @@ export function gymRefusalError(refused) {
     return new GymRefusal('invalid', { sentence });
   }
   if (refused.kind === 'future') return new GymRefusal('bad-instant', { sentence: REFUSALS.future });
+  if (refused.kind === 'badInstant') return new GymRefusal('bad-instant', { sentence: 'These times run outside the workout.' });
+  if (refused.kind === 'sessionOpen') return new GymRefusal('session-open', { sentence: 'that session is still running' });
+  if (refused.kind === 'sessionOverlap') return new GymRefusal('session-overlap', {
+    sentence: 'these times cross a session already in the log', overlapping: refused.refused.detail?.session ?? null,
+  });
   if (refused.kind === 'full' && refused.type === 'note') return new GymRefusal('cap', { sentence: FULL_LINE });
   if (refused.kind === 'proposalSuperseded') return new GymRefusal('proposal-superseded', { sentence: 'That proposal has been superseded.' });
   if (refused.kind === 'proposalSettled') return new GymRefusal('proposal-settled', { sentence: 'That proposal has already been settled.' });
@@ -192,7 +202,7 @@ export function noteDraft(note) {
     : Draft.opening(new NoteValue(id, note.title, note.body));
 }
 
-export function createGymRuntime(engine, { event = gymStep, failure = gymFailure, zone = deviceZone } = {}) {
+export function createGymApi(engine, { event = gymStep, failure = gymFailure, zone = deviceZone } = {}) {
   const owner = engine.activeReplica();
   if (shownRemovals.get(engine)?.owner !== owner) shownRemovals.set(engine, { owner, proposals: new Map() });
   const shown = shownRemovals.get(engine).proposals;
@@ -222,6 +232,12 @@ export function createGymRuntime(engine, { event = gymStep, failure = gymFailure
     }
   };
   const read = (body) => readGym((loaded) => runner.read(SCOPE, loaded), body, failure);
+  const remove = (action) => boundary('delete', async () => {
+    const outcome = await runner.run(action);
+    if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
+    event('delete', outcome.kind === 'committed' ? 'held' : 'unchanged');
+    return outcome.kind === 'committed' ? outcome.receipt.gestureId : null;
+  });
   const saveRoutine = async (operation, draft) => {
     const saved = await runner.save(draft, GymRefusals);
     if (saved.result.kind === 'failed') throw saved.result.error;
@@ -257,6 +273,63 @@ export function createGymRuntime(engine, { event = gymStep, failure = gymFailure
   });
   return {
     read,
+    ...Object.fromEntries(['exercises', 'sessions', 'session', 'review', 'routines', 'routine',
+      'history', 'progress', 'record', 'lastTime', 'lastSets', 'stats'].map((name) => [name, async (...args) => read((reader) => {
+      const source = name === 'history' && args[0]?.timeZone
+        ? new Reader(reader.views, SCOPE, new Moment(reader.moment.now, namedZone(args[0].timeZone))) : reader;
+      const history = new TrainingHistory(source);
+      const document = history[name](...args);
+      return name === 'history' && args[0]?.projection === 'progress'
+        ? { ...document, progress: history.progressIn(args[0]) } : document;
+    })])),
+    importSession: (input) => boundary('session-import', async () => {
+      const id = new Id(input.id, Session);
+      const outcome = await runner.run(ImportSession({ id, startedAt: new Instant(input.startedAt), finishedAt: new Instant(input.finishedAt),
+        routineId: input.routineId == null ? null : new Id(input.routineId, Routine),
+        sets: input.sets.map((set) => new ImportedSet({ ...set, id: new Id(set.id, TrainingSet), exerciseId: new Id(set.exerciseId, Exercise),
+          completedAt: new Instant(set.completedAt), rpeNamed: Object.hasOwn(set, 'rpe') })) }));
+      if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
+      event('session-import', outcome.kind === 'committed' ? 'saved-local' : 'unchanged');
+      return read((reader) => new TrainingHistory(reader).session(input.id));
+    }),
+    correctSession: (record, input) => boundary('session-correct', async () => {
+      const outcome = await runner.run(CorrectSession({ ...input, id: new Id(record, Session),
+        startedAt: new Instant(input.startedAt), finishedAt: new Instant(input.finishedAt),
+        sets: input.sets.map((set) => new CorrectedSet({ ...set, id: new Id(set.id, TrainingSet), exerciseId: new Id(set.exerciseId, Exercise),
+          completedAt: new Instant(set.completedAt), rpeNamed: Object.hasOwn(set, 'rpe') })) }));
+      if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
+      event('session-correct', outcome.kind === 'committed' ? 'saved-local' : 'unchanged');
+      return read((reader) => new TrainingHistory(reader).session(record));
+    }),
+    fixSet: (sessionId, record, fix) => boundary('set-correct', async () => {
+      const id = new Id(record, TrainingSet);
+      const outcome = await runner.run({ scope: SCOPE, refusals: GymRefusals,
+        load: (reader) => {
+          const current = reader.repository(TrainingSet).find(id, 'drawn');
+          if (current === null || current.sessionId.record !== sessionId) return null;
+          const value = TrainingSet.decode(Fields.values('set', record, { ...current.fields(), setNumber: current.setNumber, ...fix }));
+          const action = CorrectSet(value);
+          return { action, loaded: action.load(reader) };
+        },
+        decide: (loaded) => loaded === null
+          ? Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-record', id.ref, null, 'predicted')))
+          : loaded.action.decide(loaded.loaded),
+      });
+      if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
+      event('set-correct', outcome.kind === 'committed' ? 'saved-local' : 'unchanged');
+      return read((reader) => setDocument(reader.repository(TrainingSet).find(id, 'drawn')));
+    }),
+    holdDeath: (type, record) => {
+      const entity = { note: Note, routine: Routine, weighin: WeighIn, session: Session, set: TrainingSet }[type];
+      const id = new Id(record, entity);
+      return remove(type === 'set' ? DeleteSet(id) : new Remove(id, GymRefusals));
+    },
+    undoDeath: (gestureId) => boundary('undo', async () => {
+      checkOwner();
+      const undone = await runner.undo(gestureId);
+      event('delete', undone ? 'undone' : 'closed');
+      return undone;
+    }),
     proposals: async (filter) => read((reader) => proposalsDocument(reader, filter)),
     proposal: async (record) => read((reader) => proposal(reader, record)),
     applyProposal: (record) => decideProposal(record, true),
@@ -297,12 +370,7 @@ export function createGymRuntime(engine, { event = gymStep, failure = gymFailure
       event('note-reorder', outcome.kind === 'committed' ? 'saved-local' : 'unchanged');
       return read(notesDocument);
     }),
-    deleteNote: (id) => boundary('delete', async () => {
-      const outcome = await runner.run(DeleteNote(new Id(id, Note)));
-      if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
-      event('delete', outcome.kind === 'committed' ? 'held' : 'unchanged');
-      return outcome.kind === 'committed' ? outcome.receipt.gestureId : null;
-    }),
+    deleteNote: (id) => remove(DeleteNote(new Id(id, Note))),
     createRoutine: (document) => boundary('routine-create', () => {
       const value = routineValue(document);
       return saveRoutine('routine-create', Draft.new(new RoutineValue(value.id)).edit(() => value));
@@ -326,12 +394,7 @@ export function createGymRuntime(engine, { event = gymStep, failure = gymFailure
       event('exercise-rename', outcome.kind === 'committed' ? 'saved-local' : 'unchanged');
       return read((reader) => exerciseDocument(new Catalogue(reader).find(id)));
     }),
-    deleteRoutine: (record) => boundary('delete', async () => {
-      const outcome = await runner.run(DeleteRoutine(new Id(record, Routine)));
-      if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
-      event('delete', outcome.kind === 'committed' ? 'held' : 'unchanged');
-      return outcome.kind === 'committed' ? outcome.receipt.gestureId : null;
-    }),
+    deleteRoutine: (record) => remove(DeleteRoutine(new Id(record, Routine))),
     bodyweight: async (bounds) => read((reader) => bodyweightDocument(reader, bounds)),
     preferences: async () => read(preferencesDocument),
     saveBodyweight: (date, { weightKg }) => boundary('bodyweight-save', async () => {
@@ -350,11 +413,20 @@ export function createGymRuntime(engine, { event = gymStep, failure = gymFailure
       event('preferences-save', outcome.kind === 'committed' ? 'saved-local' : 'unchanged');
       return outcome.result.fields();
     }),
-    deleteBodyweight: (date) => boundary('delete', async () => {
-      const outcome = await runner.run(DeleteWeighIn(new Id(date, WeighIn)));
-      if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
-      event('delete', outcome.kind === 'committed' ? 'held' : 'unchanged');
-      return outcome.kind === 'committed' ? outcome.receipt.gestureId : null;
-    }),
+    deleteBodyweight: (date) => remove(DeleteWeighIn(new Id(date, WeighIn))),
   };
+}
+
+export function useGymApi() {
+  const engine = useSyncEngine();
+  const records = useSyncRecords(SCOPE);
+  const ready = records.firstPullComplete || records.drawn.length > 0;
+  return useMemo(() => engine ? { ...createGymApi(engine), ready } : null, [engine, records.replica, ready]);
+}
+
+// A workout running on a phone keeps the mirror's sync close, until four idle hours close it.
+export function gymLiveHint(engine, replica) {
+  return gymReadView(engine.observe(SCOPE).getSnapshot(), {
+    now: Date.now() + (replica?.meta?.serverOffsetMs ?? 0),
+  }).liveHint();
 }

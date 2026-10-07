@@ -3,7 +3,7 @@ import { Button, Icon, Input } from '../../../design-system/index.js';
 
 import { cappedName, isNameOverCap, nameCountLabel, showsNameCount } from '../log.js';
 import { useGymRead } from '../useGymRead.js';
-import { useGymApi } from '../gymSync.js';
+import { useGymApi } from '../gymRuntime.js';
 import {
   DEFAULT_EQUIPMENT, EQUIPMENT_CHOICES, FEATURED_HEAD, lastSetLabel, lastSetsById, movementOptions,
   TRAINED_WINDOW,

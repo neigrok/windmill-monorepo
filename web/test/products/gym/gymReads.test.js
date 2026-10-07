@@ -1,13 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { gymReadView, namedZone } from '../../../src/products/gym/gymRuntime.js';
-import { createGymApi } from '../../../src/products/gym/gymSync.js';
+import { gymReadView, namedZone, createGymApi, exerciseDocument } from '../../../src/products/gym/gymRuntime.js';
 import { gymAccount } from './harness.mjs';
 
 const readView = (rows, { now = Date.now(), timeZone = 'UTC' } = {}) => gymReadView({ drawn: rows, stored: rows }, { now, zone: namedZone(timeZone) });
 import { SeedExercises } from '../../../src/products/gym/domain/seedExercises.js';
-import { exerciseDocument } from '../../../src/products/gym/gymRuntime.js';
 
 const at = Date.UTC(2026, 8, 21, 18);
 const row = (t, id, fields, extra = {}) => ({ t, id, ...(t === 'prefs' || t === 'exerciseName' ? {} : { life: ['alive', '1000:0:srv'], born: '1000:0:srv' }), f: Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, [value, '1000:0:srv']])), rc: at, ru: at, ...extra });

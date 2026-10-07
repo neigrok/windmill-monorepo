@@ -374,7 +374,7 @@ test('web correction uses plain numeric fields and validates their raw values', 
 });
 
 test('no surface of the fix promises a set back', () => {
-  for (const file of ['fix.js', 'FixSheet.jsx', 'Log.jsx', 'gymSync.js', 'gym.css']) {
+  for (const file of ['fix.js', 'FixSheet.jsx', 'Log.jsx', 'gymRuntime.js', 'gym.css']) {
     const source = speech(file).toLowerCase();
     for (const promise of ['30 days', 'thirty days', 'recoverable', 'restore', 'undelete', 'trash']) {
       assert.equal(source.includes(promise), false, `${file} promises "${promise}"`);
@@ -417,7 +417,7 @@ test('leaving the room retires its UI clocks without sending a REST delete', () 
 test('every re-read of the session lets go of the corrections this screen was holding', () => {
   const source = read('Log.jsx');
   assert.equal(source.includes('const reread = () => {\n    setMoves(new Map());\n    view.retry();\n  };'), true);
-  assert.equal(source.includes("if (error.code === 'unknown-record') { closeFix(); reread();"), true);
+  assert.equal(source.includes("if (['unknown-record', 'record-dead'].includes(error.code)) { closeFix(); reread();"), true);
   assert.equal(source.includes('<Button variant="secondary" size="sm" onClick={reread}>Retry</Button>'), true);
   assert.equal((source.match(/view\.retry/g) ?? []).length, 1);
 });

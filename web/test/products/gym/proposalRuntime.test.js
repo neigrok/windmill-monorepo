@@ -15,7 +15,7 @@ import { Routine, RoutineEntry, SetTarget } from '../../../src/products/gym/doma
 import { Exercise } from '../../../src/products/gym/domain/catalogue.js';
 import { SeedExercises } from '../../../src/products/gym/domain/seedExercises.js';
 import { isStoreFailure } from '../../../src/products/gym/errors.js';
-import { createGymRuntime, gymProposalResult } from '../../../src/products/gym/gymRuntime.js';
+import { createGymApi, gymProposalResult } from '../../../src/products/gym/gymRuntime.js';
 import { environment, until } from '../../platform/sync/fakes.js';
 
 const scope = 'self/gym';
@@ -50,7 +50,7 @@ async function open(t, { removing = true } = {}) {
   let engine = await BrowserSyncEngine.open(options);
   let runtime;
   const compose = () => {
-    runtime = createGymRuntime(engine, {
+    runtime = createGymApi(engine, {
       event: (operation, outcome) => events.push({ operation, outcome }), failure: (operation) => failures.push(operation), zone,
     });
   };
