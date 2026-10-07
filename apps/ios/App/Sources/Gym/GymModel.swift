@@ -137,9 +137,10 @@ final class GymModel {
          Routine.ordered(try read.repository(Routine.self).all(in: .drawn)),
          try read.repository(Note.self).all(in: .drawn), try Bodyweight(read),
          try read.repository(GymPreferences.self).find(ID("prefs"), in: .drawn) ?? GymPreferences(),
-         try readCoachProposals(read), read.isAnonymous, counts, hidden)
+         coach: try Self.readCoachProposals(read), read.isAnonymous, counts, hidden)
       }
-      (log, catalogue, routines, notes, bodyweight, preferences, proposals, isAnonymous, personalCounts, workoutHidden) = snapshot
+      (log, catalogue, routines, notes, bodyweight, preferences, _, isAnonymous, personalCounts, workoutHidden) = snapshot
+      updateCoachProposals(replica: snapshot.coach.replica, receipts: snapshot.coach.receipts, proposals: snapshot.coach.proposals)
       if let runtime {
         let replica = try runtime.storageRead { try $0.device().activeReplica }
         account = replica.meta.state == .bound ? replica.meta.account : nil
