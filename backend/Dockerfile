@@ -21,7 +21,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates curl git cmake make g++ pkg-config python3 \
       libjsoncpp-dev uuid-dev zlib1g-dev libssl-dev libc-ares-dev libbrotli-dev \
-      libpq-dev libcurl4-openssl-dev \
+      libpq-dev libcurl4-openssl-dev postgresql-client \
  && rm -rf /var/lib/apt/lists/*
 
 # Drogon, its pinned release with the patches in third_party/drogon, built by the same script the CMake configure runs
@@ -55,6 +55,7 @@ COPY --from=contract sync/corpus /contract/sync/corpus
 RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWM_API_CONTRACT_DIR=/contract -DWM_DROGON_PREFIX=/opt/drogon \
  && cmake --build build -j"$(nproc)" \
       --target windmill_server windmill_server_test_clock windmill_mcp windmill_mcp_http windmill_server_probe \
+               windmill_rotate_sync_epoch \
                windmill_domain_tests windmill_mcp_tests windmill_adapters_tests windmill_sync_tests
 
 # Tests are self-contained (in-memory fakes, no database) — run them in the build so a
@@ -91,6 +92,7 @@ RUN apt-get update \
 
 COPY --from=build /src/build/windmill_server   /usr/local/bin/windmill_server
 COPY --from=build /src/build/windmill_mcp_http  /usr/local/bin/windmill_mcp_http
+COPY --from=build /src/build/windmill_rotate_sync_epoch /usr/local/bin/windmill_rotate_sync_epoch
 COPY --from=build /src/db/schema.sql            /app/db/schema.sql
 
 WORKDIR /app

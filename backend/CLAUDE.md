@@ -20,7 +20,8 @@ stores, plus gym's server write door and journal's change feed. Each builds into
 Composition roots: `platform/infra/main.cpp` (REST, the collab socket, MCP and the sync engine in one
 process; it builds `windmill_server`, the harness-clocked `windmill_server_test_clock` and the probe's
 `windmill_server_probe`), `mcp_main.cpp` (stdio transport) and `mcp_http_main.cpp` (standalone HTTP
-transport, for local runs).
+transport, for local runs). `rotate_sync_epoch.cpp` is the offline restore tool; its saved epoch
+pair makes a repeated rotation idempotent (`deploy/README.md`).
 
 ## How a product plugs in
 
@@ -46,7 +47,7 @@ receipts and retained journal revisions stay in place.
 ```sh
 cmake -S . -B build                             # RelWithDebInfo by default (CMakeLists.txt:12)
 cmake --build build -j8
-ctest --test-dir build --output-on-failure      # four C++ suites and four script checks (RUNNING.md §7)
+ctest --test-dir build --output-on-failure      # four C++ suites and five script checks (RUNNING.md §7)
 ```
 
 Drogon and libpqxx are the two vendor dependencies, and the configure fails without either. libpqxx

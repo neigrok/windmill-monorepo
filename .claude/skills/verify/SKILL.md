@@ -52,8 +52,8 @@ env -u WM_PG_TEST -u DATABASE_URL -u WM_SYNC_DATABASE_URL \
   ctest --test-dir backend/build --parallel 1 -V
 ```
 
-The four C++ suites are `domain`, `mcp`, `sync` and `adapters`; four script checks cover deployment,
-authentication comparison and log shutdown.
+The four C++ suites are `domain`, `mcp`, `sync` and `adapters`; five script checks cover deployment,
+authentication comparison, log shutdown and the restore epoch tool.
 
 Each binary ends with `N/M cases passed, X stopped before the end, Y skipped, Z assertion(s)
 failed`. Read all four numbers: *skipped* is never a pass, and a case a `REQUIRE` cut short counts

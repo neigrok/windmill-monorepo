@@ -136,6 +136,51 @@ must be public.
   backup policies must be checked on the host and with the provider.
 - **DB shell**: `docker compose exec db psql -U windmill windmill`.
 
+## Restore a database backup
+
+Keep deployments paused and all database writers stopped until this procedure succeeds. Use an
+image compatible with the dump and containing `windmill_rotate_sync_epoch`. From `~/windmill`,
+verify the backup's recorded sha256 and `pg_restore --list` before replacing the database.
+Each actual restore, including another restore of the same dump, needs a fresh random epoch.
+
+```sh
+set -eu
+RESTORE_DUMP="$PWD/backups/<backup>.dump"
+RESTORE_DIR=$(mktemp -d "$PWD/backups/restore-XXXXXXXX")
+openssl rand -hex 16 > "$RESTORE_DIR/new-epoch"
+docker compose stop caddy server migrate
+docker compose exec -T db dropdb -U windmill windmill
+docker compose exec -T db createdb -U windmill -O windmill windmill
+docker compose exec -T db pg_restore -U windmill -d windmill \
+  --single-transaction --exit-on-error --no-owner --no-acl < "$RESTORE_DUMP"
+docker compose run --rm migrate
+docker compose exec -T db psql -U windmill -d windmill -XAt \
+  -v ON_ERROR_STOP=1 -c 'select epoch from sync_meta' > "$RESTORE_DIR/old-epoch"
+docker compose run --rm --no-deps -T server windmill_rotate_sync_epoch \
+  "$(cat "$RESTORE_DIR/old-epoch")" "$(cat "$RESTORE_DIR/new-epoch")" \
+  >> "$RESTORE_DIR/epoch.log" 2>&1
+cat "$RESTORE_DIR/epoch.log"
+test "$(docker compose exec -T db psql -U windmill -d windmill -XAt \
+  -v ON_ERROR_STOP=1 -c 'select epoch from sync_meta')" = "$(cat "$RESTORE_DIR/new-epoch")"
+docker compose up -d server caddy
+```
+
+Keep the restore directory as the receipt. If rotation times out, is interrupted or its answer is
+lost, retry **only the tool command** with those same two saved epochs. It locks `sync_meta` and
+commits one update; concurrent/repeated calls with the same pair return `already-applied` without
+writing. An unexpected current epoch refuses with `epoch-mismatch`. Exit 0 means rotated or already
+applied, 2 means invalid arguments/configuration or a mismatch, and 1 means an unexpected failure.
+On any failure, keep the server stopped; inspect the completion before retrying. Do not regenerate
+the receipt, read a new expected epoch, or rerun `pg_restore` as a rotation retry. Ordinary deploys
+and process restarts never rotate the epoch.
+
+The tool uses `DATABASE_URL` and the server's Sentry settings. It emits a structured
+`sync.epoch.rotate` completion (`ok`, `already-applied`, or a refusal/failure) with duration, without
+credentials or epoch values. Clients see the new epoch on their next sync response, clear cursors
+and staging, re-identify, and rebootstrap. Pending work survives; old-epoch acknowledgements return
+to ready and are replayed (engine spec §7.5). Fully settled server writes newer than the backup are
+lost with that backup; rotation does not reconstruct them.
+
 ## Frontend
 
 The frontend is the `web/` half of this monorepo — a static Vite SPA, no container, no registry.
