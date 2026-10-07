@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { once } from 'node:events';
 import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
@@ -67,7 +68,7 @@ async function prove(order, clocked = false) {
   let clockOffset = 0;
   const now = () => Date.now() + clockOffset;
   const tickServer = () => { if (clocked) writeFileSync(clockPath, String(now())); };
-  let server, engine, port, origin, created = false, passed = false, pausePull = false, pausePush = false;
+  let server, engine, port, origin, created = false, pausePull = false, pausePush = false;
   const commandOptions = { encoding: 'utf8', timeout: 30_000, maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] };
   const run = (command, args, options = {}) => execFileSync(command, args, { ...commandOptions, ...options });
   const sql = (statement) => run('psql', [databaseUrl, '-XAt', '-v', 'ON_ERROR_STOP=1', '-c', statement]).trim();
@@ -94,7 +95,9 @@ async function prove(order, clocked = false) {
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline) {
       if (await condition()) return;
-      if (server && (server.exitCode !== null || server.signalCode !== null)) throw new Error(`${label}: server exited`);
+      if (server && (server.exitCode !== null || server.signalCode !== null)) {
+        throw new Error(`${label}: ${server.spawnfile} exited (code=${server.exitCode}, signal=${server.signalCode})`);
+      }
       await sleep(25);
     }
     throw new Error(`${label}: timed out; failures=${JSON.stringify(failures)} pending=${JSON.stringify(engine ? pending() : [])}`
@@ -121,10 +124,8 @@ async function prove(order, clocked = false) {
       ...(clocked ? { WM_TEST_CLOCK_FILE: clockPath } : {}),
     } });
     closeSync(log);
-    let launchError;
-    server.on('error', (error) => { launchError = error; });
+    await once(server, 'spawn');
     await until('server readiness', async () => {
-      if (launchError) throw launchError;
       try {
         const response = await fetch(`${origin}/v1/sync/hello`, {
           headers: { 'Sync-Schema': String(registry.version) }, signal: AbortSignal.timeout(1000),
@@ -311,6 +312,7 @@ async function prove(order, clocked = false) {
     console.log(`PASS ${label}: applied removal ${outcome}, with no refusal`);
   }
 
+  const errors = [];
   try {
     if (values.port) {
       port = Number(values.port);
@@ -617,19 +619,22 @@ async function prove(order, clocked = false) {
     await recoverPeer(peers[1], newEpoch, true);
     assert.equal(sql(`select born from gym_sessions where id = '${unpredictedSession.id}'`), newUnpredictedBorn);
     assert.equal(replica().confirmedRow(scope, 'session', unpredictedSession.id).born, newUnpredictedBorn);
-    passed = true;
+  } catch (error) {
+    errors.push(error);
   } finally {
-    engine?.close();
-    try { await stopServer(); }
-    finally {
+    try { engine?.close(); } catch (error) { errors.push(error); }
+    try { await stopServer(); } catch (error) { errors.push(error); }
+    try {
       if (created) run('dropdb', [`--maintenance-db=${values['maintenance-db']}`, '--if-exists', '--force', database]);
-      if (passed) rmSync(scratch, { recursive: true, force: true });
-      else {
-        rmSync(dumpPath, { force: true });
-        console.error(`Restore proof failed; server log: ${logPath}`);
-        try { console.error(readFileSync(logPath, 'utf8').slice(-12_000)); } catch {}
-      }
+    } catch (error) { errors.push(error); }
+    if (errors.length) {
+      console.error(`Restore proof failed (${label}); server log: ${logPath}`);
+      try { console.error(readFileSync(logPath, 'utf8') || '(server log is empty)'); }
+      catch (error) { console.error(`Could not read server log: ${error.message}`); }
+      rmSync(dumpPath, { force: true });
+      throw errors.length === 1 ? errors[0] : new AggregateError(errors, 'Restore proof and cleanup failed');
     }
+    rmSync(scratch, { recursive: true, force: true });
   }
 }
 
