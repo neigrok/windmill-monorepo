@@ -146,7 +146,7 @@ test('governing-type index reads omit unrelated product rows and preserve them o
   store.close();
 });
 
-test('every version-one row survives migration and a second open', async () => {
+for (const blocked of [false, true]) test(`every version-one row survives ${blocked ? 'an abandoned blocked open, retry' : 'migration'} and a second open`, async () => {
   const indexedDB = new IDBFactory();
   const { records, expected } = versionOneFixture();
   const database = await new Promise((resolve, reject) => {
@@ -161,7 +161,38 @@ test('every version-one row survives migration and a second open', async () => {
     transaction.oncomplete = resolve;
     transaction.onabort = () => reject(transaction.error);
   });
-  database.close();
+  if (blocked) {
+    let request, abandoned;
+    const opening = IndexedDBStore.open({ indexedDB: { open(name, version) {
+      request = indexedDB.open(name, version);
+      request.addEventListener('upgradeneeded', () => { abandoned = request.result; });
+      return request;
+    } }, name: 'migration', newReplicaId: () => assert.fail('existing device must survive') });
+    try {
+      await assert.rejects(opening, /sync storage blocked/);
+      const finished = new Promise((resolve) => {
+        request.addEventListener('success', () => resolve('success'));
+        request.addEventListener('error', () => resolve(request.error.name));
+      });
+      database.close();
+      assert.equal(await finished, 'AbortError');
+      assert.throws(() => abandoned.transaction('records'), { name: 'InvalidStateError' });
+      const original = await new Promise((resolve, reject) => {
+        const read = indexedDB.open('migration', 1);
+        read.onsuccess = () => resolve(read.result);
+        read.onerror = () => reject(read.error);
+      });
+      try {
+        const retained = await new Promise((resolve, reject) => {
+          const transaction = original.transaction('records');
+          const read = transaction.objectStore('records').getAll();
+          transaction.oncomplete = () => resolve(read.result);
+          transaction.onabort = () => reject(transaction.error);
+        });
+        assert.deepEqual(retained, records.toSorted((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+      } finally { original.close(); }
+    } finally { database.close(); abandoned?.close(); }
+  } else database.close();
   for (let opened = 0; opened < 2; opened++) {
     const store = await IndexedDBStore.open({ indexedDB, name: 'migration', newReplicaId: () => assert.fail('existing device must survive') });
     try {
@@ -170,4 +201,40 @@ test('every version-one row survives migration and a second open', async () => {
       assert.equal((await store.read([{ scope: 'self/probe', type: 'card' }])).measurement.rowReads, 12);
     } finally { store.close(); }
   }
+});
+
+test('a rejected open closes a late successful connection without initializing it', async () => {
+  const indexedDB = new IDBFactory();
+  const database = await new Promise((resolve, reject) => {
+    const request = indexedDB.open('late-success', 2);
+    request.onupgradeneeded = () => request.result.createObjectStore('records');
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  const request = { result: database };
+  try {
+    const opening = IndexedDBStore.open({ indexedDB: { open: () => request }, name: 'late-success',
+      newReplicaId: () => assert.fail('a rejected open must not initialize storage') });
+    request.onblocked();
+    await assert.rejects(opening, /sync storage blocked/);
+    request.onsuccess();
+    assert.throws(() => database.transaction('records'), { name: 'InvalidStateError' });
+  } finally { database.close(); }
+});
+
+test('versionchange releases every open store so a later upgrade can complete', async () => {
+  const indexedDB = new IDBFactory();
+  const stores = await Promise.all([1, 2].map(() => IndexedDBStore.open({ indexedDB, newReplicaId: () => id })));
+  let upgraded;
+  try {
+    upgraded = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('wm-sync', 3);
+      request.onsuccess = () => { request.result.close(); resolve(request.result); };
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error('open stores did not release their connections'));
+    });
+    assert.equal(upgraded.version, 3);
+    assert.deepEqual(stores.map((store) => store.closed), [true, true]);
+    for (const store of stores) await assert.rejects(store.read(), /sync store closed/);
+  } finally { stores.forEach((store) => store.close()); }
 });
