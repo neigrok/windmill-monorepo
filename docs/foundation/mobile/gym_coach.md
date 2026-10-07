@@ -129,8 +129,8 @@ Each catalog entry declares:
 - **INV-2.** For the same store state and call, every executor writes the same records (type, id
   and field values), apart from stamps and server-assigned `serial` fields.
 - **INV-3.** A result carries no value the replica cannot know. A result never carries a predicted
-  `serial` value: a `serial` field (set numbers) appears only once confirmed (engine D-9,
-  §7.6).
+  `serial` value: set numbers in a result MUST come from confirmed rows, even when engine views
+  overlay local predictions (engine D-9, §7.6).
 - **INV-4.** A read has one projection. The projection MCP receives is the projection Coach
   receives.
 - **INV-5.** Derived reads are shared domain rules computed by every executor from its own store:

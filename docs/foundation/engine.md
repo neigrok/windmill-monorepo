@@ -132,7 +132,7 @@ length (§2.4). A client draws a minted id again while it is taken (§4.4).
 | `fww` | first writer wins (§3.2) |
 | `const` | joins as `fww`; a client writes it only in the create |
 | `time` | a device-reported instant, an integer epoch ms; joins as `const`; clamped at admission (§10.4) |
-| `serial` | an integer assigned by the server at admission; clients never write or predict it |
+| `serial` | an integer assigned by the server at admission; command predictions may overlay it locally, never write it |
 | `text` | a string merged by the server, or replaced by a command (§6.11); clients never join it |
 
 Every field also has:
@@ -1356,9 +1356,10 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
    - A text change names the text it was edited from. The entry keeps that text in `baseTexts`.
      The delta's base is `{rev}` when that text is the confirmed text at that rev; otherwise
      `{text}`.
-   - A command prediction MAY include server-written lattice fields and text. Predicted text
-     folds locally as the proposed text, and is never sent as a delta or entered in the digest.
-     The command's confirmed row supplies its actual text and rev, through the result and pull.
+   - A command prediction MAY include server-written lattice fields, text and serial values.
+     Predicted serials name declared serial fields and MUST be positive safe integers; otherwise
+     the commit throws. Predictions fold locally, never entering wire deltas or the digest.
+     The command's confirmed row supplies its actual text, rev and serials through result and pull.
 5. **Ids.** Minted ids come from a CSPRNG by the type's `mint`, or are seeded (D-8). Label-based
    derived ids come from `derive` (D-26).
 6. **Guards.** `guard` lists registers `(t, id, field)`, and guards exactly those: each becomes
@@ -1699,7 +1700,8 @@ capCount(t) = |{ id : visible(stored(t, id)) }|
 - `drawn` decides what is drawn.
 - `stored` decides caps, guards and write positions (D-25's drop position), so a held delete still
   occupies its slot.
-- Serial values come only from confirmed rows.
+- Serial values start from confirmed rows; command predictions overlay their serial keys in commit
+  order. Entries without serials preserve them, and `stored` excludes held predictions.
 - Unknown fields, and rows of unknown types, are preserved and ignored: a row of an unknown type is
   never visible, and a record of a type with life is visible only while alive.
 - Appendix A may add a product view rule (A.2).
@@ -1730,7 +1732,8 @@ notice of its own, as step 3 states):
 2. **Remove `e`.**
 3. **Fold dependents.** A *dependent* is a delta or command of a later entry that touches, or whose
    `ref` fields, `ref` arguments or key parts name, a record created in `e` (by a delta or by
-   `predict`), that carries unchanged a life register `e` wrote (a keyed put, §7.1 step 4), or that
+   `predict`), that carries unchanged a life register `e` wrote (a keyed put or a command's
+   prediction, §7.1 step 4), or that
    targets a scope whose governing record `e` creates. A reference names a record in the scope its
    type lives in: a product scope, or the tree and overlay scopes of the same tree. Folding is
    transitive: a record a dependent creates, and a life register it writes, make their own

@@ -141,6 +141,44 @@ function inStep() {
 function folds() {
   const script = () => new ServerScript({ device: device(CLIENT_BEHIND), server: server() });
   return [
+    stepsVector('predicted serials and deaths stay local through push and restore confirmed rows on refusal', {
+      device: device({ 'self/probe': [
+        row({ t: 'run', id: 'run00001', life: ['alive', st(1300, 0, 'srv')], born: st(1300, 0, 'srv'), f: { startedAt: [1300, st(1300, 0, 'srv')] }, seq: 3 }),
+        row({ t: 'lap', id: 'lap00001', life: ['alive', st(1400)], born: st(1400), f: { runId: ['run00001', st(1400)], weight: [20, st(1400)] }, v: { no: 1 }, seq: 4 }),
+        row({ t: 'lap', id: 'lap00002', life: ['alive', st(1500)], born: st(1500), f: { runId: ['run00001', st(1500)] }, v: { no: 2 }, seq: 5 }),
+      ] }),
+      steps: [
+        commitStep('self/probe', [], { cmd: { name: 'probe.end', args: { runId: 'run00001', endedAt: 6000 } }, predict: [
+          { op: 'update', t: 'lap', id: 'lap00001', v: { no: 3 } },
+          { op: 'delete', t: 'lap', id: 'lap00002' },
+          { op: 'create', t: 'lap', id: 'lap00003', f: { runId: 'run00001', weight: 30 }, v: { no: Number.MAX_SAFE_INTEGER } },
+        ] }, 5000),
+        { op: 'view', scope: 'self/probe', withHeld: true },
+        { op: 'push', deviceNow: 5001 },
+        { op: 'pushResponse', deviceNow: 5002, response: { status: 200, body: { as: 'A', epoch: 'ep-1', serverTime: 5002,
+          lastN: 1, results: [{ n: 1, s: 'refused', code: 'invalid' }] } } },
+        { op: 'view', scope: 'self/probe', withHeld: true },
+      ],
+    }),
+    ...[false, true].map((predicted) => {
+      const day = { t: 'day', id: '2026-09-01' };
+      const deletion = { op: 'delete', ...day };
+      const cmd = { name: 'probe.end', args: { runId: 'run00001', endedAt: 6000 } };
+      return stepsVector(`refusal of ${predicted ? 'a predicted' : 'an intent'} death folds commands inheriting its life and keeps independent deltas`, {
+        device: device({ 'self/probe': [row({ ...day, life: ['alive', st(1000)], f: { score: [1, st(1000)] }, seq: 1 })] }),
+        steps: [
+          commitStep('self/probe', predicted ? [] : [deletion], predicted ? { cmd, predict: [deletion] } : undefined, 5000),
+          commitStep('self/probe', [{ op: 'put', t: 'day', id: '2026-09-02', f: { score: 9 } }], { cmd, predict: [{ op: 'put', ...day, f: { score: 2 } }] }, 5001),
+          commitStep('self/probe', [], { cmd, predict: [{ op: 'put', ...day, f: { score: 3 } }] }, 5002),
+          { op: 'view', scope: 'self/probe', withHeld: true },
+          { op: 'push', deviceNow: 5003, limit: 1 },
+          { op: 'pushResponse', deviceNow: 5004, response: { status: 200, body: { as: 'A', epoch: 'ep-1', serverTime: 5004,
+            lastN: 1, results: [{ n: 1, s: 'refused', code: 'invalid' }] } } },
+          { op: 'view', scope: 'self/probe', withHeld: true },
+          { op: 'push', deviceNow: 5005, limit: 1 },
+        ],
+      });
+    }),
     script()
       .add(commitStep('self/probe', [newCard('card0009')], undefined, 5000))
       .pushRound({ deviceNow: 5001 })

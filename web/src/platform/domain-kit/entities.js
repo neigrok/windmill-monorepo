@@ -362,7 +362,7 @@ export class Fields {
     return typeof value === 'string' ? value : '';
   }
 
-  // A confirmed serial only (engine §7.6).
+  // A view's serial, including a command prediction (engine §7.6).
   /** @param {string} name */
   serial(name) {
     const value = this.serials[name];

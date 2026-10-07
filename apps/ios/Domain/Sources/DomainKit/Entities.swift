@@ -220,7 +220,7 @@ public struct Fields {
     return text
   }
 
-  // A serial the server confirmed (engine §7.6).
+  // A confirmed serial with any pending command prediction overlaid (engine §7.6).
   public func serial(_ f: String) -> Int? {
     guard case .number(let number)? = serials[f] else { return nil }
     return Int(exactly: number.value)

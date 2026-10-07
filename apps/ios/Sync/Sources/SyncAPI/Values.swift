@@ -126,26 +126,29 @@ public struct Change: Hashable, Sendable {
   public let operation: Operation
   public let values: [String: JSON]
   public let texts: [String: TextEdit]
+  // Server-assigned values for a command's local prediction only.
+  public let serials: [String: JSON]
   public let anchor: OrderAnchor?
 
   public init(type: String, operation: Operation, values: [String: JSON] = [:], texts: [String: TextEdit] = [:],
-              anchor: OrderAnchor? = nil) {
+              serials: [String: JSON] = [:], anchor: OrderAnchor? = nil) {
     self.type = type
     self.operation = operation
     self.values = values
     self.texts = texts
+    self.serials = serials
     self.anchor = anchor
   }
 
   // `anchor`: the D-25 drop position of the order field it names, which `values` then leaves out.
   public static func create(_ type: String, id: NewID = .minted, _ values: [String: JSON] = [:],
-                            texts: [String: TextEdit] = [:], anchor: OrderAnchor? = nil) -> Change {
-    Change(type: type, operation: .create(id), values: values, texts: texts, anchor: anchor)
+                            texts: [String: TextEdit] = [:], serials: [String: JSON] = [:], anchor: OrderAnchor? = nil) -> Change {
+    Change(type: type, operation: .create(id), values: values, texts: texts, serials: serials, anchor: anchor)
   }
 
   public static func update(_ type: String, _ id: RecordID, _ values: [String: JSON] = [:],
-                            texts: [String: TextEdit] = [:]) -> Change {
-    Change(type: type, operation: .update(id), values: values, texts: texts)
+                            texts: [String: TextEdit] = [:], serials: [String: JSON] = [:]) -> Change {
+    Change(type: type, operation: .update(id), values: values, texts: texts, serials: serials)
   }
 
   public static func delete(_ type: String, _ id: RecordID) -> Change {
@@ -158,14 +161,14 @@ public struct Change: Hashable, Sendable {
 
   // A keyed record with life; `present` nil keeps its drawn presence.
   public static func put(_ type: String, _ id: RecordID, present: Bool?, _ values: [String: JSON] = [:],
-                         texts: [String: TextEdit] = [:]) -> Change {
-    Change(type: type, operation: .put(id, present: present), values: values, texts: texts)
+                         texts: [String: TextEdit] = [:], serials: [String: JSON] = [:]) -> Change {
+    Change(type: type, operation: .put(id, present: present), values: values, texts: texts, serials: serials)
   }
 
   // A keyed record without life, or a singleton.
   public static func write(_ type: String, _ id: RecordID, _ values: [String: JSON] = [:],
-                           texts: [String: TextEdit] = [:]) -> Change {
-    Change(type: type, operation: .write(id), values: values, texts: texts)
+                           texts: [String: TextEdit] = [:], serials: [String: JSON] = [:]) -> Change {
+    Change(type: type, operation: .write(id), values: values, texts: texts, serials: serials)
   }
 
   // D-25 one record's order field, at the drop position below the anchor.
@@ -182,7 +185,7 @@ public struct Change: Hashable, Sendable {
 
   public static func == (lhs: Change, rhs: Change) -> Bool {
     lhs.type.utf8.elementsEqual(rhs.type.utf8) && lhs.operation == rhs.operation && lhs.values == rhs.values
-      && lhs.texts == rhs.texts && lhs.anchor == rhs.anchor
+      && lhs.texts == rhs.texts && lhs.serials == rhs.serials && lhs.anchor == rhs.anchor
   }
 
   public func hash(into hasher: inout Hasher) {
@@ -190,6 +193,7 @@ public struct Change: Hashable, Sendable {
     hasher.combine(operation)
     hasher.combine(values)
     hasher.combine(texts)
+    hasher.combine(serials)
     hasher.combine(anchor)
   }
 }

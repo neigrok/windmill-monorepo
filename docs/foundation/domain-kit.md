@@ -435,7 +435,7 @@ public struct Fields {
   public func list<V: ValueObject>(_ f: String, of: V.Type) throws(DecodeError) -> [V]
   public func optionalList<V: ValueObject>(_ f: String, of: V.Type) throws(DecodeError) -> [V]?
   public func text(_ f: String) -> String                         // a text field; "" when unset
-  public func serial(_ f: String) -> Int?                         // confirmed only (engine §7.6)
+  public func serial(_ f: String) -> Int?                         // includes command predictions (engine §7.6)
   public func json(_ f: String) -> JSON?
 }
 public struct DecodeError: Error, Equatable, Sendable {

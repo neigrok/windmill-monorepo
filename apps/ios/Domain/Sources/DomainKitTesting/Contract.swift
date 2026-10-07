@@ -171,7 +171,7 @@ extension Gesture {
 }
 
 extension Change {
-  // `{op, t, id}`, `f` and `x` when non-empty, `present` on a put, `anchor` when set.
+  // `{op, t, id}`, `f`, `x` and `v` when non-empty, `present` on a put, `anchor` when set.
   public var form: JSON {
     var object: JSON.Object = ["t": .string(type), "id": id?.json ?? .null]
     switch operation {
@@ -186,6 +186,7 @@ extension Change {
     case .move: object["op"] = "move"
     }
     if !values.isEmpty { object["f"] = .object(fields: values) }
+    if !serials.isEmpty { object["v"] = .object(fields: serials) }
     if !texts.isEmpty {
       object["x"] = .object(JSON.Object(uniqueKeysWithValues: texts.map { name, edit in
         (name, ["text": .string(edit.text), "from": edit.editedFrom.map { .string($0) } ?? .null])

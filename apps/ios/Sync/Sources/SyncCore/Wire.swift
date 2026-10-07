@@ -376,16 +376,18 @@ public struct TextWrite: Sendable, Hashable {
   public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 }
 
-// D-12 a partial record state: its lattice part, stamped, and its text writes.
+// D-12 a partial record state: its lattice part, stamped, and its text writes; local predictions may carry serials.
 public struct Delta: Sendable, Hashable {
   public var key: RecordKey
   public var lattice: Lattice
   public var texts: [String: TextWrite]
+  public var serials: [String: JSON]
 
-  public init(key: RecordKey, lattice: Lattice = Lattice(), texts: [String: TextWrite] = [:]) {
+  public init(key: RecordKey, lattice: Lattice = Lattice(), texts: [String: TextWrite] = [:], serials: [String: JSON] = [:]) {
     self.key = key
     self.lattice = lattice
     self.texts = texts
+    self.serials = serials
   }
 
   public init(json: JSON) throws {
@@ -393,7 +395,8 @@ public struct Delta: Sendable, Hashable {
     self.init(
       key: RecordKey(try object.member("t").asString(), try RecordID(json: object.member("id"))),
       lattice: try Lattice(json: json),
-      texts: try JSON.map(object["x"]) { try TextWrite(json: $0) })
+      texts: try JSON.map(object["x"]) { try TextWrite(json: $0) },
+      serials: try JSON.map(object["v"]) { $0 })
   }
 
   public var json: JSON {
@@ -402,6 +405,7 @@ public struct Delta: Sendable, Hashable {
     object["life"] = lattice.life?.json
     object["f"] = JSON.object(from: lattice.fields) { $0.json }
     object["x"] = JSON.object(from: texts) { $0.json }
+    object["v"] = JSON.object(from: serials) { $0 }
     return .object(object)
   }
 

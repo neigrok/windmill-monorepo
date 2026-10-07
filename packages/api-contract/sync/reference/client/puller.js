@@ -64,7 +64,7 @@ function covers(replica, entry) {
 
 // One settling transaction of `scope` (§7.5 step 2): the first `count` of the acked entries its stored
 // cursor covers now resolve, in commit order. Answers whether covered entries are left.
-function settle(replica, ctx, scope, count) {
+export function settle(replica, ctx, scope, count) {
   const covered = replica.entries(scope).filter((entry) => covers(replica, entry));
   for (const entry of covered.slice(0, count)) moveEntry(replica, ctx.ended, entry, 'resolve');
   return covered.length > count;
@@ -139,11 +139,11 @@ function receiveRow(replica, ctx, scope, target, row) {
 // confirmed rows with their digest, spent ids and known scopes, their stamps observed. The first chunk
 // of a page requested with the null cursor starts a boot's staging afresh, and a later boot page's
 // chunks join it. `behind` is the last chunk's to decide; until then the rows may be past the cursor.
-function applyChunk(replica, ctx, requested, page, rows, first) {
+export function applyChunk(replica, ctx, requested, page, rows, first) {
   const { scope } = page;
   const record = replica.cursorOf(scope);
   const booting = requested === null || Cursor.decode(requested).m === 'boot';
-  if (first && requested === null && replica.confirmedRows(scope).length > 0) replica.staging[scope] = { rows: {}, digest: ZERO_DIGEST };
+  if (first && requested === null && (replica.confirmedRows(scope).length > 0 || replica.cacheSizes?.[scope] > 0)) replica.staging[scope] = { rows: {}, digest: ZERO_DIGEST };
   replica.cursors[scope] = record;
   const confirmed = { rows: replica.confirmed[scope] ?? {}, digest: record.digest };
   const target = booting && replica.staging[scope] ? replica.staging[scope] : confirmed;
@@ -212,7 +212,7 @@ export function applyPage(replica, ctx, requested, page, budget = { ...WHOLE }, 
 // staging swap, booted), settles the first `count` entries the cursor covers and checks the digest.
 // A page short of its head leaves the scope behind, and one at its head clears it (§2.5
 // CursorRec.behind). Answers whether covered entries are left for settling slices.
-function finishPage(replica, ctx, requested, page, count) {
+export function finishPage(replica, ctx, requested, page, count) {
   const { scope } = page;
   const record = replica.cursors[scope];
   const cursor = Cursor.decode(page.cursor);

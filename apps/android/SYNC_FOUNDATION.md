@@ -110,7 +110,7 @@ python3 tools/schema_gen.py --check
 | Gate | Verified result |
 |---|---|
 | Full build | `./gradlew --max-workers=4 build`: green; 474 tasks. App/platform/gym debug+release assembly and normal lint pass. |
-| Client corpus | 52/52 files, 740/740 cases, 0 unclaimed. All seven protocol transcripts generate requests through Engine, use actual model replies, and compare client returns and final devices/ended/server state. JSONL transcripts each count once. |
+| Client corpus | 52/52 files, 761/761 cases, 0 unclaimed. All seven protocol transcripts generate requests through Engine, use actual model replies, and compare client returns and final devices/ended/server state. JSONL transcripts each count once. |
 | Server corpus | 27 server-role files / 760 cases, plus 7 protocol transcripts. |
 | Kit corpus | 12/12 files, 475/475 cases, 0 unclaimed. Gym domain corpus: 12/12 files, 480 cases. |
 | API and engine | API 13/13; engine 156/156 per debug/release variant, 0 skips/errors/failures. Includes native SQLite on SDK26/27/28/29/35 and transport/runtime failure paths. |
@@ -156,12 +156,9 @@ commits and forbids pushing.
   both; suspected reference omissions because later guards/base-unknown recovery need resolved IDs.
   No supplied vector distinguishes them. No executed shared vector is believed wrong.
 - Removal predictions follow the kit's existing `Prediction.remove` mapping: Delete for
-  minted/derived identities and Put(false) for keyed life. Swift and Kotlin carry inherited life
-  and fold it on refusal/Undo. JS `reference/client/commit.js:67` omits removals' dead life;
-  that reference gap remains outside the Android territory. Keyed predictions
-  are tested with a non-wholePut binding because the registry
-  correctly prohibits commands predicting wholePut types. Shared registries/vectors and SyncAPI
-  are unchanged by the fix pass.
+  minted/derived identities and Put(false) for keyed life. The shared corpus covers predicted life,
+  serial overlays and refusal/Undo folding. Keyed predictions use a non-wholePut binding because
+  the registry prohibits commands predicting wholePut types.
 - `LEAVE_DEBOUNCE_MS` applies to web tabs. Android process-level leave releases holds immediately
   and makes one bounded best-effort push. Product liveHint is injected and defaults false.
 - Journal fuzz seeds old/future content and revision history through server-origin saves.

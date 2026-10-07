@@ -1011,7 +1011,12 @@ is answered for the caller to resume.
   either.
   `retired` lists those gesture ids in commit order; a refused commit retires nothing.
 - `cmd`: `{name, args}`.
-- `predict`: a list of `create` and `update` changes. A prediction may write server fields.
+- `predict`: a list of `create`, `update`, `delete`, `put` and `write` changes, kept locally and never
+  sent. Predictions may write server fields and carry `v: {serialField: value}`; every serial must be
+  a positive safe integer and name a declared serial field. A predicted delete writes only dead life
+  and the drawn born when the type has one (an absent born-bearing record or a lifeless type throws).
+  A predicted keyed put with omitted `present` preserves drawn presence and throws if absent;
+  explicit `present` removes or revives, and a whole put asserting presence writes fresh life.
 - `local`: `{deviceKey: value}`; `null` deletes the row. A key matching none of the product's device
   rows (`keyPattern`) throws.
 - `gestureId`: one that an outbox entry or a notice (`notice:<gestureId>/<k>`) of any replica on the
@@ -1080,7 +1085,9 @@ write-map stamps.
   register (a pending update over a record the server deleted) is not visible and not counted. A
   record of a type the registry does not know is kept and never visible.
 - Drawn folds `ready`, `sent`, `acked` and `held` entries, deltas then predictions, in commit order;
-  stored leaves out `held`.
+  stored leaves out `held`. Predicted serial keys overlay confirmed serials in that order; later
+  deltas without serials preserve them. Refusal or Undo removes the source prediction, and commands
+  whose predictions inherit its life fold with it, retaining their independent intent deltas.
 
 ### commit/*.json
 

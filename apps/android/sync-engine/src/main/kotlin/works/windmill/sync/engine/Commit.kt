@@ -71,11 +71,13 @@ internal class DeltaBuilder(private val engine: Engine, private val replica: Rep
         val key = RecordKey(type.name, id)
         val before = current(key)
         if (prediction) {
+            if (op !is Change.Operation.Create && op !is Change.Operation.Update && op !is Change.Operation.Delete &&
+                op !is Change.Operation.Put && op !is Change.Operation.Write) malformed("prediction-operation")
             if (op is Change.Operation.Delete && !type.life) malformed("delete-life")
             val born = if (!type.hasBorn) null else if (op is Change.Operation.Create) stamp else before?.born ?: malformed("prediction-absent")
+            if (op is Change.Operation.Delete) return Delta(key, Lattice(Life("dead", stamp), born))
             val life = if (!type.life) null else when {
                 op is Change.Operation.Create -> Life("alive", stamp)
-                op is Change.Operation.Delete -> Life("dead", stamp)
                 op is Change.Operation.Put && type.identity == "keyed" -> {
                     if (op.present == null && before == null) malformed("prediction-absent")
                     val previous = before?.life?.isAlive == true
@@ -88,8 +90,13 @@ internal class DeltaBuilder(private val engine: Engine, private val replica: Rep
                 }
                 else -> null
             }
+            for ((name, value) in change.serials) {
+                if (type.fields[name]?.kind != "serial") malformed("not-serial")
+                try { value.long(1) } catch (_: JsonError) { malformed("prediction-serial") }
+            }
             return Delta(key, Lattice(life, born,
-                fields(type, change.values, if (op is Change.Operation.Create) null else before, server = true)), texts(type, id, change.texts, before, server = true))
+                fields(type, change.values, if (op is Change.Operation.Create) null else before, server = true)),
+                texts(type, id, change.texts, before, server = true), change.serials)
         }
         if (op is Change.Operation.Create) {
             if (!type.hasBorn) malformed("not-creatable")

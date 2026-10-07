@@ -64,3 +64,9 @@ projections preserve admission times independently of later reorder writes. Comm
 stamp removals dead and preserve keyed presence when it is omitted. A command carrying an earlier
 prediction's life is dependent on its source: refusal and Undo fold that command while retaining
 unrelated intent deltas. Persisted regressions cover both folds across restart.
+
+Reference parity checks all 24 core/client ports byte for byte after exact encoding-shim substitutions.
+The shared corpus covers serial overlays, keyed prediction presence, and dependent commands on Undo
+and refusal. Swift and Kotlin retain predicted serials in their stored outboxes and views. The copied
+files differ only in their encoding calls/imports and the omitted registry file loader. Browser-only
+modules remain outside the copied core/client inventory.

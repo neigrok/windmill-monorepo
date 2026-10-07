@@ -14,11 +14,11 @@ import { holdsNul, widestAloneBytes } from '../core/wire.js';
 import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
 import { drawn, foldDelta, stored, visibleCount } from './views.js';
 
-// §7.1's failures before the transaction commits: `not-writable`, a replica whose state forbids
-// writes, or `malformed`, a programming error. The in-memory reference has no store failure.
+// §7.1's three failures before the transaction commits: `not-writable`, `malformed` (a programming
+// error) and `store`, the device's store failing to commit, which only the browser engine raises.
 export class CommitError extends Error {
-  constructor(message, kind = 'malformed') {
-    super(message);
+  constructor(message, kind = 'malformed', options = undefined) {
+    super(message, options);
     this.kind = kind;
   }
 }
@@ -63,9 +63,10 @@ class DeltaBuilder {
     }
   }
 
-  // A command's prediction may write server fields and text, and change record presence.
+  // A command's prediction stays local, including deaths and server-assigned serial values.
   predicted(change) {
     const type = this.typeOf(change);
+    if (!['create', 'update', 'delete', 'put', 'write'].includes(change.op)) throw new CommitError('a prediction is a create, update, delete, put or write');
     const current = this.drawnView.get(recordKey(change.t, change.id));
     const delta = { t: change.t, id: change.id };
     if (change.op === 'delete') {
@@ -77,7 +78,6 @@ class DeltaBuilder {
       delta.life = ['dead', this.stamp];
       return delta;
     }
-    if (!['create', 'update', 'put', 'write'].includes(change.op)) throw new CommitError('a prediction is a create, update, delete, put or write');
     if (change.op === 'create' && type.life) {
       delta.born = this.stamp;
       delta.life = ['alive', this.stamp];
@@ -86,7 +86,7 @@ class DeltaBuilder {
       delta.born = current.born;
     }
     if (change.op === 'put' && type.identity === 'keyed' && type.life) {
-      if (change.present === undefined && !current) throw new CommitError(`predicted put keeping the presence of ${change.t} ${change.id} absent from drawn`);
+      if (change.present === undefined && !current) throw new CommitError(`predicted put keeping presence of ${change.t} ${change.id} absent from drawn`);
       const presentBefore = current?.life?.[0] === 'alive';
       const present = change.present ?? presentBefore;
       let life = current?.life;
@@ -98,6 +98,13 @@ class DeltaBuilder {
     if (Object.keys(f).length) delta.f = f;
     const x = this.texts(type, change.id, change.x, current, { server: true });
     if (Object.keys(x).length) delta.x = x;
+    const v = {};
+    for (const [name, value] of Object.entries(change.v ?? {})) {
+      if (type.field(name)?.kind !== 'serial') throw new CommitError(`${type.type}.${name} is not a serial field`);
+      if (!Number.isSafeInteger(value) || value < 1) throw new CommitError(`${type.type}.${name} is not a positive serial value`);
+      v[name] = value;
+    }
+    if (Object.keys(v).length) delta.v = v;
     return delta;
   }
 

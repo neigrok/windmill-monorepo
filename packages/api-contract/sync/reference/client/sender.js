@@ -123,22 +123,30 @@ export function onPushResponse(replica, ctx, request, response, timing, { dieAft
     if (!entry) continue;
     if (left <= 0) return undefined;
     left -= 1;
-    meta.serverEpoch ??= body.epoch;
-    if (result.s === 'refused') {
-      onRefused(replica, ctx, entry, result, body);
-      continue;
-    }
-    moveEntry(replica, ctx.ended, entry, 'ok');
-    entry.resultSeq = result.seq;
-    entry.resultEpoch = body.epoch;
-    replica.raiseAdmittedHigh((entry.intent.d ?? []).flatMap(stampsOf));
-    if (result.write) applyWriteMap(replica, ctx, entry, result.write);
-    resolveIfCovered(replica, ctx, entry);
+    applyPushResult(replica, ctx, result, body);
   }
   meta.serverEpoch ??= body.epoch;
   meta.ackThrough = body.lastN;
   if (body.epoch !== meta.serverEpoch) epochChange(replica, ctx, body.epoch);
   return undefined;
+}
+
+
+export function applyPushResult(replica, ctx, result, body) {
+  const meta = replica.meta;
+  const entry = replica.entries().find((candidate) => candidate.state === 'sent' && candidate.n === result.n);
+  if (!entry) return;
+  meta.serverEpoch ??= body.epoch;
+  if (result.s === 'refused') {
+    onRefused(replica, ctx, entry, result, body);
+    return;
+  }
+  moveEntry(replica, ctx.ended, entry, 'ok');
+  entry.resultSeq = result.seq;
+  entry.resultEpoch = body.epoch;
+  replica.raiseAdmittedHigh((entry.intent.d ?? []).flatMap(stampsOf));
+  if (result.write) applyWriteMap(replica, ctx, entry, result.write);
+  resolveIfCovered(replica, ctx, entry);
 }
 
 // §7.4 the sender's wait between pushes. A backoff draws a sleep in [0, min(ceiling, base · 2^k)) and

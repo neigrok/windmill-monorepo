@@ -2,7 +2,7 @@ import SyncAPI
 import SyncCore
 
 // §7.6 views: a scope's confirmed rows joined with its pending deltas and predictions in commit order. `drawn` folds
-// held entries too, `stored` leaves them out; texts are the newest pending text; serials come only from confirmed rows.
+// held entries too, `stored` leaves them out; texts and predicted serials replace the confirmed values.
 
 public struct ViewRecord: Sendable, Hashable {
   public var key: RecordKey
@@ -87,12 +87,13 @@ public struct ScopeView: Sendable {
     records(ofType: type).filter(isVisible).count
   }
 
-  // One delta folded in: the lattice join, and its texts replacing the view's.
+  // One delta folded in: the lattice join, and its texts and predicted serials replacing the view's.
   public mutating func fold(_ delta: Delta) throws {
     let current = loaded[delta.key] ?? ViewRecord(key: delta.key)
     var next = current
     next.lattice = try Join.record(registry.type(delta.key.type), current.lattice, delta.lattice)
     for (name, write) in delta.texts { next.texts[name] = write.text }
+    for (name, value) in delta.serials { next.serials[name] = value }
     loaded[delta.key] = next
   }
 }

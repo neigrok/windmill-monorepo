@@ -227,6 +227,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
         val row = store.row(replica.id, scope, key)
         var lattice = row?.lattice ?: Lattice()
         val texts = row?.texts?.mapValues { TextValueState(it.value.text, it.value.merged, false) }?.toMutableMap() ?: mutableMapOf()
+        val serials = row?.serials?.toMutableMap() ?: mutableMapOf()
         var exists = row != null
         var pending = false; var held = false
         for (entry in replica.entries()) {
@@ -238,11 +239,12 @@ class Engine internal constructor(val registry: Registry, internal val store: En
                 exists = true; pending = true
                 lattice = Join.record(registry.type(key.type), lattice, delta.lattice)
                 for ((name, text) in delta.texts) texts[name] = TextValueState(text.text, false, true)
+                serials.putAll(delta.serials)
             }
         }
         if (!exists) return null
         return Record(key.type, key.id, lattice.life, lattice.born, lattice.fields.mapValues { it.value.value },
-            texts.mapValues { TextValue(it.value.text, it.value.merged, it.value.pending) }, row?.serials.orEmpty(), row?.rc, row?.ru,
+            texts.mapValues { TextValue(it.value.text, it.value.merged, it.value.pending) }, serials, row?.rc, row?.ru,
             isVisible(registry.type(key.type), lattice, texts), pending, held)
     }
     internal fun latticeView(replica: ReplicaState, scope: ScopeRef, key: RecordKey, mode: ViewMode, gone: Set<Delta> = emptySet()): Lattice? {

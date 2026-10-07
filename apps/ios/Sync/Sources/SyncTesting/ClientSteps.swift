@@ -418,7 +418,7 @@ public enum ClientSteps {
   public static func gesture(_ step: JSON) throws -> Gesture {
     let opts = step["opts"] ?? [:]
     return Gesture(
-      changes: try step["changes"]?.asArray().map(change) ?? [],
+      changes: try step["changes"]?.asArray().map { try change($0) } ?? [],
       atomic: try opts["atomic"]?.asBool() ?? false,
       hold: try opts["hold"]?.asBool() ?? false,
       guards: try opts["guard"]?.asArray().map { register in
@@ -427,15 +427,16 @@ public enum ClientSteps {
       retire: try opts["retire"]?.asArray().map { RecordRef(type: try $0.member("t").asString(), id: try RecordID(json: $0.member("id"))) } ?? [],
       supersede: try opts["supersede"]?.asArray().map { try $0.asString() } ?? [],
       command: try opts["cmd"].map { try Command(json: $0) },
-      predict: try opts["predict"]?.asArray().map(change) ?? [],
+      predict: try opts["predict"]?.asArray().map { try change($0, prediction: true) } ?? [],
       local: try (opts["local"]?.asObject().members ?? []).map { DeviceWrite(key: $0.key, value: $0.value.isNull ? nil : $0.value) },
       gestureId: try opts["gestureId"]?.asString())
   }
 
-  static func change(_ json: JSON) throws -> Change {
+  static func change(_ json: JSON, prediction: Bool = false) throws -> Change {
     let type = try json.member("t").asString()
     let id = try json["id"].map { try RecordID(json: $0) }
     let values = try JSON.map(json["f"]) { $0 }
+    let serials = try JSON.map(prediction && json["v"]?.isNull != true ? json["v"] : nil) { $0 }
     let texts = try JSON.map(json["x"]) { edit -> TextEdit in
       if case .string(let text) = edit { return TextEdit(text: text) }
       return TextEdit(text: try edit.member("text").asString(), editedFrom: try edit["from"]?.asString())
@@ -450,12 +451,12 @@ public enum ClientSteps {
     switch try json.member("op").asString() {
     case "create":
       let newID: NewID = if let id { .given(id) } else if let label = try json["label"]?.asString() { .derived(label: label) } else { .minted }
-      return Change(type: type, operation: .create(newID), values: values, texts: texts, anchor: anchor)
-    case "update": return Change(type: type, operation: .update(try required()), values: values, texts: texts)
-    case "delete": return Change(type: type, operation: .delete(try required()), values: values, texts: texts)
+      return Change(type: type, operation: .create(newID), values: values, texts: texts, serials: serials, anchor: anchor)
+    case "update": return Change(type: type, operation: .update(try required()), values: values, texts: texts, serials: serials)
+    case "delete": return Change(type: type, operation: .delete(try required()), values: values, texts: texts, serials: serials)
     case "revive": return Change(type: type, operation: .revive(try required()), values: values)
-    case "put": return Change(type: type, operation: .put(try required(), present: try json["present"]?.asBool() ?? true), values: values, texts: texts)
-    case "write": return Change(type: type, operation: .write(try required()), values: values, texts: texts)
+    case "put": return Change(type: type, operation: .put(try required(), present: try json["present"]?.asBool() ?? (prediction ? nil : true)), values: values, texts: texts, serials: serials)
+    case "write": return Change(type: type, operation: .write(try required()), values: values, texts: texts, serials: serials)
     case "move": return Change(type: type, operation: .move(try required()), anchor: anchor)
     case let op: throw VectorError("unknown change \(op)")
     }

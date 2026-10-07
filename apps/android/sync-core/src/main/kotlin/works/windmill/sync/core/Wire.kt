@@ -103,11 +103,13 @@ data class TextWrite(val text: String, val base: TextBase) {
     val json: Json get() = Json.objectOf("text" to Json.of(text), "base" to base.json)
 }
 
-data class Delta(val key: RecordKey, val lattice: Lattice = Lattice(), val texts: Map<String, TextWrite> = emptyMap()) {
-    constructor(json: Json) : this(RecordKey(json.member("t").str(), RecordID(json.member("id"))), Lattice(json), readMap(json["x"], ::TextWrite))
+data class Delta(val key: RecordKey, val lattice: Lattice = Lattice(), val texts: Map<String, TextWrite> = emptyMap(),
+    val serials: Map<String, Json> = emptyMap()) {
+    constructor(json: Json) : this(RecordKey(json.member("t").str(), RecordID(json.member("id"))), Lattice(json), readMap(json["x"], ::TextWrite), readMap(json["v"]) { it })
     val json: Json get() = Json.Obj(buildList {
         add("t" to Json.of(key.type)); add("id" to key.id.json); addAll(lattice.json.obj().toList())
         if (texts.isNotEmpty()) add("x" to Json.Obj(texts.map { it.key to it.value.json }))
+        if (serials.isNotEmpty()) add("v" to Json.Obj(serials.toList()))
     })
     val creates: Boolean get() = lattice.life?.let { it.isAlive && it.stamp == lattice.born } ?: false
     val removes: Boolean get() = lattice.life?.isAlive == false
