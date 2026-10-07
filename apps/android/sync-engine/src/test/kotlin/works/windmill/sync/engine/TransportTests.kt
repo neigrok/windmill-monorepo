@@ -96,6 +96,35 @@ class TransportTests {
         }
     }
 
+    @Test fun authenticatedRestoreConflictsValidateTheirEnvelopeBeforeDelivery() = runBlocking {
+        val events = kotlinx.coroutines.channels.Channel<EngineEvent>(16)
+        val request = json("""{"account":"A"}""")
+        val valid = json("""{"serverTime":100,"epoch":"ep-2","as":"A","error":"gap"}""")
+        MockWebServer().use { server ->
+            HTTPTransport(server.url("/").toString(), 4, telemetry = EngineTelemetry { events.send(it) }).use { transport ->
+                for (malformed in listOf(valid.with("epoch" to null), valid.with("epoch" to Json.of("")),
+                    valid.with("epoch" to Json.of(2)), valid.with("serverTime" to null), valid.with("serverTime" to Json.of(-1)),
+                    valid.with("serverTime" to Json.Num(0.5)), valid.with("error" to Json.of("unknown")))) {
+                    server.enqueue(MockResponse().setResponseCode(409).setBody(malformed.jcs))
+                    assertSame(Reply.Unreachable, transport.push(request, "token"))
+                    assertEquals(EngineEvent(EngineOperation.push, EngineOutcome.failure), withTimeout(2_000) { events.receive() })
+                }
+                for (code in listOf("gap", "replica-forked", "replica-foreign")) {
+                    val response = valid.with("error" to Json.of(code))
+                    server.enqueue(MockResponse().setResponseCode(409).setBody(response.jcs))
+                    assertEquals(SyncResponse(409, response), answer(transport.push(request, "token")))
+                    assertEquals(EngineEvent(EngineOperation.push, EngineOutcome.refused), withTimeout(2_000) { events.receive() })
+                }
+                val foreign = valid.with("as" to Json.of("B"), "epoch" to null)
+                server.enqueue(MockResponse().setResponseCode(409).setBody(foreign.jcs))
+                assertEquals(SyncResponse(409, foreign), answer(transport.push(request, "token")))
+                assertEquals(EngineEvent(EngineOperation.push, EngineOutcome.refused), withTimeout(2_000) { events.receive() })
+            }
+        }
+        events.close()
+        Unit
+    }
+
     @Test fun updateAndAuthenticationRefusalsRemainMetricsWithoutFailureIssues() = runBlocking {
         val events = kotlinx.coroutines.channels.Channel<EngineEvent>(8)
         MockWebServer().use { server ->

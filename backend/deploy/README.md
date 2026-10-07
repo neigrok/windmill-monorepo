@@ -183,21 +183,31 @@ The tool uses `DATABASE_URL` and the server's Sentry settings. It emits a struct
 `sync.epoch.rotate` completion (`ok`, `already-applied`, or a refusal/failure) with duration, without
 credentials or epoch values. Rotation changes only `sync_meta.epoch`, leaving restored rows intact.
 When a client processes the epoch change, it clears cursors and staging, re-identifies and
-rebootstraps. That transition retains unsent entries and returns still-pending old-epoch
-acknowledgements to ready at their original commit positions.
+rebootstraps. This single durable transition retains unsent entries and returns still-pending
+old-epoch acknowledgements to ready at their original commit positions, ahead of dependent edits
+and deletes. A validated, authenticated push success or replica conflict with a changed epoch
+triggers the transition before retry or result handling, including a `409 gap`, so recovery works
+whether push or pull arrives first. A replayed command's write map moves its pending dependents to
+the recreated record's `born`. If another replica's delete arrives before a retained create, the
+server stores the absent record's death so the later create cannot resurrect it. A delete aimed at
+a live record with a different `born` is refused `unknown-record`, keeping the delete in a notice.
 
-A restore is outside the engine's INV-3 guarantee ([spec §7.5](../../docs/foundation/engine.md#75-puller-reset-and-epoch-change)).
-Fully settled server writes newer than the backup are lost; rotation cannot reconstruct them.
-Retained intents may replay against missing records or records recreated with a different `born`:
-dependent edits/deletes can be refused or acknowledged as no-ops, so their intended effects can be
-lost. A no-op acknowledgement produces no refusal notice.
+While the client's local store survives, work still owed by its outbox survives the restore
+([spec §7.5](../../docs/foundation/engine.md#75-puller-reset-and-epoch-change)). Recovery replays it
+in commit order; an unreplayable intent is refused with its content retained in a notice. Fully
+settled server writes newer than the backup are lost; rotation cannot reconstruct work no client
+still owes. Restoring a backup also cannot recover a cleared or lost client store.
+These guarantees require both the updated server and updated clients. Older clients can settle a
+dependent delete before replaying its source; older servers can acknowledge an absent delete
+without preserving its death. Epoch rotation alone cannot correct those implementations.
 
-Even after rotation, a push-first reconnect can lose an offline delete of a record absent from the
-backup: after `409 gap`, the delete can be acknowledged as a no-op before its old acknowledged
-create is replayed. The record then reappears with an empty outbox and no notice. The supplied
-restore proof covers pull-first recovery of independent creates, not this dependent-delete case
-or every reconnect ordering. Keeping ingress closed until rotation is verified limits exposure;
-it does not remove this client recovery limitation.
+The [restore proof](../test/e2e/README.md) runs both pull-first and push-first reconnects against a
+real dump, restore and epoch rotation. It checks durable reload before and after the epoch
+transition, independent acknowledged and unsent creates, dependent offline edits/deletes, and a
+replayed command whose new `born` must reach its pending delete. Other replicas delete before a
+source replays and after a command without a prediction recreates its record. Bootstrap must leave
+the client and server in agreement; the wrong-incarnation delete must remain in a durable refusal
+notice, and all other fixture work must settle with its intended effect.
 
 ## Frontend
 

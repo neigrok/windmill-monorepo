@@ -12,7 +12,7 @@ import { release, releaseAll, releaseDue, undo, undoOffers } from './client/hold
 import { engineStart, epochChange, signIn, signOut } from './client/lifecycle.js';
 import { applyChunk, applyPage, finishPage, onFrame, onPullResponse, pullRequest, settle } from './client/puller.js';
 import { dismiss } from './client/refusal.js';
-import { applyPushResult, nextPush, onHello, onPushResponse, SenderWait } from './client/sender.js';
+import { applyPushResult, nextPush, onHello, onPushResponse, SenderWait, validatePushEnvelope } from './client/sender.js';
 import { Doubts, firstPullComplete, reconcile, subscribe, subscriptionsOf } from './client/subscriptions.js';
 import { drawn, stored } from './client/views.js';
 
@@ -459,13 +459,15 @@ export class BrowserSyncEngine {
   }
 
   validateResponse(endpoint, response, request) {
+    if (endpoint === 'push' && response.status === 409 && response.body?.as === request.account
+      && response.body?.error !== 'account-mismatch') validatePushEnvelope(response);
     if (response.status !== 200) return;
     const body = response.body;
     const expectedAccount = endpoint === 'push' ? request.account : this.device.activeReplica.meta.account;
     if (expectedAccount !== undefined && body?.as !== expectedAccount && endpoint !== 'hello') return;
     const integer = (value) => Number.isSafeInteger(value) && value >= 0;
     const valid = (condition) => { if (!condition) throw new Error('invalid sync response'); };
-    valid(body && integer(body.serverTime) && typeof body.epoch === 'string');
+    valid(body && integer(body.serverTime) && typeof body.epoch === 'string' && body.epoch.length > 0);
     if (endpoint === 'hello') {
       valid(integer(body.schema) && integer(body.minSchema));
       return;
@@ -585,6 +587,10 @@ export class BrowserSyncEngine {
       await this.write(null, (device, ctx) => {
         const replica = device.replicas.find((replica) => replica.storageHandle === handle);
         if (!replica || replica.id !== request.replica) return;
+        if (replica.meta.serverEpoch !== null && replica.meta.serverEpoch !== response.body.epoch) {
+          epochChange(replica, ctx, response.body.epoch);
+          return;
+        }
         if (results[index]) {
           this.onPushResult(replica, ctx, results[index], response.body);
           applyPushResult(replica, ctx, results[index], response.body);
@@ -592,7 +598,6 @@ export class BrowserSyncEngine {
         if (index === results.length - 1 || results.length === 0) {
           replica.meta.serverEpoch ??= response.body.epoch;
           replica.meta.ackThrough = response.body.lastN;
-          if (replica.meta.serverEpoch !== response.body.epoch) epochChange(replica, ctx, response.body.epoch);
         }
       });
     }

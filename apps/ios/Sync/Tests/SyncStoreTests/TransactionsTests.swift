@@ -209,7 +209,7 @@ struct TransactionsTests {
     _ = try store.commit(Gesture(changes: [.create("lap", ["runId": "run00001", "weight": 5])]), in: scope, instance: instance,
                          identities: identities)
     let commit = taken()
-    try apply(.results(ResultBatch(results: [try PushResult(json: ["n": 1, "s": "ok", "seq": 2])], lastN: 1, epoch: "ep-1", isLast: false)))
+    try apply(.results(ResultBatch(replica: "rp_1", results: [try PushResult(json: ["n": 1, "s": "ok", "seq": 2])], lastN: 1, epoch: "ep-1", isLast: false)))
     let result = taken()
     try apply(.epoch("ep-1"))
     let epoch = taken()
@@ -389,7 +389,7 @@ struct TransactionsTests {
           return try PushResult(json: random.chance(0.75) ? ["n": JSON(entry.n!), "s": "ok", "seq": JSON(seq)]
             : ["n": JSON(entry.n!), "s": "refused", "code": .string(random.pick(["stale", "invalid", "clock-skew"]))])
         }
-        let result = PushStep.results(ResultBatch(results: verdicts, lastN: sent.map { $0.n! }.max()!, epoch: "ep-1", isLast: false))
+        let result = PushStep.results(ResultBatch(replica: "rp_1", results: verdicts, lastN: sent.map { $0.n! }.max()!, epoch: "ep-1", isLast: false))
         action = "results"
         agreed = Self.agree(
           Result { try store.apply(result, replica: "rp_1", instance: &storeInstance, timing: timing, identities: try none()).value },
@@ -398,7 +398,7 @@ struct TransactionsTests {
             return whole.id
           })
       case ..<88:
-        let ack = PushStep.results(ResultBatch(results: [], lastN: whole.meta.nextN - 1, epoch: "ep-1", isLast: true))
+        let ack = PushStep.results(ResultBatch(replica: "rp_1", results: [], lastN: whole.meta.nextN - 1, epoch: "ep-1", isLast: true))
         action = "ack"
         agreed = Self.agree(
           Result { try store.apply(ack, replica: "rp_1", instance: &storeInstance, timing: timing, identities: try none()).value },

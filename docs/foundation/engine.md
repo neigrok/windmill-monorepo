@@ -181,7 +181,8 @@ that an outbox entry's `orphanOf` names is never deleted.
 **D-18 Seq, epoch, cursor.**
 - `seq`: a per-scope counter, incremented once per committed intent that changes the scope.
 - `epoch`: one random string for the whole server database, regenerated when the database is
-  restored from a backup.
+  restored from a backup. An authenticated push response carries it on conflicts as well as
+  successes; clients process a changed epoch before retrying or recording results (§7.4).
 - A cursor is `(epoch, mode ∈ {boot, live}, seq, key?, asOf?)`, encoded as §9.4 states; clients
   decode it.
 - The *scope digest*: a per-scope sum of the hashes of the scope's alive rows (§6.12).
@@ -552,8 +553,8 @@ The engine composes the id state from `lock`, `elsewhere` and its own tables (§
 - `alive(b)`, `dead(b)`: alive or dead in this scope, with born `b` (a keyed type's spent row has
   no born).
 
-Before `lock`, admission locks each fresh id of a global id space the intent creates, by
-`(type, id)` in ascending order (§6.1 step 3.6), so two scopes creating one fresh id are serialized.
+Before `lock`, admission locks each fresh id of a global id space the intent creates or deletes, by
+`(type, id)` in ascending order (§6.1 step 3.6), so creates and deletes of one fresh id are serialized.
 An id that only a command's arguments or `check` reveal is locked on demand, just before its lookup.
 
 ### §4.3 Decision table (minted and derived)
@@ -564,11 +565,15 @@ An id that only a command's arguments or `check` reveal is locked on demand, jus
 |---|---|---|---|---|---|---|
 | `create` | apply | `id-taken` | apply (join) | `id-taken` | ok | `id-spent` |
 | `update` | `unknown-record` | `unknown-record` | apply | `unknown-record` | `record-dead` | `unknown-record` |
-| `delete` | ok | ok | apply | ok | apply (join) | ok |
+| `delete` | apply death | ok | apply | `unknown-record` | apply (join) | ok |
 | `revive` | `unknown-record` | `unknown-record` | apply | `unknown-record` | revivable: apply; else `id-spent` | `unknown-record` |
 
 - A governing `create` that applies creates the governed scope. A governing `delete` that applies
   kills it (§6.1 step 15).
+- A delete of an absent record stores its death and `born`, including its spent id when death is
+  terminal. A create retained on another replica may arrive after this delete during restore
+  recovery; it must not bring the record back. A delete of a live record with another `born` is
+  refused with its content retained, rather than silently settling against the wrong incarnation.
 - Keyed with life: `put` applies on every state (a join on `alive` and `dead`).
 - Keyed without life, and singleton: `write` applies (an implicit create on `none`).
 
@@ -619,13 +624,15 @@ through:
   mint a spent id (§4.4, §6.7).
 - **Scope death** refuses every write (INV-13).
 
-**INV-3 No silent loss.** While the replica's local store survives and the server's committed state
-survives, every committed intent ends in exactly one outcome of D-15. An intent that ends `refused`
-has a notice holding its content, written in the same local transaction; an orphan's content is in
-its origin's notice (§7.7).
+**INV-3 No silent loss.** While the replica's local store survives, every committed intent still
+owed in its outbox ends in exactly one outcome of D-15, including across a server restore. An intent
+that ends `refused` has a notice holding its content, written in the same local transaction; an
+orphan's content is in its origin's notice (§7.7).
 
 Storage loss is outside this invariant: uninstall, cleared site data, private windows, and Safari's
 deletion of script-writable storage after 7 days without interaction.
+Server writes already settled before a restore and absent from its backup cannot be reconstructed
+from an empty outbox; they are outside this invariant.
 - Web engines MUST call `navigator.storage.persist()`.
 - Signed-out product copy on web MUST NOT promise durability.
 
@@ -636,7 +643,8 @@ deletion of script-writable storage after 7 days without interaction.
 - The server stores one result per `(replica, n)`, in the transaction that sets `last_n` (§6.2).
   Poison ends in a stored `internal` result (§6.6).
 - After a restore, acked entries return to `ready` (§7.5): a replica with an acked entry holds an
-  epoch (§7.4), so the restore's epoch changes it.
+  epoch (§7.4), so the restore's epoch changes it. A push processes that change before results or
+  retries, returning sent entries too; retained acknowledgements replay ahead of later dependents.
 - An acked entry resolves once its scope's stored cursor covers it. A death between settling slices
   leaves it covered, and the scope's next stored cursor settles it (§7.5 step 2).
 - A refusal folds its dependents into the same notice: the removed content of held and ready
@@ -897,7 +905,7 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
       `tree:<value>`, each row once in the stronger mode it needs: the scope row `FOR NO KEY
       UPDATE`, an argument tree `FOR SHARE`. A tree-scope intent's own row so takes its key's place
       among its argument trees. An id that no scope has yet locks nothing.
-   6. Each fresh id of a global id space that the intent creates is locked by `(type, id)` (§4.2).
+   6. Each fresh id of a global id space that the intent creates or deletes is locked by `(type, id)` (§4.2).
       An id that only a command's arguments or `check` reveal is locked on demand, just before its
       lookup.
    7. Refuse:
@@ -924,7 +932,7 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
    - `after = joinRecord(before, δ)` for each delta, in order.
    - Text fields are merged or replaced by a command's internal replacement (§6.11).
    - Each row the intent changes, in its scope or in one it creates, is measured as step 13 would
-     store it, before step 11 gives a new record its serial: an encoding over `MAX_RECORD_BYTES` →
+     store it, before step 11 gives a new alive record its serial: an encoding over `MAX_RECORD_BYTES` →
      `too-large`. Text bases do not count, and a row the intent leaves unchanged is not measured.
 10. **Product check.** `check` per type touched, on the joined records.
     - A create from a replica is re-checked like any write: `check` re-computes and validates every
@@ -935,7 +943,7 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
       `parent` reference is not alive among the joined records → `parent-dead`. A parent created in
       the same intent counts as alive. The reference is read from the join, before G1 (§6.10)
       drops a dead record's fields.
-11. **Serial.** A new record without a serial value gets 1 plus the maximum over alive records
+11. **Serial.** A new alive record without a serial value gets 1 plus the maximum over alive records
     sharing its `serialNext` fields, or 1 if there are none, in admission order (a command: in
     argument order). A value a command supplies is kept.
 12. **Caps.** For each capped type, `after = counters[type] + net alive change`. Refuse `cap`
@@ -1403,7 +1411,9 @@ After the commit: notify tabs (§7.8), kick the sender, and schedule release tim
 
 Every committed gesture is sent as its own entries, in commit order: `commit` enqueues one entry per
 intent (§7.1 step 7), and the sender numbers ready entries in commit order, passing over held and
-held-back entries (§7.4). Before its result, an entry changes only by a fold (§7.3, §7.7 step 3), a
+held-back entries (§7.4). An epoch change preserves those positions: old acknowledgements return
+ahead of later dependent edits and deletes, including entries already numbered before the change.
+Before its result, an entry changes only by a fold (§7.3, §7.7 step 3), a
 restamp or a write map (§7.7), or ends before binding by a supersede (§7.1 step 4).
 
 ### §7.3 Hold, release, undo
@@ -1473,14 +1483,16 @@ loop while state = bound ∧ ¬authPaused ∧ online:
                                   origin's notice), and dependents fold transitively
   every 400                     → also emit the telemetry event sync-push-malformed, with no intent
                                   content
-  replica-forked | replica-foreign | gap → re-identify (§7.11)
+  authenticated 200, or 409 replica-forked | replica-foreign | gap:
+    validate the response envelope (below)
+    if response epoch ≠ non-null serverEpoch → epoch change (§7.5); retry, recording no results
+  replica-forked | replica-foreign | gap → take the epoch if serverEpoch is null; re-identify (§7.11)
   in the first batch, before its first result: if serverEpoch is null → serverEpoch := the response
       epoch (an answer with no result takes it in the transaction that sets ackThrough)
   each result, in ascending n, in batches (below):
     ok      → acked, resultSeq := seq, resultEpoch := the response epoch; apply the write map (§7.7)
     refused → §7.7; after a `clock-skew` recovery, back off before the next push
   in the last batch, once every result is recorded: ackThrough := the response's lastN
-  then, if the response epoch ≠ serverEpoch → epoch change (§7.5)
 backoff: sleep random(0, min(ceiling, 1 s · 2^k)), then k += 1; ceiling = liveHint ? 30 s : 300 s; k resets
          on a response with results, unless one of them is `clock-skew`
          (liveHint: computed now by the product's view rule, Appendix A)
@@ -1490,6 +1502,16 @@ server-requested wait: a 503's or a retry's retryAfterMs, from the response's re
          starts before it ends: a kick wakes the sender no earlier, and a leave (§7.3) attempts no
          push during it
 ```
+
+The principal check precedes epoch handling. A `409` used for recovery MUST carry a nonempty string
+`epoch`, a nonnegative safe-integer `serverTime`, and one of the three conflict codes above;
+a malformed envelope is a transport failure, leaving the replica, cursors and entries unchanged.
+An authenticated changed-epoch `200` triggers the same atomic recovery before any result batch,
+even if its results report success. Its results and `lastN` are not recorded: the request ran before
+the client's earlier acknowledged intents had replayed against the restored history. Every
+sent entry and retained old acknowledgement must replay in commit order under the new replica.
+An unchanged epoch keeps ordinary conflict recovery and result batching. A null epoch is adopted
+without an epoch reset; a success adopts it in the first result batch as below.
 
 A ready entry is *held back* while it depends (§7.7 step 3) on a held or held-back entry or on an
 orphan awaiting its result (sent, or returned to ready), or touches, by a delta, a guard or a
@@ -1553,9 +1575,14 @@ closes the socket. A re-authentication that clears `authPaused` opens the socket
    entries, never with its rows: a re-identify touches no row (§7.11), and a staging it drops is
    deleted afterwards (§2.5).
 
-   A restore is outside INV-3's condition. For example, a re-sent command may create its record
-   again under a new `born`, and a pending delete already rewritten to the old `born` then ends as
-   a no-op; and a notice may describe a record that a forked store later re-creates.
+   The sender processes this transaction before retrying a conflict or recording changed-epoch
+   success results (§7.4). Replayed commands keep their predictions and apply their new write maps
+   before dependent entries are numbered; a recreated record's new `born` propagates to those
+   entries by §7.7. Without a retained prediction to map, a delete of the recreated incarnation
+   is refused `unknown-record` (§4.3). A dependent operation that cannot replay is retained in a
+   refusal notice, including its folded dependents. Already-settled writes newer than the backup
+   have no retained entry to replay and can be lost; a notice may describe a record that a forked
+   store later re-creates.
 2. **Pages.** A `reset`, `gone` or `not-found` page applies in one local transaction. A rows page
    applies in one local transaction, or in several, its *chunks*, sized by §2.5's writer rule: each
    chunk takes the next rows of the page, whole and in the page's order. A page's chunks apply one
@@ -2276,7 +2303,7 @@ Frames are at most `LIVE_FRAME_BYTES`.
 |---|---|---|
 | 400 | `malformed` | §7.4 |
 | 401 | `unauthenticated` | pause (§7.4) |
-| 409 | `replica-foreign`, `replica-forked`, `gap` | re-identify |
+| 409 | `replica-foreign`, `replica-forked`, `gap` | validate and process the epoch, then re-identify once (§7.4) |
 | 409 | `account-mismatch` | pause (§7.4) |
 | 413 | `request-too-large` | §7.4 |
 | 426 | `upgrade-required` | stop until upgraded |
@@ -2417,7 +2444,8 @@ Each property keeps its number wherever it is cited.
   counts of equal tokens.
 - **8.** Client: `clock-skew` recovery terminates (INV-14) under 409 and epoch returns, holds, undo,
   retire, keyed carriers, orphans and later gestures on the same records: with the server clock
-  held still, every entry is acked or ends, and none is refused `clock-skew` twice.
+  held still, every entry is acked or ends, and none requires a second `clock-skew` recovery.
+  Results discarded at an epoch change (§7.4) have not run recovery.
 
 ### §11.3 Replay fuzz
 

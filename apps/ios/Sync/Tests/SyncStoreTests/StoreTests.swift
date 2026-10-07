@@ -68,8 +68,8 @@ struct StoreTests {
       Step(name: "release timer") { store in _ = try store.releaseDue(at: 5003 + Constants.holdMs) },
       Step(name: "number") { store in _ = try store.number(at: 14_000) },
       push(.sample(serverTime: 14_100), at: 14_050),
-      push(.results(ResultBatch(results: [try result(1, seq: 2)], lastN: 2, epoch: "ep-1", isLast: false)), at: 14_050),
-      push(.results(ResultBatch(results: [try result(2, seq: 3)], lastN: 2, epoch: "ep-1", isLast: true)), at: 14_050),
+      push(.results(ResultBatch(replica: "rp_1", results: [try result(1, seq: 2)], lastN: 2, epoch: "ep-1", isLast: false)), at: 14_050),
+      push(.results(ResultBatch(replica: "rp_1", results: [try result(2, seq: 3)], lastN: 2, epoch: "ep-1", isLast: true)), at: 14_050),
       push(.epoch("ep-1"), at: 14_050),
     ]
   }

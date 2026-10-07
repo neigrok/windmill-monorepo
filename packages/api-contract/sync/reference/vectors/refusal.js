@@ -1,7 +1,9 @@
 // refusal/*.json (§7.7): refusals of sent entries, with the responses the reference server gives. A
 // refusal folds its dependents into one notice; clock-skew and base-unknown recover automatically.
 
+import assert from 'node:assert/strict';
 import { freshMeta } from '../client/replica.js';
+import { CONSTANTS } from '../core/constants.js';
 import { bodyBytes, intentDigest } from '../core/wire.js';
 import { pull } from '../server/pull.js';
 import { push } from '../server/push.js';
@@ -56,11 +58,11 @@ class ServerScript {
     return this;
   }
 
-  pullRound({ deviceNow, scopes, serverNow = deviceNow }) {
+  pullRound({ deviceNow, scopes, serverNow = deviceNow, limits = CONSTANTS }) {
     this.add({ op: 'pull', scopes, deviceNow });
     const out = runSteps(this.input);
     const request = out.returns[out.returns.length - 1];
-    const pulled = pull({ state: this.server, registry, product, account: 'A', request, serverNow });
+    const pulled = pull({ state: this.server, registry, product, account: 'A', request, serverNow, limits });
     this.server = pulled.state;
     return this.add({ op: 'pullResponse', response: pulled.response, deviceNow, tSend: deviceNow, tRecv: deviceNow });
   }
@@ -518,6 +520,147 @@ function baseUnknowns() {
 
 // Transport outcomes of §7.4 and §7.5: status codes on push, offsets from every response, re-identify,
 // an epoch change, and process deaths between result batches.
+function restoredDeletes() {
+  return ['pull', 'gap', 'success'].map((first) => {
+    const empty = (epoch) => serverState({ epoch, scopes: { 'acct:A/probe': productScope('A') } });
+    const script = new ServerScript({ device: device(), server: empty('ep-1') })
+      .withIds(['rp_00000000000000000000000000000002', 'rp_00000000000000000000000000000003'])
+      .withActors(['r_cccccccccccc', 'r_dddddddddddd', 'r_eeeeeeeeeeee'])
+      .add(commitStep('self/probe', [newCard('card0001'), newCard('card0002')], undefined, 5000))
+      .pushRound({ deviceNow: 5001 })
+      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Edited' } }], undefined, 5002))
+      .add(commitStep('self/probe', [{ op: 'delete', t: 'card', id: 'card0002' }], undefined, 5003))
+      .add(commitStep('self/probe', [newCard('card0003')], undefined, 5004));
+    script.server = new ServerState(empty('ep-2'));
+    if (first === 'success') script.add({ op: 'reidentify', deviceNow: 5005 });
+    if (first === 'pull') script.pullRound({ deviceNow: 5010, scopes: ['self/probe'] });
+    else script.pushRound({ deviceNow: 5010 });
+    const recovered = runSteps(script.input).device.replicas[0];
+    assert.equal(recovered.meta.serverEpoch, 'ep-2', `${first}: learn the restore before retrying`);
+    assert.deepEqual(recovered.outbox.map(({ state }) => state), Array(5).fill('ready'), `${first}: retain every owed intent`);
+    script.add({ op: 'engineStart', deviceNow: 5011 }).pushRound({ deviceNow: 5020 })
+      .pullRound({ deviceNow: 5030, scopes: ['self/probe'] });
+    const vector = script.vector(`restore learned from ${first} replays acknowledged creates before offline edits and deletes, across restart`);
+    const final = vector.expect.device.replicas[0];
+    assert.deepEqual(final.outbox ?? [], []);
+    assert.deepEqual(final.notices ?? [], []);
+    assert.deepEqual(final.confirmed['self/probe'].map(({ id, f }) => [id, f.title[0]]), [['card0001', 'Edited'], ['card0003', 'Fourth']]);
+    return vector;
+  });
+}
+
+function restoredCommands() {
+  return ['pull', 'gap', 'success'].map((first) => {
+    const empty = (epoch) => serverState({ epoch, scopes: { 'acct:A/probe': productScope('A') } });
+    const script = new ServerScript({ device: device(), server: empty('ep-1') })
+      .withIds(['rp_00000000000000000000000000000002', 'rp_00000000000000000000000000000003'])
+      .withActors(['r_cccccccccccc', 'r_dddddddddddd'])
+      .add(commitStep('self/probe', [], {
+        cmd: { name: 'probe.start', args: { id: 'run00009', startedAt: 5000, join: true } },
+        predict: [{ op: 'create', t: 'run', id: 'run00009', f: { startedAt: 5000 } }],
+      }, 5000))
+      .pushRound({ deviceNow: 5001 })
+      .add(commitStep('self/probe', [{ op: 'update', t: 'run', id: 'run00009', f: { label: 'Edited' } }], undefined, 5002))
+      .add(commitStep('self/probe', [{ op: 'delete', t: 'run', id: 'run00009' }], undefined, 5003));
+    script.server = new ServerState(empty('ep-2'));
+    if (first === 'success') script.add({ op: 'reidentify', deviceNow: 5005 });
+    if (first === 'pull') script.pullRound({ deviceNow: 5010, scopes: ['self/probe'] });
+    else script.pushRound({ deviceNow: 5010 });
+    script.pushRound({ deviceNow: 5020 });
+    if (first !== 'success') script.pushRound({ deviceNow: 5030 });
+    script.pullRound({ deviceNow: 5040, scopes: ['self/probe'] });
+    const vector = script.vector(first === 'success'
+      ? 'restore learned from success preserves the already admitted command delete and folds its replayed create into a notice'
+      : `restore learned from ${first} maps a replayed command's new born into its pending edit and delete`);
+    const final = vector.expect.device.replicas[0];
+    assert.deepEqual(final.outbox ?? [], []);
+    if (first === 'success') assert.equal(final.notices[0].code, 'id-spent');
+    else assert.deepEqual(final.notices ?? [], []);
+    assert.deepEqual(final.confirmed?.['self/probe'] ?? [], []);
+    return vector;
+  });
+}
+
+function restoredOtherReplica() {
+  const empty = (epoch) => serverState({ epoch, scopes: { 'acct:A/probe': productScope('A') } });
+  const secondId = 'rp_00000000000000000000000000000002';
+  const a = new ServerScript({ device: device(), server: empty('ep-1') })
+    .withIds(['rp_00000000000000000000000000000003']).withActors(['r_cccccccccccc'])
+    .add(commitStep('self/probe', [newCard('card0001')], undefined, 5000))
+    .pushRound({ deviceNow: 5001 });
+  const b = new ServerScript({ device: settle({ active: secondId, replicas: [{ meta: freshMeta(secondId, 'bound', 'A') }] }), server: a.server.toJSON() })
+    .withIds(['rp_00000000000000000000000000000004']).withActors(['r_dddddddddddd'])
+    .pullRound({ deviceNow: 5002, scopes: ['self/probe'] })
+    .add(commitStep('self/probe', [{ op: 'delete', t: 'card', id: 'card0001' }], undefined, 5003));
+  b.server = new ServerState(empty('ep-2'));
+  b.pushRound({ deviceNow: 5010 }).pushRound({ deviceNow: 5011 })
+    .pullRound({ deviceNow: 5012, scopes: ['self/probe'] });
+  a.server = b.server;
+  a.pullRound({ deviceNow: 5020, scopes: ['self/probe'] }).pushRound({ deviceNow: 5021 })
+    .pullRound({ deviceNow: 5022, scopes: ['self/probe'] });
+  b.server = a.server;
+  b.pullRound({ deviceNow: 5023, scopes: ['self/probe'] });
+  return [a, b].map((script, index) => {
+    const vector = script.vector(`another replica's post-restore delete precedes the replayed create: ${index === 0 ? 'creator' : 'deleter'} stays deleted`);
+    const final = vector.expect.device.replicas[0];
+    assert.deepEqual(final.outbox ?? [], []);
+    assert.deepEqual(final.notices ?? [], []);
+    assert.deepEqual(final.confirmed?.['self/probe'] ?? [], []);
+    return vector;
+  });
+}
+
+function restoredUnpredictedCommand() {
+  const empty = (epoch) => serverState({ epoch, scopes: { 'acct:A/probe': productScope('A') } });
+  const script = new ServerScript({ device: device(), server: empty('ep-1') })
+    .withIds(['rp_00000000000000000000000000000002']).withActors(['r_cccccccccccc'])
+    .add(commitStep('self/probe', [], { cmd: { name: 'probe.start', args: { id: 'run00009', startedAt: 5000, join: true } } }, 5000))
+    .pushRound({ deviceNow: 5001 })
+    .add(commitStep('self/probe', [newCard('card0001')], undefined, 5002))
+    .pushRound({ deviceNow: 5003 })
+    .pullRound({ deviceNow: 5004, scopes: ['self/probe'], limits: { ...CONSTANTS, PULL_PAGE_BYTES: 1 } })
+    .add(commitStep('self/probe', [{ op: 'delete', t: 'run', id: 'run00009' }], undefined, 5005));
+  script.server = new ServerState(empty('ep-2'));
+  script.pushRound({ deviceNow: 5010 }).pushRound({ deviceNow: 5011 }).pushRound({ deviceNow: 5012 })
+    .pullRound({ deviceNow: 5013, scopes: ['self/probe'] });
+  const vector = script.vector('restore with an unpredicted command and a partial boot retains the old-birth delete in a notice');
+  const final = vector.expect.device.replicas[0];
+  assert.deepEqual(final.outbox ?? [], []);
+  assert.equal(final.notices.length, 1);
+  assert.equal(final.notices[0].code, 'unknown-record');
+  assert.equal(final.notices[0].content.d[0].id, 'run00009');
+  assert.equal(final.notices[0].content.d[0].life[0], 'dead');
+  return [vector];
+}
+
+function conflictEnvelopes() {
+  const prepared = runSteps({ device: device(), steps: [
+    commitStep('self/probe', [newCard('card0001')], undefined, 5000),
+    { op: 'push', deviceNow: 5001 },
+    { op: 'pushResponse', deviceNow: 5001, response: { status: 200, body: { as: 'A', epoch: 'ep-1', serverTime: 5001,
+      lastN: 1, results: [{ n: 1, s: 'ok', seq: 1 }] } } },
+    commitStep('self/probe', [{ op: 'delete', t: 'card', id: 'card0001' }], undefined, 5002),
+  ] });
+  return [
+    ['missing epoch', { epoch: undefined }], ['empty epoch', { epoch: '' }], ['non-string epoch', { epoch: 2 }],
+    ['negative time', { serverTime: -1 }], ['missing time', { serverTime: undefined }],
+    ['unknown conflict', { error: 'unknown' }],
+    ['other principal', { as: 'B' }], ['account mismatch', { error: 'account-mismatch' }],
+  ].map(([name, changes]) => {
+    const body = { as: 'A', epoch: 'ep-2', serverTime: 5010, error: 'gap', ...changes };
+    for (const key of Object.keys(body)) if (body[key] === undefined) delete body[key];
+    const vector = stepsVector(`a gap with ${name} cannot reset the epoch or lose an acknowledged create and its pending delete`, {
+      device: prepared.device,
+      steps: [{ op: 'push', deviceNow: 5003 }, { op: 'pushResponse', deviceNow: 5010, response: { status: 409, body } }],
+    });
+    const replica = vector.expect.device.replicas[0];
+    assert.equal(replica.meta.serverEpoch, 'ep-1');
+    assert.deepEqual(replica.outbox.map(({ state }) => state), ['acked', 'sent']);
+    assert.deepEqual(vector.expect.returns.at(-1), name === 'other principal' || name === 'account mismatch' ? null : { throws: true });
+    return vector;
+  });
+}
+
 function transports() {
   const at = (serverTime) => ({ serverTime, epoch: 'ep-1', as: 'A' });
   const rename = (id, title, deviceNow) => commitStep('self/probe', [{ op: 'update', t: 'card', id, f: { title } }], undefined, deviceNow);
@@ -675,6 +818,6 @@ export function files() {
     ],
     'refusal/restamp.json': restamps(),
     'refusal/base-unknown.json': baseUnknowns(),
-    'refusal/transport.json': transports(),
+    'refusal/transport.json': [...transports(), ...restoredDeletes(), ...restoredCommands(), ...restoredOtherReplica(), ...restoredUnpredictedCommand(), ...conflictEnvelopes()],
   };
 }

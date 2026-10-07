@@ -73,3 +73,11 @@ modules remain outside the copied core/client inventory.
 
 Predicted deletes validate supplied serial names and values before emitting only death and born.
 The shared corpus checks that malformed serials leave the whole device unchanged and nothing to push.
+
+Epoch recovery precedes authenticated push results and conflict retries. One transaction requeues
+old acknowledgements and numbered work in commit order; product receipt callbacks see only results
+recorded in the current epoch. Shared cases cover both reconnect orders, successful pushes after
+re-identification, command birth remapping and malformed conflicts. Persisted browser checks retain
+the ordered replay across restart and report invalid recovery envelopes as transport failures.
+Absent-record deaths also survive another replica's later create; a command without a retained
+prediction leaves an incompatible delete in a durable refusal notice.

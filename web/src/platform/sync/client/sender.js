@@ -89,17 +89,35 @@ function pushRequest(meta, intents) {
 // passes to resend the first half by n; otherwise nothing. Every 400 emits sync-push-malformed. After a
 // 409 or an epoch change the instance takes a new actor (§7.11). A 401, or a 200 or 409 served as anyone
 // but the replica's account, pauses sync with nothing applied (§9.1). With `dieAfter`, the process dies
-// once that many results are recorded: the rest stay sent, and ackThrough and any epoch change are left
-// as they were.
+// once that many results are recorded: the rest stay sent and ackThrough holds. A changed epoch
+// resets before any result is recorded.
+export class ResponseError extends Error {}
+
+export function validatePushEnvelope({ status, body }) {
+  if (typeof body?.epoch !== 'string' || body.epoch.length === 0
+    || !Number.isSafeInteger(body.serverTime) || body.serverTime < 0) throw new ResponseError('invalid sync response');
+  if (status === 409 && !['gap', 'replica-forked', 'replica-foreign'].includes(body.error))
+    throw new ResponseError('invalid sync response');
+  if (status === 200 && (!Number.isSafeInteger(body.lastN) || body.lastN < 0 || !Array.isArray(body.results)))
+    throw new ResponseError('invalid sync response');
+}
+
 export function onPushResponse(replica, ctx, request, response, timing, { dieAfter = Infinity } = {}) {
   const { meta } = replica;
   const { status, body } = response;
+  const unauthenticated = replica.isUnauthenticated(response);
+  if ((status === 200 || status === 409) && !unauthenticated) validatePushEnvelope(response);
   if (body?.serverTime !== undefined) replica.takeOffsetSample(body.serverTime, timing, ctx.limits);
-  if (replica.isUnauthenticated(response)) {
+  if (unauthenticated) {
     meta.authPaused = true;
     return undefined;
   }
+  if ((status === 200 || status === 409) && meta.serverEpoch !== null && body.epoch !== meta.serverEpoch) {
+    epochChange(replica, ctx, body.epoch);
+    return undefined;
+  }
   if (status === 409) {
+    meta.serverEpoch ??= body.epoch;
     reidentify(replica, ctx);
     renewActor(ctx);
     return undefined;
@@ -127,7 +145,6 @@ export function onPushResponse(replica, ctx, request, response, timing, { dieAft
   }
   meta.serverEpoch ??= body.epoch;
   meta.ackThrough = body.lastN;
-  if (body.epoch !== meta.serverEpoch) epochChange(replica, ctx, body.epoch);
   return undefined;
 }
 

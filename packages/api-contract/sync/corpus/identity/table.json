@@ -248,7 +248,7 @@
     },
     "expect": {
       "op": "delete",
-      "verdict": "ok"
+      "verdict": "apply"
     }
   },
   {
@@ -310,7 +310,8 @@
     },
     "expect": {
       "op": "delete",
-      "verdict": "ok"
+      "verdict": "refuse",
+      "code": "unknown-record"
     }
   },
   {
@@ -695,7 +696,7 @@
     },
     "expect": {
       "op": "delete",
-      "verdict": "ok"
+      "verdict": "apply"
     }
   },
   {
@@ -737,7 +738,8 @@
     },
     "expect": {
       "op": "delete",
-      "verdict": "ok"
+      "verdict": "refuse",
+      "code": "unknown-record"
     }
   },
   {

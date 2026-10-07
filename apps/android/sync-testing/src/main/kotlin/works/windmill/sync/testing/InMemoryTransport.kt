@@ -135,7 +135,8 @@ private class PortEngineSteps(private val engine: Engine, private val transport:
         val (reply, timing) = exchange("push", request, if (leaving) 2_000 else Constants.REQUEST_TIMEOUT_MS.toLong())
         if (reply == null) { if (!leaving) wait.backoff(clock.monotonicMs, { it / 2 }); return true }
         val results = reply.body["results"]?.arr().orEmpty()
-        for (result in results.filter { it["code"] == Json.of("clock-skew") }) {
+        val epoch = current().member("meta")["serverEpoch"]?.orNull()
+        for (result in results.filter { it["code"] == Json.of("clock-skew") && (epoch == null || epoch == reply.body["epoch"]) }) {
             val intent = request.member("intents").arr().single { it.member("n") == result.member("n") }
             val entry = entries.firstOrNull { it["n"] == intent.member("n") || it["intent"]?.get("n") == intent.member("n") }
                 ?: current()["outbox"]?.arr()?.firstOrNull { it["n"] == intent.member("n") }

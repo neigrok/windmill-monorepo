@@ -621,7 +621,7 @@ admission mints one stamp per intent by §10.3 and puts it there and in the writ
 |---|---|
 | `shape.json` | §6.1 step 2: registration, ids, keys, stamps, §4.1 shapes, writer rules, domains, units, quanta, commands and arguments, guards, whole puts (a life, every client field, one stamp); `clock-skew` beyond `serverNow + MAX_SKEW_MS` and admission at the bound; time fields and time arguments clamped; instants beyond the bound `invalid` |
 | `access.json` | step 3 and D-4: scope insertion, `not-found` / `scope-dead` / `forbidden`, overlays of public and unlisted trees, origin rules |
-| `identity.json` | every §4.3 cell through admission, keyed puts and singleton writes, §4.4's const and time rule |
+| `identity.json` | every §4.3 cell through admission, absent deletes surviving replayed creates (spent, kept, governing and serial-bearing records), keyed puts and singleton writes, §4.4's const and time rule |
 | `guards.json` | step 7, the replay rule, a command replay skipping guards |
 | `commands.json` | the probe commands |
 | `check.json` | the parent rule and the run-delete consequence (laps die only when the run's joined life turns dead) |
@@ -915,7 +915,8 @@ Input: `{device, ids?, actors?, forkGuards?, draws?, actor?, limits?, steps}`.
     before the next page. Nothing after them applies, and the pages after the one cut short are not
     reported. `pushResponse` may carry
     `dieAfter`: the process dies once that many results are recorded, in ascending `n` (§7.4), and
-    `ackThrough` and any epoch change wait for the last. The offset sample and an epoch change the
+    `ackThrough` waits for the last. A changed epoch resets before results, ignoring that answer's
+    results and `lastN`. The offset sample and an epoch change the
     answer carries come before any page (§7.5 step 1), and a `serverEpoch` that was null takes the
     answer's epoch with the first result recorded (§7.4). A runner whose engine sizes its own chunks
     and slices takes `chunk` and `settle` as those sizes.
@@ -946,7 +947,7 @@ Expect: `{returns, device, ended, telemetry?, events?}`.
 | `subscribe` | `scope` | §7.9: deletes a `not-found` `KnownScope` record; a `gone` one stays | `'gone'` for a scope known gone, else `null` |
 | `dismiss` | `id` | D-17: the notice `id` of the active replica takes `dismissed: true` | `null` |
 | `push` | `limit?` | §7.4 numbering; with `limit`, at most that many sent entries, numbering none beyond them | the PushRequest, or `null` |
-| `pushResponse` | `response`, `dieAfter?` | §7.4, for the last `push`; a 401, a 409 `account-mismatch`, or a 200 or 409 whose `as` is not the replica's account, sets `authPaused` and applies nothing (§9.1) | `{limit}` after a 400 or 413 on several intents, `limit` = ⌈count/2⌉ (the next `push` passes it, resending the first half by `n`), else `null` |
+| `pushResponse` | `response`, `dieAfter?` | §7.4, for the last `push`; a 401, a 409 `account-mismatch`, or a 200 or 409 whose `as` is not the replica's account, sets `authPaused` and applies nothing (§9.1); a malformed authenticated conflict throws | `{throws: true}` for a malformed conflict; `{limit}` after a 400 or 413 on several intents, `limit` = ⌈count/2⌉ (the next `push` passes it, resending the first half by `n`), else `null` |
 | `hello` | `response` | §10.4 offset sample; a 401, or an `as` other than the replica's account, sets `authPaused` | `null` |
 | `engineStart` | `backupGuard?` | §7.3, §7.11, D-2 | `{actor, reidentified, pendingSignIn?}` |
 | `pull` | `scopes` | request with the stored cursors, leaving out a tree or overlay scope whose governing record's create is still in the outbox (§7.9) | the PullRequest, or `null` when no scope is left |
@@ -1045,7 +1046,7 @@ notice of §7.1 step 8 is `notice:<gestureId>/0`, the local id of the gesture's 
 `dismiss` step sets `dismissed: true`; content that later folds into the notice (an orphan's refusal
 folding its held-back dependents, §7.7 step 3) removes it.
 
-**Sender.** Every response carrying `serverTime` yields an offset sample: every push status, every
+**Sender.** Every valid response carrying `serverTime` yields an offset sample: every push status, every
 pull response, and hello. After a one-intent 400 or 413 the entry ends `refused` (`invalid` or
 `too-large`) with its notice, `nextN` rewinds to that entry's `n`, which the server never processed,
 and every later sent entry returns to ready (event `rewind`); an orphan ends without its own notice,
@@ -1137,6 +1138,12 @@ change, and process deaths between two result batches: the results recorded stan
 has never heard the server's epoch takes it with the first result, so after such a death a pull from a
 server restored under another epoch changes epoch, and the entry acked before the restore returns to
 ready and is sent again.
+Restore vectors cover pull-first, gap-first and success-first recovery, a restart after reset,
+acknowledged creates followed by offline edits/deletes, commands replayed under new birth stamps,
+and another replica's delete arriving before the creator replays. A command without a retained
+prediction cannot map its new birth into an old delete; that delete survives in an `unknown-record`
+notice. Authenticated malformed conflicts throw without changing state; another principal pauses
+authentication without changing the epoch or ending owed work.
 - A record is `(scope, t, id)`. A ref names a record in the scope its type lives in, relative to the
   referencing scope's tree: a tree type → `tree/<T>`, an overlay type → `self/overlay/<T>`, a product
   type → `self/<product>`. Dependents and `anonCount` key records this way.

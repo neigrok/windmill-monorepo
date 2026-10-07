@@ -9,7 +9,7 @@ const SPEC = `
 op      | none           | foreign        | alive=  | alive≠         | dead=                              | dead≠
 create  | apply          | id-taken       | apply   | id-taken       | ok                                 | id-spent
 update  | unknown-record | unknown-record | apply   | unknown-record | record-dead                        | unknown-record
-delete  | ok             | ok             | apply   | ok             | apply                              | ok
+delete  | apply          | ok             | apply   | unknown-record | apply                              | ok
 revive  | unknown-record | unknown-record | apply   | unknown-record | revivable:apply,else:id-spent      | unknown-record
 `;
 

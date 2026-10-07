@@ -4946,7 +4946,7 @@
                 {
                   "n": 3,
                   "s": "ok",
-                  "seq": 4
+                  "seq": 5
                 }
               ]
             }
@@ -5158,18 +5158,45 @@
                 "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
                 "booted": true
               }
-            }
+            },
+            "outbox": [
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "acked",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "5011:1:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "run",
+                      "id": "run00009",
+                      "born": "5011:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "dead",
+                        "5011:1:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "g2",
+                  "n": 3
+                },
+                "n": 3,
+                "digest": "7c65379617ce22898aa64a11e2af8a4a044cc0349e7afcfbe78ffe62fe32b026",
+                "resultSeq": 5,
+                "resultEpoch": "ep-1"
+              }
+            ]
           }
         ]
       },
       "ended": [
         {
           "localId": "g1/0",
-          "outcome": "resolved",
-          "event": "resolve"
-        },
-        {
-          "localId": "g2/0",
           "outcome": "resolved",
           "event": "resolve"
         }

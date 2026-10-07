@@ -100,9 +100,8 @@ struct OutcomesTests {
     #expect(replica.meta.ackThrough == 0)
   }
 
-  // Why the epoch comes first: an entry acked while the replica had no epoch, the process dying before the answer's epoch
-  // step, returns to ready when the server's epoch then changes (a restore), rather than stay acked for ever.
-  @Test func anEntryAckedBeforeTheEpochStepReturnsToReadyWhenTheServerIsRestored() throws {
+  // An entry acked by the first result batch returns to ready when the server is restored after a process death.
+  @Test func anEntryAckedByTheFirstBatchReturnsToReadyWhenTheServerIsRestored() throws {
     let instance = Instance(actor: try Stamp.Actor("r_aaaaaaaaaaaa"), deviceNow: 5000, appVersion: "1")
     var replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .bound, account: "A"), wholeScopes: true)
     _ = try CommitPlanner(registry: Self.probe).commit(
@@ -115,7 +114,6 @@ struct OutcomesTests {
     ])
     var receiving = instance
     for step in Self.steps(.ok(answer), to: request, by: pushes, batch: 1) {
-      if case .epoch = step { break }
       try pushes.apply(step, to: &replica, instance: &receiving, timing: .steady(send: 5000, recv: 5010), identities: try QueuedIdentities([:]))
     }
     try PageApplier(registry: Self.probe).apply(
@@ -193,25 +191,28 @@ struct OutcomesTests {
     #expect(replica.outbox.map { "\($0.localId) \($0.state.rawValue) \($0.resultEpoch ?? "-")" } == ["g1/0 acked ep-7"])
   }
 
-  // §7.5 step 2: a stored cursor covers only its own epoch's results, so an ok from a restored epoch at a lower seq stays acked.
-  @Test func anOkFromARestoredEpochBelowTheStoredCursorStaysAcked() throws {
+  // §7.4: a changed-epoch success resets before its first batch and drops every result, including later batches and lastN.
+  @Test func anOkFromARestoredEpochRequeuesBeforeAnyResult() throws {
     let instance = Instance(actor: try Stamp.Actor("r_aaaaaaaaaaaa"), deviceNow: 5000, appVersion: "1")
     var replica = LoadedReplica(
       meta: ReplicaMeta(replica: "rp_1", state: .bound, account: "A"),
       cursors: [.product("probe"): CursorRecord(cursor: Cursor(epoch: "ep-1", mode: .live, seq: 10).text, booted: true)], wholeScopes: true)
     replica.update { $0.serverEpoch = "ep-1" }
     _ = try CommitPlanner(registry: Self.probe).commit(
-      Gesture(changes: [.put("day", RecordID("2026-09-01"), present: true, ["score": JSON(1)])], gestureId: "g1"), in: .product("probe"),
+      Gesture(changes: (1...2).map { .put("day", RecordID("2026-09-0\($0)"), present: true, ["score": JSON($0)]) }, gestureId: "g1"), in: .product("probe"),
       to: &replica, as: instance, identities: try QueuedIdentities([:]), gestureIdTaken: false)
     let planner = PushPlanner(registry: Self.probe)
     let request = try #require(try planner.number(&replica, at: 5000))
-    let answer = try PushResponse(json: ["serverTime": 5010, "epoch": "ep-2", "as": "A", "lastN": 1, "results": [["n": 1, "s": "ok", "seq": 3]]])
+    let answer = try PushResponse(json: ["serverTime": 5010, "epoch": "ep-2", "as": "A", "lastN": 2,
+      "results": [["n": 1, "s": "ok", "seq": 3], ["n": 2, "s": "ok", "seq": 4]]])
     var receiving = instance
+    let identities = try QueuedIdentities(["ids": ["rp_2"], "actors": ["r_bbbbbbbbbbbb"]])
     for step in Self.steps(.ok(answer), to: request, by: planner, batch: 1) {
-      if case .epoch = step { break }
-      try planner.apply(step, to: &replica, instance: &receiving, timing: .steady(send: 5000, recv: 5010), identities: try QueuedIdentities([:]))
+      try planner.apply(step, to: &replica, instance: &receiving, timing: .steady(send: 5000, recv: 5010), identities: identities)
     }
-    #expect(replica.outbox.map { "\($0.localId) \($0.state.rawValue) \($0.resultEpoch ?? "-")" } == ["g1/0 acked ep-2"])
+    #expect(replica.outbox.map { "\($0.localId) \($0.state.rawValue) \($0.resultEpoch ?? "-")" } == ["g1/0 ready -", "g1/1 ready -"])
+    #expect((replica.id, replica.meta.serverEpoch, replica.meta.nextN, replica.meta.ackThrough) == ("rp_2", "ep-2", 1, 0))
+    #expect(replica.cursors[.product("probe")]?.cursor == nil)
   }
 
   // §7.4: an answer with no results is one batch, the last, which still moves ackThrough to the answer's lastN.
@@ -223,7 +224,7 @@ struct OutcomesTests {
     let answer = try PushResponse(json: ["serverTime": 5010, "epoch": "ep-1", "as": "A", "lastN": 3, "results": []])
     let steps = Self.steps(.ok(answer), to: PushRequest(replica: "rp_1", account: "A", ackThrough: 0, intents: []), by: planner, batch: 16)
     #expect(steps == [
-      .sample(serverTime: 5010), .results(ResultBatch(results: [], lastN: 3, epoch: "ep-1", isLast: true)), .epoch("ep-1"),
+      .sample(serverTime: 5010), .results(ResultBatch(replica: "rp_1", results: [], lastN: 3, epoch: "ep-1", isLast: true)),
     ])
     var instance = Instance(actor: try Stamp.Actor("r_aaaaaaaaaaaa"), deviceNow: 5000, appVersion: "1")
     for step in steps {
@@ -411,7 +412,7 @@ struct OutcomesTests {
   // §11.2 property 8 (INV-14): a device an hour or more ahead of the model server creates, edits and deletes records,
   // holds creates and keyed puts, undoes and retires them, sends creates the server refuses `invalid` and atomic entries
   // that depend on them in part, while 409s and restores under a new epoch return its numbered entries to ready. With
-  // the server clock held still, every entry is acked or ends, and none is refused clock-skew twice.
+  // the server clock held still, every entry is acked or ends, and none needs a second clock-skew recovery.
   @Test func clockSkewRecoveryTerminates() throws {
     var random = SeededRandom.fromEnvironment()
     let serverNow: Int64 = 1_000_000
@@ -435,7 +436,8 @@ struct OutcomesTests {
         return reply.status == 200 ? .ok(try PushResponse(json: reply.body)) : .failed(try HTTPFailure(status: reply.status, body: reply.body))
       }
       let answer = { (replica: inout LoadedReplica, instance: inout Instance, request: PushRequest, answer: Answer<PushResponse>) throws in
-        if case .ok(let response) = answer {
+        if case .ok(let response) = answer,
+           replica.meta.serverEpoch.map({ $0.utf8.elementsEqual(response.epoch.utf8) }) != false {
           for result in response.results where result.verdict == .refused(.clockSkew) {
             guard let entry = replica.outbox.first(where: { $0.state == .sent && $0.n == result.n }) else { continue }
             skews[entry.localId, default: 0] += 1
@@ -514,7 +516,7 @@ struct OutcomesTests {
       }
       #expect(replica.outbox.filter { $0.state != .acked }.map { "\($0.localId) \($0.state)" } == [],
               "\(context): every entry is acked or ends with the server clock held still")
-      #expect(skews.filter { $0.value > 1 }.map(\.key).sorted() == [], "\(context): no entry is refused clock-skew twice")
+      #expect(skews.filter { $0.value > 1 }.map(\.key).sorted() == [], "\(context): no entry needs two clock-skew recoveries")
       tally.recovered += skews.count
       for case .ended(_, _, let event, let orphanOf) in replica.events {
         if event == .silentFold { tally.folded += 1 }

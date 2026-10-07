@@ -26,7 +26,7 @@ public enum PushStep: Sendable, Hashable {
   // §10.4, before any stamp of the answer is observed.
   case sample(serverTime: Int64)
   case pauseAuth
-  case reidentify
+  case reidentify(epoch: String)
   // A 400 or 413 on several intents: resend the first `limit` entries by n; a 400 also reports itself.
   case halve(limit: Int, malformed: Bool)
   // A 400 or 413 on one intent: rewind to its n, and refuse it `invalid` or `too-large`.
@@ -51,6 +51,8 @@ public enum PushStep: Sendable, Hashable {
     case .sample, .pauseAuth, .halve:
       return EntrySelection()
     case .results(let batch):
+      guard batch.replica.utf8.elementsEqual(meta.replica.utf8) else { return EntrySelection() }
+      if let epoch = meta.serverEpoch, !epoch.utf8.elementsEqual(batch.epoch.utf8) { return .every }
       guard batch.results.allSatisfy({ if case .ok(_, nil) = $0.verdict { true } else { false } }) else { return .every }
       return EntrySelection(numbered: Set(batch.results.map(\.n)))
     case .epoch(let epoch):
@@ -62,14 +64,17 @@ public enum PushStep: Sendable, Hashable {
   }
 }
 
-// §7.4 the next results of an answer in ascending n, one transaction; the last, which may hold none, moves ackThrough.
+// §7.4 the next results of an answer in ascending n, pinned to the request's replica; an epoch reset drops the remaining batches.
+// The last batch, which may hold none, moves ackThrough.
 public struct ResultBatch: Sendable, Hashable {
+  public let replica: String
   public let results: [PushResult]
   public let lastN: Int64
   public let epoch: String
   public let isLast: Bool
 
-  public init(results: [PushResult], lastN: Int64, epoch: String, isLast: Bool) {
+  public init(replica: String, results: [PushResult], lastN: Int64, epoch: String, isLast: Bool) {
+    self.replica = replica
     self.results = results
     self.lastN = lastN
     self.epoch = epoch
@@ -77,12 +82,12 @@ public struct ResultBatch: Sendable, Hashable {
   }
 }
 
-// §7.4 a push answer's transactions in order: the sample, then a 401's pause, a 200's result batches and epoch, or a failure's own move.
+// §7.4 a push answer's transactions in order: the sample, then a 401's pause, a 200's epoch recovery or result batches, or a failure's own move.
 public struct PushSteps: Sendable {
   enum Part: Sendable {
     case step(PushStep)
     // A 200's results not yet taken, ascending by n.
-    case results(ArraySlice<PushResult>, lastN: Int64, epoch: String)
+    case results(ArraySlice<PushResult>, replica: String, lastN: Int64, epoch: String)
   }
 
   var parts: [Part]
@@ -94,11 +99,11 @@ public struct PushSteps: Sendable {
     case .step(let step):
       parts.removeFirst()
       return step
-    case .results(let results, let lastN, let epoch):
+    case .results(let results, let replica, let lastN, let epoch):
       let batch = results.prefix(sizes.size(.results))
       let rest = results.dropFirst(batch.count)
-      if rest.isEmpty { parts.removeFirst() } else { parts[0] = .results(rest, lastN: lastN, epoch: epoch) }
-      return .results(ResultBatch(results: Array(batch), lastN: lastN, epoch: epoch, isLast: rest.isEmpty))
+      if rest.isEmpty { parts.removeFirst() } else { parts[0] = .results(rest, replica: replica, lastN: lastN, epoch: epoch) }
+      return .results(ResultBatch(replica: replica, results: Array(batch), lastN: lastN, epoch: epoch, isLast: rest.isEmpty))
     }
   }
 }
@@ -207,11 +212,13 @@ public struct PushPlanner: Sendable {
     guard !answer.isUnauthenticated(for: request.account) else { return PushSteps(parts: sample + [.step(.pauseAuth)]) }
     switch answer {
     case .ok(let response):
-      let results = PushSteps.Part.results(response.results[...], lastN: response.lastN, epoch: response.epoch)
-      return PushSteps(parts: sample + [results, .step(.epoch(response.epoch))])
+      let results = PushSteps.Part.results(response.results[...], replica: request.replica, lastN: response.lastN, epoch: response.epoch)
+      return PushSteps(parts: sample + [results])
     case .failed(let failure):
       switch failure.status {
-      case 409: return PushSteps(parts: sample + [.step(.reidentify)])
+      case 409:
+        guard failure.isRecoveryConflict, let epoch = failure.epoch else { return PushSteps(parts: []) }
+        return PushSteps(parts: sample + [.step(.reidentify(epoch: epoch))])
       case 400, 413:
         let malformed = failure.status == 400
         if request.intents.count > 1 {
@@ -232,8 +239,10 @@ public struct PushPlanner: Sendable {
       replica.update { $0.sample(serverTime: serverTime, send: timing.send, recv: timing.recv) }
     case .pauseAuth:
       replica.update { $0.authPaused = true }
-    case .reidentify:
-      try lifecycle.reidentify(&replica, instance: &instance, identities: identities)
+    case .reidentify(let epoch):
+      let id = replica.id
+      try lifecycle.checkEpoch(epoch, in: &replica, instance: &instance, identities: identities)
+      if replica.id.utf8.elementsEqual(id.utf8) { try lifecycle.reidentify(&replica, instance: &instance, identities: identities) }
     case .halve(_, let malformed):
       if malformed { replica.record(.pushMalformed) }
     case .refuseLocally(let n, let malformed):
@@ -244,6 +253,11 @@ public struct PushPlanner: Sendable {
       try writeCommandRefusal(entry, code: malformed ? .invalid : .tooLarge, in: &replica)
       try refuse(entry.localId, code: malformed ? .invalid : .tooLarge, detail: nil, lastN: n - 1, in: &replica, instance: instance)
     case .results(let batch):
+      guard batch.replica.utf8.elementsEqual(replica.id.utf8) else { return }
+      if let epoch = replica.meta.serverEpoch, !epoch.utf8.elementsEqual(batch.epoch.utf8) {
+        try lifecycle.changeEpoch(to: batch.epoch, in: &replica, instance: &instance, identities: identities)
+        return
+      }
       // A replica with no epoch takes the answer's with its first result, or with ackThrough (§7.4).
       let records = batch.results.contains { replica.sentEntry(numbered: $0.n) != nil }
       if replica.meta.serverEpoch == nil && (records || batch.isLast) { replica.update { $0.serverEpoch = batch.epoch } }

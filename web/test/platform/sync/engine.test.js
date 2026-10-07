@@ -7,6 +7,7 @@ import { reidentify } from '../../../src/platform/sync/client/lifecycle.js';
 import { nextPush } from '../../../src/platform/sync/client/sender.js';
 import { Cursor } from '../../../src/platform/sync/core/wire.js';
 import { scopeDigest } from '../../../src/platform/sync/core/digest.js';
+import { ServerState } from '../../../../packages/api-contract/sync/reference/server/state.js';
 import { environment, until, tick } from './fakes.js';
 
 const card = (id = 'card0001') => [{ op: 'create', t: 'card', id, f: { title: 'secret' } }];
@@ -365,6 +366,83 @@ test('a delayed push result for an old wire replica cannot acknowledge a renumbe
   await engine.pushResults(handle, request, { status: 200, body: { as: 'A', epoch: 'ep-1',
     serverTime: 1000, lastN: 1, results: [{ n: 1, s: 'ok', seq: 1 }] } }, {});
   assert.deepEqual(engine.device.toJSON(), before);
+  engine.close();
+});
+
+for (const first of ['gap', 'success']) test(`a restore learned from ${first} durably replays an acknowledged create before its offline delete`, async () => {
+  const env = environment();
+  let engine = await open(env);
+  env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+  await engine.commit('self/probe', card());
+  await engine.send();
+  assert.deepEqual(engine.device.activeReplica.entries().map(({ state }) => state), ['acked']);
+  await engine.commit('self/probe', [{ op: 'delete', t: 'card', id: 'card0001' }]);
+  env.state = ServerState.empty({ epoch: 'ep-2', accounts: { A: { name: 'A' } } });
+  if (first === 'success') {
+    await engine.write(null, (device, ctx) => reidentify(device.activeReplica, ctx));
+    await until(() => engine.leader);
+  }
+  const previous = engine.activeReplica();
+  let results = 0;
+  engine.onPushResult = () => results++;
+  await engine.send();
+  assert.equal(results, 0, 'a changed-epoch result never reaches product receipt consumers');
+  assert.notEqual(engine.activeReplica(), previous);
+  assert.equal(engine.device.activeReplica.meta.serverEpoch, 'ep-2');
+  assert.deepEqual(engine.device.activeReplica.entries().map(({ state, commitOrder }) => [state, commitOrder]), [['ready', 1], ['ready', 2]]);
+  engine.close();
+  engine = await open(env);
+  await engine.send();
+  assert.deepEqual(env.requests.filter(({ endpoint }) => endpoint === 'push').at(-1).request.intents.map(({ d }) => d[0].life[0]), ['alive', 'dead']);
+  await engine.pull();
+  assert.deepEqual(engine.device.activeReplica.entries(), []);
+  assert.deepEqual(engine.device.activeReplica.notices, []);
+  assert.deepEqual(engine.device.activeReplica.confirmedRows('self/probe'), []);
+  assert.deepEqual(engine.observe('self/probe').getSnapshot().drawn, []);
+  assert.deepEqual(env.failures, []);
+  engine.close();
+});
+
+test('a malformed authenticated gap backs off as a transport failure without altering persisted work', async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+  await engine.commit('self/probe', card());
+  await engine.send();
+  await engine.commit('self/probe', [{ op: 'delete', t: 'card', id: 'card0001' }]);
+  await engine.write(null, (device, ctx) => nextPush(device.activeReplica, ctx));
+  const before = engine.device.toJSON();
+  env.transport.response = () => ({ response: { status: 409, body: { as: 'A', serverTime: 1000, error: 'gap' } }, timing: {} });
+  await engine.send();
+  assert.deepEqual(engine.device.toJSON(), before);
+  assert.deepEqual((await engine.store.read()).device.toJSON(), before);
+  assert.deepEqual(env.failures, ['transport']);
+  assert.equal(engine.wait.due(env.timers.time), false);
+  engine.close();
+});
+
+test('a pull adopting the first epoch between push transactions cannot leave an acknowledgement in another epoch', async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+  await engine.commit('self/probe', card());
+  const request = await engine.write(null, (device, ctx) => nextPush(device.activeReplica, ctx));
+  const handle = engine.device.activeReplica.storageHandle;
+  assert.equal(engine.device.activeReplica.meta.serverEpoch, null);
+  const write = engine.write.bind(engine);
+  let transactions = 0;
+  engine.write = async (...args) => {
+    if (++transactions === 2) await write(null, (device) => { device.activeReplica.meta.serverEpoch = 'ep-2'; });
+    return write(...args);
+  };
+  let results = 0;
+  engine.onPushResult = () => results++;
+  await engine.pushResults(handle, request, { status: 200, body: { as: 'A', epoch: 'ep-1', serverTime: 1000,
+    lastN: 1, results: [{ n: 1, s: 'ok', seq: 1 }] } }, {
+    send: { wall: 1000, mono: 1000, boot: 'test' }, recv: { wall: 1000, mono: 1000, boot: 'test' },
+  });
+  assert.equal(results, 0);
+  assert.deepEqual(engine.device.activeReplica.entries().map(({ state }) => state), ['ready']);
+  assert.equal(engine.device.activeReplica.meta.ackThrough, 0);
+  assert.notEqual(engine.activeReplica(), request.replica);
   engine.close();
 });
 

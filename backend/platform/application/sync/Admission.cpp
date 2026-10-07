@@ -286,12 +286,13 @@ private:
     }
   }
 
-  // 3.6: every fresh global id the intent creates, and every global id a command argument names.
+  // 3.6: every global id the intent creates or deletes, and every global id a command argument names.
   void lockFreshIds() {
     std::vector<std::pair<std::string, RecordId>> fresh;
     for (const Delta& delta : intent().d) {
       const TypeDef& type = *registry_.type(delta.t);
-      if (type.idSpace == IdSpace::global && opOf(type, delta) == Op::create) fresh.emplace_back(delta.t, delta.id);
+      const Op op = opOf(type, delta);
+      if (type.idSpace == IdSpace::global && (op == Op::create || op == Op::remove)) fresh.emplace_back(delta.t, delta.id);
     }
     for (const auto& [type, id] : argumentRecords()) {
       if (registry_.type(type)->idSpace == IdSpace::global) fresh.emplace_back(type, id);

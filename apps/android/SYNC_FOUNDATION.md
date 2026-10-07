@@ -110,7 +110,7 @@ python3 tools/schema_gen.py --check
 | Gate | Verified result |
 |---|---|
 | Full build | `./gradlew --max-workers=4 build`: green; 474 tasks. App/platform/gym debug+release assembly and normal lint pass. |
-| Client corpus | 52/52 files, 764/764 cases, 0 unclaimed. All seven protocol transcripts generate requests through Engine, use actual model replies, and compare client returns and final devices/ended/server state. JSONL transcripts each count once. |
+| Client corpus | 52/52 files, 781/781 cases, 0 unclaimed. All seven protocol transcripts generate requests through Engine, use actual model replies, and compare client returns and final devices/ended/server state. JSONL transcripts each count once. |
 | Server corpus | 27 server-role files / 760 cases, plus 7 protocol transcripts. |
 | Kit corpus | 12/12 files, 475/475 cases, 0 unclaimed. Gym domain corpus: 12/12 files, 492 cases. |
 | API and engine | API 13/13; engine 156/156 per debug/release variant, 0 skips/errors/failures. Includes native SQLite on SDK26/27/28/29/35 and transport/runtime failure paths. |

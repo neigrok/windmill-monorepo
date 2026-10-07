@@ -25042,7 +25042,7 @@
     }
   },
   {
-    "name": "an ok from a restored epoch at a seq the stored cursor of the old epoch has reached is not covered: its entry stays acked in the new epoch, and its put stays drawn",
+    "name": "an ok from a restored epoch resets before results: its entry returns to ready and its put stays drawn",
     "input": {
       "device": {
         "active": "rp_00000000000000000000000000000001",
@@ -25365,7 +25365,7 @@
                 "counter": 0
               },
               "hlcHigh": "5001:0:r_aaaaaaaaaaaa",
-              "admittedHigh": "5001:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "1003:0:r_aaaaaaaaaaaa",
               "serverOffsetMs": 0,
               "offsetSamples": [
                 {
@@ -25470,7 +25470,7 @@
                 "gestureId": "g1",
                 "lineage": "A",
                 "scope": "self/probe",
-                "state": "acked",
+                "state": "ready",
                 "commitOrder": 1,
                 "releaseAt": 0,
                 "stamp": "5001:0:r_aaaaaaaaaaaa",
@@ -25492,13 +25492,8 @@
                       }
                     }
                   ],
-                  "gestureId": "g1",
-                  "n": 1
-                },
-                "n": 1,
-                "digest": "6a44de29a165c8f72dc75d8d690815ec1621661e40790628a5c5816de200db59",
-                "resultSeq": 4,
-                "resultEpoch": "ep-2"
+                  "gestureId": "g1"
+                }
               }
             ]
           }
