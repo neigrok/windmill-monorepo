@@ -39,8 +39,7 @@ extension GymRESTClient {
         var parser = CoachSSE(), terminal = false, line = Data()
         for try await byte in bytes {
           try Task.checkCancellation()
-          guard generation == requestGeneration, !blocked, try runtime.account() == owner,
-                runtime.tokens.token(for: owner) == token else { throw CancellationError() }
+          guard generation == requestGeneration, !blocked else { throw CancellationError() }
           guard byte == 10 else {
             line.append(byte)
             if line.count > 1_048_576 { throw URLError(.dataLengthExceedsMaximum) }
@@ -50,6 +49,7 @@ extension GymRESTClient {
           guard let text = String(data: line, encoding: .utf8) else { throw URLError(.cannotDecodeContentData) }
           line.removeAll(keepingCapacity: true)
           if let (event, data) = parser.consume(text) {
+            guard try runtime.account() == owner, runtime.tokens.token(for: owner) == token else { throw CancellationError() }
             if event == "error" {
               let object = (try JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
               throw GymRESTFailure(status: object["status"] as? Int ?? 500, body: data,

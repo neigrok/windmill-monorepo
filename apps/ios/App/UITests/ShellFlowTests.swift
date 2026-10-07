@@ -9,12 +9,21 @@ import XCTest
   }
 
   func switchRoom(_ room: String, in app: XCUIApplication) {
-    let menu = app.buttons["room-menu"]
+    let viewport = app.frame
+    let menu = app.buttons.matching(NSPredicate(format: "identifier == %@ AND enabled == true", "room-menu")).firstMatch
     XCTAssertTrue(menu.waitForExistence(timeout: 10))
-    menu.tap()
-    let item = app.buttons["room-\(room.lowercased())"]
+    XCTAssertTrue(menu.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1)
+    let item = app.buttons.matching(NSPredicate(format: "identifier == %@ AND enabled == true", "room-\(room.lowercased())")).firstMatch
     XCTAssertTrue(item.waitForExistence(timeout: 5))
-    item.tap()
+    let visibleItem = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      guard let snapshot = try? item.snapshot() else { return false }
+      return snapshot.isEnabled && !snapshot.frame.isEmpty && viewport.contains(snapshot.frame)
+    }, object: item)
+    XCTAssertEqual(XCTWaiter.wait(for: [visibleItem], timeout: 5), .completed)
+    item.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1)
+    let selected = app.buttons.matching(NSPredicate(format: "identifier == %@ AND label == %@", "room-menu", room)).firstMatch
+    XCTAssertTrue(selected.waitForExistence(timeout: 10))
     XCTAssertEqual(menu.label, room)
   }
 
