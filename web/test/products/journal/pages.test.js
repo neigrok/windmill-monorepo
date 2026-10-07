@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { syncSession } from '../../../src/platform/sync/session.js';
 import { corpus } from '../../../src/products/journal/pages.js';
+import { registry } from '../../../src/platform/sync/schema.js';
 
 // The session holds `state` for this test alone.
 function holding(t, state) {
@@ -17,8 +18,12 @@ test('the corpus reads the replica for its own account, and makes no REST reques
     { t: 'page', id: '2026-08-04', x: { body: 'better' }, f: { mood: [0], energy: [null], source: ['typed'] } },
     { t: 'page', id: '2026-08-05', x: { body: '' }, f: { mood: [null], energy: [null], source: ['typed'] } },
   ], notices: [], firstPullComplete: true };
-  const engine = { observe: () => ({ getSnapshot: () => snapshot }), device: { activeReplica: {
-    meta: { state: 'bound', account: 'A' }, deviceRows: () => ({}), confirmedRow: () => null,
+  snapshot.stored = snapshot.drawn;
+  const engine = { registry, now: () => Date.parse('2026-08-05T12:00:00Z'), activeReplica: () => 'replica',
+    readMetadata: () => ({ devices: {}, confirmed: new Map(), firstPullComplete: snapshot.firstPullComplete,
+      commands: [], actor: 'writer', isAnonymous: false, checkpoint: { epoch: null, cleanSeq: null } }),
+    observe: () => ({ getSnapshot: () => snapshot }), device: { activeReplica: {
+    meta: { state: 'bound', account: 'A', serverOffsetMs: 0 }, deviceRows: () => ({}), confirmedRow: () => null,
   } } };
   holding(t, { engine, snapshot: { ...syncSession.snapshot, engine, ready: true } });
   t.mock.method(globalThis, 'fetch', () => assert.fail('local pages used REST'));

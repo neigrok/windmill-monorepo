@@ -4,8 +4,8 @@ These shared expectations are written from [domain-kit Appendix C](../../../../d
 and [engine A.3](../../../../docs/foundation/engine.md#a3-journal), with the kit's §3–§4 and §8 defining
 validation and gesture forms. The specification is the oracle. An implementation disagreement changes
 the implementation, never an expectation to accommodate a surface. Every surface carrying journal
-must claim every file. Swift's runner fails on an unclaimed file; the web domain runner is W6b work.
-The web's current writing adapter is probed read-only here.
+must claim every file. Swift and web runners fail on an unclaimed file. Web also replays every
+value/action scene with its records reversed.
 
 ## Files
 
@@ -142,54 +142,35 @@ The engine's separate [`claim-edit.json`](../../sync/corpus/journal/claim-edit.j
 restart and reordered responses. This corpus pins pure decisions and values; local commit failure
 and engine durability remain harness gates.
 
-## Surface findings
+## Surface coverage
 
-Swift now applies these rulings for the disagreements found by the corpus:
+Swift and web claim all three files. Each compares the complete rule book and every value/action
+expectation; no surface supplies expected values.
 
-| Disagreement resolved | Swift behavior and spec ruling |
-|---|---|
-| Incomplete command string specs and LOCAL rule declarations | Both command bodies and sources, the save stamp's actor, the claim receipt id and all writable state strings have bound specs; every named local check appears in the book (§3.4, §6.3, §8.4). The command-specific spec owns its violation path. |
-| State checks do not apply their declared choice specs | Each field applies its own bound `pending`/`retired` choice spec and reports `notOneOf` for an unknown value (§3.4, §4.3). |
-| Anonymous validation names the bound save's body rule | A queued `journal.claimPage` validates against `journal.claimPage.body`; a bound save uses `journal.savePage.body` (C.1, C.3 and §8.4). |
+| Corpus | Comparisons |
+|---|---:|
+| `rules.json` | 1 |
+| `values.json` | 132 |
+| `page-actions.json` | 44 |
+| Total | 177 |
 
-The clock advance, body reconciliation and pending-edit algorithms agree with the shared cases.
-Both surfaces already agree that a zero-only page is written; the distinction between a written
-page and text input governs which invitations retire. Repeated equal retirement plans and clearing
-an obsolete result while an unresolved claim recovers are permitted differences, with no writing
-loss or behavioral correction required. Omitting a deletion of an absent internal editor-draft row is serialization cleanup,
-not a new cross-surface device protocol or a behavioral spec disagreement.
+The web domain applies the rulings throughout its commands, editor actions and reconciliation:
 
-The read-only probe imports the actual `web/src/products/journal/pages.js` writing adapter and
-its existing clock/claim helpers. A transparent commit wrapper records arguments and invokes the
-real commit implementation with in-memory storage. It adds no missing validation. It compares full
-gestures, preserving omitted fields and body bytes; the current adapter's commit-receipt return is
-not compared to a future domain action result. No web file changes.
+- Strict Gregorian days, complete scale arguments, integer bounds, raw body bytes, source and
+  receipt validation happen locally; command string paths and writable state strings have bound specs.
+- Bound and reconciled predictions include the exact minted `documentStamp` and complete document.
+- Text input retires `placeholder`; scale-only answers and Not now preserve a pending placeholder.
+  Anonymous replacement retains all earlier retirements even after clearing the page.
+- Editor saves enforce local today; historical claim and reconciliation commands remain legal.
+- NUL and clock exhaustion return declared refusals. Oversized reconciled bodies retain pending
+  writing and the durable clock.
+- Refused pending edits retain their receipt and latest document without queueing a new appending claim.
 
-| Corpus | Inspected | Pass | Disagree | No equivalent API |
-|---|---:|---:|---:|---:|
-| `rules.json` | 1 | 0 | 0 | 1 |
-| `values.json` | 132 | 60 | 15 | 57 |
-| `page-actions.json` | 44 | 13 | 26 | 5 |
-| Total | 177 | 73 | 41 | 63 |
+Both surfaces preserve a zero-only written page, byte distinctions in pending edits, and exact
+contribution replacement with conservative account-first joining. Repeated equal retirement plans
+and clearing obsolete results during unresolved recovery remain permitted differences. Internal
+editor-draft deletion is not a cross-surface device protocol.
 
-The book counts as one comparison. Missing APIs are not fabricated failures: they comprise the
-book, 20 standalone spec cases, 31 `SavePageCommand` cases, six state value cases and five
-standalone invitation actions. W6b must provide and claim them.
-
-Every web disagreement belongs to these W6b rulings; an action can exercise more than one row:
-
-| Disagreement | Ruling for W6b |
-|---|---|
-| 15 `ClaimPage` validation cases construct invalid commands | Validate four invalid Gregorian dates; lower mood/upper energy bounds; fractional/string scales; unknown source; body NUL/byte overflow; missing mood; and empty/oversized/NUL claim ids. Do not defer the domain checks to admission (C.1, A.3). |
-| 16 bound-save and reconciliation predictions omit `documentStamp` | Predict all four document fields and the exact newly minted content stamp (C.1). Clock advancement itself agrees. |
-| Empty saves, scale-only answers and Not now retire `placeholder` | Retire it on text input. Scale-only writing retires `privacyLine`, `firstPage` and `scales`, retaining a pending placeholder until input (C.2, A.3). These cases have no already-retired state, so this is not a redundant-write finding. |
-| Three past/future/nonlocal-today saves are accepted | The `SavePage` editor action writes only the writer's local today; valid historical command arguments remain legal for claim/reconciliation (C.2, A.3). |
-| Two NUL actions and two exhausted-clock actions throw generic errors | Return the declared domain refusal. The current errors do not demonstrate lost writing or an advanced clock; failure must continue retaining both (C.1, A.3, §9). |
-| Anonymous supersession loses `privacyLine`, `firstPage` and `scales` after clearing the page | Preserve the entire cumulative retirement set in the replacement command's delta and its pending row (C.3, A.3). |
-| Editing a refused pending claim replaces its receipt identity | Retain the original pending row, receipt and latest edits; do not enqueue another appending claim (C.3, A.3). |
-| An oversized reconciled body queues a save, advances the clock and deletes the pending row | Apply the full save's body-byte cap before committing. The 131073-byte result must return `journal.savePage.body` / `tooLong`, retaining the pending row and durable clock (C.1, C.3, A.3). |
-
-Supplemental probes through the actual web `savePage` door also queue an invalid Gregorian day,
-an oversized body, fractional mood, out-of-range energy and an unknown source without local
-validation. Its engine rejects body NUL before queueing. These are additional evidence for the
-validation ruling, outside the 177 shared comparisons. The probe uses no server or database.
+Web's persisted engine and Chromium tests cover local transaction aborts, reload, offline writing,
+multiple tabs and receipt arrival order in addition to these pure comparisons. The engine's separate
+claim corpus continues checking its own binding.

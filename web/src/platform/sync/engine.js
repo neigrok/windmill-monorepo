@@ -14,7 +14,7 @@ import { applyChunk, applyPage, finishPage, onFrame, onPullResponse, pullRequest
 import { dismiss } from './client/refusal.js';
 import { applyPushResult, nextPush, onHello, onPushResponse, SenderWait } from './client/sender.js';
 import { Doubts, firstPullComplete, reconcile, subscribe, subscriptionsOf } from './client/subscriptions.js';
-import { drawn, stored } from './client/views.js';
+import { drawn, stored, viewRecord } from './client/views.js';
 
 function secureDraw(bound) {
   if (!Number.isSafeInteger(bound) || bound <= 0 || bound > 2 ** 32) throw new Error('invalid random bound');
@@ -343,17 +343,36 @@ export class BrowserSyncEngine {
   // passes it as `opts.gestureId`.
   newGestureId() { return crypto.randomUUID(); }
 
+  // Confirmed rows and reconciliation metadata must come from the same replica as a commit's views.
+  readMetadata(scope, replica = this.device.activeReplica, actor = this.actor) {
+    const record = replica.cursorOf(scope);
+    const cursor = Cursor.decode(record.cursor);
+    const clean = cursor?.e === replica.meta.serverEpoch && cursor?.m === 'live' && cursor.k === undefined
+      && !record.behind && record.digestStop === undefined && !record.mismatchReset && !replica.staging[scope];
+    return {
+      confirmed: new Map(replica.confirmedRows(scope).map((row) => [recordKey(row.t, row.id), structuredClone(viewRecord(row))])),
+      devices: structuredClone(replica.deviceRows(this.registry.productOfRef(scope))),
+      firstPullComplete: firstPullComplete(replica, scope, this.scopes(replica)),
+      actor,
+      isAnonymous: replica.meta.state === 'anon',
+      commands: replica.entries(scope).filter((entry) => entry.intent.cmd !== undefined).map((entry) => ({
+        gestureId: entry.gestureId,
+        command: structuredClone(entry.intent.cmd),
+        canSupersede: replica.meta.state === 'anon' && ['held', 'ready'].includes(entry.state) && entry.n === undefined,
+        isAdmitted: entry.state === 'acked',
+      })),
+      checkpoint: { epoch: replica.meta.serverEpoch, cleanSeq: clean ? cursor.s : null },
+    };
+  }
+
   // The read-and-commit body (§7.12) also reads, in its transaction, the product's device rows and the
-  // scope's first-pull state: `{drawn, stored, now, replica, devices, firstPullComplete}`. The body's own
-  // throw is the caller's (§7.1), so it passes through unreported.
+  // scope's reconciliation metadata. The body's own throw is the caller's (§7.1), unreported.
   async commit(scope, changes, opts) {
     const result = await this.write('sync-commit', (device, ctx) => {
       const replica = device.activeReplica;
       const read = typeof changes === 'function'
         ? (views) => {
-          const seen = { ...views,
-            devices: structuredClone(replica.deviceRows(this.registry.productOfRef(scope))),
-            firstPullComplete: firstPullComplete(replica, scope, this.scopes(replica)) };
+          const seen = { ...views, ...this.readMetadata(scope, replica, ctx.actor) };
           try { return changes(seen); } catch (error) { ctx.callerError = error; throw error; }
         }
         : changes;

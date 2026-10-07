@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
-import { pendingClaimWork } from '../../../src/products/journal/claims.js';
+import { pendingClaimWork, retireInvitation } from '../../../src/products/journal/pages.js';
+import { EditorDraft } from '../../../src/products/journal/domain/writing.js';
+import { ReconcileClaim } from '../../../src/products/journal/domain/writing.js';
+import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/runner.js';
+import { FixedZone } from '../../../src/platform/domain-kit/time.js';
 import { migratePages } from '../../../src/products/journal/migrate.js';
 import { pagesOf, savePage, watchClaims, onSyncResult, SCOPE, restoreUnclaimedPages, unclaimedPages } from '../../../src/products/journal/pages.js';
 import { environment, until } from '../../platform/sync/fakes.js';
@@ -18,8 +22,9 @@ function storage(values = {}) {
     getItem: (key) => data.get(key) ?? null, setItem: (key, value) => data.set(key, value), removeItem: (key) => data.delete(key) };
 }
 const entry = (body, needsPush = true, read = true, stamp = '100:0:legacy') => ({ page: { ...doc(body), stamp }, needsPush, read });
-async function setup() {
+async function setup({ watch = true } = {}) {
   const env = environment();
+  env.timers.time = Date.parse(`${day}T12:00:00Z`);
   let state = ServerState.empty({ epoch: 'ep-1', accounts: { A: {}, B: {} } });
   env.options.registry = journalRegistry;
   env.options.pendingDeviceWork = pendingClaimWork;
@@ -37,7 +42,7 @@ async function setup() {
   };
   const engine = await BrowserSyncEngine.open(env.options);
   engine.observe(SCOPE);
-  watchClaims(engine);
+  if (watch) watchClaims(engine);
   await engine.start();
   await until(() => engine.leader);
   return { env, engine };
@@ -216,7 +221,9 @@ test('a server-refused document survives reload and a corrected save retires its
   env.transport.account = 'A'; await engine.signIn('A');
   await savePage(engine, doc('seed')); await converge(engine);
   const body = 'x'.repeat(131073);
-  await savePage(engine, doc(body));
+  // Recover a command retained by an older client, before local body validation.
+  await engine.commit(SCOPE, [], { cmd: { name: 'journal.savePage', args: { ...doc(body),
+    stamp: { ms: env.timers.time + 1, counter: 0, actor: 'legacy' } } } });
   await converge(engine);
   assert.equal(engine.observe(SCOPE).getSnapshot().notices.filter((notice) => !notice.dismissed).length, 1);
   assert.equal(pagesOf(engine)[0].body, body);
@@ -231,50 +238,52 @@ test('a server-refused document survives reload and a corrected save retires its
   reopened.close();
 });
 
-test('a refused claim correction is durable, survives failed retries and joins unseen account prose', async () => {
+test('a refused claim retains its receipt and edits through failed commits and restart without appending again', async () => {
   const { engine, env } = await setup();
   env.transport.account = 'A'; await engine.signIn('A'); await converge(engine);
   await savePage(engine, doc('unseen account prose')); await converge(engine);
   engine.setOnline(false); await engine.finishSignOut({ choice: 'keep' });
   await engine.signIn('A');
-  assert.equal(engine.observe(SCOPE).getSnapshot().firstPullComplete, false);
   const transport = env.transport.request;
   env.transport.request = async (endpoint, request) => {
     if (endpoint === 'pull') throw new Error('stalled account read');
     return transport(endpoint, request);
   };
-  await savePage(engine, doc('x'.repeat(131073)));
-  const obsolete = engine.device.activeReplica.entries(SCOPE)[0].intent.cmd.args.claimId;
+  // A pending command written by the old client remains a recovery obligation.
+  const claimId = 'legacy-refused-claim';
+  const base = { body: 'x'.repeat(131073), mood: 0, energy: null, source: 'typed' };
+  const key = `pendingClaim:${claimId}`;
+  await engine.commit(SCOPE, [], { cmd: { name: 'journal.claimPage', args: { day, ...base, claimId } },
+    local: { [key]: { day, claimId, base, latest: base, touched: [], retirements: { firstPage: 'retired' }, claimResult: null, refusal: null } } });
   engine.setOnline(true); await engine.send();
   await until(() => engine.observe(SCOPE).getSnapshot().notices.some((notice) => notice.code === 'too-large'));
-  assert.equal(engine.device.activeReplica.confirmedRow(SCOPE, 'page', day), undefined);
   engine.close();
   const reopened = await BrowserSyncEngine.open(env.options); watchClaims(reopened);
   await reopened.start(); await until(() => reopened.leader);
+  const before = structuredClone(reopened.device.activeReplica.deviceRows('journal')[key]);
   const transact = reopened.store.transact;
   reopened.store.transact = async () => { throw new Error('quota'); };
   await assert.rejects(savePage(reopened, doc('correction')));
   reopened.store.transact = transact;
-  assert.equal(reopened.device.activeReplica.deviceRows('journal')[`pendingClaim:${obsolete}`].refusal, 'too-large');
-  assert.equal(reopened.observe(SCOPE).getSnapshot().notices.filter((notice) => !notice.dismissed).length, 1);
+  assert.deepEqual(reopened.device.activeReplica.deviceRows('journal')[key], before);
   await assert.rejects(savePage(reopened, doc('x'.repeat(2200000))), /journal-local-refusal/);
-  assert.equal(reopened.device.activeReplica.deviceRows('journal')[`pendingClaim:${obsolete}`].refusal, 'too-large');
+  assert.deepEqual(reopened.device.activeReplica.deviceRows('journal')[key], before);
   await savePage(reopened, { ...doc('correction'), mood: 4, energy: 7 });
-  const corrected = reopened.device.activeReplica.entries(SCOPE).find((row) => row.intent.cmd?.name === 'journal.claimPage').intent.cmd.args;
-  assert.notEqual(corrected.claimId, obsolete);
-  assert.deepEqual({ ...corrected, claimId: undefined }, { ...doc('correction'), mood: 4, energy: 7, claimId: undefined });
   const persisted = (await reopened.store.read()).device.activeReplica;
-  assert.equal(persisted.deviceRows('journal')[`pendingClaim:${obsolete}`], undefined);
-  assert.equal(persisted.deviceRows('journal')[`pendingClaim:${corrected.claimId}`].latest.body, 'correction');
-  assert.equal(persisted.notices.filter((notice) => !notice.dismissed).length, 0);
+  assert.equal(persisted.entries(SCOPE).length, 0, 'editing a refused receipt queues no fresh claim');
+  assert.deepEqual(persisted.deviceRows('journal')[key], { ...before,
+    latest: { body: 'correction', mood: 4, energy: 7, source: 'typed' }, touched: ['body', 'energy', 'mood'],
+    retirements: { firstPage: 'retired', placeholder: 'retired', privacyLine: 'retired', scales: 'retired' } });
+  assert.equal(persisted.deviceRows('journal')[EditorDraft.key], undefined);
+  assert.equal(persisted.notices.filter((notice) => !notice.dismissed).length, 1, 'the unsaved claim stays visible');
   reopened.close();
   const resumed = await BrowserSyncEngine.open(env.options); watchClaims(resumed);
   assert.equal(pagesOf(resumed)[0].body, 'correction');
   env.transport.request = transport;
   await resumed.start(); await until(() => resumed.leader); await converge(resumed);
-  assert.deepEqual(pagesOf(resumed).map(({ body, mood, energy }) => ({ body, mood, energy })),
-    [{ body: 'unseen account prose\n\ncorrection', mood: 4, energy: 7 }]);
-  assert.equal(Object.keys(resumed.device.activeReplica.deviceRows('journal')).some((key) => key.startsWith('pendingClaim:')), false);
+  assert.equal(resumed.device.activeReplica.confirmedRow(SCOPE, 'page', day).x.body.text, 'unseen account prose');
+  assert.equal(resumed.device.activeReplica.deviceRows('journal')[key].latest.body, 'correction');
+  assert.equal(resumed.device.activeReplica.deviceRows('journal')[key].claimId, claimId);
   resumed.close();
 });
 
@@ -361,4 +370,109 @@ for (const order of ['pull-before-result', 'result-before-pull']) test(`engine c
     assert.equal(Object.values(reopened.device.activeReplica.deviceRows('journal')).some((row) => row?.claimId), false);
     reopened.close();
   }
+});
+
+for (const anonymous of [true, false]) test(`a post-decision storage abort preserves ${anonymous ? 'anonymous supersession' : 'the bound content clock and document'}`, async () => {
+  const { engine, env } = await setup();
+  try {
+    if (!anonymous) {
+      env.transport.account = 'A'; await engine.signIn('A'); await converge(engine);
+    }
+    await savePage(engine, doc('durable draft'));
+    if (!anonymous) await converge(engine);
+    engine.setOnline(false);
+    const capture = async () => {
+      const replica = (await engine.store.read()).device.activeReplica;
+      return { rows: structuredClone(replica.deviceRows('journal')), entries: structuredClone(replica.entries(SCOPE)), hlc: replica.meta.hlc };
+    };
+    const before = await capture();
+    const transact = engine.store.transact.bind(engine.store);
+    engine.store.transact = (change, options) => {
+      engine.store.transact = transact;
+      return transact((device) => { change(device); throw new DOMException('quota', 'QuotaExceededError'); }, options);
+    };
+    const latest = { ...doc('latest input'), mood: null, energy: 0 };
+    await assert.rejects(savePage(engine, latest), (error) => error.kind === 'store');
+    assert.deepEqual(await capture(), before, 'command, prediction, state and clocks roll back together');
+    assert.equal(pagesOf(engine)[0].body, 'durable draft');
+    await savePage(engine, latest);
+    const after = await capture();
+    const command = after.entries.at(-1).intent.cmd;
+    assert.equal(command.args.body, 'latest input');
+    if (anonymous) {
+      assert.equal(after.entries.length, 1);
+      assert.equal(Object.keys(after.rows).filter((key) => key.startsWith('pendingClaim:')).length, 1);
+      assert.notEqual(command.args.claimId, before.entries[0].intent.cmd.args.claimId);
+    } else {
+      const stamp = command.args.stamp;
+      assert.deepEqual(after.rows.contentClock, { ms: stamp.ms, counter: stamp.counter });
+      assert.deepEqual(after.entries.at(-1).predict[0].f.documentStamp[0], stamp);
+    }
+    engine.close();
+    const reopened = await BrowserSyncEngine.open(env.options);
+    assert.deepEqual(pagesOf(reopened).map(({ body, mood, energy }) => ({ body, mood, energy })),
+      [{ body: latest.body, mood: null, energy: 0 }]);
+    reopened.close();
+  } finally { engine.close(); }
+});
+
+test('reconciliation rolls back pending removal and its clock write after a storage abort, then saves once', async () => {
+  const { engine, env } = await setup({ watch: false });
+  try {
+    await savePage(engine, doc('frozen'));
+    env.transport.account = 'A'; await engine.signIn('A');
+    await savePage(engine, { ...doc('newer writing'), mood: null });
+    await converge(engine);
+    engine.setOnline(false);
+    const before = structuredClone(engine.device.activeReplica.deviceRows('journal'));
+    const pending = Object.values(before).find((row) => row?.claimId);
+    assert.ok(pending.claimResult);
+    const runner = new ActionRunner(new EngineReplica(engine), journalRegistry, new FixedZone(0));
+    const action = new ReconcileClaim({ day, claimId: pending.claimId });
+    const transact = engine.store.transact.bind(engine.store);
+    engine.store.transact = (change, options) => {
+      engine.store.transact = transact;
+      return transact((device) => { change(device); throw new DOMException('quota', 'QuotaExceededError'); }, options);
+    };
+    await assert.rejects(runner.run(action), (error) => error.kind === 'store');
+    assert.deepEqual((await engine.store.read()).device.activeReplica.deviceRows('journal'), before);
+    assert.equal(engine.device.activeReplica.entries(SCOPE).length, 0);
+    const result = await runner.run(action);
+    assert.equal(result.kind, 'committed');
+    assert.equal(engine.device.activeReplica.entries(SCOPE).length, 1);
+    assert.equal(engine.device.activeReplica.deviceRows('journal')[`pendingClaim:${pending.claimId}`], undefined);
+    engine.setOnline(true); await converge(engine);
+    const row = engine.device.activeReplica.confirmedRow(SCOPE, 'page', day);
+    assert.equal(row.x.body.text, 'newer writing');
+    assert.equal(row.f.mood[0], null);
+    assert.equal((await runner.run(action)).kind, 'unchanged');
+    assert.equal(engine.device.activeReplica.entries(SCOPE).length, 0);
+  } finally { engine.close(); }
+});
+
+test('Not now retires only the invitation and queues no empty page', async () => {
+  const { engine } = await setup();
+  try {
+    await retireInvitation(engine, 'scales');
+    assert.deepEqual(pagesOf(engine), []);
+    const row = engine.observe(SCOPE).getSnapshot().drawn.find((row) => row.t === 'journalState');
+    assert.equal(row.f.scales[0], 'retired');
+    assert.equal(row.f.placeholder?.[0] ?? 'pending', 'pending');
+    assert.ok(engine.device.activeReplica.entries(SCOPE).every((entry) => entry.intent.cmd === undefined));
+  } finally { engine.close(); }
+});
+
+test('pending writing takes precedence over an older save refusal notice', async () => {
+  const { engine } = await setup();
+  try {
+    await savePage(engine, doc('newer contribution'));
+    await engine.write(null, (device) => {
+      device.activeReplica.notices.push({ id: 'notice:old/0', scope: SCOPE, code: 'too-large', at: 0,
+        content: { cmd: { name: 'journal.savePage', args: { ...doc('older refused writing'),
+          stamp: { ms: 1, counter: 0, actor: 'legacy' } } } } });
+    }, [SCOPE]);
+    assert.equal(pagesOf(engine)[0].body, 'newer contribution');
+    await savePage(engine, { ...doc('newer contribution'), mood: 4 });
+    assert.equal(pagesOf(engine)[0].body, 'newer contribution');
+  } finally { engine.close(); }
 });
