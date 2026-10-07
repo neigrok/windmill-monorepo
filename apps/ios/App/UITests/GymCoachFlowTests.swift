@@ -150,6 +150,36 @@ import UIKit
   }
   func testLightScreensAndNativeNavigation() { screens("Light") }
   func testDarkScreensAndNativeNavigation() { screens("Dark") }
+  func testRoutineRemovalKeepsItsReceiptInReviewAndConversation() {
+    let app = launch("Light", arguments: ["-coach-removal"])
+    let question = app.descendants(matching: .any)["coach-question"]
+    XCTAssertTrue(question.waitForExistence(timeout: 10)); question.tap(); question.typeText("Remove Push A.")
+    app.buttons["coach-send"].tap()
+    XCTAssertTrue(app.buttons["Review"].waitForExistence(timeout: 10))
+    if app.keyboards.firstMatch.exists { app.buttons["coach-keyboard-done"].tap() }
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    app.scrollViews.firstMatch.swipeUp(); app.buttons["Review"].tap()
+    XCTAssertTrue(app.staticTexts["The whole routine is removed from your program. Every set you logged against it stays in the log."].waitForExistence(timeout: 5))
+    let apply = app.buttons["coach-apply-proposal"]
+    XCTAssertEqual(apply.label, "Remove Push A")
+    app.scrollViews.firstMatch.swipeUp()
+    XCTAssertTrue(apply.isEnabled); apply.tap()
+    XCTAssertTrue(app.staticTexts["Applied"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.staticTexts["That proposal is gone."].exists)
+    XCTAssertFalse(app.buttons["Turn this down"].exists)
+    app.buttons["Close"].tap()
+    XCTAssertTrue(app.staticTexts["applied"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Remove this routine."].exists)
+    XCTAssertFalse(app.staticTexts["Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal."].exists)
+    app.buttons["Review"].tap()
+    XCTAssertTrue(app.staticTexts["Applied"].waitForExistence(timeout: 5))
+    app.buttons["Close"].tap()
+    app.tabBars.buttons["Routines"].tap()
+    XCTAssertFalse(app.buttons["routine-coach-fixture-routine"].exists)
+    app.tabBars.buttons["The log"].tap()
+    XCTAssertTrue(app.buttons["gym-log-session-coach-fixture-session"].waitForExistence(timeout: 5))
+    app.terminate()
+  }
   func testAnonymousCoachExplainsAccountRequirementAndKeepsDoors() {
     for appearance in ["Light", "Dark"] {
       let suffix = appearance.lowercased(), app = launch(appearance, fixture: false)

@@ -2,6 +2,7 @@ package works.windmill.gym.coach
 
 import works.windmill.gym.ui.*
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Box
@@ -43,6 +44,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.ChangeKind
 import works.windmill.gym.domain.Proposal
+import works.windmill.gym.domain.ProposalIntent
 import works.windmill.gym.domain.ProposalChange
 import works.windmill.gym.domain.ProposalTargets
 import works.windmill.gym.domain.Routine
@@ -90,20 +92,24 @@ class AskScreenTests {
     }
 
     // Coach writes a proposal on the server, and this phone pulls it.
-    private fun propose(room: EngineRoomFixture, server: ModelServer, id: String, routine: Routine, changes: List<ProposalChange>, summary: String) {
+    private fun propose(room: EngineRoomFixture, server: ModelServer, id: String, routine: Routine, changes: List<ProposalChange>,
+                        summary: String, intent: ProposalIntent = ProposalIntent.Revise, pull: Boolean = true) {
         fun entry(exerciseId: String, sets: List<SetTarget>) =
             SyncEntry(Id(exerciseId, SyncExercise), sets.takeIf { it.isNotEmpty() }?.map { SyncTarget(it.reps, it.weightKg) })
-        val diff = ProposalRules.changesBetween(routine.entries.map { entry(it.exerciseId, it.sets) },
-            changes.map { entry(it.exerciseId, it.after!!.sets) })
+        val proposed = if (intent == ProposalIntent.Remove) emptyList()
+            else changes.filter { it.kind != ChangeKind.Removed }.map { entry(it.exerciseId, it.after!!.sets) }
+        val diff = ProposalRules.changesBetween(routine.entries.map { entry(it.exerciseId, it.sets) }, proposed)
         fun slot(value: Json) = Json.array(value, Json.Null)
         val written = Json.objectOf("t" to Json.of("proposal"), "id" to Json.of(id), "born" to Json.Null,
             "life" to Json.array(Json.of("alive"), Json.Null), "f" to Json.objectOf(
-                "routineId" to slot(Json.of(routine.id)), "intent" to slot(Json.of("revise")), "proposedName" to slot(Json.of(routine.name)),
+                "routineId" to slot(Json.of(routine.id)), "intent" to slot(Json.of(intent.wire)),
+                "proposedName" to slot(Json.of(if (intent == ProposalIntent.Remove) "" else routine.name)),
                 "summary" to slot(Json.of(summary)), "changes" to slot(Json.Arr(diff.map { it.json })),
                 "door" to slot(Json.of("ask")), "connection" to slot(Json.of("")), "agent" to slot(Json.of(""))))
         val reply = server.call(ServerCall(room.selected!!, null, "propose", Json.objectOf(),
             listOf(Json.objectOf("scope" to Json.of("self/gym"), "d" to Json.array(written)))), room.now)
         assertEquals(Json.of("ok"), reply?.get("s"))
+        if (!pull) return
         room.pull(server)
         assertEquals(changes, runBlocking { room.training.proposal(id) }?.changes)
     }
@@ -688,6 +694,60 @@ class AskScreenTests {
             assertEquals(partial, shown())
             compose.onNodeWithText(Ask.waiting).assertDoesNotExist()
         }
+        scope.cancel()
+    }
+
+    @Test
+    fun aRemovalPromisesConfirmationUntilTheRoutineIsRemoved() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val room = signedIn(scope)
+        val routine = saved(room, server, RoutineDraft(name = "Push Day").adding("bench-press", List(3) { SetTarget(5) }))
+        propose(room, server, "proposal1", routine, listOf(ProposalChange(position = 1, kind = ChangeKind.Removed,
+            exerciseId = "bench-press", before = ProposalTargets(List(3) { SetTarget(5) }), loggedSets = 0)),
+            "Remove this routine.", intent = ProposalIntent.Remove)
+        val answered = AskExchange("Remove this routine?",
+            AskAnswer(answer = "You can remove it.", read = read, proposals = listOf("proposal1")))
+        var receipts by mutableStateOf<List<String>>(emptyList())
+        compose.setContent {
+            AskScreen(room.store, listOf(answered), receipts, emptySet(), false, null, {}, {}, {}, "",
+                "https://windmill.works", onThreads = {}, onNotes = {}, onReview = {})
+        }
+        compose.onNodeWithText("Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal.")
+            .performScrollTo().assertIsDisplayed()
+        val settled = applied(room, server, "proposal1")
+        compose.runOnIdle { receipts = listOf(requireNotNull(settled.proposal.receipt)) }
+        compose.onNodeWithText(requireNotNull(settled.proposal.receipt)).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(Ask.promise).assertDoesNotExist()
+        compose.runOnIdle { assertEquals(emptyList<String>(), room.store.routines.map { it.id }) }
+        scope.cancel()
+    }
+
+    @Test
+    fun anUnpulledProposalKeepsTheAnswerAndAppearsWhenTheRoomReopensAfterPull() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val room = signedIn(scope)
+        val routine = saved(room, server, RoutineDraft(name = "Push A").adding("bench-press", List(3) { SetTarget(5) }))
+        propose(room, server, "proposal1", routine, listOf(ProposalChange(position = 1, kind = ChangeKind.Retargeted,
+            exerciseId = "bench-press", before = ProposalTargets(List(3) { SetTarget(5) }),
+            after = ProposalTargets(List(2) { SetTarget(5) }))), "Use one lighter set.", pull = false)
+        var visit by mutableStateOf(0)
+        compose.setContent {
+            key(visit) {
+                AskScreen(room.store, listOf(AskExchange("What next?", AskAnswer("The answer stays readable.", read,
+                    proposals = listOf("proposal1")))), emptyList(), emptySet(), false, null, {}, {}, {}, "",
+                    "https://windmill.works", onThreads = {}, onNotes = {}, onReview = {})
+            }
+        }
+        compose.onNodeWithText("The answer stays readable.").assertIsDisplayed()
+        compose.onNodeWithText(ProposalRead.Gone.line).assertIsDisplayed()
+        compose.onNodeWithText("Review").assertDoesNotExist()
+        compose.onNodeWithText("Try again").assertDoesNotExist()
+        compose.runOnIdle { room.pull(server); visit++ }
+        compose.onNodeWithText("Proposal · Push A").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Review").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Try again").assertDoesNotExist()
         scope.cancel()
     }
 

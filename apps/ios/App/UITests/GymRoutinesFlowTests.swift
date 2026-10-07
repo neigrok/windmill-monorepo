@@ -254,6 +254,22 @@ import UIKit
     XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 5))
   }
 
+  func testFirstWorkoutKeepsItsWelcomeAfterLoggingASet() {
+    let app = launch()
+    app.buttons["Just start logging"].tap()
+    XCTAssertTrue(app.buttons["workout-add"].waitForExistence(timeout: 5)); app.buttons["workout-add"].tap()
+    XCTAssertTrue(app.navigationBars["What are you starting with?"].waitForExistence(timeout: 5))
+    app.buttons["gym-movement-back-squat"].tap()
+    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5)); app.buttons["workout-log"].tap()
+    let sets = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-"))
+    XCTAssertTrue(sets.firstMatch.waitForExistence(timeout: 5)); XCTAssertEqual(sets.count, 1)
+    app.buttons["workout-assembly"].tap()
+    XCTAssertTrue(app.buttons["workout-assembly-add"].waitForExistence(timeout: 5)); app.buttons["workout-assembly-add"].tap()
+    XCTAssertTrue(app.navigationBars["What are you starting with?"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["gym-movement-bench-press"].exists)
+    app.terminate()
+  }
+
   func testRoutineMovementOpensTheCommonRecord() {
     let app = launch()
     createRoutine(app)

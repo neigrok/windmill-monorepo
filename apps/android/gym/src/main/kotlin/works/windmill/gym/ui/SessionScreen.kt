@@ -239,7 +239,7 @@ fun SessionScreen(
         }
     }
 
-    // A delete keys off `deletedSets`, which grows only when the log has ACTUALLY taken the row.
+    // A deleted or restored row changes the review as well as the set list.
     LaunchedEffect(readId, corrected, store.deletedSets) {
         review = store.review(readId)
         read = true

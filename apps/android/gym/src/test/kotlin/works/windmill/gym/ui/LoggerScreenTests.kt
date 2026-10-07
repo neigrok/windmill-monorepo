@@ -259,6 +259,27 @@ class LoggerScreenTests {
     }
 
     @Test
+    fun anInFlightSetShowsTheDeviceMarkerAndOnlyAFailedDeliveryShowsTheBand() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { logger(scope, logged = true, unanswered = true).use { room ->
+            compose.onNode(hasContentDescription("Set 1, logged, 60 kg, 5 reps, on this device")).assertIsDisplayed()
+            compose.onAllNodes(hasText("saved on this device only", substring = true)).assertCountEquals(0)
+            compose.runOnIdle {
+                room.training.reportDelivery(room.engine.activeReplica(), works.windmill.sync.engine.Reply.Unreachable)
+                runBlocking { room.store.refreshEngine() }
+            }
+            compose.onNodeWithText("1 set is saved on this device only. They’ll sync when you’re online.").assertIsDisplayed()
+            compose.runOnIdle {
+                room.training.reportDelivery(room.engine.activeReplica(), works.windmill.sync.engine.Reply.Answer(
+                    works.windmill.sync.engine.SyncResponse(200, works.windmill.sync.core.Json.objectOf())))
+                runBlocking { room.store.refreshEngine() }
+            }
+            compose.onAllNodes(hasText("saved on this device only", substring = true)).assertCountEquals(0)
+            compose.onNode(hasContentDescription("Set 1, logged, 60 kg, 5 reps, on this device")).assertIsDisplayed()
+        } } finally { scope.cancel() }
+    }
+
+    @Test
     fun loggingUsesWorkingKindAndStaysSilentWithLegacyConfirmationEnabled() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val sensations = mutableListOf<HapticFeedbackType>()

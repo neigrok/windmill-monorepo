@@ -174,9 +174,14 @@ import SyncTesting
     gym.refresh(); workout.reconcile()
     #expect(workout.syncFailed && gym.workoutStrandedSets == [pending.id])
     #expect(gym.workoutBanner(gym.workoutStrandedSets.count) == "1 set is saved on this device only. The log didn’t answer. They’ll sync when it’s available.")
+    #expect(workout.logSet())
+    let retained = workout.sets
+    #expect(retained.count == 2 && gym.workoutDeviceSets(retained) == Set(retained.map(\.id)))
+    #expect(gym.workoutStrandedSets == [pending.id])
+    #expect(gym.workoutBanner(gym.workoutStrandedSets.count) == "1 set is saved on this device only. The log didn’t answer. They’ll sync when it’s available.")
     await workout.finish()
     #expect(workout.session?.isOpen == true && workout.receipt == nil && workout.isPresented)
-    #expect(workout.sets == [pending] && workout.message == "Some sets are still on this device. Finish when they have synced.")
+    #expect(workout.sets == retained && workout.message == "Some sets are still on this device. Finish when they have synced.")
     fault.failure.withLock { $0 = nil }
     await engine.flushOnLeave()
     await engine.start()

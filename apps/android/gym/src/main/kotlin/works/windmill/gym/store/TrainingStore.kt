@@ -493,7 +493,7 @@ class TrainingStore(
     // rows are drawn and never what state a screen is in, and this state opens the picker with a
     // first-session title and a drawn `Build my routine`.
     val firstSession: Boolean
-        get() = allSessions.isEmpty() && program.isEmpty() && older == Older.End
+        get() = allSessions.none { it.id != session?.id } && program.isEmpty() && older == Older.End
 
     // Called on launch and on every change of who is signed in. A re-read with the same account
     // preserves open deletion windows.
@@ -619,6 +619,8 @@ class TrainingStore(
         loadLog()
         if (seat != owner) return
         for (detail in training.details()) {
+            // A refused delete puts its row back in the replica; an older screen must draw it again.
+            deletedSets = deletedSets - detail.sets.map { it.id }.toSet()
             if (!detail.session.isOpen && detail.session.id in closedDetails) retainClosed(detail)
             for (set in detail.sets) if (withheld.any { held ->
                 val deletion = held.deletion as? Deletion.Set
@@ -1636,13 +1638,13 @@ class TrainingStore(
         // stranded.
         val stalledIds = stalled
         enginePendingSessions = training.pendingSessionIds()
-        strandedCount = if (training.anonymous) 0 else sets.count { it.id in stalledIds }
         val status = training.engine.status.state.value
         val blocker = when {
             status.authPaused -> Blocker.SignInLapsed
             !status.online -> Blocker.Offline
             else -> training.deliveryBlocker
         }
+        strandedCount = if (training.anonymous || blocker == null) 0 else sets.count { it.id in stalledIds }
         strandedBy = if (strandedCount == 0) null else blocker
         val waiting = enginePendingSessions.isNotEmpty()
         val state = when {

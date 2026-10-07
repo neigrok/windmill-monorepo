@@ -14,6 +14,7 @@ import okhttp3.mockwebserver.MockWebServer
 import works.windmill.gym.domain.*
 import works.windmill.sync.api.*
 import works.windmill.sync.core.Json
+import works.windmill.sync.core.ClockReading
 import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.engine.Engine
@@ -21,7 +22,10 @@ import works.windmill.sync.engine.EngineClock
 import works.windmill.sync.engine.signIn
 import works.windmill.sync.engine.signOut
 import works.windmill.sync.engine.nextPush
+import works.windmill.sync.engine.onPushResponse
+import works.windmill.sync.engine.RequestTiming
 import works.windmill.sync.engine.SyncResponse
+import works.windmill.sync.modelserver.Credential
 import works.windmill.sync.modelserver.ModelServer
 import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
@@ -104,7 +108,7 @@ class EngineTrainingTests {
         }
     }
 
-    private suspend fun proposalFixture(room: EngineRoomFixture, server: ModelServer) {
+    private suspend fun proposalFixture(room: EngineRoomFixture, server: ModelServer, removing: Boolean = false) {
         room.select("A")
         room.training.createRoutine(RoutineWrite("routine1", "Original", 0,
             listOf(RoutineEntryWrite("bench-press", listOf(SetTarget(5, 80.0))))))
@@ -115,7 +119,7 @@ class EngineTrainingTests {
             works.windmill.domain.kit.Id("proposal1", works.windmill.gym.domain.sync.Proposal),
             works.windmill.domain.kit.Id("routine1", works.windmill.gym.domain.sync.Routine), "Proposed",
             listOf(works.windmill.gym.domain.sync.RoutineEntry(works.windmill.domain.kit.Id("bench-press", works.windmill.gym.domain.sync.Exercise),
-                listOf(works.windmill.gym.domain.sync.SetTarget(6, 82.5)))), "Progress")) is works.windmill.domain.kit.Outcome.Committed)
+                listOf(works.windmill.gym.domain.sync.SetTarget(6, 82.5)))), "Progress", removing)) is works.windmill.domain.kit.Outcome.Committed)
         room.sync(server)
     }
 
@@ -143,6 +147,43 @@ class EngineTrainingTests {
             room.store.refreshEngine()
             assertEquals(Blocker.SignInLapsed, room.store.strandedBy)
             assertEquals(SaveState.Blocked(Blocker.SignInLapsed), room.store.saveState)
+        }
+    }
+
+    @Test fun queuedAndInFlightSetsKeepTheirDeviceMarkersWithoutAFalseDeliveryFailure() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            val server = EngineRoomFixture.server()
+            room.select("A"); room.pull(server)
+            room.store.start(); room.sync(server)
+            room.store.choose("bench-press"); room.store.logSet(80.0, 5)
+            val pending = setOf(room.store.sets.single().id)
+            assertEquals(pending, room.store.stalled)
+            assertEquals(0, room.store.strandedCount)
+            assertNull(room.store.strandedBy)
+            assertEquals(SaveState.OnThisDevice, room.store.saveState)
+
+            assertNotNull(room.engine.nextPush())
+            room.store.refreshEngine()
+            assertEquals(pending, room.store.stalled)
+            assertEquals(0, room.store.strandedCount)
+            assertNull(room.store.strandedBy)
+
+            room.training.reportDelivery(room.engine.activeReplica(), works.windmill.sync.engine.Reply.Unreachable)
+            room.store.refreshEngine()
+            assertEquals(1, room.store.strandedCount)
+            assertEquals(Blocker.Offline, room.store.strandedBy)
+            assertEquals(SaveState.Blocked(Blocker.Offline), room.store.saveState)
+
+            room.training.reportDelivery(room.engine.activeReplica(), works.windmill.sync.engine.Reply.Answer(SyncResponse(200, Json.objectOf())))
+            room.store.refreshEngine()
+            assertEquals(pending, room.store.stalled)
+            assertEquals(0, room.store.strandedCount)
+            assertNull(room.store.strandedBy)
+            assertEquals(SaveState.OnThisDevice, room.store.saveState)
+            room.sync(server); room.store.refreshEngine()
+            assertEquals(emptySet<String>(), room.store.stalled)
+            assertEquals(0, room.store.strandedCount)
+            assertEquals(SaveState.OnTheLog, room.store.saveState)
         }
     }
 
@@ -174,26 +215,44 @@ class EngineTrainingTests {
     }
 
     @Test fun proposalDecisionsReturnOnlyTheConfirmedServerReceiptAndLeaveTheCardWhileWaiting() = runTest {
-        for (applying in listOf(false, true)) EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
-            val server = EngineRoomFixture.server(); proposalFixture(room, server)
+        for ((applying, removing) in listOf(false to false, true to false, true to true)) EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            val server = EngineRoomFixture.server(); proposalFixture(room, server, removing)
             val decision = async { if (applying) room.training.applyProposal("proposal1") else room.training.dismissProposal("proposal1") }
             runCurrent()
             assertFalse("a local prediction is not a receipt", decision.isCompleted)
             assertEquals(ProposalState.Pending, room.training.proposal("proposal1")!!.state)
             assertEquals("Original", room.training.routine("routine1")!!.name)
             assertEquals("proposal1", room.training.routine("routine1")!!.pendingProposal!!.id)
-            room.now += 1_000; room.sync(server); advanceTimeBy(25); runCurrent()
+            room.now += 1_000
+            if (removing) {
+                val request = requireNotNull(room.engine.nextPush())
+                val response = server.push(request, Credential.Account("A"), room.now)
+                assertEquals(200, response.status)
+                val clock = ClockReading(room.now, room.now, "test")
+                room.engine.onPushResponse(request, SyncResponse(response.status, response.body), RequestTiming(clock, clock))
+                advanceTimeBy(25); runCurrent()
+                assertFalse("an acknowledged command still waits for its pull", decision.isCompleted)
+                assertEquals(ProposalState.Pending, room.training.proposal("proposal1")!!.state)
+                room.pull(server)
+            } else room.sync(server)
+            advanceTimeBy(25); runCurrent()
             val receipt = decision.await()
             assertEquals(if (applying) ProposalState.Applied else ProposalState.Dismissed, receipt.proposal.state)
-            assertEquals(room.now, receipt.proposal.settledAtMs)
-            assertEquals(if (applying) "Proposed" else "Original", receipt.routine!!.name)
+            if (removing) assertNull("the removal result carries no settlement timestamp", receipt.proposal.settledAtMs)
+            else assertEquals(room.now, receipt.proposal.settledAtMs)
+            assertEquals(if (removing) null else if (applying) "Proposed" else "Original", receipt.routine?.name)
+            assertNotNull(receipt.proposal.receipt)
+            if (removing) {
+                assertNull(room.training.routine("routine1"))
+                assertNull("a cold proposal read does not resurrect the removed record", room.training.proposal("proposal1"))
+            }
         }
     }
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     @Test fun proposalRefusalNeverReportsThePredictedReceiptOrChangesTheConfirmedRoutine() = runTest {
-        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
-            val server = EngineRoomFixture.server(); proposalFixture(room, server)
+        for (removing in listOf(false, true)) EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            val server = EngineRoomFixture.server(); proposalFixture(room, server, removing)
             val decision = async { runCatching { room.training.applyProposal("proposal1") } }
             runCurrent(); server.refuse(code = "stale"); room.sync(server)
             withContext(Dispatchers.IO) { withTimeout(2_000) { room.engine.notices("gym").notices.first { it.isNotEmpty() } } }
@@ -206,9 +265,11 @@ class EngineTrainingTests {
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     @Test fun proposalTimeoutCancellationAndAccountChangeCannotInventAReceiptOrLoseThePendingIntent() = runTest {
-        for (ending in listOf("timeout", "cancel", "account")) EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
-            val server = EngineRoomFixture.server(); proposalFixture(room, server)
-            val decision = async { runCatching { room.training.dismissProposal("proposal1") } }
+        for (removing in listOf(false, true)) for (ending in listOf("timeout", "cancel", "account")) EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            val server = EngineRoomFixture.server(); proposalFixture(room, server, removing)
+            val decision = async { runCatching {
+                if (removing) room.training.applyProposal("proposal1") else room.training.dismissProposal("proposal1")
+            } }
             runCurrent()
             val queued = room.outbox()
             when (ending) {
@@ -371,6 +432,39 @@ class EngineTrainingTests {
             assertEquals(moved, engine.snapshot())
             gym.putBodyweight("2026-01-01", 70.0)
             assertEquals(WeighIn("2026-01-01", 80.0, now), gym.putBodyweight("2026-01-01", 80.0))
+        }
+    }
+    @Test fun aNoteMoveCommitsOnceAndFailuresRestoreEveryPosition() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            val server = EngineRoomFixture.server()
+            room.select("A"); room.pull(server)
+            for (id in listOf("note0001", "note0002", "note0003", "note0004"))
+                assertTrue(room.store.saveNote(id, NoteWrite(id, "Body")) is GymResult.Ok)
+            room.sync(server); room.store.refreshEngine()
+            val before = room.store.notes
+            val order = listOf("note0003", "note0001", "note0002", "note0004")
+            val reordered = order.mapIndexed { index, id -> before.single { it.id == id }.copy(position = index) }
+            assertTrue(room.store.reorderNotes("note0003", listOf("note0001", "note0001", "note0003", "note0004")) is GymResult.Failed)
+            assertEquals(before, room.store.notes)
+            assertTrue(room.outbox().isEmpty())
+
+            room.engine.failNextCommit()
+            assertEquals(GymResult.Failed(WriteFailure.NoAnswer), room.store.reorderNotes("note0003", order))
+            assertEquals(before, room.store.notes)
+            assertEquals(before, room.training.notes())
+            assertTrue(room.outbox().isEmpty())
+
+            assertEquals(GymResult.Ok(reordered), room.store.reorderNotes("note0003", order))
+            val writes = room.outbox().single().member("intent").member("d").arr()
+            assertEquals(listOf("note0003"), writes.map { it.member("id").str() })
+            assertTrue(writes.all { it.member("f").obj().keys == setOf("ord") })
+            server.refuse(code = "invalid"); room.sync(server); room.store.refreshEngine()
+            assertEquals(before, room.store.notes)
+            assertEquals(before, room.training.notes())
+            assertTrue(room.outbox().isEmpty())
+            assertEquals(GymResult.Ok(reordered), room.store.reorderNotes("note0003", order))
+            room.sync(server); room.store.refreshEngine()
+            assertEquals(reordered, room.store.notes)
         }
     }
     @Test fun readoutsPreserveRecordsAndFrozenPlanComparison() {

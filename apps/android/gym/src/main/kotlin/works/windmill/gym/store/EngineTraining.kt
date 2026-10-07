@@ -323,7 +323,12 @@ class EngineTraining(val engine: Engine) {
         if (anonymous || status.authPaused) throw TrainingRefused("sign-in", "Sign in again to decide this proposal.")
         if (!status.online) throw TrainingUnanswered
         val before = engine.notices("gym").notices.value.map { it.id }.toSet()
-        if (applying) apply(ApplyProposal(Id(id, EngineProposal))) else apply(DismissProposal(Id(id, EngineProposal)))
+        val removal = if (applying) proposal(id)?.takeIf { it.isPending && it.intent == ProposalIntent.Remove } else null
+        val written = writing { runner ->
+            if (applying) runner.run(ApplyProposal(Id(id, EngineProposal))) else runner.run(DismissProposal(Id(id, EngineProposal)))
+        }
+        if (written is Outcome.Refused) throw refusal(written.refusal)
+        val localId = written.receipt?.localIds?.singleOrNull()
         return withTimeoutOrNull(15_000) {
             while (true) {
                 if (engine.activeReplica() != replica) throw TrainingRefused("account-changed", "The account changed. Open this again.")
@@ -331,6 +336,10 @@ class EngineTraining(val engine: Engine) {
                     notice.content.command?.args?.get("proposalId") == Json.of(id) }?.let {
                     throw refusal(DomainNotice(it, engine.registry, GymRefusal).refusal)
                 }
+                // A removal's confirmed rows are gone after pull; only this command's resolution is its receipt.
+                if (removal != null && localId != null && engine.ended().any {
+                    it["localId"] == Json.of(localId) && it["outcome"] == Json.of("resolved")
+                }) return@withTimeoutOrNull ProposalDecision(removal.copy(state = ProposalState.Applied, settledAtMs = null))
                 val confirmed = read { reader ->
                     val identity = Id(id, EngineProposal)
                     val record = reader.confirmed(EngineProposal, identity)?.takeIf { it.isVisible }
