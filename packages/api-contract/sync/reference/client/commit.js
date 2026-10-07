@@ -67,6 +67,12 @@ class DeltaBuilder {
   predicted(change) {
     const type = this.typeOf(change);
     if (!['create', 'update', 'delete', 'put', 'write'].includes(change.op)) throw new CommitError('a prediction is a create, update, delete, put or write');
+    const v = {};
+    for (const [name, value] of Object.entries(change.v ?? {})) {
+      if (type.field(name)?.kind !== 'serial') throw new CommitError(`${type.type}.${name} is not a serial field`);
+      if (!Number.isSafeInteger(value) || value < 1) throw new CommitError(`${type.type}.${name} is not a positive serial value`);
+      v[name] = value;
+    }
     const current = this.drawnView.get(recordKey(change.t, change.id));
     const delta = { t: change.t, id: change.id };
     if (change.op === 'delete') {
@@ -98,12 +104,6 @@ class DeltaBuilder {
     if (Object.keys(f).length) delta.f = f;
     const x = this.texts(type, change.id, change.x, current, { server: true });
     if (Object.keys(x).length) delta.x = x;
-    const v = {};
-    for (const [name, value] of Object.entries(change.v ?? {})) {
-      if (type.field(name)?.kind !== 'serial') throw new CommitError(`${type.type}.${name} is not a serial field`);
-      if (!Number.isSafeInteger(value) || value < 1) throw new CommitError(`${type.type}.${name} is not a positive serial value`);
-      v[name] = value;
-    }
     if (Object.keys(v).length) delta.v = v;
     return delta;
   }

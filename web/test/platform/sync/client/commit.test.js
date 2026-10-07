@@ -68,8 +68,9 @@ test('§7.1: a body answering no gesture writes nothing and ticks no clock, and 
 test('§7.1: commit throws only before its transaction writes, so a throw leaves the replica as it was', () => {
   const vectors = JSON.parse(readFileSync(new URL('../../../../../packages/api-contract/sync/corpus/commit/throws.json', import.meta.url), 'utf8'));
   for (const { name, input } of vectors) {
-    const last = input.steps.at(-1);
-    const device = new Device(runSteps({ ...input, steps: input.steps.slice(0, -1) }).device);
+    const index = input.steps.findLastIndex((step) => step.op === 'commit');
+    const last = input.steps[index];
+    const device = new Device(runSteps({ ...input, steps: input.steps.slice(0, index) }).device);
     const before = device.toJSON();
     const context = { registry, actor: last.actor ?? input.actor ?? ACTOR, deviceNow: last.deviceNow ?? 0, ended: [], device, nextGestureId: () => 'thrown' };
     assert.throws(() => commit(device.activeReplica, context, last.scope, last.changes, last.opts ?? {}), CommitError, name);

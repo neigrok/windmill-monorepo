@@ -70,3 +70,6 @@ The shared corpus covers serial overlays, keyed prediction presence, and depende
 and refusal. Swift and Kotlin retain predicted serials in their stored outboxes and views. The copied
 files differ only in their encoding calls/imports and the omitted registry file loader. Browser-only
 modules remain outside the copied core/client inventory.
+
+Predicted deletes validate supplied serial names and values before emitting only death and born.
+The shared corpus checks that malformed serials leave the whole device unchanged and nothing to push.

@@ -75,6 +75,10 @@ internal class DeltaBuilder(private val engine: Engine, private val replica: Rep
                 op !is Change.Operation.Put && op !is Change.Operation.Write) malformed("prediction-operation")
             if (op is Change.Operation.Delete && !type.life) malformed("delete-life")
             val born = if (!type.hasBorn) null else if (op is Change.Operation.Create) stamp else before?.born ?: malformed("prediction-absent")
+            for ((name, value) in change.serials) {
+                if (type.fields[name]?.kind != "serial") malformed("not-serial")
+                try { value.long(1) } catch (_: JsonError) { malformed("prediction-serial") }
+            }
             if (op is Change.Operation.Delete) return Delta(key, Lattice(Life("dead", stamp), born))
             val life = if (!type.life) null else when {
                 op is Change.Operation.Create -> Life("alive", stamp)
@@ -89,10 +93,6 @@ internal class DeltaBuilder(private val engine: Engine, private val replica: Rep
                     }
                 }
                 else -> null
-            }
-            for ((name, value) in change.serials) {
-                if (type.fields[name]?.kind != "serial") malformed("not-serial")
-                try { value.long(1) } catch (_: JsonError) { malformed("prediction-serial") }
             }
             return Delta(key, Lattice(life, born,
                 fields(type, change.values, if (op is Change.Operation.Create) null else before, server = true)),

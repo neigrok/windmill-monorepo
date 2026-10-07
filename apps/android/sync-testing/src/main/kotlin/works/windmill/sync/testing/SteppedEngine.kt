@@ -101,7 +101,7 @@ object ClientCorpus {
         val type = json.member("t").str()
         val op = json.member("op").str()
         val values = json["f"]?.obj().orEmpty()
-        val serials = if (prediction && op != "delete") json["v"]?.orNull()?.obj().orEmpty() else emptyMap()
+        val serials = if (prediction) json["v"]?.orNull()?.obj().orEmpty() else emptyMap()
         val texts = json["x"]?.obj()?.mapValues { (_, value) ->
             if (value is Json.Str) TextEdit(value.value) else TextEdit(value.member("text").str(), value["from"]?.str())
         }.orEmpty()
