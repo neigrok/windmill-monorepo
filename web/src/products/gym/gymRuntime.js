@@ -1,4 +1,6 @@
 import { Id } from '../../platform/domain-kit/entities.js';
+import { Draft } from '../../platform/domain-kit/drafts.js';
+import { Placement } from '../../platform/domain-kit/reading.js';
 import { ActionRunner, EngineReplica } from '../../platform/domain-kit/runner.js';
 import { Instant, LocalDay, Moment } from '../../platform/domain-kit/time.js';
 import { Valid } from '../../platform/domain-kit/validation.js';
@@ -8,9 +10,11 @@ import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
 import { Bodyweight, DeleteWeighIn, WeighIn, WeighInValue } from './domain/bodyweight.js';
 import { GymRefusals } from './domain/gymRules.js';
+import { DeleteNote, MoveNote, Note, NoteRules, NoteValue } from './domain/notes.js';
 import { ChangePreferences, Preferences, PreferencesValue, restSettings } from './domain/preferences.js';
 import { GymRefusal, isStoreFailure } from './errors.js';
 import { REFUSALS } from './bodyweight/bodyweight.js';
+import { FULL_LINE } from './notes/notes.js';
 import { fromDisplayUnit, weightUnit } from './units.js';
 
 const SCOPE = 'self/gym';
@@ -48,9 +52,14 @@ export function gymRefusalError(refused) {
     let sentence;
     if (violation.rule === 'weighin.day') sentence = violation.reason.custom === 'future' ? REFUSALS.future : 'could not read that date';
     if (violation.rule === 'weighin.kg') sentence = violation.reason.kind === 'notANumber' ? REFUSALS.notNumber : REFUSALS.bounds;
+    if (violation.rule === 'note.title' && violation.reason.kind === 'blank') sentence = 'a note needs a title';
+    if (violation.rule === 'note.title' && violation.reason.kind === 'tooLong') sentence = `a title runs to ${NoteRules.title.max} characters`;
+    if (violation.rule === 'note.body' && violation.reason.kind === 'tooLong') sentence = `a note runs to ${NoteRules.body.max} bytes`;
     return new GymRefusal('invalid', { sentence });
   }
   if (refused.kind === 'future') return new GymRefusal('bad-instant', { sentence: REFUSALS.future });
+  if (refused.kind === 'full' && refused.type === 'note') return new GymRefusal('cap', { sentence: FULL_LINE });
+  if (refused.kind === 'stale') return new GymRefusal('stale', { sentence: 'This changed on another device. Read it again before saving.' });
   const code = refused.refused?.code ?? ({ gone: 'record-dead', taken: 'id-taken', full: 'cap' }[refused.kind] ?? refused.kind);
   return new GymRefusal(code);
 }
@@ -90,6 +99,20 @@ export function bodyweightDocument(read, { from, to } = {}, weights = new Bodywe
     latest: weights.reading ? form(weights.reading.entry) : null };
 }
 
+export function notesDocument(read) {
+  const notes = read.repository(Note);
+  const stored = notes.all('stored');
+  return notes.all('drawn').map((note) => ({ id: note.id.record, position: stored.findIndex((each) => each.id.equals(note.id)),
+    ...note.fields(), ...(note.updatedAt === null ? {} : { updatedAt: note.updatedAt.ms }) }));
+}
+
+export function noteDraft(note) {
+  if (note.draft) return note.draft;
+  const id = new Id(note.id, Note);
+  return note.fresh ? Draft.new(new NoteValue(id), Placement.bottom)
+    : Draft.opening(new NoteValue(id, note.title, note.body));
+}
+
 export function createGymRuntime(engine, { event = gymStep, failure = gymFailure, zone = deviceZone } = {}) {
   const owner = engine.activeReplica();
   const port = new EngineReplica(engine);
@@ -123,6 +146,30 @@ export function createGymRuntime(engine, { event = gymStep, failure = gymFailure
   };
   return {
     read,
+    notes: async () => read(notesDocument),
+    mintNote: () => { checkOwner(); return runner.mint(Note).record; },
+    saveNote: (id, { title, body }, base) => boundary('note-save', async () => {
+      const draft = (base instanceof Draft ? base : noteDraft(base ?? { id, fresh: true }))
+        .edit((value) => new NoteValue(value.id, title, body, value.updatedAt));
+      if (draft.id.record !== id) throw new Error('a note draft saves its own record');
+      const saved = await runner.save(draft, GymRefusals);
+      if (saved.result.kind === 'failed') throw saved.result.error;
+      if (saved.result.kind === 'refused') throw gymRefusalError(saved.result.refusal);
+      event('note-save', saved.result.receipt ? 'saved-local' : 'unchanged');
+      return { ...read(notesDocument).find((note) => note.id === id), draft: saved.draft };
+    }),
+    moveNote: (id, below) => boundary('note-reorder', async () => {
+      const outcome = await runner.run(MoveNote(new Id(id, Note), below === null ? null : new Id(below, Note)));
+      if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
+      event('note-reorder', outcome.kind === 'committed' ? 'saved-local' : 'unchanged');
+      return read(notesDocument);
+    }),
+    deleteNote: (id) => boundary('delete', async () => {
+      const outcome = await runner.run(DeleteNote(new Id(id, Note)));
+      if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
+      event('delete', outcome.kind === 'committed' ? 'held' : 'unchanged');
+      return outcome.kind === 'committed' ? outcome.receipt.gestureId : null;
+    }),
     bodyweight: async (bounds) => read((reader) => bodyweightDocument(reader, bounds)),
     preferences: async () => read(preferencesDocument),
     saveBodyweight: (date, { weightKg }) => boundary('bodyweight-save', async () => {

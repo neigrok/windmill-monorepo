@@ -5,6 +5,7 @@ import { registry } from '../../../src/platform/sync/schema.js';
 import { environment, until } from '../../platform/sync/fakes.js';
 import { hello } from '../../../../packages/api-contract/sync/reference/server/pull.js';
 import { GymRefusal, isStoreFailure } from '../../../src/products/gym/errors.js';
+import { Note } from '../../../src/products/gym/domain/notes.js';
 import { createGymApi, gymLiveHint } from '../../../src/products/gym/gymSync.js';
 
 async function open(t) {
@@ -105,8 +106,8 @@ test('notes append; a move writes only the moved note order register', async (t)
   await api.moveNote('note000003', null);
   assert.deepEqual((await api.notes()).map(({ id }) => id), ['note000003', 'note000001', 'note000002']);
   const before = structuredClone(engine.device.activeReplica.outbox);
-  await assert.rejects(api.moveNote('note000099', null), { code: 'unknown-record' });
-  await assert.rejects(api.moveNote('note000001', 'note000099'), { code: 'unknown-record' });
+  await assert.rejects(api.moveNote('note000099', null), { code: 'record-dead' });
+  await assert.rejects(api.moveNote('note000001', 'note000099'), { code: 'record-dead' });
   assert.deepEqual(engine.device.activeReplica.outbox, before);
 });
 
@@ -117,7 +118,7 @@ test('note editor guards refuse changed content and preserve the original local 
   const base = (await api.notes())[0];
   await api.saveNote('note000001', { title: 'First', body: 'Changed' }, base);
   await assert.rejects(api.saveNote('note000001', { title: 'First', body: 'Stale' }, base), { code: 'stale' });
-  assert.deepEqual(engine.device.activeReplica.entries().at(-1).intent.guard.map(({ field }) => field), ['title', 'body']);
+  assert.deepEqual(engine.device.activeReplica.entries().at(-1).intent.guard.map(({ field }) => field), ['body']);
 });
 
 test('held deaths survive process exit; Undo restores the drawn row', async (t) => {
@@ -126,7 +127,8 @@ test('held deaths survive process exit; Undo restores the drawn row', async (t) 
   const gesture = await api.holdDeath('note', 'note000001');
   assert.equal(engine.device.activeReplica.entries().at(-1).state, 'held');
   assert.equal(engine.observe('self/gym').getSnapshot().drawn[0].life[0], 'dead');
-  assert.equal((await api.notes()).length, 1);
+  assert.equal((await api.notes()).length, 0);
+  assert.equal(api.read((read) => read.repository(Note).capacity().used), 1);
   const resumed = await reopen();
   assert.equal(await resumed.undoDeath(gesture), true);
   assert.equal((await resumed.notes())[0].title, 'First');
@@ -159,7 +161,7 @@ test('held note deaths occupy the cap slot and allow siblings to reorder', async
   for (let n = 0; n < 10; n++) await api.saveNote(`note0000${String(n).padStart(2, '0')}`, { title: String(n), body: '' });
   await api.holdDeath('note', 'note000000');
   const order = (await api.notes()).map(({ id }) => id);
-  [order[1], order[2]] = [order[2], order[1]];
+  [order[0], order[1]] = [order[1], order[0]];
   await api.moveNote('note000002', 'note000000');
   assert.deepEqual((await api.notes()).map(({ id }) => id), order);
   await assert.rejects(api.saveNote('note000099', { title: 'Extra', body: '' }), { code: 'cap', sentence: '10 of 10 notes. Delete one to add another.' });
@@ -402,6 +404,9 @@ for (const [operation, write] of [
   ['bodyweight-save', (api) => api.saveBodyweight('1970-01-01', { weightKg: 80 })],
   ['preferences-save', (api) => api.savePreferences({ units: 'lb' })],
   ['delete', (api) => api.deleteBodyweight('1970-01-01')],
+  ['note-save', (api) => api.saveNote('note000001', { title: 'Kept', body: '' })],
+  ['note-reorder', (api) => api.moveNote('note000001', null)],
+  ['delete', (api) => api.deleteNote('note000001')],
 ]) {
   test(`${operation}: a failed store keeps all data and is reported only at the storage boundary`, async (t) => {
     const { api, engine, env, failures, events } = await open(t);
@@ -450,5 +455,7 @@ test('domain read handles cannot follow the engine into another account', async 
   t.mock.method(engine, 'activeReplica', () => 'another-account');
   await assert.rejects(api.preferences(), { code: 'not-writable' });
   await assert.rejects(api.bodyweight(), { code: 'not-writable' });
+  await assert.rejects(api.notes(), { code: 'not-writable' });
+  assert.throws(() => api.mintNote(), { code: 'not-writable' });
   assert.deepEqual(failures, []);
 });

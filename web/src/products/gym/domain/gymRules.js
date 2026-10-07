@@ -7,6 +7,7 @@ import { ChoiceSpec, CountSpec, NumberSpec, Path, TextSpec, Violation } from '..
 import { registry } from '../../../platform/sync/schema.js';
 import { WeighIn, WeighInRules } from './bodyweight.js';
 import { Preferences, PreferencesRules } from './preferences.js';
+import { Note, NoteRules } from './notes.js';
 
 /** @typedef {import('../../../platform/domain-kit/values.js').Json} Json */
 /** @typedef {import('../../../platform/domain-kit/entities.js').RecordRef} RecordRef */
@@ -59,11 +60,6 @@ export function refusalForm(refusal) {
   const { code, subject, detail, path } = refusal.refused;
   return { [refusal.kind]: { code, subject, detail, path } };
 }
-
-export const NoteRules = Object.freeze({
-  title: new TextSpec('note.title', { unit: 'chars', min: 1, max: 60, trim: true, nfc: true }),
-  body: new TextSpec('note.body', { unit: 'bytes', min: 0, max: 500, trim: true, nfc: true }),
-});
 
 export const ExerciseRules = Object.freeze({
   name: new TextSpec('exercise.name', { unit: 'chars', min: 1, max: 60, trim: true, nfc: true }),
@@ -225,11 +221,6 @@ function entity(type, decode, checks, protocols = {}) {
   });
   return declared;
 }
-
-export const Note = entity('note', (f) => ({ title: f.string('title'), body: f.string('body', '') }), {
-  title: (f, path) => NoteRules.title.apply(f.string('title'), path),
-  body: (f, path) => NoteRules.body.apply(f.string('body'), path),
-}, { heldRemoval: true, orderField: 'ord', savesGuarded: true });
 
 export const Exercise = entity('exercise', (f) => ({ name: f.string('name'), pattern: f.string('pattern'),
   equipment: f.string('equipment'), stepKg: f.double('stepKg') }), {

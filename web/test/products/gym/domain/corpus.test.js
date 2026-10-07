@@ -7,6 +7,7 @@ import { LocalDay } from '../../../../src/platform/domain-kit/time.js';
 import { jcs } from '../../../../src/platform/sync/core/jcs.js';
 import { Bodyweight, DeleteWeighIn, SaveWeighIn, WeighIn, WeighInValue } from '../../../../src/products/gym/domain/bodyweight.js';
 import { GymRefusals, GymRules, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';
+import { MoveNote, Note, SaveNoteCall } from '../../../../src/products/gym/domain/notes.js';
 import { Preferences, PreferencesValue, SavePreferences, restSettings } from '../../../../src/products/gym/domain/preferences.js';
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { RegistryCheck, RuleBookCheck, RuleBookParity } from '../../../platform/domain-kit/checks.js';
@@ -20,7 +21,6 @@ const corpus = new ProductCorpus(book, GymRules.spec);
 const rulesFile = 'gym/domain/rules.json';
 const valuesFile = 'gym/domain/values.json';
 const pending = [
-  'gym/domain/notes-actions.json',
   'gym/domain/catalogue-actions.json',
   'gym/domain/routines-actions.json',
   'gym/domain/proposals-actions.json',
@@ -51,6 +51,16 @@ function bodyweightForm(value, input) {
 /** @type {Record<string, (vector: Vector) => unknown>} */
 const handlers = {
   [valuesFile]: (vector) => corpus.value(vector),
+  'gym/domain/notes-actions.json': (vector) => {
+    const input = vector.input.input;
+    if (vector.input.action === 'MoveNote') {
+      const below = input.below === null ? null : new Id(input.below, Note);
+      return corpus.decision(MoveNote(new Id(input.id, Note), below), vector, () => null, refusalForm);
+    }
+    assert.equal(vector.input.action, 'SaveNoteCall', 'unclaimed notes action');
+    const value = input.note;
+    return corpus.decision(new SaveNoteCall(Note.decode(Fields.values('note', value.id, value.fields))), vector, (id) => id.json, refusalForm);
+  },
   'gym/domain/bodyweight-actions.json': (vector) => {
     const input = vector.input.input;
     const id = new Id(input.day, WeighIn);
@@ -86,8 +96,9 @@ test('the gym corpus is closed: each file is claimed or explicitly pending', (t)
   const files = [...Contract.files('gym'), 'gym-ladder.json'].sort();
   assert.equal(new Set([...claimed, ...pending]).size, claimed.length + pending.length, 'a file is claimed twice or still pending');
   assert.deepEqual([...claimed, ...pending].sort(), files);
-  assert.ok(pending.length <= 8, 'the W1 pending set can only shrink');
+  assert.ok(pending.length <= 7, 'the W2 pending set can only shrink');
   for (const path of [rulesFile, valuesFile, 'gym/domain/bodyweight-actions.json', 'gym/domain/preferences-actions.json', 'gym/rules/bodyweight.json']) assert.ok(claimed.includes(path), `W1 claim regressed: ${path}`);
+  assert.ok(claimed.includes('gym/domain/notes-actions.json'), 'W2 notes claim regressed');
   const count = Object.keys(handlers).reduce((total, path) => total + Contract.vectors(path).length, 0);
   t.diagnostic(`gym corpus: ${claimed.length}/${files.length} files, ${count} vectors, ${pending.length} pending files`);
 });

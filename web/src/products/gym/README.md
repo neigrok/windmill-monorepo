@@ -12,7 +12,12 @@ workout and log shares use their REST doors in `gymApi.js`; a Coach conversation
 room's own clock, and when the room unmounts or the document hides it is dropped unsent and the
 conversation stays. The account gate remains in `GymApp`.
 
-Bodyweight and preferences use the domain kit through `gymRuntime.js`. The bodyweight stance reads
+Notes, bodyweight and preferences use the domain kit through `gymRuntime.js`. Notes draw the kit's
+`drawn` list and take capacity and empty-room stance from `stored`. Their guarded drafts save only
+touched fields, with character and byte bounds declared in `domain/notes.js`. Moves write only the
+selected note's order key; a drop in its drawn place writes nothing. Coach saves reuse a stored
+note with the same normalised words and count held deletes against capacity.
+The bodyweight stance reads
 `stored`; its reading, dots and gaps read `drawn`, with the room's pending deletes hidden before storage
 settles. Reads refresh on render, at local midnight and when the tab resumes. Bodyweight labels and fields
 take the current preference unit directly; changing units preserves the amount in an open field.
@@ -29,7 +34,7 @@ and, for an overlap, the crossed session; `failureReason` finishes the sentence 
 naming this device when its store could not keep the write and the network only for a REST door.
 
 `syncProjections.js` maps records to the REST reads' presentation shapes, using the domain reads for
-bodyweight and preferences. The global seed catalogue
+notes, bodyweight and preferences. The global seed catalogue
 is outside sync and is checked against `schema.sql` in CI. Observation updates refresh local reads
 and preserve history depth and editor drafts.
 Creation and proposal chronology use the engine observation's authoritative `rc` envelope. Command
@@ -56,9 +61,9 @@ unresolved notices.
 ## Gates
 
 Gym tests run through the existing `npm test`, `npm run test:sync` and `npm run build` scripts.
-The gym domain claims five corpus files: the rule book, 121 value vectors, 16 action/preference-read
-vectors and six bodyweight reads, compared by JCS and with reversed record order. The remaining
-eight files are listed explicitly in the corpus runner.
+The gym domain claims six corpus files: the rule book, 122 value vectors, 18 action/preference-read
+vectors, 20 note action vectors and six bodyweight reads, compared by JCS and with reversed record order.
+The remaining seven files are listed explicitly in the corpus runner.
 Screen tests run over a real browser engine for a signed-in account (`gymAccount` in
 `test/products/gym/harness.mjs`) and assert what the account still owes the server. The REST parity
 fixture captures an actual disposable backend account and persisted browser-engine observations.

@@ -706,7 +706,7 @@ test('the Notes screen is its own room off #/gym/notes, titled as a room with th
       </header>`), true);
   assert.equal(notes.includes('{PLACEHOLDER_TITLES.map((title) => ('), true);
   assert.equal(notes.includes("onClick={() => fresh(title)}"), true);
-  assert.equal(notes.includes('{shown.length > 1 && <p className="gym-notes-caption">{PRECEDENCE_CAPTION}</p>}'), true);
+  assert.equal(notes.includes('{notes.length > 1 && <p className="gym-notes-caption">{PRECEDENCE_CAPTION}</p>}'), true);
   assert.equal((notes.match(/gym-notes-caption/g) ?? []).length, 1, 'one caption on the screen');
   assert.equal(notes.includes('<p className="gym-notes-full">{FULL_LINE}</p>'), true);
   assert.equal(notes.includes('{showsByteCount(body) && ('), true);
@@ -716,13 +716,13 @@ test('the Notes screen is its own room off #/gym/notes, titled as a room with th
   assert.equal(/className="gym-note-title-input"[^/]*maxLength/.test(notes), false, 'no silent maxLength on the title');
   assert.equal(notes.includes('<Back href={NOTES_HREF} onClick={(event) => { event.preventDefault(); onClose(); }}>{NOTES_TITLE}</Back>'), true, 'the editor draws its back through Back.jsx');
   assert.equal(notes.includes("if (error?.code === 'cap') onStale();"), true, 'a full account re-reads the list behind the editor');
-  assert.equal(notes.includes('onStale={() => settle(null)}'), true);
+  assert.equal(notes.includes('onStale={view.retry}'), true);
   assert.equal(notes.includes('{!note.fresh && ('), true, 'delete is offered only on a stored note');
   // The cap is the STORE's count and the rows are the drawn list: a note held for deletion is off
   // the screen and still counted, so the cap line stands and `Add a note` never opens a refusal.
-  assert.equal(notes.includes('{isFull(notes)'), true);
-  assert.equal(notes.includes("const hidden = log.hidden('note');"), true);
-  assert.equal(notes.includes('const shown = notes.filter((note) => !hidden.has(note.id));'), true);
+  assert.equal(notes.includes('{capacity.isFull'), true);
+  assert.equal(notes.includes("log.hidden('note')"), false);
+  assert.equal(notes.includes('notes: notesDocument(read), capacity: read.repository(Note).capacity()'), true);
   assert.equal(/savePreferences|preferences\(/.test(notes), false, 'notes never ride the preferences document');
   assert.equal(/gym-sheet|Keypad/.test(notes), false);
   for (const gone of ['Drag to reorder', 'Ten notes', '500 bytes each']) {

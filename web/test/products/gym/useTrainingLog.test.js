@@ -1,9 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CommitError } from '../../../src/platform/sync/client/commit.js';
 import { syncSession } from '../../../src/platform/sync/session.js';
 import { useTrainingLog } from '../../../src/products/gym/useTrainingLog.js';
-import { browserWith, renderHook, settle } from './harness.mjs';
+import { browserWith, confirmed, gymAccount, renderHook, settle } from './harness.mjs';
 
 const stamp = '1000:0:r_aaaaaaaaaaaa';
 const row = (t, id, fields) => ({ t, id, born: stamp, life: ['alive', stamp], f: Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, [value, stamp]])) });
@@ -59,21 +58,21 @@ test('the room holds the fifty newest sessions as a local slice that follows obs
 
 test('a held delete is offered from the engine’s own offer, and Undo hands its gesture back to the engine', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_800_000_000_000 });
-  const note = row('note', 'note000001', { title: 'Kept', body: '', ord: 'a0' });
-  const { view, engine, update } = log(t, [note]);
+  browserWith();
+  const { engine, owed } = await gymAccount(t, [confirmed('note', 'note000001', { title: 'Kept', body: '', ord: 'a0' })]);
+  const view = renderHook(t, () => useTrainingLog(), { live: true });
   const undone = [];
-  engine.commit = async () => {
-    update({ undoOffers: [{ id: 'gesture1', releaseAt: 1_800_000_009_000, records: [{ t: 'note', id: 'note000001' }] }] });
-    return { outcome: { localIds: ['gesture1/0'] }, value: null };
-  };
-  engine.undo = async (gesture) => { undone.push(gesture); update({ undoOffers: [] }); return true; };
+  const undo = engine.undo.bind(engine);
+  t.mock.method(engine, 'undo', (gesture) => { undone.push(gesture); return undo(gesture); });
   view.log.holdDelete({ kind: 'note', id: 'note000001' });
   await settle();
+  const gestureId = engine.observe('self/gym').getSnapshot().undoOffers[0].id;
   assert.deepEqual(view.log.held.map(({ key, kind, id, line, gestureId, releaseAt }) => ({ key, kind, id, line, gestureId, releaseAt })),
-    [{ key: 'note:note000001', kind: 'note', id: 'note000001', line: 'Note deleted.', gestureId: 'gesture1', releaseAt: 1_800_000_009_000 }]);
+    [{ key: 'note:note000001', kind: 'note', id: 'note000001', line: 'Note deleted.', gestureId, releaseAt: 1_800_000_009_000 }]);
   assert.equal(view.log.transient.action.label, 'Undo');
   await view.log.transient.action.run();
-  assert.deepEqual(undone, ['gesture1']);
+  assert.deepEqual(undone, [gestureId]);
+  assert.deepEqual(owed(), []);
   assert.deepEqual(view.log.held, []);
   assert.equal(view.log.transient, null);
 });
@@ -87,15 +86,18 @@ test('an offer whose deadline has passed is not offered, even before the engine 
   assert.equal(view.log.transient, null);
 });
 
-test('a held delete this device cannot store puts the row back and says the screen’s refusal', async (t) => {
-  const { view, engine } = log(t);
+test('a held delete this device cannot store keeps the drawn note and says the screen’s refusal', async (t) => {
+  browserWith();
+  const { engine, refuseWrites } = await gymAccount(t, [confirmed('note', 'note000001', { title: 'Kept', body: '', ord: 'a0' })]);
+  const view = renderHook(t, () => useTrainingLog(), { live: true });
   const refused = [];
-  engine.commit = async () => { throw new CommitError('the device store did not commit', 'store'); };
+  refuseWrites();
   view.log.holdDelete({ kind: 'note', id: 'note000001', refused: (error) => { refused.push(error.kind); view.log.say('Not deleted.'); } });
-  assert.equal(view.log.hidden('note').has('note000001'), true, 'off the screen from the act');
+  assert.equal(view.log.held.length, 1);
   await settle();
   assert.deepEqual(refused, ['store']);
-  assert.equal(view.log.hidden('note').has('note000001'), false);
+  assert.equal(view.log.held.length, 0);
+  assert.equal(engine.observe('self/gym').getSnapshot().drawn[0].life[0], 'alive');
   assert.equal(view.log.transient.text, 'Not deleted.');
 });
 
@@ -111,14 +113,20 @@ test('asynchronous engine refusals remain durable and are announced once', (t) =
 
 test('a stalled durable writer keeps its Undo offer and creates no clock after room exit', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { view, engine } = log(t);
+  browserWith();
+  const { engine } = await gymAccount(t, [confirmed('note', 'note000001', { title: 'Kept', body: '', ord: 'a0' })]);
+  const view = renderHook(t, () => useTrainingLog(), { live: true });
   let complete;
-  engine.commit = () => new Promise((resolve) => { complete = resolve; });
+  const commit = engine.commit.bind(engine);
+  t.mock.method(engine, 'commit', async (...args) => {
+    await new Promise((resolve) => { complete = resolve; });
+    return commit(...args);
+  });
   view.log.holdDelete({ kind: 'note', id: 'note000001' });
   t.mock.timers.tick(9000);
   assert.equal(view.log.transient.action.label, 'Undo');
   view.unmount();
-  complete({ outcome: { localIds: ['gesture/0'] }, value: null });
+  complete();
   await settle();
   t.mock.timers.tick(9000);
   assert.equal(view.log.held.length, 1, 'the unmounted snapshot receives no delayed publish');

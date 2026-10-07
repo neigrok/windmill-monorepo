@@ -24,7 +24,7 @@ async function openList(t) {
     confirmed('note', 'noteMeetJune', { title: 'Meet in June', body: '', ord: 'a2', updatedAt: 0 }),
   ]);
   const { Notes } = await loadScreen('products/gym/notes/Notes.jsx');
-  const room = renderHook(t, () => Notes({ log: roomLog() }));
+  const room = renderHook(t, () => Notes({ log: roomLog() }), { live: true });
   await settle();
   const held = () => elementsOf(room.tree)
     .find((each) => typeof each.type === 'function' && each.type.name === 'NoteList');
@@ -36,6 +36,7 @@ async function openList(t) {
     return list.type({ ...list.props, onMove: (from, to) => { moves += 1; return list.props.onMove(from, to); } });
   });
   return {
+    engine: gym.engine,
     order: () => held().props.notes.map((note) => note.id),
     rails: () => findByClass(view.tree, 'gym-note-rail'),
     said: () => findByClass(view.tree, 'gym-said')[0],
@@ -184,6 +185,44 @@ test('the arrows move a note, the ends do not wrap, and every other key falls th
     assert.deepEqual(list.order(), ['noteCutting', 'noteShoulder', 'noteMeetJune']);
   }
   assert.equal(list.moves(), 1);
+});
+
+test('two arrows during a stalled save keep moving the selected note, including across its first acknowledgement', async (t) => {
+  const list = await openList(t);
+  const commit = list.engine.commit.bind(list.engine);
+  const releases = [];
+  t.mock.method(list.engine, 'commit', async (...args) => {
+    await new Promise((resolve) => releases.push(resolve));
+    return commit(...args);
+  });
+  await list.activate(0);
+  list.press(0, 'ArrowDown');
+  assert.deepEqual(list.order(), ['noteCutting', 'noteShoulder', 'noteMeetJune']);
+  list.press(1, 'ArrowDown');
+  assert.deepEqual(list.order(), ['noteCutting', 'noteMeetJune', 'noteShoulder']);
+  releases[0]();
+  await settle();
+  assert.deepEqual(list.order(), ['noteCutting', 'noteMeetJune', 'noteShoulder']);
+  releases[1]();
+  await settle();
+  assert.deepEqual(list.order(), ['noteCutting', 'noteMeetJune', 'noteShoulder']);
+  assert.deepEqual(list.owed(), ['ready update note noteShoulder ord', 'ready update note noteShoulder ord']);
+});
+
+test('a failed move restores the stored order and releases the picked rail before the next arrow', async (t) => {
+  const list = await openList(t);
+  const failure = t.mock.method(list.engine, 'commit', async () => { throw new Error('storage failed'); });
+  await list.activate(0);
+  list.press(0, 'ArrowDown');
+  await settle();
+  assert.deepEqual(list.order(), ['noteShoulder', 'noteCutting', 'noteMeetJune']);
+  assert.deepEqual(list.rails().map((rail) => rail.props['aria-pressed']), [false, false, false]);
+  assert.deepEqual(list.owed(), []);
+  failure.mock.restore();
+  list.press(0, 'ArrowDown');
+  await settle();
+  assert.deepEqual(list.order(), ['noteCutting', 'noteShoulder', 'noteMeetJune']);
+  assert.deepEqual(list.owed(), ['ready update note noteShoulder ord']);
 });
 
 test('the drag is untouched, and the click that ends it is not read as a pick-up', async (t) => {

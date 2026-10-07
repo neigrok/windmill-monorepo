@@ -1,7 +1,7 @@
 import { Reader, Views } from '../../platform/domain-kit/reading.js';
 import { Instant, Moment } from '../../platform/domain-kit/time.js';
 import { registry } from '../../platform/sync/schema.js';
-import { bodyweightDocument, namedZone, preferencesDocument } from './gymRuntime.js';
+import { bodyweightDocument, namedZone, notesDocument, preferencesDocument } from './gymRuntime.js';
 
 // Global seed movements are outside sync scopes (engine A.2). Kept equal to schema.sql.
 export const GYM_SEED_CATALOG = [
@@ -297,8 +297,7 @@ export function projectGym(rows, { now = Date.now(), timeZone = 'UTC', catalog =
         ...(defined(field(row, 'baseRevision')) ? { baseRevision: field(row, 'baseRevision') } : {}),
         ...(defined(field(row, 'baseName')) ? { baseName: field(row, 'baseName') } : {}) };
     },
-    notes: () => ofType('note').slice().sort((a, b) => lexical(field(a, 'ord'), field(b, 'ord')) || lexical(a.id, b.id)).map((row, position) => ({ id: row.id, position, title: field(row, 'title'), body: field(row, 'body'),
-      ...(defined(field(row, 'updatedAt')) ? { updatedAt: field(row, 'updatedAt') } : {}) })),
+    notes: () => notesDocument(read()),
     bodyweight: (bounds) => bodyweightDocument(read(), bounds),
     lastTime: (exerciseId) => {
       const session = finished.find((session) => setsFor(session.id).some((set) => set.exerciseId === exerciseId && set.kind !== 'warmup'));

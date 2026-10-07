@@ -5,7 +5,6 @@ import { jcs } from '../../platform/sync/core/jcs.js';
 import { CommitError } from '../../platform/sync/client/commit.js';
 import { GymRefusal, isStoreFailure } from './errors.js';
 import { isNameOverCap, NAME_MAX } from './log.js';
-import { BODY_BYTES, FULL_LINE, isBodyOverCap, isTitleOverCap, TITLE_MAX } from './notes/notes.js';
 import { NAME_IT_TO_SAVE_IT } from './routines.js';
 import { projectGym } from './syncProjections.js';
 import { createGymRuntime, gymStep, gymFailure } from './gymRuntime.js';
@@ -14,11 +13,10 @@ export { gymStep, gymFailure } from './gymRuntime.js';
 const SCOPE = 'self/gym';
 const BASE = Symbol('gym-editor-base');
 const READS = ['exercises', 'sessions', 'session', 'review', 'routines', 'routine',
-  'proposals', 'proposal', 'notes', 'history', 'progress', 'record', 'lastTime', 'lastSets'];
+  'proposals', 'proposal', 'history', 'progress', 'record', 'lastTime', 'lastSets'];
 const STEPS = { barbell: 2.5, dumbbell: 2, machine: 5, cable: 2.5, bodyweight: 2.5, kettlebell: 4 };
 const SENTENCES = {
   stale: 'This changed on another device. Read it again before saving.',
-  cap: FULL_LINE,
   'session-open': 'that session is still running',
   'session-overlap': 'these times cross a session already in the log',
   'bad-instant': 'These times run past now or outside the workout.',
@@ -33,7 +31,6 @@ const refusal = (code, { sentence = SENTENCES[code], overlapping = null } = {}) 
 const NAMES = {
   exercise: { blank: 'A movement needs a name.', tooLong: `A name runs to ${NAME_MAX} characters.`, isOverCap: isNameOverCap },
   routine: { blank: NAME_IT_TO_SAVE_IT, tooLong: `A name runs to ${NAME_MAX} characters.`, isOverCap: isNameOverCap },
-  note: { blank: 'a note needs a title', tooLong: `a title runs to ${TITLE_MAX} characters`, isOverCap: isTitleOverCap },
 };
 
 function displayName(typed, { blank, tooLong, isOverCap }) {
@@ -90,7 +87,6 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
     const value = project()[name](...args);
     if (name === 'routine') return attachBase(value, 'routine', args[0]);
     if (name === 'routines') return value.map((routine) => attachBase(routine, 'routine', routine.id));
-    if (name === 'notes') return value.map((note) => attachBase(note, 'note', note.id));
     return value;
     } catch (error) { failure('projection'); throw error; }
   };
@@ -119,24 +115,6 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
     return { gesture: { changes: [{ op: custom ? 'update' : 'write', t: custom ? 'exercise' : 'exerciseName', id, f: { name } }] },
       value: { ...exercise, name } };
   });
-  api.saveNote = (id, note, base) => commit('note-save', (views) => {
-    const title = displayName(note.title, NAMES.note);
-    if (isBodyOverCap(note.body)) throw refusal('invalid', { sentence: `a note runs to ${BODY_BYTES} bytes` });
-    const exists = views.drawn.get(recordKey('note', id));
-    const changes = [{ op: exists ? 'update' : 'create', t: 'note', id,
-      f: { title, body: note.body },
-      ...(!exists ? { anchor: { field: 'ord', below: project([...views.stored.values()], views.now).notes().at(-1)?.id ?? null } } : {}) }];
-    const guard = exists ? guarded(views, 'note', id, ['title', 'body'], base) : [];
-    return { gesture: { changes, opts: { guard } }, value: { id, ...note, title, position: base?.position ?? project([...views.stored.values()], views.now).notes().length } };
-  });
-  api.moveNote = (id, below) => commit('note-reorder', (views) => {
-    const notes = project([...views.stored.values()], views.now).notes();
-    const rest = notes.filter((note) => note.id !== id);
-    const at = rest.findIndex((note) => note.id === below) + 1;
-    if (rest.length === notes.length || (below !== null && at === 0)) throw refusal('unknown-record');
-    return { gesture: { changes: [{ op: 'move', t: 'note', id, anchor: { field: 'ord', below } }] },
-      value: [...rest.slice(0, at), notes.find((note) => note.id === id), ...rest.slice(at)].map((note, position) => ({ ...note, position })) };
-  });
   api.fixSet = (sessionId, id, fix) => commit('set-correct', (views) => {
     const row = views.drawn.get(recordKey('set', id));
     if (!row || row.life?.[0] === 'dead' || row.f?.sessionId?.[0] !== sessionId) throw refusal('unknown-record');
@@ -145,6 +123,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
   });
   api.holdDeath = async (t, id) => {
     if (t === 'weighin') return api.deleteBodyweight(id);
+    if (t === 'note') return api.deleteNote(id);
     try {
       const answer = await engine.commit(SCOPE, (views) => {
         if (views.replica !== replica) throw refusal('not-writable');
