@@ -143,7 +143,8 @@ import UIKit
       replace(app.textFields["gym-target-sets"], with: "3")
       replace(app.textFields["gym-target-reps"], with: "8")
       replace(app.textFields["gym-target-weight"], with: "60")
-      app.buttons["gym-target-keyboard-done"].tap()
+      app.buttons["gym-target-keyboard-done"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1)
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
       assertPrimaryLabelContrast(app.buttons["gym-target-set"], appearance: appearance)
       capture(app, "targets-straight-" + appearance)
       let vary = app.switches["Vary by set"]
@@ -166,7 +167,8 @@ import UIKit
       }
       replace(thirdLoad, with: "100")
       XCTAssertEqual(thirdLoad.value as? String, "100")
-      app.buttons["gym-target-keyboard-done"].tap()
+      app.buttons["gym-target-keyboard-done"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1)
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
       for _ in 0..<4 where !app.descendants(matching: .any)["gym-target-fill"].firstMatch.isHittable { targets.swipeDown() }
       app.descendants(matching: .any)["gym-target-fill"].firstMatch.tap()
       let ramp = app.buttons["Ramp up"]
@@ -183,7 +185,8 @@ import UIKit
       XCTAssertTrue(match.waitForNonExistence(timeout: 5))
       for row in 1...3 { XCTAssertEqual(app.textFields["gym-target-row-\(row)-weight"].value as? String, "60") }
       replace(thirdLoad, with: "100")
-      app.buttons["gym-target-keyboard-done"].tap()
+      app.buttons["gym-target-keyboard-done"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1)
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
       app.buttons["gym-target-fill"].tap()
       XCTAssertTrue(ramp.waitForExistence(timeout: 5)); ramp.tap()
       XCTAssertTrue(ramp.waitForNonExistence(timeout: 5))

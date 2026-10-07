@@ -113,8 +113,10 @@ import XCTest
     let top = app.navigationBars.firstMatch.frame.maxY + 8
     let bottom = app.buttons["gym-weigh-in"].frame.minY - 12
     for _ in 0..<3 {
-      let frame = bodyweight.frame
-      if frame.minY > top && frame.maxY < bottom && bodyweight.isHittable { break }
+      if bodyweight.exists {
+        let frame = bodyweight.frame
+        if frame.minY > top && frame.maxY < bottom && bodyweight.isHittable { break }
+      }
       app.swipeDown()
     }
     XCTAssertTrue(bodyweight.isHittable)

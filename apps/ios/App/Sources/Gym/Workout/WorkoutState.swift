@@ -221,6 +221,12 @@ struct LogWorkoutSet: Action {
   let previousSets: [TrainingSet]
   var offer: WorkoutActivityOffer? = nil
   var scope: ScopeRef { Gym.scope }
+  nonisolated static func matchesOfferedSets(_ current: [TrainingSet], _ offered: [TrainingSet]) -> Bool {
+    guard current.count == offered.count else { return false }
+    return zip(current.sorted { $0.id < $1.id }, offered.sorted { $0.id < $1.id }).allSatisfy {
+      $0.0.id == $0.1.id && $0.0.fields == $0.1.fields
+    }
+  }
   func load(_ read: Reader) throws -> (TrainingState, WorkoutActivityRecord?, String, WorkoutWalk, Bool, Bool) {
     (try TrainingState(read), try read.device(WorkoutActivityRecord.key).map(WorkoutActivityRecord.init), read.replica,
      try WorkoutWalk(read.device(WorkoutWalk.key(session.id))), try read.commands().contains { $0.command.name == Gym.Commands.finish && $0.command.args["sessionId"] == session.id.json }, read.isAnonymous)
@@ -238,7 +244,7 @@ struct LogWorkoutSet: Action {
             SessionRules.autoCloseAt(session, sets: loaded.sets, now: loaded.moment.now) == nil else { return .refuse(.stale(session.id.ref, .predicted)) }
     }
     guard loaded.drawn.first(where: { $0.id == session.id }) == session,
-          current == previousSets.sorted(by: { $0.id < $1.id }) else {
+          Self.matchesOfferedSets(current, previousSets) else {
       return .refuse(.stale(session.id.ref, .predicted))
     }
     return try AppendSet(value).decide(loaded, ids: ids)
@@ -327,7 +333,7 @@ struct FinishWorkout: Action {
         record.offer = nil; revoke = record
         if canLog, activityIdentityResolved, walk.pending == nil, !rackEditing, !gym.workoutHidden,
            weightKg.isFinite, abs(weightKg) <= 500, (1...99).contains(reps),
-           let session, offerSession == session, offerSets == sets, let selected {
+           let session, offerSession == session, LogWorkoutSet.matchesOfferedSets(sets, offerSets), let selected {
           record.offer = WorkoutActivityOffer(ownerID: record.ownerID, sessionID: session.id.description,
             movementID: selected.description, weightKg: weightKg, reps: reps, kind: kind.rawValue,
             setID: gym.runner.mint(TrainingSet.self).description)
@@ -428,7 +434,7 @@ struct FinishWorkout: Action {
       }
     }
     if previousSelected != selected { prefill(); restoreActivityDraft() }
-    else if offerSession != session || offerSets != sets { prefill() }
+    else if offerSession != session || !LogWorkoutSet.matchesOfferedSets(sets, offerSets) { prefill() }
     if awaitingReceipt && session.closedBy == "finish" { completeFinish(session) }
   }
   func retryRead() { gym.refresh(); reconcile() }
@@ -491,7 +497,7 @@ struct FinishWorkout: Action {
   }
   @discardableResult func logSet(offered: WorkoutActivityOffer? = nil) -> Bool {
     guard canLog, let selected, let session else { message = "Check the weight and reps before logging."; return false }
-    guard offerSession == session && offerSets == sets else { message = "The workout changed. Check the current set."; prefill(); return false }
+    guard offerSession == session && LogWorkoutSet.matchesOfferedSets(sets, offerSets) else { message = "The workout changed. Check the current set."; prefill(); return false }
     guard weightKg.isFinite, abs(weightKg) <= 500, (1...99).contains(reps) else { message = "Check the weight and reps before logging."; return false }
     let offer = offered ?? activityOffer()
     if offer == nil, (try? activityRecord()) != nil {

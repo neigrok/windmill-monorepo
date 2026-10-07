@@ -632,12 +632,37 @@ import SyncTesting
     #expect(planned.weightKg == 50 && planned.reps == 4)
   }
 
-  @Test func staleRackAndActionRefuseWithoutAppending() throws {
+  @Test(arguments: [false, true])
+  func admittedSetNumberDoesNotInvalidateTheOfferedRack(refreshProjection: Bool) throws {
+    let (harness, gym) = try fixture(anonymous: false), workout = try begin(gym)
+    harness.sync(); gym.refresh(); workout.reconcile()
+    workout.weightKg = 60; workout.reps = 8
+    #expect(workout.logSet())
+    let offered = try #require(workout.sets.first)
+    #expect(offered.setNumber == nil)
+    harness.sync()
+    let admitted = try #require(try harness.drawn(TrainingSet.self).first { $0.id == offered.id })
+    #expect(admitted.setNumber == 1 && admitted.fields == offered.fields)
+    if refreshProjection { gym.refresh() }
+    #expect(workout.offerSets == [offered])
+    harness.advance(ms: 1_000)
+    #expect(workout.logSet())
+    #expect(workout.sets.count == 2 && workout.sets.contains(admitted))
+    #expect(workout.weightKg == 60 && workout.reps == 8 && workout.message == nil)
+    #expect(try harness.drawn(TrainingSet.self).count == 2)
+  }
+
+  @Test(arguments: ["added", "corrected"])
+  func staleRackAndActionRefuseWithoutAppending(change: String) throws {
     let (_, gym) = try fixture(), workout = try begin(gym), session = try #require(workout.session)
+    if change == "corrected" { #expect(workout.logSet()) }
     let observed = workout.sets
-    let concurrent = value(gym, session: session, weight: 90)
-    #expect(gym.run(AppendSet(concurrent))?.receipt != nil)
-    workout.weightKg = 100; workout.logSet()
+    var concurrent = change == "corrected" ? try #require(observed.first) : value(gym, session: session, weight: 90)
+    if change == "corrected" {
+      concurrent.weightKg = 90
+      #expect(gym.run(CorrectSet(concurrent))?.receipt != nil)
+    } else { #expect(gym.run(AppendSet(concurrent))?.receipt != nil) }
+    workout.weightKg = 100; #expect(!workout.logSet())
     #expect(workout.message == "The workout changed. Check the current set." && workout.sets == [concurrent])
     let attempt = value(gym, session: session, weight: 100)
     #expect(gym.run(LogWorkoutSet(value: attempt, session: session, previousSets: observed))?.refusal == .stale(session.id.ref, .predicted))
