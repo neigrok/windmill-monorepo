@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { REMOVAL_RECEIPTS } from '../../../src/products/gym/domain/proposals.js';
 import { browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle, textOf } from './harness.mjs';
 
 const routine = (id, name) => confirmed('routine', id, { name, position: 0, entries: [
@@ -122,6 +123,55 @@ test('a pending review belongs to its routine card and remains open after applyi
   panel = elementsOf(screen.tree).find((element) => element.type?.name === 'ProposalPanel');
   assert.equal(panel.props.id, 'proposal0001');
   assert.equal(findByClass(screen.tree, 'gym-routine').length, 0);
+  assert.equal(textOf(findByClass(review.tree, 'gym-coach-receipt')[0]), 'Removal waiting to sync.');
+  assert.equal(button(review.tree, 'Apply'), undefined);
+});
+
+test('a removal outcome survives its deleted proposal until the receipt intersects a visible page', async (t) => {
+  const browser = browserWith();
+  const gym = await gymAccount(t);
+  await gym.engine.commit('self/gym', [], { local: { [REMOVAL_RECEIPTS]: { proposal0001: {
+    status: 'applied', snapshot: { routineId: 'routinePushA', intent: 'remove', proposedName: '', baseName: 'Push A',
+      summary: '', changes: [], door: 'mcp', agent: 'Trainer', state: 'pending' },
+  } } } });
+  let intersect;
+  const previous = globalThis.IntersectionObserver;
+  globalThis.IntersectionObserver = class {
+    constructor(callback) { intersect = (isIntersecting) => callback([{ isIntersecting }]); }
+    observe() {}
+    disconnect() {}
+  };
+  t.after(() => { if (previous) globalThis.IntersectionObserver = previous; else delete globalThis.IntersectionObserver; });
+  const { RoutinesList } = await loadScreen('products/gym/Routines.jsx');
+  const list = renderHook(t, () => RoutinesList({ log: roomLog() }), { live: true });
+  await settle();
+  button(list.tree, 'View receipt').props.onClick();
+  await settle();
+  const props = elementsOf(list.tree).find((element) => element.type?.name === 'ProposalPanel').props;
+  assert.equal(props.id, 'proposal0001');
+  const { ProposalPanel } = await loadScreen('products/gym/Proposals.jsx');
+  const screen = renderHook(t, () => ProposalPanel(props), { live: true });
+  await settle();
+  const receipt = () => findByClass(screen.tree, 'gym-coach-receipt')[0];
+  assert.equal(textOf(receipt()), 'Applied · Push A · routine removed');
+  receipt().ref({});
+  intersect(false);
+  await settle();
+  const retained = () => gym.engine.device.activeReplica.deviceRows('gym')[REMOVAL_RECEIPTS];
+  assert.ok(retained().proposal0001);
+  browser.hide();
+  intersect(true);
+  await settle();
+  assert.ok(retained().proposal0001);
+  browser.show();
+  await settle();
+  assert.equal(retained(), undefined);
+  assert.equal(textOf(receipt()), 'Applied · Push A · routine removed');
+  assert.equal(elementsOf(list.tree).filter((element) => element.type?.name === 'ProposalPanel').length, 1);
+  list.unmount();
+  const reopened = renderHook(t, () => RoutinesList({ log: roomLog() }));
+  await settle();
+  assert.equal(button(reopened.tree, 'View receipt'), undefined);
 });
 
 test('a direct proposal can switch to another routine review and follows the next proposal route', async (t) => {

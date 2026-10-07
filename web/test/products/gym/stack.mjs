@@ -322,7 +322,29 @@ async function run() {
         { processes: [vite, backend], label: 'preference domain convergence' });
       assert.deepEqual(await request('/v1/gym/preferences'), { units: 'lb', restSeconds: 180, restSound: false, confirmHaptic: false, confirmSound: true }); e2e++;
 
-      await waitUntil(() => sql(`SELECT count(DISTINCT props->>'operation') FROM events WHERE user_id='${account}' AND name='gym_action' AND props->>'operation' IN ('routine-save','session-import','bodyweight-save','preferences-save') AND props->>'outcome'='saved-local';`) === '4',
+      await agent('gym_propose_routine_change', { id: 'prop_fixture_dismiss', routineId: 'rt_fixture_main', name: 'Fixture Next',
+        entries: [{ exerciseId: 'back-squat', sets: [{ reps: 5, weightKg: 85 }] }] });
+      await goto('#/gym/proposals/prop_fixture_dismiss');
+      await page.getByRole('button', { name: 'Turn this down', exact: true }).click();
+      await waitUntil(async () => (await request('/v1/gym/proposals/prop_fixture_dismiss')).state === 'dismissed',
+        { processes: [vite, backend], label: 'proposal dismissal convergence' });
+      await page.getByRole('status').filter({ hasText: 'Turned down · nothing changed.' }).waitFor(); e2e++;
+
+      await agent('gym_create_routine', { id: 'rt_fixture_remove', name: 'Fixture Removal', position: 2,
+        entries: [{ exerciseId: 'bench-press' }] });
+      await agent('gym_propose_routine_removal', { id: 'prop_fixture_remove', routineId: 'rt_fixture_remove' });
+      await goto('#/gym/proposals/prop_fixture_remove');
+      await page.getByRole('button', { name: 'Apply', exact: true }).click();
+      await waitUntil(async () => await request('/v1/gym/routines/rt_fixture_remove') === null,
+        { processes: [vite, backend], label: 'proposal removal convergence' });
+      await page.getByRole('status').filter({ hasText: 'Applied · Fixture Removal · routine removed' }).waitFor();
+      await waitUntil(() => page.evaluate(async () => {
+        const { syncSession } = await import('/src/platform/sync/session.js');
+        return !syncSession.engine.device.activeReplica.deviceRows('gym')['rack:removalReceipts'];
+      }), { processes: [vite, backend], label: 'visible removal receipt acknowledgment' }); e2e++;
+      assert.ok(commandsSeen.includes('gym.applyProposal') && commandsSeen.includes('gym.dismissProposal'));
+
+      await waitUntil(() => sql(`SELECT count(DISTINCT props->>'operation') FROM events WHERE user_id='${account}' AND name='gym_action' AND props->>'operation' IN ('routine-save','session-import','bodyweight-save','preferences-save','proposal-apply','proposal-dismiss') AND props->>'outcome'='saved-local';`) === '6',
         { processes: [vite, backend], label: 'gym product telemetry' });
       const writeLog = readFileSync(join(temporary, 'stack.log'), 'utf8');
       assert.ok(writeLog.includes('"operation":"sync.push"'), 'engine admission must emit its write log');
@@ -351,10 +373,15 @@ async function run() {
       assert.deepEqual(pageErrors, []);
       assert.deepEqual(gymRequests.filter((request) => request !== 'GET /v1/gym/threads'), [], 'web mirror and engine writes must use no replaced REST door');
       await context.close();
-      console.log(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 9, pending: 0, persistedGymOperations: 4, syncWriteLog: true, ports: [backendPort, webPort] }));
+      console.log(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 11, pending: 0, persistedGymOperations: 6, syncWriteLog: true, ports: [backendPort, webPort] }));
     }
     completed = true;
   } catch (error) {
+    if (created) {
+      try { console.error(JSON.stringify({ gate: 'gym product telemetry', operations: JSON.parse(sql(
+        `SELECT coalesce(json_agg(seen), '[]') FROM (SELECT props->>'operation' AS operation, props->>'outcome' AS outcome, count(*) FROM events WHERE user_id='${account}' AND name='gym_action' GROUP BY 1,2 ORDER BY 1,2) AS seen;`)) })); }
+      catch { console.error('Gym product telemetry could not be read.'); }
+    }
     if (lastPage && !lastPage.isClosed()) {
       await lastPage.screenshot({ path: join(temporary, 'failure.png'), fullPage: true }).catch(() => {});
       const sync = await lastPage.evaluate(async () => {
@@ -364,7 +391,7 @@ async function run() {
           replicaState: engine?.device.activeReplica.meta.state, online: engine?.online, leader: engine?.leader };
       }).catch(() => null);
       console.error(JSON.stringify({ browserErrors: pageErrors, url: lastPage.url(), sync }));
-      console.error(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 9, status: 'failed' }));
+      console.error(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 11, status: 'failed' }));
     }
     throw error;
   } finally {

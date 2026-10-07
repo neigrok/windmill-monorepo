@@ -1,19 +1,19 @@
 // @ts-check
 
-import { EntityType, Fields, Id } from '../../../platform/domain-kit/entities.js';
 import { Rule, RuleBook } from '../../../platform/domain-kit/rules.js';
-import { Check } from '../../../platform/domain-kit/validation.js';
-import { ChoiceSpec, CountSpec, NumberSpec, Path, TextSpec, Violation } from '../../../platform/domain-kit/values.js';
+import { ChoiceSpec, CountSpec, NumberSpec, TextSpec, Violation } from '../../../platform/domain-kit/values.js';
 import { registry } from '../../../platform/sync/schema.js';
 import { WeighIn, WeighInRules } from './bodyweight.js';
 import { Preferences, PreferencesRules } from './preferences.js';
 import { Note, NoteRules } from './notes.js';
 import { Exercise, ExerciseName } from './catalogue.js';
 import { Routine } from './routines.js';
+import { Proposal } from './proposals.js';
 import { Session, SetRules, TrainingSet } from './training.js';
 export { Session, SessionRules, SetRules, TrainingSet } from './training.js';
 export { Exercise, ExerciseName } from './catalogue.js';
 export { Routine } from './routines.js';
+export { Proposal } from './proposals.js';
 
 /** @typedef {import('../../../platform/domain-kit/values.js').Json} Json */
 /** @typedef {import('../../../platform/domain-kit/entities.js').RecordRef} RecordRef */
@@ -117,123 +117,6 @@ export const CommandSpecs = Object.freeze([
     new ChoiceSpec(`${command}.sets.kind`, ['warmup', 'working', 'drop', 'failure']),
   ]),
 ]);
-
-/**
- * @param {Record<string, Json>} fields
- * @returns {Record<string, Json>}
- */
-function omittingNull(fields) { return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== null)); }
-
-/** @param {Fields} f */
-function targetForm(f) { return omittingNull({ reps: f.optionalInt('reps'), weightKg: f.optionalDouble('weightKg') }); }
-
-/** @param {Fields} f */
-function targetsForm(f) { return omittingNull({ sets: f.optionalList('sets', targetForm), restSeconds: f.optionalInt('restSeconds') }); }
-
-/** @param {Fields} f */
-function changeForm(f) {
-  return omittingNull({ kind: f.string('kind'), exerciseId: f.ref('exerciseId', Exercise).json,
-    before: f.optionalValue('before', targetsForm), after: f.optionalValue('after', targetsForm) });
-}
-
-/**
- * @param {Json} value
- * @param {Path} path
- * @param {ReturnType<typeof targetSpecs>} specs
- * @param {'routine' | 'proposal'} subject
- */
-function validateTargets(value, path, specs, subject) {
-  const fields = Fields.object(value, subject, path.text);
-  const sets = specs.sets.applyOptional(fields.optionalList('sets', targetForm), path.plus('sets'), (item, at) => {
-    const target = Fields.object(item, subject, at.text);
-    const rawReps = target.optionalInt('reps');
-    const rawWeight = target.optionalDouble('weightKg');
-    if (rawReps === 0) throw new Violation(`${subject}.zeroTarget`, at.plus('reps'), { kind: 'custom', custom: 'zeroTarget' });
-    const reps = specs.reps.applyOptional(rawReps, at.plus('reps'));
-    const weightKg = specs.weight.applyOptional(rawWeight, at.plus('weightKg'));
-    if (weightKg === 0 && (subject === 'proposal' || rawWeight !== 0)) {
-      throw new Violation(`${subject}.zeroTarget`, at.plus('weightKg'), { kind: 'custom', custom: 'zeroTarget' });
-    }
-    return omittingNull({ reps, weightKg });
-  });
-  return omittingNull({ sets, restSeconds: specs.rest.applyOptional(fields.optionalInt('restSeconds'), path.plus('restSeconds')) });
-}
-
-// The book's field-validated records share one immutable value; feature-specific reads use their own value types.
-class GymRecord {
-  /**
-   * @param {Id<GymRecord>} id
-   * @param {Record<string, Json>} fields
-   */
-  constructor(id, fields) {
-    this.id = id;
-    this.values = /** @type {Record<string, Json>} */ (frozenJson(fields));
-    Object.freeze(this);
-  }
-
-  fields() { return { ...this.values }; }
-}
-
-/**
- * @param {Json} value
- * @returns {Json}
- */
-function frozenJson(value) {
-  if (Array.isArray(value)) return /** @type {Json[]} */ (Object.freeze(value.map(frozenJson)));
-  if (value !== null && typeof value === 'object') {
-    return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, item]) => [key, frozenJson(item)])));
-  }
-  return value;
-}
-
-/**
- * @param {string} type
- * @param {(f: Fields) => Record<string, Json>} decode
- * @param {Record<string, (f: Fields, path: Path) => Json> | null} checks
- * @param {{ heldRemoval?: boolean, orderField?: string, savesGuarded?: boolean }} protocols
- * @returns {EntityType<GymRecord>}
- */
-function entity(type, decode, checks, protocols = {}) {
-  /** @type {EntityType<GymRecord>} */
-  const declared = new EntityType({ type, scope: 'self/gym', ...protocols,
-    decode: (f) => new GymRecord(new Id(f.id, declared), decode(f)),
-    ...(checks === null ? {} : { checks: Object.entries(checks).map(([field, apply]) => new Check(field, (value) =>
-      new GymRecord(value.id, { ...value.fields(), [field]: apply(Fields.values(type, value.id.record, value.fields()), new Path(field)) }))) }),
-  });
-  return declared;
-}
-
-export const Proposal = entity('proposal', (f) => ({ routineId: f.ref('routineId', Routine).json,
-  intent: f.string('intent'), proposedName: f.string('proposedName', ''), summary: f.string('summary', ''),
-  changes: f.list('changes', changeForm), door: f.string('door', 'ask'), connection: f.string('connection', ''), agent: f.string('agent', '') }), {
-  intent: (f, path) => ProposalRules.intent.apply(f.string('intent'), path),
-  proposedName: (f, path) => ProposalRules.name.apply(f.string('proposedName'), path),
-  summary: (f, path) => ProposalRules.summary.apply(f.string('summary'), path),
-  changes: (f, path) => {
-    const changes = ProposalRules.changes.apply(f.list('changes', changeForm), path, (change, at) => {
-      const fields = Fields.object(change, 'proposal', at.text);
-      const kind = ProposalRules.kind.apply(fields.string('kind'), at.plus('kind'));
-      const exerciseId = fields.ref('exerciseId', Exercise).json;
-      ProposalRules.exercise.apply(typeof exerciseId === 'string' ? exerciseId : '', at.plus('exerciseId'));
-      const before = fields.optionalValue('before', targetsForm);
-      const after = fields.optionalValue('after', targetsForm);
-      if ((kind === 'added') !== (before === null) || (kind === 'removed') !== (after === null)) {
-        throw new Violation('proposal.changes', at, { kind: 'custom', custom: 'side' });
-      }
-      return omittingNull({ kind, exerciseId,
-        before: before === null ? null : validateTargets(before, at.plus('before'), ProposalRules.before, 'proposal'),
-        after: after === null ? null : validateTargets(after, at.plus('after'), ProposalRules.after, 'proposal') });
-    });
-    const removed = changes.findIndex((change) => change.kind === 'removed');
-    if (removed >= 0 && changes.slice(removed).some((change) => change.kind !== 'removed')) {
-      throw new Violation('proposal.changes', path, { kind: 'custom', custom: 'removalsLast' });
-    }
-    return changes;
-  },
-  door: (f, path) => ProposalRules.door.apply(f.string('door'), path),
-  connection: (f, path) => ProposalRules.connection.apply(f.string('connection'), path),
-  agent: (f, path) => ProposalRules.agent.apply(f.string('agent'), path),
-});
 
 /** @type {RuleBook | null} */
 let book = null;

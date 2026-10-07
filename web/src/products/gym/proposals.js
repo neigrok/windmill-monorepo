@@ -200,8 +200,8 @@ export function collapseKept(rows, expanded = new Set()) {
 // Settled receipts use the stored proposal state and server count, never the model's prose.
 export function receiptLine({ verb, proposal }) {
   if (verb === 'dismiss') return 'Turned down · nothing changed.';
+  if (proposal?.intent === 'remove') return `Applied · ${proposal.baseName || proposal.name || 'routine'} · routine removed`;
   const name = proposal?.name ?? proposal?.baseName ?? 'routine';
-  if (proposal?.intent === 'remove') return `Applied · ${name} · routine removed`;
   if (typeof proposal?.changeCount !== 'number') return `Applied · ${name}`;
   return `Applied · ${name} · ${changeLabel(proposal.changeCount)}`;
 }

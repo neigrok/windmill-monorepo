@@ -88,7 +88,8 @@ function findings({ layer, name, text, directory }) {
         // A page's document is data; only a reference or binding can name the browser global.
         if (node.name === 'document' && !parent?.computed &&
           (parent?.type === 'MemberExpression' && parent.property === node ||
-            parent?.type === 'Property' && parent.key === node && !parent.shorthand)) break;
+            parent?.type === 'Property' && parent.key === node && !parent.shorthand ||
+            parent?.type === 'MethodDefinition' && parent.key === node)) break;
         checkName(node);
         break;
       case 'MemberExpression': {

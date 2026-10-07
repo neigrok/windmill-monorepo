@@ -141,6 +141,27 @@ test('terminal deaths and orphan sets cannot reappear in any projection', () => 
   assert.deepEqual(api.history().summary, { sessions: 0, sets: 0, reps: 0, tonnageKg: 0 });
 });
 
+test('proposal domain reads retain typed targets and confirmed chronology while excluding hidden training', () => {
+  const proposal = row('proposal', 'proposal_a', { routineId: 'routine_a', intent: 'revise', proposedName: 'Push B',
+    summary: 'A change', changes: [
+      { kind: 'kept', exerciseId: 'pull-up', before: { sets: [{ reps: null, weightKg: null }] }, after: {} },
+      { kind: 'removed', exerciseId: 'bench-press', before: {} },
+    ] });
+  const stored = [proposal, sessionRow('session_a', at), sessionRow('session_b', at - 86400000),
+    setRow('visible_set', 'session_a'), setRow('hidden_set', 'session_a'), setRow('hidden_session_set', 'session_b'),
+    setRow('orphan_set', 'missing_session')];
+  const withoutEnvelopeTime = ({ rc, ...record }) => record;
+  const drawn = stored.filter((record) => !['session_b', 'hidden_set'].includes(record.id)).map(withoutEnvelopeTime);
+  const api = gymReadView({ drawn, stored: stored.map(withoutEnvelopeTime), confirmed: stored }, { now: at });
+  const head = { id: 'proposal_a', routineId: 'routine_a', intent: 'revise', state: 'pending', summary: 'A change',
+    source: { door: 'ask' }, createdAt: at };
+  assert.deepEqual(api.proposals(), [head]);
+  assert.deepEqual(api.proposal('proposal_a'), { ...head, name: 'Push B', changes: [
+    { position: 1, kind: 'kept', exerciseId: 'pull-up', before: { sets: [{}] }, after: {} },
+    { position: 2, kind: 'removed', exerciseId: 'bench-press', before: {}, loggedSets: 1 },
+  ] });
+});
+
 test('server registers supply frozen metadata and zero-based notes without treating reorder receipts as content times', () => {
   const rows = [
     row('routine', 'routine_a', { name: 'Push', entries: [{ exerciseId: 'bench-press' }], revision: 7, createdEntries: 3 }),

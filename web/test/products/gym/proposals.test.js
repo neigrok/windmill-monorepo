@@ -545,6 +545,7 @@ test('receiptLine — derived from the server’s reply, never the prose; turned
   assert.equal(receiptLine({ verb: 'apply', proposal: { ...applied, changeCount: 1 } }), 'Applied · Push A · 1 change');
   assert.equal(receiptLine({ verb: 'apply', proposal: { ...applied, name: 'Push B' } }), 'Applied · Push B · 4 changes', 'the routine as it now stands');
   assert.equal(receiptLine({ verb: 'apply', proposal: { ...applied, intent: 'remove', name: undefined } }), 'Applied · Push A · routine removed');
+  assert.equal(receiptLine({ verb: 'apply', proposal: { ...applied, intent: 'remove', name: '' } }), 'Applied · Push A · routine removed');
   assert.equal(receiptLine({ verb: 'apply', proposal: { ...applied, changeCount: undefined } }), 'Applied · Push A', 'no count from the server, no count on the receipt');
   assert.equal(receiptLine({ verb: 'apply', proposal: { id: 'prop_1', name: 'Push A' } }), 'Applied · Push A');
   assert.equal(receiptLine({ verb: 'dismiss', proposal: applied }), 'Turned down · nothing changed.');

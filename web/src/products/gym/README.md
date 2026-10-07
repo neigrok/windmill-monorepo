@@ -16,6 +16,8 @@ conversation stays. The account gate remains in `GymApp`.
 Every local gym read uses the domain kit through `gymRuntime.js`. Training entities and rules live in
 `domain/training.js`; `trainingReads.js` owns prefill, last time, records and chart windows, and
 `trainingHistory.js` composes history, reviews and screen documents.
+Proposal values and decisions live in `domain/proposals.js`; their shared domain reads supply
+the proposal screen and routine history. Removal receipts survive sync and restart until shown.
 Catalogue reads combine `domain/seedExercises.js` with custom movements and seed-name overrides.
 Routine drafts preserve target absences and order; saved-workout routines and frozen plans use the
 values in `domain/routines.js`. The plan decoder refuses malformed shapes; the read boundary reports
@@ -67,15 +69,16 @@ unresolved notices.
 ## Gates
 
 Gym tests run through the existing `npm test`, `npm run test:sync` and `npm run build` scripts.
-The gym domain claims 11 of 13 corpus files and 404 vectors, compared by JCS and with reversed record
+The gym domain claims 12 of 13 corpus files and 448 vectors, compared by JCS and with reversed record
 order. Training reads claim 99 vectors (including 36 promoted REST samples and nine regression cases),
-units claim 57 and the weight ladder claims 36. Proposals and training actions remain pending.
+proposals claim 44, units claim 57 and the weight ladder claims 36. Training actions remain pending.
 Screen tests run over a real browser engine for a signed-in account (`gymAccount` in
 `test/products/gym/harness.mjs`) and assert what the account still owes the server. Shared training
 reads run on web, Swift and Kotlin. The local stack checks domain reads over an actual disposable
-backend account and persisted browser-engine observations. Chromium acceptance has nine checks: a phone replica's `gym.start`, set and `gym.finish`
+backend account and persisted browser-engine observations. Chromium acceptance has eleven checks: a phone replica's `gym.start`, set and `gym.finish`
 pushes arrive live; web routine edits, backfills, weigh-ins and unit changes converge; a held weigh-in delete can be
-undone; the cached log survives an offline reload. Product events reach intake and sync writes emit their log.
+undone; proposal dismissal and routine removal settle with receipts; the cached log survives an offline reload.
+Six product operations reach event intake and sync writes emit their log.
 Run domain-read and local-stack Playwright checks with:
 
 ```

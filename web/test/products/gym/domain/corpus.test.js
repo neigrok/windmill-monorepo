@@ -5,12 +5,15 @@ import test from 'node:test';
 import { SaveDraft } from '../../../../src/platform/domain-kit/drafts.js';
 import { DecodeError, Fields, Id } from '../../../../src/platform/domain-kit/entities.js';
 import { LocalDay } from '../../../../src/platform/domain-kit/time.js';
+import { Valid } from '../../../../src/platform/domain-kit/validation.js';
+import { Violation } from '../../../../src/platform/domain-kit/values.js';
 import { jcs } from '../../../../src/platform/sync/core/jcs.js';
 import { Bodyweight, DeleteWeighIn, SaveWeighIn, WeighIn, WeighInValue } from '../../../../src/products/gym/domain/bodyweight.js';
 import { Catalogue, CreateExercise, Exercise, RenameExercise, defaultStepKg, renamedAliases } from '../../../../src/products/gym/domain/catalogue.js';
 import { GymRefusals, GymRules, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';
 import { MoveNote, Note, SaveNoteCall } from '../../../../src/products/gym/domain/notes.js';
 import { Preferences, PreferencesValue, SavePreferences, restSettings } from '../../../../src/products/gym/domain/preferences.js';
+import { ApplyProposal, DismissProposal, Proposal, ProposalState, ProposeRoutine, RoutineCreation, changesBetween } from '../../../../src/products/gym/domain/proposals.js';
 import { DeleteRoutine, PlanSnapshot, ReorderRoutines, Routine, RoutineEntry, RoutineValue, SaveRoutine, SetTarget } from '../../../../src/products/gym/domain/routines.js';
 import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises.js';
 import { Session } from '../../../../src/products/gym/domain/training.js';
@@ -19,7 +22,7 @@ import { GymEstimate, Prefill, Readout, TrainingLog } from '../../../../src/prod
 import { GymUnits, WeightLadder } from '../../../../src/products/gym/domain/units.js';
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { RegistryCheck, RuleBookCheck, RuleBookParity } from '../../../platform/domain-kit/checks.js';
-import { Contract, savedForm, withRecordsReversed } from '../../../platform/domain-kit/vectors.js';
+import { Contract, momentOf, savedForm, withRecordsReversed } from '../../../platform/domain-kit/vectors.js';
 
 /** @typedef {import('../../../platform/domain-kit/vectors.js').Vector} Vector */
 /** @typedef {import('../../../../src/platform/domain-kit/values.js').Json} Json */
@@ -30,7 +33,6 @@ const rulesFile = 'gym/domain/rules.json';
 const valuesFile = 'gym/domain/values.json';
 const ladderFile = 'gym-ladder.json';
 const pending = [
-  'gym/domain/proposals-actions.json',
   'gym/domain/training-actions.json',
 ];
 
@@ -210,6 +212,49 @@ const handlers = {
       }
     }));
   },
+  'gym/domain/proposals-actions.json': (vector) => {
+    const input = vector.input.input;
+    const fields = Fields.object(input);
+    switch (vector.input.action) {
+      case 'ProposeRoutine': return corpus.decision(ProposeRoutine({ id: fields.ref('id', Proposal), routineId: fields.ref('routineId', Routine),
+        name: fields.string('name', ''), entries: fields.list('entries', RoutineEntry.decode), summary: fields.string('summary', ''),
+        removing: fields.bool('removing', false) }), vector, (id) => id.json, refusalForm);
+      case 'ApplyProposal': return corpus.decision(ApplyProposal(fields.ref('id', Proposal)), vector, () => null, refusalForm);
+      case 'DismissProposal': return corpus.decision(DismissProposal(fields.ref('id', Proposal)), vector, () => null, refusalForm);
+      case 'Diff': return { changes: changesBetween(fields.list('base', RoutineEntry.decode), fields.list('proposed', RoutineEntry.decode)).map((change) => change.json) };
+      case 'ChangeCount': {
+        const proposal = Proposal.decode(Fields.values('proposal', input.proposal.id, input.proposal.fields));
+        const base = Routine.decode(Fields.values('routine', input.base.id, input.base.fields));
+        return { changeCount: proposal.countChanges(base) };
+      }
+      case 'Metadata': {
+        const value = Proposal.decode(Fields.values('proposal', input.id, input.fields));
+        return { baseRevision: value.baseRevision, baseName: value.baseName, changeCount: value.changeCount,
+          state: value.state, provenance: value.provenance };
+      }
+      case 'RoutineCreation': return { snapshot: RoutineCreation.decode(Fields.values('routineCreation', input.id, input.fields)).snapshot };
+      case 'StateRefusal': {
+        const drawn = ['proposal', 'routine'].flatMap((type) => {
+          const value = input[type];
+          if (value === null || value === undefined) return [];
+          return [{ t: type, id: value.id, life: ['alive', '1000:0:r_aaaaaaaaaaaa'], born: '1000:0:r_aaaaaaaaaaaa',
+            f: Object.fromEntries(Object.entries(value.fields).map(([name, field]) => [name, [field, '1000:0:r_aaaaaaaaaaaa']])) }];
+        });
+        const read = corpus.reader({ ...vector, input: { ...vector.input, records: { drawn } } }, Proposal.scope);
+        const id = new Id('proposal1', Proposal);
+        const refused = new ProposalState(read, id).refusal(id, fields.bool('applying'));
+        return { refusal: refused === null ? null : refusalForm(refused) };
+      }
+      case 'ValidateProposal': {
+        try { return { fields: new Valid(Proposal.decode(Fields.values('proposal', input.id, input.fields)), momentOf(vector.input)).value.fields() }; }
+        catch (error) {
+          if (error instanceof Violation) return { violation: error.json };
+          throw error;
+        }
+      }
+      default: throw new Error(`unclaimed proposal action ${vector.input.action}`);
+    }
+  },
   'gym/domain/bodyweight-actions.json': (vector) => {
     const input = vector.input.input;
     const id = new Id(input.day, WeighIn);
@@ -245,11 +290,12 @@ test('the gym corpus is closed: each file is claimed or explicitly pending', (t)
   const files = [...Contract.files('gym'), ladderFile].sort();
   assert.equal(new Set([...claimed, ...pending]).size, claimed.length + pending.length, 'a file is claimed twice or still pending');
   assert.deepEqual([...claimed, ...pending].sort(), files);
-  assert.ok(pending.length <= 2, 'the W5a pending set can only shrink');
+  assert.ok(pending.length <= 1, 'the pending set can only shrink');
   for (const path of [rulesFile, valuesFile, 'gym/domain/bodyweight-actions.json', 'gym/domain/preferences-actions.json', 'gym/rules/bodyweight.json']) assert.ok(claimed.includes(path), `W1 claim regressed: ${path}`);
   assert.ok(claimed.includes('gym/domain/notes-actions.json'), 'W2 notes claim regressed');
   for (const path of ['gym/domain/catalogue-actions.json', 'gym/domain/routines-actions.json']) assert.ok(claimed.includes(path), `W3 claim regressed: ${path}`);
   for (const path of ['gym/domain/training-reads.json', 'gym/domain/units.json', ladderFile]) assert.ok(claimed.includes(path), `W5a claim regressed: ${path}`);
+  assert.ok(claimed.includes('gym/domain/proposals-actions.json'), 'W4 proposals claim regressed');
   const ladder = /** @type {{weightCases: Json[], roundCases: Json[], repCases: Json[]}} */ (Contract.json(ladderFile));
   const count = Object.keys(handlers).reduce((total, path) => total + Contract.vectors(path).length, 0)
     + ladder.weightCases.length + ladder.roundCases.length + ladder.repCases.length;

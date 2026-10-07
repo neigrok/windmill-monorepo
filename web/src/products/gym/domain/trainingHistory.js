@@ -1,11 +1,11 @@
 // @ts-check
 
-import { Fields, Id, compareText } from '../../../platform/domain-kit/entities.js';
+import { Id, compareText } from '../../../platform/domain-kit/entities.js';
 import { LocalDay } from '../../../platform/domain-kit/time.js';
 import { roundHalfAway } from '../../../platform/sync/core/values.js';
 import { Bodyweight, WeighIn } from './bodyweight.js';
 import { Catalogue, Exercise } from './catalogue.js';
-import { Proposal } from './gymRules.js';
+import { Proposal } from './proposals.js';
 import { Note } from './notes.js';
 import { Preferences, PreferencesValue, restSettings } from './preferences.js';
 import { Routine } from './routines.js';
@@ -13,6 +13,8 @@ import { SeedExercises } from './seedExercises.js';
 import { Session, SessionRules, TrainingSet } from './training.js';
 import { GymEstimate, StatsProgress, TrainingLog } from './trainingReads.js';
 
+/** @typedef {import('../../../platform/domain-kit/reading.js').Reader} Reader */
+/** @typedef {import('./proposals.js').ProposalValue} ProposalValue */
 /** @typedef {import('./training.js').SessionValue} SessionValue */
 /** @typedef {import('./training.js').TrainingSetValue} TrainingSetValue */
 /** @typedef {Record<string, any>} Document */
@@ -32,6 +34,39 @@ export function setDocument(value) {
   return { id: value.id.record, exerciseId: value.exerciseId.record, ...(value.setNumber === null ? {} : { setNumber: value.setNumber }),
     weightKg: value.weightKg, reps: value.reps, kind: value.kind, note: value.note, completedAt: value.completedAt.ms,
     ...(value.rpe === null ? {} : { rpe: value.rpe }) };
+}
+
+/** @param {Reader} read @param {ProposalValue} value @returns {Document} */
+function proposalHead(read, value) {
+  const createdAt = read.repository(Proposal).record(value.id.record, 'stored')?.rc
+    ?? read.repository(Proposal).record(value.id.record, 'drawn')?.rc ?? read.confirmed(Proposal, value.id)?.rc;
+  const source = { door: value.door, ...(value.connection ? { connection: value.connection } : {}),
+    ...(value.agent ? { agent: value.agent } : {}), ...(value.threadId ? { thread: value.threadId } : {}) };
+  return { id: value.id.record, routineId: value.routineId.record, intent: value.intent, state: value.state,
+    summary: value.summary, ...(createdAt == null ? {} : { createdAt }), source,
+    ...(value.changeCount === null ? {} : { changeCount: value.changeCount }),
+    ...(value.settledAt === null ? {} : { settledAt: value.settledAt.ms }) };
+}
+
+/** @param {Reader} read @param {{routineId?: string, state?: string}} query @returns {Document[]} */
+export function proposalsDocument(read, { routineId, state } = {}) {
+  return read.repository(Proposal).all('drawn').map((value) => proposalHead(read, value))
+    .filter((head) => (routineId === undefined || head.routineId === routineId) && (state !== 'pending' || head.state === 'pending'))
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0) || compareText(String(b.id), String(a.id)));
+}
+
+/** @param {Reader} read @param {ProposalValue | null} value @returns {Document | null} */
+export function proposalDocument(read, value) {
+  if (!value) return null;
+  const sessions = new Set(read.views.visible('drawn', 'session').map((row) => row.id));
+  const sets = read.repository(TrainingSet).all('drawn').filter((set) => sessions.has(set.sessionId.record));
+  return { ...proposalHead(read, value), name: value.proposedName,
+    changes: value.changes.map((change, index) => ({ position: index + 1, ...change.json,
+      ...(change.kind !== 'added' ? { before: change.before?.json ?? {} } : {}),
+      ...(change.kind !== 'removed' ? { after: change.after?.json ?? {} } : {}),
+      ...(change.kind === 'removed' ? { loggedSets: sets.filter((set) => set.exerciseId.equals(change.exerciseId)).length } : {}) })),
+    ...(value.baseRevision === null ? {} : { baseRevision: value.baseRevision }),
+    ...(value.baseName === null ? {} : { baseName: value.baseName }) };
 }
 
 /** @param {readonly TrainingSetValue[]} sets */
@@ -306,35 +341,10 @@ export class TrainingHistory {
   }
 
   /** @param {{routineId?: string, state?: string}} query @returns {Document[]} */
-  proposals({ routineId, state } = {}) {
-    return this.read.repository(Proposal).all('drawn').map((value) => {
-      const row = this.read.repository(Proposal).record(value.id.record, 'drawn');
-      if (!row) throw new Error('a proposal read has its record');
-      const f = Fields.record(row);
-      /** @type {Document} */
-      const source = { door: f.string('door', 'ask') };
-      for (const name of ['connection', 'agent']) { const text = f.optionalString(name); if (text) source[name] = text; }
-      const thread = f.optionalString('threadId'); if (thread) source.thread = thread;
-      const createdAt = row.rc ?? this.read.confirmed(Proposal, value.id)?.rc;
-      const changeCount = f.optionalInt('changeCount'); const settledAt = f.optionalInstant('settledAt');
-      return { id: value.id.record, routineId: f.ref('routineId', Routine).record, intent: f.string('intent'), state: f.string('state', 'pending'), summary: f.string('summary', ''), source,
-        ...(createdAt == null ? {} : { createdAt }), ...(changeCount === null ? {} : { changeCount }), ...(settledAt === null ? {} : { settledAt: settledAt.ms }) };
-    }).filter((head) => (routineId === undefined || head.routineId === routineId) && (state !== 'pending' || head.state === 'pending'))
-      .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0) || compareText(String(b.id), String(a.id)));
-  }
+  proposals(query = {}) { return proposalsDocument(this.read, query); }
 
   /** @param {string} id @returns {Document | null} */
-  proposal(id) {
-    const head = this.proposals().find((value) => value.id === id);
-    const row = this.read.repository(Proposal).record(id, 'drawn');
-    if (!head || !row) return null;
-    const f = Fields.record(row);
-    const changes = f.list('changes', (change) => change.values).map((change, index) => ({ position: index + 1, ...change,
-      ...(change.kind === 'removed' ? { loggedSets: this.log.sets.filter((set) => set.exerciseId.record === change.exerciseId && this.log.sessions.some((session) => session.id.equals(set.sessionId))).length } : {}) }));
-    const baseRevision = f.optionalInt('baseRevision'); const baseName = f.optionalString('baseName');
-    return { ...head, name: f.string('proposedName', ''), changes,
-      ...(baseRevision === null ? {} : { baseRevision }), ...(baseName === null ? {} : { baseName }) };
-  }
+  proposal(id) { return proposalDocument(this.read, this.read.repository(Proposal).find(new Id(id, Proposal), 'drawn')); }
 
   /** @returns {Document[]} */
   routines() {
