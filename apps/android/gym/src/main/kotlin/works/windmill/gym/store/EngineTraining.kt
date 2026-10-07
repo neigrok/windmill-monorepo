@@ -472,6 +472,18 @@ class EngineTraining(val engine: Engine) {
         }
         return storedSet(value.id)
     }
+    // Recover controls-only acceptances; engine rows, refusals and import sources already retain their work.
+    fun recoverAcceptedSets(controls: WorkoutControls) {
+        if (controls.engineReplica != engine.activeReplica()) return
+        val session = controls.session ?: return
+        val imported = imports.retainedWorkouts().flatMap { it.sets }.mapTo(mutableSetOf()) { it.id } +
+            imports.operations().map { it.entry.set.id }
+        val missing = controls.sets(session.id).filter { set ->
+            set.id in controls.workout.consumed && set.id !in imported &&
+                !engine.retainsRecord(EngineSet.scope, RecordKey(EngineSet.type, RecordID(set.id)))
+        }
+        for (set in missing) controls.store(commitAccepted(controls, set, session.id), session.id)
+    }
     private fun controls(controls: WorkoutControls): List<works.windmill.sync.api.DeviceWrite> = controls.session?.let { session -> listOf(
         works.windmill.sync.api.DeviceWrite("movementOrder:${session.id}", Json.Arr(controls.order.map(Json::of))),
         works.windmill.sync.api.DeviceWrite("movement:${session.id}", controls.chosenMovement?.let(Json::of)),

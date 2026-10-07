@@ -24,8 +24,8 @@ import works.windmill.gym.domain.WorkoutState
 
 // The phone's controls over the open workout, projected from the engine replica: the session and its
 // sets with the device clock each was logged at, the movement walk, the movement in hand and the
-// rack's offer. The engine holds the training; this document holds what only this phone knows, so
-// the notification and a cold start can draw the workout before anything else is read.
+// rack's offer. Accepted sets stay here until committed to the engine; rebuilding or closing the
+// controls first recovers any missing accepted sets into their replica.
 class WorkoutControls private constructor(
     private val file: File,
     deviceOwner: String?,

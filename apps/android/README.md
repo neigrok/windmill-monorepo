@@ -92,7 +92,10 @@ delivers it. A refusal by the log's rules is said on screen and is not reported 
 `WorkoutControls` (`windmill-gym-sets.json`) holds the open workout's device controls used by the
 shared `GymRuntime` and notification receivers: movement order, the movement in hand, the rack's
 offer and the clock each set was logged at. It is a projection of the selected replica, rebuilt
-when the replica changes. The bundled movement catalogue uses backend seed identities. Only Coach
+when the replica changes. It also retains accepted sets until their engine commit succeeds.
+Finish and projection refreshes recover those sets before clearing the controls; a failed recovery
+keeps them for retry. Finish receipts read the committed replica.
+The bundled movement catalogue uses backend seed identities. Only Coach
 threads, attachments, shares and connected-log credentials use REST, through `GymRest`.
 `coach/` groups conversation models, storage, photos and screens. `CoachStore` owns thread reads,
 retries and streaming; `TrainingStore` composes it with the current account, shared Undo windows and

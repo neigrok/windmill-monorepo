@@ -162,7 +162,14 @@ class TrainingStore(
                 origin.wallMs.takeIf { moment.elapsedMs - origin.elapsedMs >= AutoClose.AFTER_MS }
             } else AutoClose.at(live, controls.sets(live.id), moment.wallMs)
             if (overAt != null) {
-                controls.close(live.id)
+                try {
+                    training.recoverAcceptedSets(controls)
+                    controls.close(live.id)
+                } catch (error: Exception) {
+                    reportFailure("gym.reconcileWorkoutTime", error)
+                    refuseWorkout()
+                    return
+                }
                 lastTimes.clear()
                 exerciseId = null
                 lastTime = null
@@ -198,8 +205,7 @@ class TrainingStore(
         }
     }
 
-    // The offered set and the offer it consumes are one engine commit: a repeated tap or a
-    // redelivered command meets a consumed offer and logs nothing.
+    // Persist the set and consumed offer before the engine commit, retaining both if that commit fails.
     fun acceptSet(command: LogSetCommand): LogSetAcceptance {
         reconcileWorkoutTime()
         if (!workoutAuthorized || isFinishing || !controls.writable) {
@@ -261,6 +267,7 @@ class TrainingStore(
 
     private fun projectEngineReplica(force: Boolean = false) {
         val replica = training.engine.activeReplica()
+        training.recoverAcceptedSets(controls)
         if (controls.engineReplica == replica && !force) return
         val open = training.openWorkout()
         controls.project(replica, open?.session, open?.sets.orEmpty())
@@ -271,6 +278,7 @@ class TrainingStore(
     // Before the account changes, confirmed starts settle, the sets they owe follow, and the
     // workout's controls are in the replica the next account's room projects from.
     suspend fun prepareEngineTransition() {
+        training.recoverAcceptedSets(controls)
         training.reconcileImports()
         training.persistControls(controls)
     }
@@ -633,6 +641,7 @@ class TrainingStore(
         if (!workoutAuthorized || !controls.writable) return GymResult.Failed(WriteFailure.Refused(workoutFailure ?: "The account must be restored first."))
         val seat = owner
         return try {
+            training.recoverAcceptedSets(controls)
             val opened = training.startSession(SessionStart(id = mintSession(), startedAt = now(), routineId = routineId))
             if (!workoutAuthorized || seat != owner) return GymResult.Failed(WriteFailure.Refused("the account changed while starting"))
             adopt(opened, joined = false)
@@ -753,20 +762,17 @@ class TrainingStore(
         val live = session ?: return FinishOutcome.Failed(WriteFailure.NoAnswer)
         val seat = owner
         isFinishing = true
-        refreshWorkout()
         try {
-            val closed = try {
+            training.recoverAcceptedSets(controls)
+            refreshWorkout()
+            val detail = try {
                 training.finishSession(live.id, now())
-            } catch (interrupted: CancellationException) {
-                throw interrupted
-            } catch (refusing: Exception) {
-                reportFailure("gym.finish", refusing)
-                if (!workoutAuthorized || seat != owner) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
-                if ((refusing as? TrainingRefused)?.code != "unknown-record") return FinishOutcome.Failed(WriteFailure(refusing))
+                checkNotNull(training.session(live.id)) { "The engine does not hold the workout it just finished." }
+            } catch (refused: TrainingRefused) {
+                if (refused.code != "unknown-record") throw refused
                 null
             }
             if (!workoutAuthorized || seat != owner) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
-            val detail = closed?.let { SessionDetail(it, controls.sets(live.id)) }
             if (detail != null) retainClosed(detail)
             controls.close(live.id)
             controls.flush()
@@ -785,6 +791,12 @@ class TrainingStore(
             invalidateProgress()
             telemetry.event("gym_session_finished")
             return FinishOutcome.Closed(detail)
+        } catch (interrupted: CancellationException) {
+            throw interrupted
+        } catch (error: Exception) {
+            reportFailure("gym.finish", error)
+            if (!workoutAuthorized || seat != owner) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
+            return FinishOutcome.Failed(WriteFailure(error))
         } finally {
             isFinishing = false
             refreshWorkout()
@@ -1552,7 +1564,10 @@ class TrainingStore(
         val seat = owner
         val live = controls.session?.id
         val read = ++logReadRevision
-        val page = tried("gym.loadLog") { training.sessions(limit = logPage, before = null, beforeId = null) }
+        val page = tried("gym.loadLog") {
+            training.recoverAcceptedSets(controls)
+            training.sessions(limit = logPage, before = null, beforeId = null)
+        }
         if (!workoutAuthorized || seat != owner || read != logReadRevision || live != controls.session?.id) return
         if (page == null) {
             // The foot is where an unread log is said; the rows already in hand stay.
