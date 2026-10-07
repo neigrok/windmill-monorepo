@@ -109,6 +109,7 @@ public enum Gym {
       [
         "args": [
           "finishedAt": ["type": "instant"],
+          "preserveOtherSets": ["domain": ["type": "boolean"], "optional": true, "type": "json"],
           "requestId": ["domain": ["pattern": "^[A-Za-z0-9_-]{8,64}$", "type": "string"], "type": "json"],
           "routineName": ["domain": ["max": 240, "nullable": true, "type": "string", "unit": "bytes"], "type": "json"],
           "sessionId": ["type": "ref<session>"],
@@ -119,6 +120,7 @@ public enum Gym {
                   "completedAt": ["integer": true, "min": 0, "type": "number"],
                   "exerciseId": ["pattern": "^[A-Za-z0-9_-]{1,64}$", "type": "string"],
                   "id": ["pattern": "^[A-Za-z0-9_-]{8,64}$", "type": "string"],
+                  "kind": ["enum": ["warmup", "working", "drop", "failure"], "type": "string"],
                   "note": ["max": 4000, "type": "string", "unit": "bytes"],
                   "reps": ["integer": true, "max": 500, "min": 1, "type": "number"],
                   "rpe": ["max": 10, "min": 1, "nullable": true, "quantum": 0.1, "type": "number"],

@@ -2670,19 +2670,21 @@ It is the only writer of `closedBy = stale`.
   - A routine the owner cannot read → `plan = null` and `routineId = null`.
 
   Sets are numbered in argument order. Predicts the session and its sets.
-- **`gym.correctSession {sessionId: ref<session>, requestId, startedAt: instant, finishedAt: instant, routineName, sets}`.**
-  Each set is `{id, exerciseId, setNumber, weightKg, reps, rpe?, note?, completedAt}`, with a set's
+- **`gym.correctSession {sessionId: ref<session>, requestId, startedAt: instant, finishedAt: instant, routineName, sets, preserveOtherSets?}`.**
+  Each set is `{id, exerciseId, setNumber, weightKg, reps, kind?, rpe?, note?, completedAt}`, with a set's
   bounds and quanta, its `completedAt` bounded by the command's check as `gym.importSession`'s is. `requestId` matches the gym id pattern, and `routineName` is ≤240 bytes or
-  null. It replaces a finished workout:
+  null. It corrects a finished workout; `preserveOtherSets` is an optional boolean, default false:
   - The session is alive and the owner's; otherwise `unknown-record` or `record-dead`.
   - The `requestId` was applied to it with equal arguments → ok; otherwise → `payload-conflict`.
   - Its `finishedAt` is unset → `session-open`.
   - 1–200 sets with unique ids; set numbers 1–2 147 483 647 and unique per movement; every instant within
     `[startedAt, finishedAt]` and not in the future → otherwise `bad-instant` or `invalid`.
   - Crossing another finished session → `session-overlap`.
-  - An existing set whose `exerciseId` changes → `invalid`. A set keeps its kind; new sets are
-    `working`. Set numbers are taken as given, and a kept set takes its `completedAt`. Omitted `rpe`
-    and `note` keep their values. Missing prior sets die. A reused or spent set id → `id-taken` or
+  - An existing set whose `exerciseId` changes → `invalid`. A set keeps its kind; a new set takes
+    `kind`, default `working`. Set numbers are taken as given, and a kept set takes its `completedAt`. Omitted `rpe`
+    and `note` keep their values. Unnamed prior sets die unless `preserveOtherSets` is true, which
+    leaves those rows unchanged. Their numbers must not collide with named sets, and their times
+    must remain within the interval; the 200-set limit applies only to the argument. A reused or spent set id → `id-taken` or
     `id-spent`.
   - `startedAt`, `finishedAt`, `closedBy := finish`, and `displayName := routineName`.
 

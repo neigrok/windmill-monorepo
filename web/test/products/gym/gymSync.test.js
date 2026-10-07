@@ -210,6 +210,42 @@ test('offline corrections retain only named sets and their replacement serial nu
   });
 });
 
+test('additive corrections retain unnamed sets and exact kinds through offline restart', async (t) => {
+  const opened = await open(t);
+  const { api, engine, reopen } = opened;
+  const existing = { id: 'set00000001', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: 600, kind: 'drop' };
+  const unnamed = { id: 'set00000002', exerciseId: 'bench-press', weightKg: 80, reps: 3, completedAt: 700, kind: 'failure', note: 'Kept', rpe: 9 };
+  await api.importSession({ id: 'session00001', startedAt: 100, finishedAt: 900, sets: [existing, unnamed] });
+  await confirm(engine);
+  const before = engine.observe('self/gym').getSnapshot().drawn.find((row) => row.id === unnamed.id);
+  const added = { id: 'set00000003', exerciseId: 'bench-press', setNumber: 3, weightKg: 40, reps: 8, completedAt: 800, kind: 'warmup', note: 'Recovered', rpe: 6 };
+  await api.correctSession('session00001', { requestId: 'request00001', startedAt: 100, finishedAt: 900,
+    routineName: 'Kept', sets: [{ ...existing, setNumber: 1, kind: 'failure' }, added], preserveOtherSets: true });
+  const resumed = await reopen();
+  const { sets } = await resumed.session('session00001');
+  assert.deepEqual(sets.map(({ id, kind }) => ({ id, kind })), [
+    { id: existing.id, kind: 'drop' }, { id: unnamed.id, kind: 'failure' }, { id: added.id, kind: 'warmup' },
+  ]);
+  assert.deepEqual(sets.find((set) => set.id === added.id), added);
+  assert.deepEqual(opened.engine.observe('self/gym').getSnapshot().drawn.find((row) => row.id === unnamed.id), before);
+});
+
+test('additive correction refuses collisions and intervals excluding retained sets without partial work', async (t) => {
+  const { api, engine } = await open(t);
+  await api.importSession({ id: 'session00001', startedAt: 100, finishedAt: 900,
+    sets: [{ id: 'set00000001', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: 600 }] });
+  await confirm(engine);
+  const before = structuredClone(engine.device.activeReplica.outbox);
+  const correction = { requestId: 'request00001', startedAt: 100, finishedAt: 900, routineName: '', preserveOtherSets: true,
+    sets: [{ id: 'set00000002', exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 5, completedAt: 800 }] };
+  await assert.rejects(api.correctSession('session00001', correction), { code: 'invalid' });
+  correction.startedAt = 700;
+  correction.sets[0].setNumber = 2;
+  await assert.rejects(api.correctSession('session00001', correction), { code: 'bad-instant' });
+  assert.deepEqual(engine.device.activeReplica.outbox, before);
+  assert.equal((await api.session('session00001')).sets.length, 1);
+});
+
 test('an offline removal proposal hides its routine durably before the authoritative pull', async (t) => {
   const { api, engine, reopen } = await open(t);
   await api.createRoutine(routine);

@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -26,6 +27,115 @@ import works.windmill.sync.engine.*
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class TrainingFinishTests {
     @get:Rule val tmp = TemporaryFolder()
+
+    @Test fun finishBeforeFirstPullPreservesTheAdoptedSet() = runTest { verifyAdoptedFinish(false) }
+    @Test fun finishAfterFirstPullBeforeStartReceiptPreservesTheAdoptedSet() = runTest { verifyAdoptedFinish(true) }
+
+    private suspend fun TestScope.verifyAdoptedFinish(pullFirst: Boolean) {
+        val directory = tmp.newFolder()
+        val server = EngineRoomFixture.server()
+        lateinit var sessionId: String
+        lateinit var accepted: TrainingSet
+        var at = 0L
+        val snapshot = EngineRoomFixture(directory, backgroundScope).use { room ->
+            room.select(null)
+            sessionId = (room.store.start() as GymResult.Ok).value.id
+            room.store.choose("bench-press")
+            room.store.logSet(80.0, 5)
+            val performed = room.store.sets.single()
+            accepted = room.training.fixSet(sessionId, performed.id, SetFix(note = "Keep this set", rpe = 7.5, rpeNamed = true))
+            room.store.prepareEngineTransition()
+            room.training.prepareAdoption()
+            assertTrue(room.engine.signIn("alice", mapOf("gym" to false)).member("complete").bool())
+            room.selected = "alice"
+            room.store.connect(room.account())
+            assertEquals(listOf(accepted.id), room.training.imports.operations().map { it.entry.set.id })
+            if (pullFirst) room.pull(server)
+            room.now += 60_000
+            assertEquals(FinishOutcome.Failed(WriteFailure.NoAnswer), room.store.finish())
+            assertEquals(sessionId, WorkoutControls(room.controlsFile, "alice").session!!.id)
+            assertEquals(listOf(accepted), WorkoutControls(room.controlsFile, "alice").sets(sessionId))
+            assertTrue(room.outbox().none { it["intent"]?.get("cmd")?.get("name") == works.windmill.sync.core.Json.of("gym.finish") })
+            room.sync(server)
+            val closed = room.store.finish() as FinishOutcome.Closed
+            assertEquals(listOf(accepted), closed.detail.sets)
+            room.sync(server)
+            room.store.refreshEngine()
+            runCurrent()
+            assertEquals(emptyList<ImportRefusal>(), room.training.imports.refusals())
+            at = room.now
+            room.engine.snapshot()
+        }
+        EngineRoomFixture(directory, backgroundScope, snapshot).use { cold ->
+            cold.selected = "alice"
+            cold.now = at + 1000
+            cold.store.restoreWorkout("alice", true)
+            cold.store.connect(cold.account())
+            if (cold.training.imports.refusals().any { it.id == accepted.id }) {
+                cold.training.imports.retry(accepted.id)
+                cold.training.reconcileImports()
+                cold.sync(server)
+                cold.store.refreshEngine()
+            }
+            assertEquals("A successfully finished workout must retain its accepted adopted set",
+                listOf(accepted.copy(setNumber = 1)), cold.training.session(sessionId)!!.sets)
+        }
+    }
+
+    @Test fun aFailedAdoptedSetCommitKeepsFinishRetryableAcrossRestartAndAccountChanges() = runTest {
+        val directory = tmp.newFolder()
+        val server = EngineRoomFixture.server()
+        lateinit var accepted: TrainingSet
+        lateinit var sessionId: String
+        var at = 0L
+        val snapshot = EngineRoomFixture(directory, backgroundScope).use { room ->
+            room.select(null)
+            sessionId = (room.store.start() as GymResult.Ok).value.id
+            room.store.choose("bench-press")
+            room.store.logSet(80.0, 5)
+            accepted = room.store.sets.single()
+            room.store.prepareEngineTransition()
+            room.training.prepareAdoption()
+            room.engine.signIn("alice", mapOf("gym" to false))
+            room.selected = "alice"
+            room.store.connect(room.account())
+            room.now += 60_000
+            repeat(2) {
+                assertEquals(FinishOutcome.Failed(WriteFailure.NoAnswer), room.store.finish())
+                assertEquals(listOf(accepted), WorkoutControls(room.controlsFile, "alice").sets(sessionId))
+            }
+            room.sync(server)
+            room.engine.failNextCommit()
+            assertTrue(runCatching { room.training.finishSession(sessionId, room.now) }.exceptionOrNull() is works.windmill.sync.api.CommitFailure)
+            assertTrue(room.training.session(sessionId)!!.session.isOpen)
+            assertEquals(listOf(accepted), WorkoutControls(room.controlsFile, "alice").sets(sessionId))
+            assertTrue(room.outbox().none { it["intent"]?.get("cmd")?.get("name") == works.windmill.sync.core.Json.of("gym.finish") })
+            at = room.now
+            room.engine.snapshot()
+        }
+        EngineRoomFixture(directory, backgroundScope, snapshot).use { cold ->
+            cold.selected = "alice"
+            cold.now = at + 1000
+            cold.store.restoreWorkout("alice", true)
+            cold.store.connect(cold.account())
+            assertNull(cold.store.workoutFailure)
+            assertEquals(sessionId, cold.store.session?.id)
+            cold.select("bob")
+            assertEquals(emptyList<SessionDetail>(), cold.training.details())
+            cold.select("alice")
+            cold.pull(server)
+            cold.store.refreshEngine()
+            assertNull(cold.store.workoutFailure)
+            assertEquals(sessionId, cold.store.session?.id)
+            val outcome = cold.store.finish()
+            assertTrue(outcome.toString(), outcome is FinishOutcome.Closed)
+            val closed = outcome as FinishOutcome.Closed
+            assertEquals(listOf(accepted), closed.detail.sets)
+            cold.sync(server)
+            assertEquals(listOf(accepted.copy(setNumber = 1)), cold.training.session(sessionId)!!.sets)
+            assertEquals(emptyList<ImportRefusal>(), cold.training.imports.refusals())
+        }
+    }
 
     @Test fun finishRecoversAnAcceptedSetAfterATransientEngineCommitFailure() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->

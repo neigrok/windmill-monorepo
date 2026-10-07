@@ -25,6 +25,7 @@ import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TopSet
 import works.windmill.gym.domain.TrainingSet
+import works.windmill.gym.store.TrainingUnanswered
 import works.windmill.gym.store.TrainingRefused
 import works.windmill.gym.store.EngineTraining
 import works.windmill.gym.store.WorkoutImports
@@ -35,6 +36,9 @@ import works.windmill.sync.schema.Gym
 import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.RecordKey
+import works.windmill.sync.core.Json
+import works.windmill.sync.api.Command
+import works.windmill.sync.api.Gesture
 import works.windmill.platform.auth.AuthStatus
 import works.windmill.platform.auth.AuthStore
 import works.windmill.platform.auth.MagicLink
@@ -434,6 +438,86 @@ class LiveWireTests {
 
         discardSession(importedId)
         assertNull(adapter.session(importedId))
+    }
+
+    @Test
+    fun t13_finishWaitsForAdoptedSetsBeforeAndAfterTheFirstPull() = runBlocking {
+        for (pullFirst in listOf(false, true)) {
+            val id = "ses_adopted_${tag}_$pullFirst"
+            val setId = "set_adopted_${tag}_$pullFirst"
+            val at = System.currentTimeMillis() - 60_000
+            Engine.memory(SyncSchema.registry, clock = probeClock, commandResultWrites = WorkoutImports.commandResultWrites,
+                pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
+                val training = EngineTraining(phone)
+                training.startSession(SessionStart(id, at))
+                val accepted = training.appendSet(id, SetWrite(setId, "bench-press", 80.0, 5, SetKind.Working, at + 10_000))
+                training.prepareAdoption()
+                signIn(phone)
+                if (pullFirst) {
+                    val pull = checkNotNull(phone.pullRequest(listOf(ScopeRef(Gym.scope))))
+                    val send = probeClock.reading()
+                    phone.onPullResponse(pull, response(transport.pull(pull, bearer)), RequestTiming(send, probeClock.reading()))
+                }
+                try {
+                    training.finishSession(id, at + 30_000)
+                    fail("Finish must wait for the adopted start and its sets")
+                } catch (_: TrainingUnanswered) { }
+                assertTrue(training.session(id)!!.session.isOpen)
+                assertEquals(listOf(accepted), training.imports.operations().map { it.entry.set })
+                drain(phone) { training.firstPullComplete && phone.read(ScopeRef(Gym.scope)) {
+                    it.drawn(Gym.Types.session, RecordID(id))?.isPending == false
+                } }
+                training.finishSession(id, at + 30_000)
+                drain(phone) { phone.read(ScopeRef(Gym.scope)) {
+                    it.drawn(Gym.Types.session, RecordID(id))?.isPending == false &&
+                        it.drawn(Gym.Types.set, RecordID(setId))?.isPending == false
+                } }
+                assertEquals(emptyList<String>(), training.imports.refusals().map { it.code })
+            }
+            drain()
+            assertEquals(works.windmill.gym.domain.SessionDetail(Session(id, at, at + 30_000), listOf(
+                TrainingSet(setId, "bench-press", 1, 80.0, 5, SetKind.Working, null, "", at + 10_000))), adapter.session(id))
+            discardSession(id)
+        }
+    }
+
+    @Test
+    fun t14_retryRecoversAStrandedAdoptedSetAfterRestart() = runBlocking {
+        val id = "ses_recovered_$tag"
+        val setId = "set_recovered_$tag"
+        val at = System.currentTimeMillis() - 60_000
+        val snapshot = Engine.memory(SyncSchema.registry, clock = probeClock, commandResultWrites = WorkoutImports.commandResultWrites,
+            pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
+            val training = EngineTraining(phone)
+            training.startSession(SessionStart(id, at))
+            training.appendSet(id, SetWrite(setId, "bench-press", 80.0, 5, SetKind.Warmup, at + 10_000))
+            training.prepareAdoption()
+            signIn(phone)
+            // The durable order written by affected versions: start, finish, then the owed set.
+            phone.commit(ScopeRef(Gym.scope)) { Gesture(emptyList(), command = Command(Gym.Commands.finish,
+                Json.objectOf("sessionId" to Json.of(id), "finishedAt" to Json.of(at + 30_000)))) to Unit }
+            drain(phone) { training.firstPullComplete && training.session(id)?.session?.finishedAtMs == at + 30_000 }
+            training.imports.refuseOperation(training.imports.operations().single(), Gym.Codes.sessionFinished)
+            phone.snapshot()
+        }
+        Engine.memory(SyncSchema.registry, snapshot, clock = probeClock, commandResultWrites = WorkoutImports.commandResultWrites,
+            pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
+            val training = EngineTraining(phone)
+            training.imports.retry(setId)
+            repeat(3) {
+                training.reconcileImports()
+                drain(phone) { phone.read(ScopeRef(Gym.scope)) { reader ->
+                    reader.drawn(Gym.Types.session, RecordID(id))?.isPending == false &&
+                        reader.drawn(Gym.Types.set, RecordID(setId))?.isPending == false
+                } }
+            }
+            assertEquals(emptyList<String>(), training.imports.refusals().map { it.code })
+            assertTrue(training.imports.operations().isEmpty())
+        }
+        drain()
+        assertEquals(works.windmill.gym.domain.SessionDetail(Session(id, at, at + 30_000), listOf(
+            TrainingSet(setId, "bench-press", 1, 80.0, 5, SetKind.Warmup, null, "", at + 10_000))), adapter.session(id))
+        discardSession(id)
     }
 
     @Test

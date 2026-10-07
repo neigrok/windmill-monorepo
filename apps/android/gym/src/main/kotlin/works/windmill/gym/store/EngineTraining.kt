@@ -195,6 +195,8 @@ class EngineTraining(val engine: Engine) {
         })
     }
     suspend fun finishSession(sessionId: String, finishedAtMs: Long): Session {
+        reconcileImports()
+        if (imports.hasOwedSets(sessionId)) throw TrainingUnanswered
         apply(FinishSession(Id(sessionId, EngineSession), Instant(finishedAtMs)))
         return session(sessionId)?.session ?: throw missing("That workout is no longer on the log.")
     }
@@ -419,20 +421,47 @@ class EngineTraining(val engine: Engine) {
             if (!anonymous && !firstPullComplete) continue
             if (imports.refusals().any { it.id == operation.sessionId && it.session?.isOpen == true }) continue
             if (!anonymous && read { it.confirmed(EngineSession, Id(operation.sessionId, EngineSession))?.isVisible != true }) continue
-            val entry = operation.entry
             try {
-                val known = read { it.repository(EngineSet).find(Id(entry.set.id, EngineSet), ViewMode.drawn) }
-                if (entry.step == Owed.Append || known == null && entry.write != Owed.Delete) appendSet(operation.sessionId, SetWrite(entry.set))
-                when (entry.write) {
-                    Owed.Append -> Unit
-                    Owed.Fix -> fixSet(operation.sessionId, entry.set.id, SetFix(entry.set))
-                    Owed.Delete -> deleteSet(operation.sessionId, entry.set.id)
-                }
-                imports.resolveOperation(operation.token)
+                reconcileOperation(operation)
             } catch (refused: TrainingRefused) {
-                imports.refuseOperation(operation.token, refused.code)
+                if (refused.code == Gym.Codes.sessionFinished && imports.recoverFinishedOperation(operation)) continue
+                imports.refuseOperation(operation, refused.code)
             }
         }
+    }
+
+    internal suspend fun reconcileOperation(operation: ImportOperation) {
+        val entry = operation.entry
+        val value = engineSet(operation.sessionId, SetWrite(entry.set)).copy(rpe = entry.set.rpe, note = entry.set.note)
+        apply(object : Action<Pair<TrainingState, works.windmill.sync.api.DeviceWrite?>, Unit, GymRefusal> {
+            override val scope = EngineSet.scope
+            override val refusals = GymRefusal
+            override fun load(read: Reader) = TrainingState(read) to imports.operationResolution(operation, read.source)
+            override fun decide(loaded: Pair<TrainingState, works.windmill.sync.api.DeviceWrite?>, ids: IDSource): Decision<Unit, GymRefusal> {
+                val resolution = loaded.second ?: return Decision.Unchanged(Unit)
+                val state = loaded.first
+                val known = state.drawnSets.firstOrNull { it.id == value.id }
+                if (known != null && (known.sessionId != value.sessionId || entry.write == Owed.Append &&
+                        (known.exerciseId != value.exerciseId || known.completedAt != value.completedAt)))
+                    throw TrainingRefused("set-id-taken", "that set id is already used")
+                val decision = when {
+                    entry.write == Owed.Delete -> Remove(EngineSet, value.id, GymRefusal).decide(known, ids)
+                    known == null -> AppendSet(value).decide(state, ids)
+                    entry.write == Owed.Fix -> CorrectSet(known.copy(weightKg = value.weightKg, reps = value.reps,
+                        kind = value.kind, rpe = value.rpe, note = value.note)).decide(state, ids)
+                    else -> Decision.Unchanged(Unit)
+                }
+                val plan = when (decision) {
+                    is Decision.Write -> decision.plan
+                    is Decision.Unchanged -> Plan()
+                    is Decision.Refuse -> return decision
+                }
+                if (entry.write == Owed.Delete && known != null) plan.device("rack:deletedSet${Sha256.hex(entry.set.id.toByteArray()).take(32)}",
+                    Json.objectOf("setId" to Json.of(entry.set.id), "sessionId" to Json.of(operation.sessionId)))
+                plan.device(resolution.key, resolution.value)
+                return Decision.Write(plan, Unit)
+            }
+        })
     }
     fun refusedWrites(): List<RefusedWrite> = engine.notices("gym").notices.value.map { notice ->
         val domain = DomainNotice(notice, engine.registry, GymRefusal)
@@ -477,7 +506,7 @@ class EngineTraining(val engine: Engine) {
         if (controls.engineReplica != engine.activeReplica()) return
         val session = controls.session ?: return
         val imported = imports.retainedWorkouts().flatMap { it.sets }.mapTo(mutableSetOf()) { it.id } +
-            imports.operations().map { it.entry.set.id }
+            imports.retainedOperationSetIds()
         val missing = controls.sets(session.id).filter { set ->
             set.id in controls.workout.consumed && set.id !in imported &&
                 !engine.retainsRecord(EngineSet.scope, RecordKey(EngineSet.type, RecordID(set.id)))

@@ -167,7 +167,7 @@ outside every scope. A proposal's unset `state` reads as `pending`, the registry
   4. Otherwise create the session finished (`closedBy: finish`, `routineId` and `plan` as `gym.start`
      gives them) and its sets, `kind` default `working`, `note` default `""`, numbered in argument
      order; record the receipt.
-- `gym.correctSession {sessionId, requestId, startedAt, finishedAt, routineName, sets}`: no close.
+- `gym.correctSession {sessionId, requestId, startedAt, finishedAt, routineName, sets, preserveOtherSets?}`: no close.
   1. The session absent or `foreign` → `unknown-record`; dead → `record-dead`.
   2. A correction receipt for `requestId`: same session and equal arguments → `ok`, writing the
      session and its named sets still alive; otherwise `payload-conflict`.
@@ -177,7 +177,10 @@ outside every scope. A proposal's unset `state` reads as `pending`, the registry
   4. The session takes `startedAt`, `finishedAt`, `closedBy: finish` and `displayName := routineName`.
      A named set standing in the session keeps its movement (another → `invalid`) and its kind, takes
      `weightKg`, `reps`, `completedAt` and `setNumber`, and `rpe` and `note` only when named. A new one
-     is created `working`, with its `setNumber`. Every standing set left out dies. Record the receipt.
+     takes optional `kind`, default `working`, with its `setNumber`. Every standing set left out dies
+     unless optional `preserveOtherSets` is true. That mode leaves unnamed rows unchanged; their
+     numbers must not collide with named sets, and their times must remain within the interval.
+     The 200-set limit applies to the argument. Record the receipt.
 - `gym.finish {sessionId, finishedAt}`: absent or `foreign` → `unknown-record`; dead → `record-dead`;
   `finishedAt` zero or before `startedAt` → `bad-instant`. Unfinished → `finishedAt` and `closedBy:
   finish`. Closed `stale` at `f` → `closedBy: finish` and `finishedAt := f` when `finishedAt > f + 4 h`,

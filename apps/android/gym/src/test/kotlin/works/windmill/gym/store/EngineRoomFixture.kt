@@ -47,7 +47,6 @@ internal class EngineRoomFixture(
     var now = 1_800_000_000_000L
     var selected: String? = null
     private var nextSession = 0
-    private var nextSet = 0
     val engine = Engine.memory(SyncSchema.registry, snapshot, clock = object : EngineClock { override fun now() = now },
         commandResultWrites = WorkoutImports.commandResultWrites, pendingDeviceWork = WorkoutImports.pendingDeviceWork,
         rewriteDeviceValue = WorkoutImports.rewriteDeviceValue)
@@ -57,7 +56,7 @@ internal class EngineRoomFixture(
     // As in the application: the REST doors answer only while an account is signed in.
     fun freshStore(scope: CoroutineScope = this.scope) = TrainingStore(WorkoutControls(controlsFile, write = controlsWrite), training,
         scope, rest = { rest.takeIf { selected != null } }, now = { ++now }, mintSession = { "session${(++nextSession).toString().padStart(2, '0')}" },
-        mintSet = { "set${(++nextSet).toString().padStart(5, '0')}" }, mintRoutine = mintRoutine, mintExercise = mintExercise,
+        mintSet = Ids::set, mintRoutine = mintRoutine, mintExercise = mintExercise,
         undoWindowMs = undoWindowMs, workoutClock = workoutClock ?: WorkoutClock { val at = ++now; WorkoutMoment(at, at, "local") },
         workoutAuthority = workoutAuthority, telemetry = telemetry, elapsedNanos = elapsedNanos, localCoach = localCoach)
     fun account(id: String? = selected) = Account("https://windmill.works",

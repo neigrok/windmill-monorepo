@@ -368,6 +368,7 @@
       "args": {
         "sessionId": { "type": "ref<session>" },
         "requestId": { "type": "json", "domain": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" } },
+        "preserveOtherSets": { "type": "json", "optional": true, "domain": { "type": "boolean" } },
         "startedAt": { "type": "instant" },
         "finishedAt": { "type": "instant" },
         "routineName": { "type": "json", "domain": { "type": "string", "unit": "bytes", "max": 240, "nullable": true } },
@@ -384,6 +385,7 @@
                 "setNumber": { "type": "number", "integer": true, "min": 1, "max": 2147483647 },
                 "weightKg": { "type": "number", "min": -500, "max": 500, "quantum": 0.01 },
                 "reps": { "type": "number", "integer": true, "min": 1, "max": 500 },
+                "kind": { "type": "string", "enum": ["warmup", "working", "drop", "failure"] },
                 "rpe": { "type": "number", "min": 1, "max": 10, "nullable": true, "quantum": 0.1 },
                 "note": { "type": "string", "unit": "bytes", "max": 4000 },
                 "completedAt": { "type": "number", "integer": true, "min": 0 }

@@ -219,11 +219,16 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
       if (session.f.finishedAt === undefined) throw refusal('session-open');
       checkWorkout(views, args, sessionId);
       const standing = [...views.drawn.values()].filter((row) => row.t === 'set' && row.life?.[0] !== 'dead' && row.f?.sessionId?.[0] === sessionId);
+      const unnamed = standing.filter((row) => !args.sets.some((set) => set.id === row.id));
+      if (args.preserveOtherSets) for (const row of unnamed) {
+        if (row.f.completedAt[0] < args.startedAt || row.f.completedAt[0] > args.finishedAt) throw refusal('bad-instant');
+        if (args.sets.some((set) => set.exerciseId === row.f.exerciseId[0] && set.setNumber === row.v.setNumber)) throw refusal('invalid');
+      }
       return [{ op: 'update', t: 'session', id: sessionId, f: { startedAt: args.startedAt, finishedAt: args.finishedAt,
         closedBy: 'finish', displayName: args.routineName } },
-      ...args.sets.map(({ id, setNumber, ...set }) => ({ op: standing.some((row) => row.id === id) ? 'update' : 'create', t: 'set', id,
-        v: { setNumber }, f: { ...(standing.some((row) => row.id === id) ? {} : { sessionId, kind: 'working', rpe: null, note: '' }), ...set } })),
-      ...standing.filter((row) => !args.sets.some((set) => set.id === row.id)).map(({ id }) => ({ op: 'delete', t: 'set', id })),
+      ...args.sets.map(({ id, setNumber, kind, ...set }) => ({ op: standing.some((row) => row.id === id) ? 'update' : 'create', t: 'set', id,
+        v: { setNumber }, f: { ...(standing.some((row) => row.id === id) ? {} : { sessionId, kind: kind ?? 'working', rpe: null, note: '' }), ...set } })),
+      ...(args.preserveOtherSets ? [] : unnamed.map(({ id }) => ({ op: 'delete', t: 'set', id }))),
       ];
     }, () => ({ session: { id: sessionId, startedAt: args.startedAt, finishedAt: args.finishedAt }, sets: args.sets }));
   };

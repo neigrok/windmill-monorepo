@@ -94,7 +94,11 @@ shared `GymRuntime` and notification receivers: movement order, the movement in 
 offer and the clock each set was logged at. It is a projection of the selected replica, rebuilt
 when the replica changes. It also retains accepted sets until their engine commit succeeds.
 Finish and projection refreshes recover those sets before clearing the controls; a failed recovery
-keeps them for retry. Finish receipts read the committed replica.
+keeps them for retry. An adopted workout's Finish also waits for its start acknowledgment and
+commits its owed sets before the finish command; while waiting, it retains the controls for Retry.
+Finish receipts read the committed replica. A stranded adopted set refused with `session-finished`
+can be retried into the finished workout through a guarded correction. Its original identity, values,
+time and kind survive; concurrent changes leave the source available for another retry.
 The bundled movement catalogue uses backend seed identities. Only Coach
 threads, attachments, shares and connected-log credentials use REST, through `GymRest`.
 `coach/` groups conversation models, storage, photos and screens. `CoachStore` owns thread reads,

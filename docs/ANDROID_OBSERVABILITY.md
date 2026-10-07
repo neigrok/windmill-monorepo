@@ -52,7 +52,9 @@ Handled storage, synchronization, notification, authentication and UI boundary f
 Accepted-set recovery failures report at the calling training or account boundary, including
 `gym.finish`, `gym.start`, `gym.restoreWorkout`, `gym.connect`, `gym.loadLog` and
 `gym.reconcileWorkoutTime`. Failed Finish keeps the durable sets, returns a visible failure and
-emits no `gym_session_finished`; a successful retry emits it once.
+emits no `gym_session_finished`; a successful retry emits it once. Waiting for an adopted workout's
+start and sets is an expected unanswered Finish, without a Sentry issue. Recovery of a stranded
+adopted set uses the existing import reconciliation and Retry boundaries below.
 The first-launch onboarding gate reports unreadable workout presence, unreadable first-launch state
 and failed launch-marker writes under the static operation `onboarding_storage`; failed inspection or
 flag persistence skips automatic onboarding rather than treating an unknown phone as empty.

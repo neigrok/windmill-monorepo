@@ -185,7 +185,7 @@ Delta newSet(const std::string& session, const Json::Value& set, bool correction
   delta.lattice.born = Stamp{};
   delta.lattice.life = Life(LifeState::alive, Stamp{});
   Json::Value f = object({{"sessionId", session}, {"exerciseId", set["exerciseId"]}, {"weightKg", set["weightKg"]},
-                         {"reps", set["reps"]}, {"kind", correction ? Json::Value("working") : set.get("kind", "working")},
+                         {"reps", set["reps"]}, {"kind", set.get("kind", "working")},
                          {"note", set.get("note", "")}, {"completedAt", set["completedAt"]}});
   if (set.isMember("rpe")) f["rpe"] = set["rpe"];
   for (const std::string& name : f.getMemberNames()) delta.lattice.f.emplace(name, Reg(f[name], Stamp{}));
@@ -518,12 +518,19 @@ GymOutcome runGym(const std::string& name, const Json::Value& args, const Json::
     uniqueIds(args["sets"]);
     std::set<std::pair<std::string, std::int64_t>> numbers;
     for (const Json::Value& set : args["sets"]) if (!numbers.emplace(set["exerciseId"].asString(), set["setNumber"].asInt64()).second) throw Refusal(code::invalid);
+    const bool preserve = args.get("preserveOtherSets", false).asBool();
+    std::set<std::string> named;
+    for (const Json::Value& set : args["sets"]) named.insert(set["id"].asString());
+    if (preserve) for (const Row& row : facts.rows) {
+      if (row.t != "set" || !row.alive() || value(&row, "sessionId") != args["sessionId"] || named.contains(row.id.column())) continue;
+      const Ms completed = value(&row, "completedAt").asUInt64();
+      if (completed < args["startedAt"].asUInt64() || completed > args["finishedAt"].asUInt64()) throw Refusal("bad-instant");
+      if (!numbers.emplace(value(&row, "exerciseId").asString(), row.v.at("setNumber").asInt64()).second) throw Refusal(code::invalid);
+    }
     checkInterval(facts, id, args, now);
     append(outcome, fields(session, object({{"startedAt", args["startedAt"]}, {"finishedAt", args["finishedAt"]}, {"closedBy", "finish"}, {"displayName", args["routineName"]}})));
-    std::set<std::string> named;
     for (const Json::Value& set : args["sets"]) {
       const std::string setId = set["id"].asString();
-      named.insert(setId);
       const Row* prior = facts.row("set", setId);
       if (!prior || !prior->alive() || value(prior, "sessionId") != args["sessionId"]) {
         append(outcome, newSet(id, set, true), true);
@@ -536,7 +543,7 @@ GymOutcome runGym(const std::string& name, const Json::Value& args, const Json::
       delta.v["setNumber"] = set["setNumber"];
       append(outcome, std::move(delta));
     }
-    for (const Row& row : facts.rows) if (row.t == "set" && row.alive() && value(&row, "sessionId") == args["sessionId"] && !named.contains(row.id.column())) outcome.deltas.push_back(death(row));
+    if (!preserve) for (const Row& row : facts.rows) if (row.t == "set" && row.alive() && value(&row, "sessionId") == args["sessionId"] && !named.contains(row.id.column())) outcome.deltas.push_back(death(row));
     result.receiptKind = "corrections";
     result.receiptId = request;
     result.receipt = object({{"sessionId", args["sessionId"]}, {"args", rawArgs}});

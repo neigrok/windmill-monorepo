@@ -38,3 +38,37 @@ TEST(gym_prefs_keep_unwritten_defaults_off_the_wire) {
   CHECK_EQ(after["result"]["s"].asString(), std::string("ok"));
   CHECK_EQ(jcs(after["state"]["rows"]["acct:A/gym"][0]["f"]), std::string(R"({"units":["lb","1000:0:r_aaaaaaaaaaaa"]})"));
 }
+
+TEST(gym_additive_correction_keeps_more_than_two_hundred_standing_sets) {
+  Json::Value input;
+  for (const auto& vector : corpus::readCorpusFile(WM_SYNC_CONTRACT_DIR "/corpus/gym/admit.json")) {
+    if (vector["name"] == "an additive correction keeps unnamed sets and creates the missing set with its kind") input = vector["input"];
+  }
+  REQUIRE(input.isObject());
+  auto& rows = input["state"]["rows"]["acct:A/gym"];
+  Json::Value source;
+  for (const auto& row : rows) if (row["t"] == "set" && row["id"] == "set00000001") source = row;
+  REQUIRE(source.isObject());
+  for (int number = 3; number <= 201; ++number) {
+    auto row = source;
+    row["id"] = "standing_" + std::to_string(number);
+    row["seq"] = number + 10;
+    row["v"]["setNumber"] = number;
+    rows.append(row);
+  }
+  std::vector<Json::Value> standing(rows.begin(), rows.end());
+  input["state"]["scopes"]["acct:A/gym"]["seq"] = 211;
+  input["state"]["scopes"]["acct:A/gym"]["digest"] = scopeDigest(standing).hex();
+  input["intent"]["cmd"]["args"]["sets"][0]["setNumber"] = 202;
+  wm::sync::test::FakeWorld world(true);
+  const auto after = wm::sync::test::gymAdmitVector(world, input);
+  REQUIRE_EQ(after["result"]["s"].asString(), std::string("ok"));
+  std::map<std::string, Json::Value> actual;
+  for (const auto& row : after["state"]["rows"]["acct:A/gym"]) if (row["t"] == "set") actual.emplace(row["id"].asString(), row);
+  CHECK_EQ(actual.size(), 202U);
+  for (const auto& row : standing) if (row["t"] == "set") CHECK_EQ(jcs(actual.at(row["id"].asString())), jcs(row));
+  CHECK_EQ(actual.at("set00000009")["f"]["kind"][0].asString(), std::string("warmup"));
+  CHECK_EQ(actual.at("set00000009")["v"]["setNumber"].asInt(), 202);
+  input["state"] = after["state"];
+  CHECK_EQ(jcs(wm::sync::test::gymAdmitVector(world, input)["state"]), jcs(after["state"]));
+}

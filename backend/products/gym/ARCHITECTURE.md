@@ -216,8 +216,10 @@ A whole-workout correction is the command `gym.correctSession`, pushed through `
 admitted in one transaction (GymRules). It refuses an open workout (`session-open`) and an interval
 that crosses another finished one (`session-overlap`), rewrites the session's start, finish and
 `displayName` and closes it as the lifter's `finish`, rewrites each set it names with the number it
-names, creates a set it names that the workout does not hold as `working`, and kills every set it
-leaves out, whose ids stay spent; a rewritten set keeps its kind. Its request id is the key of a
+names, creates a set it names that the workout does not hold with the supplied `kind` (default
+`working`), and kills every set it leaves out, whose ids stay spent; a rewritten set keeps its kind.
+Optional `preserveOtherSets: true` retains unnamed rows unchanged, with number and interval checks
+against the named sets; only the argument has a 200-set limit. Its request id is the key of a
 `gym_correction_receipts` row, so a replay answers from the current rows without applying again and
 the same id carrying another request is refused `payload-conflict`. `displayName` overrides historical
 display independently of the frozen plan; `historyRoutineId` retains filter identity after the living
