@@ -73,8 +73,8 @@ sealed interface Deletion {
     // refusal to say.
     //
     // The one subject here a later write can name AGAIN: every other key is a minted id nothing
-    // reuses. So `TrainingStore.weighIn` takes this window down before it records — weighing the day
-    // again is the undo — or the clock would delete the number the lifter had just saved.
+    // reuses. `TrainingStore.weighIn` retires this window after a successful save; a failed save
+    // keeps Undo, and a successful one cancels the clock that could delete the saved number.
     data class Bodyweight(val dateLocal: String) : Deletion {
         override val subjectId: String get() = dateLocal
         override val line: String get() = "Weigh-in deleted."

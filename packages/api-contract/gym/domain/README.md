@@ -11,8 +11,8 @@ for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCr
 |---|---|
 | `rules.json` | Entity facts and the complete rule book, compared by `RuleBookParity` |
 | `values.json` | Every LOCAL spec and writable entity check; action-only LOCAL rules also have violation cases in the action files |
-| `notes-actions.json` | Idempotent Coach note saves and capacity |
-| `bodyweight-actions.json` | Whole-day weigh-in saves and held deletes |
+| `notes-actions.json` | Idempotent Coach note saves, capacity and single-note moves across held deletes |
+| `bodyweight-actions.json` | Whole-day weigh-in saves, corrections and held deletes |
 | `routines-actions.json` | Guarded editor saves, reorder, delete, ordered targets, frozen-plan decoding |
 | `catalogue-actions.json` | Create, rename, seed overrides, aliases, byte-sensitive search, decoding failures |
 | `preferences-actions.json` | Draft preference saves and rest defaults |
@@ -56,12 +56,14 @@ separately and is outside the v4 rule book because v4 has no such type.
 
 | Action | Input | Result |
 |---|---|---|
-| `SaveRoutine`, `SavePreferences`, `SaveWeighIn` | Editor fields; vectors open the drawn entity or a new blank draft | `{values,exists}` from the draft save |
+| `SaveRoutine`, `SavePreferences` | Editor fields; vectors open the drawn entity or a new blank draft | `{values,exists}` from the draft save |
+| `SaveWeighIn` | `{day,kg}`; vectors open the drawn day or a new blank draft | `{id,fields}`; every save writes the whole fact with the save's moment |
 | `DeleteRoutine`, `DeleteSet`, `DeleteWeighIn` | `{id}` or `{day}` | `null`; held, with Undo on a real engine |
 | `ReorderRoutines` | `{order:[routineId]}` | `null`; a complete permutation, changed positions only |
 | `CreateExercise` | `{exercise:{id,fields}}` | Exercise id |
 | `RenameExercise` | `{id,name}` | `null`; a custom rename or seed override |
 | `SaveNoteCall` | `{note:{id,fields}}` | Call id, or the stored note with the same words |
+| `MoveNote` | `{id,below}`; `below:null` means the top | `null`; only the moved note's order changes, a drop in place writes nothing |
 | `StartSession` | `{id,routineId?,startedAt?}` | Predicted or joined session id; always sends `joinOpenSession:true` |
 | `FinishSession` | `{id,finishedAt?}` | `null` |
 | `AppendSet`, `CorrectSet` | `{set:{id,fields}}` | Set id or `null` |

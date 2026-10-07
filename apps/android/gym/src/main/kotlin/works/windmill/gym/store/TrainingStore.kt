@@ -62,7 +62,6 @@ import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.domain.WeighIn
-import works.windmill.gym.domain.WeighInWrite
 import works.windmill.gym.net.GymRest
 import works.windmill.gym.coach.CoachStore
 import works.windmill.gym.coach.LocalCoach
@@ -1091,24 +1090,17 @@ class TrainingStore(
         }
     }
 
-    // The order is the lifter's instruction and it is written before it is believed here: a refusal
-    // leaves the notebook exactly as the replica holds it. What arrives is the order of the rows
-    // DRAWN, and a note inside its undo window is not one of them — the withheld one keeps the place
-    // it stands in and the drawn ones fill the rest.
-    suspend fun reorderNotes(drawn: List<String>): GymResult<List<Note>> {
+    // A drop moves its one note below the drawn neighbor; held notes keep their stored keys.
+    suspend fun reorderNotes(moved: String, drawn: List<String>): GymResult<List<Note>> {
         val seat = owner
         return notebookWrite.withLock {
             if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
-            val visible = notes.map { it.id }
-            if (drawn.size != visible.size || drawn.toSet().size != drawn.size || drawn.toSet() != visible.toSet()) {
-                return@withLock GymResult.Failed(WriteFailure.Refused("The notes changed. Read them again before reordering."))
-            }
-            val queue = ArrayDeque(drawn)
-            val order = notebook.map { if (it.id in withheldIds || queue.isEmpty()) it.id else queue.removeFirst() }
             try {
-                val written = training.reorderNotes(order)
+                val changed = training.moveNote(moved, drawn, withheldIds)
                 if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
+                val written = training.notes()
                 notebook = written
+                if (changed) telemetry.event("gym_note_moved")
                 GymResult.Ok(written)
             } catch (interrupted: CancellationException) {
                 throw interrupted
@@ -1185,14 +1177,14 @@ class TrainingStore(
             ?: return WriteFailure.Refused("Choose a date.")
         Bodyweight.dated(date, Bodyweight.today(now()))?.let { return WriteFailure.Refused(it) }
         val seat = owner
-        dropWithheld(dateLocal)
         return bodyweightWrite.withLock {
             try {
-                val previous = series.firstOrNull { it.dateLocal == dateLocal }
-                training.putBodyweight(dateLocal, WeighInWrite(weightKg, maxOf(now(), (previous?.recordedAt ?: -1) + 1)))
+                training.putBodyweight(dateLocal, weightKg)
                 if (seat != owner) return@withLock WriteFailure.Refused(accountChanged)
+                dropWithheld(dateLocal)
                 series = training.weighins()
                 bodyweightRead = true
+                telemetry.event("gym_bodyweight_saved")
                 null
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) { reportFailure("gym.weighIn", failure); WriteFailure(failure) }

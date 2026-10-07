@@ -114,6 +114,7 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Brand onboarding | `onboarding_opened`, `onboarding_page_viewed`, `onboarding_action`, `onboarding_exited` | state, screen, action, outcome |
 | Coach | `gym_ask_started`, `gym_ask_outcome` | outcome, failure_kind, status, duration_ms, cap |
 | Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged` | common metadata only |
+| Bodyweight/notes | `gym_bodyweight_saved`, `gym_note_moved` | common metadata only; successful local commits, no event for an unchanged drop |
 | Routines/proposals | `gym_routine_saved`, `gym_proposal_outcome` | action, outcome |
 | Engine refusals/failures | `sync_engine` | operation, outcome, failure_kind |
 | Workout imports | `gym_import_recovery` | action, state, outcome |

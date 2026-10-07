@@ -10,17 +10,12 @@ import java.time.temporal.ChronoUnit
 import java.util.Locale
 import kotlinx.serialization.Serializable
 
-// One row per local calendar date; the date IS the identity, so every write is idempotent by it and
-// the server keeps whichever of two writes carries the later `recordedAt`. Kilograms only, on the
-// wire and on this phone. `recordedAt` is this device's clock at the save and decides nothing but
-// which of two writes is newer.
+// One whole fact per local date, in kilograms. The newest engine stamp wins; recordedAt is the
+// engine's commit moment, never the tie-breaker between saves.
 @Serializable
 data class WeighIn(val dateLocal: String, val weightKg: Double, val recordedAt: Long) {
     val date: LocalDate get() = LocalDate.parse(dateLocal)
 }
-
-// A weigh-in as this phone saves it for its date.
-data class WeighInWrite(val weightKg: Double, val recordedAt: Long)
 
 // What the field said, or the one refusal it met first.
 sealed interface ParsedWeight {

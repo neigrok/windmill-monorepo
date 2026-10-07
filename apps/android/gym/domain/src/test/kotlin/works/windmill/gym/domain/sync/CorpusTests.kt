@@ -61,7 +61,11 @@ class CorpusTests {
         val input = vector.input["input"]
         return when (vector.file) {
             "gym/domain/values.json" -> corpus.value(vector)
-            "gym/domain/notes-actions.json" -> corpus.decision(SaveNoteCall(Note.fromForm(input!!.member("note"))), vector, { it.json }, ::refusalForm)
+            "gym/domain/notes-actions.json" -> when (vector.input.member("action").str()) {
+                "SaveNoteCall" -> corpus.decision(SaveNoteCall(Note.fromForm(input!!.member("note"))), vector, { it.json }, ::refusalForm)
+                "MoveNote" -> corpus.decision(moveNote(Fields(input!!).ref("id", Note), Fields(input).optionalRef("below", Note)), vector, { Json.Null }, ::refusalForm)
+                else -> error("unclaimed notes action")
+            }
             "gym/domain/bodyweight-actions.json" -> when (vector.input.member("action").str()) {
                 "SaveWeighIn" -> {
                     val blank = WeighIn(LocalDay.parse(input!!.member("day").str())!!)

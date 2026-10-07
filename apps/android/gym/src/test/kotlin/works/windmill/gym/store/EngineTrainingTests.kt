@@ -15,6 +15,7 @@ import works.windmill.gym.domain.*
 import works.windmill.sync.api.*
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.RecordID
+import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.engine.Engine
 import works.windmill.sync.engine.EngineClock
 import works.windmill.sync.engine.signIn
@@ -348,17 +349,28 @@ class EngineTrainingTests {
             assertEquals(listOf("session2"), gym.progress().sessions.map { it.sessionId })
         }
     }
-    @Test fun notesReorderAtomicallyAndWeighinsKeepTheNewerRecordedAt() = runBlocking {
+    @Test fun aNoteMoveWritesOnlyItsPositionAndWeighinsSaveAtTheCommitMoment() = runBlocking {
         engine().use { engine ->
             val gym = EngineTraining(engine)
             gym.writeNote("note0001", NoteWrite("One", "First"))
             gym.writeNote("note0002", NoteWrite("Two", "Second"))
+            gym.writeNote("note0003", NoteWrite("Three", "Third"))
+            fun positions() = engine.read(ScopeRef(Gym.scope)) { read ->
+                read.stored(Gym.Types.note).associate { it.id.string!! to it.values.getValue("ord") }
+            }
+            val standing = positions()
             val before = engine.snapshot().jcs
-            try { gym.reorderNotes(listOf("note0001")); fail("An order must name every note.") } catch (_: TrainingRefused) {}
+            try { gym.moveNote("note0001", listOf("note0002", "note0001", "note_missing"), emptySet()); fail("An order must name every note.") } catch (_: TrainingRefused) {}
             assertEquals(before, engine.snapshot().jcs)
-            assertEquals(listOf("note0002", "note0001"), gym.reorderNotes(listOf("note0002", "note0001")).map { it.id })
-            gym.putBodyweight("2026-01-01", WeighInWrite(70.0, now - 1))
-            assertEquals(WeighIn("2026-01-01", 70.0, now), gym.putBodyweight("2026-01-01", WeighInWrite(80.0, now - 2)))
+            val order = listOf("note0002", "note0001", "note0003")
+            assertTrue(gym.moveNote("note0001", order, emptySet()))
+            assertEquals(order, gym.notes().map { it.id })
+            assertEquals(standing.filterKeys { it != "note0001" }, positions().filterKeys { it != "note0001" })
+            val moved = engine.snapshot()
+            assertFalse(gym.moveNote("note0001", order, emptySet()))
+            assertEquals(moved, engine.snapshot())
+            gym.putBodyweight("2026-01-01", 70.0)
+            assertEquals(WeighIn("2026-01-01", 80.0, now), gym.putBodyweight("2026-01-01", 80.0))
         }
     }
     @Test fun readoutsPreserveRecordsAndFrozenPlanComparison() {

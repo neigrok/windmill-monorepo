@@ -1757,14 +1757,14 @@ class TrainingStoreTests {
                 GymResult.Ok(Note("note_a", 0, "How I want to be talked to", "Blunt, no cheering.", 0)),
                 room.store.saveNote("note_a", NoteWrite("How I want to be talked to", "Blunt, no cheering.")))
 
-            val reordered = room.store.reorderNotes(listOf("note_b", "note_a"))
+            val reordered = room.store.reorderNotes("note_a", listOf("note_b", "note_a"))
             assertEquals(GymResult.Ok(listOf(
                 Note("note_b", 0, "What I am training for", "A 140 squat.", 0),
                 Note("note_a", 1, "How I want to be talked to", "Blunt, no cheering.", 0),
             )), reordered)
             assertEquals("an order naming a note outside the notebook is refused before anything is written",
                 GymResult.Failed(WriteFailure.Refused("The notes changed. Read them again before reordering.")),
-                room.store.reorderNotes(listOf("note_gone")))
+                room.store.reorderNotes("note_gone", listOf("note_gone")))
 
             assertNull(room.store.deleteNote("note_b"))
             assertNull("a note already gone is gone", room.store.deleteNote("note_b"))
@@ -1772,6 +1772,43 @@ class TrainingStoreTests {
                 Note("note_a", 0, "How I want to be talked to", "Blunt, no cheering.", 0),
             )), room.store.readNotes())
             runCurrent()
+        }
+    }
+
+    @Test
+    fun noteDropsPreserveHeldKeysAndRefuseStaleOrMultipleMovesWithoutWriting() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            val server = EngineRoomFixture.server()
+            room.select("alice"); room.pull(server)
+            for (index in 0..2) assertTrue(room.store.saveNote("note_00$index", NoteWrite("Note $index", "")) is GymResult.Ok)
+            room.sync(server)
+            room.store.withhold(Deletion.Note("note_001"))
+            val before = room.engine.snapshot()
+            assertTrue(room.store.reorderNotes("note_002", listOf("note_000", "note_002")) is GymResult.Ok)
+            assertEquals(before, room.engine.snapshot())
+            val refused = GymResult.Failed(WriteFailure.Refused("The notes changed. Read them again before reordering."))
+            for ((moved, order) in listOf(
+                "note_001" to listOf("note_000", "note_002"),
+                "note_000" to listOf("note_000", "note_000"),
+                "note_000" to listOf("note_002"),
+                "note_000" to listOf("note_002", "note_missing"),
+            )) assertEquals(refused, room.store.reorderNotes(moved, order))
+            assertEquals(before, room.engine.snapshot())
+
+            assertTrue(room.store.reorderNotes("note_000", listOf("note_002", "note_000")) is GymResult.Ok)
+            assertEquals(listOf("note_002", "note_000"), room.store.notes.map { it.id })
+            assertEquals(listOf("note_001", "note_002", "note_000"), room.training.notes().map { it.id })
+            assertEquals(listOf("note_001"), room.store.withheld.map { it.subjectId })
+            assertNotNull(room.store.keepWithheld())
+            assertEquals(listOf("note_001", "note_002", "note_000"), room.store.notes.map { it.id })
+
+            val moved = room.engine.snapshot()
+            assertEquals(refused, room.store.reorderNotes("note_000", listOf("note_000", "note_002", "note_001")))
+            assertEquals(moved, room.engine.snapshot())
+            room.training.writeNote("note_003", NoteWrite("New arrival", ""))
+            val arrived = room.engine.snapshot()
+            assertEquals(refused, room.store.reorderNotes("note_000", listOf("note_000", "note_001", "note_002")))
+            assertEquals(arrived, room.engine.snapshot())
         }
     }
 

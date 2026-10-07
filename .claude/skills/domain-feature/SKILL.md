@@ -154,9 +154,10 @@ takes `firstPullComplete`. `Bodyweight.init(_ read: Reader)` reads both views, t
 ### 5. Actions (§8, §9)
 
 Name the standard deciders: Swift type aliases `SaveWeighIn = SaveDraft<WeighIn, GymRefusal>`, `DeleteWeighIn` over
-`Remove`, `MoveNote` over `Move`; Kotlin functions `saveWeighIn(value) = SaveDraft(value, WeighIn, GymRefusal)`,
-`deleteWeighIn(id) = Remove(WeighIn, id, GymRefusal)`, `moveNote(id, below) = Move(Note, id, below, GymRefusal)`. A
-custom action is a value conforming to `Action` (Kotlin `Action<Loaded, Result, GymRefusal>` with `override val scope`
+`Remove`, `MoveNote` over `Move`; Kotlin functions `deleteWeighIn(id) = Remove(WeighIn, id, GymRefusal)` and
+`moveNote(id, below) = Move(Note, id, below, GymRefusal)`. A keyed save opens the day with `runner.open` and saves its
+draft (step 6); Kotlin's `SaveDraft(value, …)` is create-only and refuses a key that already has a record. A custom
+action is a value conforming to `Action` (Kotlin `Action<Loaded, Result, GymRefusal>` with `override val scope`
 and `override val refusals = GymRefusal`), its stored properties its input:
 
 - `load(_ read: Reader)` reads through the reader only, `read.moment` included, calling a pure domain function between
@@ -341,7 +342,7 @@ cd apps/android
 ./gradlew :domain-kit-testing:test :domain-kit-testing:corpus :domain-kit-testing:layering :sync-testing:layering   # the kit corpus and both layering tasks
 ```
 
-The first prints `Gym corpus: 12/12 files, 478 cases, no unclaimed file`; the second `kit corpus: 12/12 files, 475/475
+The first prints `Gym corpus: 12/12 files, 489 cases, no unclaimed file`; the second `kit corpus: 12/12 files, 475/475
 vectors` and `layering: 5 deterministic modules, … compiled classes, 0 findings`. `./gradlew build` (CI,
 `.github/workflows/android.yml`) runs all of it, with `ANDROID_SENTRY_DSN` set.
 

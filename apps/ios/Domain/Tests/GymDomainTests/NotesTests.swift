@@ -192,6 +192,47 @@ struct NotesTests {
     #expect([three, one, two].map { Note.position(of: $0, stored: notes) } == [0, 1, 2])
   }
 
+  @Test func draggingTheFirstNoteBelowTheNextLandsInThatOrder() throws {
+    let a = NotesTests.phone()
+    let b = a.device()
+    let one = try NotesTests.add(a, "One")
+    let two = try NotesTests.add(a, "Two")
+    let three = try NotesTests.add(a, "Three")
+    a.sync()
+
+    let move = try #require(try a.runner.run(MoveNote(one, below: two)).receipt)
+    #expect(move.ids == [one.record])
+    #expect(try a.drawn(Note.self).map(\.id) == [two, one, three])
+    a.sync()
+
+    #expect(try b.drawn(Note.self).map(\.id) == [two, one, three])
+    #expect(try a.notices(GymRefusal.self).isEmpty && b.notices(GymRefusal.self).isEmpty)
+  }
+
+  @Test func aDragAcrossAHeldNoteKeepsItsDeleteWindowAndUndo() throws {
+    let a = NotesTests.phone()
+    let b = a.device()
+    let one = try NotesTests.add(a, "One")
+    let two = try NotesTests.add(a, "Two")
+    let three = try NotesTests.add(a, "Three")
+    a.sync()
+    let removal = try #require(try a.runner.run(DeleteNote(two)).receipt)
+
+    #expect(unchanged(try a.runner.run(MoveNote(three, below: one))) != nil)
+    let move = try #require(try a.runner.run(MoveNote(one, below: three)).receipt)
+    #expect(move.ids == [one.record])
+    #expect(try a.drawn(Note.self).map(\.id) == [three, one])
+    #expect(try a.stored(Note.self).map(\.id) == [two, three, one])
+    #expect(a.undoOffers().map(\.id) == [removal.gestureId])
+    a.sync()
+    #expect(try b.drawn(Note.self).map(\.id) == [two, three, one])
+
+    #expect(try a.runner.undo(removal.gestureId))
+    #expect(try a.drawn(Note.self).map(\.id) == [two, three, one])
+    #expect(a.undoOffers().isEmpty)
+    #expect(try a.notices(GymRefusal.self).isEmpty && b.notices(GymRefusal.self).isEmpty)
+  }
+
   @Test func aDeleteIsHeldForItsWindowKeepingItsPositionAndUndoBringsTheNoteBack() throws {
     let a = NotesTests.phone()
     let b = a.device()
@@ -278,9 +319,13 @@ struct NotesTests {
   func action(_ vector: Vector) throws {
     let corpus = ProductCorpus(GymRules.book)
     let input = try vector.input.member("input")
+    let fields = try Fields(input)
     let result = switch try vector.input.member("action").asString() {
     case "SaveNoteCall":
       try corpus.decision(of: SaveNoteCall(try Note(form: input.member("note"))), vector, result: \.json, refusal: \.form)
+    case "MoveNote":
+      try corpus.decision(of: MoveNote(fields.ref("id", Note.self), below: fields.optionalRef("below", Note.self)),
+                          vector, result: { _ in .null }, refusal: \.form)
     case let action: throw ContractError("no notes action \(action)")
     }
     #expect(result == vector.expect, "\(vector)\n  got    \(result.jcsText)\n  expect \(vector.expect.jcsText)")

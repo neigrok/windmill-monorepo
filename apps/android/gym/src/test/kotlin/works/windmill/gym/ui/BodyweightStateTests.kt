@@ -1,6 +1,9 @@
 package works.windmill.gym.ui
 
 import android.os.Looper
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -17,6 +20,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -27,6 +31,7 @@ import org.robolectric.annotation.Config
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.WeighIn
 import works.windmill.gym.store.EngineRoomFixture
+import works.windmill.gym.store.TrainingStore
 import works.windmill.sync.modelserver.ModelServer
 
 @RunWith(RobolectricTestRunner::class)
@@ -94,5 +99,49 @@ class BodyweightStateTests {
         compose.onNodeWithText("Keep it").performClick()
         compose.onNodeWithText("82,4.5").assertIsDisplayed()
         compose.runOnIdle { assertEquals(emptyList<Pair<String, Double>>(), saved) }
+    }
+
+    // The save commits on this phone and waits there for the next sync: the log still holds the old row.
+    @Test
+    fun correctionRestoresWithAFreshStoreAndOfflineSaveBecomesACommittedPendingRow() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try { EngineRoomFixture(temporary.newFolder(), scope).use { room ->
+            val server = EngineRoomFixture.server()
+            val day = LocalDate.now().minusDays(4)
+            weighedElsewhere(scope, server, day, 82.4)
+            room.now = System.currentTimeMillis()
+            runBlocking { room.select("u1"); room.pull(server) }
+            var instances = 0
+            lateinit var current: TrainingStore
+            val restored = StateRestorationTester(compose)
+            restored.setContent {
+                val held = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
+                val store = remember { room.freshStore(held).also { current = it; instances++ } }
+                DisposableEffect(held) { onDispose { held.cancel() } }
+                LaunchedEffect(store) { store.connect(room.account()) }
+                GymMaterial { BodyweightScreen(store, "Log", {}, {}) }
+            }
+            compose.onNodeWithText(Bodyweight.listDay(day)).performScrollTo().performClick()
+            compose.onNodeWithContentDescription(weightField).performTextReplacement("82,4.5")
+            compose.onNodeWithText(Bodyweight.save).performClick()
+            restored.emulateSavedInstanceStateRestore()
+            compose.onNodeWithText("82,4.5").assertIsDisplayed()
+            compose.onNodeWithText(Bodyweight.onePoint).assertIsDisplayed()
+            compose.onNodeWithText(Bodyweight.fullDay(day)).assertIsDisplayed()
+            compose.onNodeWithContentDescription(weightField).performTextReplacement("82,45")
+            compose.onNodeWithText(Bodyweight.save).performClick()
+            compose.onNodeWithText("82.45 kg").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(Bodyweight.save).assertDoesNotExist()
+            compose.runOnIdle {
+                assertEquals(2, instances)
+                assertEquals(listOf(day.toString() to 82.45), current.bodyweight.map { it.dateLocal to it.weightKg })
+                assertEquals(listOf(day.toString() to 82.45), room.training.weighins().map { it.dateLocal to it.weightKg })
+                assertTrue("the correction is owed to the log", room.outbox().isNotEmpty())
+            }
+            EngineRoomFixture(temporary.newFolder(), scope).use { reader -> runBlocking {
+                reader.select("u1"); reader.pull(server)
+                assertEquals(listOf(day.toString() to 82.4), reader.training.weighins().map { it.dateLocal to it.weightKg })
+            } }
+        } } finally { scope.cancel() }
     }
 }

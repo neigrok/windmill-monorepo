@@ -46,12 +46,6 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
   document hides or the room unmounts; iOS's withheld Coach deletes when the scene goes to the
   background (`CoachHistory.swift`); and Android's holds, which are in memory, on `ON_STOP` and on
   disposal (`GymRoom.kt`, `abandonWithheld`).
-- **7b · Notes reorder.** Canon (`gym/briefs/10-notes.md` "A move writes one note",
-  `13-gestures.md`; owner ruling 2026-09-26): moving a note writes that note's position only, right
-  after the row drawn above the drop point in stored order, so a note inside a delete window keeps
-  its stored place. The web writes the one moved note (`gymSync.js` `reorderNotes`, one `move`).
-  Android writes a `move` for every note, in the drawn order, so a reorder restamps notes that did
-  not move.
 - **7c · Sign-out.** Canon (`guidelines/superapp-flow.md` §3 and §7, `roadmap/guidelines/auth.md`
   §4, `roadmap/guidelines/front-door.md` §2; owner ruling 2026-09-26): signing out takes the
   account's synced data off the device. When the account has not confirmed some changes, the
