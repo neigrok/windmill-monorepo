@@ -243,6 +243,8 @@ jobs:
           xcrun simctl boot "$UI_SIMULATOR"
           xcrun simctl bootstatus "$UI_SIMULATOR" -b
           xcrun simctl spawn "$UI_SIMULATOR" launchctl setenv TZ UTC
+          xcrun simctl spawn "$UI_SIMULATOR" defaults write NSGlobalDomain AppleLanguages -array en
+          xcrun simctl spawn "$UI_SIMULATOR" defaults write NSGlobalDomain AppleLocale -string en_US
           xcrun simctl ui "$UI_SIMULATOR" appearance light
           xcrun simctl ui "$UI_SIMULATOR" content_size large
           xcrun simctl status_bar "$UI_SIMULATOR" override --time '9:41' \
@@ -251,8 +253,12 @@ jobs:
           xcrun simctl getenv "$UI_SIMULATOR" TZ
           xcrun simctl spawn "$UI_SIMULATOR" defaults read NSGlobalDomain AppleLanguages
           xcrun simctl spawn "$UI_SIMULATOR" defaults read NSGlobalDomain AppleLocale
-          test "$(xcrun simctl spawn "$UI_SIMULATOR" defaults read com.apple.Accessibility ApplicationAccessibilityEnabled)" = 1
-          test "$(xcrun simctl spawn "$UI_SIMULATOR" defaults read com.apple.Accessibility AutomationEnabled)" = 1
+          for UI_AX_SETTING in ApplicationAccessibilityEnabled AutomationEnabled; do
+            xcrun simctl spawn "$UI_SIMULATOR" defaults write com.apple.Accessibility "$UI_AX_SETTING" -bool true
+            UI_AX_VALUE=$(xcrun simctl spawn "$UI_SIMULATOR" defaults read com.apple.Accessibility "$UI_AX_SETTING")
+            echo "$UI_AX_SETTING=$UI_AX_VALUE"
+            test "$UI_AX_VALUE" = 1
+          done
           xcrun simctl spawn "$UI_SIMULATOR" defaults read com.apple.liveactivitiesd
 
       - name: Build and run the UI shard
