@@ -25,10 +25,10 @@ have no action. The current row identifies its target without repeating the rack
 Warmups read `W` and do not consume planned working-set numbers. Spoken row names include position,
 state, load and reps. Keep the current row visible above the rack and any transient.
 
-iOS retains its horizontal slot strip and last-time line; reconciliation is consistency entry 5m.
-Web and Android entry/correction omit Kind: new sets are Working and corrections preserve stored
-classification. iOS retains its kind picker. Targets remain references, independent of actual
-load/reps and extra, skipped or substituted sets.
+iOS draws the same quiet ledger in native controls, with no slot strip and no last-time line
+(`../../ios/ios-redesign.md` §7.7). Entry omits Kind on every surface: new sets are Working,
+corrections preserve stored classification, and the Fix sheet is where a kind is changed. Targets
+remain references, independent of actual load/reps and extra, skipped or substituted sets.
 
 A successful log persists and sends immediately, with no after-log Undo. Correction and deletion
 begin from its logged row and commit at once. The engine sends every change in the order it was
@@ -95,4 +95,4 @@ needs concrete copy and an owning state; unresolved strings remain in the consis
 ## Open
 
 - Whether a drop set needs to name a parent; classification alone carries no relationship.
-- iOS logger and delayed-queue presentation alignment under consistency entry 5m.
+- iOS delayed-queue presentation beside the affected set.

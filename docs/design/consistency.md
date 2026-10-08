@@ -171,21 +171,20 @@ Apple sign-in is off in every build, so no surface draws it yet.
 
 ## iOS
 
-`apps/ios/App` implements the journal first run on the engine; gym remains unbuilt. First-run canon:
-`guidelines/superapp-shell.md`, `guidelines/superapp-flow.md`, `gym/briefs/09-coach.md` and the Figma
-page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2).
+`apps/ios/App` carries the Journal room and the Gym room on the engine, with the workout Live
+Activity. First-run canon: `guidelines/superapp-shell.md`, `guidelines/superapp-flow.md`,
+`gym/briefs/09-coach.md` and the Figma page
+[iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2). The
+rendering contract is [`ios/ios-redesign.md`](ios/ios-redesign.md).
 
-- **6v · iOS gym canon is unbuilt.** `apps/ios` holds the sync engine client, the domain kit, the
-  journal product app and the dev-only probe. Gym drawings and written canon describe a room no build
-  implements. The journal restores the previous TestFlight app's icon and bundle identifier.
-  Where canon states the deleted app's code or behavior as current, restate it as the rebuild's
-  requirement or drop it: `gym/briefs/09-coach.md` (`Proposal.swift`, `Ask.swift`, `ReviewGate`),
-  `10-notes.md` (`.onMove`), `11-bodyweight.md` (the iOS sheet, chart, empty-window, refusal and
+- **6v · Briefs that cite the deleted app.** Several gym briefs state the previous native app's
+  code or behavior as current. Restate each as the rebuilt room's requirement or drop it:
+  `gym/briefs/09-coach.md` (`Proposal.swift`, `Ask.swift`, `ReviewGate`), `10-notes.md`
+  (`.onMove`), `11-bodyweight.md` (the iOS sheet, chart, empty-window, refusal and
   `TrainingStore.weighIn` paragraphs), `13-gestures.md` (full swipe), `15-the-routine.md` (History
-  and routine detail), `16-the-workout.md` and `17-set-targets.md` (5m), `19-connected-log.md`
-  (`ConnectInvite`), `12-native-idiom.md` and `guidelines/superapp-shell.md` §8 (F4, 4j),
-  and `gym/feedback-contract.md`
-  (iOS acceptance).
+  and routine detail), `17-set-targets.md`, `19-connected-log.md` (`ConnectInvite`),
+  `12-native-idiom.md` and `guidelines/superapp-shell.md` §8 (F4, 4j), and
+  `gym/feedback-contract.md` (iOS acceptance).
 - **6k · Backend: signed-out Coach.** Coach is account-only: `AskRation` keys an in-memory token
   bucket by account (`kAskPerDay` 10, `kAskBackToBack` 3; a deploy refills it) under the account's
   30-day AI ceiling. Signed-out Coach needs a device-scoped identity, a durable 5-per-phone count
@@ -200,9 +199,43 @@ page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?nod
 - **6n · Backend: the conversation on sign-in.** A signed-out conversation must move to the account
   on sign-in with the same identity, receipts included, so the chat continues where it stopped.
 - **6o · First-run boards against the gym briefs.** Boards 13a/13b title the finish receipt with
-  the routine name where `gym/briefs/16-the-workout.md` uses *Well done.* or *Ended early.*, and
-  board 02d labels the Routines primary *Start logging* where `gym/briefs/12-native-idiom.md` uses
-  *Just start logging*. Choose one of each and align the other.
+  the routine name; `ios/ios-redesign.md` §7.9 rules the title *Well done.* / *Ended early.* with
+  the routine name as the subtitle. Board 02d labels the Routines primary *Start logging* where
+  `gym/briefs/12-native-idiom.md` uses *Just start logging*. Redraw 13a/13b and 02d.
+
+### iOS redesign · iteration 1
+
+Spec: [`ios/ios-redesign.md`](ios/ios-redesign.md). It rules the iOS rendering; these are the
+places it disagrees with a drawing or a brief.
+
+- **9a · Light gym accent.** The Gym file's `brand/base` aliases to iris `#4C4374` in Daylight
+  (F44); the spec, the owner's 2026-09-06 ruling and the decided onboarding boards use verdigris
+  `#137A6C`. The iOS boards bind a file-local `ios/accent`. Repoint `brand/base` or keep both and
+  say which surface each serves.
+- **9b · Phones weave.** `gym/briefs/18-progress.md` gives web and iOS the movement strip and
+  Android the woven moments; the spec gives both phones the woven timeline and only the web the
+  strip. The brief now says so; the Progress section's iOS strip boards (`459:29`, `531:532`)
+  are superseded.
+- **9c · The rack's kind picker.** `16-the-workout.md` kept iOS's kind picker at the rack; the
+  spec moves Kind into the Fix sheet on iOS as on web and Android. The brief now says so.
+- **9d · Two gym light grounds.** Design System `iOS First Run · Colour` has `gym/canvas` light
+  `#F4F4EB` and `gym/card` `#F9FDFC`; `Onboarding · Colour` and the Gym file have `#EBE7E3` and
+  `#F8F6F4`, which the spec adopts. Align the first-run collection.
+- **9e · First-run boards' chrome.** The first-run and Coach-wave boards draw a *W* capsule, a
+  hand-drawn glass fill and a drawn account glyph; the spec's room menu and `person.crop.circle`
+  on system glass replace them. Redraw the top band of boards 02d, 05–07d, 08a–09k, 10–13b, 21a/21b
+  and the Gym file's Coach-wave iOS boards from the new section's bar anatomy.
+- **9f · You's palette.** `AccountSheet.swift` draws You on system colours with the gym accent
+  when opened from Gym; canon (`superapp-shell.md` §6) and the spec keep You clay in both
+  appearances.
+- **9g · Live Activity accent.** `WorkoutActivityWidget.swift:128` defines its own green; the
+  spec gives the widget `gym/accent` from the shared theme folder.
+- **9h · Journal day inks.** `iOS First Run · Colour` light `journal/ink` `#2A2118`, `ink-dim`
+  `#74654F`, `ink-faint` `#8E8272` are warm, as are the onboarding glimpse's; the web's journal day
+  (`palettes.css`) and the spec are cool paper (`#161E28` / `#4E5968` / `#5E6979`). Align the
+  collection and the glimpse when journal day ships.
+- **9i · `TabView` tint.** `GymRoom.swift:39` tints the whole `TabView`; `12-native-idiom.md`
+  and the spec forbid it. Build item 7.2.
 
 ## Onboarding
 
@@ -330,10 +363,6 @@ it in these places.
 
 ### Native and web differences
 
-- **5m · iOS logger.** Android uses the [quiet ledger](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=805-4536)
-  defined in `gym/briefs/16-the-workout.md`, which still says iOS retains its horizontal slot strip,
-  last-time line and kind picker; `apps/ios` has no logger (6v). The rebuilt iOS logger translates
-  the quiet ledger into native iOS controls.
 - **Coach Markdown.** Android renders answer Markdown blocks and paces streamed text; web
   `CoachRoom.jsx` renders plain text. Decide the shared block typography and pacing, then align the
   other clients and Figma specimens. Tracking: `gym-android-coach-stream-markdown`.

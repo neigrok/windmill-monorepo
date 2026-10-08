@@ -29,6 +29,7 @@ Keep current requirements; remove completed plans, verification transcripts and 
 | `roadmap/` | Feature guidelines and the open-asks briefs. The largest set. |
 | `journal/` | Product canon (`journal.md`), the mood and energy scales (`scales.md`), first-run canon (`onboarding.md`). |
 | `gym/briefs/` | Current feature contracts for the gym room. |
+| `ios/` | The iOS rendering contract (`ios-redesign.md`): palettes by role, type and spacing, toolbars, menus, sheets, the per-screen build list. |
 | `marketing/` | The landing-family briefs, the pricing story, the transactional-email spec. |
 
 ## Rules for drawing a screen

@@ -8,18 +8,19 @@ Obeys `12-native-idiom.md`, `13-gestures.md`, `../../guidelines/text-budget.md` 
 `../../guidelines/thumb-reach.md`. The chart rules here extend `11-bodyweight.md`, which owns the
 primitive.
 
-## Where it lives: the log — a strip on web and iOS, moments woven in on Android
+## Where it lives: the log — a strip on the web, moments woven in on the phones
 
 **The log.** Progress is a reading of what happened, and the log is the record of what happened.
 It is not a fourth tab and not a Progress screen: the per-movement screen already exists — the
 Record screen — and a second room onto the same chart is two doors onto one value.
 
-> **Web and iOS: a horizontal strip of movement cards sits in the head of the log**, under the
+> **Web: a horizontal strip of movement cards sits in the head of the log**, under the
 > loaded line and the bodyweight reading, above the first week divider. One card per movement
 > trained in the last twelve weeks, most recently trained first. **Every card is a door to that
 > movement's Record screen.** Nothing on a card writes.
 
-> **Android (boards `837:14824` and `837:14932`): no strip and no head
+> **Both phones (Android boards `837:14824` and `837:14932`; iOS `../../ios/ios-redesign.md`
+> §7.6): no strip and no head
 > numbers. Progress is woven into the session list where it happened.** A **moment** is a quiet
 > one-line outlined card between the sessions, dated like them: *Bench Press · new best · 76 kg
 > est · up 4 kg since August* with a dot trail, *Weighed in · 82.4 kg*, or *Trained 4 of the last
