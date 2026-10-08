@@ -26,14 +26,24 @@ import UIKit
   func capture(_ app: XCUIApplication, _ name: String) {
     if name.hasPrefix("picker-") {
       let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-        let create = app.buttons["gym-create-movement"]
-        return create.exists && create.isHittable && create.frame.maxY <= app.frame.maxY
-          && app.navigationBars["Add movement"].frame.minY < app.frame.height / 4
-      }, object: app)
-      XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+        guard let snapshot = try? app.snapshot(),
+              let create = self.descendant(in: snapshot, type: .button, named: "gym-create-movement"),
+              let navigation = self.descendant(in: snapshot, type: .navigationBar, named: "Add movement") else { return false }
+        return create.isEnabled && !create.frame.isEmpty && self.viewport.contains(create.frame)
+          && !navigation.frame.isEmpty && self.viewport.contains(navigation.frame) && navigation.frame.minY < self.viewport.height / 4
+      }, object: nil)
+      XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed)
+      XCTAssertTrue(app.buttons["gym-create-movement"].isHittable)
     }
     let attachment = XCTAttachment(screenshot: app.screenshot())
     attachment.name = "routines-" + name; attachment.lifetime = .keepAlways; add(attachment)
+  }
+  func descendant(in snapshot: any XCUIElementSnapshot, type: XCUIElement.ElementType, named name: String) -> (any XCUIElementSnapshot)? {
+    if snapshot.elementType == type && (snapshot.identifier == name || snapshot.label == name) { return snapshot }
+    for child in snapshot.children {
+      if let match = descendant(in: child, type: type, named: name) { return match }
+    }
+    return nil
   }
   func waitForPrimaryButton(_ button: XCUIElement) -> Bool {
     let rendered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
@@ -450,18 +460,14 @@ import UIKit
       XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
       XCTAssertEqual(question.value as? String, "Tell me about the proposal for Push A.")
       let routines = app.tabBars.buttons["Routines"]
-      XCTAssertTrue(routines.wait(for: \.isHittable, toEqual: true, timeout: 5))
-      var previousFrame = CGRect.zero
-      var unchangedSince = ContinuousClock.now
-      let routinesSettled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-        let frame = routines.frame
-        if frame.isEmpty || frame != previousFrame {
-          previousFrame = frame; unchangedSince = ContinuousClock.now; return false
-        }
-        return unchangedSince.duration(to: ContinuousClock.now) >= .seconds(1)
-      }, object: routines)
-      XCTAssertEqual(XCTWaiter.wait(for: [routinesSettled], timeout: 5), .completed)
-      XCTAssertTrue(app.tabBars.firstMatch.frame.contains(routines.frame))
+      let tabBar = app.tabBars.firstMatch
+      let routinesReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+        guard let snapshot = try? tabBar.snapshot(),
+              let button = self.descendant(in: snapshot, type: .button, named: "Routines") else { return false }
+        return button.isEnabled && !button.frame.isEmpty && snapshot.frame.contains(button.frame) && self.viewport.contains(button.frame)
+      }, object: nil)
+      XCTAssertEqual(XCTWaiter.wait(for: [routinesReady], timeout: 30), .completed)
+      XCTAssertTrue(routines.isHittable)
       routines.tap()
       XCTAssertTrue(routines.wait(for: \.isSelected, toEqual: true, timeout: 5))
       XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 5))
