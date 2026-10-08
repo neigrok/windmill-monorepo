@@ -105,10 +105,10 @@ struct CoachTab: View {
           if !gym.undoOffers.isEmpty {
             GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
           } else if coach.saved.text.utf8.count > 1000 {
-            RoomTransient(message: "Keep your question within 1000 bytes.", ink: GymPalette.ink, card: GymPalette.card)
+            RoomTransient(message: "Keep your question within 1000 bytes.", room: .gym)
               .padding(.horizontal, RoomSpace.inset)
           } else if let error = coach.error ?? (coach.retryable ? CoachCopy.interrupted : nil) {
-            RoomTransient(message: error, ink: GymPalette.ink, card: GymPalette.card,
+            RoomTransient(message: error, room: .gym,
                           actionTitle: coach.retryable ? "Try again" : "Dismiss message",
                           actionSymbol: coach.retryable ? nil : "xmark", actionIdentifier: coach.retryable ? "coach-retry" : nil) {
               if coach.retryable { coach.retry() } else { coach.error = nil }
@@ -175,8 +175,8 @@ struct CoachTab: View {
           if coach.asking {
             Button { coach.stopResponse() } label: { Image(systemName: "stop.fill").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel(coach.uploading ? "Cancel upload" : "Stop response").disabled(coach.stopping).accessibilityIdentifier("coach-stop")
           } else {
-            Button { composing = false; coach.send() } label: { Image(systemName: "arrow.up").foregroundStyle(GymPalette.onAccent).frame(minWidth: 44, minHeight: 44) }
-              .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).buttonBorderShape(.circle).accessibilityLabel("Ask Coach").accessibilityIdentifier("coach-send")
+            Button { composing = false; coach.send() } label: { Image(systemName: "arrow.up").frame(minWidth: 44, minHeight: 44) }
+              .modifier(RoomPrimaryStyle(room: .gym)).buttonBorderShape(.circle).accessibilityLabel("Ask Coach").accessibilityIdentifier("coach-send")
               .disabled(!CoachCopy.sendable(coach.saved.text, photo: coach.saved.photo != nil) || preparing)
           }
         }

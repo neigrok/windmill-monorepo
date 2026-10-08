@@ -1,12 +1,12 @@
 import SwiftUI
 
 struct RoomPrimaryStyle: ViewModifier {
-  let accent: Color
-  let onAccent: Color
+  let room: RoomColors
+  @Environment(\.isEnabled) private var enabled
 
   func body(content: Content) -> some View {
-    styled(content).controlSize(.large).buttonBorderShape(.capsule)
-      .tint(accent).foregroundStyle(onAccent)
+    styled(content).controlSize(.large).buttonBorderShape(.capsule).tint(room.accent)
+      .foregroundStyle(enabled ? AnyShapeStyle(room.onAccent) : AnyShapeStyle(.secondary))
   }
 
   @ViewBuilder private func styled(_ content: Content) -> some View {

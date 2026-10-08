@@ -96,7 +96,7 @@ struct RoutinesTab: View {
       .safeAreaInset(edge: .bottom) {
         VStack(spacing: 0) {
           GymTransient(gym: gym)
-          ActionBand(title: "Just start logging", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+          ActionBand(title: "Just start logging", room: .gym,
                      disabled: gym.accountTransition || gym.readFailed) { gym.startWorkout() }
         }
       }
@@ -175,7 +175,7 @@ struct RoutineDetail: View {
         VStack(spacing: 0) {
           GymTransient(gym: gym)
           if let routine {
-            ActionBand(title: "Start workout", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+            ActionBand(title: "Start workout", room: .gym,
                        disabled: gym.accountTransition || gym.readFailed) { gym.startWorkout(routineId: routine.id) }
           }
         }

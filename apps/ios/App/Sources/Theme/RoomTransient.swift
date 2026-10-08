@@ -2,8 +2,7 @@ import SwiftUI
 
 struct RoomTransient: View {
   let message: String
-  let ink: Color
-  let card: Color
+  let room: RoomColors
   var actionTitle: String?
   var actionSymbol: String?
   var actionIdentifier: String?
@@ -11,7 +10,7 @@ struct RoomTransient: View {
 
   var body: some View {
     HStack(spacing: RoomSpace.related) {
-      Text(message).foregroundStyle(ink).lineLimit(1)
+      Text(message).foregroundStyle(room.ink).lineLimit(1)
         .frame(maxWidth: .infinity, alignment: .leading)
       if let action {
         Button(action: action) {
@@ -28,7 +27,7 @@ struct RoomTransient: View {
     }.font(.footnote)
       .padding(.horizontal, RoomSpace.inset)
       .frame(minHeight: RoomSpace.minimumTarget)
-      .background(card, in: RoundedRectangle(cornerRadius: RoomSpace.cardRadius))
+      .background(room.card, in: RoundedRectangle(cornerRadius: RoomSpace.cardRadius))
       .accessibilityElement(children: .contain)
   }
 }
@@ -36,8 +35,7 @@ struct RoomTransient: View {
 struct ActionBand: View {
   let title: String
   var subtitle: String?
-  let accent: Color
-  let onAccent: Color
+  let room: RoomColors
   var disabled = false
   var busy = false
   var actionIdentifier: String?
@@ -47,10 +45,10 @@ struct ActionBand: View {
     VStack(spacing: RoomSpace.related) {
       Button(action: action) {
         HStack(spacing: RoomSpace.related) {
-          if busy { ProgressView().tint(onAccent) }
+          if busy { ProgressView().tint(room.onAccent) }
           Text(title)
         }.frame(maxWidth: .infinity)
-      }.modifier(RoomPrimaryStyle(accent: accent, onAccent: onAccent))
+      }.modifier(RoomPrimaryStyle(room: room))
         .disabled(disabled || busy)
         .accessibilityIdentifier(actionIdentifier ?? title)
       if let subtitle { Text(subtitle).font(.footnote).lineLimit(1) }

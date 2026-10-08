@@ -46,7 +46,7 @@ struct AccountSheet: View {
             Text("Finish signing in").font(ShellType.title)
             Button { model.choose("retry", screen: "auth_pending"); Task { await model.retryAuthenticatedSignIn() } } label: {
               Text("Try again").frame(maxWidth: .infinity)
-            }.font(ShellType.action).modifier(RoomPrimaryStyle(accent: brand, onAccent: ShellPalette.onBrand)).accessibilityIdentifier("auth-retry")
+            }.font(ShellType.action).modifier(RoomPrimaryStyle(room: .shell)).accessibilityIdentifier("auth-retry")
           case nil: EmptyView()
           }
           if model.sheet != .code, let error = model.error { errorText(error) }
@@ -284,7 +284,7 @@ struct AccountSheet: View {
         Button { Task { await model.verifyLink(signInLink) } } label: {
           Text("Sign in").frame(maxWidth: .infinity)
         }.font(ShellType.action)
-          .modifier(RoomPrimaryStyle(accent: brand, onAccent: ShellPalette.onBrand)).disabled(model.working || signInLink.isEmpty).accessibilityIdentifier("sign-in-link-submit")
+          .modifier(RoomPrimaryStyle(room: .shell)).disabled(model.working || signInLink.isEmpty).accessibilityIdentifier("sign-in-link-submit")
         Button("Use email instead") { usingLink = false; model.error = nil }.frame(minHeight: 44)
       } else {
       Text(model.sheet == .appleAddress ? "Your Windmill email" : "Sign in with email").font(ShellType.title)
@@ -293,7 +293,7 @@ struct AccountSheet: View {
         .padding(18).background(inputSurface, in: RoundedRectangle(cornerRadius: 18)).overlay(RoundedRectangle(cornerRadius: 18).stroke(brand)).accessibilityIdentifier("email-address")
       Button { Task { await model.sendCode() } } label: {
         Text("Send code").frame(maxWidth: .infinity)
-      }.font(ShellType.action).modifier(RoomPrimaryStyle(accent: brand, onAccent: ShellPalette.onBrand)).disabled(model.working || !model.email.contains("@"))
+      }.font(ShellType.action).modifier(RoomPrimaryStyle(room: .shell)).disabled(model.working || !model.email.contains("@"))
       Text("New here? This also creates your account.").font(ShellType.meta).foregroundStyle(dim)
       }
     }

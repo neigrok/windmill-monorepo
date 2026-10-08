@@ -59,3 +59,14 @@ enum ShellPalette {
   static let onBrand = Color("shell/on-brand")
   static let danger = Color("shell/danger")
 }
+
+// What a shared control takes from the room that hosts it; the shell lends its brand as the accent.
+struct RoomColors {
+  let ink: Color
+  let card: Color
+  let accent: Color
+  let onAccent: Color
+
+  static let gym = RoomColors(ink: GymPalette.ink, card: GymPalette.card, accent: GymPalette.accent, onAccent: GymPalette.onAccent)
+  static let shell = RoomColors(ink: ShellPalette.ink, card: ShellPalette.card, accent: ShellPalette.brand, onAccent: ShellPalette.onBrand)
+}

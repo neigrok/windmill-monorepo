@@ -33,7 +33,7 @@ struct LogTab: View {
         VStack(spacing: 0) {
           GymTransient(gym: gym, message: shareMessage, dismiss: { shareMessage = nil },
                        errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo")
-          ActionBand(title: "Weigh in", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+          ActionBand(title: "Weigh in", room: .gym,
                      actionIdentifier: "gym-weigh-in") { weighing = true }
         }
       }

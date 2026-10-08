@@ -137,9 +137,8 @@ struct OnboardingScreen: View {
           else { changePage(OnboardingPage(rawValue: page.rawValue + 1)!) }
         } label: {
           Text(page == .gym ? replay ? "Done" : "Get started" : "Next")
-            .font(ShellType.action).foregroundStyle(ShellPalette.onBrand)
-            .frame(maxWidth: .infinity, minHeight: 38)
-        }.modifier(RoomPrimaryStyle(accent: ShellPalette.brand, onAccent: ShellPalette.onBrand)).buttonBorderShape(.capsule).padding(.horizontal, 24).padding(.top, 14).padding(.bottom, 16)
+            .font(ShellType.action).frame(maxWidth: .infinity, minHeight: 38)
+        }.modifier(RoomPrimaryStyle(room: .shell)).padding(.horizontal, 24).padding(.top, 14).padding(.bottom, 16)
           .accessibilityIdentifier("onboarding-next").accessibilitySortPriority(10)
       }.frame(width: geometry.size.width, height: geometry.size.height).accessibilityElement(children: .contain)
     }.background(ShellPalette.canvas.ignoresSafeArea())

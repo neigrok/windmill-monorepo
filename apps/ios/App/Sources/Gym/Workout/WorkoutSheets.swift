@@ -42,7 +42,7 @@ struct WorkoutKeypadSheet: View {
         }
       }
       .safeAreaInset(edge: .bottom) {
-        ActionBand(title: "Set", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+        ActionBand(title: "Set", room: .gym,
                    disabled: pad.reading.value == nil, actionIdentifier: "workout-keypad-set") {
           if let value = pad.reading.value { commit(value); dismiss() }
         }
@@ -143,7 +143,7 @@ struct WorkoutFixSheet: View {
         .safeAreaInset(edge: .bottom) {
           VStack(spacing: 0) {
             GymTransient(gym: gym, message: draft.failure, dismiss: { draft.failure = nil }, errorIdentifier: "workout-fix-failure")
-            ActionBand(title: "Save the fix", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+            ActionBand(title: "Save the fix", room: .gym,
                        disabled: !draft.valid || gym.accountTransition, busy: draft.busy, actionIdentifier: "workout-fix-save") {
               if draft.save(gym) { dismiss() }
             }
@@ -256,7 +256,7 @@ struct WorkoutDeviationSheet: View {
           VStack(spacing: 0) {
             GymTransient(gym: workout.gym, message: workout.message, dismiss: { workout.message = nil },
                          noticeMessage: workout.gym.workoutNotice, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
-            ActionBand(title: offer.saveLabel, accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+            ActionBand(title: offer.saveLabel, room: .gym,
                        disabled: workout.gym.accountTransition, actionIdentifier: "workout-deviation-save") {
               workout.resolveDeviation(save: true)
             }

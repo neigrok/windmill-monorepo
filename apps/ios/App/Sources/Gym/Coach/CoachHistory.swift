@@ -136,21 +136,21 @@ struct CoachHistoryScreen: View {
       .safeAreaInset(edge: .bottom) {
         VStack(spacing: 0) {
           if let offer = history.held.last {
-            RoomTransient(message: "Conversation removed", ink: GymPalette.ink, card: GymPalette.card, actionTitle: "Undo") {
+            RoomTransient(message: "Conversation removed", room: .gym, actionTitle: "Undo") {
               history.undo(offer.id)
             }.padding(.horizontal, RoomSpace.inset)
           } else if !gym.undoOffers.isEmpty {
             GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
           } else if let error = coach.error {
-            RoomTransient(message: error, ink: GymPalette.ink, card: GymPalette.card,
+            RoomTransient(message: error, room: .gym,
                           actionTitle: "Dismiss message", actionSymbol: "xmark") { coach.error = nil }
               .padding(.horizontal, RoomSpace.inset)
           } else if let error = history.error {
-            RoomTransient(message: error, ink: GymPalette.ink, card: GymPalette.card, actionTitle: "Try again") {
+            RoomTransient(message: error, room: .gym, actionTitle: "Try again") {
               Task { await history.load() }
             }.padding(.horizontal, RoomSpace.inset)
           } else { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
-          ActionBand(title: "Ask something new", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+          ActionBand(title: "Ask something new", room: .gym,
                      disabled: coach.asking) { if coach.newChat() { dismiss() } }
         }
       }

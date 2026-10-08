@@ -7,7 +7,6 @@ struct GymPage: ViewModifier {
     content
       .scrollContentBackground(.hidden)
       .background(GymPalette.canvas)
-      .foregroundStyle(GymPalette.ink)
       .tint(GymPalette.accent)
       .navigationBarTitleDisplayMode(titleDisplayMode)
   }

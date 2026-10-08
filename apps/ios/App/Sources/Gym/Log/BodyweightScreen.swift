@@ -265,7 +265,7 @@ struct WeighInSheet: View {
         }
       }
       .safeAreaInset(edge: .bottom) {
-        ActionBand(title: "Save weight", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+        ActionBand(title: "Save weight", room: .gym,
                    busy: saving, actionIdentifier: "gym-weigh-in-save") { save() }
       }
       .interactiveDismissDisabled(saving)

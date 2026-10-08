@@ -178,7 +178,7 @@ struct MovementPicker: View {
     .safeAreaInset(edge: .bottom) {
       VStack(spacing: 0) {
         GymTransient(gym: gym)
-        ActionBand(title: "Create movement", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+        ActionBand(title: "Create movement", room: .gym,
                    disabled: gym.accountTransition, actionIdentifier: "gym-create-movement") {
         searchFocused = false
         if let onCreate { onCreate(); return }
@@ -319,7 +319,7 @@ struct CreateMovementSheet: View {
     .safeAreaInset(edge: .bottom) {
       VStack(spacing: 0) {
         GymTransient(gym: gym, message: draft.refusal, dismiss: { draft.refusal = nil }, errorIdentifier: "gym-movement-creation-refusal")
-        ActionBand(title: includesTargets ? "Add to routine" : "Create and add", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+        ActionBand(title: includesTargets ? "Add to routine" : "Create and add", room: .gym,
                    disabled: gym.accountTransition || draft.problem(includesTargets: includesTargets) != nil,
                    busy: busy, actionIdentifier: "gym-movement-create-commit") {
         guard creatingAccount == gym.account, creatingAnonymous == gym.isAnonymous else {

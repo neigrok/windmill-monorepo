@@ -108,7 +108,7 @@ struct WorkoutScreen: View {
         } description: {
           Text("You decide the numbers at the rack.")
         } actions: {
-          Button("Add movement", systemImage: "plus") { addMovement = true }.modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).foregroundStyle(GymPalette.onAccent)
+          Button("Add movement", systemImage: "plus") { addMovement = true }.modifier(RoomPrimaryStyle(room: .gym))
             .accessibilityIdentifier("workout-add")
         }
       } else {
@@ -286,7 +286,7 @@ struct WorkoutRack: View {
         ScrollView { controls }.frame(height: 220)
       } else { controls }
       Button { workout.logSet() } label: { Text("Log set").frame(maxWidth: .infinity, minHeight: 44) }
-        .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).foregroundStyle(GymPalette.onAccent).disabled(!workout.canLog).accessibilityIdentifier("workout-log")
+        .modifier(RoomPrimaryStyle(room: .gym)).disabled(!workout.canLog).accessibilityIdentifier("workout-log")
     }.disabled(workout.paging || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
   }
   var controls: some View {

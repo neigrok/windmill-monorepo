@@ -59,7 +59,7 @@ struct GymTransient: View {
     if let shown {
       let undo = shown.isUndo
       let retrying = !undo && gym.readFailed
-      RoomTransient(message: shown.text, ink: GymPalette.ink, card: GymPalette.card,
+      RoomTransient(message: shown.text, room: .gym,
                     actionTitle: undo ? "Undo" : retrying ? "Try again" : "Dismiss message",
                     actionSymbol: undo || retrying ? nil : "xmark",
                     actionIdentifier: undo ? undoIdentifier : nil, action: action(shown))

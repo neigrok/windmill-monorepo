@@ -216,10 +216,10 @@ struct SessionShareSheet: View {
       .safeAreaInset(edge: .bottom) {
         VStack(spacing: 0) {
           if let note = sharing.state.note {
-            RoomTransient(message: note, ink: GymPalette.ink, card: GymPalette.card)
+            RoomTransient(message: note, room: .gym)
               .accessibilityIdentifier("gym-share-error").padding(.horizontal, RoomSpace.inset)
           }
-          ActionBand(title: sharing.state.action, accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+          ActionBand(title: sharing.state.action, room: .gym,
                      busy: sharing.state == .working, actionIdentifier: "gym-share-primary") {
             if case .live(let share, _, _) = sharing.state {
               guard gym.account == owner, !gym.accountTransition, !gym.authPaused else { sharing.accountChanged(); return }

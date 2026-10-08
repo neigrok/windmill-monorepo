@@ -206,7 +206,7 @@ struct ProposalReviewSheet: View {
           .onChange(of: phase) { _, _ in acknowledgeReceipt() }
       }
       if decidable {
-        ActionBand(title: applyLabel, accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+        ActionBand(title: applyLabel, room: .gym,
                    disabled: seen == nil || seen != extent, actionIdentifier: "coach-apply-proposal") {
           if let proposal { submitted = gym.coachDecideProposal(proposal, apply: true) }
         }

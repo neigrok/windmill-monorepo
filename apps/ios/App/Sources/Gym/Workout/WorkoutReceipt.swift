@@ -210,11 +210,11 @@ struct WorkoutReceipt: View {
           if receipt.readingReview { Section { ProgressView("Reading the log…") } }
           if receipt.reviewFailed { Section { Text("the log didn’t answer — the session is saved"); Button("Try again") { Task { await receipt.loadReview(gym) } } } }
           if gym.isAnonymous {
-            Section { Button("Keep this log") { gym.workout.handoff = .keep; dismiss() }.modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).foregroundStyle(GymPalette.onAccent) } footer: { Text("This log is only on this phone.") }
+            Section { Button("Keep this log") { gym.workout.handoff = .keep; dismiss() }.modifier(RoomPrimaryStyle(room: .gym)) } footer: { Text("This log is only on this phone.") }
           } else if gym.workout.coachAvailable && !gym.authPaused {
             Section {
               Button("Share with Coach") { gym.workout.handoff = .coach; dismiss() }
-                .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).foregroundStyle(GymPalette.onAccent).disabled(gym.accountTransition).accessibilityIdentifier("workout-share-coach")
+                .modifier(RoomPrimaryStyle(room: .gym)).disabled(gym.accountTransition).accessibilityIdentifier("workout-share-coach")
             } footer: { Text("Sends Coach one line — “Check my last session.” — and opens the answer.") }
           }
           if receipt.offersRoutine {

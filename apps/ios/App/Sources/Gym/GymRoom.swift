@@ -21,26 +21,22 @@ struct GymRoom: View {
     TabView(selection: $tab) {
       SwiftUI.Tab("Routines", systemImage: "list.bullet.rectangle", value: Tab.routines) {
         NavigationStack(path: $routinesPath) {
-          RoutinesTab(gym: gym, onAccount: openAccount,
-                      onWrittenProgram: { if gym.isAnonymous || gym.authPaused { openAccount() } else { ask("Help me turn my written program into a routine.") } },
-                      onReviewProposal: { proposal = ProposalReviewID(id: $0.description) })
-            .toolbar { roomToolbar }
-            .navigationDestination(for: Destination.self, destination: destination)
+          root(RoutinesTab(gym: gym, onAccount: openAccount,
+                           onWrittenProgram: { if gym.isAnonymous || gym.authPaused { openAccount() } else { ask("Help me turn my written program into a routine.") } },
+                           onReviewProposal: { proposal = ProposalReviewID(id: $0.description) }))
         }
       }
       SwiftUI.Tab("The log", systemImage: "calendar", value: Tab.log) {
-        NavigationStack(path: $logPath) {
-          LogTab(gym: gym).toolbar { roomToolbar }
-            .navigationDestination(for: Destination.self, destination: destination)
-        }
+        NavigationStack(path: $logPath) { root(LogTab(gym: gym)) }
       }
       SwiftUI.Tab("Coach", systemImage: "bubble.left.and.bubble.right", value: Tab.coach) {
-        NavigationStack(path: $coachPath) {
-          CoachTab(gym: gym, handoff: $coachHandoff).toolbar { roomToolbar }
-            .navigationDestination(for: Destination.self, destination: destination)
-        }
+        NavigationStack(path: $coachPath) { root(CoachTab(gym: gym, handoff: $coachHandoff)) }
       }
     }.accessibilityHidden(gym.workout.isPresented)
+  }
+
+  func root(_ screen: some View) -> some View {
+    screen.toolbar { roomToolbar }.navigationDestination(for: Destination.self, destination: destination)
   }
 
   var body: some View {
@@ -84,12 +80,14 @@ struct GymRoom: View {
   @ToolbarContentBuilder var roomToolbar: some ToolbarContent {
     ToolbarItem(placement: .topBarLeading) { RoomMenu(app: app) }
   }
-  @ViewBuilder func destination(_ destination: Destination) -> some View {
-    switch destination {
-    case .routine(let id): RoutineDetail(gym: gym, id: ID(RecordID(id))).toolbar(.hidden, for: .tabBar)
-    case .session(let id): SessionDetailScreen(gym: gym, sessionID: ID(RecordID(id))).toolbar(.hidden, for: .tabBar)
-    case .settings: GymSettingsScreen(gym: gym).toolbar(.hidden, for: .tabBar)
-    }
+  func destination(_ destination: Destination) -> some View {
+    Group {
+      switch destination {
+      case .routine(let id): RoutineDetail(gym: gym, id: ID(RecordID(id)))
+      case .session(let id): SessionDetailScreen(gym: gym, sessionID: ID(RecordID(id)))
+      case .settings: GymSettingsScreen(gym: gym)
+      }
+    }.toolbar(.hidden, for: .tabBar)
   }
   func openAccount() { app.journal.done(); app.sheet = .you }
   func ask(_ question: String, send: Bool = false) {

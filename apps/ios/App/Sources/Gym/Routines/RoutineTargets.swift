@@ -300,7 +300,7 @@ struct RoutineTargetsSheet: View {
       }
     }
     .safeAreaInset(edge: .bottom) {
-      ActionBand(title: draft.commitLabel, accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+      ActionBand(title: draft.commitLabel, room: .gym,
                  disabled: draft.refusal != nil, actionIdentifier: "gym-target-set") {
         switch draft.reading {
         case .open: onCommit(nil)

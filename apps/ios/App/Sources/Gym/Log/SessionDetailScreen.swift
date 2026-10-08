@@ -157,7 +157,7 @@ struct FinishedSetFixSheet: View {
         .safeAreaInset(edge: .bottom) {
           VStack(spacing: 0) {
             GymTransient(gym: gym, message: failed ?? draft.problem)
-            ActionBand(title: "Save the fix", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+            ActionBand(title: "Save the fix", room: .gym,
                        disabled: draft.problem != nil || gym.accountTransition, actionIdentifier: "gym-fix-save") {
             guard let value = draft.value else { return }
             if gym.correctLoggedSet(draft.original, to: value, account: account) {
