@@ -464,6 +464,24 @@ struct ObservationTests {
     #expect(view.state == .loaded(RecordsView.Snapshot(records: [], firstPullComplete: true)))
   }
 
+  // A commit moves the last change to the one it published, which a read taken after it sees; a view's first load lands
+  // with a nudge, which moves nothing, so a UI that read through the last change has nothing newer to read.
+  @Test func theLastChangeMovesWithEachCommitAndNeverWithANudge() async throws {
+    let rig = try Rig()
+    await rig.engine.settle()
+    let started = rig.engine.lastChange
+    let view = try rig.engine.records(Rig.scope, "card")
+    await rig.engine.settle()
+    #expect(view.state == .loaded(RecordsView.Snapshot(records: [], firstPullComplete: true)))
+    #expect(rig.engine.lastChange == started)
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "One")]))
+    let committed = rig.engine.lastChange
+    #expect(committed > started)
+    #expect(try rig.engine.read(Rig.scope) { try $0.drawn("card").map(\.id.description) } == ["card0001"])
+    await rig.engine.settle()
+    #expect(rig.engine.lastChange == committed)
+  }
+
   @Test func everySubscriberGetsTheEventsInCommitOrder() async throws {
     let rig = try Rig()
     var first = rig.engine.events().makeAsyncIterator()

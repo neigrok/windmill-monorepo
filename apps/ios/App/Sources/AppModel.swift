@@ -60,6 +60,7 @@ final class AppModel {
   var adoptionAnswers: [String: LineageAnswer] = [:]
   @ObservationIgnored var observationTask: Task<Void, Never>?
   @ObservationIgnored var timerTask: Task<Void, Never>?
+  @ObservationIgnored var polledThrough: UInt64?
   @ObservationIgnored var recoveryDue: ContinuousClock.Instant?
   @ObservationIgnored var recoveryDelayMs = Constants.backoffBaseMs
 
@@ -156,10 +157,24 @@ final class AppModel {
   }
 
   func refresh() {
-    journal.refresh(); gym.refresh()
+    poll(); gym.refresh()
+  }
+
+  // The journal and the account have no observer: the clock reads them again; the gym observes its own records.
+  func poll() {
+    polledThrough = runtime?.engine.lastChange
+    journal.refresh()
     do {
       if let runtime { account = try runtime.account(); keptWork = try runtime.hasKeptWork() }
-    } catch { reportBoundary("auth_restore", error: error); self.error = "Couldn't read the account. Your work stays on this phone. Try again." }
+    } catch {
+      polledThrough = nil
+      reportBoundary("auth_restore", error: error); self.error = "Couldn't read the account. Your work stays on this phone. Try again."
+    }
+  }
+
+  // Since the last poll the store moved, the journal's day turned, or a read failed.
+  var pollDue: Bool {
+    runtime?.engine.lastChange != polledThrough || journal.editorDay != journal.today || journal.readFailed
   }
 
   func scenePhaseChanged(_ phase: ScenePhase) {
@@ -196,7 +211,7 @@ final class AppModel {
         while !Task.isCancelled {
           try? await Task.sleep(for: .milliseconds(350))
           guard let self, !Task.isCancelled else { return }
-          self.refresh()
+          if self.pollDue { self.poll() }
           self.expireAppleTicket()
           if !self.restoringSignIn, self.pendingSignIn != nil, !self.working, !self.accountTransition, self.authRetryAt <= self.authRetryNow() { await self.retryAuthenticatedSignIn() }
           if !self.syncStarted && !self.journal.dirty { await self.resumeBackup() }
