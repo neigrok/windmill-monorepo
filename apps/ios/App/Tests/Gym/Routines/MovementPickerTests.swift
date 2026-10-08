@@ -212,10 +212,10 @@ import SyncModelServer
     let (_, gym) = fixture()
     var draft = MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: "Custom")
     #expect(gym.createMovement(&draft, includesTargets: true) == nil && draft.refusal == "Choose at least one set.")
-    gym.accountTransition = true
+    gym.accountChanging = true
     #expect(gym.createMovement(&draft, includesTargets: false) == nil)
     #expect(draft.name == "Custom" && draft.refusal == "Wait for the account change to finish." && gym.catalogue.find(draft.id) == nil)
-    gym.accountTransition = false
+    gym.accountChanging = false
     #expect(gym.createMovement(&draft, includesTargets: false) == RoutineEntry(exerciseId: draft.id))
   }
 }

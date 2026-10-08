@@ -71,7 +71,7 @@ final class AppRuntime {
   let telemetry: any Telemetry
   let store: Store
   let engine: SyncEngine
-  let workoutActivityBinding = WorkoutActivityBinding()
+  let gymBinding: GymBinding
   let runner: ActionRunner
   let auth: NativeAuth
   let lifecycle: AppLifecycle
@@ -87,6 +87,7 @@ final class AppRuntime {
        service: String? = nil, syncTransport: (any SyncTransport)? = nil,
        connectivity: any Connectivity = PathConnectivity(), authSession: URLSession? = nil) throws {
     self.settings = settings; self.telemetry = telemetry
+    gymBinding = GymBinding()
     self.connectivity = connectivity
     let telemetry: any Telemetry = telemetry is NoopTelemetry ? telemetry : BoundedTelemetry(telemetry)
     let storageDirectory = directory ?? URL.applicationSupportDirectory.appending(path: settings.board.map { "JournalBoards/\($0)" } ?? settings.scenario.map { "JournalVerification/\($0)" } ?? "WindmillSync")
@@ -134,7 +135,7 @@ final class AppRuntime {
     transport = HTTPTransport(baseURL: settings.baseURL ?? URL(string: "http://127.0.0.1:1")!, schema: SyncSchema.version, telemetry: telemetry)
     auth = NativeAuth(baseURL: settings.baseURL, telemetry: telemetry, session: authSession)
     #endif
-    engine = try SyncEngine(config: EngineConfig(appVersion: "0.2.0", surface: .ios), bindings: [workoutActivityBinding], store: store, transport: syncTransport ?? transport,
+    engine = try SyncEngine(config: EngineConfig(appVersion: "0.2.0", surface: .ios), bindings: [gymBinding], store: store, transport: syncTransport ?? transport,
                             tokens: tokens,
                             forkGuard: storage.forkGuard, clock: EngineClock(wall: boardClock ? BoardClock() : SystemClock(), sleeper: ContinuousClock()), random: SystemRandom(), connectivity: connectivity, telemetry: telemetry)
     runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: DeviceZone())
@@ -142,8 +143,9 @@ final class AppRuntime {
     updateTelemetryIdentity()
   }
 
-  init(settings: AppSettings, store: Store, engine: SyncEngine, auth: NativeAuth, runner: ActionRunner, tokens: any TokenStore, revocations: any TokenStore, telemetry: any Telemetry = NoopTelemetry()) {
+  init(settings: AppSettings, store: Store, engine: SyncEngine, auth: NativeAuth, runner: ActionRunner, tokens: any TokenStore, revocations: any TokenStore, telemetry: any Telemetry = NoopTelemetry(), gymBinding: GymBinding = GymBinding()) {
     self.telemetry = telemetry
+    self.gymBinding = gymBinding
     connectivity = nil
     self.settings = settings; self.store = store; self.engine = engine; self.auth = auth; self.runner = runner
     self.tokens = tokens; self.revocations = revocations

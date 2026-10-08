@@ -65,7 +65,9 @@ refusal/error/readFailed and undoOffers. Use `run(_:)` for GymDomain actions, `s
 `undo(_:)` for held gestures, `dismissNotice(_:)`, and `refresh()`; `start()`/`stop()` observe engine
 changes. `flush()` releases holds before account transitions; real backgrounding ends Undo windows.
 An inactive scene persists Journal drafts while Gym live sync, REST work and pending Undo windows continue.
-The app sets `accountTransition` to lock writes during account changes. `rest` is the authenticated
+Gym's `accountTransition` pauses training only while sign-out is open (`accountChanging`, set by the
+app) and while the engine changes the replica (`replicaChanging`, set by `GymBinding`). Pending
+sign-in, hello and adoption questions leave training available. `rest` is the authenticated
 client handle for Coach, shares and Connected log; engine-backed training writes use domain actions.
 Gym includes routine planning and movement creation, the live set rack and finish receipt, session history/sharing and strength/bodyweight charts, and account-only Coach, proposal review, Notes and Connected log. Gym follows system light/dark appearance; Journal keeps its night canvas.
 
@@ -117,10 +119,10 @@ Offline boundary observations:
 | Boundary | UI behavior and limit |
 |---|---|
 | Startup hello and pending-session recovery | Local reads and ordinary launch controls do not wait for hello. The engine bounds hello at `REQUEST_TIMEOUT_MS`, skips a known missing path, and ignores late cancellation results. Pending account recovery can be deferred with Done. |
-| Local journal, routines, sets, preferences and movement rename | Read and commit against the local replica. First-pull status describes incomplete history and backup confidence. Account adoption retains its explicit data-safety checks and offers Not now. |
+| Local journal, routines, sets, preferences and movement rename | Read and commit against the local replica. First-pull status describes incomplete history and backup confidence. Workout logging and restoration remain local during pending sign-in, including before Not now. Adoption recounts any new work before completion. |
 | Auth and Gym REST | No wait for connectivity; 8-second idle and 15-second total deadlines. Back, Close and Done cancel active auth work. Late responses cannot navigate or change the active account after cancellation. |
-| Workout Finish | Attempts the durable local action before network confirmation and releases controls. Unconfirmed sets on an already-synced workout remain editable and explain the connection requirement. Hide remains available during confirmation. |
-| Coach streaming | Parsing runs off the main actor; 8-second idle and 120-second total deadlines. Stop releases the composer immediately, preserving the draft, before its best-effort stop request. |
+| Workout Finish | Attempts the durable local action before network confirmation and releases controls. Unconfirmed sets on an already-synced workout remain editable and explain the connection requirement. The latest message leads the notice, so at accessibility text sizes the connection requirement shows unscrolled above the rack; the rest wraps and scrolls while Log set and Hide remain reachable. |
+| Coach streaming | Parsing runs off the main actor; 8-second idle and 120-second total deadlines. Stop releases the composer immediately. Its late reply preserves newer draft text and photos on the phone. |
 | Revocation and telemetry | Run independently of launch, room refresh and local sign-out. Offline events stay queued; repeated connection failures coalesce into one content-free state. |
 
 Echoes has no native screen or request path in this app. The network-dependent native features are

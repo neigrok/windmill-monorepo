@@ -14,6 +14,52 @@ import XCTest
   func testStalledNetworkSignedOutResumeDuringHello() { exercise(mode: "stalled", signedIn: false, resumeDuringLaunch: true) }
   func testStalledNetworkSignedInResumeDuringHello() { exercise(mode: "stalled", signedIn: true, resumeDuringLaunch: true) }
 
+  func testPendingSignInKeepsWorkoutLoggingAndRestorationLocalAcrossRelaunch() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "shell-adoption-two-rooms"]
+    app.launch()
+    XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 10))
+    app.buttons["email-sign-in"].tap()
+    let email = app.textFields["email-address"]
+    ready(email); email.tap(); email.typeText("shell@example.com")
+    app.buttons["Send code"].tap()
+    let code = app.textFields["email-code"]
+    ready(code); code.tap(); code.typeText("482913")
+    let later = app.alerts["Add to your account?"].buttons["Not now"]
+    XCTAssertTrue(later.waitForExistence(timeout: 10)); later.tap()
+    ready(app.buttons["room-menu"])
+    app.terminate()
+
+    app.launchArguments = ["-board", "shell-adoption-two-rooms", "-restore-board", "-server", "https://offline.invalid", "-offline-fixture", "no-network"]
+    app.launch()
+    ready(app.buttons["Done"]); app.buttons["Done"].tap()
+    switchRoom("Gym", in: app)
+    ready(app.buttons["Just start logging"]); app.buttons["Just start logging"].tap()
+    ready(app.buttons["workout-add"]); app.buttons["workout-add"].tap()
+    let search = app.searchFields.firstMatch
+    ready(search); search.tap(); search.typeText("Bench")
+    ready(app.buttons["gym-movement-bench-press"]); app.buttons["gym-movement-bench-press"].tap()
+    let sets = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-"))
+    ready(app.buttons["workout-log"]); app.buttons["workout-log"].tap()
+    XCTAssertEqual(sets.count, 1, "Pending sign-in must not prevent a local set from being saved.")
+    let firstSet = sets.firstMatch.identifier
+
+    for cold in [false, true] {
+      ready(app.buttons["workout-assembly"]); app.buttons["workout-assembly"].tap()
+      ready(app.buttons["workout-hide"]); app.buttons["workout-hide"].tap()
+      if cold {
+        app.terminate(); app.launch()
+        ready(app.buttons["Done"]); app.buttons["Done"].tap()
+      }
+      ready(app.buttons["Just start logging"]); app.buttons["Just start logging"].tap()
+      ready(app.buttons["workout-log"])
+      XCTAssertTrue(sets.matching(identifier: firstSet).firstMatch.exists)
+      XCTAssertEqual(sets.count, cold ? 2 : 1)
+      app.buttons["workout-log"].tap()
+      XCTAssertEqual(sets.count, cold ? 3 : 2)
+    }
+  }
+
   func testStalledEmailRequestCanBeDismissedAndJournalRemainsWritable() {
     let app = launch(mode: "stalled", signedIn: false)
     ready(app.buttons["you"])

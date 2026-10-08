@@ -36,7 +36,7 @@ import SyncTesting
     model.journal.type("Written while sign-in is deferred"); model.journal.done()
     #expect(model.journal.document.body == "Written while sign-in is deferred" && !model.journal.dirty)
     await model.retryAuthenticatedSignIn()
-    #expect(model.sheet == .adoption && model.editorReadOnly && model.gym.accountTransition && model.signInSession === session)
+    #expect(model.sheet == .adoption && model.editorReadOnly && !model.gym.accountTransition && model.signInSession === session)
     #expect(model.account == nil)
   }
 

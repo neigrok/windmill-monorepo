@@ -29,6 +29,7 @@ nonisolated struct CoachSaved: Codable {
   var photo: CoachAttachment?
   var photoData: Data?
   var request: Request?
+  var editedRequestId: String?
   var thread: CoachThread?
   var generation: CoachGeneration?
   var exchanges: [CoachGeneration] = []
@@ -124,18 +125,19 @@ struct CoachDraftStore {
   func edit(_ text: String) {
     guard text != saved.text else { return }
     invalidateRead()
-    var next = saved; next.text = text
-    if !keep(next, failure: "Your draft couldn’t be saved. Try again.") { saved.text = text }
+    var next = saved; next.text = text; next.editedRequestId = next.request?.requestId
+    if !keep(next, failure: "Your draft couldn’t be saved. Try again.") { saved.text = text; saved.editedRequestId = next.editedRequestId }
   }
   func addPhoto(_ data: Data) throws {
     let (attachment, bytes) = try CoachPhotoPreparation.prepare(data)
     invalidateRead()
-    var next = saved; next.photo = attachment; next.photoData = bytes
+    var next = saved; next.photo = attachment; next.photoData = bytes; next.editedRequestId = next.request?.requestId
     _ = keep(next, failure: "Your draft couldn’t be saved. Try again.")
   }
   func removePhoto() {
     invalidateRead()
-    var next = saved; next.photo = nil; next.photoData = nil; _ = keep(next, failure: "Your draft couldn’t be saved. Try again.")
+    var next = saved; next.photo = nil; next.photoData = nil; next.editedRequestId = next.request?.requestId
+    _ = keep(next, failure: "Your draft couldn’t be saved. Try again.")
   }
   @discardableResult func newChat(seed: String = "") -> Bool {
     guard !asking else { return false }
@@ -158,6 +160,10 @@ struct CoachDraftStore {
     let attachmentIds = saved.photo.map { [$0.id] } ?? []
     if retryable, let request = saved.request, request.thread == saved.threadId,
        request.question == question, request.attachmentIds == attachmentIds {
+      if saved.editedRequestId != nil {
+        var next = saved; next.editedRequestId = nil
+        guard keep(next, failure: "Your message couldn’t be saved. Try again.") else { return }
+      }
       launch(request, owner: owner); return
     }
     var next = saved
@@ -166,7 +172,7 @@ struct CoachDraftStore {
        !next.exchanges.contains(where: { $0.id == generation.id }) { next.exchanges.append(generation) }
     let request = CoachSaved.Request(thread: next.threadId, question: question,
                                     requestId: UUID().uuidString, attachmentIds: attachmentIds)
-    next.request = request; next.generation = nil; next.thread?.generation = nil
+    next.request = request; next.editedRequestId = nil; next.generation = nil; next.thread?.generation = nil
     guard keep(next, failure: "Your message couldn’t be saved. Try again.") else { return }
     launch(request, owner: owner)
   }
@@ -191,7 +197,7 @@ struct CoachDraftStore {
       defer { if self.owner == owner, self.saved.threadId == request.thread, self.workGeneration == generation { self.asking = false; self.uploading = false; self.work = nil } }
       do {
         if !request.attachmentIds.isEmpty, activeGeneration == nil {
-          guard let photo = saved.photo, let bytes = saved.photoData else {
+          guard let photo = saved.photo, request.attachmentIds == [photo.id], let bytes = saved.photoData else {
             throw AppFailure(message: "That photo is unavailable. Remove it and choose it again.")
           }
           uploading = true
@@ -256,7 +262,10 @@ struct CoachDraftStore {
     guard snapshot.thread == request.thread, snapshot.generation.requestId == request.requestId else { throw URLError(.badServerResponse) }
     if let previous = activeGeneration, previous.id == snapshot.generation.id, snapshot.generation.revision <= previous.revision { return }
     var next = saved; next.generation = snapshot.generation
-    if snapshot.generation.terminal { next.text = ""; next.photo = nil; next.photoData = nil }
+    // Composer edits keep their request marker through Stop and recovery, even after an edit is reverted.
+    let ownsDraft = next.editedRequestId != request.requestId && next.text.trimmingCharacters(in: .whitespacesAndNewlines) == request.question
+      && (next.photo.map { [$0.id] } ?? []) == request.attachmentIds
+    if snapshot.generation.terminal && ownsDraft { next.text = ""; next.photo = nil; next.photoData = nil; next.editedRequestId = nil }
     guard keep(next, failure: "Your message couldn’t be saved. Try again.") else { throw AppFailure(message: "Your message couldn’t be saved. Try again.") }
     error = snapshot.generation.status == "failed" ? CoachCopy.interrupted : snapshot.generation.status == "stopped" ? CoachCopy.stopped : nil
   }

@@ -40,7 +40,7 @@ final class AppModel {
   var appleReceiptEmail = ""
   var appleLinkedReceipt = false
   @ObservationIgnored var appleAuthorization: ((SessionToken?) async throws -> AppleAuthResponse)?
-  var pendingSignIn: PendingSignIn? { didSet { gym.accountTransition = editorReadOnly } }
+  var pendingSignIn: PendingSignIn?
   var authRetryAt = Date.distantPast
   var signInMethods: [SignInMethod] = []
   var methodsGeneration = 0
@@ -50,15 +50,16 @@ final class AppModel {
   var authSuccess = 0
   var authSelection = 0
   var authBusyIndicator = false
-  var working = false { didSet { gym.accountTransition = editorReadOnly } }
-  var accountTransition = false { didSet { gym.accountTransition = editorReadOnly } }
+  var working = false
+  var accountTransition = false
+  var signingOut = false { didSet { gym.accountChanging = signingOut || signOutSession != nil } }
   var syncStarted = false
   var restoringSignIn = false
-  var signInDeferred = false { didSet { gym.accountTransition = editorReadOnly } }
+  var signInDeferred = false
   var resumingBackup = false
   var authGeneration = 0
-  var signInSession: SignInSession? { didSet { gym.accountTransition = editorReadOnly } }
-  var signOutSession: SignOutSession? { didSet { gym.accountTransition = editorReadOnly } }
+  var signInSession: SignInSession?
+  var signOutSession: SignOutSession? { didSet { gym.accountChanging = signingOut || signOutSession != nil } }
   var adoptionAnswers: [String: LineageAnswer] = [:]
   @ObservationIgnored var observationTask: Task<Void, Never>?
   @ObservationIgnored var timerTask: Task<Void, Never>?
@@ -302,7 +303,7 @@ final class AppModel {
     authGeneration += 1
     authTask?.cancel(); authTask = nil
     if pendingSignIn != nil || signInSession?.isComplete == false { signInDeferred = true; backupTask?.cancel() }
-    working = false; accountTransition = false; authBusyIndicator = false
+    working = false; accountTransition = false; signingOut = false; authBusyIndicator = false
   }
 
   func performAuthentication(_ operation: @escaping @MainActor () async -> Void) {
@@ -521,24 +522,6 @@ final class AppModel {
     signInMethods = []
     methodsGeneration += 1
     do {
-      let anonymous = try runner.read(Gym.scope) { $0.isAnonymous }
-      if anonymous {
-        let workouts = try runner.read(Gym.scope) { try $0.repository(Session.self).all(in: .drawn) }
-        for workout in workouts {
-          if let refusal = try runner.run(AdoptWorkout(workout.id, mode: .prepare)).refusal {
-            throw AppFailure(message: "Your signed-out workout is kept on this phone. " + gym.message(refusal))
-          }
-        }
-        let saved = try runner.read(Gym.scope) { try SignedOutWorkout.read($0) }
-        for workout in saved where workout.session.isOpen {
-          for set in workout.sets {
-            let present = try runner.read(Gym.scope) { try $0.repository(TrainingSet.self).find(set.id, in: .drawn) != nil }
-            if !present, let refusal = try runner.run(AppendSet(set)).refusal {
-              throw AppFailure(message: "Your signed-out sets are kept on this phone. " + gym.message(refusal))
-            }
-          }
-        }
-      }
       setSignInSession(try await runtime.engine.signIn(account: identity.account, token: identity.token))
     }
     catch { reportBoundary("auth_sign_in", error: error); throw error }
@@ -555,8 +538,8 @@ final class AppModel {
     guard !accountTransition, let runtime else { return }
     let generation = authGeneration
     journal.liftInk()
-    accountTransition = true; journal.editing = false
-    defer { if authGeneration == generation { accountTransition = false } }
+    accountTransition = true; signingOut = true; journal.editing = false
+    defer { if authGeneration == generation { accountTransition = false; signingOut = false } }
     if !flushRooms() { return }
     choose("sign_out", screen: "you")
     do {
@@ -569,8 +552,8 @@ final class AppModel {
 
   func finishSignOut(_ choice: SignOutChoice) async {
     guard !accountTransition, var session = signOutSession, let runtime else { return }
-    accountTransition = true; journal.editing = false
-    defer { accountTransition = false }
+    accountTransition = true; signingOut = true; journal.editing = false
+    defer { accountTransition = false; signingOut = false }
     var revocation: String?
     do {
       if journal.dirty {

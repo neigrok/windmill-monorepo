@@ -181,7 +181,7 @@ import SyncTesting
     #expect(gym.workoutBanner(gym.workoutStrandedSets.count) == "1 set is saved on this device only. The log didn’t answer. They’ll sync when it’s available.")
     await workout.finish()
     #expect(workout.session?.isOpen == true && workout.receipt == nil && workout.isPresented)
-    #expect(workout.sets == retained && workout.message == "Some sets are saved on this phone. Finishing this synced workout needs a connection. You can keep logging or hide it.")
+    #expect(workout.sets == retained && workout.message == "Finishing needs a connection. Some sets in this synced workout are saved only on this phone. You can keep logging or hide it.")
     #expect(workout.canLog && gym.hideWorkout() && !workout.isPresented)
     #expect(gym.restoreWorkout())
     fault.failure.withLock { $0 = nil }
@@ -241,7 +241,7 @@ import SyncTesting
     #expect(await Self.until { workout.finishQueued && !workout.finishing && fault.pullRequests.withLock { $0 > requests } })
     #expect(gym.hideWorkout() && !workout.isPresented)
     let interrupted = ContinuousClock.now
-    if cancel { finishing.cancel() } else { gym.accountTransition = true }
+    if cancel { finishing.cancel() } else { gym.accountChanging = true }
     await finishing.value
     #expect(interrupted.duration(to: .now) < .seconds(1))
     #expect(!workout.finishing && workout.session?.isOpen == true && workout.receipt == nil && workout.sets == retained)
@@ -721,8 +721,8 @@ import SyncTesting
   @Test func pagingInvalidRackAndAccountTransitionBlockLogging() throws {
     let (_, gym) = try fixture(), workout = try begin(gym)
     workout.paging = true; workout.logSet(); #expect(workout.sets.isEmpty && !workout.canLog)
-    workout.paging = false; gym.accountTransition = true; workout.logSet(); #expect(workout.sets.isEmpty && !workout.canLog)
-    gym.accountTransition = false; gym.readFailed = true; workout.logSet(); #expect(workout.sets.isEmpty && !workout.canLog)
+    workout.paging = false; gym.accountChanging = true; workout.logSet(); #expect(workout.sets.isEmpty && !workout.canLog)
+    gym.accountChanging = false; gym.readFailed = true; workout.logSet(); #expect(workout.sets.isEmpty && !workout.canLog)
     gym.readFailed = false
     for weight in [Double.nan, .infinity, 500.01, -500.01] { workout.weightKg = weight; workout.logSet(); #expect(workout.sets.isEmpty) }
     workout.weightKg = 20
@@ -1487,7 +1487,7 @@ import SyncTesting
     #expect(workout.session == session && workout.sets == retained && workout.receipt == nil && workout.canLog)
     #expect(recorder.entries.withLock { $0.filter { $0.name == "client_error" }.isEmpty })
     #expect(await workout.drainForFinish(timeout: .milliseconds(30)) {
-      await MainActor.run { gym.accountTransition = true }
+      await MainActor.run { gym.accountChanging = true }
       try? await Task.sleep(for: .seconds(10))
     } == false)
     #expect(recorder.entries.withLock { $0.filter { $0.name == "client_error" }.isEmpty })

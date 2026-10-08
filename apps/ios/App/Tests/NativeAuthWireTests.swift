@@ -74,6 +74,10 @@ nonisolated final class AuthWireProtocol: URLProtocol, @unchecked Sendable {
     #expect(!model.working && !model.editorReadOnly && model.codeSentAt == nil)
     #expect(model.sheet == (cancel ? nil : .address))
     #expect(model.error == (cancel ? nil : AuthRefusal.offline.message))
+    for _ in 0..<100 {
+      if AuthWireProtocol.state.withLock({ $0.stopped > 0 }) { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
     #expect(AuthWireProtocol.state.withLock { $0.stopped } == 1)
   }
 

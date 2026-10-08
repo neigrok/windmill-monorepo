@@ -3,6 +3,8 @@ import Observation
 import SwiftUI
 import Testing
 import UIKit
+import DomainKit
+import GymDomain
 import SyncAPI
 import SyncCore
 import SyncEngine
@@ -38,6 +40,39 @@ import Synchronization
     }
     Issue.record("Pending sign-in did not resume")
     throw CancellationError()
+  }
+
+  @Test func pendingHelloKeepsForegroundWorkoutControlsLocal() async throws {
+    let directory = URL.temporaryDirectory.appending(path: UUID().uuidString), service = "works.windmill.startup-tests.\(UUID())"
+    let transport = RecoveryTransport()
+    let (runtime, identity) = try await pendingRuntime(transport: transport, directory: directory, service: service)
+    let preferences = UserDefaults(suiteName: service)!
+    let model = try AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime)
+    defer {
+      model.timerTask?.cancel(); model.observationTask?.cancel(); model.gym.stop()
+      try? runtime.tokens.delete(for: identity.account)
+      preferences.removePersistentDomain(forName: service)
+    }
+    let id = try #require(model.gym.startWorkout()), workout = model.gym.workout
+    workout.add(ID("bench-press"))
+    await transport.hold()
+    let start = Task { await model.start() }
+    defer { start.cancel() }
+    try await waiting(transport)
+    #expect(model.pendingSignIn != nil && !model.signInDeferred)
+    #expect(!model.gym.accountTransition && workout.canLog)
+    #expect(workout.activityOffer() == nil)
+    workout.weightKg = 45; workout.reps = 7
+    #expect(workout.logSet())
+    let retained = workout.sets
+    #expect(retained.count == 1 && retained.first?.weightKg == 45 && retained.first?.reps == 7)
+    #expect(model.gym.hideWorkout() && model.gym.workoutHidden)
+    #expect(model.gym.restoreWorkout() && !model.gym.workoutHidden && workout.isPresented)
+    #expect(workout.sessionId == id && workout.sets == retained)
+    start.cancel(); await transport.release(); await start.value
+    let reopened = try AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime)
+    #expect(reopened.gym.workout.sessionId == id && reopened.gym.workout.sets == retained)
+    #expect(!reopened.gym.accountTransition && reopened.gym.workout.canLog)
   }
 
   @Test(arguments: [false, true]) func authControlsDuringRestoredHelloKeepRecoveryUsable(close: Bool) async throws {

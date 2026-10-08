@@ -149,7 +149,7 @@ import SyncModelServer
     do { _ = try await gym.mintSessionShare(id); Issue.record("Expected paused-account refusal") }
     catch { #expect((error as? AppFailure)?.message == "sharing needs your account — sign in first") }
     #expect(gym.rest.tasks.isEmpty)
-    gym.accountTransition = true
+    gym.accountChanging = true
     do { try await gym.revokeSessionShare(id); Issue.record("Expected transition refusal") }
     catch { #expect((error as? AppFailure)?.message == "Wait for the account change to finish.") }
     #expect(gym.rest.tasks.isEmpty)

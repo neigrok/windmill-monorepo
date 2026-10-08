@@ -28,9 +28,8 @@ final class GymModel {
   var isAnonymous = true
   var account: String?
   var authPaused = false
-  var accountTransition = false {
-    didSet { existingWorkoutActivity?.schedule(); rest.blocked = accountTransition; if accountTransition { rest.cancel() } }
-  }
+  var accountChanging = false { didSet { accountTransitionChanged() } }
+  var replicaChanging = false { didSet { accountTransitionChanged() } }
   var refusal: GymRefusal?
   var error: String?
   var readFailed = false
@@ -47,13 +46,19 @@ final class GymModel {
   init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry()) {
     self.runner = runner; self.runtime = runtime; self.telemetry = telemetry
     rest = GymRESTClient(runtime: runtime, telemetry: telemetry)
-    runtime?.workoutActivityBinding.gym = self
+    runtime?.gymBinding.gym = self
     refresh()
   }
 
   var sessions: [Session] { log?.drawnSessions ?? [] }
   var sets: [TrainingSet] { log?.sets ?? [] }
   var openSession: Session? { log?.open }
+  var accountTransition: Bool { accountChanging || replicaChanging }
+  func accountTransitionChanged() {
+    existingWorkoutActivity?.schedule()
+    rest.blocked = accountTransition
+    if accountTransition { rest.cancel() }
+  }
   var hasData: Bool { personalCounts.values.contains { $0 > 0 } }
   var phoneSummary: String {
     let kinds = [(Session.type, "workout", "workouts"), (Routine.type, "routine", "routines"),
