@@ -84,7 +84,7 @@ struct JournalScreen: View {
               }
                 .padding(.top, typeSize.isAccessibilitySize && model.showPlaceholder ? 430 : 50)
                 .frame(minHeight: max(0, geo.size.height + (focused ? 0 : geo.safeAreaInsets.bottom) - (model.compactAccountSheet ? 406 : 0)), alignment: .bottom)
-            }.defaultScrollAnchor(model.compactAccountSheet || (!focused && typeSize.isAccessibilitySize && model.showPlaceholder) ? .top : .bottom).scrollDismissesKeyboard(.interactively)
+            }.accessibilityIdentifier("journal-canvas").defaultScrollAnchor(model.compactAccountSheet || (!focused && typeSize.isAccessibilitySize && model.showPlaceholder) ? .top : .bottom).scrollDismissesKeyboard(.interactively)
               .ignoresSafeArea(.container, edges: focused ? [] : .bottom)
               .padding(.bottom, focused ? RoomSpace.minimumTarget + RoomSpace.inset : 0)
           }

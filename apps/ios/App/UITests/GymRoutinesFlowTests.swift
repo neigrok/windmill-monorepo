@@ -180,20 +180,22 @@ import UIKit
         ramp.exists && ramp.isEnabled && ramp.isHittable && ramp.frame.width > 0 && app.frame.contains(ramp.frame)
       }, object: app)
       XCTAssertEqual(XCTWaiter.wait(for: [visibleRamp], timeout: 10), .completed)
-      ramp.tap()
-      XCTAssertTrue(ramp.waitForNonExistence(timeout: 5))
+      // A gym menu keeps the app from idling, so XCTest can drop a tap on its item; tap again while it stays open.
+      func choose(_ item: XCUIElement) {
+        for _ in 0..<3 where item.exists { item.tap(); _ = item.waitForNonExistence(timeout: 5) }
+        XCTAssertFalse(item.exists)
+      }
+      choose(ramp)
       XCTAssertEqual(app.textFields["gym-target-row-2-weight"].value as? String, "80")
       app.buttons["gym-target-fill"].tap()
       let match = app.buttons["Match set 1"]
-      XCTAssertTrue(match.waitForExistence(timeout: 5)); match.tap()
-      XCTAssertTrue(match.waitForNonExistence(timeout: 5))
+      XCTAssertTrue(match.waitForExistence(timeout: 5)); choose(match)
       for row in 1...3 { XCTAssertEqual(app.textFields["gym-target-row-\(row)-weight"].value as? String, "60") }
       replace(thirdLoad, with: "100")
       app.buttons["gym-target-keyboard-done"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1)
       XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
       app.buttons["gym-target-fill"].tap()
-      XCTAssertTrue(ramp.waitForExistence(timeout: 5)); ramp.tap()
-      XCTAssertTrue(ramp.waitForNonExistence(timeout: 5))
+      XCTAssertTrue(ramp.waitForExistence(timeout: 5)); choose(ramp)
       XCTAssertEqual(app.textFields["gym-target-row-2-weight"].value as? String, "80")
       assertPrimaryLabelContrast(app.buttons["gym-target-set"], appearance: appearance)
       capture(app, "targets-varied-" + appearance)

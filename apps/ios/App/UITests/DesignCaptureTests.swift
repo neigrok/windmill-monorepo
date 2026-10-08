@@ -137,7 +137,7 @@ import XCTest
     XCTAssertTrue(app.buttons["sign-out"].waitForExistence(timeout: 5))
     capture("gym-you-signed-in-\(appearance)", app)
     app.buttons["sign-out"].tap()
-    XCTAssertTrue(app.buttons["sign-out-keep"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.alerts["Sign out?"].waitForExistence(timeout: 5))
     capture("gym-sign-out-sheet-\(appearance)", app)
     app.terminate()
   }
@@ -209,7 +209,7 @@ import XCTest
     let editor = app.textViews["journal-editor"]
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
     capture("journal-history-today-\(appearance)", app, settle: 1.5)
-    let scroll = app.scrollViews.firstMatch
+    let scroll = app.scrollViews["journal-canvas"]
     for _ in 0..<5 { scroll.swipeDown(velocity: .fast) }
     capture("journal-history-past-pages-\(appearance)", app)
     app.buttons["write-today"].tap()
@@ -340,7 +340,7 @@ import XCTest
     XCTAssertTrue(app.buttons["sign-out"].waitForExistence(timeout: 5))
     capture("journal-you-signed-in-\(appearance)", app)
     app.buttons["sign-out"].tap()
-    XCTAssertTrue(app.buttons["sign-out-keep"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.alerts["Sign out?"].waitForExistence(timeout: 5))
     capture("journal-sign-out-sheet-\(appearance)", app)
     app.terminate()
   }

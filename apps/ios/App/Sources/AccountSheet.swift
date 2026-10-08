@@ -91,7 +91,6 @@ struct AccountSheet: View {
       .task(id: model.sheet) { if model.sheet == .you { await model.loadSignInMethods() } }
       .alert("Sign out?", isPresented: $confirmSignOut) {
         Button("Sign out", role: .destructive) { finishSignOut(.keep) }
-          .accessibilityIdentifier("sign-out-keep")
         Button("Cancel", role: .cancel, action: cancelSignOut)
       } message: {
         Text("Your pages and log stay in your account and leave this phone.")

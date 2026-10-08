@@ -176,9 +176,6 @@ struct RoomMenu: View {
         Image(systemName: "chevron.down").font(.caption.weight(.semibold))
       }.inkAnchor("title", enabled: inkEnabled, frames: inkFrames)
     }.accessibilityLabel(app.selectedRoom.title).accessibilityIdentifier("room-menu")
-      .simultaneousGesture(LongPressGesture(minimumDuration: 0).onChanged { pressed in
-        if pressed, app.selectedRoom == .journal { app.journal.liftInk() }
-      })
       .disabled(app.editorReadOnly)
   }
 }

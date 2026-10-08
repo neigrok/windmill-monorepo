@@ -150,8 +150,9 @@ final class AppModel {
   }
 
   func switchRoom(_ room: Room) {
-    guard !editorReadOnly, room != selectedRoom else { return }
+    guard !editorReadOnly else { return }
     if selectedRoom == .journal { journal.liftInk() }
+    guard room != selectedRoom else { return }
     journal.done()
     selectedRoom = room; preferences.set(room.rawValue, forKey: "lastRoom")
     telemetry.event("room_switched", properties: ["room": room.rawValue])
