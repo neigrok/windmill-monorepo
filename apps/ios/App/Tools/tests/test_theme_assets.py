@@ -33,6 +33,13 @@ class ThemeAssetsTests(unittest.TestCase):
             checked += 1
         self.assertEqual(checked, 42)
 
+    def test_alpha_is_a_normalized_decimal_instead_of_a_byte(self):
+        for room in ("gym", "journal", "shell"):
+            for path in (APP / "Resources/Assets.xcassets" / room).glob("*.colorset/Contents.json"):
+                for entry in json.loads(path.read_text())["colors"]:
+                    with self.subTest(asset=str(path)):
+                        self.assertRegex(entry["color"]["components"]["alpha"], r"^(0\.\d+|1\.0+)$")
+
     def test_launch_uses_the_shell_canvas_and_widget_compiles_the_same_theme(self):
         project = (APP / "project.yml").read_text()
         self.assertIn("UIColorName: shell/canvas", project)
