@@ -222,6 +222,33 @@ import SyncTesting
     #expect(try runtime.runner.read(Gym.scope) { try $0.commands().isEmpty })
   }
 
+  @Test func finishWaitsOnlineForTheConfirmationOfASetTheLogJustAccepted() async throws {
+    let fault = WorkoutFaultTransport(), runtime = try Self.faultRuntime(fault, drivesLoops: true)
+    let identity = fault.model.identity(email: "finish-after-fix@example.com")
+    #expect(try await runtime.engine.signIn(account: identity.account, token: identity.token).isComplete)
+    let gym = GymModel(runner: runtime.runner, runtime: runtime)
+    _ = try #require(gym.startWorkout())
+    let workout = gym.workout, id = try #require(workout.sessionId)
+    workout.add(ID("back-squat")); workout.logSet()
+    await runtime.engine.start()
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    #expect(await Self.until { gym.refresh(); workout.reconcile(); return gym.workoutDeviceSets(workout.sets).isEmpty })
+    let original = try #require(workout.sets.first)
+    var fixed = original; fixed.weightKg += 2.5
+    fault.pullFailure.withLock { $0 = 503 }
+    #expect(gym.run(CorrectSet(fixed, original: original))?.refusal == nil)
+    await runtime.engine.flushOnLeave()
+    let accepted = try runtime.runner.read(Gym.scope) { read in
+      let loaded = try FinishWorkout(id: id).load(read)
+      return try loaded.serverHeld && loaded.stranded && read.commands().isEmpty
+    }
+    #expect(accepted)
+    fault.pullFailure.withLock { $0 = nil }
+    await workout.finish()
+    let receipt = try #require(workout.receipt)
+    #expect(!receipt.session.isOpen && receipt.sets.map(\.weightKg) == [fixed.weightKg] && workout.message == nil)
+  }
+
   @Test(arguments: [true, false])
   func confirmationWaitStopsForCancellationOrAccountTransition(cancel: Bool) async throws {
     let fault = WorkoutFaultTransport(), runtime = try Self.faultRuntime(fault, drivesLoops: true)

@@ -557,6 +557,15 @@ struct FinishWorkout: Action {
     let account = gym.account
     finishing = true; message = nil
     defer { finishing = false }
+    // A set the log accepted a moment ago is confirmed by the next pull; online, Finish waits for that, never offline.
+    let unconfirmed = try? gym.runner.read(Gym.scope) { read in
+      let loaded = try FinishWorkout(id: session.id).load(read)
+      return loaded.serverHeld && loaded.stranded
+    }
+    if unconfirmed == true, let runtime = gym.runtime, !gym.isAnonymous, runtime.engine.status.online, !syncFailed {
+      _ = await drainForFinish(operation: { await self.flushAndConfirm(session.id, finished: false) })
+      guard !Task.isCancelled, gym.account == account, sessionId == session.id, !gym.accountTransition else { return }
+    }
     let pending: Bool
     do {
       pending = try gym.runner.read(Gym.scope) { read in
@@ -574,7 +583,7 @@ struct FinishWorkout: Action {
     finishing = false
     if receipt == nil { message = "Finish is saved on this phone. It will be confirmed when a connection is available." }
     if gym.runtime != nil, !gym.isAnonymous {
-      guard await drainForFinish(operation: { await self.flushAndConfirm(session.id) }) else { return }
+      guard await drainForFinish(operation: { await self.flushAndConfirm(session.id, finished: true) }) else { return }
       gym.refresh()
     }
     guard !Task.isCancelled, gym.account == account, sessionId == session.id, !gym.accountTransition else { return }
@@ -583,8 +592,8 @@ struct FinishWorkout: Action {
     }
     completeFinish(finished)
   }
-  // A successful push may precede its live hint. Confirmation runs after local controls are released.
-  func flushAndConfirm(_ id: ID<Session>) async {
+  // A successful push may precede its live hint: pull until the sets (before Finish) or the finish (after it) are confirmed.
+  func flushAndConfirm(_ id: ID<Session>, finished: Bool) async {
     guard let runtime = gym.runtime else { return }
     let account = gym.account
     await runtime.engine.flushOnLeave()
@@ -597,6 +606,7 @@ struct FinishWorkout: Action {
       do {
         let waiting = try gym.runner.read(Gym.scope) { read in
           let loaded = try FinishWorkout(id: id).load(read)
+          if !finished { return loaded.serverHeld && loaded.stranded }
           guard loaded.training.drawn.first(where: { $0.id == id })?.isOpen == true else { return false }
           return try read.commands().contains { $0.command.name == Gym.Commands.finish && $0.command.args["sessionId"] == id.json }
         }
