@@ -102,6 +102,30 @@ test('history applies half-open dates and identity filters before aggregate face
   assert.deepEqual(history.progress.sessions.map((entry) => entry.sessionId), ['session_a']);
 });
 
+test('stored movement presence retains held deletions and applies date and routine filters', () => {
+  const rows = [sessionRow('session_a', at, { historyRoutineId: 'routine_a' }), setRow('working_1', 'session_a')];
+  const history = gymReadView({ drawn: [], stored: rows }, { now: at + 3600000 });
+  assert.deepEqual([
+    {},
+    { exercise: 'bench-press' },
+    { exercise: 'bench-press', from: at, until: at + 1, routine: 'routine_a' },
+    { exercise: 'bench-press', from: at + 1 },
+    { exercise: 'bench-press', until: at },
+    { exercise: 'bench-press', routine: 'routine_b' },
+    { exercise: 'chin-up' },
+  ].map((query) => history.hasStoredSessions(query)), [true, true, true, false, false, false, false]);
+  assert.equal(gymReadView({ drawn: rows, stored: [] }).hasStoredSessions({ exercise: 'bench-press' }), false);
+});
+
+test('stored movement presence excludes open sessions until their latest set reaches the idle deadline', () => {
+  const now = at + 5 * 3600000;
+  const rows = [row('session', 'session_a', { startedAt: at }),
+    setRow('working_1', 'session_a', { completedAt: at + 1000 }),
+    setRow('working_2', 'session_a', { exerciseId: 'chin-up', completedAt: now - 1000 })];
+  assert.equal(readView(rows, { now }).hasStoredSessions({ exercise: 'bench-press' }), false);
+  assert.equal(readView(rows, { now: now - 1000 + 4 * 3600000 }).hasStoredSessions({ exercise: 'bench-press' }), true);
+});
+
 test('preferences defaults, weigh-in range latest and fractional note order survive cache snapshots', () => {
   assert.deepEqual(readView([]).preferences(), { units: 'kg', restSound: true, confirmHaptic: true, confirmSound: false });
   const rows = [row('prefs', 'prefs', { units: 'lb', restSeconds: null, restSound: false }), row('weighin', '2026-09-20', { kg: 70.25, recordedAt: at }), row('weighin', '2026-09-21', { kg: 70.5, recordedAt: at + 1 }), row('note', 'note_bbb', { title: 'B', body: 'second', ord: 'a1' }), row('note', 'note_aaa', { title: 'A', body: 'first', ord: 'a0' })];
@@ -137,6 +161,7 @@ test('terminal deaths and orphan sets cannot reappear in any projection', () => 
   assert.deepEqual(api.bodyweight(), { entries: [], latest: null });
   assert.deepEqual(api.lastSets(), []);
   assert.deepEqual(api.history().summary, { sessions: 0, sets: 0, reps: 0, tonnageKg: 0 });
+  assert.equal(api.hasStoredSessions({ exercise: 'bench-press' }), false);
 });
 
 test('proposal domain reads retain typed targets and confirmed chronology while excluding hidden training', () => {

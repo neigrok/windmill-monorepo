@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CONSTANTS } from '../../../../packages/api-contract/sync/reference/core/constants.js';
 import { ZERO_DIGEST } from '../../../../packages/api-contract/sync/reference/core/digest.js';
+import { Registry } from '../../../../packages/api-contract/sync/reference/core/registry.js';
 import { Cursor } from '../../../../packages/api-contract/sync/reference/core/wire.js';
 import { epochChange } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
@@ -13,13 +14,14 @@ import { Decision } from '../../../src/platform/domain-kit/actions.js';
 import { Draft } from '../../../src/platform/domain-kit/drafts.js';
 import { Id } from '../../../src/platform/domain-kit/entities.js';
 import { Plan, Prediction } from '../../../src/platform/domain-kit/plans.js';
-import { Placement } from '../../../src/platform/domain-kit/reading.js';
+import { Placement, Reader, Views } from '../../../src/platform/domain-kit/reading.js';
 import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/runner.js';
 import { Remove } from '../../../src/platform/domain-kit/standardActions.js';
 import { FixedZone } from '../../../src/platform/domain-kit/time.js';
 import { Fault } from '../../../src/platform/domain-kit/values.js';
 import { environment } from '../sync/fakes.js';
 import { PROBE_SCOPE, Probe, ProbeRefusals, probeCommand, probeValue } from './probe.js';
+import { Contract, momentOf, probeRegistry, viewRecords } from './vectors.js';
 
 /** @typedef {import('./probe.js').ProbeRefusal} ProbeRefusal */
 
@@ -39,6 +41,58 @@ async function open(options = {}) {
  * @returns {import('../../../src/platform/domain-kit/actions.js').Decider<T, T, ProbeRefusal>}
  */
 const action = (scope, body, decide) => ({ scope, refusals: ProbeRefusals, load: body, decide });
+
+test('view reference indexes preserve stored holds, drawn changes, visibility and independent result arrays', () => {
+  const rows = viewRecords([
+    { t: 'run', id: 'run00001', born: '1:0:srv', life: ['alive', '1:0:srv'], f: { label: ['group', '1:0:srv'] } },
+    { t: 'lap', id: 'lap00002', born: '1:0:srv', life: ['alive', '1:0:srv'], f: { runId: ['run00001', '1:0:srv'] } },
+    { t: 'lap', id: 'lap00001', born: '1:0:srv', life: ['alive', '1:0:srv'], f: { runId: ['run00001', '1:0:srv'] } },
+    { t: 'lap', id: 'lap_dead', born: '1:0:srv', life: ['dead', '1:0:srv'], f: { runId: ['run00001', '1:0:srv'] } },
+    { t: 'unknown', id: 'unknown1', born: '1:0:srv', life: ['alive', '1:0:srv'] },
+  ]);
+  const drawn = rows.map((row) => row.id === 'lap00001' ? { ...row, life: /** @type {['dead', string]} */ (['dead', '2:0:srv']) }
+    : row.id === 'lap00002' ? { ...row, f: { runId: /** @type {[string, string]} */ (['run00002', '2:0:srv']) } } : row);
+  const views = Views.ofRecords(probeRegistry, { drawn, stored: rows });
+  const reader = new Reader(views, PROBE_SCOPE, momentOf({}));
+  const laps = reader.repository(Probe.lap);
+  const first = new Id('run00001', Probe.run);
+  const second = new Id('run00002', Probe.run);
+  const ids = (/** @type {{ id: Id<any> }[]} */ values) => values.map((value) => value.id.record);
+  assert.deepEqual(ids(laps.children(first, 'runId', 'stored')), ['lap00001', 'lap00002']);
+  assert.deepEqual(ids(laps.children(first, 'runId', 'drawn')), []);
+  assert.deepEqual(ids(laps.children(second, 'runId', 'drawn')), ['lap00002']);
+  assert.deepEqual(ids(laps.children(second, 'runId', 'stored')), []);
+  assert.deepEqual(ids(laps.children(new Id('absent00', Probe.run), 'runId', 'stored')), []);
+  assert.deepEqual(views.visible('stored', 'unknown'), []);
+  assert.deepEqual(views.visible('stored', 'tag'), []);
+  assert.deepEqual(ids(reader.repository(Probe.run).children(new Id('group', Probe.run), 'label', 'stored')), ['run00001']);
+  const visible = views.visible('stored', 'lap');
+  visible.reverse(); visible.pop();
+  const referencing = views.referencing('stored', 'lap', 'runId', first.record);
+  referencing.splice(0);
+  const children = laps.children(first, 'runId', 'stored');
+  children.pop();
+  assert.deepEqual(views.visible('stored', 'lap').map((row) => row.id), ['lap00002', 'lap00001']);
+  assert.deepEqual(views.referencing('stored', 'lap', 'runId', first.record).map((row) => row.id), ['lap00002', 'lap00001']);
+  assert.deepEqual(ids(laps.children(first, 'runId', 'stored')), ['lap00001', 'lap00002']);
+});
+
+test('view reference indexes compare tuple references by JCS and exclude absent fields', () => {
+  const schema = /** @type {any} */ (Contract.json('sync/probe.registry.json'));
+  schema.types.find((/** @type {{ type: string }} */ type) => type.type === 'tag').fields.linkId = { kind: 'const', writer: 'client', ref: 'link' };
+  const registry = new Registry(schema);
+  const rows = viewRecords([
+    { t: 'tag', id: 'tag-a', born: '1:0:srv', life: ['alive', '1:0:srv'], f: { linkId: [['left', 'right'], '1:0:srv'] } },
+    { t: 'tag', id: 'tag-b', born: '1:0:srv', life: ['alive', '1:0:srv'], f: { linkId: [['right', 'left'], '1:0:srv'] } },
+    { t: 'tag', id: 'tag-c', born: '1:0:srv', life: ['alive', '1:0:srv'], f: { label: ['Unlinked', '1:0:srv'] } },
+  ]);
+  const views = Views.ofRecords(registry, { drawn: rows, stored: rows });
+  const tags = new Reader(views, Probe.tag.scope, momentOf({})).repository(Probe.tag);
+  assert.deepEqual(tags.children(new Id(['left', 'right'], Probe.link), 'linkId', 'stored').map((tag) => tag.id.record), ['tag-a']);
+  assert.deepEqual(tags.children(new Id(['right', 'left'], Probe.link), 'linkId', 'stored').map((tag) => tag.id.record), ['tag-b']);
+  assert.deepEqual(tags.children(new Id('["left","right"]', Probe.link), 'linkId', 'stored'), []);
+  assert.deepEqual(tags.children(new Id(['left', 'missing'], Probe.link), 'linkId', 'stored'), []);
+});
 
 test('a new card saves through the engine, its removal is held with its releaseAt, and Undo brings it back', async () => {
   const { env, engine, runner } = await open();
