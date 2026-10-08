@@ -207,6 +207,7 @@ struct WorkoutAssembly: View {
         .safeAreaInset(edge: .bottom) {
           GymTransient(gym: workout.gym, message: workout.message, dismiss: { workout.message = nil },
                        noticeMessage: workout.gym.workoutNotice, retry: { workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
+            .modifier(BoundedBand())
         }
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }

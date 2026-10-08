@@ -121,12 +121,7 @@ struct WorkoutScreen: View {
     .safeAreaInset(edge: .bottom, spacing: 0) {
       if workout.selected != nil || workout.message != nil || gym.workoutNotice != nil || gym.error != nil || gym.readFailed || !gym.undoOffers.isEmpty || gym.workoutBanner(gym.workoutStrandedSets.count) != nil {
         VStack(spacing: 8) {
-          if typeSize.isAccessibilitySize {
-            ViewThatFits(in: .vertical) {
-              notices.fixedSize(horizontal: false, vertical: true)
-              ScrollView { notices }.scrollBounceBehavior(.basedOnSize)
-            }.frame(maxHeight: 180)
-          } else { notices }
+          notices.modifier(BoundedBand())
           if workout.selected != nil {
             WorkoutRack(workout: workout, edit: { keypad = $0 })
               .padding(RoomSpace.inset)
@@ -136,7 +131,7 @@ struct WorkoutScreen: View {
       }
     }
   }
-  // The message leads, so at accessibility sizes it stays above the rack before any scroll.
+  // The message leads and the banner follows it in one bounded band, so the rack stays in reach.
   var notices: some View {
     VStack(spacing: 8) {
       GymTransient(gym: gym, message: workout.message, dismiss: { workout.message = nil }, noticeMessage: gym.workoutNotice, retry: { gym.workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")

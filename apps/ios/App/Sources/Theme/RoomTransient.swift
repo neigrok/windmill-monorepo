@@ -7,9 +7,12 @@ struct RoomTransient: View {
   var actionSymbol: String?
   var actionIdentifier: String?
   var action: (() -> Void)?
+  @Environment(\.dynamicTypeSize) private var typeSize
 
   var body: some View {
-    HStack(spacing: RoomSpace.related) {
+    let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: RoomSpace.small))
+      : AnyLayout(HStackLayout(spacing: RoomSpace.related))
+    layout {
       Text(message).foregroundStyle(room.ink).fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
       if let action {
@@ -29,6 +32,20 @@ struct RoomTransient: View {
       .frame(minHeight: RoomSpace.minimumTarget)
       .background(room.card, in: RoundedRectangle(cornerRadius: RoomSpace.cardRadius))
       .accessibilityElement(children: .contain)
+  }
+}
+
+// At accessibility sizes a floating band scrolls within a bounded height, so the controls beneath stay in reach.
+struct BoundedBand: ViewModifier {
+  @Environment(\.dynamicTypeSize) private var typeSize
+
+  func body(content: Content) -> some View {
+    if typeSize.isAccessibilitySize {
+      ViewThatFits(in: .vertical) {
+        content.fixedSize(horizontal: false, vertical: true)
+        ScrollView { content }.scrollBounceBehavior(.basedOnSize)
+      }.frame(maxHeight: 180)
+    } else { content }
   }
 }
 
