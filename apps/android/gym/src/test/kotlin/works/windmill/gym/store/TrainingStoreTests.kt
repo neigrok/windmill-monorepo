@@ -1553,18 +1553,23 @@ class TrainingStoreTests {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             val pushA = pushAWaitingOnADiff(room, server, removing = true)
+            val receipt = room.store.pendingProposals.single().copy(state = ProposalState.Applied)
             // Another surface taps Apply and the log takes the removal.
             anotherPhone(server, room.now) { phone ->
-                val elsewhere = async { phone.store.applyProposal("proposal1") }
-                runCurrent(); phone.now += 1_000; phone.sync(server)
-                elsewhere.cancel()
+                assertEquals(ProposalOutcome.Decided(receipt),
+                    deciding(phone, server) { phone.store.applyProposal("proposal1") })
+                assertNull(phone.store.routine(pushA.id))
             }
             assertEquals(pushA.id, room.store.routine(pushA.id)?.id)
 
             val again = deciding(room, server) { room.store.applyProposal("proposal1") }
 
-            assertEquals(ProposalOutcome.Gone("that proposal is no longer on the log"), again)
-            assertNull("the program was re-read rather than guessed at", room.store.routine(pushA.id))
+            assertEquals("the log accepts the same removal again", ProposalOutcome.Decided(receipt), again)
+            assertNull("the program reflects the confirmed removal", room.store.routine(pushA.id))
+            assertNull(room.training.routine(pushA.id))
+            assertEquals(mapOf(receipt.id to receipt), room.store.unseenRemovalReceipts)
+            assertEquals(mapOf(receipt.id to receipt), room.training.removalReceipts())
+            assertTrue(room.outbox().isEmpty())
             runCurrent()
         }
     }
