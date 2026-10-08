@@ -147,7 +147,7 @@ import SyncStore
     let (_, gym) = fixture(), day = try gym.runner.moment().today
     var draft = try gym.logWeighInDraft(day: day)
     draft.current.kg = 80
-    gym.accountTransition = true
+    gym.accountChanging = true
     #expect(gym.logSaveWeighIn(&draft) == "Wait for the account change to finish.")
     #expect(!gym.logDeleteWeighIn(day: day))
     #expect(draft.isNew && gym.bodyweight?.entries.isEmpty == true)

@@ -71,9 +71,20 @@ refusal/error/readFailed and undoOffers. Use `run(_:)` for GymDomain actions, `s
 `undo(_:)` for held gestures, `dismissNotice(_:)`, and `refresh()`; `start()`/`stop()` observe engine
 changes. `flush()` releases holds before account transitions; real backgrounding ends Undo windows.
 An inactive scene persists Journal drafts while Gym live sync, REST work and pending Undo windows continue.
-The app sets `accountTransition` to lock writes during account changes. `rest` is the authenticated
+Gym's `accountTransition` pauses training only while sign-out is open (`accountChanging`, set by the
+app) and while the engine changes the replica (`replicaChanging`, set by `GymBinding`). Pending
+sign-in, hello and adoption questions leave training available. `rest` is the authenticated
 client handle for Coach, shares and Connected log; engine-backed training writes use domain actions.
 Gym includes routine planning and movement creation, the live set rack and finish receipt, session history/sharing and strength/bodyweight charts, and account-only Coach, proposal review, Notes and Connected log. Gym follows system light/dark appearance; Journal keeps its night canvas.
+
+Debug simulator `OfflineFlowTests` seed an isolated `-scenario` with `-offline-fixture seed-signed-in`
+or `seed-signed-out`, then reopen it with `-restore-board -server https://offline.invalid` and
+`-offline-fixture no-network`, `unreachable` or `stalled`. The HTTP loader injects a missing network,
+a refused connection or a request that never answers; only `no-network` also removes the path.
+The `black-hole` cases use `https://192.0.2.1` through the ordinary HTTP transport and path monitor,
+with no loader or connectivity substitution.
+Tests exercise cold launch, Home/resume, local journal persistence, workout controls, Coach, settings
+and leaving an unanswered sign-in request. No host networking changes or real credentials are used.
 
 Run the `WindmillTests` scheme tests for deterministic domain and lineage flows, and
 `WindmillUITests` for the native sheet/keyboard round trip. All product persistence is in the engine's
@@ -99,12 +110,30 @@ today and is combined with today's existing page. Yesterday's saved page stays i
 persisted on each edit in the active replica before autosave, and is restored across backgrounding,
 termination and relaunch. An over-limit combined page stays as a durable draft until shortened.
 
-The editor and account sheet stay locked while an account transition awaits the server. Adoption and
+Startup reads the local replica and leaves room controls available while hello, sync and retained
+session revocations run. First-pull status controls backup labels and first-run invitations, not
+local editing. Account requests can be dismissed with Back, Close or Done; cancellation suppresses
+late navigation, and a pending sign-in or adoption can be deferred while the phone remains usable. Adoption and
 sign-out flush dirty writing and recount before completion. A paused session plainly shows that backup
 is paused and offers email or Apple sign-in to the same account; reauthentication retains its replica.
 Confirmed Keep and Discard sign-out revoke the captured bearer session. If offline, a separate
 Keychain queue retains every revocation and retries on the next launch with network, when connectivity
 returns, and at most once per 30 seconds while open. Cancel leaves the server session active.
+
+Offline boundary observations:
+
+| Boundary | UI behavior and limit |
+|---|---|
+| Startup hello and pending-session recovery | Local reads and ordinary launch controls do not wait for hello. The engine bounds hello at `REQUEST_TIMEOUT_MS`, skips a known missing path, and ignores late cancellation results. Pending account recovery can be deferred with Done. |
+| Local journal, routines, sets, preferences and movement rename | Read and commit against the local replica. First-pull status describes incomplete history and backup confidence. Workout logging and restoration remain local during pending sign-in, including before Not now. Adoption recounts any new work before completion. |
+| Auth and Gym REST | No wait for connectivity; 8-second idle and 15-second total deadlines. Back, Close and Done cancel active auth work. Late responses cannot navigate or change the active account after cancellation. |
+| Workout Finish | Attempts the durable local action before network confirmation and releases controls. Unconfirmed sets on an already-synced workout remain editable and explain the connection requirement. The latest message leads the notice, so at accessibility text sizes the connection requirement shows unscrolled above the rack; the rest wraps and scrolls while Log set and Hide remain reachable. |
+| Coach streaming | Parsing runs off the main actor; 8-second idle and 120-second total deadlines. Stop releases the composer immediately. Its late reply preserves newer draft text and photos on the phone. |
+| Revocation and telemetry | Run independently of launch, room refresh and local sign-out. Offline events stay queued; repeated connection failures coalesce into one content-free state. |
+
+The network-dependent native features are Coach, journal echoes, account authentication, sharing and
+connected-log management. None blocks the local rooms: echoes show nothing extra offline, and the others
+state their connection requirement.
 
 Journal echoes live in `Sources/Journal/Echoes`. `JournalEchoView.swift` owns their presentation:
 a 44 pt count beside a day, a native quotation sheet, source highlighting and a trail back to

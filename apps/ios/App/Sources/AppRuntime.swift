@@ -71,20 +71,24 @@ final class AppRuntime {
   let telemetry: any Telemetry
   let store: Store
   let engine: SyncEngine
-  let workoutActivityBinding = WorkoutActivityBinding()
+  let gymBinding: GymBinding
   let runner: ActionRunner
   let auth: NativeAuth
   let lifecycle: AppLifecycle
   let tokens: any TokenStore
   let revocations: any TokenStore
   let hadInstallHistory: Bool
+  let connectivity: (any Connectivity)?
   var revoking = false
   var lastRevocationAttempt = Date.distantPast
   var revocationOnline = false
 
   init(settings: AppSettings, telemetry: any Telemetry = NoopTelemetry(), directory: URL? = nil,
-       service: String? = nil, syncTransport: (any SyncTransport)? = nil) throws {
+       service: String? = nil, syncTransport: (any SyncTransport)? = nil,
+       connectivity: any Connectivity = PathConnectivity(), authSession: URLSession? = nil) throws {
     self.settings = settings; self.telemetry = telemetry
+    gymBinding = GymBinding()
+    self.connectivity = connectivity
     let telemetry: any Telemetry = telemetry is NoopTelemetry ? telemetry : BoundedTelemetry(telemetry)
     let storageDirectory = directory ?? URL.applicationSupportDirectory.appending(path: settings.board.map { "JournalBoards/\($0)" } ?? settings.scenario.map { "JournalVerification/\($0)" } ?? "WindmillSync")
     if directory == nil && ((settings.board != nil || settings.scenario != nil) && !settings.restoreBoard) { try? FileManager.default.removeItem(at: storageDirectory) }
@@ -127,22 +131,24 @@ final class AppRuntime {
       auth = NativeAuth(baseURL: nil, fake: model, telemetry: telemetry)
     } else {
       transport = HTTPTransport(baseURL: settings.baseURL ?? URL(string: "http://127.0.0.1:1")!, schema: SyncSchema.version, telemetry: telemetry)
-      auth = NativeAuth(baseURL: settings.baseURL, telemetry: telemetry)
+      auth = NativeAuth(baseURL: settings.baseURL, telemetry: telemetry, session: authSession)
     }
     #else
     transport = HTTPTransport(baseURL: settings.baseURL ?? URL(string: "http://127.0.0.1:1")!, schema: SyncSchema.version, telemetry: telemetry)
-    auth = NativeAuth(baseURL: settings.baseURL, telemetry: telemetry)
+    auth = NativeAuth(baseURL: settings.baseURL, telemetry: telemetry, session: authSession)
     #endif
-    engine = try SyncEngine(config: EngineConfig(appVersion: "0.2.0", surface: .ios), bindings: [workoutActivityBinding], store: store, transport: syncTransport ?? transport,
+    engine = try SyncEngine(config: EngineConfig(appVersion: "0.2.0", surface: .ios), bindings: [gymBinding], store: store, transport: syncTransport ?? transport,
                             tokens: tokens,
-                            forkGuard: storage.forkGuard, clock: EngineClock(wall: boardClock ? BoardClock() : SystemClock(), sleeper: ContinuousClock()), random: SystemRandom(), connectivity: PathConnectivity(), telemetry: telemetry)
+                            forkGuard: storage.forkGuard, clock: EngineClock(wall: boardClock ? BoardClock() : SystemClock(), sleeper: ContinuousClock()), random: SystemRandom(), connectivity: connectivity, telemetry: telemetry)
     runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: DeviceZone())
     lifecycle = AppLifecycle(engine: engine, signals: .application, time: ApplicationBackgroundTime())
     updateTelemetryIdentity()
   }
 
-  init(settings: AppSettings, store: Store, engine: SyncEngine, auth: NativeAuth, runner: ActionRunner, tokens: any TokenStore, revocations: any TokenStore, telemetry: any Telemetry = NoopTelemetry()) {
+  init(settings: AppSettings, store: Store, engine: SyncEngine, auth: NativeAuth, runner: ActionRunner, tokens: any TokenStore, revocations: any TokenStore, telemetry: any Telemetry = NoopTelemetry(), gymBinding: GymBinding = GymBinding()) {
     self.telemetry = telemetry
+    self.gymBinding = gymBinding
+    connectivity = nil
     self.settings = settings; self.store = store; self.engine = engine; self.auth = auth; self.runner = runner
     self.tokens = tokens; self.revocations = revocations
     hadInstallHistory = true
@@ -249,7 +255,7 @@ nonisolated struct AuthRefusal: Error, LocalizedError, Equatable {
   static let expired = AuthRefusal(code: "apple-ticket-expired", message: "Apple's sign-in lasts 15 minutes, and this one ran out. Nothing was created.")
   static let wrongCode = AuthRefusal(code: "invalid-code", message: "That code didn't work. Check the digits, or send a fresh one.")
   static let identityTaken = AuthRefusal(code: "identity-taken", message: "It opens another Windmill account with its own data. Windmill doesn't merge accounts. Remove Apple there first.")
-  static let offline = AuthRefusal(code: "offline", message: "Can't reach windmill.works. Nothing was created, and your pages stay on this phone.")
+  static let offline = AuthRefusal(code: "offline", message: "Sign-in needs a connection. Your work stays on this phone.")
 }
 
 nonisolated struct AppFailure: Error, LocalizedError {
@@ -264,7 +270,28 @@ final class NativeAuth {
   static func nativeSession() -> URLSession {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.httpShouldSetCookies = false; configuration.httpCookieStorage = nil
+    configuration.waitsForConnectivity = false
+    configuration.timeoutIntervalForRequest = 8
+    configuration.timeoutIntervalForResource = 15
     return URLSession(configuration: configuration)
+  }
+
+  nonisolated static func data(for request: URLRequest, session: URLSession) async throws -> (Data, URLResponse) {
+    let operation = Task { try await session.data(for: request) }
+    let deadline = Task {
+      try await Task.sleep(for: .seconds(session.configuration.timeoutIntervalForResource))
+      operation.cancel()
+    }
+    defer { deadline.cancel() }
+    do {
+      let response = try await withTaskCancellationHandler { try await operation.value } onCancel: { operation.cancel() }
+      try Task.checkCancellation()
+      return response
+    } catch {
+      try Task.checkCancellation()
+      if operation.isCancelled { throw URLError(.timedOut) }
+      throw error
+    }
   }
   #if DEBUG
   let fake: JournalModelTransport?
@@ -432,7 +459,7 @@ final class NativeAuth {
       if let body { request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.httpBody = try JSONSerialization.data(withJSONObject: body) }
       if let token { request.setValue("Bearer " + token.value, forHTTPHeaderField: "Authorization") }
       kind = "transport"
-      let (data, response) = try await session.data(for: request)
+      let (data, response) = try await Self.data(for: request, session: session)
       guard let response = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
       status = response.statusCode
       if response.statusCode == 204 || (allowUnauthorized && response.statusCode == 401) || (allowNotFound && response.statusCode == 404) { return try decode([:]) }

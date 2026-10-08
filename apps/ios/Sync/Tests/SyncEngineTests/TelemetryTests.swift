@@ -4,7 +4,7 @@ import SyncAPI
 import SyncCore
 @testable import SyncEngine
 import SyncReplica
-import SyncTesting
+@testable import SyncTesting
 @testable import SyncStore
 import Synchronization
 import Testing
@@ -66,7 +66,7 @@ struct TelemetryTests {
 
   func wait(_ signal: DispatchSemaphore, seconds: Int) async -> Bool {
     await withCheckedContinuation { continuation in
-      DispatchQueue.global().async {
+      DispatchQueue(label: "windmill.test.telemetry-wait").async {
         continuation.resume(returning: signal.wait(timeout: .now() + .seconds(seconds)) == .success)
       }
     }
@@ -193,13 +193,39 @@ struct TelemetryTests {
     #expect(!String(describing: recorder.failures).contains("secret response body"))
   }
 
-  @Test func offlineRequestsAreMetricsWithoutIssues() async throws {
+  @Test(arguments: [URLError.Code.notConnectedToInternet, .networkConnectionLost])
+  func offlineRequestsAreMetricsWithoutIssues(_ code: URLError.Code) async throws {
     let recorder = Recorder()
-    let transport = TransportTests.Stub.transport("telemetry-offline.test", telemetry: recorder) { _, _ in nil }
+    let transport = FailedRequest.transport(code, telemetry: recorder)
     _ = await transport.hello(token: nil)
     #expect(recorder.events.count == 1)
     #expect(recorder.events.first?.properties["failure_kind"] == "offline")
     #expect(recorder.failures.isEmpty)
+  }
+
+  @Test(.timeLimit(.minutes(1)), arguments: [nil, "A"] as [String?])
+  func aSilentStartupHelloHasADeadlineWhileLocalChangesAndForegroundRemainAvailable(_ account: String?) async throws {
+    let recorder = Recorder(), rig = try Rig(account: account, telemetry: recorder)
+    rig.transport.willNotAnswerHello()
+    let starting = Task { await rig.engine.start() }
+    await rig.clock.asleep(until: Constants.requestTimeoutMs)
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "Private")], gestureId: "g1"))
+    try rig.engine.leave()
+    rig.engine.foreground()
+    #expect(try rig.engine.read(Rig.scope) { try $0.drawn("card").map(\.id) } == ["card0001"])
+    rig.clock.advance(ms: Constants.requestTimeoutMs)
+    await starting.value
+    await drain(rig.engine.core.telemetry)
+    #expect(try rig.meta().account == account)
+    #expect(try !rig.meta().authPaused)
+    #expect(try rig.outbox() == ["g1/0 ready"])
+    let properties = [
+      "operation": "sync_hello", "method": "GET", "route": "/v1/sync", "failure_kind": "timeout",
+    ]
+    #expect(recorder.events == [Recorded(name: "api_request_failed", kind: nil, properties: properties,
+                                       durationMs: Constants.requestTimeoutMs)])
+    #expect(recorder.failures == [Recorded(name: "sync_hello", kind: "timeout", properties: properties,
+                                         durationMs: Constants.requestTimeoutMs)])
   }
 
   @Test func timeoutAndTLSAreReportableWhileCancellationIsQuiet() async throws {
@@ -231,6 +257,39 @@ struct TelemetryTests {
     #expect(recorder.failures.count == 1)
     #expect(recorder.failures.first?.kind == "timeout")
     #expect(recorder.failures.first?.durationMs == Constants.requestTimeoutMs)
+  }
+
+  @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+  func aRequestDeadlineReturnsEvenWhenTheTransportIgnoresCancellation(_ cancelled: Bool) throws {
+    let recorder = Recorder(), gate = Gate(), finished = DispatchSemaphore(value: 0)
+    let rig = try Rig(telemetry: recorder)
+    CallerThread.run {
+      let exchanging = Task(executorPreference: SyncEngine.taskExecutor) {
+        let exchange = await rig.engine.core.answered(operation: "sync_push") {
+          await gate.pass()
+          if !Task.isCancelled {
+            TransportDiagnostics.report(recorder, operation: "sync_push", method: "POST", kind: "transport", durationMs: 60_000)
+          }
+          return Reply<PushResponse>.unreachable
+        }
+        finished.signal()
+        return exchange
+      }
+      await gate.arrival()
+      await rig.clock.asleep(until: Constants.requestTimeoutMs)
+      if cancelled { exchanging.cancel() }
+      rig.clock.advance(ms: Constants.requestTimeoutMs)
+      #expect(await TelemetryTests().wait(finished, seconds: 2))
+      gate.open()
+      let exchange = await exchanging.value
+      await TelemetryTests().drain(rig.engine.core.telemetry)
+      #expect(exchange.failureKind == (cancelled ? nil : "timeout"))
+      #expect(recorder.events.count == (cancelled ? 0 : 1))
+      #expect(recorder.failures.count == (cancelled ? 0 : 1))
+      if !cancelled {
+        #expect(recorder.events.first?.properties == ["operation": "sync_push", "method": "POST", "route": "/v1/sync", "failure_kind": "timeout"])
+      }
+    }
   }
 
   @Test func syncPullAndPushOutcomesCarryDurationAndNoRecordContent() async throws {

@@ -178,13 +178,16 @@ public protocol ProductBinding: Sendable {
   func liveHint(_ reader: any ScopeReader, physNow: Int64) throws -> Bool
   // A sign-in or sign-out transaction that may change the replica the products write to is about to run: the product
   // ends what cannot outlive the seat, as the Coach ends a running turn (Coach D-10). One sign-in or sign-out may call it
-  // more than once.
-  func seatWillChange() async
+  // more than once. A throw aborts the transaction; each call is paired with seatChangeFinished, after the transaction or
+  // when it throws or is cancelled.
+  func seatWillChange() async throws
+  func seatChangeFinished() async
 }
 
 extension ProductBinding {
   public func liveHint(_ reader: any ScopeReader, physNow: Int64) throws -> Bool { false }
-  public func seatWillChange() async {}
+  public func seatWillChange() async throws {}
+  public func seatChangeFinished() async {}
 }
 
 // MARK: - Loop primitives

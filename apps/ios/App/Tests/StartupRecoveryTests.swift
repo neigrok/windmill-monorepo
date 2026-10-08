@@ -3,6 +3,8 @@ import Observation
 import SwiftUI
 import Testing
 import UIKit
+import DomainKit
+import GymDomain
 import SyncAPI
 import SyncCore
 import SyncEngine
@@ -38,6 +40,75 @@ import Synchronization
     }
     Issue.record("Pending sign-in did not resume")
     throw CancellationError()
+  }
+
+  @Test func pendingHelloKeepsForegroundWorkoutControlsLocal() async throws {
+    let directory = URL.temporaryDirectory.appending(path: UUID().uuidString), service = "works.windmill.startup-tests.\(UUID())"
+    let transport = RecoveryTransport()
+    let (runtime, identity) = try await pendingRuntime(transport: transport, directory: directory, service: service)
+    let preferences = UserDefaults(suiteName: service)!
+    let model = try AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime)
+    defer {
+      model.timerTask?.cancel(); model.observationTask?.cancel(); model.gym.stop()
+      try? runtime.tokens.delete(for: identity.account)
+      preferences.removePersistentDomain(forName: service)
+    }
+    let id = try #require(model.gym.startWorkout()), workout = model.gym.workout
+    workout.add(ID("bench-press"))
+    await transport.hold()
+    let start = Task { await model.start() }
+    defer { start.cancel() }
+    try await waiting(transport)
+    #expect(model.pendingSignIn != nil && !model.signInDeferred)
+    #expect(!model.gym.accountTransition && workout.canLog)
+    #expect(workout.activityOffer() == nil)
+    workout.weightKg = 45; workout.reps = 7
+    #expect(workout.logSet())
+    let retained = workout.sets
+    #expect(retained.count == 1 && retained.first?.weightKg == 45 && retained.first?.reps == 7)
+    #expect(model.gym.hideWorkout() && model.gym.workoutHidden)
+    #expect(model.gym.restoreWorkout() && !model.gym.workoutHidden && workout.isPresented)
+    #expect(workout.sessionId == id && workout.sets == retained)
+    start.cancel(); await transport.release(); await start.value
+    let reopened = try AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime)
+    #expect(reopened.gym.workout.sessionId == id && reopened.gym.workout.sets == retained)
+    #expect(!reopened.gym.accountTransition && reopened.gym.workout.canLog)
+  }
+
+  @Test(arguments: [false, true]) func authControlsDuringRestoredHelloKeepRecoveryUsable(close: Bool) async throws {
+    let directory = URL.temporaryDirectory.appending(path: UUID().uuidString), service = "works.windmill.startup-tests.\(UUID())"
+    let transport = RecoveryTransport()
+    let (runtime, identity) = try await pendingRuntime(transport: transport, directory: directory, service: service)
+    let preferences = UserDefaults(suiteName: service)!
+    let model = try AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime)
+    defer {
+      model.timerTask?.cancel(); model.observationTask?.cancel(); model.gym.stop()
+      try? runtime.tokens.delete(for: identity.account)
+      preferences.removePersistentDomain(forName: service)
+    }
+    await transport.hold()
+    let start = Task { await model.start() }
+    try await waiting(transport)
+    if close {
+      model.cancelAuthentication(); model.sheet = nil
+      await start.value
+      #expect(model.signInDeferred && !model.editorReadOnly && !model.accountTransition)
+      #expect(try runtime.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == identity.account)
+      model.journal.type("Writing while recovery is deferred"); model.journal.done()
+      await transport.release()
+      model.sheet = .authPending
+      model.performAuthentication { await model.retryAuthenticatedSignIn() }
+      await model.authTask?.value
+      #expect(model.journal.document.body == "Writing while recovery is deferred")
+    } else {
+      model.performAuthentication { await model.retryAuthenticatedSignIn() }
+      await model.authTask?.value
+      await transport.release()
+      await start.value
+    }
+    #expect(model.syncStarted && model.account == identity.account && !model.accountTransition)
+    #expect(!model.restoringSignIn && !model.signInDeferred && !model.editorReadOnly && model.pendingSignIn == nil && model.sheet == nil)
+    #expect(try runtime.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == nil)
   }
 
   @Test func upgradedPreviouslyOpenedInstallDoesNotShowInkDuringRealStartup() async throws {
@@ -117,10 +188,13 @@ import Synchronization
     await transport.hold()
     let first = Task { await model.start() }
     try await waiting(transport)
+    let repeated = Task { await model.start() }
+    await Task.yield()
     await model.resumeBackup()
     #expect(transport.state.withLock { $0.active == 1 && $0.maximumActive == 1 })
     first.cancel()
     await first.value
+    await repeated.value
     #expect(!model.syncStarted && !model.accountTransition)
     #expect(model.restoringSignIn && model.pendingSignIn != nil && model.sheet == .authPending)
     #expect(!model.journal.inkVisible && !preferences.bool(forKey: "inkShown"))

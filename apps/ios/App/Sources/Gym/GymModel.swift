@@ -28,9 +28,8 @@ final class GymModel {
   var isAnonymous = true
   var account: String?
   var authPaused = false
-  var accountTransition = false {
-    didSet { existingWorkoutActivity?.schedule(); rest.blocked = accountTransition; if accountTransition { rest.cancel() } }
-  }
+  var accountChanging = false { didSet { accountTransitionChanged() } }
+  var replicaChanging = false { didSet { accountTransitionChanged() } }
   var refusal: GymRefusal?
   var error: String?
   var readFailed = false
@@ -49,13 +48,19 @@ final class GymModel {
   init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry()) {
     self.runner = runner; self.runtime = runtime; self.telemetry = telemetry
     rest = GymRESTClient(runtime: runtime, telemetry: telemetry)
-    runtime?.workoutActivityBinding.gym = self
+    runtime?.gymBinding.gym = self
     refresh()
   }
 
   var sessions: [Session] { log?.drawnSessions ?? [] }
   var sets: [TrainingSet] { log?.sets ?? [] }
   var openSession: Session? { log?.open }
+  var accountTransition: Bool { accountChanging || replicaChanging }
+  func accountTransitionChanged() {
+    existingWorkoutActivity?.schedule()
+    rest.blocked = accountTransition
+    if accountTransition { rest.cancel() }
+  }
   var hasData: Bool { personalCounts.values.contains { $0 > 0 } }
   var phoneSummary: String {
     let kinds = [(Session.type, "workout", "workouts"), (Routine.type, "routine", "routines"),
@@ -323,7 +328,7 @@ final class GymModel {
     request.httpMethod = method; request.httpBody = body
     request.setValue("Bearer \(token.value)", forHTTPHeaderField: "Authorization")
     if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
-    let id = UUID(), task = Task { try await session.data(for: request) }
+    let id = UUID(), task = Task { try await NativeAuth.data(for: request, session: session) }
     let requestGeneration = generation
     tasks[id] = task
     defer { tasks[id] = nil }
@@ -365,6 +370,12 @@ final class GymModel {
   }
 
   func cancel() { generation += 1; for task in tasks.values { task.cancel() }; tasks = [:] }
+
+  nonisolated static func needsConnection(_ error: any Error) -> Bool {
+    guard let error = error as? URLError else { return false }
+    return [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost,
+            .cannotFindHost, .dnsLookupFailed, .timedOut].contains(error.code)
+  }
 }
 
 nonisolated struct GymRESTFailure: Error, LocalizedError {

@@ -98,6 +98,7 @@ struct WorkoutScreen: View {
     .onChange(of: gym.notices.map(\.id)) { _, _ in workout.reconcile() }
     .onChange(of: gym.readFailed) { _, failed in if !failed { workout.reconcile() } }
     .onChange(of: gym.account) { _, _ in finishTask?.cancel(); workout.accountChanged(); updateAwake() }
+    .onChange(of: gym.accountTransition) { _, changing in if changing { finishTask?.cancel() } }
     .onChange(of: scenePhase) { _, phase in
       if phase == .background { finishTask?.cancel() }
       updateAwake()
@@ -384,22 +385,12 @@ struct WorkoutNotice: View {
   }
   var body: some View {
     VStack(spacing: 4) {
-      if let banner = gym.workoutBanner(gym.workoutStrandedSets.count) {
-        let line = Text(banner).font(.footnote).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
-        if typeSize.isAccessibilitySize { ScrollView { line }.frame(height: 100) }
-        else { line }
-      }
-      WorkoutAdoptionBand(gym: gym)
-      if let shown {
-        HStack {
-          Text(shown.text).font(.footnote).frame(maxWidth: .infinity, alignment: .leading)
-          Button("Dismiss message", systemImage: "xmark") { dismissMessage(shown) }
-            .labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44)
-        }.accessibilityAction(named: "Dismiss") {
-          dismissMessage(shown)
-        }
-          .accessibilityIdentifier("workout-refusal")
-      }
+      if typeSize.isAccessibilitySize {
+        ViewThatFits(in: .vertical) {
+          notices.fixedSize(horizontal: false, vertical: true)
+          ScrollView { notices }.scrollBounceBehavior(.basedOnSize)
+        }.frame(maxHeight: 180)
+      } else { notices }
       if let offer = gym.undoOffers.last {
         HStack {
           Text(gym.undoOffers.count == 1 ? "Change deleted" : "\(gym.undoOffers.count) changes deleted").font(.footnote)
@@ -409,6 +400,26 @@ struct WorkoutNotice: View {
       if gym.readFailed { Button("Try again") { gym.workout.retryRead() }.font(.footnote) }
     }.onChange(of: message ?? gym.workoutNotice ?? gym.error) { _, message in
       if let message { UIAccessibility.post(notification: .announcement, argument: message) }
+    }
+  }
+  var notices: some View {
+    VStack(spacing: 4) {
+      if let shown {
+        HStack(alignment: .top) {
+          Text(shown.text).font(.footnote).fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+          Button("Dismiss message", systemImage: "xmark") { dismissMessage(shown) }
+            .labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44)
+        }.accessibilityAction(named: "Dismiss") {
+          dismissMessage(shown)
+        }
+          .accessibilityIdentifier("workout-refusal")
+      }
+      if let banner = gym.workoutBanner(gym.workoutStrandedSets.count) {
+        Text(banner).font(.footnote).foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+      }
+      WorkoutAdoptionBand(gym: gym)
     }
   }
 }

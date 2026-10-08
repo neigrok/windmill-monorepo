@@ -63,7 +63,11 @@ public final class ScriptedTransport: SyncTransport {
     state.withLock { $0.pulls.append(Scripted(reply: .unreachable, gate: gate)) }
   }
 
-  // A pull, or a push, the server never answers.
+  // A request the server never answers.
+  public func willNotAnswerHello() {
+    state.withLock { $0.hellos.append(Scripted(reply: .unreachable, gate: nil, unanswered: true)) }
+  }
+
   public func willNotAnswerPull() {
     state.withLock { $0.pulls.append(Scripted(reply: .unreachable, gate: nil, unanswered: true)) }
   }

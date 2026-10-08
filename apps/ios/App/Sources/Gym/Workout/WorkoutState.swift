@@ -329,9 +329,9 @@ struct FinishWorkout: Action {
     guard weightKg != self.weightKg || reps != self.reps || kind != self.kind else { return }
     var revoke: WorkoutActivityRecord?
     do {
-      if let sessionId, var record = try activityRecord(), record.offer != nil {
+      if let sessionId, var record = try activityRecord() {
         record.offer = nil; revoke = record
-        if canLog, activityIdentityResolved, walk.pending == nil, !rackEditing, !gym.workoutHidden,
+        if canLog, walk.pending == nil, !rackEditing, !gym.workoutHidden,
            weightKg.isFinite, abs(weightKg) <= 500, (1...99).contains(reps),
            let session, offerSession == session, LogWorkoutSet.matchesOfferedSets(sets, offerSets), let selected {
           record.offer = WorkoutActivityOffer(ownerID: record.ownerID, sessionID: session.id.description,
@@ -500,9 +500,6 @@ struct FinishWorkout: Action {
     guard offerSession == session && LogWorkoutSet.matchesOfferedSets(sets, offerSets) else { message = "The workout changed. Check the current set."; prefill(); return false }
     guard weightKg.isFinite, abs(weightKg) <= 500, (1...99).contains(reps) else { message = "Check the weight and reps before logging."; return false }
     let offer = offered ?? activityOffer()
-    if offer == nil, (try? activityRecord()) != nil {
-      message = "Gym could not save this change. Try again."; return false
-    }
     let now: Instant
     do { now = try gym.runner.moment().now }
     catch { message = "The workout could not be read. Check the current set."; gym.report("gym_read", error); return false }
@@ -556,18 +553,10 @@ struct FinishWorkout: Action {
   }
 
   func finish() async {
-    guard !finishing, !paging, let session, session.isOpen, !gym.readFailed else { return }
+    guard !Task.isCancelled, !finishing, !paging, let session, session.isOpen, !gym.readFailed, !gym.accountTransition else { return }
     let account = gym.account
     finishing = true; message = nil
     defer { finishing = false }
-    if gym.runtime != nil {
-      guard await drainForFinish(operation: { await self.flushAndConfirm(session.id, finished: false) }) else {
-        guard !Task.isCancelled, gym.account == account, sessionId == session.id, !gym.accountTransition else { return }
-        message = "The log didn’t answer — the workout is still open. Try Finish again."; return
-      }
-      gym.refresh()
-      guard !Task.isCancelled, gym.account == account, sessionId == session.id, !gym.accountTransition else { return }
-    }
     let pending: Bool
     do {
       pending = try gym.runner.read(Gym.scope) { read in
@@ -576,28 +565,26 @@ struct FinishWorkout: Action {
     } catch { message = "The workout could not be read. Try Finish again."; gym.report("gym_read", error); return }
     if !pending {
       guard let result = gym.run(FinishWorkout(id: session.id)), result.refusal == nil else {
-        if case .sessionOpen = gym.refusal { message = "Some sets are still on this device. Finish when they have synced." }
+        if case .sessionOpen = gym.refusal { message = "Finishing needs a connection. Some sets in this synced workout are saved only on this phone. You can keep logging or hide it." }
         else { message = gym.error }
         return
       }
     }
     reconcile()
-    if gym.runtime != nil {
-      guard await drainForFinish(operation: { await self.flushAndConfirm(session.id, finished: true) }) else {
-        guard !Task.isCancelled, gym.account == account, sessionId == session.id, !gym.accountTransition else { return }
-        message = "The log didn’t answer — the workout is still open. Try Finish again."; return
-      }
+    finishing = false
+    if receipt == nil { message = "Finish is saved on this phone. It will be confirmed when a connection is available." }
+    if gym.runtime != nil, !gym.isAnonymous {
+      guard await drainForFinish(operation: { await self.flushAndConfirm(session.id) }) else { return }
       gym.refresh()
     }
     guard !Task.isCancelled, gym.account == account, sessionId == session.id, !gym.accountTransition else { return }
     guard let finished = gym.sessions.first(where: { $0.id == session.id }), !finished.isOpen else {
-      message = gym.error ?? "The log didn’t answer — the workout is still open. Try Finish again."; return
+      message = gym.error ?? "Finish is saved on this phone. It will be confirmed when a connection is available."; return
     }
     completeFinish(finished)
   }
-  // A successful push may precede its live hint, or live may be unavailable. Keep the cover/progress while pulling
-  // accepted work back; the caller bounds this confirmation with the same deadline as its push drain.
-  func flushAndConfirm(_ id: ID<Session>, finished: Bool) async {
+  // A successful push may precede its live hint. Confirmation runs after local controls are released.
+  func flushAndConfirm(_ id: ID<Session>) async {
     guard let runtime = gym.runtime else { return }
     let account = gym.account
     await runtime.engine.flushOnLeave()
@@ -610,7 +597,6 @@ struct FinishWorkout: Action {
       do {
         let waiting = try gym.runner.read(Gym.scope) { read in
           let loaded = try FinishWorkout(id: id).load(read)
-          if !finished { return loaded.serverHeld && loaded.stranded }
           guard loaded.training.drawn.first(where: { $0.id == id })?.isOpen == true else { return false }
           return try read.commands().contains { $0.command.name == Gym.Commands.finish && $0.command.args["sessionId"] == id.json }
         }
@@ -635,11 +621,18 @@ struct FinishWorkout: Action {
     return completed
   }
   static func drain(timeout: Duration = .seconds(15), operation: @escaping @Sendable () async -> Void) async -> Bool {
-    await withTaskGroup(of: Bool.self) { group in
-      group.addTask { await operation(); return !Task.isCancelled }
-      group.addTask { try? await Task.sleep(for: timeout); return false }
-      let completed = await group.next() ?? false
-      group.cancelAll(); return completed
+    let (results, continuation) = AsyncStream<Bool>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    let work = Task { await operation(); continuation.yield(!Task.isCancelled); continuation.finish() }
+    let timer = Task {
+      do { try await Task.sleep(for: timeout) } catch { return }
+      continuation.yield(false); continuation.finish()
+    }
+    defer { work.cancel(); timer.cancel(); continuation.finish() }
+    return await withTaskCancellationHandler {
+      for await completed in results { return completed && !Task.isCancelled }
+      return false
+    } onCancel: {
+      work.cancel(); timer.cancel(); continuation.finish()
     }
   }
   func closeReceipt() { receipt = nil; if handoff == nil { handoff = .detail(sessionId) }; message = nil }
@@ -688,10 +681,12 @@ extension GymModel {
     return workout.keep(next)
   }
   @discardableResult func restoreWorkout() -> Bool {
-    guard openSession != nil else { return false }
+    guard !accountTransition, openSession != nil else { return false }
     workout.restore()
-    guard workout.restoreActivityAuthority() else { return false }
-    existingWorkoutActivity?.restore()
+    if workout.activityIdentityResolved {
+      guard workout.restoreActivityAuthority() else { return false }
+      existingWorkoutActivity?.restore()
+    }
     guard workoutHidden else { return true }
     var next = workout.walk; next.hidden = false
     return workout.keep(next)

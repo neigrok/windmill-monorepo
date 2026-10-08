@@ -13,6 +13,7 @@ struct WindmillApp: App {
   let settings: AppSettings
   let telemetry: AppTelemetry
   init() {
+    OfflineFixture.install()
     let settings = AppSettings()
     self.settings = settings
     #if DEBUG
@@ -51,7 +52,7 @@ struct WindmillApp: App {
         await Task.yield()
         guard !Task.isCancelled else { return }
         do {
-          let runtime = try WorkoutActivityIntentHandler.model?.runtime ?? AppRuntime(settings: settings, telemetry: telemetry)
+          let runtime = try WorkoutActivityIntentHandler.model?.runtime ?? OfflineFixture.runtime(settings: settings, telemetry: telemetry) ?? AppRuntime(settings: settings, telemetry: telemetry)
           let suite = settings.board.map { "board-\($0)" } ?? settings.scenario.map { "scenario-\($0)" }
           let preferences = suite.map { UserDefaults(suiteName: $0)! } ?? .standard
           if settings.scenario != nil, !settings.restoreBoard, let suite { preferences.removePersistentDomain(forName: suite) }
@@ -66,6 +67,7 @@ struct WindmillApp: App {
             onboardingFixture = await OnboardingFixture.prepare(board, model: created)
             if !onboardingFixture { await BoardFixture.prepare(board, model: created) }
           }
+          try await OfflineFixture.prepare(created)
           if settings.board == nil && settings.scenario == nil || onboardingFixture {
             introduction = try OnboardingLaunch.shouldPresent(model: created, deepLink: launchLink || launchDelegate.deepLink || settings.board == "onboarding-deep-link")
           }
@@ -106,7 +108,7 @@ struct RootScreen: View {
       }
       #endif
     }
-    .sheet(isPresented: Binding(get: { model.sheet != nil }, set: { if !$0 && !model.editorReadOnly { model.sheet = nil } }), onDismiss: { model.dismissSheet() }) { AccountSheet(model: model) }
+    .sheet(isPresented: Binding(get: { model.sheet != nil }, set: { if !$0 { model.cancelAuthentication(); model.sheet = nil } }), onDismiss: { model.dismissSheet() }) { AccountSheet(model: model) }
       .environment(\.dynamicTypeSize, model.runtime?.settings.board?.contains("AX3") == true ? .accessibility3 : typeSize)
   }
 
@@ -183,7 +185,7 @@ struct RoomSeat: View {
 struct AccountButton: View {
   @Bindable var app: AppModel
   var body: some View {
-    Button { app.journal.done(); app.sheet = .you } label: {
+    Button { app.journal.done(); app.sheet = app.pendingSignIn == nil && app.signInSession?.isComplete != false ? .you : .authPending } label: {
       YouGlyph().stroke(app.selectedRoom == .gym ? Color.primary : Design.ink, lineWidth: 1.5).frame(width: 18, height: 18)
         .frame(width: 44, height: 44).modifier(Glass(capsule: false))
     }.buttonStyle(.plain).accessibilityLabel("You and settings").accessibilityIdentifier("you")

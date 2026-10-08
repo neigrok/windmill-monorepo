@@ -45,6 +45,7 @@ extension SyncEngine {
   // is replaced, and that account's token deleted. Signing in as the account already signed in re-authenticates it; as
   // another, it throws `signedIn`, and that account signs out first.
   public func signIn(account: String, token: SessionToken) async throws -> SignInSession {
+    try Task.checkCancellation()
     if let seat = try core.seat(), seat.state == .bound, let current = seat.account {
       guard current.utf8.elementsEqual(account.utf8) else { throw EngineError.signedIn(account: current) }
       try reauthenticate(token: token)
@@ -66,9 +67,11 @@ extension SyncEngine {
   // The hello as `account`, then the lineage rule before any answer: complete when no decision is due.
   func continueSignIn(as account: String) async throws -> SignInSession {
     let holdsRecords = try await holdsRecords(of: account)
-    await seatWillChange()
-    let signIn = try core.write { store, _ in
-      try store.continueSignIn(account: account, holdsRecords: holdsRecords, answers: [:], counted: [:], identities: core.identities)
+    try Task.checkCancellation()
+    let signIn = try await changingSeat { [self] in
+      try core.write { store, _ in
+        try store.continueSignIn(account: account, holdsRecords: holdsRecords, answers: [:], counted: [:], identities: core.identities)
+      }
     }
     guard let signIn else { throw EngineError.signInEnded }
     if signIn.complete { core.wakes.kickAll() }
@@ -76,8 +79,22 @@ extension SyncEngine {
   }
 
   // Before each transaction that may change the replica the products write to (Coach D-10).
-  func seatWillChange() async {
-    for binding in core.bindings { await binding.seatWillChange() }
+  func changingSeat<Value: Sendable>(_ change: @Sendable () async throws -> Value) async throws -> Value {
+    var started: [any ProductBinding] = []
+    do {
+      for binding in core.bindings {
+        try Task.checkCancellation()
+        started.append(binding)
+        try await binding.seatWillChange()
+      }
+      try Task.checkCancellation()
+      let value = try await change()
+      for binding in started.reversed() { await binding.seatChangeFinished() }
+      return value
+    } catch {
+      for binding in started.reversed() { await binding.seatChangeFinished() }
+      throw error
+    }
   }
 
   // §9.2 a hello as `account`: the products in which it holds records. Sign-in runs only after a hello served as the
@@ -117,18 +134,19 @@ extension SyncEngine {
   // discards it, or cancels and stays signed in. A later sign-out replaces this one.
   public func signOut() async throws -> SignOutSession {
     guard let seat = try core.seat(), seat.state == .bound, let account = seat.account else { throw EngineError.notSignedIn }
-    await seatWillChange()
-    if try core.write({ store, _ in try store.releaseAll(.signOutRelease) }) { core.wakes.sender.kick() }
-    await flush(atMostMs: Constants.signoutFlushMs)
-    let hold = await sender.hold(signingOut: account)
-    do {
-      guard let counted = try core.write({ store, _ in try store.countUnsent(signingOut: account) }) else {
-        throw EngineError.notSignedIn
+    return try await changingSeat { [self] in
+      if try core.write({ store, _ in try store.releaseAll(.signOutRelease) }) { core.wakes.sender.kick() }
+      await flush(atMostMs: Constants.signoutFlushMs)
+      let hold = await sender.hold(signingOut: account)
+      do {
+        guard let counted = try core.write({ store, _ in try store.countUnsent(signingOut: account) }) else {
+          throw EngineError.notSignedIn
+        }
+        return SignOutSession(engine: self, account: account, hold: hold, counted: counted)
+      } catch {
+        await sender.endHold(hold)
+        throw error
       }
-      return SignOutSession(engine: self, account: account, hold: hold, counted: counted)
-    } catch {
-      await sender.endHold(hold)
-      throw error
     }
   }
 
@@ -204,12 +222,15 @@ public final class SignInSession: Sendable {
     case .open: break
     }
     if let missing = decisions.first(where: { answers[$0.product] == nil }) { throw EngineError.decisionMissing(product: missing.product) }
-    await engine.seatWillChange()
+    try Task.checkCancellation()
     let core = engine.core
-    let signIn = try core.write { store, _ in
-      try store.continueSignIn(
-        account: account, holdsRecords: holdsRecords, answers: answers,
-        counted: Dictionary(uniqueKeysWithValues: decisions.map { ($0.product, $0.counted) }), identities: core.identities)
+    let signIn = try await engine.changingSeat { [self] in
+      guard state.withLock({ $0 == .open }) else { throw EngineError.signInEnded }
+      return try core.write { store, _ in
+        try store.continueSignIn(
+          account: account, holdsRecords: holdsRecords, answers: answers,
+          counted: Dictionary(uniqueKeysWithValues: decisions.map { ($0.product, $0.counted) }), identities: core.identities)
+      }
     }
     guard let signIn else { throw EngineError.signInEnded }
     guard signIn.complete else { throw EngineError.signInChanged }
@@ -271,12 +292,13 @@ public final class SignOutSession: Sendable {
       state.withLock { $0 = .ended }
       throw EngineError.signOutEnded
     }
-    await engine.seatWillChange()
     let core = engine.core
     let finished: SignOutFinish
     do {
-      finished = try core.write { store, _ in
-        try store.finishSignOut(account: account, choice: choice, counted: counted, identities: core.identities)
+      finished = try await engine.changingSeat { [self] in
+        try core.write { store, _ in
+          try store.finishSignOut(account: account, choice: choice, counted: counted, identities: core.identities)
+        }
       }
     } catch {
       state.withLock { $0 = .open }

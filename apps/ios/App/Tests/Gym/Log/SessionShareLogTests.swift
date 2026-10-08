@@ -81,7 +81,7 @@ import SyncModelServer
   @Test func offlineMintDoesNotClaimThatALinkExists() async {
     let model = SessionShareModel(mint: { throw URLError(.notConnectedToInternet) }, revoke: {})
     await model.getLink()?.value
-    #expect(model.state == .closed(note: "the log didn’t answer — the link wasn’t made"))
+    #expect(model.state == .closed(note: "Sharing needs a connection. The link wasn’t made."))
     #expect(model.state.action == "Try again")
   }
 
@@ -90,7 +90,7 @@ import SyncModelServer
     await model.getLink()?.value
     model.copied()
     await model.revokeLink()?.value
-    #expect(model.state == .live(share, note: "the log didn’t answer — the link is still live"))
+    #expect(model.state == .live(share, note: "Sharing needs a connection. The link is still live."))
     #expect(model.state.title == "The link is live" && model.state.action == "Copy link")
   }
 
@@ -149,7 +149,7 @@ import SyncModelServer
     do { _ = try await gym.mintSessionShare(id); Issue.record("Expected paused-account refusal") }
     catch { #expect((error as? AppFailure)?.message == "sharing needs your account — sign in first") }
     #expect(gym.rest.tasks.isEmpty)
-    gym.accountTransition = true
+    gym.accountChanging = true
     do { try await gym.revokeSessionShare(id); Issue.record("Expected transition refusal") }
     catch { #expect((error as? AppFailure)?.message == "Wait for the account change to finish.") }
     #expect(gym.rest.tasks.isEmpty)

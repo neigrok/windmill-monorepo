@@ -195,6 +195,45 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     }
   }
 
+  @Test(arguments: [false, true]) func offlineRetriesReachSentryAndTheQueueOnceWithoutContentOrIssues(telemetryDeliveryFirst: Bool) async throws {
+    let dir = directory(); defer { try? FileManager.default.removeItem(at: dir) }
+    let telemetry = AppTelemetry(info: info, baseURL: URL(string: "https://offline.invalid"), directory: dir, debug: true)
+    let delivered = TelemetryBuffer<[String]>([])
+    let options = try #require(CrashReports.options(info: info, debug: true))
+    options.beforeSend = { event in
+      let safe = CrashReports.scrub(event)!
+      delivered.withLock { $0.append(String(decoding: (try? JSONSerialization.data(withJSONObject: safe.serialize())) ?? Data(), as: UTF8.self)) }
+      return nil
+    }
+    SentrySDK.start(options: options)
+    defer { SentrySDK.close() }
+    let queue = try #require(telemetry.queue)
+    if telemetryDeliveryFirst { await queue.report("telemetry_delivery", "timeout", ["route": "/v1/events", "message": "private-marker"], 60_000) }
+    for _ in 0..<50 {
+      telemetry.event("api_request_failed", properties: ["operation": "sync_hello", "failure_kind": "timeout", "email": "private-marker"])
+      telemetry.failure("sync_hello", kind: "timeout")
+    }
+    await queue.report("telemetry_delivery", "timeout", ["route": "/v1/events", "message": "private-marker"], 60_000)
+    for _ in 0..<100 {
+      if delivered.withLock({ $0.count == 1 }), await queue.state.events.count == 1 { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    let events = await queue.state.events
+    #expect(events.map(\.name) == ["api_request_failed"])
+    #expect(events.first?.props["failure_kind"] == .label("offline"))
+    #expect(!String(decoding: try JSONEncoder().encode(events), as: UTF8.self).contains("private-marker"))
+    let sent = delivered.withLock { $0 }
+    #expect(sent.count == 1)
+    #expect(sent.first?.contains("offline") == true && sent.first?.contains("info") == true)
+    #expect(sent.allSatisfy { !$0.contains("private-marker") && !$0.contains("WindmillHandledFailure") })
+    #expect(telemetry.connectionRequired)
+    telemetry.event("sync_pull_outcome", properties: ["outcome": "ok"])
+    #expect(!telemetry.connectionRequired)
+    telemetry.event("api_request_failed", properties: ["operation": "sync_hello", "failure_kind": "offline"])
+    for _ in 0..<100 where delivered.withLock({ $0.count < 2 }) { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(delivered.withLock { $0.count } == 2)
+  }
+
   @Test func retryAndRelaunchKeepEventIdsAndPersistNoCredentials() async throws {
     let dir = directory(); defer { try? FileManager.default.removeItem(at: dir) }
     let file = dir.appending(path: "events.json"), delivery = TelemetryDelivery()

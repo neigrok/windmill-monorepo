@@ -117,11 +117,17 @@ and emits no dismissed event.
 
 Gym boundary operation labels are `gym_read`, `gym_action`, `gym_undo`, `gym_flush`, `gym_rest`,
 `gym_activity_request` and `gym_activity_update`.
-Expected REST refusals and offline failures emit metrics; unexpected responses, transport failures
-and timeouts report to Sentry. REST requests retain their captured account and bearer and cancel
+Expected REST refusals emit metrics. Missing network, refused connections, dropped connections
+and timeouts become one `api_request_failed` with `failure_kind=offline` and one informational
+Sentry event per offline stretch in the process. The Sentry state has no exception, message,
+request, content or identity; the normal scrubber retains only bounded operation labels. Repeated
+offline requests and failed sync outcomes are suppressed until a successful sync or sign-in event.
+The first-party event stays queued for later delivery. Unexpected responses, TLS and other
+transport failures still report as failures. Known missing paths report even when hello is skipped. REST requests retain their captured account and bearer and cancel
 on real backgrounding or an account transition; an inactive scene persists drafts while live sync,
 REST work and Undo windows continue. Late conversation reads and Stop results are accepted only for
-the work they captured. Send reuses the retained request ID after a lost response when question and
+the work they captured. A late Stop reply preserves newer composer text and photos, including their
+durable draft. Send reuses the retained request ID after a lost response when question and
 attachments are unchanged. These local identifiers remain outside event properties.
 Gym engine notices retain typed refusals for local UI only. No movement/routine names, set values,
 notes, Coach messages, counts, IDs or REST bodies enter telemetry.
@@ -133,7 +139,9 @@ Gym adoption uses the verified account's explicit per-product Add/Discard decisi
 signed-out workouts use one whole-session import, with their original set identities and values.
 An unfinished workout refused by an account's open workout retains a durable recovery copy; an
 explicit Keep as finished workout action imports it as finished at its last set. It is never silently
-joined into the account workout. Recovery commits use the existing bounded `gym_action` outcomes;
+joined into the account workout. The recovery copy is refreshed before each change of the replica; a
+failed refresh reports through `gym_action` and aborts that account change, which its auth operation
+also reports. Recovery commits use the existing bounded `gym_action` outcomes;
 adoption approvals use `room_adoption_answered`, without workout counts, content or identifiers.
 
 Screen and choice events also record visits when the same screens are revisited after first run.
