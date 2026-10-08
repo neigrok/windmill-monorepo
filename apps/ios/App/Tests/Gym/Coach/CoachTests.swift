@@ -44,13 +44,14 @@ import SyncModelServer
     return try JSONDecoder().decode(CoachSnapshot.self, from: JSONSerialization.data(withJSONObject: value))
   }
   func store() -> CoachDraftStore { CoachDraftStore(directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)) }
-  func authed(_ reply: CoachTestProtocol.Reply) async throws -> (GymModel, GymRESTClient, TelemetryRecorder) {
+  func authed(_ reply: CoachTestProtocol.Reply, timeout: TimeInterval = 60) async throws -> (GymModel, GymRESTClient, TelemetryRecorder) {
     let telemetry = TelemetryRecorder(), transport = JournalModelTransport()
     let runtime = try GymModelTests().runtime(telemetry: telemetry, transport: transport)
     let identity = transport.identity(email: "coach-test@example.com")
     _ = try await runtime.engine.signIn(account: identity.account, token: identity.token)
     let gym = GymModel(runner: runtime.runner, runtime: runtime, telemetry: telemetry)
     let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [CoachTestProtocol.self]
+    config.timeoutIntervalForRequest = timeout
     CoachTestProtocol.state.withLock { $0 = .init(reply: reply) }
     return (gym, GymRESTClient(runtime: runtime, telemetry: telemetry, session: URLSession(configuration: config)), telemetry)
   }
@@ -166,6 +167,69 @@ import SyncModelServer
     gym.account = "other-account"; await coach.activate()
     #expect(coach.saved.request == nil && coach.saved.text.isEmpty)
   }
+
+  @Test func stopReleasesComposerBeforeTheServerAnswers() async throws {
+    let (gym, rest, _) = try await authed(.stalled), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let coach = CoachConversation(gym: gym, rest: rest, store: cache)
+    await coach.activate(); coach.edit("A private draft"); coach.send()
+    try await settle { CoachTestProtocol.state.withLock { !$0.requests.isEmpty } }
+    let request = try #require(coach.saved.request)
+    coach.stopResponse()
+    #expect(!coach.asking && coach.canCompose)
+    #expect(try cache.read(gym.account!).request == request)
+    coach.stopWork?.cancel(); coach.work?.cancel(); rest.cancel()
+    try await settle { !coach.asking && !coach.stopping && rest.tasks.isEmpty }
+  }
+
+  @Test func cancelledStreamCannotReplaceTheOfflineStopMessage() async throws {
+    let (gym, rest, telemetry) = try await authed(.stalled), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let coach = CoachConversation(gym: gym, rest: rest, store: cache)
+    await coach.activate(); coach.edit("A private draft"); coach.send()
+    try await settle { CoachTestProtocol.state.withLock { !$0.requests.isEmpty } }
+    let request = try #require(coach.saved.request), stream = try #require(coach.work)
+    CoachTestProtocol.state.withLock {
+      $0.replies["/v1/gym/threads/\(request.thread)/generations/\(request.requestId)/stop"] = .failure(.notConnectedToInternet)
+    }
+    coach.stopResponse()
+    await coach.stopWork?.value; await stream.value
+    #expect(!coach.asking && !coach.stopping && coach.canCompose && coach.retryable)
+    #expect(coach.error == "Coach is stopped on this phone. Stopping it on the server needs a connection.")
+    #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_ask_outcome" }.map(\.properties) } == [["screen": "coach", "outcome": "cancelled"]])
+  }
+
+  @Test(arguments: [URLError.Code.notConnectedToInternet, .cannotConnectToHost, .timedOut])
+  func unreachableCoachNeedsConnectionAndRetainsDraft(code: URLError.Code) async throws {
+    let (gym, rest, _) = try await authed(.failure(code)), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let coach = CoachConversation(gym: gym, rest: rest, store: cache)
+    await coach.activate(); coach.edit("A private draft"); coach.send()
+    await coach.work?.value
+    #expect(coach.error == "Coach needs a connection. Your draft is saved on this phone.")
+    #expect(!coach.asking && coach.canCompose && coach.retryable && rest.tasks.isEmpty)
+    #expect(try cache.read(gym.account!).request == coach.saved.request)
+    #expect(coach.saved.text == "A private draft")
+  }
+
+  @Test(arguments: ["before-response", "after-headers", "partial-frame"])
+  func stalledStreamTimesOutAndReleasesTransport(stage: String) async throws {
+    let reply: CoachTestProtocol.Reply = stage == "before-response" ? .stalled :
+      .partial(stage == "partial-frame" ? "event: snapshot\ndata: {\"private\": " : "")
+    let (_, rest, telemetry) = try await authed(reply, timeout: 0.05)
+    var completed = false, timedOut = false
+    let call = Task {
+      defer { completed = true }
+      do { _ = try await rest.coachRequest("/v1/gym/ask") { _ in Issue.record("A partial snapshot was delivered") } }
+      catch { timedOut = (error as? URLError)?.code == .timedOut }
+    }
+    try await settle { CoachTestProtocol.state.withLock { !$0.requests.isEmpty } }
+    try await Task.sleep(for: .milliseconds(200))
+    #expect(completed && timedOut && rest.tasks.isEmpty)
+    call.cancel(); await call.value
+    #expect(!telemetry.entries.withLock { $0.flatMap { $0.properties.values } }.contains { $0.contains("private") })
+  }
+
   @Test func interruptedStreamRetriesTheSameDurablePayload() async throws {
     let (gym, rest, _) = try await authed(.failure(.networkConnectionLost)), cache = store()
     defer { try? FileManager.default.removeItem(at: cache.directory) }
@@ -225,6 +289,7 @@ import SyncModelServer
     let stoppedCall = try #require(CoachTestProtocol.state.withLock { $0.activeByPath[stopPath] })
     let stopWork = try #require(coach.stopWork)
     if retrySameRequest { coach.retry() } else { coach.edit("Second question"); coach.send() }
+    #expect(!coach.stopping)
     try await settle { CoachTestProtocol.state.withLock { $0.requests.count >= 3 && $0.activeByPath["/v1/gym/ask"] != nil } }
     let second = try #require(coach.saved.request)
     let activeWork = try #require(coach.work)
@@ -408,7 +473,7 @@ import SyncModelServer
     var next = coach.saved; next.threadId = request.thread; next.request = request; _ = coach.keep(next, failure: "failure")
     try coach.accept(snapshot(answer: "Durable partial"), request: request)
     coach.stopResponse(); await coach.stopWork?.value; #expect(!coach.stopping)
-    #expect(coach.error == "The stop request didn’t reach Coach. Try again.")
+    #expect(coach.error == "Coach is stopped on this phone. Stopping it on the server needs a connection.")
     #expect(coach.activeGeneration?.answer == "Durable partial" && coach.activeGeneration?.results.count == 1)
     let call = try #require(CoachTestProtocol.state.withLock { $0.requests.first })
     #expect(call.path.hasSuffix("/generations/request-123/stop") && call.method == "POST" && call.body == nil)
@@ -846,7 +911,11 @@ import SyncModelServer
         transport.failure.withLock { $0 = nil }
         await reopened.engine.flushOnLeave(); reopened.engine.foreground()
       }
-      try await settle { gym.refresh(); return (try? reopened.runner.read(Gym.scope) { try $0.commands().isEmpty }) == true }
+      try await settle {
+        gym.refresh()
+        return gym.coachRemovalReceipts.first?.outcome == (refused ? .refused : .applied) &&
+          (try? reopened.runner.read(Gym.scope) { try $0.commands().isEmpty }) == true
+      }
       #expect(gym.routines.count == (refused ? 1 : 0))
       #expect(review.proposal?.state == (refused ? "pending" : "applied") && !review.pending)
       #expect(gym.coachRemovalReceipts.first?.outcome == (refused ? .refused : .applied))
@@ -944,7 +1013,7 @@ nonisolated final class CoachCountingTokenStore: TokenStore {
 }
 
 nonisolated final class CoachTestProtocol: URLProtocol, @unchecked Sendable {
-  enum Reply: Sendable { case http(Int, String, String = "application/json"), failure(URLError.Code), stalled }
+  enum Reply: Sendable { case http(Int, String, String = "application/json"), partial(String), failure(URLError.Code), stalled }
   struct Request: Sendable { let path: String; let method: String; let authorization: String?; let mediaType: String?; let body: Data? }
   struct State: Sendable { var reply: Reply; var replies: [String: Reply] = [:]; var requests: [Request] = []; var active: CoachTestProtocol?; var activeByPath: [String: CoachTestProtocol] = [:] }
   static let state = Mutex(State(reply: .stalled))
@@ -962,6 +1031,9 @@ nonisolated final class CoachTestProtocol: URLProtocol, @unchecked Sendable {
     }
     switch reply {
     case .http(let status, let body, let type): respond(status, body, type: type)
+    case .partial(let body):
+      client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"])!, cacheStoragePolicy: .notAllowed)
+      if !body.isEmpty { client?.urlProtocol(self, didLoad: Data(body.utf8)) }
     case .failure(let code): client?.urlProtocol(self, didFailWithError: URLError(code))
     case .stalled: break
     }

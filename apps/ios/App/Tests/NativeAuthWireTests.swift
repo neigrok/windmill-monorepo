@@ -8,7 +8,7 @@ import SyncEngine
 
 nonisolated final class AuthWireProtocol: URLProtocol, @unchecked Sendable {
   struct Request: Sendable { let path: String; let method: String; let authorization: String?; let body: Data? }
-  struct State: Sendable { var replies: [(Int, String)] = []; var requests: [Request] = [] }
+  struct State: Sendable { var replies: [(Int, String)] = []; var requests: [Request] = []; var stalled = false; var stopped = 0 }
   static let state = Mutex(State())
   override class func canInit(with request: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -21,16 +21,62 @@ nonisolated final class AuthWireProtocol: URLProtocol, @unchecked Sendable {
       body = data
     }
     let captured = Request(path: request.url!.path, method: request.httpMethod!, authorization: request.value(forHTTPHeaderField: "Authorization"), body: body)
-    let reply = Self.state.withLock { state in state.requests.append(captured); return state.replies.removeFirst() }
+    let reply = Self.state.withLock { state -> (Int, String)? in
+      state.requests.append(captured)
+      return state.stalled ? nil : state.replies.removeFirst()
+    }
+    guard let reply else { return }
     let response = HTTPURLResponse(url: request.url!, statusCode: reply.0, httpVersion: nil, headerFields: ["Set-Cookie": "session=never-retain; Path=/"])!
     client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
     client?.urlProtocol(self, didLoad: Data(reply.1.utf8))
     client?.urlProtocolDidFinishLoading(self)
   }
-  override func stopLoading() {}
+  override func stopLoading() { Self.state.withLock { $0.stopped += 1 } }
 }
 
 @Suite(.serialized) @MainActor struct NativeAuthWireTests {
+  @Test func repeatedSubmitCannotReplaceTheRequestCancelledByClose() async throws {
+    AuthWireProtocol.state.withLock { $0 = AuthWireProtocol.State(stalled: true) }
+    let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AuthWireProtocol.self]
+    let auth = NativeAuth(baseURL: URL(string: "https://auth.invalid")!, session: URLSession(configuration: config))
+    let model = try LineageFlowTests().fixture(JournalModelTransport(), auth: auth)
+    model.sheet = .address; model.email = "offline@example.com"
+    model.performAuthentication { await model.sendCode() }
+    let first = try #require(model.authTask)
+    while AuthWireProtocol.state.withLock({ $0.requests.isEmpty }) { await Task.yield() }
+    model.performAuthentication { await model.sendCode() }
+    model.cancelAuthentication(); model.sheet = nil
+    await first.value
+    for _ in 0..<100 {
+      if AuthWireProtocol.state.withLock({ $0.stopped > 0 }) { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(AuthWireProtocol.state.withLock { $0.requests.count } == 1)
+    #expect(AuthWireProtocol.state.withLock { $0.stopped } == 1)
+    #expect(model.sheet == nil && !model.editorReadOnly && model.codeSentAt == nil && model.authTask == nil)
+  }
+
+  @Test(arguments: [false, true]) func unansweredAuthenticationTimesOutOrCancelsWithoutAStaleSheet(cancel: Bool) async throws {
+    AuthWireProtocol.state.withLock { $0 = AuthWireProtocol.State(stalled: true) }
+    let config = URLSessionConfiguration.ephemeral
+    config.protocolClasses = [AuthWireProtocol.self]
+    config.timeoutIntervalForResource = cancel ? 10 : 0.05
+    let auth = NativeAuth(baseURL: URL(string: "https://auth.invalid")!, session: URLSession(configuration: config))
+    let model = try LineageFlowTests().fixture(JournalModelTransport(), auth: auth)
+    model.sheet = .address; model.email = "private-marker@example.com"
+    let started = ContinuousClock.now
+    let request = Task { await model.sendCode() }
+    model.authTask = request
+    while AuthWireProtocol.state.withLock({ $0.requests.isEmpty }) { await Task.yield() }
+    if cancel { model.cancelAuthentication(); model.sheet = nil }
+    await request.value
+    #expect(started.duration(to: .now) < .seconds(1))
+    #expect(!model.working && !model.editorReadOnly && model.codeSentAt == nil)
+    #expect(model.sheet == (cancel ? nil : .address))
+    #expect(model.error == (cancel ? nil : AuthRefusal.offline.message))
+    #expect(AuthWireProtocol.state.withLock { $0.stopped } == 1)
+  }
+
   func auth(replies: [(Int, String)], telemetry: TelemetryRecorder = TelemetryRecorder()) -> NativeAuth {
     AuthWireProtocol.state.withLock { $0 = AuthWireProtocol.State(replies: replies) }
     let config = URLSessionConfiguration.ephemeral

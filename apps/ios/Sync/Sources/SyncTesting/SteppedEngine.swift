@@ -390,8 +390,7 @@ final class Fleet: Sendable {
 
 // An async body run to its end on the calling thread (design §9.3): its task prefers this executor, whose jobs the
 // calling thread runs in the order they come. Default actors run on a task's preferred executor, so the engine's sender,
-// puller and live channel run here too, and nothing interleaves. Work that leaves the preference (an unstructured task)
-// runs elsewhere while this thread waits for it; no harness call makes any, so a wait of a minute is a hang, and stops.
+// puller and live channel run here too, and the request tasks inherit the engine's task-local preference.
 final class CallerThread: TaskExecutor {
   let jobs = Mutex<[UnownedJob]>([])
   let arrivals = DispatchSemaphore(value: 0)
@@ -401,10 +400,12 @@ final class CallerThread: TaskExecutor {
     let thread = CallerThread()
     let answer = Mutex<Value?>(nil)
     Task(executorPreference: thread) {
-      let value = await body()
-      answer.withLock { $0 = value }
-      thread.finished.store(true, ordering: .releasing)
-      thread.arrivals.signal()
+      await SyncEngine.$taskExecutor.withValue(thread) {
+        let value = await body()
+        answer.withLock { $0 = value }
+        thread.finished.store(true, ordering: .releasing)
+        thread.arrivals.signal()
+      }
     }
     thread.runJobs()
     return answer.withLock { $0! }

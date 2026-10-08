@@ -147,6 +147,7 @@ import Synchronization
     let transport = JournalModelTransport(), model = try fixture(transport)
     let identity = transport.identity(email: "logout@example.com")
     try await model.signIn(identity); await model.beginSignOut(); await model.finishSignOut(choice)
+    for _ in 0..<100 where model.runtime?.revocations.accounts().isEmpty == false { try await Task.sleep(for: .milliseconds(5)) }
     let replay = await transport.hello(token: identity.token)
     if case .answered(.failed(let failure)) = replay { #expect(failure.status == 401) }
     else { Issue.record("Signed-out token still authenticates") }
@@ -186,6 +187,20 @@ import Synchronization
     try await model.signIn(server.identity(email: "delayed-keep@example.com"))
     await model.runtime?.engine.start(); try await AppScenario.backedUp(model)
     #expect(model.journal.document.body == "Before autosave")
+  }
+
+  @Test func closingAnUnansweredSignOutKeepsTheAccountAndNeverReopensItsSheet() async throws {
+    let server = JournalModelTransport(), transport = DelayedJournalTransport(base: server, delayHello: false)
+    let model = try fixture(server, syncTransport: transport)
+    try await model.signIn(server.identity(email: "cancel-signout@example.com"))
+    model.journal.type("Local writing"); model.journal.done(); model.sheet = .you
+    model.performAuthentication { await model.beginSignOut() }
+    let request = try #require(model.authTask)
+    await transport.gate.untilWaiting()
+    model.cancelAuthentication(); model.sheet = nil
+    await transport.gate.release(); await request.value
+    #expect(model.account == "model-cancel-signout@example.com" && model.signOutSession == nil && model.sheet == nil)
+    #expect(!model.editorReadOnly && model.journal.document.body == "Local writing")
   }
 
   @Test func offlineSignOutQueuesEveryCredentialAndNextRuntimeRevokesBoth() async throws {

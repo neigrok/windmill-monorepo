@@ -101,8 +101,13 @@ action `dismiss_ink` once when writing or a tap lifts it; no ink replay action i
 
 Gym boundary operation labels are `gym_read`, `gym_action`, `gym_undo`, `gym_flush`, `gym_rest`,
 `gym_activity_request` and `gym_activity_update`.
-Expected REST refusals and offline failures emit metrics; unexpected responses, transport failures
-and timeouts report to Sentry. REST requests retain their captured account and bearer and cancel
+Expected REST refusals emit metrics. Missing network, refused connections, dropped connections
+and timeouts become one `api_request_failed` with `failure_kind=offline` and one informational
+Sentry event per offline stretch in the process. The Sentry state has no exception, message,
+request, content or identity; the normal scrubber retains only bounded operation labels. Repeated
+offline requests and failed sync outcomes are suppressed until a successful sync or sign-in event.
+The first-party event stays queued for later delivery. Unexpected responses, TLS and other
+transport failures still report as failures. Known missing paths report even when hello is skipped. REST requests retain their captured account and bearer and cancel
 on real backgrounding or an account transition; an inactive scene persists drafts while live sync,
 REST work and Undo windows continue. Late conversation reads and Stop results are accepted only for
 the work they captured. Send reuses the retained request ID after a lost response when question and

@@ -556,18 +556,10 @@ struct FinishWorkout: Action {
   }
 
   func finish() async {
-    guard !finishing, !paging, let session, session.isOpen, !gym.readFailed else { return }
+    guard !Task.isCancelled, !finishing, !paging, let session, session.isOpen, !gym.readFailed, !gym.accountTransition else { return }
     let account = gym.account
     finishing = true; message = nil
     defer { finishing = false }
-    if gym.runtime != nil {
-      guard await drainForFinish(operation: { await self.flushAndConfirm(session.id, finished: false) }) else {
-        guard !Task.isCancelled, gym.account == account, sessionId == session.id, !gym.accountTransition else { return }
-        message = "The log didn’t answer — the workout is still open. Try Finish again."; return
-      }
-      gym.refresh()
-      guard !Task.isCancelled, gym.account == account, sessionId == session.id, !gym.accountTransition else { return }
-    }
     let pending: Bool
     do {
       pending = try gym.runner.read(Gym.scope) { read in
@@ -576,28 +568,26 @@ struct FinishWorkout: Action {
     } catch { message = "The workout could not be read. Try Finish again."; gym.report("gym_read", error); return }
     if !pending {
       guard let result = gym.run(FinishWorkout(id: session.id)), result.refusal == nil else {
-        if case .sessionOpen = gym.refusal { message = "Some sets are still on this device. Finish when they have synced." }
+        if case .sessionOpen = gym.refusal { message = "Some sets are saved on this phone. Finishing this synced workout needs a connection. You can keep logging or hide it." }
         else { message = gym.error }
         return
       }
     }
     reconcile()
-    if gym.runtime != nil {
-      guard await drainForFinish(operation: { await self.flushAndConfirm(session.id, finished: true) }) else {
-        guard !Task.isCancelled, gym.account == account, sessionId == session.id, !gym.accountTransition else { return }
-        message = "The log didn’t answer — the workout is still open. Try Finish again."; return
-      }
+    finishing = false
+    if receipt == nil { message = "Finish is saved on this phone. It will be confirmed when a connection is available." }
+    if gym.runtime != nil, !gym.isAnonymous {
+      guard await drainForFinish(operation: { await self.flushAndConfirm(session.id) }) else { return }
       gym.refresh()
     }
     guard !Task.isCancelled, gym.account == account, sessionId == session.id, !gym.accountTransition else { return }
     guard let finished = gym.sessions.first(where: { $0.id == session.id }), !finished.isOpen else {
-      message = gym.error ?? "The log didn’t answer — the workout is still open. Try Finish again."; return
+      message = gym.error ?? "Finish is saved on this phone. It will be confirmed when a connection is available."; return
     }
     completeFinish(finished)
   }
-  // A successful push may precede its live hint, or live may be unavailable. Keep the cover/progress while pulling
-  // accepted work back; the caller bounds this confirmation with the same deadline as its push drain.
-  func flushAndConfirm(_ id: ID<Session>, finished: Bool) async {
+  // A successful push may precede its live hint. Confirmation runs after local controls are released.
+  func flushAndConfirm(_ id: ID<Session>) async {
     guard let runtime = gym.runtime else { return }
     let account = gym.account
     await runtime.engine.flushOnLeave()
@@ -610,7 +600,6 @@ struct FinishWorkout: Action {
       do {
         let waiting = try gym.runner.read(Gym.scope) { read in
           let loaded = try FinishWorkout(id: id).load(read)
-          if !finished { return loaded.serverHeld && loaded.stranded }
           guard loaded.training.drawn.first(where: { $0.id == id })?.isOpen == true else { return false }
           return try read.commands().contains { $0.command.name == Gym.Commands.finish && $0.command.args["sessionId"] == id.json }
         }
@@ -635,11 +624,18 @@ struct FinishWorkout: Action {
     return completed
   }
   static func drain(timeout: Duration = .seconds(15), operation: @escaping @Sendable () async -> Void) async -> Bool {
-    await withTaskGroup(of: Bool.self) { group in
-      group.addTask { await operation(); return !Task.isCancelled }
-      group.addTask { try? await Task.sleep(for: timeout); return false }
-      let completed = await group.next() ?? false
-      group.cancelAll(); return completed
+    let (results, continuation) = AsyncStream<Bool>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    let work = Task { await operation(); continuation.yield(!Task.isCancelled); continuation.finish() }
+    let timer = Task {
+      do { try await Task.sleep(for: timeout) } catch { return }
+      continuation.yield(false); continuation.finish()
+    }
+    defer { work.cancel(); timer.cancel(); continuation.finish() }
+    return await withTaskCancellationHandler {
+      for await completed in results { return completed && !Task.isCancelled }
+      return false
+    } onCancel: {
+      work.cancel(); timer.cancel(); continuation.finish()
     }
   }
   func closeReceipt() { receipt = nil; if handoff == nil { handoff = .detail(sessionId) }; message = nil }

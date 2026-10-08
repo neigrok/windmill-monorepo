@@ -310,7 +310,7 @@ final class GymModel {
     request.httpMethod = method; request.httpBody = body
     request.setValue("Bearer \(token.value)", forHTTPHeaderField: "Authorization")
     if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
-    let id = UUID(), task = Task { try await session.data(for: request) }
+    let id = UUID(), task = Task { try await NativeAuth.data(for: request, session: session) }
     let requestGeneration = generation
     tasks[id] = task
     defer { tasks[id] = nil }
@@ -352,6 +352,12 @@ final class GymModel {
   }
 
   func cancel() { generation += 1; for task in tasks.values { task.cancel() }; tasks = [:] }
+
+  nonisolated static func needsConnection(_ error: any Error) -> Bool {
+    guard let error = error as? URLError else { return false }
+    return [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost,
+            .cannotFindHost, .dnsLookupFailed, .timedOut].contains(error.code)
+  }
 }
 
 nonisolated struct GymRESTFailure: Error, LocalizedError {

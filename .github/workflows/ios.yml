@@ -176,6 +176,7 @@ jobs:
               -only-testing:WindmillUITests/GymIntegrationFlowTests
               -only-testing:WindmillUITests/OnboardingFlowTests
               -only-testing:WindmillUITests/ShellFlowTests
+              -only-testing:WindmillUITests/OfflineFlowTests
     defaults:
       run:
         working-directory: apps/ios/App

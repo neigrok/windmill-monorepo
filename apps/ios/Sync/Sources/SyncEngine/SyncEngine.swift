@@ -10,6 +10,8 @@ import Synchronization
 // `start()` says hello and starts the loops.
 
 public final class SyncEngine: Replica {
+  @TaskLocal package static var taskExecutor: (any TaskExecutor)?
+
   struct Loops {
     var tasks: [Task<Void, Never>] = []
     var started = false
@@ -96,8 +98,12 @@ public final class SyncEngine: Replica {
   // as a 401 (§9.1: a 401, or a hello served as anyone but the active replica's account) pauses it while `token` is
   // still the account's; and a `minSchema` above the registry's version, or a 426, requires an upgrade.
   package func hello(token: SessionToken?) async -> Reply<HelloResponse> {
+    guard core.connectivity.isOnline, !Task.isCancelled else { return .unreachable }
     let send = core.clock.wall.reading()
-    let reply = await transport.hello(token: token)
+    let reply = await core.answered(operation: "sync_hello", method: "GET", abandonOnCancellation: true) { [transport] in
+      await transport.hello(token: token)
+    }.reply
+    guard !Task.isCancelled else { return .unreachable }
     let timing = Timing(send: send, recv: core.clock.wall.reading())
     guard case .answered(let answer) = reply else { return reply }
     if let serverTime = answer.serverTime { _ = try? core.write { store, _ in try store.sample(serverTime: serverTime, timing: timing) } }
@@ -432,41 +438,45 @@ final class EngineCore: Sendable {
     return lifecycle.firstPullComplete(scope, in: loaded, subscribed: Set(try lifecycle.subscriptionSet(of: loaded, subscriptions)))
   }
 
-  // §7.4, §7.5: no answer in REQUEST_TIMEOUT_MS is a transport error; cancelling the caller cancels the call too.
-  func answered<Body: Sendable>(operation: String, _ call: @escaping @Sendable () async -> Reply<Body>) async
+  // Deadlines abandon the request; a cancelled push can record a late reply until its deadline, while hello ends at once.
+  func answered<Body: Sendable>(operation: String, method: String = "POST", abandonOnCancellation: Bool = false,
+                               _ call: @escaping @Sendable () async -> Reply<Body>) async
     -> (reply: Reply<Body>, failureKind: String?) {
+    guard !Task.isCancelled else { return (.unreachable, nil) }
     let diagnostics = TransportDiagnostics.Invocation()
     let start = clock.wall.reading().mono
     return await TransportDiagnostics.$invocation.withValue(diagnostics) {
-      let reply = await withTaskGroup(of: RequestRace<Body>.self) { group in
-        group.addTask { .answered(await call()) }
-        group.addTask { [sleeper = clock.sleeper] in
-          do {
-            try await sleeper.sleep(for: .milliseconds(Constants.requestTimeoutMs))
-            return .timedOut
-          } catch {
-            return .stopped
-          }
-        }
-        while let first = await group.next() {
-          switch first {
-          case .answered(let reply):
-            group.cancelAll()
-            return reply
-          case .timedOut:
-            if !Task.isCancelled {
-              TransportDiagnostics.report(telemetry, operation: operation, method: "POST", kind: "timeout",
-                                          durationMs: max(0, clock.wall.reading().mono - start))
-            }
-            group.cancelAll()
-            return .unreachable
-          case .stopped:
-            continue
-          }
-        }
-        return .unreachable
+      let race = RequestRace<Body>()
+      let request = Task(executorPreference: SyncEngine.taskExecutor) {
+        guard !Task.isCancelled else { return race.settle(.stopped) }
+        race.settle(.answered(await call()))
       }
-      return (reply, diagnostics.kind.withLock { $0 })
+      let deadline = Task(executorPreference: SyncEngine.taskExecutor) { [sleeper = clock.sleeper] in
+        do {
+          try await sleeper.sleep(for: .milliseconds(Constants.requestTimeoutMs))
+          race.settle(.timedOut)
+        } catch {}
+      }
+      defer { request.cancel(); deadline.cancel() }
+      let outcome = await withTaskCancellationHandler {
+        await race.outcome()
+      } onCancel: {
+        if abandonOnCancellation {
+          race.settle(.stopped)
+          deadline.cancel()
+        }
+        request.cancel()
+      }
+      switch outcome {
+      case .answered(let reply): return (reply, diagnostics.kind.withLock { $0 })
+      case .timedOut:
+        if !Task.isCancelled {
+          TransportDiagnostics.report(telemetry, operation: operation, method: method, kind: "timeout",
+                                      durationMs: max(0, clock.wall.reading().mono - start))
+        }
+        return (.unreachable, diagnostics.kind.withLock { $0 })
+      case .stopped: return (.unreachable, nil)
+      }
     }
   }
 
@@ -603,11 +613,40 @@ final class EngineCore: Sendable {
   }
 }
 
-// How a request's race against REQUEST_TIMEOUT_MS ended for one of its two runners.
-enum RequestRace<Body: Sendable>: Sendable {
-  case answered(Reply<Body>)
-  case timedOut
-  case stopped
+// The first answer, deadline or cancellation settles the caller; late replies cannot settle it again.
+final class RequestRace<Body: Sendable>: Sendable {
+  enum Outcome: Sendable {
+    case answered(Reply<Body>)
+    case timedOut
+    case stopped
+  }
+
+  struct State {
+    var outcome: Outcome?
+    var waiter: CheckedContinuation<Outcome, Never>?
+  }
+
+  let state = Mutex(State())
+
+  func outcome() async -> Outcome {
+    await withCheckedContinuation { continuation in
+      let settled = state.withLock { state -> Outcome? in
+        if state.outcome == nil { state.waiter = continuation }
+        return state.outcome
+      }
+      if let settled { continuation.resume(returning: settled) }
+    }
+  }
+
+  func settle(_ outcome: Outcome) {
+    let waiter = state.withLock { state -> CheckedContinuation<Outcome, Never>? in
+      guard state.outcome == nil else { return nil }
+      state.outcome = outcome
+      defer { state.waiter = nil }
+      return state.waiter
+    }
+    waiter?.resume(returning: outcome)
+  }
 }
 
 // MARK: - The release timer

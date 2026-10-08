@@ -94,7 +94,7 @@ enum TransportDiagnostics {
     guard let error = error as? URLError else { return "transport" }
     switch error.code {
     case .cancelled: return nil
-    case .notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed: return "offline"
+    case .notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .networkConnectionLost: return "offline"
     case .timedOut: return "timeout"
     case .secureConnectionFailed, .serverCertificateHasBadDate, .serverCertificateUntrusted,
          .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid, .clientCertificateRejected,

@@ -31,16 +31,16 @@ struct AccountSheet: View {
       HStack {
         if model.sheet == .code || model.sheet == .address || model.sheet == .appleAddress {
           roundButton("chevron.left", "Back") {
-            model.choose("back", screen: model.sheet?.telemetryName ?? "keep"); model.error = nil
+            model.cancelAuthentication(); model.choose("back", screen: model.sheet?.telemetryName ?? "keep"); model.error = nil
             if model.sheet == .code { model.sheet = model.appleTicket == nil ? .address : .appleAddress }
             else if model.sheet == .appleAddress { model.sheet = model.account == nil ? .appleQuestion : model.appleOrigin }
             else { model.sheet = .keep }
           }
-        } else if model.sheet == .keep { roundButton("xmark", "Close") { model.closeKeep() } }
-        else if compact { roundButton("xmark", "Close") { model.closeAppleStep() } }
+        } else if model.sheet == .keep { roundButton("xmark", "Close") { model.cancelAuthentication(); model.closeKeep() } }
+        else if compact { roundButton("xmark", "Close") { model.cancelAuthentication(); model.closeAppleStep() } }
         Spacer()
-        if model.sheet == .you { Button("Done") { model.choose("close", screen: "you"); model.sheet = nil }.font(Design.strong()).padding(.horizontal, 18).frame(height: 44).modifier(Glass()) }
-      }.padding(.horizontal, model.sheet == .you ? 16 : 24).padding(.top, compact ? 24 : 16).frame(height: receipt ? 0 : nil).opacity(receipt ? 0 : 1).disabled(model.working)
+        if [.you, .authPending, .adoption, .discardAdoption].contains(model.sheet) { Button("Done") { model.cancelAuthentication(); model.choose("close", screen: "you"); model.sheet = nil }.font(Design.strong()).padding(.horizontal, 18).frame(height: 44).modifier(Glass()) }
+      }.padding(.horizontal, model.sheet == .you ? 16 : 24).padding(.top, compact ? 24 : 16).frame(height: model.sheet == .appleAdded ? 0 : nil).opacity(model.sheet == .appleAdded ? 0 : 1)
       ScrollView {
         VStack(alignment: .leading, spacing: 16) {
           switch model.sheet {
@@ -57,7 +57,8 @@ struct AccountSheet: View {
           case .appleExpired: appleExpired
           case .authPending:
             Text("Finish signing in").font(Design.title())
-            Button("Try again") { model.choose("retry", screen: "auth_pending"); Task { await model.retryAuthenticatedSignIn() } }
+            Text("Sign-in needs a connection. You can keep using this phone while offline.").foregroundStyle(dim)
+            Button("Try again") { model.choose("retry", screen: "auth_pending"); model.performAuthentication { await model.retryAuthenticatedSignIn() } }
               .font(Design.strong()).frame(maxWidth: .infinity, minHeight: 52).background(brand, in: Capsule()).foregroundStyle(shell).accessibilityIdentifier("auth-retry")
           case nil: EmptyView()
           }
@@ -74,8 +75,7 @@ struct AccountSheet: View {
         OnboardingScreen(replay: true, telemetry: model.telemetry) { aboutWindmill = false }
           .preferredColorScheme(OnboardingFixture.appearance ?? (systemStyle == .light ? .light : .dark))
       }
-      .interactiveDismissDisabled(model.editorReadOnly)
-      .disabled((model.working || model.accountTransition) && !inputStep)
+      .interactiveDismissDisabled(model.signInSession?.isComplete == false || model.signOutSession != nil)
       .animation(.easeOut(duration: reduceMotion ? 0.2 : 0.28), value: model.sheet)
       .sensoryFeedback(.success, trigger: model.authSuccess)
       .sensoryFeedback(.selection, trigger: model.authSelection)
@@ -98,7 +98,7 @@ struct AccountSheet: View {
       Text("This Apple ID doesn't open a Windmill account yet. If you have one, confirm its email and Apple will open it too.").font(Design.text(17)).tracking(-0.3).foregroundStyle(dim).lineSpacing(2)
       VStack(spacing: 12) {
         equalButton("Use my account") { model.useAppleAccount() }
-        equalButton("Create account") { Task { await model.createAppleAccount() } }
+        equalButton("Create account") { model.performAuthentication { await model.createAppleAccount() } }
       }.padding(.top, 14)
     }
   }
@@ -109,8 +109,8 @@ struct AccountSheet: View {
       Text("No account at this email").font(Design.title())
       Text("\(model.email) doesn't open a Windmill account. Try the address you signed up with, or create one with Apple.").font(Design.text(17)).tracking(-0.3).foregroundStyle(dim).lineSpacing(2)
       VStack(spacing: 12) {
-        equalButton("Try another email") { model.choose("change_email", screen: "apple_no_account"); model.error = nil; model.code = ""; model.sheet = .appleAddress }
-        equalButton("Create account") { Task { await model.createAppleAccount() } }
+        equalButton("Try another email") { model.cancelAuthentication(); model.choose("change_email", screen: "apple_no_account"); model.error = nil; model.code = ""; model.sheet = .appleAddress }
+        equalButton("Create account") { model.performAuthentication { await model.createAppleAccount() } }
       }.padding(.top, 14)
     }
   }
@@ -168,9 +168,10 @@ struct AccountSheet: View {
 
   var authDoors: some View {
     VStack(spacing: 16) {
+      Text("Sign-in needs a connection.").font(Design.text(13)).foregroundStyle(dim)
       appleDoor
-      Button("Use email instead") { usingLink = false; model.choose("email", screen: model.sheet?.telemetryName ?? "keep"); model.appleTicket = nil; model.appleAuthorization = nil; model.error = nil; model.sheet = .address }.font(Design.strong()).frame(maxWidth: .infinity, minHeight: 44).accessibilityIdentifier("email-sign-in")
-      Button("Use a sign-in link") { usingLink = true; model.error = nil; model.appleTicket = nil; model.appleAuthorization = nil; model.sheet = .address }
+      Button("Use email instead") { model.cancelAuthentication(); usingLink = false; model.choose("email", screen: model.sheet?.telemetryName ?? "keep"); model.appleTicket = nil; model.appleAuthorization = nil; model.error = nil; model.sheet = .address }.font(Design.strong()).frame(maxWidth: .infinity, minHeight: 44).accessibilityIdentifier("email-sign-in")
+      Button("Use a sign-in link") { model.cancelAuthentication(); usingLink = true; model.error = nil; model.appleTicket = nil; model.appleAuthorization = nil; model.sheet = .address }
         .font(Design.strong()).frame(maxWidth: .infinity, minHeight: 44).accessibilityIdentifier("link-sign-in")
     }.buttonStyle(.plain)
   }
@@ -179,7 +180,7 @@ struct AccountSheet: View {
       if model.runtime?.settings.appleEnabled == true {
         if model.runtime?.settings.fakeApple == true {
           Button {
-            Task {
+            model.performAuthentication {
               guard let auth = model.runtime?.auth else { model.error = "Sign-in is unavailable."; return }
               await model.authenticateApple { token in
                 return try auth.authorizeFakeApple(token: token)
@@ -194,7 +195,7 @@ struct AccountSheet: View {
             request.requestedScopes = [.fullName, .email]
             request.nonce = SHA256.hash(data: Data(appleNonce.utf8)).map { String(format: "%02x", $0) }.joined()
           } onCompletion: { result in
-            Task {
+            model.performAuthentication {
               do {
                 let authorization = try result.get()
                 guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
@@ -222,15 +223,15 @@ struct AccountSheet: View {
         Text("Works once and lasts 15 minutes.").font(Design.text(15)).foregroundStyle(dim)
         TextField("Sign-in link or token", text: $signInLink).textInputAutocapitalization(.never).autocorrectionDisabled()
           .padding(18).background(inputSurface, in: RoundedRectangle(cornerRadius: 18)).accessibilityIdentifier("sign-in-link")
-        Button("Sign in") { Task { await model.verifyLink(signInLink) } }.font(Design.strong()).frame(maxWidth: .infinity, minHeight: 52)
+        Button("Sign in") { model.performAuthentication { await model.verifyLink(signInLink) } }.font(Design.strong()).frame(maxWidth: .infinity, minHeight: 52)
           .background(brand, in: Capsule()).foregroundStyle(shell).disabled(model.working || signInLink.isEmpty).accessibilityIdentifier("sign-in-link-submit")
-        Button("Use email instead") { usingLink = false; model.error = nil }.frame(minHeight: 44)
+        Button("Use email instead") { model.cancelAuthentication(); usingLink = false; model.error = nil }.frame(minHeight: 44)
       } else {
       Text(model.sheet == .appleAddress ? "Your Windmill email" : "Sign in with email").font(Design.title())
       Text(model.sheet == .appleAddress ? "We'll send a code to confirm it's yours." : "We'll send a six-digit code.").font(Design.text(15)).foregroundStyle(dim)
       TextField("Email address", text: Binding(get: { model.email }, set: { if !model.working { model.email = $0 } })).keyboardType(.emailAddress).textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled().focused($focusedInput, equals: model.sheet == .appleAddress ? .appleAddress : .address)
         .padding(18).background(inputSurface, in: RoundedRectangle(cornerRadius: 18)).overlay(RoundedRectangle(cornerRadius: 18).stroke(brand)).accessibilityIdentifier("email-address")
-      Button("Send code") { Task { await model.sendCode() } }.font(Design.strong()).frame(maxWidth: .infinity, minHeight: 52).background(brand, in: Capsule()).foregroundStyle(shell).disabled(model.working || !model.email.contains("@"))
+      Button("Send code") { model.performAuthentication { await model.sendCode() } }.font(Design.strong()).frame(maxWidth: .infinity, minHeight: 52).background(brand, in: Capsule()).foregroundStyle(shell).disabled(model.working || !model.email.contains("@"))
       Text("New here? This also creates your account.").font(Design.text(13)).foregroundStyle(dim)
       }
     }
@@ -242,23 +243,23 @@ struct AccountSheet: View {
       Text("Check your email").font(Design.title())
       HStack(spacing: 7) {
         Text("Sent to \(model.email)").font(Design.text(14)).foregroundStyle(dim)
-        Button("Change") { model.choose("change_email", screen: "code"); model.error = nil; model.sheet = model.appleTicket == nil ? .address : .appleAddress }.font(Design.strong(14)).foregroundStyle(brand).disabled(model.working)
+        Button("Change") { model.cancelAuthentication(); model.choose("change_email", screen: "code"); model.error = nil; model.sheet = model.appleTicket == nil ? .address : .appleAddress }.font(Design.strong(14)).foregroundStyle(brand)
       }
       TextField("6-digit code", text: Binding(get: { model.code }, set: { if !model.working { model.code = String($0.filter { $0.isASCII && $0.isNumber }.prefix(6)) } })).keyboardType(.numberPad).textContentType(.oneTimeCode).focused($focusedInput, equals: .code)
         .padding(18).frame(minHeight: 60).background(inputSurface, in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(brand, lineWidth: 1.5)).accessibilityIdentifier("email-code")
         .overlay(alignment: .trailing) { if model.authBusyIndicator { ProgressView().tint(brand).padding(.trailing, 18) } }
         .onChange(of: model.code) { _, value in
-          if value.count == 6 { Task { await model.verifyCode() } }
+          if value.count == 6 { model.performAuthentication { await model.verifyCode() } }
         }
       if let error = model.error { errorText(error) }
       else { Text("It works once and lasts 15 minutes.").font(Design.text(13)).foregroundStyle(faint) }
       if model.appleTicket == nil {
-        Button("Use a sign-in link") { usingLink = true; model.code = ""; model.sheet = .address }.frame(minHeight: 44)
+        Button("Use a sign-in link") { model.cancelAuthentication(); usingLink = true; model.code = ""; model.sheet = .address }.frame(minHeight: 44)
       }
       TimelineView(.periodic(from: .now, by: 1)) { context in
         let remaining = max(0, 30 - Int(context.date.timeIntervalSince(model.codeSentAt ?? .distantPast)))
-        Button(remaining == 0 ? "Resend code" : "Resend code in 0:\(String(format: "%02d", remaining))") { Task { await model.sendCode() } }
+        Button(remaining == 0 ? "Resend code" : "Resend code in 0:\(String(format: "%02d", remaining))") { model.performAuthentication { await model.sendCode() } }
           .font(Design.strong(13)).foregroundStyle(remaining == 0 ? brand : faint).disabled(remaining > 0 || model.working).frame(minHeight: 44, alignment: .leading)
       }
     }
@@ -298,10 +299,10 @@ struct AccountSheet: View {
         }
         Text("YOUR DATA").font(Design.mono()).foregroundStyle(faint)
         fact("Backup", model.authPaused ? "Paused" : model.backup == "backed up" ? "Up to date" : "Not backed up yet")
-        Button("Sign out") { Task { await model.beginSignOut() } }.frame(minHeight: 52).accessibilityIdentifier("sign-out")
+        Button("Sign out") { model.performAuthentication { await model.beginSignOut() } }.frame(minHeight: 52).accessibilityIdentifier("sign-out")
       }
       Button {
-        model.sheet = nil
+        model.cancelAuthentication(); model.sheet = nil
         model.gymSettingsRequested = true
         model.openRoom(.gym)
       } label: {
@@ -350,7 +351,7 @@ struct AccountSheet: View {
       Text(count == 0 ? "Your pages and log stay in your account and leave this phone." : "\(count) pending work \(count == 1 ? "item hasn't" : "items haven't") been confirmed as backed up. Keep \(count == 1 ? "it" : "them") on this phone for this account, or discard \(count == 1 ? "it" : "them") from this phone.").foregroundStyle(dim)
       Button(count == 0 ? "Sign out" : "Keep and sign out") { Task { await model.finishSignOut(.keep) } }.frame(maxWidth: .infinity, minHeight: 52).accessibilityIdentifier("sign-out-keep")
       if count > 0 { Button("Discard and sign out", role: .destructive) { Task { await model.finishSignOut(.discard) } }.frame(maxWidth: .infinity, minHeight: 52) }
-      Button("Cancel", role: .cancel) { Task { await model.cancelSignOut() } }.frame(maxWidth: .infinity, minHeight: 52)
+      Button("Cancel", role: .cancel) { Task { await model.cancelSignOut() } }.frame(maxWidth: .infinity, minHeight: 52).disabled(model.accountTransition)
     }
   }
 
@@ -382,7 +383,7 @@ struct AppleRemovalConfirmation: UIViewControllerRepresentable {
       let dialog = UIAlertController(title: "Remove Apple?", message: "You'll sign in with \(model.accountEmail) instead. Apple won't open this account.", preferredStyle: .actionSheet)
       dialog.addAction(UIAlertAction(title: "Remove Apple", style: .destructive) { _ in
         model.removingApple = false
-        Task { await model.removeApple() }
+        model.performAuthentication { await model.removeApple() }
       })
       dialog.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
         model.removingApple = false; model.choose("cancel", screen: "24c")
@@ -427,7 +428,7 @@ struct AccountConfirmation: UIViewControllerRepresentable {
           guard let self, let alert else { return }
           self.settling = true
           let finish: () -> Void = { [weak self] in
-            Task { @MainActor in
+            model.performAuthentication {
               await action()
               self?.settling = false
               self?.showConfirmation()
@@ -444,6 +445,7 @@ struct AccountConfirmation: UIViewControllerRepresentable {
         button("Cancel", style: .cancel) { model.choose("cancel", screen: "discard_adoption"); model.sheet = .adoption }
         button("Discard", style: .destructive) { await model.adopt(.discard) }
       } else {
+        button("Not now", style: .cancel) { model.cancelAuthentication(); model.choose("cancel", screen: "adoption"); model.sheet = nil }
         button("Add") { await model.adopt(.add) }
         button("Discard") { model.choose("discard", screen: "adoption"); model.sheet = .discardAdoption }
       }

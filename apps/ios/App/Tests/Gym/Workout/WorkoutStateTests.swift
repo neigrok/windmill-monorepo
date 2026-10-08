@@ -181,7 +181,9 @@ import SyncTesting
     #expect(gym.workoutBanner(gym.workoutStrandedSets.count) == "1 set is saved on this device only. The log didn’t answer. They’ll sync when it’s available.")
     await workout.finish()
     #expect(workout.session?.isOpen == true && workout.receipt == nil && workout.isPresented)
-    #expect(workout.sets == retained && workout.message == "Some sets are still on this device. Finish when they have synced.")
+    #expect(workout.sets == retained && workout.message == "Some sets are saved on this phone. Finishing this synced workout needs a connection. You can keep logging or hide it.")
+    #expect(workout.canLog && gym.hideWorkout() && !workout.isPresented)
+    #expect(gym.restoreWorkout())
     fault.failure.withLock { $0 = nil }
     await engine.flushOnLeave()
     await engine.start()
@@ -197,7 +199,7 @@ import SyncTesting
     #expect(!workout.isPresented && workout.handoff == .detail(workout.sessionId))
   }
 
-  @Test func finishPullsAcceptedSetsAndReceiptWhenLiveIsUnavailable() async throws {
+  @Test func finishConfirmsReceiptWithoutLockingControlsWhenLiveIsUnavailable() async throws {
     let fault = WorkoutFaultTransport(), runtime = try Self.faultRuntime(fault, drivesLoops: true)
     let identity = fault.model.identity(email: "finish-without-live@example.com")
     #expect(try await runtime.engine.signIn(account: identity.account, token: identity.token).isComplete)
@@ -208,7 +210,12 @@ import SyncTesting
     workout.logSet()
     #expect(gym.workoutDeviceSets(workout.sets).count == 1)
     await runtime.engine.start()
-    await workout.finish()
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    #expect(await Self.until { gym.refresh(); workout.reconcile(); return gym.workoutDeviceSets(workout.sets).isEmpty })
+    let finishing = Task { await workout.finish() }
+    #expect(await Self.until { workout.finishQueued || workout.receipt != nil })
+    #expect(!workout.finishing)
+    await finishing.value
     let receipt = try #require(workout.receipt)
     #expect(!receipt.session.isOpen && receipt.sets.count == 1 && workout.isPresented && !workout.finishing)
     #expect(gym.workoutDeviceSets(receipt.sets).isEmpty && workout.message == nil)
@@ -224,18 +231,23 @@ import SyncTesting
     _ = try #require(gym.startWorkout())
     let workout = gym.workout
     workout.add(ID("back-squat")); workout.logSet()
-    let retained = workout.sets, requests = fault.pullRequests.withLock { $0 }
-    fault.pullFailure.withLock { $0 = 503 }
     await runtime.engine.start()
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    #expect(await Self.until { gym.refresh(); workout.reconcile(); return gym.workoutDeviceSets(workout.sets).isEmpty })
+    let retained = workout.sets
+    let requests = fault.pullRequests.withLock { $0 }
+    fault.pullFailure.withLock { $0 = 503 }
     let finishing = Task { await workout.finish() }
-    #expect(await Self.until { workout.finishing && fault.pullRequests.withLock { $0 >= requests + 2 } })
+    #expect(await Self.until { workout.finishQueued && !workout.finishing && fault.pullRequests.withLock { $0 > requests } })
+    #expect(gym.hideWorkout() && !workout.isPresented)
     let interrupted = ContinuousClock.now
     if cancel { finishing.cancel() } else { gym.accountTransition = true }
     await finishing.value
     #expect(interrupted.duration(to: .now) < .seconds(1))
     #expect(!workout.finishing && workout.session?.isOpen == true && workout.receipt == nil && workout.sets == retained)
-    #expect(workout.message == nil && recorder.entries.withLock { $0.filter { $0.name == "client_error" }.isEmpty })
-    #expect(try runtime.runner.read(Gym.scope) { try !$0.commands().contains { $0.command.name == Gym.Commands.finish } })
+    #expect(workout.message == "Finish is saved on this phone. It will be confirmed when a connection is available.")
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "client_error" }.isEmpty })
+    #expect(try runtime.runner.read(Gym.scope) { try $0.commands().contains { $0.command.name == Gym.Commands.finish } })
   }
 
   @Test func clockAheadStartAndSetsStayOnDeviceAfterRefusalAndReplayWithTheSameIdentities() async throws {
@@ -278,6 +290,23 @@ import SyncTesting
     #expect(workout.receipt != nil && workout.session?.isOpen == false && workout.isPresented)
     #expect(try runtime.runner.read(Gym.scope) { try $0.commands().contains { $0.command.name == Gym.Commands.start && !$0.isAdmitted } })
     #expect(gym.workoutDeviceSets(workout.sets) == Set(workout.sets.map(\.id)))
+  }
+
+  @Test func localFinishDoesNotWaitForAStalledPush() async throws {
+    let fault = WorkoutFaultTransport(), runtime = try Self.faultRuntime(fault)
+    let identity = fault.model.identity(email: "stalled-workout@example.com")
+    #expect(try await runtime.engine.signIn(account: identity.account, token: identity.token).isComplete)
+    let gym = GymModel(runner: runtime.runner, runtime: runtime)
+    _ = try #require(gym.startWorkout())
+    let workout = gym.workout
+    workout.add(ID("back-squat")); #expect(workout.logSet())
+    let retained = workout.sets
+    fault.pushDelay.withLock { $0 = .seconds(10) }
+    let finishing = Task { await workout.finish() }
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(!workout.finishing && workout.receipt?.sets == retained && workout.session?.isOpen == false)
+    finishing.cancel(); await finishing.value
+    #expect(workout.sets == retained)
   }
 
   @Test func backwardClockFinishPreservesTheWorkoutAndShowsItsSpecificRefusal() async throws {
@@ -1430,7 +1459,8 @@ import SyncTesting
       do { try await Task.sleep(for: .seconds(10)) }
       catch { cancelled.withLock { $0 = true } }
     }
-    #expect(!completed && cancelled.withLock { $0 } && started.duration(to: .now) < .seconds(1))
+    #expect(!completed && started.duration(to: .now) < .seconds(1))
+    #expect(await Self.until { cancelled.withLock { $0 } })
     #expect(workout.session == session && workout.sets == retained && workout.receipt == nil && workout.canLog)
     let failures = recorder.entries.withLock { $0.filter { $0.name == "client_error" } }
     #expect(failures.map(\.properties) == [["operation": "gym_flush", "failure_kind": "timeout"]])
@@ -1452,7 +1482,8 @@ import SyncTesting
     }
     for _ in 0..<100 where !entered.withLock({ $0 }) { try await Task.sleep(for: .milliseconds(2)) }
     #expect(entered.withLock { $0 }); drain.cancel()
-    #expect(await drain.value == false && cancelled.withLock { $0 } && started.duration(to: .now) < .seconds(1))
+    #expect(await drain.value == false && started.duration(to: .now) < .seconds(1))
+    #expect(await Self.until { cancelled.withLock { $0 } })
     #expect(workout.session == session && workout.sets == retained && workout.receipt == nil && workout.canLog)
     #expect(recorder.entries.withLock { $0.filter { $0.name == "client_error" }.isEmpty })
     #expect(await workout.drainForFinish(timeout: .milliseconds(30)) {
@@ -1468,7 +1499,8 @@ import SyncTesting
       do { try await Task.sleep(for: .seconds(10)) }
       catch { cancelled.withLock { $0 = true } }
     }
-    #expect(!result && cancelled.withLock { $0 })
+    #expect(!result)
+    #expect(await Self.until { cancelled.withLock { $0 } })
     #expect(started.duration(to: .now) < .seconds(1))
   }
 
@@ -1483,18 +1515,38 @@ import SyncTesting
     }
     for _ in 0..<100 where !entered.withLock({ $0 }) { try await Task.sleep(for: .milliseconds(2)) }
     #expect(entered.withLock { $0 }); drain.cancel()
-    #expect(await drain.value == false && cancelled.withLock { $0 })
+    #expect(await drain.value == false)
+    #expect(await Self.until { cancelled.withLock { $0 } })
     #expect(started.duration(to: .now) < .seconds(1))
+  }
+
+  @Test(arguments: [false, true])
+  func drainDoesNotJoinAnOperationThatIgnoresCancellation(cancel: Bool) async throws {
+    let pending = Mutex<CheckedContinuation<Void, Never>?>(nil)
+    let started = ContinuousClock.now
+    let drain = Task {
+      await WorkoutState.drain(timeout: cancel ? .seconds(10) : .milliseconds(30)) {
+        await withCheckedContinuation { continuation in pending.withLock { $0 = continuation } }
+      }
+    }
+    #expect(await Self.until { pending.withLock { $0 != nil } })
+    if cancel { drain.cancel() }
+    #expect(await drain.value == false && started.duration(to: .now) < .seconds(1))
+    pending.withLock { $0?.resume(); $0 = nil }
   }
 }
 
 nonisolated final class WorkoutFaultTransport: SyncTransport {
   let model = JournalModelTransport()
   let failure = Mutex<Int?>(nil)
+  let pushDelay = Mutex<Duration?>(nil)
   let pullFailure = Mutex<Int?>(nil)
   let pullRequests = Mutex(0)
   func hello(token: SessionToken?) async -> Reply<HelloResponse> { await model.hello(token: token) }
   func push(_ request: PushRequest, token: SessionToken) async -> Reply<PushResponse> {
+    if let delay = pushDelay.withLock({ $0 }) {
+      do { try await Task.sleep(for: delay) } catch { return .unreachable }
+    }
     if let status = failure.withLock({ $0 }) {
       return status == 0 ? .unreachable : .answered(.failed(HTTPFailure(status: status)))
     }

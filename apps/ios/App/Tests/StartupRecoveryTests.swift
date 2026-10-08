@@ -40,6 +40,42 @@ import Synchronization
     throw CancellationError()
   }
 
+  @Test(arguments: [false, true]) func authControlsDuringRestoredHelloKeepRecoveryUsable(close: Bool) async throws {
+    let directory = URL.temporaryDirectory.appending(path: UUID().uuidString), service = "works.windmill.startup-tests.\(UUID())"
+    let transport = RecoveryTransport()
+    let (runtime, identity) = try await pendingRuntime(transport: transport, directory: directory, service: service)
+    let preferences = UserDefaults(suiteName: service)!
+    let model = try AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime)
+    defer {
+      model.timerTask?.cancel(); model.observationTask?.cancel(); model.gym.stop()
+      try? runtime.tokens.delete(for: identity.account)
+      preferences.removePersistentDomain(forName: service)
+    }
+    await transport.hold()
+    let start = Task { await model.start() }
+    try await waiting(transport)
+    if close {
+      model.cancelAuthentication(); model.sheet = nil
+      await start.value
+      #expect(model.signInDeferred && !model.editorReadOnly && !model.accountTransition)
+      #expect(try runtime.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == identity.account)
+      model.journal.type("Writing while recovery is deferred"); model.journal.done()
+      await transport.release()
+      model.sheet = .authPending
+      model.performAuthentication { await model.retryAuthenticatedSignIn() }
+      await model.authTask?.value
+      #expect(model.journal.document.body == "Writing while recovery is deferred")
+    } else {
+      model.performAuthentication { await model.retryAuthenticatedSignIn() }
+      await model.authTask?.value
+      await transport.release()
+      await start.value
+    }
+    #expect(model.syncStarted && model.account == identity.account && !model.accountTransition)
+    #expect(!model.restoringSignIn && !model.signInDeferred && !model.editorReadOnly && model.pendingSignIn == nil && model.sheet == nil)
+    #expect(try runtime.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == nil)
+  }
+
   @Test func upgradedPreviouslyOpenedInstallDoesNotShowInkDuringRealStartup() async throws {
     let directory = URL.temporaryDirectory.appending(path: UUID().uuidString), service = "works.windmill.ink-upgrade-tests.\(UUID())"
     let runtime = try AppRuntime(settings: AppSettings(arguments: ["app"]), directory: directory, service: service,
@@ -117,10 +153,13 @@ import Synchronization
     await transport.hold()
     let first = Task { await model.start() }
     try await waiting(transport)
+    let repeated = Task { await model.start() }
+    await Task.yield()
     await model.resumeBackup()
     #expect(transport.state.withLock { $0.active == 1 && $0.maximumActive == 1 })
     first.cancel()
     await first.value
+    await repeated.value
     #expect(!model.syncStarted && !model.accountTransition)
     #expect(model.restoringSignIn && model.pendingSignIn != nil && model.sheet == .authPending)
     #expect(!model.journal.inkVisible && !preferences.bool(forKey: "inkShown"))

@@ -54,11 +54,16 @@ final class AppModel {
   var accountTransition = false { didSet { gym.accountTransition = editorReadOnly } }
   var syncStarted = false
   var restoringSignIn = false
+  var signInDeferred = false { didSet { gym.accountTransition = editorReadOnly } }
+  var resumingBackup = false
+  var authGeneration = 0
   var signInSession: SignInSession? { didSet { gym.accountTransition = editorReadOnly } }
   var signOutSession: SignOutSession? { didSet { gym.accountTransition = editorReadOnly } }
   var adoptionAnswers: [String: LineageAnswer] = [:]
   @ObservationIgnored var observationTask: Task<Void, Never>?
   @ObservationIgnored var timerTask: Task<Void, Never>?
+  @ObservationIgnored var backupTask: Task<Void, Never>?
+  @ObservationIgnored var authTask: Task<Void, Never>?
   @ObservationIgnored var recoveryDue: ContinuousClock.Instant?
   @ObservationIgnored var recoveryDelayMs = Constants.backoffBaseMs
 
@@ -112,14 +117,15 @@ final class AppModel {
   var canSignIn: Bool { runtime?.settings.baseURL != nil || runtime?.settings.modelServer == true }
   var authPaused: Bool { runtime?.engine.status.authPaused == true }
   var compactAccountSheet: Bool { [.keep, .appleQuestion, .appleNoAccount, .appleExpired].contains(sheet) }
-  var editorReadOnly: Bool { working || accountTransition || pendingSignIn != nil || signInSession?.isComplete == false || signOutSession != nil }
+  var editorReadOnly: Bool { working || accountTransition || (!signInDeferred && (pendingSignIn != nil || signInSession?.isComplete == false)) || signOutSession != nil }
   var appleSessionToken: SessionToken? {
     guard !authPaused, let account else { return nil }
     return runtime?.tokens.token(for: account)
   }
 
   func reportBoundary(_ operation: String, error: any Error) {
-    guard Store.failureKind(error) == nil, !(error is KeychainError) else { return }
+    guard Store.failureKind(error) == nil, !(error is KeychainError), !(error is CancellationError),
+          (error as? EngineError) != .unreachable else { return }
     telemetry.failure(operation, kind: "unexpected")
   }
   func screenViewed(_ screen: String) { telemetry.event("first_run_screen_viewed", properties: ["screen": screen]) }
@@ -156,6 +162,9 @@ final class AppModel {
 
   func refresh() {
     journal.refresh(); gym.refresh()
+    if runtime?.connectivity?.isOnline == false {
+      telemetry.event("api_request_failed", properties: ["operation": "sync_hello", "route": "/v1/sync", "method": "GET", "failure_kind": "offline"])
+    }
     do {
       if let runtime { account = try runtime.account(); keptWork = try runtime.hasKeptWork() }
     } catch { reportBoundary("auth_restore", error: error); self.error = "Couldn't read the account. Your work stays on this phone. Try again." }
@@ -180,6 +189,10 @@ final class AppModel {
 
   func start() async {
     guard let runtime else { return }
+    if let backupTask {
+      await withTaskCancellationHandler { await backupTask.value } onCancel: { backupTask.cancel() }
+      return
+    }
     let restoring = restoringSignIn
     if observationTask == nil {
       let events = runtime.engine.events()
@@ -188,8 +201,7 @@ final class AppModel {
       }
     }
     gym.start()
-    await runtime.revokeSignedOutSessions(force: true)
-    await resumeBackup()
+    Task { await runtime.revokeSignedOutSessions(force: true) }
     if timerTask == nil {
       timerTask = Task { [weak self] in
         while !Task.isCancelled {
@@ -197,13 +209,19 @@ final class AppModel {
           guard let self, !Task.isCancelled else { return }
           self.refresh()
           self.expireAppleTicket()
-          if !self.restoringSignIn, self.pendingSignIn != nil, !self.working, !self.accountTransition, self.authRetryAt <= Date() { await self.retryAuthenticatedSignIn() }
-          if !self.syncStarted && !self.journal.dirty { await self.resumeBackup() }
-          await self.runtime?.revokeSignedOutSessions()
+          if !self.signInDeferred, !self.restoringSignIn, self.pendingSignIn != nil, !self.working, !self.accountTransition, self.authRetryAt <= Date() {
+            self.performAuthentication { await self.retryAuthenticatedSignIn() }
+          }
+          if !self.signInDeferred, !self.syncStarted, self.backupTask == nil, !self.journal.dirty {
+            _ = self.startBackup()
+          }
+          Task { await self.runtime?.revokeSignedOutSessions() }
         }
       }
     }
-    guard !Task.isCancelled else { return }
+    let backup = startBackup()
+    await withTaskCancellationHandler { await backup.value } onCancel: { backup.cancel() }
+    guard !Task.isCancelled, !backup.isCancelled else { return }
     refresh()
     runtime.updateTelemetryIdentity()
     if !syncStarted {
@@ -213,17 +231,30 @@ final class AppModel {
     if !welcome, !restoring, selectedRoom == .journal { journal.automaticallyShowInk() }
   }
 
+  func startBackup() -> Task<Void, Never> {
+    if let backupTask { return backupTask }
+    let task = Task { await self.resumeBackup(); self.backupTask = nil }
+    backupTask = task
+    return task
+  }
+
   func resumeBackup() async {
-    guard !Task.isCancelled, !syncStarted, !accountTransition, !working,
+    guard !Task.isCancelled, !syncStarted, !resumingBackup, !accountTransition, !working,
+          signOutSession == nil, signInSession?.isComplete != false || restoringSignIn,
           pendingSignIn == nil || restoringSignIn, let runtime else { return }
     if let recoveryDue, recoveryDue > ContinuousClock.now { return }
-    accountTransition = true; journal.editing = false
-    defer { accountTransition = false }
+    let generation = authGeneration
+    let restoring = restoringSignIn
+    resumingBackup = true
+    defer { resumingBackup = false }
+    accountTransition = restoring
+    if restoring { journal.editing = false }
+    defer { if authGeneration == generation { accountTransition = false } }
     if !flushRooms() { return }
     await runtime.engine.start()
-    guard !Task.isCancelled else { return }
+    guard !Task.isCancelled, authGeneration == generation else { return }
     do {
-      let resumed = try await runtime.engine.resumeSignIn()
+      let resumed = restoring ? try await runtime.engine.resumeSignIn() : nil
       try Task.checkCancellation()
       setSignInSession(resumed)
       if let resumed, !resumed.isComplete, currentAdoption == nil { try await completeAdoption(resumed) }
@@ -260,13 +291,34 @@ final class AppModel {
   }
 
   func dismissSheet() {
+    cancelAuthentication()
     if keepSheetPresented { dismissKeep() }
     keepSheetPresented = false
     appleTicket = nil; appleLinkedReceipt = false; error = nil
     if pendingSignIn == nil { appleAuthorization = nil }
   }
 
+  func cancelAuthentication() {
+    authGeneration += 1
+    authTask?.cancel(); authTask = nil
+    if pendingSignIn != nil || signInSession?.isComplete == false { signInDeferred = true; backupTask?.cancel() }
+    working = false; accountTransition = false; authBusyIndicator = false
+  }
+
+  func performAuthentication(_ operation: @escaping @MainActor () async -> Void) {
+    guard authTask == nil, !working, !accountTransition else { return }
+    if !restoringSignIn { backupTask?.cancel() }
+    authGeneration += 1
+    let generation = authGeneration
+    authTask = Task {
+      guard !Task.isCancelled, self.authGeneration == generation else { return }
+      await operation()
+      if self.authGeneration == generation { self.authTask = nil }
+    }
+  }
+
   func useAppleAccount() {
+    cancelAuthentication()
     guard !expireAppleTicket() else { return }
     choose("use_account", screen: "23a"); authSelection += 1
     code = ""; error = nil; sheet = .appleAddress
@@ -290,17 +342,19 @@ final class AppModel {
       if refusal.code == "identity-taken" { identityTaken = true; screenViewed("24d"); error = nil; return }
     }
     let offline = (failure as? AuthRefusal)?.code == "offline" || (failure as? URLError).map {
-      [.notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .networkConnectionLost].contains($0.code)
+      [.notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .networkConnectionLost, .timedOut].contains($0.code)
     } == true
-    error = offline && (appleFlow || appleTicket != nil) ? AuthRefusal.offline.message : failure.localizedDescription
+    if failure is CancellationError || (failure as? URLError)?.code == .cancelled { return }
+    error = offline ? AuthRefusal.offline.message : failure.localizedDescription
   }
 
   func createAppleAccount() async {
     guard !working, pendingSignIn == nil, !expireAppleTicket(), let ticket = appleTicket, let auth = runtime?.auth else { return }
     guard account == nil else { error = "Sign in to the same account to resume backup. Your pages stay with this account."; return }
     choose("create_account", screen: sheet == .appleNoAccount ? "apple_no_account" : "23a"); authSelection += 1
+    let generation = authGeneration
     working = true; accountTransition = true; error = nil
-    defer { working = false; accountTransition = false }
+    defer { if authGeneration == generation { working = false; accountTransition = false } }
     do {
       let identity = try await auth.createApple(ticket: ticket)
       appleLinkedReceipt = false
@@ -327,8 +381,9 @@ final class AppModel {
     guard !working, let token = appleSessionToken, let auth = runtime?.auth else { return }
     choose("remove_apple", screen: "24c")
     methodsGeneration += 1
+    let generation = authGeneration
     working = true; error = nil
-    defer { working = false }
+    defer { if authGeneration == generation { working = false } }
     do { try await auth.removeApple(token: token); signInMethods.removeAll { $0.kind == "apple" }; screenViewed("24a") }
     catch { showAuthError(error) }
   }
@@ -342,10 +397,12 @@ final class AppModel {
     if sheet == .code, let sent = codeSentAt, Date().timeIntervalSince(sent) < 30 { return }
     if sheet == .code { choose("resend", screen: "code") }
     telemetry.event("auth_code_requested", properties: ["method": "email"])
+    let generation = authGeneration
     working = true; error = nil
-    defer { working = false }
+    defer { if authGeneration == generation { working = false } }
     do {
       try await auth.requestCode(email: email)
+      try Task.checkCancellation()
       telemetry.event("auth_code_sent", properties: ["method": "email", "outcome": "ok"])
       codeSentAt = Date(); code = ""; sheet = .code
     } catch { telemetry.event("auth_code_sent", properties: ["method": "email", "outcome": "failed"]); showAuthError(error) }
@@ -357,26 +414,29 @@ final class AppModel {
     if appleTicket != nil, account != nil, !accountEmail.isEmpty, email.lowercased() != accountEmail.lowercased() {
       error = "Sign in to the same account to resume backup. Your pages stay with this account."; return
     }
+    let generation = authGeneration
     working = true; error = nil
     authBusyIndicator = false
     let indicator = Task { [weak self] in
       try? await Task.sleep(for: .milliseconds(800))
       if !Task.isCancelled { self?.authBusyIndicator = true }
     }
-    defer { indicator.cancel(); authBusyIndicator = false; working = false }
+    defer { indicator.cancel(); if authGeneration == generation { authBusyIndicator = false; working = false } }
     accountTransition = true; journal.editing = false
-    defer { accountTransition = false }
+    defer { if authGeneration == generation { accountTransition = false } }
     let method = appleTicket == nil ? "email" : "apple"
     telemetry.event("auth_sign_in_started", properties: ["method": method])
     do {
       let reauthenticatingApple = appleTicket != nil && account != nil
       let identity = try await auth.verifyCode(email: email, code: code, appleTicket: reauthenticatingApple ? nil : appleTicket)
+      try Task.checkCancellation()
       try await acceptAuthenticatedSignIn(identity, method: method, attachApple: reauthenticatingApple)
     }
     catch { telemetry.event("auth_signed_in", properties: ["method": method, "outcome": "failed"]); showAuthError(error) }
   }
 
   func acceptAuthenticatedSignIn(_ identity: AuthIdentity, method: String, attachApple: Bool = false) async throws {
+    try Task.checkCancellation()
     if let current = account, !current.utf8.elementsEqual(identity.account.utf8) {
       try? await runtime?.auth.logout(token: identity.token)
       throw AppFailure(message: "Sign in to the same account to resume backup. Your pages stay with this account.")
@@ -390,18 +450,23 @@ final class AppModel {
 
   func verifyLink(_ link: String) async {
     guard !working, pendingSignIn == nil, appleTicket == nil, let auth = runtime?.auth else { return }
+    let generation = authGeneration
     working = true; accountTransition = true; error = nil; journal.done()
-    defer { working = false; accountTransition = false }
+    defer { if authGeneration == generation { working = false; accountTransition = false } }
     telemetry.event("auth_sign_in_started", properties: ["method": "email"])
     do { try await acceptAuthenticatedSignIn(auth.verifyLink(link), method: "email") }
     catch { telemetry.event("auth_signed_in", properties: ["method": "email", "outcome": "failed"]); showAuthError(error) }
   }
 
   func retryAuthenticatedSignIn() async {
-    guard !working, !accountTransition, pendingSignIn != nil else { return }
+    guard !working, !accountTransition else { return }
+    signInDeferred = false
+    if pendingSignIn == nil, signInSession?.isComplete == false { sheet = .adoption; return }
+    guard pendingSignIn != nil else { return }
     if restoringSignIn { recoveryDue = nil; await resumeBackup(); return }
+    let generation = authGeneration
     working = true; accountTransition = true; error = nil
-    defer { working = false; accountTransition = false }
+    defer { if authGeneration == generation { working = false; accountTransition = false } }
     await continueAuthenticatedSignIn()
   }
 
@@ -426,6 +491,7 @@ final class AppModel {
       preferences.removeObject(forKey: "pendingAuthMethod"); preferences.removeObject(forKey: "pendingAuthLinked")
       telemetry.event("auth_signed_in", properties: ["method": pending.method, "outcome": pending.linked ? "linked" : "ok"])
     } catch {
+      guard !Task.isCancelled else { return }
       telemetry.event("auth_signed_in", properties: ["method": pending.method, "outcome": "failed"])
       if let refusal = error as? AuthRefusal, pending.needsAppleAttachment, refusal.code != "offline" {
         pendingSignIn = nil; appleAuthorization = nil; sheet = .you; showAuthError(error)
@@ -441,8 +507,9 @@ final class AppModel {
 
   func signIn(_ identity: AuthIdentity, presentResult: Bool = true) async throws {
     guard let runtime else { return }
+    let generation = authGeneration
     accountTransition = true; journal.editing = false
-    defer { accountTransition = false }
+    defer { if authGeneration == generation { accountTransition = false } }
     if !flushRooms() { throw AppFailure(message: "Save your work before signing in. Try again.") }
     if let current = account, !current.utf8.elementsEqual(identity.account.utf8) {
       try? await runtime.auth.logout(token: identity.token)
@@ -486,13 +553,18 @@ final class AppModel {
 
   func beginSignOut() async {
     guard !accountTransition, let runtime else { return }
+    let generation = authGeneration
     journal.liftInk()
     accountTransition = true; journal.editing = false
-    defer { accountTransition = false }
+    defer { if authGeneration == generation { accountTransition = false } }
     if !flushRooms() { return }
     choose("sign_out", screen: "you")
-    do { signOutSession = try await runtime.engine.signOut(); sheet = .signOut }
-    catch { reportBoundary("auth_sign_out", error: error); self.error = error.localizedDescription }
+    do {
+      let session = try await runtime.engine.signOut()
+      guard !Task.isCancelled else { await session.cancel(); return }
+      signOutSession = session; sheet = .signOut
+    }
+    catch { if !Task.isCancelled { reportBoundary("auth_sign_out", error: error); self.error = error.localizedDescription } }
   }
 
   func finishSignOut(_ choice: SignOutChoice) async {
@@ -518,7 +590,7 @@ final class AppModel {
       appleTicket = nil; signInMethods = []; accountEmail = ""; appleLinkedReceipt = false
       keepDismissed = false; welcome = true; preferences.set(true, forKey: "roomWelcomeRequired"); preferences.removeObject(forKey: "lastRoom"); clearAdoptionAnswers(); refresh()
       preferences.set(false, forKey: "keepDismissed")
-      await runtime.revokeSignedOutSessions(force: true)
+      Task { await runtime.revokeSignedOutSessions(force: true) }
     } catch EngineError.signOutChanged {
       if let revocation { try? runtime.revocations.delete(for: revocation) }
       await session.cancel(); signOutSession = try? await runtime.engine.signOut(); error = "Pending writing changed. Review the new count."
@@ -530,11 +602,14 @@ final class AppModel {
     let attaching = appleSessionToken != nil
     appleTicket = nil; appleAuthorization = nil; appleLinkedReceipt = false
     if sheet == .keep || sheet == .you { appleOrigin = sheet ?? .keep }
+    let generation = authGeneration
     working = true; accountTransition = true; journal.editing = false; error = nil
-    defer { working = false; accountTransition = false }
+    defer { if authGeneration == generation { working = false; accountTransition = false } }
     telemetry.event("auth_sign_in_started", properties: ["method": "apple"])
     do {
-      switch try await authorize(appleSessionToken) {
+      let response = try await authorize(appleSessionToken)
+      try Task.checkCancellation()
+      switch response {
       case .ticket(let ticket):
         guard !attaching else { throw URLError(.cannotParseResponse) }
         appleTicket = ticket; error = nil
@@ -545,14 +620,20 @@ final class AppModel {
         try await acceptAuthenticatedSignIn(identity, method: "apple")
       case .attached:
         guard attaching else { throw URLError(.cannotParseResponse) }
-        await loadSignInMethods(); authSuccess += 1; sheet = .you
+        await loadSignInMethods()
+        try Task.checkCancellation()
+        guard authGeneration == generation else { return }
+        authSuccess += 1; sheet = .you
         telemetry.event("auth_signed_in", properties: ["method": "apple", "outcome": "linked"])
       }
     }
     catch { telemetry.event("auth_signed_in", properties: ["method": "apple", "outcome": "failed"]); showAuthError(error, appleFlow: !attaching) }
   }
 
-  func cancelSignOut() async { choose("cancel", screen: "sign_out"); await signOutSession?.cancel(); signOutSession = nil; sheet = .you }
+  func cancelSignOut() async {
+    guard !accountTransition else { return }
+    choose("cancel", screen: "sign_out"); await signOutSession?.cancel(); signOutSession = nil; sheet = .you
+  }
 
   struct SavedAdoption: Codable {
     let account: String
@@ -629,21 +710,26 @@ final class AppModel {
 
   func adopt(_ answer: LineageAnswer) async {
     guard !accountTransition, var session = signInSession else { return }
+    let generation = authGeneration
     if currentAdoption == nil {
       accountTransition = true
-      defer { accountTransition = false }
+      defer { if authGeneration == generation { accountTransition = false } }
+      guard flushRooms() else { return }
       do { try await completeAdoption(session) }
-      catch EngineError.signInChanged { setSignInSession(try? await runtime?.engine.resumeSignIn()); sheet = .adoption; error = "The work changed. Choose again for the current counts." }
-      catch { reportBoundary("auth_adopt", error: error); self.error = "Couldn't finish adding your work. Try again." }
+      catch EngineError.signInChanged { await recountAdoption() }
+      catch { if !Task.isCancelled { reportBoundary("auth_adopt", error: error); self.error = "Couldn't finish adding your work. Try again." } }
       return
     }
     guard let decision = currentAdoption else { return }
     accountTransition = true; journal.editing = false
-    defer { accountTransition = false }
+    defer { if authGeneration == generation { accountTransition = false } }
     do {
       if journal.dirty {
         guard flushRooms() else { return }
-        if let recounted = try await runtime?.engine.resumeSignIn() { session = recounted; setSignInSession(recounted) }
+        if let recounted = try await runtime?.engine.resumeSignIn() {
+          try Task.checkCancellation()
+          session = recounted; setSignInSession(recounted)
+        }
         if answer == .discard { sheet = .adoption; error = "The work changed. Choose again for the current counts."; return }
       }
       guard currentAdoption == decision else { sheet = .adoption; error = "The work changed. Choose again for the current counts."; return }
@@ -655,8 +741,21 @@ final class AppModel {
       if currentAdoption != nil { sheet = .adoption; return }
       try await completeAdoption(session)
     } catch EngineError.signInChanged {
-      setSignInSession(try? await runtime?.engine.resumeSignIn()); sheet = .adoption
-      error = "The work changed. Choose again for the current counts."
-    } catch { reportBoundary("auth_adopt", error: error); self.error = "Couldn't finish adding your work. Your choices are kept; try again." }
+      await recountAdoption()
+    } catch { if !Task.isCancelled { reportBoundary("auth_adopt", error: error); self.error = "Couldn't finish adding your work. Your choices are kept; try again." } }
+  }
+
+  func recountAdoption() async {
+    do {
+      let resumed = try await runtime?.engine.resumeSignIn()
+      try Task.checkCancellation()
+      if let resumed { setSignInSession(resumed) }
+      sheet = .adoption; error = "The work changed. Choose again for the current counts."
+    } catch {
+      guard !Task.isCancelled else { return }
+      reportBoundary("auth_adopt", error: error)
+      sheet = .authPending
+      self.error = (error as? EngineError) == .unreachable ? AuthRefusal.offline.message : "Couldn't refresh your choices. Your work stays on this phone."
+    }
   }
 }

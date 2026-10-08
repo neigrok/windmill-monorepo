@@ -90,6 +90,7 @@ struct WorkoutScreen: View {
     .onChange(of: gym.notices.map(\.id)) { _, _ in workout.reconcile() }
     .onChange(of: gym.readFailed) { _, failed in if !failed { workout.reconcile() } }
     .onChange(of: gym.account) { _, _ in finishTask?.cancel(); workout.accountChanged(); updateAwake() }
+    .onChange(of: gym.accountTransition) { _, changing in if changing { finishTask?.cancel() } }
     .onChange(of: scenePhase) { _, phase in
       if phase == .background { finishTask?.cancel() }
       updateAwake()

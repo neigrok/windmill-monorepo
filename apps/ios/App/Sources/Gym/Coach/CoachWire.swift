@@ -198,6 +198,7 @@ nonisolated enum CoachCopy {
   static let interrupted = "Response interrupted. Retry to continue this response."
   static let stopped = "Response stopped."
   static let noAnswer = "Coach didn’t answer. Try again in a moment"
+  static let connectionRequired = "Coach needs a connection. Your draft is saved on this phone."
   static let signedOut = "Coach reads your log, so it needs you signed in."
   static let absent = "Coach isn’t part of this Windmill. Your log is still yours to read."
   static let promise = "Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal."

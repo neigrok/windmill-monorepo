@@ -25,6 +25,7 @@ struct WorkoutAdoptionBand: View {
           Button("Keep as finished workout") { gym.keepAdoptedWorkout(workout.session.id) }
             .disabled(gym.accountTransition || gym.authPaused || gym.readFailed || gym.log?.firstPullComplete != true)
             .accessibilityIdentifier("gym-adoption-keep-\(workout.session.id)")
+          if gym.log?.firstPullComplete != true { Text("Adding this workout to your account needs a connection. It stays saved on this phone.").font(.footnote) }
         }
         if !saving, let error = gym.error { Text(error).font(.footnote).foregroundStyle(.secondary) }
       }.frame(maxWidth: .infinity, alignment: .leading).padding(12)

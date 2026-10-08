@@ -158,14 +158,25 @@ nonisolated enum CrashReports {
     if let durationMs { event.context = ["telemetry": ["duration_ms": min(max(0, durationMs), 86_400_000)]] }
     SentrySDK.capture(event: event)
   }
+
+  static func offline(properties: [String: String]) {
+    let event = Event(level: .info)
+    event.tags = properties.merging(["failure_kind": "offline"]) { _, value in value }
+    SentrySDK.capture(event: event)
+  }
 }
 
 nonisolated final class AppTelemetry: Telemetry, Sendable {
   struct Identity: Sendable { var account: String?; var token: SessionToken? }
-  final class Session: Sendable { let identity = Mutex(Identity()) }
+  final class Session: Sendable {
+    let identity = Mutex(Identity())
+    let offline = Mutex(false)
+    let sentryOffline = Mutex(false)
+  }
   let session = Session()
   let queue: EventQueue?
   let enabled: Bool
+  var connectionRequired: Bool { session.offline.withLock { $0 } || session.sentryOffline.withLock { $0 } }
 
   init(info: [String: Any], baseURL: URL?, directory: URL, debug: Bool) {
     enabled = !debug || info["WMDebugTelemetry"] as? String == "YES"
@@ -174,7 +185,12 @@ nonisolated final class AppTelemetry: Telemetry, Sendable {
       let session = self.session
       queue = EventQueue(file: directory.appending(path: "events.json"), baseURL: baseURL,
                          metadata: TelemetryMetadata(info: info), credentials: { session.identity.withLock { $0 } },
-                         report: { CrashReports.failure($0, kind: $1, properties: $2, durationMs: $3) })
+                         report: { operation, kind, properties, duration in
+                           if ["offline", "timeout"].contains(kind) {
+                             let first = session.sentryOffline.withLock { value in let first = !value; value = true; return first }
+                             if first { CrashReports.offline(properties: properties.merging(["operation": operation]) { _, value in value }) }
+                           } else { CrashReports.failure(operation, kind: kind, properties: properties, durationMs: duration) }
+                         })
     } else { queue = nil }
     if let queue {
       Task { [weak queue] in
@@ -193,6 +209,21 @@ nonisolated final class AppTelemetry: Telemetry, Sendable {
   }
 
   func event(_ name: String, properties: [String: String], durationMs: Int64?) {
+    var properties = properties
+    if name == "api_request_failed", ["offline", "timeout"].contains(properties["failure_kind"]) {
+      let first = session.offline.withLock { value in
+        let first = !value; value = true; return first
+      }
+      guard first else { return }
+      properties["failure_kind"] = "offline"
+      let firstSentry = session.sentryOffline.withLock { value in let first = !value; value = true; return first }
+      if enabled, firstSentry { CrashReports.offline(properties: properties) }
+    } else if ["sync_pull_outcome", "sync_push_outcome", "auth_code_sent", "auth_signed_in"].contains(name), properties["outcome"] == "ok" {
+      session.offline.withLock { $0 = false }
+      session.sentryOffline.withLock { $0 = false }
+    } else if ["sync_pull_outcome", "sync_push_outcome"].contains(name), properties["outcome"] == "failed", connectionRequired {
+      return
+    }
     guard let queue, TelemetryPrivacy.events.contains(name) else { return }
     let account = session.identity.withLock { $0.account }
     let props = TelemetryPrivacy.properties(properties, durationMs: durationMs)
@@ -200,6 +231,10 @@ nonisolated final class AppTelemetry: Telemetry, Sendable {
   }
 
   func failure(_ operation: String, kind: String, properties: [String: String], durationMs: Int64?) {
+    if ["offline", "timeout"].contains(kind) {
+      event("api_request_failed", properties: properties.merging(["operation": operation, "failure_kind": kind]) { _, value in value }, durationMs: durationMs)
+      return
+    }
     guard enabled else { return }
     let props = properties.merging(["operation": operation, "failure_kind": kind]) { _, new in new }
     CrashReports.failure(operation, kind: kind, properties: properties, durationMs: durationMs)

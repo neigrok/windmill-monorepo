@@ -14,6 +14,65 @@ import SyncTesting
 @testable import Windmill
 
 @Suite @MainActor struct AppModelTests {
+  @Test func ordinaryBackupPreservesAnUnfinishedAdoptionAndItsAnswers() async throws {
+    let (_, owner, model, localRoutine) = try await twoRooms()
+    await model.adopt(.add)
+    let session = try #require(model.signInSession)
+    let decision = try #require(model.currentAdoption)
+    #expect(!model.syncStarted && !model.restoringSignIn && model.pendingSignIn == nil)
+    await model.resumeBackup()
+    #expect(model.signInSession === session && model.currentAdoption == decision)
+    #expect(model.adoptionAnswers == ["journal": .add] && model.account == nil && model.sheet == .adoption)
+    await model.adopt(.add)
+    #expect(model.account == owner.account && model.sheet == nil && !model.editorReadOnly)
+    #expect(model.journal.document.body == "Local page" && model.gym.routines.contains { $0.id == localRoutine })
+  }
+
+  @Test func adoptionCanBeDeferredWithoutDiscardingLocalWork() async throws {
+    let (_, _, model, _) = try await twoRooms()
+    let session = try #require(model.signInSession)
+    model.cancelAuthentication(); model.sheet = nil
+    #expect(!model.editorReadOnly && !model.gym.accountTransition && model.account == nil)
+    model.journal.type("Written while sign-in is deferred"); model.journal.done()
+    #expect(model.journal.document.body == "Written while sign-in is deferred" && !model.journal.dirty)
+    await model.retryAuthenticatedSignIn()
+    #expect(model.sheet == .adoption && model.editorReadOnly && model.gym.accountTransition && model.signInSession === session)
+    #expect(model.account == nil)
+  }
+
+  @Test func stalledLaunchKeepsLocalEditingAndRoomSwitchingAvailable() async throws {
+    let server = JournalModelTransport(), transport = DelayedJournalTransport(base: server, delayHello: true)
+    let model = try LineageFlowTests().fixture(server, syncTransport: transport)
+    model.openJournal()
+    let start = Task { await model.start() }
+    await transport.gate.untilWaiting()
+    #expect(!model.editorReadOnly && !model.gym.accountTransition && model.timerTask != nil)
+    model.journal.type("Saved while hello has no answer")
+    model.journal.done()
+    #expect(model.journal.document.body == "Saved while hello has no answer" && !model.journal.dirty)
+    model.switchRoom(.gym)
+    #expect(model.selectedRoom == .gym)
+    model.scenePhaseChanged(.background); model.scenePhaseChanged(.active)
+    model.switchRoom(.journal)
+    #expect(model.selectedRoom == .journal && !model.editorReadOnly)
+    await transport.gate.release(); await start.value
+    model.timerTask?.cancel(); model.observationTask?.cancel(); model.gym.stop()
+  }
+
+  @Test func cancelledPendingHelloCannotSwitchAccountsOrLockOfflineWriting() async throws {
+    let server = JournalModelTransport(), transport = DelayedJournalTransport(base: server, delayHello: true)
+    let model = try LineageFlowTests().fixture(server, syncTransport: transport)
+    model.openJournal(); model.sheet = .code; model.email = "offline@example.com"; model.code = "482913"
+    let request = Task { await model.verifyCode() }
+    model.authTask = request
+    await transport.gate.untilWaiting()
+    model.cancelAuthentication(); model.sheet = nil
+    #expect(!model.editorReadOnly && model.signInDeferred)
+    model.journal.type("Still local after cancel"); model.journal.done()
+    await transport.gate.release(); await request.value
+    #expect(model.account == nil && model.sheet == nil && model.journal.document.body == "Still local after cancel")
+  }
+
   func routine(_ model: AppModel, name: String) throws -> ID<Routine> {
     let id = model.runner.mint(Routine.self)
     var draft = Draft(new: Routine(id: id, name: name, entries: [RoutineEntry(exerciseId: ID("back-squat"))]))

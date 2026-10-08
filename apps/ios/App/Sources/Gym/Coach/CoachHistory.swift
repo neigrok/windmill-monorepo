@@ -41,7 +41,8 @@ import Observation
       nextCursor = page.nextCursor; loaded = true
     } catch {
       guard owner == gym.account, !(error is CancellationError) else { return }
-      self.error = (error as? GymRESTFailure)?.message ?? "the log didn’t answer — your conversations are out of reach"
+      self.error = GymRESTClient.needsConnection(error) ? "Coach history needs a connection."
+        : (error as? GymRESTFailure)?.message ?? "the log didn’t answer — your conversations are out of reach"
       if error is DecodingError { gym.report("gym_read", error) }
     }
   }
@@ -66,7 +67,8 @@ import Observation
         }
         guard self.gym.account == account else { return }
         self.rows.removeAll { $0.id == row.id }; self.rows.append(row); self.rows.sort { $0.askedAt > $1.askedAt }
-        self.error = (error as? GymRESTFailure)?.message ?? "That conversation couldn’t be deleted. Try again."
+        self.error = GymRESTClient.needsConnection(error) ? "Deleting a conversation needs a connection."
+          : (error as? GymRESTFailure)?.message ?? "That conversation couldn’t be deleted. Try again."
       }
     }
     held.append(Held(row: row, account: account, until: Date().addingTimeInterval(9), task: task))

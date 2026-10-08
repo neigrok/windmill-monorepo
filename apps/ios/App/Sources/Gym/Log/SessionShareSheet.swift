@@ -130,6 +130,9 @@ nonisolated enum SessionShareState: Equatable, Sendable {
   }
 
   static func message(_ error: any Error, revoking: Bool) -> String {
+    if GymRESTClient.needsConnection(error) {
+      return "Sharing needs a connection. \(revoking ? "The link is still live." : "The link wasn’t made.")"
+    }
     if let error = error as? GymRESTFailure { return error.message }
     if let error = error as? AppFailure { return error.message }
     return "the log didn’t answer — \(revoking ? "the link is still live" : "the link wasn’t made")"
