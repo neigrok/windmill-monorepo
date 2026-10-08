@@ -2,6 +2,11 @@ import Foundation
 import DomainKit
 import GymDomain
 import SyncCore
+#if DEBUG && targetEnvironment(simulator)
+import ActivityKit
+import SwiftUI
+import UIKit
+#endif
 
 enum WorkoutFixture {
   static func prepare(_ board: String, model: AppModel) async -> Bool {
@@ -52,3 +57,34 @@ enum WorkoutFixture {
     #endif
   }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+struct WorkoutActivityFixtureStatus: UIViewRepresentable {
+  let model: AppModel
+  func makeUIView(context: Context) -> StatusView {
+    let view = StatusView()
+    view.backgroundColor = .clear
+    view.isAccessibilityElement = true
+    view.accessibilityIdentifier = "workout-activity-state"
+    view.accessibilityLabel = "Workout Live Activity"
+    view.model = model
+    return view
+  }
+  func updateUIView(_ view: StatusView, context: Context) { view.model = model }
+
+  final class StatusView: UIView {
+    weak var model: AppModel?
+    override var accessibilityValue: String? {
+      get {
+        guard let model, model.syncStarted, !model.editorReadOnly,
+              let session = model.gym.openSession,
+              let controller = model.gym.existingWorkoutActivity, !controller.reconciling,
+              let activity = controller.activity, activity.attributes.sessionID == session.id.description,
+              activity.activityState == .active, activity.content.state.offer != nil else { return "pending" }
+        return "active"
+      }
+      set { super.accessibilityValue = newValue }
+    }
+  }
+}
+#endif

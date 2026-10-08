@@ -57,6 +57,14 @@ struct WorkoutScreen: View {
   var body: some View {
     navigation.modifier(WorkoutAppearance())
     .accessibilityIdentifier("gym-workout")
+    #if DEBUG && targetEnvironment(simulator)
+    .background {
+      if let model = WorkoutActivityIntentHandler.model, model.gym === gym,
+         model.runtime?.settings.board == "workout-live-activity-planned" {
+        WorkoutActivityFixtureStatus(model: model).frame(width: 1, height: 1).allowsHitTesting(false)
+      }
+    }
+    #endif
     .sheet(isPresented: $assembly, onDismiss: {
       if addAfterAssembly { addAfterAssembly = false; addMovement = true }
     }) {

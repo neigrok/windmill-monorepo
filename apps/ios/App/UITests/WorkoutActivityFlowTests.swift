@@ -12,6 +12,12 @@ import XCTest
     app.launch()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10))
     XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).count, 3)
+    let activity = app.otherElements["workout-activity-state"]
+    let published = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      activity.exists && activity.value as? String == "active"
+    }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [published], timeout: 10), .completed,
+      "The workout Live Activity must be active before backgrounding")
     XCUIDevice.shared.press(.home)
     let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
     springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.001)).press(forDuration: 0.05,

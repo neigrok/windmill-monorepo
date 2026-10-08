@@ -846,7 +846,7 @@ import SyncModelServer
         transport.failure.withLock { $0 = nil }
         await reopened.engine.flushOnLeave(); reopened.engine.foreground()
       }
-      try await settle { gym.refresh(); return (try? reopened.runner.read(Gym.scope) { try $0.commands().isEmpty }) == true }
+      try await settle { gym.refresh(); return gym.coachRemovalReceipts.first?.outcome == (refused ? .refused : .applied) && (try? reopened.runner.read(Gym.scope) { try $0.commands().isEmpty }) == true }
       #expect(gym.routines.count == (refused ? 1 : 0))
       #expect(review.proposal?.state == (refused ? "pending" : "applied") && !review.pending)
       #expect(gym.coachRemovalReceipts.first?.outcome == (refused ? .refused : .applied))

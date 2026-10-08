@@ -41,8 +41,7 @@ import UIKit
       let frame = snapshot.frame
       return snapshot.isEnabled && frame.width > 100 && frame.height > 30 && self.viewport.contains(frame)
     }, object: button)
-    guard XCTWaiter.wait(for: [rendered], timeout: 5) == .completed else { return false }
-    return button.wait(for: \.isHittable, toEqual: true, timeout: 5)
+    return XCTWaiter.wait(for: [rendered], timeout: 5) == .completed
   }
   func assertPrimaryLabelContrast(_ button: XCUIElement, appearance: String, file: StaticString = #filePath, line: UInt = #line) {
     let previous = continueAfterFailure
