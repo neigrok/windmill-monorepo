@@ -2,7 +2,15 @@ import XCTest
 import UIKit
 
 @MainActor final class GymCoachFlowTests: XCTestCase {
-  override func setUp() { continueAfterFailure = false }
+  override func setUp() {
+    continueAfterFailure = false
+    addUIInterruptionMonitor(withDescription: "Wait for notification banners to dismiss") { interruption in
+      MainActor.assumeIsolated {
+        guard interruption.identifier == "NotificationShortLookView" else { return false }
+        return interruption.waitForNonExistence(timeout: 30)
+      }
+    }
+  }
 
   func launch(_ appearance: String, fixture: Bool = true, arguments: [String] = []) -> XCUIApplication {
     let app = XCUIApplication()
