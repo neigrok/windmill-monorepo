@@ -107,7 +107,7 @@ import XCTest
   func test23eCOfflineLeavesQuestionAndPages() {
     let app = launch(fixture: "offline"); question(app)
     app.buttons["Create account"].tap()
-    XCTAssertTrue(app.staticTexts["Can't reach windmill.works. Nothing was created, and your pages stay on this phone."].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Sign-in needs a connection. Your work stays on this phone."].waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["Create account"].isEnabled)
     app.buttons["Close"].tap()
     XCTAssertTrue(app.staticTexts["Keep your pages"].waitForExistence(timeout: 5))

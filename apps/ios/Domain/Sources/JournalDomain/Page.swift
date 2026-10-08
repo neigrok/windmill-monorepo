@@ -43,6 +43,22 @@ public struct PageDocument: Equatable, Sendable {
   }
 }
 
+public enum EchoQuote {
+  public static func locate(body: String, text: String, occurrenceHint: Int? = nil) -> Range<Int>? {
+    // Character equality is canonically equivalent; indices still address the unchanged body.
+    guard !text.isEmpty, let first = body.firstRange(of: text) else { return nil }
+    var selected = first
+    for _ in 0..<max(0, occurrenceHint ?? 0) {
+      guard let next = body[selected.upperBound...].firstRange(of: text) else {
+        selected = first
+        break
+      }
+      selected = next
+    }
+    return selected.lowerBound.utf16Offset(in: body)..<selected.upperBound.utf16Offset(in: body)
+  }
+}
+
 public struct JournalState: Writable, Equatable {
   public static let type = Journal.Types.journalState
   public static let scope = Journal.scope

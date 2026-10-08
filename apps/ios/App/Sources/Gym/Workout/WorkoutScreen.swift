@@ -93,6 +93,7 @@ struct WorkoutScreen: View {
     }
     .onChange(of: gym.readFailed) { _, failed in if !failed { workout.reconcile() } }
     .onChange(of: gym.account) { _, _ in finishTask?.cancel(); workout.accountChanged(); updateAwake() }
+    .onChange(of: gym.accountTransition) { _, changing in if changing { finishTask?.cancel() } }
     .onChange(of: scenePhase) { _, phase in
       if phase == .background { finishTask?.cancel() }
       updateAwake()
@@ -120,19 +121,29 @@ struct WorkoutScreen: View {
     .safeAreaInset(edge: .bottom, spacing: 0) {
       if workout.selected != nil || workout.message != nil || gym.workoutNotice != nil || gym.error != nil || gym.readFailed || !gym.undoOffers.isEmpty || gym.workoutBanner(gym.workoutStrandedSets.count) != nil {
         VStack(spacing: 8) {
-          if let banner = gym.workoutBanner(gym.workoutStrandedSets.count) {
-            let line = Text(banner).font(.footnote).foregroundStyle(GymPalette.inkDim)
-              .frame(maxWidth: .infinity, alignment: .leading)
-            if typeSize.isAccessibilitySize { ScrollView { line }.frame(height: 100).padding(.horizontal, RoomSpace.inset) }
-            else { line.padding(.horizontal, RoomSpace.inset) }
-          }
-          GymTransient(gym: gym, message: workout.message, dismiss: { workout.message = nil }, noticeMessage: gym.workoutNotice, retry: { gym.workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
+          if typeSize.isAccessibilitySize {
+            ViewThatFits(in: .vertical) {
+              notices.fixedSize(horizontal: false, vertical: true)
+              ScrollView { notices }.scrollBounceBehavior(.basedOnSize)
+            }.frame(maxHeight: 180)
+          } else { notices }
           if workout.selected != nil {
             WorkoutRack(workout: workout, edit: { keypad = $0 })
               .padding(RoomSpace.inset)
               .background(GymPalette.card, in: UnevenRoundedRectangle(topLeadingRadius: RoomSpace.panel, topTrailingRadius: RoomSpace.panel))
           }
         }.frame(maxWidth: .infinity).padding(.top, RoomSpace.related)
+      }
+    }
+  }
+  // The message leads, so at accessibility sizes it stays above the rack before any scroll.
+  var notices: some View {
+    VStack(spacing: 8) {
+      GymTransient(gym: gym, message: workout.message, dismiss: { workout.message = nil }, noticeMessage: gym.workoutNotice, retry: { gym.workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
+      if let banner = gym.workoutBanner(gym.workoutStrandedSets.count) {
+        Text(banner).font(.footnote).foregroundStyle(GymPalette.inkDim)
+          .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, RoomSpace.inset)
       }
     }
   }

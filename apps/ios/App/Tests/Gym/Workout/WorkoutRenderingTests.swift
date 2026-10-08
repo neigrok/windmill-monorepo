@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+import Vision
 import DomainKit
 import DomainKitTesting
 import GymDomain
@@ -205,6 +206,50 @@ import SyncTesting
         try await capture(WorkoutKeypadSheet(field: .weight, value: -500, commit: { _ in }), name: "keypad-\(name)-\(skin)", appearance: appearance, type: type)
         try await capture(WorkoutFixSheet(gym: gym, set: try XCTUnwrap(gym.sets.last), routine: "Lower A"), name: "fix-\(name)-\(skin)", appearance: appearance, type: type)
       }
+    }
+  }
+
+  func testConnectionWarningLeadsTheRackAtLargestText() async throws {
+    let (_, gym) = try fixture()
+    gym.workout.message = "Finishing needs a connection. Some sets in this synced workout are saved only on this phone. You can keep logging or hide it."
+    let window = try host(WorkoutScreen(gym: gym).environment(\.dynamicTypeSize, .accessibility5), appearance: .light)
+    defer { window.isHidden = true; window.rootViewController = nil }
+    try await Task.sleep(for: .milliseconds(450))
+    window.layoutIfNeeded()
+    var captures = 0
+    func visibleText() throws -> String {
+      let image = UIGraphicsImageRenderer(bounds: window.bounds).image {
+        _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+      }
+      let attachment = XCTAttachment(image: image)
+      attachment.name = "connection-warning-AX5-\(captures)"
+      attachment.lifetime = .keepAlways; add(attachment); captures += 1
+      let request = VNRecognizeTextRequest()
+      request.recognitionLevel = .accurate
+      request.recognitionLanguages = ["en-US"]
+      try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
+      return (request.results ?? []).sorted { $0.boundingBox.minY > $1.boundingBox.minY }
+        .compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ").lowercased()
+        .split(separator: " ").filter { $0 != "x" }.joined(separator: " ")
+    }
+    func scrolls(_ view: UIView) -> [UIScrollView] {
+      (view as? UIScrollView).map { [$0] } ?? view.subviews.flatMap(scrolls)
+    }
+    let unscrolled = try visibleText()
+    for phrase in ["needs a connection", "log set"] {
+      XCTAssertTrue(unscrolled.contains(phrase), "The warning hid ‘\(phrase)’ before any scroll: \(unscrolled)")
+    }
+    var rendered = unscrolled
+    for scroll in scrolls(window) where scroll.contentSize.height > scroll.bounds.height {
+      let end = scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom
+      for offset in stride(from: CGFloat(40), through: end + 40, by: 40) {
+        scroll.setContentOffset(CGPoint(x: 0, y: min(offset, end)), animated: false)
+        try await Task.sleep(for: .milliseconds(100))
+        rendered += " " + (try visibleText())
+      }
+    }
+    for phrase in ["keep logging", "or hide", "saved on this device only"] {
+      XCTAssertTrue(rendered.contains(phrase), "The warning never showed ‘\(phrase)’: \(rendered)")
     }
   }
 

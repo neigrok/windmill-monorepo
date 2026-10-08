@@ -9,6 +9,7 @@ import { journalApi } from '../journalApi.js';
 import { localDay } from '../localDay.js';
 import { corpus } from '../pages.js';
 import { hopToHash } from '../openPosition.js';
+import { locateEcho } from '../domain/echoes.js';
 import { CEILING_MS, PAUSE_MS, SETTLE_MS, armArrival } from './arrival.js';
 
 const PAGE_FLOOR = 20;
@@ -38,29 +39,18 @@ const MARGIN_HYSTERESIS = 12;
 // over it. No new duration enters the product. Its other reader is `--je-swap` in journal.css.
 const SWAP_MS = 90;
 const TAKEN_MS = 150;           // --duration-fast: one feedback beat, for a light a press ended
+const graphemes = new Intl.Segmenter('und', { granularity: 'grapheme' });
 
-// `occurrenceHint` is which occurrence of the text this is, not a character position, and only a hint:
-// the text search decides whether a quote renders. Answers the char range in this body.
-export function locate(body, text, occurrence) {
-  if (!body || !text) return null;
-  const want = typeof occurrence === 'number' && occurrence >= 0 ? occurrence : 0;
-  let from = 0;
-  let at = -1;
-  for (let n = 0; n <= want; n += 1) {
-    at = body.indexOf(text, from);
-    if (at < 0) break;
-    from = at + text.length;
-  }
-  if (at < 0) at = body.indexOf(text);      // the hint over-counted — fall back to the first
-  return at < 0 ? null : [at, at + text.length];
+export function locate(body, text, occurrenceHint) {
+  return locateEcho(body, text, occurrenceHint, (value) => graphemes.segment(value));
 }
-
 
 // Two match lists are the same pairing set when they name the same passages — used to keep a page's
 // verified flag across a re-read rather than re-locating quotes whose pairing has not moved.
 function sameMatches(before, after) {
   if (!before || !after || before.length !== after.length) return false;
-  return before.every((match, at) => match.day === after[at].day && match.text === after[at].text);
+  return before.every((match, at) => match.day === after[at].day
+    && match.text.normalize('NFC') === after[at].text.normalize('NFC'));
 }
 
 // Which of a page's matches still stand, given the bodies the canvas is holding right now. A match
@@ -81,7 +71,7 @@ export function stillStanding(matches, live) {
 // words themselves. Two passages out of one past day are two pieces of news; keyed by the day alone,
 // showing the first would present the second for free.
 function passagesOf(matches) {
-  return (matches || []).map((match) => `${match.day}\u0000${match.text}`);
+  return (matches || []).map((match) => `${match.day}\u0000${match.text.normalize('NFC')}`);
 }
 
 function marginRoom() {
@@ -513,6 +503,8 @@ export function useEchoes({
   // It goes through `hopToHash` so the entry carries the hop mark — a day walked to is not a day the
   // writer asked for, and a reload taken mid-walk must open on tonight rather than resurrect it.
   const walkTo = useCallback((triggerDay, match) => {
+    const span = locate(bodyRef.current(match.day), match.text, match.occurrenceHint);
+    if (!span) { check(triggerDay, true); return; }
     journalApi.echoOpened(triggerDay, match.day).catch(() => { /* a lost signal changes nothing here */ });
     setHops((current) => {
       const trail = current.length ? current : [today];
@@ -522,8 +514,8 @@ export function useEchoes({
     setOpenDay(match.day);
     setHeldDay(match.day);
     hopToHash(`#/journal/${match.day}`);
-    onFly({ day: match.day, lo: match.lo, hi: match.hi });
-  }, [today, onFly]);
+    onFly({ day: match.day, lo: span[0], hi: span[1] });
+  }, [today, onFly, check]);
 
   // Stepping back onto a page already in the trail folds the trail rather than growing a loop.
   const standOn = useCallback((day) => {

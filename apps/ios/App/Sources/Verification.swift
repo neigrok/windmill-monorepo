@@ -11,6 +11,7 @@ enum BoardFixture {
   static let shortProse = "Long day. The walk home was the best part — the rain had just stopped and the street smelled of it."
   static func prepare(_ board: String, model: AppModel) async {
     #if DEBUG && targetEnvironment(simulator)
+    if await JournalEchoFixture.prepare(board, model: model) { return }
     if ProcessInfo.processInfo.arguments.contains("-routines-proposal-fixture"),
        let server = model.runtime?.auth.fake {
       do { try await model.signIn(server.identity(email: "routines-proposal-fixture@example.com")) }

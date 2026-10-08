@@ -13,6 +13,7 @@ struct WindmillApp: App {
   let settings: AppSettings
   let telemetry: AppTelemetry
   init() {
+    OfflineFixture.install()
     let settings = AppSettings()
     self.settings = settings
     #if DEBUG
@@ -51,7 +52,7 @@ struct WindmillApp: App {
         await Task.yield()
         guard !Task.isCancelled else { return }
         do {
-          let runtime = try WorkoutActivityIntentHandler.model?.runtime ?? AppRuntime(settings: settings, telemetry: telemetry)
+          let runtime = try WorkoutActivityIntentHandler.model?.runtime ?? OfflineFixture.runtime(settings: settings, telemetry: telemetry) ?? AppRuntime(settings: settings, telemetry: telemetry)
           let suite = settings.board.map { "board-\($0)" } ?? settings.scenario.map { "scenario-\($0)" }
           let preferences = suite.map { UserDefaults(suiteName: $0)! } ?? .standard
           if settings.scenario != nil, !settings.restoreBoard, let suite { preferences.removePersistentDomain(forName: suite) }
@@ -64,6 +65,7 @@ struct WindmillApp: App {
             onboardingFixture = await OnboardingFixture.prepare(board, model: created)
             if !onboardingFixture { await BoardFixture.prepare(board, model: created) }
           }
+          try await OfflineFixture.prepare(created)
           if settings.board == nil && settings.scenario == nil || onboardingFixture {
             introduction = try OnboardingLaunch.shouldPresent(model: created, deepLink: launchLink || launchDelegate.deepLink || settings.board == "onboarding-deep-link")
           }
@@ -96,7 +98,7 @@ struct RootScreen: View {
       else if model.welcome { welcome.onAppear { model.screenViewed("welcome") } }
       else if model.selectedRoom == .journal { JournalScreen(model: model.journal, app: model).environment(\.colorScheme, .dark) }
       else { GymRoom(gym: model.gym, app: model) }
-    }.sheet(isPresented: Binding(get: { model.sheet != nil }, set: { if !$0 && !model.editorReadOnly { model.sheet = nil } }), onDismiss: { model.dismissSheet() }) { AccountSheet(model: model) }
+    }.sheet(isPresented: Binding(get: { model.sheet != nil }, set: { if !$0 { model.cancelAuthentication(); model.sheet = nil } }), onDismiss: { model.dismissSheet() }) { AccountSheet(model: model) }
       .environment(\.dynamicTypeSize, model.runtime?.settings.board?.contains("AX3") == true ? .accessibility3 : typeSize)
   }
 
@@ -160,7 +162,7 @@ struct RoomMenu: View {
         }
       }.pickerStyle(.inline)
       Divider()
-      Button("You", systemImage: "person.crop.circle") { app.journal.done(); app.sheet = .you }
+      Button("You", systemImage: "person.crop.circle") { app.openYou() }
       if app.selectedRoom == .journal {
         Button("Show ink notes") {
           app.journal.done()

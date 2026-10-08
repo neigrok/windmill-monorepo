@@ -29,6 +29,7 @@ nonisolated struct CoachSaved: Codable {
   var photo: CoachAttachment?
   var photoData: Data?
   var request: Request?
+  var editedRequestId: String?
   var thread: CoachThread?
   var generation: CoachGeneration?
   var exchanges: [CoachGeneration] = []
@@ -124,18 +125,19 @@ struct CoachDraftStore {
   func edit(_ text: String) {
     guard text != saved.text else { return }
     invalidateRead()
-    var next = saved; next.text = text
-    if !keep(next, failure: "Your draft couldn’t be saved. Try again.") { saved.text = text }
+    var next = saved; next.text = text; next.editedRequestId = next.request?.requestId
+    if !keep(next, failure: "Your draft couldn’t be saved. Try again.") { saved.text = text; saved.editedRequestId = next.editedRequestId }
   }
   func addPhoto(_ data: Data) throws {
     let (attachment, bytes) = try CoachPhotoPreparation.prepare(data)
     invalidateRead()
-    var next = saved; next.photo = attachment; next.photoData = bytes
+    var next = saved; next.photo = attachment; next.photoData = bytes; next.editedRequestId = next.request?.requestId
     _ = keep(next, failure: "Your draft couldn’t be saved. Try again.")
   }
   func removePhoto() {
     invalidateRead()
-    var next = saved; next.photo = nil; next.photoData = nil; _ = keep(next, failure: "Your draft couldn’t be saved. Try again.")
+    var next = saved; next.photo = nil; next.photoData = nil; next.editedRequestId = next.request?.requestId
+    _ = keep(next, failure: "Your draft couldn’t be saved. Try again.")
   }
   @discardableResult func newChat(seed: String = "") -> Bool {
     guard !asking else { return false }
@@ -158,6 +160,10 @@ struct CoachDraftStore {
     let attachmentIds = saved.photo.map { [$0.id] } ?? []
     if retryable, let request = saved.request, request.thread == saved.threadId,
        request.question == question, request.attachmentIds == attachmentIds {
+      if saved.editedRequestId != nil {
+        var next = saved; next.editedRequestId = nil
+        guard keep(next, failure: "Your message couldn’t be saved. Try again.") else { return }
+      }
       launch(request, owner: owner); return
     }
     var next = saved
@@ -166,7 +172,7 @@ struct CoachDraftStore {
        !next.exchanges.contains(where: { $0.id == generation.id }) { next.exchanges.append(generation) }
     let request = CoachSaved.Request(thread: next.threadId, question: question,
                                     requestId: UUID().uuidString, attachmentIds: attachmentIds)
-    next.request = request; next.generation = nil; next.thread?.generation = nil
+    next.request = request; next.editedRequestId = nil; next.generation = nil; next.thread?.generation = nil
     guard keep(next, failure: "Your message couldn’t be saved. Try again.") else { return }
     launch(request, owner: owner)
   }
@@ -181,8 +187,9 @@ struct CoachDraftStore {
   }
   func launch(_ request: CoachSaved.Request, owner: String) {
     invalidateRead()
+    stopGeneration += 1; stopWork?.cancel(); stopWork = nil; stopping = false
     workGeneration += 1; let generation = workGeneration
-    asking = true; refusal = nil; error = nil
+    asking = true; uploading = false; refusal = nil; error = nil
     let started = ProcessInfo.processInfo.systemUptime
     gym.telemetry.event("gym_ask_started", properties: ["screen": "coach"])
     work = Task { [weak self] in
@@ -190,7 +197,7 @@ struct CoachDraftStore {
       defer { if self.owner == owner, self.saved.threadId == request.thread, self.workGeneration == generation { self.asking = false; self.uploading = false; self.work = nil } }
       do {
         if !request.attachmentIds.isEmpty, activeGeneration == nil {
-          guard let photo = saved.photo, let bytes = saved.photoData else {
+          guard let photo = saved.photo, request.attachmentIds == [photo.id], let bytes = saved.photoData else {
             throw AppFailure(message: "That photo is unavailable. Remove it and choose it again.")
           }
           uploading = true
@@ -223,7 +230,9 @@ struct CoachDraftStore {
           return
         }
         if error is DecodingError { gym.report("gym_rest", error) }
-        if uploading {
+        if GymRESTClient.needsConnection(error) {
+          refusal = .retry(CoachCopy.connectionRequired); self.error = CoachCopy.connectionRequired
+        } else if uploading {
           self.error = "Photo didn’t upload. Retry to send this photo."
         } else if let failure = error as? GymRESTFailure {
           let object = (try? JSONSerialization.jsonObject(with: failure.body)) as? [String: Any] ?? [:]
@@ -253,14 +262,21 @@ struct CoachDraftStore {
     guard snapshot.thread == request.thread, snapshot.generation.requestId == request.requestId else { throw URLError(.badServerResponse) }
     if let previous = activeGeneration, previous.id == snapshot.generation.id, snapshot.generation.revision <= previous.revision { return }
     var next = saved; next.generation = snapshot.generation
-    if snapshot.generation.terminal { next.text = ""; next.photo = nil; next.photoData = nil }
+    // Composer edits keep their request marker through Stop and recovery, even after an edit is reverted.
+    let ownsDraft = next.editedRequestId != request.requestId && next.text.trimmingCharacters(in: .whitespacesAndNewlines) == request.question
+      && (next.photo.map { [$0.id] } ?? []) == request.attachmentIds
+    if snapshot.generation.terminal && ownsDraft { next.text = ""; next.photo = nil; next.photoData = nil; next.editedRequestId = nil }
     guard keep(next, failure: "Your message couldn’t be saved. Try again.") else { throw AppFailure(message: "Your message couldn’t be saved. Try again.") }
     error = snapshot.generation.status == "failed" ? CoachCopy.interrupted : snapshot.generation.status == "stopped" ? CoachCopy.stopped : nil
   }
   func stopResponse() {
     guard !stopping, let owner, let request = saved.request else { return }
-    if uploading { work?.cancel(); return }
-    let generation = workGeneration, stoppedWork = work
+    let wasAsking = asking, wasUploading = uploading
+    workGeneration += 1; let generation = workGeneration
+    work?.cancel(); work = nil; asking = false; uploading = false
+    error = wasUploading ? "Upload cancelled. Retry to send this photo." : CoachCopy.interrupted
+    if wasAsking { gym.telemetry.event("gym_ask_outcome", properties: ["screen": "coach", "outcome": "cancelled"]) }
+    if wasUploading { return }
     stopGeneration += 1; let stop = stopGeneration
     stopping = true
     stopWork = Task { [weak self] in
@@ -272,12 +288,14 @@ struct CoachDraftStore {
               self.saved.request?.requestId == request.requestId, self.workGeneration == generation else { return }
         let snapshot = try JSONDecoder().decode(CoachSnapshot.self, from: data)
         try accept(snapshot, request: request)
-        if snapshot.generation.terminal { stoppedWork?.cancel(); asking = false }
+        if snapshot.generation.terminal { asking = false }
       } catch {
         guard self.owner == owner, self.allowed, self.saved.threadId == request.thread,
               self.saved.request?.requestId == request.requestId, self.workGeneration == generation,
               !(error is CancellationError) else { return }
-        self.error = "The stop request didn’t reach Coach. Try again."
+        self.error = GymRESTClient.needsConnection(error)
+          ? "Coach is stopped on this phone. Stopping it on the server needs a connection."
+          : "The stop request didn’t reach Coach. Try again."
       }
     }
   }
@@ -320,7 +338,8 @@ struct CoachDraftStore {
       if let request = next.request, next.generation?.terminal == false { launch(request, owner: owner) }
     } catch {
       guard self.owner == owner, allowed, self.readGeneration == generation, !(error is CancellationError) else { return }
-      self.error = (error as? GymRESTFailure)?.message ?? "That conversation couldn’t be opened. Try again."
+      self.error = GymRESTClient.needsConnection(error) ? "Coach history needs a connection."
+        : (error as? GymRESTFailure)?.message ?? "That conversation couldn’t be opened. Try again."
       if error is DecodingError || (error as? URLError)?.code == .badServerResponse { gym.report("gym_read", error) }
     }
   }

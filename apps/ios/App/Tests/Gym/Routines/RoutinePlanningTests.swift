@@ -152,7 +152,7 @@ import SyncSchema
     gym.readFailed = true
     #expect(gym.startWorkout() == nil)
     #expect(gym.openSession == nil)
-    gym.readFailed = false; gym.accountTransition = true
+    gym.readFailed = false; gym.accountChanging = true
     #expect(!gym.saveRoutine(&draft))
     #expect(gym.startWorkout() == nil)
     #expect(gym.routines.isEmpty && gym.openSession == nil)

@@ -51,6 +51,94 @@ struct LifecycleTests {
     #expect(try rig.meta().authPaused)
   }
 
+  @Test(arguments: [nil, "A"] as [String?])
+  func anOfflineStartAndForegroundReadAndCommitWithoutAHello(_ account: String?) async throws {
+    let rig = try Rig(account: account)
+    rig.connectivity.set(online: false)
+    await rig.engine.start()
+    try rig.engine.leave()
+    rig.engine.foreground()
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "Private")], gestureId: "g1"))
+    #expect(try rig.engine.read(Rig.scope) { try $0.drawn("card").map(\.id) } == ["card0001"])
+    #expect(try rig.outbox() == ["g1/0 ready"])
+    #expect(try rig.meta().account == account)
+    #expect(try !rig.meta().authPaused)
+    #expect(rig.transport.calls.isEmpty)
+  }
+
+  @Test func aKnownOfflineSignInKeepsLocalWorkWithoutStartingAHello() async throws {
+    let rig = try Rig()
+    rig.connectivity.set(online: false)
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "Private")], gestureId: "g1"))
+    await #expect(throws: EngineError.unreachable) {
+      try await rig.engine.signIn(account: "A", token: SessionToken("private-session"))
+    }
+    await rig.engine.start()
+    #expect(try rig.meta().account == nil)
+    #expect(try rig.outbox() == ["g1/0 ready"])
+    #expect(try rig.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == "A")
+    #expect(rig.transport.calls.isEmpty)
+  }
+
+  @Test(.timeLimit(.minutes(1))) func cancellingAStalledSignInKeepsItsLocalWorkAndCannotBindALateAnswer() async throws {
+    let rig = try Rig(), gate = Gate()
+    defer { gate.open() }
+    rig.transport.willAnswerHello(200, Self.hello(holds: [:], as: "A"), after: gate)
+    let signingIn = Task { try await rig.engine.signIn(account: "A", token: SessionToken("private-session")) }
+    await gate.arrival()
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "Private")], gestureId: "g1"))
+    signingIn.cancel()
+    await #expect(throws: EngineError.unreachable) { try await signingIn.value }
+    gate.open()
+    #expect(try rig.meta().account == nil)
+    #expect(try rig.outbox() == ["g1/0 ready"])
+    #expect(try rig.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == "A")
+  }
+
+  @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+  func cancellingSignInDuringABindingCannotChangeTheReplica(_ adopting: Bool) async throws {
+    let seats = SeatChanges(), gate = Gate(), rig = try Rig(bindings: [seats])
+    defer { gate.open() }
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "Private")], gestureId: "g1"))
+    let replica = try rig.engine.activeReplica()
+    let session = adopting ? try await rig.signIn("A", holds: ["probe": true]) : nil
+    seats.gate.withLock { $0 = gate }
+    let changing = Task {
+      if let session { try await session.complete(["probe": .add]) }
+      else { _ = try await rig.signIn("A", holds: ["probe": false]) }
+    }
+    await gate.arrival()
+    changing.cancel()
+    gate.open()
+    await #expect(throws: CancellationError.self) { try await changing.value }
+    #expect(try rig.meta().account == nil)
+    #expect(try rig.engine.activeReplica() == replica)
+    #expect(try rig.outbox() == ["g1/0 ready"])
+    #expect(try rig.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == "A")
+    #expect(seats.finished == seats.count)
+    seats.gate.withLock { $0 = nil }
+    if let session { try await session.complete(["probe": .add]) }
+    else { #expect(try await rig.signIn("A", holds: ["probe": false]).isComplete) }
+    #expect(try rig.meta().account == "A")
+    #expect(seats.finished == seats.count)
+  }
+
+  @Test func aSignInCancelledBeforeItStartsRetainsNoCredentialOrPendingAccount() async throws {
+    let rig = try Rig(), gate = Gate()
+    let signingIn = Task {
+      await gate.pass()
+      return try await rig.engine.signIn(account: "A", token: SessionToken("private-session"))
+    }
+    await gate.arrival()
+    signingIn.cancel()
+    gate.open()
+    await #expect(throws: CancellationError.self) { try await signingIn.value }
+    #expect(try rig.meta().account == nil)
+    #expect(rig.tokens.accounts().isEmpty)
+    #expect(try rig.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == nil)
+    #expect(rig.transport.calls.isEmpty)
+  }
+
   // Engine start keeps a token only for the account signed in or signing in.
   @Test func engineStartDeletesTheTokensNoSignInNeeds() throws {
     let rig = try Rig(account: "A")
@@ -115,12 +203,13 @@ struct LifecycleTests {
     let transport = ScriptedTransport()
     let clock = SimClock(wallMs: 0)
     let ended = EventLog()
+    let connectivity = SwitchedConnectivity(online: false)
     let engine = try SyncEngine(
       config: EngineConfig(appVersion: "1", surface: .ios, drivesLoops: false), bindings: [], store: store, transport: transport,
       tokens: InMemoryTokenStore(Dictionary(uniqueKeysWithValues: signedIn.map { ($0, SessionToken("token-\($0)")) })),
       forkGuard: InMemoryForkGuardStore(forkGuard), clock: clock.engineClock, random: SeededRandomSource(seed: 1),
       identities: try QueuedIdentities(["ids": vector.input["ids"] ?? [], "actors": [.string(ClientSteps.actor)]]),
-      connectivity: SwitchedConnectivity(online: false), tap: { ended.append($0) })
+      connectivity: connectivity, tap: { ended.append($0) })
 
     var signIn: SignInSession?
     var signOut: SignOutSession?
@@ -135,6 +224,8 @@ struct LifecycleTests {
         let account = try step.member("account").asString()
         let holds = try JSON.map(step["holdsRecords"]) { try $0.asBool() }
         let ask = { () async throws -> SignInSession in
+          connectivity.set(online: true)
+          defer { connectivity.set(online: false) }
           transport.willAnswerHello(200, Self.hello(holds: holds, as: account, serverTime: clock.nowMs()))
           let pending = try store.read { try $0.deviceMeta()?.meta.pendingSignIn }
           return try await pending == account ? engine.resumeSignIn()! : engine.signIn(account: account, token: SessionToken("t"))
@@ -537,18 +628,134 @@ struct LifecycleTests {
     try rig.commit(Gesture(changes: [Rig.card("card0001", "Offline")]))
     let session = try await rig.signIn("A", holds: ["probe": true])
     #expect(seats.count == 1)
+    #expect(seats.finished == 1)
     session.cancel()
     rig.transport.willAnswerHello(200, Self.hello(holds: ["probe": true], as: "A"))
     let resumed = try #require(try await rig.engine.resumeSignIn())
     #expect(seats.count == 2)
+    #expect(seats.finished == 2)
     try await resumed.complete(["probe": .add])
     #expect(seats.count == 3)
+    #expect(seats.finished == 3)
     rig.connectivity.set(online: false)
     let signingOut = try await rig.engine.signOut()
     #expect(seats.count == 4)
+    #expect(seats.finished == 4)
     try await signingOut.finish(.keep)
     #expect(seats.count == 5)
+    #expect(seats.finished == 5)
     #expect(try rig.replicas() == ["anon active entries: 0 new id", "dormant(A) entries: 1 new id"])
+  }
+
+  @Test(arguments: [false, true], [false, true])
+  func failedSignInBalancesEveryStartedBindingAndCanBeRetried(_ adopting: Bool, _ commitFailure: Bool) async throws {
+    let order = Mutex<[String]>([]), failingCommit = Mutex(false)
+    let first = SeatChanges { event in order.withLock { $0.append("first \(event)") } }
+    let second = SeatChanges { event in order.withLock { $0.append("second \(event)") } }
+    let rig = try Rig(bindings: [first, second], crashPoints: CrashPoints { point in
+      if point == .beforeCommit(.signInComplete), failingCommit.withLock({ $0 }) { throw RigError("sign-in commit failed") }
+    })
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "Private")], gestureId: "g1"))
+    let replica = try rig.engine.activeReplica()
+    let session = adopting ? try await rig.signIn("A", holds: ["probe": true]) : nil
+    order.withLock { $0 = [] }
+    second.failing.withLock { $0 = !commitFailure }
+    failingCommit.withLock { $0 = commitFailure }
+    await #expect(throws: RigError.self) {
+      if let session { try await session.complete(["probe": .add]) }
+      else { _ = try await rig.signIn("A", holds: ["probe": false]) }
+    }
+    #expect(order.withLock { $0 } == ["first prepare", "second prepare", "second finish", "first finish"])
+    #expect(first.finished == first.count)
+    #expect(second.finished == second.count)
+    #expect(try rig.engine.activeReplica() == replica)
+    #expect(try rig.meta().account == nil)
+    #expect(try rig.outbox() == ["g1/0 ready"])
+    #expect(try rig.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == "A")
+
+    second.failing.withLock { $0 = false }
+    failingCommit.withLock { $0 = false }
+    if let session { try await session.complete(["probe": .add]) }
+    else { #expect(try await rig.signIn("A", holds: ["probe": false]).isComplete) }
+    #expect(try rig.meta().account == "A")
+    #expect(try rig.engine.read(Rig.scope) { try $0.drawn("card").map(\.id) } == ["card0001"])
+    #expect(first.finished == first.count)
+    #expect(second.finished == second.count)
+  }
+
+  @Test(arguments: [false, true])
+  func failedSignOutPreparationBalancesTheBindingAndReleasesTheSender(_ commitFailure: Bool) async throws {
+    let seats = SeatChanges(), failingCommit = Mutex(false)
+    let rig = try Rig(account: "A", bindings: [seats], crashPoints: CrashPoints { point in
+      if point == .beforeCommit(.signOutCount), failingCommit.withLock({ $0 }) { throw RigError("sign-out count failed") }
+    })
+    rig.connectivity.set(online: false)
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "Private")], gestureId: "g1"))
+    let replica = try rig.engine.activeReplica()
+    seats.failing.withLock { $0 = !commitFailure }
+    failingCommit.withLock { $0 = commitFailure }
+    await #expect(throws: RigError.self) { try await rig.engine.signOut() }
+    #expect(seats.count == 1)
+    #expect(seats.finished == 1)
+    #expect(try rig.engine.activeReplica() == replica)
+    #expect(try rig.meta().account == "A")
+    #expect(try rig.outbox() == ["g1/0 ready"])
+    #expect(rig.tokens.token(for: "A") != nil)
+    #expect(await !rig.engine.sender.isHolding(1))
+
+    seats.failing.withLock { $0 = false }
+    failingCommit.withLock { $0 = false }
+    let session = try await rig.engine.signOut()
+    #expect(session.ready == 1)
+    #expect(await rig.engine.sender.isHolding(session.hold))
+    await session.cancel()
+    #expect(await !rig.engine.sender.isHolding(session.hold))
+    #expect(try rig.meta().account == "A")
+    #expect(seats.count == 2)
+    #expect(seats.finished == 2)
+  }
+
+  @Test(.timeLimit(.minutes(1)), arguments: [SignOutChoice.keep, .discard], ["prepare", "commit", "cancel"])
+  func aFailedSignOutFinishCanRetryTheSameChoice(_ choice: SignOutChoice, _ failure: String) async throws {
+    let seats = SeatChanges(), gate = Gate(), failingCommit = Mutex(false)
+    defer { gate.open() }
+    let rig = try Rig(account: "A", bindings: [seats], crashPoints: CrashPoints { point in
+      if point == .beforeCommit(.signOutFinish), failingCommit.withLock({ $0 }) { throw RigError("sign-out commit failed") }
+    })
+    rig.connectivity.set(online: false)
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "Private")], gestureId: "g1"))
+    let replica = try rig.engine.activeReplica()
+    let session = try await rig.engine.signOut()
+    seats.failing.withLock { $0 = failure == "prepare" }
+    failingCommit.withLock { $0 = failure == "commit" }
+    if failure == "cancel" {
+      seats.gate.withLock { $0 = gate }
+      let finishing = Task { try await session.finish(choice) }
+      await gate.arrival()
+      finishing.cancel()
+      gate.open()
+      await #expect(throws: CancellationError.self) { try await finishing.value }
+    } else {
+      await #expect(throws: RigError.self) { try await session.finish(choice) }
+    }
+    #expect(seats.count == 2)
+    #expect(seats.finished == 2)
+    #expect(try rig.engine.activeReplica() == replica)
+    #expect(try rig.meta().account == "A")
+    #expect(try rig.outbox() == ["g1/0 ready"])
+    #expect(rig.tokens.token(for: "A") != nil)
+    #expect(await rig.engine.sender.isHolding(session.hold))
+
+    seats.gate.withLock { $0 = nil }
+    seats.failing.withLock { $0 = false }
+    failingCommit.withLock { $0 = false }
+    #expect(try await session.finish(choice) == SignOut(complete: true, ready: 1, sent: 0, counted: ["g1/0"]))
+    #expect(try rig.meta().account == nil)
+    #expect(rig.tokens.token(for: "A") == nil)
+    #expect(await !rig.engine.sender.isHolding(session.hold))
+    #expect(try rig.engine.dormantReplicas() == (choice == .keep ? [DormantReplica(account: "A", ready: 1, sent: 0)] : []))
+    #expect(seats.count == 3)
+    #expect(seats.finished == 3)
   }
 
   // MARK: The active replica (§7.12)
@@ -574,6 +781,7 @@ struct LifecycleTests {
     rig.connectivity.set(online: false)
     try await rig.engine.signOut().finish(.keep)
     #expect(try rig.engine.activeReplica() == anon)
+    rig.connectivity.set(online: true)
     _ = try await rig.signIn("A", holds: ["probe": true])
     #expect(try rig.engine.activeReplica() == changedEpoch)
     #expect(Set([anon, bound, reidentified, changedEpoch]).count == 4)
@@ -731,12 +939,27 @@ struct LifecycleTests {
 final class SeatChanges: ProductBinding {
   let product = "probe"
   let calls = Mutex(0)
+  let completions = Mutex(0)
+  let gate = Mutex<Gate?>(nil)
+  let failing = Mutex(false)
+  let trace: @Sendable (String) -> Void
 
-  func seatWillChange() async {
+  init(trace: @escaping @Sendable (String) -> Void = { _ in }) { self.trace = trace }
+
+  func seatWillChange() async throws {
     calls.withLock { $0 += 1 }
+    trace("prepare")
+    await gate.withLock { $0 }?.pass()
+    if failing.withLock({ $0 }) { throw RigError("seat preparation failed") }
+  }
+
+  func seatChangeFinished() async {
+    completions.withLock { $0 += 1 }
+    trace("finish")
   }
 
   var count: Int { calls.withLock { $0 } }
+  var finished: Int { completions.withLock { $0 } }
 }
 
 extension Rig {

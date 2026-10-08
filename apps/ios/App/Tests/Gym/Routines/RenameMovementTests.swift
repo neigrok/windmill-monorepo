@@ -87,7 +87,7 @@ import SyncTesting
     #expect(gym.catalogue.find(exercise.id) == exercise)
     #expect(!gym.renameMovement(exercise, to: " \n") && gym.error == "Name it to save it.")
     #expect(!gym.renameMovement(exercise, to: String(repeating: "x", count: 61)) && gym.error == "Use 60 characters or fewer.")
-    gym.accountTransition = true
+    gym.accountChanging = true
     #expect(!gym.renameMovement(exercise, to: "Renamed") && gym.error == "Wait for the account change to finish.")
     #expect(gym.catalogue.find(exercise.id) == exercise)
   }

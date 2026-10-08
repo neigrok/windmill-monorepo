@@ -12,6 +12,7 @@ import { ClaimPage, ClaimPageCommand, ContentClock, EditorDraft, PendingClaim, R
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { RegistryCheck, RuleBookCheck, RuleBookParity } from '../../../platform/domain-kit/checks.js';
 import { Contract, ContractError, momentOf, viewRecords, withRecordsReversed } from '../../../platform/domain-kit/vectors.js';
+import { locateEcho } from '../../../../src/products/journal/domain/echoes.js';
 
 /** @typedef {import('../../../platform/domain-kit/vectors.js').Vector} Vector */
 /** @typedef {import('../../../../src/platform/domain-kit/values.js').Json} Json */
@@ -19,6 +20,8 @@ import { Contract, ContractError, momentOf, viewRecords, withRecordsReversed } f
 const rulesFile = 'journal/domain/rules.json';
 const valuesFile = 'journal/domain/values.json';
 const actionsFile = 'journal/domain/page-actions.json';
+const echoesFile = 'journal/domain/echo-quotes.json';
+const graphemes = new Intl.Segmenter('und', { granularity: 'grapheme' });
 
 class JournalCorpus extends ProductCorpus {
   /** @param {Vector} vector @param {string} scope */
@@ -82,6 +85,8 @@ const corpus = new JournalCorpus(JournalRules.book, JournalRules.spec);
 
 /** @type {Record<string, (vector: Vector) => unknown>} */
 const handlers = {
+  [echoesFile]: ({ input }) => ({ range: locateEcho(input.body, input.text, input.occurrenceHint,
+    (value) => graphemes.segment(value)) }),
   [valuesFile]: (vector) => corpus.runValue(vector),
   [actionsFile]: (vector) => {
     const input = vector.input;
@@ -100,7 +105,7 @@ const handlers = {
 
 test('the web claims every journal vector file', (t) => {
   assert.deepEqual([rulesFile, ...Object.keys(handlers)].sort(), Contract.files('journal/domain'));
-  t.diagnostic(`journal corpus: 3/3 files, ${1 + Object.keys(handlers).reduce((sum, file) => sum + Contract.vectors(file).length, 0)} comparisons, none pending`);
+  t.diagnostic(`journal corpus: ${Object.keys(handlers).length + 1}/${Contract.files('journal/domain').length} files, ${1 + Object.keys(handlers).reduce((sum, file) => sum + Contract.vectors(file).length, 0)} comparisons, none pending`);
 });
 
 test('the two-entity journal book equals the pinned bytes', () => RuleBookParity.check(JournalRules.book, rulesFile));

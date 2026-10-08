@@ -1,4 +1,5 @@
 import XCTest
+import Vision
 
 @MainActor final class GymWorkoutFlowTests: XCTestCase {
   override func setUp() { continueAfterFailure = false }
@@ -105,5 +106,57 @@ import XCTest
     app.otherElements["workout-refusal"].buttons["Dismiss message"].tap()
     XCTAssertTrue(retained.waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.buttons["workout-log"].exists)
+  }
+
+  func testOfflineFinishWarningLeadsWithItsConnectionRequirementAtLargestText() throws {
+    let app = launch("workout-notice")
+    app.terminate()
+    app.launchArguments = ["-board", "workout-notice", "-restore-board",
+                           "-server", "https://offline.invalid", "-offline-fixture", "no-network",
+                           "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+    app.launch()
+    let log = app.buttons["workout-log"]
+    XCTAssertTrue(log.waitForExistence(timeout: 3)); XCTAssertTrue(log.isEnabled); XCTAssertTrue(log.isHittable)
+    log.tap(); app.buttons["workout-finish"].tap()
+    let message = "Finishing needs a connection. Some sets in this synced workout are saved only on this phone. You can keep logging or hide it."
+    XCTAssertTrue(app.staticTexts[message].waitForExistence(timeout: 3))
+    var captures = 0
+    func visibleText() throws -> String {
+      let screenshot = app.screenshot()
+      let attachment = XCTAttachment(screenshot: screenshot)
+      attachment.name = "offline-finish-warning-AX5-\(captures)"
+      attachment.lifetime = .keepAlways; add(attachment); captures += 1
+      let request = VNRecognizeTextRequest()
+      request.recognitionLevel = .accurate
+      request.recognitionLanguages = ["en-US"]
+      try VNImageRequestHandler(cgImage: XCTUnwrap(screenshot.image.cgImage)).perform([request])
+      return (request.results ?? []).sorted { $0.boundingBox.minY > $1.boundingBox.minY }
+        .compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ").lowercased()
+        .split(separator: " ").filter { $0 != "x" }.joined(separator: " ")
+    }
+    let unscrolled = try visibleText()
+    for phrase in ["needs a connection", "log set"] {
+      XCTAssertTrue(unscrolled.contains(phrase), "The warning hid ‘\(phrase)’ before any scroll: \(unscrolled)")
+    }
+    var rendered = unscrolled
+    let notice = app.scrollViews.containing(.staticText, identifier: message).firstMatch
+    for _ in 0..<12 where !(rendered.contains("keep logging") && rendered.contains("or hide")) {
+      guard notice.exists else { break }
+      let start = notice.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
+      let end = notice.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+      start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.3)
+      rendered += " " + (try visibleText())
+    }
+    for phrase in ["keep logging", "or hide"] {
+      XCTAssertTrue(rendered.contains(phrase), "The warning never showed ‘\(phrase)’: \(rendered)")
+    }
+    XCTAssertTrue(log.isEnabled); XCTAssertTrue(log.isHittable); log.tap()
+    app.buttons["workout-assembly"].tap()
+    XCTAssertTrue(app.navigationBars["This session"].waitForExistence(timeout: 3))
+    let hide = app.buttons["workout-hide"]
+    for _ in 0..<4 where !hide.exists || !hide.isHittable { app.swipeUp() }
+    XCTAssertTrue(hide.exists)
+    XCTAssertTrue(hide.isEnabled); XCTAssertTrue(hide.isHittable); hide.tap()
+    XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 3))
   }
 }

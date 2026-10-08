@@ -10,7 +10,7 @@ struct RoomTransient: View {
 
   var body: some View {
     HStack(spacing: RoomSpace.related) {
-      Text(message).foregroundStyle(room.ink).lineLimit(1)
+      Text(message).foregroundStyle(room.ink).fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
       if let action {
         Button(action: action) {
@@ -25,7 +25,7 @@ struct RoomTransient: View {
           .accessibilityIdentifier(actionIdentifier ?? actionTitle ?? "transient-action")
       }
     }.font(.footnote)
-      .padding(.horizontal, RoomSpace.inset)
+      .padding(.horizontal, RoomSpace.inset).padding(.vertical, RoomSpace.small)
       .frame(minHeight: RoomSpace.minimumTarget)
       .background(room.card, in: RoundedRectangle(cornerRadius: RoomSpace.cardRadius))
       .accessibilityElement(children: .contain)

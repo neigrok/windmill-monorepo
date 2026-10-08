@@ -10,8 +10,9 @@ vendor spend has its own allowance.
 - Both passages must share a low-frequency lexical anchor. Similar vectors alone are insufficient.
 - Do not infer resolutions, life events or patterns from absent entries. A total is valid only when
   every item it counts is visible and reachable. A named page may say that it has no echo.
-- Re-locate every quote by exact text in the live page before rendering it. Do not render a quote
-  that no longer exists; compute the visible count after this check.
+- Re-locate every quote in the live page before rendering it, comparing text in NFC
+  (`packages/api-contract/journal/domain/echo-quotes.json`). Do not render a quote that no longer
+  exists; compute the visible count after this check.
 - A page carries at most ten cards, with at most one card per past day. Echoes remain attached to
   their pages, including when the reader reaches a page through another echo.
 

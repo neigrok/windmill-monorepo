@@ -33,7 +33,8 @@ nonisolated enum TelemetryPrivacy {
     "app_started", "app_foregrounded", "app_backgrounded", "auth_restore", "auth_code_requested",
     "auth_code_sent", "auth_sign_in_started", "auth_signed_in", "auth_signed_out",
     "first_run_screen_viewed", "first_run_choice", "scale_invitation_shown", "scale_invitation_answered",
-    "journal_line_saved", "sync_pull_outcome", "sync_push_outcome", "api_request_failed", "client_error",
+    "journal_line_saved", "journal_echo_shown", "journal_echo_opened", "journal_echo_dismissed", "journal_echo_useful",
+    "sync_pull_outcome", "sync_push_outcome", "api_request_failed", "client_error",
     "onboarding_screen_viewed", "onboarding_skipped", "onboarding_finished", "onboarding_replayed", "room_switched", "room_adoption_answered", "gym_screen_viewed", "gym_action", "gym_undo",
     "gym_activity_set_logged", "gym_activity_offer_refused", "gym_session_started", "gym_session_finished", "gym_set_logged", "gym_routine_saved",
     "gym_ask_started", "gym_ask_outcome", "gym_proposal_outcome"
@@ -50,9 +51,9 @@ nonisolated enum TelemetryPrivacy {
     "method": ["GET", "POST", "PUT", "DELETE", "email", "apple"],
     "day_kind": ["today"],
     "scope_kind": ["product", "tree", "overlay", "unknown"],
-    "route": ["/v1/auth", "/v1/me", "/v1/sync", "/v1/events", "/v1/gym"],
+    "route": ["/v1/auth", "/v1/me", "/v1/sync", "/v1/events", "/v1/gym", "/v1/journal"],
     "failure_kind": ["offline", "timeout", "transport", "http", "decode", "encode", "storage", "keychain", "unexpected", "admission", "digest_reset", "doubt_exhausted", "overflow", "rejected", "tls", "sqlite", "digest_mismatch", "malformed", "unexpected_admission", "backoff_exhausted"],
-    "operation": ["gym_activity_request", "gym_activity_update", "gym_read", "gym_action", "gym_undo", "gym_flush", "gym_rest", "auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "auth_sign_in", "auth_sign_out", "auth_adopt", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts"]
+    "operation": ["gym_activity_request", "gym_activity_update", "gym_read", "gym_action", "gym_undo", "gym_flush", "gym_rest", "auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "journal_echoes", "auth_sign_in", "auth_sign_out", "auth_adopt", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts"]
   ]
 
   static func properties(_ input: [String: String], durationMs: Int64? = nil) -> [String: EventValue] {
@@ -158,14 +159,25 @@ nonisolated enum CrashReports {
     if let durationMs { event.context = ["telemetry": ["duration_ms": min(max(0, durationMs), 86_400_000)]] }
     SentrySDK.capture(event: event)
   }
+
+  static func offline(properties: [String: String]) {
+    let event = Event(level: .info)
+    event.tags = properties.merging(["failure_kind": "offline"]) { _, value in value }
+    SentrySDK.capture(event: event)
+  }
 }
 
 nonisolated final class AppTelemetry: Telemetry, Sendable {
   struct Identity: Sendable { var account: String?; var token: SessionToken? }
-  final class Session: Sendable { let identity = Mutex(Identity()) }
+  final class Session: Sendable {
+    let identity = Mutex(Identity())
+    let offline = Mutex(false)
+    let sentryOffline = Mutex(false)
+  }
   let session = Session()
   let queue: EventQueue?
   let enabled: Bool
+  var connectionRequired: Bool { session.offline.withLock { $0 } || session.sentryOffline.withLock { $0 } }
 
   init(info: [String: Any], baseURL: URL?, directory: URL, debug: Bool) {
     enabled = !debug || info["WMDebugTelemetry"] as? String == "YES"
@@ -174,7 +186,12 @@ nonisolated final class AppTelemetry: Telemetry, Sendable {
       let session = self.session
       queue = EventQueue(file: directory.appending(path: "events.json"), baseURL: baseURL,
                          metadata: TelemetryMetadata(info: info), credentials: { session.identity.withLock { $0 } },
-                         report: { CrashReports.failure($0, kind: $1, properties: $2, durationMs: $3) })
+                         report: { operation, kind, properties, duration in
+                           if ["offline", "timeout"].contains(kind) {
+                             let first = session.sentryOffline.withLock { value in let first = !value; value = true; return first }
+                             if first { CrashReports.offline(properties: properties.merging(["operation": operation]) { _, value in value }) }
+                           } else { CrashReports.failure(operation, kind: kind, properties: properties, durationMs: duration) }
+                         })
     } else { queue = nil }
     if let queue {
       Task { [weak queue] in
@@ -193,6 +210,21 @@ nonisolated final class AppTelemetry: Telemetry, Sendable {
   }
 
   func event(_ name: String, properties: [String: String], durationMs: Int64?) {
+    var properties = properties
+    if name == "api_request_failed", ["offline", "timeout"].contains(properties["failure_kind"]) {
+      let first = session.offline.withLock { value in
+        let first = !value; value = true; return first
+      }
+      guard first else { return }
+      properties["failure_kind"] = "offline"
+      let firstSentry = session.sentryOffline.withLock { value in let first = !value; value = true; return first }
+      if enabled, firstSentry { CrashReports.offline(properties: properties) }
+    } else if ["sync_pull_outcome", "sync_push_outcome", "auth_code_sent", "auth_signed_in"].contains(name), properties["outcome"] == "ok" {
+      session.offline.withLock { $0 = false }
+      session.sentryOffline.withLock { $0 = false }
+    } else if ["sync_pull_outcome", "sync_push_outcome"].contains(name), properties["outcome"] == "failed", connectionRequired {
+      return
+    }
     guard let queue, TelemetryPrivacy.events.contains(name) else { return }
     let account = session.identity.withLock { $0.account }
     let props = TelemetryPrivacy.properties(properties, durationMs: durationMs)
@@ -200,6 +232,10 @@ nonisolated final class AppTelemetry: Telemetry, Sendable {
   }
 
   func failure(_ operation: String, kind: String, properties: [String: String], durationMs: Int64?) {
+    if ["offline", "timeout"].contains(kind) {
+      event("api_request_failed", properties: properties.merging(["operation": operation, "failure_kind": kind]) { _, value in value }, durationMs: durationMs)
+      return
+    }
     guard enabled else { return }
     let props = properties.merging(["operation": operation, "failure_kind": kind]) { _, new in new }
     CrashReports.failure(operation, kind: kind, properties: properties, durationMs: durationMs)

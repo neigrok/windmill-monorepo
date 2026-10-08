@@ -13,14 +13,15 @@ import Synchronization
 @testable import Windmill
 
 @Suite @MainActor struct LineageFlowTests {
-  func fixture(_ transport: JournalModelTransport, syncTransport: (any SyncTransport)? = nil, tokens: InMemoryTokenStore = InMemoryTokenStore(), revocations: InMemoryTokenStore = InMemoryTokenStore(), auth: NativeAuth? = nil, seed: UInt64 = 17, connectivity: SwitchedConnectivity = SwitchedConnectivity()) throws -> AppModel {
-    let store = try Store.inMemory(registry: SyncSchema.registry, commandResultWrites: JournalWriting.resultWrites, pendingDeviceWork: JournalWriting.pendingWork)
-    let engine = try SyncEngine(config: EngineConfig(appVersion: "test", surface: .ios), store: store,
+  func fixture(_ transport: JournalModelTransport, syncTransport: (any SyncTransport)? = nil, tokens: InMemoryTokenStore = InMemoryTokenStore(), revocations: InMemoryTokenStore = InMemoryTokenStore(), auth: NativeAuth? = nil, seed: UInt64 = 17, connectivity: SwitchedConnectivity = SwitchedConnectivity(), crashPoints: CrashPoints = .none, bindings: [any ProductBinding] = [], telemetry: any Telemetry = NoopTelemetry()) throws -> AppModel {
+    let store = try Store.inMemory(registry: SyncSchema.registry, crashPoints: crashPoints, commandResultWrites: JournalWriting.resultWrites, pendingDeviceWork: JournalWriting.pendingWork)
+    let binding = GymBinding()
+    let engine = try SyncEngine(config: EngineConfig(appVersion: "test", surface: .ios), bindings: [binding] + bindings, store: store,
                                 transport: syncTransport ?? transport, tokens: tokens, forkGuard: InMemoryForkGuardStore(),
-                                clock: .system, random: SeededRandomSource(seed: seed), connectivity: connectivity)
+                                clock: .system, random: SeededRandomSource(seed: seed), connectivity: connectivity, telemetry: telemetry)
     let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
-    let runtime = AppRuntime(settings: AppSettings(arguments: ["app", "-model-server"]), store: store, engine: engine, auth: auth ?? NativeAuth(baseURL: nil, fake: transport), runner: runner, tokens: tokens, revocations: revocations)
-    return try AppModel(runner: runner, preferences: UserDefaults(suiteName: UUID().uuidString)!, runtime: runtime)
+    let runtime = AppRuntime(settings: AppSettings(arguments: ["app", "-model-server"]), store: store, engine: engine, auth: auth ?? NativeAuth(baseURL: nil, fake: transport), runner: runner, tokens: tokens, revocations: revocations, telemetry: telemetry, gymBinding: binding)
+    return try AppModel(runner: runner, preferences: UserDefaults(suiteName: UUID().uuidString)!, runtime: runtime, telemetry: telemetry)
   }
 
   @Test func emptyAccountAdoptsSilently() async throws {
@@ -147,6 +148,7 @@ import Synchronization
     let transport = JournalModelTransport(), model = try fixture(transport)
     let identity = transport.identity(email: "logout@example.com")
     try await model.signIn(identity); await model.beginSignOut(); await model.finishSignOut(choice)
+    for _ in 0..<100 where model.runtime?.revocations.accounts().isEmpty == false { try await Task.sleep(for: .milliseconds(5)) }
     let replay = await transport.hello(token: identity.token)
     if case .answered(.failed(let failure)) = replay { #expect(failure.status == 401) }
     else { Issue.record("Signed-out token still authenticates") }
@@ -186,6 +188,20 @@ import Synchronization
     try await model.signIn(server.identity(email: "delayed-keep@example.com"))
     await model.runtime?.engine.start(); try await AppScenario.backedUp(model)
     #expect(model.journal.document.body == "Before autosave")
+  }
+
+  @Test func closingAnUnansweredSignOutKeepsTheAccountAndNeverReopensItsSheet() async throws {
+    let server = JournalModelTransport(), transport = DelayedJournalTransport(base: server, delayHello: false)
+    let model = try fixture(server, syncTransport: transport)
+    try await model.signIn(server.identity(email: "cancel-signout@example.com"))
+    model.journal.type("Local writing"); model.journal.done(); model.sheet = .you
+    model.performAuthentication { await model.beginSignOut() }
+    let request = try #require(model.authTask)
+    await transport.gate.untilWaiting()
+    model.cancelAuthentication(); model.sheet = nil
+    await transport.gate.release(); await request.value
+    #expect(model.account == "model-cancel-signout@example.com" && model.signOutSession == nil && model.sheet == nil)
+    #expect(!model.editorReadOnly && model.journal.document.body == "Local writing")
   }
 
   @Test func offlineSignOutQueuesEveryCredentialAndNextRuntimeRevokesBoth() async throws {

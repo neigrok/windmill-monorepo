@@ -21,8 +21,8 @@ struct GymRoom: View {
     TabView(selection: $tab) {
       SwiftUI.Tab("Routines", systemImage: "list.bullet.rectangle", value: Tab.routines) {
         NavigationStack(path: $routinesPath) {
-          root(RoutinesTab(gym: gym, onAccount: openAccount,
-                           onWrittenProgram: { if gym.isAnonymous || gym.authPaused { openAccount() } else { ask("Help me turn my written program into a routine.") } },
+          root(RoutinesTab(gym: gym, onAccount: app.openYou,
+                           onWrittenProgram: { if gym.isAnonymous || gym.authPaused { app.openYou() } else { ask("Help me turn my written program into a routine.") } },
                            onReviewProposal: { proposal = ProposalReviewID(id: $0.description) }))
         }
       }
@@ -44,7 +44,7 @@ struct GymRoom: View {
       if #available(iOS 26, *) { tabs.tabBarMinimizeBehavior(.onScrollDown) }
       else { tabs }
     }
-    .environment(\.coachOpenAccount, openAccount)
+    .environment(\.coachOpenAccount, app.openYou)
     .environment(\.coachOpenRoutine, { id in tab = .routines; routinesPath.append(Destination.routine(id)) })
     .environment(\.coachOpenSession, { id in tab = .log; logPath.append(Destination.session(id)) })
     .accessibilityIdentifier("gym-room")
@@ -89,7 +89,6 @@ struct GymRoom: View {
       }
     }.toolbar(.hidden, for: .tabBar)
   }
-  func openAccount() { app.journal.done(); app.sheet = .you }
   func ask(_ question: String, send: Bool = false) {
     coachPath = NavigationPath(); tab = .coach
     coachHandoff = CoachHandoff(question: question, send: send)
@@ -101,7 +100,7 @@ struct GymRoom: View {
     case .detail(let id): if let id { tab = .log; logPath.append(Destination.session(id.description)) }
     case .keep: app.keep()
     case .coach: ask(WorkoutHandoff.coachQuestion, send: true)
-    case .writtenProgram: if gym.isAnonymous || gym.authPaused { openAccount() } else { ask("Help me turn my written program into a routine.") }
+    case .writtenProgram: if gym.isAnonymous || gym.authPaused { app.openYou() } else { ask("Help me turn my written program into a routine.") }
     }
   }
 }

@@ -34,6 +34,7 @@ struct CoachTab: View {
       ScrollViewReader { proxy in
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 20) {
+            Text("Coach needs a connection.").font(.callout).foregroundStyle(GymPalette.inkDim)
             if !coach.allowed { Text(CoachCopy.signedOut).foregroundStyle(GymPalette.inkDim) }
             else if coach.saved.thread == nil, coach.saved.request == nil {
               Text("Ask about your training. Coach can create routines and propose changes — you decide on the diff.")
@@ -288,12 +289,13 @@ struct CoachPhotoView: View {
   @State var data: Data?
   @State var loadedOwner: String?
   @State var failed = false
+  @State var connectionRequired = false
   @State var enlarged = false
   var body: some View {
     Group {
       if owner == gym.account, gym.coachAccountAvailable, (local != nil || loadedOwner == gym.account), let data = data ?? local, let image = UIImage(data: data) {
         Button { enlarged = true } label: { Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: 140, maxHeight: 100).clipShape(RoundedRectangle(cornerRadius: 12)) }.accessibilityLabel("Enlarge photo")
-      } else if failed { Button("Photo unavailable · Retry") { Task { await load() } } }
+      } else if failed { Button(connectionRequired ? "Photo needs a connection · Retry" : "Photo unavailable · Retry") { Task { await load() } } }
       else { ProgressView("Reading photo…") }
     }.task(id: "\(gym.account ?? ""):\(thread):\(attachment.id)") { data = nil; if local == nil { await load() } }
       .sheet(isPresented: $enlarged) {
@@ -305,12 +307,16 @@ struct CoachPhotoView: View {
       }
   }
   func load() async {
-    let owner = gym.account; failed = false
+    let owner = gym.account; failed = false; connectionRequired = false
     do {
       let loaded = try await CoachFixture.rest(gym).coachRequest("/v1/gym/threads/\(CoachCopy.escaped(thread))/attachments/\(CoachCopy.escaped(attachment.id))", expectedAccount: owner)
       guard owner == gym.account, !gym.accountTransition else { return }
       guard UIImage(data: loaded) != nil else { throw URLError(.cannotDecodeContentData) }
       loadedOwner = owner; data = loaded
-    } catch { if owner == gym.account, !(error is CancellationError) { failed = true } }
+    } catch {
+      if owner == gym.account, !(error is CancellationError) {
+        failed = true; connectionRequired = GymRESTClient.needsConnection(error)
+      }
+    }
   }
 }

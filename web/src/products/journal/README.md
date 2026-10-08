@@ -2,9 +2,10 @@
 
 Pages live in the browser replica (`self/journal`) and change only through the engine. The pure
 `domain/` owns page documents, the journal state rule book, command validation, invitation
-retirements, pending claims, editor drafts, content clocks and reconciliation. `pages.js` runs its
-actions and adapts `JournalRoom` to the web's flat page view (`pagesOf`, `corpus`), with durable
-refusal notices and editor drafts overlaid. `journalApi.js` holds the server features over the
+retirements, pending claims, editor drafts, content clocks, reconciliation and echo quotation
+comparisons. `pages.js` runs its actions and adapts `JournalRoom` to the web's flat page view
+(`pagesOf`, `corpus`), with durable refusal notices and editor drafts overlaid. `journalApi.js`
+holds the server features over the
 session cookie: echoes, nudges, transcription and export.
 
 An anonymous save, or typing before an account's first read without a confirmed page, queues a
@@ -36,7 +37,12 @@ appending claim. Unattributable pages stay quarantined until explicit restore, w
 marked `recovered` so restoring them retains a draft instead of appending it to the account.
 Migration's claim adapter translates the domain's validated plan.
 
-The domain runner claims all three shared journal files: 186 comparisons, with every value/action
+Echo quotations compare in NFC; saved writing retains its original bytes. The domain matcher
+returns whole-grapheme UTF-16 ranges in the current source, with segmentation supplied by the
+echoes boundary. Read rechecks that source before navigating, and equivalent quotation spellings
+share one arrival identity.
+
+The domain runner claims all four shared journal files: 203 comparisons, with every value/action
 scene also run in reverse record order. Engine and Chromium tests exercise transaction aborts,
 restart, offline writing, receipt arrival order and multiple tabs.
 

@@ -27,19 +27,27 @@ extension GymRESTClient {
     if snapshot != nil { request.setValue("text/event-stream", forHTTPHeaderField: "Accept") }
     let requestGeneration = generation
     let id = UUID()
-    let task = Task<(Data, URLResponse), any Error> { @MainActor in
+    let streamConfiguration = session.configuration
+    streamConfiguration.timeoutIntervalForResource = 120
+    let transport = snapshot == nil ? session : URLSession(configuration: streamConfiguration)
+    defer { if snapshot != nil { transport.invalidateAndCancel() } }
+    let wireRequest = request
+    let task = Task<(Data, URLResponse), any Error>.detached { [self] in
       if let snapshot {
-        let (bytes, response) = try await session.bytes(for: request)
+        let (bytes, response) = try await transport.bytes(for: wireRequest)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         if !(200..<300).contains(http.statusCode) || !(http.value(forHTTPHeaderField: "Content-Type") ?? "").hasPrefix("text/event-stream") {
           var data = Data()
-          for try await byte in bytes { data.append(byte); if data.count > 1_048_576 { throw URLError(.dataLengthExceedsMaximum) } }
+          for try await byte in bytes {
+            try Task.checkCancellation()
+            data.append(byte)
+            if data.count > 1_048_576 { throw URLError(.dataLengthExceedsMaximum) }
+          }
           return (data, response)
         }
         var parser = CoachSSE(), terminal = false, line = Data()
         for try await byte in bytes {
           try Task.checkCancellation()
-          guard generation == requestGeneration, !blocked else { throw CancellationError() }
           guard byte == 10 else {
             line.append(byte)
             if line.count > 1_048_576 { throw URLError(.dataLengthExceedsMaximum) }
@@ -49,15 +57,25 @@ extension GymRESTClient {
           guard let text = String(data: line, encoding: .utf8) else { throw URLError(.cannotDecodeContentData) }
           line.removeAll(keepingCapacity: true)
           if let (event, data) = parser.consume(text) {
-            guard try runtime.account() == owner, runtime.tokens.token(for: owner) == token else { throw CancellationError() }
             if event == "error" {
+              try await MainActor.run {
+                try Task.checkCancellation()
+                guard generation == requestGeneration, !blocked,
+                      try runtime.account() == owner, runtime.tokens.token(for: owner) == token else { throw CancellationError() }
+              }
               let object = (try JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
               throw GymRESTFailure(status: object["status"] as? Int ?? 500, body: data,
                                    message: object["error"] as? String ?? CoachCopy.noAnswer)
             }
             if event == "snapshot" {
               let value = try JSONDecoder().decode(CoachSnapshot.self, from: data)
-              try snapshot(value); terminal = value.generation.terminal
+              try await MainActor.run {
+                try Task.checkCancellation()
+                guard generation == requestGeneration, !blocked,
+                      try runtime.account() == owner, runtime.tokens.token(for: owner) == token else { throw CancellationError() }
+                try snapshot(value)
+              }
+              terminal = value.generation.terminal
               if terminal { break }
             }
           }
@@ -65,7 +83,7 @@ extension GymRESTClient {
         guard terminal else { throw URLError(.networkConnectionLost) }
         return (Data(), response)
       }
-      return try await session.data(for: request)
+      return try await NativeAuth.data(for: wireRequest, session: transport)
     }
     tasks[id] = task
     defer { tasks[id] = nil }

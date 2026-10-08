@@ -121,9 +121,10 @@ extension WorkoutState {
     catch { gym.report("gym_activity_update", error); return false }
   }
   func activityOffer() -> WorkoutActivityOffer? {
+    guard activityIdentityResolved else { return nil }
     do {
       guard var record = try activityRecord() else { return nil }
-      guard canLog, activityIdentityResolved, walk.pending == nil, !rackEditing, !gym.workoutHidden, weightKg.isFinite, abs(weightKg) <= 500, (1...99).contains(reps),
+      guard canLog, walk.pending == nil, !rackEditing, !gym.workoutHidden, weightKg.isFinite, abs(weightKg) <= 500, (1...99).contains(reps),
             let session, offerSession == session, LogWorkoutSet.matchesOfferedSets(sets, offerSets), let selected else {
         if record.offer != nil { record.offer = nil; _ = keepActivity(record) }
         return nil
@@ -161,19 +162,6 @@ extension WorkoutState {
     return false
   }
   func activityChanged() { gym.existingWorkoutActivity?.schedule() }
-}
-
-@MainActor final class WorkoutActivityBinding: ProductBinding {
-  nonisolated let product = "gym"
-  weak var gym: GymModel?
-  func seatWillChange() async {
-    guard let controller = gym?.existingWorkoutActivity else { return }
-    controller.seatChanging = true
-    defer { controller.seatChanging = false }
-    while controller.reconciling { await Task.yield() }
-    await controller.end()
-    controller.requestedSession = nil
-  }
 }
 
 @MainActor final class WorkoutActivityController {
@@ -326,7 +314,6 @@ extension GymModel {
         model = app; app.gym.startWorkoutActivity()
       }
       app.refresh(); app.runtime?.updateTelemetryIdentity()
-      guard !app.editorReadOnly, app.pendingSignIn == nil else { app.openActivityWorkout(); return app.gym.workout.refuseActivityOffer() }
       let logged = app.gym.workout.logActivityOffer(offer)
       if !logged { app.openActivityWorkout() }
       await app.gym.existingWorkoutActivity?.reconcile()
@@ -344,7 +331,7 @@ extension GymModel {
 extension AppModel {
   func openActivityWorkout() {
     selectedRoom = .gym; welcome = false
-    guard !editorReadOnly, gym.openSession != nil else { return }
+    guard !gym.accountTransition, gym.openSession != nil else { return }
     gym.workout.restore()
     if gym.workoutHidden {
       var walk = gym.workout.walk; walk.hidden = false; _ = gym.workout.keep(walk)

@@ -61,8 +61,10 @@ struct LogTab: View {
       if gym.readFailed {
         Section { Text("Progress unavailable").font(.headline); Text("Your progress could not be read."); Button("Try again") { gym.refresh() } }
           .listRowBackground(GymPalette.card)
-      } else if gym.log == nil || gym.log?.firstPullComplete == false && !gym.isAnonymous {
+      } else if gym.log == nil {
         Section { ProgressView("Reading progress…") }.listRowBackground(GymPalette.card)
+      } else if gym.log?.firstPullComplete == false && !gym.isAnonymous {
+        Section { Text("Your full training history needs a connection to finish syncing.") }.listRowBackground(GymPalette.card)
       }
       if gym.logTimeline(limit: limit).isEmpty && !gym.readFailed && (gym.isAnonymous || gym.log?.firstPullComplete == true) {
         ContentUnavailableView("No sessions yet", systemImage: "clock", description: Text("Your training will land here."))

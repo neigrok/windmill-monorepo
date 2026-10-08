@@ -59,7 +59,7 @@ struct RoutinesTab: View {
         }
         Section {
           if gym.routines.isEmpty, gym.personalCounts[Routine.type, default: 0] == 0, !gym.readFailed {
-            Text(gym.log?.firstPullComplete == true ? "No routines yet." : "Your routines are still being read.").foregroundStyle(GymPalette.inkDim)
+            Text(gym.isAnonymous || gym.log?.firstPullComplete == true ? "No routines yet." : "Checking for more routines needs a connection.").foregroundStyle(GymPalette.inkDim)
           }
           ForEach(gym.routinesByLastTraining, id: \.id) { routine in
             NavigationLink { RoutineDetail(gym: gym, id: routine.id) } label: {
@@ -165,7 +165,7 @@ struct RoutineDetail: View {
             }
             if gym.readFailed { Text("The log didn’t answer — this routine’s history is out of reach.").foregroundStyle(GymPalette.inkDim) }
             else if gym.routineHistory(id).isEmpty, gym.log?.firstPullComplete == true { Text("No workouts with this routine yet.").foregroundStyle(GymPalette.inkDim) }
-            else if gym.log?.firstPullComplete != true { Text("History is still being read.").foregroundStyle(GymPalette.inkDim) }
+            else if gym.log?.firstPullComplete != true { Text("More workout history needs a connection.").foregroundStyle(GymPalette.inkDim) }
           }
         } else { Text("That routine is no longer in your program. Everything you logged against it is still in the log.") }
       }.listRowBackground(GymPalette.card)

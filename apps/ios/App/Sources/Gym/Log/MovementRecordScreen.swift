@@ -18,7 +18,7 @@ struct MovementRecordScreen: View {
     List {
       if gym.readFailed {
         Section { Text("Record unavailable").font(.headline); Text("Your record could not be read."); Button("Try again") { gym.refresh() } }.listRowBackground(GymPalette.card)
-      } else if !ready { ProgressView("Reading your log…").listRowBackground(GymPalette.card) }
+      } else if !ready { Text("Your full training record needs a connection to finish syncing.").listRowBackground(GymPalette.card) }
       else if let progress, let log = gym.log {
         Section {
           Text(movement?.equipment.capitalized ?? "Movement").font(.subheadline).foregroundStyle(GymPalette.inkDim)
@@ -92,7 +92,7 @@ struct MovementRecordScreen: View {
       }
     }.listStyle(.insetGrouped).modifier(GymPage())
       .navigationTitle(movement?.name ?? "Movement").navigationBarTitleDisplayMode(.inline).toolbar(.hidden, for: .tabBar)
-      .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Rename") { renaming = true }.disabled(!ready || movement == nil) } }
+      .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Rename") { renaming = true }.disabled(gym.readFailed || gym.accountTransition || movement == nil) } }
       .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo") }
       .sheet(isPresented: $renaming) { if let movement { LogRenameSheet(gym: gym, movement: movement) } }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "record"]) }

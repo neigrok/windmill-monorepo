@@ -41,13 +41,14 @@ nonisolated struct CoachConnection: Identifiable, Equatable {
   var rows: [CoachConnection]?
   var reading = false
   var failed = false
+  var connectionRequired = false
   var generation = 0
   init(gym: GymModel, rest: GymRESTClient? = nil) { self.gym = gym; self.rest = rest ?? CoachFixture.rest(gym) }
   func load() async {
     generation += 1; let generation = generation
     guard gym.coachAccountAvailable, !gym.authPaused else { rows = nil; reading = false; failed = false; owner = nil; return }
     let account = gym.account; owner = account
-    reading = true; failed = false; rows = nil
+    reading = true; failed = false; connectionRequired = false; rows = nil
     defer { if self.generation == generation { reading = false } }
     do {
       async let grants = rest.coachRequest("/v1/oauth/grants", expectedAccount: account)
@@ -58,6 +59,7 @@ nonisolated struct CoachConnection: Identifiable, Equatable {
     } catch {
       guard account == gym.account, self.generation == generation, !(error is CancellationError) else { return }
       failed = true
+      connectionRequired = GymRESTClient.needsConnection(error)
       if error is DecodingError { gym.report("gym_read", error) }
     }
   }
@@ -81,7 +83,7 @@ struct ConnectedLogScreen: View {
           Section("Connected") {
             if connections.owner != gym.account || connections.reading { ProgressView("Reading your connections…") }
             else if connections.failed {
-              Text("Couldn’t read your connections.")
+              Text(connections.connectionRequired ? "Connect to the internet to read your connections." : "Couldn’t read your connections.")
               Button("Try again") { Task { await connections.load() } }
             } else if let rows = connections.rows {
               if rows.isEmpty { Text("nothing connected yet").foregroundStyle(GymPalette.inkDim) }

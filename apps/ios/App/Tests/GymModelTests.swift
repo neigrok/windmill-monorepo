@@ -99,12 +99,12 @@ import SyncTesting
   @Test func accountTransitionBlocksActionsSavesAndUndo() throws {
     let (_, gym) = fixture()
     var draft = Draft(new: Note(id: gym.runner.mint(Note.self), title: "Pending"))
-    gym.accountTransition = true
+    gym.accountChanging = true
     #expect(gym.rest.blocked)
     #expect(gym.run(SaveNoteCall(draft.current)) == nil)
     guard case .failed = gym.save(&draft) else { Issue.record("Expected account transition to block draft save"); return }
     #expect(draft.isNew && gym.notes.isEmpty && !gym.undo("unknown"))
-    gym.accountTransition = false
+    gym.accountChanging = false
     #expect(!gym.rest.blocked)
     guard case .saved = gym.save(&draft) else { Issue.record("Expected draft save after transition"); return }
     #expect(!draft.isNew && gym.notes.map(\.title) == ["Pending"])

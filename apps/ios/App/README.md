@@ -65,9 +65,20 @@ refusal/error/readFailed and undoOffers. Use `run(_:)` for GymDomain actions, `s
 `undo(_:)` for held gestures, `dismissNotice(_:)`, and `refresh()`; `start()`/`stop()` observe engine
 changes. `flush()` releases holds before account transitions; real backgrounding ends Undo windows.
 An inactive scene persists Journal drafts while Gym live sync, REST work and pending Undo windows continue.
-The app sets `accountTransition` to lock writes during account changes. `rest` is the authenticated
+Gym's `accountTransition` pauses training only while sign-out is open (`accountChanging`, set by the
+app) and while the engine changes the replica (`replicaChanging`, set by `GymBinding`). Pending
+sign-in, hello and adoption questions leave training available. `rest` is the authenticated
 client handle for Coach, shares and Connected log; engine-backed training writes use domain actions.
 Gym includes routine planning and movement creation, the live set rack and finish receipt, session history/sharing and strength/bodyweight charts, and account-only Coach, proposal review, Notes and Connected log. Gym follows system light/dark appearance; Journal keeps its night canvas.
+
+Debug simulator `OfflineFlowTests` seed an isolated `-scenario` with `-offline-fixture seed-signed-in`
+or `seed-signed-out`, then reopen it with `-restore-board -server https://offline.invalid` and
+`-offline-fixture no-network`, `unreachable` or `stalled`. The HTTP loader injects a missing network,
+a refused connection or a request that never answers; only `no-network` also removes the path.
+The `black-hole` cases use `https://192.0.2.1` through the ordinary HTTP transport and path monitor,
+with no loader or connectivity substitution.
+Tests exercise cold launch, Home/resume, local journal persistence, workout controls, Coach, settings
+and leaving an unanswered sign-in request. No host networking changes or real credentials are used.
 
 Run the `WindmillTests` scheme tests for deterministic domain and lineage flows, and
 `WindmillUITests` for the native sheet/keyboard round trip. All product persistence is in the engine's
@@ -96,12 +107,58 @@ today and is combined with today's existing page. Yesterday's saved page stays i
 persisted on each edit in the active replica before autosave, and is restored across backgrounding,
 termination and relaunch. An over-limit combined page stays as a durable draft until shortened.
 
-The editor and account sheet stay locked while an account transition awaits the server. Adoption and
+Startup reads the local replica and leaves room controls available while hello, sync and retained
+session revocations run. First-pull status controls backup labels and first-run invitations, not
+local editing. Account requests can be dismissed with Back, Close or Done; cancellation suppresses
+late navigation, and a pending sign-in or adoption can be deferred while the phone remains usable. Adoption and
 sign-out flush dirty writing and recount before completion. A paused session plainly shows that backup
 is paused and offers email or Apple sign-in to the same account; reauthentication retains its replica.
 Confirmed Keep and Discard sign-out revoke the captured bearer session. If offline, a separate
 Keychain queue retains every revocation and retries on the next launch with network, when connectivity
 returns, and at most once per 30 seconds while open. Cancel leaves the server session active.
+
+Offline boundary observations:
+
+| Boundary | UI behavior and limit |
+|---|---|
+| Startup hello and pending-session recovery | Local reads and ordinary launch controls do not wait for hello. The engine bounds hello at `REQUEST_TIMEOUT_MS`, skips a known missing path, and ignores late cancellation results. Pending account recovery can be deferred with Done. |
+| Local journal, routines, sets, preferences and movement rename | Read and commit against the local replica. First-pull status describes incomplete history and backup confidence. Workout logging and restoration remain local during pending sign-in, including before Not now. Adoption recounts any new work before completion. |
+| Auth and Gym REST | No wait for connectivity; 8-second idle and 15-second total deadlines. Back, Close and Done cancel active auth work. Late responses cannot navigate or change the active account after cancellation. |
+| Workout Finish | Attempts the durable local action before network confirmation and releases controls. Unconfirmed sets on an already-synced workout remain editable and explain the connection requirement. The latest message leads the notice, so at accessibility text sizes the connection requirement shows unscrolled above the rack; the rest wraps and scrolls while Log set and Hide remain reachable. |
+| Coach streaming | Parsing runs off the main actor; 8-second idle and 120-second total deadlines. Stop releases the composer immediately. Its late reply preserves newer draft text and photos on the phone. |
+| Revocation and telemetry | Run independently of launch, room refresh and local sign-out. Offline events stay queued; repeated connection failures coalesce into one content-free state. |
+
+The network-dependent native features are Coach, journal echoes, account authentication, sharing and
+connected-log management. None blocks the local rooms: echoes show nothing extra offline, and the others
+state their connection requirement.
+
+Journal echoes live in `Sources/Journal/Echoes`. `JournalEchoView.swift` owns their presentation:
+a 44 pt count beside a day, a native quotation sheet, source highlighting and a trail back to
+tonight. The sheet follows the system light/dark appearance on the journal palette roles, while the
+canvas stays night.
+The model re-locates every full quotation in the phone's current pages before showing its count.
+Shared journal vectors pin NFC-equivalent matching and UTF-16 anchors into the unchanged source;
+equivalent edits retain an echo, while edits that remove its quotation retract it. The model
+follows the server's 20-page floor and waiver, provenance and Useful state. A first-echo
+introduction requires an explicit server flag; the current list route does not supply it.
+Reads poll every 15 seconds only while the room is active. All reads and verdicts use the existing
+REST echoes routes; writing continues through the sync engine. Offline, empty and failed reads
+show no echo surface. Requests are cancelled and old replies discarded across account or lifecycle
+changes. Verdict failures roll back without a retry queue; opened signals never delay source
+navigation. HTTP caching is disabled.
+
+`journal-echoes`, `journal-echoes-offline` and `journal-echoes-empty` board fixtures use real
+journal actions with a deterministic echoes service. `journal-echoes-AX3-RM` covers larger type
+and the source-scroll Reduce Motion path, including Back to tonight. `journal-echoes-unicode`
+and `journal-echoes-unicode-decomposed` apply real source edits while the sheet is open: Useful
+on the first quotation changes only its normalization; Useful on the second removes the first
+quotation. The source quote sits after 14 paragraphs; navigation tests use the Debug simulator's
+UIKit quote rectangle to check that the exact passage reaches the visible canvas centre and
+remains read-only. `JournalEchoFlowTests`
+belongs to CI's routines-journal shard; its screenshots are XCTest attachments, or PNGs when
+`WM_IOS_ECHO_SHOTS` is supplied.
+The canon is `docs/design/journal/journal.md` §§3–6 and `onboarding.md` §7; Figma's phone echo
+boards are `31:211`/`33:327`, the trail `58:530`/`59:550`, in file `pC6ciOUnfLmI42oMihd7l3`.
 
 Fonts are bundled from official OFL sources, with licences alongside each family:
 
@@ -123,7 +180,7 @@ check; `python3 -m unittest discover -s Tools/tests -v` includes its rejection c
 Telemetry uses Sentry Cocoa for failures and first-party `/v1/events` for product events. Debug
 telemetry is off unless `WM_DEBUG_TELEMETRY=YES` is supplied; simulator verification can use
 `-telemetry -sentry-dsn http://ios@127.0.0.1:8091/42`. Release builds require `IOS_SENTRY_DSN`.
-See [iOS observability](../../../docs/IOS_OBSERVABILITY.md) for the complete 36-event allowlist,
+See [iOS observability](../../../docs/IOS_OBSERVABILITY.md) for the complete event allowlist,
 privacy rules, queue behavior and release verification. CI uses `python3 Tools/generate_project.py`
 with a nonproduction DSN. The manual release workflow uses `--release` with the signing secrets,
 builds with Xcode 26.3 and uploads to TestFlight; it does not run on push.

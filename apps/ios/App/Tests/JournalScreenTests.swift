@@ -208,4 +208,20 @@ import CoreText
     #expect(view.text == "External page.")
     #expect(view.font?.pointSize == 19)
   }
+
+  @Test func equivalentSourceEditsRefreshNativeBytesAndHighlightTheCurrentRange() throws {
+    let initial = "An e\u{301} before. I remembered the cafe\u{301} by the river."
+    let revised = initial.precomposedStringWithCanonicalMapping
+    let view = editor(initial).textView
+    let coordinator = JournalBodyText(text: .constant(initial), focused: .constant(false), fontSize: 17).makeCoordinator()
+    coordinator.updateText(view, text: initial, fontSize: 17)
+    coordinator.updateText(view, text: revised, fontSize: 17)
+    #expect((view.text ?? "").utf8.elementsEqual(revised.utf8))
+    let quote = "I remembered the café by the river."
+    let range = try #require(JournalEchoMatch(day: "2026-05-29", text: quote).range(in: revised))
+    coordinator.updateHighlight(view, range: range)
+    #expect((view.text as NSString).substring(with: range) == quote)
+    #expect(view.textStorage.attribute(.backgroundColor, at: range.location, effectiveRange: nil) != nil)
+    #expect(!view.isFirstResponder)
+  }
 }
