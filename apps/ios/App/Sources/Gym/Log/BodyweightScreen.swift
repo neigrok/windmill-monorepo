@@ -272,6 +272,7 @@ struct WeighInSheet: View {
         ToolbarItem(placement: .cancellationAction) {
           Button("Cancel") { dismiss() }.disabled(saving).accessibilityIdentifier("gym-weigh-in-cancel")
         }
+        ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Done") { weightFocused = false } }
       }
       .safeAreaInset(edge: .bottom) {
         Button { save() } label: {
