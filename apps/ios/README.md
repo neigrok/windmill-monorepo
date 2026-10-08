@@ -127,9 +127,10 @@ through the SQLite store, in `SyncStoreTests`.
 [CI](../../.github/workflows/ios.yml) pins Xcode 26.3 and runs five parallel jobs. The packages/builds job checks the
 generated registry, tests `WindmillSync`, `WindmillDomain` and `SyncTestingSurface` with the explicit import check,
 builds Sync and SyncProbe for the simulator, checks the App tools, and builds the App in Debug and Release. App unit
-tests select `WindmillTests` on iPhone 17. Three UI shards select each `WindmillUITests` class once: log/workout/account
+tests select `WindmillTests` on iPhone 17. Three UI shards select each standard `WindmillUITests` class once: log/workout/account
 (`GymLogFlowTests`, `GymWorkoutFlowTests`, `AppleLinkingFlowTests`), routines/journal (`GymRoutinesFlowTests`,
 `JournalFlowTests`, `WorkoutActivityFlowTests`), and Coach/shell (`GymCoachFlowTests`, `GymIntegrationFlowTests`,
 `OnboardingFlowTests`, `ShellFlowTests`). Each test job builds its own App, and the packages job checks that the UI
-class partition stays complete. Failed UI shards retain their xcresult bundles for three days. CI uses UTC; it does
+class partition stays complete. The opt-in `DesignCaptureTests` class is excluded; its environment flag
+and screenshot export command are in [the App README](App/README.md). Failed UI shards retain their xcresult bundles for three days. CI uses UTC; it does
 not run `e2e.sh`, which needs the local backend.

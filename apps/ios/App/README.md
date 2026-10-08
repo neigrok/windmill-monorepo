@@ -1,7 +1,7 @@
 # Windmill · Journal and Gym
 
 The product app uses `works.windmill.app`, the previous TestFlight bundle identifier. iOS 18 is the
-minimum. Generate the project with `xcodegen generate`, then open `Windmill.xcodeproj`.
+minimum. Generate the project with `python3 Tools/generate_project.py`, then open `Windmill.xcodeproj`.
 
 The default build connects to `https://windmill.works` and saves on the phone without an account.
 Configure `WM_SERVER_BASE_URL` with a local server origin, such as `http://127.0.0.1:8089`, or launch
@@ -83,7 +83,10 @@ becomes Done writing above the keyboard. It hides during read-only transitions a
 The room seat is a native Journal · Gym menu with the current room checked; the separate account
 button opens You. The last room persists across launches. A fresh phone gets both doors after the
 introduction on Where to start?.
-Hand-drawn Caveat ink notes appear only on a true first Journal open. Previous Journal visits, retained history, drafts and unreadable state suppress them; restored sign-in stays quiet. Writing or a tap lifts them while the editor keeps the tap; there is no replay control.
+Hand-drawn Caveat ink notes appear automatically only on a true first Journal open. Previous Journal
+visits, retained history, drafts and unreadable state suppress automatic presentation; restored sign-in
+stays quiet. Writing or a tap lifts them while the editor keeps the tap. The Journal room menu's
+*Show ink notes* item replays them on request.
 `journal-empty-later`, `journal-one-line` and `journal-history` board fixtures seed past pages through
 the journal actions. A `-RM` suffix exercises the journal's Reduce Motion scroll and glyph swap.
 Focus and dismissal emit the bounded `first_run_choice` actions `write` and `done_writing` on the
@@ -108,8 +111,14 @@ Fonts are bundled from official OFL sources, with licences alongside each family
 - [Baloo 2](https://github.com/google/fonts/tree/main/ofl/baloo2), bold introduction wordmark.
 - [Caveat](https://github.com/google/fonts/tree/main/ofl/caveat), regular ink notes.
 
-Inter and Nunito are static instances of the official variable fonts. Colour and type tokens
-follow the supplied Figma `TOKENS.json`.
+Inter and Nunito are static instances of the official variable fonts. The room colour roles (one
+asset catalogue, one palette enum per room), the named type roles and the spacing scale live in
+`Sources/Theme/`, which the Live Activity extension compiles too; their values follow
+[the iOS redesign contract](../../../docs/design/ios/ios-redesign.md). The onboarding glimpses keep
+their illustration colours under `onboarding/` in `Resources/Assets.xcassets`.
+`python3 Tools/check_theme_literals.py` rejects numeric colour construction outside `Sources/Theme/`
+in the app, widget and Activity shared sources. Project generation and both target builds run the
+check; `python3 -m unittest discover -s Tools/tests -v` includes its rejection cases.
 
 Telemetry uses Sentry Cocoa for failures and first-party `/v1/events` for product events. Debug
 telemetry is off unless `WM_DEBUG_TELEMETRY=YES` is supplied; simulator verification can use
@@ -123,6 +132,23 @@ The Live Activity UI test waits for stable Island content before taking screensh
 minimal layout, `WM_ACTIVITY_RENDER_MEDIA` can point to a local audio page whose Play QA tone button
 changes to QA tone is playing after playback starts. Audio must continue while Safari is backgrounded.
 The test finishes the workout and verifies that the Activity disappears after logging from the Island.
+
+`DesignCaptureTests` is an opt-in design review suite. It captures onboarding, both rooms, account
+flows, pushed screens and sheets in light and dark; Journal keeps its night canvas in either system
+appearance. XCTest skips it unless the test runner sees `WM_DESIGN_CAPTURE=1`; Xcode forwards
+`TEST_RUNNER_`-prefixed variables to the runner without the prefix. The CI shards leave the class out
+and check that its guard remains. From this directory, with one simulator and a fresh result path:
+
+```sh
+python3 Tools/generate_project.py
+TEST_RUNNER_WM_DESIGN_CAPTURE=1 xcodebuild test -project Windmill.xcodeproj -scheme Windmill \
+  -destination "platform=iOS Simulator,id=$SIMULATOR" -parallel-testing-enabled NO \
+  -resultBundlePath "$RESULT" -only-testing:WindmillUITests/DesignCaptureTests
+python3 Tools/export_design_captures.py --result "$RESULT" --output "$CAPTURES"
+```
+
+Each PNG names its screen, state and appearance. The exporter suffixes a name that already exists in
+the output folder and writes a `capture-manifest.json` linking each PNG to its test and result bundle.
 
 Coordinator-owned documentation outside this worktree's territory still describes the earlier app:
 `CLAUDE.md:12`, `docs/design/guidelines/onboarding.md:138`/`:141` and `docs/design/consistency.md`

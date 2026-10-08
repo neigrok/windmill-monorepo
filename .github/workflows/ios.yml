@@ -79,6 +79,10 @@ jobs:
 
           classes = Counter(name for source in Path("../App/UITests").rglob("*.swift")
                             for name in re.findall(r"\bclass\s+(\w+)\s*:\s*XCTestCase", source.read_text()))
+          capture = Path("../App/UITests/DesignCaptureTests.swift").read_text()
+          assert classes["DesignCaptureTests"] == 1
+          assert 'try XCTSkipUnless(ProcessInfo.processInfo.environment["WM_DESIGN_CAPTURE"] == "1"' in capture
+          del classes["DesignCaptureTests"]
           workflow = Path("../../../.github/workflows/ios.yml").read_text()
           selected = Counter(re.findall(r"-only-testing:WindmillUITests/(\w+)", workflow))
           assert classes and selected == classes, f"UI shard coverage differs: classes={classes}, selected={selected}"

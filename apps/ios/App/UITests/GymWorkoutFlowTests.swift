@@ -99,10 +99,10 @@ import XCTest
   func testDismissLocalFailureRevealsDurableWorkoutRefusal() {
     let app = launch("workout-notice")
     XCTAssertTrue(app.staticTexts["Check the weight and reps before logging."].waitForExistence(timeout: 5))
-    app.buttons["Dismiss message"].tap()
+    app.otherElements["workout-refusal"].buttons["Dismiss message"].tap()
     let retained = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "never reached the log")).firstMatch
     XCTAssertTrue(retained.waitForExistence(timeout: 5))
-    app.buttons["Dismiss message"].tap()
+    app.otherElements["workout-refusal"].buttons["Dismiss message"].tap()
     XCTAssertTrue(retained.waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.buttons["workout-log"].exists)
   }

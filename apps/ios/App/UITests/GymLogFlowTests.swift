@@ -227,26 +227,30 @@ import XCTest
       .firstMatch.waitForExistence(timeout: 5))
     // The native disclosure applies its identifier to the expanded List rows.
     let openRecord = app.buttons["Open record"]
-    XCTAssertTrue(openRecord.waitForExistence(timeout: 5))
-    func reveal(_ control: XCUIElement) {
+    func reveal(_ control: XCUIElement, scrollUpIfMissing: Bool) -> Bool {
       for _ in 0..<8 {
-        let frame = control.frame, top = app.navigationBars.firstMatch.frame.maxY + 8
+        let top = app.navigationBars.firstMatch.frame.maxY + 8
         let bottom = app.buttons["gym-weigh-in"].frame.minY - 12
         guard bottom > top + 16 else { break }
-        if frame.minY > top && frame.maxY < bottom { break }
-        let movement = min(150, (bottom - top) / 2 - 8) * (frame.minY <= top ? 1 : -1)
+        let frame = control.exists ? control.frame : nil
+        if let frame, frame.minY > top && frame.maxY < bottom { break }
+        let scrollDown = frame.map { $0.minY <= top } ?? !scrollUpIfMissing
+        let movement = min(150, (bottom - top) / 2 - 8) * (scrollDown ? 1 : -1)
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0))
-          .withOffset(CGVector(dx: 0, dy: max(top + 8, min(bottom - 8, frame.midY))))
+          .withOffset(CGVector(dx: 0, dy: max(top + 8, min(bottom - 8, frame?.midY ?? (top + bottom) / 2))))
         start.press(forDuration: 0.01, thenDragTo: start.withOffset(CGVector(dx: 0, dy: movement)),
           withVelocity: .slow, thenHoldForDuration: 0.1)
       }
+      XCTAssertTrue(control.exists)
+      guard control.exists else { return false }
       XCTAssertGreaterThan(control.frame.minY, app.navigationBars.firstMatch.frame.maxY + 8)
       XCTAssertLessThan(control.frame.maxY, app.buttons["gym-weigh-in"].frame.minY - 12)
       XCTAssertTrue(control.isHittable)
+      return control.isHittable
     }
-    reveal(openRecord)
+    guard reveal(openRecord, scrollUpIfMissing: true) else { return }
     snapshot("moment-\(appearance)", app: app)
-    reveal(moment)
+    guard reveal(moment, scrollUpIfMissing: false) else { return }
     moment.tap()
     XCTAssertTrue(moments.matching(NSPredicate(format: "value == %@", "Collapsed"))
       .firstMatch.waitForExistence(timeout: 5))
