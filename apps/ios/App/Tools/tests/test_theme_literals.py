@@ -24,6 +24,8 @@ class ThemeLiteralTests(unittest.TestCase):
             "let paint = CGColor(colorSpace: space, components: [0.2, 0.3, 0.4, 1])",
             "typealias Paint = SwiftUI.Color\nlet paint = Paint(red: 0.1, green: 0.2, blue: 0.3)",
             "let red = 0.3\nlet green = 0.7\nlet blue = 0.6\nlet paint = Color(red: red, green: green, blue: blue)",
+            "let paint = Color(red: External.red, green: External.green, blue: External.blue)",
+            "let paint: Color =\n .init(red: External.red, green: External.green, blue: External.blue)",
             "let channels = [0.2, 0.3, 0.4, 1]\nlet paint = CGColor(colorSpace: space, components: channels)",
             "let paint = #colorLiteral(red: 0, green: 0, blue: 0, alpha: 1)",
         ]

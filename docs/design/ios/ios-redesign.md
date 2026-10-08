@@ -40,10 +40,10 @@ reviews screenshots against §11.
 
 ## 2. Colour roles
 
-Three palettes, one role vocabulary. Every role is a colour set in `Resources/Assets.xcassets`
+Three palettes, one role vocabulary. Every role is a colour set in `Sources/Theme/Theme.xcassets`
 (light and dark appearance values, named `gym/accent`, `shell/canvas`, …) read through one enum
-per palette — `GymPalette`, `JournalPalette`, `ShellPalette` — in a `Sources/Theme/` folder that
-`project.yml` compiles into both the app and the `WindmillWorkoutActivity` target, the way
+per palette — `GymPalette`, `JournalPalette`, `ShellPalette` — beside it in `Sources/Theme/`, the
+folder `project.yml` compiles into both the app and the `WindmillWorkoutActivity` target, the way
 `WorkoutActivityShared` already is. The style audit of 2026-10-08
 (`.claude/scratch/ios-design/style-audit.md`, Appendix B) maps every one of the 164 literals in
 the app to a role below; the refactor follows that map. Deleted: `CoachPalette`
@@ -54,7 +54,8 @@ the app to a role below; the refactor follows that map. Deleted: `CoachPalette`
 (`Onboarding.swift:24`, reads `ShellPalette` and the product palettes for its glimpses), the
 colour half of `Design` (`Design.swift:5`), `Color(hex:)` outside `Sources/Theme/`, and the
 `scheme == .dark ? … : …` branches in views. Onboarding's illustration kind colours
-(`OnboardingGlimpses.swift`) stay private to the glimpse as named specimen roles.
+(`OnboardingGlimpses.swift`) stay private to the glimpse as named specimen roles, colour sets
+under `onboarding/` in the app's own `Resources/Assets.xcassets`.
 
 **Tint.** The room accent is applied by the one page modifier (`GymPage`, §5) to the content of
 each tab's `NavigationStack` and to every sheet the room raises — never to the `TabView`
@@ -617,10 +618,9 @@ page ink and reader (Journal Figma boards 40/41 and 59/60) into the room's own c
 Recorded in `consistency.md` under *iOS*: 9a (light gym accent vs Figma Daylight `brand/base`),
 9b (phones weave, web keeps the strip), 9c (the rack's kind picker leaves iOS), 9d (two gym light
 grounds in the Design System collections), 9e (the first-run boards' W capsule and hand-drawn
-glass), 9f (You's palette), 9g (the Live Activity accent), 9h (the journal day inks in the Figma
-collection and the onboarding glimpse are warm; the web's and this spec's are cool paper), 9i (the
-`TabView` tint against `12-native-idiom.md`). 5m is closed by §7.7; 6o stays open only for the
-board redraw.
+glass), 9h (the journal day inks in the Figma collection and the onboarding glimpse are warm; the
+web's and this spec's are cool paper). 5m is closed by §7.7; 6o stays open only for the board
+redraw.
 
 ## 10. Drawings
 

@@ -122,9 +122,6 @@ targets:
       - WorkoutActivityWidget
       - path: Sources/Theme
         group: Sources
-      - path: Resources/Assets.xcassets
-        group: Resources
-        buildPhase: resources
     preBuildScripts:
       - name: Check theme colour literals
         basedOnDependencyAnalysis: false

@@ -6,6 +6,7 @@ import unittest
 
 APP = Path(__file__).resolve().parents[2]
 REPOSITORY = APP.parents[2]
+THEME = APP / "Sources/Theme/Theme.xcassets"
 
 
 class ThemeAssetsTests(unittest.TestCase):
@@ -16,7 +17,7 @@ class ThemeAssetsTests(unittest.TestCase):
         for room, role, dark, light in rows:
             if not re.search(r"#[0-9A-F]{6}", dark):
                 continue
-            path = APP / "Resources/Assets.xcassets" / room / (role + ".colorset/Contents.json")
+            path = THEME / room / (role + ".colorset/Contents.json")
             entries = json.loads(path.read_text())["colors"]
             self.assertEqual(len(entries), 2, str(path))
             for appearance, expected in [("light", light), ("dark", dark)]:
@@ -34,16 +35,18 @@ class ThemeAssetsTests(unittest.TestCase):
         self.assertEqual(checked, 42)
 
     def test_alpha_is_a_normalized_decimal_instead_of_a_byte(self):
-        for room in ("gym", "journal", "shell"):
-            for path in (APP / "Resources/Assets.xcassets" / room).glob("*.colorset/Contents.json"):
+        for catalogue in (THEME, APP / "Resources/Assets.xcassets"):
+            for path in catalogue.rglob("*.colorset/Contents.json"):
                 for entry in json.loads(path.read_text())["colors"]:
                     with self.subTest(asset=str(path)):
                         self.assertRegex(entry["color"]["components"]["alpha"], r"^(0\.\d+|1\.0+)$")
 
-    def test_launch_uses_the_shell_canvas_and_widget_compiles_the_same_theme(self):
+    def test_launch_uses_the_shell_canvas_and_widget_compiles_only_the_theme(self):
         project = (APP / "project.yml").read_text()
         self.assertIn("UIColorName: shell/canvas", project)
         widget = project.split("  WindmillWorkoutActivity:\n", 1)[1].split("  WindmillTests:\n", 1)[0]
         self.assertIn("      - path: Sources/Theme\n", widget)
-        self.assertIn("      - path: Resources/Assets.xcassets\n", widget)
-        self.assertFalse((APP / "Resources/Assets.xcassets/ShellCanvas.colorset").exists())
+        self.assertNotIn("Resources", widget)
+        groups = lambda catalogue: sorted(path.name for path in catalogue.iterdir() if path.is_dir() and not path.suffix)
+        self.assertEqual(["gym", "journal", "shell"], groups(THEME))
+        self.assertEqual(["onboarding"], groups(APP / "Resources/Assets.xcassets"))

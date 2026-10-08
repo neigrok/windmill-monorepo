@@ -118,7 +118,7 @@ struct RootScreen: View {
                   Text("Write tonight’s page").font(ShellType.subheadline).foregroundStyle(JournalPalette.inkDim)
                 }
                 Spacer()
-                Image(systemName: "arrow.right").foregroundStyle(JournalPalette.lamp).frame(width: 40, height: 40).background(JournalPalette.lamp.opacity(0.18), in: Circle())
+                Image(systemName: "arrow.right").foregroundStyle(JournalPalette.lamp).frame(width: 40, height: 40).background(JournalPalette.lampSoft, in: Circle())
               }.foregroundStyle(JournalPalette.ink).padding(24).frame(maxWidth: .infinity, alignment: .leading).frame(minHeight: 140)
                 .background { ZStack { JournalPalette.canvas; LinearGradient(colors: [.clear, JournalPalette.lamp.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing) }.clipShape(RoundedRectangle(cornerRadius: 28)) }
                 .overlay(RoundedRectangle(cornerRadius: 28).stroke(JournalPalette.line, lineWidth: 1))

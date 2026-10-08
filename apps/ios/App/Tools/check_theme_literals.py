@@ -15,7 +15,6 @@ COLOUR_NAME = re.compile(r"color|colour|palette|ramp|tint|accent|canvas|ink|lamp
 class Token:
     value: str
     line: int
-    number: bool = False
 
 
 def tokens(source):
@@ -66,7 +65,7 @@ def tokens(source):
             continue
         match = TOKEN.match(source, index)
         value = match.group()
-        result.append(Token(value, line, value[0].isdigit() or (value.startswith(".") and len(value) > 1)))
+        result.append(Token(value, line))
         index = match.end()
     return result
 
@@ -89,7 +88,6 @@ def expressions(items):
 
 def violations(source):
     items = tokens(source)
-    bindings = {}
     colour_types = set(COLOUR_TYPES)
     issues = set()
     for index, item in enumerate(items):
@@ -117,20 +115,10 @@ def violations(source):
             elif token.value in (")", "]", "}"):
                 depth -= 1
             end += 1
-        bindings[name] = items[start:end]
         if COLOUR_NAME.search(name):
-            for token in bindings[name]:
+            for token in items[start:end]:
                 if token.value.lower().startswith("0x"):
                     issues.add((token.line, "hex colour ramp belongs in Sources/Theme"))
-
-    def contains_number(expression, seen=frozenset()):
-        for token in expression:
-            if token.number:
-                return True
-            if token.value in bindings and token.value not in seen:
-                if contains_number(bindings[token.value], seen | {token.value}):
-                    return True
-        return False
 
     for index, item in enumerate(items):
         if item.value == "colorLiteral" and index and items[index - 1].value == "#":
@@ -151,7 +139,7 @@ def violations(source):
             issues.add((items[index - 1].line, "hex colour construction belongs in Sources/Theme"))
         if colour_constructor or component_signature or (name == "init" and labels & COMPONENTS):
             for argument in arguments:
-                if len(argument) >= 2 and argument[1].value == ":" and argument[0].value in COMPONENTS and contains_number(argument[2:]):
+                if len(argument) >= 2 and argument[1].value == ":" and argument[0].value in COMPONENTS:
                     issues.add((items[index - 1].line, "numeric colour components belong in Sources/Theme"))
         if COLOUR_NAME.search(name):
             for argument in arguments:

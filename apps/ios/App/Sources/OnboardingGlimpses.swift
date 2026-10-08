@@ -235,3 +235,46 @@ struct OnboardingCheck: Shape {
     }
   }
 }
+
+// Illustration roles frozen for the glimpses; the journal glimpse keeps its iteration-one warm day ink.
+enum OnboardingSpecimen {
+  static let journalInk = Color("onboarding/journal-ink")
+  static let journalDim = Color("onboarding/journal-dim")
+  static let journalFaint = Color("onboarding/journal-faint")
+  static let journalLine = Color("onboarding/journal-line")
+  static let completed = Color("onboarding/completed")
+  static let completedOutline = Color("onboarding/completed-outline")
+  static let skyKind = Color("onboarding/sky-kind")
+  static let skyLockedFill = Color("onboarding/sky-locked-fill")
+  static let skyLockedOutline = Color("onboarding/sky-locked-outline")
+  static let goldKind = Color("onboarding/gold-kind")
+  static let goldLockedFill = Color("onboarding/gold-locked-fill")
+  static let goldLockedOutline = Color("onboarding/gold-locked-outline")
+  static let clayOpenOutline = Color("onboarding/clay-open-outline")
+  static let clayLockedFill = Color("onboarding/clay-locked-fill")
+  static let clayLockedOutline = Color("onboarding/clay-locked-outline")
+  static let openEdge = Color("onboarding/open-edge")
+  static let lockedEdge = Color("onboarding/locked-edge")
+}
+
+enum OnboardingSpecimenType {
+  static let wordmark = Font.custom("Baloo2-Bold", fixedSize: 30)
+  static let roomTitle = Font.custom("Nunito-ExtraBold", fixedSize: 18)
+  static let roomLine = Font.custom("Inter-Regular", fixedSize: 13)
+  static let miniWeight = Font.custom("JetBrainsMono-Regular", fixedSize: 30)
+  static let miniCheck = Font.custom("Inter-SemiBold", fixedSize: 13)
+  static let caption = Font.custom("JetBrainsMono-Regular", fixedSize: 10)
+  static let treeTitle = Font.custom("Inter-SemiBold", fixedSize: 12)
+  static let treeNode = Font.custom("Inter-Regular", fixedSize: 12)
+  static let journalPast = Font.custom("Inter-Regular", fixedSize: 15)
+  static let journalTitle = Font.custom("Nunito-ExtraBold", fixedSize: 14)
+  static let journalBody = Font.custom("Inter-Regular", fixedSize: 17)
+  static let scaleLabel = Font.custom("Inter-Regular", fixedSize: 11)
+  static let movementTitle = Font.custom("Nunito-ExtraBold", fixedSize: 22)
+  static let setMeta = Font.custom("JetBrainsMono-Regular", fixedSize: 11)
+  static let setRow = Font.custom("JetBrainsMono-Regular", fixedSize: 12)
+  static let weight = Font.custom("JetBrainsMono-Regular", fixedSize: 72)
+  static let weightUnit = Font.custom("JetBrainsMono-Regular", fixedSize: 18)
+  static let logAction = Font.custom("Nunito-ExtraBold", fixedSize: 15)
+  static let checkSymbol = Font.system(size: 11, weight: .semibold)
+}
