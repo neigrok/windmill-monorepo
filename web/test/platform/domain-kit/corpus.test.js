@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { jcs } from '../../../src/platform/sync/core/jcs.js';
+import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { Decision, IDSource, decision, refusalSubject } from '../../../src/platform/domain-kit/actions.js';
 import { Draft, SaveDraft } from '../../../src/platform/domain-kit/drafts.js';
 import { DecodeError, Fields, Id } from '../../../src/platform/domain-kit/entities.js';

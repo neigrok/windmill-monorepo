@@ -2,8 +2,8 @@
 
 import { Id, compareText } from '../../../platform/domain-kit/entities.js';
 import { LocalDay } from '../../../platform/domain-kit/time.js';
-import { jcs } from '../../../platform/sync/core/jcs.js';
-import { roundHalfAway } from '../../../platform/sync/core/values.js';
+import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { roundHalfAway } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 import { Bodyweight, WeighIn } from './bodyweight.js';
 import { Catalogue, Exercise } from './catalogue.js';
 import { Proposal } from './proposals.js';

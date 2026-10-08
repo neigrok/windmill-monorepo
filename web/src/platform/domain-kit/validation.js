@@ -2,7 +2,7 @@
 // §4.5 checks and `Valid`: the only constructor of a validated entity. A plan accepts a Valid alone,
 // recognised by the brand this module holds, so no field reaches the engine without its checks.
 
-import { jcs } from '../sync/core/jcs.js';
+import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { uniqueInByteOrder } from './entities.js';
 import { Fault, Path, Violation, firstNul, precondition } from './values.js';
 

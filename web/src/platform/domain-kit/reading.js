@@ -2,8 +2,8 @@
 // §7 reading: the two views a reader sees, repositories over them, capacity over `stored`, and the
 // placement a new member resolves against `stored`. `stored` decides; `drawn` draws (INV-9).
 
-import { compareJcs, jcs } from '../sync/core/jcs.js';
-import { isVisible, recordKey } from '../sync/core/rows.js';
+import { compareJcs, jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { isVisible, recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
 import { Fields, compareText } from './entities.js';
 import { Refused } from './refusals.js';
 import { precondition } from './values.js';
@@ -13,7 +13,7 @@ import { precondition } from './values.js';
 /** @typedef {import('./entities.js').RecordRef} RecordRef */
 /** @typedef {import('./entities.js').ViewRecord} ViewRecord */
 /** @typedef {import('./time.js').Moment} Moment */
-/** @typedef {import('../sync/core/registry.js').Registry} Registry */
+/** @typedef {import('../../../../packages/api-contract/sync/reference/core/registry.js').Registry} Registry */
 /** @typedef {'drawn' | 'stored'} ViewMode */
 /** @typedef {{ kind: 'top' } | { kind: 'bottom' } | { kind: 'below', id: RecordID }} Placement */
 /** @typedef {{ gestureId: string, command: import('./plans.js').Command, canSupersede: boolean, isAdmitted?: boolean }} QueuedCommand */

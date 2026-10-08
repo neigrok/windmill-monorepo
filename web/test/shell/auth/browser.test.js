@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 let server, browser, origin;
 const root = fileURLToPath(new URL('../../../', import.meta.url));
+const referencePath = fileURLToPath(new URL('../../../../packages/api-contract/sync/reference/', import.meta.url));
 const registryPath = fileURLToPath(new URL('../../../../packages/api-contract/sync/probe.registry.json', import.meta.url));
 const ready = (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-auth-test`, plugins: [{
@@ -26,7 +27,7 @@ const ready = (async () => {
         import { SessionsSection } from '/src/shell/settings/SessionsSection.jsx';
         import { syncSession } from '/src/platform/sync/session.js';
         import { BrowserSyncEngine } from '/src/platform/sync/engine.js';
-        import { Registry } from '/src/platform/sync/core/registry.js';
+        import { Registry } from '/@fs${referencePath}core/registry.js';
         function AuthView() {
           const auth = useAuth(); window.auth = auth;
           return React.createElement('div', null, React.createElement('p', { id: 'auth-state' }, auth.status),
@@ -54,7 +55,7 @@ const ready = (async () => {
         };
       `;
     },
-  }], optimizeDeps: { include: ['react', 'react-dom/client', '@noble/hashes/sha256', '@noble/hashes/utils'] },
+  }], optimizeDeps: { include: ['react', 'react-dom/client'] },
   server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../', import.meta.url))] } } });
   await server.listen(0);
   origin = `http://127.0.0.1:${server.httpServer.address().port}`;

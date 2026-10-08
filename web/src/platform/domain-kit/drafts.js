@@ -2,7 +2,7 @@
 // §10 drafts: an entity being edited, immutable, and its one save, a decider the runner alone builds
 // from a draft (INV-14). Each edit and each save returns the next draft as a value.
 
-import { Registry } from '../sync/core/registry.js';
+import { Registry } from '../../../../packages/api-contract/sync/reference/core/registry.js';
 import { Decision } from './actions.js';
 import { Fields, sameJson, uniqueInByteOrder } from './entities.js';
 import { Plan } from './plans.js';

@@ -1,5 +1,5 @@
-import { CONSTANTS } from './core/constants.js';
-import { jcs } from './core/jcs.js';
+import { CONSTANTS } from '../../../../packages/api-contract/sync/reference/core/constants.js';
+import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 
 const LIVE_QUEUE_FRAMES = 64;
 const LIVE_QUEUE_BYTES = 1_048_576;

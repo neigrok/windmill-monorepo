@@ -5,7 +5,7 @@ import test from 'node:test';
 import { GymProduct } from '../../../../../packages/api-contract/sync/reference/gym/product.js';
 import { Refusal } from '../../../../../packages/api-contract/sync/reference/server/admit.js';
 import { Id } from '../../../../src/platform/domain-kit/entities.js';
-import { CONSTANTS } from '../../../../src/platform/sync/core/constants.js';
+import { CONSTANTS } from '../../../../../packages/api-contract/sync/reference/core/constants.js';
 import { registry } from '../../../../src/platform/sync/schema.js';
 import { Bodyweight, DeleteWeighIn, WeighIn, WeighInValue } from '../../../../src/products/gym/domain/bodyweight.js';
 import { GymRefusals, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';

@@ -1,5 +1,10 @@
 # Engine observations
 
+The JS reference's core and client are the browser runtime's imported implementation. Encoding uses
+platform globals and a dependency-free synchronous SHA-256; file reads belong to corpus loaders.
+The browser bundle gate checks that Vite includes the shared modules and excludes reference server
+and test code. Domain layering admits the shared core and the explicit web encoding/content modules.
+
 Strict IndexedDB transactions and stable replica handles provide the durable baseline. Mutable
 replica objects must be detached from the transaction's before-image: otherwise an in-place outbox
 transition also changes the comparison baseline and suppresses its write. The rollback, resend and

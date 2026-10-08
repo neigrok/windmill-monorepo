@@ -1,7 +1,6 @@
-// §2.4 the registry: types, fields and commands, read from a file in registry.schema.json's format.
+// §2.4 the registry: types, fields and commands, in registry.schema.json's format.
 // Scope references (§9.1 ScopeRef) map to registry scope kinds here.
 
-import { readFileSync } from 'node:fs';
 import { checkFieldValue } from './values.js';
 
 const LATTICE_KINDS = new Set(['lww', 'ranked', 'fww', 'const', 'time']);
@@ -197,10 +196,6 @@ export class Registry {
     this.types = new Map(json.types.map((type) => [type.type, new TypeDef(type)]));
     this.commands = new Map(json.commands.map((command) => [command.name, command]));
     this.validate();
-  }
-
-  static fromFile(path) {
-    return new Registry(JSON.parse(readFileSync(path, 'utf8')));
   }
 
   static isLattice(kind) {

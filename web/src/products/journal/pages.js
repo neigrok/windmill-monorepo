@@ -1,9 +1,9 @@
 import { syncSession } from '../../platform/sync/session.js';
 import { compareDocumentStamps } from '../../platform/sync/core/content.js';
-import { commit } from '../../platform/sync/client/commit.js';
+import { commit } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 import { registry } from '../../platform/sync/schema.js';
-import { recordKey } from '../../platform/sync/core/rows.js';
-import { jcs } from '../../platform/sync/core/jcs.js';
+import { recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
+import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { ActionRunner, EngineReplica } from '../../platform/domain-kit/runner.js';
 import { Decision, decision } from '../../platform/domain-kit/actions.js';
 import { Violation } from '../../platform/domain-kit/values.js';

@@ -7,7 +7,7 @@
 // of its cursor, or two batches of a push answer's results. Each step checks that every change of a
 // device's active replica id was announced (§7.12); `check()` states the invariants after quiescence.
 
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { CONSTANTS } from '../../core/constants.js';
 import { jcs } from '../../core/jcs.js';
 import { Registry } from '../../core/registry.js';
@@ -27,7 +27,7 @@ import { serverCall } from '../../server/requests.js';
 import { ServerState } from '../../server/state.js';
 import { Rng } from '../../vectors/fixtures.js';
 
-export const PROBE_REGISTRY = Registry.fromFile(fileURLToPath(new URL('../../../probe.registry.json', import.meta.url)));
+export const PROBE_REGISTRY = new Registry(JSON.parse(readFileSync(new URL('../../../probe.registry.json', import.meta.url), 'utf8')));
 
 const WORDS = ['oak', 'ash', 'elm', 'fir', 'yew', 'bay', 'box', 'ivy'];
 

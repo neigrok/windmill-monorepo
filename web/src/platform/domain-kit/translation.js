@@ -2,9 +2,9 @@
 // §8.2 translation: a plan becomes one engine gesture by the registry's identity classes, and §8.3's
 // rules fail it as a PlanError. Every collection built from a set is ordered by bytes.
 
-import { compareJcs, jcs } from '../sync/core/jcs.js';
-import { Registry } from '../sync/core/registry.js';
-import { recordKey } from '../sync/core/rows.js';
+import { compareJcs, jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { Registry } from '../../../../packages/api-contract/sync/reference/core/registry.js';
+import { recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
 import { compareText, uniqueInByteOrder } from './entities.js';
 import { PlanError } from './plans.js';
 

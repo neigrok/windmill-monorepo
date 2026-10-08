@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { gymReadView } from '../../../../src/products/gym/gymRuntime.js';
 import * as gymRuntime from '../../../../src/products/gym/gymRuntime.js';
-import { applyPushResult, nextPush } from '../../../../src/platform/sync/client/sender.js';
+import { applyPushResult, nextPush } from '../../../../../packages/api-contract/sync/reference/client/sender.js';
 const readView = (rows) => gymReadView({ drawn: rows, stored: rows });
 import {
   browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle, textOf,

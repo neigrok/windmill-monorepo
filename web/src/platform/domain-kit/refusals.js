@@ -2,7 +2,7 @@
 // §12 refusals and notices: one refusal as the engine states it, the product's total mapping of it,
 // and an engine notice read as a domain event.
 
-import { jcs } from '../sync/core/jcs.js';
+import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { compareText } from './entities.js';
 
 /** @typedef {import('./values.js').Json} Json */
@@ -41,7 +41,7 @@ export class Refused {
   // §12.1 rule 3: the notice's first delta, else the first ref argument of its command.
   /**
    * @param {Notice} notice
-   * @param {import('../sync/core/registry.js').Registry} registry
+   * @param {import('../../../../packages/api-contract/sync/reference/core/registry.js').Registry} registry
    */
   static ofNotice(notice, registry) {
     const first = notice.content.d?.[0];
@@ -61,7 +61,7 @@ export class Refused {
 // The first `ref<t>` argument of a command, in the JCS order of its registry arguments.
 /**
  * @param {{ name: string, args: Record<string, Json> } | undefined} command
- * @param {import('../sync/core/registry.js').Registry} registry
+ * @param {import('../../../../packages/api-contract/sync/reference/core/registry.js').Registry} registry
  * @returns {RecordRef | null}
  */
 export function commandSubject(command, registry) {
@@ -80,7 +80,7 @@ export function commandSubject(command, registry) {
 export class DomainNotice {
   /**
    * @param {Notice} notice
-   * @param {import('../sync/core/registry.js').Registry} registry
+   * @param {import('../../../../packages/api-contract/sync/reference/core/registry.js').Registry} registry
    * @param {Refusals<R>} refusals
    */
   constructor(notice, registry, refusals) {

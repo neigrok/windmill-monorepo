@@ -8,7 +8,7 @@ import { Id } from '../../../src/platform/domain-kit/entities.js';
 import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/runner.js';
 import { FixedZone } from '../../../src/platform/domain-kit/time.js';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
-import { isVisible } from '../../../src/platform/sync/core/rows.js';
+import { isVisible } from '../../../../packages/api-contract/sync/reference/core/rows.js';
 import { registry } from '../../../src/platform/sync/schema.js';
 import { Proposal, ProposeRoutine, REMOVAL_RECEIPTS } from '../../../src/products/gym/domain/proposals.js';
 import { Routine, RoutineEntry, SetTarget } from '../../../src/products/gym/domain/routines.js';

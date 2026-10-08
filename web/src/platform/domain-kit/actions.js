@@ -3,7 +3,7 @@
 // outcome a run answers; and the two pure steps of the pipeline the runner applies to every plan: the
 // gone check (§9.2 step 5) and the subject of an engine refusal (§12.1 rule 2).
 
-import { isVisible } from '../sync/core/rows.js';
+import { isVisible } from '../../../../packages/api-contract/sync/reference/core/rows.js';
 import { Id } from './entities.js';
 import { Refused } from './refusals.js';
 import { recordIdOf } from './translation.js';
@@ -118,7 +118,7 @@ export function decision(decider, loaded, ids) {
  * @param {Plan} plan
  * @param {Views} views
  * @param {string} scope
- * @param {import('../sync/core/registry.js').Registry} registry
+ * @param {import('../../../../packages/api-contract/sync/reference/core/registry.js').Registry} registry
  * @returns {Refused | null}
  */
 export function firstGone(plan, views, scope, registry) {
@@ -148,7 +148,7 @@ export function firstGone(plan, views, scope, registry) {
  * @param {Plan} plan
  * @param {string} code
  * @param {Json | null} detail
- * @param {import('../sync/core/registry.js').Registry} registry
+ * @param {import('../../../../packages/api-contract/sync/reference/core/registry.js').Registry} registry
  * @returns {RecordRef | null}
  */
 export function refusalSubject(plan, code, detail, registry) {

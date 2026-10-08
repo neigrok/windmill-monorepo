@@ -1,14 +1,14 @@
 // Shared inputs for the corpus builders: the probe registry and product, stamp and row shorthands,
 // and server states whose digests and counters are computed from their rows.
 
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { ZERO_DIGEST, replaceRow } from '../core/digest.js';
 import { Registry } from '../core/registry.js';
 import { compactRow, isAlive } from '../core/rows.js';
 import { ProbeProduct } from '../probe/product.js';
 import { ServerState } from '../server/state.js';
 
-export const registry = Registry.fromFile(fileURLToPath(new URL('../../probe.registry.json', import.meta.url)));
+export const registry = new Registry(JSON.parse(readFileSync(new URL('../../probe.registry.json', import.meta.url), 'utf8')));
 export const product = new ProbeProduct();
 
 export const ACTOR = 'r_aaaaaaaaaaaa';

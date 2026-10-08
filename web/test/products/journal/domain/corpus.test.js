@@ -6,7 +6,7 @@ import { DecodeError, Fields } from '../../../../src/platform/domain-kit/entitie
 import { Reader, Views } from '../../../../src/platform/domain-kit/reading.js';
 import { Plan } from '../../../../src/platform/domain-kit/plans.js';
 import { Fault, Violation } from '../../../../src/platform/domain-kit/values.js';
-import { jcs } from '../../../../src/platform/sync/core/jcs.js';
+import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { JournalRefusals, JournalRules, refusalForm } from '../../../../src/products/journal/domain/journalRules.js';
 import { ClaimPage, ClaimPageCommand, ContentClock, EditorDraft, PendingClaim, ReconcileClaim, RetireJournalInvitation, SavePage, SavePageCommand } from '../../../../src/products/journal/domain/writing.js';
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';

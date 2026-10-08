@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { compareJcs, jcs } from '../../../../src/platform/sync/core/jcs.js';
+import { compareJcs, jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { doubleOf } from '../oracle-adapters/jcs.js';
 
 // RFC 8785 Appendix B, as the RFC prints them.

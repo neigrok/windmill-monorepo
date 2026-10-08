@@ -3,7 +3,7 @@
 import { DecodeError, EntityType, Id } from '../../../platform/domain-kit/entities.js';
 import { Check } from '../../../platform/domain-kit/validation.js';
 import { ChoiceSpec, NumberSpec, Path, TextSpec, Violation } from '../../../platform/domain-kit/values.js';
-import { roundHalfAway } from '../../../platform/sync/core/values.js';
+import { roundHalfAway } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 import { Exercise } from './catalogue.js';
 import { PlanSnapshot, Routine } from './routines.js';
 

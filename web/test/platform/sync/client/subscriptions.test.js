@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Replica } from '../../../../src/platform/sync/client/replica.js';
-import { Doubts, firstPullComplete, reconcile, subscriptionsOf } from '../../../../src/platform/sync/client/subscriptions.js';
+import { Replica } from '../../../../../packages/api-contract/sync/reference/client/replica.js';
+import { Doubts, firstPullComplete, reconcile, subscriptionsOf } from '../../../../../packages/api-contract/sync/reference/client/subscriptions.js';
 import { registry } from '../oracle-adapters/fixtures.js';
 
 function boundWithBoards() {

@@ -8,12 +8,13 @@ import { versionOneFixture } from './store-v1.js';
 
 let server, browser, origin;
 const root = fileURLToPath(new URL('../../../', import.meta.url));
+const referencePath = fileURLToPath(new URL('../../../../packages/api-contract/sync/reference/', import.meta.url));
 const registryPath = fileURLToPath(new URL('../../../../packages/api-contract/sync/probe.registry.json', import.meta.url));
 const testHtml = '<!doctype html><title>Sync engine test</title>';
 const ready = (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-sync-test`, plugins: [{ name: 'sync-test-page', configureServer(server) {
     server.middlewares.use('/sync-test', (_request, response) => { response.setHeader('Content-Type', 'text/html'); response.end(testHtml); });
-  } }], optimizeDeps: { include: ['@noble/hashes/sha256', '@noble/hashes/utils'] }, server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../', import.meta.url))] } } });
+  } }], server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../', import.meta.url))] } } });
   await server.listen(0);
   origin = `http://127.0.0.1:${server.httpServer.address().port}`;
   browser = await chromium.launch({ channel: 'chromium', headless: true, ignoreDefaultArgs: ['--disable-back-forward-cache'] });
@@ -69,9 +70,9 @@ async function open(context, name) {
   await serving();
   const page = await context.newPage();
   await page.goto(`${origin}/sync-test`);
-  await page.evaluate(async ({ name, registryPath }) => {
+  await page.evaluate(async ({ name, registryPath, referencePath }) => {
     const { BrowserSyncEngine } = await import('/src/platform/sync/engine.js');
-    const { Registry } = await import('/src/platform/sync/core/registry.js');
+    const { Registry } = await import(`/@fs${referencePath}core/registry.js`);
     const probe = await (await fetch(`/@fs${registryPath}`)).json();
     window.requests = 0; window.failures = []; window.events = [];
     window.engine = await BrowserSyncEngine.open({ name, registry: new Registry(probe),
@@ -80,7 +81,7 @@ async function open(context, name) {
     engine.onEvent((event) => events.push(event));
     window.observation = engine.observe('self/probe');
     await engine.start();
-  }, { name, registryPath });
+  }, { name, registryPath, referencePath });
   return page;
 }
 async function leader(pages) {
@@ -624,15 +625,15 @@ for (const order of ['pull-before-result', 'result-before-pull']) test(`Chromium
   try {
     const name = `journal-claim-${order}`;
     const page = await open(context, name);
-    await page.evaluate(async ({ name, order }) => {
+    await page.evaluate(async ({ name, order, referencePath }) => {
       const Constructor = engine.constructor;
       engine.close();
       const { registry } = await import('/src/platform/sync/schema.js');
       const { savePage, watchClaims, onSyncResult, pendingClaimWork } = await import('/src/products/journal/pages.js');
       const { localDay } = await import('/src/products/journal/localDay.js');
-      const { nextPush } = await import('/src/platform/sync/client/sender.js');
-      const { Cursor } = await import('/src/platform/sync/core/wire.js');
-      const { scopeDigest } = await import('/src/platform/sync/core/digest.js');
+      const { nextPush } = await import(`/@fs${referencePath}client/sender.js`);
+      const { Cursor } = await import(`/@fs${referencePath}core/wire.js`);
+      const { scopeDigest } = await import(`/@fs${referencePath}core/digest.js`);
       const scope = 'self/journal', day = localDay();
       const doc = (body) => ({ day, body, mood: 0, energy: null, source: 'typed' });
       const timing = () => {
@@ -683,7 +684,7 @@ for (const order of ['pull-before-result', 'result-before-pull']) test(`Chromium
         await engine.start();
         await pull();
       }
-    }, { name, order });
+    }, { name, order, referencePath });
     await page.waitForFunction(() => engine.device.activeReplica.entries('self/journal').some((entry) => entry.intent.cmd?.name === 'journal.savePage'));
     if (order === 'pull-before-result') assert.equal(await page.evaluate(() => receiptBeforeResult), null);
     else assert.deepEqual(await page.evaluate(() => persistedReceipt), { seq: 1, epoch: 'ep-1' });

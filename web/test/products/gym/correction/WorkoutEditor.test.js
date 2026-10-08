@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as gymRuntime from '../../../../src/products/gym/gymRuntime.js';
-import { applyPushResult, nextPush } from '../../../../src/platform/sync/client/sender.js';
+import { applyPushResult, nextPush } from '../../../../../packages/api-contract/sync/reference/client/sender.js';
 import { syncSession } from '../../../../src/platform/sync/session.js';
 import { browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle, textOf } from '../harness.mjs';
 

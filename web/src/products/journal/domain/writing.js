@@ -8,7 +8,7 @@ import { Valid } from '../../../platform/domain-kit/validation.js';
 import { Path, Violation } from '../../../platform/domain-kit/values.js';
 import { claimBody, isDocumentStamp, nextDocumentStamp } from '../../../platform/sync/core/content.js';
 import { hashText } from '../../../platform/sync/core/encoding.js';
-import { jcs } from '../../../platform/sync/core/jcs.js';
+import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { EDITOR_DRAFT_KEY, EDITOR_RECOVERY_PREFIX, JOURNAL_SCOPE, JournalState, JournalStateValue, Page, PageDocument, STATE_FIELDS } from './page.js';
 import { ClaimPageSpecs, JournalRefusals, JournalRules, SavePageSpecs } from './journalRules.js';
 

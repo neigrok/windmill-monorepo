@@ -2,6 +2,7 @@
 // at any depth, with the client's rounding to a domain's quantum (§7.1 step 4).
 
 import { MS_LIMIT } from './constants.js';
+import { utf8 } from './encoding.js';
 import { isOrderKey } from './fracindex.js';
 import { jcs } from './jcs.js';
 import { Stamp } from './stamp.js';
@@ -9,7 +10,7 @@ import { Stamp } from './stamp.js';
 // A bound's unit, which the registry always states (D-9): code points or UTF-8 bytes.
 export function lengthIn(unit, text) {
   if (unit === 'chars') return [...text].length;
-  if (unit === 'bytes') return Buffer.byteLength(text, 'utf8');
+  if (unit === 'bytes') return utf8(text).length;
   throw new Error(`a bound without a unit: ${unit}`);
 }
 

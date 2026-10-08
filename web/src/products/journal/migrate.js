@@ -1,5 +1,5 @@
-import { Replica } from '../../platform/sync/client/replica.js';
-import { commit } from '../../platform/sync/client/commit.js';
+import { Replica } from '../../../../packages/api-contract/sync/reference/client/replica.js';
+import { commit } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 import { hashText } from '../../platform/sync/core/encoding.js';
 import { compareDocumentStamps, isCalendarDay, isDocumentStamp } from '../../platform/sync/core/content.js';
 import { claimGesture, isWritten, normalizePage, retainRecoveredPage, SCOPE } from './pages.js';

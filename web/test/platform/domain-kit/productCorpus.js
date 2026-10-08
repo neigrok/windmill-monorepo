@@ -8,7 +8,7 @@ import { Reader, Views } from '../../../src/platform/domain-kit/reading.js';
 import { translate } from '../../../src/platform/domain-kit/translation.js';
 import { Valid } from '../../../src/platform/domain-kit/validation.js';
 import { CountSpec, Fault, Path, Violation } from '../../../src/platform/domain-kit/values.js';
-import { jcs } from '../../../src/platform/sync/core/jcs.js';
+import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { applySpec, momentOf, viewRecords } from './vectors.js';
 
 /** @typedef {import('../../../src/platform/domain-kit/values.js').Json} Json */

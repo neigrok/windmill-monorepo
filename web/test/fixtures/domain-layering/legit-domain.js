@@ -2,7 +2,9 @@
 // layer: domain
 // file: notes.js
 import { Id } from '../../../platform/domain-kit/entities.js';
-import { jcs } from '../../../platform/sync/core/jcs.js';
+import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { hashText } from '../../../platform/sync/core/encoding.js';
+import { nextDocumentStamp } from '../../../platform/sync/core/content.js';
 import { registry } from '../../../platform/sync/schema.js';
 import { GymRules } from './gymRules.js';
 export * from './bodyweight.js';

@@ -7,7 +7,7 @@ import {
   SET_NOTE_BYTES, SET_NOTE_CAPTION, setNoteCountLabel, SET_NOTE_LABEL, setNoteRefusal, setsAfter,
   showsSetNoteCount, UNDO_MS,
 } from '../../../src/products/gym/fix.js';
-import { CommitError } from '../../../src/platform/sync/client/commit.js';
+import { CommitError } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 import { GymRefusal } from '../../../src/products/gym/errors.js';
 import { readSetFields, setFields } from '../../../src/products/gym/correction/correction.js';
 import { browserWith, elementsOf, findByClass, loadScreen, renderHook, textOf } from './harness.mjs';

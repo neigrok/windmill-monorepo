@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
-import { CommitError } from '../../../src/platform/sync/client/commit.js';
-import { releaseDue } from '../../../src/platform/sync/client/hold.js';
-import { reidentify } from '../../../src/platform/sync/client/lifecycle.js';
-import { nextPush } from '../../../src/platform/sync/client/sender.js';
-import { Cursor } from '../../../src/platform/sync/core/wire.js';
-import { scopeDigest } from '../../../src/platform/sync/core/digest.js';
+import { CommitError } from '../../../../packages/api-contract/sync/reference/client/commit.js';
+import { releaseDue } from '../../../../packages/api-contract/sync/reference/client/hold.js';
+import { reidentify } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
+import { nextPush } from '../../../../packages/api-contract/sync/reference/client/sender.js';
+import { Cursor } from '../../../../packages/api-contract/sync/reference/core/wire.js';
+import { scopeDigest } from '../../../../packages/api-contract/sync/reference/core/digest.js';
 import { hashText } from '../../../src/platform/sync/core/encoding.js';
-import { jcs } from '../../../src/platform/sync/core/jcs.js';
+import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { ServerState } from '../../../../packages/api-contract/sync/reference/server/state.js';
 import { environment, until, tick } from './fakes.js';
 

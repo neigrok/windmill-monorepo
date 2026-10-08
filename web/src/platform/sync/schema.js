@@ -1,7 +1,7 @@
 import composition from '../../../../packages/api-contract/sync/composition.json' with { type: 'json' };
 import gym from '../../../../packages/api-contract/sync/gym.registry.json' with { type: 'json' };
 import journal from '../../../../packages/api-contract/sync/journal.registry.json' with { type: 'json' };
-import { Registry } from './core/registry.js';
+import { Registry } from '../../../../packages/api-contract/sync/reference/core/registry.js';
 
 const registries = { 'gym.registry.json': gym, 'journal.registry.json': journal };
 const members = composition.registries.map((name) => registries[name]);

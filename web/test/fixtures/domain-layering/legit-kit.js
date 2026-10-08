@@ -1,7 +1,9 @@
 // @ts-check
 // layer: kit
 // file: entities.js
-import { jcs } from '../sync/core/jcs.js';
+import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { utf8 } from '../sync/core/encoding.js';
+import { nextDocumentStamp } from '../sync/core/content.js';
 import { Path } from './values.js';
 export class Card {
   #ownId;

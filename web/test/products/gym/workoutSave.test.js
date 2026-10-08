@@ -5,9 +5,9 @@ import { Refusal } from '../../../../packages/api-contract/sync/reference/server
 import { hello, pull } from '../../../../packages/api-contract/sync/reference/server/pull.js';
 import { push } from '../../../../packages/api-contract/sync/reference/server/push.js';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
-import { steadyTiming } from '../../../src/platform/sync/core/clock.js';
-import { nextPush, onPushResponse } from '../../../src/platform/sync/client/sender.js';
-import { onPullResponse, pullRequest } from '../../../src/platform/sync/client/puller.js';
+import { steadyTiming } from '../../../../packages/api-contract/sync/reference/core/clock.js';
+import { nextPush, onPushResponse } from '../../../../packages/api-contract/sync/reference/client/sender.js';
+import { onPullResponse, pullRequest } from '../../../../packages/api-contract/sync/reference/client/puller.js';
 import { registry } from '../../../src/platform/sync/schema.js';
 import { GymRefusal, isStoreFailure } from '../../../src/products/gym/errors.js';
 import * as gymRuntime from '../../../src/products/gym/gymRuntime.js';

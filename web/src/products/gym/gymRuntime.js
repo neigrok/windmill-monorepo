@@ -10,7 +10,7 @@ import { Remove } from '../../platform/domain-kit/standardActions.js';
 import { Instant, LocalDay, Moment } from '../../platform/domain-kit/time.js';
 import { Valid } from '../../platform/domain-kit/validation.js';
 import { Violation } from '../../platform/domain-kit/values.js';
-import { CommitError } from '../../platform/sync/client/commit.js';
+import { CommitError } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 import { registry } from '../../platform/sync/schema.js';
 import { useSyncEngine, useSyncRecords } from '../../platform/sync/react.js';
 import { captureError } from '../../telemetry/sentry.js';

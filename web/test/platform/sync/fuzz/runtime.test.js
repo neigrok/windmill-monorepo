@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { BrowserSyncEngine } from '../../../../src/platform/sync/engine.js';
-import { isAlive, latticeOf, compareRecords } from '../../../../src/platform/sync/core/rows.js';
+import { isAlive, latticeOf, compareRecords } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
 import { Rng } from '../oracle-adapters/fixtures.js';
 import { environment, until } from '../fakes.js';
 
@@ -60,13 +60,13 @@ for (let seed = 1; seed <= 20; seed++) {
   });
 }
 
-import { Device } from '../../../../src/platform/sync/client/replica.js';
-import { Cursor } from '../../../../src/platform/sync/core/wire.js';
-import { scopeDigest } from '../../../../src/platform/sync/core/digest.js';
+import { Device } from '../../../../../packages/api-contract/sync/reference/client/replica.js';
+import { Cursor } from '../../../../../packages/api-contract/sync/reference/core/wire.js';
+import { scopeDigest } from '../../../../../packages/api-contract/sync/reference/core/digest.js';
 import { registry, product } from '../oracle-adapters/fixtures.js';
 import { push } from '../../../../../packages/api-contract/sync/reference/server/push.js';
 import { pull, frameFor, liveFrameOf } from '../../../../../packages/api-contract/sync/reference/server/pull.js';
-import { CONSTANTS } from '../../../../src/platform/sync/core/constants.js';
+import { CONSTANTS } from '../../../../../packages/api-contract/sync/reference/core/constants.js';
 import { admit } from '../../../../../packages/api-contract/sync/reference/server/admit.js';
 
 const runtimeFaults = ['drop request', 'duplicate', 'delay', 'reorder', 'lost reply', 'local abort',

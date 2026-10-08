@@ -1,5 +1,5 @@
 import { failureReason } from '../errors.js';
-import { lengthIn } from '../../../platform/sync/core/values.js';
+import { lengthIn } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 import { NoteRules } from '../domain/notes.js';
 
 // The counters are chrome a short note does not need: each is drawn from the last fifth of its

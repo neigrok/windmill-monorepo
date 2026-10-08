@@ -6,9 +6,9 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { compareRecords, isVisible } from '../../../../src/platform/sync/core/rows.js';
-import { Replica } from '../../../../src/platform/sync/client/replica.js';
-import { capCount, view } from '../../../../src/platform/sync/client/views.js';
+import { compareRecords, isVisible } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
+import { Replica } from '../../../../../packages/api-contract/sync/reference/client/replica.js';
+import { capCount, view } from '../../../../../packages/api-contract/sync/reference/client/views.js';
 import { registry } from '../oracle-adapters/fixtures.js';
 import { runSteps } from '../oracle-adapters/steps.js';
 

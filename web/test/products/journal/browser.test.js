@@ -81,7 +81,7 @@ const ready = (async () => {
         response.end('<!doctype html><title>Journal hook test</title><div id="editor"></div>');
       });
     },
-  }], optimizeDeps: { include: ['react', 'react-dom/client', '@noble/hashes/sha256', '@noble/hashes/utils'] },
+  }], optimizeDeps: { include: ['react', 'react-dom/client'] },
   server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../', import.meta.url))] } } });
   await server.listen(0);
   origin = `http://127.0.0.1:${server.httpServer.address().port}`;

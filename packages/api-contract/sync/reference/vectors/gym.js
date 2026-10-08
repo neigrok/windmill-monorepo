@@ -2,7 +2,7 @@
 // gym's binding (A.2).
 
 import assert from 'node:assert/strict';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { CONSTANTS } from '../core/constants.js';
 import { ZERO_DIGEST, replaceRow } from '../core/digest.js';
 import { Registry } from '../core/registry.js';
@@ -12,7 +12,7 @@ import { admit } from '../server/admit.js';
 import { ServerState } from '../server/state.js';
 import { ACTOR, vector } from './fixtures.js';
 
-export const gymRegistry = Registry.fromFile(fileURLToPath(new URL('../../gym.registry.json', import.meta.url)));
+export const gymRegistry = new Registry(JSON.parse(readFileSync(new URL('../../gym.registry.json', import.meta.url), 'utf8')));
 export const gymProduct = new GymProduct();
 
 const H = 3_600_000;

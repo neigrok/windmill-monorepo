@@ -1,19 +1,12 @@
-
-class Registry extends BrowserRegistry {
-  static fromFile(path) { return new Registry(JSON.parse(readRegistry(path, "utf8"))); }
-}
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
-import { CommitError, commit } from '../../../../src/platform/sync/client/commit.js';
-import { Device, Replica } from '../../../../src/platform/sync/client/replica.js';
-import { mintId } from '../../../../src/platform/sync/core/derive.js';
-import { Registry as BrowserRegistry } from '../../../../src/platform/sync/core/registry.js';
+import { CommitError, commit } from '../../../../../packages/api-contract/sync/reference/client/commit.js';
+import { Device, Replica } from '../../../../../packages/api-contract/sync/reference/client/replica.js';
+import { mintId } from '../../../../../packages/api-contract/sync/reference/core/derive.js';
+import { Registry } from '../../../../../packages/api-contract/sync/reference/core/registry.js';
 import { ACTOR, registry, row, st } from '../oracle-adapters/fixtures.js';
 import { runSteps } from '../oracle-adapters/steps.js';
-import { readFileSync as readRegistry } from "node:fs";
-
 
 function bound(confirmed = {}) {
   return new Replica({ meta: Replica.fresh({ replica: 'rp_1', state: 'bound', account: 'A' }).meta, confirmed });
@@ -107,7 +100,7 @@ test('§7.1: a replica that is not writable and a malformed commit are distinct 
 });
 
 test('§7.1 step 4: a command\'s arguments round to their domain\'s quantum at any depth', () => {
-  const gym = Registry.fromFile(fileURLToPath(new URL('../../../../../packages/api-contract/sync/gym.registry.json', import.meta.url)));
+  const gym = new Registry(JSON.parse(readFileSync(new URL('../../../../../packages/api-contract/sync/gym.registry.json', import.meta.url), 'utf8')));
   const replica = new Replica({ meta: Replica.fresh({ replica: 'rp_1', state: 'bound', account: 'A' }).meta });
   const set = (weightKg, rpe) => ({ id: 'set0000000000001', exerciseId: 'dip', weightKg, reps: 5, rpe, completedAt: 1500 });
   const context = { ...ctx(), registry: gym, device: new Device({ active: 'rp_1', replicas: [replica.toJSON()] }) };

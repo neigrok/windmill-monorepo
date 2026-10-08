@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { seededId } from '../../../../src/platform/sync/core/derive.js';
-import { Registry, RegistryError, isPortablePattern } from '../../../../src/platform/sync/core/registry.js';
+import { seededId } from '../../../../../packages/api-contract/sync/reference/core/derive.js';
+import { Registry, RegistryError, isPortablePattern } from '../../../../../packages/api-contract/sync/reference/core/registry.js';
 
 const CONTRACT = fileURLToPath(new URL('../../../../../packages/api-contract/sync/', import.meta.url));
 const read = (name) => JSON.parse(readFileSync(`${CONTRACT}${name}`, 'utf8'));

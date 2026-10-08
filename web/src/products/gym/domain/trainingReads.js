@@ -3,8 +3,8 @@
 import { Id } from '../../../platform/domain-kit/entities.js';
 import { LocalDay } from '../../../platform/domain-kit/time.js';
 import { precondition } from '../../../platform/domain-kit/values.js';
-import { jcs } from '../../../platform/sync/core/jcs.js';
-import { roundHalfAway, roundToQuantum } from '../../../platform/sync/core/values.js';
+import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { roundHalfAway, roundToQuantum } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 import { Exercise } from './catalogue.js';
 import { GymEstimate, Session, SessionRules, TrainingSet } from './training.js';
 import { GymUnits, WeightLadder } from './units.js';

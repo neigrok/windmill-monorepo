@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { BrowserSyncEngine } from '../../../web/src/platform/sync/engine.js';
 import { HttpTransport } from '../../../web/src/platform/sync/transport.js';
-import { Cursor } from '../../../web/src/platform/sync/core/wire.js';
+import { Cursor } from '../../../packages/api-contract/sync/reference/core/wire.js';
 import { registry } from '../../../web/src/platform/sync/schema.js';
 import { FakeLocks } from '../../../web/test/platform/sync/fakes.js';
 

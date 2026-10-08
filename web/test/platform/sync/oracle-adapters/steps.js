@@ -1,21 +1,21 @@
 // The client-step language of corpus/README.md ("Client steps"). Each step answers one snapshot in
 // `returns`; a throwing step answers {throws: true} and changes nothing, being one local transaction.
 
-import { steadyTiming } from '../../../../src/platform/sync/core/clock.js';
-import { CONSTANTS } from '../../../../src/platform/sync/core/constants.js';
-import { scopeDigest } from '../../../../src/platform/sync/core/digest.js';
-import { TransitionError } from '../../../../src/platform/sync/core/machines.js';
-import { compareRecords, isAlive } from '../../../../src/platform/sync/core/rows.js';
-import { Cursor } from '../../../../src/platform/sync/core/wire.js';
-import { CommitError, commit } from '../../../../src/platform/sync/client/commit.js';
-import { release, releaseAll, releaseDue, undo } from '../../../../src/platform/sync/client/hold.js';
-import { anonCount, discardUnsent, engineStart, epochChange, reidentify, renewActor, signIn, signOut } from '../../../../src/platform/sync/client/lifecycle.js';
-import { onFrame, onPullResponse, pullRequest } from '../../../../src/platform/sync/client/puller.js';
-import { dismiss } from '../../../../src/platform/sync/client/refusal.js';
-import { Device } from '../../../../src/platform/sync/client/replica.js';
-import { nextPush, onHello, onPushResponse, ResponseError } from '../../../../src/platform/sync/client/sender.js';
-import { reconcile, subscribe, subscriptionsOf } from '../../../../src/platform/sync/client/subscriptions.js';
-import { capCount, view } from '../../../../src/platform/sync/client/views.js';
+import { steadyTiming } from '../../../../../packages/api-contract/sync/reference/core/clock.js';
+import { CONSTANTS } from '../../../../../packages/api-contract/sync/reference/core/constants.js';
+import { scopeDigest } from '../../../../../packages/api-contract/sync/reference/core/digest.js';
+import { TransitionError } from '../../../../../packages/api-contract/sync/reference/core/machines.js';
+import { compareRecords, isAlive } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
+import { Cursor } from '../../../../../packages/api-contract/sync/reference/core/wire.js';
+import { CommitError, commit } from '../../../../../packages/api-contract/sync/reference/client/commit.js';
+import { release, releaseAll, releaseDue, undo } from '../../../../../packages/api-contract/sync/reference/client/hold.js';
+import { anonCount, discardUnsent, engineStart, epochChange, reidentify, renewActor, signIn, signOut } from '../../../../../packages/api-contract/sync/reference/client/lifecycle.js';
+import { onFrame, onPullResponse, pullRequest } from '../../../../../packages/api-contract/sync/reference/client/puller.js';
+import { dismiss } from '../../../../../packages/api-contract/sync/reference/client/refusal.js';
+import { Device } from '../../../../../packages/api-contract/sync/reference/client/replica.js';
+import { nextPush, onHello, onPushResponse, ResponseError } from '../../../../../packages/api-contract/sync/reference/client/sender.js';
+import { reconcile, subscribe, subscriptionsOf } from '../../../../../packages/api-contract/sync/reference/client/subscriptions.js';
+import { capCount, view } from '../../../../../packages/api-contract/sync/reference/client/views.js';
 import { ACTOR, registry } from './fixtures.js';
 
 // A device as a client holds it after pulling its confirmed rows: each confirmed scope has a live

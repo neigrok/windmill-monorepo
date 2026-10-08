@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../design-system/index.js';
-import { lengthIn } from '../../../platform/sync/core/values.js';
+import { lengthIn } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 import '../coach/coach.css';
 import './notes.css';
 import { Back } from '../Back.jsx';

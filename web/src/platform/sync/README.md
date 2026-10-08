@@ -5,9 +5,12 @@ request. `start()` installs tab coordination and lifecycle hooks, releases holds
 requests persistent storage and starts synchronization. No product or UI imports this engine.
 
 The registry composes the shared gym and journal registries at version 6, minimum 4. The deterministic
-core and replica rules are browser ports of `packages/api-contract/sync/reference`.
-UTF-8 uses `TextEncoder`, canonical cursor encoding uses browser base64 APIs and synchronous SHA-256
-uses `@noble/hashes`. Test oracles stay outside the shipping dependency graph.
+core and replica rules import `packages/api-contract/sync/reference/core` and `client` directly.
+The shared modules use `TextEncoder`, canonical base64url and vendored synchronous SHA-256, with no
+dependencies. `core/encoding.js` exposes the shared encoding helpers to web consumers;
+`core/content.js` holds the web content clock. IndexedDB, transport, leadership, session, telemetry
+and React bindings stay here. Reference server models and test oracles stay outside the shipping
+dependency graph.
 
 ```js
 const engine = await BrowserSyncEngine.open({ appVersion, telemetry, credentials });

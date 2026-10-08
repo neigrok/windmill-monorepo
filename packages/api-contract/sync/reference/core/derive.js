@@ -1,12 +1,14 @@
 // D-26 derived ids from a label, and D-8 seeded ids `<seed>-<n>`.
 
+import { utf8 } from './encoding.js';
+
 const ALPHANUMERIC = /^[A-Za-z0-9]$/;
 const ORDINAL = /^[1-9][0-9]*$/;
 const BASE_LIMIT = 40;
 
 export function derive(label, fallback, taken) {
   let base = '';
-  for (const byte of Buffer.from(label, 'utf8')) {
+  for (const byte of utf8(label)) {
     if (base.length === BASE_LIMIT) break;
     const char = String.fromCharCode(byte);
     if (ALPHANUMERIC.test(char)) base += char.toLowerCase();

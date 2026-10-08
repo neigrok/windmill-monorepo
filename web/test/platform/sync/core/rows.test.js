@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isVisible } from '../../../../src/platform/sync/core/rows.js';
+import { isVisible } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
 
 // §2.4 visibility of a type without life and without visibleWhen: any lattice register or text counts,
 // whatever it holds; a serial value never does.

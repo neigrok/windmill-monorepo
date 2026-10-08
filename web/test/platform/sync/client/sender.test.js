@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { onPushResponse, ResponseError, SenderWait } from '../../../../src/platform/sync/client/sender.js';
-import { Replica } from '../../../../src/platform/sync/client/replica.js';
+import { onPushResponse, ResponseError, SenderWait } from '../../../../../packages/api-contract/sync/reference/client/sender.js';
+import { Replica } from '../../../../../packages/api-contract/sync/reference/client/replica.js';
 
 test('a malformed authenticated success cannot reset an epoch or mutate the replica', () => {
   for (const invalid of [{ epoch: 2 }, { epoch: '' }, { epoch: undefined }, { serverTime: -1 },

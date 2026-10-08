@@ -7,8 +7,9 @@ layer a product's feature domains are declared on, beside the Swift `DomainKit` 
 
 ## The layer rule
 
-A kit file imports `../sync/core/<name>.js` and kit files, nothing else; a product domain
-(`src/products/<p>/domain/`) imports the kit, `platform/sync/core`, `platform/sync/schema.js` and
+A kit file imports the shared `packages/api-contract/sync/reference/core/<name>.js` by relative
+path, the web's `sync/core/encoding.js` and `content.js`, and kit files; a product domain
+(`src/products/<p>/domain/`) imports the same core modules, the kit, `platform/sync/schema.js` and
 itself. No clock, randomness, platform global, console, locale, rounding (the quantum's is
 `core/values.js`) or concurrency; `runner.js`, the one impure file, alone awaits the engine. Every
 file opts into `tsc --checkJs` with `// @ts-check` and `npm run check:domain` type-checks them

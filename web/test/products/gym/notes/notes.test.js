@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CommitError } from '../../../../src/platform/sync/client/commit.js';
+import { CommitError } from '../../../../../packages/api-contract/sync/reference/client/commit.js';
 import { GymRefusal } from '../../../../src/products/gym/errors.js';
 import { BODY_COUNT_FROM as NAME_TWIN } from '../../../../src/products/gym/notes/notes.js';
 import { NoteRules } from '../../../../src/products/gym/domain/notes.js';

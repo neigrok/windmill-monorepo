@@ -22,7 +22,7 @@ web/                        Vite/React superapp for all three products
     main.jsx                entry point
     styles/                 shared tokens and global styles
     telemetry/              product-neutral telemetry
-    platform/               browser sync engine and product-neutral domain kit
+    platform/               browser sync runtime and product-neutral domain kit
     design-system/          shared components
     showcase/               component and product gallery
     shell/                  router, product registry, account, billing and shared navigation
@@ -35,7 +35,7 @@ apps/
   android/                  Kotlin/Compose gym app; :app, :platform, :gym and :gym:domain, the sync
                             engine (:sync-*) and the domain kit (:domain-kit, :domain-kit-testing)
 packages/
-  api-contract/             shared wire contracts and executable golden fixtures
+  api-contract/             shared wire contracts, executable golden fixtures and the JS sync core/client
 services/
   embedder/                 HTTP sidecar for journal passage vectors
 tools/                     standalone operational tools
@@ -106,8 +106,9 @@ contents. Native acceptance and a same-key update check precede publication. See
   [gym architecture](backend/products/gym/ARCHITECTURE.md).
 - `docs/foundation/` holds specifications that apply to more than one product or platform:
   [the sync engine](docs/foundation/engine.md) for every product and surface, built in the C++ server
-  (`backend/platform/**/sync*`) and the JS (`web/src/platform/sync`), Swift (`apps/ios/Sync`) and
-  Kotlin (`apps/android/sync-*`) clients;
+  (`backend/platform/**/sync*`) and the JS (`packages/api-contract/sync/reference/core` and `client`,
+  with the browser runtime in `web/src/platform/sync`), Swift (`apps/ios/Sync`) and Kotlin
+  (`apps/android/sync-*`) clients;
   [the domain kit](docs/foundation/domain-kit.md), the pure-logic layer every Swift and Kotlin feature
   domain is declared on, built in Swift (`apps/ios/Domain`) and Kotlin (`apps/android/domain-kit`); and
   [gym Coach on the client](docs/foundation/mobile/gym_coach.md) for both phones, specified and not

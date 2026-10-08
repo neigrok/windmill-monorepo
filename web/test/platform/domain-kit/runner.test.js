@@ -4,10 +4,10 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CONSTANTS } from '../../../src/platform/sync/core/constants.js';
-import { ZERO_DIGEST } from '../../../src/platform/sync/core/digest.js';
-import { Cursor } from '../../../src/platform/sync/core/wire.js';
-import { epochChange } from '../../../src/platform/sync/client/lifecycle.js';
+import { CONSTANTS } from '../../../../packages/api-contract/sync/reference/core/constants.js';
+import { ZERO_DIGEST } from '../../../../packages/api-contract/sync/reference/core/digest.js';
+import { Cursor } from '../../../../packages/api-contract/sync/reference/core/wire.js';
+import { epochChange } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { Decision } from '../../../src/platform/domain-kit/actions.js';
 import { Draft } from '../../../src/platform/domain-kit/drafts.js';

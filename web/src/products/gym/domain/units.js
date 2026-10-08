@@ -1,6 +1,6 @@
 // @ts-check
 
-import { roundHalfAway, roundToQuantum } from '../../../platform/sync/core/values.js';
+import { roundHalfAway, roundToQuantum } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 
 export class GymUnits {
   static kilogramsPerPound = 0.45359237;

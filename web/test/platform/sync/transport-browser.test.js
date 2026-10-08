@@ -3,18 +3,19 @@ import { after, test } from 'node:test';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { fileURLToPath } from 'node:url';
-import { ZERO_DIGEST, replaceRow } from '../../../src/platform/sync/core/digest.js';
-import { Cursor } from '../../../src/platform/sync/core/wire.js';
+import { ZERO_DIGEST, replaceRow } from '../../../../packages/api-contract/sync/reference/core/digest.js';
+import { Cursor } from '../../../../packages/api-contract/sync/reference/core/wire.js';
 
 let server, browser, origin;
 const root = fileURLToPath(new URL('../../../', import.meta.url));
+const referencePath = fileURLToPath(new URL('../../../../packages/api-contract/sync/reference/', import.meta.url));
 const registryPath = fileURLToPath(new URL('../../../../packages/api-contract/sync/probe.registry.json', import.meta.url));
 const ready = (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-transport-test`, plugins: [{ name: 'transport-test-page', configureServer(server) {
     server.middlewares.use('/transport-test', (_request, response) => {
       response.setHeader('Content-Type', 'text/html'); response.end('<!doctype html><title>Sync transport test</title>');
     });
-  } }], optimizeDeps: { include: ['@noble/hashes/sha256', '@noble/hashes/utils'] },
+  } }],
   server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../', import.meta.url))] } } });
   await server.listen(0);
   origin = `http://127.0.0.1:${server.httpServer.address().port}`;
@@ -68,9 +69,9 @@ for (const bound of ['count', 'bytes']) test(`Chromium: stalled live ${bound} ov
       }) });
     });
     await page.goto(`${origin}/transport-test`);
-    await page.evaluate(async ({ registryPath, name }) => {
+    await page.evaluate(async ({ registryPath, referencePath, name }) => {
       const { BrowserSyncEngine } = await import('/src/platform/sync/engine.js');
-      const { Registry } = await import('/src/platform/sync/core/registry.js');
+      const { Registry } = await import(`/@fs${referencePath}core/registry.js`);
       const probe = await (await fetch(`/@fs${registryPath}`)).json();
       window.failures = [];
       window.engine = await BrowserSyncEngine.open({ name, registry: new Registry(probe), base: '', draw: () => 100,
@@ -78,7 +79,7 @@ for (const bound of ['count', 'bytes']) test(`Chromium: stalled live ${bound} ov
       window.observation = engine.observe('self/probe');
       window.signedin = await engine.signIn('A');
       await engine.start();
-    }, { registryPath, name: `live-${bound}` });
+    }, { registryPath, referencePath, name: `live-${bound}` });
     await page.waitForFunction(() => engine.live.socket?.readyState === 1 && engine.device.activeReplica.cursors['self/probe']?.booted,
       undefined, { timeout: 5000 }).catch(async () => {
       throw new Error(JSON.stringify({ sockets: sockets.length, pulls, browser: await page.evaluate(() => ({

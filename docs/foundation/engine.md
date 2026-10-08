@@ -6,8 +6,9 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. Sections, 
 ## §0 Status and scope
 
 **Status:** The C++ server (`backend/platform/**/sync*`) carries the engine, with clients in JS
-(`web/src/platform/sync`), Swift (`apps/ios/Sync`) and Kotlin (`apps/android/sync-*`);
-`packages/api-contract/sync/reference/` is its JS reference. `windmill_server` serves the gym and
+(`packages/api-contract/sync/reference/core` and `client`, shared with the JS reference, with browser
+I/O in `web/src/platform/sync`), Swift (`apps/ios/Sync`) and Kotlin (`apps/android/sync-*`).
+`windmill_server` serves the gym and
 journal composition on `/v1/sync`, and the engine is the only writer of their records: web (gym,
 journal), iOS (journal, gym) and Android (gym) write through replicas, and MCP, the Coach and gym's
 import door admit as the server (A.2). Production's gym and journal rows were adopted in place

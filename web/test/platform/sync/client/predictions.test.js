@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { BrowserSyncEngine } from '../../../../src/platform/sync/engine.js';
-import { nextPush } from '../../../../src/platform/sync/client/sender.js';
-import { isVisible } from '../../../../src/platform/sync/core/rows.js';
+import { nextPush } from '../../../../../packages/api-contract/sync/reference/client/sender.js';
+import { isVisible } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
 import { registry } from '../../../../src/platform/sync/schema.js';
 import { environment } from '../fakes.js';
 

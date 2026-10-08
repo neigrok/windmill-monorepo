@@ -3,8 +3,8 @@
 // an action as one engine commit, opens and saves drafts, and binds the browser engine through
 // `EngineReplica`. The commit body stays synchronous; only the transaction's completion is awaited.
 
-import { mintId } from '../sync/core/derive.js';
-import { recordKey } from '../sync/core/rows.js';
+import { mintId } from '../../../../packages/api-contract/sync/reference/core/derive.js';
+import { recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
 import { IDSource, Outcome, decision, firstGone, refusalSubject } from './actions.js';
 import { Draft, SaveDraft, SaveResult } from './drafts.js';
 import { DecodeError, Id } from './entities.js';
@@ -60,7 +60,7 @@ function takenIn(drawn, type) {
 export class ActionRunner {
   /**
    * @param {Replica} replica
-   * @param {import('../sync/core/registry.js').Registry} registry
+   * @param {import('../../../../packages/api-contract/sync/reference/core/registry.js').Registry} registry
    * @param {import('./time.js').Zone} zone
    */
   constructor(replica, registry, zone) {

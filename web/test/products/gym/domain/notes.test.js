@@ -6,7 +6,7 @@ import { GymProduct } from '../../../../../packages/api-contract/sync/reference/
 import { Draft } from '../../../../src/platform/domain-kit/drafts.js';
 import { Fields, Id } from '../../../../src/platform/domain-kit/entities.js';
 import { Placement } from '../../../../src/platform/domain-kit/reading.js';
-import { CONSTANTS } from '../../../../src/platform/sync/core/constants.js';
+import { CONSTANTS } from '../../../../../packages/api-contract/sync/reference/core/constants.js';
 import { registry } from '../../../../src/platform/sync/schema.js';
 import { GymRefusals, GymRules, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';
 import { DeleteNote, MoveNote, Note, NoteValue, SaveNoteCall } from '../../../../src/products/gym/domain/notes.js';

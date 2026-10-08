@@ -7,7 +7,7 @@ import { DecodeError, Fields, Id } from '../../../../src/platform/domain-kit/ent
 import { LocalDay } from '../../../../src/platform/domain-kit/time.js';
 import { Valid } from '../../../../src/platform/domain-kit/validation.js';
 import { Violation } from '../../../../src/platform/domain-kit/values.js';
-import { jcs } from '../../../../src/platform/sync/core/jcs.js';
+import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { Bodyweight, DeleteWeighIn, SaveWeighIn, WeighIn, WeighInValue } from '../../../../src/products/gym/domain/bodyweight.js';
 import { Catalogue, CreateExercise, Exercise, RenameExercise, defaultStepKg, renamedAliases } from '../../../../src/products/gym/domain/catalogue.js';
 import { GymRefusals, GymRules, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';

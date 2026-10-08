@@ -3,7 +3,7 @@
 // which announces every change of `activeReplica()` in `ctx.events`.
 
 import { moveEntry, REPLICA_MACHINE, transition } from '../core/machines.js';
-import { createHash } from 'node:crypto';
+import { hashText } from '../core/encoding.js';
 import { jcs } from '../core/jcs.js';
 import { recordKey, stampsOf } from '../core/rows.js';
 import { releaseAll } from './hold.js';
@@ -101,7 +101,7 @@ function sameCounted(pinned, counted) {
 function pendingDeviceRows(ctx, replica, product) {
   const rows = replica.device[product] ?? {};
   return (ctx.pendingDeviceWork?.(product, rows) ?? []).slice().sort().map((key) =>
-    `device:${product}:${key}:${createHash('sha256').update(jcs(rows[key])).digest('hex')}`);
+    `device:${product}:${key}:${hashText(jcs(rows[key]))}`);
 }
 
 // Sign-in as `account`, after a hello whose holdsRecords is given. `decisions[product]` is 'add' or

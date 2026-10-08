@@ -6,8 +6,8 @@ import { GymProduct } from '../../../../../packages/api-contract/sync/reference/
 import { Refusal } from '../../../../../packages/api-contract/sync/reference/server/admit.js';
 import { Fields, Id } from '../../../../src/platform/domain-kit/entities.js';
 import { Instant } from '../../../../src/platform/domain-kit/time.js';
-import { CONSTANTS } from '../../../../src/platform/sync/core/constants.js';
-import { Stamp } from '../../../../src/platform/sync/core/stamp.js';
+import { CONSTANTS } from '../../../../../packages/api-contract/sync/reference/core/constants.js';
+import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/stamp.js';
 import { registry } from '../../../../src/platform/sync/schema.js';
 import { Exercise } from '../../../../src/products/gym/domain/catalogue.js';
 import { GymRefusals, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';

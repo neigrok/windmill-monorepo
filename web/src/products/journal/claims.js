@@ -1,6 +1,6 @@
-import { commit, CommitError } from "../../platform/sync/client/commit.js";
-import { onPushResponse } from "../../platform/sync/client/sender.js";
-import { Cursor } from "../../platform/sync/core/wire.js";
+import { commit, CommitError } from "../../../../packages/api-contract/sync/reference/client/commit.js";
+import { onPushResponse } from "../../../../packages/api-contract/sync/reference/client/sender.js";
+import { Cursor } from "../../../../packages/api-contract/sync/reference/core/wire.js";
 import { claimBody, nextDocumentStamp } from "../../platform/sync/core/content.js";
 
 const SCOPE = "self/journal";

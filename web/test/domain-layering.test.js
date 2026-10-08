@@ -18,10 +18,15 @@ const FIXTURES = path.join(WEB, 'test', 'fixtures', 'domain-layering');
 
 const NAME = '[\\w-]+';
 const IMPORTS = {
-  kit: [new RegExp(`^\\.\\./sync/core/${NAME}\\.js$`), new RegExp(`^\\./${NAME}\\.js$`)],
+  kit: [
+    new RegExp(`^(?:\\.\\./){4}packages/api-contract/sync/reference/core/${NAME}\\.js$`),
+    /^\.\.\/sync\/core\/(?:encoding|content)\.js$/,
+    new RegExp(`^\\./${NAME}\\.js$`),
+  ],
   domain: [
     new RegExp(`^\\.\\./\\.\\./\\.\\./platform/domain-kit/${NAME}\\.js$`),
-    new RegExp(`^\\.\\./\\.\\./\\.\\./platform/sync/core/${NAME}\\.js$`),
+    new RegExp(`^(?:\\.\\./){5}packages/api-contract/sync/reference/core/${NAME}\\.js$`),
+    /^\.\.\/\.\.\/\.\.\/platform\/sync\/core\/(?:encoding|content)\.js$/,
     /^\.\.\/\.\.\/\.\.\/platform\/sync\/schema\.js$/,
     new RegExp(`^\\./${NAME}\\.js$`),
   ],

@@ -83,7 +83,7 @@ const ready = (async () => {
           response.end('<!doctype html><title>Notes delete test</title><div id="root"></div><script type="module" src="/notes-delete-entry.js"></script>');
         });
       },
-    }], optimizeDeps: { include: ['react', 'react-dom/client', '@noble/hashes/sha256', '@noble/hashes/utils'] },
+    }], optimizeDeps: { include: ['react', 'react-dom/client'] },
     server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../../', import.meta.url))] } } });
   await server.listen(0);
   origin = `http://127.0.0.1:${server.httpServer.address().port}`;

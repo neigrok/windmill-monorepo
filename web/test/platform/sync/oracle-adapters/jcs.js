@@ -1,7 +1,7 @@
 // jcs/values.json: RFC 8785 canonical JSON (§3.2 `jcs`). A number vector names its IEEE-754 bits; a
 // text vector gives JSON text for the runner's own parser.
 
-import { jcs } from '../../../../src/platform/sync/core/jcs.js';
+import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { vector } from './fixtures.js';
 
 export const NUMBER_BITS = [
