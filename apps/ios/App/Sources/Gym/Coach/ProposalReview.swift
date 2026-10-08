@@ -143,36 +143,36 @@ struct ProposalReviewSheet: View {
           } else if gym.readFailed {
             Text("That proposal could not be read."); Button("Try again") { gym.refresh() }
           } else if let proposal {
-            Text(gym.coachProposalSource(proposal)).font(.caption.monospaced()).foregroundStyle(.secondary)
+            Text(gym.coachProposalSource(proposal)).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
             if gym.openSession != nil { Text("Finish this session").font(.title3.weight(.semibold)) }
             else {
               if !proposal.summary.isEmpty {
-                Text(proposal.door == "ask" ? "Coach wrote:" : proposal.agent.isEmpty && proposal.connection.isEmpty ? "Your agent wrote:" : "\(proposal.agent.isEmpty ? proposal.connection : proposal.agent) wrote:").font(.caption.weight(.semibold)).foregroundStyle(CoachPalette.accent)
-                Text(proposal.summary).padding(.leading, 12).overlay(alignment: .leading) { Rectangle().fill(CoachPalette.accent).frame(width: 3) }
+                Text(proposal.door == "ask" ? "Coach wrote:" : proposal.agent.isEmpty && proposal.connection.isEmpty ? "Your agent wrote:" : "\(proposal.agent.isEmpty ? proposal.connection : proposal.agent) wrote:").font(.caption.weight(.semibold)).foregroundStyle(GymPalette.accent)
+                Text(proposal.summary).padding(.leading, 12).overlay(alignment: .leading) { Rectangle().fill(GymPalette.accent).frame(width: 3) }
               }
               if proposal.intent == "remove" {
                 diffCard("Remove \(routine?.name ?? proposal.baseName ?? "routine")", symbol: "minus", color: .red) {
-                  Text("The whole routine is removed from your program. Every set you logged against it stays in the log.").font(.callout).foregroundStyle(.secondary)
+                  Text("The whole routine is removed from your program. Every set you logged against it stays in the log.").font(.callout).foregroundStyle(GymPalette.inkDim)
                 }
               } else {
                 ForEach(Array(changeRuns.enumerated()), id: \.offset) { _, run in
                   if run.first?.kind == "kept" {
                     DisclosureGroup("and \(run.count) \(run.count == 1 ? "line" : "lines") unchanged") {
                       ForEach(Array(run.enumerated()), id: \.offset) { _, change in changeRow(change) }
-                    }.padding(12).background(CoachPalette.surface, in: RoundedRectangle(cornerRadius: 12))
+                    }.padding(12).background(GymPalette.card, in: RoundedRectangle(cornerRadius: 12))
                   } else if let change = run.first { changeRow(change) }
                 }
                 if let routine, routine.name != proposal.proposedName {
-                  diffCard("Routine name", symbol: "pencil", color: CoachPalette.accent) { Text("\(routine.name) → \(proposal.proposedName)").font(.callout) }
+                  diffCard("Routine name", symbol: "pencil", color: GymPalette.accent) { Text("\(routine.name) → \(proposal.proposedName)").font(.callout) }
                 }
                 if let routine, routine.entries.map(\.exerciseId).filter({ proposal.document.map(\.exerciseId).contains($0) }) != proposal.document.map(\.exerciseId).filter({ routine.entries.map(\.exerciseId).contains($0) }) {
-                  diffCard("Movement order", symbol: "arrow.up.arrow.down", color: CoachPalette.accent) {
-                    Text(routine.entries.map { name($0.exerciseId) }.joined(separator: " · ")).font(.callout).foregroundStyle(.secondary)
+                  diffCard("Movement order", symbol: "arrow.up.arrow.down", color: GymPalette.accent) {
+                    Text(routine.entries.map { name($0.exerciseId) }.joined(separator: " · ")).font(.callout).foregroundStyle(GymPalette.inkDim)
                     Text("→ " + proposal.document.map { name($0.exerciseId) }.joined(separator: " · ")).font(.callout)
                   }
                 }
               }
-              if superseded { Text("This routine has changed since the proposal was written, so it can no longer be applied — nothing here was. What the routine now says is what stands.").font(.callout).foregroundStyle(.secondary) }
+              if superseded { Text("This routine has changed since the proposal was written, so it can no longer be applied — nothing here was. What the routine now says is what stands.").font(.callout).foregroundStyle(GymPalette.inkDim) }
               if let ask { Button("Ask Coach") { dismiss(); ask(routine?.name ?? proposal.baseName ?? "this routine") } }
             }
           } else { Text("That proposal is gone.") }
@@ -184,7 +184,7 @@ struct ProposalReviewSheet: View {
         extent = position.extent
         if position.atEnd, position.extent.viewport > 0, position.extent.content > 0 { seen = position.extent }
       }
-      .navigationTitle(routine?.name ?? proposal?.baseName ?? "Proposal").modifier(CoachPage())
+      .navigationTitle(routine?.name ?? proposal?.baseName ?? "Proposal").modifier(GymPage())
       .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
       .safeAreaInset(edge: .bottom) { band }
       .alert("Turn this down?", isPresented: $turningDown) {
@@ -205,12 +205,12 @@ struct ProposalReviewSheet: View {
           .onChange(of: phase) { _, _ in acknowledgeReceipt() }
       }
       if decidable {
-        Button { if let proposal { submitted = gym.coachDecideProposal(proposal, apply: true) } } label: { Text(applyLabel).foregroundStyle(CoachPalette.onAccent).frame(maxWidth: .infinity) }
+        Button { if let proposal { submitted = gym.coachDecideProposal(proposal, apply: true) } } label: { Text(applyLabel).foregroundStyle(GymPalette.onAccent).frame(maxWidth: .infinity) }
           .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
           .disabled(seen == nil || seen != extent).accessibilityIdentifier("coach-apply-proposal")
           .accessibilityHint(seen == nil || seen != extent ? "Scroll to the end to apply." : "Apply every change together")
         Text(seen == nil || seen != extent ? "Scroll to the end to apply." : proposal?.intent == "remove" ? "The routine goes and your logged sets stay. Nothing is removed until you tap." : count <= 1 ? "Nothing is applied until you tap." : "All \(count) or none. Nothing is applied until you tap.")
-          .font(.caption).foregroundStyle(.secondary).accessibilityHidden(true)
+          .font(.caption).foregroundStyle(GymPalette.inkDim).accessibilityHidden(true)
         Button("Turn this down", role: .destructive) { turningDown = true }.frame(minHeight: 44)
       } else if owner != gym.account || !gym.coachAccountAvailable { EmptyView() }
       else if pending { ProgressView("Waiting for the log to confirm…") }
@@ -220,7 +220,7 @@ struct ProposalReviewSheet: View {
           .onChange(of: phase) { _, _ in acknowledgeReceipt() }
       }
       if let error = gym.error { Text(error).font(.callout).foregroundStyle(.red) }
-    }.padding(16).frame(maxWidth: .infinity).background(CoachPalette.surface).tint(CoachPalette.accent)
+    }.padding(16).frame(maxWidth: .infinity).background(GymPalette.card).tint(GymPalette.accent)
   }
   func acknowledgeReceipt() {
     guard phase == .active, !pending, let proposal else { return }
@@ -231,23 +231,23 @@ struct ProposalReviewSheet: View {
   @ViewBuilder func changeRow(_ change: RoutineChange) -> some View {
     if change.kind == "kept" {
       DisclosureGroup("\(name(change.exerciseId)) · unchanged") {
-        Text(targets(change.after)).font(.callout.monospaced())
-        ForEach(Array((change.after?.sets ?? []).enumerated()), id: \.offset) { i, target in Text("set \(i + 1) · \(Readout.setTarget(target)) kg").font(.callout.monospaced()) }
-      }.padding(12).background(CoachPalette.surface, in: RoundedRectangle(cornerRadius: 12))
+        Text(targets(change.after)).font(.callout.monospacedDigit())
+        ForEach(Array((change.after?.sets ?? []).enumerated()), id: \.offset) { i, target in Text("set \(i + 1) · \(Readout.setTarget(target)) kg").font(.callout.monospacedDigit()) }
+      }.padding(12).background(GymPalette.card, in: RoundedRectangle(cornerRadius: 12))
     } else {
       diffCard((change.kind == "added" ? "Add " : change.kind == "removed" ? "Remove " : "") + name(change.exerciseId),
-               symbol: change.kind == "added" ? "plus" : change.kind == "removed" ? "minus" : "arrow.right", color: change.kind == "removed" ? .red : CoachPalette.accent) {
-        if change.kind == "removed" { Text("removed from the routine · logged sets kept").font(.callout).foregroundStyle(.secondary) }
+               symbol: change.kind == "added" ? "plus" : change.kind == "removed" ? "minus" : "arrow.right", color: change.kind == "removed" ? .red : GymPalette.accent) {
+        if change.kind == "removed" { Text("removed from the routine · logged sets kept").font(.callout).foregroundStyle(GymPalette.inkDim) }
         else if change.kind == "added" {
-          Text(targets(change.after)).font(.callout.monospaced())
+          Text(targets(change.after)).font(.callout.monospacedDigit())
           if let proposal, let index = proposal.document.firstIndex(where: { $0.exerciseId == change.exerciseId }) {
-            Text(index == 0 ? "first in the routine" : "after " + name(proposal.document[index - 1].exerciseId)).font(.callout).foregroundStyle(.secondary)
+            Text(index == 0 ? "first in the routine" : "after " + name(proposal.document[index - 1].exerciseId)).font(.callout).foregroundStyle(GymPalette.inkDim)
           }
         } else {
           DisclosureGroup("\(targets(change.before)) → \(targets(change.after))") {
             let before = change.before?.sets ?? [], after = change.after?.sets ?? []
             ForEach(0..<max(before.count, after.count), id: \.self) { i in
-              Text("set \(i + 1) · \(i < before.count ? Readout.setTarget(before[i]) : "—") → \(i < after.count ? Readout.setTarget(after[i]) : "—") kg").font(.callout.monospaced())
+              Text("set \(i + 1) · \(i < before.count ? Readout.setTarget(before[i]) : "—") → \(i < after.count ? Readout.setTarget(after[i]) : "—") kg").font(.callout.monospacedDigit())
             }
           }
           if change.before?.restSeconds != change.after?.restSeconds { Text("rest · \(change.before?.restSeconds.map(String.init) ?? "—") → \(change.after?.restSeconds.map(String.init) ?? "—") seconds").font(.callout) }
@@ -257,6 +257,6 @@ struct ProposalReviewSheet: View {
   }
   func diffCard<Content: View>(_ title: String, symbol: String, color: Color, @ViewBuilder content: () -> Content) -> some View {
     VStack(alignment: .leading, spacing: 8) { Label(title, systemImage: symbol).font(.body.weight(.semibold)).foregroundStyle(color); content() }
-      .frame(maxWidth: .infinity, alignment: .leading).padding(12).background(CoachPalette.surface, in: RoundedRectangle(cornerRadius: 12))
+      .frame(maxWidth: .infinity, alignment: .leading).padding(12).background(GymPalette.card, in: RoundedRectangle(cornerRadius: 12))
   }
 }

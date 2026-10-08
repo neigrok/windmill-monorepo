@@ -31,10 +31,10 @@ struct WindmillApp: App {
         if let model {
           if introduction {
             OnboardingScreen(replay: false, telemetry: telemetry) { introduction = false }
-          } else { RootScreen(model: model).preferredColorScheme(model.selectedRoom == .gym && !model.welcome ? OnboardingFixture.appearance : .dark) }
+          } else { RootScreen(model: model) }
         } else if let failure {
-          ZStack { Design.shell.ignoresSafeArea(); Text(failure).foregroundStyle(Design.ink).padding(24) }
-        } else { Color("ShellCanvas").ignoresSafeArea() }
+          ZStack { ShellPalette.canvas.ignoresSafeArea(); Text(failure).foregroundStyle(ShellPalette.ink).padding(24) }
+        } else { ShellPalette.canvas.ignoresSafeArea() }
       }.preferredColorScheme(OnboardingFixture.appearance)
         .onOpenURL { url in
           launchLink = true; introduction = false
@@ -92,9 +92,9 @@ struct RootScreen: View {
   @Environment(\.dynamicTypeSize) var typeSize
   var body: some View {
     Group {
-      if model.runtime?.settings.board == "01-launch" { Design.shell.ignoresSafeArea() }
+      if model.runtime?.settings.board == "01-launch" { ShellPalette.canvas.ignoresSafeArea() }
       else if model.welcome { welcome.onAppear { model.screenViewed("welcome") } }
-      else if model.selectedRoom == .journal { JournalScreen(model: model.journal, app: model) }
+      else if model.selectedRoom == .journal { JournalScreen(model: model.journal, app: model).environment(\.colorScheme, .dark) }
       else { GymRoom(gym: model.gym, app: model) }
     }.sheet(isPresented: Binding(get: { model.sheet != nil }, set: { if !$0 && !model.editorReadOnly { model.sheet = nil } }), onDismiss: { model.dismissSheet() }) { AccountSheet(model: model) }
       .environment(\.dynamicTypeSize, model.runtime?.settings.board?.contains("AX3") == true ? .accessibility3 : typeSize)
@@ -103,43 +103,43 @@ struct RootScreen: View {
   var welcome: some View {
     GeometryReader { geo in
       ZStack {
-        Design.shell.ignoresSafeArea()
+        ShellPalette.canvas.ignoresSafeArea()
         ScrollView {
           VStack(alignment: .leading, spacing: 0) {
             Color.clear.frame(height: max(40, geo.size.height * 0.18))
-            Text("WINDMILL").font(Design.mono(9)).tracking(3).foregroundStyle(Design.dim).padding(.bottom, 8)
-            Text("Where to start?").font(Design.title(34)).foregroundStyle(Design.ink).padding(.bottom, 8)
-            Text("Your journal and training, no account needed.").font(Design.text()).foregroundStyle(Design.dim).padding(.bottom, 24)
+            Text("WINDMILL").font(ShellType.caption).foregroundStyle(ShellPalette.inkDim).padding(.bottom, 8)
+            Text("Where to start?").font(ShellType.display).foregroundStyle(ShellPalette.ink).padding(.bottom, 8)
+            Text("Your journal and training, no account needed.").font(ShellType.body).foregroundStyle(ShellPalette.inkDim).padding(.bottom, 24)
             Button { model.openJournal() } label: {
               HStack {
                 VStack(alignment: .leading, spacing: 6) {
-                  RoundedRectangle(cornerRadius: 1).fill(Design.lamp).frame(width: 3, height: 24).padding(.bottom, 2)
-                  Text("Journal").font(Design.title())
-                  Text("Write tonight’s page").font(Design.text(14)).foregroundStyle(Design.dim)
+                  RoundedRectangle(cornerRadius: 1).fill(JournalPalette.lamp).frame(width: 3, height: 24).padding(.bottom, 2)
+                  Text("Journal").font(ShellType.title)
+                  Text("Write tonight’s page").font(ShellType.subheadline).foregroundStyle(JournalPalette.inkDim)
                 }
                 Spacer()
-                Image(systemName: "arrow.right").foregroundStyle(Design.lamp).frame(width: 40, height: 40).background(Design.lamp.opacity(0.18), in: Circle())
-              }.foregroundStyle(Design.ink).padding(24).frame(maxWidth: .infinity, alignment: .leading).frame(minHeight: 140)
-                .background { ZStack { Design.canvas; LinearGradient(colors: [.clear, Design.lamp.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing) }.clipShape(RoundedRectangle(cornerRadius: 28)) }
-                .overlay(RoundedRectangle(cornerRadius: 28).stroke(Design.line, lineWidth: 1))
+                Image(systemName: "arrow.right").foregroundStyle(JournalPalette.lamp).frame(width: 40, height: 40).background(JournalPalette.lamp.opacity(0.18), in: Circle())
+              }.foregroundStyle(JournalPalette.ink).padding(24).frame(maxWidth: .infinity, alignment: .leading).frame(minHeight: 140)
+                .background { ZStack { JournalPalette.canvas; LinearGradient(colors: [.clear, JournalPalette.lamp.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing) }.clipShape(RoundedRectangle(cornerRadius: 28)) }
+                .overlay(RoundedRectangle(cornerRadius: 28).stroke(JournalPalette.line, lineWidth: 1))
             }.buttonStyle(.plain).accessibilityIdentifier("open-journal")
               .padding(.horizontal, -8)
             Button { model.openRoom(.gym) } label: {
               HStack {
                 VStack(alignment: .leading, spacing: 6) {
-                  Image(systemName: "dumbbell").foregroundStyle(Design.brand)
-                  Text("Gym").font(Design.title())
-                  Text("Log sets · see last time").font(Design.text(14)).foregroundStyle(Design.dim)
+                  Image(systemName: "dumbbell").foregroundStyle(GymPalette.accent)
+                  Text("Gym").font(ShellType.title)
+                  Text("Log sets · see last time").font(ShellType.subheadline).foregroundStyle(GymPalette.inkDim)
                 }
                 Spacer()
-                Image(systemName: "arrow.right").foregroundStyle(Design.brand)
-              }.foregroundStyle(Design.ink).padding(24).frame(maxWidth: .infinity, alignment: .leading).frame(minHeight: 140)
-                .background(Design.card, in: RoundedRectangle(cornerRadius: 28))
-                .overlay(RoundedRectangle(cornerRadius: 28).stroke(Design.line, lineWidth: 1))
+                Image(systemName: "arrow.right").foregroundStyle(GymPalette.accent)
+              }.foregroundStyle(GymPalette.ink).padding(24).frame(maxWidth: .infinity, alignment: .leading).frame(minHeight: 140)
+                .background(GymPalette.card, in: RoundedRectangle(cornerRadius: 28))
+                .overlay(RoundedRectangle(cornerRadius: 28).stroke(GymPalette.line, lineWidth: 1))
             }.buttonStyle(.plain).accessibilityIdentifier("open-gym").padding(.horizontal, -8).padding(.top, 12)
-            if model.canSignIn { Button("Sign in") { model.choose("keep", screen: "welcome"); model.sheet = .keep }.font(Design.strong()).foregroundStyle(Design.dim).frame(maxWidth: .infinity, minHeight: 52).padding(.top, 10) }
+            if model.canSignIn { Button("Sign in") { model.choose("keep", screen: "welcome"); model.sheet = .keep }.font(ShellType.action).foregroundStyle(ShellPalette.inkDim).frame(maxWidth: .infinity, minHeight: 52).padding(.top, 10) }
             if model.keptWork {
-              Text("Changes you kept will return when you sign in to the same account.").font(Design.text(13)).foregroundStyle(Design.dim).padding(.top, 8)
+              Text("Changes you kept will return when you sign in to the same account.").font(ShellType.meta).foregroundStyle(ShellPalette.inkDim).padding(.top, 8)
             }
           }.padding(.horizontal, 24).padding(.bottom, 30).frame(minHeight: geo.size.height, alignment: .top)
         }
@@ -159,9 +159,9 @@ struct RoomSeat: View {
       }.pickerStyle(.inline)
     } label: {
       HStack(spacing: 8) {
-        Text(app.selectedRoom.title).font(Design.strong(17))
+        Text(app.selectedRoom.title).font(ShellType.action)
         Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
-      }.foregroundStyle(app.selectedRoom == .gym ? Color.primary : Design.ink).padding(.horizontal, 16).frame(height: 44).modifier(Glass())
+      }.foregroundStyle(app.selectedRoom == .gym ? Color.primary : ShellPalette.ink).padding(.horizontal, 16).frame(height: 44).modifier(Glass())
     }.buttonStyle(.plain).accessibilityLabel(app.selectedRoom.title).accessibilityIdentifier("room-menu")
       .simultaneousGesture(LongPressGesture(minimumDuration: 0).onChanged { pressed in
         if pressed, app.selectedRoom == .journal { app.journal.liftInk() }
@@ -174,7 +174,7 @@ struct AccountButton: View {
   @Bindable var app: AppModel
   var body: some View {
     Button { app.journal.done(); app.sheet = .you } label: {
-      YouGlyph().stroke(app.selectedRoom == .gym ? Color.primary : Design.ink, lineWidth: 1.5).frame(width: 18, height: 18)
+      YouGlyph().stroke(app.selectedRoom == .gym ? Color.primary : ShellPalette.ink, lineWidth: 1.5).frame(width: 18, height: 18)
         .frame(width: 44, height: 44).modifier(Glass(capsule: false))
     }.buttonStyle(.plain).accessibilityLabel("You and settings").accessibilityIdentifier("you")
       .dynamicTypeSize(...DynamicTypeSize.large).disabled(app.editorReadOnly)

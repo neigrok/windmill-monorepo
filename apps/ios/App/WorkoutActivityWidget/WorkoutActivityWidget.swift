@@ -30,7 +30,7 @@ struct WorkoutActivityWidget: Widget {
         }
       } compactLeading: {
         HStack(spacing: 4) {
-          Image(systemName: "dumbbell.fill").foregroundStyle(WorkoutActivityStyle.accent)
+          Image(systemName: "dumbbell.fill").foregroundStyle(GymPalette.accent)
           Text(timerInterval: context.state.startedAt...max(context.state.startedAt, context.state.staleAt), countsDown: false).monospacedDigit().frame(maxWidth: 52)
         }.font(.caption2)
       } compactTrailing: {
@@ -38,11 +38,11 @@ struct WorkoutActivityWidget: Widget {
           .monospacedDigit().font(.caption2).frame(maxWidth: 52)
           .accessibilityLabel("Since last set")
       } minimal: {
-        Image(systemName: "dumbbell.fill").foregroundStyle(WorkoutActivityStyle.accent)
+        Image(systemName: "dumbbell.fill").foregroundStyle(GymPalette.accent)
           .accessibilityLabel("Workout in progress")
       }
       .widgetURL(WorkoutActivityAttributes.workoutURL)
-      .keylineTint(WorkoutActivityStyle.accent)
+      .keylineTint(GymPalette.accent)
     }
   }
 }
@@ -105,7 +105,7 @@ struct WorkoutActivityDetails: View {
         if !isStale, let offer = state.offer {
           Button(intent: WorkoutLogSetIntent(offer: offer)) {
             Label("Log set", systemImage: "plus").font(.subheadline.weight(.semibold))
-          }.buttonStyle(.borderedProminent).tint(WorkoutActivityStyle.accent).foregroundStyle(.black)
+          }.buttonStyle(.borderedProminent).tint(GymPalette.accent).foregroundStyle(GymPalette.onAccent)
         }
       }
     }
@@ -122,8 +122,4 @@ struct WorkoutActivityClock: View {
       Text(timerInterval: start...max(start, end), countsDown: false).font(.subheadline.weight(.medium)).monospacedDigit().multilineTextAlignment(.trailing)
     }.frame(width: 90, alignment: .trailing).accessibilityElement(children: .combine)
   }
-}
-
-enum WorkoutActivityStyle {
-  static let accent = Color(red: 0.31, green: 0.75, blue: 0.65)
 }

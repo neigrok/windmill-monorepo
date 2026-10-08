@@ -170,67 +170,69 @@ struct WorkoutReceipt: View {
   var body: some View {
     NavigationStack {
       List {
-        Section {
-          Text(receipt.slight ? "Ended early." : "Well done.").font(.title2.weight(.bold))
-          HStack {
-            fact("Sets", "\(receipt.readout.workingSetCount)")
-            fact("kg", Readout.weight(receipt.readout.volumeKg))
-            fact("Movements", "\(receipt.readout.movementCount)")
-          }
-          if let duration = receipt.readout.durationMs { Text(Readout.duration(duration)).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary) }
-        }
-        Section("Performed") {
-          let ids = receipt.sets.reduce(into: [ID<Exercise>]()) { result, set in if !result.contains(set.exerciseId) { result.append(set.exerciseId) } }
-          ForEach(ids, id: \.self) { id in
-            VStack(alignment: .leading, spacing: 6) {
-              Text(gym.catalogue.find(id)?.name ?? "Movement").font(.body.weight(.semibold))
-              let working = receipt.sets.filter { $0.exerciseId == id && $0.kind == "working" }
-              if !working.isEmpty { Text(Readout.target(working.map { SetTarget(reps: $0.reps, weightKg: $0.weightKg) })).font(.subheadline.monospacedDigit()).foregroundStyle(.secondary) }
-              ForEach(receipt.sets.filter { $0.exerciseId == id }, id: \.id) { set in
-                Text("\(set.kind == "warmup" ? "W · " : "")\(Readout.weight(set.weightKg)) kg × \(set.reps)").font(.subheadline.monospacedDigit())
-              }
-            }
-          }
-        }
-        if let sentence = receipt.review?.record?.sentence(gym.catalogue) {
-          Section("Personal record") { Text(sentence).font(.body.weight(.semibold)).foregroundStyle(WorkoutPalette.record) }
-        }
-        if let against = receipt.review?.against {
-          Section(against.title) {
-            ForEach(Array(against.movements.enumerated()), id: \.offset) { _, movement in
-              VStack(alignment: .leading, spacing: 4) {
-                Text(gym.catalogue.find(ID(RecordID(movement.exerciseId)))?.name ?? "Movement")
-                Text((Set(against.movements.map(\.source)).count > 1 ? "\(movement.source): " : "") + movement.detail)
-                  .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
-              }
-            }
-          }
-        }
-        if receipt.readingReview { Section { ProgressView("Reading the log…") } }
-        if receipt.reviewFailed { Section { Text("the log didn’t answer — the session is saved"); Button("Try again") { Task { await receipt.loadReview(gym) } } } }
-        if gym.isAnonymous {
-          Section { Button("Keep this log") { gym.workout.handoff = .keep; dismiss() }.buttonStyle(.borderedProminent).foregroundStyle(WorkoutPalette.onAccent) } footer: { Text("This log is only on this phone.") }
-        } else if gym.workout.coachAvailable && !gym.authPaused {
+        Group {
           Section {
-            Button("Share with Coach") { gym.workout.handoff = .coach; dismiss() }
-              .buttonStyle(.borderedProminent).foregroundStyle(WorkoutPalette.onAccent).disabled(gym.accountTransition).accessibilityIdentifier("workout-share-coach")
-          } footer: { Text("Sends Coach one line — “Check my last session.” — and opens the answer.") }
-        }
-        if receipt.offersRoutine {
-          Section("Save as routine") {
-            if let name = receipt.keptName { Text("Kept as \(name).").accessibilityIdentifier("workout-routine-kept") }
-            else {
-              TextField("Routine name", text: $receipt.routine.current.name).accessibilityIdentifier("workout-routine-name")
-              Button(receipt.saving ? "Saving…" : "Save as routine") { _ = receipt.saveRoutine(gym) }
-                .disabled(receipt.nameRefusal != nil || receipt.saving || gym.accountTransition).accessibilityIdentifier("workout-save-routine")
-              if !receipt.saving, let refusal = receipt.nameRefusal { Text(refusal).font(.footnote) }
-              if let failure = receipt.failure { Text(failure).font(.footnote).accessibilityIdentifier("workout-routine-failure") }
+            Text(receipt.slight ? "Ended early." : "Well done.").font(.title2.weight(.bold))
+            HStack {
+              fact("Sets", "\(receipt.readout.workingSetCount)")
+              fact("kg", Readout.weight(receipt.readout.volumeKg))
+              fact("Movements", "\(receipt.readout.movementCount)")
+            }
+            if let duration = receipt.readout.durationMs { Text(Readout.duration(duration)).font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
+          }
+          Section("Performed") {
+            let ids = receipt.sets.reduce(into: [ID<Exercise>]()) { result, set in if !result.contains(set.exerciseId) { result.append(set.exerciseId) } }
+            ForEach(ids, id: \.self) { id in
+              VStack(alignment: .leading, spacing: 6) {
+                Text(gym.catalogue.find(id)?.name ?? "Movement").font(.body.weight(.semibold))
+                let working = receipt.sets.filter { $0.exerciseId == id && $0.kind == "working" }
+                if !working.isEmpty { Text(Readout.target(working.map { SetTarget(reps: $0.reps, weightKg: $0.weightKg) })).font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
+                ForEach(receipt.sets.filter { $0.exerciseId == id }, id: \.id) { set in
+                  Text("\(set.kind == "warmup" ? "W · " : "")\(Readout.weight(set.weightKg)) kg × \(set.reps)").font(.subheadline.monospacedDigit())
+                }
+              }
             }
           }
-        }
-      }.modifier(WorkoutAppearance()).navigationTitle(receipt.session.name ?? Readout.noRoutine).navigationBarTitleDisplayMode(.inline)
+          if let sentence = receipt.review?.record?.sentence(gym.catalogue) {
+            Section("Personal record") { Text(sentence).font(.body.weight(.semibold)).foregroundStyle(GymPalette.record) }
+          }
+          if let against = receipt.review?.against {
+            Section(against.title) {
+              ForEach(Array(against.movements.enumerated()), id: \.offset) { _, movement in
+                VStack(alignment: .leading, spacing: 4) {
+                  Text(gym.catalogue.find(ID(RecordID(movement.exerciseId)))?.name ?? "Movement")
+                  Text((Set(against.movements.map(\.source)).count > 1 ? "\(movement.source): " : "") + movement.detail)
+                    .font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
+                }
+              }
+            }
+          }
+          if receipt.readingReview { Section { ProgressView("Reading the log…") } }
+          if receipt.reviewFailed { Section { Text("the log didn’t answer — the session is saved"); Button("Try again") { Task { await receipt.loadReview(gym) } } } }
+          if gym.isAnonymous {
+            Section { Button("Keep this log") { gym.workout.handoff = .keep; dismiss() }.buttonStyle(.borderedProminent).foregroundStyle(GymPalette.onAccent) } footer: { Text("This log is only on this phone.") }
+          } else if gym.workout.coachAvailable && !gym.authPaused {
+            Section {
+              Button("Share with Coach") { gym.workout.handoff = .coach; dismiss() }
+                .buttonStyle(.borderedProminent).foregroundStyle(GymPalette.onAccent).disabled(gym.accountTransition).accessibilityIdentifier("workout-share-coach")
+            } footer: { Text("Sends Coach one line — “Check my last session.” — and opens the answer.") }
+          }
+          if receipt.offersRoutine {
+            Section("Save as routine") {
+              if let name = receipt.keptName { Text("Kept as \(name).").accessibilityIdentifier("workout-routine-kept") }
+              else {
+                TextField("Routine name", text: $receipt.routine.current.name).accessibilityIdentifier("workout-routine-name")
+                Button(receipt.saving ? "Saving…" : "Save as routine") { _ = receipt.saveRoutine(gym) }
+                  .disabled(receipt.nameRefusal != nil || receipt.saving || gym.accountTransition).accessibilityIdentifier("workout-save-routine")
+                if !receipt.saving, let refusal = receipt.nameRefusal { Text(refusal).font(.footnote) }
+                if let failure = receipt.failure { Text(failure).font(.footnote).accessibilityIdentifier("workout-routine-failure") }
+              }
+            }
+          }
+        }.listRowBackground(GymPalette.card)
+      }.modifier(GymPage()).navigationTitle(receipt.session.name ?? Readout.noRoutine).navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-    }.modifier(WorkoutAppearance()).presentationDetents([.large]).presentationDragIndicator(.visible)
+    }.modifier(GymPage()).presentationDetents([.large]).presentationDragIndicator(.visible)
       .sensoryFeedback(.success, trigger: receipt.keptName) { old, new in old == nil && new != nil }
       .task { await receipt.loadReview(gym) }
       .onAppear { receipt.reconcile(gym) }
@@ -239,7 +241,7 @@ struct WorkoutReceipt: View {
   func fact(_ label: String, _ value: String) -> some View {
     VStack(alignment: .leading, spacing: 4) {
       Text(value).font(.title3.monospacedDigit().weight(.semibold)).minimumScaleFactor(0.5)
-      Text(label).font(.caption).foregroundStyle(.secondary)
+      Text(label).font(.caption).foregroundStyle(GymPalette.inkDim)
     }.frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .combine)
   }
 }

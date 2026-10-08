@@ -255,37 +255,39 @@ struct RoutineTargetsSheet: View {
 
   var body: some View {
     List {
-      Section {
-        if draft.isOpen && draft.refusal == nil {
-          Text("You decide the numbers at the rack.").foregroundStyle(.secondary)
-        }
-        headField("Sets", field: .sets, placeholder: "open", focus: .sets)
-        headField("Reps", field: .reps, placeholder: draft.varies(.reps) ? "varies" : "max", focus: .reps)
-        headField("kg", field: .weight, placeholder: draft.varies(.weight) ? "varies" : "last time", focus: .weight)
-        Toggle("Vary by set", isOn: $draft.varyBySet)
-          .disabled(!draft.canChangeVariation)
-      } footer: {
-        Text("kg blank: pick it at the rack the first time; after that, last time fills it.")
-      }
-      if !draft.isOpen && draft.varyBySet {
-        Section("Each set") {
-          fillMenu
-          ForEach(draft.visibleRows.indices, id: \.self) { index in
-            targetRow(index)
-              .swipeActions(edge: .trailing) { Button("Delete", role: .destructive) { delete(index) } }
-              .accessibilityAction(named: "Delete") { delete(index) }
-              .contextMenu {
-                fillActions
-                Button("Delete", systemImage: "trash", role: .destructive) { delete(index) }
-              }
+      Group {
+        Section {
+          if draft.isOpen && draft.refusal == nil {
+            Text("You decide the numbers at the rack.").foregroundStyle(GymPalette.inkDim)
           }
-          Button { draft.addSet(); feedback += 1 } label: { Label("Add set", systemImage: "plus") }
-            .accessibilityIdentifier("gym-target-add-set")
-          if draft.atSetCeiling && draft.refusal == nil { refusalLine(RoutineTargetDraft.outsideSets) }
+          headField("Sets", field: .sets, placeholder: "open", focus: .sets)
+          headField("Reps", field: .reps, placeholder: draft.varies(.reps) ? "varies" : "max", focus: .reps)
+          headField("kg", field: .weight, placeholder: draft.varies(.weight) ? "varies" : "last time", focus: .weight)
+          Toggle("Vary by set", isOn: $draft.varyBySet)
+            .disabled(!draft.canChangeVariation)
+        } footer: {
+          Text("kg blank: pick it at the rack the first time; after that, last time fills it.")
         }
-      } else if !draft.isOpen {
-        Section { fillMenu }
-      }
+        if !draft.isOpen && draft.varyBySet {
+          Section("Each set") {
+            fillMenu
+            ForEach(draft.visibleRows.indices, id: \.self) { index in
+              targetRow(index)
+                .swipeActions(edge: .trailing) { Button("Delete", role: .destructive) { delete(index) } }
+                .accessibilityAction(named: "Delete") { delete(index) }
+                .contextMenu {
+                  fillActions
+                  Button("Delete", systemImage: "trash", role: .destructive) { delete(index) }
+                }
+            }
+            Button { draft.addSet(); feedback += 1 } label: { Label("Add set", systemImage: "plus") }
+              .accessibilityIdentifier("gym-target-add-set")
+            if draft.atSetCeiling && draft.refusal == nil { refusalLine(RoutineTargetDraft.outsideSets) }
+          }
+        } else if !draft.isOpen {
+          Section { fillMenu }
+        }
+      }.listRowBackground(GymPalette.card)
     }
     .accessibilityIdentifier("gym-routine-targets")
     .navigationTitle(exercise.name)
@@ -305,7 +307,7 @@ struct RoutineTargetsSheet: View {
         case .scheme(let sets): onCommit(sets)
         case .refused: return
         }
-      } label: { Text(draft.commitLabel).foregroundStyle(CoachPalette.onAccent).frame(maxWidth: .infinity) }
+      } label: { Text(draft.commitLabel).foregroundStyle(GymPalette.onAccent).frame(maxWidth: .infinity) }
       .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
       .disabled(draft.refusal != nil).accessibilityIdentifier("gym-target-set")
       .padding().background(.bar)
@@ -318,7 +320,7 @@ struct RoutineTargetsSheet: View {
       }
     }
     .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "routine_editor"]) }
-    .modifier(RoutineTint())
+    .modifier(GymPage())
   }
   private func headField(_ label: String, field: RoutineTargetDraft.Field, placeholder: String, focus target: Focus) -> some View {
     let refused = draft.headRefusal?.field == field
@@ -352,7 +354,7 @@ struct RoutineTargetsSheet: View {
   private func targetRow(_ index: Int) -> some View {
     let refusal = draft.headRefusal == nil && draft.refusal?.row == index ? draft.refusal : nil
     return VStack(alignment: .leading, spacing: 8) {
-      Text("Set \(index + 1)").font(.subheadline).foregroundStyle(.secondary)
+      Text("Set \(index + 1)").font(.subheadline).foregroundStyle(GymPalette.inkDim)
       if dynamicTypeSize.isAccessibilitySize {
         rowField("Reps", field: .reps, index: index, placeholder: "max", focus: .rowReps(index), refusal: refusal)
         HStack {
@@ -373,7 +375,7 @@ struct RoutineTargetsSheet: View {
   private func rowField(_ label: String, field: RoutineTargetDraft.Field, index: Int, placeholder: String, focus target: Focus,
                         refusal: RoutineTargetDraft.Refusal?) -> some View {
     VStack(alignment: .leading, spacing: 4) {
-      Text(label).font(.caption).foregroundStyle(.secondary)
+      Text(label).font(.caption).foregroundStyle(GymPalette.inkDim)
       TextField(placeholder, text: Binding(get: {
         guard draft.rows.indices.contains(index) else { return "" }
         return field == .reps ? draft.rows[index].reps : draft.rows[index].weight

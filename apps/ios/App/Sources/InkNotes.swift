@@ -7,7 +7,7 @@ struct InkNotes: View {
   let visible: Bool
   @Environment(\.dynamicTypeSize) var typeSize
   @Environment(\.accessibilityReduceMotion) var reduceMotion
-  @ScaledMetric(relativeTo: .body) var handSize = 24.0
+  @ScaledMetric(relativeTo: .body) var handSize = JournalType.handSize
   @State var reveals = Array(repeating: 0.0, count: 6)
   @State var opacity = 0.0
   @State var liftBlur = 0.0
@@ -134,7 +134,7 @@ struct InkNotes: View {
 
   func stroke(index: Int, _ draw: (inout Path) -> Void) -> some View {
     var path = Path(); draw(&path)
-    return path.trim(from: 0, to: reveals[index]).stroke(Design.lamp, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+    return path.trim(from: 0, to: reveals[index]).stroke(JournalPalette.lamp, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
   }
 
   func arrow(_ path: inout Path, _ tip: CGPoint, dx: CGFloat, dy: CGFloat) {
@@ -154,7 +154,7 @@ struct InkLabel: View {
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @State var shown = false
   static func textSize(_ text: String, size: CGFloat, width: CGFloat) -> CGSize {
-    let font = CTFontCreateWithName("Caveat-Regular" as CFString, size, nil)
+    let font = JournalType.handFont(size: size) as CTFont
     let setter = CTFramesetterCreateWithAttributedString(NSAttributedString(string: text, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font]))
     let bounds = CTFramesetterSuggestFrameSizeWithConstraints(setter, CFRange(), nil,
       CGSize(width: max(1, width - size / 2), height: .greatestFiniteMagnitude), nil)
@@ -164,10 +164,10 @@ struct InkLabel: View {
   }
   var lettering: some View {
     let measured = Self.textSize(text, size: size, width: width)
-    let font = CTFontCreateWithName("Caveat-Regular" as CFString, size, nil)
+    let font = JournalType.handFont(size: size) as CTFont
     let setter = CTFramesetterCreateWithAttributedString(NSAttributedString(string: text, attributes: [
       NSAttributedString.Key(kCTFontAttributeName as String): font,
-      NSAttributedString.Key(kCTForegroundColorAttributeName as String): UIColor(dim ? Design.dim : Design.lamp).cgColor,
+      NSAttributedString.Key(kCTForegroundColorAttributeName as String): UIColor(dim ? JournalPalette.inkDim : JournalPalette.lamp).cgColor,
     ]))
     // CoreText preserves Caveat's overhang when native Text is rasterized.
     return Canvas { context, _ in

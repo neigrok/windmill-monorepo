@@ -186,7 +186,6 @@ struct SessionShareSheet: View {
   let gym: GymModel
   let sessionID: ID<Session>
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.colorScheme) private var colorScheme
   @State private var owner: String?
   @State private var sharing: SessionShareModel
 
@@ -197,28 +196,27 @@ struct SessionShareSheet: View {
                                                     revoke: { try await gym.revokeSessionShare(sessionID) }))
   }
 
-  var palette: LogPalette { LogPalette(dark: colorScheme == .dark) }
   var base: String { gym.runtime?.settings.baseURL?.absoluteString ?? "https://windmill.works" }
 
   var body: some View {
     NavigationStack {
       ScrollView {
         VStack(alignment: .leading, spacing: 20) {
-          Text(sharing.state.body(expiry: expiry)).font(.body).foregroundStyle(palette.dim)
+          Text(sharing.state.body(expiry: expiry)).font(.body).foregroundStyle(GymPalette.inkDim)
           if case .live(let share, _, _) = sharing.state {
             Text(share.link(base: base))
-              .font(.footnote.monospaced()).foregroundStyle(palette.accent)
+              .font(.footnote.monospacedDigit()).foregroundStyle(GymPalette.accent)
               .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-              .padding().background(palette.surface, in: RoundedRectangle(cornerRadius: 12))
+              .padding().background(GymPalette.card, in: RoundedRectangle(cornerRadius: 12))
               .accessibilityIdentifier("gym-share-link")
           }
           if let note = sharing.state.note {
-            Text(note).font(.body).foregroundStyle(palette.alarm)
+            Text(note).font(.body).foregroundStyle(GymPalette.alarm)
               .accessibilityIdentifier("gym-share-error")
           }
         }.frame(maxWidth: .infinity, alignment: .leading).padding()
       }
-      .background(palette.canvas)
+      .modifier(GymPage())
       .safeAreaInset(edge: .bottom) {
         VStack(spacing: 12) {
           Button {
@@ -233,20 +231,19 @@ struct SessionShareSheet: View {
               else { Text(sharing.state.action).font(.body.weight(.semibold)) }
             }.frame(maxWidth: .infinity, minHeight: 44)
           }
-          .buttonStyle(.borderedProminent).controlSize(.large).tint(palette.accent).foregroundStyle(colorScheme == .dark ? .black : .white)
+          .buttonStyle(.borderedProminent).controlSize(.large).tint(GymPalette.accent).foregroundStyle(GymPalette.onAccent)
           .disabled(sharing.state == .working).accessibilityIdentifier("gym-share-primary")
           if case .live = sharing.state {
             Button("Revoke the link", role: .destructive) { sharing.revokeLink() }
-              .font(.body).foregroundStyle(palette.alarm).frame(minHeight: 44)
+              .font(.body).foregroundStyle(GymPalette.alarm).frame(minHeight: 44)
               .accessibilityIdentifier("gym-share-revoke")
           }
-        }.padding().background(palette.canvas)
+        }.padding().background(GymPalette.canvas)
       }
       .navigationTitle(sharing.state.title).navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
       }
-      .toolbarBackground(palette.canvas, for: .navigationBar)
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "session_share"]) }
       .onDisappear { sharing.cancel() }
       .onChange(of: gym.account) { _, _ in sharing.accountChanged() }

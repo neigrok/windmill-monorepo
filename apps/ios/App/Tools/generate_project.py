@@ -7,6 +7,7 @@ import subprocess
 from tempfile import TemporaryDirectory
 
 from prepare_build import configuration
+from check_theme_literals import check as check_theme_literals
 
 
 def configured_spec(spec, settings, release):
@@ -42,6 +43,7 @@ if __name__ == "__main__":
     source = Path(__file__).resolve().parents[1]
     settings = {**os.environ, "SRCROOT": str(source), "CONFIGURATION": "Release" if args.release else "Debug"}
     try:
+        check_theme_literals(source)
         spec = json.loads(subprocess.check_output(
             ["xcodegen", "dump", "--type", "json", "--spec", str(source / "project.yml")], text=True
         ))

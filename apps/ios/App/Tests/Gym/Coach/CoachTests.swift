@@ -16,7 +16,7 @@ import SyncModelServer
 
 @Suite(.serialized) @MainActor struct CoachTests {
   @Test func dynamicPaletteResolvesOnAccessibilityBackgroundThread() async {
-    let colours = [CoachPalette.canvas, CoachPalette.surface, CoachPalette.onAccent, CoachPalette.accent].map { UIColor($0) }
+    let colours = [GymPalette.canvas, GymPalette.card, GymPalette.onAccent, GymPalette.accent].map { UIColor($0) }
     let result = await Task.detached { @Sendable in
       let onMain = ({ @Sendable in Thread.isMainThread })()
       let values = colours.map { colour -> UInt32? in
@@ -27,7 +27,7 @@ import SyncModelServer
       return (onMain, values)
     }.value
     #expect(!result.0)
-    #expect(result.1 == [0x0b1111, 0x161c1d, 0x0b1111, 0x5fcdb4])
+    #expect(result.1 == [0x0b1111, 0x161c1d, 0x1b1408, 0x5fcdb4])
   }
 
   func fixture() -> (Harness, GymModel) {

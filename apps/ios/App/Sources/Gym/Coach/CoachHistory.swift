@@ -98,38 +98,40 @@ struct CoachHistoryScreen: View {
   }
   var body: some View {
     List {
-      if !gym.coachAccountAvailable {
-        Text(CoachCopy.signedOut)
-      } else if history.owner != gym.account {
-        ProgressView("Reading your conversations…")
-      } else {
-        Section {
-          if history.reading, !history.loaded { ProgressView("Reading your conversations…") }
-          if let error = history.error { Text(error); Button("Try again") { Task { await history.load() } } }
-          if history.loaded, history.rows.isEmpty, history.error == nil { Text("Nothing here yet. Every conversation you have with Coach is kept until you delete it.") }
-          ForEach(history.rows) { row in
-            Button {
-              opening = row.id
-              Task {
-                await coach.open(row.id); opening = nil
-                if coach.saved.threadId == row.id, coach.saved.thread != nil { dismiss() }
-              }
-            } label: {
-              VStack(alignment: .leading, spacing: 8) {
-                Text(row.title.isEmpty ? "Conversation" : row.title).font(.body.weight(.semibold)).foregroundStyle(.primary)
-                if let line = row.outcome?.line { Text(line).font(.callout).foregroundStyle(CoachPalette.accent) }
-                if row.askedAt > 0 { Text(Date(timeIntervalSince1970: Double(row.askedAt) / 1000).formatted(date: .abbreviated, time: .omitted)).font(.caption.monospaced()).foregroundStyle(.secondary) }
-                if opening == row.id { ProgressView("Opening conversation…") }
-              }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            }.disabled(opening != nil || coach.asking).listRowBackground(CoachPalette.surface)
-              .swipeActions { Button("Delete", role: .destructive) { history.remove(row) } }
-              .contextMenu { Button("Delete conversation", role: .destructive) { history.remove(row) } }
-          }
-          if history.nextCursor != nil { Button("Earlier conversations") { Task { await history.load(earlier: true) } }.disabled(history.reading) }
-        } footer: { Text("Deleting a conversation keeps applied routine changes, created routines and saved notes.") }
-        if let error = coach.error { Text(error).foregroundStyle(.red) }
-      }
-    }.listStyle(.insetGrouped).navigationTitle("History").modifier(CoachPage()).accessibilityIdentifier("gym-coach-history")
+      Group {
+        if !gym.coachAccountAvailable {
+          Text(CoachCopy.signedOut)
+        } else if history.owner != gym.account {
+          ProgressView("Reading your conversations…")
+        } else {
+          Section {
+            if history.reading, !history.loaded { ProgressView("Reading your conversations…") }
+            if let error = history.error { Text(error); Button("Try again") { Task { await history.load() } } }
+            if history.loaded, history.rows.isEmpty, history.error == nil { Text("Nothing here yet. Every conversation you have with Coach is kept until you delete it.") }
+            ForEach(history.rows) { row in
+              Button {
+                opening = row.id
+                Task {
+                  await coach.open(row.id); opening = nil
+                  if coach.saved.threadId == row.id, coach.saved.thread != nil { dismiss() }
+                }
+              } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                  Text(row.title.isEmpty ? "Conversation" : row.title).font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink)
+                  if let line = row.outcome?.line { Text(line).font(.callout).foregroundStyle(GymPalette.accent) }
+                  if row.askedAt > 0 { Text(Date(timeIntervalSince1970: Double(row.askedAt) / 1000).formatted(date: .abbreviated, time: .omitted)).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
+                  if opening == row.id { ProgressView("Opening conversation…") }
+                }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+              }.disabled(opening != nil || coach.asking).listRowBackground(GymPalette.card)
+                .swipeActions { Button("Delete", role: .destructive) { history.remove(row) } }
+                .contextMenu { Button("Delete conversation", role: .destructive) { history.remove(row) } }
+            }
+            if history.nextCursor != nil { Button("Earlier conversations") { Task { await history.load(earlier: true) } }.disabled(history.reading) }
+          } footer: { Text("Deleting a conversation keeps applied routine changes, created routines and saved notes.") }
+          if let error = coach.error { Text(error).foregroundStyle(.red) }
+        }
+      }.listRowBackground(GymPalette.card)
+    }.listStyle(.insetGrouped).navigationTitle("History").modifier(GymPage()).accessibilityIdentifier("gym-coach-history")
       .toolbar(.hidden, for: .tabBar)
       .refreshable { await history.load() }
       .task(id: gym.account) { await history.load() }
@@ -138,8 +140,8 @@ struct CoachHistoryScreen: View {
           ForEach(history.held.reversed()) { offer in
             HStack { Text("Conversation removed"); Spacer(); Button("Undo") { history.undo(offer.id) } }
           }
-          Button { if coach.newChat() { dismiss() } } label: { Text("Ask something new").foregroundStyle(CoachPalette.onAccent).frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity).disabled(coach.asking)
-        }.padding(16).background(CoachPalette.surface)
+          Button { if coach.newChat() { dismiss() } } label: { Text("Ask something new").foregroundStyle(GymPalette.onAccent).frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity).disabled(coach.asking)
+        }.padding(16).background(GymPalette.card)
       }
       .onChange(of: phase) { _, phase in if phase == .background { history.abandon() } }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "history"]) }

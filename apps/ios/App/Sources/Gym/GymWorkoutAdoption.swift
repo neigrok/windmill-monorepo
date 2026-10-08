@@ -26,9 +26,9 @@ struct WorkoutAdoptionBand: View {
             .disabled(gym.accountTransition || gym.authPaused || gym.readFailed || gym.log?.firstPullComplete != true)
             .accessibilityIdentifier("gym-adoption-keep-\(workout.session.id)")
         }
-        if !saving, let error = gym.error { Text(error).font(.footnote).foregroundStyle(.secondary) }
+        if !saving, let error = gym.error { Text(error).font(.footnote).foregroundStyle(GymPalette.inkDim) }
       }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
-        .background(WorkoutPalette.canvas).accessibilityElement(children: .contain)
+        .background(GymPalette.canvas).accessibilityElement(children: .contain)
         .accessibilityIdentifier("gym-adoption-recovery")
     }
   }

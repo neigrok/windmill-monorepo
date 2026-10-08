@@ -28,17 +28,17 @@ struct CoachTab: View {
     VStack(spacing: 0) {
       NavigationLink { NotesScreen(gym: gym) } label: {
         HStack {
-          Text("Notes"); Text("what you write for Coach").font(.callout).foregroundStyle(.secondary)
-          Spacer(); Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-        }.padding(.horizontal, 16).frame(minHeight: 44).background(CoachPalette.surface)
+          Text("Notes"); Text("what you write for Coach").font(.callout).foregroundStyle(GymPalette.inkDim)
+          Spacer(); Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(GymPalette.inkDim)
+        }.padding(.horizontal, 16).frame(minHeight: 44).background(GymPalette.card)
       }.buttonStyle(.plain)
       ScrollViewReader { proxy in
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 20) {
-            if !coach.allowed { Text(CoachCopy.signedOut).foregroundStyle(.secondary) }
+            if !coach.allowed { Text(CoachCopy.signedOut).foregroundStyle(GymPalette.inkDim) }
             else if coach.saved.thread == nil, coach.saved.request == nil {
               Text("Ask about your training. Coach can create routines and propose changes — you decide on the diff.")
-              Text("Every conversation is kept so you can read it back, and yours to delete.").font(.callout).foregroundStyle(.secondary)
+              Text("Every conversation is kept so you can read it back, and yours to delete.").font(.callout).foregroundStyle(GymPalette.inkDim)
             }
             if coach.allowed {
             if coach.reading { ProgressView("Reading your conversation…") }
@@ -47,7 +47,7 @@ struct CoachTab: View {
               if turn.from == "lifter" { question(turn.text, attachments: turn.attachments) }
               else {
                 CoachAnswerView(gym: gym, thread: coach.saved.threadId, text: turn.text, receipt: turn.receipt, steps: turn.receipt?.steps ?? [], results: turn.results, review: { review = ProposalReviewID(id: $0) })
-                if turn.status == "failed" || turn.status == "stopped" { Text(turn.status == "failed" ? CoachCopy.interrupted : CoachCopy.stopped).font(.callout).foregroundStyle(.secondary) }
+                if turn.status == "failed" || turn.status == "stopped" { Text(turn.status == "failed" ? CoachCopy.interrupted : CoachCopy.stopped).font(.callout).foregroundStyle(GymPalette.inkDim) }
               }
             }
             ForEach(coach.saved.exchanges) { generation in generationView(generation) }
@@ -57,7 +57,7 @@ struct CoachTab: View {
               if coach.asking { ProgressView("reading your log…") }
             }
             if let error = coach.error {
-              Text(error).font(.callout).foregroundStyle(.secondary).accessibilityIdentifier("coach-error")
+              Text(error).font(.callout).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("coach-error")
                 .onChange(of: error, initial: true) { _, error in UIAccessibility.post(notification: .announcement, argument: error) }
             }
             if coach.retryable { Button("Retry") { coach.retry() }.accessibilityIdentifier("coach-retry") }
@@ -68,7 +68,7 @@ struct CoachTab: View {
               NavigationLink("Notes") { NotesScreen(gym: gym) }
             }
             }
-            if accountHint { Text("Open You and settings in the top bar.").font(.callout).foregroundStyle(.secondary) }
+            if accountHint { Text("Open You and settings in the top bar.").font(.callout).foregroundStyle(GymPalette.inkDim) }
             Color.clear.frame(height: 1).id("latest")
           }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
         }.defaultScrollAnchor(.bottom, for: .sizeChanges).scrollDismissesKeyboard(.interactively)
@@ -78,7 +78,7 @@ struct CoachTab: View {
           }
           .onChange(of: coach.saved.request?.requestId) { _, _ in proxy.scrollTo("latest", anchor: .bottom) }
       }
-    }.navigationTitle("Coach").modifier(CoachPage()).accessibilityIdentifier("gym-coach")
+    }.navigationTitle("Coach").modifier(GymPage()).accessibilityIdentifier("gym-coach")
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
           Button { showMenu = true } label: { Label("More", systemImage: "ellipsis.circle") }.accessibilityIdentifier("coach-more")
@@ -135,7 +135,7 @@ struct CoachTab: View {
   @ViewBuilder var composer: some View {
     if coach.canCompose || coach.asking {
       VStack(alignment: .leading, spacing: 8) {
-        Text("Ten questions a day, three back to back.").font(.caption.monospaced()).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+        Text("Ten questions a day, three back to back.").font(.caption.monospaced()).foregroundStyle(GymPalette.inkDim).frame(maxWidth: .infinity)
         if preparing { ProgressView("Preparing photo…") }
         if coach.uploading { ProgressView("Photo upload").accessibilityLabel("Photo upload") }
         if let photo = coach.saved.photo, !coach.asking {
@@ -158,13 +158,13 @@ struct CoachTab: View {
           if coach.asking {
             Button { coach.stopResponse() } label: { Image(systemName: "stop.fill").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel(coach.uploading ? "Cancel upload" : "Stop response").disabled(coach.stopping).accessibilityIdentifier("coach-stop")
           } else {
-            Button { composing = false; coach.send() } label: { Image(systemName: "arrow.up").foregroundStyle(CoachPalette.onAccent).frame(minWidth: 44, minHeight: 44) }
+            Button { composing = false; coach.send() } label: { Image(systemName: "arrow.up").foregroundStyle(GymPalette.onAccent).frame(minWidth: 44, minHeight: 44) }
               .buttonStyle(.borderedProminent).clipShape(Circle()).accessibilityLabel("Ask Coach").accessibilityIdentifier("coach-send")
               .disabled(!CoachCopy.sendable(coach.saved.text, photo: coach.saved.photo != nil) || preparing)
           }
         }
         if coach.saved.text.utf8.count > 1000 { Text("Keep your question within 1000 bytes.").font(.caption).foregroundStyle(.red) }
-      }.padding(12).background(CoachPalette.surface).tint(CoachPalette.accent)
+      }.padding(12).background(GymPalette.card).tint(GymPalette.accent)
     }
   }
   func question(_ text: String, attachments: [CoachAttachment]) -> some View {
@@ -173,7 +173,7 @@ struct CoachTab: View {
       VStack(alignment: .leading, spacing: 8) {
         if !text.isEmpty { Text(text).textSelection(.enabled).contextMenu { Button("Copy question") { UIPasteboard.general.string = text } } }
         ForEach(attachments) { attachment in CoachPhotoView(gym: gym, thread: coach.saved.threadId, attachment: attachment, local: nil) }
-      }.padding(12).background(CoachPalette.accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 16))
+      }.padding(12).background(GymPalette.accentSoft, in: RoundedRectangle(cornerRadius: 16))
     }
   }
   func generationView(_ generation: CoachGeneration) -> some View {
@@ -200,7 +200,7 @@ struct CoachAnswerView: View {
       CoachMarkdown(text: text).contextMenu { Button("Copy answer") { UIPasteboard.general.string = text } }
       if let receipt {
         DisclosureGroup(receipt.read.line) {
-          ForEach(Array(steps.enumerated()), id: \.offset) { _, step in if let phrase = step.phrase { Text(phrase).font(.callout).foregroundStyle(.secondary) } }
+          ForEach(Array(steps.enumerated()), id: \.offset) { _, step in if let phrase = step.phrase { Text(phrase).font(.callout).foregroundStyle(GymPalette.inkDim) } }
           ForEach(receipt.workouts) { source in
             DisclosureGroup(source.routine ?? "Workout") {
               Text(Date(timeIntervalSince1970: Double(source.startedAt) / 1000).formatted(date: .abbreviated, time: .shortened))
@@ -211,19 +211,19 @@ struct CoachAnswerView: View {
               CoachSourceWorkout(gym: gym, id: source.sessionId)
             }.font(.callout)
           }
-        }.font(.caption.monospaced()).foregroundStyle(.secondary)
+        }.font(.caption.monospaced()).foregroundStyle(GymPalette.inkDim)
         ForEach(receipt.proposals, id: \.self) { id in
           VStack(alignment: .leading, spacing: 12) {
             if let p = gym.proposals.first(where: { $0.id.record.string == id }) {
-              Text("PROPOSAL · " + (p.baseName ?? p.proposedName)).font(.caption.weight(.semibold)).foregroundStyle(CoachPalette.accent)
+              Text("PROPOSAL · " + (p.baseName ?? p.proposedName)).font(.caption.weight(.semibold)).foregroundStyle(GymPalette.accent)
               Text(p.summary.isEmpty ? "Proposal" : p.summary)
-              Text(p.intent == "remove" ? "a removal" : "\(p.changeCount ?? p.changes.filter { $0.kind != "kept" }.count) changes").font(.caption.monospaced()).foregroundStyle(.secondary)
-              Text(p.state == "pending" ? "still waiting" : p.state == "dismissed" ? "turned down" : p.state).font(.caption.monospaced()).foregroundStyle(.secondary)
+              Text(p.intent == "remove" ? "a removal" : "\(p.changeCount ?? p.changes.filter { $0.kind != "kept" }.count) changes").font(.caption.monospaced()).foregroundStyle(GymPalette.inkDim)
+              Text(p.state == "pending" ? "still waiting" : p.state == "dismissed" ? "turned down" : p.state).font(.caption.monospaced()).foregroundStyle(GymPalette.inkDim)
             }
             Button("Review") { review(id) }.frame(minHeight: 44)
-            if gym.proposals.first(where: { $0.id.record.string == id })?.state == "pending" { Text(CoachCopy.promise).font(.caption).foregroundStyle(.secondary) }
-          }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(CoachPalette.surface, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(CoachPalette.accent))
+            if gym.proposals.first(where: { $0.id.record.string == id })?.state == "pending" { Text(CoachCopy.promise).font(.caption).foregroundStyle(GymPalette.inkDim) }
+          }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(GymPalette.card, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(GymPalette.accent))
         }
       }
       ForEach(results.filter { $0.kind == "routine-created" }) { result in

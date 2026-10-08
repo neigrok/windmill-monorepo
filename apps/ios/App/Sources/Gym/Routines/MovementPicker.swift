@@ -200,10 +200,10 @@ struct MovementPicker: View {
                               account: pickingAccount, anonymous: pickingAnonymous) { entry in
             onSelect(entry)
           }
-        }.modifier(RoutineTint())
+        }.modifier(GymPage())
       }
     }
-    .modifier(RoutineTint())
+    .modifier(GymPage())
   }
 
   private var movementList: some View {
@@ -211,37 +211,39 @@ struct MovementPicker: View {
     let options = MovementPickerOptions.matching(query: query, catalogue: gym.catalogue.exercises, selected: selected,
                                                  log: gym.log, featured: ranking.ids, readFailed: gym.readFailed)
     return List {
-      if let externalQuery {
-        Section {
-          HStack {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Search movements", text: externalQuery).focused($searchFocused)
-              .textInputAutocapitalization(.never).submitLabel(.done).onSubmit { searchFocused = false }
-              .accessibilityIdentifier("gym-movement-search")
-            if !query.isEmpty {
-              Button { externalQuery.wrappedValue = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary).frame(minWidth: 44, minHeight: 44) }
-                .buttonStyle(.plain).accessibilityLabel("Clear search").accessibilityIdentifier("gym-movement-search-clear")
+      Group {
+        if let externalQuery {
+          Section {
+            HStack {
+              Image(systemName: "magnifyingglass").foregroundStyle(GymPalette.inkDim)
+              TextField("Search movements", text: externalQuery).focused($searchFocused)
+                .textInputAutocapitalization(.never).submitLabel(.done).onSubmit { searchFocused = false }
+                .accessibilityIdentifier("gym-movement-search")
+              if !query.isEmpty {
+                Button { externalQuery.wrappedValue = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(GymPalette.inkDim).frame(minWidth: 44, minHeight: 44) }
+                  .buttonStyle(.plain).accessibilityLabel("Clear search").accessibilityIdentifier("gym-movement-search-clear")
+              }
             }
           }
         }
-      }
-      if let unread = options.unread {
-        Section { Text(unread).foregroundStyle(.secondary); Button("Try again") { gym.refresh() } }
-      }
-      RoutineNotice(gym: gym)
-      if !options.six.isEmpty { Section("The six") { ForEach(options.six) { movementRow($0) } } }
-      if !options.matches.isEmpty {
-        Section(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "All movements" : "Matches") {
-          ForEach(options.matches) { movementRow($0) }
+        if let unread = options.unread {
+          Section { Text(unread).foregroundStyle(GymPalette.inkDim); Button("Try again") { gym.refresh() } }
         }
-      }
-      if let empty = options.empty { Section { Text(empty).foregroundStyle(.secondary) } }
-      if !includesTargets && firstSession {
-        Section {
-          Text(gym.isAnonymous ? "Have a written program? An agent can build it — sign in first." : "Have a written program? Ask Coach to build it into a routine.")
-          if let onBuildRoutine { Button("Build my routine") { dismiss(); onBuildRoutine() }.accessibilityIdentifier("gym-build-written-program") }
+        RoutineNotice(gym: gym)
+        if !options.six.isEmpty { Section("The six") { ForEach(options.six) { movementRow($0) } } }
+        if !options.matches.isEmpty {
+          Section(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "All movements" : "Matches") {
+            ForEach(options.matches) { movementRow($0) }
+          }
         }
-      }
+        if let empty = options.empty { Section { Text(empty).foregroundStyle(GymPalette.inkDim) } }
+        if !includesTargets && firstSession {
+          Section {
+            Text(gym.isAnonymous ? "Have a written program? An agent can build it — sign in first." : "Have a written program? Ask Coach to build it into a routine.")
+            if let onBuildRoutine { Button("Build my routine") { dismiss(); onBuildRoutine() }.accessibilityIdentifier("gym-build-written-program") }
+          }
+        }
+      }.listRowBackground(GymPalette.card)
     }
   }
 
@@ -251,12 +253,12 @@ struct MovementPicker: View {
     } label: {
       HStack(alignment: .center, spacing: 12) {
         VStack(alignment: .leading, spacing: 4) {
-          Text(row.exercise.name).font(.body.weight(.semibold)).foregroundStyle(Color.primary)
-          Text(row.exercise.equipment.capitalized).font(.caption).foregroundStyle(Color.secondary)
-          if let alias = row.alias { Text("was “\(alias)”").font(.caption).foregroundStyle(Color.secondary) }
-          if let meta = row.meta { Text(meta).font(.caption.monospaced()).foregroundStyle(Color.secondary).monospacedDigit() }
+          Text(row.exercise.name).font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink)
+          Text(row.exercise.equipment.capitalized).font(.caption).foregroundStyle(GymPalette.inkDim)
+          if let alias = row.alias { Text("was “\(alias)”").font(.caption).foregroundStyle(GymPalette.inkDim) }
+          if let meta = row.meta { Text(meta).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim).monospacedDigit() }
         }.frame(maxWidth: .infinity, alignment: .leading)
-        Image(systemName: row.selected ? "checkmark" : "plus").foregroundStyle(Color.secondary)
+        Image(systemName: row.selected ? "checkmark" : "plus").foregroundStyle(GymPalette.inkDim)
       }.padding(.vertical, 4)
     }
     .disabled(row.selected || gym.accountTransition)
@@ -289,28 +291,30 @@ struct CreateMovementSheet: View {
 
   var body: some View {
     Form {
-      Section("Name") {
-        TextField("Movement name", text: $draft.name).focused($nameFocused).autocorrectionDisabled().textInputAutocapitalization(.words).submitLabel(.done).onSubmit { nameFocused = false }
-          .disabled(busy).accessibilityIdentifier("gym-movement-name")
-        if let counter = MovementName.counter(draft.name) { Text(counter).font(.caption.monospaced()).foregroundStyle(.secondary) }
-        if let problem = MovementName.problem(draft.name), !busy { Text(problem).font(.footnote).foregroundStyle(.red) }
-      }
-      Section("Equipment") {
-        Picker("Equipment", selection: $draft.equipment) {
-          ForEach(MovementCreationDraft.equipmentChoices, id: \.self) { Text($0.capitalized).tag($0) }
-        }.labelsHidden().pickerStyle(.inline).disabled(busy).accessibilityIdentifier("gym-movement-equipment")
-      }
-      if includesTargets {
-        Section {
-          Button { nameFocused = false; onTargets?() } label: {
-            HStack { Text("Targets"); Spacer(); Text(Readout.target(draft.sets)).foregroundStyle(.secondary).monospacedDigit() }
-          }.disabled(busy).accessibilityIdentifier("gym-movement-targets")
-          if draft.sets?.isEmpty ?? true { Text("Choose at least one set.").font(.footnote).foregroundStyle(.red) }
+      Group {
+        Section("Name") {
+          TextField("Movement name", text: $draft.name).focused($nameFocused).autocorrectionDisabled().textInputAutocapitalization(.words).submitLabel(.done).onSubmit { nameFocused = false }
+            .disabled(busy).accessibilityIdentifier("gym-movement-name")
+          if let counter = MovementName.counter(draft.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
+          if let problem = MovementName.problem(draft.name), !busy { Text(problem).font(.footnote).foregroundStyle(.red) }
         }
-      }
-      if let refusal = draft.refusal { Section { Text(refusal).foregroundStyle(.red).accessibilityIdentifier("gym-movement-creation-refusal") } }
+        Section("Equipment") {
+          Picker("Equipment", selection: $draft.equipment) {
+            ForEach(MovementCreationDraft.equipmentChoices, id: \.self) { Text($0.capitalized).tag($0) }
+          }.labelsHidden().pickerStyle(.inline).disabled(busy).accessibilityIdentifier("gym-movement-equipment")
+        }
+        if includesTargets {
+          Section {
+            Button { nameFocused = false; onTargets?() } label: {
+              HStack { Text("Targets"); Spacer(); Text(Readout.target(draft.sets)).foregroundStyle(GymPalette.inkDim).monospacedDigit() }
+            }.disabled(busy).accessibilityIdentifier("gym-movement-targets")
+            if draft.sets?.isEmpty ?? true { Text("Choose at least one set.").font(.footnote).foregroundStyle(.red) }
+          }
+        }
+        if let refusal = draft.refusal { Section { Text(refusal).foregroundStyle(.red).accessibilityIdentifier("gym-movement-creation-refusal") } }
+      }.listRowBackground(GymPalette.card)
     }
-    .accessibilityIdentifier("gym-movement-creation")
+    .modifier(GymPage()).accessibilityIdentifier("gym-movement-creation")
     .navigationTitle("Create movement").navigationBarTitleDisplayMode(.inline)
     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { if let onCancel { onCancel() } else { dismiss() } }.disabled(busy) } }
     .safeAreaInset(edge: .bottom) {
@@ -330,7 +334,7 @@ struct CreateMovementSheet: View {
           if let entry { onCreated(entry) }
         }
       } label: {
-        Text(busy ? "Creating…" : includesTargets ? "Add to routine" : "Create and add").foregroundStyle(CoachPalette.onAccent).frame(maxWidth: .infinity)
+        Text(busy ? "Creating…" : includesTargets ? "Add to routine" : "Create and add").foregroundStyle(GymPalette.onAccent).frame(maxWidth: .infinity)
       }
       .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
       .disabled(busy || gym.accountTransition || draft.problem(includesTargets: includesTargets) != nil)

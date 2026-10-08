@@ -13,7 +13,7 @@ struct JournalScreen: View {
   @State var inkFrames: [String: CGRect] = [:]
   @Environment(\.dynamicTypeSize) var typeSize
   @Environment(\.accessibilityReduceMotion) var systemReduceMotion
-  @ScaledMetric(relativeTo: .body) var bodySize = 17.0
+  @ScaledMetric(relativeTo: .body) var bodySize = JournalType.bodySize
   var reduceMotion: Bool { systemReduceMotion || model.runtime?.settings.board?.hasSuffix("-RM") == true }
   var body: some View {
     ScrollViewReader { scroll in
@@ -26,10 +26,10 @@ struct JournalScreen: View {
               VStack(alignment: .leading, spacing: 40) {
                 ForEach(model.room?.days.filter { $0.day < model.today } ?? [], id: \.day) { day in
                   VStack(alignment: .leading, spacing: 18) {
-                    Text(date(day.day)).font(Design.mono()).foregroundStyle(Design.dim)
+                    Text(date(day.day)).font(JournalType.date).tracking(JournalType.dateTracking).foregroundStyle(JournalPalette.inkDim)
                     JournalBodyText(text: .constant(day.document.body), focused: .constant(false), fontSize: bodySize, editable: false)
                       .frame(height: JournalBodyText.height(for: day.document.body, width: geo.size.width - 48, fontSize: bodySize))
-                    HStack { Text("Mood \(day.document.mood.map(String.init) ?? "–")"); Text("Energy \(day.document.energy.map(String.init) ?? "–")") }.font(Design.mono()).foregroundStyle(Design.dim)
+                    HStack { Text("Mood \(day.document.mood.map(String.init) ?? "–")"); Text("Energy \(day.document.energy.map(String.init) ?? "–")") }.font(ShellType.meta).monospacedDigit().foregroundStyle(JournalPalette.inkDim)
                   }.padding(.horizontal, 24).accessibilityElement(children: .combine).accessibilityLabel("\(date(day.day)), read only. \(day.document.body)")
                 }
                 today(width: geo.size.width - 48)
@@ -72,7 +72,7 @@ struct JournalScreen: View {
             Image(systemName: focused ? "checkmark" : "square.and.pencil")
               .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
               .animation(.easeInOut(duration: 0.3), value: focused)
-              .font(.system(size: 18)).foregroundStyle(Design.ink)
+              .font(.system(size: 18)).foregroundStyle(JournalPalette.ink)
               .frame(width: 44, height: 44).modifier(Glass(capsule: false))
           }.buttonStyle(.plain)
             .accessibilityLabel(focused ? "Done writing" : "Write")
@@ -123,8 +123,8 @@ struct JournalScreen: View {
       VStack(alignment: .leading, spacing: 0) {
         HStack(spacing: 6) {
           Text(date(model.editorDay) + (model.words > 0 ? " · \(model.words) \(model.words == 1 ? "WORD" : "WORDS")" : "") + (focused || model.backup.isEmpty ? "" : " · \(model.backup)"))
-            .font(Design.mono()).tracking(0.7).foregroundStyle(Design.dim)
-          if model.firstKept && model.scalesDue { Image(systemName: "checkmark").font(.system(size: 10)).foregroundStyle(Design.lamp) }
+            .font(JournalType.date).tracking(JournalType.dateTracking).foregroundStyle(JournalPalette.inkDim)
+          if model.firstKept && model.scalesDue { Image(systemName: "checkmark").font(.system(size: 10)).foregroundStyle(JournalPalette.lamp) }
         }.accessibilityElement(children: .combine).accessibilityIdentifier("journal-date").inkAnchor("date", enabled: inkMounted, frames: $inkFrames).padding(.bottom, 16)
         ZStack(alignment: .topLeading) {
           JournalBodyText(text: Binding(get: { model.document.body }, set: { model.type($0) }), focused: $focused, fontSize: bodySize, editable: !model.editorReadOnly, appendRequest: appendRequest, inkVisible: inkMounted && model.inkVisible && !focused && model.sheet == nil)
@@ -133,21 +133,21 @@ struct JournalScreen: View {
           if model.document.body.isEmpty && !focused {
             VStack(alignment: .leading, spacing: 14) {
               HStack(alignment: .top, spacing: 3) {
-                Rectangle().fill(Design.lamp).frame(width: 1.5, height: bodySize * 1.4)
+                Rectangle().fill(JournalPalette.lamp).frame(width: 1.5, height: bodySize * 1.4)
                 if model.showPlaceholder {
-                  Text("Start anywhere. Nothing here is graded.").font(.custom("Inter-Regular", fixedSize: bodySize)).lineSpacing(7).foregroundStyle(Design.faint)
+                  Text("Start anywhere. Nothing here is graded.").font(JournalType.body).lineSpacing(JournalType.lineSpacing).foregroundStyle(JournalPalette.inkFaint)
                 }
               }.accessibilityHidden(true)
               if model.showPrivacy {
                 Text("Only you. No prompts, no fields, nothing to fill in — write a line or a page.")
-                  .font(Design.text(13)).lineSpacing(3).foregroundStyle(Design.faint).inkAnchor("privacy", enabled: inkMounted, frames: $inkFrames)
+                  .font(ShellType.meta).lineSpacing(3).foregroundStyle(JournalPalette.inkFaint).inkAnchor("privacy", enabled: inkMounted, frames: $inkFrames)
               }
             }.allowsHitTesting(false)
           }
         }.inkAnchor("caret", enabled: inkMounted, frames: $inkFrames)
         if model.showPrivacy && (!model.document.body.isEmpty || focused) {
           Text("Only you. No prompts, no fields, nothing to fill in — write a line or a page.")
-            .font(Design.text(13)).lineSpacing(3).foregroundStyle(Design.faint).inkAnchor("privacy", enabled: inkMounted, frames: $inkFrames).padding(.top, 14)
+            .font(ShellType.meta).lineSpacing(3).foregroundStyle(JournalPalette.inkFaint).inkAnchor("privacy", enabled: inkMounted, frames: $inkFrames).padding(.top, 14)
         }
       }.padding(.bottom, focused ? 0 : 23)
         .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
@@ -157,8 +157,8 @@ struct JournalScreen: View {
       if !focused {
         if model.scalesDue {
           HStack {
-            Text("How did today feel?").font(Design.strong(14)); Spacer()
-            Button("Not now") { model.dismissScales() }.font(Design.text(14)).foregroundStyle(Design.dim).frame(minHeight: 44)
+            Text("How did today feel?").font(ShellType.secondaryAction); Spacer()
+            Button("Not now") { model.dismissScales() }.font(ShellType.subheadline).foregroundStyle(JournalPalette.inkDim).frame(minHeight: 44)
           }.padding(.top, 17)
         }
         VStack(spacing: 0) {
@@ -166,26 +166,26 @@ struct JournalScreen: View {
           ScaleRow(name: "Energy", value: model.document.energy) { model.setScale("energy", $0) }
         }.disabled(model.editorReadOnly)
         if model.scalesDue {
-          Text("Mood is what you see when you zoom out to the year.").font(Design.text(13)).foregroundStyle(Design.faint).padding(.top, 10)
+          Text("Mood is what you see when you zoom out to the year.").font(ShellType.meta).foregroundStyle(JournalPalette.inkFaint).padding(.top, 10)
         }
         if model.keepDue {
           HStack {
-            Image(systemName: "iphone").font(.system(size: 14)); Text("Only on this phone").font(Design.text(13)); Spacer()
-            Button("Keep it") { model.keep() }.font(Design.strong(14)).foregroundStyle(Design.brand).padding(.horizontal, 16).frame(minHeight: 44).modifier(Glass())
-          }.foregroundStyle(Design.dim).padding(.top, 18)
+            Image(systemName: "iphone").font(.system(size: 14)); Text("Only on this phone").font(ShellType.meta); Spacer()
+            Button("Keep it") { model.keep() }.font(ShellType.secondaryAction).foregroundStyle(JournalPalette.lamp).padding(.horizontal, 16).frame(minHeight: 44).modifier(Glass())
+          }.foregroundStyle(JournalPalette.inkDim).padding(.top, 18)
         }
       }
       if let error = model.error {
-        Text(error).font(Design.text(13)).foregroundStyle(Design.brand).padding(.top, 12)
-        if model.dirty { Button("Try saving again") { model.save() }.frame(minHeight: 44).font(Design.strong(14)) }
+        Text(error).font(ShellType.meta).foregroundStyle(JournalPalette.lamp).padding(.top, 12)
+        if model.dirty { Button("Try saving again") { model.save() }.frame(minHeight: 44).font(ShellType.secondaryAction) }
       }
-    }.foregroundStyle(Design.ink)
+    }.foregroundStyle(JournalPalette.ink)
   }
 
   func editorHeight(width: CGFloat) -> CGFloat {
     let text = model.document.body.isEmpty ? "Start anywhere. Nothing here is graded." : model.document.body + " "
-    let font = UIFont(name: "Inter-Regular", size: bodySize) ?? .systemFont(ofSize: bodySize)
-    return max((font.lineHeight + 7) * 3, JournalBodyText.height(for: text, width: width, fontSize: bodySize))
+    let font = JournalType.bodyFont(size: bodySize)
+    return max((font.lineHeight + JournalType.lineSpacing) * 3, JournalBodyText.height(for: text, width: width, fontSize: bodySize))
   }
 
   func date(_ day: LocalDay) -> String {
@@ -204,9 +204,9 @@ struct JournalBodyText: UIViewRepresentable {
 
   static func attributes(fontSize: CGFloat) -> [NSAttributedString.Key: Any] {
     let paragraph = NSMutableParagraphStyle()
-    paragraph.lineSpacing = 7
+    paragraph.lineSpacing = JournalType.lineSpacing
     paragraph.paragraphSpacing = 10
-    return [.font: UIFont(name: "Inter-Regular", size: fontSize) ?? .systemFont(ofSize: fontSize), .paragraphStyle: paragraph, .foregroundColor: UIColor(Design.ink)]
+    return [.font: JournalType.bodyFont(size: fontSize), .paragraphStyle: paragraph, .foregroundColor: UIColor(JournalPalette.ink)]
   }
 
   static func height(for text: String, width: CGFloat, fontSize: CGFloat) -> CGFloat {
@@ -221,7 +221,7 @@ struct JournalBodyText: UIViewRepresentable {
     #endif
     view.delegate = context.coordinator
     view.backgroundColor = .clear
-    view.tintColor = UIColor(Design.lamp)
+    view.tintColor = UIColor(JournalPalette.lamp)
     view.isScrollEnabled = false
     view.textContainerInset = .zero
     view.textContainer.lineFragmentPadding = 0
