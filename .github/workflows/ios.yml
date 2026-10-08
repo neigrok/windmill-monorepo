@@ -198,70 +198,11 @@ jobs:
 
       - name: Create and prepare the UI simulator
         timeout-minutes: 10
-        env:
-          UI_SHARD: ${{ matrix.shard }}
-          SIMCTL_CHILD_TZ: UTC
         run: |
-          UI_SIMULATOR=$(xcrun simctl create "Windmill CI $UI_SHARD" \
+          UI_SIMULATOR=$(xcrun simctl create "Windmill CI ${{ matrix.shard }}" \
             com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-26-5)
           echo "UI_SIMULATOR=$UI_SIMULATOR" >> "$GITHUB_ENV"
-          export UI_SIMULATOR
-          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
-          python3 - <<'PY'
-          from datetime import datetime, timezone
-          from pathlib import Path
-          import os
-          import plistlib
-
-          preferences = Path.home() / "Library/Developer/CoreSimulator/Devices" / os.environ["UI_SIMULATOR"] / "data/Library/Preferences"
-          preferences.mkdir(parents=True, exist_ok=True)
-          now = datetime.now(timezone.utc)
-          policies = {
-              ".GlobalPreferences": {
-                  "AppleLanguages": ["en"], "AppleLocale": "en_US",
-                  "KeyboardAutocorrection": False, "KeyboardPrediction": False,
-                  "KeyboardContinuousPathEnabled": False,
-              },
-              "com.apple.Accessibility": {
-                  "ApplicationAccessibilityEnabled": True, "AutomationEnabled": True,
-              },
-              # iOS 26.5 keeps Live Activity consent outside simctl privacy's services.
-              "com.apple.liveactivitiesd": {
-                  "AppAuthorizationRecords": {"works.windmill.app": True},
-                  "FirstResponseRecords": ["works.windmill.app"],
-                  "SecondResponseRecords": ["works.windmill.app"],
-              },
-              # Mark the first-boot Settings notifications as already delivered.
-              "com.apple.generativeexperiences.corefollowup": {
-                  "DateOfLastAppleIntelligenceReadinessCFU": now.replace(tzinfo=None),
-                  "DateOfLastNotificationAutoEnablement": (now - datetime(2001, 1, 1, tzinfo=timezone.utc)).total_seconds(),
-              },
-          }
-          for domain, settings in policies.items():
-              path = preferences / f"{domain}.plist"
-              current = plistlib.loads(path.read_bytes()) if path.exists() else {}
-              path.write_bytes(plistlib.dumps(current | settings))
-          PY
-          xcrun simctl boot "$UI_SIMULATOR"
-          xcrun simctl bootstatus "$UI_SIMULATOR" -b
-          xcrun simctl spawn "$UI_SIMULATOR" launchctl setenv TZ UTC
-          xcrun simctl spawn "$UI_SIMULATOR" defaults write NSGlobalDomain AppleLanguages -array en
-          xcrun simctl spawn "$UI_SIMULATOR" defaults write NSGlobalDomain AppleLocale -string en_US
-          xcrun simctl ui "$UI_SIMULATOR" appearance light
-          xcrun simctl ui "$UI_SIMULATOR" content_size large
-          xcrun simctl status_bar "$UI_SIMULATOR" override --time '9:41' \
-            --dataNetwork wifi --wifiMode active --wifiBars 3 \
-            --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
-          xcrun simctl getenv "$UI_SIMULATOR" TZ
-          xcrun simctl spawn "$UI_SIMULATOR" defaults read NSGlobalDomain AppleLanguages
-          xcrun simctl spawn "$UI_SIMULATOR" defaults read NSGlobalDomain AppleLocale
-          for UI_AX_SETTING in ApplicationAccessibilityEnabled AutomationEnabled; do
-            xcrun simctl spawn "$UI_SIMULATOR" defaults write com.apple.Accessibility "$UI_AX_SETTING" -bool true
-            UI_AX_VALUE=$(xcrun simctl spawn "$UI_SIMULATOR" defaults read com.apple.Accessibility "$UI_AX_SETTING")
-            echo "$UI_AX_SETTING=$UI_AX_VALUE"
-            test "$UI_AX_VALUE" = 1
-          done
-          xcrun simctl spawn "$UI_SIMULATOR" defaults read com.apple.liveactivitiesd
+          python3 Tools/prepare_simulator.py "$UI_SIMULATOR"
 
       # One line every 15 s of the runner's load, swap and busiest processes, simulator daemons included, for triage.
       - name: Record the runner's load
