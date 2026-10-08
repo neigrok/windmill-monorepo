@@ -17,6 +17,19 @@ import CoreText
     return editor
   }
 
+  @Test func journalEditorUsesNightInkInALightShell() {
+    let light = UITraitCollection(userInterfaceStyle: .light)
+    let dark = UITraitCollection(userInterfaceStyle: .dark)
+    light.performAsCurrent {
+      let attributes = JournalBodyText.attributes(fontSize: JournalType.bodySize)
+      let ink = attributes[.foregroundColor] as? UIColor
+      let expected = UIColor(JournalPalette.ink).resolvedColor(with: dark)
+      #expect(ink?.resolvedColor(with: light).cgColor.components == expected.cgColor.components)
+      #expect(UIColor(ShellPalette.canvas).resolvedColor(with: light).cgColor.components !=
+              UIColor(ShellPalette.canvas).resolvedColor(with: dark).cgColor.components)
+    }
+  }
+
   @Test func inkFontIsRegisteredFromTheAppBundle() throws {
     let font = try #require(UIFont(name: "Caveat-Regular", size: 26))
     #expect(font.familyName == "Caveat")

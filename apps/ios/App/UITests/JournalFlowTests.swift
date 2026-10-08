@@ -167,6 +167,11 @@ import XCTest
     XCTAssertEqual(roomMenu.frame, frame)
     assertInkVisible(false, in: editor)
     XCTAssertFalse(app.keyboards.firstMatch.exists)
+    roomMenu.tap()
+    let showInk = app.buttons["Show ink notes"]
+    XCTAssertTrue(showInk.waitForExistence(timeout: 5))
+    showInk.tap()
+    assertInkVisible(true, in: editor)
     let screenshot = XCTAttachment(screenshot: app.screenshot())
     screenshot.name = "room-menu"
     screenshot.lifetime = .keepAlways
@@ -440,21 +445,24 @@ import XCTest
     XCTAssertEqual(app.textViews["journal-editor"].value as? String, page)
   }
 
-  func testLargestTextKeepsJournalChromeAtNormalSize() {
+  func testLargestTextKeepsNativeJournalControlsReachable() {
     let app = XCUIApplication()
     app.launchArguments = ["-board", "05-journal-first-open"]
     app.launch()
     XCTAssertTrue(app.buttons["room-menu"].waitForExistence(timeout: 10))
-    let roomSize = app.buttons["room-menu"].frame.size
-    let accountSize = app.buttons["you"].frame.size
     let writeSize = app.buttons["write-today"].frame.size
     let bodyHeight = app.textViews["journal-editor"].frame.height
     app.terminate()
     app.launchArguments = ["-board", "05-journal-first-open-AX3"]
     app.launch()
     XCTAssertTrue(app.buttons["room-menu"].waitForExistence(timeout: 10))
-    XCTAssertEqual(app.buttons["room-menu"].frame.size, roomSize)
-    XCTAssertEqual(app.buttons["you"].frame.size, accountSize)
+    let room = app.buttons["room-menu"]
+    let account = app.buttons["you"]
+    XCTAssertTrue(room.isHittable)
+    XCTAssertTrue(account.isHittable)
+    XCTAssertTrue(app.frame.contains(room.frame))
+    XCTAssertTrue(app.frame.contains(account.frame))
+    XCTAssertFalse(room.frame.intersects(account.frame))
     XCTAssertEqual(app.buttons["write-today"].frame.size, writeSize)
     XCTAssertGreaterThan(app.textViews["journal-editor"].frame.height, bodyHeight)
     XCTAssertEqual(app.buttons["room-menu"].label, "Journal")

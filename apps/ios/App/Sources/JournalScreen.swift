@@ -16,12 +16,28 @@ struct JournalScreen: View {
   @ScaledMetric(relativeTo: .body) var bodySize = JournalType.bodySize
   var reduceMotion: Bool { systemReduceMotion || model.runtime?.settings.board?.hasSuffix("-RM") == true }
   var body: some View {
+    NavigationStack {
+      journal
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar(model.compactAccountSheet ? .hidden : .visible, for: .navigationBar)
+        .toolbar {
+          ToolbarItem(placement: .topBarLeading) {
+            RoomMenu(app: app, inkEnabled: inkMounted, inkFrames: $inkFrames)
+          }
+          ToolbarItem(placement: .topBarTrailing) {
+            RoomAccountButton(action: { app.journal.done(); app.sheet = .you }, inkEnabled: inkMounted, inkFrames: $inkFrames)
+              .disabled(app.editorReadOnly)
+          }
+        }
+    }
+  }
+
+  var journal: some View {
     ScrollViewReader { scroll in
       GeometryReader { geo in
         ZStack(alignment: .topLeading) {
           JournalBackdrop()
           VStack(spacing: 0) {
-            if !model.compactAccountSheet { header.padding(.horizontal, 16).padding(.top, 6) }
             ScrollView {
               VStack(alignment: .leading, spacing: 40) {
                 ForEach(model.room?.days.filter { $0.day < model.today } ?? [], id: \.day) { day in
@@ -42,10 +58,10 @@ struct JournalScreen: View {
                   .id("journal-today")
               }
                 .padding(.top, typeSize.isAccessibilitySize && model.showPlaceholder ? 430 : 50)
-                .frame(minHeight: max(0, geo.size.height + (focused ? 0 : geo.safeAreaInsets.bottom) - 56 - (model.compactAccountSheet ? 350 : 0)), alignment: .bottom)
+                .frame(minHeight: max(0, geo.size.height + (focused ? 0 : geo.safeAreaInsets.bottom) - (model.compactAccountSheet ? 406 : 0)), alignment: .bottom)
             }.defaultScrollAnchor(model.compactAccountSheet || (!focused && typeSize.isAccessibilitySize && model.showPlaceholder) ? .top : .bottom).scrollDismissesKeyboard(.interactively)
               .ignoresSafeArea(.container, edges: focused ? [] : .bottom)
-              .padding(.bottom, focused ? 44 + 12 : 0)
+              .padding(.bottom, focused ? RoomSpace.minimumTarget + RoomSpace.inset : 0)
           }
           inkNotes(origin: geo.frame(in: .global).origin)
         }
@@ -73,13 +89,12 @@ struct JournalScreen: View {
               .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
               .animation(.easeInOut(duration: 0.3), value: focused)
               .font(.system(size: 18)).foregroundStyle(JournalPalette.ink)
-              .frame(width: 44, height: 44).modifier(Glass(capsule: false))
-          }.buttonStyle(.plain)
+          }.modifier(RoomSeatStyle())
             .accessibilityLabel(focused ? "Done writing" : "Write")
             .accessibilityHint(focused ? "" : "Opens the keyboard on today's page")
             .accessibilityIdentifier(focused ? "done-writing" : "write-today")
             .inkAnchor("write", enabled: inkMounted, frames: $inkFrames)
-            .padding(.trailing, 16).padding(.bottom, 12)
+            .padding(.trailing, RoomSpace.inset).padding(.bottom, RoomSpace.inset)
         }
       }
     }.simultaneousGesture(TapGesture().onEnded { model.liftInk() })
@@ -107,15 +122,6 @@ struct JournalScreen: View {
       InkNotes(frames: inkFrames.mapValues { $0.offsetBy(dx: -origin.x, dy: -origin.y) }, visible: model.inkVisible && !focused && model.sheet == nil)
         .allowsHitTesting(false)
     }
-  }
-
-  var header: some View {
-    HStack {
-      RoomSeat(app: app).inkAnchor("title", enabled: inkMounted, frames: $inkFrames)
-        .simultaneousGesture(TapGesture().onEnded { model.liftInk() })
-      Spacer()
-      AccountButton(app: app).inkAnchor("you", enabled: inkMounted, frames: $inkFrames)
-    }.buttonStyle(.plain).dynamicTypeSize(...DynamicTypeSize.large)
   }
 
   func today(width: CGFloat) -> some View {
@@ -171,7 +177,7 @@ struct JournalScreen: View {
         if model.keepDue {
           HStack {
             Image(systemName: "iphone").font(.system(size: 14)); Text("Only on this phone").font(ShellType.meta); Spacer()
-            Button("Keep it") { model.keep() }.font(ShellType.secondaryAction).foregroundStyle(JournalPalette.lamp).padding(.horizontal, 16).frame(minHeight: 44).modifier(Glass())
+            Button("Keep it") { model.keep() }.font(ShellType.secondaryAction).modifier(RoomSecondaryStyle()).tint(JournalPalette.lamp)
           }.foregroundStyle(JournalPalette.inkDim).padding(.top, 18)
         }
       }
@@ -206,7 +212,7 @@ struct JournalBodyText: UIViewRepresentable {
     let paragraph = NSMutableParagraphStyle()
     paragraph.lineSpacing = JournalType.lineSpacing
     paragraph.paragraphSpacing = 10
-    return [.font: JournalType.bodyFont(size: fontSize), .paragraphStyle: paragraph, .foregroundColor: UIColor(JournalPalette.ink)]
+    return [.font: JournalType.bodyFont(size: fontSize), .paragraphStyle: paragraph, .foregroundColor: JournalPalette.nightColor(JournalPalette.ink)]
   }
 
   static func height(for text: String, width: CGFloat, fontSize: CGFloat) -> CGFloat {
@@ -221,7 +227,8 @@ struct JournalBodyText: UIViewRepresentable {
     #endif
     view.delegate = context.coordinator
     view.backgroundColor = .clear
-    view.tintColor = UIColor(JournalPalette.lamp)
+    view.tintColor = JournalPalette.nightColor(JournalPalette.lamp)
+    view.keyboardAppearance = .dark
     view.isScrollEnabled = false
     view.textContainerInset = .zero
     view.textContainer.lineFragmentPadding = 0

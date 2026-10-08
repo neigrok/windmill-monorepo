@@ -9,6 +9,7 @@ struct RoutinesTab: View {
   let onAccount: (() -> Void)?
   let onWrittenProgram: (() -> Void)?
   let onReviewProposal: ((ID<Proposal>) -> Void)?
+  @Environment(\.coachOpenAccount) private var openAccount
   @State private var building: RoutineEditingSession?
   @State private var savedID: ID<Routine>?
   @State private var browsing = false
@@ -82,9 +83,14 @@ struct RoutinesTab: View {
       }.listRowBackground(GymPalette.card)
     }.listStyle(.insetGrouped).navigationTitle("Routines")
       .accessibilityIdentifier("gym-routines")
-      .toolbar { ToolbarItem(placement: .topBarTrailing) {
-        Button("New routine", systemImage: "plus") { building = RoutineEditingSession(gym: gym, routine: nil) }.accessibilityIdentifier("new-routine").disabled(gym.accountTransition)
-      } }
+      .toolbar {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button("New routine", systemImage: "plus") { building = RoutineEditingSession(gym: gym, routine: nil) }
+            .labelStyle(.iconOnly).accessibilityIdentifier("new-routine").disabled(gym.accountTransition)
+        }
+        if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
+        ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
+      }
       .safeAreaInset(edge: .bottom) { RoutineActionBand(title: "Just start logging", disabled: gym.accountTransition || gym.readFailed) { gym.startWorkout() } }
       .sheet(item: $building) { editing in RoutineBuilder(gym: gym, editing: editing) { savedID = $0 } }
       .sheet(isPresented: $browsing) {
@@ -171,7 +177,7 @@ struct RoutineActionBand: View {
   var disabled = false
   let action: () -> Void
   var body: some View {
-    Button(action: action) { Text(title).foregroundStyle(GymPalette.onAccent).frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent).controlSize(.large)
+    Button(action: action) { Text(title).foregroundStyle(GymPalette.onAccent).frame(maxWidth: .infinity) }.modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).controlSize(.large)
       .disabled(disabled).padding().background(.bar)
   }
 }

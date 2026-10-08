@@ -26,20 +26,7 @@ struct AccountSheet: View {
   var faint: Color { ShellPalette.inkFaint }
   var brand: Color { ShellPalette.brand }
   var body: some View {
-    VStack(spacing: 0) {
-      HStack {
-        if model.sheet == .code || model.sheet == .address || model.sheet == .appleAddress {
-          roundButton("chevron.left", "Back") {
-            model.choose("back", screen: model.sheet?.telemetryName ?? "keep"); model.error = nil
-            if model.sheet == .code { model.sheet = model.appleTicket == nil ? .address : .appleAddress }
-            else if model.sheet == .appleAddress { model.sheet = model.account == nil ? .appleQuestion : model.appleOrigin }
-            else { model.sheet = .keep }
-          }
-        } else if model.sheet == .keep { roundButton("xmark", "Close") { model.closeKeep() } }
-        else if compact { roundButton("xmark", "Close") { model.closeAppleStep() } }
-        Spacer()
-        if model.sheet == .you { Button("Done") { model.choose("close", screen: "you"); model.sheet = nil }.font(ShellType.action).padding(.horizontal, 18).frame(height: 44).modifier(Glass()) }
-      }.padding(.horizontal, model.sheet == .you ? 16 : 24).padding(.top, compact ? 24 : 16).frame(height: receipt ? 0 : nil).opacity(receipt ? 0 : 1).disabled(model.working)
+    NavigationStack {
       ScrollView {
         VStack(alignment: .leading, spacing: 16) {
           switch model.sheet {
@@ -56,14 +43,20 @@ struct AccountSheet: View {
           case .appleExpired: appleExpired
           case .authPending:
             Text("Finish signing in").font(ShellType.title)
-            Button("Try again") { model.choose("retry", screen: "auth_pending"); Task { await model.retryAuthenticatedSignIn() } }
-              .font(ShellType.action).frame(maxWidth: .infinity, minHeight: 52).background(brand, in: Capsule()).foregroundStyle(ShellPalette.onBrand).accessibilityIdentifier("auth-retry")
+            Button { model.choose("retry", screen: "auth_pending"); Task { await model.retryAuthenticatedSignIn() } } label: {
+              Text("Try again").frame(maxWidth: .infinity)
+            }.font(ShellType.action).modifier(RoomPrimaryStyle(accent: brand, onAccent: ShellPalette.onBrand)).accessibilityIdentifier("auth-retry")
           case nil: EmptyView()
           }
           if model.sheet != .code, let error = model.error { errorText(error) }
         }.padding(.horizontal, model.sheet == .you ? 16 : 24).padding(.top, receipt ? 218 : inputStep ? 130 : compact ? 18 : 14).padding(.bottom, inputStep ? 0 : 26)
       }.defaultScrollAnchor(inputStep ? .bottom : .top)
-    }.background(inputStep || receipt || compact ? card : shell)
+        .background(shell)
+        .navigationTitle(sheetTitle)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(shell, for: .navigationBar)
+        .toolbar { accountToolbar }
+    }
       .foregroundStyle(ink).font(ShellType.body).tint(brand)
       .presentationDragIndicator(.visible)
       .presentationDetents(compact && !typeSize.isAccessibilitySize ? [.medium] : [.large])
@@ -88,6 +81,44 @@ struct AccountSheet: View {
       .background {
         AccountConfirmation(model: model, isPresented: model.identityTaken || model.sheet == .adoption || model.sheet == .discardAdoption).frame(width: 0, height: 0)
       }
+  }
+
+  var sheetTitle: String {
+    switch model.sheet {
+    case .you: "You"
+    case .keep: "Keep"
+    case .appleQuestion, .appleAdded, .appleNoAccount, .appleExpired: "Apple"
+    case .signOut: "Sign out"
+    default: "Sign in"
+    }
+  }
+
+  @ToolbarContentBuilder var accountToolbar: some ToolbarContent {
+    ToolbarItem(placement: .cancellationAction) { backOrClose.disabled(model.working) }
+    ToolbarItem(placement: .confirmationAction) {
+      if model.sheet == .you && !receipt {
+        Button("Done") { model.choose("close", screen: "you"); model.sheet = nil }.disabled(model.working)
+      }
+    }
+  }
+
+  @ViewBuilder var backOrClose: some View {
+    if !receipt {
+      if inputStep {
+        Button("Back", systemImage: "chevron.left", action: goBack)
+      } else if model.sheet == .keep {
+        Button("Close") { model.closeKeep() }
+      } else if compact {
+        Button("Close") { model.closeAppleStep() }
+      }
+    }
+  }
+
+  func goBack() {
+    model.choose("back", screen: model.sheet?.telemetryName ?? "keep"); model.error = nil
+    if model.sheet == .code { model.sheet = model.appleTicket == nil ? .address : .appleAddress }
+    else if model.sheet == .appleAddress { model.sheet = model.account == nil ? .appleQuestion : model.appleOrigin }
+    else { model.sheet = .keep }
   }
 
   var appleQuestion: some View {
@@ -147,7 +178,7 @@ struct AccountSheet: View {
 
   func equalButton(_ label: String, action: @escaping () -> Void) -> some View {
     Button(action: action) { Text(label).font(ShellType.secondaryAction).foregroundStyle(brand).frame(maxWidth: .infinity, minHeight: 27) }
-      .buttonStyle(.bordered).controlSize(.large).buttonBorderShape(.capsule).tint(.gray).modifier(Glass())
+      .modifier(RoomSecondaryStyle()).controlSize(.large).buttonBorderShape(.capsule).tint(brand)
   }
 
   func errorText(_ error: String) -> some View { Text(error).font(ShellType.meta).foregroundStyle(brand).accessibilityIdentifier("auth-error") }
@@ -221,15 +252,19 @@ struct AccountSheet: View {
         Text("Works once and lasts 15 minutes.").font(ShellType.subheadline).foregroundStyle(dim)
         TextField("Sign-in link or token", text: $signInLink).textInputAutocapitalization(.never).autocorrectionDisabled()
           .padding(18).background(inputSurface, in: RoundedRectangle(cornerRadius: 18)).accessibilityIdentifier("sign-in-link")
-        Button("Sign in") { Task { await model.verifyLink(signInLink) } }.font(ShellType.action).frame(maxWidth: .infinity, minHeight: 52)
-          .background(brand, in: Capsule()).foregroundStyle(ShellPalette.onBrand).disabled(model.working || signInLink.isEmpty).accessibilityIdentifier("sign-in-link-submit")
+        Button { Task { await model.verifyLink(signInLink) } } label: {
+          Text("Sign in").frame(maxWidth: .infinity)
+        }.font(ShellType.action)
+          .modifier(RoomPrimaryStyle(accent: brand, onAccent: ShellPalette.onBrand)).disabled(model.working || signInLink.isEmpty).accessibilityIdentifier("sign-in-link-submit")
         Button("Use email instead") { usingLink = false; model.error = nil }.frame(minHeight: 44)
       } else {
       Text(model.sheet == .appleAddress ? "Your Windmill email" : "Sign in with email").font(ShellType.title)
       Text(model.sheet == .appleAddress ? "We'll send a code to confirm it's yours." : "We'll send a six-digit code.").font(ShellType.subheadline).foregroundStyle(dim)
       TextField("Email address", text: Binding(get: { model.email }, set: { if !model.working { model.email = $0 } })).keyboardType(.emailAddress).textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled().focused($focusedInput, equals: model.sheet == .appleAddress ? .appleAddress : .address)
         .padding(18).background(inputSurface, in: RoundedRectangle(cornerRadius: 18)).overlay(RoundedRectangle(cornerRadius: 18).stroke(brand)).accessibilityIdentifier("email-address")
-      Button("Send code") { Task { await model.sendCode() } }.font(ShellType.action).frame(maxWidth: .infinity, minHeight: 52).background(brand, in: Capsule()).foregroundStyle(ShellPalette.onBrand).disabled(model.working || !model.email.contains("@"))
+      Button { Task { await model.sendCode() } } label: {
+        Text("Send code").frame(maxWidth: .infinity)
+      }.font(ShellType.action).modifier(RoomPrimaryStyle(accent: brand, onAccent: ShellPalette.onBrand)).disabled(model.working || !model.email.contains("@"))
       Text("New here? This also creates your account.").font(ShellType.meta).foregroundStyle(dim)
       }
     }
@@ -265,7 +300,6 @@ struct AccountSheet: View {
 
   var you: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Text("You").font(ShellType.display)
       Text("One Windmill account keeps your journal and training together.").font(ShellType.subheadline).foregroundStyle(dim)
       VStack(alignment: .leading, spacing: 16) {
         HStack(spacing: 14) {
@@ -356,9 +390,7 @@ struct AccountSheet: View {
   func fact(_ name: String, _ value: String) -> some View {
     HStack { Text(name); Spacer(); Text(value).foregroundStyle(dim) }.padding(16).frame(minHeight: 52).background(card, in: RoundedRectangle(cornerRadius: 20))
   }
-  func roundButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
-    Button(action: action) { Image(systemName: symbol).frame(width: 44, height: 44).modifier(Glass(capsule: false)) }.accessibilityLabel(label)
-  }
+
 }
 
 struct AppleRemovalConfirmation: UIViewControllerRepresentable {

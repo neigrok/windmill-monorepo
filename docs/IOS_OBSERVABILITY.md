@@ -71,8 +71,8 @@ MetricKit are disabled. Technical reports contain no product navigation history.
 The 36-name allowlist below covers the app's screens and actions. Its 14 finite-label keys accept 173
 values in total; status and duration use the bounded numeric rules above. Every row also carries the common
 platform/version/build/release/environment properties. Scale answers record only that the invitation
-was answered or declined; neither the scale name nor its value is recorded. First-open ink emits
-`first_run_screen_viewed` with screen `ink_notes` once when presented and `first_run_choice` with
+was answered or declined; neither the scale name nor its value is recorded. Journal ink emits
+`first_run_screen_viewed` with screen `ink_notes` for each automatic or requested presentation and `first_run_choice` with
 action `dismiss_ink` once when writing or a tap lifts it; no ink replay action is allowlisted.
 
 | Area | Events | Useful properties |

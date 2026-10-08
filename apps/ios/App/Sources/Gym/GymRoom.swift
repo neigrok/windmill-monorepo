@@ -17,23 +17,36 @@ struct GymRoom: View {
   @State var coachHandoff: CoachHandoff?
   @State var finishedHandoff: WorkoutHandoff?
 
-  var body: some View {
+  var tabs: some View {
     TabView(selection: $tab) {
-      NavigationStack(path: $routinesPath) {
-        RoutinesTab(gym: gym, onAccount: openAccount,
-                    onWrittenProgram: { if gym.isAnonymous || gym.authPaused { openAccount() } else { ask("Help me turn my written program into a routine.") } },
-                    onReviewProposal: { proposal = ProposalReviewID(id: $0.description) })
-          .toolbar { roomToolbar }
-          .navigationDestination(for: Destination.self, destination: destination)
-      }.tabItem { Label("Routines", systemImage: "list.bullet.rectangle") }.tag(Tab.routines)
-      NavigationStack(path: $logPath) {
-        LogTab(gym: gym).toolbar { roomToolbar }
-          .navigationDestination(for: Destination.self, destination: destination)
-      }.tabItem { Label("The log", systemImage: "clock") }.tag(Tab.log)
-      NavigationStack(path: $coachPath) {
-        CoachTab(gym: gym, handoff: $coachHandoff).toolbar { roomToolbar }
-          .navigationDestination(for: Destination.self, destination: destination)
-      }.tabItem { Label("Coach", systemImage: "bubble.left.and.bubble.right") }.tag(Tab.coach)
+      SwiftUI.Tab("Routines", systemImage: "list.bullet.rectangle", value: Tab.routines) {
+        NavigationStack(path: $routinesPath) {
+          RoutinesTab(gym: gym, onAccount: openAccount,
+                      onWrittenProgram: { if gym.isAnonymous || gym.authPaused { openAccount() } else { ask("Help me turn my written program into a routine.") } },
+                      onReviewProposal: { proposal = ProposalReviewID(id: $0.description) })
+            .toolbar { roomToolbar }
+            .navigationDestination(for: Destination.self, destination: destination)
+        }
+      }
+      SwiftUI.Tab("The log", systemImage: "calendar", value: Tab.log) {
+        NavigationStack(path: $logPath) {
+          LogTab(gym: gym).toolbar { roomToolbar }
+            .navigationDestination(for: Destination.self, destination: destination)
+        }
+      }
+      SwiftUI.Tab("Coach", systemImage: "bubble.left.and.bubble.right", value: Tab.coach) {
+        NavigationStack(path: $coachPath) {
+          CoachTab(gym: gym, handoff: $coachHandoff).toolbar { roomToolbar }
+            .navigationDestination(for: Destination.self, destination: destination)
+        }
+      }
+    }
+  }
+
+  var body: some View {
+    Group {
+      if #available(iOS 26, *) { tabs.tabBarMinimizeBehavior(.onScrollDown) }
+      else { tabs }
     }
     .safeAreaInset(edge: .top, spacing: 0) { if !gym.workout.isPresented { WorkoutAdoptionBand(gym: gym) } }
     .environment(\.coachOpenAccount, openAccount)
@@ -70,8 +83,7 @@ struct GymRoom: View {
   }
 
   @ToolbarContentBuilder var roomToolbar: some ToolbarContent {
-    ToolbarItem(placement: .topBarLeading) { RoomSeat(app: app) }
-    ToolbarItem(placement: .topBarTrailing) { AccountButton(app: app) }
+    ToolbarItem(placement: .topBarLeading) { RoomMenu(app: app) }
   }
   @ViewBuilder func destination(_ destination: Destination) -> some View {
     switch destination {

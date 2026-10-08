@@ -24,7 +24,7 @@ struct WorkoutKeypadSheet: View {
           LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 8) {
             ForEach(["1", "2", "3", "4", "5", "6", "7", "8", "9", "±", "0", "."], id: \.self) { key in
               Button { pad.press(key) } label: { Text(key).font(.title2.monospacedDigit()).frame(maxWidth: .infinity, minHeight: 54) }
-                .buttonStyle(.bordered).disabled(pad.field == .reps && ["±", "."].contains(key))
+                .modifier(RoomSecondaryStyle()).disabled(pad.field == .reps && ["±", "."].contains(key))
                 .accessibilityLabel(key == "±" ? "Flip the sign — band-assisted" : key)
                 .accessibilityIdentifier("workout-key-\(key)")
             }
@@ -39,7 +39,7 @@ struct WorkoutKeypadSheet: View {
       .safeAreaInset(edge: .bottom) {
         Button { if let value = pad.reading.value { commit(value); dismiss() } } label: {
           Text("Set").frame(maxWidth: .infinity, minHeight: 44)
-        }.buttonStyle(.borderedProminent).foregroundStyle(GymPalette.onAccent).disabled(pad.reading.value == nil)
+        }.modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).foregroundStyle(GymPalette.onAccent).disabled(pad.reading.value == nil)
           .padding(16).background(GymPalette.canvas).accessibilityIdentifier("workout-keypad-set")
       }
     }.modifier(GymPage()).presentationDetents([.large]).presentationDragIndicator(.visible)
@@ -103,7 +103,7 @@ struct WorkoutFixSheet: View {
                 ForEach(0..<4) { index in
                   Button(WeightLadder.labels(draft.weightKg)[index]) {
                     draft.weightKg = WeightLadder.bump(draft.weightKg, direction: index < 2 ? -1 : 1, big: index == 0 || index == 3)
-                  }.buttonStyle(.bordered).frame(maxWidth: .infinity, minHeight: 44)
+                  }.modifier(RoomSecondaryStyle()).frame(maxWidth: .infinity, minHeight: 44)
                 }
               }.font(.body.monospacedDigit())
             }
@@ -138,7 +138,7 @@ struct WorkoutFixSheet: View {
         .safeAreaInset(edge: .bottom) {
           Button { if draft.save(gym) { dismiss() } } label: {
             Text(draft.busy ? "Saving…" : "Save the fix").frame(maxWidth: .infinity, minHeight: 44)
-          }.buttonStyle(.borderedProminent).foregroundStyle(GymPalette.onAccent).disabled(!draft.valid || draft.busy || gym.accountTransition)
+          }.modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).foregroundStyle(GymPalette.onAccent).disabled(!draft.valid || draft.busy || gym.accountTransition)
             .padding(16).background(GymPalette.canvas).accessibilityIdentifier("workout-fix-save")
         }
     }.modifier(GymPage()).presentationDetents([.large]).presentationDragIndicator(.visible)
@@ -243,7 +243,7 @@ struct WorkoutDeviationSheet: View {
       }.modifier(GymPage()).navigationTitle("Heavier than the plan").navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
           Button { workout.resolveDeviation(save: true) } label: { Text(offer.saveLabel).frame(maxWidth: .infinity, minHeight: 44) }
-            .buttonStyle(.borderedProminent).foregroundStyle(GymPalette.onAccent).padding(16).background(GymPalette.canvas)
+            .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).foregroundStyle(GymPalette.onAccent).padding(16).background(GymPalette.canvas)
             .disabled(workout.gym.accountTransition).accessibilityIdentifier("workout-deviation-save")
         }
     }.modifier(GymPage()).presentationDetents([.large]).presentationDragIndicator(.visible)

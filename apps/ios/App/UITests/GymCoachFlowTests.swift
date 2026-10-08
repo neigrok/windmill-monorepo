@@ -24,17 +24,17 @@ import UIKit
     let menu = app.buttons["coach-more"]
     XCTAssertTrue(menu.wait(for: \.isHittable, toEqual: true, timeout: 10))
     menu.tap()
-    let ids = ["History": "history", "Notes": "notes", "Connected log": "connections", "Gym settings": "settings"]
-    let choices = app.sheets.containing(.button, identifier: "History").firstMatch
+    let ids = ["History": "history", "Notes": "notes", "Connected log": "connections", "Gym settings": "settings", "New chat": "new-chat", "Account": "account"]
+    let choices = app.buttons["coach-menu-history"]
     XCTAssertTrue(choices.waitForExistence(timeout: 5))
     if let snapshot { capture(snapshot, app) }
-    let item = choices.buttons[name]
+    let item = app.buttons["coach-menu-" + (ids[name] ?? name)]
     XCTAssertTrue(item.wait(for: \.isHittable, toEqual: true, timeout: 10))
     let frame = item.frame
     XCTAssertTrue(frame.minX.isFinite && frame.minY.isFinite && frame.width > 0 && frame.height > 0)
     item.tap()
     XCTAssertTrue(choices.waitForNonExistence(timeout: 10))
-    if ids[name] != nil { XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5)) }
+    if ["History", "Notes", "Connected log", "Gym settings"].contains(name) { XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5)) }
   }
   func back(_ app: XCUIApplication, expecting title: String? = nil) {
     let previous = app.navigationBars.firstMatch

@@ -206,7 +206,7 @@ struct ProposalReviewSheet: View {
       }
       if decidable {
         Button { if let proposal { submitted = gym.coachDecideProposal(proposal, apply: true) } } label: { Text(applyLabel).foregroundStyle(GymPalette.onAccent).frame(maxWidth: .infinity) }
-          .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
+          .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).controlSize(.large).frame(maxWidth: .infinity)
           .disabled(seen == nil || seen != extent).accessibilityIdentifier("coach-apply-proposal")
           .accessibilityHint(seen == nil || seen != extent ? "Scroll to the end to apply." : "Apply every change together")
         Text(seen == nil || seen != extent ? "Scroll to the end to apply." : proposal?.intent == "remove" ? "The routine goes and your logged sets stay. Nothing is removed until you tap." : count <= 1 ? "Nothing is applied until you tap." : "All \(count) or none. Nothing is applied until you tap.")

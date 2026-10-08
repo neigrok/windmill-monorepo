@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // Asset names and values follow docs/design/ios/ios-redesign.md §2.
 
@@ -38,6 +39,9 @@ enum JournalPalette {
   static let energy = Color("journal/energy")
   static let moodRamp = (0...10).map { Color("journal/mood-\($0)") }
   static func mood(_ value: Int) -> Color { moodRamp[min(10, max(0, value))] }
+  static func nightColor(_ role: Color) -> UIColor {
+    UIColor(role).resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark))
+  }
 }
 
 enum ShellPalette {

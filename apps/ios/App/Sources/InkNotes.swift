@@ -167,7 +167,7 @@ struct InkLabel: View {
     let font = JournalType.handFont(size: size) as CTFont
     let setter = CTFramesetterCreateWithAttributedString(NSAttributedString(string: text, attributes: [
       NSAttributedString.Key(kCTFontAttributeName as String): font,
-      NSAttributedString.Key(kCTForegroundColorAttributeName as String): UIColor(dim ? JournalPalette.inkDim : JournalPalette.lamp).cgColor,
+      NSAttributedString.Key(kCTForegroundColorAttributeName as String): JournalPalette.nightColor(dim ? JournalPalette.inkDim : JournalPalette.lamp).cgColor,
     ]))
     // CoreText preserves Caveat's overhang when native Text is rasterized.
     return Canvas { context, _ in

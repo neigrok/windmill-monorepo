@@ -5,6 +5,7 @@ import SyncAPI
 
 struct LogTab: View {
   let gym: GymModel
+  @Environment(\.coachOpenAccount) private var openAccount
   @Environment(\.dynamicTypeSize) var typeSize
   @State var limit = 30
   @State var loading = false
@@ -27,11 +28,12 @@ struct LogTab: View {
       logFooter
     }.listStyle(.insetGrouped).modifier(GymPage(titleDisplayMode: .large))
       .navigationTitle("The log").accessibilityIdentifier("gym-log")
+      .toolbar { ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) } }
       .safeAreaInset(edge: .bottom) {
         VStack(spacing: 0) {
           LogNoticeBand(gym: gym)
           Button { weighing = true } label: { Label("Weigh in", systemImage: "plus").frame(maxWidth: .infinity).foregroundStyle(GymPalette.onAccent) }
-            .buttonStyle(.borderedProminent).controlSize(.large)
+            .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).controlSize(.large)
             .frame(maxWidth: .infinity).padding().accessibilityIdentifier("gym-weigh-in")
         }.background(GymPalette.canvas)
       }

@@ -12,7 +12,6 @@ struct CoachTab: View {
   @State var history: CoachHistory
   @State var fixturePrepared = false
   @State private var destination: CoachDestination?
-  @State private var showMenu = false
   @State var review: ProposalReviewID?
   @State var photo: PhotosPickerItem?
   @State var preparing = false
@@ -74,23 +73,29 @@ struct CoachTab: View {
         }.defaultScrollAnchor(.bottom, for: .sizeChanges).scrollDismissesKeyboard(.interactively)
           .onScrollGeometryChange(for: Bool.self) { geometry in geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 40 } action: { _, latest in atLatest = latest }
           .overlay(alignment: .bottomTrailing) {
-            if !atLatest { Button("Jump to latest") { withAnimation { proxy.scrollTo("latest", anchor: .bottom) } }.buttonStyle(.bordered).padding(16).background(.ultraThinMaterial, in: Capsule()) }
+            if !atLatest { Button("Jump to latest") { withAnimation { proxy.scrollTo("latest", anchor: .bottom) } }.modifier(RoomSecondaryStyle()).padding(16) }
           }
           .onChange(of: coach.saved.request?.requestId) { _, _ in proxy.scrollTo("latest", anchor: .bottom) }
       }
     }.navigationTitle("Coach").modifier(GymPage()).accessibilityIdentifier("gym-coach")
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
-          Button { showMenu = true } label: { Label("More", systemImage: "ellipsis.circle") }.accessibilityIdentifier("coach-more")
+          Menu {
+            if coach.saved.request != nil || coach.saved.thread != nil {
+              Section { Button("New chat") { coach.newChat() }.disabled(coach.asking).accessibilityIdentifier("coach-menu-new-chat") }
+            }
+            Section {
+              Button("History") { destination = .history }.accessibilityIdentifier("coach-menu-history")
+              Button("Notes") { destination = .notes }.accessibilityIdentifier("coach-menu-notes")
+              Button("Connected log") { destination = .connections }.accessibilityIdentifier("coach-menu-connections")
+              Button("Gym settings") { destination = .settings }.accessibilityIdentifier("coach-menu-settings")
+            }
+            Section { Button("Account") { if let openAccount { openAccount() } else { accountHint = true } }.accessibilityIdentifier("coach-menu-account") }
+          } label: { Label("More", systemImage: "ellipsis.circle") }
+            .labelStyle(.iconOnly).accessibilityIdentifier("coach-more")
         }
-      }
-      .confirmationDialog("Coach", isPresented: $showMenu, titleVisibility: .hidden) {
-        Button("History") { destination = .history }
-        Button("Notes") { destination = .notes }
-        Button("Connected log") { destination = .connections }
-        Button("Gym settings") { destination = .settings }
-        if coach.saved.request != nil || coach.saved.thread != nil { Button("New chat") { coach.newChat() }.disabled(coach.asking) }
-        Button("Account") { if let openAccount { openAccount() } else { accountHint = true } }
+        if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
+        ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
       }
       .navigationDestination(item: $destination) { destination in
         switch destination {
@@ -159,7 +164,7 @@ struct CoachTab: View {
             Button { coach.stopResponse() } label: { Image(systemName: "stop.fill").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel(coach.uploading ? "Cancel upload" : "Stop response").disabled(coach.stopping).accessibilityIdentifier("coach-stop")
           } else {
             Button { composing = false; coach.send() } label: { Image(systemName: "arrow.up").foregroundStyle(GymPalette.onAccent).frame(minWidth: 44, minHeight: 44) }
-              .buttonStyle(.borderedProminent).clipShape(Circle()).accessibilityLabel("Ask Coach").accessibilityIdentifier("coach-send")
+              .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).buttonBorderShape(.circle).accessibilityLabel("Ask Coach").accessibilityIdentifier("coach-send")
               .disabled(!CoachCopy.sendable(coach.saved.text, photo: coach.saved.photo != nil) || preparing)
           }
         }

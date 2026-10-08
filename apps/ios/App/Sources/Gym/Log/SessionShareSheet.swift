@@ -231,7 +231,7 @@ struct SessionShareSheet: View {
               else { Text(sharing.state.action).font(.body.weight(.semibold)) }
             }.frame(maxWidth: .infinity, minHeight: 44)
           }
-          .buttonStyle(.borderedProminent).controlSize(.large).tint(GymPalette.accent).foregroundStyle(GymPalette.onAccent)
+          .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).controlSize(.large).tint(GymPalette.accent).foregroundStyle(GymPalette.onAccent)
           .disabled(sharing.state == .working).accessibilityIdentifier("gym-share-primary")
           if case .live = sharing.state {
             Button("Revoke the link", role: .destructive) { sharing.revokeLink() }

@@ -105,7 +105,7 @@ struct WorkoutScreen: View {
         } description: {
           Text("You decide the numbers at the rack.")
         } actions: {
-          Button("Add movement", systemImage: "plus") { addMovement = true }.buttonStyle(.borderedProminent).foregroundStyle(GymPalette.onAccent)
+          Button("Add movement", systemImage: "plus") { addMovement = true }.modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).foregroundStyle(GymPalette.onAccent)
             .accessibilityIdentifier("workout-add")
         }
       } else {
@@ -275,7 +275,7 @@ struct WorkoutRack: View {
         ScrollView { controls }.frame(height: 220)
       } else { controls }
       Button { workout.logSet() } label: { Text("Log set").frame(maxWidth: .infinity, minHeight: 44) }
-        .buttonStyle(.borderedProminent).foregroundStyle(GymPalette.onAccent).disabled(!workout.canLog).accessibilityIdentifier("workout-log")
+        .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).foregroundStyle(GymPalette.onAccent).disabled(!workout.canLog).accessibilityIdentifier("workout-log")
     }.disabled(workout.paging || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
   }
   var controls: some View {
@@ -293,18 +293,18 @@ struct WorkoutRack: View {
         ForEach(0..<4) { index in
           Button(WeightLadder.labels(workout.weightKg)[index]) {
             workout.weightKg = WeightLadder.bump(workout.weightKg, direction: index < 2 ? -1 : 1, big: index == 0 || index == 3)
-          }.buttonStyle(.bordered).frame(maxWidth: .infinity, minHeight: 44)
+          }.modifier(RoomSecondaryStyle()).frame(maxWidth: .infinity, minHeight: 44)
             .accessibilityLabel("\(WeightLadder.labels(workout.weightKg)[index]) kilograms")
         }
       }.font(.body.monospacedDigit())
       ViewThatFits(in: .horizontal) {
       HStack {
         Button("Fewer reps", systemImage: "minus") { workout.reps = max(1, workout.reps - 1) }.labelStyle(.iconOnly)
-          .frame(minWidth: 44, minHeight: 44).buttonStyle(.bordered)
+          .frame(minWidth: 44, minHeight: 44).modifier(RoomSecondaryStyle())
         Button("\(workout.reps) reps") { edit(.reps) }.font(.title3.monospacedDigit()).frame(maxWidth: .infinity, minHeight: 44)
           .accessibilityIdentifier("workout-reps")
         Button("More reps", systemImage: "plus") { workout.reps = min(99, workout.reps + 1) }.labelStyle(.iconOnly)
-          .frame(minWidth: 44, minHeight: 44).buttonStyle(.bordered)
+          .frame(minWidth: 44, minHeight: 44).modifier(RoomSecondaryStyle())
         Picker("Set kind", selection: $workout.kind) {
           ForEach(SetKind.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
         }.pickerStyle(.menu).accessibilityIdentifier("workout-kind")

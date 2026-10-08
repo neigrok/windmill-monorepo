@@ -140,7 +140,7 @@ struct CoachHistoryScreen: View {
           ForEach(history.held.reversed()) { offer in
             HStack { Text("Conversation removed"); Spacer(); Button("Undo") { history.undo(offer.id) } }
           }
-          Button { if coach.newChat() { dismiss() } } label: { Text("Ask something new").foregroundStyle(GymPalette.onAccent).frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity).disabled(coach.asking)
+          Button { if coach.newChat() { dismiss() } } label: { Text("Ask something new").foregroundStyle(GymPalette.onAccent).frame(maxWidth: .infinity) }.modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).controlSize(.large).frame(maxWidth: .infinity).disabled(coach.asking)
         }.padding(16).background(GymPalette.card)
       }
       .onChange(of: phase) { _, phase in if phase == .background { history.abandon() } }

@@ -148,8 +148,10 @@ struct RootScreen: View {
   }
 }
 
-struct RoomSeat: View {
+struct RoomMenu: View {
   @Bindable var app: AppModel
+  var inkEnabled = false
+  var inkFrames: Binding<[String: CGRect]> = .constant([:])
   var body: some View {
     Menu {
       Picker("Room", selection: Binding(get: { app.selectedRoom }, set: { app.switchRoom($0) })) {
@@ -157,26 +159,36 @@ struct RoomSeat: View {
           Label(room.title, systemImage: room.symbol).tag(room).accessibilityIdentifier("room-" + room.rawValue)
         }
       }.pickerStyle(.inline)
+      Divider()
+      Button("You", systemImage: "person.crop.circle") { app.journal.done(); app.sheet = .you }
+      if app.selectedRoom == .journal {
+        Button("Show ink notes") {
+          app.journal.done()
+          app.journal.inkVisible = true
+          app.journal.screenViewed("ink_notes")
+        }
+      }
     } label: {
-      HStack(spacing: 8) {
-        Text(app.selectedRoom.title).font(ShellType.action)
-        Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
-      }.foregroundStyle(app.selectedRoom == .gym ? Color.primary : ShellPalette.ink).padding(.horizontal, 16).frame(height: 44).modifier(Glass())
-    }.buttonStyle(.plain).accessibilityLabel(app.selectedRoom.title).accessibilityIdentifier("room-menu")
+      HStack(spacing: 6) {
+        Text(app.selectedRoom.title).font(.body.weight(.semibold))
+        Image(systemName: "chevron.down").font(.caption.weight(.semibold))
+      }.inkAnchor("title", enabled: inkEnabled, frames: inkFrames)
+    }.accessibilityLabel(app.selectedRoom.title).accessibilityIdentifier("room-menu")
       .simultaneousGesture(LongPressGesture(minimumDuration: 0).onChanged { pressed in
         if pressed, app.selectedRoom == .journal { app.journal.liftInk() }
       })
-      .dynamicTypeSize(...DynamicTypeSize.large).disabled(app.editorReadOnly)
+      .disabled(app.editorReadOnly)
   }
 }
 
-struct AccountButton: View {
-  @Bindable var app: AppModel
+struct RoomAccountButton: View {
+  let action: () -> Void
+  var inkEnabled = false
+  var inkFrames: Binding<[String: CGRect]> = .constant([:])
   var body: some View {
-    Button { app.journal.done(); app.sheet = .you } label: {
-      YouGlyph().stroke(app.selectedRoom == .gym ? Color.primary : ShellPalette.ink, lineWidth: 1.5).frame(width: 18, height: 18)
-        .frame(width: 44, height: 44).modifier(Glass(capsule: false))
-    }.buttonStyle(.plain).accessibilityLabel("You and settings").accessibilityIdentifier("you")
-      .dynamicTypeSize(...DynamicTypeSize.large).disabled(app.editorReadOnly)
+    Button(action: action) {
+      Image(systemName: "person.crop.circle")
+        .inkAnchor("you", enabled: inkEnabled, frames: inkFrames)
+    }.accessibilityLabel("You and settings").accessibilityIdentifier("you")
   }
 }

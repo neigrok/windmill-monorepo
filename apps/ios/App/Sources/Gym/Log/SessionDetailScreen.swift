@@ -164,7 +164,7 @@ struct FinishedSetFixSheet: View {
             else if !gym.readFailed && !gym.sets.contains(where: { $0.id == original.id }) { dismiss() }
             else { failed = (gym.error ?? "That fix did not save.") + " The set is unchanged." }
           } label: { Text("Save the fix").frame(maxWidth: .infinity).foregroundStyle(GymPalette.onAccent) }
-            .buttonStyle(.borderedProminent).controlSize(.large).disabled(draft.problem != nil || gym.accountTransition)
+            .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).controlSize(.large).disabled(draft.problem != nil || gym.accountTransition)
             .frame(maxWidth: .infinity).padding().background(GymPalette.canvas).accessibilityIdentifier("gym-fix-save")
         }
         .sensoryFeedback(.success, trigger: saved)

@@ -1,14 +1,6 @@
 import SwiftUI
 import UIKit
 
-struct Glass: ViewModifier {
-  var capsule = true
-  func body(content: Content) -> some View {
-    content.background(.white.opacity(0.10), in: capsule ? AnyShape(Capsule()) : AnyShape(Circle()))
-      .overlay { (capsule ? AnyShape(Capsule()) : AnyShape(Circle())).stroke(.white.opacity(0.18), lineWidth: 0.7) }
-  }
-}
-
 struct JournalBackdrop: View {
   var body: some View {
     GeometryReader { proxy in
@@ -17,17 +9,6 @@ struct JournalBackdrop: View {
         RadialGradient(colors: [JournalPalette.lamp.opacity(0.09), .clear], center: .init(x: 0.5, y: 1.12), startRadius: 0, endRadius: proxy.size.width * 0.85)
       }
     }.ignoresSafeArea()
-  }
-}
-
-struct YouGlyph: Shape {
-  func path(in rect: CGRect) -> Path {
-    var path = Path()
-    path.addEllipse(in: CGRect(x: 0.8, y: 0.8, width: 16.4, height: 16.4))
-    path.addEllipse(in: CGRect(x: 6, y: 3.5, width: 6, height: 6))
-    path.move(to: CGPoint(x: 3.7, y: 15))
-    path.addCurve(to: CGPoint(x: 14.3, y: 15), control1: CGPoint(x: 4.1, y: 10.1), control2: CGPoint(x: 13.9, y: 10.1))
-    return path.applying(CGAffineTransform(scaleX: rect.width / 18, y: rect.height / 18))
   }
 }
 

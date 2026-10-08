@@ -242,7 +242,6 @@ struct RoutineTargetsSheet: View {
   let onCancel: () -> Void
   @Binding private var draft: RoutineTargetDraft
   @State private var feedback = 0
-  @State private var showingFill = false
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @FocusState private var focus: Focus?
 
@@ -308,7 +307,7 @@ struct RoutineTargetsSheet: View {
         case .refused: return
         }
       } label: { Text(draft.commitLabel).foregroundStyle(GymPalette.onAccent).frame(maxWidth: .infinity) }
-      .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
+      .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).controlSize(.large).frame(maxWidth: .infinity)
       .disabled(draft.refusal != nil).accessibilityIdentifier("gym-target-set")
       .padding().background(.bar)
     }
@@ -406,10 +405,10 @@ struct RoutineTargetsSheet: View {
   }
 
   private var fillMenu: some View {
-    Button { focus = nil; showingFill = true } label: {
+    Menu { fillActions } label: {
       Text("Fill").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
     }.accessibilityIdentifier("gym-target-fill")
-      .confirmationDialog("Fill targets", isPresented: $showingFill, titleVisibility: .hidden) { fillActions }
+      .simultaneousGesture(TapGesture().onEnded { focus = nil })
   }
 
   private func refusalLine(_ message: String) -> some View {

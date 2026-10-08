@@ -182,7 +182,7 @@ struct MovementPicker: View {
         if creation == nil { creation = MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: MovementName.capped(MovementName.trimmed(query))) }
         showingCreation = true
       } label: { Label("Create movement", systemImage: "plus").frame(maxWidth: .infinity) }
-      .buttonStyle(.bordered).controlSize(.large).disabled(gym.accountTransition)
+      .modifier(RoomSecondaryStyle()).controlSize(.large).disabled(gym.accountTransition)
       .accessibilityIdentifier("gym-create-movement")
       .padding(16).background(.bar)
     }
@@ -336,7 +336,7 @@ struct CreateMovementSheet: View {
       } label: {
         Text(busy ? "Creating…" : includesTargets ? "Add to routine" : "Create and add").foregroundStyle(GymPalette.onAccent).frame(maxWidth: .infinity)
       }
-      .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
+      .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).controlSize(.large).frame(maxWidth: .infinity)
       .disabled(busy || gym.accountTransition || draft.problem(includesTargets: includesTargets) != nil)
       .accessibilityIdentifier("gym-movement-create-commit")
       .padding(16).background(.bar)

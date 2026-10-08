@@ -268,7 +268,7 @@ struct WeighInSheet: View {
         Button { save() } label: {
           Text(saving ? "Saving…" : "Save weight").frame(maxWidth: .infinity).foregroundStyle(GymPalette.onAccent)
         }
-          .buttonStyle(.borderedProminent)
+          .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent))
           .controlSize(.large)
           .disabled(saving)
           .accessibilityIdentifier("gym-weigh-in-save")
