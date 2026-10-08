@@ -342,7 +342,7 @@ cd apps/android
 ./gradlew :domain-kit-testing:test :domain-kit-testing:corpus :domain-kit-testing:layering :sync-testing:layering   # the kit corpus and both layering tasks
 ```
 
-The first prints `Gym corpus: 12/12 files, 492 cases, no unclaimed file`; the second `kit corpus: 12/12 files, 475/475
+The first prints `Gym corpus: 12/12 files, 494 cases, no unclaimed file`; the second `kit corpus: 12/12 files, 475/475
 vectors` and `layering: 5 deterministic modules, … compiled classes, 0 findings`. `./gradlew build` (CI,
 `.github/workflows/android.yml`) runs all of it, with `ANDROID_SENTRY_DSN` set.
 
@@ -468,11 +468,13 @@ loads, decides and translates runs synchronously inside it. Vectors run over `Ve
 every file under `src/platform/domain-kit/` and `src/products/*/domain/` with acorn (a parse failure, JSX included, is a
 finding) and checks:
 
-- **Imports.** A kit file imports only `../sync/core/<name>.js` and `./<name>.js`; a domain file only
-  `../../../platform/domain-kit/<name>.js`, `../../../platform/sync/core/<name>.js`, `../../../platform/sync/schema.js`
-  and `./<name>.js`. Static imports, `export … from` and `import('literal')` all count; a computed dynamic import, a bare
-  specifier (`react`, `@noble/hashes`), a `.jsx`, a `.json`, anything under `test/` or `packages/`, and a relative path
-  that does not exist are findings.
+- **Imports.** A kit file imports the shared core by `../../../../packages/api-contract/sync/reference/core/<name>.js`,
+  the web's `../sync/core/encoding.js` and `content.js`, and `./<name>.js`. A domain file imports the shared core by
+  `../../../../../packages/api-contract/sync/reference/core/<name>.js`, `../../../platform/domain-kit/<name>.js`,
+  the web's `../../../platform/sync/core/encoding.js` and `content.js`, `../../../platform/sync/schema.js` and
+  `./<name>.js`. Static imports, `export … from` and `import('literal')` all count; a computed dynamic import, a bare
+  specifier (`react`, `@noble/hashes`), a `.jsx`, a `.json`, anything under `test/` or outside the shared core in
+  `packages/`, and a relative path that does not exist are findings.
 - **Determinism.** No `Date`, `crypto`, `performance`, `setTimeout`, `setInterval`, `queueMicrotask`,
   `requestAnimationFrame`, `Promise`, `fetch`, `indexedDB`, `window`, `document`, `globalThis`, `navigator`, `self`,
   `localStorage`, `sessionStorage`, `console`, `Intl`, `eval`, `Function`, `localeCompare`, `toLocale*`, `Math.random`,

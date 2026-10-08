@@ -135,7 +135,8 @@ final class GymModel {
         adoptionWorkouts = try runner.read(Gym.scope) { try SignedOutWorkout.read($0) }
       }
       let snapshot = try runner.read(Gym.scope) { read in
-        let counts = [Session.type: try read.repository(Session.self).all(in: .stored).count,
+        let storedSessions = try read.repository(Session.self).all(in: .stored)
+        let counts = [Session.type: storedSessions.count,
                       Routine.type: try read.repository(Routine.self).all(in: .stored).count,
                       TrainingSet.type: try read.repository(TrainingSet.self).all(in: .stored).count,
                       Note.type: try read.repository(Note.self).all(in: .stored).count,
@@ -150,9 +151,11 @@ final class GymModel {
          Routine.ordered(try read.repository(Routine.self).all(in: .drawn)),
          try read.repository(Note.self).all(in: .drawn), try Bodyweight(read),
          try read.repository(GymPreferences.self).find(ID("prefs"), in: .drawn) ?? GymPreferences(),
-         coach: try Self.readCoachProposals(read), read.isAnonymous, counts, hidden)
+         coach: try Self.readCoachProposals(read), read.isAnonymous, counts, hidden,
+         planUnreadable: storedSessions.contains(where: \.planUnreadable) || training.sessions.contains(where: \.planUnreadable))
       }
-      (log, catalogue, routines, notes, bodyweight, preferences, _, isAnonymous, personalCounts, workoutHidden) = snapshot
+      (log, catalogue, routines, notes, bodyweight, preferences, _, isAnonymous, personalCounts, workoutHidden, _) = snapshot
+      if snapshot.planUnreadable { telemetry.failure("gym_read", kind: "unexpected") }
       updateCoachProposals(replica: snapshot.coach.replica, receipts: snapshot.coach.receipts, proposals: snapshot.coach.proposals)
       if let runtime {
         let replica = try runtime.storageRead { try $0.device().activeReplica }

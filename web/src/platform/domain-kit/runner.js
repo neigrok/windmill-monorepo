@@ -3,8 +3,8 @@
 // an action as one engine commit, opens and saves drafts, and binds the browser engine through
 // `EngineReplica`. The commit body stays synchronous; only the transaction's completion is awaited.
 
-import { mintId } from '../sync/core/derive.js';
-import { recordKey } from '../sync/core/rows.js';
+import { mintId } from '../../../../packages/api-contract/sync/reference/core/derive.js';
+import { recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
 import { IDSource, Outcome, decision, firstGone, refusalSubject } from './actions.js';
 import { Draft, SaveDraft, SaveResult } from './drafts.js';
 import { DecodeError, Id } from './entities.js';
@@ -23,9 +23,9 @@ let insideRun = false;
 /** @typedef {import('./actions.js').CommitReceipt} CommitReceipt */
 /** @typedef {import('./translation.js').Gesture} Gesture */
 /**
- * What a replica hands a read or a commit body: the scope's two views keyed as the engine keys them
- * (`recordKey`), the product's device rows and the scope's first-pull state; a commit adds its `now`.
- * @typedef {{ drawn: Map<string, ViewRecord>, stored: Map<string, ViewRecord>, devices: Record<string, Json>, firstPullComplete: boolean }} ReadViews
+ * What a replica hands a read or a commit body: the scope's views and reconciliation metadata,
+ * all read from the same replica; a commit adds its `now`.
+ * @typedef {{ drawn: Map<string, ViewRecord>, stored: Map<string, ViewRecord>, confirmed?: Map<string, ViewRecord> } & import('./reading.js').ViewMetadata} ReadViews
  * @typedef {ReadViews & { now: number }} CommitViews
  * @typedef {{ receipt: CommitReceipt } | { refused: { code: string, detail: Json | null, notice: string | null } }} CommitOutcome
  */
@@ -37,6 +37,7 @@ let insideRun = false;
  *   read(scope: string): ReadViews,
  *   undo(gestureId: string): Promise<boolean> | boolean,
  *   mintId(type: string, taken: Set<string>): RecordID,
+ *   opaqueID?(): string,
  *   physNow(): number,
  *   dismissNotice(id: string): Promise<unknown> | unknown,
  * }} Replica
@@ -59,7 +60,7 @@ function takenIn(drawn, type) {
 export class ActionRunner {
   /**
    * @param {Replica} replica
-   * @param {import('../sync/core/registry.js').Registry} registry
+   * @param {import('../../../../packages/api-contract/sync/reference/core/registry.js').Registry} registry
    * @param {import('./time.js').Zone} zone
    */
   constructor(replica, registry, zone) {
@@ -122,7 +123,8 @@ export class ActionRunner {
       finally { insideRun = false; }
     }
     const { receipt } = outcome;
-    const wroteNothing = receipt.localIds.length === 0 && receipt.retired.length === 0 && plan.deviceWrites.length === 0;
+    const wroteNothing = receipt.localIds.length === 0 && receipt.retired.length === 0
+      && (receipt.superseded?.length ?? 0) === 0 && plan.deviceWrites.length === 0;
     return wroteNothing ? Outcome.unchanged(result) : Outcome.committed(result, receipt);
   }
 
@@ -131,7 +133,8 @@ export class ActionRunner {
    * @param {ReadViews} input
    */
   viewsOf(scope, input) {
-    return new Views(this.registry, { drawn: input.drawn, stored: input.stored, devices: input.devices, firstPullComplete: input.firstPullComplete,
+    const opaqueID = input.opaqueID ?? this.replica.opaqueID?.bind(this.replica);
+    return new Views(this.registry, { ...input, ...(opaqueID ? { opaqueID } : {}),
       mintId: (type) => this.replica.mintId(type, takenIn(input.drawn, type)) });
   }
 
@@ -231,8 +234,9 @@ export class EngineReplica {
     const { outcome, value } = await this.engine.commit(scope, (/** @type {CommitViews} */ views) => {
       const decided = body(views);
       if (decided.gesture === null) return { gesture: null, value: decided.value };
-      const { changes, atomic, hold, guards, retire, cmd, predict, local } = decided.gesture;
-      const opts = { gestureId, atomic, hold, guard: guards, retire, predict, local: Object.fromEntries(local.map((write) => [write.key, write.value])) };
+      const { changes, atomic, hold, guards, retire, cmd, predict, local, supersede } = decided.gesture;
+      const opts = { gestureId, atomic, hold, guard: guards, retire, predict,
+        ...(supersede?.length ? { supersede } : {}), local: Object.fromEntries(local.map((write) => [write.key, write.value])) };
       return { gesture: { changes, opts: cmd === null ? opts : { ...opts, cmd } }, value: decided.value };
     });
     if (outcome === null) return { outcome: null, value };
@@ -242,7 +246,8 @@ export class EngineReplica {
     }
     const entry = outcome.localIds.length ? this.engine.device.activeReplica.entry(outcome.localIds[0]) : undefined;
     const releaseAt = entry?.state === 'held' ? entry.releaseAt : null;
-    return { outcome: { receipt: { gestureId, localIds: outcome.localIds, retired: outcome.retired, releaseAt } }, value };
+    return { outcome: { receipt: { gestureId, localIds: outcome.localIds, retired: outcome.retired,
+      ...(outcome.superseded?.length ? { superseded: outcome.superseded } : {}), releaseAt } }, value };
   }
 
   /**
@@ -255,8 +260,7 @@ export class EngineReplica {
     return {
       drawn: keyed(snapshot.drawn),
       stored: keyed(snapshot.stored),
-      devices: structuredClone(this.engine.device.activeReplica.deviceRows(this.engine.registry.productOfRef(scope))),
-      firstPullComplete: snapshot.firstPullComplete,
+      ...this.engine.readMetadata(scope),
     };
   }
 
@@ -277,6 +281,10 @@ export class EngineReplica {
     let id = mintId(definition, this.engine.draw);
     while (taken.has(id)) id = mintId(definition, this.engine.draw);
     return id;
+  }
+
+  opaqueID() {
+    return this.engine.newGestureId();
   }
 
   // The commit's own clock: the device clock corrected by the server offset (engine §10.4).

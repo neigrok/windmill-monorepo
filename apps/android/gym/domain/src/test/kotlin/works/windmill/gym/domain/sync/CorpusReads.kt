@@ -8,6 +8,31 @@ fun trainingReadsForm(vector: Vector, read: Reader): Json {
     val f = Fields(vector.input.member("input"))
     val log = TrainingLog(read)
     return when (vector.input.member("read").str()) {
+        "TrainingHistory" -> {
+            val history = TrainingHistory(read)
+            val args = vector.input.member("input").member("args").arr()
+            val query = args.firstOrNull() ?: Json.objectOf()
+            when (f.string("method")) {
+                "exercises" -> history.exercises()
+                "preferences" -> history.preferences()
+                "notes" -> history.notes()
+                "bodyweight" -> history.bodyweight()
+                "routines" -> history.routines()
+                "routine" -> history.routine(Id(query.str(), Routine))
+                "proposals" -> history.proposals(query)
+                "proposal" -> history.proposal(Id(query.str(), Proposal))
+                "sessions" -> history.sessions(query)
+                "session" -> history.session(Id(query.str(), Session))
+                "review" -> history.review(Id(query.str(), Session))
+                "history" -> history.history(query)
+                "progress" -> history.progress()
+                "stats" -> history.stats()
+                "lastTime" -> history.lastTime(Id(query.str(), Exercise))
+                "lastSets" -> history.lastSets()
+                "record" -> history.record(Id(query.str(), Exercise))
+                else -> error("unclaimed training history")
+            }
+        }
         "GymEstimate" -> nullable(GymEstimate.value(f.double("weightKg"), f.int("reps"), f.string("kind", "working"), f.optionalDouble("rpe")))
         "TrainingLog" -> {
             val id = f.ref("sessionId", Session)
@@ -29,6 +54,15 @@ fun trainingReadsForm(vector: Vector, read: Reader): Json {
             Json.objectOf("weightKg" to Json.of(prefill.weightKg), "reps" to Json.of(prefill.reps))
         }
         "StatsProgress" -> log.progress.json
+        "BodyweightReps" -> {
+            val progress = log.progress.movement(f.ref("exerciseId", Exercise))
+            val series = if (f.bool("window", false)) progress.window(read.moment.now, read.moment.zone) else progress
+            val best = series.bodyweightReps
+            Json.objectOf("sessions" to Json.Arr(series.sessions.map { point ->
+                Json.objectOf("sessionId" to point.id.json, "mostReps" to point.fact.mostReps.json,
+                    "bodyweightReps" to (point.fact.bodyweightReps?.json ?: Json.Null))
+            }), "best" to (best?.let { Json.objectOf("sessionId" to it.id.json, "fact" to it.fact.bodyweightReps!!.json) } ?: Json.Null))
+        }
         "ProgressCompleteness" -> Json.objectOf("isComplete" to Json.of(log.progress.isComplete))
         "Consistency" -> nullable(log.progress.consistency(read.moment.now, read.moment.zone))
         "MovementProgress" -> {

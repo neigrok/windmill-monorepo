@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ROUTINES_HREF } from '../../../../src/products/gym/log.js';
-import { createGymApi } from '../../../../src/products/gym/gymSync.js';
+import { createGymApi } from '../../../../src/products/gym/gymRuntime.js';
 import { browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle, textOf } from '../harness.mjs';
 
 function button(tree, label) {
@@ -88,6 +88,6 @@ test('a save over a routine nobody else moved writes only the draft’s changes,
   await settle();
   assert.deepEqual(gym.owed(), ['ready update routine routinePushA name']);
   assert.deepEqual(gym.engine.device.activeReplica.entries()[0].intent.guard.map(({ t: type, id, field }) => `${type} ${id} ${field}`),
-    ['routine routinePushA name', 'routine routinePushA entries', 'routine routinePushA position']);
+    ['routine routinePushA name']);
   assert.equal(window.location.hash, ROUTINES_HREF);
 });

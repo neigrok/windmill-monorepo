@@ -1,63 +1,26 @@
-// The pure rules behind the notes screen. A note is a title and a body, stored verbatim; the bounds
-// are the store's (`gym_notes`): ten per account, a title of sixty characters, a body of five hundred
-// UTF-8 bytes. Notes are their own resource, never a field of the preferences document.
-
 import { failureReason } from '../errors.js';
-import { mintId } from '../mint.js';
-
-export const NOTE_PREFIX = 'note_';
-
-export function mintNoteId() {
-  return mintId(NOTE_PREFIX);
-}
-
-export const NOTES_MAX = 10;
-export const TITLE_MAX = 60;
-export const BODY_BYTES = 500;
+import { lengthIn } from '../../../../../packages/api-contract/sync/reference/core/values.js';
+import { NoteRules } from '../domain/notes.js';
 
 // The counters are chrome a short note does not need: each is drawn from the last fifth of its
 // bound, the same rule `NAME_COUNT_FROM` (log.js) reads for a name.
-export const BODY_COUNT_FROM = 400;
-export const TITLE_COUNT_FROM = 48;
-
-// The store counts a title in code points, so a title is measured here the same way.
-export function titleChars(title) {
-  return [...(title ?? '')].length;
-}
+export const BODY_COUNT_FROM = NoteRules.body.max * 0.8;
+export const TITLE_COUNT_FROM = NoteRules.title.max * 0.8;
 
 export function showsTitleCount(title) {
-  return titleChars(title) >= TITLE_COUNT_FROM;
+  return lengthIn(NoteRules.title.unit, title ?? '') >= TITLE_COUNT_FROM;
 }
 
 export function titleCountLabel(title) {
-  return `${titleChars(title)} of ${TITLE_MAX} characters`;
-}
-
-// The field takes the keystroke and the counter goes alarm; the store's refusal is shown in place.
-export function isTitleOverCap(title) {
-  return titleChars(title) > TITLE_MAX;
-}
-
-export function bodyBytes(body) {
-  return new TextEncoder().encode(body ?? '').length;
+  return `${lengthIn(NoteRules.title.unit, title ?? '')} of ${NoteRules.title.max} characters`;
 }
 
 export function showsByteCount(body) {
-  return bodyBytes(body) >= BODY_COUNT_FROM;
+  return lengthIn(NoteRules.body.unit, body ?? '') >= BODY_COUNT_FROM;
 }
 
 export function byteCountLabel(body) {
-  return `${bodyBytes(body)} of ${BODY_BYTES} bytes`;
-}
-
-export function isBodyOverCap(body) {
-  return bodyBytes(body) > BODY_BYTES;
-}
-
-// The STORE's count and never the drawn list: a note held for deletion is still a note the store
-// would refuse a mint over, so the cap line stands for the length of the window.
-export function isFull(notes) {
-  return notes.length >= NOTES_MAX;
+  return `${lengthIn(NoteRules.body.unit, body ?? '')} of ${NoteRules.body.max} bytes`;
 }
 
 // The room's title and what these are, in the lifter's own direction; then the one surprising fact,
@@ -83,23 +46,6 @@ export const NOTES_FAILED = 'Your notes didn’t load.';
 export function firstLineOf(body) {
   const line = (body ?? '').split('\n').find((each) => each.trim() !== '');
   return line ? line.trim() : '';
-}
-
-// Order is precedence. Positions are renumbered here so the list on screen agrees with the write.
-export function reorderNotes(notes, from, to) {
-  const target = Math.max(0, Math.min(notes.length - 1, to));
-  if (from === target || !notes[from]) return notes;
-  const next = [...notes];
-  const [moved] = next.splice(from, 1);
-  next.splice(target, 0, moved);
-  return next.map((note, position) => ({ ...note, position }));
-}
-
-// A move writes the moved note's place alone: right after the row drawn above it, so a note the window
-// is holding keeps its stored place. Null is the top of the list.
-export function noteAbove(notes, id, hidden) {
-  const drawn = notes.filter((note) => !hidden.has(note.id));
-  return drawn[drawn.findIndex((note) => note.id === id) - 1]?.id ?? null;
 }
 
 // A refusal speaks in the store's own words where it sent any; the store's sentence is never rewritten.

@@ -7,6 +7,45 @@ import works.windmill.sync.core.*
 import works.windmill.sync.modelserver.*
 
 class ServerPropertyTests {
+    @Test fun absentDeleteSurvivesRestartAndPreventsAnotherReplicasCreateReplay() {
+        val cases = listOf("card" to "card0001", "board" to "b_00000001", "tag" to "restored")
+        for ((type, id) in cases) {
+            val scope = if (type == "tag") ScopeKey("tree:b_00000001") else ScopeKey("acct:A/probe")
+            val key = RecordKey(type, RecordID(id))
+            val born = Stamp("100:0:a"); val death = Stamp("101:0:b")
+            val initial = ServerState().also { it.scopes[scope.text] = ScopeRecord("A") }
+            val admission = Admission(CorpusTests.probe, ProbeServerRules())
+            val deletion = Intent(scope.ref, deltas = listOf(Delta(key, Lattice(Life("dead", death), born)))).json
+            val (deleted, answer) = admission.admit(deletion, IntentOrigin("A", "rp_delete", 1), 200, initial)
+            assertEquals(Json.objectOf("s" to Json.of("ok"), "seq" to Json.of(1)), answer.result)
+            val stored = deleted.idState(key, scope, CorpusTests.probe)
+            val row = checkNotNull(stored.row)
+            assertEquals("dead", stored.state)
+            assertEquals(Lattice(Life("dead", death), born), row.lattice)
+            assertEquals(1L, row.seq)
+            assertEquals(ScopeDigest.ZERO, deleted.scopes.getValue(scope.text).digest)
+            assertEquals(type == "card", deleted.spent[scope.text]?.containsKey(key) == true)
+            val replay = Intent(scope.ref, deltas = listOf(Delta(key, Lattice(Life("alive", born), born)))).json
+            val (after, replayed) = admission.admit(replay, IntentOrigin("A", "rp_creator", 1), 201, ServerState(deleted.json))
+            assertEquals(Json.objectOf("s" to Json.of("ok"), "seq" to Json.of(1)), replayed.result)
+            assertEquals(emptyList<LiveEvent>(), replayed.events)
+            assertEquals(deleted.json, after.json)
+        }
+    }
+
+    @Test fun wrongBirthDeleteRefusesWithoutChangingTheRecreatedRecord() {
+        val scope = ScopeKey("acct:A/probe"); val key = RecordKey("card", RecordID("card0001"))
+        val born = Stamp("200:0:server")
+        val admission = Admission(CorpusTests.probe, ProbeServerRules())
+        val create = Intent(scope.ref, deltas = listOf(Delta(key, Lattice(Life("alive", born), born)))).json
+        val (created, _) = admission.admit(create, IntentOrigin("A", "rp_creator", 1), 200, ServerState())
+        val deletion = Intent(scope.ref, deltas = listOf(Delta(key, Lattice(Life("dead", Stamp("201:0:client")), Stamp("100:0:server"))))).json
+        val (after, answer) = admission.admit(deletion, IntentOrigin("A", "rp_delete", 1), 201, created)
+        assertEquals(Json.objectOf("s" to Json.of("refused"), "code" to Json.of("unknown-record")), answer.result)
+        assertEquals(emptyList<LiveEvent>(), answer.events)
+        assertEquals(created.json, after.json)
+    }
+
     @Test fun property4AdmissionPermutations() {
         var admissions = 0
         repeat(128) { seed ->

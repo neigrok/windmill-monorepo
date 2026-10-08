@@ -3,7 +3,7 @@
 // reader of one record or one object inside it.
 
 import { compareBytes, utf8 } from '../sync/core/encoding.js';
-import { compareJcs, jcs } from '../sync/core/jcs.js';
+import { compareJcs, jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { Instant, LocalDay } from './time.js';
 import { Fault, precondition } from './values.js';
 
@@ -14,7 +14,7 @@ import { Fault, precondition } from './values.js';
  * The engine's view record (engine §7.6): lattice registers `[value, stamp]`, texts as plain strings,
  * serials as numbers.
  * @typedef {{ t: string, id: RecordID, life?: [string, string], born?: string, f?: Record<string, [Json, string]>,
- *   x?: Record<string, string>, v?: Record<string, number> }} ViewRecord
+ *   x?: Record<string, string>, v?: Record<string, number>, rc?: number }} ViewRecord
  */
 /**
  * An entity value: its id, and when written, every client field as JSON.
@@ -23,7 +23,7 @@ import { Fault, precondition } from './values.js';
  */
 /**
  * A registry type as the kit reads it (ER-16): the engine's TypeDef with the members `Object.assign` gives it.
- * @typedef {import('../sync/core/registry.js').TypeDef & { identity: string, scope: string, life?: boolean, cap?: number,
+ * @typedef {import('../../../../packages/api-contract/sync/reference/core/registry.js').TypeDef & { identity: string, scope: string, life?: boolean, cap?: number,
  *   wholePut?: boolean, singletonId?: RecordID, mint?: { prefix: string, alphabet: string, length: number },
  *   fields: Record<string, { kind: string, writer: string }> }} Definition
  */

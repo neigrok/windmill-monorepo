@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ZERO_DIGEST, fromHex, replaceRow, rowHash, scopeDigest } from '../../../../src/platform/sync/core/digest.js';
-import { recordKey } from '../../../../src/platform/sync/core/rows.js';
+import { ZERO_DIGEST, fromHex, replaceRow, rowHash, scopeDigest } from '../../../../../packages/api-contract/sync/reference/core/digest.js';
+import { recordKey } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
 import { Rng, row, st } from '../oracle-adapters/fixtures.js';
 
 function randomRow(rng, id, seq) {

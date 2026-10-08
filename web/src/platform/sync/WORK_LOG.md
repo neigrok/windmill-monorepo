@@ -1,5 +1,10 @@
 # Engine observations
 
+The JS reference's core and client are the browser runtime's imported implementation. Encoding uses
+platform globals and a dependency-free synchronous SHA-256; file reads belong to corpus loaders.
+The browser bundle gate checks that Vite includes the shared modules and excludes reference server
+and test code. Domain layering admits the shared core and the explicit web encoding/content modules.
+
 Strict IndexedDB transactions and stable replica handles provide the durable baseline. Mutable
 replica objects must be detached from the transaction's before-image: otherwise an in-place outbox
 transition also changes the comparison baseline and suppresses its write. The rollback, resend and
@@ -31,8 +36,10 @@ cache size. Queue-to-durability timings are measured; 128-key cleanup batches bo
 The observer hydrates only the scopes it needs after boot and may still do work proportional to
 an observed scope. This work happens in a readonly transaction after the writer commits.
 
-Persisted replay exercises the full fault inventory with a per-seed coverage floor. Real Chromium
-checks close/crash lock handoff, BroadcastChannel observations and rollback across renderer death.
+Both runtime replays register all 20 seeds as separate test cases, each with a 60-second limit,
+so the timeout bounds one seed's work. Every persisted seed exercises all 34 faults and checks
+per-reply isolation and durable restarts. Real Chromium checks close/crash lock handoff,
+BroadcastChannel observations and rollback across renderer death.
 Active replica events follow durable state publication. A surviving tab therefore announces a
 committed transition even when the leader dies before its BroadcastChannel notification; the real
 renderer-crash test exercises this boundary. The isolated production-backend replay checks gym and journal against server rows and digests.
@@ -73,3 +80,23 @@ modules remain outside the copied core/client inventory.
 
 Predicted deletes validate supplied serial names and values before emitting only death and born.
 The shared corpus checks that malformed serials leave the whole device unchanged and nothing to push.
+
+Epoch recovery and authenticated success results commit together. Old acknowledgements replay in
+commit order before later work; without them, recovery records known successful results and product
+receipts before re-identifying. Shared cases cover both reconnect orders, command birth remapping
+and malformed conflicts. Persisted browser checks retain ordered replay across restart and report
+invalid recovery envelopes as transport failures.
+
+A command retains the source and resolved identity of each write map, even without a prediction.
+Replay can then move a delete of a joined session to the session recreated by the server. Legacy
+predictions recover unambiguous targets; unresolved targets keep affected work in a notice.
+Retained commands that shared a resolved target also rebind their source arguments to it, so a
+later replay cannot split one joined session into several recreated sessions before its delete.
+Account-owned proposal apply receipts survive removals so a successful removal can replay without
+becoming a durable refusal.
+
+Networking checks online state and leadership after awaited storage reads as well as before request
+planning. A push or pull paused on its writer cannot start a new request after going offline;
+deliberate cancellation emits no transport failure and retains numbered work for reconnect.
+Closing after a durable write may abandon its publication read; that shutdown emits no storage
+failure. Reopening still recovers the committed work, while an active publication failure reports.

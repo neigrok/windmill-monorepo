@@ -1586,6 +1586,7 @@ class TrainingStore(
         val read = ++logReadRevision
         val page = tried("gym.loadLog") {
             training.recoverAcceptedSets(controls)
+            if (training.planUnreadable) telemetry.failure("gym.loadLog", IllegalStateException("unreadable-frozen-plan"))
             training.sessions(limit = logPage, before = null, beforeId = null)
         }
         if (!workoutAuthorized || seat != owner || read != logReadRevision || live != controls.session?.id) return

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   preferenceRefusal, restLabel,
 } from '../../../../src/products/gym/settings/preferences.js';
-import { CommitError } from '../../../../src/platform/sync/client/commit.js';
+import { CommitError } from '../../../../../packages/api-contract/sync/reference/client/commit.js';
 import { GymRefusal } from '../../../../src/products/gym/errors.js';
 
 test('rest targets are spelled as a clock, and off is a word', () => {

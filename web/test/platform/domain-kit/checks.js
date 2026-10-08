@@ -3,8 +3,8 @@
 import assert from 'node:assert/strict';
 import { Fields } from '../../../src/platform/domain-kit/entities.js';
 import { Refused } from '../../../src/platform/domain-kit/refusals.js';
-import { jcs } from '../../../src/platform/sync/core/jcs.js';
-import { checkDomain, isOnQuantum, lengthIn } from '../../../src/platform/sync/core/values.js';
+import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { checkDomain, isOnQuantum, lengthIn } from '../../../../packages/api-contract/sync/reference/core/values.js';
 import { Contract } from './vectors.js';
 
 /** @typedef {import('../../../src/platform/domain-kit/rules.js').RuleBook} RuleBook */

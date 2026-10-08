@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Section, styles } from '../../../shell/settings/Section.jsx';
-import { useGymApi } from '../gymSync.js';
+import { useGymApi } from '../gymRuntime.js';
 import { useSyncRecords } from '../../../platform/sync/react.js';
 import { NOTES_HREF } from '../log.js';
 import { HEAD_LINE } from '../notes/notes.js';

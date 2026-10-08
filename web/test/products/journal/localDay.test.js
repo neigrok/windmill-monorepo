@@ -36,19 +36,18 @@ function fakeClock() {
   };
 }
 
-test('watchLocalDay — the timer turns the canvas over at midnight and keeps waiting', () => {
+test('watchLocalDay — midnight publishes the next local day and schedules one timer for the following midnight', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 7, 7, 23).getTime() });
   const clock = fakeClock();
 
   assert.deepEqual(clock.said, []);
-  assert.equal(clock.pending().length, 1);
+  assert.deepEqual(clock.pending().map(({ delay }) => delay), [60 * 60 * 1000]);
 
+  t.mock.timers.tick(60 * 60 * 1000);
   clock.fire();
 
-  assert.deepEqual(clock.said, [localDay()]);
-  assert.equal(clock.pending().length, 1, 'the next midnight is already being waited on');
-  // The code read the clock a moment before this line does; a tick between the two is not a defect.
-  const drift = clock.pending()[0].delay - msUntilNextDay();
-  assert.ok(drift >= 0 && drift <= 50, `the timer waits for the next midnight (drift ${drift} ms)`);
+  assert.deepEqual(clock.said, ['2026-08-08']);
+  assert.deepEqual(clock.pending().map(({ delay }) => delay), [24 * 60 * 60 * 1000]);
   clock.stop();
 });
 

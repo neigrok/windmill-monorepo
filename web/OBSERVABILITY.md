@@ -41,15 +41,27 @@ No account identifier or decision content is included.
 Journal reports migration, durable save, pending-claim reconciliation, invitation retirement and
 REST transport failures using static `journal-*` Sentry operation names. Migration and recovery
 emit `sync_commit` with bounded outcome labels; claim/save and first-run retirements use the engine's
-gesture events. No page body, scales, date, claim identifier or account is reported.
+gesture events. Domain refusals retain the complete input in a local editor draft and keep the
+editor's unsaved status; failed reconciliation emits a bounded `sync_commit` failure outcome.
+Post-commit notice-cleanup failures use `journal-notice-cleanup` and preserve the successful save
+outcome. Unreadable legacy data uses `journal-migration`, retains its source, and allows startup.
+No page body, scales, date, claim identifier or account is reported.
 
 Gym engine writes emit `gym_action` through the first-party events intake with only `operation`
 and `outcome`. Operations are routine create/save, exercise create/rename, preferences save,
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
-delete, Undo and refusal. Outcomes are `saved-local`, `unchanged` (a rename to the name the store
-holds, which writes nothing), `failed`, `held`, `undone`, `closed` and `refused`. A local save
+delete, Undo and refusal. Outcomes are `saved-local`, `unchanged` (a clean draft or a rename to the
+name the store holds writes nothing), `failed`, `held`, `undone`, `closed` and `refused`. A local save
 records durability, not server admission. Unexpected product boundary failures use static
-`gym-<operation>` Sentry names; projection failures use `gym-projection`. A gym refusal and a store
+`gym-<operation>` Sentry names; projection failures use `gym-projection`. A malformed frozen plan
+reports that static operation at read and write boundaries and is omitted from the display; the
+workout's facts, set corrections and deletion remain available, and its stored plan is preserved.
+Workout drafts stay in account-scoped device rows while admission is pending or refused; the
+refusal step offers the retained editor without reporting its contents. A gym refusal and a store
 failure report no `gym-<operation>`: engine telemetry owns transport, storage, authentication and
 admission failures. No workout or note content, identifiers, field values, refusal details or raw
 exception messages are reported.
+
+Proposal decisions run through the gym domain. Removal snapshots persist in the account replica
+until their outcome is visible; acknowledging one emits `gym_action` with `proposal-apply` and
+`closed`. Failed acknowledgment uses `gym-proposal-apply`; a storage failure remains engine-owned.

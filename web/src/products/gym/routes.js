@@ -4,7 +4,7 @@
 import { lazy } from 'react';
 import { gymLandingHead } from './marketing/landingHead.js';
 import { sharedLogTokenOf, sharedTokenOf } from './log.js';
-import { gymLiveHint } from './gymSync.js';
+import { gymLiveHint, gymCommandResult } from './gymRuntime.js';
 
 const importGymApp = () => import('./GymApp.jsx').then((m) => ({ default: m.GymApp }));
 const GymApp = lazy(importGymApp);
@@ -48,7 +48,7 @@ export const gymRoutes = {
   render,
   preloadApp: importGymApp,
   // How the gym rides the browser engine; the shell composes every product's hooks into it.
-  sync: { liveHint: gymLiveHint },
+  sync: { liveHint: gymLiveHint, onPushResult: gymCommandResult },
   // `main`: the product zone, with gym's own dials and its Notes door — not `data`, which sits
   // beside the account's close.
   settingsSections: {

@@ -171,7 +171,7 @@ public:
   std::set<RecordRef> parentsWanted() const;
   void checkParents(const std::map<RecordRef, std::optional<Row>>& storedParents) const;
 
-  // Step 11: the stored maxima a new record's serial fields need, then the numbering in admission order.
+  // Step 11: the stored maxima a new alive record's serial fields need, then numbering in admission order.
   std::vector<SerialWanted> serialsWanted() const;
   void assignSerials(const std::map<std::string, std::optional<std::int64_t>>& storedMaxima);
 

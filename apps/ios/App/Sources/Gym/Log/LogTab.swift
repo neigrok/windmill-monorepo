@@ -95,7 +95,7 @@ struct LogTab: View {
                     }
                     Text("Last 12 weeks · \(progress.sessions.count) sessions").font(.caption.monospaced()).foregroundStyle(palette.dim)
                     if let best = progress.best?.fact.estimate { Text("best \(Readout.estimate(best.e1rm))").font(.subheadline.monospaced()).foregroundStyle(palette.record) }
-                    if let heavy = progress.heaviest?.fact.heaviest {
+                    ForEach(LogPresentation.progressEfforts(progress), id: \.setId) { heavy in
                       Text(heavy.weightKg == 0 ? "most reps \(heavy.reps) · bodyweight" : "heaviest \(Readout.effort(weightKg: heavy.weightKg, reps: heavy.reps))").font(.subheadline.monospaced()).foregroundStyle(palette.dim)
                     }
                   }.padding(12).containerRelativeFrame(.horizontal, alignment: .leading) { width, _ in

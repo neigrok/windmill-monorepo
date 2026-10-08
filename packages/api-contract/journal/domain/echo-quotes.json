@@ -1,0 +1,210 @@
+[
+  {
+    "name": "composed-source-decomposed-quotation",
+    "input": {
+      "body": "🌙 café.",
+      "text": "café"
+    },
+    "expect": {
+      "range": [
+        3,
+        7
+      ]
+    }
+  },
+  {
+    "name": "decomposed-source-composed-quotation",
+    "input": {
+      "body": "🌙 café.",
+      "text": "café"
+    },
+    "expect": {
+      "range": [
+        3,
+        8
+      ]
+    }
+  },
+  {
+    "name": "raw-prefix-length-is-preserved",
+    "input": {
+      "body": "é / café.",
+      "text": "café"
+    },
+    "expect": {
+      "range": [
+        5,
+        9
+      ]
+    }
+  },
+  {
+    "name": "first-equivalent-occurrence",
+    "input": {
+      "body": "café / café",
+      "text": "café",
+      "occurrenceHint": 0
+    },
+    "expect": {
+      "range": [
+        0,
+        5
+      ]
+    }
+  },
+  {
+    "name": "second-equivalent-occurrence",
+    "input": {
+      "body": "café / café",
+      "text": "café",
+      "occurrenceHint": 1
+    },
+    "expect": {
+      "range": [
+        8,
+        12
+      ]
+    }
+  },
+  {
+    "name": "overcount-falls-back-to-first",
+    "input": {
+      "body": "café / café",
+      "text": "café",
+      "occurrenceHint": 8
+    },
+    "expect": {
+      "range": [
+        0,
+        5
+      ]
+    }
+  },
+  {
+    "name": "negative-hint-means-first",
+    "input": {
+      "body": "café / café",
+      "text": "café",
+      "occurrenceHint": -1
+    },
+    "expect": {
+      "range": [
+        0,
+        5
+      ]
+    }
+  },
+  {
+    "name": "hangul-composition",
+    "input": {
+      "body": "🌙 가.",
+      "text": "가"
+    },
+    "expect": {
+      "range": [
+        3,
+        5
+      ]
+    }
+  },
+  {
+    "name": "canonical-mark-order",
+    "input": {
+      "body": "ạ́.",
+      "text": "ạ́"
+    },
+    "expect": {
+      "range": [
+        0,
+        3
+      ]
+    }
+  },
+  {
+    "name": "composition-exclusion",
+    "input": {
+      "body": "̈́.",
+      "text": "̈́"
+    },
+    "expect": {
+      "range": [
+        0,
+        1
+      ]
+    }
+  },
+  {
+    "name": "real-edit-retracts",
+    "input": {
+      "body": "🌙 café closed.",
+      "text": "café opened"
+    },
+    "expect": {
+      "range": null
+    }
+  },
+  {
+    "name": "accent-removal-is-a-real-edit",
+    "input": {
+      "body": "cafe",
+      "text": "café"
+    },
+    "expect": {
+      "range": null
+    }
+  },
+  {
+    "name": "case-remains-significant",
+    "input": {
+      "body": "CAFÉ",
+      "text": "café"
+    },
+    "expect": {
+      "range": null
+    }
+  },
+  {
+    "name": "compatibility-spelling-is-not-nfc",
+    "input": {
+      "body": "ﬁre",
+      "text": "fire"
+    },
+    "expect": {
+      "range": null
+    }
+  },
+  {
+    "name": "empty-quotation-is-absent",
+    "input": {
+      "body": "café",
+      "text": ""
+    },
+    "expect": {
+      "range": null
+    }
+  },
+  {
+    "name": "empty-journal-is-absent",
+    "input": {
+      "body": "",
+      "text": "café"
+    },
+    "expect": {
+      "range": null
+    }
+  },
+  {
+    "name": "nonoverlapping-occurrences",
+    "input": {
+      "body": "aaa",
+      "text": "aa",
+      "occurrenceHint": 1
+    },
+    "expect": {
+      "range": [
+        0,
+        2
+      ]
+    }
+  }
+]

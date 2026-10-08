@@ -18,7 +18,7 @@ for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCr
 | `preferences-actions.json` | Draft preference saves and rest defaults |
 | `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
 | `proposals-actions.json` | Propose, apply/dismiss, ordered diff, change count, provenance and optional R118 metadata reads |
-| `training-reads.json` | Prefill, last time, readouts, the canonical estimate, complete progress projection, movement records and chart windows |
+| `training-reads.json` | Prefill, last time, readouts, the canonical estimate, complete progress projection, movement records, chart windows and shared history documents |
 | `units.json` | Units, signed weight ladder, formatting, rounding and rep steps |
 | `../rules/bodyweight.json` | Bodyweight stance, readings, chart windows and gaps |
 | `../../gym-ladder.json` | The existing cross-surface ladder, also run directly by both domains |
@@ -29,7 +29,8 @@ An action scene has `{action, input, records:{drawn, stored?}, ids?, now, offset
 `stored` defaults to `drawn`. A read scene replaces `action` with `read` and may specify
 `firstPullComplete:false`. That flag prevents absence and lifetime-best claims over a booting history.
 Pure value reads use their input directly. Malformed decode cases return
-`{decodeError:{type,field,reason}}` and never discard malformed fields silently.
+`{decodeError:{type,field,reason}}`. An unreadable frozen session plan is retained as exact JSON,
+with `planUnreadable` marking its absent presentation; other session facts and writes remain available.
 
 ## Public entities and values
 
@@ -40,7 +41,8 @@ from scene rows; an input set's `setNumber` names the identity retained by a cor
 
 `RoutineEntry` has `exerciseId`, optional `sets` and optional `restSeconds`.
 A `SetTarget` has optional `reps` and `weightKg`; omission means max reps or last load.
-Absent sets mean an open line. `SessionPlan` freezes `{routine,entries}`.
+Absent sets mean an open line. `SessionPlan` freezes `{routine,entries}`. A session's malformed
+frozen plan stays in its fields through closure and correction and cannot block editing sets or removal.
 
 `ImportedSet` carries `id,exerciseId,weightKg,reps,completedAt` and optional `kind,rpe,note`.
 `CorrectedSet` adds required `setNumber`: kept sets keep their kind; new ones take optional `kind`,
@@ -89,12 +91,26 @@ finish behavior, start bounds and half-open overlap. `SetRules` pins next-number
 `LastTime` selects the latest finished movement session. `Prefill` follows ordered targets,
 last-time rows and today's working-set override. `SessionReadout` provides duration, working-set
 and movement counts, positive working tonnage and the session estimate. `StatsProgress` groups
-finished working facts in total order, with unrounded estimates for ranking. `MovementProgress`
+finished working facts in total order, with full-precision estimate values. `MovementProgress`
 provides twelve-week/all windows, best, heaviest, most reps, record steps, sparse-chart eligibility
 and gaps. All estimates use `GymEstimate`: positive working load, 1–10 reps, supplied RPE ≥7;
 one rep is the load itself, otherwise Epley. Incomplete history does not assert a best or absence.
+Estimate ordering compares exact cent-load scores: load in cents multiplied by 30 for one rep or
+by `30 + reps` otherwise. Equal scores retain the earliest session, then lowest session identity;
+within a session, the lowest set identity wins.
+`BodyweightReps` exposes the independent zero-load repetition fact of each session and its best
+in the requested window. Higher assisted repetitions or equally repeated added load never replace
+that fact; the all-load `mostReps` read retains its own ordering. Partial history has facts but no best.
 
-Both engines accept create/update/write/removal predictions. Omitted sets in completed-session
+`TrainingHistory` composes the mirror documents through the same entities and reads. Its vectors use
+`input:{method,args}` and preserve catalogue and routine joins, proposal provenance, last-set selection,
+session summaries, reviews, record details and weekly totals. History filters apply before summary and
+facet aggregation; only the returned session page uses the cursor and limit. Equal session timestamps
+sort by ascending identity, and the next page excludes identities through `beforeId`. Tonnage sums
+loads in their storage quanta; estimates retain full precision. Record steps include the first baseline.
+The 112 training-read cases include 36 complete mirror documents and 22 adversarial read scenes.
+
+The engines accept create/update/write/removal predictions. Omitted sets in completed-session
 replacement and a proposal-removed routine disappear locally while their command is pending;
 a refusal restores them. Joined session identities and pending
 set parents reconcile through the engine's write map. UI callers read the view again after resolution.

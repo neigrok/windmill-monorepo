@@ -2062,6 +2062,18 @@ today's dirty value before showing another day or rolling over at midnight. A re
 failure keeps the unsaved input available and the editor shown. It never erases the input or
 reports backup merely because an action returned `committed`.
 
+Sign-in carries every durable draft into its account or keeps it accessible for recovery on the
+device. Adoption keeps the destination's current document and retains distinct displaced writing;
+identical day and document bytes do not create another recovery copy. An untouched recovered draft
+follows newer peer corrections instead of masking them, while the older writing remains recoverable.
+A failure in cleanup after a durable save cannot turn that saved document into unsaved input or
+carry it onto another day.
+
+Legacy migration is not a prerequisite for opening the journal. Invalid commands become recoverable
+writing; malformed or unreadable sources stay intact when migration cannot finish. Valid entries
+can proceed independently. Distinct overlapping sources and replacement snapshots must not be
+discarded or replayed as another appending contribution.
+
 `journalState` is a non-primary, client-written singleton. Its fields `placeholder`, `privacyLine`,
 `firstPage` and `scales` are ranked strings: `pending: 0`, `retired: 1`, default `pending`. Each
 retirement is monotone; a later device writing `pending` cannot re-offer it. This state follows the
@@ -2094,7 +2106,8 @@ only then may the meta line say **backed up**.
 Offline or refused content keeps its truthful local/pending state. No page shows a spinner or a
 save button.
 
-Search, voice, echoes, nudges and the week have no controls or stub actions on this iOS surface.
+Search, voice, nudges and the week have no controls or stub actions on this iOS surface.
+Echoes are an online REST feature beside the canvas; they do not participate in the writing actions.
 Their existing web computations, tables and REST doors remain as engine A.3 specifies. The page
 entity does not acquire fields for those features merely because web can derive them.
 

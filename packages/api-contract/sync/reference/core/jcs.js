@@ -1,6 +1,8 @@
 // RFC 8785 JSON Canonicalization Scheme (§3.2 `jcs`). `compareJcs` orders values by the UTF-8 bytes
 // of their encoding, which differs from JavaScript string order above U+FFFF.
 
+import { utf8, compareBytes } from './encoding.js';
+
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
 
 export class JcsError extends Error {}
@@ -26,11 +28,11 @@ export function jcs(value) {
 }
 
 export function jcsBytes(value) {
-  return Buffer.from(jcs(value), 'utf8');
+  return utf8(jcs(value));
 }
 
 export function compareJcs(a, b) {
-  return Buffer.compare(jcsBytes(a), jcsBytes(b));
+  return compareBytes(jcsBytes(a), jcsBytes(b));
 }
 
 export function sameJson(a, b) {

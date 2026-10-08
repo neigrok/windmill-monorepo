@@ -1,12 +1,19 @@
 // @ts-check
 
-import { EntityType, Fields, Id } from '../../../platform/domain-kit/entities.js';
 import { Rule, RuleBook } from '../../../platform/domain-kit/rules.js';
-import { Check } from '../../../platform/domain-kit/validation.js';
-import { ChoiceSpec, CountSpec, NumberSpec, Path, TextSpec, Violation } from '../../../platform/domain-kit/values.js';
+import { ChoiceSpec, CountSpec, NumberSpec, TextSpec, Violation } from '../../../platform/domain-kit/values.js';
 import { registry } from '../../../platform/sync/schema.js';
 import { WeighIn, WeighInRules } from './bodyweight.js';
 import { Preferences, PreferencesRules } from './preferences.js';
+import { Note, NoteRules } from './notes.js';
+import { Exercise, ExerciseName } from './catalogue.js';
+import { Routine } from './routines.js';
+import { Proposal } from './proposals.js';
+import { Session, SetRules, TrainingSet } from './training.js';
+export { Session, SessionRules, SetRules, TrainingSet } from './training.js';
+export { Exercise, ExerciseName } from './catalogue.js';
+export { Routine } from './routines.js';
+export { Proposal } from './proposals.js';
 
 /** @typedef {import('../../../platform/domain-kit/values.js').Json} Json */
 /** @typedef {import('../../../platform/domain-kit/entities.js').RecordRef} RecordRef */
@@ -60,11 +67,6 @@ export function refusalForm(refusal) {
   return { [refusal.kind]: { code, subject, detail, path } };
 }
 
-export const NoteRules = Object.freeze({
-  title: new TextSpec('note.title', { unit: 'chars', min: 1, max: 60, trim: true, nfc: true }),
-  body: new TextSpec('note.body', { unit: 'bytes', min: 0, max: 500, trim: true, nfc: true }),
-});
-
 export const ExerciseRules = Object.freeze({
   name: new TextSpec('exercise.name', { unit: 'chars', min: 1, max: 60, trim: true, nfc: true }),
   seedName: new TextSpec('exerciseName.name', { unit: 'chars', min: 1, max: 60, trim: true, nfc: true }),
@@ -105,28 +107,6 @@ export const ProposalRules = Object.freeze({
   after: targetSpecs('proposal.changes.after'),
 });
 
-export const SetRules = Object.freeze({
-  weightKg: new NumberSpec('set.weightKg', { min: -500, max: 500, quantum: 0.01 }),
-  reps: new NumberSpec('set.reps', { min: 1, max: 500, integer: true }),
-  kind: new ChoiceSpec('set.kind', ['warmup', 'working', 'drop', 'failure']),
-  rpe: new NumberSpec('set.rpe', { min: 1, max: 10, quantum: 0.1 }),
-  note: new TextSpec('set.note', { unit: 'bytes', min: 0, max: 4000, trim: false, nfc: false }),
-});
-
-export const SessionRules = Object.freeze({
-  maxInstantMs: 253_402_300_799_000,
-  /**
-   * @param {number} value
-   * @param {string} rule
-   * @param {Path} path
-   */
-  instant(value, rule, path) {
-    if (value < 1) throw new Violation(rule, path, { kind: 'below', min: 1 });
-    if (value > SessionRules.maxInstantMs) throw new Violation(rule, path, { kind: 'above', max: SessionRules.maxInstantMs });
-    return value;
-  },
-});
-
 export const CommandSpecs = Object.freeze([
   new TextSpec('gym.correctSession.requestId', { unit: 'chars', min: 8, max: 64, trim: false, nfc: false }),
   new TextSpec('gym.correctSession.routineName', { unit: 'bytes', min: 0, max: 240, trim: false, nfc: false }),
@@ -138,170 +118,6 @@ export const CommandSpecs = Object.freeze([
   ]),
 ]);
 
-/**
- * @param {Record<string, Json>} fields
- * @returns {Record<string, Json>}
- */
-function omittingNull(fields) { return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== null)); }
-
-/** @param {Fields} f */
-function targetForm(f) { return omittingNull({ reps: f.optionalInt('reps'), weightKg: f.optionalDouble('weightKg') }); }
-
-/** @param {Fields} f */
-function targetsForm(f) { return omittingNull({ sets: f.optionalList('sets', targetForm), restSeconds: f.optionalInt('restSeconds') }); }
-
-/** @param {Fields} f */
-function entryForm(f) { return { exerciseId: f.ref('exerciseId', Exercise).json, ...targetsForm(f) }; }
-
-/** @param {Fields} f */
-function changeForm(f) {
-  return omittingNull({ kind: f.string('kind'), exerciseId: f.ref('exerciseId', Exercise).json,
-    before: f.optionalValue('before', targetsForm), after: f.optionalValue('after', targetsForm) });
-}
-
-/**
- * @param {Json} value
- * @param {Path} path
- * @param {ReturnType<typeof targetSpecs>} specs
- * @param {'routine' | 'proposal'} subject
- */
-function validateTargets(value, path, specs, subject) {
-  const fields = Fields.object(value, subject, path.text);
-  const sets = specs.sets.applyOptional(fields.optionalList('sets', targetForm), path.plus('sets'), (item, at) => {
-    const target = Fields.object(item, subject, at.text);
-    const rawReps = target.optionalInt('reps');
-    const rawWeight = target.optionalDouble('weightKg');
-    if (rawReps === 0) throw new Violation(`${subject}.zeroTarget`, at.plus('reps'), { kind: 'custom', custom: 'zeroTarget' });
-    const reps = specs.reps.applyOptional(rawReps, at.plus('reps'));
-    const weightKg = specs.weight.applyOptional(rawWeight, at.plus('weightKg'));
-    if (weightKg === 0 && (subject === 'proposal' || rawWeight !== 0)) {
-      throw new Violation(`${subject}.zeroTarget`, at.plus('weightKg'), { kind: 'custom', custom: 'zeroTarget' });
-    }
-    return omittingNull({ reps, weightKg });
-  });
-  return omittingNull({ sets, restSeconds: specs.rest.applyOptional(fields.optionalInt('restSeconds'), path.plus('restSeconds')) });
-}
-
-// The book's field-validated records share one immutable value; feature-specific reads use their own value types.
-class GymRecord {
-  /**
-   * @param {Id<GymRecord>} id
-   * @param {Record<string, Json>} fields
-   */
-  constructor(id, fields) {
-    this.id = id;
-    this.values = /** @type {Record<string, Json>} */ (frozenJson(fields));
-    Object.freeze(this);
-  }
-
-  fields() { return { ...this.values }; }
-}
-
-/**
- * @param {Json} value
- * @returns {Json}
- */
-function frozenJson(value) {
-  if (Array.isArray(value)) return /** @type {Json[]} */ (Object.freeze(value.map(frozenJson)));
-  if (value !== null && typeof value === 'object') {
-    return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, item]) => [key, frozenJson(item)])));
-  }
-  return value;
-}
-
-/**
- * @param {string} type
- * @param {(f: Fields) => Record<string, Json>} decode
- * @param {Record<string, (f: Fields, path: Path) => Json> | null} checks
- * @param {{ heldRemoval?: boolean, orderField?: string, savesGuarded?: boolean }} protocols
- * @returns {EntityType<GymRecord>}
- */
-function entity(type, decode, checks, protocols = {}) {
-  /** @type {EntityType<GymRecord>} */
-  const declared = new EntityType({ type, scope: 'self/gym', ...protocols,
-    decode: (f) => new GymRecord(new Id(f.id, declared), decode(f)),
-    ...(checks === null ? {} : { checks: Object.entries(checks).map(([field, apply]) => new Check(field, (value) =>
-      new GymRecord(value.id, { ...value.fields(), [field]: apply(Fields.values(type, value.id.record, value.fields()), new Path(field)) }))) }),
-  });
-  return declared;
-}
-
-export const Note = entity('note', (f) => ({ title: f.string('title'), body: f.string('body', '') }), {
-  title: (f, path) => NoteRules.title.apply(f.string('title'), path),
-  body: (f, path) => NoteRules.body.apply(f.string('body'), path),
-}, { heldRemoval: true, orderField: 'ord', savesGuarded: true });
-
-export const Exercise = entity('exercise', (f) => ({ name: f.string('name'), pattern: f.string('pattern'),
-  equipment: f.string('equipment'), stepKg: f.double('stepKg') }), {
-  name: (f, path) => ExerciseRules.name.apply(f.string('name'), path),
-  pattern: (f, path) => ExerciseRules.pattern.apply(f.string('pattern'), path),
-  equipment: (f, path) => ExerciseRules.equipment.apply(f.string('equipment'), path),
-  stepKg: (f, path) => ExerciseRules.stepKg.apply(f.double('stepKg'), path),
-});
-
-export const ExerciseName = entity('exerciseName', (f) => ({ name: f.optionalString('name') }), {
-  name: (f, path) => ExerciseRules.seedName.applyOptional(f.optionalString('name'), path),
-});
-
-export const Routine = entity('routine', (f) => ({ name: f.string('name'), position: f.optionalInt('position') ?? 0,
-  entries: f.list('entries', entryForm) }), {
-  name: (f, path) => RoutineRules.name.apply(f.string('name'), path),
-  position: (f, path) => RoutineRules.position.apply(f.int('position'), path),
-  entries: (f, path) => RoutineRules.entries.apply(f.list('entries', entryForm), path, (entry, at) => {
-    RoutineRules.exercise.apply(typeof entry.exerciseId === 'string' ? entry.exerciseId : '', at.plus('exerciseId'));
-    return { exerciseId: entry.exerciseId, ...validateTargets(entry, at, RoutineRules.targets, 'routine') };
-  }),
-}, { heldRemoval: true, savesGuarded: true });
-
-export const Session = entity('session', (f) => ({ startedAt: f.instant('startedAt').ms,
-  finishedAt: f.optionalInstant('finishedAt')?.ms ?? null, closedBy: f.optionalString('closedBy'),
-  routineId: f.optionalRef('routineId', Routine)?.json ?? null,
-  historyRoutineId: f.optionalRef('historyRoutineId', Routine)?.json ?? null,
-  plan: f.json('plan') ?? null, displayName: f.optionalString('displayName') }), null, { heldRemoval: true });
-
-export const TrainingSet = entity('set', (f) => ({ sessionId: f.ref('sessionId', Session).json,
-  exerciseId: f.ref('exerciseId', Exercise).json, weightKg: f.double('weightKg'), reps: f.int('reps'),
-  kind: f.string('kind', 'working'), rpe: f.optionalDouble('rpe'), note: f.string('note', ''), completedAt: f.instant('completedAt').ms }), {
-  weightKg: (f, path) => SetRules.weightKg.apply(f.double('weightKg'), path),
-  reps: (f, path) => SetRules.reps.apply(f.int('reps'), path),
-  kind: (f, path) => SetRules.kind.apply(f.string('kind'), path),
-  rpe: (f, path) => SetRules.rpe.applyOptional(f.optionalDouble('rpe'), path),
-  note: (f, path) => SetRules.note.apply(f.string('note'), path),
-  completedAt: (f, path) => SessionRules.instant(f.instant('completedAt').ms, 'set.completedAt', path),
-}, { heldRemoval: true });
-
-export const Proposal = entity('proposal', (f) => ({ routineId: f.ref('routineId', Routine).json,
-  intent: f.string('intent'), proposedName: f.string('proposedName', ''), summary: f.string('summary', ''),
-  changes: f.list('changes', changeForm), door: f.string('door', 'ask'), connection: f.string('connection', ''), agent: f.string('agent', '') }), {
-  intent: (f, path) => ProposalRules.intent.apply(f.string('intent'), path),
-  proposedName: (f, path) => ProposalRules.name.apply(f.string('proposedName'), path),
-  summary: (f, path) => ProposalRules.summary.apply(f.string('summary'), path),
-  changes: (f, path) => {
-    const changes = ProposalRules.changes.apply(f.list('changes', changeForm), path, (change, at) => {
-      const fields = Fields.object(change, 'proposal', at.text);
-      const kind = ProposalRules.kind.apply(fields.string('kind'), at.plus('kind'));
-      const exerciseId = fields.ref('exerciseId', Exercise).json;
-      ProposalRules.exercise.apply(typeof exerciseId === 'string' ? exerciseId : '', at.plus('exerciseId'));
-      const before = fields.optionalValue('before', targetsForm);
-      const after = fields.optionalValue('after', targetsForm);
-      if ((kind === 'added') !== (before === null) || (kind === 'removed') !== (after === null)) {
-        throw new Violation('proposal.changes', at, { kind: 'custom', custom: 'side' });
-      }
-      return omittingNull({ kind, exerciseId,
-        before: before === null ? null : validateTargets(before, at.plus('before'), ProposalRules.before, 'proposal'),
-        after: after === null ? null : validateTargets(after, at.plus('after'), ProposalRules.after, 'proposal') });
-    });
-    const removed = changes.findIndex((change) => change.kind === 'removed');
-    if (removed >= 0 && changes.slice(removed).some((change) => change.kind !== 'removed')) {
-      throw new Violation('proposal.changes', path, { kind: 'custom', custom: 'removalsLast' });
-    }
-    return changes;
-  },
-  door: (f, path) => ProposalRules.door.apply(f.string('door'), path),
-  connection: (f, path) => ProposalRules.connection.apply(f.string('connection'), path),
-  agent: (f, path) => ProposalRules.agent.apply(f.string('agent'), path),
-});
-
 /** @type {RuleBook | null} */
 let book = null;
 
@@ -311,7 +127,7 @@ export const GymRules = Object.freeze({
     const { before, after, ...proposal } = ProposalRules;
     return Object.freeze([...Object.values(NoteRules), WeighInRules.kg, PreferencesRules.units,
       ...Object.values(ExerciseRules), ...Object.values(routine), ...Object.values(targets),
-      ...Object.values(proposal), ...Object.values(before), ...Object.values(after), ...Object.values(SetRules), ...CommandSpecs]);
+      ...Object.values(proposal), ...Object.values(before), ...Object.values(after), SetRules.weightKg, SetRules.reps, SetRules.kind, SetRules.rpe, SetRules.note, ...CommandSpecs]);
   },
   /** @param {string} path */
   spec(path) { return GymRules.specs.find((spec) => spec.path === path) ?? null; },

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../design-system/index.js';
+import { lengthIn } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 import '../coach/coach.css';
 import './notes.css';
 import { Back } from '../Back.jsx';
@@ -8,12 +9,13 @@ import { COACH_HREF, NOTES_HREF } from '../log.js';
 import { CoachNavigation } from '../coach/CoachNavigation.jsx';
 import { COACH_TITLE } from '../coach/coach.js';
 import { useRail } from '../rail.js';
-import { useGymRead } from '../useGymRead.js';
-import { useGymApi } from '../gymSync.js';
+import { useDomainRead } from '../useDomainRead.js';
+import { useGymApi, noteDraft, notesDocument } from '../gymRuntime.js';
+import { Note, NoteRules } from '../domain/notes.js';
 import {
   ADD_VERB, byteCountLabel, DELETE_VERB, firstLineOf, FULL_LINE, HEAD_LINE, HONESTY_LINE,
-  isBodyOverCap, isFull, isTitleOverCap, mintNoteId, noteRefusal, NOTES_FAILED, NOTES_TITLE,
-  noteAbove, PLACEHOLDER_TITLES, PRECEDENCE_CAPTION, reorderNotes, showsByteCount, showsTitleCount,
+  noteRefusal, NOTES_FAILED, NOTES_TITLE,
+  PLACEHOLDER_TITLES, PRECEDENCE_CAPTION, showsByteCount, showsTitleCount,
   titleCountLabel,
 } from './notes.js';
 
@@ -21,40 +23,45 @@ function countReadout(label) {
   return label.split(/(\d+)/).map((part, index) => index % 2 ? <span key={index}>{part}</span> : part);
 }
 
-// Reached only signed in, like the Coach room it is a door off. The list is the store's order; a
-// drag moves it here first and the store's answer replaces it.
+// Pending deletes leave the screen before persistence; the kit counts them through the delete window.
 export function Notes({ log }) {
   const api = useGymApi();
-  const view = useGymRead(() => api.notes(), [], { sync: true, ready: Boolean(api?.ready) });
-  const [held, setHeld] = useState(null);
+  const view = useDomainRead((read) => ({ notes: notesDocument(read), capacity: read.repository(Note).capacity(),
+    firstPullComplete: read.firstPullComplete() }));
   const [editing, setEditing] = useState(null);
-  useEffect(() => setHeld(null), [view.data]);
-
-  // The store's list, and the rows that may be drawn over it: a note the window is holding is off
-  // the screen for the length of its window and off it for good once the store has answered — but
-  // the store still holds it, which is what BOTH stances about the account are read from: the cap
-  // that refuses an eleventh note, and the empty room that offers the first.
-  const notes = held ?? view.data ?? [];
+  // Keep the rail's selected index aligned until every queued move has published.
+  const [order, setOrder] = useState(null);
+  const pendingMoves = useRef(0);
   const hidden = log.hidden('note');
-  const shown = notes.filter((note) => !hidden.has(note.id));
+  const editingHidden = editing !== null && hidden.has(editing.id);
+  useEffect(() => { if (editingHidden) setEditing(null); }, [editingHidden]);
+  const drawn = (view.data?.notes ?? []).filter((note) => !hidden.has(note.id));
+  const notes = order === null ? drawn : [
+    ...order.flatMap((id) => drawn.filter((note) => note.id === id)),
+    ...drawn.filter((note) => !order.includes(note.id)),
+  ];
+  const capacity = view.data?.capacity;
+  const phase = view.phase === 'ready' && !view.data.firstPullComplete && capacity.used === 0 ? 'loading' : view.phase;
 
-  const settle = (list) => {
-    setHeld(list);
-    view.retry();
-  };
-
-  // The indices are the drawn list's; the list moved is the whole store's, which a note held for
-  // deletion is still part of until its window closes.
+  // The rail names the selected note and its new drawn predecessor; the domain moves that id alone.
   const move = async (from, to) => {
-    const { id } = shown[from];
-    const moved = reorderNotes(notes, notes.indexOf(shown[from]), notes.indexOf(shown[to]));
-    if (moved === notes) return;
-    setHeld(moved);
+    if (from === to || !notes[from] || !notes[to]) return false;
+    const { id } = notes[from];
+    const below = (from < to ? notes[to] : notes[to - 1])?.id ?? null;
+    const next = notes.map((note) => note.id);
+    next.splice(from, 1);
+    next.splice(to, 0, id);
+    pendingMoves.current += 1;
+    setOrder(next);
     try {
-      setHeld(await api.moveNote(id, noteAbove(moved, id, hidden)));
+      await api.moveNote(id, below);
+      return true;
     } catch (error) {
       log.say(noteRefusal(error, 'reordered'));
-      settle(null);
+      return false;
+    } finally {
+      pendingMoves.current -= 1;
+      if (pendingMoves.current === 0) setOrder(null);
     }
   };
 
@@ -70,29 +77,26 @@ export function Notes({ log }) {
     setEditing(null);
   };
 
-  if (editing) {
+  if (editing && !editingHidden) {
     return (
       <NoteEditor
         note={editing}
-        noteCount={notes.length}
+        noteCount={capacity?.used ?? null}
         onClose={() => setEditing(null)}
-        onSaved={(stored) => {
+        onSaved={() => {
           setEditing(null);
-          settle(notes.some((each) => each.id === stored.id)
-            ? notes.map((each) => (each.id === stored.id ? stored : each))
-            : [...notes, stored]);
         }}
         onDelete={remove}
-        onStale={() => settle(null)}
+        onStale={view.retry}
       />
     );
   }
 
-  const fresh = (title = '') => setEditing({ id: mintNoteId(), title, body: '', fresh: true });
+  const fresh = (title = '') => setEditing({ id: api.mintNote(), title, body: '', fresh: true });
 
   return (
     <section className="gym-notes">
-      <CoachNavigation active="notes" noteCount={notes.length} />
+      <CoachNavigation active="notes" noteCount={capacity?.used ?? null} />
       <Back href={COACH_HREF}>{COACH_TITLE}</Back>
       <header className="gym-notes-heading">
         <div className="gym-notes-head">
@@ -102,21 +106,17 @@ export function Notes({ log }) {
         <p className="gym-notes-disclosure">{HONESTY_LINE}</p>
       </header>
 
-      {view.phase === 'loading' && held === null && <p className="gym-quiet">Opening your notes…</p>}
-      {view.phase === 'failed' && held === null && (
+      {phase === 'loading' && <p className="gym-quiet">Opening your notes…</p>}
+      {phase === 'failed' && (
         <p className="gym-read-failed">
           {NOTES_FAILED}
           <Button variant="secondary" size="sm" onClick={view.retry}>Retry</Button>
         </p>
       )}
 
-      {(view.phase === 'ready' || held !== null) && (
+      {phase === 'ready' && (
         <>
-          {/* Off the STORE, like the cap below it: the placeholders seed an account with nothing in
-              it, and an account holding one note the window has taken off the screen is not that
-              account — the note comes back on Undo, and a placeholder tapped meanwhile mints a
-              second. Between them the room draws no rows, which is what both phones draw here. */}
-          {notes.length === 0 && (
+          {capacity.used === 0 && (
             <ul className="gym-notes-rows">
               {PLACEHOLDER_TITLES.map((title) => (
                 <li key={title}>
@@ -128,10 +128,10 @@ export function Notes({ log }) {
             </ul>
           )}
 
-          {shown.length > 0 && <NoteList notes={shown} onOpen={setEditing} onMove={move} />}
+          {notes.length > 0 && <NoteList notes={notes} onOpen={setEditing} onMove={move} />}
           <div className="gym-notes-footer">
-            {shown.length > 1 && <p className="gym-notes-caption">{PRECEDENCE_CAPTION}</p>}
-            {isFull(notes)
+            {notes.length > 1 && <p className="gym-notes-caption">{PRECEDENCE_CAPTION}</p>}
+            {capacity.isFull
               ? <p className="gym-notes-full">{FULL_LINE}</p>
               : <button type="button" className="gym-notes-add" onClick={() => fresh()}>{ADD_VERB}</button>}
           </div>
@@ -153,7 +153,7 @@ function NoteList({ notes, onOpen, onMove }) {
     count: notes.length,
     nameOf: (index) => notes[index].title,
     placeOf: (index) => `${index + 1} of ${notes.length}`,
-    move: onMove,
+    move: async (from, to) => { if (!await onMove(from, to)) rail.reset(); },
   });
 
   const shift = (event) => Math.round((event.clientY - drag.from) / (rowHeight.current || 1));
@@ -217,6 +217,7 @@ function NoteList({ notes, onOpen, onMove }) {
 // `onStale` re-reads it while the editor stays open with the sentence.
 export function NoteEditor({ note, noteCount = null, onClose, onSaved, onDelete, onStale }) {
   const api = useGymApi();
+  const [draft, setDraft] = useState(() => noteDraft(note));
   const [title, setTitle] = useState(note.title);
   const [body, setBody] = useState(note.body);
   const [saving, setSaving] = useState(false);
@@ -229,7 +230,9 @@ export function NoteEditor({ note, noteCount = null, onClose, onSaved, onDelete,
     setSaving(true);
     setRefused('');
     try {
-      onSaved(await api.saveNote(note.id, { title: title.trim(), body: body.trim() }, note));
+      const stored = await api.saveNote(note.id, { title, body }, draft);
+      setDraft(stored.draft);
+      onSaved(stored);
     } catch (error) {
       setSaving(false);
       setRefused(noteRefusal(error, 'saved'));
@@ -258,7 +261,7 @@ export function NoteEditor({ note, noteCount = null, onClose, onSaved, onDelete,
             autoFocus
           />
           {showsTitleCount(title) && (
-            <p className={isTitleOverCap(title) ? 'gym-note-count is-over' : 'gym-note-count'}>{countReadout(titleCountLabel(title))}</p>
+            <p className={lengthIn(NoteRules.title.unit, title) > NoteRules.title.max ? 'gym-note-count is-over' : 'gym-note-count'}>{countReadout(titleCountLabel(title))}</p>
           )}
         </div>
         <div className="gym-note-field">
@@ -273,7 +276,7 @@ export function NoteEditor({ note, noteCount = null, onClose, onSaved, onDelete,
             onChange={(event) => setBody(event.target.value)}
           />
           {showsByteCount(body) && (
-            <p className={isBodyOverCap(body) ? 'gym-note-count is-over' : 'gym-note-count'}>{countReadout(byteCountLabel(body))}</p>
+            <p className={lengthIn(NoteRules.body.unit, body) > NoteRules.body.max ? 'gym-note-count is-over' : 'gym-note-count'}>{countReadout(byteCountLabel(body))}</p>
           )}
         </div>
       </div>

@@ -2,7 +2,7 @@
 // §4 values: specs declared as data, their fail-fast pipelines, the violation a value breaks a rule
 // with, and the kit's two faults a product can reach from here.
 
-import { lengthIn, roundToQuantum } from '../sync/core/values.js';
+import { lengthIn, roundToQuantum } from '../../../../packages/api-contract/sync/reference/core/values.js';
 
 /** @typedef {null | boolean | number | string | Json[] | {[key: string]: Json}} Json */
 /** @typedef {'chars' | 'bytes'} TextUnit */

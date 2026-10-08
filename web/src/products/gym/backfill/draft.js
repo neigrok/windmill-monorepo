@@ -8,7 +8,9 @@
 // off the draft's own counter, so a row is addressed by what it is and never by where it stands.
 
 import { entryLabel, fmtKg, OPEN_TARGET, schemeAgrees, setCountLabel } from '../log.js';
-import { parseEntry } from '../logger/entry.js';
+import { MAX_SESSION_SETS } from '../domain/trainingActions.js';
+import { SetRules } from '../domain/training.js';
+import { LOGGER_REPS_MIN, LOGGER_REPS_MAX, parseEntry } from '../logger/entry.js';
 import { round } from '../logger/ladder.js';
 import { NO_LAST_TIME_META } from '../logger/movements.js';
 
@@ -16,14 +18,9 @@ const FILLED_FROM_TARGET = 'Filled from the target. A blank load or rep count ta
 const ARRIVES_WITH_LAST_TIME = 'A movement you add arrives with last time’s sets.';
 const CARRIES_DOWN = 'An edit carries down to the sets below it you have not touched.';
 
-// The store's own bound on one import.
-const SET_LIMIT = 200;
-export const SET_LIMIT_LINE = 'A workout holds up to 200 sets.';
+export const SET_LIMIT_LINE = `A workout holds up to ${MAX_SESSION_SETS} sets.`;
 
 const BODYWEIGHT = 'bodyweight';
-const LOAD_BOUND_KG = 500;
-const REPS_MIN = 1;
-const REPS_MAX = 99;
 const DEFAULT_STEP_KG = 2.5;
 const NUMERAL = /^-?\d*[.,]?\d*$/;
 
@@ -197,9 +194,9 @@ export function typedValue(text, field) {
 
 // ↑ and ↓: the load by the movement's plate step, the reps by one.
 export function steppedValue(value, field, direction, stepKg) {
-  if (field === 'reps') return Math.min(REPS_MAX, Math.max(REPS_MIN, (value ?? 0) + direction));
+  if (field === 'reps') return Math.min(LOGGER_REPS_MAX, Math.max(LOGGER_REPS_MIN, (value ?? 0) + direction));
   const step = stepKg ?? DEFAULT_STEP_KG;
-  return Math.min(LOAD_BOUND_KG, Math.max(-LOAD_BOUND_KG, round((value ?? 0) + direction * step)));
+  return Math.min(SetRules.weightKg.max, Math.max(SetRules.weightKg.min, round((value ?? 0) + direction * step)));
 }
 
 function setCountOf(draft) {
@@ -207,12 +204,12 @@ function setCountOf(draft) {
 }
 
 export function isOverLimit(draft) {
-  return setCountOf(draft) > SET_LIMIT;
+  return setCountOf(draft) > MAX_SESSION_SETS;
 }
 
 export function isReady(draft) {
   const count = setCountOf(draft);
-  return count > 0 && count <= SET_LIMIT && draft.movements.every((movement) => movement.sets.every(isFilled));
+  return count > 0 && count <= MAX_SESSION_SETS && draft.movements.every((movement) => movement.sets.every(isFilled));
 }
 
 export function saveLabel(draft) {
@@ -231,8 +228,7 @@ export function sourceCaption(movement, edited) {
   return ARRIVES_WITH_LAST_TIME;
 }
 
-// One request, the whole workout, built from what the form holds and nothing else: the set ids are
-// the session id's own, numbered, so the same form always builds the same request.
+// The ImportSession input: stable set identities and approximate instants chosen by the draft.
 // The set instants are spread evenly strictly inside the span and read as approximate; nothing
 // reads a rest interval off them. Every set is a working set.
 export function importOf({ id, slot, draft }) {

@@ -29,6 +29,7 @@ import works.windmill.sync.modelserver.Credential
 import works.windmill.sync.modelserver.ModelServer
 import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
+import works.windmill.platform.telemetry.Telemetry
 
 class EngineTrainingTests {
     @get:Rule val tmp = TemporaryFolder()
@@ -42,6 +43,34 @@ class EngineTrainingTests {
     }
     private fun seedRoutine(engine: Engine) = seed(engine, Gym.Types.routine, "routine1", mapOf(
         "name" to Json.of("Original"), "position" to Json.of(2), "entries" to Json.parse("""[{"exerciseId":"bench-press","sets":[{"reps":8}],"restSeconds":90},{"exerciseId":"back-squat","sets":[{"reps":5,"weightKg":100}],"restSeconds":120},{"exerciseId":"deadlift","restSeconds":60}]""")))
+
+    @Test fun unreadablePlanReportsStaticFailureWhileFactsCorrectionsAndDiscardRemainAvailable() = runTest {
+        val failures = mutableListOf<Pair<String, String?>>()
+        val telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) {}
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation to error.message }
+        }
+        EngineRoomFixture(tmp.newFolder(), backgroundScope, telemetry = telemetry).use { room ->
+            room.select(null)
+            val scope = ScopeRef(Gym.scope)
+            val plan = Json.parse("""{"routine":"PRIVATE_FROZEN_PLAN","entries":"broken"}""")
+            val session = mapOf("startedAt" to Json.of(100), "finishedAt" to Json.of(900), "closedBy" to Json.of("finish"), "plan" to plan)
+            val set = mapOf("sessionId" to Json.of("sessionP2"), "exerciseId" to Json.of("bench-press"), "weightKg" to Json.of(80),
+                "reps" to Json.of(5), "kind" to Json.of("working"), "note" to Json.of(""), "completedAt" to Json.of(500))
+            room.engine.commit(scope, Gesture(emptyList(), command = works.windmill.sync.core.Command("gym.importSession", Json.objectOf(
+                "id" to Json.of("sessionP2"), "startedAt" to Json.of(100), "finishedAt" to Json.of(900), "sets" to Json.Arr(emptyList()))),
+                predict = listOf(Change.create(Gym.Types.session, NewID.Given(RecordID("sessionP2")), session),
+                    Change.create(Gym.Types.set, NewID.Given(RecordID("set00001")), set))))
+            room.store.refreshEngine()
+            assertTrue(room.training.planUnreadable)
+            assertEquals(5, room.training.session("sessionP2")!!.sets.single().reps)
+            assertTrue(failures.isNotEmpty())
+            assertTrue(failures.all { it == "gym.loadLog" to "unreadable-frozen-plan" })
+            room.training.fixSet("sessionP2", "set00001", SetFix(reps = 9))
+            room.training.discardSession("sessionP2")
+            assertEquals(plan, room.engine.read(scope) { it.stored(Gym.Types.session, RecordID("sessionP2"))!!.values["plan"] })
+        }
+    }
 
     @Test fun formerNamesRemainSearchableOnThePhoneAndConfirmedRenamesKeepNewestAliasesFirst() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->

@@ -1,7 +1,8 @@
 // gym/admit.json: §6.1 admission of one intent against a gym server state, under gym.registry.json and
 // gym's binding (A.2).
 
-import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { CONSTANTS } from '../core/constants.js';
 import { ZERO_DIGEST, replaceRow } from '../core/digest.js';
 import { Registry } from '../core/registry.js';
@@ -11,7 +12,7 @@ import { admit } from '../server/admit.js';
 import { ServerState } from '../server/state.js';
 import { ACTOR, vector } from './fixtures.js';
 
-export const gymRegistry = Registry.fromFile(fileURLToPath(new URL('../../gym.registry.json', import.meta.url)));
+export const gymRegistry = new Registry(JSON.parse(readFileSync(new URL('../../gym.registry.json', import.meta.url), 'utf8')));
 export const gymProduct = new GymProduct();
 
 const H = 3_600_000;
@@ -189,6 +190,17 @@ function proposals() {
   const other = proposalRow('proposal002', 6, { door: 'ask', connection: '', agent: '' });
   const apply = (id = 'proposal001') => cmd('gym.applyProposal', { proposalId: id });
   const dismiss = (id = 'proposal001') => cmd('gym.dismissProposal', { proposalId: id });
+  const removed = admitted('apply of a removal kills the routine and its proposals, and writes routineId null on its sessions', { state: settled(removal), intent: apply() });
+  const replayed = admitted('a restored removal receipt survives proposal death and a new replica with old guards', {
+    state: { ...removed.expect.state, epoch: 'ep-2' }, origin: { ...A, replica: 'rp_0000000000000000000000000000000c' },
+    intent: { ...apply(), guard: ROUTINE_GUARDS },
+  });
+  assert.equal(replayed.expect.result.s, 'ok', 'an accepted removal must not become a durable refusal on replay');
+  assert.deepEqual(replayed.expect.state, replayed.input.state);
+  const foreignReplay = admitted('a removal receipt belongs to its account only', {
+    state: removed.expect.state, origin: { ...A, account: 'B' }, intent: apply(),
+  });
+  assert.equal(foreignReplay.expect.result.code, 'unknown-record');
   return [
     admitted('a new proposal supersedes the pending one of its routine, door and connection, naming itself in supersededBy', { state: base(), origin: SERVER_A, intent: mint('proposal003') }),
     admitted('a proposal of another connection leaves the pending one standing', { state: base(), origin: SERVER_A, intent: mint('proposal003', { connection: 'conn-2', agent: 'Other' }) }),
@@ -199,13 +211,13 @@ function proposals() {
     admitted('a replica\'s proposal create naming an agent is invalid', { state: base(), origin: A, intent: mint('proposal003', { door: 'ask', connection: '', agent: 'Claude' }, A) }),
     admitted('a replica\'s proposal create from the phone Coach door is admitted, its state unset and read as pending', { state: base(), origin: A, intent: { ...mint('proposal003', { door: 'ask', connection: '', agent: '' }, A), guard: ROUTINE_GUARDS } }),
     admitted('apply writes the proposal\'s document and supersedes the routine\'s other pending proposals', { state: base({ a: [other] }), intent: apply() }),
-    admitted('apply of an applied proposal is ok and writes nothing', { state: settled(settledBy('applied')), intent: apply() }),
+    admitted('apply of an applied proposal records its receipt without changing records', { state: settled(settledBy('applied')), intent: apply() }),
     admitted('apply of a dismissed proposal is refused proposal-settled with its state', { state: settled(settledBy('dismissed')), intent: apply() }),
     admitted('apply of a proposal a newer one replaced is refused proposal-superseded: replaced', { state: settled(settledBy('superseded', { supersededBy: 'proposal009' })), intent: apply() }),
     admitted('apply of a proposal its routine outran is refused proposal-superseded: routine-changed', { state: settled(settledBy('superseded'), 2), intent: apply() }),
     admitted('apply of a proposal superseded before either reason was recorded is refused proposal-superseded: superseded', { state: settled(settledBy('superseded')), intent: apply() }),
     admitted('apply of a pending proposal whose base the routine outran is refused proposal-superseded: routine-changed, leaving pending unchanged', { state: settled(PENDING, 2), intent: apply() }),
-    admitted('apply of a removal kills the routine and its proposals, and writes routineId null on its sessions', { state: settled(removal), intent: apply() }),
+    removed, replayed, foreignReplay,
     admitted('apply of a proposal that died with its routine is refused record-dead', { state: base({ spent: { [GYM_A]: [{ t: 'proposal', id: 'proposal007', born: `${T}:0:srv`, lifeStamp: `${T + H}:0:srv`, seq: 6 }] } }), intent: apply('proposal007') }),
     admitted('dismiss settles a pending proposal with its settledAt', { state: base(), intent: dismiss() }),
     admitted('dismiss of a dismissed proposal is ok and writes nothing', { state: settled(settledBy('dismissed')), intent: dismiss() }),

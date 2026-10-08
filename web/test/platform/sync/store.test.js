@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { IDBFactory } from 'fake-indexeddb';
 import { IndexedDBStore } from '../../../src/platform/sync/store.js';
-import { commit } from '../../../src/platform/sync/client/commit.js';
-import { reidentify } from '../../../src/platform/sync/client/lifecycle.js';
+import { commit } from '../../../../packages/api-contract/sync/reference/client/commit.js';
+import { reidentify } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { registry } from './oracle-adapters/fixtures.js';
 import { versionOneFixture } from './store-v1.js';
 

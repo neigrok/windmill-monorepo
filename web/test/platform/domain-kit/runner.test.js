@@ -4,18 +4,24 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CONSTANTS } from '../../../src/platform/sync/core/constants.js';
+import { CONSTANTS } from '../../../../packages/api-contract/sync/reference/core/constants.js';
+import { ZERO_DIGEST } from '../../../../packages/api-contract/sync/reference/core/digest.js';
+import { Registry } from '../../../../packages/api-contract/sync/reference/core/registry.js';
+import { Cursor } from '../../../../packages/api-contract/sync/reference/core/wire.js';
+import { epochChange } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { Decision } from '../../../src/platform/domain-kit/actions.js';
 import { Draft } from '../../../src/platform/domain-kit/drafts.js';
-import { Plan } from '../../../src/platform/domain-kit/plans.js';
-import { Placement } from '../../../src/platform/domain-kit/reading.js';
+import { Id } from '../../../src/platform/domain-kit/entities.js';
+import { Plan, Prediction } from '../../../src/platform/domain-kit/plans.js';
+import { Placement, Reader, Views } from '../../../src/platform/domain-kit/reading.js';
 import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/runner.js';
 import { Remove } from '../../../src/platform/domain-kit/standardActions.js';
 import { FixedZone } from '../../../src/platform/domain-kit/time.js';
 import { Fault } from '../../../src/platform/domain-kit/values.js';
 import { environment } from '../sync/fakes.js';
-import { PROBE_SCOPE, Probe, ProbeRefusals, probeValue } from './probe.js';
+import { PROBE_SCOPE, Probe, ProbeRefusals, probeCommand, probeValue } from './probe.js';
+import { Contract, momentOf, probeRegistry, viewRecords } from './vectors.js';
 
 /** @typedef {import('./probe.js').ProbeRefusal} ProbeRefusal */
 
@@ -35,6 +41,58 @@ async function open(options = {}) {
  * @returns {import('../../../src/platform/domain-kit/actions.js').Decider<T, T, ProbeRefusal>}
  */
 const action = (scope, body, decide) => ({ scope, refusals: ProbeRefusals, load: body, decide });
+
+test('view reference indexes preserve stored holds, drawn changes, visibility and independent result arrays', () => {
+  const rows = viewRecords([
+    { t: 'run', id: 'run00001', born: '1:0:srv', life: ['alive', '1:0:srv'], f: { label: ['group', '1:0:srv'] } },
+    { t: 'lap', id: 'lap00002', born: '1:0:srv', life: ['alive', '1:0:srv'], f: { runId: ['run00001', '1:0:srv'] } },
+    { t: 'lap', id: 'lap00001', born: '1:0:srv', life: ['alive', '1:0:srv'], f: { runId: ['run00001', '1:0:srv'] } },
+    { t: 'lap', id: 'lap_dead', born: '1:0:srv', life: ['dead', '1:0:srv'], f: { runId: ['run00001', '1:0:srv'] } },
+    { t: 'unknown', id: 'unknown1', born: '1:0:srv', life: ['alive', '1:0:srv'] },
+  ]);
+  const drawn = rows.map((row) => row.id === 'lap00001' ? { ...row, life: /** @type {['dead', string]} */ (['dead', '2:0:srv']) }
+    : row.id === 'lap00002' ? { ...row, f: { runId: /** @type {[string, string]} */ (['run00002', '2:0:srv']) } } : row);
+  const views = Views.ofRecords(probeRegistry, { drawn, stored: rows });
+  const reader = new Reader(views, PROBE_SCOPE, momentOf({}));
+  const laps = reader.repository(Probe.lap);
+  const first = new Id('run00001', Probe.run);
+  const second = new Id('run00002', Probe.run);
+  const ids = (/** @type {{ id: Id<any> }[]} */ values) => values.map((value) => value.id.record);
+  assert.deepEqual(ids(laps.children(first, 'runId', 'stored')), ['lap00001', 'lap00002']);
+  assert.deepEqual(ids(laps.children(first, 'runId', 'drawn')), []);
+  assert.deepEqual(ids(laps.children(second, 'runId', 'drawn')), ['lap00002']);
+  assert.deepEqual(ids(laps.children(second, 'runId', 'stored')), []);
+  assert.deepEqual(ids(laps.children(new Id('absent00', Probe.run), 'runId', 'stored')), []);
+  assert.deepEqual(views.visible('stored', 'unknown'), []);
+  assert.deepEqual(views.visible('stored', 'tag'), []);
+  assert.deepEqual(ids(reader.repository(Probe.run).children(new Id('group', Probe.run), 'label', 'stored')), ['run00001']);
+  const visible = views.visible('stored', 'lap');
+  visible.reverse(); visible.pop();
+  const referencing = views.referencing('stored', 'lap', 'runId', first.record);
+  referencing.splice(0);
+  const children = laps.children(first, 'runId', 'stored');
+  children.pop();
+  assert.deepEqual(views.visible('stored', 'lap').map((row) => row.id), ['lap00002', 'lap00001']);
+  assert.deepEqual(views.referencing('stored', 'lap', 'runId', first.record).map((row) => row.id), ['lap00002', 'lap00001']);
+  assert.deepEqual(ids(laps.children(first, 'runId', 'stored')), ['lap00001', 'lap00002']);
+});
+
+test('view reference indexes compare tuple references by JCS and exclude absent fields', () => {
+  const schema = /** @type {any} */ (Contract.json('sync/probe.registry.json'));
+  schema.types.find((/** @type {{ type: string }} */ type) => type.type === 'tag').fields.linkId = { kind: 'const', writer: 'client', ref: 'link' };
+  const registry = new Registry(schema);
+  const rows = viewRecords([
+    { t: 'tag', id: 'tag-a', born: '1:0:srv', life: ['alive', '1:0:srv'], f: { linkId: [['left', 'right'], '1:0:srv'] } },
+    { t: 'tag', id: 'tag-b', born: '1:0:srv', life: ['alive', '1:0:srv'], f: { linkId: [['right', 'left'], '1:0:srv'] } },
+    { t: 'tag', id: 'tag-c', born: '1:0:srv', life: ['alive', '1:0:srv'], f: { label: ['Unlinked', '1:0:srv'] } },
+  ]);
+  const views = Views.ofRecords(registry, { drawn: rows, stored: rows });
+  const tags = new Reader(views, Probe.tag.scope, momentOf({})).repository(Probe.tag);
+  assert.deepEqual(tags.children(new Id(['left', 'right'], Probe.link), 'linkId', 'stored').map((tag) => tag.id.record), ['tag-a']);
+  assert.deepEqual(tags.children(new Id(['right', 'left'], Probe.link), 'linkId', 'stored').map((tag) => tag.id.record), ['tag-b']);
+  assert.deepEqual(tags.children(new Id('["left","right"]', Probe.link), 'linkId', 'stored'), []);
+  assert.deepEqual(tags.children(new Id(['left', 'missing'], Probe.link), 'linkId', 'stored'), []);
+});
 
 test('a new card saves through the engine, its removal is held with its releaseAt, and Undo brings it back', async () => {
   const { env, engine, runner } = await open();
@@ -80,6 +138,146 @@ test('a device write commits with no record and is read back inside the next run
     (loaded) => Decision.unchanged(loaded)));
   assert.deepEqual(read, { kind: 'unchanged', result: { rack: { n: 1 }, pulled: engine.observe(PROBE_SCOPE).getSnapshot().firstPullComplete, today: runner.moment().today.text } });
   assert.deepEqual(runner.read(PROBE_SCOPE, (reader) => reader.device('rack')), { n: 1 });
+  engine.close();
+});
+
+test('a commit reads the current tab transaction, including confirmed values beneath predictions and scoped device metadata', async () => {
+  const { env, engine, runner } = await open();
+  const peer = await BrowserSyncEngine.open(env.options);
+  const peerRunner = new ActionRunner(new EngineReplica(peer), env.options.registry, new FixedZone(0));
+  const id = new Id('run00001', Probe.run);
+  const command = probeCommand('probe.start', { id: id.record, label: 'Pending', startedAt: 1000, join: false });
+  const confirmed = { t: 'run', id: id.record, life: ['alive', '1:0:srv'], born: '1:0:srv',
+    f: { startedAt: [1, '1:0:srv'], label: ['Confirmed', '1:0:srv'] } };
+  /** @param {import('../../../src/platform/domain-kit/reading.js').Reader} read */
+  const metadata = (read) => ({ confirmed: read.confirmed(Probe.run, id),
+    drawn: read.repository(Probe.run).find(id, 'drawn')?.fields() ?? null, devices: read.devices('picture:'),
+    commands: read.commands(), checkpoint: read.checkpoint(), actor: read.actor,
+    isAnonymous: read.isAnonymous, complete: read.firstPullComplete() });
+  const before = runner.read(PROBE_SCOPE, metadata);
+  await peer.write(null, (/** @type {any} */ device) => {
+    device.activeReplica.putConfirmed(PROBE_SCOPE, { ...confirmed, seq: 5, rc: 1, ru: 1 });
+  }, [PROBE_SCOPE]);
+  const queued = await peerRunner.run(action(PROBE_SCOPE, () => null, () => {
+    const plan = Plan.running(command, [Prediction.update(id, { label: 'Pending' })]);
+    plan.device('picture:abcdefgh', { kept: true });
+    plan.device('rack', { excluded: true });
+    return Decision.write(plan, null);
+  }));
+  const receipt = queued.kind === 'committed' ? queued.receipt : assert.fail('not committed');
+  await peer.write(null, (/** @type {any} */ device) => {
+    const replica = device.activeReplica;
+    Object.assign(replica.meta, { state: 'bound', account: 'A', serverEpoch: 'ep-current' });
+    replica.cursors[PROBE_SCOPE] = { cursor: Cursor.encode({ e: 'ep-current', m: 'live', s: 5 }), digest: ZERO_DIGEST, booted: true };
+    Object.assign(replica.entry(receipt.localIds[0]), { state: 'acked', n: 1, resultEpoch: 'ep-current', resultSeq: 6 });
+  }, [PROBE_SCOPE]);
+  assert.deepEqual(runner.read(PROBE_SCOPE, metadata), before, 'the first tab has received no peer refresh');
+  const loaded = await runner.run(action(PROBE_SCOPE, metadata, (value) => Decision.unchanged(value)));
+  assert.deepEqual(loaded, { kind: 'unchanged', result: {
+    confirmed: { ...confirmed, rc: 1 },
+    drawn: { startedAt: 1, label: 'Pending' },
+    devices: { 'picture:abcdefgh': { kept: true } },
+    commands: [{ gestureId: receipt.gestureId, command: { name: command.name, args: command.args }, canSupersede: false, isAdmitted: true }],
+    checkpoint: { epoch: 'ep-current', cleanSeq: 5 }, actor: engine.actor, isAnonymous: false, complete: true,
+  } });
+  await engine.refresh(false, [PROBE_SCOPE]);
+  assert.deepEqual(runner.read(PROBE_SCOPE, metadata), loaded.kind === 'unchanged' && loaded.result);
+  engine.close(); peer.close();
+});
+
+test('a checkpoint covers only a complete same-epoch live pull with no staging or failed digest', async () => {
+  const { engine, runner } = await open();
+  /** @param {import('../../../src/platform/domain-kit/reading.js').Reader} read */
+  const metadata = (read) => ({ checkpoint: read.checkpoint(), complete: read.firstPullComplete() });
+  assert.deepEqual(runner.read(PROBE_SCOPE, metadata), { checkpoint: { epoch: null, cleanSeq: null }, complete: true });
+  await engine.write(null, (/** @type {any} */ device) => {
+    Object.assign(device.activeReplica.meta, { state: 'bound', account: 'A', serverEpoch: 'ep-current' });
+  });
+  assert.deepEqual(runner.read(PROBE_SCOPE, metadata), { checkpoint: { epoch: 'ep-current', cleanSeq: null }, complete: false });
+  const live = Cursor.encode({ e: 'ep-current', m: 'live', s: 5 });
+  const cases = [
+    { name: 'boot', cursor: Cursor.encode({ e: 'ep-current', m: 'boot', s: 0, a: 5 }), booted: false },
+    { name: 'complete', cursor: live, cleanSeq: 5 },
+    { name: 'partial transaction', cursor: Cursor.encode({ e: 'ep-current', m: 'live', s: 5, k: ['run', 'run00001'] }) },
+    { name: 'wrong epoch', cursor: Cursor.encode({ e: 'ep-old', m: 'live', s: 5 }) },
+    { name: 'behind', cursor: live, behind: true },
+    { name: 'staging', cursor: live, staging: true },
+    { name: 'digest reset', cursor: live, mismatchReset: true },
+    { name: 'digest stop', cursor: live, digestStop: '1' },
+    { name: 'no cursor', cursor: null },
+  ];
+  for (const { name, staging = false, cleanSeq = null, booted = true, ...record } of cases) {
+    await engine.write(null, (/** @type {any} */ device) => {
+      const replica = device.activeReplica;
+      replica.cursors[PROBE_SCOPE] = { digest: ZERO_DIGEST, booted, ...record };
+      if (staging) replica.staging[PROBE_SCOPE] = { digest: ZERO_DIGEST, rows: {} };
+      else delete replica.staging[PROBE_SCOPE];
+    }, [PROBE_SCOPE]);
+    const expected = { checkpoint: { epoch: 'ep-current', cleanSeq }, complete: booted };
+    assert.deepEqual(runner.read(PROBE_SCOPE, metadata), expected, name);
+    assert.deepEqual(await runner.run(action(PROBE_SCOPE, metadata, (value) => Decision.unchanged(value))),
+      { kind: 'unchanged', result: expected }, name);
+  }
+  await engine.write(null, (/** @type {any} */ device, /** @type {any} */ ctx) => epochChange(device.activeReplica, ctx, 'ep-next'), [PROBE_SCOPE]);
+  assert.deepEqual(runner.read(PROBE_SCOPE, metadata), { checkpoint: { epoch: 'ep-next', cleanSeq: null }, complete: true });
+  engine.close();
+});
+
+test('anonymous command replacement and its device snapshot survive an aborted commit unchanged, then supersede together', async () => {
+  const { env, engine, runner } = await open();
+  /** @param {string} label */
+  const save = (label) => action(PROBE_SCOPE, (read) => read.commands(), (commands) => {
+    const plan = Plan.running(probeCommand('probe.start', { id: 'run00001', label, startedAt: 1000, join: false }));
+    plan.supersede(commands.filter((queued) => queued.canSupersede).map((queued) => queued.gestureId));
+    plan.device('rack', { label });
+    return Decision.write(plan, commands);
+  });
+  const first = await runner.run(save('First'));
+  const firstReceipt = first.kind === 'committed' ? first.receipt : assert.fail('not committed');
+  const before = (await engine.store.read()).device.toJSON();
+  const transact = engine.store.transact.bind(engine.store);
+  engine.store.transact = (/** @type {any} */ change, /** @type {any} */ options) => {
+    engine.store.transact = transact;
+    return transact(change, { ...options, beforeCommit: (/** @type {any} */ { transaction }) => transaction.abort() });
+  };
+  await assert.rejects(runner.run(save('Latest')));
+  assert.deepEqual((await engine.store.read()).device.toJSON(), before);
+  const reopened = await BrowserSyncEngine.open(env.options);
+  assert.deepEqual((await reopened.store.read()).device.toJSON(), before);
+  reopened.close();
+  const second = await runner.run(save('Latest'));
+  const secondReceipt = second.kind === 'committed' ? second.receipt : assert.fail('not committed');
+  assert.deepEqual(secondReceipt.superseded, [firstReceipt.gestureId]);
+  assert.deepEqual(second.kind === 'committed' && second.result, [{ gestureId: firstReceipt.gestureId,
+    command: { name: 'probe.start', args: { id: 'run00001', label: 'First', startedAt: 1000, join: false } }, canSupersede: true, isAdmitted: false }]);
+  assert.deepEqual(engine.device.activeReplica.entries(PROBE_SCOPE).map((/** @type {any} */ entry) => entry.intent.cmd),
+    [{ name: 'probe.start', args: { id: 'run00001', label: 'Latest', startedAt: 1000, join: false } }]);
+  assert.deepEqual(runner.read(PROBE_SCOPE, (read) => read.device('rack')), { label: 'Latest' });
+  const removed = await runner.run(action(PROBE_SCOPE, () => null, () => {
+    const plan = new Plan();
+    plan.supersede([secondReceipt.gestureId]);
+    return Decision.write(plan, null);
+  }));
+  assert.equal(removed.kind, 'committed');
+  assert.deepEqual(removed.kind === 'committed' && { localIds: removed.receipt.localIds, superseded: removed.receipt.superseded },
+    { localIds: [], superseded: [secondReceipt.gestureId] });
+  engine.close();
+});
+
+test('opaque ids are minted at the engine boundary and retained with the same device commit', async () => {
+  const { engine, runner } = await open();
+  const saved = await runner.run({ scope: PROBE_SCOPE, refusals: ProbeRefusals, load: () => null,
+    decide: (_loaded, ids) => {
+      const opaque = [ids.opaqueID(), ids.opaqueID()];
+      const plan = new Plan();
+      plan.device('rack', opaque);
+      return Decision.write(plan, opaque);
+    } });
+  assert.equal(saved.kind, 'committed');
+  if (saved.kind !== 'committed') return;
+  assert.deepEqual(runner.read(PROBE_SCOPE, (read) => read.device('rack')), saved.result);
+  assert.equal(new Set([...saved.result, saved.receipt.gestureId]).size, 3);
+  for (const opaque of saved.result) assert.match(opaque, /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/);
   engine.close();
 });
 

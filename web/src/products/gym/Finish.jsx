@@ -2,26 +2,33 @@ import React, { useRef, useState } from 'react';
 import { Button } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
 import { failureReason } from './errors.js';
+import { routineFromWorkout, useGymApi } from './gymRuntime.js';
+import { Session, SessionRules, TrainingSet } from './domain/training.js';
+import { sessionDocument } from './domain/trainingHistory.js';
 import {
   cappedName, entryLabel, fromSession, isFirstSession, nameOfMovement, recordHref, routineNameOf, sessionHref,
   weekdayName,
 } from './log.js';
 import { mintId } from './mint.js';
 import { comparison, finishHead, RECORD_TITLE, recordSentence, statTiles } from './review.js';
-import { NAME_IT_TO_SAVE_IT, routineFromSession } from './routines.js';
+import { NAME_IT_TO_SAVE_IT } from './routines.js';
 import { ShareWorkout } from './share/ShareWorkout.jsx';
 import { useGymRead } from './useGymRead.js';
-import { useGymApi } from './gymSync.js';
+import { useDomainRead } from './useDomainRead.js';
 
 export function FinishScreen({ id, log }) {
   const api = useGymApi();
+  const stored = useDomainRead((read) => {
+    const sets = read.repository(TrainingSet).all('stored');
+    return { isComplete: read.firstPullComplete(),
+      sessions: read.repository(Session).all('stored').map((session) => sessionDocument(SessionRules.drawn(session, sets, read.moment.now))) };
+  }, [log.progress?.data]);
   const view = useGymRead(
     () => Promise.all([
       api.session(id),
       api.review(id),
       api.exercises(),
-      api.sessions({ limit: 2 }),
-    ]).then(([detail, review, catalog, recent]) => (detail ? { detail, review, catalog, recent } : null)),
+    ]).then(([detail, review, catalog]) => (detail ? { detail, review, catalog } : null)),
     [id],
     { sync: true, ready: Boolean(api?.ready) },
   );
@@ -48,14 +55,14 @@ export function FinishScreen({ id, log }) {
     );
   }
 
-  const { detail, review, catalog, recent } = view.data;
+  const { detail, review, catalog } = view.data;
   const { session, sets } = detail;
   const head = finishHead({
     startedAt: session.startedAt,
     finishedAt: session.finishedAt,
     routine: routineNameOf(session),
     slight: review.slight,
-    first: isFirstSession(recent, id),
+    first: stored.phase === 'ready' && stored.data.isComplete && isFirstSession(stored.data.sessions, id),
   });
   const record = recordSentence(review.record, catalog);
   const against = comparison(review.against, catalog);
@@ -143,7 +150,7 @@ function KeepAsRoutine({ session, sets, catalog, log }) {
   // The id is the idempotency key: mint once so a retried create is one routine.
   const minted = useRef(null);
   if (minted.current === null) minted.current = mintId('rt_');
-  const composed = routineFromSession({ id: minted.current, name: name.trim(), sets });
+  const composed = routineFromWorkout({ id: minted.current, name: name.trim(), sets });
   if (!offered || composed.entries.length === 0) return null;
 
   return (

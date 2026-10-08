@@ -7,8 +7,7 @@ import { BODYWEIGHT_HREF, dayLabel } from '../log.js';
 import { weightUnit } from '../units.js';
 import { useDomainRead } from '../useDomainRead.js';
 import { Bodyweight } from '../domain/bodyweight.js';
-import { bodyweightDocument, gymMoment, gymStep, preferencesDocument, weighInInput, weighInKilograms } from '../gymRuntime.js';
-import { useGymApi } from '../gymSync.js';
+import { bodyweightDocument, gymMoment, gymStep, preferencesDocument, weighInInput, weighInKilograms, useGymApi } from '../gymRuntime.js';
 import {
   axisDate, axisValue, BODYWEIGHT_TITLE, chartCaption, chartDomainOf, chartPointsOf, DATE_LABEL,
   DEFAULT_WINDOW, deleteRefusal, DELETE_VERB, FAILED,
@@ -27,7 +26,7 @@ export function useBodyweight(log) {
     }), read.scope, read.moment);
     const weights = new Bodyweight(read);
     return { weights, unit: preferencesDocument(read).units, ...bodyweightDocument(read, {}, weights) };
-  });
+  }, [JSON.stringify([...hidden].sort())]);
   const save = async (write) => {
     try { await api.saveBodyweight(write.dateLocal, write); return null; }
     catch (error) { return saveRefusal(error); }

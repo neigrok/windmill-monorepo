@@ -76,7 +76,7 @@ export function deletedLine(set) {
 }
 
 export function fixFailure(error) {
-  if (error?.code === 'unknown-record') return 'That set isn’t in this workout any more.';
+  if (['unknown-record', 'record-dead'].includes(error?.code)) return 'That set isn’t in this workout any more.';
   return `That fix didn’t land — ${failureReason(error)}.`;
 }
 

@@ -1,11 +1,11 @@
-import { CONSTANTS } from "../../../../src/platform/sync/core/constants.js";
-import { steadyTiming } from "../../../../src/platform/sync/core/clock.js";
-import { scopeDigest } from "../../../../src/platform/sync/core/digest.js";
-import { commit } from "../../../../src/platform/sync/client/commit.js";
-import { epochChange, signIn, signOut } from "../../../../src/platform/sync/client/lifecycle.js";
-import { Device, Replica } from "../../../../src/platform/sync/client/replica.js";
-import { onPullResponse, pullRequest } from "../../../../src/platform/sync/client/puller.js";
-import { nextPush, onPushResponse } from "../../../../src/platform/sync/client/sender.js";
+import { CONSTANTS } from "../../../../../packages/api-contract/sync/reference/core/constants.js";
+import { steadyTiming } from "../../../../../packages/api-contract/sync/reference/core/clock.js";
+import { scopeDigest } from "../../../../../packages/api-contract/sync/reference/core/digest.js";
+import { commit } from "../../../../../packages/api-contract/sync/reference/client/commit.js";
+import { epochChange, signIn, signOut } from "../../../../../packages/api-contract/sync/reference/client/lifecycle.js";
+import { Device, Replica } from "../../../../../packages/api-contract/sync/reference/client/replica.js";
+import { onPullResponse, pullRequest } from "../../../../../packages/api-contract/sync/reference/client/puller.js";
+import { nextPush, onPushResponse } from "../../../../../packages/api-contract/sync/reference/client/sender.js";
 import {
   editPendingClaim, onClaimPushResponse, pendingClaimKey, pendingClaimWork, queueClaim, reconcilePendingClaim,
 } from "../../../../src/products/journal/claims.js";

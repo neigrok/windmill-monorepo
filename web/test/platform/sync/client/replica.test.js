@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Device, Replica, freshMeta } from '../../../../src/platform/sync/client/replica.js';
+import { Device, Replica, freshMeta } from '../../../../../packages/api-contract/sync/reference/client/replica.js';
 import { row, st } from '../oracle-adapters/fixtures.js';
 
 test('a replica round-trips its canonical JSON, sorted and without empty parts', () => {

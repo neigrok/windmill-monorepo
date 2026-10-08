@@ -9,8 +9,8 @@ import { IDBFactory } from 'fake-indexeddb';
 import { BrowserSyncEngine } from '../src/platform/sync/engine.js';
 import { HttpTransport } from '../src/platform/sync/transport.js';
 import { registry } from '../src/platform/sync/schema.js';
-import { Cursor } from '../src/platform/sync/core/wire.js';
-import { scopeDigest } from '../src/platform/sync/core/digest.js';
+import { Cursor } from '../../packages/api-contract/sync/reference/core/wire.js';
+import { scopeDigest } from '../../packages/api-contract/sync/reference/core/digest.js';
 import { FakeTimers } from '../test/platform/sync/fakes.js';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));

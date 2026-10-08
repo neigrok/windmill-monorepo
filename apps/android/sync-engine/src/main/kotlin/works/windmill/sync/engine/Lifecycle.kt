@@ -88,7 +88,10 @@ internal fun Engine.epochChange(replica: ReplicaState, epoch: String) {
     replica.cursors.replaceAll { _, value -> value.with("cursor" to Json.Null) }
     replica.staging.keys.toList().forEach { store.dropStaging(replica.id, ScopeRef(it)) }
     replica.staging.clear()
-    replica.entries().filter { it.state == "acked" && it.json["resultEpoch"]?.str() != epoch }.forEach { replica.move(it, "epoch", ended) }
+    replica.entries().filter { it.state == "acked" && it.json["resultEpoch"]?.str() != epoch }.forEach { entry ->
+        recoverWriteTargets(entry)
+        replica.move(entry, "epoch", ended)
+    }
     reidentify(replica); actor = identities.actorID()
 }
 fun Engine.epochChange(epoch: String) { write(EngineOperation.lifecycle) { epochChange(it, epoch) } }

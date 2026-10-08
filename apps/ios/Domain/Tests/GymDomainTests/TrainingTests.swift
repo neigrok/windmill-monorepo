@@ -32,6 +32,24 @@ struct TrainingTests {
                 weightKg: weight, reps: reps, kind: kind, rpe: rpe, note: note, completedAt: Instant(ms: h.clock.nowMs()))
   }
 
+  @Test func unreadableFrozenPlansRetainExactJSONAndDoNotHideSessionFacts() throws {
+    let values = Session(id: Self.sessionID, startedAt: Instant(ms: 1000)).fields
+    let malformed: [JSON] = [false, 42, [], ["routine": 42, "entries": []],
+                             ["routine": "legacy", "entries": "broken", "extra": ["e\u{301}", .null]]]
+    for plan in malformed {
+      var fields = values; fields["plan"] = plan
+      let session = try Session(Fields(type: Session.type, id: Self.sessionID.record, values: fields))
+      #expect(session.planUnreadable && session.plan == nil && session.name == nil)
+      #expect(session.fields == fields)
+      #expect(SessionRules.drawn(session, sets: [], now: Instant(ms: Self.now)).fields["plan"] == plan)
+      #expect(try SessionRules.finish(session, at: Instant(ms: 2000)).fields["plan"] == plan)
+      #expect(throws: DecodeError.self) { try SessionPlan.decode(plan) }
+    }
+    #expect(try !Session(Fields(type: Session.type, id: Self.sessionID.record, values: values)).planUnreadable)
+    var invalid = values; invalid["startedAt"] = "broken"; invalid["plan"] = false
+    #expect(throws: DecodeError.self) { try Session(Fields(type: Session.type, id: Self.sessionID.record, values: invalid)) }
+  }
+
   @Test func twoConcurrentStartsResolveToOneAuthoritativeSession() throws {
     let a = Self.phone(), b = a.device()
     let one = ID<Session>(RecordID("session1")), two = ID<Session>(RecordID("session2"))

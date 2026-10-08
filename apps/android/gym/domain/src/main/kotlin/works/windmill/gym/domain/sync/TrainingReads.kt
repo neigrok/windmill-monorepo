@@ -11,6 +11,11 @@ object GymEstimate {
             (rpe != null && (!rpe.isFinite() || rpe < 7))) return null
         return if (reps == 1) weightKg else weightKg * (1 + reps / 30.0)
     }
+
+    fun score(weightKg: Double, reps: Int, kind: String = "working", rpe: Double? = null): Double? {
+        if (value(weightKg, reps, kind, rpe) == null) return null
+        return Quantum.halfAway(weightKg * 100) * (if (reps == 1) 30 else 30 + reps)
+    }
 }
 
 class SessionReadout(session: Session, sets: List<TrainingSet>) {
@@ -77,11 +82,13 @@ data class EstimatedFact(val performed: PerformedFact, val e1rm: Double) {
     val weightKg get() = performed.weightKg
     val reps get() = performed.reps
     val rpe get() = performed.rpe
+    val score get() = GymEstimate.score(weightKg, reps, rpe = rpe) ?: 0.0
     val json: Json get() = Json.Obj(performed.json.obj().toList() + ("e1rm" to Json.of(e1rm)))
 }
 
 data class MovementSessionFact(val exerciseId: Id<Exercise>, val workingSetCount: Int,
-    val heaviest: PerformedFact, val mostReps: PerformedFact, val estimate: EstimatedFact? = null) {
+    val heaviest: PerformedFact, val mostReps: PerformedFact, val estimate: EstimatedFact? = null,
+    val bodyweightReps: PerformedFact? = null) {
     val json: Json get() = Json.Obj(buildList {
         add("exerciseId" to exerciseId.json); add("workingSetCount" to Json.of(workingSetCount)); add("heaviest" to heaviest.json)
         estimate?.let { add("estimate" to it.json) }
@@ -101,8 +108,9 @@ data class StatsProgress(val asOf: Instant, val sessions: List<ProgressSession>,
                     val heaviest = sets.sortedWith(compareByDescending<TrainingSet> { it.weightKg }.thenByDescending { it.reps }.thenBy { it.id }).first()
                     val mostReps = sets.sortedWith(compareByDescending<TrainingSet> { it.reps }.thenByDescending { it.weightKg }.thenBy { it.id }).first()
                     val estimate = sets.mapNotNull { set -> set.e1rm?.let { EstimatedFact(set, it) } }
-                        .sortedWith(compareByDescending<EstimatedFact> { it.e1rm }.thenBy { it.setId }).firstOrNull()
-                    MovementSessionFact(exerciseId, sets.size, PerformedFact(heaviest), PerformedFact(mostReps), estimate)
+                        .sortedWith(compareByDescending<EstimatedFact> { it.score }.thenBy { it.setId }).firstOrNull()
+                    val bodyweightReps = sets.filter { it.weightKg == 0.0 }.sortedWith(compareByDescending<TrainingSet> { it.reps }.thenBy { it.id }).firstOrNull()
+                    MovementSessionFact(exerciseId, sets.size, PerformedFact(heaviest), PerformedFact(mostReps), estimate, bodyweightReps?.let(::PerformedFact))
                 }
             if (movements.isEmpty()) null else ProgressSession(session.id, session.startedAt, movements)
         }.sortedWith(compareBy({ it.startedAt }, { it.sessionId })), log.firstPullComplete)
@@ -132,16 +140,18 @@ class MovementProgress(val exerciseId: Id<Exercise>, sessions: List<Point>, val 
     val sessions = sessions.sortedWith(compareBy({ it.startedAt }, { it.id }))
     val estimates: List<Point> get() = sessions.filter { it.fact.estimate != null }
     val latest: Point? get() = estimates.lastOrNull()
-    val best: Point? get() = if (!isComplete) null else estimates.sortedWith(compareByDescending<Point> { it.fact.estimate!!.e1rm }
+    val best: Point? get() = if (!isComplete) null else estimates.sortedWith(compareByDescending<Point> { it.fact.estimate!!.score }
         .thenBy { it.startedAt }.thenBy { it.id }).firstOrNull()
     val heaviest: Point? get() = if (!isComplete) null else sessions.sortedWith(compareByDescending<Point> { it.fact.heaviest.weightKg }
         .thenByDescending { it.fact.heaviest.reps }.thenBy { it.startedAt }.thenBy { it.id }).firstOrNull()
     val mostReps: Point? get() = if (!isComplete) null else sessions.sortedWith(compareByDescending<Point> { it.fact.mostReps.reps }
         .thenByDescending { it.fact.mostReps.weightKg }.thenBy { it.startedAt }.thenBy { it.id }).firstOrNull()
+    val bodyweightReps: Point? get() = if (!isComplete) null else sessions.filter { it.fact.bodyweightReps != null }
+        .sortedWith(compareByDescending<Point> { it.fact.bodyweightReps!!.reps }.thenBy { it.startedAt }.thenBy { it.id }).firstOrNull()
     val records: List<Point> get() {
         if (!isComplete) return emptyList()
         val records = mutableListOf<Point>()
-        for (point in estimates) if (point.fact.estimate!!.e1rm > (records.lastOrNull()?.fact?.estimate?.e1rm ?: 0.0)) records.add(point)
+        for (point in estimates) if (point.fact.estimate!!.score > (records.lastOrNull()?.fact?.estimate?.score ?: 0.0)) records.add(point)
         return records
     }
     fun window(now: Instant, zone: Zone): MovementProgress {

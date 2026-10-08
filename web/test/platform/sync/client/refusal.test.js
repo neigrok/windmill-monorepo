@@ -2,17 +2,17 @@
 // reference server creates, edits and deletes records, holds creates and keyed puts, undoes and retires
 // them, sends creates the server refuses `invalid` and atomic entries that depend on them in part, while
 // 409s and restores under a new epoch return its numbered entries to ready. With the server clock held
-// still, every entry is acked or ends, and none is refused clock-skew twice.
+// still, every entry is acked or ends, and none requires a second clock-skew recovery.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { steadyTiming } from '../../../../src/platform/sync/core/clock.js';
-import { isAlive } from '../../../../src/platform/sync/core/rows.js';
-import { commit } from '../../../../src/platform/sync/client/commit.js';
-import { releaseAll, undo } from '../../../../src/platform/sync/client/hold.js';
-import { Replica } from '../../../../src/platform/sync/client/replica.js';
-import { nextPush, onPushResponse } from '../../../../src/platform/sync/client/sender.js';
-import { drawn, stored } from '../../../../src/platform/sync/client/views.js';
+import { steadyTiming } from '../../../../../packages/api-contract/sync/reference/core/clock.js';
+import { isAlive } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
+import { commit } from '../../../../../packages/api-contract/sync/reference/client/commit.js';
+import { releaseAll, undo } from '../../../../../packages/api-contract/sync/reference/client/hold.js';
+import { Replica } from '../../../../../packages/api-contract/sync/reference/client/replica.js';
+import { nextPush, onPushResponse } from '../../../../../packages/api-contract/sync/reference/client/sender.js';
+import { drawn, stored } from '../../../../../packages/api-contract/sync/reference/client/views.js';
 import { push } from '../../../../../packages/api-contract/sync/reference/server/push.js';
 import { ServerState } from '../../../../../packages/api-contract/sync/reference/server/state.js';
 import { ACTOR, Rng, product, registry } from '../oracle-adapters/fixtures.js';
@@ -50,7 +50,8 @@ test('clock-skew recovery terminates when 409s, epoch changes, holds, undo, reti
       return out.response;
     };
     const answer = (request, response) => {
-      for (const result of response.body.results ?? []) {
+      const applies = replica.meta.serverEpoch === null || replica.meta.serverEpoch === response.body.epoch;
+      for (const result of applies ? response.body.results ?? [] : []) {
         if (result.s !== 'refused' || result.code !== 'clock-skew') continue;
         const entry = replica.entries().find((candidate) => candidate.state === 'sent' && candidate.n === result.n);
         if (entry) skews.set(entry.localId, (skews.get(entry.localId) ?? 0) + 1);
@@ -108,7 +109,7 @@ test('clock-skew recovery terminates when 409s, epoch changes, holds, undo, reti
     }
     const unsettled = replica.entries().filter((entry) => entry.state !== 'acked').map((entry) => `${entry.localId}:${entry.state}`);
     assert.deepEqual(unsettled, [], `seed ${seed}: every entry is acked or ends with the server clock held still`);
-    assert.deepEqual([...skews].filter(([, count]) => count > 1), [], `seed ${seed}: no entry is refused clock-skew twice`);
+    assert.deepEqual([...skews].filter(([, count]) => count > 1), [], `seed ${seed}: no entry requires a second clock-skew recovery`);
     tally.recovered += skews.size;
     tally.folded += ctx.ended.filter((end) => end.event === 'silent-fold').length;
     tally.orphans += ctx.ended.filter((end) => end.event === 'refuse' && end.orphanOf !== undefined).length;

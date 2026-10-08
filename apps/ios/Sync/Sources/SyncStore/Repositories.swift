@@ -179,6 +179,7 @@ public struct StoreTransaction {
     entry.resultSeq = record["result_seq"]
     entry.resultEpoch = record["result_epoch"]
     entry.orphanOf = record["orphan_of"]
+    entry.writeTargets = try (record["write_targets"] as Data?).map { try Blob.json($0).asArray().map { try WriteTarget(json: $0) } }
     return entry
   }
 

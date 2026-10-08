@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { NOTES_HREF } from '../../../../src/products/gym/log.js';
+import { createGymApi } from '../../../../src/products/gym/gymRuntime.js';
 import { FULL_LINE } from '../../../../src/products/gym/notes/notes.js';
 import {
   browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle, textOf,
@@ -129,10 +130,10 @@ test('the Notes screen re-reads the store when the editor says its list is stale
 
 test('a delete window over the last note does not empty the room: the placeholders read the store, not the drawn rows', async (t) => {
   browserWith();
-  await gymAccount(t, [confirmed('note', 'noteOnly0001', { title: 'How I want to be talked to', body: 'Blunt.', ord: 'a0', updatedAt: 0 })]);
+  const gym = await gymAccount(t, [confirmed('note', 'noteOnly0001', { title: 'How I want to be talked to', body: 'Blunt.', ord: 'a0', updatedAt: 0 })]);
   const { Notes } = await loadScreen('products/gym/notes/Notes.jsx');
-  const held = [{ kind: 'note', id: 'noteOnly0001', line: 'Note deleted.' }];
-  const screen = renderHook(t, () => Notes({ log: roomLog({ held }) }));
+  await createGymApi(gym.engine).deleteNote('noteOnly0001');
+  const screen = renderHook(t, () => Notes({ log: roomLog() }));
   await settle();
 
   // The row is off the screen for the length of the window — that is what the window is for.

@@ -31,7 +31,7 @@ export default defineConfig({
   server: {
     port: 5173,
     open: false,
-    // The web app now imports the shared genesis legend from ../packages/api-contract, which
+    // The web app imports the shared sync core and genesis legend from ../packages/api-contract, which
     // lives outside this Vite root. Allow the dev server to serve web/ and the packages/ dir
     // it reads from (the production build resolves these through Rollup regardless).
     fs: { allow: ['.', '../packages'] },

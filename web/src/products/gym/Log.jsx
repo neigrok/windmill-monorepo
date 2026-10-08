@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Icon } from '../../design-system/index.js';
+import { Id } from '../../platform/domain-kit/entities.js';
 import { Back } from './Back.jsx';
 import { failureReason } from './errors.js';
 import { BodyweightReading, useBodyweight, WeighInSheet } from './bodyweight/Bodyweight.jsx';
@@ -13,8 +14,11 @@ import {
 } from './log.js';
 import { ShareWorkout } from './share/ShareWorkout.jsx';
 import { useGymRead } from './useGymRead.js';
-import { useGymApi } from './gymSync.js';
-import { collapsedScheme, emptyHistoryLine, historyHref, historyQuery, historyTotals, withoutRows, workoutTotals, yearsOf } from './logbook/history.js';
+import { useDomainRead } from './useDomainRead.js';
+import { Session, TrainingSet } from './domain/training.js';
+import { setDocument, TrainingHistory } from './domain/trainingHistory.js';
+import { useGymApi } from './gymRuntime.js';
+import { collapsedScheme, emptyHistoryLine, historyHref, historyQuery, historyScope, historyTotals, withoutRows, workoutTotals, yearsOf } from './logbook/history.js';
 import { useHistory, useHistoryDates } from './logbook/useHistory.js';
 import { DateJump } from './logbook/DateJump.jsx';
 import { weightUnit } from './units.js';
@@ -31,17 +35,21 @@ export function LogList({ log, hash = '#/gym/log', sessionId = null, fixSetId = 
   const indexKey = historyHref(filters, { selected: null });
   const history = useHistory(filters);
   const dates = useHistoryDates(filters);
+  const stored = useDomainRead((read) => ({
+    hasSessions: new TrainingHistory(read).hasStoredSessions(historyScope(filters)), isComplete: read.firstPullComplete(),
+  }), [filters.year, filters.month, filters.exercise, filters.routine, log.progress?.data]);
   const hidden = log.hidden('session');
-  const stored = (history.data?.sessions ?? []).filter((session) => !log.gone('session').has(session.id));
   const sessions = (history.data?.sessions ?? []).filter((session) => !hidden.has(session.id));
   const selected = sessionId ?? filters.selected ?? null;
-  const noMatches = history.phase === 'ready' && stored.length === 0 && Boolean(filters.year || filters.exercise || filters.routine);
+  const complete = stored.phase === 'ready' && stored.data.isComplete;
+  const empty = history.phase === 'ready' && complete && !stored.data.hasSessions;
+  const noMatches = empty && Boolean(filters.year || filters.exercise || filters.routine);
   const exerciseOptions = history.data?.exercises?.length ? history.data.exercises : log.catalog;
   const routineOptions = history.data?.routines ?? [];
   const from = historyHref(filters, { selected });
   const dense = history.data?.summary?.sessions > 50 || filters.density === 'compact';
   const focusedHistory = dense || filters.year || filters.exercise || filters.routine;
-  const selectedOutside = selected && history.phase === 'ready' && !history.data?.next && !sessions.some((session) => session.id === selected);
+  const selectedOutside = selected && complete && history.phase === 'ready' && !history.data?.next && !sessions.some((session) => session.id === selected);
   const weights = useBodyweight(log);
   const [weighing, setWeighing] = useState(false);
   const consistency = consistencyLine(log.progress?.data);
@@ -117,12 +125,12 @@ export function LogList({ log, hash = '#/gym/log', sessionId = null, fixSetId = 
       {history.data?.summary && <p className="gym-log-count">{historyTotals(withoutRows(history.data.summary, (history.data.sessions ?? []).filter((session) => hidden.has(session.id))))}</p>}
       {history.phase === 'loading' && !history.data && <p className="gym-quiet">Opening the log…</p>}
       {history.failure && <p className="gym-read-failed">The log didn’t load. <Button size="sm" variant="secondary" onClick={history.retry}>Retry</Button></p>}
-      {history.phase === 'ready' && stored.length === 0 && !noMatches && <p className="gym-quiet">No sessions yet.</p>}
+      {empty && !noMatches && <p className="gym-quiet">No sessions yet.</p>}
       {noMatches && <section className="gym-history-empty"><p>{emptyHistoryLine(filters, log.catalog, routineOptions)}</p><Button onClick={() => moveFilter({ year: null, month: null, exercise: '', routine: '' })}>Clear filters</Button></section>}
       {!noMatches && <div className="gym-history-workspace">
         <aside ref={index} onScroll={(event) => { if (!indexPosition.current.pending) indexPositions.set(indexKey, event.currentTarget.scrollTop); }} className={`gym-history-index is-${filters.density}${dense ? ' is-dense' : ''}`} aria-label="Workout history">
           <HistoryIndex sessions={sessions} selected={selected} filters={filters} dense={dense} />
-          {!history.data?.next && history.phase === 'ready' && sessions.length > 0 && <p className="gym-history-end">End of history</p>}
+          {!history.data?.next && complete && history.phase === 'ready' && sessions.length > 0 && <p className="gym-history-end">End of history</p>}
           {history.data?.next && <button type="button" className="gym-older" aria-busy={history.more === 'loading'} onClick={history.load}>{history.more === 'loading' ? 'Loading…' : history.more === 'failed' ? 'That read failed · retry' : 'Load older'}</button>}
         </aside>
         <div className="gym-history-detail">
@@ -179,11 +187,17 @@ function SessionRow({ summary, selected, href, unit }) {
 
 export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', edit = false, fixSetId = null }) {
   const api = useGymApi();
+  const correction = edit ? api?.workoutSave(`correction:${id}`) : null;
   const { say, holdDelete } = log;
+  const storedSets = useDomainRead((read) => read.repository(TrainingSet).children(new Id(id, Session), 'sessionId', 'stored').map(setDocument), [id]);
   const view = useGymRead(
     () => Promise.all([api.session(id), api.exercises()])
-      .then(([detail, catalog]) => (detail ? { detail, catalog } : null)),
-    [id],
+      .then(([detail, catalog]) => {
+        const recovery = edit ? api.workoutSave(`correction:${id}`)?.draft : null;
+        const current = detail ?? (recovery ? { session: recovery.session, sets: recovery.sets } : null);
+        return current ? { detail: current, catalog } : null;
+      }),
+    [id, edit],
     { sync: true, ready: Boolean(api?.ready) },
   );
   const [moves, setMoves] = useState(() => new Map());
@@ -223,14 +237,14 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
       setMoves((current) => new Map(current).set(set.id, stored));
       closeFix();
     } catch (error) {
-      if (error.code === 'unknown-record') { closeFix(); reread(); say(fixFailure(error)); return null; }
+      if (['unknown-record', 'record-dead'].includes(error.code)) { closeFix(); reread(); say(fixFailure(error)); return null; }
       return fixFailure(error);
     }
   };
 
   if (view.phase === 'loading') return <p className="gym-quiet">Opening the session…</p>;
   // A session its delete window holds is gone from its own screen, as its row is from the log.
-  if (view.phase === 'absent' || log.hidden('session').has(id)) {
+  if (view.phase === 'absent' || (!correction && log.hidden('session').has(id))) {
     return (
       <>
         {!embedded && <Back href={from}>The log</Back>}
@@ -253,8 +267,8 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
   const { session } = view.data.detail;
   const settledSets = log.gone('set');
   const hiddenSets = log.hidden('set');
-  const logged = setsAfter(view.data.detail.sets, moves).filter((set) => !settledSets.has(set.id));
-  const sets = logged.filter((set) => !hiddenSets.has(set.id));
+  const logged = setsAfter(storedSets.data ?? view.data.detail.sets, moves).filter((set) => !settledSets.has(set.id));
+  const sets = setsAfter(view.data.detail.sets, moves).filter((set) => !hiddenSets.has(set.id));
   const names = new Map(view.data.catalog.map((exercise) => [exercise.id, exercise.name]));
   const frozen = planFrozenLabel(session);
   const totals = workoutTotals(sets);

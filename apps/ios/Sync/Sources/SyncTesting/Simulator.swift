@@ -1198,7 +1198,7 @@ package final class Simulator {
     var found = violations
     for phone in phones { found += check(phone) }
     found += server.admittedTwice.map { "INV-4 \($0) was admitted twice" }
-    found += pushes.refusedSkewTwice.map { "INV-14 \($0) was refused clock-skew twice" }
+    found += pushes.recoveredSkewTwice.map { "INV-14 \($0) needed two clock-skew recoveries" }
     found += checkCaps()
     found += checkExistence()
     return found
@@ -1404,7 +1404,7 @@ final class Lowerings: Sendable {
 // MARK: - The pushes served
 
 // What the server answered each push, as a simulation checks it: the results by code, the HTTP failures, the retries, and
-// every entry refused `clock-skew`, by each (replica, n) it was refused under, which INV-14 allows once. An entry is found
+// every applicable `clock-skew` refusal, by each (replica, n) it was refused under, which INV-14 allows once. An entry is found
 // by its `n` among the `sent` entries of the device whose replica sent it, which holds it `sent` while its push is served;
 // an acked entry keeps the `n` it had before its replica was renamed, which a later entry may take again.
 final class PushLedger: Sendable {
@@ -1453,7 +1453,7 @@ final class PushLedger: Sendable {
     }
   }
 
-  var refusedSkewTwice: [String] {
+  var recoveredSkewTwice: [String] {
     state.withLock { $0.skewed.filter { $0.value.count > 1 }.keys.sorted() }
   }
 
@@ -1477,7 +1477,11 @@ final class PushLedger: Sendable {
       counts.append(result["s"] == "ok" ? (joining ? "ok with a joining write map" : "ok") : "refused \(code)")
       guard code == "clock-skew", let n = try? result["n"]?.asInteger() else { continue }
       for device in devices {
-        let sent = try? device.store.read { try $0.replica(served.request.replica)?.outbox.first { $0.n == n && $0.state == .sent } }
+        let sent: OutboxEntry? = try? device.store.read { tx in
+          guard let replica = try tx.replica(served.request.replica), served.body["as"] == .string(served.request.account),
+                replica.meta.serverEpoch.map({ JSON.string($0) == served.body["epoch"] }) != false else { return nil }
+          return replica.outbox.first { $0.n == n && $0.state == .sent }
+        }
         if let entry = sent { skewed.append(("\(device.name) \(entry.localId)", "\(served.request.replica) \(n)")) }
       }
     }

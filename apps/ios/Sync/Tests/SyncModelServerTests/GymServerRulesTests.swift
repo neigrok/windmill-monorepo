@@ -5,6 +5,29 @@ import Testing
 @testable import SyncModelServer
 
 struct GymServerRulesTests {
+  @Test func aProposalApplyReceiptRollsBackWithALaterRefusalAndSurvivesAReload() throws {
+    let removal = try vector("apply of a removal kills the routine and its proposals, and writes routineId null on its sessions")
+    let invalid = try vector("a session created by a bare delta is invalid: only commands create sessions")
+    let replay = try vector("a restored removal receipt survives proposal death and a new replica with old guards")
+    var state = try ServerState(json: removal.input.member("state"))
+    let before = state
+    let admission = Admission(registry: try Registry(json: Corpus.registryFile("gym")), rules: GymServerRules())
+    var rejected = try removal.input.member("intent").asObject()
+    rejected["d"] = try invalid.input.member("intent").member("d")
+    let now = try removal.input.member("serverNow").asInteger()
+    let refused = try admission.admit(.object(rejected), from: .replica(account: "A", replica: "rp_1", n: 1), at: now, in: &state)
+    #expect(refused.result == .refused(Refusal(.invalid)))
+    #expect(state == before)
+    let applied = try admission.admit(removal.input.member("intent"), from: .replica(account: "A", replica: "rp_1", n: 2), at: now, in: &state)
+    #expect(applied.result.json["s"] == "ok")
+    #expect(state.product["proposalApplies"]?["acct:A/gym"]?["proposal001"] == true)
+    var reloaded = try ServerState(json: state.json)
+    let accepted = try admission.admit(replay.input.member("intent"), from: .replica(account: "A", replica: "rp_2", n: 1), at: now + 1, in: &reloaded)
+    #expect(accepted.result.json["s"] == "ok")
+    #expect(accepted.result.json["write"] == [])
+    #expect(reloaded == state)
+  }
+
   @Test func aLaterCapRefusalRollsBackTheRoutineProjectionAndItsServerStamps() throws {
     let create = try vector("a routine created with entries takes revision 1")
     let cap = try vector("an eleventh note is refused cap")

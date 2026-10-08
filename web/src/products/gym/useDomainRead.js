@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSyncRecords } from '../../platform/sync/react.js';
-import { useGymApi } from './gymSync.js';
+import { useGymApi } from './gymRuntime.js';
 
-export function useDomainRead(read) {
+export function useDomainRead(read, inputs = []) {
   const api = useGymApi();
-  useSyncRecords('self/gym');
-  const [, redraw] = useState(0);
+  const records = useSyncRecords('self/gym');
+  const [refresh, redraw] = useState(0);
+  const today = new Date().toDateString();
   const retry = useCallback(() => redraw((value) => value + 1), []);
   useEffect(() => {
     let timer;
@@ -32,8 +33,10 @@ export function useDomainRead(read) {
       document.removeEventListener('visibilitychange', resume);
     };
   }, [retry]);
-  // A read's Moment and its display inputs belong to this render, even without a sync update.
-  if (!api) return { phase: 'loading', data: null, retry };
-  try { return { phase: 'ready', data: api.read(read), retry }; }
-  catch { return { phase: 'failed', data: null, retry }; }
+  // Inline selectors name their changing inputs; observations also include device-only metadata.
+  return useMemo(() => {
+    if (!api) return { phase: 'loading', data: null, retry };
+    try { return { phase: 'ready', data: api.read(read), retry }; }
+    catch { return { phase: 'failed', data: null, retry }; }
+  }, [api, records, refresh, today, ...inputs]);
 }

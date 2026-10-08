@@ -1,5 +1,5 @@
-import { Device, Replica } from '../../../src/platform/sync/client/replica.js';
-import { recordKey } from '../../../src/platform/sync/core/rows.js';
+import { Device, Replica } from '../../../../packages/api-contract/sync/reference/client/replica.js';
+import { recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
 
 export function versionOneFixture() {
   const replicas = [1, 2].map((n) => {

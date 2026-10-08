@@ -109,6 +109,9 @@ object NetworkCorpus {
                 } catch (_: TransitionError) {
                     gestures = beforeGestures; consumed.putAll(beforeConsumed); current = beforeActor
                     Json.objectOf("throws" to Json.of(true))
+                } catch (_: JsonError) {
+                    gestures = beforeGestures; consumed.putAll(beforeConsumed); current = beforeActor
+                    Json.objectOf("throws" to Json.of(true))
                 } finally { engine.actor = current }
             }
             return Json.Obj(buildList {

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
 import { CommitError, commit } from '../../client/commit.js';
 import { Device, Replica } from '../../client/replica.js';
 import { mintId } from '../../core/derive.js';
@@ -101,7 +100,7 @@ test('§7.1: a replica that is not writable and a malformed commit are distinct 
 });
 
 test('§7.1 step 4: a command\'s arguments round to their domain\'s quantum at any depth', () => {
-  const gym = Registry.fromFile(fileURLToPath(new URL('../../../gym.registry.json', import.meta.url)));
+  const gym = new Registry(JSON.parse(readFileSync(new URL('../../../gym.registry.json', import.meta.url), 'utf8')));
   const replica = new Replica({ meta: Replica.fresh({ replica: 'rp_1', state: 'bound', account: 'A' }).meta });
   const set = (weightKg, rpe) => ({ id: 'set0000000000001', exerciseId: 'dip', weightKg, reps: 5, rpe, completedAt: 1500 });
   const context = { ...ctx(), registry: gym, device: new Device({ active: 'rp_1', replicas: [replica.toJSON()] }) };

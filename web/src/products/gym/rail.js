@@ -92,5 +92,7 @@ export function useRail({ count, nameOf, placeOf, move }) {
     move(from, to);
   };
 
-  return { picked, said, nameFor, activate, keyDown, grabbed, dropped };
+  const reset = () => { setPicked(null); setSaid(''); };
+
+  return { picked, said, nameFor, activate, keyDown, grabbed, dropped, reset };
 }

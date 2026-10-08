@@ -79,5 +79,8 @@ test('decoded records own their immutable nested values without freezing the rea
   assert.equal(Object.isFrozen(plan.entries), false);
   plan.entries.push({ exerciseId: 'dip' });
   assert.deepEqual(value.fields().plan, { routine: 'Lower', entries: [{ exerciseId: 'back-squat' }] });
-  assert.equal(Object.isFrozen(value.fields().plan), true);
+  assert.ok(value.plan);
+  assert.equal(Object.isFrozen(value.plan), true);
+  assert.equal(Object.isFrozen(value.plan.entries), true);
+  assert.equal(Object.isFrozen(value.plan.entries[0]), true);
 });

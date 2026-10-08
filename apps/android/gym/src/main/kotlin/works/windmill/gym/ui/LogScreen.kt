@@ -222,7 +222,9 @@ private fun MomentRow(moment: LogEntry.Moment, readout: LogReadout.Moment, movem
                 Text("Last 12 weeks · ${Readout.sessionCount(movement.sessions.size)}", style = WindmillFont.body(12).copy(lineHeight = 17.sp), color = skin.inkDim)
                 movement.best?.let { Text("Best e1RM ${Readout.estimatedWeight(it.fact.estimate!!.e1rm)} kg · ${Readout.briefDay(it.startedAt, nowMs)}",
                     style = WindmillFont.body(14, FontWeight.Bold).copy(lineHeight = 20.sp), color = skin.prInk) }
-                movement.heaviest?.let { Text("Heaviest ${Readout.effort(it.fact.heaviest.weightKg, it.fact.heaviest.reps)} · ${Readout.briefDay(it.startedAt, nowMs)}",
+                movement.heaviest?.takeIf { it.fact.heaviest.weightKg != 0.0 }?.let { Text("Heaviest ${Readout.effort(it.fact.heaviest.weightKg, it.fact.heaviest.reps)} · ${Readout.briefDay(it.startedAt, nowMs)}",
+                    style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim) }
+                movement.bodyweightReps?.let { Text("Most reps ${it.fact.bodyweightReps!!.reps} · bodyweight · ${Readout.briefDay(it.startedAt, nowMs)}",
                     style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim) }
                 Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onOpenRecord), contentAlignment = Alignment.CenterStart) {
                     Text("Open record ›", style = WindmillFont.body(14, FontWeight.Bold), color = skin.accent)

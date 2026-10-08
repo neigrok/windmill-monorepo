@@ -1,6 +1,6 @@
 // The gym's failures, and the reason a screen gives for each.
 
-import { CommitError } from '../../platform/sync/client/commit.js';
+import { CommitError } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 
 // A REST door's answer that was not a success, in the server's words and code.
 export class GymError extends Error {
@@ -14,7 +14,7 @@ export class GymError extends Error {
   }
 }
 
-// A write the log refused before storing it: the engine's code, the sentence a screen shows, and for an
+// A refused write: the engine's code, the sentence a screen shows, and for an
 // overlap the finished session the workout's times cross.
 export class GymRefusal extends Error {
   constructor(code, { sentence = 'The log wouldn’t take this change as written.', overlapping = null } = {}) {

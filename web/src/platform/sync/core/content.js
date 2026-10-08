@@ -1,4 +1,4 @@
-import { COUNTER_LIMIT, MS_LIMIT } from "./constants.js";
+import { COUNTER_LIMIT, MS_LIMIT } from "../../../../../packages/api-contract/sync/reference/core/constants.js";
 
 export function isCalendarDay(day) {
   if (typeof day !== "string" || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(day))

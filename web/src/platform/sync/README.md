@@ -5,9 +5,12 @@ request. `start()` installs tab coordination and lifecycle hooks, releases holds
 requests persistent storage and starts synchronization. No product or UI imports this engine.
 
 The registry composes the shared gym and journal registries at version 6, minimum 4. The deterministic
-core and replica rules are browser ports of `packages/api-contract/sync/reference`.
-UTF-8 uses `TextEncoder`, canonical cursor encoding uses browser base64 APIs and synchronous SHA-256
-uses `@noble/hashes`. Test oracles stay outside the shipping dependency graph.
+core and replica rules import `packages/api-contract/sync/reference/core` and `client` directly.
+The shared modules use `TextEncoder`, canonical base64url and vendored synchronous SHA-256, with no
+dependencies. `core/encoding.js` exposes the shared encoding helpers to web consumers;
+`core/content.js` holds the web content clock. IndexedDB, transport, leadership, session, telemetry
+and React bindings stay here. Reference server models and test oracles stay outside the shipping
+dependency graph.
 
 ```js
 const engine = await BrowserSyncEngine.open({ appVersion, telemetry, credentials });
@@ -76,7 +79,7 @@ checks the stop before using the network. CI uses `VITE_RELEASE` as the build id
 bound active plus pending work to 64 frames and 1 MiB; overflow closes the socket and recovers through
 pulls. A hidden leader yields to a visible peer. Unsupported coordination fails explicitly.
 
-`npm run test:sync` claims all 52 client/all corpus files (847 vectors/transcript steps) and runs the
+`npm run test:sync` claims all 52 client/all corpus files (897 vectors/transcript steps) and runs the
 persisted runtime, fake IndexedDB and real Chromium tests. Playwright is dev-only. Test/build scripts
 install Chromium automatically; Linux CI also installs its system dependencies. No browser test is
 skipped when Chromium is unavailable. `npm run test:sync:fuzz` runs 500×300 core replay, 20×80 random
@@ -95,9 +98,16 @@ the browser engine separately and rejects Node builtins. The app shell caches th
 `useSyncRecords(scope)` (stable drawn/stored records, notices and first-pull state through
 `useSyncExternalStore`). Records can observe the anonymous replica; only the session owner opens
 and starts the engine. Each product's route table carries a `sync` group — `prepare(engine)`,
-`onPushResult`, `pendingDeviceWork`, `liveHint(engine, replica)` and `signedOutWork`, the record type a
+`onPushResult`, `pendingDeviceWork`, `adoptDeviceRows`, `liveHint(engine, replica)` and `signedOutWork`, the record type a
 sign-in question counts — and the session owner composes every group into the engine options;
 `prepare` runs before the first network request.
+
+`pendingDeviceWork(product, rows)` identifies durable work for both sign-in and sign-out decisions.
+Sign-in adopts that work even without outbox entries, exposes its count as `due.pending`, and pins
+each row's full bytes with its key so a stale Add or Discard is asked again.
+`adoptDeviceRows(product, incomingRows, keptRows)` returns the merged product rows, or `undefined`
+when unhandled. A differing pending-work collision without a merge fails the transaction and keeps
+both replicas intact; ordinary device settings retain the destination value on a shared key.
 
 Command predictions may include local deaths and serial values; only the command arguments go on
 the wire.

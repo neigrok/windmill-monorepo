@@ -37,14 +37,14 @@ struct MovementRecordScreen: View {
             }.accessibilityIdentifier("gym-record-best")
           }.listRowBackground(palette.surface)
         }
-        if let heaviest = progress.heaviest?.fact.heaviest {
+        ForEach(LogPresentation.progressEfforts(progress), id: \.setId) { heaviest in
           Section {
             VStack(alignment: .leading, spacing: 5) {
               Text(heaviest.weightKg == 0 ? "Most reps" : "Heaviest").font(.caption).foregroundStyle(palette.dim)
               Text(heaviest.weightKg == 0 ? String(heaviest.reps) : Readout.weight(heaviest.weightKg))
                 .font(.largeTitle.monospaced().weight(.bold))
               Text(heaviest.weightKg == 0 ? "reps · no added load" : "kg · \(heaviest.reps) reps").font(.subheadline.monospaced()).foregroundStyle(palette.dim)
-            }.accessibilityIdentifier("gym-record-heaviest")
+            }.accessibilityIdentifier(heaviest.weightKg == 0 ? "gym-record-bodyweight-reps" : "gym-record-heaviest")
           }.listRowBackground(palette.surface)
         }
         if !progress.estimates.isEmpty {

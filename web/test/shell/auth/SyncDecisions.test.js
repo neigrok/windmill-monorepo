@@ -30,3 +30,12 @@ test('sign-out states sent work may be confirmed and offers Keep/Discard/Cancel'
   const buttons = elementsOf(view.tree.props.footer).filter((element) => element.props.variant);
   assert.deepEqual(buttons.map((button) => textOf(button.props.children)), ['Cancel', 'Keep', 'Discard']);
 });
+
+test('an editor-only sign-in question names the unsaved writing without claiming zero pages', async (t) => {
+  const { SyncDecisions } = await loadScreen('shell/auth/SyncDecisions.jsx');
+  const view = renderHook(t, () => SyncDecisions({ question: { ...question, count: {}, pending: 1 }, work }));
+  assert.equal(textOf(view.tree.props.children),
+    '1 unsaved change from before you signed in is only on this device, and your account already has pages. Add it, or discard it for good.');
+  elementsOf(view.tree.props.footer).find((element) => textOf(element.props.children) === 'Discard').props.onClick();
+  assert.equal(view.tree.props.title, 'Discard 1 unsaved change?');
+});

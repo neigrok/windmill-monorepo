@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CommitError } from '../../../src/platform/sync/client/commit.js';
+import { CommitError } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 import { failureReason, GymError, GymRefusal, isStoreFailure } from '../../../src/products/gym/errors.js';
 
 test('failureReason — a refusal, a lapsed sign-in, a row that is gone, this device’s store and a silence each get their own sentence', () => {

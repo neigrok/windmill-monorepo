@@ -83,10 +83,10 @@ test('mirror symmetry — the assisted side is the loaded side reflected through
   }
 });
 
-test('round — the float noise a step leaves behind, and the zero that keeps its sign', () => {
+test('round — float noise is removed and the domain quantum produces canonical zero', () => {
   assert.equal(round(18.999000000000002), 19);
   assert.equal(round(20.01 - 2.5), 17.51);
-  assert.equal(round(-0.001), -0);
+  assert.equal(round(-0.001), 0);
 });
 
 test('LADDER_KEYS — DOM order, the small steps loudest in the middle', () => {

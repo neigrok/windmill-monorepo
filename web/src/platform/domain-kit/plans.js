@@ -154,6 +154,8 @@ export class Plan {
     this.predictions = [];
     /** @type {DeviceWrite[]} */
     this.deviceWrites = [];
+    /** @type {string[]} */
+    this.supersededGestures = [];
   }
 
   // §8.4: a plan running a command, its string arguments normalised by the command's specs; a
@@ -240,6 +242,11 @@ export class Plan {
    */
   device(key, value) {
     this.deviceWrites.push({ key, value });
+  }
+
+  /** @param {string[]} gestureIds */
+  supersede(gestureIds) {
+    this.supersededGestures = [...gestureIds];
   }
 
   /**

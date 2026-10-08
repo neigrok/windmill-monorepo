@@ -1,7 +1,3 @@
-
-class Registry extends BrowserRegistry {
-  static fromFile(path) { return new Registry(JSON.parse(readRegistry(path, "utf8"))); }
-}
 // §11.3 the deterministic replay simulator: devices running the browser client core against the reference
 // server over a network that drops, duplicates, delays and reorders, with process death and reboots,
 // clock error and device clock jumps, holds, undo and retire, two tabs, sign-in and sign-out, credentials
@@ -11,29 +7,27 @@ class Registry extends BrowserRegistry {
 // of its cursor, or two batches of a push answer's results. Each step checks that every change of a
 // device's active replica id was announced (§7.12); `check()` states the invariants after quiescence.
 
-import { fileURLToPath } from 'node:url';
-import { CONSTANTS } from '../../../../src/platform/sync/core/constants.js';
-import { jcs } from '../../../../src/platform/sync/core/jcs.js';
-import { Registry as BrowserRegistry } from '../../../../src/platform/sync/core/registry.js';
-import { compareRecords, isAlive, isVisible, recordKey } from '../../../../src/platform/sync/core/rows.js';
+import { readFileSync } from 'node:fs';
+import { CONSTANTS } from '../../../../../packages/api-contract/sync/reference/core/constants.js';
+import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { Registry } from '../../../../../packages/api-contract/sync/reference/core/registry.js';
+import { compareRecords, isAlive, isVisible, recordKey } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
 import { ProbeProduct } from '../../../../../packages/api-contract/sync/reference/probe/product.js';
-import { commit } from '../../../../src/platform/sync/client/commit.js';
-import { releaseAll, releaseDue, undo, undoOffered } from '../../../../src/platform/sync/client/hold.js';
-import { engineStart, signIn, signOut } from '../../../../src/platform/sync/client/lifecycle.js';
-import { onFrame, onPullResponse, pullRequest } from '../../../../src/platform/sync/client/puller.js';
-import { Device, Replica } from '../../../../src/platform/sync/client/replica.js';
-import { reconcile, subscriptionsOf } from '../../../../src/platform/sync/client/subscriptions.js';
-import { nextPush, onPushResponse } from '../../../../src/platform/sync/client/sender.js';
-import { capCount, drawn, stored } from '../../../../src/platform/sync/client/views.js';
+import { commit } from '../../../../../packages/api-contract/sync/reference/client/commit.js';
+import { releaseAll, releaseDue, undo, undoOffered } from '../../../../../packages/api-contract/sync/reference/client/hold.js';
+import { engineStart, signIn, signOut } from '../../../../../packages/api-contract/sync/reference/client/lifecycle.js';
+import { onFrame, onPullResponse, pullRequest } from '../../../../../packages/api-contract/sync/reference/client/puller.js';
+import { Device, Replica } from '../../../../../packages/api-contract/sync/reference/client/replica.js';
+import { reconcile, subscriptionsOf } from '../../../../../packages/api-contract/sync/reference/client/subscriptions.js';
+import { nextPush, onPushResponse } from '../../../../../packages/api-contract/sync/reference/client/sender.js';
+import { capCount, drawn, stored } from '../../../../../packages/api-contract/sync/reference/client/views.js';
 import { frameFor, hello, pull, refOfKey } from '../../../../../packages/api-contract/sync/reference/server/pull.js';
 import { push } from '../../../../../packages/api-contract/sync/reference/server/push.js';
 import { serverCall } from '../../../../../packages/api-contract/sync/reference/server/requests.js';
 import { ServerState } from '../../../../../packages/api-contract/sync/reference/server/state.js';
 import { Rng } from '../oracle-adapters/fixtures.js';
-import { readFileSync as readRegistry } from "node:fs";
 
-
-export const PROBE_REGISTRY = Registry.fromFile(fileURLToPath(new URL('../../../../../packages/api-contract/sync/probe.registry.json', import.meta.url)));
+export const PROBE_REGISTRY = new Registry(JSON.parse(readFileSync(new URL('../../../../../packages/api-contract/sync/probe.registry.json', import.meta.url), 'utf8')));
 
 const WORDS = ['oak', 'ash', 'elm', 'fir', 'yew', 'bay', 'box', 'ivy'];
 

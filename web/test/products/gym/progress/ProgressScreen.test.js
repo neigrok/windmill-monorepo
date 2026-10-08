@@ -7,7 +7,7 @@ test('a no-estimate record distinguishes loaded facts from bodyweight additions'
   const at = new Date(2026, 8, 25, 12).getTime();
   t.mock.method(Date, 'now', () => at);
   const { MovementChart } = await loadScreen('products/gym/progress/Progress.jsx');
-  const log = { progress: { phase: 'ready', data: { sessions: [{ sessionId: 'a', startedAt: at, movements: [{ exerciseId: 'move', workingSetCount: 1, heaviest: { weightKg: 60, reps: 8 } }] }] } } };
+  const log = { progress: { phase: 'ready', data: { sessions: [{ sessionId: 'a', startedAt: at, movements: [{ exerciseId: 'move', workingSetCount: 1, heaviest: { setId: 'set_heavy', weightKg: 60, reps: 8 } }] }] } } };
   for (const equipment of ['barbell', undefined]) {
     const screen = renderHook(t, () => MovementChart({ id: 'move', equipment, log }));
     assert.deepEqual(elementsOf(screen.tree).filter((element) => element.type === 'p').map(textOf), ['heaviest 60 × 8 · 25 Sep', '1 session · since 25 Sep', 'No estimate in this window.']);
@@ -20,7 +20,7 @@ test('all-time chart table and gap labels keep years across a multiyear horizon'
   browserWith();
   t.mock.method(Date, 'now', () => new Date(2026, 8, 25, 12).getTime());
   const { MovementChart } = await loadScreen('products/gym/progress/Progress.jsx');
-  const sessions = [new Date(2024, 5, 10, 12).getTime(), new Date(2026, 2, 3, 12).getTime()].map((startedAt, index) => ({ sessionId: `ses_${index}`, startedAt, movements: [{ exerciseId: 'bench', workingSetCount: 1, heaviest: { weightKg: 60, reps: 8 }, estimate: { weightKg: 60, reps: 8, e1rm: 76 } }] }));
+  const sessions = [new Date(2024, 5, 10, 12).getTime(), new Date(2026, 2, 3, 12).getTime()].map((startedAt, index) => ({ sessionId: `ses_${index}`, startedAt, movements: [{ exerciseId: 'bench', workingSetCount: 1, heaviest: { setId: 'set_heavy', weightKg: 60, reps: 8 }, estimate: { setId: 'set_estimate', weightKg: 60, reps: 8, e1rm: 76 } }] }));
   const screen = renderHook(t, () => MovementChart({ id: 'bench', equipment: 'barbell', log: { progress: { phase: 'ready', data: { sessions } } } }));
   elementsOf(screen.tree).find((each) => each.type === 'button' && textOf(each) === 'All').props.onClick();
   const chart = elementsOf(screen.tree).find((each) => typeof each.type === 'function' && each.type.name === 'DotChart');
@@ -28,4 +28,19 @@ test('all-time chart table and gap labels keep years across a multiyear horizon'
   assert.equal(chart.props.formatDate(sessions[0].startedAt), '10 Jun 2024');
   assert.equal(chart.props.gapLabel(chart.props.points[0], chart.props.points[1]), 'No session · 10 Jun 2024–3 Mar 2026');
   assert.equal(chart.props.points[0].label, '76 kg est · 10 Jun 2024 · 60 × 8');
+});
+
+
+test('a partial training pull shows observed estimates without asserting a best', async (t) => {
+  browserWith();
+  const at = new Date(2026, 8, 25, 12).getTime();
+  t.mock.method(Date, 'now', () => at);
+  const { MovementChart } = await loadScreen('products/gym/progress/Progress.jsx');
+  const log = { progress: { phase: 'ready', data: { isComplete: false, sessions: [{ sessionId: 'a', startedAt: at,
+    movements: [{ exerciseId: 'bench', workingSetCount: 1, heaviest: { setId: 'set_a', weightKg: 60, reps: 8 },
+      estimate: { setId: 'set_a', weightKg: 60, reps: 8, e1rm: 76 } }] }] } } };
+  const screen = renderHook(t, () => MovementChart({ id: 'bench', equipment: 'barbell', log }));
+  assert.deepEqual(elementsOf(screen.tree).filter((element) => element.type === 'p').map(textOf),
+    ['1 session', 'Estimates, not tested lifts.', 'Latest · 76 kg est · 60 × 8']);
+  assert.deepEqual(elementsOf(screen.tree).filter((element) => element.type === 'td').map(textOf), ['25 Sep', '60×8', '76.0']);
 });

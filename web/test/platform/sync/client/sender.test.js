@@ -1,6 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { SenderWait } from '../../../../src/platform/sync/client/sender.js';
+import { onPushResponse, ResponseError, SenderWait } from '../../../../../packages/api-contract/sync/reference/client/sender.js';
+import { Replica } from '../../../../../packages/api-contract/sync/reference/client/replica.js';
+
+test('a malformed authenticated success cannot reset an epoch or mutate the replica', () => {
+  for (const invalid of [{ epoch: 2 }, { epoch: '' }, { epoch: undefined }, { serverTime: -1 },
+    { serverTime: undefined }, { lastN: -1 }, { results: null }]) {
+    const replica = Replica.fresh({ replica: 'rp_00000000000000000000000000000001', state: 'bound', account: 'A' });
+    replica.meta.serverEpoch = 'ep-1';
+    const before = replica.toJSON();
+    const body = { as: 'A', epoch: 'ep-2', serverTime: 1000, lastN: 0, results: [], ...invalid };
+    assert.throws(() => onPushResponse(replica, {}, { account: 'A', intents: [] }, { status: 200, body }, {}), ResponseError);
+    assert.deepEqual(replica.toJSON(), before);
+  }
+});
 
 // A draw that answers its bound, the longest sleep a backoff can take.
 const longest = (bound) => bound;

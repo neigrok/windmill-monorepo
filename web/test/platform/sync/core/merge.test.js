@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { jcs } from '../../../../src/platform/sync/core/jcs.js';
-import { joinBorn, joinFww, joinLife, joinLww, joinRanked, joinRecord } from '../../../../src/platform/sync/core/merge.js';
-import { Stamp } from '../../../../src/platform/sync/core/stamp.js';
+import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { joinBorn, joinFww, joinLife, joinLww, joinRanked, joinRecord } from '../../../../../packages/api-contract/sync/reference/core/merge.js';
+import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/stamp.js';
 import { Rng, registry } from '../oracle-adapters/fixtures.js';
 
 const TRIALS = 3000;

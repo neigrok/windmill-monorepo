@@ -58,4 +58,78 @@ struct SchemaTests {
     let store = try Store(path: directory.appendingPathComponent("sync.sqlite").path, registry: Self.probe)
     #expect(try ["journal_mode", "synchronous", "foreign_keys"].map(store.pragma) == ["wal", "2", "1"])
   }
+
+  @Test(arguments: [false, true], [false, true])
+  func aLegacyJoinedCommandMigratesAndRecoversAcrossDiskFailures(predicted: Bool, committed: Bool) throws {
+    let file = try #require(try Corpus.files().first { $0.path == "refusal/transport.json" })
+    let vector = try #require(try Corpus.vectors(in: file).first { $0.name == "legacy joined commands share their replay target before its delete after a pull restore" })
+    var device = try LoadedDevice(json: vector.input.member("device"), registry: Self.probe)
+    let command = try #require(device.activeReplica.outbox.first { $0.intent.command != nil })
+    let deletion = try #require(device.activeReplica.outbox.first { $0.intent.deltas.contains(where: \.removes) })
+    if !predicted { device.modify(device.active) { $0.update(entry: command.localId) { $0.predict = [] } } }
+    let before = device.json
+    let identities = { try QueuedIdentities(["ids": ["rp_new"], "actors": ["r_bbbbbbbbbbbb"]]) }
+    try StoreTests.inFreshDirectory { path in
+      do {
+        let store = try Store(path: path, registry: Self.probe)
+        _ = try store.write(.firstLaunch) { _ in Planned((), ReplicaBatch(building: device)) }
+        try store.writer.write { db in
+          try db.execute(sql: "ALTER TABLE outbox DROP COLUMN write_targets")
+          try db.execute(sql: "DELETE FROM grdb_migrations WHERE identifier = 'v2'")
+        }
+      }
+      let point: CrashPoint = committed ? .afterCommit(.epochChange) : .beforeCommit(.epochChange)
+      let migrating = try Store(path: path, registry: Self.probe, crashPoints: CrashPoints { if $0 == point { throw StoreTests.Killed() } })
+      #expect(try migrating.read { try $0.device(rows: true).json } == before)
+      var instance = StoreTests.at(6000)
+      #expect(throws: StoreTests.Killed.self) {
+        try migrating.changeEpoch(to: "ep-2", instance: &instance, identities: identities())
+      }
+      let recovered = try Store(path: path, registry: Self.probe)
+      if !committed {
+        #expect(try recovered.read { try $0.device(rows: true).json } == before)
+        _ = try recovered.changeEpoch(to: "ep-2", instance: &instance, identities: identities())
+      }
+      let inferred = try recovered.read { try $0.device(rows: true).activeReplica.entry(command.localId)?.writeTargets }
+      let expected = predicted ? [WriteTarget(key: RecordKey("run", "run00001"), from: "run00002", born: command.predict[0].lattice.born)] : []
+      #expect(inferred == expected)
+      let request = try #require(try recovered.number(at: 7000).value)
+      let mapped = try PushResult(json: ["n": JSON(request.intents[0].n!), "s": "ok", "seq": 1,
+        "write": [["t": "run", "id": "run00002", "born": "7000:0:srv"]]])
+      _ = try recovered.apply(.results(ResultBatch(replica: "rp_new", results: [mapped], lastN: 1, epoch: "ep-2", isLast: true)),
+        replica: "rp_new", instance: &instance, timing: .steady(send: 7000, recv: 7000), identities: try StoreTests.none())
+      let reopened = try Store(path: path, registry: Self.probe)
+      let replica = try reopened.read { try $0.device(rows: true).activeReplica }
+      #expect(replica.entry(command.localId)?.writeTargets == [WriteTarget(key: RecordKey("run", "run00002"), from: "run00002", born: try Stamp("7000:0:srv"))])
+      if predicted {
+        let delta = try #require(replica.entry(deletion.localId)?.intent.deltas.first)
+        #expect(delta.key == RecordKey("run", "run00002"))
+        let alias = try #require(replica.outbox.first { $0.intent.command != nil && $0.localId != command.localId })
+        #expect(alias.intent.command?.args["id"] == "run00002")
+        #expect(alias.writeTargets?.map(\.from) == [RecordID("run00002")])
+        #expect(delta.lattice.born == alias.predict.first?.lattice.born)
+        let aliasRequest = try #require(try reopened.number(at: 7010).value)
+        let aliasResult = try PushResult(json: ["n": JSON(aliasRequest.intents[0].n!), "s": "ok", "seq": 1,
+          "write": [["t": "run", "id": "run00002", "born": "7000:0:srv"]]])
+        _ = try reopened.apply(.results(ResultBatch(replica: "rp_new", results: [aliasResult], lastN: 2, epoch: "ep-2", isLast: true)),
+          replica: "rp_new", instance: &instance, timing: .steady(send: 7010, recv: 7010), identities: try StoreTests.none())
+        #expect(try reopened.read { try $0.device(rows: true).activeReplica.entry(deletion.localId)?.intent.deltas.first?.lattice.born }
+          == Stamp("7000:0:srv"))
+        #expect(replica.notices.isEmpty)
+      } else {
+        #expect(replica.entry(deletion.localId) == nil)
+        #expect(replica.notices.map(\.code) == [.targetMerged])
+        #expect(replica.notices.first?.content == deletion.content)
+      }
+      _ = try reopened.changeEpoch(to: "ep-3", instance: &instance,
+        identities: try QueuedIdentities(["ids": ["rp_again"], "actors": ["r_cccccccccccc"]]))
+      let replay = try #require(try reopened.number(at: 8000).value)
+      let empty = try PushResult(json: ["n": JSON(replay.intents[0].n!), "s": "ok", "seq": 1, "write": []])
+      _ = try reopened.apply(.results(ResultBatch(replica: "rp_again", results: [empty], lastN: 1, epoch: "ep-3", isLast: true)),
+        replica: "rp_again", instance: &instance, timing: .steady(send: 8000, recv: 8000), identities: try StoreTests.none())
+      let final = try Store(path: path, registry: Self.probe)
+      #expect(try final.read { try $0.device(rows: true).activeReplica.entry(command.localId)?.writeTargets }
+        == replica.entry(command.localId)?.writeTargets)
+    }
+  }
 }

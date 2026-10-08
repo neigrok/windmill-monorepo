@@ -23,9 +23,11 @@ object Record {
                 add(Tile("Best e1RM", Readout.estimatedWeight(point.fact.estimate!!.e1rm),
                     "kg · ${Readout.briefDay(point.startedAt, now)}", true))
             }
-            heaviest?.let {
-                add(if (it.weightKg == 0.0) Tile("Most reps", "${it.reps}", "reps · no added load", false)
-                    else Tile("Heaviest", Readout.weight(it.weightKg), "kg · ${Readout.repCount(it.reps)}", false))
+            heaviest?.takeIf { it.weightKg != 0.0 }?.let {
+                add(Tile("Heaviest", Readout.weight(it.weightKg), "kg · ${Readout.repCount(it.reps)}", false))
+            }
+            progress.bodyweightReps?.fact?.bodyweightReps?.let {
+                add(Tile("Most reps", "${it.reps}", "reps · no added load", false))
             }
         }
         return Page(record.exercise.name,

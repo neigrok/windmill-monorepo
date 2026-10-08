@@ -5,18 +5,18 @@ import { ServerState } from '../../../../packages/api-contract/sync/reference/se
 import { hello, pull } from '../../../../packages/api-contract/sync/reference/server/pull.js';
 import { push } from '../../../../packages/api-contract/sync/reference/server/push.js';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
-import { steadyTiming } from '../../../src/platform/sync/core/clock.js';
-import { releaseAll, releaseDue, undoOffers } from '../../../src/platform/sync/client/hold.js';
-import { engineStart } from '../../../src/platform/sync/client/lifecycle.js';
-import { onPullResponse, pullRequest } from '../../../src/platform/sync/client/puller.js';
-import { nextPush, onPushResponse } from '../../../src/platform/sync/client/sender.js';
+import { steadyTiming } from '../../../../packages/api-contract/sync/reference/core/clock.js';
+import { releaseAll, releaseDue, undoOffers } from '../../../../packages/api-contract/sync/reference/client/hold.js';
+import { engineStart } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
+import { onPullResponse, pullRequest } from '../../../../packages/api-contract/sync/reference/client/puller.js';
+import { nextPush, onPushResponse } from '../../../../packages/api-contract/sync/reference/client/sender.js';
 import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/runner.js';
 import { DomainNotice } from '../../../src/platform/domain-kit/refusals.js';
 import { FixedZone } from '../../../src/platform/domain-kit/time.js';
 import { environment } from '../sync/fakes.js';
 import { DEFAULT_NOW } from './vectors.js';
 
-/** @typedef {{ registry: import('../../../src/platform/sync/core/registry.js').Registry, product: any, scope: string, now: number, serial: number, server: any, phones: Harness[], zone: import('../../../src/platform/domain-kit/time.js').Zone }} World */
+/** @typedef {{ registry: import('../../../../packages/api-contract/sync/reference/core/registry.js').Registry, product: any, scope: string, now: number, serial: number, server: any, phones: Harness[], zone: import('../../../src/platform/domain-kit/time.js').Zone }} World */
 
 export class Harness {
   /** @param {World} world @param {any} env @param {any} engine @param {any} options */
@@ -29,7 +29,7 @@ export class Harness {
     world.phones.push(this);
   }
 
-  /** @param {{ registry: import('../../../src/platform/sync/core/registry.js').Registry, product: any, scope: string, start?: number, zone?: import('../../../src/platform/domain-kit/time.js').Zone }} options */
+  /** @param {{ registry: import('../../../../packages/api-contract/sync/reference/core/registry.js').Registry, product: any, scope: string, start?: number, zone?: import('../../../src/platform/domain-kit/time.js').Zone }} options */
   static async open({ registry, product, scope, start = DEFAULT_NOW, zone = new FixedZone(0) }) {
     const world = { registry, product, scope, now: start, serial: 0, server: ServerState.empty({ epoch: 'ep-domain', accounts: { A: { name: 'A' } } }), phones: [], zone };
     return Harness.phone(world);

@@ -18,10 +18,15 @@ const FIXTURES = path.join(WEB, 'test', 'fixtures', 'domain-layering');
 
 const NAME = '[\\w-]+';
 const IMPORTS = {
-  kit: [new RegExp(`^\\.\\./sync/core/${NAME}\\.js$`), new RegExp(`^\\./${NAME}\\.js$`)],
+  kit: [
+    new RegExp(`^(?:\\.\\./){4}packages/api-contract/sync/reference/core/${NAME}\\.js$`),
+    /^\.\.\/sync\/core\/(?:encoding|content)\.js$/,
+    new RegExp(`^\\./${NAME}\\.js$`),
+  ],
   domain: [
     new RegExp(`^\\.\\./\\.\\./\\.\\./platform/domain-kit/${NAME}\\.js$`),
-    new RegExp(`^\\.\\./\\.\\./\\.\\./platform/sync/core/${NAME}\\.js$`),
+    new RegExp(`^(?:\\.\\./){5}packages/api-contract/sync/reference/core/${NAME}\\.js$`),
+    /^\.\.\/\.\.\/\.\.\/platform\/sync\/core\/(?:encoding|content)\.js$/,
     /^\.\.\/\.\.\/\.\.\/platform\/sync\/schema\.js$/,
     new RegExp(`^\\./${NAME}\\.js$`),
   ],
@@ -37,11 +42,11 @@ const EXEMPTIONS = { 'runner.js': ['async', 'await', 'Promise'] };
 
 const isNode = (value) => value !== null && typeof value === 'object' && typeof value.type === 'string';
 
-function walk(node, visit) {
-  visit(node);
+function walk(node, visit, parent = null) {
+  visit(node, parent);
   for (const value of Object.values(node)) {
-    if (Array.isArray(value)) value.forEach((item) => { if (isNode(item)) walk(item, visit); });
-    else if (isNode(value)) walk(value, visit);
+    if (Array.isArray(value)) value.forEach((item) => { if (isNode(item)) walk(item, visit, node); });
+    else if (isNode(value)) walk(value, visit, node);
   }
 }
 
@@ -72,7 +77,7 @@ function findings({ layer, name, text, directory }) {
     if (word.startsWith('_') && word !== '_') report(line, `identifier ${word} begins with an underscore`);
   };
 
-  walk(program, (node) => {
+  walk(program, (node, parent) => {
     const line = node.loc.start.line;
     switch (node.type) {
       case 'ImportDeclaration':
@@ -85,6 +90,11 @@ function findings({ layer, name, text, directory }) {
         else report(line, 'dynamic import of a computed specifier');
         break;
       case 'Identifier':
+        // A page's document is data; only a reference or binding can name the browser global.
+        if (node.name === 'document' && !parent?.computed &&
+          (parent?.type === 'MemberExpression' && parent.property === node ||
+            parent?.type === 'Property' && parent.key === node && !parent.shorthand ||
+            parent?.type === 'MethodDefinition' && parent.key === node)) break;
         checkName(node);
         break;
       case 'MemberExpression': {

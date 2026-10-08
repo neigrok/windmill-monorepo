@@ -180,6 +180,25 @@ const pushA = () => confirmed('routine', 'routinePushA', { name: 'Push A', posit
 const menuOf = (tree) => elementsOf(tree).find((each) => typeof each.type === 'function' && each.type.name === 'Menu');
 const routinesHome = (t) => roomWith(t, 'products/gym/Routines.jsx', ({ RoutinesList }, log) => RoutinesList({ log }));
 
+test('the routines home waits for the initial pull before claiming an empty program or an untrained routine', async (t) => {
+  browserWith();
+  const gym = await gymAccount(t, [confirmed('note', 'note000001', { title: 'Note', body: '', ord: 'a', updatedAt: 0 })]);
+  await gym.engine.write(null, (device) => { device.activeReplica.cursors['self/gym'].booted = false; }, ['self/gym']);
+  const home = await routinesHome(t);
+  assert.deepEqual(findByClass(home.screen(), 'gym-plan-empty').map(textOf), []);
+
+  await gym.land(pushA());
+  await settle();
+  assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), ['Push A']);
+  assert.deepEqual(findByClass(home.screen(), 'gym-routine-trained').map(textOf), ['']);
+  assert.deepEqual(findByClass(home.screen(), 'gym-plan-empty').map(textOf), []);
+
+  await gym.engine.write(null, (device) => { device.activeReplica.cursors['self/gym'].booted = true; }, ['self/gym']);
+  await settle();
+  assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), ['Push A']);
+  assert.deepEqual(findByClass(home.screen(), 'gym-routine-trained').map(textOf), ['Never trained']);
+});
+
 test('a routine delete is in the row overflow, is held on the device until the window closes, and names the routine', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
@@ -555,6 +574,30 @@ const reviewWithShort = (review) => {
   return { review, short: element ? element.type(element.props) : null };
 };
 
+test('the finish screen waits for the initial pull before calling a workout the first session', async (t) => {
+  browserWith();
+  const { engine } = await gymAccount(t, [shortSession()]);
+  await engine.write(null, (device) => { device.activeReplica.cursors['self/gym'].booted = false; }, ['self/gym']);
+  const finish = await roomWith(t, 'products/gym/Finish.jsx', ({ FinishScreen }, log) => FinishScreen({ id: 'session0001', log }));
+  assert.deepEqual(findByClass(finish.screen(), 'gym-finish-subtitle').map(textOf), ['Free session']);
+
+  await engine.write(null, (device) => { device.activeReplica.cursors['self/gym'].booted = true; }, ['self/gym']);
+  await settle();
+  assert.deepEqual(findByClass(finish.screen(), 'gym-finish-subtitle').map(textOf), ['Your first session']);
+});
+
+test('the cached stored first-session stance advances when another session reaches its idle deadline', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
+  browserWith();
+  await gymAccount(t, [shortSession(), confirmed('session', 'session_open', { startedAt: NOW - 4 * 3600000 + 1000 })]);
+  const finish = await roomWith(t, 'products/gym/Finish.jsx', ({ FinishScreen }, log) => FinishScreen({ id: 'session0001', log }));
+  assert.deepEqual(findByClass(finish.screen(), 'gym-finish-subtitle').map(textOf), ['Your first session']);
+  t.mock.timers.tick(1000);
+  await settle();
+  assert.equal(finish.log().session, null);
+  assert.deepEqual(findByClass(finish.screen(), 'gym-finish-subtitle').map(textOf), ['Free session']);
+});
+
 test('Discard asks nothing, holds the session for the window, and only then lets it go to the store', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
@@ -810,6 +853,23 @@ test('the log’s empty stance reads the store: a held delete of the only sessio
 // The other screen that reads the log's page for a decision, and the decision is a REFUSAL with a
 // door in it. `withhold` is the room's own verb, the one `ShortSession` calls; this drives it
 // directly so the test stays on the screen whose read is under test.
+test('the cached stored past-workout spans advance when the room reaches a session idle deadline', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
+  browserWith();
+  await gymAccount(t, [confirmed('session', 'session_open', { startedAt: NOW - 4 * 3600000 + 1000 })]);
+  const past = await roomWith(t, 'products/gym/backfill/Backfill.jsx', ({ Backfill }, log) => {
+    const workout = Backfill({ target: 'free', log });
+    return workout.type(workout.props);
+  });
+  findByClass(past.screen(), 'gym-past-link')[0].props.onClick();
+  elementsOf(past.screen()).find((each) => each.props?.['aria-label'] === 'Start time').props.onChange({ target: { value: '15:30' } });
+  assert.equal(findByClass(past.screen(), 'gym-past-refusal').length, 1);
+  t.mock.timers.tick(1000);
+  await settle();
+  assert.equal(past.log().session, null);
+  assert.deepEqual(findByClass(past.screen(), 'gym-past-refusal').map(textOf), []);
+});
+
 test('the past workout’s overlap refusal reads the account: it stands while the window holds the session it names, and falls away once the store has answered', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();

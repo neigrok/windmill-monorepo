@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { BrowserSyncEngine } from '../../../../src/platform/sync/engine.js';
-import { isAlive, latticeOf, compareRecords } from '../../../../src/platform/sync/core/rows.js';
+import { isAlive, latticeOf, compareRecords } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
 import { Rng } from '../oracle-adapters/fixtures.js';
 import { environment, until } from '../fakes.js';
 
-test('IndexedDB runtime replay: 20 seeds × 80 steps, request/reply loss, duplicate replies, reload, holds and auth expiry', { timeout: 60_000 }, async (t) => {
-  const coverage = { 'request lost': 0, 'reply lost': 0, 'duplicate reply': 0, 'reload': 0, 'hold undo': 0, 'auth expiry': 0 };
-  for (let seed = 1; seed <= 20; seed++) {
+for (let seed = 1; seed <= 20; seed++) {
+  test(`IndexedDB runtime replay: seed ${seed}, 80 steps, request/reply loss, duplicate replies, reload, holds and auth expiry`, { timeout: 60_000 }, async (t) => {
+    const coverage = { 'request lost': 0, 'reply lost': 0, 'duplicate reply': 0, 'reload': 0, 'hold undo': 0, 'auth expiry': 0 };
     const env = environment(), rng = new Rng(seed);
     const open = async () => {
       const engine = await BrowserSyncEngine.open(env.options);
@@ -15,6 +15,7 @@ test('IndexedDB runtime replay: 20 seeds × 80 steps, request/reply loss, duplic
       await engine.start(); await until(() => engine.leader); return engine;
     };
     let engine = await open();
+    t.after(() => engine.close());
     env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
     const request = env.transport.request.bind(env.transport);
     for (let step = 0; step < 80; step++) {
@@ -54,19 +55,18 @@ test('IndexedDB runtime replay: 20 seeds × 80 steps, request/reply loss, duplic
       .map((row) => ({ t: row.t, id: row.id, ...latticeOf(row), seq: row.seq, rc: row.rc, ru: row.ru }));
     assert.deepEqual(actual, expected, `seed ${seed}: convergence`);
     assert.equal(engine.device.activeReplica.cursorOf('self/probe').digest, env.state.scope('acct:A/probe').digest);
-    engine.close();
-  }
-  for (const [event, count] of Object.entries(coverage)) assert.ok(count > 0, `missing fault ${event}`);
-  t.diagnostic(JSON.stringify(coverage));
-});
+    for (const [event, count] of Object.entries(coverage)) assert.ok(count > 0, `seed ${seed}: missing fault ${event}`);
+    t.diagnostic(JSON.stringify({ seed, coverage }));
+  });
+}
 
-import { Device } from '../../../../src/platform/sync/client/replica.js';
-import { Cursor } from '../../../../src/platform/sync/core/wire.js';
-import { scopeDigest } from '../../../../src/platform/sync/core/digest.js';
+import { Device } from '../../../../../packages/api-contract/sync/reference/client/replica.js';
+import { Cursor } from '../../../../../packages/api-contract/sync/reference/core/wire.js';
+import { scopeDigest } from '../../../../../packages/api-contract/sync/reference/core/digest.js';
 import { registry, product } from '../oracle-adapters/fixtures.js';
 import { push } from '../../../../../packages/api-contract/sync/reference/server/push.js';
 import { pull, frameFor, liveFrameOf } from '../../../../../packages/api-contract/sync/reference/server/pull.js';
-import { CONSTANTS } from '../../../../src/platform/sync/core/constants.js';
+import { CONSTANTS } from '../../../../../packages/api-contract/sync/reference/core/constants.js';
 import { admit } from '../../../../../packages/api-contract/sync/reference/server/admit.js';
 
 const runtimeFaults = ['drop request', 'duplicate', 'delay', 'reorder', 'lost reply', 'local abort',
@@ -75,9 +75,8 @@ const runtimeFaults = ['drop request', 'duplicate', 'delay', 'reorder', 'lost re
   'decision add', 'decision discard', 'sign-out keep', 'sign-out discard', '401', 'anonymous credential',
   'foreign credential', 'account mismatch', 'poison', 'epoch', 'snapshot restore', 'clone'];
 
-test('persisted runtime fault replay: 20 seeds exercise every §11.3 fault, with per-reply isolation and durable restart checks', { timeout: 60_000 }, async (t) => {
-  const coverage = Object.fromEntries(runtimeFaults.map((fault) => [fault, 0]));
-  for (let seed = 1; seed <= 20; seed++) {
+for (let seed = 1; seed <= 20; seed++) {
+  test(`persisted runtime fault replay: seed ${seed} exercises every §11.3 fault, with per-reply isolation and durable restart checks`, { timeout: 60_000 }, async (t) => {
     const env = environment(), rng = new Rng(seed), observed = new Set(), ended = new Set(), committed = new Set();
     let engine, peer;
     const hit = (fault) => observed.add(fault);
@@ -307,9 +306,8 @@ test('persisted runtime fault replay: 20 seeds exercise every §11.3 fault, with
       assert.equal(scopeDigest(local.confirmedRows('self/probe')), env.state.scope('acct:A/probe').digest);
       assert.ok(!local.known['self/probe']);
       assert.ok([...committed].every((id) => ended.has(id)), `seed ${seed}: every recorded gesture ended`);
-      for (const fault of runtimeFaults) { assert.ok(observed.has(fault), `seed ${seed}: missing ${fault}`); coverage[fault]++; }
+      for (const fault of runtimeFaults) assert.ok(observed.has(fault), `seed ${seed}: missing ${fault}`);
+      t.diagnostic(JSON.stringify({ seed, faults: observed.size }));
     } finally { peer?.close(); engine?.close(); }
-  }
-  for (const [fault, seeds] of Object.entries(coverage)) assert.ok(seeds >= 10, `coverage floor: ${fault}`);
-  t.diagnostic(JSON.stringify({ seeds: 20, faultProducingSeeds: coverage }));
-});
+  });
+}

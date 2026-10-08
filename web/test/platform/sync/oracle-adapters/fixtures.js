@@ -1,20 +1,14 @@
-
-class Registry extends BrowserRegistry {
-  static fromFile(path) { return new Registry(JSON.parse(readRegistry(path, "utf8"))); }
-}
 // Shared inputs for the corpus builders: the probe registry and product, stamp and row shorthands,
 // and server states whose digests and counters are computed from their rows.
 
-import { fileURLToPath } from 'node:url';
-import { ZERO_DIGEST, replaceRow } from '../../../../src/platform/sync/core/digest.js';
-import { Registry as BrowserRegistry } from '../../../../src/platform/sync/core/registry.js';
-import { compactRow, isAlive } from '../../../../src/platform/sync/core/rows.js';
+import { readFileSync } from 'node:fs';
+import { ZERO_DIGEST, replaceRow } from '../../../../../packages/api-contract/sync/reference/core/digest.js';
+import { Registry } from '../../../../../packages/api-contract/sync/reference/core/registry.js';
+import { compactRow, isAlive } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
 import { ProbeProduct } from '../../../../../packages/api-contract/sync/reference/probe/product.js';
 import { ServerState } from '../../../../../packages/api-contract/sync/reference/server/state.js';
-import { readFileSync as readRegistry } from "node:fs";
 
-
-export const registry = Registry.fromFile(fileURLToPath(new URL('../../../../../packages/api-contract/sync/probe.registry.json', import.meta.url)));
+export const registry = new Registry(JSON.parse(readFileSync(new URL('../../../../../packages/api-contract/sync/probe.registry.json', import.meta.url), 'utf8')));
 export const product = new ProbeProduct();
 
 export const ACTOR = 'r_aaaaaaaaaaaa';
@@ -64,7 +58,6 @@ export function overlayScope(owner, board, extra = {}) {
 export function row(fields) {
   return compactRow({ rc: fields.seq * 1000, ru: fields.seq * 1000, ...fields });
 }
-
 
 // A seeded generator (mulberry32) for builders and the replay simulator; nothing in the corpus uses
 // Math.random.

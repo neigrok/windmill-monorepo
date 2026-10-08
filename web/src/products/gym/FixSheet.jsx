@@ -10,6 +10,7 @@ export function FixSheet({ set, sets = [set], movement, session, onSave, onDelet
   const [busy, setBusy] = useState(false);
   const form = useRef(null);
   const parsed = readSetFields(draft);
+  const noteRefusal = parsed.field === 'note' ? parsed.reason : setNoteRefusal(draft.note);
   const group = sets.filter((row) => row.exerciseId === set.exerciseId);
   const ratings = [null, ...(set.rpe != null && !RPE_RUNGS.includes(set.rpe) ? [set.rpe] : []), ...RPE_RUNGS];
   const save = async (event) => {
@@ -50,9 +51,9 @@ export function FixSheet({ set, sets = [set], movement, session, onSave, onDelet
           <div className="gym-fix-extra">
             {alsoReadsLabel(parsed.value?.weightKg) && <p className="gym-quiet">{alsoReadsLabel(parsed.value.weightKg)}</p>}
             <div className="gym-fix-effort"><span id="gym-fix-rpe-label">RPE</span><div className="gym-fix-ratings" role="group" aria-labelledby="gym-fix-rpe-label">{ratings.map((rating) => <button key={rating ?? 'none'} type="button" aria-pressed={draft.rpe === (rating == null ? '' : String(rating))} onClick={() => update('rpe', rating == null ? '' : String(rating))}>{rating ?? NO_RPE_LABEL}</button>)}</div></div>
-            <label className="gym-fix-note" htmlFor="gym-set-note"><span>{SET_NOTE_LABEL}{showsSetNoteCount(draft.note) && <span className={isSetNoteOverCap(draft.note) ? 'gym-name-count is-over' : 'gym-name-count'}>{setNoteCountLabel(draft.note)}</span>}</span><textarea rows="1" name="note" id="gym-set-note" aria-label={SET_NOTE_LABEL} aria-describedby="gym-set-note-caption" aria-invalid={Boolean(setNoteRefusal(draft.note))} placeholder="felt heavy" value={draft.note} onChange={(event) => update('note', event.target.value)} /></label>
+            <label className="gym-fix-note" htmlFor="gym-set-note"><span>{SET_NOTE_LABEL}{showsSetNoteCount(draft.note) && <span className={isSetNoteOverCap(draft.note) ? 'gym-name-count is-over' : 'gym-name-count'}>{setNoteCountLabel(draft.note)}</span>}</span><textarea rows="1" name="note" id="gym-set-note" aria-label={SET_NOTE_LABEL} aria-describedby={noteRefusal ? 'gym-set-note-caption gym-set-note-refusal' : 'gym-set-note-caption'} aria-invalid={Boolean(noteRefusal)} placeholder="felt heavy" value={draft.note} onChange={(event) => update('note', event.target.value)} /></label>
             <p id="gym-set-note-caption" className="gym-fix-note-caption">{SET_NOTE_CAPTION}</p>
-            {setNoteRefusal(draft.note) && <p className="gym-fix-refusal" role="alert">{setNoteRefusal(draft.note)}</p>}
+            {noteRefusal && <p id="gym-set-note-refusal" className="gym-fix-refusal" role="alert">{noteRefusal}</p>}
           </div>
         </React.Fragment>)}
       </fieldset>

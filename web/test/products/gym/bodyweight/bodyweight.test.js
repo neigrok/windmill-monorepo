@@ -5,7 +5,7 @@ import {
   gapLabel, readingLine, REFUSALS, saveRefusal, WEIGH_IN_DELETED, WEIGH_IN_VERB, weightReading, WINDOWS,
 } from '../../../../src/products/gym/bodyweight/bodyweight.js';
 import { gymMoment, weighInInput } from '../../../../src/products/gym/gymRuntime.js';
-import { CommitError } from '../../../../src/platform/sync/client/commit.js';
+import { CommitError } from '../../../../../packages/api-contract/sync/reference/client/commit.js';
 import { GymRefusal } from '../../../../src/products/gym/errors.js';
 import { KG, LB, spellWeightsIn } from '../../../../src/products/gym/units.js';
 

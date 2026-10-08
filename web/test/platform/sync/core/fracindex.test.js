@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { between, compareMembers, dropKey, isOrderKey } from '../../../../src/platform/sync/core/fracindex.js';
+import { between, compareMembers, dropKey, isOrderKey } from '../../../../../packages/api-contract/sync/reference/core/fracindex.js';
 import { Rng } from '../oracle-adapters/fixtures.js';
 
 test('§11.2 #5: between(a, b) lies strictly between a and b, and is a valid key', () => {

@@ -10,9 +10,9 @@ import assert from 'node:assert/strict';
 import {
   cappedName, isNameOverCap, NAME_MAX, nameChars, nameCountLabel, showsNameCount,
 } from '../../../src/products/gym/log.js';
-import {
-  isTitleOverCap, titleChars, titleCountLabel, TITLE_MAX,
-} from '../../../src/products/gym/notes/notes.js';
+import { titleCountLabel } from '../../../src/products/gym/notes/notes.js';
+import { NoteRules } from '../../../src/products/gym/domain/notes.js';
+import { Path, Violation } from '../../../src/platform/domain-kit/values.js';
 import {
   browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle,
 } from './harness.mjs';
@@ -67,17 +67,15 @@ test('one thing on screen can be five characters, and the cap counts all five', 
   assert.equal(nameChars(LIFTER.repeat(13)), 65);
   assert.equal(isNameOverCap(LIFTER.repeat(13)), true);
   assert.equal(cappedName(LIFTER.repeat(13)), twelve);
-  assert.equal(titleChars(twelve), 60);
-  assert.equal(isTitleOverCap(LIFTER.repeat(13)), true);
+  assert.equal(NoteRules.title.apply(twelve, new Path('title')), twelve);
+  assert.throws(() => NoteRules.title.apply(LIFTER.repeat(13), new Path('title')), Violation);
 });
 
 test('a note’s title counts the same fixture the same way, against the column’s own char_length', () => {
-  assert.equal(titleChars(SIXTY), 60);
+  assert.equal(NoteRules.title.apply(SIXTY, new Path('title')), SIXTY);
   assert.equal(titleCountLabel(SIXTY), '60 of 60 characters');
-  assert.equal(isTitleOverCap(SIXTY), false);
-  assert.equal(titleChars(SIXTY_ONE), 61);
-  assert.equal(isTitleOverCap(SIXTY_ONE), true);
-  assert.equal(TITLE_MAX, NAME_MAX);
+  assert.throws(() => NoteRules.title.apply(SIXTY_ONE, new Path('title')), Violation);
+  assert.equal(NoteRules.title.max, NAME_MAX);
 });
 
 // The finish card mints a routine in passing, so it takes the editor's CAP and its UNIT — and NOT

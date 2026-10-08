@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { projectGym } from '../../../src/products/gym/syncProjections.js';
+import { gymReadView } from '../../../src/products/gym/gymRuntime.js';
+const readView = (rows) => gymReadView({ drawn: rows, stored: rows });
 import {
   deleteLineOf, heldDetail, heldLine, hiddenIds, openHeld, transientOf, UNDO_LABEL, WINDOW_CLOSED, WITHHELD_KINDS,
   withheldKey,
@@ -119,7 +120,7 @@ test('an engine-held delete is named from the store, and one the store no longer
   const stamp = '1000:0:srv';
   const row = (t, id, fields, v) => ({ t, id, born: stamp, life: ['alive', stamp], ...(v ? { v } : {}),
     f: Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, [value, stamp]])) });
-  const projection = projectGym([
+  const projection = readView([
     row('routine', 'routinePushA', { name: 'Push A', position: 0, entries: [{ exerciseId: 'bench-press' }] }),
     row('session', 'session0001', { startedAt: 1000, finishedAt: 2000 }),
     row('set', 'set0000001', { sessionId: 'session0001', exerciseId: 'bench-press', weightKg: 100, reps: 5, kind: 'working', note: '', completedAt: 1500 }, { setNumber: 1 }),

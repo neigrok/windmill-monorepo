@@ -7,7 +7,7 @@ import { compareText } from './entities.js';
 /** @typedef {import('./values.js').Json} Json */
 /** @typedef {import('./values.js').ValueSpec} ValueSpec */
 /** @typedef {import('./entities.js').EntityType<any>} AnyEntityType */
-/** @typedef {import('../sync/core/registry.js').Registry} Registry */
+/** @typedef {import('../../../../packages/api-contract/sync/reference/core/registry.js').Registry} Registry */
 
 export class Rule {
   /**

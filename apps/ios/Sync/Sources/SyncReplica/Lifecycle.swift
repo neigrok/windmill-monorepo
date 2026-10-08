@@ -158,6 +158,16 @@ public struct ReplicaLifecycle: Sendable {
     }
     for scope in replica.staging.keys.sorted() { replica.apply(.dropStaging(scope)) }
     for entry in replica.outbox where entry.state == .acked && entry.resultEpoch?.utf8.elementsEqual(epoch.utf8) != true {
+      if let command = entry.intent.command, entry.writeTargets == nil {
+        let refs = Dependents.references(of: command, registry: registry)
+        replica.update(entry: entry.localId) { stored in
+          stored.writeTargets = entry.predict.compactMap { delta in
+            let sources = refs.filter { $0.key.type == delta.key.type }
+            guard sources.count == 1, entry.predict.filter({ $0.key.type == delta.key.type }).count == 1 else { return nil }
+            return WriteTarget(key: delta.key, from: sources[0].key.id, born: delta.lattice.born)
+          }
+        }
+      }
       try replica.move(entry.localId, .epoch)
     }
     try reidentify(&replica, instance: &instance, identities: identities)

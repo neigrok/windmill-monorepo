@@ -210,19 +210,61 @@ function rewriteId(registry, delta, w) {
   }
 }
 
-function rewriteEntry(registry, entry, w) {
+function rewriteEntry(registry, entry, w, replay = false) {
+  if (replay && entry.intent.cmd) {
+    for (const target of entry.writeTargets ?? []) {
+      if (target.t !== w.t || !sameJson(target.id, w.from)) continue;
+      const refs = commandRefs(registry, entry.intent.cmd).filter((ref) => ref.t === w.t && sameJson(ref.id, target.from));
+      for (const ref of refs) entry.intent.cmd.args[ref.name] = w.id;
+      if (refs.length) target.from = w.id;
+    }
+  }
   for (const delta of deltasOf(entry)) rewriteId(registry, delta, w);
   for (const guard of entry.intent.guard ?? []) if (guard.t === w.t && sameJson(guard.id, w.from)) guard.id = w.id;
   if (entry.intent.cmd) {
     for (const ref of commandRefs(registry, entry.intent.cmd)) if (ref.t === w.t && ref.id === w.from) entry.intent.cmd.args[ref.name] = w.id;
+  }
+  for (const target of entry.writeTargets ?? []) {
+    if (target.t !== w.t) continue;
+    if (sameJson(target.from, w.from)) target.from = w.id;
+    if (sameJson(target.id, w.from)) target.id = w.id;
   }
 }
 
 // §7.7 write map: an ok result's map applies in the result's transaction.
 export function applyWriteMap(replica, ctx, command, write) {
   const { registry } = ctx;
+  const retained = command.writeTargets !== undefined;
+  const targets = command.writeTargets ??= [];
   for (const w of write) {
-    if (w.from !== undefined) {
+    const source = w.from ?? w.id;
+    const previous = targets.find((target) => target.t === w.t && sameJson(target.from, source));
+    if (previous) {
+      const remap = { ...w, from: previous.id };
+      for (const entry of laterUnacked(replica, command).filter(isQueued)) rewriteEntry(registry, entry, remap, true);
+      if (!sameJson(previous.id, w.id)) {
+        for (const delta of command.predict ?? []) rewriteId(registry, delta, remap);
+      }
+      if (previous.born !== undefined && w.born !== undefined && previous.born !== w.born) {
+        for (const entry of laterUnacked(replica, command)) {
+          for (const delta of deltasOf(entry)) {
+            if (delta.t !== w.t || !sameJson(delta.id, w.id)) continue;
+            if (delta.born === previous.born) delta.born = w.born;
+            if (delta.life?.[1] === previous.born) delta.life[1] = w.born;
+          }
+        }
+      }
+    } else if (retained && w.born !== undefined) {
+      const predicted = (command.predict ?? []).filter((delta) => delta.t === w.t);
+      for (const entry of laterUnacked(replica, command).filter(isQueued)) {
+        if (!replica.entry(entry.localId)) continue;
+        const unmapped = (entry.intent.d ?? []).some((delta) => delta.t === w.t && delta.life?.[0] === 'dead'
+          && !sameJson(delta.id, source) && !sameJson(delta.id, w.id)
+          && (predicted.length === 0 || predicted.some((known) => sameJson(known.id, delta.id))));
+        if (unmapped) refuse(replica, ctx, entry, 'target-merged', { code: 'target-merged' });
+      }
+    }
+    if (!previous && w.from !== undefined) {
       for (const entry of replica.entries().filter(isQueued)) {
         if (replica.entry(entry.localId) !== entry) continue; // ended by an earlier target-merged fold
         const deletesTarget = (entry.intent.d ?? []).some((delta) => delta.t === w.t && sameJson(delta.id, w.from) && delta.life?.[0] === 'dead');
@@ -239,6 +281,10 @@ export function applyWriteMap(replica, ctx, command, write) {
       for (const [name, stamp] of Object.entries(w.f ?? {})) moveRegister(replica, command, delta, name, stamp);
       if (w.born !== undefined) moveRegister(replica, command, delta, 'life', w.born);
     }
+    const target = previous ?? { t: w.t, from: structuredClone(source), id: structuredClone(w.id) };
+    target.id = structuredClone(w.id);
+    if (w.born !== undefined) target.born = w.born;
+    if (!previous) targets.push(target);
   }
 
   const mapped = write.flatMap((w) => [...(w.born !== undefined ? [w.born] : []), ...Object.values(w.f ?? {})]);

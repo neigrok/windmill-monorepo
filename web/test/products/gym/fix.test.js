@@ -7,9 +7,10 @@ import {
   SET_NOTE_BYTES, SET_NOTE_CAPTION, setNoteCountLabel, SET_NOTE_LABEL, setNoteRefusal, setsAfter,
   showsSetNoteCount, UNDO_MS,
 } from '../../../src/products/gym/fix.js';
-import { CommitError } from '../../../src/platform/sync/client/commit.js';
+import { CommitError } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 import { GymRefusal } from '../../../src/products/gym/errors.js';
 import { readSetFields, setFields } from '../../../src/products/gym/correction/correction.js';
+import { browserWith, elementsOf, findByClass, loadScreen, renderHook, textOf } from './harness.mjs';
 
 const actualDraft = (set) => readSetFields(setFields(set)).value;
 
@@ -132,6 +133,7 @@ test('a refused fix is spoken by its code, and the missing set is not blamed on 
     fixFailure(new GymRefusal('unknown-record')),
     'That set isn’t in this workout any more.',
   );
+  assert.equal(fixFailure(new GymRefusal('record-dead')), 'That set isn’t in this workout any more.');
   assert.equal(
     fixFailure(new GymRefusal('invalid')),
     'That fix didn’t land — the log wouldn’t take it as written.',
@@ -144,6 +146,28 @@ test('a refused fix is spoken by its code, and the missing set is not blamed on 
     deleteFailure(new CommitError('the device store did not commit', 'store', { cause: new DOMException('storage refused', 'QuotaExceededError') })),
     'That set is still in the log — this device couldn’t store it.',
   );
+});
+
+test('the fix sheet shows a domain note refusal, keeps the text and saves only after it is corrected', async (t) => {
+  browserWith();
+  const { FixSheet } = await loadScreen('products/gym/FixSheet.jsx');
+  const saved = [];
+  const view = renderHook(t, () => FixSheet({ set: SET, movement: 'Overhead Press', session: {},
+    onSave: async (fix) => { saved.push(fix); }, onDelete() {}, onClose() {} }));
+  const note = () => elementsOf(view.tree).find((node) => node.type === 'textarea');
+  for (const [text, reason] of [['\0', 'Remove the unsupported character from this set note.'], ['é'.repeat(2001), 'A set note runs to 4000 bytes.']]) {
+    note().props.onChange({ target: { value: text } });
+    await findByClass(view.tree, 'gym-fix-form')[0].props.onSubmit({ preventDefault() {} });
+    assert.equal(note().props.value, text);
+    assert.equal(note().props['aria-invalid'], true);
+    assert.equal(note().props['aria-describedby'], 'gym-set-note-caption gym-set-note-refusal');
+    assert.deepEqual(findByClass(view.tree, 'gym-fix-refusal').map(textOf), [reason]);
+    assert.deepEqual(saved, []);
+  }
+  note().props.onChange({ target: { value: '' } });
+  assert.equal(note().props['aria-invalid'], false);
+  await findByClass(view.tree, 'gym-fix-form')[0].props.onSubmit({ preventDefault() {} });
+  assert.deepEqual(saved, [{ note: '' }]);
 });
 
 test('a corrected set replaces the one it corrects, in the order it already stood in', () => {

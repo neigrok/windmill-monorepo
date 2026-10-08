@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Replica } from '../../../src/platform/sync/client/replica.js';
-import { commit } from '../../../src/platform/sync/client/commit.js';
-import { nextPush } from '../../../src/platform/sync/client/sender.js';
-import { latticeOf, compareRecords } from '../../../src/platform/sync/core/rows.js';
+import { Replica } from '../../../../packages/api-contract/sync/reference/client/replica.js';
+import { commit } from '../../../../packages/api-contract/sync/reference/client/commit.js';
+import { nextPush } from '../../../../packages/api-contract/sync/reference/client/sender.js';
+import { latticeOf, compareRecords } from '../../../../packages/api-contract/sync/reference/core/rows.js';
 import { admit } from '../../../../packages/api-contract/sync/reference/server/admit.js';
 import { ServerState } from '../../../../packages/api-contract/sync/reference/server/state.js';
 import { registry, product, Rng, ACTOR } from './oracle-adapters/fixtures.js';

@@ -1,5 +1,5 @@
 // Journal admission, retention, content-clock and client vectors.
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { CONSTANTS } from "../core/constants.js";
 import { replaceRow } from "../core/digest.js";
 import { Registry } from "../core/registry.js";
@@ -10,8 +10,8 @@ import { push } from "../server/push.js";
 import { Device, Replica } from "../client/replica.js";
 import { ACTOR, vector } from "./fixtures.js";
 import { runSteps } from "./steps.js";
-export const journalRegistry = Registry.fromFile(
-  fileURLToPath(new URL("../../journal.registry.json", import.meta.url)),
+export const journalRegistry = new Registry(
+  JSON.parse(readFileSync(new URL("../../journal.registry.json", import.meta.url), "utf8")),
 );
 export const journalProduct = new JournalProduct();
 const NOW = 1760000000000,

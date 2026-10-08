@@ -281,6 +281,18 @@ struct TelemetryTests {
     #expect(recorder.failures == [Recorded(name: "sync_admission", kind: "unexpected_admission", properties: [:], durationMs: nil)])
   }
 
+  @Test func malformedRecoveryEnvelopeReportsDecodeFailureWithoutItsContent() async throws {
+    let recorder = Recorder()
+    let rig = try Rig(account: "A", telemetry: recorder)
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "private")], gestureId: "secret-id"))
+    rig.transport.willAnswerPush(409, ["error": "gap", "serverTime": JSON(Rig.startMs), "epoch": ["private"], "as": "A"])
+    _ = await rig.engine.sender.step()
+    await drain(rig.engine.core.telemetry)
+    #expect(recorder.events == [Recorded(name: "sync_push_outcome", kind: nil,
+      properties: ["outcome": "failed", "failure_kind": "decode"], durationMs: 0)])
+    #expect(recorder.failures == [Recorded(name: "sync_push", kind: "decode", properties: [:], durationMs: nil)])
+  }
+
   @Test func corruptStoreReadEnqueuesAStaticDiagnosticAndPropagatesTheFailure() async throws {
     let recorder = Recorder()
     let armed = Mutex(false)

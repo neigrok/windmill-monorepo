@@ -296,7 +296,7 @@ void ChangeSet::checkParents(const std::map<RecordRef, std::optional<Row>>& stor
 std::vector<SerialWanted> ChangeSet::serialsWanted() const {
   std::vector<SerialWanted> wanted;
   for (const Change& change : changes_) {
-    if (!change.isNew) continue;
+    if (!change.isNew || !change.after.alive()) continue;
     for (const auto& [name, field] : change.type->fields) {
       if (field.kind != FieldKind::serial || change.after.v.contains(name)) continue;
       SerialWanted serial{change.scope, change.type, name, {}};
@@ -310,7 +310,7 @@ std::vector<SerialWanted> ChangeSet::serialsWanted() const {
 void ChangeSet::assignSerials(const std::map<std::string, std::optional<std::int64_t>>& storedMaxima) {
   std::vector<const Row*> numbered;
   for (Change& change : changes_) {
-    if (!change.isNew) continue;
+    if (!change.isNew || !change.after.alive()) continue;
     for (const auto& [name, field] : change.type->fields) {
       if (field.kind != FieldKind::serial || change.after.v.contains(name)) continue;
       SerialWanted serial{change.scope, change.type, name, {}};

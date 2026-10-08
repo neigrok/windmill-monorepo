@@ -1,7 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Icon, Menu, Tag } from '../../design-system/index.js';
+import { Id } from '../../platform/domain-kit/entities.js';
 import { Back } from './Back.jsx';
+import { Routine, RoutineValue } from './domain/routines.js';
 import { failureReason } from './errors.js';
+import { routineDocument, useGymApi } from './gymRuntime.js';
 import {
   agoLabel, backfillHref, cappedName, entryLabel, FROM_ROUTINE_MENU, isNameOverCap, MOVEMENTS_HREF,
   movementOf, nameCountLabel, nameOfMovement, NEW_ROUTINE_ID, routineHref,
@@ -13,25 +16,28 @@ import { ProposalPreview, ProposalPanel } from './Proposals.jsx';
 import { useRail } from './rail.js';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import {
-  blankRoutine, draftFrom, entryDroppedLine, entryPlaceLabel,
-  NAME_IT_TO_SAVE_IT, reorderEntries, routineConflictRows, routineWrite, saysNeverLogged,
+  draftFrom, entryDroppedLine, entryPlaceLabel,
+  NAME_IT_TO_SAVE_IT, reorderEntries, routineConflictRows, saysNeverLogged,
   withEntryAdded, withEntryAt, withEntryRemoved, withEntrySet,
 } from './routines.js';
 import { useGymRead } from './useGymRead.js';
-import { useGymApi } from './gymSync.js';
+import { useDomainRead } from './useDomainRead.js';
 import { TargetEditor } from './planning/TargetEditor.jsx';
 import './planning/planning.css';
 
 export function RoutinesList({ log, reviewing = null }) {
   const api = useGymApi();
   const view = useGymRead(() => api.routines(), [], { sync: true, ready: Boolean(api?.ready) });
+  const program = useDomainRead((read) => ({ routines: read.repository(Routine).all('stored'), isComplete: read.firstPullComplete() }));
+  const removals = useGymRead(() => api.removalReceipts(), [], { sync: true, ready: Boolean(api?.ready) });
   const [reviewId, setReviewId] = useState(reviewing);
   useEffect(() => setReviewId(reviewing), [reviewing]);
 
   const gone = log.gone('routine');
   const hidden = log.hidden('routine');
-  const program = view.phase === 'ready' ? view.data.filter((routine) => !gone.has(routine.id)) : [];
-  const routines = program.filter((routine) => !hidden.has(routine.id));
+  const routines = view.phase === 'ready' ? view.data.filter((routine) => !gone.has(routine.id) && !hidden.has(routine.id)) : [];
+  const hasProgram = (program.data?.routines.length ?? 0) > 0;
+  const complete = program.phase === 'ready' && program.data.isComplete;
 
   const remove = (routine) => log.holdDelete({
     kind: 'routine',
@@ -46,12 +52,19 @@ export function RoutinesList({ log, reviewing = null }) {
 
         <span className="gym-head-doors">
           <a className="gym-door-past" href={MOVEMENTS_HREF}>Movements</a>
-          {program.length > 0 && <span className="gym-new-routine-wide"><Button href={routineHref(NEW_ROUTINE_ID)}>New routine</Button></span>}
+          {hasProgram && <span className="gym-new-routine-wide"><Button href={routineHref(NEW_ROUTINE_ID)}>New routine</Button></span>}
         </span>
       </header>
       {log.session && <LiveMirror log={log} />}
 
       {reviewId && <ProposalPanel key={reviewId} id={reviewId} log={log} onChanged={view.refresh} />}
+      {removals.phase === 'ready' && removals.data.filter((proposal) => proposal.id !== reviewId).map((proposal) =>
+        <section className="gym-routine-review" key={proposal.id}>
+          <header><span className="gym-proposal-name">{proposal.baseName || 'Routine removal'}</span>
+            <button className="gym-proposal-review" type="button" onClick={() => setReviewId(proposal.id)}>View receipt</button></header>
+          <p className="gym-proposal-line">{proposal.removalOutcome === 'pending' ? 'Removal waiting to sync.'
+            : proposal.removalOutcome === 'applied' ? 'Routine removed.' : 'Nothing was applied.'}</p>
+        </section>)}
       {view.phase === 'loading' && <p className="gym-quiet">Opening your routines…</p>}
       {view.phase === 'failed' && (
         <p className="gym-read-failed">
@@ -60,7 +73,7 @@ export function RoutinesList({ log, reviewing = null }) {
         </p>
       )}
 
-      {view.phase === 'ready' && program.length === 0 && (
+      {view.phase === 'ready' && complete && !hasProgram && (
         <section className="gym-plan-empty">
           <p>No routines yet. Build the first one.</p>
           <Button href={routineHref(NEW_ROUTINE_ID)}>New routine</Button>
@@ -71,7 +84,7 @@ export function RoutinesList({ log, reviewing = null }) {
           {routines.map((routine) => (
             <li className={`gym-routine${routine.pendingProposal ? ' has-proposal' : ''}`} key={routine.id}>
               <a className="gym-routine-open" href={routineHref(routine.id)}>
-                <span className="gym-routine-card-head"><span className="gym-routine-name">{routine.name}</span><span className="gym-routine-trained">{routine.lastTrainedAt ? <><span className="gym-routine-trained-prefix">Trained </span>{agoLabel(routine.lastTrainedAt)}</> : 'Never trained'}</span></span>
+                <span className="gym-routine-card-head"><span className="gym-routine-name">{routine.name}</span><span className="gym-routine-trained">{routine.lastTrainedAt ? <><span className="gym-routine-trained-prefix">Trained </span>{agoLabel(routine.lastTrainedAt)}</> : complete ? 'Never trained' : null}</span></span>
                 <span className="gym-routine-card-body"><span className="gym-routine-meta">{(routine.entries ?? []).map((entry) => nameOfMovement(log.catalog, entry.exerciseId)).join(' · ')}</span>
                 <span className="gym-routine-rails" aria-hidden="true">{(routine.entries ?? []).map((entry, index) => <span key={index}>{Array.from({ length: entry.sets?.length ?? 1 }, (_, tick) => <i key={tick} />)}</span>)}</span></span>
               </a>
@@ -87,7 +100,7 @@ export function RoutinesList({ log, reviewing = null }) {
           ))}
         </ul>
       )}
-      {program.length > 0 && <div className="gym-new-routine-small"><Button full href={routineHref(NEW_ROUTINE_ID)}>New routine</Button></div>}
+      {hasProgram && <div className="gym-new-routine-small"><Button full href={routineHref(NEW_ROUTINE_ID)}>New routine</Button></div>}
     </section>
   );
 }
@@ -100,7 +113,7 @@ export function RoutineEditor({ id, log }) {
   const fresh = id === NEW_ROUTINE_ID;
 
   const projection = useGymRead(
-    () => (fresh ? Promise.resolve(blankRoutine({ id: minted.current })) : api.routine(id)),
+    () => (fresh ? Promise.resolve(routineDocument(new RoutineValue(new Id(minted.current, Routine)))) : api.routine(id)),
     [id],
     { sync: true, ready: Boolean(api?.ready) },
   );
@@ -163,8 +176,8 @@ export function RoutineEditor({ id, log }) {
   const commit = async () => {
     if (missing || saving) return false;
     setSaving(true);
-    // The draft retains the registers it read, even while the mirror receives newer data.
-    const write = routineWrite({ ...draft, name: draft.name.trim() });
+    // The draft retains the fields it read, even while the mirror receives newer data.
+    const write = { ...draft, name: draft.name.trim() };
     try {
       if (fresh) await api.createRoutine(write);
       else await api.replaceRoutine(draft.id, write, view.data);
@@ -200,7 +213,7 @@ export function RoutineEditor({ id, log }) {
       if (saving) return;
       setSaving(true);
       try {
-        await api.createRoutine(routineWrite({ ...draft, id: minted.current, name: draft.name.trim() }));
+        await api.createRoutine({ ...draft, id: minted.current, name: draft.name.trim() });
         window.location.hash = ROUTINES_HREF;
       } catch (error) { log.say(`Your draft is still here — ${failureReason(error)}.`); }
       setSaving(false);

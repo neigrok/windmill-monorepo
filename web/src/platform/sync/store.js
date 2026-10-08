@@ -1,5 +1,5 @@
-import { Device, Replica } from './client/replica.js';
-import { jcs } from './core/jcs.js';
+import { Device, Replica } from '../../../../packages/api-contract/sync/reference/client/replica.js';
+import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 
 const keyOf = (...parts) => jcs(parts);
 const caches = ['confirmed', 'spentIds', 'staging'];

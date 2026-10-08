@@ -46,10 +46,10 @@ const TABLE = {
     'dead≠': () => refuse('unknown-record'),
   },
   delete: {
-    none: () => OK,
+    none: () => APPLY,
     foreign: () => OK,
     'alive=': () => APPLY,
-    'alive≠': () => OK,
+    'alive≠': () => refuse('unknown-record'),
     'dead=': () => APPLY,
     'dead≠': () => OK,
   },

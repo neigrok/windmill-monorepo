@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { journalRoutes } from '../../../src/products/journal/routes.js';
+import { EditorDraft, PendingClaim } from '../../../src/products/journal/domain/writing.js';
 
 test('journal registers a settings section, in the data zone beside the accountâ€™s own', () => {
   assert.equal(Array.isArray(journalRoutes.settingsSections.data), true);
@@ -12,13 +13,17 @@ test('journal registers a settings section, in the data zone beside the accountâ
 
 test('journal hands the engine its claim hooks, and a sign-in question counts its pages', () => {
   const { sync } = journalRoutes;
-  assert.deepEqual(Object.keys(sync).sort(), ['onPushResult', 'pendingDeviceWork', 'prepare', 'signedOutWork']);
+  assert.deepEqual(Object.keys(sync).sort(), ['adoptDeviceRows', 'onPushResult', 'pendingDeviceWork', 'prepare', 'signedOutWork']);
+  const document = { body: 'words', mood: null, energy: null, source: 'typed' };
+  const pending = new PendingClaim({ day: '2026-10-01', claimId: 'c1', document });
+  pending.edit({ ...document, body: 'later words' });
   const rows = {
-    'pendingClaim:c1': { claimId: 'c1', touched: ['body'], retirements: {} },
-    'pendingClaim:c2': { claimId: 'c2', touched: [], retirements: {} },
+    'pendingClaim:c1': pending.json,
+    'pendingClaim:c2': new PendingClaim({ day: '2026-10-01', claimId: 'c2', document }).json,
+    [EditorDraft.key]: new EditorDraft({ day: '2026-10-01', document }).json,
     contentClock: { ms: 1, counter: 0 },
   };
-  assert.deepEqual(sync.pendingDeviceWork('journal', rows), ['pendingClaim:c1']);
+  assert.deepEqual(sync.pendingDeviceWork('journal', rows), [EditorDraft.key, 'pendingClaim:c1']);
   assert.deepEqual(sync.pendingDeviceWork('gym', rows), []);
   assert.deepEqual(sync.signedOutWork, { type: 'page', one: 'page', many: 'pages' });
 });

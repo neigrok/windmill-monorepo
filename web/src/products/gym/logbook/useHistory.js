@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSyncRecords } from '../../../platform/sync/react.js';
-import { useGymApi } from '../gymSync.js';
+import { useGymApi } from '../gymRuntime.js';
 import { historyScope } from './history.js';
 
 // `reader` answers `history(query)`: the log's own over the replica unless a caller hands another, such

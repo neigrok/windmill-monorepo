@@ -15,6 +15,7 @@ public struct GymServerRules: ServerRules {
     case "gym.start": entry("starts", command.string("id"), in: context) != nil
     case "gym.importSession": entry("imports", command.string("id"), in: context) != nil
     case "gym.correctSession": entry("corrections", command.string("requestId"), in: context) != nil
+    case "gym.applyProposal": entry("proposalApplies", command.string("proposalId"), in: context) != nil
     default: false
     }
   }
@@ -214,18 +215,26 @@ public struct GymServerRules: ServerRules {
   }
 
   func applyProposal(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
-    let proposal = try alive(key("proposal", command.string("proposalId")), in: context)
+    let id = command.string("proposalId")
+    var product = context.product
+    ensureBook("proposalApplies", scope: context.scope, in: &product)
+    if entry("proposalApplies", id, in: context) != nil { return CommandOutcome(product: product) }
+    let proposal = try alive(key("proposal", id), in: context)
     let state = proposalState(proposal)
-    if state == "applied" { return CommandOutcome(product: context.product) }
+    if state == "applied" {
+      store(true, table: "proposalApplies", id: id, scope: context.scope, in: &product)
+      return CommandOutcome(product: product)
+    }
     try unsettled(proposal, in: context)
     let routineId = value(proposal, "routineId")!.stringValue!
     guard value(context.idState(of: key("routine", routineId)).row, "revision") == value(proposal, "baseRevision") else {
       throw refuse("proposal-superseded", detail: ["reason": "routine-changed"])
     }
     let routine = try alive(key("routine", routineId), in: context)
+    store(true, table: "proposalApplies", id: id, scope: context.scope, in: &product)
     let settle = PlannedDelta.serverUpdate(proposal.key, born: proposal.lattice.born, fields: ["state": "applied", "settledAt": JSON(context.serverNow)])
     if value(proposal, "intent") == "remove" {
-      return CommandOutcome(deltas: [settle, .serverDelete(routine.key, born: routine.lattice.born)], product: context.product)
+      return CommandOutcome(deltas: [settle, .serverDelete(routine.key, born: routine.lattice.born)], product: product)
     }
     let entries = value(proposal, "changes")!.arrayValue.filter { $0["kind"] != "removed" }.map { change in
       var fields = change["after"]?.objectValue ?? JSON.Object()
@@ -234,7 +243,7 @@ public struct GymServerRules: ServerRules {
     }
     return CommandOutcome(deltas: [settle, .serverUpdate(routine.key, born: routine.lattice.born,
       fields: ["name": value(proposal, "proposedName")!, "entries": .array(entries)])],
-      write: [WriteClaim(key: proposal.key, fields: ["state", "settledAt"]), WriteClaim(key: routine.key, fields: ["name", "entries"])], product: context.product)
+      write: [WriteClaim(key: proposal.key, fields: ["state", "settledAt"]), WriteClaim(key: routine.key, fields: ["name", "entries"])], product: product)
   }
 
   func dismissProposal(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {

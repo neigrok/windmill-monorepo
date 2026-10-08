@@ -374,11 +374,16 @@ Json::Value PgGymState::load(SyncTxn& txn, const ScopeKey& scope) {
     books["corrections"][id]["sessionId"] = row[1].template as<std::string>();
     if (!row[2].is_null()) books["corrections"][id]["args"] = parseJson(row[2].template as<std::string>());
   }
+  for (const auto& row : sql.exec("select id from gym_proposal_applies where user_id=$1::uuid", owner)) books["proposalApplies"][row[0].template as<std::string>()] = true;
   return books;
 }
 
 void PgGymState::receipt(SyncTxn& txn, const ScopeKey& scope, const std::string& kind, const std::string& id, const Json::Value& receipt) {
   auto& sql = sqlOf(txn);
+  if (kind == "proposalApplies") {
+    sql.exec("insert into gym_proposal_applies(id,user_id) values($1,$2::uuid) on conflict do nothing", pqxx::params{id, scope.account().str()});
+    return;
+  }
   const Json::Value args = kind == "corrections" ? receipt["args"] : receipt;
   const std::string hash = kind == "imports" ? gymImportRequestHash(args) : kind == "corrections" ? gymCorrectionRequestHash(args) : sha256(jcs(args)).hex();
   if (kind == "corrections") {

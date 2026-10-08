@@ -14,6 +14,30 @@ struct TrainingReadsTests {
       let operation = try vector.input.member("read").asString()
       let log = try TrainingLog(read)
       switch operation {
+      case "TrainingHistory":
+        let history = try TrainingHistory(read)
+        let args = try input.member("args").asArray()
+        let query = args.first ?? [:]
+        switch try fields.string("method") {
+        case "exercises": return history.exercises()
+        case "preferences": return try history.preferences()
+        case "notes": return try history.notes()
+        case "bodyweight": return try history.bodyweight()
+        case "routines": return history.routines()
+        case "routine": return history.routine(ID(RecordID(try query.asString())))
+        case "proposals": return try history.proposals(query)
+        case "proposal": return history.proposal(ID(RecordID(try query.asString())))
+        case "sessions": return try history.sessions(query)
+        case "session": return history.session(ID(RecordID(try query.asString())))
+        case "review": return history.review(ID(RecordID(try query.asString())))
+        case "history": return try history.history(query)
+        case "progress": return history.progress()
+        case "stats": return history.stats()
+        case "lastTime": return history.lastTime(ID(RecordID(try query.asString())))
+        case "lastSets": return history.lastSets()
+        case "record": return history.record(ID(RecordID(try query.asString())))
+        default: throw ContractError("unknown training history \(vector)")
+        }
       case "GymEstimate": return .of(GymEstimate.value(weightKg: try fields.double("weightKg"), reps: try fields.int("reps"),
                                                          kind: try fields.string("kind", default: "working"), rpe: try fields.optionalDouble("rpe")))
       case "TrainingLog":
@@ -34,6 +58,14 @@ struct TrainingReadsTests {
         let prefill = Prefill.of(todaySets: today, planEntry: try fields.optionalValue("planEntry", of: RoutineEntry.self), lastTime: last)
         return ["weightKg": .of(prefill.weightKg), "reps": JSON(prefill.reps)]
       case "StatsProgress": return log.progress.json
+      case "BodyweightReps":
+        let progress = log.progress.movement(try fields.ref("exerciseId", Exercise.self))
+        let series = try fields.bool("window", default: false) ? progress.window(now: read.moment.now, zone: read.moment.zone) : progress
+        let best = series.bodyweightReps
+        return ["sessions": .array(series.sessions.map { point in
+          ["sessionId": point.id.json, "mostReps": point.fact.mostReps.json,
+           "bodyweightReps": point.fact.bodyweightReps?.json ?? .null]
+        }), "best": best.map { ["sessionId": $0.id.json, "fact": $0.fact.bodyweightReps!.json] } ?? .null]
       case "ProgressCompleteness": return ["isComplete": .bool(log.progress.isComplete)]
       case "Consistency": return .of(log.progress.consistency(now: read.moment.now, zone: read.moment.zone))
       case "MovementProgress":

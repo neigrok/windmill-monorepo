@@ -123,9 +123,11 @@ jobs:
           docker create --name epoch-proof-binaries windmill-backend-build
           trap 'docker rm -f epoch-proof-binaries' EXIT
           docker cp epoch-proof-binaries:/src/build/windmill_server "$RUNNER_TEMP/windmill_server"
+          docker cp epoch-proof-binaries:/src/build/windmill_server_test_clock "$RUNNER_TEMP/windmill_server_test_clock"
           docker cp epoch-proof-binaries:/src/build/windmill_rotate_sync_epoch "$RUNNER_TEMP/windmill_rotate_sync_epoch"
           PATH="/usr/lib/postgresql/16/bin:$PATH" node backend/test/e2e/sync_epoch_restore.mjs --maintenance-db "$DATABASE_URL" \
-            --server-bin "$RUNNER_TEMP/windmill_server" --rotate-bin "$RUNNER_TEMP/windmill_rotate_sync_epoch"
+            --server-bin "$RUNNER_TEMP/windmill_server" --clock-server-bin "$RUNNER_TEMP/windmill_server_test_clock" \
+            --rotate-bin "$RUNNER_TEMP/windmill_rotate_sync_epoch"
       - name: Serve windmill_server_probe from the tested builder stage
         run: |
           docker run -d --name probe --network host -e DATABASE_URL="$WM_SYNC_DATABASE_URL" -e PORT=18613 windmill-backend-build build/windmill_server_probe

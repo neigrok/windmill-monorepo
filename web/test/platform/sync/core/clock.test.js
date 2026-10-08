@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Clock } from '../../../../src/platform/sync/core/clock.js';
-import { Stamp } from '../../../../src/platform/sync/core/stamp.js';
+import { Clock } from '../../../../../packages/api-contract/sync/reference/core/clock.js';
+import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/stamp.js';
 import { Rng } from '../oracle-adapters/fixtures.js';
 
 // INV-1's clock half: a tick is above every earlier tick and every stamp observed before it.

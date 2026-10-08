@@ -5,8 +5,8 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Registry } from '../../../src/platform/sync/core/registry.js';
-import { viewRecord } from '../../../src/platform/sync/client/views.js';
+import { Registry } from '../../../../packages/api-contract/sync/reference/core/registry.js';
+import { viewRecord } from '../../../../packages/api-contract/sync/reference/client/views.js';
 import { Views } from '../../../src/platform/domain-kit/reading.js';
 import { FixedZone, Instant, Moment } from '../../../src/platform/domain-kit/time.js';
 import { translate } from '../../../src/platform/domain-kit/translation.js';
@@ -86,7 +86,7 @@ export function momentOf(input) {
 
 /** @param {any[] | undefined} rows */
 export function viewRecords(rows) {
-  return (rows ?? []).map((row) => /** @type {ViewRecord} */ (viewRecord(row)));
+  return (rows ?? []).map((row) => /** @type {ViewRecord} */ ({ ...viewRecord(row), ...(row.rc === undefined ? {} : { rc: row.rc }) }));
 }
 
 // A vector's records as the kit's Views: rows become view records, ids are minted from the given list.
@@ -314,4 +314,3 @@ export function listsRecords(input) {
   if (input === null || typeof input !== 'object') return false;
   return Object.entries(input).some(([key, value]) => ((key === 'drawn' || key === 'stored') && Array.isArray(value) && value.length > 1) || listsRecords(value));
 }
-

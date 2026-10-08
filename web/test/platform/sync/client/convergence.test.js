@@ -4,13 +4,13 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { steadyTiming } from '../../../../src/platform/sync/core/clock.js';
-import { compareRecords, isAlive, latticeOf } from '../../../../src/platform/sync/core/rows.js';
-import { commit } from '../../../../src/platform/sync/client/commit.js';
-import { onPullResponse, pullRequest } from '../../../../src/platform/sync/client/puller.js';
-import { Replica } from '../../../../src/platform/sync/client/replica.js';
-import { nextPush, onPushResponse } from '../../../../src/platform/sync/client/sender.js';
-import { drawn } from '../../../../src/platform/sync/client/views.js';
+import { steadyTiming } from '../../../../../packages/api-contract/sync/reference/core/clock.js';
+import { compareRecords, isAlive, latticeOf } from '../../../../../packages/api-contract/sync/reference/core/rows.js';
+import { commit } from '../../../../../packages/api-contract/sync/reference/client/commit.js';
+import { onPullResponse, pullRequest } from '../../../../../packages/api-contract/sync/reference/client/puller.js';
+import { Replica } from '../../../../../packages/api-contract/sync/reference/client/replica.js';
+import { nextPush, onPushResponse } from '../../../../../packages/api-contract/sync/reference/client/sender.js';
+import { drawn } from '../../../../../packages/api-contract/sync/reference/client/views.js';
 import { pull } from '../../../../../packages/api-contract/sync/reference/server/pull.js';
 import { push } from '../../../../../packages/api-contract/sync/reference/server/push.js';
 import { ServerState } from '../../../../../packages/api-contract/sync/reference/server/state.js';
