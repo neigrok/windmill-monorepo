@@ -28,7 +28,10 @@ enum JournalEchoFixture {
       model.keepDismissed = true
       let today = model.journal.today
       let first = today.adding(days: -120), second = today.adding(days: -240)
-      let spoken = "The long walk home helped me notice the evening."
+      let unicode = board.contains("unicode"), decomposedEdit = board.contains("decomposed")
+      let unicodeQuote = "I remembered the café by the river."
+      let spoken = unicode ? (decomposedEdit ? unicodeQuote : unicodeQuote.decomposedStringWithCanonicalMapping)
+        : "The long walk home helped me notice the evening."
       let copied = "Pay attention to the walk, not the destination."
       let longSource = (1...14).map { step in
         "I took a different street on the way home, passing the small gardens and the corner shop. I remembered one ordinary detail from the day: the quiet pause at stop \(step)."
@@ -55,7 +58,20 @@ enum JournalEchoFixture {
         JournalEchoMatch(day: first.text, text: spoken, isSelf: true, source: "spoken", useful: false, occurrenceHint: 0),
         JournalEchoMatch(day: second.text, text: copied, isSelf: false, source: "typed", useful: false, occurrenceHint: 0),
       ])], pagesWritten: empty ? 0 : 21, floorWaived: false)
-      model.journal.echoes = JournalEchoes(service: JournalEchoFixtureService(response: response, offline: board.contains("offline")),
+      let service = JournalEchoFixtureService(response: response, offline: board.contains("offline"))
+      if unicode {
+        service.onUseful = { [weak model] day in
+          let zone = FixedZone(offsetSeconds: DeviceZone().offsetSeconds(at: Instant(ms: BoardClock().nowMs())) - 120 * 86_400)
+          let runner = ActionRunner(replica: runtime.engine, registry: SyncSchema.registry, zone: zone)
+          let body = day == first.text
+            ? (decomposedEdit ? longSource.decomposedStringWithCanonicalMapping : longSource.precomposedStringWithCanonicalMapping)
+            : longSource.replacingOccurrences(of: spoken, with: "The river path is closed.")
+          let result = try runner.run(SavePage(day: first, document: PageDocument(body: body, source: "spoken")))
+          guard result.refusal == nil else { throw JournalEchoFailure.unavailable }
+          model?.refresh()
+        }
+      }
+      model.journal.echoes = JournalEchoes(service: service,
         preferences: model.preferences, telemetry: model.telemetry)
       model.refresh()
     } catch {
@@ -72,6 +88,7 @@ enum JournalEchoFixture {
 @MainActor final class JournalEchoFixtureService: JournalEchoServing {
   var response: JournalEchoResponse
   let offline: Bool
+  var onUseful: ((String?) throws -> Void)?
 
   init(response: JournalEchoResponse, offline: Bool) {
     self.response = response; self.offline = offline
@@ -85,6 +102,7 @@ enum JournalEchoFixture {
   func signal(_ signal: JournalEchoSignal, triggerDay: String, matchDay: String?) async throws {
     if offline { throw URLError(.notConnectedToInternet) }
     guard signal != .opened else { return }
+    if signal == .useful { try onUseful?(matchDay) }
     response.pages = response.pages.compactMap { page in
       guard page.day == triggerDay else { return page }
       if signal == .dismiss && matchDay == nil { return nil }

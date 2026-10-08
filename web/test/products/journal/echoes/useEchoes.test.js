@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 
 import { browserWith, renderHook, settle } from '../../gym/harness.mjs';
 import { locate, stillStanding, useEchoes } from '../../../../src/products/journal/echoes/useEchoes.js';
+import { proseRuns } from '../../../../src/products/journal/links.js';
 
 const TWICE = "i don't know. and then i don't know.";
 
@@ -159,6 +160,77 @@ function reading({ wide, reduced = false, pages = ECHO_PAGES }) {
 }
 
 const readerOn = (t, server) => renderHook(t, () => useEchoes({ today: '2026-09-01', account: 'reader', bodyOf: server.bodyOf }));
+
+test('an equivalent source edit keeps the echo and a real edit retracts it', async (t) => {
+  const quote = 'I remembered the cafe\u0301 by the river.';
+  const page = { day: '2026-08-11', matches: [{ day: '2026-05-02', text: quote }] };
+  const server = reading({ wide: false, pages: [page] });
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const run = readerOn(t, server);
+  await settle(16);
+  run.log.verify(page.day);
+  await settle(4);
+  const body = `e\u0301 before. ${quote} after.`.normalize('NFC');
+  server.editBody('2026-05-02', body);
+  t.mock.timers.tick(15000);
+  await settle(16);
+  assert.deepEqual(run.log.pageOf(page.day)?.matches.map(({ day, text }) => ({ day, text })), page.matches);
+  assert.equal(body.slice(10, 45), quote.normalize('NFC'));
+  assert.equal(run.log.lit, null);
+
+  server.editBody('2026-05-02', body.replace('remembered', 'forgot'));
+  t.mock.timers.tick(15000);
+  await settle(16);
+  assert.equal(run.log.pageOf(page.day), null);
+});
+
+test('Read this page reanchors an equivalent edit in the current raw source before the next poll', async (t) => {
+  const quote = 'I remembered the cafe\u0301 by the river.';
+  const page = { day: '2026-08-11', matches: [{ day: '2026-05-02', text: quote }] };
+  const server = reading({ wide: false, pages: [page] });
+  server.editBody('2026-05-02', `e\u0301 before. ${quote} after.`);
+  const flights = [];
+  const run = renderHook(t, () => useEchoes({ today: '2026-09-01', account: 'reader', bodyOf: server.bodyOf,
+    onFly: (target) => flights.push(target) }));
+  await settle(16);
+  run.log.verify(page.day);
+  await settle(4);
+  const match = run.log.pageOf(page.day).matches[0];
+  const body = `e\u0301 before. ${quote} after.`.normalize('NFC');
+  server.editBody(match.day, body);
+  run.log.walkTo(page.day, match);
+  await settle(4);
+  assert.deepEqual(flights, [{ day: match.day, lo: 10, hi: 45 }]);
+  assert.equal(proseRuns(body, { highlight: flights[0] }).filter((run) => run.marked)
+    .map((run) => run.text).join(''), quote.normalize('NFC'));
+  assert.deepEqual(run.log.hops, ['2026-09-01', match.day]);
+
+  run.log.backToTonight();
+  flights.length = 0;
+  server.editBody(match.day, 'The quoted words are gone.');
+  run.log.walkTo(page.day, match);
+  await settle(4);
+  assert.deepEqual(flights, []);
+  assert.deepEqual(run.log.hops, []);
+  assert.equal(run.log.pageOf(page.day), null);
+});
+
+test('a canonical-equivalent quotation reread is never announced as a new echo', async (t) => {
+  const page = { day: '2026-08-11', matches: [{ day: '2026-05-02', text: 'the cafe\u0301' }] };
+  const server = reading({ wide: false, pages: [page] });
+  const run = readerOn(t, server);
+  await settle(16);
+  run.log.verify(page.day);
+  await settle(4);
+  server.serve([{ ...page, matches: [{ ...page.matches[0], text: 'the café' }] }]);
+  run.log.reread();
+  await settle(16);
+  assert.equal(run.log.pageOf(page.day).verified, true);
+  assert.equal(run.log.lit, null);
+  assert.equal(run.log.announce, null);
+  assert.equal(run.log.presentedBefore(page.day), true);
+});
+
 const rested = () => new Promise((resolve) => setTimeout(resolve, SETTLE_MS + 60));
 // Two clocks, and they are different facts. `rested` is the scroll settling and the panel COMMITTING
 // to a page; `shown` is the panel having finished LEAVING the page before it and named the new one.
@@ -273,7 +345,7 @@ test('a walk holds the panel on the page it lands on; going back to tonight hand
   const run = readerOn(t, reading({ wide: true }));
   await settle(8);
 
-  run.log.walkTo('2026-08-20', { day: '2026-05-02', lo: 0, hi: 5 });
+  run.log.walkTo('2026-08-11', ECHO_PAGES[0].matches[0]);
   assert.equal(run.log.heldDay, '2026-05-02');
   assert.equal(run.log.openDay, '2026-05-02');
 

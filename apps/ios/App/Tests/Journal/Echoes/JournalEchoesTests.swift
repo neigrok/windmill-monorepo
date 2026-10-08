@@ -96,7 +96,43 @@ import SyncTesting
     try #require(condition(), "The controlled REST request did not reach its continuation")
   }
 
-  @Test func quoteLocatorUsesExactUTF16RangesAndTreatsOccurrenceAsAHint() {
+  @Test func sharedQuoteVectorsUseCanonicalMatchingAndOriginalUTF16Anchors() throws {
+    for vector in try Contract.vectors("journal/domain/echo-quotes.json") {
+      let input = vector.input, span = try vector.expect.member("range")
+      let expected: NSRange?
+      if span.isNull { expected = nil }
+      else {
+        let bounds = try span.asArray().map { Int(try $0.asInteger()) }
+        expected = NSRange(location: bounds[0], length: bounds[1] - bounds[0])
+      }
+      let match = try JournalEchoMatch(day: Self.recent.day, text: input.member("text").asString(),
+        occurrenceHint: input["occurrenceHint"].map { Int(try $0.asInteger()) })
+      #expect(try match.range(in: input.member("body").asString()) == expected, "\(vector)")
+    }
+  }
+
+  @Test func equivalentSourceEditsKeepEchoesAndRealEditsRetractThem() async throws {
+    let fixture = Fixture(); defer { fixture.close() }
+    let match = JournalEchoMatch(day: Self.recent.day, text: "I remembered the cafe\u{301} by the river.")
+    let initial = "An e\u{301} before. \(match.text) After."
+    fixture.service.response = JournalEchoResponse(pages: [JournalEchoPage(day: Self.today, matches: [match])])
+    fixture.model.updateBodies([Self.today: Self.bodies[Self.today]!, match.day: initial])
+    await fixture.model.reload()
+    fixture.model.open(Self.today)
+    let edited = initial.precomposedStringWithCanonicalMapping
+    #expect(initial == edited && !initial.utf8.elementsEqual(edited.utf8))
+    fixture.model.updateBodies([Self.today: Self.bodies[Self.today]!, match.day: edited])
+    #expect(fixture.model.pages[Self.today]?.matches == [match])
+    #expect(fixture.model.openDay == Self.today)
+    let range = try #require(match.range(in: edited))
+    #expect((edited as NSString).substring(with: range) == match.text)
+    fixture.model.walk(from: Self.today, to: match)
+    #expect(fixture.model.destination?.day == match.day)
+    fixture.model.updateBodies([Self.today: Self.bodies[Self.today]!, match.day: "The river path is closed."])
+    #expect(fixture.model.pages.isEmpty && fixture.model.destination == nil)
+  }
+
+  @Test func quoteLocatorUsesOriginalUTF16RangesAndTreatsOccurrenceAsAHint() {
     let text = "🌙 cafe\u{301}", body = "Start \(text), then \(text)."
     let first = (body as NSString).range(of: text, options: .literal)
     let nextStart = NSMaxRange(first)
@@ -107,7 +143,7 @@ import SyncTesting
     for hint in [-1, 2, Int.max] {
       #expect(JournalEchoMatch(day: Self.recent.day, text: text, occurrenceHint: hint).range(in: body) == first)
     }
-    #expect(JournalEchoMatch(day: Self.recent.day, text: "🌙 café").range(in: body) == nil)
+    #expect(JournalEchoMatch(day: Self.recent.day, text: "🌙 café").range(in: body) == first)
     #expect(JournalEchoMatch(day: Self.recent.day, text: "").range(in: body) == nil)
     #expect(JournalEchoMatch(day: Self.recent.day, text: "not on this page").range(in: body) == nil)
   }

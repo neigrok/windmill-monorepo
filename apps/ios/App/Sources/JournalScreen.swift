@@ -387,7 +387,7 @@ struct JournalBodyText: UIViewRepresentable {
     func updateText(_ view: UITextView, text: String, fontSize: CGFloat) {
       // Binding publication can reenter with the snapshot from before this keystroke.
       guard !publishingText, view.markedTextRange == nil else { return }
-      let textChanged = view.text != text
+      let textChanged = !(view.text ?? "").utf8.elementsEqual(text.utf8)
       let fontChanged = view.font?.pointSize != fontSize
       guard textChanged || fontChanged else { return }
       let selection = initialized ? view.selectedRange : NSRange(location: text.utf16.count, length: 0)

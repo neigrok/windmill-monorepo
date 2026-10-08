@@ -8,7 +8,7 @@ import Testing
 
 struct JournalRulesTests {
   @Test func everySharedFileHasARunner() throws {
-    let handled = ["page-actions.json", "rules.json", "values.json"].map { "journal/domain/" + $0 }
+    let handled = ["echo-quotes.json", "page-actions.json", "rules.json", "values.json"].map { "journal/domain/" + $0 }
     #expect(try Contract.files(under: "journal") == handled)
   }
 
@@ -42,6 +42,15 @@ struct JournalRulesTests {
   @Test(arguments: try Contract.vectors("journal/domain/values.json"))
   func value(_ vector: Vector) throws {
     let actual = try Self.value(vector)
+    #expect(actual == vector.expect, "\(vector)\n  got    \(actual.jcsText)\n  expect \(vector.expect.jcsText)")
+  }
+
+  @Test(arguments: try Contract.vectors("journal/domain/echo-quotes.json"))
+  func echoQuote(_ vector: Vector) throws {
+    let input = vector.input
+    let range = EchoQuote.locate(body: try input.member("body").asString(), text: try input.member("text").asString(),
+      occurrenceHint: try input["occurrenceHint"].map { Int(try $0.asInteger()) })
+    let actual: JSON = ["range": range.map { .array([JSON($0.lowerBound), JSON($0.upperBound)]) } ?? .null]
     #expect(actual == vector.expect, "\(vector)\n  got    \(actual.jcsText)\n  expect \(vector.expect.jcsText)")
   }
 

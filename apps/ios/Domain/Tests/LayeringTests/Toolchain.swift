@@ -166,7 +166,10 @@ enum Shell {
 
 enum Scratch {
   static func withDirectory<T>(_ body: (URL) throws -> T) throws -> T {
-    let directory = FileManager.default.temporaryDirectory.appending(path: "layering-\(UUID().uuidString)")
+    let temporaryDirectory = ProcessInfo.processInfo.environment["TMPDIR"]
+      .flatMap { $0.hasPrefix("/") ? URL(fileURLWithPath: $0, isDirectory: true) : nil }
+      ?? FileManager.default.temporaryDirectory
+    let directory = temporaryDirectory.appending(path: "layering-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     return try body(directory)

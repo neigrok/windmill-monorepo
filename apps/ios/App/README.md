@@ -103,8 +103,10 @@ returns, and at most once per 30 seconds while open. Cancel leaves the server se
 Journal echoes live in `Sources/Journal/Echoes`. `JournalEchoView.swift` owns their presentation:
 a 44 pt count beside a day, a native quotation sheet, source highlighting and a trail back to
 tonight. The sheet follows system light/dark appearance independently of the existing night canvas.
-The model re-locates every full quotation in the phone's current pages before showing its count;
-it follows the server's 20-page floor and waiver, provenance and Useful state. A first-echo
+The model re-locates every full quotation in the phone's current pages before showing its count.
+Shared journal vectors pin NFC-equivalent matching and UTF-16 anchors into the unchanged source;
+equivalent edits retain an echo, while edits that remove its quotation retract it. The model
+follows the server's 20-page floor and waiver, provenance and Useful state. A first-echo
 introduction requires an explicit server flag; the current list route does not supply it.
 Reads poll every 15 seconds only while the room is active. All reads and verdicts use the existing
 REST echoes routes; writing continues through the sync engine. Offline, empty and failed reads
@@ -114,7 +116,10 @@ navigation. HTTP caching is disabled.
 
 `journal-echoes`, `journal-echoes-offline` and `journal-echoes-empty` board fixtures use real
 journal actions with a deterministic echoes service. `journal-echoes-AX3-RM` covers larger type
-and the source-scroll Reduce Motion path, including Back to tonight. The source quote sits after
+and the source-scroll Reduce Motion path, including Back to tonight. `journal-echoes-unicode`
+and `journal-echoes-unicode-decomposed` apply real source edits while the sheet is open: Useful
+on the first quotation changes only its normalization; Useful on the second removes the first
+quotation. The source quote sits after
 14 paragraphs; navigation tests use the Debug simulator's UIKit quote rectangle to check that
 the exact passage reaches the visible canvas centre and remains read-only. `JournalEchoFlowTests`
 belongs to CI's routines-journal shard; its screenshots are XCTest attachments, or PNGs when

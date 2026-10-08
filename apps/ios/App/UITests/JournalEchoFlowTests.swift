@@ -43,9 +43,9 @@ import XCTest
     let scroller = sheet.exists ? sheet : app.scrollViews.firstMatch
     var previous = CGRect.null
     var stableSince = Date()
+    var viewport = CGRect.null
     let ready = NSPredicate { _, _ in
       let frame = element.frame
-      let viewport = scroller.frame.intersection(app.frame)
       guard frame.height >= 44, viewport.contains(frame) else {
         previous = .null; return false
       }
@@ -56,18 +56,21 @@ import XCTest
       return Date().timeIntervalSince(stableSince) >= 0.3
     }
     for _ in 0..<8 {
-      if scroller.frame.intersection(app.frame).contains(element.frame) {
+      viewport = scroller.frame.intersection(app.frame)
+      let frame = element.frame
+      if viewport.contains(frame) {
         let settled = XCTNSPredicateExpectation(predicate: ready, object: element)
         if XCTWaiter.wait(for: [settled], timeout: 3) == .completed { return }
+        continue
       }
-      let frame = element.frame, viewport = scroller.frame.intersection(app.frame)
       let direction: CGFloat = frame.isEmpty ? (towardTop ? -1 : 1) : (frame.midY < viewport.midY ? -1 : 1)
       let distance = min(max(abs(frame.midY - viewport.midY), 80), viewport.height * 0.4)
       let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: viewport.midX, dy: viewport.midY))
       let end = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: viewport.midX, dy: viewport.midY - direction * distance))
       start.press(forDuration: 0.05, thenDragTo: end)
     }
-    let geometry = XCTAttachment(string: "control: \(element.frame)\nvisible scroll view: \(scroller.frame.intersection(app.frame))")
+    viewport = scroller.frame.intersection(app.frame)
+    let geometry = XCTAttachment(string: "control: \(element.frame)\nvisible scroll view: \(viewport)\nprevious sample: \(previous)")
     geometry.name = "echo-control-visibility"; geometry.lifetime = .keepAlways; add(geometry)
     XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: element)], timeout: 3), .completed,
                    "Echo control must settle, fit in the visible scroll view, and retain its 44-point height")
@@ -78,7 +81,7 @@ import XCTest
     return (try? JSONSerialization.jsonObject(with: Data(value.utf8))) as? [String: Any]
   }
 
-  func assertSourcePassageCentered(in app: XCUIApplication, appearance: String) throws {
+  func assertSourcePassageCentered(in app: XCUIApplication, appearance: String, quote: String? = nil) throws {
     XCTAssertTrue(app.buttons["echo-close"].waitForNonExistence(timeout: 5))
     let source = app.textViews["journal-body-\(firstSource)"]
     XCTAssertTrue(source.waitForExistence(timeout: 5))
@@ -100,7 +103,8 @@ import XCTest
     let range = try XCTUnwrap(metrics["echoRange"] as? [Int])
     let rect = try XCTUnwrap(metrics["echoRect"] as? [Double])
     guard range.count == 2, rect.count == 4 else { XCTFail("Invalid source passage geometry"); return }
-    XCTAssertEqual(range, [body.range(of: sourceQuote).location, (sourceQuote as NSString).length])
+    let expectedQuote = quote ?? sourceQuote
+    XCTAssertEqual(range, [body.range(of: expectedQuote, options: .literal).location, (expectedQuote as NSString).length])
     XCTAssertGreaterThan(range[0], 2_000, "The fixture quote must be far below the source page's opening")
     XCTAssertEqual(metrics["editable"] as? Bool, false)
     XCTAssertEqual(metrics["focused"] as? Bool, false)
@@ -161,6 +165,37 @@ import XCTest
 
   func testLightEchoOpensSourceAndAcceptsFeedback() throws { try flow("light") }
   func testDarkEchoOpensSourceAndAcceptsFeedback() throws { try flow("dark") }
+
+  func testEquivalentSourceEditKeepsReadNavigationAndRealEditRetractsEcho() throws {
+    for appearance in ["light", "dark"] {
+      let decomposed = appearance == "dark"
+      let app = launch(appearance, board: decomposed ? "journal-echoes-unicode-decomposed" : "journal-echoes-unicode", layout: true)
+      let disclosure = app.buttons["journal-echo-\(today)"]
+      reveal(disclosure, in: app, towardTop: true); disclosure.tap()
+      let useful = app.buttons["echo-useful-\(firstSource)"]
+      reveal(useful, in: app); useful.tap()
+      let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "Selected"), object: useful)
+      XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 5), .completed)
+      let open = app.buttons["echo-open-\(firstSource)"]
+      reveal(open, in: app, towardTop: true); open.tap()
+      let quote = decomposed ? "I remembered the cafe\u{301} by the river." : "I remembered the café by the river."
+      try assertSourcePassageCentered(in: app, appearance: "unicode-\(appearance)", quote: quote)
+      let source = app.textViews["journal-body-\(firstSource)"]
+      let text = try XCTUnwrap(sourceMetrics(source)?["text"] as? String)
+      let expected = decomposed ? text.decomposedStringWithCanonicalMapping : text.precomposedStringWithCanonicalMapping
+      XCTAssertEqual(Array(text.utf8), Array(expected.utf8), "The text view must contain the current source bytes")
+      try capture("night-canvas-echo-unicode-source-sheet-\(appearance)", app)
+      app.buttons["echo-back-to-tonight"].tap()
+      reveal(disclosure, in: app, towardTop: true); disclosure.tap()
+      let changeWords = app.buttons["echo-useful-\(secondSource)"]
+      reveal(changeWords, in: app); changeWords.tap()
+      XCTAssertTrue(open.waitForNonExistence(timeout: 5))
+      XCTAssertTrue(app.buttons["echo-open-\(secondSource)"].exists)
+      XCTAssertTrue(app.staticTexts["1 passage you wrote before"].exists)
+      try capture("echo-unicode-real-edit-retracted-\(appearance)", app)
+      app.terminate()
+    }
+  }
 
   func silentWriting(_ board: String, appearance: String, empty: Bool) throws {
     let app = launch(appearance, board: board)

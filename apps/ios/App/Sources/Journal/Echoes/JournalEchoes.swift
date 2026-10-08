@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import DomainKit
+import JournalDomain
 import SyncEngine
 
 nonisolated struct JournalEchoAccess: Equatable {
@@ -18,18 +19,8 @@ nonisolated struct JournalEchoDestination: Equatable {
 
 extension JournalEchoMatch {
   nonisolated func range(in body: String) -> NSRange? {
-    guard !text.isEmpty else { return nil }
-    let body = body as NSString
-    var from = 0
-    var found = NSRange(location: NSNotFound, length: 0)
-    // An occurrence is a hint, never an offset or permission to quote missing words.
-    for _ in 0...min(max(0, occurrenceHint ?? 0), body.length) {
-      found = body.range(of: text, options: .literal, range: NSRange(location: from, length: body.length - from))
-      if found.location == NSNotFound { break }
-      from = NSMaxRange(found)
-    }
-    if found.location == NSNotFound { found = body.range(of: text, options: .literal) }
-    return found.location == NSNotFound ? nil : found
+    guard let range = EchoQuote.locate(body: body, text: text, occurrenceHint: occurrenceHint) else { return nil }
+    return NSRange(location: range.lowerBound, length: range.count)
   }
 
   nonisolated var provenance: String? {

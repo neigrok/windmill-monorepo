@@ -142,8 +142,11 @@ allowance-saving switch to disable it.
 On iOS, a 44 pt count control beside the day opens a native, scrollable sheet of complete
 passages, source dates and provenance. Useful and Not useful answer the connection; reading a
 source returns to its exact passage in the canvas, with the neighbouring days intact and a
-trail back to tonight. Counts include only quotations found verbatim in the phone's current
-pages. Below 20 written pages nothing appears unless the server waives that floor. Offline,
+trail back to tonight. On web and iOS, quotation validation and source anchors compare in NFC:
+equivalent Unicode spellings keep an echo, while edits that remove the quotation retract it.
+Anchors address the original page's UTF-16 range; comparison never rewrites the person's text.
+Counts include only quotations present in the phone's current pages. Below 20 written pages
+nothing appears unless the server waives that floor. Offline,
 empty, loading and failed reads add no surface and never delay writing. The sheet and controls
 support Dynamic Type and VoiceOver; Reduce Motion jumps to the source without a scroll animation.
 The phone drawings are [Night](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3/?node-id=31-211),
