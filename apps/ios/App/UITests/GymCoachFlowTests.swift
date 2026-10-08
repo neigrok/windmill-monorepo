@@ -94,10 +94,7 @@ import UIKit
     app.buttons["coach-send"].tap()
     XCTAssertTrue(app.buttons["Review"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
-    if app.keyboards.firstMatch.exists {
-      let done = app.buttons["coach-keyboard-done"]
-      XCTAssertTrue(done.waitForExistence(timeout: 5)); done.tap()
-    }
+    XCTAssertTrue(app.buttons["coach-keyboard-done"].waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
     capture("coach-answer-\(suffix)", app)
     app.scrollViews.firstMatch.swipeDown()
@@ -200,7 +197,8 @@ import UIKit
     XCTAssertTrue(question.waitForExistence(timeout: 10)); question.tap(); question.typeText("Remove Push A.")
     app.buttons["coach-send"].tap()
     XCTAssertTrue(app.buttons["Review"].waitForExistence(timeout: 10))
-    if app.keyboards.firstMatch.exists { app.buttons["coach-keyboard-done"].tap() }
+    XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["coach-keyboard-done"].waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
     app.scrollViews.firstMatch.swipeUp(); app.buttons["Review"].tap()
     XCTAssertTrue(app.staticTexts["The whole routine is removed from your program. Every set you logged against it stays in the log."].waitForExistence(timeout: 5))

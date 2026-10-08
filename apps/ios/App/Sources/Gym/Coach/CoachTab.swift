@@ -21,8 +21,8 @@ struct CoachTab: View {
   @Environment(\.coachOpenAccount) var openAccount
   @Environment(\.scenePhase) var phase
   @FocusState var composing: Bool
-  init(gym: GymModel, handoff: Binding<CoachHandoff?> = .constant(nil)) { self.gym = gym; _handoff = handoff; let rest = CoachFixture.rest(gym)
-    _coach = State(initialValue: CoachConversation(gym: gym, rest: rest)); _history = State(initialValue: CoachHistory(gym: gym, rest: rest)) }
+  init(gym: GymModel, handoff: Binding<CoachHandoff?> = .constant(nil), coach: CoachConversation? = nil) { self.gym = gym; _handoff = handoff; let rest = coach?.rest ?? CoachFixture.rest(gym)
+    _coach = State(initialValue: coach ?? CoachConversation(gym: gym, rest: rest)); _history = State(initialValue: CoachHistory(gym: gym, rest: rest)) }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -60,7 +60,7 @@ struct CoachTab: View {
               Text(error).font(.callout).foregroundStyle(.secondary).accessibilityIdentifier("coach-error")
                 .onChange(of: error, initial: true) { _, error in UIAccessibility.post(notification: .announcement, argument: error) }
             }
-            if coach.retryable { Button("Retry") { coach.retry() }.accessibilityIdentifier("coach-retry") }
+            if coach.retryable { Button("Retry") { composing = false; coach.retry() }.accessibilityIdentifier("coach-retry") }
             if !coach.draftReadable { Button("Try again") { coach.reloadDraft() } }
             if !coach.canCompose, coach.allowed {
               if case .fresh = coach.refusal { Button("Ask something new") { coach.newChat() } }
@@ -76,7 +76,10 @@ struct CoachTab: View {
           .overlay(alignment: .bottomTrailing) {
             if !atLatest { Button("Jump to latest") { withAnimation { proxy.scrollTo("latest", anchor: .bottom) } }.buttonStyle(.bordered).padding(16).background(.ultraThinMaterial, in: Capsule()) }
           }
-          .onChange(of: coach.saved.request?.requestId) { _, _ in proxy.scrollTo("latest", anchor: .bottom) }
+          .onChange(of: coach.saved.request?.requestId) { _, request in
+            if request != nil { composing = false }
+            proxy.scrollTo("latest", anchor: .bottom)
+          }
       }
     }.navigationTitle("Coach").modifier(CoachPage()).accessibilityIdentifier("gym-coach")
       .toolbar {
@@ -155,6 +158,7 @@ struct CoachTab: View {
           PhotosPicker(selection: $photo, matching: .images) { Image(systemName: "photo.badge.plus").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel("Add photo").disabled(coach.asking || preparing)
           TextField("Ask about your training", text: Binding(get: { coach.saved.text }, set: { coach.edit($0) }), axis: .vertical)
             .lineLimit(1...5).focused($composing).disabled(coach.asking).accessibilityIdentifier("coach-question")
+            .id(coach.asking)
           if coach.asking {
             Button { coach.stopResponse() } label: { Image(systemName: "stop.fill").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel(coach.uploading ? "Cancel upload" : "Stop response").disabled(coach.stopping).accessibilityIdentifier("coach-stop")
           } else {

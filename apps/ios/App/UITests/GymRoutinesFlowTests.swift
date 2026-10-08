@@ -463,6 +463,7 @@ import UIKit
       XCTAssertTrue(done.isEnabled && done.isHittable)
       XCTAssertTrue(send.isEnabled && send.isHittable)
       done.tap()
+      XCTAssertTrue(done.waitForNonExistence(timeout: 5))
       XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
       XCTAssertEqual(question.value as? String, "Tell me about the proposal for Push A.")
       let routines = app.tabBars.buttons["Routines"]
