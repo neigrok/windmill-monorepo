@@ -229,8 +229,9 @@ Compliance frame 393 × 852 (iPhone 17); checked at 375 × 667 and at the larges
   `RoomSeat`/`AccountButton` chrome (`WindmillApp.swift`, `modifier(Glass…)`), the glass `Done`
   and round buttons in `AccountSheet.swift:42,361`, the glass *Keep it* in `JournalScreen.swift:174`.
   Nothing in the app draws a white-alpha fill or stroke.
-- **Journal gets a `NavigationStack`** so its bar is the system's: `.toolbarBackground(.hidden,
-  for: .navigationBar)` over the night canvas, no title, the room menu and account button as
+- **Journal gets a `NavigationStack`** so its bar is the system's: a visible bar filled
+  `journal/canvas` with `.toolbarColorScheme(.dark)`, so it reads as the night canvas and past pages
+  scroll beneath it instead of under the bar's items; no title, the room menu and account button as
   above. The ink notes anchor to the toolbar items' frames (`onGeometryChange` inside the labels).
 - Symbols in bars render monochrome at the bar's default weight. No `.fill` variants in bars;
   `.fill` is for a selected tab only.

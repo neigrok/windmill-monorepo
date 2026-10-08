@@ -18,7 +18,9 @@ struct JournalScreen: View {
   var body: some View {
     NavigationStack {
       journal
-        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarBackground(JournalPalette.canvas, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar(model.compactAccountSheet ? .hidden : .visible, for: .navigationBar)
         .toolbar {
           ToolbarItem(placement: .topBarLeading) {
