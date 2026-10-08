@@ -20,7 +20,7 @@ if (ordinaryFiles.length) {
   runner.on('test:fail', () => { process.exitCode = 1; });
   for await (const chunk of runner.compose(spec())) process.stdout.write(chunk);
 }
-// Keep timing budgets meaningful: run these after the parallel workers have exited.
+// Run the large training fixtures after the parallel workers have exited.
 if (performanceFiles.length) {
   const result = spawnSync(process.execPath,
     ['--test', '--test-concurrency=1', '--test-timeout=120000', ...performanceFiles], { stdio: 'inherit' });

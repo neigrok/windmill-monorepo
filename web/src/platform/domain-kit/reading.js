@@ -15,6 +15,7 @@ import { precondition } from './values.js';
 /** @typedef {import('./time.js').Moment} Moment */
 /** @typedef {import('../../../../packages/api-contract/sync/reference/core/registry.js').Registry} Registry */
 /** @typedef {'drawn' | 'stored'} ViewMode */
+/** @typedef {{ records: ViewRecord[], references: Map<string, Map<string, ViewRecord[]>> }} ViewTypeIndex */
 /** @typedef {{ kind: 'top' } | { kind: 'bottom' } | { kind: 'below', id: RecordID }} Placement */
 /** @typedef {{ gestureId: string, command: import('./plans.js').Command, canSupersede: boolean, isAdmitted?: boolean }} QueuedCommand */
 /** @typedef {{ epoch: string | null, cleanSeq: number | null }} ScopeCheckpoint */
@@ -34,6 +35,9 @@ export const Placement = Object.freeze({
 // What a reader reads: one scope's views, confirmed records, commands and checkpoint, with its
 // product's device rows and the identity mints a commit offers.
 export class Views {
+  /** @type {Record<ViewMode, Map<string, ViewTypeIndex>>} */
+  #indexes = { drawn: new Map(), stored: new Map() };
+
   /**
    * @param {Registry} registry
    * @param {{ drawn: Map<string, ViewRecord>, stored: Map<string, ViewRecord>, confirmed?: Map<string, ViewRecord> } & ViewMetadata} source
@@ -52,6 +56,27 @@ export class Views {
     this.checkpoint = checkpoint;
     this.mintId = mintId ?? null;
     this.mintOpaqueId = opaqueID ?? null;
+    for (const view of /** @type {const} */ (['drawn', 'stored'])) {
+      for (const record of this[view].values()) {
+        const definition = registry.type(record.t);
+        if (!isVisible(definition, record)) continue;
+        let index = this.#indexes[view].get(record.t);
+        if (!index) {
+          index = { records: [], references: new Map(definition.fieldNames((/** @type {{ ref?: string }} */ field) => field.ref !== undefined)
+            .map((/** @type {string} */ name) => [name, new Map()])) };
+          this.#indexes[view].set(record.t, index);
+        }
+        index.records.push(record);
+        for (const [name, references] of index.references) {
+          const value = record.f?.[name]?.[0];
+          if (value === undefined) continue;
+          const key = jcs(value);
+          const members = references.get(key) ?? [];
+          members.push(record);
+          references.set(key, members);
+        }
+      }
+    }
     Object.freeze(this);
   }
 
@@ -80,8 +105,25 @@ export class Views {
    * @param {string} type
    */
   visible(view, type) {
-    const definition = this.registry.type(type);
-    return [...this[view].values()].filter((record) => record.t === type && isVisible(definition, record));
+    return [...(this.#indexes[view].get(type)?.records ?? [])];
+  }
+
+  /**
+   * @param {ViewMode} view
+   * @param {string} type
+   * @param {string} via
+   * @param {RecordID} id
+   */
+  referencing(view, type, via, id) {
+    const key = jcs(id);
+    const index = this.#indexes[view].get(type);
+    if (!index) return [];
+    const references = index.references.get(via);
+    if (references) return [...(references.get(key) ?? [])];
+    return this.visible(view, type).filter((record) => {
+      const value = record.f?.[via]?.[0];
+      return value !== undefined && jcs(value) === key;
+    });
   }
 
   /** @param {string} key */
@@ -195,12 +237,7 @@ export class Repository {
    * @param {ViewMode} view
    */
   children(parent, via, view) {
-    const key = jcs(parent.record);
-    const members = this.views.visible(view, this.type.type).filter((record) => {
-      const value = record.f?.[via]?.[0];
-      return value !== undefined && jcs(value) === key;
-    });
-    return Repository.decode(this.type, members);
+    return Repository.decode(this.type, this.views.referencing(view, this.type.type, via, parent.record));
   }
 
   capacity() {

@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { performance } from 'node:perf_hooks';
 import { Reader, Views } from '../../../src/platform/domain-kit/reading.js';
 import { FixedZone, Instant, Moment } from '../../../src/platform/domain-kit/time.js';
 import { registry } from '../../../src/platform/sync/schema.js';
@@ -74,10 +73,7 @@ for (const workouts of [250, 1000]) test(`training reads recompute once per repl
 
 const moment = new Moment(new Instant(1_800_000_000_000), new FixedZone(0));
 
-for (const workouts of [250, 1000]) test(`stored history finds no presence for an untrained movement across ${workouts} workouts, and reports its cost`, (t) => {
-  /** @param {string} type @param {string} id @param {Record<string, import('../../../src/platform/domain-kit/values.js').Json>} fields */
-  const row = (type, id, fields) => ({ t: type, id, born: '1000:0:srv', life: /** @type {[string, string]} */ (['alive', '1000:0:srv']),
-    f: Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, /** @type {[import('../../../src/platform/domain-kit/values.js').Json, string]} */ ([value, '1000:0:srv'])])) });
+for (const workouts of [250, 1000]) test(`hasStoredSessions returns false without visiting stored records for an untrained movement across ${workouts} workouts`, (t) => {
   const rows = [];
   for (let index = 0; index < workouts; index += 1) {
     const id = `session_${index}`;
@@ -86,13 +82,20 @@ for (const workouts of [250, 1000]) test(`stored history finds no presence for a
     for (let set = 0; set < 20; set += 1) rows.push(row('set', `${id}_set_${set}`,
       { sessionId: id, exerciseId: 'bench-press', weightKg: 60, reps: 8, completedAt: at + set + 1 }));
   }
-  const history = new TrainingHistory(new Reader(Views.ofRecords(registry, { drawn: rows, stored: rows }), Session.scope, moment));
-  const cpu = process.cpuUsage();
-  const wall = performance.now();
+  const visited = new Set();
+  const stored = rows.map((record) => new Proxy(record, {
+    get(target, key, receiver) {
+      visited.add(target);
+      return Reflect.get(target, key, receiver);
+    },
+  }));
+  const history = new TrainingHistory(new Reader(Views.ofRecords(registry, { drawn: rows, stored }), Session.scope, moment));
+  // Snapshot preparation builds indexes; count the query's raw record visits, including decoding.
+  visited.clear();
   const found = history.hasStoredSessions({ exercise: 'chin-up' });
-  const elapsed = process.cpuUsage(cpu);
-  const milliseconds = (elapsed.user + elapsed.system) / 1000;
-  t.diagnostic(`${workouts} workouts: stored absence ${milliseconds.toFixed(1)} ms CPU, ${(performance.now() - wall).toFixed(1)} ms wall`);
+  t.diagnostic(`${workouts} workouts: stored absence visited ${visited.size} records`);
   assert.equal(found, false);
-  assert.ok(milliseconds < (workouts === 250 ? 100 : 300), `stored absence ${milliseconds.toFixed(1)} ms CPU exceeds budget`);
+  assert.equal(visited.size, 0, 'an absent movement needs no stored record visits at either history size');
+  assert.equal(history.hasStoredSessions({ exercise: 'bench-press' }), true);
+  assert.ok(visited.size > 0, 'the counter observes stored records when a movement is present');
 });

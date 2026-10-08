@@ -413,6 +413,7 @@ export class TrainingHistory {
 
   /** @param {HistoryQuery} query */
   hasStoredSessions({ from = 0, until = SessionRules.maxInstantMs, exercise = '', routine = '' } = {}) {
+    if (exercise && this.read.views.referencing('stored', TrainingSet.type, 'exerciseId', exercise).length === 0) return false;
     /** @type {Map<string, TrainingSetValue[]>} */
     const sets = new Map();
     for (const set of this.read.repository(TrainingSet).all('stored')) {
