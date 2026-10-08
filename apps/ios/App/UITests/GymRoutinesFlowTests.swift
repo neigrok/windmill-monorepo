@@ -15,12 +15,18 @@ import UIKit
     if proposal { app.launchArguments.append("-routines-proposal-fixture") }
     app.launch()
     XCTAssertTrue(app.textViews["journal-editor"].waitForExistence(timeout: 10))
-    XCTAssertTrue(app.buttons["room-menu"].waitForExistence(timeout: 10))
-    app.buttons["room-menu"].tap()
+    viewport = app.frame
+    let menu = app.buttons["room-menu"]
+    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      guard let snapshot = try? menu.snapshot() else { return false }
+      return snapshot.isEnabled && !snapshot.frame.isEmpty && self.viewport.contains(snapshot.frame)
+    }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed)
+    XCTAssertTrue(menu.isHittable)
+    menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1)
     let gym = app.buttons["room-gym"]
     XCTAssertTrue(gym.waitForExistence(timeout: 5)); gym.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 10))
-    viewport = app.frame
     return app
   }
   func capture(_ app: XCUIApplication, _ name: String) {
