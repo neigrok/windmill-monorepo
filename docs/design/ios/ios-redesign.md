@@ -322,9 +322,9 @@ section; no third shape.
 ### One transient band
 
 The room has one component, `RoomTransient`, for refusals, notices, Undo and copied-link
-confirmations: a single-line `.footnote` message on `gym/card`, radius 16, with at most one
-trailing action (*Undo* · *Try again* · *Dismiss* as `xmark`), floating in the reach band above the
-primary, honouring the delete window (`gym/briefs/13-gestures.md`). It replaces `RoutineNotice`
+confirmations: a `.footnote` message on `gym/card` that wraps rather than truncates, radius 16,
+with at most one trailing action (*Undo* · *Try again* · *Dismiss* as `xmark`), floating in the
+reach band above the primary, honouring the delete window (`gym/briefs/13-gestures.md`). It replaces `RoutineNotice`
 (`RoutinesTab.swift:205`, list sections in red), `LogNoticeBand` (`LogPresentation.swift:151`),
 `CoachNoticeBand` (`CoachScreens.swift:39`), the share message section (`LogTab.swift:125`) and the
 message rows of `WorkoutNotice` (`WorkoutScreen.swift:351`). Refusal text is `gym/ink`, never
