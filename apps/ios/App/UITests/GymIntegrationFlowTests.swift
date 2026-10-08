@@ -170,7 +170,8 @@ import XCTest
     app.terminate(); app.launch()
     let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.buttons["workout-log"].exists || app.buttons["you"].exists }, object: app)
     XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 20), .completed)
-    XCTAssertFalse(recovery.exists); XCTAssertFalse(restoredKeep.exists)
+    XCTAssertFalse(restoredKeep.exists)
+    XCTAssertTrue(recovery.waitForNonExistence(timeout: 20), "A kept workout's recovery band retires once the log confirms it")
     XCTAssertEqual(verifyConflictServer(app, identity: identity, stage: "relaunch-after-keep", recoveryID: recoveredID), allAnonymousSets)
   }
 
