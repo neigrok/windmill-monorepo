@@ -31,8 +31,10 @@ cache size. Queue-to-durability timings are measured; 128-key cleanup batches bo
 The observer hydrates only the scopes it needs after boot and may still do work proportional to
 an observed scope. This work happens in a readonly transaction after the writer commits.
 
-Persisted replay exercises the full fault inventory with a per-seed coverage floor. Real Chromium
-checks close/crash lock handoff, BroadcastChannel observations and rollback across renderer death.
+Both runtime replays register all 20 seeds as separate test cases, each with a 60-second limit,
+so the timeout bounds one seed's work. Every persisted seed exercises all 34 faults and checks
+per-reply isolation and durable restarts. Real Chromium checks close/crash lock handoff,
+BroadcastChannel observations and rollback across renderer death.
 Active replica events follow durable state publication. A surviving tab therefore announces a
 committed transition even when the leader dies before its BroadcastChannel notification; the real
 renderer-crash test exercises this boundary. The isolated production-backend replay checks gym and journal against server rows and digests.
