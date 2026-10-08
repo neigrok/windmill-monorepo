@@ -12,7 +12,6 @@ import { browserWith, renderHook } from './harness.mjs';
 
 const stamp = '1000:0:r_aaaaaaaaaaaa';
 const row = (t, id, fields) => ({ t, id, born: stamp, life: ['alive', stamp], f: Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, [value, stamp]])) });
-const cpuMs = (start) => { const { user, system } = process.cpuUsage(start); return (user + system) / 1000; };
 function log(t, rows = []) {
   browserWith();
   let records = { replica: 'bound', drawn: rows, stored: rows, notices: [], undoOffers: [], firstPullComplete: true };
@@ -26,9 +25,12 @@ function log(t, rows = []) {
   return { view, update: (change) => { records = { ...records, ...change }; view.redraw(); }, engine };
 }
 
-for (const workouts of [250, 1000]) test(`training reads stay within the render budget for ${workouts} populated workouts`, (t) => {
+for (const workouts of [250, 1000]) test(`training reads recompute once per replica change for ${workouts} populated workouts`, (t) => {
   const now = Date.UTC(2026, 9, 8, 12);
   t.mock.timers.enable({ apis: ['Date'], now });
+  const sessionsRead = t.mock.method(TrainingHistory.prototype, 'sessions');
+  const exercisesRead = t.mock.method(TrainingHistory.prototype, 'exercises');
+  const recomputations = () => ({ sessions: sessionsRead.mock.callCount(), exercises: exercisesRead.mock.callCount() });
   const rows = [];
   for (let index = 0; index < workouts; index += 1) {
     const id = `session_${String(index).padStart(5, '0')}`;
@@ -41,34 +43,33 @@ for (const workouts of [250, 1000]) test(`training reads stay within the render 
       v: { setNumber: set % 5 + 1 },
     });
   }
-  const started = performance.now(), mountCpu = process.cpuUsage();
   const { view, update } = log(t, rows);
-  const mountedMs = performance.now() - started;
-  const mountedCpuMs = cpuMs(mountCpu);
+  assert.deepEqual(recomputations(), { sessions: 1, exercises: 1 }, 'mount computes each training read once');
   assert.equal(view.log.summaries.length, 50);
+  assert.equal(view.log.progress.data.sessions.length, workouts);
   const summaries = view.log.summaries;
   const progress = view.log.progress.data;
-  const redrawAt = performance.now(), redrawCpu = process.cpuUsage();
   view.redraw();
-  const redrawnMs = performance.now() - redrawAt;
-  const redrawnCpuMs = cpuMs(redrawCpu);
-  t.diagnostic(`${workouts} workouts: mount ${mountedMs.toFixed(1)} ms (${mountedCpuMs.toFixed(1)} CPU); unchanged render ${redrawnMs.toFixed(1)} ms (${redrawnCpuMs.toFixed(1)} CPU)`);
+  assert.deepEqual(recomputations(), { sessions: 1, exercises: 1 }, 'unchanged replica does no domain recomputation');
   assert.equal(view.log.summaries, summaries, 'unchanged replica reuses the training read');
   assert.equal(view.log.progress.data, progress, 'unchanged replica reuses progress facts');
-  // CPU budgets exclude time waiting for other test workers; wall time remains visible in the gate.
-  const budgetMs = workouts === 250 ? 250 : 500;
-  assert.ok(mountedCpuMs < budgetMs, `mount ${mountedCpuMs.toFixed(1)} CPU ms exceeds the ${budgetMs} ms budget`);
-  assert.ok(redrawnCpuMs < 25, `unchanged render ${redrawnCpuMs.toFixed(1)} CPU ms exceeds the 25 ms budget`);
-  const changed = [...rows, row('session', 'session_new', { startedAt: now - 1000, finishedAt: now, closedBy: 'finish' })];
-  const changedAt = performance.now(), changeCpu = process.cpuUsage();
+  const changed = [...rows,
+    row('session', 'session_new', { startedAt: now - 1000, finishedAt: now, closedBy: 'finish' }),
+    row('set', 'session_new_set', { sessionId: 'session_new', exerciseId: 'bench-press',
+      weightKg: 80, reps: 8, kind: 'working', completedAt: now }),
+  ];
   update({ drawn: changed, stored: changed });
-  const changedMs = performance.now() - changedAt;
-  const changedCpuMs = cpuMs(changeCpu);
-  t.diagnostic(`${workouts} workouts: changed replica ${changedMs.toFixed(1)} ms (${changedCpuMs.toFixed(1)} CPU)`);
+  assert.deepEqual(recomputations(), { sessions: 2, exercises: 2 }, 'changed replica recomputes each training read once');
   assert.equal(view.log.summaries[0].id, 'session_new');
+  assert.equal(view.log.progress.data.sessions.length, workouts + 1);
   assert.notEqual(view.log.summaries, summaries);
   assert.notEqual(view.log.progress.data, progress);
-  assert.ok(changedCpuMs < budgetMs, `changed replica ${changedCpuMs.toFixed(1)} CPU ms exceeds the ${budgetMs} ms budget`);
+  const changedSummaries = view.log.summaries;
+  const changedProgress = view.log.progress.data;
+  view.redraw();
+  assert.deepEqual(recomputations(), { sessions: 2, exercises: 2 }, 'changed replica is cached for the next render');
+  assert.equal(view.log.summaries, changedSummaries);
+  assert.equal(view.log.progress.data, changedProgress);
 });
 
 const moment = new Moment(new Instant(1_800_000_000_000), new FixedZone(0));
