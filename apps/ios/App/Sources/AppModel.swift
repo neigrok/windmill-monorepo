@@ -18,6 +18,7 @@ final class AppModel {
   let telemetry: any Telemetry
   let preferences: UserDefaults
   let runtime: AppRuntime?
+  let authRetryNow: () -> Date
   let journal: JournalModel
   let gym: GymModel
   var selectedRoom: Room
@@ -91,8 +92,8 @@ final class AppModel {
     var receiptPending: Bool
   }
 
-  init(runner: ActionRunner, preferences: UserDefaults, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry()) throws {
-    self.runner = runner; self.preferences = preferences; self.runtime = runtime; self.telemetry = telemetry
+  init(runner: ActionRunner, preferences: UserDefaults, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), authRetryNow: @escaping () -> Date = Date.init) throws {
+    self.runner = runner; self.preferences = preferences; self.runtime = runtime; self.telemetry = telemetry; self.authRetryNow = authRetryNow
     journal = try JournalModel(runner: runner, preferences: preferences, runtime: runtime, telemetry: telemetry)
     gym = GymModel(runner: runner, runtime: runtime, telemetry: telemetry)
     selectedRoom = Room(rawValue: preferences.string(forKey: "lastRoom") ?? "") ?? .journal
@@ -197,7 +198,7 @@ final class AppModel {
           guard let self, !Task.isCancelled else { return }
           self.refresh()
           self.expireAppleTicket()
-          if !self.restoringSignIn, self.pendingSignIn != nil, !self.working, !self.accountTransition, self.authRetryAt <= Date() { await self.retryAuthenticatedSignIn() }
+          if !self.restoringSignIn, self.pendingSignIn != nil, !self.working, !self.accountTransition, self.authRetryAt <= self.authRetryNow() { await self.retryAuthenticatedSignIn() }
           if !self.syncStarted && !self.journal.dirty { await self.resumeBackup() }
           await self.runtime?.revokeSignedOutSessions()
         }
@@ -432,7 +433,7 @@ final class AppModel {
         preferences.removeObject(forKey: "pendingAuthMethod"); preferences.removeObject(forKey: "pendingAuthLinked")
         return
       }
-      authRetryAt = Date().addingTimeInterval(5); sheet = .authPending
+      authRetryAt = authRetryNow().addingTimeInterval(5); sheet = .authPending
       if (error as? EngineError) == .unreachable || (error as? AuthRefusal)?.code == "offline" || error is URLError {
         self.error = "Can't reach windmill.works. Your pages are safe on this phone. Try again to finish signing in."
       } else { self.error = error.localizedDescription }

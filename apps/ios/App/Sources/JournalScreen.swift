@@ -3,6 +3,8 @@ import UIKit
 import DomainKit
 import JournalDomain
 
+nonisolated struct JournalWritingLayout: Equatable { let body: String; let contentHeight: CGFloat }
+
 struct JournalScreen: View {
   @Bindable var model: JournalModel
   let app: AppModel
@@ -18,6 +20,7 @@ struct JournalScreen: View {
   var reduceMotion: Bool { systemReduceMotion || model.runtime?.settings.board?.hasSuffix("-RM") == true }
   var body: some View {
     ScrollViewReader { scroll in
+      let renderedBody = model.document.body
       GeometryReader { geo in
         ZStack(alignment: .topLeading) {
           JournalBackdrop()
@@ -45,14 +48,18 @@ struct JournalScreen: View {
                 .padding(.top, typeSize.isAccessibilitySize && model.showPlaceholder ? 430 : 50)
                 .frame(minHeight: max(0, geo.size.height + (focused ? 0 : geo.safeAreaInsets.bottom) - 56 - (model.compactAccountSheet ? 350 : 0)), alignment: .bottom)
             }.defaultScrollAnchor(model.compactAccountSheet || (!focused && typeSize.isAccessibilitySize && model.showPlaceholder) ? .top : .bottom).scrollDismissesKeyboard(.interactively)
+              .onScrollGeometryChange(for: JournalWritingLayout.self) {
+                JournalWritingLayout(body: renderedBody, contentHeight: $0.contentSize.height)
+              } action: { _, layout in
+                guard focused, editedBodyAtEnd == layout.body else { return }
+                scroll.scrollTo("journal-today", anchor: .bottom)
+                editedBodyAtEnd = nil
+              }
               .ignoresSafeArea(.container, edges: focused ? [] : .bottom)
               .padding(.bottom, focused ? 44 + 12 : 0)
           }
           inkNotes(origin: geo.frame(in: .global).origin)
         }
-      }.onChange(of: model.document.body) { _, new in
-        if focused && editedBodyAtEnd == new { scroll.scrollTo("journal-today", anchor: .bottom) }
-        editedBodyAtEnd = nil
       }.overlay(alignment: .bottomTrailing) {
         if !model.editorReadOnly && model.sheet == nil && !model.compactAccountSheet {
           Button {

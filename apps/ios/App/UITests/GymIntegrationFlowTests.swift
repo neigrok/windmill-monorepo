@@ -9,9 +9,10 @@ import XCTest
           let values = try? JSONSerialization.jsonObject(with: data) as? [String: [String: String]] else { return [:] }
     return values
   }
-  func launch(anonymous: Bool = false, appearance: String? = nil) -> XCUIApplication {
+  func launch(anonymous: Bool = false, appearance: String? = nil, conflict: Bool = false) -> XCUIApplication {
     let app = XCUIApplication()
     app.launchArguments = ["-scenario", anonymous ? "gym-e2e-anonymous" : "gym-e2e"]
+    if conflict, server == nil { app.launchArguments[1] = "gym-e2e-conflict" }
     if let appearance { app.launchArguments += ["-onboarding-appearance", appearance] }
     if let server {
       app.launchArguments += ["-server", server, "-telemetry"]
@@ -115,10 +116,11 @@ import XCTest
     if server != nil { verifyServer("adopt", edited: false) }
   }
   func testFinishedAndOpenAnonymousWorkoutsStaySeparateFromAccountsOpenWorkout() throws {
-    try XCTSkipUnless(server != nil && identities["conflict"] != nil, "Requires the isolated real backend and precreated open account workout.")
-    let link = try XCTUnwrap(identities["conflict"]?["link"])
-    let accountWorkout = try XCTUnwrap(identities["conflict"]?["openSession"])
-    let app = launch(anonymous: true, appearance: "light")
+    let app = launch(anonymous: true, appearance: "light", conflict: true)
+    let identity = try server == nil
+      ? XCTUnwrap(conflictModelSnapshot(app, expectedSessions: 1)["identity"] as? [String: String])
+      : XCTUnwrap(identities["conflict"])
+    let accountWorkout = try XCTUnwrap(identity["openSession"])
     app.buttons["Just start logging"].tap()
     XCTAssertTrue(app.buttons["workout-add"].waitForExistence(timeout: 5)); app.buttons["workout-add"].tap(); pickBench(app)
     logAndFinish(app, count: 2); back(app)
@@ -131,8 +133,14 @@ import XCTest
     app.buttons["workout-assembly"].tap()
     XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
     XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 5)); app.buttons["you"].tap()
-    XCTAssertTrue(app.buttons["link-sign-in"].waitForExistence(timeout: 5)); app.buttons["link-sign-in"].tap()
-    replace(app.textFields["sign-in-link"], link); app.buttons["sign-in-link-submit"].tap()
+    if server != nil {
+      let link = try XCTUnwrap(identity["link"])
+      XCTAssertTrue(app.buttons["link-sign-in"].waitForExistence(timeout: 5)); app.buttons["link-sign-in"].tap()
+      replace(app.textFields["sign-in-link"], link); app.buttons["sign-in-link-submit"].tap()
+    } else {
+      app.buttons["email-sign-in"].tap(); replace(app.textFields["email-address"], try XCTUnwrap(identity["email"]))
+      app.buttons["Send code"].tap(); replace(app.textFields["email-code"], "482913")
+    }
     XCTAssertTrue(app.alerts.buttons["Add"].waitForExistence(timeout: 15)); app.alerts.buttons["Add"].tap()
     let recovery = app.descendants(matching: .any)["gym-adoption-recovery"]
     XCTAssertTrue(recovery.waitForExistence(timeout: 20))
@@ -144,7 +152,7 @@ import XCTest
     let recoveredID = String(keep.identifier.dropFirst("gym-adoption-keep-".count))
     XCTAssertFalse(recoveredID.isEmpty); XCTAssertNotEqual(recoveredID, accountWorkout)
     capture(app, "adoption-recovery-light")
-    let finishedSets = verifyConflictServer(stage: "before-keep")
+    let finishedSets = verifyConflictServer(app, identity: identity, stage: "before-keep")
     XCTAssertEqual(finishedSets.count, 2)
     app.terminate()
     if let appearance = app.launchArguments.firstIndex(of: "-onboarding-appearance") { app.launchArguments[appearance + 1] = "dark" }
@@ -153,34 +161,61 @@ import XCTest
     let restoredKeep = app.buttons["gym-adoption-keep-" + recoveredID]
     XCTAssertTrue(restoredKeep.waitForExistence(timeout: 5)); XCTAssertEqual(restoredKeep.label, "Keep as finished workout")
     capture(app, "adoption-recovery-dark")
-    XCTAssertEqual(verifyConflictServer(stage: "restored-before-keep"), finishedSets)
+    XCTAssertEqual(verifyConflictServer(app, identity: identity, stage: "restored-before-keep"), finishedSets)
     let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in restoredKeep.isEnabled && restoredKeep.isHittable }, object: restoredKeep)
     XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed); restoredKeep.tap()
     XCTAssertTrue(restoredKeep.waitForNonExistence(timeout: 15))
-    let allAnonymousSets = verifyConflictServer(stage: "after-keep", recoveryID: recoveredID)
+    let allAnonymousSets = verifyConflictServer(app, identity: identity, stage: "after-keep", recoveryID: recoveredID)
     XCTAssertEqual(allAnonymousSets.count, 4); XCTAssertTrue(allAnonymousSets.isSuperset(of: finishedSets))
     app.terminate(); app.launch()
     let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.buttons["workout-log"].exists || app.buttons["you"].exists }, object: app)
     XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 20), .completed)
     XCTAssertFalse(recovery.exists); XCTAssertFalse(restoredKeep.exists)
-    XCTAssertEqual(verifyConflictServer(stage: "relaunch-after-keep", recoveryID: recoveredID), allAnonymousSets)
+    XCTAssertEqual(verifyConflictServer(app, identity: identity, stage: "relaunch-after-keep", recoveryID: recoveredID), allAnonymousSets)
   }
 
-  func verifyConflictServer(stage: String, recoveryID: String? = nil) -> Set<String> {
+  func conflictModelSnapshot(_ app: XCUIApplication, expectedSessions: Int) throws -> [String: Any] {
+    let status = app.descendants(matching: .any)["gym-conflict-server"]
+    XCTAssertTrue(status.waitForExistence(timeout: 20))
+    var snapshot: [String: Any]?
+    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      guard let value = status.value as? String,
+            let decoded = try? JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any] else { return false }
+      snapshot = decoded
+      return decoded["error"] != nil || (decoded["ready"] as? Bool == true && (decoded["sessions"] as? [[String: Any]])?.count == expectedSessions)
+    }, object: status)
+    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed)
+    let confirmed = try XCTUnwrap(snapshot)
+    XCTAssertNil(confirmed["error"], String(describing: confirmed["error"]))
+    return confirmed
+  }
+
+  func verifyConflictServer(_ app: XCUIApplication, identity: [String: String], stage: String, recoveryID: String? = nil) -> Set<String> {
+    if server == nil {
+      if app.buttons["workout-log"].exists {
+        app.buttons["workout-assembly"].tap()
+        XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
+        XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 5))
+      }
+      do {
+        let snapshot = try conflictModelSnapshot(app, expectedSessions: recoveryID == nil ? 2 : 3)
+        return try assertConflictSessions(XCTUnwrap(snapshot["sessions"] as? [[String: Any]]),
+          identity: identity, stage: stage, recoveryID: recoveryID)
+      } catch { XCTFail("Conflicting adoption model verification failed: \(error)"); return [] }
+    }
     let confirmed = expectation(description: "Anonymous workouts retained separately and exactly once")
     var setIDs = Set<String>()
     Task {
-      do { setIDs = try await verifyConflictServerAsync(stage: stage, recoveryID: recoveryID) }
+      do { setIDs = try await verifyConflictServerAsync(identity: identity, stage: stage, recoveryID: recoveryID) }
       catch { XCTFail("Conflicting adoption REST verification failed: \(error)") }
       confirmed.fulfill()
     }
     wait(for: [confirmed], timeout: 30)
     return setIDs
   }
-  func verifyConflictServerAsync(stage: String, recoveryID: String?) async throws -> Set<String> {
-    let identity = try XCTUnwrap(identities["conflict"]), origin = try XCTUnwrap(server)
-    let accountWorkout = try XCTUnwrap(identity["openSession"]), accountSet = try XCTUnwrap(identity["openSet"])
-    let startedAt = try XCTUnwrap(identity["openStartedAt"].flatMap(Int64.init)), completedAt = try XCTUnwrap(identity["openCompletedAt"].flatMap(Int64.init))
+  func verifyConflictServerAsync(identity: [String: String], stage: String, recoveryID: String?) async throws -> Set<String> {
+    let origin = try XCTUnwrap(server)
+    let accountWorkout = try XCTUnwrap(identity["openSession"])
     let token = try XCTUnwrap(identity["token"])
     func get(_ path: String) async throws -> [String: Any] {
       var request = URLRequest(url: URL(string: origin + "/v1/gym/" + path)!); request.timeoutInterval = 5
@@ -193,38 +228,52 @@ import XCTest
     for _ in 0..<100 {
       let sessions = try await get("sessions")["sessions"] as? [[String: Any]] ?? []
       guard sessions.count == expectedSessions else { try await Task.sleep(for: .milliseconds(200)); continue }
-      var details: [[String: Any]] = [], anonymousSets: [[String: Any]] = []
+      var details: [[String: Any]] = []
       for listed in sessions {
         let id = try XCTUnwrap(listed["id"] as? String), detail = try await get("sessions/" + id)
-        let session = try XCTUnwrap(detail["session"] as? [String: Any]), sets = try XCTUnwrap(detail["sets"] as? [[String: Any]])
+        XCTAssertEqual((detail["session"] as? [String: Any])?["id"] as? String, id)
         details.append(detail)
-        if id == accountWorkout {
-          XCTAssertNil(session["finishedAt"]); XCTAssertEqual(sets.count, 1)
-          XCTAssertEqual(session["startedAt"] as? Int64, startedAt); XCTAssertEqual(sets.first?["completedAt"] as? Int64, completedAt)
-          XCTAssertEqual(sets.first?["kind"] as? String, "working"); XCTAssertEqual(sets.first?["note"] as? String, "")
-          XCTAssertEqual(sets.first?["id"] as? String, accountSet)
-          XCTAssertEqual(sets.first?["exerciseId"] as? String, "barbell-row")
-          XCTAssertEqual(sets.first?["weightKg"] as? Double, 35); XCTAssertEqual(sets.first?["reps"] as? Int, 11)
-        } else {
-          XCTAssertNotNil(session["finishedAt"]); XCTAssertEqual(sets.count, 2)
-          XCTAssertTrue(sets.allSatisfy { $0["exerciseId"] as? String == "bench-press" })
-          if id == recoveryID {
-            XCTAssertEqual(session["finishedAt"] as? Int64, sets.compactMap { $0["completedAt"] as? Int64 }.max())
-          } else { XCTAssertTrue(sets.contains { $0["weightKg"] as? Double == 62.5 }) }
-          anonymousSets += sets
-        }
       }
-      let ids = Set(anonymousSets.compactMap { $0["id"] as? String })
-      XCTAssertEqual(ids.count, anonymousSets.count); XCTAssertFalse(ids.contains(accountSet))
       XCTAssertEqual(sessions.filter { $0["finishedAt"] == nil }.compactMap { $0["id"] as? String }, [accountWorkout])
       if let recoveryID { XCTAssertTrue(sessions.contains { $0["id"] as? String == recoveryID }) }
-      let data = try JSONSerialization.data(withJSONObject: ["stage": stage, "sessions": details], options: [.prettyPrinted, .sortedKeys])
-      let evidence = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
-      evidence.name = "conflict-rest-" + stage; evidence.lifetime = .keepAlways; add(evidence)
-      return ids
+      return try assertConflictSessions(details, identity: identity, stage: stage, recoveryID: recoveryID)
     }
     XCTFail("The expected anonymous sessions did not reach the backend within 20 seconds.")
     return []
+  }
+
+  func assertConflictSessions(_ details: [[String: Any]], identity: [String: String], stage: String, recoveryID: String?) throws -> Set<String> {
+    let accountWorkout = try XCTUnwrap(identity["openSession"]), accountSet = try XCTUnwrap(identity["openSet"])
+    let startedAt = try XCTUnwrap(identity["openStartedAt"].flatMap(Int64.init)), completedAt = try XCTUnwrap(identity["openCompletedAt"].flatMap(Int64.init))
+    var sessions: [[String: Any]] = [], anonymousSets: [[String: Any]] = []
+    for detail in details {
+      let session = try XCTUnwrap(detail["session"] as? [String: Any]), sets = try XCTUnwrap(detail["sets"] as? [[String: Any]])
+      let id = try XCTUnwrap(session["id"] as? String)
+      sessions.append(session)
+      if id == accountWorkout {
+        XCTAssertNil(session["finishedAt"]); XCTAssertEqual(sets.count, 1)
+        XCTAssertEqual(session["startedAt"] as? Int64, startedAt); XCTAssertEqual(sets.first?["completedAt"] as? Int64, completedAt)
+        XCTAssertEqual(sets.first?["kind"] as? String, "working"); XCTAssertEqual(sets.first?["note"] as? String, "")
+        XCTAssertEqual(sets.first?["id"] as? String, accountSet)
+        XCTAssertEqual(sets.first?["exerciseId"] as? String, "barbell-row")
+        XCTAssertEqual(sets.first?["weightKg"] as? Double, 35); XCTAssertEqual(sets.first?["reps"] as? Int, 11)
+      } else {
+        XCTAssertNotNil(session["finishedAt"]); XCTAssertEqual(sets.count, 2)
+        XCTAssertTrue(sets.allSatisfy { $0["exerciseId"] as? String == "bench-press" })
+        if id == recoveryID {
+          XCTAssertEqual(session["finishedAt"] as? Int64, sets.compactMap { $0["completedAt"] as? Int64 }.max())
+        } else { XCTAssertTrue(sets.contains { $0["weightKg"] as? Double == 62.5 }) }
+        anonymousSets += sets
+      }
+    }
+    let ids = Set(anonymousSets.compactMap { $0["id"] as? String })
+    XCTAssertEqual(ids.count, anonymousSets.count); XCTAssertFalse(ids.contains(accountSet))
+    XCTAssertEqual(sessions.filter { $0["finishedAt"] == nil }.compactMap { $0["id"] as? String }, [accountWorkout])
+    if let recoveryID { XCTAssertTrue(sessions.contains { $0["id"] as? String == recoveryID }) }
+    let data = try JSONSerialization.data(withJSONObject: ["stage": stage, "sessions": details], options: [.prettyPrinted, .sortedKeys])
+    let evidence = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+    evidence.name = (server == nil ? "conflict-model-" : "conflict-rest-") + stage; evidence.lifetime = .keepAlways; add(evidence)
+    return ids
   }
 
   func testReceiptKeepsCoachAndAccountHandoffsThroughDismissal() {

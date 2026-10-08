@@ -213,6 +213,51 @@ import CoreText
     }
   }
 
+  @Test func nativeEndInsertionScrollsAfterThePageGrows() throws {
+    let (_, app) = try JournalModelTests().fixture()
+    app.openJournal()
+    let original = "First filled line.\nSecond filled line.\nThird filled line."
+    app.journal.type(original); app.journal.editing = true
+    let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+    let previousKeyWindow = scene.windows.first(where: \.isKeyWindow)
+    let window = UIWindow(windowScene: scene)
+    window.frame = CGRect(x: 0, y: 0, width: 390, height: 400)
+    let host = UIHostingController(rootView: JournalScreen(model: app.journal, app: app).ignoresSafeArea(.keyboard))
+    window.rootViewController = host
+    window.makeKeyAndVisible()
+    defer {
+      app.journal.saveTask?.cancel()
+      window.isHidden = true
+      window.rootViewController = nil
+      previousKeyWindow?.makeKeyAndVisible()
+    }
+    host.view.layoutIfNeeded()
+    func descendants(_ view: UIView) -> [UIView] {
+      view.subviews.flatMap { [$0] + descendants($0) }
+    }
+    let text = try #require(descendants(host.view).compactMap { $0 as? JournalTextView }.first)
+    #expect(text.becomeFirstResponder())
+    #expect(text.isFirstResponder)
+    text.selectedRange = NSRange(location: original.utf16.count, length: 0)
+    var ancestor = text.superview
+    while ancestor != nil && !(ancestor is UIScrollView) { ancestor = ancestor?.superview }
+    let scroll = try #require(ancestor as? UIScrollView)
+    var expected = original
+    for insertion in [String(repeating: "\nA longer page keeps the caret clear of the Done seat.", count: 12), "\n"] {
+      text.insertText(insertion)
+      expected += insertion
+      host.view.setNeedsLayout(); host.view.layoutIfNeeded()
+      #expect(app.journal.document.body == expected)
+      #expect(text.selectedRange == NSRange(location: expected.utf16.count, length: 0))
+      #expect(scroll.contentSize.height > scroll.bounds.height)
+      for rect in [text.caretRect(for: text.endOfDocument), text.lastLineRect] {
+        let visible = text.convert(rect, to: scroll)
+        #expect(visible.minY >= scroll.bounds.minY)
+        #expect(visible.maxY < scroll.bounds.maxY)
+      }
+    }
+  }
+
   @Test func reentrantBindingUpdateCannotRewindTyping() {
     let view = editor("A page.").textView
     var published = view.text ?? ""

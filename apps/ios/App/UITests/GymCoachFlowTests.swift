@@ -65,7 +65,7 @@ import UIKit
     let item = choices.buttons[name]
     XCTAssertTrue(waitForVisible(item, in: app))
     XCTAssertTrue(item.isHittable)
-    item.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1)
+    item.tap()
     XCTAssertTrue(choices.waitForNonExistence(timeout: 10))
     if ids[name] != nil { XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5)) }
   }

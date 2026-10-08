@@ -4,6 +4,12 @@ import JournalDomain
 import GymDomain
 import SyncSchema
 import SyncEngine
+#if DEBUG && targetEnvironment(simulator)
+import SwiftUI
+import UIKit
+import SyncCore
+import struct SyncModelServer.ScopeKey
+#endif
 
 // Launch fixtures use the same actions, persistence and sign-in door as the app.
 enum BoardFixture {
@@ -147,6 +153,10 @@ enum AppScenario {
       if model.runtime?.settings.restoreBoard == true { return }
       guard let runtime = model.runtime, runtime.settings.scenario != "gym-e2e-anonymous" else { return }
       do {
+        if runtime.settings.scenario == "gym-e2e-conflict" {
+          try await GymConflictFixture.prepare(model: model)
+          return
+        }
         let identity: AuthIdentity
         if let path = runtime.settings.codeFile {
           let data = try Data(contentsOf: URL(fileURLWithPath: path))
@@ -234,3 +244,85 @@ enum AppScenario {
     throw AppFailure(message: "backup did not confirm: \(model.error ?? model.journal.backup)")
   }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+enum GymConflictFixture {
+  static let email = "gym-conflict@example.com"
+  static let workout = ID<Session>("ci-conflict-account-workout")
+  static let set = ID<TrainingSet>("ci-conflict-account-set")
+  static var prepared = false
+
+  static func prepare(model: AppModel) async throws {
+    prepared = false
+    guard let server = model.runtime?.auth.fake else { throw AppFailure(message: "The conflict model server is missing.") }
+    let now = server.now, startedAt = Instant(ms: now - 60_000), completedAt = Instant(ms: now - 30_000)
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let remote = try AppRuntime(settings: AppSettings(arguments: ["fixture", "-model-server"]),
+      directory: directory, service: UUID().uuidString, syncTransport: server)
+    let identity = server.identity(email: email)
+    defer { try? remote.tokens.delete(for: identity.account) }
+    _ = try await remote.engine.signIn(account: identity.account, token: identity.token)
+    guard try remote.runner.run(StartSession(id: workout, startedAt: startedAt)).refusal == nil,
+          try remote.runner.run(AppendSet(TrainingSet(id: set, sessionId: workout, exerciseId: ID("barbell-row"),
+            weightKg: 35, reps: 11, completedAt: completedAt))).refusal == nil else {
+      throw AppFailure(message: "The account workout could not be prepared.")
+    }
+    try remote.engine.leave(); await remote.engine.flushOnLeave()
+    let confirmed = server.state.withLock { state in
+      let rows = state.server.state.rows[ScopeKey(.product(account: identity.account, name: "gym"))] ?? [:]
+      return !state.persistenceFailed && rows[RecordKey(Session.type, workout.record)]?.lattice.fields["startedAt"]?.value == .of(startedAt)
+        && rows[RecordKey(TrainingSet.type, set.record)]?.lattice.fields["completedAt"]?.value == .of(completedAt)
+    }
+    guard confirmed else { throw AppFailure(message: "The account workout did not reach its persistent model server.") }
+    prepared = true
+  }
+
+  static func snapshot(model: AppModel) -> JSON {
+    guard let server = model.runtime?.auth.fake else { return ["error": "The conflict model server is missing."] }
+    return server.state.withLock { state in
+      if state.persistenceFailed { return ["error": "The conflict model server could not save its snapshot."] }
+      if let error = model.error { return ["error": .string(error)] }
+      let accountRows = state.server.state.rows[ScopeKey(.product(account: "model-" + email, name: "gym"))] ?? [:]
+      guard prepared || model.runtime?.settings.restoreBoard == true,
+            let startedAt = try? accountRows[RecordKey(Session.type, workout.record)]?.lattice.fields["startedAt"]?.value.asInteger(),
+            let completedAt = try? accountRows[RecordKey(TrainingSet.type, set.record)]?.lattice.fields["completedAt"]?.value.asInteger() else {
+        return ["ready": false]
+      }
+      let rows = accountRows.values.filter(\.isAlive)
+      func fields(_ row: Row) -> JSON {
+        var values = JSON.Object(uniqueKeysWithValues: row.lattice.fields.filter { !$0.value.value.isNull }.map { ($0.key, $0.value.value) })
+        values["id"] = row.key.id.json
+        return .object(values)
+      }
+      let sessions = rows.filter { $0.key.type == Session.type }.sorted { $0.key.id < $1.key.id }.map { session -> JSON in
+        let sets = rows.filter { $0.key.type == TrainingSet.type && $0.lattice.fields["sessionId"]?.value == session.key.id.json }
+        return ["session": fields(session), "sets": .array(sets.sorted { $0.key.id < $1.key.id }.map(fields))]
+      }
+      return ["ready": true,
+        "identity": ["email": .string(email), "openSession": workout.json, "openSet": set.json,
+        "openStartedAt": .string(String(startedAt)), "openCompletedAt": .string(String(completedAt))], "sessions": .array(sessions)]
+    }
+  }
+}
+
+struct GymConflictFixtureStatus: UIViewRepresentable {
+  let model: AppModel
+  func makeUIView(context: Context) -> StatusView {
+    let view = StatusView()
+    view.isAccessibilityElement = true
+    view.accessibilityIdentifier = "gym-conflict-server"
+    view.accessibilityLabel = "Confirmed conflict workouts"
+    view.model = model
+    return view
+  }
+  func updateUIView(_ view: StatusView, context: Context) { view.model = model }
+  final class StatusView: UIView {
+    weak var model: AppModel?
+    override var accessibilityValue: String? {
+      get { model.map { GymConflictFixture.snapshot(model: $0).jcsText } }
+      set { super.accessibilityValue = newValue }
+    }
+  }
+}
+#endif

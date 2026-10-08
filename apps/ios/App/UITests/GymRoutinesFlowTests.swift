@@ -23,7 +23,7 @@ import UIKit
     }, object: nil)
     XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed)
     XCTAssertTrue(menu.isHittable)
-    menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1)
+    menu.tap()
     let gym = app.buttons["room-gym"]
     XCTAssertTrue(gym.waitForExistence(timeout: 5)); gym.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 10))

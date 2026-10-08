@@ -23,14 +23,6 @@ import XCTest
     springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.001)).press(forDuration: 0.05,
       thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)))
     let bannerDeadline = Date().addingTimeInterval(20)
-    let bannerAction = springboard.buttons.matching(NSPredicate(format: "label IN %@", ["Allow", "Always Allow", "Log set"])).firstMatch
-    let permission = springboard.buttons.matching(NSPredicate(format: "label IN %@", ["Allow", "Always Allow"])).firstMatch
-    for _ in 0..<3 {
-      XCTAssertTrue(bannerAction.waitForExistence(timeout: max(0, bannerDeadline.timeIntervalSinceNow)),
-        "The workout banner or its permission choice must become accessible")
-      if !permission.exists { break }
-      permission.tap()
-    }
     XCTAssertTrue(springboard.staticTexts["Lower A"].waitForExistence(timeout: max(0, bannerDeadline.timeIntervalSinceNow)))
     XCTAssertTrue(springboard.buttons["Log set"].waitForExistence(timeout: max(0, bannerDeadline.timeIntervalSinceNow)))
     XCTAssertTrue(springboard.buttons["Log set"].wait(for: \.isHittable, toEqual: true, timeout: max(0, bannerDeadline.timeIntervalSinceNow)))
@@ -56,7 +48,11 @@ import XCTest
       safari.terminate()
       waitForVisibleIsland(island, in: springboard)
     }
-    island.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 1)
+    let activityContainer = springboard.otherElements.matching(NSPredicate(format: "identifier BEGINSWITH %@", "jindo-container-view:"))
+      .containing(.staticText, identifier: "Since last set").firstMatch
+    XCTAssertTrue(activityContainer.wait(for: \.isHittable, toEqual: true, timeout: 30),
+      "SpringBoard's Activity container must accept the expansion gesture")
+    activityContainer.press(forDuration: 1)
     let log = springboard.buttons["Log set"]
     XCTAssertTrue(log.waitForExistence(timeout: 5))
     let expanded = XCTAttachment(screenshot: springboard.screenshot())
@@ -84,7 +80,5 @@ import XCTest
       return snapshot.isEnabled && !snapshot.frame.isEmpty && viewport.contains(snapshot.frame) && snapshot.frame.maxY < 100
     }, object: nil)
     XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed, "Dynamic Island content must be visible before capture")
-    XCTAssertTrue(element.wait(for: \.isHittable, toEqual: true, timeout: 30),
-      "Dynamic Island content must accept a native hit before interaction")
   }
 }

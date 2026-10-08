@@ -328,8 +328,9 @@ PY
 Then run the UI tests with `WM_GYM_E2E_SERVER=http://127.0.0.1:8088`,
 `WM_GYM_E2E_IDENTITIES=/private/tmp/<yours>/identities.json` and
 `WM_GYM_E2E_SESSION=/private/tmp/<yours>/session.json`. Without them the tests run on the app's
-in-process model server and the conflict case skips, which is never a pass. Mint fresh identities
-for every run: each link signs in once.
+in-process model server; the conflict fixture persists its model account and server state across
+relaunches and checks the same session/set assertions. Use the isolated backend fixtures to verify
+the actual server. Mint fresh identities for every run: each link signs in once.
 
 ## What the server saw
 

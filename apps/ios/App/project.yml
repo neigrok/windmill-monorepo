@@ -176,6 +176,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app.uitests
         GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_KEY_NSPrincipalClass: UITestEnvironment
         CODE_SIGNING_ALLOWED: "NO"
         SWIFT_VERSION: "6.0"
         SWIFT_TREAT_WARNINGS_AS_ERRORS: "YES"

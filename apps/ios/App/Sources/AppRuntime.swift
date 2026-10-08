@@ -106,7 +106,9 @@ final class AppRuntime {
     let boardClock = settings.board != nil && settings.board?.hasPrefix("workout-live-activity") != true
     #if DEBUG
     if settings.modelServer {
-      let model = JournalModelTransport(boardClock: boardClock)
+      let snapshotURL = settings.scenario == "gym-e2e-conflict" ? storageDirectory.appending(path: "model-server.json") : nil
+      let model = JournalModelTransport(boardClock: boardClock, snapshotURL: snapshotURL)
+      if snapshotURL != nil, settings.restoreBoard { try model.restore() }
       model.state.withLock { state in
         if settings.appleFixture != nil || settings.board?.hasPrefix("23") == true || settings.board?.hasPrefix("24") == true {
           state.appleEmail = "sam@privaterelay.appleid.com"

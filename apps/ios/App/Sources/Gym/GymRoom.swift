@@ -35,12 +35,12 @@ struct GymRoom: View {
           .navigationDestination(for: Destination.self, destination: destination)
       }.tabItem { Label("Coach", systemImage: "bubble.left.and.bubble.right") }.tag(Tab.coach)
     }
+    .accessibilityIdentifier("gym-room")
     .safeAreaInset(edge: .top, spacing: 0) { if !gym.workout.isPresented { WorkoutAdoptionBand(gym: gym) } }
     .tint(CoachPalette.accent)
     .environment(\.coachOpenAccount, openAccount)
     .environment(\.coachOpenRoutine, { id in tab = .routines; routinesPath.append(Destination.routine(id)) })
     .environment(\.coachOpenSession, { id in tab = .log; logPath.append(Destination.session(id)) })
-    .accessibilityIdentifier("gym-room")
     .sheet(item: $proposal) { proposal in
       ProposalReviewSheet(gym: gym, proposalId: proposal.id) { name in
         self.proposal = nil

@@ -194,18 +194,112 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: "1"
         run: brew install xcodegen
 
+      - name: Create and prepare the UI simulator
+        timeout-minutes: 5
+        env:
+          UI_SHARD: ${{ matrix.shard }}
+          SIMCTL_CHILD_TZ: UTC
+        run: |
+          UI_SIMULATOR=$(xcrun simctl create "Windmill CI $UI_SHARD" \
+            com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-26-5)
+          echo "UI_SIMULATOR=$UI_SIMULATOR" >> "$GITHUB_ENV"
+          export UI_SIMULATOR
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+          python3 - <<'PY'
+          from datetime import datetime, timezone
+          from pathlib import Path
+          import os
+          import plistlib
+
+          preferences = Path.home() / "Library/Developer/CoreSimulator/Devices" / os.environ["UI_SIMULATOR"] / "data/Library/Preferences"
+          preferences.mkdir(parents=True, exist_ok=True)
+          now = datetime.now(timezone.utc)
+          policies = {
+              ".GlobalPreferences": {
+                  "AppleLanguages": ["en"], "AppleLocale": "en_US",
+                  "KeyboardAutocorrection": False, "KeyboardPrediction": False,
+                  "KeyboardContinuousPathEnabled": False,
+              },
+              # iOS 26.5 keeps Live Activity consent outside simctl privacy's services.
+              "com.apple.liveactivitiesd": {
+                  "AppAuthorizationRecords": {"works.windmill.app": True},
+                  "FirstResponseRecords": ["works.windmill.app"],
+                  "SecondResponseRecords": ["works.windmill.app"],
+              },
+              # Mark the first-boot Settings notifications as already delivered.
+              "com.apple.generativeexperiences.corefollowup": {
+                  "DateOfLastAppleIntelligenceReadinessCFU": now.replace(tzinfo=None),
+                  "DateOfLastNotificationAutoEnablement": (now - datetime(2001, 1, 1, tzinfo=timezone.utc)).total_seconds(),
+              },
+          }
+          for domain, settings in policies.items():
+              path = preferences / f"{domain}.plist"
+              current = plistlib.loads(path.read_bytes()) if path.exists() else {}
+              path.write_bytes(plistlib.dumps(current | settings))
+          PY
+          xcrun simctl boot "$UI_SIMULATOR"
+          xcrun simctl bootstatus "$UI_SIMULATOR" -b
+          xcrun simctl spawn "$UI_SIMULATOR" launchctl setenv TZ UTC
+          xcrun simctl ui "$UI_SIMULATOR" appearance light
+          xcrun simctl ui "$UI_SIMULATOR" content_size large
+          xcrun simctl status_bar "$UI_SIMULATOR" override --time '9:41' \
+            --dataNetwork wifi --wifiMode active --wifiBars 3 \
+            --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
+          xcrun simctl getenv "$UI_SIMULATOR" TZ
+          xcrun simctl spawn "$UI_SIMULATOR" defaults read NSGlobalDomain AppleLanguages
+          xcrun simctl spawn "$UI_SIMULATOR" defaults read NSGlobalDomain AppleLocale
+          xcrun simctl spawn "$UI_SIMULATOR" defaults read com.apple.liveactivitiesd
+
       - name: Build and run the UI shard
+        shell: bash
         run: |
           python3 Tools/generate_project.py
           xcodebuild test -project Windmill.xcodeproj -scheme Windmill \
-            -destination 'platform=iOS Simulator,name=iPhone 17' \
+            -destination "platform=iOS Simulator,id=$UI_SIMULATOR" \
+            -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
+            -testLanguage en -testRegion US \
             -resultBundlePath "$RUNNER_TEMP/ios-ui-${{ matrix.shard }}.xcresult" \
-            ${{ matrix.tests }}
+            ${{ matrix.tests }} 2>&1 | tee "$RUNNER_TEMP/ios-ui-${{ matrix.shard }}.log"
+
+      - name: Check every selected UI test ran once
+        env:
+          UI_TEST_SELECTION: ${{ matrix.tests }}
+          UI_TEST_LOG: ${{ runner.temp }}/ios-ui-${{ matrix.shard }}.log
+        run: |
+          python3 - <<'PY'
+          from collections import Counter
+          from pathlib import Path
+          import os
+          import re
+
+          selected = set(re.findall(r"-only-testing:WindmillUITests/(\w+)", os.environ["UI_TEST_SELECTION"]))
+          expected = Counter()
+          for source in Path("UITests").rglob("*.swift"):
+              text = source.read_text()
+              classes = re.findall(r"\bclass\s+(\w+)\s*:\s*XCTestCase", text)
+              if not classes or classes[0] not in selected:
+                  continue
+              assert len(classes) == 1, f"Expected one UI test class in {source}"
+              expected.update((classes[0], method) for method in re.findall(r"\bfunc\s+(test\w+)\s*\(", text))
+          log = Path(os.environ["UI_TEST_LOG"]).read_text()
+          started = Counter(re.findall(r"Test Case '-\[WindmillUITests\.(\w+) (test\w+)\]' started\.", log))
+          passed = Counter(re.findall(r"Test Case '-\[WindmillUITests\.(\w+) (test\w+)\]' passed ", log))
+          assert expected and started == expected, f"UI executions differ: expected={expected}, started={started}"
+          assert passed == expected, f"UI results differ: expected={expected}, passed={passed}"
+          print(f"All {sum(expected.values())} selected UI tests passed exactly once.")
+          PY
 
       - name: Retain failed UI test results
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
           name: ios-ui-${{ matrix.shard }}-result
-          path: ${{ runner.temp }}/ios-ui-${{ matrix.shard }}.xcresult
+          path: |
+            ${{ runner.temp }}/ios-ui-${{ matrix.shard }}.xcresult
+            ${{ runner.temp }}/ios-ui-${{ matrix.shard }}.log
           retention-days: 3
+
+      - name: Delete the UI simulator
+        if: ${{ always() && env.UI_SIMULATOR != '' }}
+        timeout-minutes: 2
+        run: xcrun simctl delete "$UI_SIMULATOR"
