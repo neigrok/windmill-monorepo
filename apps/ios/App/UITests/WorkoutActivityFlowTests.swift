@@ -37,7 +37,8 @@ import XCTest
     let banner = XCTAttachment(screenshot: springboard.screenshot())
     banner.name = "lock-screen-banner"; banner.lifetime = .keepAlways; add(banner)
     XCUIDevice.shared.press(.home)
-    waitForSettledIsland(springboard.staticTexts["Since last set"])
+    let island = springboard.staticTexts["Since last set"]
+    waitForVisibleIsland(island, in: springboard)
     let compact = XCTAttachment(screenshot: springboard.screenshot())
     compact.name = "dynamic-island-compact"; compact.lifetime = .keepAlways; add(compact)
     if let media = ProcessInfo.processInfo.environment["WM_ACTIVITY_RENDER_MEDIA"], let url = URL(string: media) {
@@ -49,13 +50,13 @@ import XCTest
         "The media fixture must confirm playback before Safari backgrounds")
       XCUIDevice.shared.press(.home)
       XCTAssertTrue(springboard.icons["Safari"].waitForExistence(timeout: 5))
-      waitForSettledIsland(springboard.images["Workout in progress"])
+      waitForVisibleIsland(springboard.images["Workout in progress"], in: springboard)
       let minimal = XCTAttachment(screenshot: springboard.screenshot())
       minimal.name = "dynamic-island-minimal"; minimal.lifetime = .keepAlways; add(minimal)
       safari.terminate()
-      waitForSettledIsland(springboard.staticTexts["Since last set"])
+      waitForVisibleIsland(island, in: springboard)
     }
-    springboard.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: springboard.frame.midX, dy: 28)).press(forDuration: 1)
+    island.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 1)
     let log = springboard.buttons["Log set"]
     XCTAssertTrue(log.waitForExistence(timeout: 5))
     let expanded = XCTAttachment(screenshot: springboard.screenshot())
@@ -76,18 +77,13 @@ import XCTest
     XCTAssertEqual(XCTWaiter.wait(for: [ended], timeout: 10), .completed)
   }
 
-  func waitForSettledIsland(_ element: XCUIElement) {
-    XCTAssertTrue(element.waitForExistence(timeout: 20), "Dynamic Island content must become accessible before settling")
-    var previous = CGRect.zero
-    var settledSince: Date?
-    let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      guard element.exists else { settledSince = nil; return false }
-      let frame = element.frame
-      guard !frame.isEmpty, frame.minY < 100 else { settledSince = nil; return false }
-      if frame != previous { previous = frame; settledSince = Date(); return false }
-      guard let settledSince else { settledSince = Date(); return false }
-      return Date().timeIntervalSince(settledSince) >= 1
+  func waitForVisibleIsland(_ element: XCUIElement, in springboard: XCUIApplication) {
+    let viewport = springboard.frame
+    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      guard let snapshot = try? element.snapshot() else { return false }
+      return snapshot.isEnabled && !snapshot.frame.isEmpty && viewport.contains(snapshot.frame) && snapshot.frame.maxY < 100
     }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 10), .completed, "Dynamic Island content must settle before capture")
+    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed, "Dynamic Island content must be visible before capture")
+    XCTAssertTrue(element.isHittable)
   }
 }

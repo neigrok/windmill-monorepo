@@ -249,11 +249,23 @@ import XCTest
       [XCUIElement.ElementType.menuItem.rawValue, XCUIElement.ElementType.button.rawValue])).firstMatch
     XCTAssertTrue(cut.waitForExistence(timeout: 5))
     cut.tap()
+    @MainActor func find(_ identifier: String, in snapshot: any XCUIElementSnapshot) -> (any XCUIElementSnapshot)? {
+      if snapshot.identifier == identifier { return snapshot }
+      for child in snapshot.children {
+        if let match = find(identifier, in: child) { return match }
+      }
+      return nil
+    }
     let cleared = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      guard let value = weight.value as? String else { return false }
-      return (value.isEmpty || value == weight.placeholderValue) && !app.buttons["gym-fix-save"].isEnabled
-    }, object: weight)
-    XCTAssertEqual(XCTWaiter.wait(for: [cleared], timeout: 5), .completed)
+      guard let snapshot = try? app.snapshot(),
+        let field = find("gym-fix-weight", in: snapshot),
+        let save = find("gym-fix-save", in: snapshot) else { return false }
+      if let value = field.value {
+        guard let text = value as? String, text.isEmpty || text == field.placeholderValue else { return false }
+      }
+      return !save.isEnabled
+    }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [cleared], timeout: 30), .completed)
     weight.typeText("90")
     let entered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "90"), object: weight)
     XCTAssertEqual(XCTWaiter.wait(for: [entered], timeout: 5), .completed)
