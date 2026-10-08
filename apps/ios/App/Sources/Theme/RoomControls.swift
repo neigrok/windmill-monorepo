@@ -22,10 +22,10 @@ struct RoomSecondaryStyle: ViewModifier {
   }
 }
 
-struct RoomSeatStyle: ViewModifier {
-  func body(content: Content) -> some View {
-    seat(content.frame(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget)
-      .contentShape(Circle()).buttonStyle(.plain))
+struct RoomSeatStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    seat(configuration.label.frame(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget)
+      .contentShape(Circle()))
   }
 
   @ViewBuilder private func seat<V: View>(_ content: V) -> some View {

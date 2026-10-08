@@ -55,11 +55,6 @@ struct CoachTab: View {
               question(request.question, attachments: coach.saved.photo.map { [$0] } ?? [])
               if coach.asking { ProgressView("reading your log…") }
             }
-            if let error = coach.error {
-              Text(error).font(.callout).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("coach-error")
-                .onChange(of: error, initial: true) { _, error in UIAccessibility.post(notification: .announcement, argument: error) }
-            }
-            if coach.retryable { Button("Retry") { coach.retry() }.accessibilityIdentifier("coach-retry") }
             if !coach.draftReadable { Button("Try again") { coach.reloadDraft() } }
             if !coach.canCompose, coach.allowed {
               if case .fresh = coach.refusal { Button("Ask something new") { coach.newChat() } }
@@ -105,7 +100,24 @@ struct CoachTab: View {
         case .settings: GymSettingsScreen(gym: gym)
         }
       }
-      .safeAreaInset(edge: .bottom) { VStack(spacing: 0) { composer; CoachNoticeBand(gym: gym) } }
+      .safeAreaInset(edge: .bottom) {
+        VStack(spacing: 0) {
+          if !gym.undoOffers.isEmpty {
+            GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
+          } else if coach.saved.text.utf8.count > 1000 {
+            RoomTransient(message: "Keep your question within 1000 bytes.", ink: GymPalette.ink, card: GymPalette.card)
+              .padding(.horizontal, RoomSpace.inset)
+          } else if let error = coach.error ?? (coach.retryable ? CoachCopy.interrupted : nil) {
+            RoomTransient(message: error, ink: GymPalette.ink, card: GymPalette.card,
+                          actionTitle: coach.retryable ? "Try again" : "Dismiss message",
+                          actionSymbol: coach.retryable ? nil : "xmark", actionIdentifier: coach.retryable ? "coach-retry" : nil) {
+              if coach.retryable { coach.retry() } else { coach.error = nil }
+            }.accessibilityIdentifier("coach-error").padding(.horizontal, RoomSpace.inset)
+              .onChange(of: error, initial: true) { _, error in UIAccessibility.post(notification: .announcement, argument: error) }
+          } else { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
+          composer
+        }
+      }
       .sheet(item: $review) { id in
         ProposalReviewSheet(gym: gym, proposalId: id.id) { name in composing = coach.newChat(seed: "Tell me about the proposal for \(name).") }
       }
@@ -168,7 +180,6 @@ struct CoachTab: View {
               .disabled(!CoachCopy.sendable(coach.saved.text, photo: coach.saved.photo != nil) || preparing)
           }
         }
-        if coach.saved.text.utf8.count > 1000 { Text("Keep your question within 1000 bytes.").font(.caption).foregroundStyle(.red) }
       }.padding(12).background(GymPalette.card).tint(GymPalette.accent)
     }
   }
@@ -287,9 +298,10 @@ struct CoachPhotoView: View {
     }.task(id: "\(gym.account ?? ""):\(thread):\(attachment.id)") { data = nil; if local == nil { await load() } }
       .sheet(isPresented: $enlarged) {
         NavigationStack {
-          Group { if owner == gym.account, gym.coachAccountAvailable, (local != nil || loadedOwner == gym.account), let data = data ?? local, let image = UIImage(data: data) { Image(uiImage: image).resizable().scaledToFit().padding() } }
-            .navigationTitle("Photo").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { enlarged = false } } }
-        }
+          ZStack { if owner == gym.account, gym.coachAccountAvailable, (local != nil || loadedOwner == gym.account), let data = data ?? local, let image = UIImage(data: data) { Image(uiImage: image).resizable().scaledToFit().padding() } }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .modifier(GymPage()).navigationTitle("Photo").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { enlarged = false } } }
+        }.presentationDetents([.large])
       }
   }
   func load() async {

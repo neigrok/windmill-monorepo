@@ -14,35 +14,40 @@ struct WorkoutKeypadSheet: View {
   var body: some View {
     NavigationStack {
       ScrollView {
-        VStack(spacing: 12) {
+        VStack(spacing: RoomSpace.small) {
           Text(pad.text.isEmpty ? "—" : pad.text.replacingOccurrences(of: "-", with: "−"))
             .modifier(GymKeypadNumeral()).monospacedDigit()
             .lineLimit(1).minimumScaleFactor(0.5).frame(maxWidth: .infinity)
             .accessibilityIdentifier("workout-keypad-value")
           Text(pad.reading.message).font(.subheadline).foregroundStyle(pad.reading.value == nil ? GymPalette.ink : GymPalette.inkDim)
             .accessibilityIdentifier("workout-keypad-hint")
-          LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 8) {
+          LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: RoomSpace.small) {
             ForEach(["1", "2", "3", "4", "5", "6", "7", "8", "9", "±", "0", "."], id: \.self) { key in
-              Button { pad.press(key) } label: { Text(key).font(.title2.monospacedDigit()).frame(maxWidth: .infinity, minHeight: 54) }
-                .modifier(RoomSecondaryStyle()).disabled(pad.field == .reps && ["±", "."].contains(key))
+              Button { pad.press(key) } label: { Text(key).font(.title2.monospacedDigit()).frame(maxWidth: .infinity) }
+                .modifier(RoomSecondaryStyle()).frame(minHeight: RoomSpace.minimumTarget)
+                .disabled(pad.field == .reps && ["±", "."].contains(key))
                 .accessibilityLabel(key == "±" ? "Flip the sign — band-assisted" : key)
                 .accessibilityIdentifier("workout-key-\(key)")
             }
           }
-          Button("Delete", systemImage: "delete.left") { pad.press("⌫") }.frame(minHeight: 44)
-            .accessibilityIdentifier("workout-key-delete")
         }.padding(16)
       }.modifier(GymPage())
       .navigationTitle(pad.field == .weight ? "Weight · kg" : "Reps")
       .navigationBarTitleDisplayMode(.inline)
-      .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-      .safeAreaInset(edge: .bottom) {
-        Button { if let value = pad.reading.value { commit(value); dismiss() } } label: {
-          Text("Set").frame(maxWidth: .infinity, minHeight: 44)
-        }.modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).foregroundStyle(GymPalette.onAccent).disabled(pad.reading.value == nil)
-          .padding(16).background(GymPalette.canvas).accessibilityIdentifier("workout-keypad-set")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+        ToolbarItem(placement: .topBarTrailing) {
+          Button("Delete", systemImage: "delete.left") { pad.press("⌫") }
+            .labelStyle(.iconOnly).accessibilityIdentifier("workout-key-delete")
+        }
       }
-    }.modifier(GymPage()).presentationDetents([.large]).presentationDragIndicator(.visible)
+      .safeAreaInset(edge: .bottom) {
+        ActionBand(title: "Set", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+                   disabled: pad.reading.value == nil, actionIdentifier: "workout-keypad-set") {
+          if let value = pad.reading.value { commit(value); dismiss() }
+        }
+      }
+    }.modifier(GymPage()).presentationDetents([.height(440)])
   }
 }
 
@@ -122,10 +127,9 @@ struct WorkoutFixSheet: View {
             TextEditor(text: $draft.note).frame(minHeight: 100).accessibilityLabel("Set note")
               .accessibilityIdentifier("workout-fix-note")
             if !draft.note.isEmpty { Button("Clear note") { draft.note = "" } }
-            if draft.noteBytes > 4_000 { Text("A set note runs to 4000 bytes.").foregroundStyle(.red) }
-            if let counter = draft.noteCounter { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(draft.noteBytes > 4_000 ? .red : GymPalette.inkDim) }
+            if draft.noteBytes > 4_000 { Text("A set note runs to 4000 bytes.").foregroundStyle(GymPalette.alarm) }
+            if let counter = draft.noteCounter { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(draft.noteBytes > 4_000 ? GymPalette.alarm : GymPalette.inkDim) }
           } header: { Text("Set note") } footer: { Text("A record for you — not an instruction to Coach.") }
-          if let failure = draft.failure { Section { Text(failure).accessibilityIdentifier("workout-fix-failure") } }
           Section {
             Button("Delete set", role: .destructive) {
               guard let result = gym.run(DeleteSet(draft.original.id)), result.refusal == nil else { draft.failure = gym.error; return }
@@ -135,13 +139,17 @@ struct WorkoutFixSheet: View {
         }.listRowBackground(GymPalette.card)
       }.modifier(GymPage()).disabled(draft.busy || gym.accountTransition)
         .navigationTitle("Fix set").navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(draft.busy) } }
         .safeAreaInset(edge: .bottom) {
-          Button { if draft.save(gym) { dismiss() } } label: {
-            Text(draft.busy ? "Saving…" : "Save the fix").frame(maxWidth: .infinity, minHeight: 44)
-          }.modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).foregroundStyle(GymPalette.onAccent).disabled(!draft.valid || draft.busy || gym.accountTransition)
-            .padding(16).background(GymPalette.canvas).accessibilityIdentifier("workout-fix-save")
+          VStack(spacing: 0) {
+            GymTransient(gym: gym, message: draft.failure, dismiss: { draft.failure = nil }, errorIdentifier: "workout-fix-failure")
+            ActionBand(title: "Save the fix", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+                       disabled: !draft.valid || gym.accountTransition, busy: draft.busy, actionIdentifier: "workout-fix-save") {
+              if draft.save(gym) { dismiss() }
+            }
+          }
         }
-    }.modifier(GymPage()).presentationDetents([.large]).presentationDragIndicator(.visible)
+    }.modifier(GymPage()).presentationDetents([.large])
       .sheet(isPresented: Binding(get: { keypad != nil }, set: { if !$0 { keypad = nil } })) {
         if let keypad {
           WorkoutKeypadSheet(field: keypad, value: keypad == .weight ? draft.weightKg : Double(draft.reps)) { value in
@@ -194,14 +202,17 @@ struct WorkoutAssembly: View {
             Button("Hide workout") { if workout.gym.hideWorkout() { dismiss() } }
               .disabled(workout.finishing || workout.gym.accountTransition).accessibilityIdentifier("workout-hide")
           } footer: { Text("Your sets stay saved. Restore this workout from Gym settings.") }
-          if let message = workout.message { Section { Text(message) } }
         }.listRowBackground(GymPalette.card)
       }.modifier(GymPage()).navigationTitle("This session").navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom) {
+          GymTransient(gym: workout.gym, message: workout.message, dismiss: { workout.message = nil },
+                       noticeMessage: workout.gym.workoutNotice, retry: { workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
+        }
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
           ToolbarItem(placement: .topBarTrailing) { EditButton() }
         }
-    }.modifier(GymPage()).presentationDetents([.large]).presentationDragIndicator(.visible)
+    }.modifier(GymPage()).presentationDetents([.large])
   }
 }
 
@@ -237,15 +248,20 @@ struct WorkoutDeviationSheet: View {
               }
             }
           }
-          if let message = workout.message { Section { Text(message) } }
           Section { Button("Today only") { workout.resolveDeviation(save: false) }.accessibilityIdentifier("workout-deviation-today") }
         }.listRowBackground(GymPalette.card)
       }.modifier(GymPage()).navigationTitle("Heavier than the plan").navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { workout.resolveDeviation(save: false) } } }
         .safeAreaInset(edge: .bottom) {
-          Button { workout.resolveDeviation(save: true) } label: { Text(offer.saveLabel).frame(maxWidth: .infinity, minHeight: 44) }
-            .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).foregroundStyle(GymPalette.onAccent).padding(16).background(GymPalette.canvas)
-            .disabled(workout.gym.accountTransition).accessibilityIdentifier("workout-deviation-save")
+          VStack(spacing: 0) {
+            GymTransient(gym: workout.gym, message: workout.message, dismiss: { workout.message = nil },
+                         noticeMessage: workout.gym.workoutNotice, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
+            ActionBand(title: offer.saveLabel, accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+                       disabled: workout.gym.accountTransition, actionIdentifier: "workout-deviation-save") {
+              workout.resolveDeviation(save: true)
+            }
+          }
         }
-    }.modifier(GymPage()).presentationDetents([.large]).presentationDragIndicator(.visible)
+    }.modifier(GymPage()).presentationDetents([.large])
   }
 }

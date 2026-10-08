@@ -45,7 +45,7 @@ struct RenameMovementSheet: View {
               .disabled(saving).accessibilityIdentifier("gym-rename-movement-name")
             if let counter = MovementName.counter(name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
             if let problem = refusal ?? MovementName.problem(name), !saving {
-              Text(problem).foregroundStyle(.red).accessibilityIdentifier("gym-rename-movement-refusal")
+              Text(problem).foregroundStyle(GymPalette.alarm).accessibilityIdentifier("gym-rename-movement-refusal")
             }
           }
           Section {
@@ -84,6 +84,6 @@ struct RenameMovementSheet: View {
       .onChange(of: name) { _, value in name = MovementName.capped(value); refusal = nil }
       .accessibilityIdentifier("gym-rename-movement")
     }
-    .modifier(GymPage())
+    .modifier(GymPage()).presentationDetents([.medium])
   }
 }

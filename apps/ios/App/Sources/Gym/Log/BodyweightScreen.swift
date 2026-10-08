@@ -167,7 +167,7 @@ struct BodyweightScreen: View {
     .navigationBarTitleDisplayMode(.inline)
     .toolbar(.hidden, for: .tabBar)
     .accessibilityIdentifier("gym-bodyweight")
-    .safeAreaInset(edge: .bottom) { LogNoticeBand(gym: gym) }
+    .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo") }
     .sheet(item: $correcting) { WeighInSheet(gym: gym, entry: $0.entry) }
     .onChange(of: gym.account) { _, _ in correcting = nil }
     .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "bodyweight"]) }
@@ -265,14 +265,8 @@ struct WeighInSheet: View {
         }
       }
       .safeAreaInset(edge: .bottom) {
-        Button { save() } label: {
-          Text(saving ? "Saving…" : "Save weight").frame(maxWidth: .infinity).foregroundStyle(GymPalette.onAccent)
-        }
-          .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent))
-          .controlSize(.large)
-          .disabled(saving)
-          .accessibilityIdentifier("gym-weigh-in-save")
-          .padding().background(GymPalette.canvas)
+        ActionBand(title: "Save weight", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+                   busy: saving, actionIdentifier: "gym-weigh-in-save") { save() }
       }
       .interactiveDismissDisabled(saving)
       .sensoryFeedback(.success, trigger: saved)
@@ -287,7 +281,7 @@ struct WeighInSheet: View {
         weightFocused = true
         gym.telemetry.event("gym_screen_viewed", properties: ["screen": "weigh_in"])
       }
-    }.modifier(GymPage())
+    }.modifier(GymPage()).presentationDetents([.medium])
   }
 
   private func save() {

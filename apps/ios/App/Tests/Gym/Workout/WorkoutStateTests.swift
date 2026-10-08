@@ -858,12 +858,12 @@ import SyncTesting
     workout.logSet(); await runtime.engine.flushOnLeave(); gym.refresh(); workout.reconcile()
     let durable = try #require(gym.notices.last), explanation = try #require(gym.workoutNotice)
     workout.message = "Check the weight and reps before logging."
-    let local = WorkoutNotice(gym: gym, message: workout.message, dismiss: { workout.message = nil })
+    let local = GymTransient(gym: gym, message: workout.message, dismiss: { workout.message = nil })
     local.dismissMessage(try #require(local.shown))
     #expect(workout.message == nil && gym.notices.map(\.id) == [durable.id] && gym.workoutNotice == explanation)
     let reopened = GymModel(runner: runtime.runner, runtime: runtime)
     #expect(reopened.notices.map(\.id) == [durable.id] && reopened.workoutNotice == explanation)
-    let notice = WorkoutNotice(gym: reopened, message: nil, dismiss: { Issue.record("A durable refusal must not clear unrelated local input") })
+    let notice = GymTransient(gym: reopened, message: nil, dismiss: { Issue.record("A durable refusal must not clear unrelated local input") })
     notice.dismissMessage(try #require(notice.shown))
     #expect(reopened.notices.isEmpty && reopened.workoutNotice == nil)
     #expect(GymModel(runner: runtime.runner, runtime: runtime).notices.isEmpty)
@@ -879,7 +879,7 @@ import SyncTesting
     #expect(workout.sets.isEmpty)
     #expect(try workout.activityRecord()?.offer == offer)
     if !matching { gym.error = "A newer unrelated failure." }
-    let notice = WorkoutNotice(gym: gym, message: workout.message, dismiss: { workout.message = nil })
+    let notice = GymTransient(gym: gym, message: workout.message, dismiss: { workout.message = nil })
     notice.dismissMessage(try #require(notice.shown))
     #expect(workout.message == nil)
     #expect(gym.error == (matching ? nil : "A newer unrelated failure."))

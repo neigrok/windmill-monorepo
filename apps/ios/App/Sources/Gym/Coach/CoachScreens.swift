@@ -22,25 +22,6 @@ extension EnvironmentValues {
   }
 }
 
-struct CoachNoticeBand: View {
-  let gym: GymModel
-  var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      if let error = gym.error {
-        Text(error).font(.callout).accessibilityIdentifier("gym-coach-error")
-        if gym.readFailed { Button("Try again") { gym.refresh() } }
-      }
-      ForEach(gym.notices, id: \.id) { notice in
-        Button("Dismiss message") { gym.dismissNotice(notice.id) }
-      }
-      ForEach(gym.undoOffers.reversed(), id: \.id) { offer in
-        Button("Undo") { _ = gym.undo(offer.id) }.accessibilityIdentifier("coach-engine-undo")
-      }
-    }.padding(gym.error == nil && gym.undoOffers.isEmpty ? 0 : 16).frame(maxWidth: .infinity, alignment: .leading)
-      .background(GymPalette.card)
-  }
-}
-
 extension GymModel {
   var coachNoteCount: Int { personalCounts[Note.type] ?? notes.count }
   var coachAccountAvailable: Bool { !isAnonymous && account != nil && !accountTransition }
@@ -82,7 +63,7 @@ struct GymSettingsScreen: View {
       }.listRowBackground(GymPalette.card)
     }.listStyle(.insetGrouped).navigationTitle("Gym settings").modifier(GymPage())
       .toolbar(.hidden, for: .tabBar)
-      .safeAreaInset(edge: .bottom) { CoachNoticeBand(gym: gym) }
+      .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
       .accessibilityIdentifier("gym-settings")
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "settings"]) }
   }
@@ -143,7 +124,7 @@ struct NotesScreen: View {
     }.listStyle(.insetGrouped).navigationTitle("Notes").modifier(GymPage()).accessibilityIdentifier("gym-notes")
       .toolbar(.hidden, for: .tabBar)
       .toolbar { if gym.coachAccountAvailable, !gym.notes.isEmpty { EditButton() } }
-      .safeAreaInset(edge: .bottom) { CoachNoticeBand(gym: gym) }
+      .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
       .sheet(item: $editor) { identity in NoteEditor(gym: gym, identity: identity) }
       .sensoryFeedback(.selection, trigger: ordered)
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "notes"]) }
@@ -179,10 +160,10 @@ struct NoteEditor: View {
           Section {
             TextField(identity.hint, text: $draft.current.title, axis: .vertical).font(.title3.weight(.semibold)).focused($focus).accessibilityIdentifier("coach-note-title")
             let titleCount = draft.current.title.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars.count
-            if titleCount >= 48 { Text("\(titleCount) of 60 characters").font(.caption.monospacedDigit()).foregroundStyle(titleCount > 60 ? .red : GymPalette.inkDim) }
+            if titleCount >= 48 { Text("\(titleCount) of 60 characters").font(.caption.monospacedDigit()).foregroundStyle(titleCount > 60 ? GymPalette.alarm : GymPalette.inkDim) }
             TextField("Write a note for Coach", text: $draft.current.body, axis: .vertical).lineLimit(8...20).accessibilityIdentifier("coach-note-body")
             let bytes = draft.current.body.trimmingCharacters(in: .whitespacesAndNewlines).utf8.count
-            if bytes >= 400 { Text("\(bytes) of 500 bytes").font(.caption.monospacedDigit()).foregroundStyle(bytes > 500 ? .red : GymPalette.inkDim) }
+            if bytes >= 400 { Text("\(bytes) of 500 bytes").font(.caption.monospacedDigit()).foregroundStyle(bytes > 500 ? GymPalette.alarm : GymPalette.inkDim) }
         }.listRowBackground(GymPalette.card)
         if !identity.isNew {
           Section { Button("Delete note", role: .destructive) {
@@ -190,10 +171,10 @@ struct NoteEditor: View {
             if gym.run(DeleteNote(identity.note.id))?.refusal == nil, gym.error == nil { dismiss() }
           } }
         }
-        if let error = gym.error { Section { Text(error).foregroundStyle(.red) } }
         }
         }.listRowBackground(GymPalette.card)
       }.navigationTitle("Note").modifier(GymPage())
+        .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
           ToolbarItem(placement: .confirmationAction) { Button("Save") {

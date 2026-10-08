@@ -93,7 +93,7 @@ struct MovementRecordScreen: View {
     }.listStyle(.insetGrouped).modifier(GymPage())
       .navigationTitle(movement?.name ?? "Movement").navigationBarTitleDisplayMode(.inline).toolbar(.hidden, for: .tabBar)
       .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Rename") { renaming = true }.disabled(!ready || movement == nil) } }
-      .safeAreaInset(edge: .bottom) { LogNoticeBand(gym: gym) }
+      .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo") }
       .sheet(isPresented: $renaming) { if let movement { LogRenameSheet(gym: gym, movement: movement) } }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "record"]) }
       .accessibilityIdentifier("gym-movement-record")
@@ -150,7 +150,7 @@ struct LogRenameSheet: View {
           ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
           ToolbarItem(placement: .confirmationAction) { Button("Rename") { rename() }.disabled(problem != nil || trimmed == movement.name || gym.accountTransition) }
         }
-    }.modifier(GymPage()).presentationDetents([.medium, .large]).accessibilityIdentifier("gym-rename-sheet")
+    }.modifier(GymPage()).presentationDetents([.medium]).accessibilityIdentifier("gym-rename-sheet")
       .onChange(of: name) { _, _ in failure = nil }
       .onChange(of: gym.account) { _, _ in dismiss() }
   }

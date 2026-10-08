@@ -134,7 +134,7 @@ because the accent against the faint ink separates by barely one to one.
 
 Appearance is owned by the shell; the room supplies Instrument and Daylight palettes.
 Android follows system appearance through the shared theme context. A three-way Appearance
-control remains a follow-up. iOS palette and text-scaling gaps remain in `../../consistency.md`.
+control remains a follow-up. iOS shares its room colour assets with the Live Activity extension.
 
 Instrument uses emitted light; Daylight uses contrast, inked fills or a leading rule. Daylight
 has no set-done glow. Density, tabular numerals and semantic colour keep the room recognizable.
@@ -146,8 +146,8 @@ check both gesture and three-button navigation.
 
 ## Type
 
-iOS's custom fixed-size fonts still need Dynamic Type behavior. Android uses `sp`; layouts must
-grow and reflow at large text sizes. Track remaining failures in `../../consistency.md`.
+iOS uses the shared Dynamic Type ramp, and Android uses `sp`; layouts must grow and reflow at
+large text sizes. Track remaining failures in `../../consistency.md`.
 
 **Everything that is prose takes the platform's text styles** and scales with them. Nothing on a
 board is specified in points again; each role is a named text style plus a design and a weight —

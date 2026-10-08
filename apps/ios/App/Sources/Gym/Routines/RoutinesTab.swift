@@ -23,6 +23,9 @@ struct RoutinesTab: View {
     let waiting = gym.waitingRoutineProposals
     List {
       Group {
+        if !gym.isAnonymous, gym.adoptionWorkoutToReview != nil {
+          Section { WorkoutAdoptionBand(gym: gym) }.listRowBackground(Color.clear)
+        }
         if gym.readFailed {
           Section { Text("Your routines could not be read. Try again."); Button("Try again") { gym.refresh() } }
         }
@@ -79,7 +82,6 @@ struct RoutinesTab: View {
           }
         }
         Section { Button("Movements", systemImage: "list.bullet") { browsing = true } }
-        RoutineNotice(gym: gym)
       }.listRowBackground(GymPalette.card)
     }.listStyle(.insetGrouped).navigationTitle("Routines")
       .accessibilityIdentifier("gym-routines")
@@ -91,7 +93,13 @@ struct RoutinesTab: View {
         if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
         ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
       }
-      .safeAreaInset(edge: .bottom) { RoutineActionBand(title: "Just start logging", disabled: gym.accountTransition || gym.readFailed) { gym.startWorkout() } }
+      .safeAreaInset(edge: .bottom) {
+        VStack(spacing: 0) {
+          GymTransient(gym: gym)
+          ActionBand(title: "Just start logging", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+                     disabled: gym.accountTransition || gym.readFailed) { gym.startWorkout() }
+        }
+      }
       .sheet(item: $building) { editing in RoutineBuilder(gym: gym, editing: editing) { savedID = $0 } }
       .sheet(isPresented: $browsing) {
         NavigationStack {
@@ -160,11 +168,18 @@ struct RoutineDetail: View {
             else if gym.log?.firstPullComplete != true { Text("History is still being read.").foregroundStyle(GymPalette.inkDim) }
           }
         } else { Text("That routine is no longer in your program. Everything you logged against it is still in the log.") }
-        RoutineNotice(gym: gym)
       }.listRowBackground(GymPalette.card)
     }.navigationTitle(routine?.name ?? "Routine").navigationBarTitleDisplayMode(.inline).toolbar(.hidden, for: .tabBar)
       .toolbar { if routine != nil { ToolbarItem(placement: .topBarTrailing) { Button("Edit") { if let routine { editing = RoutineEditingSession(gym: gym, routine: routine) } }.accessibilityIdentifier("edit-routine") } } }
-      .safeAreaInset(edge: .bottom) { if let routine { RoutineActionBand(title: "Start workout", disabled: gym.accountTransition || gym.readFailed) { gym.startWorkout(routineId: routine.id) } } }
+      .safeAreaInset(edge: .bottom) {
+        VStack(spacing: 0) {
+          GymTransient(gym: gym)
+          if let routine {
+            ActionBand(title: "Start workout", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+                       disabled: gym.accountTransition || gym.readFailed) { gym.startWorkout(routineId: routine.id) }
+          }
+        }
+      }
       .sheet(item: $editing) { editing in RoutineBuilder(gym: gym, editing: editing) { _ in } }
       .accessibilityIdentifier("routine-detail")
       .modifier(GymPage())
@@ -172,15 +187,6 @@ struct RoutineDetail: View {
   }
 }
 
-struct RoutineActionBand: View {
-  let title: String
-  var disabled = false
-  let action: () -> Void
-  var body: some View {
-    Button(action: action) { Text(title).foregroundStyle(GymPalette.onAccent).frame(maxWidth: .infinity) }.modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).controlSize(.large)
-      .disabled(disabled).padding().background(.bar)
-  }
-}
 
 struct RoutineMovementDoor: View {
   let gym: GymModel
@@ -204,39 +210,12 @@ struct RoutineMovementDoor: View {
             if gym.readFailed { Text("The log didn’t answer. Try again."); Button("Try again") { gym.refresh() } }
           }
         } else { Text("This movement is no longer available.") }
-        RoutineNotice(gym: gym)
       }.listRowBackground(GymPalette.card)
     }.navigationTitle(gym.catalogue.find(id)?.name ?? "Movement").navigationBarTitleDisplayMode(.inline).toolbar(.hidden, for: .tabBar)
       .sheet(isPresented: $renaming) { if let exercise = gym.catalogue.find(id) { RenameMovementSheet(gym: gym, exercise: exercise) } }
       .accessibilityIdentifier("routine-movement")
       .modifier(GymPage())
+      .safeAreaInset(edge: .bottom) { GymTransient(gym: gym) }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "movement"]) }
-  }
-}
-
-struct RoutineNotice: View {
-  let gym: GymModel
-  var excluding: String?
-  var body: some View {
-    let noticeMessages = gym.notices.map { gym.message($0.refusal) }
-    if !gym.readFailed {
-      if let error = gym.error, error != excluding, !noticeMessages.contains(error) {
-        Section { Text(error).foregroundStyle(.red) }
-      }
-      ForEach(gym.notices) { notice in
-        Section {
-          let noticeMessage = gym.message(notice.refusal)
-          if noticeMessage != excluding { Text(noticeMessage).foregroundStyle(.red) }
-          Button("Dismiss") { gym.dismissNotice(notice.id) }
-        }
-      }
-    }
-    if !gym.undoOffers.isEmpty {
-      Section {
-        ForEach(gym.undoOffers.reversed()) { offer in
-          Button("Undo", systemImage: "arrow.uturn.backward") { _ = gym.undo(offer.id) }.accessibilityIdentifier("gym-routines-undo")
-        }
-      }
-    }
   }
 }

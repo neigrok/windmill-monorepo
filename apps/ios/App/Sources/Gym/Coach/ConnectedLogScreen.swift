@@ -104,7 +104,6 @@ struct ConnectedLogScreen: View {
             .accessibilityHint("opens in your browser").accessibilityIdentifier("coach-connect-tool")
           if gym.coachAccountAvailable { Button { browse("settings") } label: { Label("Manage connections", systemImage: "arrow.up.forward") }.accessibilityHint("opens in your browser") }
           if accountHint { Text("Open You and settings in the top bar.").font(.callout) }
-          if browserError { Text("The browser couldn’t be opened. Try again.").foregroundStyle(.red) }
       }.listRowBackground(GymPalette.card)
       Section {
         DisclosureGroup("How this works") {
@@ -115,6 +114,10 @@ struct ConnectedLogScreen: View {
       }.listRowBackground(GymPalette.card)
       }.listRowBackground(GymPalette.card)
     }.listStyle(.insetGrouped).navigationTitle("Connected log").modifier(GymPage()).accessibilityIdentifier("gym-connected-log")
+      .safeAreaInset(edge: .bottom) {
+        GymTransient(gym: gym, message: browserError ? "The browser couldn’t be opened. Try again." : nil,
+                     dismiss: { browserError = false }, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
+      }
       .toolbar(.hidden, for: .tabBar)
       .refreshable { await connections.load() }
       .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition)") { await connections.load() }

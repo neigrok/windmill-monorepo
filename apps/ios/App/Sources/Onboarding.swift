@@ -78,9 +78,9 @@ struct OnboardingScreen: View {
             }.accessibilityElement(children: .ignore).accessibilityLabel("Windmill").accessibilityIdentifier("onboarding-identity").accessibilitySortPriority(90)
           }
           Spacer(minLength: 4)
-          if replay || page != .gym {
-            Button(replay ? "Done" : "Skip") {
-              exit(skipped: !replay)
+          if !replay && page != .gym {
+            Button("Skip") {
+              exit(skipped: true)
             }.font(ShellType.action).foregroundStyle(ShellPalette.ink).buttonStyle(.plain)
               .padding(.horizontal, 16).frame(minHeight: 52)
               .accessibilityIdentifier("onboarding-exit").accessibilitySortPriority(80)

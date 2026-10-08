@@ -75,7 +75,7 @@ struct SessionDetailScreen: View {
     }.listStyle(.insetGrouped).modifier(GymPage())
       .navigationTitle(session?.name ?? Readout.noRoutine).navigationBarTitleDisplayMode(.inline)
       .toolbar(.hidden, for: .tabBar).accessibilityIdentifier("gym-session-detail")
-      .safeAreaInset(edge: .bottom) { LogNoticeBand(gym: gym) }
+      .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo") }
       .sheet(isPresented: Binding(get: { fixing != nil }, set: { if !$0 { fixing = nil } })) {
         if let fixing { FinishedSetFixSheet(gym: gym, original: fixing) }
       }
@@ -144,7 +144,6 @@ struct FinishedSetFixSheet: View {
           TextField("Note", text: $draft.note, axis: .vertical).lineLimit(3...8).accessibilityIdentifier("gym-fix-note")
           Text("\(draft.note.utf8.count) / 4000 bytes").font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
         }.listRowBackground(GymPalette.card)
-        if let problem = failed ?? draft.problem { Section { Text(problem).foregroundStyle(GymPalette.alarm) }.listRowBackground(GymPalette.card) }
         Section {
           Text("Routine targets stay unchanged.").font(.subheadline).foregroundStyle(GymPalette.inkDim)
           Button("Delete set", systemImage: "trash", role: .destructive) {
@@ -154,8 +153,12 @@ struct FinishedSetFixSheet: View {
         }.listRowBackground(GymPalette.card)
       }.modifier(GymPage())
         .navigationTitle("Fix set").navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         .safeAreaInset(edge: .bottom) {
-          Button {
+          VStack(spacing: 0) {
+            GymTransient(gym: gym, message: failed ?? draft.problem)
+            ActionBand(title: "Save the fix", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+                       disabled: draft.problem != nil || gym.accountTransition, actionIdentifier: "gym-fix-save") {
             guard let value = draft.value else { return }
             if gym.correctLoggedSet(draft.original, to: value, account: account) {
               draft.original = gym.sets.first { $0.id == original.id } ?? value
@@ -163,9 +166,8 @@ struct FinishedSetFixSheet: View {
             }
             else if !gym.readFailed && !gym.sets.contains(where: { $0.id == original.id }) { dismiss() }
             else { failed = (gym.error ?? "That fix did not save.") + " The set is unchanged." }
-          } label: { Text("Save the fix").frame(maxWidth: .infinity).foregroundStyle(GymPalette.onAccent) }
-            .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).controlSize(.large).disabled(draft.problem != nil || gym.accountTransition)
-            .frame(maxWidth: .infinity).padding().background(GymPalette.canvas).accessibilityIdentifier("gym-fix-save")
+            }
+          }
         }
         .sensoryFeedback(.success, trigger: saved)
         .onChange(of: draft) { _, _ in failed = nil }

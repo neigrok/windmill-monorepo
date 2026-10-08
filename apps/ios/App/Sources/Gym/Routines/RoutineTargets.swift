@@ -300,16 +300,14 @@ struct RoutineTargetsSheet: View {
       }
     }
     .safeAreaInset(edge: .bottom) {
-      Button {
+      ActionBand(title: draft.commitLabel, accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+                 disabled: draft.refusal != nil, actionIdentifier: "gym-target-set") {
         switch draft.reading {
         case .open: onCommit(nil)
         case .scheme(let sets): onCommit(sets)
         case .refused: return
         }
-      } label: { Text(draft.commitLabel).foregroundStyle(GymPalette.onAccent).frame(maxWidth: .infinity) }
-      .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).controlSize(.large).frame(maxWidth: .infinity)
-      .disabled(draft.refusal != nil).accessibilityIdentifier("gym-target-set")
-      .padding().background(.bar)
+      }
     }
     .sensoryFeedback(.selection, trigger: feedback)
     .onChange(of: draft.refusal) { _, refusal in
@@ -412,7 +410,7 @@ struct RoutineTargetsSheet: View {
   }
 
   private func refusalLine(_ message: String) -> some View {
-    Text(message).font(.subheadline).foregroundStyle(.red).accessibilityIdentifier("gym-target-refusal")
+    Text(message).font(.subheadline).foregroundStyle(GymPalette.alarm).accessibilityIdentifier("gym-target-refusal")
   }
 
   private func delete(_ index: Int) {

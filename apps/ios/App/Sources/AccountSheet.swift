@@ -11,7 +11,8 @@ struct AccountSheet: View {
   @State var aboutWindmill = false
   @State var usingLink = false
   @State var signInLink = ""
-  @Environment(\.dynamicTypeSize) var typeSize
+  @State var confirmSignOut = false
+  @State var answeringSignOut = false
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.colorScheme) var colorScheme
   @ScaledMetric var methodRowHeight = 50.0
@@ -58,26 +59,42 @@ struct AccountSheet: View {
         .toolbar { accountToolbar }
     }
       .foregroundStyle(ink).font(ShellType.body).tint(brand)
-      .presentationDragIndicator(.visible)
-      .presentationDetents(compact && !typeSize.isAccessibilitySize ? [.medium] : [.large])
-      .presentationCornerRadius(40)
+      .presentationDragIndicator(.hidden)
+      .presentationDetents(compact ? [.medium] : [.large])
+      .presentationBackground(shell)
       .sheet(isPresented: $aboutWindmill) {
-        let systemStyle = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.traitCollection.userInterfaceStyle
-        OnboardingScreen(replay: true, telemetry: model.telemetry) { aboutWindmill = false }
-          .preferredColorScheme(OnboardingFixture.appearance ?? (systemStyle == .light ? .light : .dark))
+        NavigationStack {
+          OnboardingScreen(replay: true, telemetry: model.telemetry) { aboutWindmill = false }
+            .navigationTitle("About Windmill")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(shell, for: .navigationBar)
+            .toolbar {
+              ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { aboutWindmill = false }.accessibilityIdentifier("onboarding-exit")
+              }
+            }
+        }.preferredColorScheme(OnboardingFixture.appearance)
+          .presentationDetents([.large]).presentationDragIndicator(.hidden)
       }
       .interactiveDismissDisabled(model.editorReadOnly)
-      .disabled((model.working || model.accountTransition) && !inputStep)
+      .disabled(answeringSignOut || ((model.working || model.accountTransition) && !inputStep))
       .animation(.easeOut(duration: reduceMotion ? 0.2 : 0.28), value: model.sheet)
       .sensoryFeedback(.success, trigger: model.authSuccess)
       .sensoryFeedback(.selection, trigger: model.authSelection)
       .onChange(of: model.sheet, initial: true) { _, value in
         if value == .appleAddress { usingLink = false }
+        confirmSignOut = value == .signOut && (model.signOutSession?.unsent ?? 0) == 0
         focusedInput = value == .code || value == .address || value == .appleAddress ? value : nil
         if let value { model.screenViewed(value.telemetryName) }
       }
       .task(id: model.sheet) { if model.sheet == .you { await model.loadSignInMethods() } }
-      .background { AppleRemovalConfirmation(model: model, isPresented: model.removingApple).frame(width: 0, height: 0) }
+      .alert("Sign out?", isPresented: $confirmSignOut) {
+        Button("Sign out", role: .destructive) { finishSignOut(.keep) }
+          .accessibilityIdentifier("sign-out-keep")
+        Button("Cancel", role: .cancel, action: cancelSignOut)
+      } message: {
+        Text("Your pages and log stay in your account and leave this phone.")
+      }
       .background {
         AccountConfirmation(model: model, isPresented: model.identityTaken || model.sheet == .adoption || model.sheet == .discardAdoption).frame(width: 0, height: 0)
       }
@@ -94,10 +111,12 @@ struct AccountSheet: View {
   }
 
   @ToolbarContentBuilder var accountToolbar: some ToolbarContent {
-    ToolbarItem(placement: .cancellationAction) { backOrClose.disabled(model.working) }
+    ToolbarItem(placement: .cancellationAction) { backOrClose.disabled(model.working || (inputStep && model.editorReadOnly)) }
     ToolbarItem(placement: .confirmationAction) {
       if model.sheet == .you && !receipt {
         Button("Done") { model.choose("close", screen: "you"); model.sheet = nil }.disabled(model.working)
+      } else if inputStep && !receipt {
+        Button("Close", role: .cancel, action: closeSignIn).disabled(model.editorReadOnly)
       }
     }
   }
@@ -110,15 +129,25 @@ struct AccountSheet: View {
         Button("Close") { model.closeKeep() }
       } else if compact {
         Button("Close") { model.closeAppleStep() }
+      } else if model.sheet == .signOut {
+        Button("Cancel", role: .cancel, action: cancelSignOut)
       }
     }
   }
 
   func goBack() {
+    guard inputStep, !model.editorReadOnly else { return }
     model.choose("back", screen: model.sheet?.telemetryName ?? "keep"); model.error = nil
     if model.sheet == .code { model.sheet = model.appleTicket == nil ? .address : .appleAddress }
     else if model.sheet == .appleAddress { model.sheet = model.account == nil ? .appleQuestion : model.appleOrigin }
     else { model.sheet = .keep }
+  }
+
+  func closeSignIn() {
+    guard inputStep, !model.editorReadOnly else { return }
+    if model.sheet == .appleAddress || model.appleTicket != nil { model.closeAppleStep(); return }
+    model.choose("close", screen: model.sheet?.telemetryName ?? "keep")
+    model.error = nil; model.sheet = nil
   }
 
   var appleQuestion: some View {
@@ -331,7 +360,7 @@ struct AccountSheet: View {
         }
         Text("YOUR DATA").font(ShellType.caption).foregroundStyle(faint)
         fact("Backup", model.authPaused ? "Paused" : model.backup == "backed up" ? "Up to date" : "Not backed up yet")
-        Button("Sign out") { Task { await model.beginSignOut() } }.frame(minHeight: 52).accessibilityIdentifier("sign-out")
+        Button("Sign out", role: .destructive) { Task { await model.beginSignOut() } }.frame(minHeight: 52).accessibilityIdentifier("sign-out")
       }
       Button {
         model.sheet = nil
@@ -359,6 +388,12 @@ struct AccountSheet: View {
         Button { model.removingApple = true; model.screenViewed("24c") } label: {
           methodRow("Apple", apple.relay ? "Hide My Email" : apple.email, symbol: "apple.logo")
         }.buttonStyle(.plain).accessibilityIdentifier("apple-method")
+          .confirmationDialog("Remove Apple?", isPresented: $model.removingApple, titleVisibility: .visible) {
+            Button("Remove Apple", role: .destructive) { Task { await model.removeApple() } }
+            Button("Cancel", role: .cancel) { model.choose("cancel", screen: "24c") }
+          } message: {
+            Text("You'll sign in with \(model.accountEmail) instead. Apple won't open this account.")
+          }
           .swipeActions { Button("Remove Apple", role: .destructive) { model.removingApple = true; model.screenViewed("24c") } }
       }
     }.listStyle(.plain).scrollDisabled(true).scrollContentBackground(.hidden)
@@ -378,12 +413,37 @@ struct AccountSheet: View {
 
   var signOut: some View {
     VStack(alignment: .leading, spacing: 20) {
-      Text("Sign out?").font(ShellType.title)
       let count = model.signOutSession?.unsent ?? 0
       Text(count == 0 ? "Your pages and log stay in your account and leave this phone." : "\(count) pending work \(count == 1 ? "item hasn't" : "items haven't") been confirmed as backed up. Keep \(count == 1 ? "it" : "them") on this phone for this account, or discard \(count == 1 ? "it" : "them") from this phone.").foregroundStyle(dim)
-      Button(count == 0 ? "Sign out" : "Keep and sign out") { Task { await model.finishSignOut(.keep) } }.frame(maxWidth: .infinity, minHeight: 52).accessibilityIdentifier("sign-out-keep")
-      if count > 0 { Button("Discard and sign out", role: .destructive) { Task { await model.finishSignOut(.discard) } }.frame(maxWidth: .infinity, minHeight: 52) }
-      Button("Cancel", role: .cancel) { Task { await model.cancelSignOut() } }.frame(maxWidth: .infinity, minHeight: 52)
+      if count == 0 {
+        Button("Sign out", role: .destructive) {
+          if model.sheet == .signOut && !answeringSignOut { confirmSignOut = true }
+        }
+          .frame(maxWidth: .infinity, minHeight: 52).accessibilityIdentifier("sign-out-retry")
+      } else {
+        Button("Keep and sign out") { finishSignOut(.keep) }
+          .frame(maxWidth: .infinity, minHeight: 52).accessibilityIdentifier("sign-out-keep")
+        Button("Discard and sign out", role: .destructive) { finishSignOut(.discard) }
+          .frame(maxWidth: .infinity, minHeight: 52)
+      }
+    }
+  }
+
+  func finishSignOut(_ choice: SignOutChoice) {
+    guard model.sheet == .signOut, !model.accountTransition, !answeringSignOut else { return }
+    answeringSignOut = true
+    Task {
+      await model.finishSignOut(choice)
+      answeringSignOut = false
+    }
+  }
+
+  func cancelSignOut() {
+    guard model.sheet == .signOut, !model.accountTransition, !answeringSignOut else { return }
+    answeringSignOut = true
+    Task {
+      await model.cancelSignOut()
+      answeringSignOut = false
     }
   }
 
@@ -391,42 +451,6 @@ struct AccountSheet: View {
     HStack { Text(name); Spacer(); Text(value).foregroundStyle(dim) }.padding(16).frame(minHeight: 52).background(card, in: RoundedRectangle(cornerRadius: 20))
   }
 
-}
-
-struct AppleRemovalConfirmation: UIViewControllerRepresentable {
-  var model: AppModel
-  var isPresented: Bool
-  func makeUIViewController(context: Context) -> Presenter { Presenter() }
-  func updateUIViewController(_ controller: Presenter, context: Context) {
-    controller.model = model
-    controller.showConfirmation()
-  }
-
-  final class Presenter: UIViewController {
-    var model: AppModel?
-    override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); showConfirmation() }
-    func showConfirmation() {
-      guard let model, model.removingApple, view.window != nil else { return }
-      var host: UIViewController = self
-      while let parent = host.parent { host = parent }
-      guard host.presentedViewController == nil else { return }
-      let dialog = UIAlertController(title: "Remove Apple?", message: "You'll sign in with \(model.accountEmail) instead. Apple won't open this account.", preferredStyle: .actionSheet)
-      dialog.addAction(UIAlertAction(title: "Remove Apple", style: .destructive) { _ in
-        model.removingApple = false
-        Task { await model.removeApple() }
-      })
-      dialog.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
-        model.removingApple = false; model.choose("cancel", screen: "24c")
-      })
-      // iOS 26 hides Cancel in anchored action sheets. Keep both choices explicit on iPhone.
-      if UIDevice.current.userInterfaceIdiom == .pad {
-        dialog.popoverPresentationController?.sourceView = host.view
-        dialog.popoverPresentationController?.sourceRect = host.view.bounds
-        dialog.popoverPresentationController?.permittedArrowDirections = []
-      }
-      host.present(dialog, animated: true)
-    }
-  }
 }
 
 struct AccountConfirmation: UIViewControllerRepresentable {

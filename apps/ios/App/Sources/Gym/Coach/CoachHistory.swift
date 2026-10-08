@@ -106,7 +106,6 @@ struct CoachHistoryScreen: View {
         } else {
           Section {
             if history.reading, !history.loaded { ProgressView("Reading your conversations…") }
-            if let error = history.error { Text(error); Button("Try again") { Task { await history.load() } } }
             if history.loaded, history.rows.isEmpty, history.error == nil { Text("Nothing here yet. Every conversation you have with Coach is kept until you delete it.") }
             ForEach(history.rows) { row in
               Button {
@@ -128,7 +127,6 @@ struct CoachHistoryScreen: View {
             }
             if history.nextCursor != nil { Button("Earlier conversations") { Task { await history.load(earlier: true) } }.disabled(history.reading) }
           } footer: { Text("Deleting a conversation keeps applied routine changes, created routines and saved notes.") }
-          if let error = coach.error { Text(error).foregroundStyle(.red) }
         }
       }.listRowBackground(GymPalette.card)
     }.listStyle(.insetGrouped).navigationTitle("History").modifier(GymPage()).accessibilityIdentifier("gym-coach-history")
@@ -136,12 +134,25 @@ struct CoachHistoryScreen: View {
       .refreshable { await history.load() }
       .task(id: gym.account) { await history.load() }
       .safeAreaInset(edge: .bottom) {
-        VStack(alignment: .leading, spacing: 8) {
-          ForEach(history.held.reversed()) { offer in
-            HStack { Text("Conversation removed"); Spacer(); Button("Undo") { history.undo(offer.id) } }
-          }
-          Button { if coach.newChat() { dismiss() } } label: { Text("Ask something new").foregroundStyle(GymPalette.onAccent).frame(maxWidth: .infinity) }.modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).controlSize(.large).frame(maxWidth: .infinity).disabled(coach.asking)
-        }.padding(16).background(GymPalette.card)
+        VStack(spacing: 0) {
+          if let offer = history.held.last {
+            RoomTransient(message: "Conversation removed", ink: GymPalette.ink, card: GymPalette.card, actionTitle: "Undo") {
+              history.undo(offer.id)
+            }.padding(.horizontal, RoomSpace.inset)
+          } else if !gym.undoOffers.isEmpty {
+            GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
+          } else if let error = coach.error {
+            RoomTransient(message: error, ink: GymPalette.ink, card: GymPalette.card,
+                          actionTitle: "Dismiss message", actionSymbol: "xmark") { coach.error = nil }
+              .padding(.horizontal, RoomSpace.inset)
+          } else if let error = history.error {
+            RoomTransient(message: error, ink: GymPalette.ink, card: GymPalette.card, actionTitle: "Try again") {
+              Task { await history.load() }
+            }.padding(.horizontal, RoomSpace.inset)
+          } else { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
+          ActionBand(title: "Ask something new", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+                     disabled: coach.asking) { if coach.newChat() { dismiss() } }
+        }
       }
       .onChange(of: phase) { _, phase in if phase == .background { history.abandon() } }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "history"]) }

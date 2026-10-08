@@ -151,7 +151,7 @@ struct ProposalReviewSheet: View {
                 Text(proposal.summary).padding(.leading, 12).overlay(alignment: .leading) { Rectangle().fill(GymPalette.accent).frame(width: 3) }
               }
               if proposal.intent == "remove" {
-                diffCard("Remove \(routine?.name ?? proposal.baseName ?? "routine")", symbol: "minus", color: .red) {
+                diffCard("Remove \(routine?.name ?? proposal.baseName ?? "routine")", symbol: "minus", color: GymPalette.alarm) {
                   Text("The whole routine is removed from your program. Every set you logged against it stays in the log.").font(.callout).foregroundStyle(GymPalette.inkDim)
                 }
               } else {
@@ -193,25 +193,27 @@ struct ProposalReviewSheet: View {
       } message: { Text("Nothing changes, and it stays in the routine’s history as a record.") }
       .sensoryFeedback(.success, trigger: !pending && submitted && ["applied", "dismissed"].contains(proposal?.state ?? ""))
       .onChange(of: proposal?.fields, initial: false) { _, _ in seen = nil }
-    }.presentationDetents([.large]).presentationDragIndicator(.visible)
+    }.presentationDetents([.large])
       .accessibilityIdentifier("gym-proposal-review")
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "review"]) }
   }
   @ViewBuilder var band: some View {
-    VStack(spacing: 10) {
+    VStack(spacing: RoomSpace.related) {
+      GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
       if gym.coachRemovalReceipts.contains(where: { $0.proposal.id.description == proposalId && $0.outcome == .refused }) {
         Text("Nothing was applied.").font(.body.weight(.semibold))
           .onAppear { acknowledgeReceipt() }
           .onChange(of: phase) { _, _ in acknowledgeReceipt() }
       }
       if decidable {
-        Button { if let proposal { submitted = gym.coachDecideProposal(proposal, apply: true) } } label: { Text(applyLabel).foregroundStyle(GymPalette.onAccent).frame(maxWidth: .infinity) }
-          .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).controlSize(.large).frame(maxWidth: .infinity)
-          .disabled(seen == nil || seen != extent).accessibilityIdentifier("coach-apply-proposal")
+        ActionBand(title: applyLabel, accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+                   disabled: seen == nil || seen != extent, actionIdentifier: "coach-apply-proposal") {
+          if let proposal { submitted = gym.coachDecideProposal(proposal, apply: true) }
+        }
           .accessibilityHint(seen == nil || seen != extent ? "Scroll to the end to apply." : "Apply every change together")
         Text(seen == nil || seen != extent ? "Scroll to the end to apply." : proposal?.intent == "remove" ? "The routine goes and your logged sets stay. Nothing is removed until you tap." : count <= 1 ? "Nothing is applied until you tap." : "All \(count) or none. Nothing is applied until you tap.")
           .font(.caption).foregroundStyle(GymPalette.inkDim).accessibilityHidden(true)
-        Button("Turn this down", role: .destructive) { turningDown = true }.frame(minHeight: 44)
+        Button("Turn this down", role: .destructive) { turningDown = true }.foregroundStyle(GymPalette.alarm).frame(minHeight: 44)
       } else if owner != gym.account || !gym.coachAccountAvailable { EmptyView() }
       else if pending { ProgressView("Waiting for the log to confirm…") }
       else if let proposal {
@@ -219,8 +221,7 @@ struct ProposalReviewSheet: View {
           .onAppear { acknowledgeReceipt() }
           .onChange(of: phase) { _, _ in acknowledgeReceipt() }
       }
-      if let error = gym.error { Text(error).font(.callout).foregroundStyle(.red) }
-    }.padding(16).frame(maxWidth: .infinity).background(GymPalette.card).tint(GymPalette.accent)
+    }.padding(.bottom, RoomSpace.inset).frame(maxWidth: .infinity)
   }
   func acknowledgeReceipt() {
     guard phase == .active, !pending, let proposal else { return }
@@ -236,7 +237,7 @@ struct ProposalReviewSheet: View {
       }.padding(12).background(GymPalette.card, in: RoundedRectangle(cornerRadius: 12))
     } else {
       diffCard((change.kind == "added" ? "Add " : change.kind == "removed" ? "Remove " : "") + name(change.exerciseId),
-               symbol: change.kind == "added" ? "plus" : change.kind == "removed" ? "minus" : "arrow.right", color: change.kind == "removed" ? .red : GymPalette.accent) {
+               symbol: change.kind == "added" ? "plus" : change.kind == "removed" ? "minus" : "arrow.right", color: change.kind == "removed" ? GymPalette.alarm : GymPalette.accent) {
         if change.kind == "removed" { Text("removed from the routine · logged sets kept").font(.callout).foregroundStyle(GymPalette.inkDim) }
         else if change.kind == "added" {
           Text(targets(change.after)).font(.callout.monospacedDigit())

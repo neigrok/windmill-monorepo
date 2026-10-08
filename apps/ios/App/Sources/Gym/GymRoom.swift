@@ -40,7 +40,7 @@ struct GymRoom: View {
             .navigationDestination(for: Destination.self, destination: destination)
         }
       }
-    }
+    }.accessibilityHidden(gym.workout.isPresented)
   }
 
   var body: some View {
@@ -48,7 +48,6 @@ struct GymRoom: View {
       if #available(iOS 26, *) { tabs.tabBarMinimizeBehavior(.onScrollDown) }
       else { tabs }
     }
-    .safeAreaInset(edge: .top, spacing: 0) { if !gym.workout.isPresented { WorkoutAdoptionBand(gym: gym) } }
     .environment(\.coachOpenAccount, openAccount)
     .environment(\.coachOpenRoutine, { id in tab = .routines; routinesPath.append(Destination.routine(id)) })
     .environment(\.coachOpenSession, { id in tab = .log; logPath.append(Destination.session(id)) })

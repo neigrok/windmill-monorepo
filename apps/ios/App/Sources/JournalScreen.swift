@@ -89,7 +89,7 @@ struct JournalScreen: View {
               .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
               .animation(.easeInOut(duration: 0.3), value: focused)
               .font(.system(size: 18)).foregroundStyle(JournalPalette.ink)
-          }.modifier(RoomSeatStyle())
+          }.buttonStyle(RoomSeatStyle())
             .accessibilityLabel(focused ? "Done writing" : "Write")
             .accessibilityHint(focused ? "" : "Opens the keyboard on today's page")
             .accessibilityIdentifier(focused ? "done-writing" : "write-today")

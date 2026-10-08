@@ -8,14 +8,12 @@ acceptance. Figma review tasks below need a fresh file inspection before editing
 
 - **F4 · Gym Daylight PR ink.** Web and the [approved specimen](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=874-7735)
   use gold-700 `#6E5217`; Android `GymSkin.kt` still uses `#A17822`. Align Android and check native
-  PR rows. `guidelines/superapp-shell.md` §8 says iOS gym defines only its Instrument palette;
-  `apps/ios` defines none (6v), and the rebuilt Daylight palette uses gold-700.
+  PR rows. iOS's shared `gym/record` asset uses gold-700 in Daylight.
 - **F7 / F29 · Mono weights.** `web/src/styles/fonts.js` loads JetBrains Mono 400/500/600.
   Gym and journal CSS request heavier mono weights. Normalize the uses or supply the faces.
 - **F8 · Unused numeral tokens.** `gymTokens.css` declares `--weight-size`, `--weight-leading`
   and `--reps-size`; no web rule consumes them. Remove them or give them a real consumer.
-- **4j · Text scaling.** `gym/briefs/12-native-idiom.md` says iOS's fixed-size fonts need Dynamic
-  Type behavior; `apps/ios` has no fonts (6v). Define Dynamic Type for the rebuilt rooms, and check
+- **4j · Text scaling.** Check iOS layout reflow against the shared Dynamic Type ramp and
   web text resizing across the gym's pixel-sized type.
 - **Published clay tokens.** Reconcile Design System `surface/card` dark mode with web's
   `#171719`. The recorded published value is `#17120B` (`VariableID:1:66`, key
@@ -225,17 +223,10 @@ places it disagrees with a drawing or a brief.
   hand-drawn glass fill and a drawn account glyph; the spec's room menu and `person.crop.circle`
   on system glass replace them. Redraw the top band of boards 02d, 05–07d, 08a–09k, 10–13b, 21a/21b
   and the Gym file's Coach-wave iOS boards from the new section's bar anatomy.
-- **9f · You's palette.** `AccountSheet.swift` draws You on system colours with the gym accent
-  when opened from Gym; canon (`superapp-shell.md` §6) and the spec keep You clay in both
-  appearances.
-- **9g · Live Activity accent.** `WorkoutActivityWidget.swift:128` defines its own green; the
-  spec gives the widget `gym/accent` from the shared theme folder.
 - **9h · Journal day inks.** `iOS First Run · Colour` light `journal/ink` `#2A2118`, `ink-dim`
   `#74654F`, `ink-faint` `#8E8272` are warm, as are the onboarding glimpse's; the web's journal day
   (`palettes.css`) and the spec are cool paper (`#161E28` / `#4E5968` / `#5E6979`). Align the
   collection and the glimpse when journal day ships.
-- **9i · `TabView` tint.** `GymRoom.swift:39` tints the whole `TabView`; `12-native-idiom.md`
-  and the spec forbid it. Build item 7.2.
 
 ## Onboarding
 

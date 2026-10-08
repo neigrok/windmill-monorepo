@@ -136,25 +136,3 @@ extension GymModel {
     return outcome.refusal == nil
   }
 }
-
-struct LogNoticeBand: View {
-  let gym: GymModel
-  var body: some View {
-    if gym.error != nil || !gym.undoOffers.isEmpty || !gym.notices.isEmpty {
-      VStack(alignment: .leading, spacing: 8) {
-        if let error = gym.error, !gym.notices.contains(where: { gym.message($0.refusal) == error }) {
-          Text(error).font(.subheadline).accessibilityIdentifier("gym-log-error")
-        }
-        ForEach(gym.notices) { notice in
-          VStack(alignment: .leading, spacing: 4) {
-            Text(gym.message(notice.refusal)).font(.subheadline)
-            Button("Dismiss message", systemImage: "xmark") { gym.dismissNotice(notice.id) }
-          }
-        }
-        ForEach(gym.undoOffers.reversed()) { offer in
-          Button("Undo", systemImage: "arrow.uturn.backward") { _ = gym.undo(offer.id) }.accessibilityIdentifier("gym-log-undo")
-        }
-      }.padding().frame(maxWidth: .infinity, alignment: .leading).background(.regularMaterial)
-    }
-  }
-}

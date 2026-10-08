@@ -232,7 +232,7 @@ struct WorkoutReceipt: View {
         }.listRowBackground(GymPalette.card)
       }.modifier(GymPage()).navigationTitle(receipt.session.name ?? Readout.noRoutine).navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-    }.modifier(GymPage()).presentationDetents([.large]).presentationDragIndicator(.visible)
+    }.modifier(GymPage()).presentationDetents([.large])
       .sensoryFeedback(.success, trigger: receipt.keptName) { old, new in old == nil && new != nil }
       .task { await receipt.loadReview(gym) }
       .onAppear { receipt.reconcile(gym) }

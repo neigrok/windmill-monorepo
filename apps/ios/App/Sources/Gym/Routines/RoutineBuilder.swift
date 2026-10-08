@@ -118,10 +118,6 @@ struct RoutineBuilder: View {
           if let removed = editing.removed, editing.draft.current.entries.count < 50 { Section { Button("Undo movement removal") {
             editing.draft.current.entries.insert(removed.1, at: min(removed.0, editing.draft.current.entries.count)); editing.removed = nil
           } } }
-          if editing.draft.isDirty || editing.failure != nil, let problem = editing.failure ?? RoutinePlanning.problem(editing.draft.current) {
-            Section { Text(problem).foregroundStyle(.red).accessibilityIdentifier("routine-refusal") }
-          }
-          RoutineNotice(gym: gym, excluding: editing.failure)
           if !editing.draft.isNew { Section("History") {
             ForEach(gym.routineHistory(editing.draft.id).prefix(20), id: \.id) { session in Text(Date(timeIntervalSince1970: Double(session.startedAt.ms) / 1000), style: .date) }
             if gym.readFailed { Text("The log didn’t answer — this routine’s history is out of reach.") }
@@ -129,6 +125,11 @@ struct RoutineBuilder: View {
         }.listRowBackground(GymPalette.card)
       }.listStyle(.insetGrouped).modifier(GymPage()).environment(\.editMode, $editing.editMode)
         .navigationTitle(editing.draft.isNew ? "New routine" : "Edit routine").navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom) {
+          GymTransient(gym: gym,
+                       message: editing.draft.isDirty || editing.failure != nil ? editing.failure ?? RoutinePlanning.problem(editing.draft.current) : nil,
+                       errorIdentifier: "routine-refusal")
+        }
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(editing.saving) }
           if editing.draft.current.entries.count > 1 {
@@ -172,7 +173,7 @@ struct RoutineBuilder: View {
         .sensoryFeedback(.selection, trigger: editing.draft.current.entries.map(\.exerciseId))
         .sensoryFeedback(.success, trigger: editing.saved)
         .accessibilityIdentifier("routine-builder")
-    }.modifier(GymPage())
+    }.modifier(GymPage()).presentationDetents([.large])
   }
   private func remove(_ index: Int) {
     guard editing.draft.current.entries.indices.contains(index) else { return }

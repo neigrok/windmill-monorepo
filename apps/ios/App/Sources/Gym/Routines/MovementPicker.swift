@@ -176,15 +176,16 @@ struct MovementPicker: View {
     .navigationBarTitleDisplayMode(.inline)
     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { if let onCancel { onCancel() } else { dismiss() } } } }
     .safeAreaInset(edge: .bottom) {
-      Button {
+      VStack(spacing: 0) {
+        GymTransient(gym: gym)
+        ActionBand(title: "Create movement", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+                   disabled: gym.accountTransition, actionIdentifier: "gym-create-movement") {
         searchFocused = false
         if let onCreate { onCreate(); return }
         if creation == nil { creation = MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: MovementName.capped(MovementName.trimmed(query))) }
         showingCreation = true
-      } label: { Label("Create movement", systemImage: "plus").frame(maxWidth: .infinity) }
-      .modifier(RoomSecondaryStyle()).controlSize(.large).disabled(gym.accountTransition)
-      .accessibilityIdentifier("gym-create-movement")
-      .padding(16).background(.bar)
+        }
+      }
     }
     .onAppear {
       ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log)
@@ -200,7 +201,7 @@ struct MovementPicker: View {
                               account: pickingAccount, anonymous: pickingAnonymous) { entry in
             onSelect(entry)
           }
-        }.modifier(GymPage())
+        }.modifier(GymPage()).presentationDetents([.large])
       }
     }
     .modifier(GymPage())
@@ -229,7 +230,6 @@ struct MovementPicker: View {
         if let unread = options.unread {
           Section { Text(unread).foregroundStyle(GymPalette.inkDim); Button("Try again") { gym.refresh() } }
         }
-        RoutineNotice(gym: gym)
         if !options.six.isEmpty { Section("The six") { ForEach(options.six) { movementRow($0) } } }
         if !options.matches.isEmpty {
           Section(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "All movements" : "Matches") {
@@ -296,7 +296,7 @@ struct CreateMovementSheet: View {
           TextField("Movement name", text: $draft.name).focused($nameFocused).autocorrectionDisabled().textInputAutocapitalization(.words).submitLabel(.done).onSubmit { nameFocused = false }
             .disabled(busy).accessibilityIdentifier("gym-movement-name")
           if let counter = MovementName.counter(draft.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
-          if let problem = MovementName.problem(draft.name), !busy { Text(problem).font(.footnote).foregroundStyle(.red) }
+          if let problem = MovementName.problem(draft.name), !busy { Text(problem).font(.footnote).foregroundStyle(GymPalette.alarm) }
         }
         Section("Equipment") {
           Picker("Equipment", selection: $draft.equipment) {
@@ -308,17 +308,20 @@ struct CreateMovementSheet: View {
             Button { nameFocused = false; onTargets?() } label: {
               HStack { Text("Targets"); Spacer(); Text(Readout.target(draft.sets)).foregroundStyle(GymPalette.inkDim).monospacedDigit() }
             }.disabled(busy).accessibilityIdentifier("gym-movement-targets")
-            if draft.sets?.isEmpty ?? true { Text("Choose at least one set.").font(.footnote).foregroundStyle(.red) }
+            if draft.sets?.isEmpty ?? true { Text("Choose at least one set.").font(.footnote).foregroundStyle(GymPalette.alarm) }
           }
         }
-        if let refusal = draft.refusal { Section { Text(refusal).foregroundStyle(.red).accessibilityIdentifier("gym-movement-creation-refusal") } }
       }.listRowBackground(GymPalette.card)
     }
     .modifier(GymPage()).accessibilityIdentifier("gym-movement-creation")
     .navigationTitle("Create movement").navigationBarTitleDisplayMode(.inline)
     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { if let onCancel { onCancel() } else { dismiss() } }.disabled(busy) } }
     .safeAreaInset(edge: .bottom) {
-      Button {
+      VStack(spacing: 0) {
+        GymTransient(gym: gym, message: draft.refusal, dismiss: { draft.refusal = nil }, errorIdentifier: "gym-movement-creation-refusal")
+        ActionBand(title: includesTargets ? "Add to routine" : "Create and add", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+                   disabled: gym.accountTransition || draft.problem(includesTargets: includesTargets) != nil,
+                   busy: busy, actionIdentifier: "gym-movement-create-commit") {
         guard creatingAccount == gym.account, creatingAnonymous == gym.isAnonymous else {
           draft.refusal = "the account changed while creating"; return
         }
@@ -333,13 +336,8 @@ struct CreateMovementSheet: View {
           busy = false
           if let entry { onCreated(entry) }
         }
-      } label: {
-        Text(busy ? "Creating…" : includesTargets ? "Add to routine" : "Create and add").foregroundStyle(GymPalette.onAccent).frame(maxWidth: .infinity)
+        }
       }
-      .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).controlSize(.large).frame(maxWidth: .infinity)
-      .disabled(busy || gym.accountTransition || draft.problem(includesTargets: includesTargets) != nil)
-      .accessibilityIdentifier("gym-movement-create-commit")
-      .padding(16).background(.bar)
     }
     .interactiveDismissDisabled(busy)
     .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": includesTargets ? "routine_editor" : "movement"]) }

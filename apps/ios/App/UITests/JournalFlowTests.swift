@@ -435,7 +435,14 @@ import XCTest
     XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 10))
     let backedUp = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "backed up")).firstMatch
     XCTAssertTrue(backedUp.waitForExistence(timeout: 15))
-    app.buttons["you"].tap(); app.buttons["sign-out"].tap(); app.buttons["sign-out-keep"].tap()
+    app.buttons["you"].tap(); app.buttons["sign-out"].tap()
+    let signOut = app.alerts["Sign out?"]
+    XCTAssertTrue(signOut.waitForExistence(timeout: 10))
+    signOut.buttons["Cancel"].tap()
+    XCTAssertTrue(app.buttons["sign-out"].waitForExistence(timeout: 5))
+    app.buttons["sign-out"].tap()
+    XCTAssertTrue(signOut.waitForExistence(timeout: 10))
+    signOut.buttons["sign-out-keep"].tap()
     XCTAssertTrue(app.buttons["open-journal"].waitForExistence(timeout: 10))
     app.buttons["Sign in"].tap(); app.buttons["email-sign-in"].tap()
     XCTAssertEqual(app.textFields["email-address"].value as? String, "flow@example.com")

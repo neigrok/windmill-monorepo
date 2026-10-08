@@ -88,6 +88,9 @@ struct WorkoutScreen: View {
     .onChange(of: gym.sets) { _, _ in workout.reconcile() }
     .onChange(of: gym.openSession?.id) { _, _ in workout.reconcile(); updateAwake() }
     .onChange(of: gym.notices.map(\.id)) { _, _ in workout.reconcile() }
+    .onChange(of: workout.message ?? gym.workoutNotice ?? gym.error) { _, message in
+      if let message { UIAccessibility.post(notification: .announcement, argument: message) }
+    }
     .onChange(of: gym.readFailed) { _, failed in if !failed { workout.reconcile() } }
     .onChange(of: gym.account) { _, _ in finishTask?.cancel(); workout.accountChanged(); updateAwake() }
     .onChange(of: scenePhase) { _, phase in
@@ -115,13 +118,21 @@ struct WorkoutScreen: View {
       }
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
-      if workout.selected != nil || workout.message != nil || gym.workoutNotice != nil || gym.error != nil || gym.readFailed || !gym.undoOffers.isEmpty {
+      if workout.selected != nil || workout.message != nil || gym.workoutNotice != nil || gym.error != nil || gym.readFailed || !gym.undoOffers.isEmpty || gym.workoutBanner(gym.workoutStrandedSets.count) != nil {
         VStack(spacing: 8) {
-          WorkoutNotice(gym: gym, message: workout.message, dismiss: { workout.message = nil })
+          if let banner = gym.workoutBanner(gym.workoutStrandedSets.count) {
+            let line = Text(banner).font(.footnote).foregroundStyle(GymPalette.inkDim)
+              .frame(maxWidth: .infinity, alignment: .leading)
+            if typeSize.isAccessibilitySize { ScrollView { line }.frame(height: 100).padding(.horizontal, RoomSpace.inset) }
+            else { line.padding(.horizontal, RoomSpace.inset) }
+          }
+          GymTransient(gym: gym, message: workout.message, dismiss: { workout.message = nil }, noticeMessage: gym.workoutNotice, retry: { gym.workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
           if workout.selected != nil {
             WorkoutRack(workout: workout, edit: { keypad = $0 })
+              .padding(RoomSpace.inset)
+              .background(GymPalette.card, in: UnevenRoundedRectangle(topLeadingRadius: RoomSpace.panel, topTrailingRadius: RoomSpace.panel))
           }
-        }.frame(maxWidth: .infinity).padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 8).background(GymPalette.canvas)
+        }.frame(maxWidth: .infinity).padding(.top, RoomSpace.related)
       }
     }
   }
@@ -318,63 +329,6 @@ struct WorkoutRack: View {
         Picker("Set kind", selection: $workout.kind) { ForEach(SetKind.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) } }.pickerStyle(.menu)
       }
       }
-    }
-  }
-}
-
-struct WorkoutNotice: View {
-  enum Message: Equatable {
-    case local(String), notice(String, String), error(String)
-    var text: String {
-      switch self { case .local(let text), .error(let text), .notice(_, let text): text }
-    }
-  }
-  let gym: GymModel
-  let message: String?
-  let dismiss: () -> Void
-  @Environment(\.dynamicTypeSize) var typeSize
-  var shown: Message? {
-    if let message { return .local(message) }
-    if let notice = gym.notices.last, let message = gym.workoutNotice { return .notice(notice.id, message) }
-    return gym.error.map(Message.error)
-  }
-  func dismissMessage(_ shown: Message) {
-    switch shown {
-    case .local(let text):
-      dismiss()
-      if gym.error == text { gym.error = nil; gym.refusal = nil }
-    case .notice(let id, _): gym.dismissNotice(id)
-    case .error(let text):
-      if gym.error == text { gym.error = nil; gym.refusal = nil }
-    }
-  }
-  var body: some View {
-    VStack(spacing: 4) {
-      if let banner = gym.workoutBanner(gym.workoutStrandedSets.count) {
-        let line = Text(banner).font(.footnote).foregroundStyle(GymPalette.inkDim).frame(maxWidth: .infinity, alignment: .leading)
-        if typeSize.isAccessibilitySize { ScrollView { line }.frame(height: 100) }
-        else { line }
-      }
-      WorkoutAdoptionBand(gym: gym)
-      if let shown {
-        HStack {
-          Text(shown.text).font(.footnote).frame(maxWidth: .infinity, alignment: .leading)
-          Button("Dismiss message", systemImage: "xmark") { dismissMessage(shown) }
-            .labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44)
-        }.accessibilityAction(named: "Dismiss") {
-          dismissMessage(shown)
-        }
-          .accessibilityIdentifier("workout-refusal")
-      }
-      if let offer = gym.undoOffers.last {
-        HStack {
-          Text(gym.undoOffers.count == 1 ? "Change deleted" : "\(gym.undoOffers.count) changes deleted").font(.footnote)
-          Spacer(); Button("Undo") { _ = gym.undo(offer.id) }.frame(minHeight: 44)
-        }.accessibilityIdentifier("workout-undo")
-      }
-      if gym.readFailed { Button("Try again") { gym.workout.retryRead() }.font(.footnote) }
-    }.onChange(of: message ?? gym.workoutNotice ?? gym.error) { _, message in
-      if let message { UIAccessibility.post(notification: .announcement, argument: message) }
     }
   }
 }

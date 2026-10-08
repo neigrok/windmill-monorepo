@@ -134,7 +134,9 @@ import XCTest
     let remove = app.buttons["Remove Apple"]
     XCTAssertTrue(remove.waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["You'll sign in with sam@example.com instead. Apple won't open this account."].exists)
-    app.buttons["Cancel"].tap()
+    if app.buttons["Cancel"].exists { app.buttons["Cancel"].tap() }
+    else { app.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.15)).tap() }
+    XCTAssertTrue(remove.wait(for: \.exists, toEqual: false, timeout: 5))
     XCTAssertTrue(app.buttons["apple-method"].exists)
     app.buttons["apple-method"].tap(); XCTAssertTrue(remove.waitForExistence(timeout: 5)); remove.tap()
     XCTAssertTrue(app.buttons["apple-sign-in"].waitForExistence(timeout: 5))

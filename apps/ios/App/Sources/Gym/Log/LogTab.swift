@@ -31,11 +31,11 @@ struct LogTab: View {
       .toolbar { ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) } }
       .safeAreaInset(edge: .bottom) {
         VStack(spacing: 0) {
-          LogNoticeBand(gym: gym)
-          Button { weighing = true } label: { Label("Weigh in", systemImage: "plus").frame(maxWidth: .infinity).foregroundStyle(GymPalette.onAccent) }
-            .modifier(RoomPrimaryStyle(accent: GymPalette.accent, onAccent: GymPalette.onAccent)).controlSize(.large)
-            .frame(maxWidth: .infinity).padding().accessibilityIdentifier("gym-weigh-in")
-        }.background(GymPalette.canvas)
+          GymTransient(gym: gym, message: shareMessage, dismiss: { shareMessage = nil },
+                       errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo")
+          ActionBand(title: "Weigh in", accent: GymPalette.accent, onAccent: GymPalette.onAccent,
+                     actionIdentifier: "gym-weigh-in") { weighing = true }
+        }
       }
       .sheet(isPresented: $weighing) { WeighInSheet(gym: gym) }
       .onAppear { prepareLogFixture(); gym.telemetry.event("gym_screen_viewed", properties: ["screen": "log"]) }
@@ -121,7 +121,6 @@ struct LogTab: View {
           }
         }.listRowBackground(GymPalette.card)
       }
-      if let shareMessage { Section { Text(shareMessage).font(.subheadline) }.listRowBackground(GymPalette.card) }
   }
 
   @ViewBuilder func timelineRow(_ entry: LogTimelineEntry, progress: StatsProgress?) -> some View {
