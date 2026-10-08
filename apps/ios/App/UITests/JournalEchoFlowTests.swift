@@ -211,7 +211,8 @@ import XCTest
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
     let addition = empty ? "One quiet line." : " Another line stays here."
     app.typeText(addition)
-    XCTAssertEqual(editor.value as? String, initial + addition)
+    let typed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", initial + addition), object: editor)
+    XCTAssertEqual(XCTWaiter.wait(for: [typed], timeout: 5), .completed)
     app.buttons["done-writing"].tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
     XCTAssertEqual(editor.value as? String, initial + addition)
