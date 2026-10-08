@@ -85,7 +85,8 @@ unresolved notices.
 
 Gym tests run through the existing `npm test`, `npm run test:sync` and `npm run build` scripts.
 The full suite runs performance cases after the parallel test workers exit. Training reads cover
-250 and 1,000 populated workouts, requiring unchanged renders to reuse their results within 25 ms CPU.
+250 and 1,000 populated workouts, counting domain reads: unchanged renders do no recomputation,
+and a replica change recomputes each read once. These render checks have no timing budget.
 The gym domain claims all 13 corpus files and 594 vectors, compared by JCS and with reversed record
 order. Training reads claim 112 vectors (including 36 promoted REST samples and 22 regression cases),
 proposals claim 44, units claim 57 and the weight ladder claims 36. Training actions claim 133;
