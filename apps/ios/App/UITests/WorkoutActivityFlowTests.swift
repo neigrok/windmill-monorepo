@@ -84,6 +84,7 @@ import XCTest
       return snapshot.isEnabled && !snapshot.frame.isEmpty && viewport.contains(snapshot.frame) && snapshot.frame.maxY < 100
     }, object: nil)
     XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed, "Dynamic Island content must be visible before capture")
-    XCTAssertTrue(element.isHittable)
+    XCTAssertTrue(element.wait(for: \.isHittable, toEqual: true, timeout: 30),
+      "Dynamic Island content must accept a native hit before interaction")
   }
 }
