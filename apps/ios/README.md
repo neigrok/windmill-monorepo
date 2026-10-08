@@ -132,9 +132,9 @@ tests select `WindmillTests` on iPhone 17. Three UI shards select each `Windmill
 `JournalFlowTests`, `WorkoutActivityFlowTests`), and Coach/shell (`GymCoachFlowTests`, `GymIntegrationFlowTests`,
 `OnboardingFlowTests`, `ShellFlowTests`). Each test job builds its own App, and the packages job checks that the UI
 class partition stays complete. Each UI shard creates its own iPhone 17 on iOS 26.5, seeds English/US preferences,
-Live Activity consent, completed Apple Intelligence notification state and accessibility automation before boot,
-then waits for boot completion and SpringBoard's event loop and animations to become idle. The simulator uses UTC,
-a fixed status bar and the software keyboard. Tests run
-serially on that UUID, and a result check requires every selected test to pass exactly once. Cleanup deletes the
-device even after failure. Failed UI shards retain their logs and xcresult bundles for three days. CI does not run
-`e2e.sh`, which needs the local backend.
+Live Activity consent and completed Apple Intelligence notification state before boot, waits for boot completion, then
+sets and checks accessibility automation, UTC, a fixed status bar and the software keyboard. The shard builds its tests
+before it runs them, so the build's memory is free before the first launch, and logs the runner's load every 15
+seconds. Tests run serially on that UUID, and a result check requires every selected test to pass exactly once. A
+failed shard prints each failed test's app hierarchy at its failure and retains its logs and xcresult bundle for three
+days. Cleanup deletes the device even after failure. CI does not run `e2e.sh`, which needs the local backend.
