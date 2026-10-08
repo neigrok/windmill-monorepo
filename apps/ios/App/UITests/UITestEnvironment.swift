@@ -11,6 +11,7 @@ final class UITestEnvironment: NSObject, XCTestObservation {
     let prepare: @MainActor @Sendable () -> Void = {
       XCUIDevice.shared.press(.home)
       let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+      springboard.activate()
       precondition(springboard.wait(for: .runningForeground, timeout: 30),
         "SpringBoard must reach the foreground before UI tests begin")
       precondition(springboard.icons["Safari"].wait(for: \.isHittable, toEqual: true, timeout: 30),

@@ -125,8 +125,9 @@ privacy rules, queue behavior and release verification. CI uses `python3 Tools/g
 with a nonproduction DSN. The manual release workflow uses `--release` with the signing secrets,
 builds with Xcode 26.3 and uploads to TestFlight; it does not run on push.
 
-The UI test bundle presses Home and waits for SpringBoard to reach the foreground with a hittable
-Settings icon before any test begins. A failed preflight stops the bundle before an app launch.
+The UI test bundle presses Home and activates SpringBoard, waiting for its event loop and animations
+to become idle. It requires the foreground Home screen and a hittable Safari icon before any test
+begins. A failed preflight stops the bundle before an app launch.
 
 The Live Activity UI test waits for published Island content and presses SpringBoard's Activity
 container to expand it. To capture its

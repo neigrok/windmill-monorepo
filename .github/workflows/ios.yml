@@ -195,7 +195,7 @@ jobs:
         run: brew install xcodegen
 
       - name: Create and prepare the UI simulator
-        timeout-minutes: 5
+        timeout-minutes: 10
         env:
           UI_SHARD: ${{ matrix.shard }}
           SIMCTL_CHILD_TZ: UTC
@@ -219,6 +219,9 @@ jobs:
                   "AppleLanguages": ["en"], "AppleLocale": "en_US",
                   "KeyboardAutocorrection": False, "KeyboardPrediction": False,
                   "KeyboardContinuousPathEnabled": False,
+              },
+              "com.apple.Accessibility": {
+                  "ApplicationAccessibilityEnabled": True, "AutomationEnabled": True,
               },
               # iOS 26.5 keeps Live Activity consent outside simctl privacy's services.
               "com.apple.liveactivitiesd": {
@@ -248,6 +251,8 @@ jobs:
           xcrun simctl getenv "$UI_SIMULATOR" TZ
           xcrun simctl spawn "$UI_SIMULATOR" defaults read NSGlobalDomain AppleLanguages
           xcrun simctl spawn "$UI_SIMULATOR" defaults read NSGlobalDomain AppleLocale
+          test "$(xcrun simctl spawn "$UI_SIMULATOR" defaults read com.apple.Accessibility ApplicationAccessibilityEnabled)" = 1
+          test "$(xcrun simctl spawn "$UI_SIMULATOR" defaults read com.apple.Accessibility AutomationEnabled)" = 1
           xcrun simctl spawn "$UI_SIMULATOR" defaults read com.apple.liveactivitiesd
 
       - name: Build and run the UI shard
