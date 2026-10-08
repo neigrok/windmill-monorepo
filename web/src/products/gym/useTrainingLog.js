@@ -4,6 +4,7 @@ import { UNDO_MS } from './fix.js';
 import { failureReason } from './errors.js';
 import { useGymApi, gymStep, gymReadView, preferencesDocument } from './gymRuntime.js';
 import { mintId } from './mint.js';
+import { backfillHref, FREE_SESSION, sessionHref } from './log.js';
 import { CREATED_PATTERN } from './logger/movements.js';
 import { useDomainRead } from './useDomainRead.js';
 import { TrainingHistory } from './domain/trainingHistory.js';
@@ -212,10 +213,18 @@ export function useTrainingLog() {
       const fingerprint = JSON.stringify(notice.content);
       if (seen.current.get(notice.id) === fingerprint) continue;
       seen.current.set(notice.id, fingerprint);
-      say('A change could not be saved to the log. Your other changes are still here.');
+      const commands = [notice.content?.cmd, ...(notice.content?.dependents ?? []).map((part) => part.cmd)].filter(Boolean);
+      const workout = commands.length ? api.workoutSaves().find((receipt) => receipt.status === 'refused' && commands.some((command) =>
+        command.name === receipt.command.name && (command.name === 'gym.importSession' ? command.args.id === receipt.sessionId
+          : command.args.sessionId === receipt.sessionId && command.args.requestId === receipt.command.args.requestId))) : null;
+      if (workout) {
+        const href = workout.command.name === 'gym.importSession'
+          ? backfillHref(workout.command.args.routineId ?? FREE_SESSION) : `${sessionHref(workout.sessionId)}/edit`;
+        say(`${workout.error.sentence} Your draft is here.`, { action: { label: 'Review workout', run: () => { window.location.hash = href; } } });
+      } else say('A change could not be saved to the log. Your other changes are still here.');
       gymStep('refusal', 'refused');
     }
-  }, [records.notices, say]);
+  }, [records.notices, say, api]);
   useEffect(() => {
     if (!toast) return undefined;
     const timer = setTimeout(() => setToast((current) => current === toast ? null : current), TOAST_MS);

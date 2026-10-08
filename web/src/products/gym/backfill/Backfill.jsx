@@ -97,6 +97,8 @@ function RoutinePick({ log }) {
 function RoutineWorkout({ id, back, log }) {
   const api = useGymApi();
   const view = useGymRead(async () => {
+    const submitted = api.workoutSave(`backfill:${id}`);
+    if (submitted) return submitted.draft.draft;
     const routine = await api.routine(id);
     if (!routine) return null;
     const movements = [...new Set(routine.entries.map((entry) => entry.exerciseId))];
@@ -133,22 +135,26 @@ function ReadFailed({ back, onRetry, children }) {
 
 function PastWorkout({ opening, back, log, noRoutines = false }) {
   const api = useGymApi();
+  const draftKey = `backfill:${opening.routineId ?? 'free'}`;
+  const [restored] = useState(() => api?.workoutSave(draftKey)?.draft);
   const stored = useDomainRead((read) => {
     const sets = read.repository(TrainingSet).all('stored');
     return read.repository(Session).all('stored').map((session) => sessionDocument(SessionRules.drawn(session, sets, read.moment.now)));
   }, [log.progress?.data]);
   // One clock for the life of the form, so the same form always builds the same request.
-  const [now] = useState(() => Date.now());
-  const [sessionId] = useState(() => mintId('ses_'));
-  const [draft, setDraft] = useState(opening);
-  const [day, setDay] = useState(() => todayOf(now));
+  const [now] = useState(() => restored?.now ?? Date.now());
+  const [sessionId] = useState(() => restored?.sessionId ?? mintId('ses_'));
+  const [draft, setDraft] = useState(() => restored?.draft ?? opening);
+  const [day, setDay] = useState(() => restored?.day ?? todayOf(now));
   // The lifter's own start and length, once `Change time` is opened; the default slot until then.
-  const [clock, setClock] = useState(null);
-  const [expanded, setExpanded] = useState(() => new Set());
-  const [focus, setFocus] = useState(opening.movements[0]?.key ?? null);
-  const [edited, setEdited] = useState(() => new Set());
+  const [clock, setClock] = useState(restored?.clock ?? null);
+  const [submittedSlot, setSubmittedSlot] = useState(restored?.slot ?? null);
+  const [expanded, setExpanded] = useState(() => new Set(restored?.expanded));
+  const [focus, setFocus] = useState(restored?.focus ?? opening.movements[0]?.key ?? null);
+  const [edited, setEdited] = useState(() => new Set(restored?.edited));
   const [lift, setLift] = useState(null);
   const [leaving, setLeaving] = useState(() => new Set());
+  const [adding, setAdding] = useState(false);
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState('');
   const [saving, setSaving] = useState(false);
@@ -156,9 +162,18 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
   const [landed, setLanded] = useState(null);
   // The session the store said these times cross: the log moved under the form.
   const [raced, setRaced] = useState(null);
+  const [failure, setFailure] = useState(null);
   const dayField = useRef(null);
   const startField = useRef(null);
   const savedTimer = useRef(null);
+  const submittedFrom = useRef(window.location.hash);
+  const handled = useRef(null);
+  const editingBlocked = useRef(false);
+  const receipt = api?.workoutSave(draftKey);
+  const ownReceipt = receipt?.sessionId === sessionId ? receipt : null;
+  const pending = ownReceipt?.status === 'pending';
+  const locked = saving || pending || Boolean(landed) || !api?.ready;
+  editingBlocked.current = locked;
 
   // A skipped movement's Undo has nowhere to go once the form is gone, and neither has its `Saved`.
   const { dropWithheld } = log;
@@ -168,17 +183,20 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
   }, [dropWithheld]);
 
   const settled = log.gone('session');
-  const sessions = (stored.data ?? []).filter((summary) => !settled.has(summary.id));
+  const sessions = (stored.data ?? []).filter((summary) => summary.id !== sessionId && !settled.has(summary.id));
   const running = sessions.find((summary) => !isFinished(summary)) ?? null;
-  const fallback = defaultSlot({ day, now, sessions, open: running });
+  const fallback = submittedSlot ?? defaultSlot({ day, now, sessions, open: running });
   // No default fits the day: the time row stands open, waiting for a start.
   const opened = clock ?? (fallback ? null : { hour: null, minute: null, minutes: DEFAULT_MINUTES });
   const chosen = opened?.hour != null ? chosenSlot({ day, ...opened, now }) : null;
   const slot = landed ?? (opened ? chosen : fallback);
   const refusal = raced
-    ? crossedRefusal(raced, now)
-    : !landed && chosen && refusalOf({ slot: chosen, busy: busySpans({ sessions, open: running, now }), now });
-  const inert = !isReady(draft) || !slot || Boolean(refusal) || saving || Boolean(landed);
+    ? Number.isFinite(raced.startedAt) ? crossedRefusal(raced, now) : {
+      title: 'These times cross a workout already in the log.',
+      body: 'Change the time, or open that workout to review it.', session: raced,
+    }
+    : !landed && !pending && chosen && refusalOf({ slot: chosen, busy: busySpans({ sessions, open: running, now }), now });
+  const inert = !isReady(draft) || !slot || Boolean(refusal) || locked || adding || leaving.size > 0;
   const focused = draft.movements.find((movement) => movement.key === focus) ?? draft.movements[0] ?? null;
   const dayChip = dayChipOf(day, now);
 
@@ -186,11 +204,17 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
   const keepOpen = (key) => setExpanded((held) => new Set(held).add(key));
 
   const changeDay = (next) => {
+    if (locked) return;
     setRaced(null);
+    setFailure(null);
+    setSubmittedSlot(null);
     setDay(next);
   };
   const changeClock = (change) => {
+    if (locked) return;
     setRaced(null);
+    setFailure(null);
+    setSubmittedSlot(null);
     setClock({ ...opened, ...change });
   };
   const openClock = () => {
@@ -210,6 +234,8 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
   };
 
   const write = (key, setKey, field, value) => {
+    if (locked) return;
+    setFailure(null);
     const { draft: next, carried } = withValueSet(draft, key, setKey, field, value);
     setDraft(next);
     setEdited((held) => new Set(held).add(key));
@@ -219,6 +245,7 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
 
   // The row collapses its height before it leaves; without motion it leaves at once.
   const removeSet = (key, setKey) => {
+    if (locked) return;
     keepOpen(key);
     const still = !window.matchMedia || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (still) {
@@ -238,21 +265,25 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
 
   // Withheld like a routine line: it leaves at once, and the transient is the way back.
   const skip = (movement) => {
+    if (locked) return;
     const index = draft.movements.indexOf(movement);
     setDraft((held) => withMovementRemoved(held, movement.key));
     log.withhold({
       kind: 'entry',
       id: mintId('drop_'),
       line: movementSkippedLine(nameOfMovement(log.catalog, movement.exerciseId)),
-      undo: () => setDraft((held) => withMovementAt(held, index, movement)),
+      undo: () => { if (!editingBlocked.current) setDraft((held) => withMovementAt(held, index, movement)); },
     });
   };
 
   const addMovement = async (exerciseId) => {
+    if (locked) return;
+    setAdding(true);
     setPicking(false);
     const reply = await api.lastTime(exerciseId).catch(() => null);
     setDraft((held) => withMovementAdded(held, exerciseId, reply));
     setFocus(`m${draft.minted}`);
+    setAdding(false);
   };
 
   const discard = (id) => {
@@ -264,29 +295,51 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
     window.location.hash = '#/gym/log';
   };
 
+  useEffect(() => {
+    if (!ownReceipt) return;
+    if (ownReceipt.status === 'pending') { handled.current = null; return; }
+    const signature = JSON.stringify([ownReceipt.status, ownReceipt.command]);
+    if (handled.current === signature) return;
+    handled.current = signature;
+    if (ownReceipt.status === 'refused') {
+      const error = ownReceipt.error;
+      if (error?.overlapping) setRaced(error.overlapping);
+      else setFailure(error?.sentence || `That workout didn’t reach the log — ${failureReason(error)}.`);
+      setSaving(false);
+      return;
+    }
+    setLanded(ownReceipt.draft.slot);
+    const name = ownReceipt.draft.draft.name ?? NO_ROUTINE;
+    const form = submittedFrom.current;
+    savedTimer.current = setTimeout(() => {
+      if (window.location.hash === form) window.location.hash = `${sessionHref(sessionId)}?from=${encodeURIComponent('#/gym/log')}`;
+      log.say(inTheLogLine(name), { action: { label: UNDO_LABEL, run: () => discard(sessionId) } });
+      api.clearWorkoutSave(draftKey, ownReceipt.command).catch(() => {});
+    }, SAVED_MS);
+  }, [api, ownReceipt, draftKey, sessionId, log]);
+
   // The id is this form's for good, so a save pressed again after a refusal sends the same workout.
   const save = async () => {
     if (inert) return;
+    submittedFrom.current = window.location.hash;
+    dropWithheld('entry');
+    setFailure(null);
+    setSubmittedSlot(slot);
     setSaving(true);
-    let session;
     try {
-      ({ session } = await api.importSession(importOf({ id: sessionId, slot, draft })));
-    } catch (error) {
-      setSaving(false);
-      if (error.overlapping) setRaced(error.overlapping);
-      else log.say(`That workout didn’t reach the log — ${failureReason(error)}.`);
-      return;
-    }
-    setSaving(false);
-    setLanded({ startedAt: session.startedAt, finishedAt: session.finishedAt });
-    const name = draft.name ?? NO_ROUTINE;
-    const form = window.location.hash;
-    savedTimer.current = setTimeout(() => {
-      if (window.location.hash === form) window.location.hash = `${sessionHref(sessionId)}?from=${encodeURIComponent('#/gym/log')}`;
-      log.say(inTheLogLine(name), {
-        action: { label: UNDO_LABEL, run: () => discard(sessionId) },
+      await api.importSession(importOf({ id: sessionId, slot, draft }), {
+        draftKey, draft: { sessionId, now, draft, day, clock, slot, expanded: [...expanded], focus, edited: [...edited] },
       });
-    }, SAVED_MS);
+    } catch (error) {
+      if (error.overlapping) setRaced(error.overlapping);
+      else {
+        const reason = error.sentence || `That workout didn’t reach the log — ${failureReason(error)}.`;
+        setFailure(reason);
+        log.say(reason);
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   const clockValue = opened?.hour != null
@@ -300,7 +353,7 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
         <h1 className="gym-title">{draft.name ?? NO_ROUTINE}</h1>
       </header>
       <div className="gym-past">
-        <div className="gym-past-form">
+        <fieldset className="gym-past-form" disabled={locked} style={{ minWidth: 0, margin: 0, padding: 0, border: 0 }}>
           <div className="gym-past-when">
             <div className="gym-past-days">
               {['today', 'yesterday'].map((chip) => (
@@ -418,6 +471,8 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
             </section>
           )}
 
+          {failure && <p className="gym-read-failed" role="alert">{failure}</p>}
+
           <div className="gym-save">
             <p className="gym-save-note">{slot ? slotNote(slot, now) : TIME_NEEDED}</p>
             <button
@@ -426,11 +481,11 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
               aria-disabled={inert}
               onClick={save}
             >
-              {landed ? savedLabel(draft) : saveLabel(draft)}
+              {pending ? 'Waiting for the log…' : landed ? savedLabel(draft) : saveLabel(draft)}
             </button>
           </div>
           {isOverLimit(draft) && <p className="gym-past-limit">{SET_LIMIT_LINE}</p>}
-        </div>
+        </fieldset>
 
         <aside className="gym-past-side">
           {noRoutines && (

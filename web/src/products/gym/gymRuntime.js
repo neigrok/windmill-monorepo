@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { Decision } from '../../platform/domain-kit/actions.js';
 import { Draft } from '../../platform/domain-kit/drafts.js';
-import { DecodeError, Fields, Id } from '../../platform/domain-kit/entities.js';
+import { DecodeError, Fields, Id, sameJson } from '../../platform/domain-kit/entities.js';
+import { Plan } from '../../platform/domain-kit/plans.js';
 import { Placement, Reader, Views } from '../../platform/domain-kit/reading.js';
 import { Refused } from '../../platform/domain-kit/refusals.js';
 import { ActionRunner, EngineReplica } from '../../platform/domain-kit/runner.js';
@@ -23,8 +24,8 @@ import { DeleteRoutine, PlanSnapshot, Routine, RoutineValue } from './domain/rou
 import { AcknowledgeRoutineRemoval, ApplyProposalKeepingReceipt, DismissProposal, Proposal,
   REMOVAL_RECEIPTS, removalReceipts } from './domain/proposals.js';
 import { SeedExercises } from './domain/seedExercises.js';
-import { proposalDocument, proposalsDocument, setDocument, TrainingHistory } from './domain/trainingHistory.js';
-import { Session, TrainingSet } from './domain/training.js';
+import { proposalDocument, proposalsDocument, sessionDocument, setDocument, TrainingHistory } from './domain/trainingHistory.js';
+import { Session, SessionRules, TrainingSet } from './domain/training.js';
 import { CorrectedSet, CorrectSession, CorrectSet, DeleteSet, ImportedSet, ImportSession } from './domain/trainingActions.js';
 import { GymRefusal, isStoreFailure } from './errors.js';
 import { REFUSALS } from './bodyweight/bodyweight.js';
@@ -38,6 +39,14 @@ const OPERATIONS = new Set(['routine-create', 'routine-save', 'exercise-create',
   'session-import', 'session-correct', 'proposal-apply', 'proposal-dismiss', 'refusal']);
 const OUTCOMES = new Set(['saved-local', 'unchanged', 'failed', 'held', 'undone', 'closed', 'refused']);
 const shownRemovals = new WeakMap();
+const WORKOUT_DRAFTS = 'rack:workoutDrafts';
+
+function sameWorkoutCommand(left, right) {
+  if (!left || !right || left.name !== right.name) return false;
+  if (left.name === 'gym.importSession') return left.args.id === right.args.id;
+  return left.name === 'gym.correctSession' && left.args.sessionId === right.args.sessionId
+    && left.args.requestId === right.args.requestId;
+}
 
 export function gymStep(operation, outcome) {
   if (!OPERATIONS.has(operation) || !OUTCOMES.has(outcome)) return;
@@ -52,31 +61,25 @@ export function gymFailure(operation) {
 export const deviceZone = { offsetSeconds: (instant) => -new Date(instant.ms).getTimezoneOffset() * 60 };
 export const gymMoment = (now = Date.now()) => new Moment(new Instant(now), deviceZone);
 
-function withoutMalformedPlans(read) {
-  let changed = false;
-  const clean = (records) => new Map([...records].map(([key, record]) => {
-    if (record.t !== 'session') return [key, record];
-    try { PlanSnapshot.decode(Fields.record(record).json('plan')); return [key, record]; }
+function reportUnreadablePlans(views, failure, checked = new WeakSet()) {
+  let unreadable = false;
+  for (const view of [views.drawn, views.stored]) for (const record of view.values()) {
+    const register = record.f?.plan;
+    if (record.t !== 'session' || register?.[0] == null || checked.has(register)) continue;
+    checked.add(register);
+    try { PlanSnapshot.decode(register[0]); }
     catch (error) {
       if (!(error instanceof DecodeError)) throw error;
-      changed = true;
-      const { plan, ...f } = record.f;
-      return [key, { ...record, f }];
+      unreadable = true;
     }
-  }));
-  const drawn = clean(read.views.drawn); const stored = clean(read.views.stored);
-  return changed ? new Reader(new Views(read.registry, { ...read.views, drawn, stored }), SCOPE, read.moment) : null;
+  }
+  if (unreadable) failure('projection');
 }
 
-function readGym(load, body, failure) {
-  let read;
-  try { return load((reader) => { read = reader; return body(reader); }); }
+function readGym(load, body, failure, checked) {
+  try { return load((reader) => { reportUnreadablePlans(reader.views, failure, checked); return body(reader); }); }
   catch (error) {
     if (!(error instanceof GymRefusal)) failure('projection');
-    if (read && error instanceof DecodeError) {
-      const repaired = withoutMalformedPlans(read);
-      if (repaired) return body(repaired);
-    }
     throw error;
   }
 }
@@ -149,6 +152,23 @@ export function gymProposalResult(replica, context, result) {
   }
 }
 
+export function gymWorkoutResult(replica, context, result) {
+  const entry = replica.entries(SCOPE).find((entry) => entry.state === 'sent' && entry.n === result.n);
+  if (!entry?.intent.cmd) return;
+  for (const receipt of Object.values(replica.deviceRows('gym')[WORKOUT_DRAFTS] ?? {})) {
+    if (receipt.status !== 'pending' || !sameWorkoutCommand(receipt.command, entry.intent.cmd)) continue;
+    if (result.s === 'ok') receipt.status = 'accepted';
+    if (result.s === 'refused' && !['clock-skew', 'base-unknown'].includes(result.code)) {
+      receipt.status = 'refused'; receipt.code = result.code; receipt.detail = result.detail ?? null;
+    }
+  }
+}
+
+export function gymCommandResult(replica, context, result) {
+  gymProposalResult(replica, context, result);
+  gymWorkoutResult(replica, context, result);
+}
+
 export function routineFromWorkout({ id, ...workout }) {
   return routineDocument(RoutineValue.fromSession({ ...workout, id: new Id(id, Routine) }));
 }
@@ -206,6 +226,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
   const owner = engine.activeReplica();
   if (shownRemovals.get(engine)?.owner !== owner) shownRemovals.set(engine, { owner, proposals: new Map() });
   const shown = shownRemovals.get(engine).proposals;
+  const checkedPlans = new WeakSet();
   const port = new EngineReplica(engine);
   const checkOwner = (replica = engine.activeReplica()) => {
     if (replica !== owner) throw new GymRefusal('not-writable', { sentence: 'Sign in to save to your training log.' });
@@ -213,6 +234,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
   const runner = new ActionRunner({
     commit: (scope, body) => port.commit(scope, (views) => {
       checkOwner(views.replica);
+      reportUnreadablePlans(views, failure, checkedPlans);
       return body(views);
     }),
     read: (scope) => { checkOwner(); return port.read(scope); },
@@ -231,7 +253,61 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
       throw error;
     }
   };
-  const read = (body) => readGym((loaded) => runner.read(SCOPE, loaded), body, failure);
+  const read = (body) => readGym((loaded) => runner.read(SCOPE, loaded), body, failure, checkedPlans);
+  const workoutSave = (key) => read((reader) => {
+    const receipt = reader.device(WORKOUT_DRAFTS)?.[key];
+    if (!receipt) return null;
+    let result = receipt;
+    if (receipt.status === 'pending') {
+      const queued = reader.commands().find((entry) => sameWorkoutCommand(entry.command, receipt.command));
+      if (queued?.isAdmitted) result = { ...receipt, status: 'accepted' };
+      if (!queued) {
+        const notice = engine.observe(SCOPE).getSnapshot().notices.findLast((notice) => sameWorkoutCommand(notice.content?.cmd, receipt.command)
+          || notice.content?.dependents?.some((part) => sameWorkoutCommand(part.cmd, receipt.command)));
+        if (notice) result = { ...receipt, status: 'refused', code: notice.code, detail: notice.detail ?? null };
+      }
+    }
+    if (result.status !== 'refused') return { ...result, error: null };
+    const error = gymRefusalError(GymRefusals.ofRefused(new Refused(result.code, { t: 'session', id: result.sessionId }, result.detail, 'notice')));
+    if (result.code === 'session-overlap' && result.detail?.sessionId) {
+      error.overlapping = new TrainingHistory(reader).session(result.detail.sessionId)?.session ?? { id: result.detail.sessionId };
+    }
+    if (result.code === 'invalid' || result.code === 'bad-instant') error.sentence = 'The log couldn’t accept this workout. Check its date, times and sets, then try again.';
+    if (['unknown-record', 'record-dead'].includes(result.code)) error.sentence = 'This workout is no longer in the log. Your edits are still here.';
+    return { ...result, error };
+  });
+  // A form checks the transaction's current log and keeps its exact draft beside the queued command.
+  const savingWorkout = (action, input, record, { draftKey, draft } = {}) => ({ ...action,
+    load: (reader) => {
+      const sets = reader.repository(TrainingSet).all('stored');
+      return { loaded: action.load(reader), sessions: reader.repository(Session).all('stored').map((session) => SessionRules.drawn(session, sets, reader.moment.now)),
+        visible: reader.repository(Session).all('drawn'), now: reader.moment.now.ms,
+        receipts: reader.device(WORKOUT_DRAFTS) ?? {}, commands: reader.commands() };
+    },
+    decide: ({ loaded, sessions, visible, now, receipts, commands }) => {
+      const decided = action.decide(loaded);
+      if (decided.kind !== 'write') return decided;
+      const previous = draftKey ? receipts[draftKey] : null;
+      if (previous?.status === 'pending' && commands.some((entry) => sameWorkoutCommand(entry.command, previous.command))) {
+        if (sameJson(previous.command, decided.plan.command)) return Decision.unchanged(decided.result);
+        throw new GymRefusal('save-pending', { sentence: 'A workout from this form is still waiting for the log. Wait for it before saving again.' });
+      }
+      if (record) {
+        const current = visible.find((session) => session.id.record === record);
+        if (!current) throw new GymRefusal('unknown-record', { sentence: 'This workout is no longer in the log. Your edits are still here.' });
+        if (current.isOpen) throw new GymRefusal('session-open', { sentence: 'That workout is still running. Finish it before editing it.' });
+      }
+      if (input.finishedAt > now) throw new GymRefusal('bad-instant', { sentence: 'These times run past now.' });
+      const overlapping = sessions.find((session) => session.id.record !== (record ?? input.id)
+        && input.startedAt < Math.max(session.finishedAt?.ms ?? now, session.startedAt.ms + 1)
+        && session.startedAt.ms < Math.max(input.finishedAt, input.startedAt + 1));
+      if (overlapping) throw new GymRefusal('session-overlap', { sentence: 'These times cross a workout already in the log.',
+        overlapping: sessionDocument(overlapping) });
+      if (draftKey) decided.plan.device(WORKOUT_DRAFTS, { ...receipts, [draftKey]: { status: 'pending',
+        sessionId: record ?? input.id, command: decided.plan.command, draft: structuredClone(draft) } });
+      return decided;
+    },
+  });
   const remove = (action) => boundary('delete', async () => {
     const outcome = await runner.run(action);
     if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
@@ -273,6 +349,21 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
   });
   return {
     read,
+    workoutSave,
+    workoutSaves: () => read((reader) => Object.keys(reader.device(WORKOUT_DRAFTS) ?? {}).map((key) => ({ key, ...workoutSave(key) }))),
+    clearWorkoutSave: (key, expectedCommand = null) => boundary('session-correct', async () => {
+      await runner.run({ scope: SCOPE, refusals: GymRefusals,
+        load: (reader) => ({ receipts: reader.device(WORKOUT_DRAFTS) ?? {}, commands: reader.commands() }),
+        decide: ({ receipts, commands }) => {
+          const current = receipts[key];
+          if (!current || (expectedCommand && !sameJson(expectedCommand, current.command))
+            || (current.status === 'pending' && commands.some((entry) => !entry.isAdmitted && sameWorkoutCommand(entry.command, current.command)))) return Decision.unchanged(null);
+          const { [key]: removed, ...rest } = receipts;
+          const plan = new Plan(); plan.device(WORKOUT_DRAFTS, Object.keys(rest).length ? rest : null);
+          return Decision.write(plan, null);
+        },
+      });
+    }),
     ...Object.fromEntries(['exercises', 'sessions', 'session', 'review', 'routines', 'routine',
       'history', 'progress', 'record', 'lastTime', 'lastSets', 'stats'].map((name) => [name, async (...args) => read((reader) => {
       const source = name === 'history' && args[0]?.timeZone
@@ -282,21 +373,21 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
       return name === 'history' && args[0]?.projection === 'progress'
         ? { ...document, progress: history.progressIn(args[0]) } : document;
     })])),
-    importSession: (input) => boundary('session-import', async () => {
+    importSession: (input, draft) => boundary('session-import', async () => {
       const id = new Id(input.id, Session);
-      const outcome = await runner.run(ImportSession({ id, startedAt: new Instant(input.startedAt), finishedAt: new Instant(input.finishedAt),
+      const outcome = await runner.run(savingWorkout(ImportSession({ id, startedAt: new Instant(input.startedAt), finishedAt: new Instant(input.finishedAt),
         routineId: input.routineId == null ? null : new Id(input.routineId, Routine),
         sets: input.sets.map((set) => new ImportedSet({ ...set, id: new Id(set.id, TrainingSet), exerciseId: new Id(set.exerciseId, Exercise),
-          completedAt: new Instant(set.completedAt), rpeNamed: Object.hasOwn(set, 'rpe') })) }));
+          completedAt: new Instant(set.completedAt), rpeNamed: Object.hasOwn(set, 'rpe') })) }), input, null, draft));
       if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
       event('session-import', outcome.kind === 'committed' ? 'saved-local' : 'unchanged');
       return read((reader) => new TrainingHistory(reader).session(input.id));
     }),
-    correctSession: (record, input) => boundary('session-correct', async () => {
-      const outcome = await runner.run(CorrectSession({ ...input, id: new Id(record, Session),
+    correctSession: (record, input, draft) => boundary('session-correct', async () => {
+      const outcome = await runner.run(savingWorkout(CorrectSession({ ...input, id: new Id(record, Session),
         startedAt: new Instant(input.startedAt), finishedAt: new Instant(input.finishedAt),
         sets: input.sets.map((set) => new CorrectedSet({ ...set, id: new Id(set.id, TrainingSet), exerciseId: new Id(set.exerciseId, Exercise),
-          completedAt: new Instant(set.completedAt), rpeNamed: Object.hasOwn(set, 'rpe') })) }));
+          completedAt: new Instant(set.completedAt), rpeNamed: Object.hasOwn(set, 'rpe') })) }), input, record, draft));
       if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
       event('session-correct', outcome.kind === 'committed' ? 'saved-local' : 'unchanged');
       return read((reader) => new TrainingHistory(reader).session(record));

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { registry } from '../../../src/platform/sync/schema.js';
 import { syncSession } from '../../../src/platform/sync/session.js';
 import { useTrainingLog } from '../../../src/products/gym/useTrainingLog.js';
+import { createGymApi } from '../../../src/products/gym/gymRuntime.js';
 import { browserWith, confirmed, gymAccount, renderHook, settle } from './harness.mjs';
 
 const stamp = '1000:0:r_aaaaaaaaaaaa';
@@ -155,4 +156,29 @@ test('a memoized live session closes at its idle deadline without a replica upda
   assert.equal(view.log.session, null);
   assert.equal(view.log.summaries[0].closedItself, true);
   assert.notEqual(view.log.progress.data, progress);
+});
+
+test('a refused workout offers its retained editable draft from anywhere in the log', async (t) => {
+  browserWith();
+  const { engine } = await gymAccount(t);
+  const api = createGymApi(engine);
+  const key = 'backfill:free';
+  const input = { id: 'sessionRecovery', startedAt: 100, finishedAt: 900,
+    sets: [{ id: 'setRecovery', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: 850 }] };
+  const draft = { sessionId: input.id, draft: { name: 'PRIVATE_DRAFT', movements: [] }, day: '2026-01-01', clock: { hour: 12, minute: 3 } };
+  await api.importSession(input, { draftKey: key, draft });
+  const view = renderHook(t, () => useTrainingLog(), { live: true });
+  window.location.hash = '#/gym/log';
+  await engine.write(null, (device) => {
+    const replica = device.activeReplica;
+    const [entry] = replica.entries('self/gym');
+    replica.outbox = [];
+    replica.notices.push({ id: `notice:${entry.localId}`, scope: 'self/gym', code: 'invalid', content: { cmd: entry.intent.cmd }, at: 1000 });
+  });
+  await settle();
+  assert.equal(view.log.transient.text, 'The log couldn’t accept this workout. Check its date, times and sets, then try again. Your draft is here.');
+  assert.equal(view.log.transient.action.label, 'Review workout');
+  view.log.transient.action.run();
+  assert.equal(window.location.hash, '#/gym/backfill/free');
+  assert.deepEqual(api.workoutSave(key).draft, draft);
 });

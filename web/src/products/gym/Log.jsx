@@ -187,12 +187,17 @@ function SessionRow({ summary, selected, href, unit }) {
 
 export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', edit = false, fixSetId = null }) {
   const api = useGymApi();
+  const correction = edit ? api?.workoutSave(`correction:${id}`) : null;
   const { say, holdDelete } = log;
   const storedSets = useDomainRead((read) => read.repository(TrainingSet).children(new Id(id, Session), 'sessionId', 'stored').map(setDocument), [id]);
   const view = useGymRead(
     () => Promise.all([api.session(id), api.exercises()])
-      .then(([detail, catalog]) => (detail ? { detail, catalog } : null)),
-    [id],
+      .then(([detail, catalog]) => {
+        const recovery = edit ? api.workoutSave(`correction:${id}`)?.draft : null;
+        const current = detail ?? (recovery ? { session: recovery.session, sets: recovery.sets } : null);
+        return current ? { detail: current, catalog } : null;
+      }),
+    [id, edit],
     { sync: true, ready: Boolean(api?.ready) },
   );
   const [moves, setMoves] = useState(() => new Map());
@@ -239,7 +244,7 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
 
   if (view.phase === 'loading') return <p className="gym-quiet">Opening the session…</p>;
   // A session its delete window holds is gone from its own screen, as its row is from the log.
-  if (view.phase === 'absent' || log.hidden('session').has(id)) {
+  if (view.phase === 'absent' || (!correction && log.hidden('session').has(id))) {
     return (
       <>
         {!embedded && <Back href={from}>The log</Back>}

@@ -29,7 +29,8 @@ An action scene has `{action, input, records:{drawn, stored?}, ids?, now, offset
 `stored` defaults to `drawn`. A read scene replaces `action` with `read` and may specify
 `firstPullComplete:false`. That flag prevents absence and lifetime-best claims over a booting history.
 Pure value reads use their input directly. Malformed decode cases return
-`{decodeError:{type,field,reason}}` and never discard malformed fields silently.
+`{decodeError:{type,field,reason}}`. An unreadable frozen session plan is retained as exact JSON,
+with `planUnreadable` marking its absent presentation; other session facts and writes remain available.
 
 ## Public entities and values
 
@@ -40,7 +41,8 @@ from scene rows; an input set's `setNumber` names the identity retained by a cor
 
 `RoutineEntry` has `exerciseId`, optional `sets` and optional `restSeconds`.
 A `SetTarget` has optional `reps` and `weightKg`; omission means max reps or last load.
-Absent sets mean an open line. `SessionPlan` freezes `{routine,entries}`.
+Absent sets mean an open line. `SessionPlan` freezes `{routine,entries}`. A session's malformed
+frozen plan stays in its fields through closure and correction and cannot block editing sets or removal.
 
 `ImportedSet` carries `id,exerciseId,weightKg,reps,completedAt` and optional `kind,rpe,note`.
 `CorrectedSet` adds required `setNumber`: kept sets keep their kind; new ones take optional `kind`,

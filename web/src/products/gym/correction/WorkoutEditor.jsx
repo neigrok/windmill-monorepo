@@ -10,18 +10,43 @@ import { correctionDraft, correctionScheme, correctionWrite } from './correction
 
 export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
   const api = useGymApi();
-  const [draft, setDraft] = useState(() => correctionDraft(session, sets));
+  const draftKey = `correction:${session.id}`;
+  const [restored] = useState(() => api?.workoutSave(draftKey)?.draft);
+  const original = restored?.session ?? session;
+  const originalSets = restored?.sets ?? sets;
+  const [draft, setDraft] = useState(() => restored?.draft ?? correctionDraft(original, originalSets));
   const [failure, setFailure] = useState(null);
-  const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [pick, setPick] = useState(false);
-  const [selected, setSelected] = useState(sets[0]?.exerciseId ?? null);
-  const request = useRef(null);
+  const [selected, setSelected] = useState(restored?.selected ?? originalSets[0]?.exerciseId ?? null);
+  const request = useRef(restored?.request ?? null);
   const form = useRef(null);
+  const submittedFrom = useRef(window.location.hash);
+  const handled = useRef(null);
+  const receipt = api?.workoutSave(draftKey);
+  const ownReceipt = receipt?.command?.args.requestId === request.current?.id ? receipt : null;
+  const pending = ownReceipt?.status === 'pending';
+  const busy = saving || pending || !api?.ready;
   const names = new Map(catalog.map((exercise) => [exercise.id, exercise.name]));
   const back = `${sessionHref(session.id)}?from=${encodeURIComponent(from)}`;
-  const totals = workoutTotals(sets);
-  const name = routineNameOf(session) ?? NO_ROUTINE;
+  const totals = workoutTotals(originalSets);
+  const name = routineNameOf(original) ?? NO_ROUTINE;
   const date = draft.date ? new Date(`${draft.date}T12:00`) : null;
+  useEffect(() => {
+    if (!ownReceipt) return;
+    if (ownReceipt.status === 'pending') { handled.current = null; return; }
+    const signature = JSON.stringify([ownReceipt.status, ownReceipt.command]);
+    if (handled.current === signature) return;
+    handled.current = signature;
+    if (ownReceipt.status === 'refused') {
+      const error = ownReceipt.error;
+      setFailure({ reason: error?.sentence || `Those changes didn’t land — ${failureReason(error)}.`, overlapping: error?.overlapping });
+      setSaving(false);
+      return;
+    }
+    if (window.location.hash === submittedFrom.current) window.location.hash = back;
+    api.clearWorkoutSave(draftKey, ownReceipt.command).catch(() => {});
+  }, [api, ownReceipt, draftKey, back]);
   useEffect(() => {
     if (!failure) return;
     form.current?.querySelector(failure.setId ? `[data-set="${failure.setId}"] [name="${failure.field}"]` : `[name="${failure.field}"]`)?.focus();
@@ -40,7 +65,7 @@ export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
   const save = async (event) => {
     event.preventDefault();
     if (busy) return;
-    const parsed = correctionWrite(session, draft, request.current?.id ?? mintId('fix_'));
+    const parsed = correctionWrite(original, draft, request.current?.id ?? mintId('fix_'));
     if (parsed.reason) {
       setFailure(parsed);
       if (parsed.setId) setSelected(draft.sets.find((set) => set.id === parsed.setId)?.exerciseId);
@@ -50,20 +75,24 @@ export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
     const body = { ...parsed.value, requestId: '' };
     const signature = JSON.stringify(body);
     if (!request.current || request.current.signature !== signature) request.current = { signature, id: mintId('fix_') };
-    setBusy(true);
+    submittedFrom.current = window.location.hash;
+    setFailure(null);
+    setSaving(true);
     try {
-      await api.correctSession(session.id, { ...parsed.value, requestId: request.current.id });
-      window.location.hash = back;
+      await api.correctSession(session.id, { ...parsed.value, requestId: request.current.id }, {
+        draftKey, draft: { session: original, sets: originalSets, draft, selected, request: request.current },
+      });
     } catch (error) {
-      setFailure({ reason: error.sentence || `Those changes didn’t land — ${failureReason(error)}.` });
-      setBusy(false);
+      setFailure({ reason: error.sentence || `Those changes didn’t land — ${failureReason(error)}.`, overlapping: error.overlapping });
+    } finally {
+      setSaving(false);
     }
   };
   return <section className="gym-workout-editor">
     <Back href={back}>{name}</Back>
     <header>
       <h1 className="gym-title">Edit workout</h1>
-      <p className="gym-workout-note">{name} · {dayLabel(session.startedAt)}</p>
+      <p className="gym-workout-note">{name} · {dayLabel(original.startedAt)}</p>
     </header>
     <div className="gym-workout-desk">
       <form ref={form} onSubmit={save} className="gym-correction-form">
@@ -98,11 +127,11 @@ export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
           <button type="button" className="gym-workout-add" onClick={() => setPick(!pick)}>+ Add movement</button>
           {pick && <label className="gym-workout-picker">Movement<select value="" onChange={(event) => { if (event.target.value) addSet(event.target.value); }}><option value="">Choose a movement</option>{catalog.map((exercise) => <option key={exercise.id} value={exercise.id}>{exercise.name}</option>)}</select></label>}
         </fieldset>
-        {failure && <p className="gym-read-failed" role="alert">{failure.reason}</p>}
-        <div className="gym-correction-actions"><a className="gym-workout-cancel" href={back}>Cancel</a><Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</Button></div>
+        {failure && <p className="gym-read-failed" role="alert">{failure.reason}{failure.overlapping && <> <a href={sessionHref(failure.overlapping.id)}>Open that session</a></>}</p>}
+        <div className="gym-correction-actions"><a className="gym-workout-cancel" href={back}>{pending ? 'Back to workout' : 'Cancel'}</a><Button type="submit" disabled={busy}>{pending ? 'Waiting for the log…' : saving ? 'Saving…' : 'Save changes'}</Button></div>
       </form>
       <aside className="gym-workout-totals">
-        <p className="gym-workout-unit">SAVED · {dayLabel(session.startedAt).toUpperCase()}</p>
+        <p className="gym-workout-unit">SAVED · {dayLabel(original.startedAt).toUpperCase()}</p>
         <dl>{[[totals.sets, 'sets'], [totals.reps, 'reps'], [Number(fmtKg(totals.tonnageKg)).toLocaleString('en'), 'kg external']].map(([value, label]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
         <p>These are this workout’s own numbers.</p>
         <button type="button" className="gym-short-discard" disabled={busy} onClick={onDelete}>Delete workout</button>

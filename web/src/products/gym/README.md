@@ -23,8 +23,9 @@ Proposal values and decisions live in `domain/proposals.js`; their shared domain
 the proposal screen and routine history. Removal receipts survive sync and restart until shown.
 Catalogue reads combine `domain/seedExercises.js` with custom movements and seed-name overrides.
 Routine drafts preserve target absences and order; saved-workout routines and frozen plans use the
-values in `domain/routines.js`. The plan decoder refuses malformed shapes; the read boundary reports
-`gym-projection` and omits the malformed plan from the read while retaining the workout facts and stored data.
+values in `domain/routines.js`. Session decoding marks malformed plans as unreadable presentation
+and preserves their JSON. Reads, set corrections and workout deletion remain available; the boundary
+reports `gym-projection` without plan content.
 Notes mask pending deletes from the kit's `drawn` list and close an editor when its note is hidden.
 Undo restores the row. Capacity and empty-room stance come from `stored`. Their guarded drafts save only
 touched fields, with character and byte bounds declared in `domain/notes.js`. Moves write only the
@@ -40,8 +41,8 @@ the commit moment and retire a held delete of that day. Preference saves write o
 
 Training facts use the engine's drawn view: held session and set deletes leave records, last times,
 progress and history immediately, and Undo restores them. Account capacity and empty-room stance
-use stored facts. The room also hides a delete while the engine is still storing the hold. A write the log refuses before
-storing it is a `GymRefusal` (`errors.js`) carrying the engine's code, the sentence a screen shows
+use stored facts. The room also hides a delete while the engine is still storing the hold. A refused write
+is a `GymRefusal` (`errors.js`) carrying the engine's code, the sentence a screen shows
 and, for an overlap, the crossed session; `failureReason` finishes the sentence for any failure,
 naming this device when its store could not keep the write and the network only for a REST door.
 
@@ -57,8 +58,11 @@ predictions persist workout fields, correction removals and routine deaths from 
 through offline restart. Set numbers arrive with server admission; a pending correction retains the
 confirmed number until then. Import and correction plans preserve raw numbers and optional-key
 presence; predictions and committed commands use their declared numeric quantum. Additive corrections use
-`preserveOtherSets` to keep unnamed sets, their kinds and concurrent changes. Overlap, future-time
-and open-session admission are server-decided.
+`preserveOtherSets` to keep unnamed sets, their kinds and concurrent changes. The server decides
+admission. Workout forms preflight known conflicts in their commit transaction and retain the exact
+submitted draft in `rack:workoutDrafts` until admission succeeds. Pending saves stay on the form;
+refusals keep it editable, survive reload, and offer a route back from the log. Only acceptance shows
+Saved or leaves the editor. HTTP refusals also recover through the engine's durable notices.
 The composition is schema v6 with minimum v4. Routine `revision` and `createdEntries`, proposal
 `baseRevision`, `baseName` and `changeCount`, and note `updatedAt` come from server-authored registers.
 Editors never write them. Note positions are zero-based; a move writes the moved note's `ord` alone,
@@ -82,9 +86,9 @@ unresolved notices.
 Gym tests run through the existing `npm test`, `npm run test:sync` and `npm run build` scripts.
 The full suite runs performance cases after the parallel test workers exit. Training reads cover
 250 and 1,000 populated workouts, requiring unchanged renders to reuse their results within 25 ms CPU.
-The gym domain claims all 13 corpus files and 587 vectors, compared by JCS and with reversed record
+The gym domain claims all 13 corpus files and 594 vectors, compared by JCS and with reversed record
 order. Training reads claim 112 vectors (including 36 promoted REST samples and 22 regression cases),
-proposals claim 44, units claim 57 and the weight ladder claims 36. Training actions claim 126;
+proposals claim 44, units claim 57 and the weight ladder claims 36. Training actions claim 133;
 nothing remains pending. Harness tests exercise adopted-workout Finish, held set deletion and Undo,
 failed commits, command refusals, raw receipt replay and additive correction recovery.
 Screen tests run over a real browser engine for a signed-in account (`gymAccount` in

@@ -9,6 +9,7 @@ import { Valid } from '../../../../src/platform/domain-kit/validation.js';
 import { Path, Violation } from '../../../../src/platform/domain-kit/values.js';
 import { registry } from '../../../../src/platform/sync/schema.js';
 import { Exercise } from '../../../../src/products/gym/domain/catalogue.js';
+import { PlanSnapshot } from '../../../../src/products/gym/domain/routines.js';
 import { Session, SessionRules, SessionValue, SetRules, TrainingSet, TrainingSetValue } from '../../../../src/products/gym/domain/training.js';
 import { EstimatedFact, GymEstimate, MovementSessionFact, PerformedFact, ProgressSession, StatsProgress } from '../../../../src/products/gym/domain/trainingReads.js';
 import { SignedOutWorkout } from '../../../../src/products/gym/domain/workoutAdoption.js';
@@ -21,6 +22,23 @@ const moment = new Moment(new Instant(1_800_000_000_000), new FixedZone(0));
 function performed(id = 'set00001', session = sessionId, at = 2000, number = null, exercise = exerciseId) {
   return new TrainingSetValue(new Id(id, TrainingSet), session, exercise, 80, 5, new Instant(at), 'working', null, '', number);
 }
+
+test('an unreadable frozen plan retains its exact JSON while session facts remain usable', () => {
+  const values = new SessionValue(sessionId, new Instant(1000)).fields();
+  for (const plan of [false, 42, [], { routine: 42, entries: [] }, { routine: 'legacy', entries: 'broken', extra: ['e\u0301', null] }]) {
+    const session = Session.decode(Fields.values('session', sessionId.record, { ...values, plan }));
+    assert.equal(session.planUnreadable, true);
+    assert.equal(session.plan, null);
+    assert.equal(session.name, null);
+    assert.deepEqual(session.fields(), { ...values, plan });
+    assert.deepEqual(SessionRules.drawn(session, [], moment.now).fields().plan, plan);
+    assert.deepEqual(SessionRules.finish(session, new Instant(2000)).fields().plan, plan);
+    assert.deepEqual(SignedOutWorkout.decode(new SignedOutWorkout(session, []).json).session.fields().plan, plan);
+    assert.throws(() => PlanSnapshot.decode(plan), DecodeError);
+  }
+  assert.equal(Session.decode(Fields.values('session', sessionId.record, values)).planUnreadable, false);
+  assert.throws(() => Session.decode(Fields.values('session', sessionId.record, { ...values, startedAt: 'broken', plan: false })), DecodeError);
+});
 
 test('indexed progress keeps session and exercise identities separate when their record IDs match', () => {
   const session = new Id('same', Session), exercise = new Id('same', Exercise);

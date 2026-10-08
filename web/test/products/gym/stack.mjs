@@ -306,6 +306,7 @@ async function run() {
       assert.equal(imported.sets.length, 5);
       assert.ok(imported.session.finishedAt <= Date.now());
       assert.ok(commandsSeen.includes('gym.importSession'), 'backfill must use the engine command'); e2e++;
+      await page.waitForURL(`**#/gym/session/${importedId}?from=*`);
 
       const recoveredSet = { id: 'set_fixture_recovery', exerciseId: 'bench-press', setNumber: 1,
         weightKg: 20, reps: 8, completedAt: imported.session.startedAt + 1, kind: 'warmup', rpe: 6, note: 'Recovered set' };
@@ -321,6 +322,54 @@ async function run() {
       assert.deepEqual(recovered.sets.filter((set) => set.id !== recoveredSet.id), imported.sets);
       assert.deepEqual(recovered.sets.find((set) => set.id === recoveredSet.id), recoveredSet);
       assert.ok(commandsSeen.includes('gym.correctSession')); e2e++;
+
+      // A phone wins admission after this form commits. The browser must keep the rejected draft.
+      await goto('#/gym/backfill/rt_fixture_main');
+      const refusedDay = new Date(now - 40 * day).toISOString().slice(0, 10);
+      await page.getByRole('button', { name: 'Other day', exact: true }).click();
+      await page.getByLabel('Other day', { exact: true }).fill(refusedDay);
+      let racedInput = null;
+      const raceImport = async (route) => {
+        const intent = route.request().postDataJSON().intents.find((intent) => intent.cmd?.name === 'gym.importSession');
+        if (intent && !racedInput) {
+          racedInput = intent.cmd.args;
+          await agent('gym_import_session', { id: 'ses_fixture_conflict', startedAt: racedInput.startedAt, finishedAt: racedInput.finishedAt,
+            sets: [{ id: 'set_fixture_conflict', exerciseId: 'bench-press', weightKg: 20, reps: 5, completedAt: racedInput.startedAt }] });
+        }
+        await route.continue();
+      };
+      await page.route('**/v1/sync/push', raceImport);
+      await page.locator('.gym-save-do').click();
+      await page.locator('.gym-past-refusal').waitFor();
+      await page.unroute('**/v1/sync/push', raceImport);
+      assert.ok(racedInput, 'the overlap must race actual admission');
+      assert.equal(await request(`/v1/gym/sessions/${racedInput.id}`), null);
+      assert.match(page.url(), /#\/gym\/backfill\/rt_fixture_main$/);
+      assert.equal(await page.locator('.gym-save-do').getAttribute('class'), 'gym-save-do is-inert');
+      assert.equal(await page.getByLabel('Other day', { exact: true }).inputValue(), refusedDay);
+      const beforeReload = await page.evaluate(async () => {
+        const { syncSession } = await import('/src/platform/sync/session.js');
+        const { createGymApi } = await import('/src/products/gym/gymRuntime.js');
+        const receipt = createGymApi(syncSession.engine).workoutSave('backfill:rt_fixture_main');
+        return { status: receipt.status, draft: receipt.draft, overlapping: receipt.error.overlapping?.id };
+      });
+      assert.equal(beforeReload.status, 'refused');
+      assert.equal(beforeReload.overlapping, 'ses_fixture_conflict');
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.locator('.gym-past-refusal').waitFor();
+      const afterReload = await page.evaluate(async () => {
+        const { syncSession } = await import('/src/platform/sync/session.js');
+        const { createGymApi } = await import('/src/products/gym/gymRuntime.js');
+        return createGymApi(syncSession.engine).workoutSave('backfill:rt_fixture_main').draft;
+      });
+      assert.deepEqual(afterReload, beforeReload.draft);
+      assert.equal(await page.getByLabel('Other day', { exact: true }).inputValue(), refusedDay);
+      await page.locator('.gym-past-refusal').getByRole('button', { name: 'Change time', exact: true }).click();
+      await page.getByLabel('Start time', { exact: true }).fill('00:01');
+      await page.locator('.gym-save-do').click();
+      await waitUntil(async () => Boolean(await request(`/v1/gym/sessions/${racedInput.id}`)),
+        { processes: [vite, backend], label: 'refused draft retry convergence' });
+      await page.waitForURL(`**#/gym/session/${racedInput.id}?from=*`); e2e++;
 
       await goto('#/gym/log');
       await page.getByRole('button', { name: 'Weigh in', exact: true }).first().click();
@@ -396,7 +445,7 @@ async function run() {
       assert.deepEqual(pageErrors, []);
       assert.deepEqual(gymRequests.filter((request) => request !== 'GET /v1/gym/threads'), [], 'web mirror and engine writes must use no replaced REST door');
       await context.close();
-      console.log(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 12, pending: 0, persistedGymOperations: 7, syncWriteLog: true, ports: [backendPort, webPort] }));
+      console.log(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 13, pending: 0, persistedGymOperations: 7, syncWriteLog: true, ports: [backendPort, webPort] }));
     }
     completed = true;
   } catch (error) {
@@ -414,7 +463,7 @@ async function run() {
           replicaState: engine?.device.activeReplica.meta.state, online: engine?.online, leader: engine?.leader };
       }).catch(() => null);
       console.error(JSON.stringify({ browserErrors: pageErrors, url: lastPage.url(), sync }));
-      console.error(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 12, status: 'failed' }));
+      console.error(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 13, status: 'failed' }));
     }
     throw error;
   } finally {

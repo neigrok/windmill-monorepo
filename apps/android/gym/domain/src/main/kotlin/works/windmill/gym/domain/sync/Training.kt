@@ -8,18 +8,23 @@ import works.windmill.sync.schema.Gym
 
 data class Session(override val id: Id<Session>, val startedAt: Instant, val finishedAt: Instant? = null,
     val closedBy: String? = null, val routineId: Id<Routine>? = null, val historyRoutineId: Id<Routine>? = routineId,
-    val plan: PlanSnapshot? = null, val displayName: String? = null) : Entity<Session> {
+    val plan: PlanSnapshot? = null, val displayName: String? = null, val unreadablePlan: Json? = null) : Entity<Session> {
     val isOpen: Boolean get() = finishedAt == null
     val name: String? get() = displayName ?: plan?.routine
+    val planUnreadable: Boolean get() = unreadablePlan != null
     fun fields(): Map<String, Json> = mapOf("startedAt" to Json.of(startedAt.ms), "finishedAt" to (finishedAt?.ms?.let(Json::of) ?: Json.Null),
         "closedBy" to (closedBy?.let(Json::of) ?: Json.Null), "routineId" to (routineId?.json ?: Json.Null),
-        "historyRoutineId" to (historyRoutineId?.json ?: Json.Null), "plan" to (plan?.json ?: Json.Null), "displayName" to (displayName?.let(Json::of) ?: Json.Null))
+        "historyRoutineId" to (historyRoutineId?.json ?: Json.Null), "plan" to (unreadablePlan ?: plan?.json ?: Json.Null), "displayName" to (displayName?.let(Json::of) ?: Json.Null))
     companion object : EntityType<Session>, RemovableType<Session> {
         override val type = Gym.Types.session
         override val scope = ScopeRef(Gym.scope)
         override val heldRemoval = true
-        override fun decode(f: Fields) = Session(Id(f.id, this), f.instant("startedAt"), f.optionalInstant("finishedAt"), f.optionalString("closedBy"),
-            f.optionalRef("routineId", Routine), f.optionalRef("historyRoutineId", Routine), PlanSnapshot.decode(f.json("plan")), f.optionalString("displayName"))
+        override fun decode(f: Fields): Session {
+            var unreadablePlan: Json? = null
+            val plan = try { PlanSnapshot.decode(f.json("plan")) } catch (error: DecodeError) { unreadablePlan = f.json("plan"); null }
+            return Session(Id(f.id, this), f.instant("startedAt"), f.optionalInstant("finishedAt"), f.optionalString("closedBy"),
+                f.optionalRef("routineId", Routine), f.optionalRef("historyRoutineId", Routine), plan, f.optionalString("displayName"), unreadablePlan)
+        }
     }
 }
 

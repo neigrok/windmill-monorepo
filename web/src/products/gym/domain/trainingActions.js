@@ -317,7 +317,7 @@ export function CorrectSession({ id, requestId, startedAt, finishedAt, routineNa
       });
       const session = loaded.session(id);
       const predicted = session === null ? null : new SessionValue(id, startedAt, finishedAt, 'finish', session.routineId,
-        session.historyRoutineId, session.plan, routineName);
+        session.historyRoutineId, session.plan, routineName, session.unreadablePlan);
       const command = { name: 'gym.correctSession', args: { sessionId: id.json, requestId, startedAt: startedAt.ms,
         finishedAt: finishedAt.ms, routineName, sets: corrected.map((set) => set.json), ...(preserveOtherSets ? { preserveOtherSets: true } : {}) },
       specs: CommandSpecs.filter((spec) => spec.path.startsWith('gym.correctSession.')) };

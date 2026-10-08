@@ -27,6 +27,29 @@ import SyncTesting
     return try #require(gym.sessions.first { $0.id == id })
   }
 
+  @Test func unreadablePlanReportsStaticFailureWhileFactsCorrectionsAndDiscardRemainAvailable() throws {
+    let engine = SteppedEngine(registry: SyncSchema.registry, startMs: 1_790_424_000_000, account: nil,
+                               rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
+    let runner = ActionRunner(replica: engine.replica, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
+    let id = ID<Session>(RecordID("sessionP2")), setID = ID<TrainingSet>(RecordID("set00001"))
+    let plan: JSON = ["routine": "PRIVATE_FROZEN_PLAN", "entries": "broken"]
+    let session = Session(id: id, startedAt: Instant(ms: 100), finishedAt: Instant(ms: 900), closedBy: "finish", unreadablePlan: plan)
+    let set = TrainingSet(id: setID, sessionId: id, exerciseId: ID("bench-press"), weightKg: 80, reps: 5, completedAt: Instant(ms: 500))
+    _ = try engine.replica.commit(Gym.scope, Gesture(changes: [], command: Command(name: "gym.importSession", args: [
+      "id": id.json, "startedAt": 100, "finishedAt": 900, "sets": []]), predict: [
+        .create(Session.type, id: .given(id.record), session.fields),
+        .create(TrainingSet.type, id: .given(setID.record), set.fields)]))
+    let telemetry = TelemetryRecorder(), gym = GymModel(runner: runner, telemetry: telemetry)
+    #expect(!gym.readFailed && gym.sessions == [session] && gym.sets == [set])
+    #expect(telemetry.entries.withLock { $0.map(\.properties) } == [["operation": "gym_read", "failure_kind": "unexpected"]])
+    var corrected = set; corrected.reps = 9
+    #expect(gym.run(CorrectSet(corrected))?.receipt != nil)
+    #expect(gym.run(DiscardSession(id))?.receipt != nil)
+    let retainedPlan: JSON? = try runner.read(Gym.scope) { try $0.repository(Session.self).find(id, in: .stored)?.fields["plan"] }
+    #expect(retainedPlan == plan)
+    #expect(telemetry.entries.withLock { $0.allSatisfy { !$0.properties.values.contains { $0.contains("PRIVATE_FROZEN_PLAN") } } })
+  }
+
   @Test func monthGroupedTimelineFiltersOpenAndFutureAndPagesAllLocalRows() throws {
     let (_, gym) = fixture()
     for day in 1...35 { _ = try session(gym, daysAgo: day, kg: 60) }

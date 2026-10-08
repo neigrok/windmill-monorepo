@@ -54,8 +54,10 @@ delete, Undo and refusal. Outcomes are `saved-local`, `unchanged` (a clean draft
 name the store holds writes nothing), `failed`, `held`, `undone`, `closed` and `refused`. A local save
 records durability, not server admission. Unexpected product boundary failures use static
 `gym-<operation>` Sentry names; projection failures use `gym-projection`. A malformed frozen plan
-reports that static operation and is omitted from the display; the workout's recorded facts and
-other records remain readable, and its stored plan is preserved. A gym refusal and a store
+reports that static operation at read and write boundaries and is omitted from the display; the
+workout's facts, set corrections and deletion remain available, and its stored plan is preserved.
+Workout drafts stay in account-scoped device rows while admission is pending or refused; the
+refusal step offers the retained editor without reporting its contents. A gym refusal and a store
 failure report no `gym-<operation>`: engine telemetry owns transport, storage, authentication and
 admission failures. No workout or note content, identifiers, field values, refusal details or raw
 exception messages are reported.

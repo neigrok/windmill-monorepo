@@ -75,6 +75,32 @@ test('a malformed stored plan preserves the session and reports through the API 
   assert.deepEqual(engine.observe('self/gym').getSnapshot().stored[0].f.plan, row.f.plan);
 });
 
+test('unreadable frozen plans allow unrelated set fixes and held workout deletion, preserving their bytes', async (t) => {
+  const { api, engine, failures, events } = await open(t);
+  const malformed = { routine: 'PRIVATE_PLAN', entries: 'PRIVATE_BAD_ENTRIES' };
+  const records = [
+    confirmed('session', 'sessionValid', { startedAt: 100, finishedAt: 900 }),
+    confirmed('session', 'sessionBroken', { startedAt: 1000, finishedAt: 1900, plan: malformed }),
+    confirmed('set', 'set00000001', { sessionId: 'sessionValid', exerciseId: 'bench-press', weightKg: 60,
+      reps: 5, completedAt: 850, setNumber: 1 }),
+  ];
+  await engine.write(null, (device) => records.forEach((row, index) => device.activeReplica.putConfirmed('self/gym', { ...row, seq: index + 1 })), ['self/gym']);
+  assert.equal((await api.fixSet('sessionValid', 'set00000001', { reps: 9 })).reps, 9);
+  const gesture = await api.holdDeath('session', 'sessionBroken');
+  assert.equal(typeof gesture, 'string');
+  assert.deepEqual(engine.device.activeReplica.entries().map(({ intent }) => intent.d.map(({ t, id, f, life }) => ({ t, id,
+    fields: Object.keys(f ?? {}), ...(life ? { life: life[0] } : {}) }))), [
+    [{ t: 'set', id: 'set00000001', fields: ['reps'] }],
+    [{ t: 'session', id: 'sessionBroken', fields: [], life: 'dead' }],
+  ]);
+  assert.equal(await api.undoDeath(gesture), true);
+  assert.deepEqual(engine.observe('self/gym').getSnapshot().stored.find((row) => row.id === 'sessionBroken').f.plan, records[1].f.plan);
+  assert.ok(failures.length > 0);
+  assert.ok(failures.every((operation) => operation === 'projection'));
+  assert.deepEqual(events, [{ operation: 'set-correct', outcome: 'saved-local' }, { operation: 'delete', outcome: 'held' },
+    { operation: 'delete', outcome: 'undone' }]);
+});
+
 test('authoritative gym fields and independent routine creation snapshots survive persisted engine restart', async (t) => {
   const opened = await open(t);
   const { api, engine, reopen } = opened;
@@ -436,18 +462,18 @@ test('liveHint follows the phone session and expires after four idle hours', asy
   assert.equal(gymLiveHint(engine), false, 'no open workout, no live hint');
 });
 
-test('overlap, future instants and live correction admission belong to the server', async (t) => {
+test('workout forms preflight overlap, future instants and live correction against the transaction', async (t) => {
   const { api, engine } = await open(t);
   const imported = { id: 'session00001', startedAt: 100, finishedAt: 900, sets: [{ id: 'set00000001', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: 850 }] };
   await api.importSession(imported);
-  await api.importSession({ ...imported, id: 'session00002', sets: [{ ...imported.sets[0], id: 'set00000002' }] });
-  await api.importSession({ ...imported, id: 'session00003', finishedAt: 2000, sets: [{ ...imported.sets[0], id: 'set00000003' }] });
+  await assert.rejects(api.importSession({ ...imported, id: 'session00002', sets: [{ ...imported.sets[0], id: 'set00000002' }] }), { code: 'session-overlap' });
+  await assert.rejects(api.importSession({ ...imported, id: 'session00003', finishedAt: 2000, sets: [{ ...imported.sets[0], id: 'set00000003' }] }), { code: 'bad-instant' });
   await engine.commit('self/gym', [], { cmd: { name: 'gym.start', args: { id: 'phoneSession0', startedAt: 1000, joinOpenSession: true } },
     predict: [{ op: 'create', t: 'session', id: 'phoneSession0', f: { startedAt: 1000 } }] });
-  await api.correctSession('phoneSession0', { requestId: 'correction00', startedAt: 100, finishedAt: 900, routineName: '',
-    sets: [{ ...imported.sets[0], id: 'set00000004', setNumber: 1 }] });
+  await assert.rejects(api.correctSession('phoneSession0', { requestId: 'correction00', startedAt: 100, finishedAt: 900, routineName: '',
+    sets: [{ ...imported.sets[0], id: 'set00000004', setNumber: 1 }] }), { code: 'session-open' });
   assert.deepEqual(engine.device.activeReplica.entries().map((entry) => entry.intent.cmd.name), [
-    'gym.importSession', 'gym.importSession', 'gym.importSession', 'gym.start', 'gym.correctSession',
+    'gym.importSession', 'gym.start',
   ]);
 });
 

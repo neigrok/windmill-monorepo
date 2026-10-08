@@ -10,6 +10,29 @@ import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
 
 class TrainingRulesTests {
+    @Test fun unreadableFrozenPlansRetainExactJsonAndDoNotHideSessionFacts() {
+        val values = Session(sessionId, Instant(1000)).fields()
+        val malformed = listOf(Json.of(false), Json.of(42), Json.Arr(emptyList()),
+            Json.objectOf("routine" to Json.of(42), "entries" to Json.Arr(emptyList())),
+            Json.objectOf("routine" to Json.of("legacy"), "entries" to Json.of("broken"),
+                "extra" to Json.Arr(listOf(Json.of("e\u0301"), Json.Null))))
+        for (plan in malformed) {
+            val fields = values + ("plan" to plan)
+            val session = Session.decode(Fields(Session.type, sessionId.record, fields))
+            assertTrue(session.planUnreadable)
+            assertNull(session.plan)
+            assertNull(session.name)
+            assertEquals(fields, session.fields())
+            assertEquals(plan, SessionRules.drawn(session, emptyList(), testMoment.now).fields()["plan"])
+            assertEquals(plan, SessionRules.finish(session, Instant(2000)).fields()["plan"])
+            assertThrows(DecodeError::class.java) { PlanSnapshot.decode(plan) }
+        }
+        assertFalse(Session.decode(Fields(Session.type, sessionId.record, values)).planUnreadable)
+        assertThrows(DecodeError::class.java) {
+            Session.decode(Fields(Session.type, sessionId.record, values + mapOf("startedAt" to Json.of("broken"), "plan" to Json.of(false))))
+        }
+    }
+
     @Test fun staleClosureUsesOnlyOwnLastActivityAndIncludesFourHourBoundary() {
         val started = Instant(10_000)
         val workout = Session(sessionId, started)

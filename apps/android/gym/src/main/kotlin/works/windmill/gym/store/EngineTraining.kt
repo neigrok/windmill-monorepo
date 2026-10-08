@@ -83,6 +83,10 @@ class EngineTraining(val engine: Engine) {
     val anonymous: Boolean get() = read { it.isAnonymous }
     val firstPullComplete: Boolean get() = read { it.firstPullComplete() }
     val notesReady: Boolean get() = anonymous || firstPullComplete
+    val planUnreadable: Boolean get() = read { reader ->
+        reader.repository(EngineSession).all(ViewMode.stored).any { it.planUnreadable } ||
+            reader.repository(EngineSession).all(ViewMode.drawn).any { it.planUnreadable }
+    }
 
     private fun <T> read(body: (Reader) -> T): T = reader.read(EngineSession.scope, body)
     private suspend fun <T> writing(body: (ActionRunner) -> T): T = withGymActionContext { context ->

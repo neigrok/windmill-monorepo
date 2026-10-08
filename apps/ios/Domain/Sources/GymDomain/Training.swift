@@ -20,28 +20,32 @@ public struct Session: Entity, Removable, Equatable {
   public var historyRoutineId: ID<Routine>?
   public var plan: SessionPlan?
   public var displayName: String?
+  public let unreadablePlan: JSON?
 
   public init(id: ID<Session>, startedAt: Instant, finishedAt: Instant? = nil, closedBy: String? = nil,
               routineId: ID<Routine>? = nil, historyRoutineId: ID<Routine>? = nil,
-              plan: SessionPlan? = nil, displayName: String? = nil) {
+              plan: SessionPlan? = nil, displayName: String? = nil, unreadablePlan: JSON? = nil) {
     self.id = id; self.startedAt = startedAt; self.finishedAt = finishedAt; self.closedBy = closedBy
     self.routineId = routineId; self.historyRoutineId = historyRoutineId ?? routineId
-    self.plan = plan; self.displayName = displayName
+    self.plan = plan; self.displayName = displayName; self.unreadablePlan = unreadablePlan
   }
 
   public init(_ r: Fields) throws(DecodeError) {
     id = ID(r.id); startedAt = try r.instant("startedAt"); finishedAt = try r.optionalInstant("finishedAt")
     closedBy = try r.optionalString("closedBy"); routineId = try r.optionalRef("routineId", Routine.self)
     historyRoutineId = try r.optionalRef("historyRoutineId", Routine.self)
-    plan = try SessionPlan.decode(r.json("plan")); displayName = try r.optionalString("displayName")
+    do { plan = try SessionPlan.decode(r.json("plan")); unreadablePlan = nil }
+    catch { plan = nil; unreadablePlan = r.json("plan") }
+    displayName = try r.optionalString("displayName")
   }
 
   public var isOpen: Bool { finishedAt == nil }
   public var name: String? { displayName ?? plan?.routine }
+  public var planUnreadable: Bool { unreadablePlan != nil }
   public var fields: [String: JSON] {
     ["startedAt": .of(startedAt), "finishedAt": .of(finishedAt), "closedBy": .of(closedBy),
      "routineId": routineId?.json ?? .null, "historyRoutineId": historyRoutineId?.json ?? .null,
-     "plan": plan?.json ?? .null, "displayName": .of(displayName)]
+     "plan": unreadablePlan ?? plan?.json ?? .null, "displayName": .of(displayName)]
   }
 }
 

@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { gymReadView } from '../../../../src/products/gym/gymRuntime.js';
+import * as gymRuntime from '../../../../src/products/gym/gymRuntime.js';
+import { applyPushResult, nextPush } from '../../../../src/platform/sync/client/sender.js';
 const readView = (rows) => gymReadView({ drawn: rows, stored: rows });
 import {
   browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle, textOf,
@@ -82,6 +84,19 @@ const movements = (tree) => named(tree, 'Movement').map((each) => ({ props: each
 const rowsOf = (movement) => named(movement.tree, 'EditableNumber').map((cell) => cell.props);
 
 const saveButton = (tree) => findByClass(tree, 'gym-save-do')[0];
+
+async function answerWorkout(gym, refusal = null) {
+  await gym.engine.write(null, (device, context) => {
+    const replica = device.activeReplica;
+    const request = nextPush(replica, context);
+    assert.ok(request);
+    const result = refusal ? { n: request.intents[0].n, s: 'refused', ...refusal } : { n: request.intents[0].n, s: 'ok', seq: 100 };
+    const body = { epoch: replica.meta.serverEpoch, serverTime: Date.now(), lastN: result.n, results: [result] };
+    gymRuntime.gymWorkoutResult(replica, context, result, body);
+    applyPushResult(replica, context, result, body);
+  }, ['self/gym']);
+  await settle();
+}
 
 test('the pick lists the program in its own order, each row the log’s index row, and a free session under a rule', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
@@ -204,7 +219,51 @@ test('a skipped movement leaves at once through the withheld window, and Undo pu
   assert.deepEqual(movements(view.tree).map(({ props }) => props.name), ['Bench Press', 'Overhead Press', 'Chin-up', 'Face Pull']);
 });
 
-test('Save writes the whole workout in one command, reads Saved for 900ms, then opens the session with its Undo', async (t) => {
+test('submitting a backfill retires movement Undo and its old callback cannot change the pending draft', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
+  browserWith();
+  const gym = await pushAAccount(t);
+  const held = [];
+  const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG,
+    withhold: (entry) => held.push(entry), dropWithheld: () => held.splice(0),
+  }));
+  movements(view.tree)[1].props.onSkip();
+  const undo = held[0].undo;
+  await saveButton(view.tree).props.onClick();
+  assert.equal(imported(gym)[0].sets.length, 6);
+  assert.equal(textOf(saveButton(view.tree)), 'Waiting for the log…');
+  assert.deepEqual(held, []);
+  undo();
+  assert.deepEqual(movements(view.tree).map(({ props }) => props.name), ['Bench Press', 'Chin-up', 'Face Pull']);
+  await answerWorkout(gym);
+  view.redraw();
+  assert.equal(textOf(saveButton(view.tree)), 'Saved · 6 sets');
+});
+
+test('Save waits for a removing row and a movement prefill to settle into the submitted draft', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
+  browserWith();
+  window.matchMedia = () => ({ matches: false });
+  const gym = await pushAAccount(t);
+  const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG }));
+  findByClass(movements(view.tree)[2].tree, 'gym-past-set-drop')[0].props.onClick();
+  assert.equal(saveButton(view.tree).props['aria-disabled'], true);
+  await saveButton(view.tree).props.onClick();
+  assert.deepEqual(gym.owed(), []);
+  t.mock.timers.tick(180);
+  assert.equal(textOf(saveButton(view.tree)), 'Save · 8 sets');
+  findByClass(view.tree, 'gym-past-add').find((button) => textOf(button) === '+ Add movement').props.onClick();
+  const adding = named(view.tree, 'MovementPicker')[0].props.onPick('bench-press');
+  assert.equal(saveButton(view.tree).props['aria-disabled'], true);
+  await saveButton(view.tree).props.onClick();
+  assert.deepEqual(gym.owed(), []);
+  await adding;
+  assert.equal(textOf(saveButton(view.tree)), 'Save · 11 sets');
+  await saveButton(view.tree).props.onClick();
+  assert.equal(imported(gym)[0].sets.length, 11);
+});
+
+test('Save waits for admission, then reads Saved for 900ms and opens the session with its Undo', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
   // The log has a running workout on the phone: this door does not wait for it.
@@ -244,6 +303,9 @@ test('Save writes the whole workout in one command, reads Saved for 900ms, then 
     })),
   });
   assert.deepEqual(gym.owed(), [`ready gym.importSession ${stored.id}`], 'one command, whole or not at all, and the routine is never written');
+  assert.deepEqual([textOf(saveButton(view.tree)), saveButton(view.tree).props['aria-disabled']], ['Waiting for the log…', true]);
+  await answerWorkout(gym);
+  view.redraw();
   assert.deepEqual([textOf(saveButton(view.tree)), saveButton(view.tree).props['aria-disabled']], ['Saved · 10 sets', true]);
   const { session, sets } = readView(gym.engine.observe('self/gym').getSnapshot().stored).session(stored.id);
   assert.deepEqual([session.startedAt, session.finishedAt, sets.length], [at(24, 12), at(24, 13), 10], 'the store holds the workout the moment it is saved');
@@ -284,9 +346,11 @@ test('a free session’s movement arrives with last time’s sets, and Save’s 
 
   saveButton(view.tree).props.onClick();
   await settle();
+  await answerWorkout(gym);
+  view.redraw();
   t.mock.timers.tick(900);
   const saved = window.location.hash.slice('#/gym/session/'.length).split('?')[0];
-  assert.deepEqual(gym.owed(), [`ready gym.importSession ${saved}`]);
+  assert.deepEqual(gym.owed(), [`acked gym.importSession ${saved}`]);
   assert.deepEqual(said.map(([text, action]) => [text, action.label]), [['Free session is in the log.', 'Undo']]);
   said[0][1].run();
   assert.equal(window.location.hash, '#/gym/log');
@@ -363,7 +427,7 @@ test('a lifter’s time that ends after now reads as running past now, and Save 
   assert.equal(saveButton(view.tree).props['aria-disabled'], false);
 });
 
-test('a workout arriving after the form read leaves overlap admission to the server', async (t) => {
+test('a workout arriving after the form read refuses the known overlap without leaving the draft', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();
   const gym = await pushAAccount(t);
@@ -373,13 +437,94 @@ test('a workout arriving after the form read leaves overlap admission to the ser
   await gym.land(confirmed('session', 'sessionPhone', { startedAt: at(24, 11, 50), finishedAt: at(24, 12, 40), plan: { routine: 'Legs', entries: [] } }));
   saveButton(view.tree).props.onClick();
   await settle();
-  assert.deepEqual(findByClass(view.tree, 'gym-past-refusal'), []);
-  assert.deepEqual([textOf(saveButton(view.tree)), saveButton(view.tree).props['aria-disabled']], ['Saved · 9 sets', true]);
-  assert.deepEqual(said, [], 'the Saved beat precedes the room announcement');
-  const [command] = imported(gym);
-  assert.deepEqual(gym.owed(), [`ready gym.importSession ${command.id}`]);
-  assert.equal(command.sets.length, 9);
-  assert.equal(gym.engine.observe('self/gym').getSnapshot().stored.find((row) => row.id === 'sessionPhone').life[0], 'alive');
+  assert.deepEqual(findByClass(view.tree, 'gym-past-refusal-body').map(textOf), [
+    'Legs · today · 11:50 – 12:40 is already in the log. One visit is one session — if sets are missing from it, add them there instead.',
+  ]);
+  assert.deepEqual(findByClass(view.tree, 'gym-past-refusal-open').map((link) => link.props.href), ['#/gym/session/sessionPhone']);
+  assert.deepEqual([textOf(saveButton(view.tree)), saveButton(view.tree).props['aria-disabled']], ['Save · 9 sets', true]);
+  assert.deepEqual(said, []);
+  assert.deepEqual(gym.owed(), []);
+});
+
+test('a late overlap keeps the submitted backfill draft across remount and only admission permits Saved', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
+  browserWith();
+  const gym = await pushAAccount(t);
+  const said = [];
+  const log = roomLog({ catalog: CATALOG, say: (text) => said.push(text) });
+  let view = await form(t, 'routinePushA', log);
+  window.location.hash = '#/gym/backfill/routinePushA';
+  movements(view.tree)[0].props.onOpen();
+  rowsOf(movements(view.tree)[0])[0].onCommit(62.5);
+  saveButton(view.tree).props.onClick();
+  await settle();
+  view.redraw();
+  const [submitted] = imported(gym);
+  assert.deepEqual([textOf(saveButton(view.tree)), saveButton(view.tree).props['aria-disabled']], ['Waiting for the log…', true]);
+  t.mock.timers.tick(900);
+  assert.equal(window.location.hash, '#/gym/backfill/routinePushA');
+  assert.deepEqual(said, []);
+  saveButton(view.tree).props.onClick();
+  await settle();
+  assert.equal(imported(gym).length, 1);
+  await gym.land({ ...PUSH_A, life: ['dead', '2:0:srv'], seq: 100 });
+  view.unmount();
+  view = await form(t, 'routinePushA', log);
+  assert.deepEqual(findByClass(view.tree, 'gym-title').map(textOf), ['Push A'], 'the submitted draft still opens after its routine leaves the program');
+  assert.equal(rowsOf(movements(view.tree)[0])[0].value, 62.5);
+  assert.equal(textOf(saveButton(view.tree)), 'Waiting for the log…');
+  await answerWorkout(gym, { code: 'session-overlap', detail: { sessionId: 'sessionRaced' } });
+  view.redraw();
+  assert.equal(window.location.hash, '#/gym/backfill/routinePushA');
+  assert.deepEqual(findByClass(view.tree, 'gym-past-refusal-open').map((link) => link.props.href), ['#/gym/session/sessionRaced']);
+  assert.deepEqual(findByClass(view.tree, 'gym-past-refusal-body').map(textOf), ['Change the time, or open that workout to review it.']);
+  await gym.land(confirmed('session', 'sessionRaced', { startedAt: at(24, 11, 50), finishedAt: at(24, 12, 40), displayName: 'Legs' }));
+  view.unmount();
+  view = await form(t, 'routinePushA', log);
+  assert.equal(rowsOf(movements(view.tree)[0])[0].value, 62.5);
+  assert.deepEqual(findByClass(view.tree, 'gym-save-note').map(textOf), ['Today · 12:00–13:00']);
+  findByClass(view.tree, 'gym-chip').find((chip) => textOf(chip) === 'Yesterday').props.onClick();
+  rowsOf(movements(view.tree)[0])[0].onCommit(65);
+  view.redraw();
+  assert.equal(rowsOf(movements(view.tree)[0])[0].value, 65, 'the refused receipt never overwrites a later edit');
+  saveButton(view.tree).props.onClick();
+  await settle();
+  view.redraw();
+  assert.equal(imported(gym).at(-1).id, submitted.id, 'retry retains the import identity');
+  assert.equal(textOf(saveButton(view.tree)), 'Waiting for the log…');
+  await answerWorkout(gym);
+  view.redraw();
+  assert.equal(textOf(saveButton(view.tree)), 'Saved · 9 sets');
+  t.mock.timers.tick(900);
+  assert.equal(window.location.hash, `#/gym/session/${submitted.id}?from=%23%2Fgym%2Flog`);
+  assert.deepEqual(said, ['Push A is in the log.']);
+});
+
+test('a backfill form opened beside another tab keeps its own draft when that tab receives admission', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
+  browserWith();
+  const gym = await pushAAccount(t);
+  const said = [];
+  const log = roomLog({ catalog: CATALOG, say: (text) => said.push(text) });
+  const first = await form(t, 'routinePushA', log);
+  const second = await form(t, 'routinePushA', log);
+  window.location.hash = '#/gym/backfill/routinePushA';
+  movements(second.tree)[0].props.onOpen();
+  rowsOf(movements(second.tree)[0])[0].onCommit(65);
+  saveButton(first.tree).props.onClick();
+  await settle();
+  saveButton(second.tree).props.onClick();
+  await settle();
+  assert.equal(imported(gym).length, 1);
+  assert.match(textOf(findByClass(second.tree, 'gym-read-failed')[0]), /still waiting/);
+  first.unmount();
+  await answerWorkout(gym);
+  second.redraw();
+  t.mock.timers.tick(900);
+  assert.equal(window.location.hash, '#/gym/backfill/routinePushA');
+  assert.equal(textOf(saveButton(second.tree)), 'Save · 9 sets');
+  assert.equal(rowsOf(movements(second.tree)[0])[0].value, 65);
+  assert.equal(said.some((text) => text === 'Push A is in the log.'), false);
 });
 
 test('a press the browser could not keep is pressed again with the same request, ids and all, and lands once', async (t) => {
@@ -413,7 +558,7 @@ test('a press the browser could not keep is pressed again with the same request,
   assert.equal(pressed.length, 2);
   assert.equal(pressed[1], pressed[0]);
   assert.deepEqual(gym.owed(), [`ready gym.importSession ${JSON.parse(pressed[0]).id}`]);
-  assert.equal(textOf(saveButton(view.tree)), 'Saved · 9 sets');
+  assert.equal(textOf(saveButton(view.tree)), 'Waiting for the log…');
 });
 
 test('two sets removed inside one collapse each take the set they name', async (t) => {
@@ -442,7 +587,10 @@ test('Saved does not pull the lifter back: a form already left goes nowhere, and
   saveButton(view.tree).props.onClick();
   await settle();
   window.location.hash = '#/gym/notes';
+  await answerWorkout(gym);
+  view.redraw();
   t.mock.timers.tick(900);
+  await settle();
   assert.equal(window.location.hash, '#/gym/notes');
   assert.deepEqual(said, ['Push A is in the log.']);
 
@@ -454,6 +602,8 @@ test('Saved does not pull the lifter back: a form already left goes nowhere, and
   saveButton(second.tree).props.onClick();
   await settle();
   assert.equal(imported(gym).length, 2, 'the second workout landed too');
+  await answerWorkout(gym);
+  second.redraw();
   second.unmount();
   t.mock.timers.tick(900);
   assert.deepEqual(said, ['Push A is in the log.']);

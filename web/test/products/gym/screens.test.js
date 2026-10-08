@@ -1003,7 +1003,7 @@ test('the past workout takes its day in one tap, keeps the native field for any 
   const screen = read('backfill/Backfill.jsx');
   assert.equal(screen.includes('type="date"'), true);
   assert.equal(screen.includes('max={todayOf(now)}'), true);
-  assert.equal(screen.includes('const [day, setDay] = useState(() => todayOf(now));'), true);
+  assert.equal(screen.includes('const [day, setDay] = useState(() => restored?.day ?? todayOf(now));'), true);
   assert.equal(/gym-save-cancel|>Cancel</.test(screen), false, 'the bottom door is gone; Back is the one');
   assert.equal(read('gym.css').includes('gym-save-cancel'), false);
 });
