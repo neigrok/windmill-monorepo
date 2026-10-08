@@ -1,0 +1,80 @@
+name: Delete production database backups
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type DELETE_PRODUCTION_BACKUPS to irreversibly delete every products-*.dump backup on the server
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  delete:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Confirm irreversible deletion
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          if [[ "$CONFIRM" != DELETE_PRODUCTION_BACKUPS ]]; then
+            printf 'FAIL confirm must be DELETE_PRODUCTION_BACKUPS\n' >&2
+            exit 1
+          fi
+      - name: List, delete and verify backups on the VPS
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          set -euo pipefail
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key"
+          chmod 600 "$key"
+          ssh -i "$key" -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+            "$SSH_USER@$SSH_HOST" 'timeout --kill-after=10s 300s bash -seuo pipefail' <<'REMOTE'
+          main() {
+            if [[ -L "$HOME/windmill" || -L "$HOME/windmill/backups" ]]; then
+              printf 'FAIL backup path must not be a symlink\n' >&2; return 1
+            fi
+            cd -P -- "$HOME/windmill"
+            [[ "$PWD" == "$HOME/windmill" ]]
+            if [[ ! -e backups ]]; then printf 'PASS no backups directory\n'; return; fi
+            [[ -d backups ]]
+            cd -P -- backups
+            [[ "$PWD" == "$HOME/windmill/backups" ]]
+            if awk -v root="$PWD" '{mp = $5; gsub(/\\040/, " ", mp)
+                if (mp == root || index(mp, root "/") == 1) found = 1} END {exit !found}' /proc/self/mountinfo; then
+              printf 'FAIL backups is or contains a mount point\n' >&2; return 1
+            fi
+            pattern='^products-[0-9]{8}T[0-9]{6}Z-[0-9]+\.dump(\.sha256)?(\.partial)?$'
+            other=0
+            printf 'before:\n'
+            while IFS= read -r -d '' entry; do
+              name=${entry#./}
+              if [[ -f "$entry" && ! -L "$entry" && "$name" =~ $pattern ]]; then
+                printf '  %s %s bytes\n' "$name" "$(stat -c %s -- "$entry")"
+              else
+                other=$((other + 1))
+              fi
+            done < <(find -P . -mindepth 1 -maxdepth 1 -print0)
+            printf '  other entries left alone: %s\n' "$other"
+            find -P . -mindepth 1 -maxdepth 1 -type f -regextype posix-extended -regex "\./${pattern#^}" -delete
+            remaining=$(find -P . -mindepth 1 -maxdepth 1 -type f -regextype posix-extended -regex "\./${pattern#^}" -printf x | wc -c)
+            printf 'after: %s backup files remain, %s other entries untouched\n' "$remaining" "$(find -P . -mindepth 1 -maxdepth 1 | wc -l)"
+            [[ "$remaining" -eq 0 ]] || { printf 'FAIL backups remain\n' >&2; return 1; }
+            printf 'PASS backups deleted\n'
+          }
+          main < /dev/null
+          REMOTE
