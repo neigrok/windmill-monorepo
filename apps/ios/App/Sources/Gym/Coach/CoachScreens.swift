@@ -208,8 +208,12 @@ struct NoteEditor: View {
             guard owner == gym.account, gym.coachAccountAvailable else { gym.error = "The account changed. Open this note again."; return }
             if case .saved = gym.save(&draft) { saved = true; dismiss() }
           }.disabled(owner != gym.account || !gym.coachAccountAvailable || draft.current.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).accessibilityIdentifier("coach-note-save") }
-          ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Done") { focus = false } }
-        }.sensoryFeedback(.success, trigger: saved)
+        }
+        .safeAreaInset(edge: .bottom) {
+          // Not a keyboard toolbar: on iOS 26 one shortens the keyboard avoidance of later sheets.
+          if focus { HStack { Spacer(); Button("Done") { focus = false }.frame(minWidth: 44, minHeight: 44) }.padding(.horizontal).background(.bar) }
+        }
+        .sensoryFeedback(.success, trigger: saved)
     }.presentationDetents([.large])
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "note"]) }
   }
