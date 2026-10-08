@@ -30,7 +30,7 @@ first-party intake proves storage, not asynchronous Amplitude receipt.
 ## Error coverage and privacy
 
 Sentry starts before session or SQLite storage reads. The SDK captures native crashes. Handled
-reports cover HTTP/transport and successful-body decoding, journal and gym storage and drafts, held Gym deletes and Undo, Gym REST, SQLite
+reports cover HTTP/transport and successful-body decoding, journal and gym storage and drafts, Journal Echoes REST, held Gym deletes and Undo, Gym REST, SQLite
 reads/writes, protected-storage preparation, fork-guard I/O, Keychain reads/writes/deletions and
 enumeration, session restoration, code authentication, Apple ticket creation/linking, sign-in-method
 reads, Apple removal, adoption and sign-out. The sync engine
@@ -42,7 +42,7 @@ sink cannot delay commits/subscriptions or enter adaptive writer timing.
 HTTP owns transport reports; the engine's deadline uses the same invocation
 diagnostics to avoid a second report and retains the failure kind in pull/push outcome metrics.
 
-HTTP failures carry method, coarse route family (`/v1/auth`, `/v1/me`, `/v1/sync`, `/v1/gym` or `/v1/events`), a static
+HTTP failures carry method, coarse route family (`/v1/auth`, `/v1/me`, `/v1/sync`, `/v1/gym`, `/v1/journal` or `/v1/events`), a static
 operation, `failure_kind`, optional numeric status label and `duration_ms`. Duration uses a monotonic
 clock through response consumption and decoding. Sync outcomes also cover application of the reply
 to the local store. Expected statuses 400, 401, 403, 404, 409, 410, 422 and 429 are product/API metrics,
@@ -68,8 +68,8 @@ MetricKit are disabled. Technical reports contain no product navigation history.
 
 ## Product events
 
-The 36-name allowlist below covers the app's screens and actions. Its 14 finite-label keys accept 173
-values in total; status and duration use the bounded numeric rules above. Every row also carries the common
+The allowlist below covers the app's screens and actions. Property labels accept only fixed values;
+status and duration use the bounded numeric rules above. Every row also carries the common
 platform/version/build/release/environment properties. Scale answers record only that the invitation
 was answered or declined; neither the scale name nor its value is recorded. First-open ink emits
 `first_run_screen_viewed` with screen `ink_notes` once when presented and `first_run_choice` with
@@ -96,8 +96,24 @@ action `dismiss_ink` once when writing or a tap lifts it; no ink replay action i
 | Gym actions | `gym_action`, `gym_undo` | screen: gym; outcome: ok, refused, failed; no action payloads |
 | Optional scales | `scale_invitation_shown`, `scale_invitation_answered` | action: answered, declined |
 | Writing | `journal_line_saved` | day_kind: today; emitted after a changed, nonempty body saves, never for scale-only changes |
+| Echoes | `journal_echo_shown`, `journal_echo_opened`, `journal_echo_dismissed`, `journal_echo_useful` | no properties; passage exposure, following its source, Not useful, and Useful |
 | Synchronization | `sync_pull_outcome`, `sync_push_outcome` | outcome: ok, failed; failure_kind, status, duration_ms |
 | Reliability | `api_request_failed`, `client_error` | operation, method, route, status, failure_kind, duration_ms; optional coarse scope_kind |
+
+Echoes reads and feedback stay REST and report failures under the static operation `journal_echoes`
+and coarse route `/v1/journal`. Expected HTTP refusals and offline/DNS/connect failures emit only
+`api_request_failed`; cancellation is quiet. Timeouts, TLS, unexpected HTTP responses and decoding
+failures also reach Sentry. Offline, Echoes adds no cached echo, placeholder, spinner or error to the
+journal and never blocks writing. Product events contain no journal text, excerpts, connection
+reasons, dates, similarity scores, echo/page identifiers or counts. Echoes REST bodies and dynamic
+routes never enter telemetry. Only common app metadata accompanies the four Echoes events.
+
+`journal_echo_shown` records each verified passage when its visible day control first exposes it in a
+foreground session. `journal_echo_opened` records following a passage to its source in the canvas;
+the REST opened signal is best effort. `journal_echo_dismissed` records explicit Not useful on a
+pairing or the whole page. The dismissal is optimistic and rolls back if its REST request fails.
+`journal_echo_useful` records explicit Useful. Closing the native sheet does not dismiss a server echo
+and emits no dismissed event.
 
 Gym boundary operation labels are `gym_read`, `gym_action`, `gym_undo`, `gym_flush`, `gym_rest`,
 `gym_activity_request` and `gym_activity_update`.

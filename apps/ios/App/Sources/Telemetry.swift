@@ -33,7 +33,8 @@ nonisolated enum TelemetryPrivacy {
     "app_started", "app_foregrounded", "app_backgrounded", "auth_restore", "auth_code_requested",
     "auth_code_sent", "auth_sign_in_started", "auth_signed_in", "auth_signed_out",
     "first_run_screen_viewed", "first_run_choice", "scale_invitation_shown", "scale_invitation_answered",
-    "journal_line_saved", "sync_pull_outcome", "sync_push_outcome", "api_request_failed", "client_error",
+    "journal_line_saved", "journal_echo_shown", "journal_echo_opened", "journal_echo_dismissed", "journal_echo_useful",
+    "sync_pull_outcome", "sync_push_outcome", "api_request_failed", "client_error",
     "onboarding_screen_viewed", "onboarding_skipped", "onboarding_finished", "onboarding_replayed", "room_switched", "room_adoption_answered", "gym_screen_viewed", "gym_action", "gym_undo",
     "gym_activity_set_logged", "gym_activity_offer_refused", "gym_session_started", "gym_session_finished", "gym_set_logged", "gym_routine_saved",
     "gym_ask_started", "gym_ask_outcome", "gym_proposal_outcome"
@@ -50,9 +51,9 @@ nonisolated enum TelemetryPrivacy {
     "method": ["GET", "POST", "PUT", "DELETE", "email", "apple"],
     "day_kind": ["today"],
     "scope_kind": ["product", "tree", "overlay", "unknown"],
-    "route": ["/v1/auth", "/v1/me", "/v1/sync", "/v1/events", "/v1/gym"],
+    "route": ["/v1/auth", "/v1/me", "/v1/sync", "/v1/events", "/v1/gym", "/v1/journal"],
     "failure_kind": ["offline", "timeout", "transport", "http", "decode", "encode", "storage", "keychain", "unexpected", "admission", "digest_reset", "doubt_exhausted", "overflow", "rejected", "tls", "sqlite", "digest_mismatch", "malformed", "unexpected_admission", "backoff_exhausted"],
-    "operation": ["gym_activity_request", "gym_activity_update", "gym_read", "gym_action", "gym_undo", "gym_flush", "gym_rest", "auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "auth_sign_in", "auth_sign_out", "auth_adopt", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts"]
+    "operation": ["gym_activity_request", "gym_activity_update", "gym_read", "gym_action", "gym_undo", "gym_flush", "gym_rest", "auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "journal_echoes", "auth_sign_in", "auth_sign_out", "auth_adopt", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts"]
   ]
 
   static func properties(_ input: [String: String], durationMs: Int64? = nil) -> [String: EventValue] {

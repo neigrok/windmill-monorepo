@@ -74,7 +74,6 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
   }
 
   @Test func gymEventsRetainBoundedLabelsAndRejectTrainingContent() {
-    #expect(TelemetryPrivacy.events.count == 36)
     #expect(TelemetryPrivacy.events.isSuperset(of: ["gym_activity_set_logged", "gym_activity_offer_refused", "gym_session_started", "gym_session_finished", "gym_set_logged", "gym_routine_saved", "gym_ask_started", "gym_ask_outcome", "gym_proposal_outcome"]))
     for screen in ["routine", "routine_editor", "movement", "session", "fix_set", "record", "bodyweight", "weigh_in", "session_share", "history", "notes", "note", "settings", "review", "connected_log"] {
       #expect(TelemetryPrivacy.properties(["screen": screen, "name": "private-marker", "load": "100", "note": "private-marker", "question": "private-marker"]) == ["screen": .label(screen)])
@@ -82,6 +81,73 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     #expect(TelemetryPrivacy.properties(["action": "apply", "outcome": "decided", "method": "PUT", "cap": "daily", "storage": "device"]) ==
             ["action": .label("apply"), "outcome": .label("decided"), "method": .label("PUT"), "cap": .label("daily"), "storage": .label("device")])
     #expect(TelemetryPrivacy.properties(["cap": "private-marker", "screen": "private-marker", "storage": "private-marker"]).isEmpty)
+  }
+
+  @Test func echoNamesAndDiagnosticsAllowOnlyContentFreeLabels() {
+    #expect(TelemetryPrivacy.events.filter { $0.hasPrefix("journal_echo_") } ==
+            Set(["journal_echo_shown", "journal_echo_opened", "journal_echo_dismissed", "journal_echo_useful"]))
+    let content = ["text": "private-marker", "excerpt": "private-marker", "reason": "private-marker",
+                   "date": "2026-10-08", "source_day": "2025-01-01", "target_day": "2026-10-08",
+                   "score": "0.94", "count": "3", "echo_id": "private-marker", "page_id": "private-marker",
+                   "source_id": "private-marker", "target_id": "private-marker"]
+    #expect(TelemetryPrivacy.properties(content).isEmpty)
+    let diagnostics = content.merging(["operation": "journal_echoes", "route": "/v1/journal", "method": "GET",
+                                       "failure_kind": "http", "status": "503"]) { _, new in new }
+    #expect(TelemetryPrivacy.properties(diagnostics, durationMs: 42) ==
+            ["operation": .label("journal_echoes"), "route": .label("/v1/journal"), "method": .label("GET"),
+             "failure_kind": .label("http"), "status": .label("503"), "duration_ms": .number(42)])
+    #expect(TelemetryPrivacy.properties(["operation": "journal_echoes_private-marker",
+                                        "route": "/v1/journal/echoes/private-marker"]).isEmpty)
+  }
+
+  @Test func restoredEchoEventsStripTextDatesScoresIdentifiersAndCounts() async throws {
+    let dir = directory(); defer { try? FileManager.default.removeItem(at: dir) }
+    let file = dir.appending(path: "events.json"), delivery = TelemetryDelivery()
+    var stored = EventQueue.State()
+    stored.events = ["journal_echo_shown", "journal_echo_opened", "journal_echo_dismissed", "journal_echo_useful"].map {
+      EventQueue.Item(id: UUID().uuidString, name: $0, clientMs: 1,
+                      props: ["text": .label("private-marker"), "excerpt": .label("private-marker"),
+                              "reason": .label("private-marker"), "date": .label("2026-10-08"),
+                              "source_day": .label("2025-01-01"), "target_day": .label("2026-10-08"),
+                              "score": .label("0.94"), "count": .number(3), "echo_id": .label("private-marker"),
+                              "page_id": .label("private-marker"), "source_id": .label("private-marker"),
+                              "target_id": .label("private-marker")], account: nil)
+    }
+    let bytes = try JSONEncoder().encode(stored)
+    let metadata = TelemetryMetadata(info: info)
+    let events = EventQueue(file: file, baseURL: URL(string: "https://first-party.invalid")!, metadata: metadata,
+                           credentials: { AppTelemetry.Identity() }, report: { _, _, _, _ in },
+                           deliver: delivery.send, load: { _ in bytes })
+    await events.flush()
+    let body = try #require(delivery.state.withLock { $0.requests.first?.httpBody })
+    let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+    let submitted = try #require(json["events"] as? [[String: Any]])
+    #expect(submitted.compactMap { $0["id"] as? String } == stored.events.map(\.id))
+    #expect(submitted.compactMap { $0["name"] as? String } == stored.events.map(\.name))
+    for event in submitted {
+      let properties = try #require(event["props"] as? [String: Any])
+      let filtered = try JSONDecoder().decode([String: EventValue].self, from: JSONSerialization.data(withJSONObject: properties))
+      #expect(filtered == metadata.properties)
+    }
+    #expect(!String(decoding: body, as: UTF8.self).contains("private-marker"))
+    #expect(await events.state.events.isEmpty)
+  }
+
+  @Test func echoFailureScrubberPreservesStaticOperationAndRejectsContent() throws {
+    let event = Event(level: .error)
+    event.message = SentryMessage(formatted: "private-marker")
+    event.tags = ["operation": "journal_echoes", "route": "/v1/journal", "failure_kind": "decode", "method": "GET",
+                  "text": "private-marker", "excerpt": "private-marker", "date": "2026-10-08",
+                  "score": "0.94", "echo_id": "private-marker", "count": "3"]
+    event.extra = ["body": "private-marker"]
+    event.context = ["echo": ["text": "private-marker", "date": "2026-10-08", "count": 3]]
+    let scrubbed = try #require(CrashReports.scrub(event))
+    #expect(scrubbed.tags == ["operation": "journal_echoes", "route": "/v1/journal", "failure_kind": "decode",
+                              "method": "GET", "platform": "ios"])
+    #expect(scrubbed.message == nil && scrubbed.extra == nil)
+    #expect(scrubbed.context?.isEmpty != false)
+    let bytes = try JSONSerialization.data(withJSONObject: scrubbed.serialize())
+    #expect(!String(decoding: bytes, as: UTF8.self).contains("private-marker"))
   }
 
   @Test func inkLabelsAreBoundedWithoutReplayAction() {

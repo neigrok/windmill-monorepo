@@ -2106,7 +2106,8 @@ only then may the meta line say **backed up**.
 Offline or refused content keeps its truthful local/pending state. No page shows a spinner or a
 save button.
 
-Search, voice, echoes, nudges and the week have no controls or stub actions on this iOS surface.
+Search, voice, nudges and the week have no controls or stub actions on this iOS surface.
+Echoes are an online REST feature beside the canvas; they do not participate in the writing actions.
 Their existing web computations, tables and REST doors remain as engine A.3 specifies. The page
 entity does not acquire fields for those features merely because web can derive them.
 

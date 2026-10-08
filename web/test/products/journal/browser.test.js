@@ -69,6 +69,17 @@ const fixture = `
     const { Canvas } = await import('/src/products/journal/Canvas.jsx');
     root.render(React.createElement(Canvas));
   }
+  export async function showEchoCanvas() {
+    const { Canvas } = await import('/src/products/journal/Canvas.jsx');
+    const { useEchoes } = await import('/src/products/journal/echoes/useEchoes.js');
+    function Journal() {
+      const [flyTo, onFly] = React.useState(null);
+      const echoes = useEchoes({ today: localDay(), account: 'A', onFly });
+      window.echoes = echoes;
+      return React.createElement(Canvas, { echoes, flyTo });
+    }
+    root.render(React.createElement(Journal));
+  }
 `;
 const ready = (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-journal-test`, plugins: [{
@@ -106,6 +117,56 @@ async function reopen(page, name, options = {}) {
 async function body(page, expected) {
   await page.waitForFunction((expected) => document.querySelector('textarea').value === expected, expected);
 }
+
+test('Chromium: an equivalent source edit keeps its echo and Read highlights the current source', async () => {
+  await ready;
+  const context = await browser.newContext({ timezoneId: 'UTC', viewport: { width: 900, height: 700 } });
+  try {
+    const page = await open(context, 'journal-echo-nfc', '2026-10-01T12:00:00Z');
+    const quote = 'I remembered the cafe\u0301 by the river.';
+    const original = `e\u0301 before. ${quote} after.`;
+    const sourceDay = '2026-05-29';
+    const opened = [];
+    await page.route('**/v1/journal/echoes**', async (route) => {
+      if (route.request().method() === 'POST') {
+        opened.push(new URL(route.request().url()).pathname);
+        return route.fulfill({ status: 204 });
+      }
+      return route.fulfill({ status: 200, json: { floorWaived: true, pages: [{ day: '2026-10-01',
+        matches: [{ day: sourceDay, text: quote, isSelf: true }] }] } });
+    });
+    const writeSource = (text, seq) => page.evaluate(async ({ sourceDay, text, seq }) => {
+      await engine.write(null, (device) => device.activeReplica.putConfirmed('self/journal', {
+        t: 'page', id: sourceDay, seq, rc: 1, ru: seq,
+        f: { mood: [null, seq + ':0:srv'], energy: [null, seq + ':0:srv'], source: ['typed', seq + ':0:srv'],
+          documentStamp: [{ ms: seq, counter: 0, actor: 'srv' }, seq + ':0:srv'] },
+        x: { body: { text, rev: seq, base: null } },
+      }), ['self/journal']);
+    }, { sourceDay, text, seq });
+    await writeSource(original, 2);
+    await page.evaluate(async () => { await (await import('/journal-hook-fixture.js')).showEchoCanvas(); });
+    await page.getByRole('button', { name: '1 passage you wrote before', exact: true }).click();
+    await page.locator('.je-ink-open').waitFor();
+    await writeSource(original.normalize('NFC'), 3);
+    await page.waitForFunction(({ sourceDay, original }) => document.querySelector(`[data-date="${sourceDay}"] .journal-prose`).textContent === original,
+      { sourceDay, original: original.normalize('NFC') });
+    assert.equal(await page.locator('.je-ink-passage').textContent(), quote);
+    await page.locator('.je-ink-open').click();
+    await page.locator(`[data-date="${sourceDay}"] .journal-highlight`).waitFor();
+    assert.equal(await page.locator('.journal-highlight').textContent(), quote.normalize('NFC'));
+    assert.equal(new URL(page.url()).hash, `#/journal/${sourceDay}`);
+    assert.deepEqual(await page.evaluate(() => window.echoes.hops), ['2026-10-01', sourceDay]);
+
+    await page.evaluate(() => window.echoes.backToTonight());
+    await page.getByRole('button', { name: '1 passage you wrote before', exact: true }).click();
+    await writeSource('The quoted words are gone.', 4);
+    await page.locator('.je-ink-open').click();
+    await page.waitForFunction(() => !document.querySelector('.je-ink-open'));
+    assert.equal(new URL(page.url()).hash, '#/journal');
+    assert.deepEqual(await page.evaluate(() => window.echoes.hops), []);
+    assert.deepEqual(opened, ['/v1/journal/echoes/2026-10-01/2026-05-29/opened']);
+  } finally { await context.close(); }
+});
 
 test('Chromium: settled journal saves use remote body updates for later mood and energy edits in two tabs', async () => {
   await ready;

@@ -14,6 +14,7 @@ value/action scene with its records reversed.
 | `rules.json` | One complete rule book: two entity facts and 18 rules |
 | `values.json` | 141 cases: bound specs, both command checks, state, content stamps and clocks, pending edits, contribution reconciliation and draft adoption |
 | `page-actions.json` | 44 cases: bound and anonymous saves, retirements, supersession, retained edits, confirmation proofs and reconciliation |
+| `echo-quotes.json` | 17 cases: NFC-equivalent quotations, original-body UTF-16 anchors, occurrence selection and real edits |
 
 `rules.json` is the gym corpus's `{entities,rules}` object. The other files are arrays of
 `{name,input,expect}` with unique names, compared by JCS equality. The common
@@ -78,6 +79,19 @@ draft, or transfers the incoming draft when the destination is empty. Distinct i
 is returned as `recovered` without overriding the current draft. Exact day and document byte
 equality suppresses a duplicate recovery; different days, explicit zero/null scales, source and
 canonically equivalent body spellings remain distinct. Neither input is changed.
+
+## Echo quotations
+
+`echo-quotes.json` accepts `{body,text,occurrenceHint?}` and expects `{range:[lo,hi]}` or
+`{range:null}`. Quotes compare whole graphemes in NFC-equivalent form; case, accents and
+compatibility spellings remain significant. An equivalent source edit retains its echo; an edit
+that removes the quote retracts it. Empty quotes and empty pages have no anchor.
+
+The range is half-open UTF-16 offsets into the original body, including its original normalization
+and any surrogate pairs. Validation and navigation use this same rule. `occurrenceHint` is a
+zero-based index of non-overlapping occurrences; an absent or negative hint selects the first,
+and an out-of-range hint falls back to the first. Quotation comparison never rewrites stored body,
+pending-claim or draft bytes.
 
 ## Actions
 
@@ -154,15 +168,16 @@ and engine durability remain harness gates.
 
 ## Surface coverage
 
-Swift and web claim all three files. Each compares the complete rule book and every value/action
-expectation; no surface supplies expected values.
+Swift and web claim all four files. Each compares the complete rule book and every value/action
+and echo-quotation expectation; no surface supplies expected values.
 
 | Corpus | Comparisons |
 |---|---:|
 | `rules.json` | 1 |
 | `values.json` | 141 |
 | `page-actions.json` | 44 |
-| Total | 186 |
+| `echo-quotes.json` | 17 |
+| Total | 203 |
 
 The web domain applies the rulings throughout its commands, editor actions and reconciliation:
 
