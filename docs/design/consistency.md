@@ -297,6 +297,14 @@ exception to `guidelines/superapp-flow.md` §3 and §8. Nothing is built.
   accent is `#986B1E`. Align the crawlable shell and verify CTA contrast.
 - **F28 · Echo layout drawings.** Above the margin breakpoint, the echo form is margin-only.
   Boards showing an in-page desktop form must state a width where that form can appear.
+- **Echo drawings · included passages.** [Caption 33:426](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=33-426)
+  still describes a cut passage, withheld words and a free path. `journal.md` §6 requires full
+  passages for everyone, without AI credits or a paywall; notes `34:294` and `43:360` agree.
+  Reconcile the caption and the free-path labels on the phone echo boards `31:211` and `33:327`.
+- **iOS Journal daylight.** The canvas, source pages and echo trail retain the app's night tokens
+  and dark Journal preference. The Echoes sheet defines light and dark colours and selects system
+  appearance independently. Reconcile the canvas's daylight tokens with the wider iOS review;
+  screenshots of the light sheet do not establish a daylight canvas.
 - **F34 · Type roles.** Reconcile the journal's unassigned first-run, talk, verdict, nudge,
   week-count and narrow scale styles with the named type ramp.
 - **F36 · Phone tools.** Check the fixed `.journal-tools` rail against the writing measure at

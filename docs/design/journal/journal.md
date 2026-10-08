@@ -139,6 +139,18 @@ allowance-saving switch to disable it.
 - Echoes are derived on write; repair processing handles edits and retries. A subscription
   ending does not withdraw the person's existing writing or lock the Echoes it connects.
 
+On iOS, a 44 pt count control beside the day opens a native, scrollable sheet of complete
+passages, source dates and provenance. Useful and Not useful answer the connection; reading a
+source returns to its exact passage in the canvas, with the neighbouring days intact and a
+trail back to tonight. Counts include only quotations found verbatim in the phone's current
+pages. Below 20 written pages nothing appears unless the server waives that floor. Offline,
+empty, loading and failed reads add no surface and never delay writing. The sheet and controls
+support Dynamic Type and VoiceOver; Reduce Motion jumps to the source without a scroll animation.
+The phone drawings are [Night](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3/?node-id=31-211),
+[Day](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3/?node-id=33-327), and the
+[trail](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3/?node-id=58-530); native presentation
+uses the same evidence and navigation rules.
+
 ## 7. Nudges
 
 One notification a day, at most, **adaptive by default**: the product learns the hour you
@@ -222,7 +234,7 @@ One product, four shells:
 | **Installed (PWA)** | The reference web experience. Push, app icon, no browser chrome |
 | **Mobile web** | Same canvas inside browser chrome. The app's tab bar sits *above* the browser toolbar; one install offer, stating plainly that a tab can't receive nudges |
 | **Desktop web** | Gutter + scroll-following margin + month rail, ⌘K, select-to-search, print |
-| **Native (iOS)** | The journal room inside the Windmill superapp, entered from Where to start? or, once Gym joins, the room menu. Same canvas, same canon. The shell owns the room-name seat top-left — a plain title while Journal is the only room, the room menu with two — and the account button top-right (`guidelines/superapp-shell.md` §3); journal owns everything below them, including the night default and the Write seat (§4a). Carries the canvas, mood/energy, offline-first writing and claim-on-sign-in; search, voice, echoes, nudges and the week are not there, and their absence is stated rather than stubbed |
+| **Native (iOS)** | The journal room inside the Windmill superapp, entered from Where to start? or the Journal · Gym room menu. Same canvas, same canon. The shell owns the room-name seat top-left and the account button top-right (`guidelines/superapp-shell.md` §3); journal owns everything below them, including the Write seat (§4a). Carries the canvas, mood/energy, offline-first writing, claim-on-sign-in and online echoes (§6); search, voice, nudges and the week are not there, and their absence is stated rather than stubbed |
 
 Phone is primary. Breakpoints: 744 / 1024 / 1440.
 

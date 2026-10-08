@@ -16,6 +16,7 @@ final class JournalModel {
   let telemetry: any Telemetry
   let preferences: UserDefaults
   let runtime: AppRuntime?
+  var echoes: JournalEchoes
   @ObservationIgnored weak var app: AppModel?
   var invitationShown = false
   var keepInvitationShown = false
@@ -31,9 +32,10 @@ final class JournalModel {
   @ObservationIgnored var saveTask: Task<Void, Never>?
   var editorDay: LocalDay
 
-  init(runner: ActionRunner, preferences: UserDefaults, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry()) throws {
+  init(runner: ActionRunner, preferences: UserDefaults, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), echoService: (any JournalEchoServing)? = nil) throws {
     self.telemetry = telemetry
     self.runner = runner; self.preferences = preferences; self.runtime = runtime
+    echoes = JournalEchoes(service: echoService ?? JournalEchoREST(runtime: runtime, telemetry: telemetry), preferences: preferences, telemetry: telemetry)
     firstOpenEligible = !preferences.bool(forKey: "journalOpened")
     editorDay = try runner.moment().today
     if let draft = try runner.read(Journal.scope, { try $0.device(EditorDraft.key).map(EditorDraft.init(json:)) }) {

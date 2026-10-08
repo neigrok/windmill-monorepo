@@ -100,6 +100,28 @@ Confirmed Keep and Discard sign-out revoke the captured bearer session. If offli
 Keychain queue retains every revocation and retries on the next launch with network, when connectivity
 returns, and at most once per 30 seconds while open. Cancel leaves the server session active.
 
+Journal echoes live in `Sources/Journal/Echoes`. `JournalEchoView.swift` owns their presentation:
+a 44 pt count beside a day, a native quotation sheet, source highlighting and a trail back to
+tonight. The sheet follows system light/dark appearance independently of the existing night canvas.
+The model re-locates every full quotation in the phone's current pages before showing its count;
+it follows the server's 20-page floor and waiver, provenance and Useful state. A first-echo
+introduction requires an explicit server flag; the current list route does not supply it.
+Reads poll every 15 seconds only while the room is active. All reads and verdicts use the existing
+REST echoes routes; writing continues through the sync engine. Offline, empty and failed reads
+show no echo surface. Requests are cancelled and old replies discarded across account or lifecycle
+changes. Verdict failures roll back without a retry queue; opened signals never delay source
+navigation. HTTP caching is disabled.
+
+`journal-echoes`, `journal-echoes-offline` and `journal-echoes-empty` board fixtures use real
+journal actions with a deterministic echoes service. `journal-echoes-AX3-RM` covers larger type
+and the source-scroll Reduce Motion path, including Back to tonight. The source quote sits after
+14 paragraphs; navigation tests use the Debug simulator's UIKit quote rectangle to check that
+the exact passage reaches the visible canvas centre and remains read-only. `JournalEchoFlowTests`
+belongs to CI's routines-journal shard; its screenshots are XCTest attachments, or PNGs when
+`WM_IOS_ECHO_SHOTS` is supplied.
+The canon is `docs/design/journal/journal.md` §§3–6 and `onboarding.md` §7; Figma's phone echo
+boards are `31:211`/`33:327`, the trail `58:530`/`59:550`, in file `pC6ciOUnfLmI42oMihd7l3`.
+
 Fonts are bundled from official OFL sources, with licences alongside each family:
 
 - [Inter](https://github.com/google/fonts/tree/main/ofl/inter), regular and semibold.
@@ -114,7 +136,7 @@ follow the supplied Figma `TOKENS.json`.
 Telemetry uses Sentry Cocoa for failures and first-party `/v1/events` for product events. Debug
 telemetry is off unless `WM_DEBUG_TELEMETRY=YES` is supplied; simulator verification can use
 `-telemetry -sentry-dsn http://ios@127.0.0.1:8091/42`. Release builds require `IOS_SENTRY_DSN`.
-See [iOS observability](../../../docs/IOS_OBSERVABILITY.md) for the complete 36-event allowlist,
+See [iOS observability](../../../docs/IOS_OBSERVABILITY.md) for the complete event allowlist,
 privacy rules, queue behavior and release verification. CI uses `python3 Tools/generate_project.py`
 with a nonproduction DSN. The manual release workflow uses `--release` with the signing secrets,
 builds with Xcode 26.3 and uploads to TestFlight; it does not run on push.
