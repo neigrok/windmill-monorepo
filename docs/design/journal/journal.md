@@ -146,8 +146,8 @@ trail back to tonight. On web and iOS, quotation validation and source anchors c
 equivalent Unicode spellings keep an echo, while edits that remove the quotation retract it.
 Anchors address the original page's UTF-16 range; comparison never rewrites the person's text.
 Counts include only quotations present in the phone's current pages. Below 20 written pages
-nothing appears unless the server waives that floor. Offline,
-empty, loading and failed reads add no surface and never delay writing. The sheet and controls
+nothing appears unless the server waives that floor. Offline, empty, loading and failed reads
+add no surface and never delay writing. The sheet and controls
 support Dynamic Type and VoiceOver; Reduce Motion jumps to the source without a scroll animation.
 The phone drawings are [Night](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3/?node-id=31-211),
 [Day](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3/?node-id=33-327), and the

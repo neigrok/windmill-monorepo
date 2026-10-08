@@ -4,8 +4,8 @@ Pages live in the browser replica (`self/journal`) and change only through the e
 `domain/` owns page documents, the journal state rule book, command validation, invitation
 retirements, pending claims, editor drafts, content clocks, reconciliation and echo quotation
 comparisons. `pages.js` runs its actions and adapts `JournalRoom` to the web's flat page view
-(`pagesOf`, `corpus`), with durable
-refusal notices and editor drafts overlaid. `journalApi.js` holds the server features over the
+(`pagesOf`, `corpus`), with durable refusal notices and editor drafts overlaid. `journalApi.js`
+holds the server features over the
 session cookie: echoes, nudges, transcription and export.
 
 An anonymous save, or typing before an account's first read without a confirmed page, queues a

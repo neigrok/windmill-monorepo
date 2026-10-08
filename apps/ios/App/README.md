@@ -119,9 +119,9 @@ journal actions with a deterministic echoes service. `journal-echoes-AX3-RM` cov
 and the source-scroll Reduce Motion path, including Back to tonight. `journal-echoes-unicode`
 and `journal-echoes-unicode-decomposed` apply real source edits while the sheet is open: Useful
 on the first quotation changes only its normalization; Useful on the second removes the first
-quotation. The source quote sits after
-14 paragraphs; navigation tests use the Debug simulator's UIKit quote rectangle to check that
-the exact passage reaches the visible canvas centre and remains read-only. `JournalEchoFlowTests`
+quotation. The source quote sits after 14 paragraphs; navigation tests use the Debug simulator's
+UIKit quote rectangle to check that the exact passage reaches the visible canvas centre and
+remains read-only. `JournalEchoFlowTests`
 belongs to CI's routines-journal shard; its screenshots are XCTest attachments, or PNGs when
 `WM_IOS_ECHO_SHOTS` is supplied.
 The canon is `docs/design/journal/journal.md` §§3–6 and `onboarding.md` §7; Figma's phone echo
