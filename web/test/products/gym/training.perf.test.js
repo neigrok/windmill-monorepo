@@ -74,7 +74,7 @@ for (const workouts of [250, 1000]) test(`training reads recompute once per repl
 
 const moment = new Moment(new Instant(1_800_000_000_000), new FixedZone(0));
 
-for (const workouts of [250, 1000]) test(`stored history presence stays within budget for an untrained movement across ${workouts} workouts`, (t) => {
+for (const workouts of [250, 1000]) test(`stored history finds no presence for an untrained movement across ${workouts} workouts, and reports its cost`, (t) => {
   /** @param {string} type @param {string} id @param {Record<string, import('../../../src/platform/domain-kit/values.js').Json>} fields */
   const row = (type, id, fields) => ({ t: type, id, born: '1000:0:srv', life: /** @type {[string, string]} */ (['alive', '1000:0:srv']),
     f: Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, /** @type {[import('../../../src/platform/domain-kit/values.js').Json, string]} */ ([value, '1000:0:srv'])])) });
