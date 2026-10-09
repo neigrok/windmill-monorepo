@@ -294,9 +294,15 @@ exception to `guidelines/superapp-flow.md` §3 and §8. Nothing is built.
   Reconcile the caption and the free-path labels on the phone echo boards `31:211` and `33:327`.
 - **iOS Journal daylight.** The canvas, source pages and echo trail stay night in both appearances
   (`ios/ios-redesign.md` §2). The Echoes sheet follows the system appearance on the journal roles,
-  so in light it draws the spec's Day column: passages in `journal/lamp` `#986B1E` on
-  `journal/canvas` `#F7F7F5` measure 4.39:1, under the 4.5:1 body-text floor. Settle the Day lamp
-  before iteration 2 gives Journal its day.
+  so in light it draws the spec's Day column. Its lamp is `#90651C` (4.82:1 on `#F7F7F5`); the web's
+  day lamp `#986B1E` (`palettes.css`) measures 4.39:1 on the same paper, under the 4.5:1 text floor.
+  Move the web and the Figma Day collection to `#90651C`.
+- **iOS gym and shell day contrast (owner decision).** `gym/accent` Daylight `#137A6C` measures
+  4.24:1 on `gym/canvas` `#EBE7E3` and 3.76:1 on `gym/raised` `#DFDAD5` as text; candidate
+  `#106B5F` measures 5.19:1 and 4.60:1 (white on it 6.38:1). `shell/brand` light `#BC6C42` carries a
+  white label at 3.92:1 and brand text on `shell/canvas` `#F9F5EB` at 3.60:1; candidate `#9F5B38`
+  measures 5.21:1 and 4.79:1. Both values are owner-ruled; the build keeps them until the owner
+  chooses.
 - **F34 · Type roles.** Reconcile the journal's unassigned first-run, talk, verdict, nudge,
   week-count and narrow scale styles with the named type ramp.
 - **F36 · Phone tools.** Check the fixed `.journal-tools` rail against the writing measure at
