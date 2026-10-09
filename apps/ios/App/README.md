@@ -173,9 +173,12 @@ asset catalogue, one palette enum per room), the named type roles and the spacin
 `Sources/Theme/`, which the Live Activity extension compiles too; their values follow
 [the iOS redesign contract](../../../docs/design/ios/ios-redesign.md). The onboarding glimpses keep
 their illustration colours under `onboarding/` in `Resources/Assets.xcassets`.
-`python3 Tools/check_theme_literals.py` rejects numeric colour construction outside `Sources/Theme/`
-in the app, widget and Activity shared sources. Project generation and both target builds run the
-check; `python3 -m unittest discover -s Tools/tests -v` includes its rejection cases.
+`python3 Tools/check_theme_literals.py` rejects, outside `Sources/Theme/` in the app, widget and
+Activity shared sources, numeric and hex colour construction, system named colours, the asset accent
+colour, UIKit semantic colours, asset colour lookups by string and appearance branches between
+colours. Its short allowlist names each remaining exception and why; an entry that no longer matches
+fails the check. Project generation and both target builds run the check;
+`python3 -m unittest discover -s Tools/tests -v` includes its rejection cases.
 
 Telemetry uses Sentry Cocoa for failures and first-party `/v1/events` for product events. Debug
 telemetry is off unless `WM_DEBUG_TELEMETRY=YES` is supplied; simulator verification can use

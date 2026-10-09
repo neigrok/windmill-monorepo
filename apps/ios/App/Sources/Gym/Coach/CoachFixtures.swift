@@ -116,7 +116,7 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
     else if path.contains("/attachments/"), request.httpMethod == "GET" {
       let format = UIGraphicsImageRendererFormat(); format.scale = 1
       data = UIGraphicsImageRenderer(size: CGSize(width: 80, height: 80), format: format).image { context in
-        UIColor.systemTeal.setFill(); context.fill(CGRect(x: 0, y: 0, width: 80, height: 80))
+        UIColor(GymPalette.accent).setFill(); context.fill(CGRect(x: 0, y: 0, width: 80, height: 80))
       }.jpegData(compressionQuality: 0.9)!; type = "image/jpeg"
     }
     else if path.contains("/attachments/") { response = ["attachment": ["id": path.components(separatedBy: "/").last!, "mediaType": "image/jpeg", "width": 10, "height": 10, "bytes": request.httpBody?.count ?? 10]] }

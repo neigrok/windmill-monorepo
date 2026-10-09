@@ -1,16 +1,12 @@
 import SwiftUI
 import UIKit
 
-// Asset names and values follow docs/design/ios/ios-redesign.md §2.
+// Asset names and values follow docs/design/ios/ios-redesign.md §2; roles resolve from any thread.
 
-enum GymPalette {
+nonisolated enum GymPalette {
   static let canvas = Color("gym/canvas")
   static let card = Color("gym/card")
-  static let raised = Color("gym/raised")
-  static let sunken = Color("gym/sunken")
   static let line = Color("gym/line")
-  static let lineStrong = Color("gym/line-strong")
-  static let overlay = Color("gym/overlay")
   static let ink = Color("gym/ink")
   static let inkDim = Color("gym/ink-dim")
   static let inkFaint = Color("gym/ink-faint")
@@ -20,17 +16,11 @@ enum GymPalette {
   static let done = Color("gym/done")
   static let record = Color("gym/record")
   static let alarm = Color("gym/alarm")
-  static let alarmFill = Color("gym/alarm-fill")
-  static let onAlarm = Color("gym/on-alarm")
 }
 
-enum JournalPalette {
+nonisolated enum JournalPalette {
   static let canvas = Color("journal/canvas")
-  static let card = Color("journal/card")
-  static let sunken = Color("journal/sunken")
   static let line = Color("journal/line")
-  static let lineStrong = Color("journal/line-strong")
-  static let overlay = Color("journal/overlay")
   static let ink = Color("journal/ink")
   static let inkDim = Color("journal/ink-dim")
   static let inkFaint = Color("journal/ink-faint")
@@ -44,20 +34,17 @@ enum JournalPalette {
   }
 }
 
-enum ShellPalette {
+nonisolated enum ShellPalette {
   static let canvas = Color("shell/canvas")
   static let card = Color("shell/card")
   static let raised = Color("shell/raised")
-  static let sunken = Color("shell/sunken")
   static let line = Color("shell/line")
   static let lineStrong = Color("shell/line-strong")
-  static let overlay = Color("shell/overlay")
   static let ink = Color("shell/ink")
   static let inkDim = Color("shell/ink-dim")
   static let inkFaint = Color("shell/ink-faint")
   static let brand = Color("shell/brand")
   static let onBrand = Color("shell/on-brand")
-  static let danger = Color("shell/danger")
 }
 
 // What a shared control takes from the room that hosts it; the shell lends its brand as the accent.

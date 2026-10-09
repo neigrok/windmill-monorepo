@@ -19,7 +19,6 @@ enum JournalType {
   static let dateTracking: CGFloat = 0.7
   static let body = Font.custom("Inter-Regular", size: bodySize, relativeTo: .body)
   static let date = Font.custom("JetBrainsMono-Regular", size: 11, relativeTo: .caption)
-  static let hand = Font.custom("Caveat-Regular", size: handSize, relativeTo: .body)
 
   static func bodyFont(size: CGFloat) -> UIFont {
     UIFont(name: "Inter-Regular", size: size) ?? .systemFont(ofSize: size)
@@ -47,11 +46,8 @@ struct GymKeypadNumeral: ViewModifier {
 enum RoomSpace {
   static let small: CGFloat = 4
   static let related: CGFloat = 8
-  static let group: CGFloat = 12
   static let inset: CGFloat = 16
   static let panel: CGFloat = 20
-  static let section: CGFloat = 24
-  static let tail: CGFloat = 32
   static let cardRadius: CGFloat = 16
   static let minimumTarget: CGFloat = 44
 }

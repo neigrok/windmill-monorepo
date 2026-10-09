@@ -48,10 +48,62 @@ class ThemeLiteralTests(unittest.TestCase):
             with self.subTest(source=example):
                 self.assertTrue(check_theme_literals.violations(example))
 
+    def test_rejects_named_semantic_asset_and_appearance_colours(self):
+        examples = [
+            "let paint = Color.white.opacity(0.3)",
+            'Text("x").foregroundStyle(.red)',
+            'Text("x").foregroundColor(.blue)',
+            'Toggle("x", isOn: $on).tint(.green)',
+            "let paint = UIColor.black",
+            'Text("x").foregroundStyle(Color.accentColor)',
+            'Text("x").tint(.accentColor)',
+            "let paint = Color(uiColor: .systemRed)",
+            "List {}.background(Color(.systemGroupedBackground))",
+            "let paint = UIColor.secondarySystemBackground",
+            'let paint = Color("gym/acent")',
+            'let paint = Color("onboarding/sky-kind")',
+            'let paint = UIColor(named: "gym/accent")',
+            'Text("x").foregroundStyle(scheme == .dark ? Color.white : Color.black)',
+            'Text("x").foregroundStyle(scheme == .light ? GymPalette.ink : JournalPalette.ink)',
+            "let paint = UIColor { $0.userInterfaceStyle == .dark ? .white : .black }",
+            "let paint = Color(0.1, 0.2, 0.3)",
+            "let brandRGB: UInt32 = 0xD08A5E",
+            'let paint = Color(hexString: "#D08A5E")',
+            "let paint = Color(rgb: 0xD08A5E)",
+        ]
+        for example in examples:
+            with self.subTest(source=example):
+                self.assertTrue(check_theme_literals.violations(example))
+
+    def test_allows_hierarchical_styles_scheme_choices_and_system_values(self):
+        source = """
+        Text("x").foregroundStyle(.secondary)
+        Text("x").foregroundStyle(.tint)
+        let clear = Color.clear
+        let font = UIFont.systemFont(ofSize: 12)
+        let uptime = ProcessInfo.processInfo.systemUptime
+        let appearance: ColorScheme = system == .light ? .light : .dark
+        """
+        self.assertEqual([], check_theme_literals.violations(source))
+
+    def test_allowlisted_lines_pass_and_stale_entries_fail(self):
+        with TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            for root in check_theme_literals.SOURCE_ROOTS:
+                (source / root).mkdir()
+            transport = source / "Sources/Gym/Coach/CoachTransport.swift"
+            transport.parent.mkdir(parents=True)
+            transport.write_text("if !png { UIColor.white.setFill(); context.fill(rect) }\nlet other = UIColor.white\n")
+            with self.assertRaisesRegex(ValueError, "CoachTransport.swift:2: error: system named colours") as failure:
+                check_theme_literals.check(source)
+            self.assertNotIn("CoachTransport.swift:1:", str(failure.exception))
+            transport.write_text("let flattened = true\n")
+            with self.assertRaisesRegex(ValueError, "allowlisted colour no longer appears: if !png"):
+                check_theme_literals.check(source)
+
     def test_allows_roles_system_styles_geometry_and_unrelated_business_values(self):
         source = '''
         let roles = [GymPalette.accent, GymPalette.ink]
-        let paint = Color(uiColor: .systemBackground)
         let bridge = UIColor(GymPalette.accent)
         let native: Color = .primary
         let clear = Color.clear

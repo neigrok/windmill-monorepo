@@ -51,7 +51,6 @@ struct BoundedBand: ViewModifier {
 
 struct ActionBand: View {
   let title: String
-  var subtitle: String?
   let room: RoomColors
   var disabled = false
   var busy = false
@@ -59,16 +58,14 @@ struct ActionBand: View {
   let action: () -> Void
 
   var body: some View {
-    VStack(spacing: RoomSpace.related) {
-      Button(action: action) {
-        HStack(spacing: RoomSpace.related) {
-          if busy { ProgressView().tint(room.onAccent) }
-          Text(title)
-        }.frame(maxWidth: .infinity)
-      }.modifier(RoomPrimaryStyle(room: room))
-        .disabled(disabled || busy)
-        .accessibilityIdentifier(actionIdentifier ?? title)
-      if let subtitle { Text(subtitle).font(.footnote).lineLimit(1) }
-    }.padding(RoomSpace.inset)
+    Button(action: action) {
+      HStack(spacing: RoomSpace.related) {
+        if busy { ProgressView().tint(room.onAccent) }
+        Text(title)
+      }.frame(maxWidth: .infinity)
+    }.modifier(RoomPrimaryStyle(room: room))
+      .disabled(disabled || busy)
+      .accessibilityIdentifier(actionIdentifier ?? title)
+      .padding(RoomSpace.inset)
   }
 }
