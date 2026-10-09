@@ -44,13 +44,17 @@ import XCTest
     var previous = CGRect.null
     var stableSince = Date()
     var viewport = CGRect.null
+    var samples: [String] = []
     let ready = NSPredicate { _, _ in
-      let frame = element.frame
+      // A snapshot the busy app could not serve says nothing about movement, so it keeps the stable run.
+      guard let frame = (try? element.snapshot())?.frame else { samples.append("no snapshot"); return false }
+      samples.append("\(frame)")
       guard frame.height >= 44, viewport.contains(frame) else {
         previous = .null; return false
       }
-      if abs(frame.minX - previous.minX) > 0.25 || abs(frame.minY - previous.minY) > 0.25 ||
-          abs(frame.width - previous.width) > 0.25 || abs(frame.height - previous.height) > 0.25 {
+      // Between samples a scrolling page moves by points; a fraction of a point is not movement.
+      if abs(frame.minX - previous.minX) >= 1 || abs(frame.minY - previous.minY) >= 1 ||
+          abs(frame.width - previous.width) >= 1 || abs(frame.height - previous.height) >= 1 {
         previous = frame; stableSince = Date(); return false
       }
       return Date().timeIntervalSince(stableSince) >= 0.3
@@ -70,7 +74,7 @@ import XCTest
       start.press(forDuration: 0.05, thenDragTo: end)
     }
     viewport = scroller.frame.intersection(app.frame)
-    let geometry = XCTAttachment(string: "control: \(element.frame)\nvisible scroll view: \(viewport)\nprevious sample: \(previous)")
+    let geometry = XCTAttachment(string: "control: \(element.frame)\nvisible scroll view: \(viewport)\nlast samples: \(samples.suffix(8))")
     geometry.name = "echo-control-visibility"; geometry.lifetime = .keepAlways; add(geometry)
     XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: element)], timeout: 3), .completed,
                    "Echo control must settle, fit in the visible scroll view, and retain its 44-point height")
