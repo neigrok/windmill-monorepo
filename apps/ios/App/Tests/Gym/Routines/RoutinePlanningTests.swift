@@ -85,6 +85,23 @@ import SyncSchema
     #expect(gym.routines == [pending])
   }
 
+  @Test func editorMovesRemovesAndRestoresMovementsInPlace() {
+    let (_, gym) = fixture()
+    let editing = RoutineEditingSession(gym: gym, routine: nil)
+    let (bench, deadlift, chinUp) = (RoutineEntry(exerciseId: ID("bench-press")), RoutineEntry(exerciseId: ID("deadlift")), RoutineEntry(exerciseId: ID("chin-up")))
+    [bench, deadlift, chinUp].forEach(editing.select)
+    editing.move(2, by: -1)
+    #expect(editing.draft.current.entries == [bench, chinUp, deadlift])
+    editing.move(0, by: -1); editing.move(2, by: 1)
+    #expect(editing.draft.current.entries == [bench, chinUp, deadlift])
+    editing.remove(1)
+    #expect(editing.draft.current.entries == [bench, deadlift] && editing.removed?.0 == 1 && editing.removed?.1 == chinUp)
+    editing.undoRemoval()
+    #expect(editing.draft.current.entries == [bench, chinUp, deadlift] && editing.removed == nil)
+    editing.remove(0); editing.select(bench)
+    #expect(editing.draft.current.entries == [chinUp, deadlift, bench] && editing.removed == nil)
+  }
+
   @Test func saveFailureRetainsExactDraftAndRetryUsesSameID() {
     let (harness, gym) = fixture()
     var draft = draft(gym)

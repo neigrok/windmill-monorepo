@@ -337,25 +337,28 @@ import UIKit
     reorder.tap()
     XCTAssertTrue(reorder.wait(for: \.label, toEqual: "Done reordering", timeout: 5))
     let deadliftHandle = app.buttons["Reorder Deadlift"]
-    let benchHandle = app.buttons["Reorder Bench Press"]
     XCTAssertTrue(deadliftHandle.wait(for: \.isHittable, toEqual: true, timeout: 5))
-    XCTAssertTrue(benchHandle.wait(for: \.isHittable, toEqual: true, timeout: 5))
-    deadliftHandle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.5,
-      thenDragTo: benchHandle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)),
-      withVelocity: .default, thenHoldForDuration: 0.3)
-    let firstMovement = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "builder-movement-")).element(boundBy: 0)
-    XCTAssertTrue(firstMovement.wait(for: \.identifier, toEqual: "builder-movement-deadlift", timeout: 5))
+    XCTAssertTrue(app.buttons["Reorder Bench Press"].wait(for: \.isHittable, toEqual: true, timeout: 5))
     reorder.tap()
     XCTAssertTrue(reorder.wait(for: \.label, toEqual: "Reorder", timeout: 5))
     XCTAssertTrue(deadliftHandle.waitForNonExistence(timeout: 5))
     let deadlift = app.buttons["builder-movement-deadlift"]
-    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      guard deadlift.exists, deadlift.isEnabled, deadlift.isHittable else { return false }
-      let frame = deadlift.frame
-      return !frame.isEmpty && self.viewport.contains(frame)
-    }, object: deadlift)
-    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
-    let row = deadlift.frame
+    func settledFrame() -> CGRect {
+      let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+        guard deadlift.exists, deadlift.isEnabled, deadlift.isHittable else { return false }
+        let frame = deadlift.frame
+        return !frame.isEmpty && self.viewport.contains(frame)
+      }, object: deadlift)
+      XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
+      return deadlift.frame
+    }
+    _ = settledFrame()
+    deadlift.press(forDuration: 1)
+    let moveUp = app.buttons["Move up"]
+    XCTAssertTrue(moveUp.wait(for: \.isHittable, toEqual: true, timeout: 5)); moveUp.tap()
+    let firstMovement = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "builder-movement-")).element(boundBy: 0)
+    XCTAssertTrue(firstMovement.wait(for: \.identifier, toEqual: "builder-movement-deadlift", timeout: 5))
+    let row = settledFrame()
     let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: row.maxX - 40, dy: row.midY))
     start.press(forDuration: 0.01, thenDragTo: start.withOffset(CGVector(dx: -min(150, row.width / 2), dy: 0)),
       withVelocity: .slow, thenHoldForDuration: 0.1)
