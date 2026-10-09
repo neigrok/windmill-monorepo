@@ -304,6 +304,8 @@ struct FinishWorkout: Action {
   var finishing = false { didSet { if oldValue != finishing { activityChanged() } } }
   var finishQueued = false { didSet { if oldValue != finishQueued { activityChanged() } } }
   var receipt: WorkoutReceiptData?
+  // Finish was taken: its receipt is owed until the log shows the finish, however late the confirmation lands.
+  @ObservationIgnored var receiptOwed = false
   var handoff: WorkoutHandoff?
   var rackEditing = false {
     didSet {
@@ -391,7 +393,7 @@ struct FinishWorkout: Action {
       message = "The session is saved. Its movement order could not be read. Try again."
       gym.error = "Gym could not be read from this phone. Try again."; gym.report("gym_read", error); return
     }
-    if sessionId != open.id { drafts = [:]; receipt = nil; handoff = nil }
+    if sessionId != open.id { drafts = [:]; receipt = nil; receiptOwed = false; handoff = nil }
     sessionId = open.id; (walk, finishQueued) = restored
     if message == "The session is saved. Its movement order could not be read. Try again." { message = nil }
     walk.merge(session: open, sets: sets)
@@ -404,7 +406,7 @@ struct FinishWorkout: Action {
     if gym.readFailed { gym.refresh(); guard !gym.readFailed else { finishQueued = true; return } }
     if let open = gym.openSession, open.id != sessionId { restore() }
     guard !gym.readFailed, let session else { return }
-    let awaitingReceipt = finishing || finishQueued, previousSelected = selected
+    let awaitingReceipt = finishing || finishQueued || receiptOwed, previousSelected = selected
     do {
       (walk, finishQueued) = try gym.runner.read(Gym.scope) { read in
         (try WorkoutWalk(read.device(WorkoutWalk.key(session.id))),
@@ -579,6 +581,7 @@ struct FinishWorkout: Action {
         return
       }
     }
+    receiptOwed = true
     reconcile()
     finishing = false
     if receipt == nil { message = "Finish is saved on this phone. It will be confirmed when a connection is available." }
@@ -616,6 +619,7 @@ struct FinishWorkout: Action {
     }
   }
   func completeFinish(_ session: Session) {
+    receiptOwed = false
     guard receipt == nil, handoff == nil else { return }
     receipt = WorkoutReceiptData(session: session, sets: sets, routineId: gym.runner.mint(Routine.self),
                                  routinePosition: (gym.routines.map(\.position).max() ?? -1) + 1)
@@ -650,7 +654,7 @@ struct FinishWorkout: Action {
     gym.coachUnavailable = false
     sessionId = nil; walk = WorkoutWalk(); drafts = [:]; offerSession = nil; offerSets = []
     restoreRack(weightKg: Prefill.emptyBarKg, reps: Prefill.emptyBarReps, kind: .working); paging = false
-    receipt = nil; handoff = nil; message = nil; finishQueued = false; restore()
+    receipt = nil; receiptOwed = false; handoff = nil; message = nil; finishQueued = false; restore()
   }
 }
 
