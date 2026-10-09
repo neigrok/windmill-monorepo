@@ -494,7 +494,8 @@ import XCTest
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
     capture("gym-coach-conversation-\(appearance)", app)
     app.scrollViews.firstMatch.swipeDown()
-    XCTAssertTrue(app.buttons["Enlarge photo"].waitForExistence(timeout: 5)); app.buttons["Enlarge photo"].tap()
+    let photo = app.buttons["Enlarge photo"].firstMatch
+    XCTAssertTrue(photo.waitForExistence(timeout: 5)); photo.tap()
     XCTAssertTrue(app.navigationBars["Photo"].waitForExistence(timeout: 5))
     capture("gym-coach-photo-sheet-\(appearance)", app)
     app.buttons["Close"].tap()
