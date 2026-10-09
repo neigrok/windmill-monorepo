@@ -118,6 +118,13 @@ import UIKit
     XCTAssertGreaterThanOrEqual(contrast, 4.5,
       "\(appearance) \(button.label): rendered glyph/fill contrast \(contrast), glyph pixels \(glyph.count)", file: file, line: line)
   }
+  // The rename sheet focuses its name as it rises with the keyboard, so a tap could land outside it and dismiss it.
+  func retype(_ field: XCUIElement, with text: String) {
+    XCTAssertTrue(field.waitForExistence(timeout: 5))
+    XCTAssertTrue(XCUIApplication().keyboards.firstMatch.waitForExistence(timeout: 5))
+    let value = field.value as? String ?? ""
+    field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count) + text)
+  }
   func replace(_ field: XCUIElement, with text: String) {
     XCTAssertTrue(field.waitForExistence(timeout: 5)); field.tap()
     if let value = field.value as? String, !["open", "max", "last time", "Routine name", "varies"].contains(value) {
@@ -226,9 +233,9 @@ import UIKit
       app.buttons["routine-detail-movement-bench-press"].tap()
       capture(app, "movement-" + appearance)
       app.buttons["rename-movement"].tap()
-      app.textFields["gym-rename-movement-name"].tap()
+      XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
       capture(app, "rename-" + appearance)
-      replace(app.textFields["gym-rename-movement-name"], with: "Bench today")
+      retype(app.textFields["gym-rename-movement-name"], with: "Bench today")
       app.buttons["gym-rename-movement-commit"].tap()
       XCTAssertTrue(app.staticTexts["gym-rename-movement-refusal"].waitForExistence(timeout: 5))
       XCTAssertEqual(app.textFields["gym-rename-movement-name"].value as? String, "Bench today")
@@ -249,7 +256,7 @@ import UIKit
       app.buttons["gym-movement-create-commit"].tap()
       XCTAssertTrue(app.buttons["rename-movement"].waitForExistence(timeout: 5))
       app.buttons["rename-movement"].tap()
-      replace(app.textFields["gym-rename-movement-name"], with: "My curl")
+      retype(app.textFields["gym-rename-movement-name"], with: "My curl")
       app.buttons["gym-rename-movement-commit"].tap()
       XCTAssertTrue(app.navigationBars["My curl"].waitForExistence(timeout: 5))
       app.terminate()

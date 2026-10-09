@@ -22,7 +22,7 @@ import UIKit
     XCTAssertTrue(menu.waitForExistence(timeout: 10)); menu.tap()
     let gym = app.buttons["room-gym"]
     XCTAssertTrue(gym.waitForExistence(timeout: 5)); gym.tap()
-    app.tabBars.buttons["Coach"].tap()
+    openTab("Coach", app)
     XCTAssertTrue(app.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 10))
     return app
   }
@@ -38,20 +38,24 @@ import UIKit
     }, object: nil)
     return XCTWaiter.wait(for: [ready], timeout: 30) == .completed
   }
-  func waitForCoachTab(_ app: XCUIApplication) -> Bool {
+  // Scrolling minimizes the tab bar to its selected tab; tapping that tab brings the other tabs back.
+  func openTab(_ name: String, _ app: XCUIApplication) {
     let viewport = app.frame
     let tabBar = app.tabBars.firstMatch
+    var minimized = false
     let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      guard let snapshot = try? tabBar.snapshot(), !snapshot.frame.isEmpty, viewport.contains(snapshot.frame) else { return false }
-      @MainActor func containsCoach(_ child: any XCUIElementSnapshot) -> Bool {
-        if child.elementType == .button && (child.identifier == "Coach" || child.label == "Coach") {
-          return child.isEnabled && !child.frame.isEmpty && snapshot.frame.contains(child.frame) && viewport.contains(child.frame)
-        }
-        return child.children.contains(where: containsCoach)
+      guard let bar = try? tabBar.snapshot(), !bar.frame.isEmpty, viewport.contains(bar.frame) else { return false }
+      @MainActor func buttons(_ element: any XCUIElementSnapshot) -> [any XCUIElementSnapshot] {
+        (element.elementType == .button ? [element] : []) + element.children.flatMap(buttons)
       }
-      return snapshot.children.contains(where: containsCoach)
+      let shown = buttons(bar).filter { $0.isEnabled && !$0.frame.isEmpty && viewport.contains($0.frame) }
+      minimized = shown.contains { $0.value as? String == "Collapsed" }
+      return minimized || shown.contains { $0.identifier == name || $0.label == name }
     }, object: nil)
-    return XCTWaiter.wait(for: [ready], timeout: 30) == .completed
+    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed)
+    if minimized { app.tabBars.buttons.firstMatch.tap() }
+    let tab = app.tabBars.buttons[name]
+    XCTAssertTrue(tab.wait(for: \.isHittable, toEqual: true, timeout: 10)); tab.tap()
   }
   func more(_ name: String, _ app: XCUIApplication, snapshot: String? = nil) {
     let menu = app.buttons["coach-more"]
@@ -114,9 +118,7 @@ import UIKit
     app.buttons["Open workout"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
     back(app)
-    XCTAssertTrue(waitForCoachTab(app))
-    XCTAssertTrue(app.tabBars.buttons["Coach"].isHittable)
-    app.tabBars.buttons["Coach"].tap()
+    openTab("Coach", app)
     app.scrollViews.firstMatch.swipeUp()
     app.buttons["Review"].tap()
     XCTAssertTrue(app.buttons["coach-apply-proposal"].waitForExistence(timeout: 5))
@@ -135,9 +137,7 @@ import UIKit
     XCTAssertTrue(app.navigationBars["Push A2"].waitForExistence(timeout: 5)); capture("coach-created-routine-\(suffix)", app)
     back(app)
     XCTAssertTrue(app.navigationBars["Routines"].waitForExistence(timeout: 5))
-    XCTAssertTrue(waitForCoachTab(app))
-    XCTAssertTrue(app.tabBars.buttons["Coach"].isHittable)
-    app.tabBars.buttons["Coach"].tap()
+    openTab("Coach", app)
     more("History", app, snapshot: "coach-menu-\(suffix)")
     XCTAssertTrue(app.staticTexts["3 changes waiting"].waitForExistence(timeout: 5)); capture("coach-history-\(suffix)", app)
     XCTAssertFalse(app.tabBars.buttons["Coach"].isHittable)
@@ -218,9 +218,9 @@ import UIKit
     app.buttons["Review"].tap()
     XCTAssertTrue(app.staticTexts["Applied"].waitForExistence(timeout: 5))
     app.buttons["Close"].tap()
-    app.tabBars.buttons["Routines"].tap()
+    openTab("Routines", app)
     XCTAssertFalse(app.buttons["routine-coach-fixture-routine"].exists)
-    app.tabBars.buttons["The log"].tap()
+    openTab("The log", app)
     XCTAssertTrue(app.buttons["gym-log-session-coach-fixture-session"].waitForExistence(timeout: 5))
     app.terminate()
   }
