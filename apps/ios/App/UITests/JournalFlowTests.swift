@@ -429,6 +429,7 @@ import XCTest
     app.buttons["email-sign-in"].tap()
     let email = app.textFields["email-address"]
     XCTAssertTrue(email.waitForExistence(timeout: 5)); email.tap(); email.typeText("flow@example.com")
+    XCTAssertTrue(email.waitForValue("flow@example.com"))
     app.buttons["Send code"].tap()
     let code = app.textFields["email-code"]
     XCTAssertTrue(code.waitForExistence(timeout: 5)); code.tap(); code.typeText("482913")
@@ -483,6 +484,7 @@ import XCTest
     app.buttons["email-sign-in"].tap()
     let email = app.textFields["email-address"]
     XCTAssertTrue(email.waitForExistence(timeout: 5)); email.tap(); email.typeText("apple@example.com")
+    XCTAssertTrue(email.waitForValue("apple@example.com"))
     app.buttons["Send code"].tap()
     let code = app.textFields["email-code"]
     XCTAssertTrue(code.waitForExistence(timeout: 5)); code.tap(); code.typeText("482913")

@@ -34,6 +34,7 @@ import XCTest
     XCTAssertTrue(app.staticTexts["Your Windmill email"].waitForExistence(timeout: 5))
     let field = app.textFields["email-address"]
     field.tap(); field.typeText(email)
+    XCTAssertTrue(field.waitForValue(email))
     app.buttons["Send code"].tap()
     XCTAssertTrue(app.textFields["email-code"].waitForExistence(timeout: 5))
     app.textFields["email-code"].tap()

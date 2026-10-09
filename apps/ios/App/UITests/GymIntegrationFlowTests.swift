@@ -103,12 +103,14 @@ import XCTest
     logAndFinish(app); back(app)
     app.buttons["you"].tap()
     if let link = identities["adopt"]?["link"] {
-      app.buttons["email-sign-in"].tap(); replace(app.textFields["email-address"], "gym-mail-failure@example.com"); app.buttons["Send code"].tap()
+      app.buttons["email-sign-in"].tap(); replace(app.textFields["email-address"], "gym-mail-failure@example.com")
+      XCTAssertTrue(app.textFields["email-address"].waitForValue("gym-mail-failure@example.com")); app.buttons["Send code"].tap()
       XCTAssertTrue(app.staticTexts["Can't reach windmill.works. Nothing you've written is lost."].waitForExistence(timeout: 10))
       capture(app, "e2e-auth-mail-unavailable"); app.buttons["Back"].tap()
       app.buttons["link-sign-in"].tap(); replace(app.textFields["sign-in-link"], link); app.buttons["sign-in-link-submit"].tap()
     } else {
-      app.buttons["email-sign-in"].tap(); replace(app.textFields["email-address"], "gym-adopt@example.com"); app.buttons["Send code"].tap()
+      app.buttons["email-sign-in"].tap(); replace(app.textFields["email-address"], "gym-adopt@example.com")
+      XCTAssertTrue(app.textFields["email-address"].waitForValue("gym-adopt@example.com")); app.buttons["Send code"].tap()
       replace(app.textFields["email-code"], "482913")
     }
     if app.alerts.buttons["Add"].waitForExistence(timeout: 5) { app.alerts.buttons["Add"].tap() }
@@ -138,8 +140,9 @@ import XCTest
       XCTAssertTrue(app.buttons["link-sign-in"].waitForExistence(timeout: 5)); app.buttons["link-sign-in"].tap()
       replace(app.textFields["sign-in-link"], link); app.buttons["sign-in-link-submit"].tap()
     } else {
-      app.buttons["email-sign-in"].tap(); replace(app.textFields["email-address"], try XCTUnwrap(identity["email"]))
-      app.buttons["Send code"].tap(); replace(app.textFields["email-code"], "482913")
+      let address = try XCTUnwrap(identity["email"])
+      app.buttons["email-sign-in"].tap(); replace(app.textFields["email-address"], address)
+      XCTAssertTrue(app.textFields["email-address"].waitForValue(address)); app.buttons["Send code"].tap(); replace(app.textFields["email-code"], "482913")
     }
     XCTAssertTrue(app.alerts.buttons["Add"].waitForExistence(timeout: 15)); app.alerts.buttons["Add"].tap()
     let recovery = app.descendants(matching: .any)["gym-adoption-recovery"]

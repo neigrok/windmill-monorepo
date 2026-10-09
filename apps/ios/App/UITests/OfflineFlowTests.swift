@@ -22,6 +22,7 @@ import XCTest
     app.buttons["email-sign-in"].tap()
     let email = app.textFields["email-address"]
     ready(email); email.tap(); email.typeText("shell@example.com")
+    XCTAssertTrue(email.waitForValue("shell@example.com"))
     app.buttons["Send code"].tap()
     let code = app.textFields["email-code"]
     ready(code); code.tap(); code.typeText("482913")
@@ -69,6 +70,7 @@ import XCTest
     let email = app.textFields["email-address"]
     ready(email)
     email.tap(); email.typeText("offline@example.invalid")
+    XCTAssertTrue(email.waitForValue("offline@example.invalid"))
     ready(app.buttons["Send code"])
     app.buttons["Send code"].tap()
     ready(app.buttons["Back"])
