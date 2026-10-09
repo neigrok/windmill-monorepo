@@ -124,6 +124,7 @@ import UIKit
     XCTAssertTrue(XCUIApplication().keyboards.firstMatch.waitForExistence(timeout: 5))
     let value = field.value as? String ?? ""
     field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count) + text)
+    XCTAssertTrue(field.waitForValue(text))
   }
   func replace(_ field: XCUIElement, with text: String) {
     XCTAssertTrue(field.waitForExistence(timeout: 5)); field.tap()
@@ -131,6 +132,7 @@ import UIKit
       field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count))
     }
     field.typeText(text)
+    XCTAssertTrue(field.waitForValue(text))
     if ["routine-name", "gym-movement-name"].contains(field.identifier) {
       field.typeText("\n")
       XCTAssertTrue(XCUIApplication().keyboards.firstMatch.waitForNonExistence(timeout: 5))

@@ -264,12 +264,11 @@ import XCTest
     XCTAssertTrue(app.textFields["gym-fix-weight"].waitForExistence(timeout: 5))
     snapshot("fix-\(appearance)", app: app)
     let weight = app.textFields["gym-fix-weight"]
-    weight.doubleTap()
-    let cut = app.descendants(matching: .any).matching(NSPredicate(
-      format: "(label == %@ OR identifier == %@) AND elementType IN %@", "Cut", "Cut",
-      [XCUIElement.ElementType.menuItem.rawValue, XCUIElement.ElementType.button.rawValue])).firstMatch
-    XCTAssertTrue(cut.waitForExistence(timeout: 5))
-    cut.tap()
+    // Focusing tap first; a tap past the end of the focused, trailing-aligned text then puts the caret after it.
+    weight.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    weight.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5)).tap()
+    weight.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: weight.value.map { "\($0)" }?.count ?? 0))
     @MainActor func find(_ identifier: String, in snapshot: any XCUIElementSnapshot) -> (any XCUIElementSnapshot)? {
       if snapshot.identifier == identifier { return snapshot }
       for child in snapshot.children {

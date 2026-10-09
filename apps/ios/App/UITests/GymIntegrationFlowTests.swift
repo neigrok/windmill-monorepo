@@ -127,7 +127,8 @@ import XCTest
     XCTAssertTrue(app.buttons["workout-add"].waitForExistence(timeout: 5)); app.buttons["workout-add"].tap(); pickBench(app)
     logAndFinish(app, count: 2); back(app)
     app.tabBars.buttons["Routines"].tap()
-    XCTAssertTrue(app.buttons["Just start logging"].waitForExistence(timeout: 5)); app.buttons["Just start logging"].tap()
+    let start = app.buttons["Just start logging"]
+    XCTAssertTrue(start.waitForExistence(timeout: 5)); XCTAssertTrue(start.wait(for: \.isEnabled, toEqual: true, timeout: 10)); start.tap()
     XCTAssertTrue(app.buttons["workout-add"].waitForExistence(timeout: 5)); app.buttons["workout-add"].tap(); pickBench(app)
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
     app.buttons["workout-log"].tap(); app.buttons["workout-log"].tap()
