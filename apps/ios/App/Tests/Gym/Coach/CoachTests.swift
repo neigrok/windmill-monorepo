@@ -277,7 +277,7 @@ import SyncModelServer
       catch { timedOut = (error as? URLError)?.code == .timedOut }
     }
     try await settle { CoachTestProtocol.state.withLock { !$0.requests.isEmpty } }
-    try await Task.sleep(for: .milliseconds(200))
+    try await settle { completed && rest.tasks.isEmpty }
     #expect(completed && timedOut && rest.tasks.isEmpty)
     call.cancel(); await call.value
     #expect(!telemetry.entries.withLock { $0.flatMap { $0.properties.values } }.contains { $0.contains("private") })
