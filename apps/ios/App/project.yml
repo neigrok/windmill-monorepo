@@ -77,6 +77,9 @@ targets:
           CODE_SIGN_IDENTITY[sdk=iphonesimulator*]: "-"
           CODE_SIGN_STYLE[sdk=iphonesimulator*]: Manual
     preBuildScripts:
+      - name: Check theme colour literals
+        basedOnDependencyAnalysis: false
+        script: python3 "$SRCROOT/Tools/check_theme_literals.py"
       - name: Prepare build metadata and capabilities
         basedOnDependencyAnalysis: false
         script: python3 "$SRCROOT/Tools/prepare_build.py"
@@ -98,7 +101,7 @@ targets:
             CFBundleURLSchemes: [windmill]
         WMServerBaseURL: $(WM_SERVER_BASE_URL)
         UILaunchScreen:
-          UIColorName: ShellCanvas
+          UIColorName: shell/canvas
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
@@ -117,6 +120,12 @@ targets:
     sources:
       - WorkoutActivityShared
       - WorkoutActivityWidget
+      - path: Sources/Theme
+        group: Sources
+    preBuildScripts:
+      - name: Check theme colour literals
+        basedOnDependencyAnalysis: false
+        script: python3 "$SRCROOT/Tools/check_theme_literals.py"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app.workout-activity

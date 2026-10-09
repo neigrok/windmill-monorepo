@@ -85,48 +85,51 @@ struct RoutineBuilder: View {
   var body: some View {
     NavigationStack(path: $editing.path) {
       List {
-        Section("Name") {
-          TextField("Routine name", text: $editing.draft.current.name).focused($nameFocused).submitLabel(.done)
-            .onSubmit { nameFocused = false }.accessibilityIdentifier("routine-name")
-          if editing.draft.current.name.unicodeScalars.count >= 48 { Text("\(editing.draft.current.name.unicodeScalars.count)/60").font(.caption.monospaced()).foregroundStyle(.secondary) }
-        }
-        Section("Movements") {
-          ForEach(Array(editing.draft.current.entries.enumerated()), id: \.element.exerciseId) { index, entry in
-            Button {
-              nameFocused = false
-              if let exercise = gym.catalogue.find(entry.exerciseId) { editing.openTargets(exercise: exercise, sets: entry.sets) }
-            } label: {
-              VStack(alignment: .leading, spacing: 4) {
-                Text(gym.catalogue.find(entry.exerciseId)?.name ?? "Movement unavailable").foregroundStyle(Color.primary)
-                Text(Readout.target(entry.sets)).font(.subheadline.monospaced()).foregroundStyle(Color.secondary)
-              }
-            }.accessibilityIdentifier("builder-movement-\(entry.exerciseId)")
-              .swipeActions { Button("Remove", role: .destructive) { remove(index) } }
-              .contextMenu {
-                Button("Move up") { move(index, by: -1) }.disabled(index == 0)
-                Button("Move down") { move(index, by: 1) }.disabled(index == editing.draft.current.entries.count - 1)
-                Button("Remove movement", role: .destructive) { remove(index) }
-              }
-              .accessibilityAction(named: "Move up") { move(index, by: -1) }
-              .accessibilityAction(named: "Move down") { move(index, by: 1) }
-              .accessibilityAction(named: "Remove movement") { remove(index) }
-          }.onMove { source, destination in editing.draft.current.entries.move(fromOffsets: source, toOffset: destination) }
-          Button("Add movement", systemImage: "plus.circle.fill") { nameFocused = false; editing.pickMovement() }
-            .accessibilityIdentifier("add-movement").disabled(editing.draft.current.entries.count >= 50)
-        }
-        if let removed = editing.removed, editing.draft.current.entries.count < 50 { Section { Button("Undo movement removal") {
-          editing.draft.current.entries.insert(removed.1, at: min(removed.0, editing.draft.current.entries.count)); editing.removed = nil
-        } } }
-        if editing.draft.isDirty || editing.failure != nil, let problem = editing.failure ?? RoutinePlanning.problem(editing.draft.current) {
-          Section { Text(problem).foregroundStyle(.red).accessibilityIdentifier("routine-refusal") }
-        }
-        RoutineNotice(gym: gym, excluding: editing.failure)
-        if !editing.draft.isNew { Section("History") {
-          ForEach(gym.routineHistory(editing.draft.id).prefix(20), id: \.id) { session in Text(Date(timeIntervalSince1970: Double(session.startedAt.ms) / 1000), style: .date) }
-          if gym.readFailed { Text("The log didn’t answer — this routine’s history is out of reach.") }
-        } }
-      }.listStyle(.insetGrouped).environment(\.editMode, $editing.editMode)
+        Group {
+          Section("Name") {
+            TextField("Routine name", text: $editing.draft.current.name).focused($nameFocused).submitLabel(.done)
+              .onSubmit { nameFocused = false }.accessibilityIdentifier("routine-name")
+            if editing.draft.current.name.unicodeScalars.count >= 48 { Text("\(editing.draft.current.name.unicodeScalars.count)/60").font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
+          }
+          Section("Movements") {
+            ForEach(Array(editing.draft.current.entries.enumerated()), id: \.element.exerciseId) { index, entry in
+              Button {
+                nameFocused = false
+                if let exercise = gym.catalogue.find(entry.exerciseId) { editing.openTargets(exercise: exercise, sets: entry.sets) }
+              } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                  Text(gym.catalogue.find(entry.exerciseId)?.name ?? "Movement unavailable").foregroundStyle(GymPalette.ink)
+                  Text(Readout.target(entry.sets)).font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
+                }
+              }.accessibilityIdentifier("builder-movement-\(entry.exerciseId)")
+                .swipeActions { Button("Remove", role: .destructive) { remove(index) } }
+                .contextMenu {
+                  Button("Move up") { move(index, by: -1) }.disabled(index == 0)
+                  Button("Move down") { move(index, by: 1) }.disabled(index == editing.draft.current.entries.count - 1)
+                  Button("Remove movement", role: .destructive) { remove(index) }
+                }
+                .accessibilityAction(named: "Move up") { move(index, by: -1) }
+                .accessibilityAction(named: "Move down") { move(index, by: 1) }
+                .accessibilityAction(named: "Remove movement") { remove(index) }
+            }.onMove { source, destination in editing.draft.current.entries.move(fromOffsets: source, toOffset: destination) }
+            Button("Add movement", systemImage: "plus.circle.fill") { nameFocused = false; editing.pickMovement() }
+              .accessibilityIdentifier("add-movement").disabled(editing.draft.current.entries.count >= 50)
+          }
+          if let removed = editing.removed, editing.draft.current.entries.count < 50 { Section { Button("Undo movement removal") {
+            editing.draft.current.entries.insert(removed.1, at: min(removed.0, editing.draft.current.entries.count)); editing.removed = nil
+          } } }
+          if !editing.draft.isNew { Section("History") {
+            ForEach(gym.routineHistory(editing.draft.id).prefix(20), id: \.id) { session in Text(Date(timeIntervalSince1970: Double(session.startedAt.ms) / 1000), style: .date) }
+            if gym.readFailed { Text("The log didn’t answer — this routine’s history is out of reach.") }
+          } }
+        }.listRowBackground(GymPalette.card)
+      }.listStyle(.insetGrouped).modifier(GymPage()).environment(\.editMode, $editing.editMode)
         .navigationTitle(editing.draft.isNew ? "New routine" : "Edit routine").navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom) {
+          GymTransient(gym: gym,
+                       message: editing.draft.isDirty || editing.failure != nil ? editing.failure ?? RoutinePlanning.problem(editing.draft.current) : nil,
+                       errorIdentifier: "routine-refusal")
+        }
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(editing.saving) }
           if editing.draft.current.entries.count > 1 {
@@ -170,7 +173,7 @@ struct RoutineBuilder: View {
         .sensoryFeedback(.selection, trigger: editing.draft.current.entries.map(\.exerciseId))
         .sensoryFeedback(.success, trigger: editing.saved)
         .accessibilityIdentifier("routine-builder")
-    }.modifier(RoutineTint())
+    }.modifier(GymPage()).presentationDetents([.large])
   }
   private func remove(_ index: Int) {
     guard editing.draft.current.entries.indices.contains(index) else { return }

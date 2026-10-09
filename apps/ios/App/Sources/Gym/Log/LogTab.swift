@@ -5,7 +5,7 @@ import SyncAPI
 
 struct LogTab: View {
   let gym: GymModel
-  @Environment(\.colorScheme) var scheme
+  @Environment(\.coachOpenAccount) private var openAccount
   @Environment(\.dynamicTypeSize) var typeSize
   @State var limit = 30
   @State var loading = false
@@ -16,7 +16,6 @@ struct LogTab: View {
   @State var shareMessage: String?
   @State var shareGeneration = 0
   @State var shareTask: Task<Void, Never>?
-  var palette: LogPalette { LogPalette(dark: scheme == .dark) }
 
   var body: some View {
     let progress = gym.log?.progress
@@ -24,24 +23,24 @@ struct LogTab: View {
       logHead
       progressStrip(progress)
       ForEach(gym.logTimeline(limit: limit)) { month in
-        Section(month.title) { ForEach(month.entries) { entry in timelineRow(entry, progress: progress) } }.listRowBackground(palette.surface)
+        Section(month.title) { ForEach(month.entries) { entry in timelineRow(entry, progress: progress) } }.listRowBackground(GymPalette.card)
       }
       logFooter
-    }.listStyle(.insetGrouped).scrollContentBackground(.hidden).background(palette.canvas).foregroundStyle(palette.ink)
-      .navigationTitle("The log").navigationBarTitleDisplayMode(.inline).accessibilityIdentifier("gym-log")
+    }.listStyle(.insetGrouped).modifier(GymPage(titleDisplayMode: .large))
+      .navigationTitle("The log").accessibilityIdentifier("gym-log")
+      .toolbar { ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) } }
       .safeAreaInset(edge: .bottom) {
         VStack(spacing: 0) {
-          LogNoticeBand(gym: gym)
-          Button { weighing = true } label: { Label("Weigh in", systemImage: "plus").frame(maxWidth: .infinity).foregroundStyle(scheme == .dark ? .black : .white) }
-            .buttonStyle(.borderedProminent).controlSize(.large)
-            .frame(maxWidth: .infinity).padding().accessibilityIdentifier("gym-weigh-in")
-        }.background(palette.canvas)
+          GymTransient(gym: gym, message: shareMessage, dismiss: { shareMessage = nil },
+                       errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo")
+          ActionBand(title: "Weigh in", room: .gym,
+                     actionIdentifier: "gym-weigh-in") { weighing = true }
+        }
       }
       .sheet(isPresented: $weighing) { WeighInSheet(gym: gym) }
       .onAppear { prepareLogFixture(); gym.telemetry.event("gym_screen_viewed", properties: ["screen": "log"]) }
       .onDisappear { shareGeneration += 1; shareTask?.cancel(); sharing = nil }
       .onChange(of: gym.account) { _, _ in shareGeneration += 1; shareTask?.cancel(); sharing = nil; shareMessage = nil; limit = 30; expanded = nil }
-      .tint(palette.accent)
   }
 
   @ViewBuilder var logHead: some View {
@@ -51,25 +50,24 @@ struct LogTab: View {
             VStack(alignment: .leading, spacing: 5) {
               Text("Bodyweight")
               Text("\(Readout.weight(reading.entry.kg)) kg · \(reading.daysAgo == 0 ? "today" : reading.daysAgo == 1 ? "yesterday" : "\(reading.daysAgo) days ago")")
-                .font(.subheadline.monospaced()).foregroundStyle(palette.dim)
+                .font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
             }
           }.accessibilityIdentifier("gym-bodyweight-door")
-        } footer: { Text("Coach can read this. It can never write it.") }.listRowBackground(palette.surface)
+        } footer: { Text("Coach can read this. It can never write it.") }.listRowBackground(GymPalette.card)
       } else {
         Section { NavigationLink("Bodyweight") { BodyweightScreen(gym: gym) }.accessibilityIdentifier("gym-bodyweight-door") }
-          .listRowBackground(palette.surface)
+          .listRowBackground(GymPalette.card)
       }
       if gym.readFailed {
-        Section { Text("Progress unavailable").font(.headline); Text("Your progress could not be read."); Button("Try again") { gym.refresh() } }
-          .listRowBackground(palette.surface)
+        EmptyView() // the transient band owns a failed read and its retry
       } else if gym.log == nil {
-        Section { ProgressView("Reading progress…") }.listRowBackground(palette.surface)
+        Section { ProgressView("Reading progress…") }.listRowBackground(GymPalette.card)
       } else if gym.log?.firstPullComplete == false && !gym.isAnonymous {
-        Section { Text("Your full training history needs a connection to finish syncing.") }.listRowBackground(palette.surface)
+        Section { Text("Your full training history needs a connection to finish syncing.") }.listRowBackground(GymPalette.card)
       }
       if gym.logTimeline(limit: limit).isEmpty && !gym.readFailed && (gym.isAnonymous || gym.log?.firstPullComplete == true) {
         ContentUnavailableView("No sessions yet", systemImage: "clock", description: Text("Your training will land here."))
-          .listRowBackground(palette.canvas)
+          .listRowBackground(GymPalette.canvas)
       }
   }
 
@@ -84,7 +82,7 @@ struct LogTab: View {
       if !movements.isEmpty {
         Section {
           if let count = snapshot.consistency(now: log.moment.now, zone: log.moment.zone) {
-            Text("Trained \(count) of the last 4 weeks").font(.caption.monospaced()).foregroundStyle(palette.dim)
+            Text("Trained \(count) of the last 4 weeks").font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
           }
           ScrollView(.horizontal) {
             HStack(alignment: .top, spacing: 16) {
@@ -95,19 +93,19 @@ struct LogTab: View {
                     if progress.hasChart(in: log.moment.zone), let first = progress.logPlotPoints.first {
                       LogDatedChart(points: progress.logPlotPoints, from: first.date, through: LogPresentation.date(log.moment.now), gapDays: 21, bestID: progress.best?.id.description, compact: true)
                     }
-                    Text("Last 12 weeks · \(progress.sessions.count) sessions").font(.caption.monospaced()).foregroundStyle(palette.dim)
-                    if let best = progress.best?.fact.estimate { Text("best \(Readout.estimate(best.e1rm))").font(.subheadline.monospaced()).foregroundStyle(palette.record) }
+                    Text("Last 12 weeks · \(progress.sessions.count) sessions").font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
+                    if let best = progress.best?.fact.estimate { Text("best \(Readout.estimate(best.e1rm))").font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.record) }
                     ForEach(LogPresentation.progressEfforts(progress), id: \.setId) { heavy in
-                      Text(heavy.weightKg == 0 ? "most reps \(heavy.reps) · bodyweight" : "heaviest \(Readout.effort(weightKg: heavy.weightKg, reps: heavy.reps))").font(.subheadline.monospaced()).foregroundStyle(palette.dim)
+                      Text(heavy.weightKg == 0 ? "most reps \(heavy.reps) · bodyweight" : "heaviest \(Readout.effort(weightKg: heavy.weightKg, reps: heavy.reps))").font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
                     }
                   }.padding(12).containerRelativeFrame(.horizontal, alignment: .leading) { width, _ in
                     typeSize.isAccessibilitySize ? width : min(284, width)
-                  }.background(palette.surface, in: RoundedRectangle(cornerRadius: 12))
+                  }.background(GymPalette.card, in: RoundedRectangle(cornerRadius: 12))
                 }.buttonStyle(.plain).accessibilityIdentifier("gym-progress-movement")
               }
             }.scrollTargetLayout()
           }.scrollTargetBehavior(.viewAligned).scrollIndicators(.hidden).accessibilityLabel("Progress by movement")
-        }.listRowBackground(palette.canvas).listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+        }.listRowBackground(GymPalette.canvas).listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
       }
     }
   }
@@ -120,11 +118,10 @@ struct LogTab: View {
               .disabled(loading).accessibilityIdentifier("gym-log-older")
             if olderFailed { Text("That read failed.").font(.subheadline) }
           } else if let first = gym.finishedLogSessions.last {
-            Text("First session · \(LogPresentation.brief(LogPresentation.date(first.startedAt)))").font(.caption.monospaced()).foregroundStyle(palette.dim)
+            Text("First session · \(LogPresentation.brief(LogPresentation.date(first.startedAt)))").font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
           }
-        }.listRowBackground(palette.surface)
+        }.listRowBackground(GymPalette.card)
       }
-      if let shareMessage { Section { Text(shareMessage).font(.subheadline) }.listRowBackground(palette.surface) }
   }
 
   @ViewBuilder func timelineRow(_ entry: LogTimelineEntry, progress: StatsProgress?) -> some View {
@@ -134,14 +131,14 @@ struct LogTab: View {
             case .month(let day, let weeks):
               DisclosureGroup(isExpanded: Binding(get: { expanded == entry.id }, set: { expanded = $0 ? entry.id : nil })) {
                 Text("A working-set workout in every week of \(LogPresentation.date(day).formatted(.dateTime.month(.wide))).")
-                  .font(.subheadline).foregroundStyle(palette.dim)
+                  .font(.subheadline).foregroundStyle(GymPalette.inkDim)
               } label: { Label("Trained \(weeks) of \(weeks) weeks", systemImage: "calendar") }
               .accessibilityIdentifier("gym-month-moment")
             case .weight(let weight):
               NavigationLink { BodyweightScreen(gym: gym) } label: {
                 VStack(alignment: .leading, spacing: 4) {
                   Label("Weighed in · \(Readout.weight(weight.kg)) kg", systemImage: "scalemass")
-                  Text(LogPresentation.dayLabel(weight.day, today: gym.log?.moment.today ?? weight.day)).font(.caption).foregroundStyle(palette.dim)
+                  Text(LogPresentation.dayLabel(weight.day, today: gym.log?.moment.today ?? weight.day)).font(.caption).foregroundStyle(GymPalette.inkDim)
                 }
               }.accessibilityIdentifier("gym-weight-moment")
             }
@@ -157,10 +154,10 @@ struct LogTab: View {
     return NavigationLink { SessionDetailScreen(gym: gym, sessionID: session.id) } label: {
       VStack(alignment: .leading, spacing: 5) {
         Text(session.name ?? Readout.noRoutine).font(.headline)
-        Text(fact).font(.subheadline.monospaced()).foregroundStyle(record == nil ? palette.dim : palette.record)
+        Text(fact).font(.subheadline.monospacedDigit()).foregroundStyle(record == nil ? GymPalette.inkDim : GymPalette.record)
         Text(LogPresentation.dayLabel(LogPresentation.day(LogPresentation.date(session.startedAt)), today: gym.log?.moment.today ?? LogPresentation.day(Date())))
-          .font(.caption).foregroundStyle(palette.dim)
-        if gym.logSessionIsDeviceOnly(session.id) { Label("On this device", systemImage: "iphone").font(.caption).foregroundStyle(palette.dim) }
+          .font(.caption).foregroundStyle(GymPalette.inkDim)
+        if gym.logSessionIsDeviceOnly(session.id) { Label("On this device", systemImage: "iphone").font(.caption).foregroundStyle(GymPalette.inkDim) }
       }
     }.accessibilityIdentifier("gym-log-session-\(session.id)")
       .contextMenu {
@@ -184,15 +181,15 @@ struct LogTab: View {
         if progress.hasChart(in: gym.log!.moment.zone), let first = progress.logPlotPoints.first {
           LogDatedChart(points: progress.logPlotPoints, from: first.date, through: LogPresentation.date(point.startedAt), gapDays: 21, bestID: progress.best?.id.description, compact: true)
         }
-        Text("Last 12 weeks · \(progress.sessions.count) sessions").font(.caption.monospaced()).foregroundStyle(palette.dim)
-        if let heaviest = progress.heaviest?.fact.heaviest { Text("heaviest \(Readout.effort(weightKg: heaviest.weightKg, reps: heaviest.reps))").font(.subheadline.monospaced()) }
-        Text("best e1RM \(Readout.estimatedWeight(value))").font(.subheadline.monospaced()).foregroundStyle(palette.record)
+        Text("Last 12 weeks · \(progress.sessions.count) sessions").font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
+        if let heaviest = progress.heaviest?.fact.heaviest { Text("heaviest \(Readout.effort(weightKg: heaviest.weightKg, reps: heaviest.reps))").font(.subheadline.monospacedDigit()) }
+        Text("best e1RM \(Readout.estimatedWeight(value))").font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.record)
       }
       NavigationLink("Open record") { MovementRecordScreen(gym: gym, exerciseID: id) }.accessibilityIdentifier("gym-open-record")
     } label: {
       VStack(alignment: .leading, spacing: 4) {
-        Label("\(name) · new best", systemImage: "circle.fill").foregroundStyle(palette.record).font(.subheadline.weight(.semibold))
-        Text("\(Readout.estimatedWeight(value)) kg est · \(change)").font(.caption.monospaced()).foregroundStyle(palette.dim)
+        Label("\(name) · new best", systemImage: "circle.fill").foregroundStyle(GymPalette.record).font(.subheadline.weight(.semibold))
+        Text("\(Readout.estimatedWeight(value)) kg est · \(change)").font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
       }
     }.accessibilityIdentifier("gym-best-moment")
       .accessibilityValue(expanded == entry.id ? "Expanded" : "Collapsed")

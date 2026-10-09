@@ -16,7 +16,7 @@ import SyncModelServer
 
 @Suite(.serialized) @MainActor struct CoachTests {
   @Test func dynamicPaletteResolvesOnAccessibilityBackgroundThread() async {
-    let colours = [CoachPalette.canvas, CoachPalette.surface, CoachPalette.onAccent, CoachPalette.accent].map { UIColor($0) }
+    let colours = [GymPalette.canvas, GymPalette.card, GymPalette.onAccent, GymPalette.accent].map { UIColor($0) }
     let result = await Task.detached { @Sendable in
       let onMain = ({ @Sendable in Thread.isMainThread })()
       let values = colours.map { colour -> UInt32? in
@@ -27,7 +27,7 @@ import SyncModelServer
       return (onMain, values)
     }.value
     #expect(!result.0)
-    #expect(result.1 == [0x0b1111, 0x161c1d, 0x0b1111, 0x5fcdb4])
+    #expect(result.1 == [0x0b1111, 0x161c1d, 0x1b1408, 0x5fcdb4])
   }
 
   func fixture() -> (Harness, GymModel) {
@@ -580,7 +580,8 @@ import SyncModelServer
     #expect(relaunched.saved.text == oldCache.text && relaunched.saved.photo == oldCache.photo && relaunched.saved.photoData == oldCache.photoData)
   }
 
-  @Test func interruptedSnapshotSurvivesRestartAndContinuesSameRequest() async throws {
+  @Test(arguments: ["running", "failed"])
+  func interruptedSnapshotSurvivesRestartAndContinuesSameRequest(status: String) async throws {
     let (gym, rest, _) = try await authed(.failure(.networkConnectionLost)), cache = store()
     defer { try? FileManager.default.removeItem(at: cache.directory) }
     let first = CoachConversation(gym: gym, rest: rest, store: cache)
@@ -590,11 +591,15 @@ import SyncModelServer
       let data = try JSONSerialization.data(withJSONObject: ["thread": request.thread, "generation": ["id": "generation-123", "requestId": request.requestId, "question": request.question, "status": status, "revision": revision, "answer": answer]])
       return "event: snapshot\r\ndata: " + String(decoding: data, as: UTF8.self) + "\r\n\r\n"
     }
-    CoachTestProtocol.state.withLock { $0.reply = .http(200, try! event("running", 1, "Partial"), "text/event-stream") }
+    CoachTestProtocol.state.withLock { $0.reply = .http(200, try! event(status, 1, "Partial"), "text/event-stream") }
     first.retry(); await first.work?.value; #expect(!first.asking)
     #expect(first.activeGeneration?.answer == "Partial" && first.retryable)
     CoachTestProtocol.state.withLock { $0.reply = .http(200, try! event("completed", 2, "Recovered"), "text/event-stream") }
     let restarted = CoachConversation(gym: gym, rest: rest, store: cache); await restarted.activate()
+    if status == "failed" {
+      #expect(restarted.error == nil && restarted.retryable && !restarted.asking)
+      restarted.retry()
+    }
     await restarted.work?.value; #expect(!restarted.asking)
     #expect(restarted.activeGeneration?.answer == "Recovered" && restarted.saved.request == request)
     let calls = CoachTestProtocol.state.withLock { $0.requests.compactMap(\.body) }

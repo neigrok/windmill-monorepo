@@ -17,6 +17,31 @@ import CoreText
     return editor
   }
 
+  @Test func journalEditorUsesNightInkInALightShell() throws {
+    let light = UITraitCollection(userInterfaceStyle: .light)
+    let dark = UITraitCollection(userInterfaceStyle: .dark)
+    var foreground: UIColor?
+    light.performAsCurrent {
+      let attributes = JournalBodyText.attributes(fontSize: JournalType.bodySize)
+      foreground = attributes[.foregroundColor] as? UIColor
+    }
+    let ink = try #require(foreground)
+    // Independent §2 values catch a broken SwiftUI → UIKit bridge as well as wrong appearance.
+    let colors: [(UIColor, [CGFloat])] = [
+      (ink.resolvedColor(with: light), [241, 240, 236]),
+      (UIColor(ShellPalette.canvas).resolvedColor(with: light), [249, 245, 235]),
+      (UIColor(ShellPalette.canvas).resolvedColor(with: dark), [11, 11, 12]),
+    ]
+    for (color, expected) in colors {
+      var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+      try #require(color.getRed(&red, green: &green, blue: &blue, alpha: &alpha))
+      for (component, value) in zip([red, green, blue], expected) {
+        #expect(abs(component * 255 - value) < 0.01)
+      }
+      #expect(alpha == 1)
+    }
+  }
+
   @Test func inkFontIsRegisteredFromTheAppBundle() throws {
     let font = try #require(UIFont(name: "Caveat-Regular", size: 26))
     #expect(font.familyName == "Caveat")

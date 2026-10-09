@@ -58,16 +58,18 @@ import UIKit
     XCTAssertTrue(waitForVisible(menu, in: app))
     XCTAssertTrue(menu.isHittable)
     menu.tap()
-    let ids = ["History": "history", "Notes": "notes", "Connected log": "connections", "Gym settings": "settings"]
-    let choices = app.sheets.containing(.button, identifier: "History").firstMatch
+    let ids = ["History": "history", "Notes": "notes", "Connected log": "connections", "Gym settings": "settings", "New chat": "new-chat", "Account": "account"]
+    let choices = app.buttons["coach-menu-history"]
     XCTAssertTrue(choices.waitForExistence(timeout: 5))
     if let snapshot { capture(snapshot, app) }
-    let item = choices.buttons[name]
-    XCTAssertTrue(waitForVisible(item, in: app))
-    XCTAssertTrue(item.isHittable)
-    item.tap()
-    XCTAssertTrue(choices.waitForNonExistence(timeout: 10))
-    if ids[name] != nil { XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5)) }
+    let item = app.buttons["coach-menu-" + (ids[name] ?? name)]
+    XCTAssertTrue(item.wait(for: \.isHittable, toEqual: true, timeout: 10))
+    let frame = item.frame
+    XCTAssertTrue(frame.minX.isFinite && frame.minY.isFinite && frame.width > 0 && frame.height > 0)
+    // A gym menu keeps the app from idling, so XCTest can drop a tap on its item; tap again while it stays open.
+    for _ in 0..<3 where choices.exists { item.tap(); _ = choices.waitForNonExistence(timeout: 10) }
+    XCTAssertFalse(choices.exists)
+    if ["History", "Notes", "Connected log", "Gym settings"].contains(name) { XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5)) }
   }
   func back(_ app: XCUIApplication, expecting title: String? = nil) {
     let previous = app.navigationBars.firstMatch

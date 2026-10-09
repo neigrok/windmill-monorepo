@@ -21,20 +21,6 @@ nonisolated enum OnboardingPage: Int, CaseIterable {
   }
 }
 
-struct OnboardingPalette {
-  let dark: Bool
-  func color(_ night: UInt32, _ day: UInt32) -> Color { Color(hex: dark ? night : day) }
-  var ground: Color { color(0x0b0b0c, 0xf9f5eb) }
-  var ink: Color { color(0xf2f0eb, 0x211b13) }
-  var dim: Color { color(0xb4b2ac, 0x6f5f45) }
-  var brand: Color { color(0xd08a5e, 0xbc6c42) }
-  var raised: Color { color(0x222224, 0xfdfbf6) }
-  var line: Color { color(0x2e2e32, 0xd3c2a0) }
-  var onBrand: Color { dark ? Color(hex: 0x1b1408) : .white }
-  var lamp: Color { color(0xe0b972, 0x986b1e) }
-  var gym: Color { color(0x5fcdb4, 0x137a6c) }
-}
-
 // Device history is checked before the model enters the view tree.
 enum OnboardingLaunch {
   static let shownKey = "windmillIntroductionShown"
@@ -77,10 +63,8 @@ struct OnboardingScreen: View {
   @State var visit = UUID()
   @State var exited = false
   @State var overflowingPages: Set<OnboardingPage> = []
-  @Environment(\.colorScheme) var scheme
   @Environment(\.dynamicTypeSize) var typeSize
   @Environment(\.accessibilityReduceMotion) var reduceMotion
-  var palette: OnboardingPalette { OnboardingPalette(dark: scheme == .dark) }
   var properties: [String: String] { ["page": page.name, "presentation": replay ? "replay" : "first_launch"] }
 
   var body: some View {
@@ -90,14 +74,14 @@ struct OnboardingScreen: View {
           if page == .windmill {
             HStack(spacing: 10) {
               Image("OnboardingBrandMark").resizable().frame(width: 42.45, height: 44).accessibilityHidden(true)
-              Text("Windmill").font(.custom("Baloo2-Bold", fixedSize: 30)).foregroundStyle(Design.brand).accessibilityHidden(true)
+              Text("Windmill").font(OnboardingSpecimenType.wordmark).foregroundStyle(ShellPalette.brand).accessibilityHidden(true)
             }.accessibilityElement(children: .ignore).accessibilityLabel("Windmill").accessibilityIdentifier("onboarding-identity").accessibilitySortPriority(90)
           }
           Spacer(minLength: 4)
-          if replay || page != .gym {
-            Button(replay ? "Done" : "Skip") {
-              exit(skipped: !replay)
-            }.font(Design.strong(17)).foregroundStyle(palette.ink).buttonStyle(.plain)
+          if !replay && page != .gym {
+            Button("Skip") {
+              exit(skipped: true)
+            }.font(ShellType.action).foregroundStyle(ShellPalette.ink).buttonStyle(.plain)
               .padding(.horizontal, 16).frame(minHeight: 52)
               .accessibilityIdentifier("onboarding-exit").accessibilitySortPriority(80)
           }
@@ -107,7 +91,7 @@ struct OnboardingScreen: View {
             ForEach(OnboardingPage.allCases, id: \.self) { item in
               ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
-                  OnboardingGlimpse(page: item, active: settled == item, visit: visit, palette: palette)
+                  OnboardingGlimpse(page: item, active: settled == item, visit: visit)
                     .frame(height: typeSize.isAccessibilitySize ? 260 : item == .windmill ? 320 : 340)
                     .accessibilityRepresentation {
                       Text(item.example).accessibilityIdentifier("onboarding-glimpse").accessibilitySortPriority(30)
@@ -115,20 +99,20 @@ struct OnboardingScreen: View {
                   VStack(alignment: .leading, spacing: 10) {
                     if item != .windmill {
                       HStack(spacing: 8) {
-                        Circle().fill(item == .roadmap ? palette.brand : item == .journal ? palette.lamp : palette.gym).frame(width: 7, height: 7).accessibilityHidden(true)
-                        Text(item.name.uppercased()).font(Design.mono(10)).tracking(2.4).foregroundStyle(palette.dim)
+                        Circle().fill(item == .roadmap ? ShellPalette.brand : item == .journal ? JournalPalette.lamp : GymPalette.accent).frame(width: 7, height: 7).accessibilityHidden(true)
+                        Text(item.name.uppercased()).font(ShellType.caption).foregroundStyle(ShellPalette.inkDim)
                           .accessibilityIdentifier("onboarding-eyebrow").accessibilitySortPriority(70)
                       }
                     }
-                    Text(item.title).font(Design.title(34)).tracking(0.2).foregroundStyle(palette.ink)
+                    Text(item.title).font(ShellType.display).tracking(0.2).foregroundStyle(ShellPalette.ink)
                       .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("onboarding-title").accessibilityAddTraits(.isHeader).accessibilitySortPriority(60)
-                    Text(item.message).font(Design.text(17)).tracking(-0.3).foregroundStyle(palette.dim)
+                    Text(item.message).font(ShellType.body).tracking(-0.3).foregroundStyle(ShellPalette.inkDim)
                       .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("onboarding-body").accessibilitySortPriority(50)
                     if let location = item.location {
-                      Text(location).font(Design.strong(12)).foregroundStyle(item == .journal ? palette.brand : palette.dim)
+                      Text(location).font(ShellType.caption).foregroundStyle(item == .journal ? ShellPalette.brand : ShellPalette.inkDim)
                         .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(item == .journal ? palette.brand.opacity(0.16) : palette.raised, in: Capsule())
-                        .overlay(Capsule().stroke(item == .journal ? palette.brand : palette.line, lineWidth: 1))
+                        .background(item == .journal ? ShellPalette.brand.opacity(0.16) : ShellPalette.raised, in: Capsule())
+                        .overlay(Capsule().stroke(item == .journal ? ShellPalette.brand : ShellPalette.lineStrong, lineWidth: 1))
                         .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("onboarding-tag").accessibilitySortPriority(40)
                     }
                   }
@@ -145,7 +129,7 @@ struct OnboardingScreen: View {
           }.tabViewStyle(.page(indexDisplayMode: .never))
             .indexViewStyle(.page(backgroundDisplayMode: .never))
             .accessibilityElement(children: .contain).accessibilitySortPriority(70)
-          OnboardingPageControl(page: $page, palette: palette, change: changePage)
+          OnboardingPageControl(page: $page, change: changePage)
             .frame(width: 100, height: 36).accessibilitySortPriority(20)
         }.accessibilityElement(children: .contain).accessibilitySortPriority(70)
         Button {
@@ -153,13 +137,11 @@ struct OnboardingScreen: View {
           else { changePage(OnboardingPage(rawValue: page.rawValue + 1)!) }
         } label: {
           Text(page == .gym ? replay ? "Done" : "Get started" : "Next")
-            .font(Design.strong(17)).foregroundStyle(palette.onBrand)
-            .frame(maxWidth: .infinity, minHeight: 38)
-        }.buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
-          .tint(palette.brand).padding(.horizontal, 24).padding(.top, 14).padding(.bottom, 16)
+            .font(ShellType.action).frame(maxWidth: .infinity, minHeight: 38)
+        }.modifier(RoomPrimaryStyle(room: .shell)).padding(.horizontal, 24).padding(.top, 14).padding(.bottom, 16)
           .accessibilityIdentifier("onboarding-next").accessibilitySortPriority(10)
       }.frame(width: geometry.size.width, height: geometry.size.height).accessibilityElement(children: .contain)
-    }.background(palette.ground.ignoresSafeArea())
+    }.background(ShellPalette.canvas.ignoresSafeArea())
       .onChange(of: page, initial: true) { _, value in
         settled = nil
         telemetry.event("onboarding_screen_viewed", properties: properties)
@@ -188,7 +170,6 @@ struct OnboardingScreen: View {
 // The native control also supplies an adjustable VoiceOver element after the glimpse.
 struct OnboardingPageControl: UIViewRepresentable {
   @Binding var page: OnboardingPage
-  let palette: OnboardingPalette
   let change: (OnboardingPage) -> Void
   func makeUIView(context: Context) -> UIPageControl {
     let control = UIPageControl()
@@ -199,8 +180,8 @@ struct OnboardingPageControl: UIViewRepresentable {
   }
   func updateUIView(_ control: UIPageControl, context: Context) {
     control.currentPage = page.rawValue
-    control.currentPageIndicatorTintColor = UIColor(palette.ink)
-    control.pageIndicatorTintColor = UIColor(palette.ink.opacity(0.28))
+    control.currentPageIndicatorTintColor = UIColor(ShellPalette.ink)
+    control.pageIndicatorTintColor = UIColor(ShellPalette.ink.opacity(0.28))
     control.accessibilityLabel = "Page \(page.rawValue + 1) of 4"
     context.coordinator.change = change
   }

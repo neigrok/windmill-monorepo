@@ -242,7 +242,6 @@ struct RoutineTargetsSheet: View {
   let onCancel: () -> Void
   @Binding private var draft: RoutineTargetDraft
   @State private var feedback = 0
-  @State private var showingFill = false
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @FocusState private var focus: Focus?
 
@@ -255,37 +254,39 @@ struct RoutineTargetsSheet: View {
 
   var body: some View {
     List {
-      Section {
-        if draft.isOpen && draft.refusal == nil {
-          Text("You decide the numbers at the rack.").foregroundStyle(.secondary)
-        }
-        headField("Sets", field: .sets, placeholder: "open", focus: .sets)
-        headField("Reps", field: .reps, placeholder: draft.varies(.reps) ? "varies" : "max", focus: .reps)
-        headField("kg", field: .weight, placeholder: draft.varies(.weight) ? "varies" : "last time", focus: .weight)
-        Toggle("Vary by set", isOn: $draft.varyBySet)
-          .disabled(!draft.canChangeVariation)
-      } footer: {
-        Text("kg blank: pick it at the rack the first time; after that, last time fills it.")
-      }
-      if !draft.isOpen && draft.varyBySet {
-        Section("Each set") {
-          fillMenu
-          ForEach(draft.visibleRows.indices, id: \.self) { index in
-            targetRow(index)
-              .swipeActions(edge: .trailing) { Button("Delete", role: .destructive) { delete(index) } }
-              .accessibilityAction(named: "Delete") { delete(index) }
-              .contextMenu {
-                fillActions
-                Button("Delete", systemImage: "trash", role: .destructive) { delete(index) }
-              }
+      Group {
+        Section {
+          if draft.isOpen && draft.refusal == nil {
+            Text("You decide the numbers at the rack.").foregroundStyle(GymPalette.inkDim)
           }
-          Button { draft.addSet(); feedback += 1 } label: { Label("Add set", systemImage: "plus") }
-            .accessibilityIdentifier("gym-target-add-set")
-          if draft.atSetCeiling && draft.refusal == nil { refusalLine(RoutineTargetDraft.outsideSets) }
+          headField("Sets", field: .sets, placeholder: "open", focus: .sets)
+          headField("Reps", field: .reps, placeholder: draft.varies(.reps) ? "varies" : "max", focus: .reps)
+          headField("kg", field: .weight, placeholder: draft.varies(.weight) ? "varies" : "last time", focus: .weight)
+          Toggle("Vary by set", isOn: $draft.varyBySet)
+            .disabled(!draft.canChangeVariation)
+        } footer: {
+          Text("kg blank: pick it at the rack the first time; after that, last time fills it.")
         }
-      } else if !draft.isOpen {
-        Section { fillMenu }
-      }
+        if !draft.isOpen && draft.varyBySet {
+          Section("Each set") {
+            fillMenu
+            ForEach(draft.visibleRows.indices, id: \.self) { index in
+              targetRow(index)
+                .swipeActions(edge: .trailing) { Button("Delete", role: .destructive) { delete(index) } }
+                .accessibilityAction(named: "Delete") { delete(index) }
+                .contextMenu {
+                  fillActions
+                  Button("Delete", systemImage: "trash", role: .destructive) { delete(index) }
+                }
+            }
+            Button { draft.addSet(); feedback += 1 } label: { Label("Add set", systemImage: "plus") }
+              .accessibilityIdentifier("gym-target-add-set")
+            if draft.atSetCeiling && draft.refusal == nil { refusalLine(RoutineTargetDraft.outsideSets) }
+          }
+        } else if !draft.isOpen {
+          Section { fillMenu }
+        }
+      }.listRowBackground(GymPalette.card)
     }
     .accessibilityIdentifier("gym-routine-targets")
     .navigationTitle(exercise.name)
@@ -295,16 +296,14 @@ struct RoutineTargetsSheet: View {
     }
     .safeAreaInset(edge: .bottom) {
       VStack(spacing: 0) {
-        Button {
+        ActionBand(title: draft.commitLabel, room: .gym,
+                   disabled: draft.refusal != nil, actionIdentifier: "gym-target-set") {
           switch draft.reading {
           case .open: onCommit(nil)
           case .scheme(let sets): onCommit(sets)
           case .refused: return
           }
-        } label: { Text(draft.commitLabel).foregroundStyle(CoachPalette.onAccent).frame(maxWidth: .infinity) }
-        .buttonStyle(.borderedProminent).controlSize(.large).frame(maxWidth: .infinity)
-        .disabled(draft.refusal != nil).accessibilityIdentifier("gym-target-set")
-        .padding()
+        }
         // Not a keyboard toolbar: on iOS 26 one shortens the keyboard avoidance of later sheets.
         if focus != nil {
           HStack {
@@ -313,7 +312,7 @@ struct RoutineTargetsSheet: View {
             Button("Done") { focus = nil }.frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("gym-target-keyboard-done")
           }.padding(.horizontal)
         }
-      }.background(.bar)
+      }
     }
     .sensoryFeedback(.selection, trigger: feedback)
     .onChange(of: draft.refusal) { _, refusal in
@@ -323,7 +322,7 @@ struct RoutineTargetsSheet: View {
       }
     }
     .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "routine_editor"]) }
-    .modifier(RoutineTint())
+    .modifier(GymPage())
   }
   private func headField(_ label: String, field: RoutineTargetDraft.Field, placeholder: String, focus target: Focus) -> some View {
     let refused = draft.headRefusal?.field == field
@@ -357,7 +356,7 @@ struct RoutineTargetsSheet: View {
   private func targetRow(_ index: Int) -> some View {
     let refusal = draft.headRefusal == nil && draft.refusal?.row == index ? draft.refusal : nil
     return VStack(alignment: .leading, spacing: 8) {
-      Text("Set \(index + 1)").font(.subheadline).foregroundStyle(.secondary)
+      Text("Set \(index + 1)").font(.subheadline).foregroundStyle(GymPalette.inkDim)
       if dynamicTypeSize.isAccessibilitySize {
         rowField("Reps", field: .reps, index: index, placeholder: "max", focus: .rowReps(index), refusal: refusal)
         HStack {
@@ -378,7 +377,7 @@ struct RoutineTargetsSheet: View {
   private func rowField(_ label: String, field: RoutineTargetDraft.Field, index: Int, placeholder: String, focus target: Focus,
                         refusal: RoutineTargetDraft.Refusal?) -> some View {
     VStack(alignment: .leading, spacing: 4) {
-      Text(label).font(.caption).foregroundStyle(.secondary)
+      Text(label).font(.caption).foregroundStyle(GymPalette.inkDim)
       TextField(placeholder, text: Binding(get: {
         guard draft.rows.indices.contains(index) else { return "" }
         return field == .reps ? draft.rows[index].reps : draft.rows[index].weight
@@ -409,14 +408,14 @@ struct RoutineTargetsSheet: View {
   }
 
   private var fillMenu: some View {
-    Button { focus = nil; showingFill = true } label: {
+    Menu { fillActions } label: {
       Text("Fill").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
     }.accessibilityIdentifier("gym-target-fill")
-      .confirmationDialog("Fill targets", isPresented: $showingFill, titleVisibility: .hidden) { fillActions }
+      .simultaneousGesture(TapGesture().onEnded { focus = nil })
   }
 
   private func refusalLine(_ message: String) -> some View {
-    Text(message).font(.subheadline).foregroundStyle(.red).accessibilityIdentifier("gym-target-refusal")
+    Text(message).font(.subheadline).foregroundStyle(GymPalette.alarm).accessibilityIdentifier("gym-target-refusal")
   }
 
   private func delete(_ index: Int) {

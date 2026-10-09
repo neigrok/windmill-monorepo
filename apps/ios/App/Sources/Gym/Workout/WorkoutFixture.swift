@@ -2,9 +2,9 @@ import Foundation
 import DomainKit
 import GymDomain
 import SyncCore
+import SwiftUI
 #if DEBUG && targetEnvironment(simulator)
 import ActivityKit
-import SwiftUI
 import UIKit
 #endif
 
@@ -54,6 +54,22 @@ enum WorkoutFixture {
     return true
     #else
     return false
+    #endif
+  }
+}
+
+struct WorkoutActivityFixtureProbe: ViewModifier {
+  let gym: GymModel
+  func body(content: Content) -> some View {
+    #if DEBUG && targetEnvironment(simulator)
+    content.background {
+      if let model = WorkoutActivityIntentHandler.model, model.gym === gym,
+         model.runtime?.settings.board == "workout-live-activity-planned" {
+        WorkoutActivityFixtureStatus(model: model).frame(width: 1, height: 1).allowsHitTesting(false)
+      }
+    }
+    #else
+    content
     #endif
   }
 }

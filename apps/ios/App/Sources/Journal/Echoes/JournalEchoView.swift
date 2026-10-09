@@ -19,8 +19,8 @@ struct JournalEchoButton: View {
           HStack(spacing: 5) {
             Image(systemName: "quote.opening").font(.caption)
             Text(page.matches.count.formatted()).font(.callout.monospacedDigit())
-          }.foregroundStyle(Design.lamp).padding(.horizontal, 10).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
-            .background(Design.lamp.opacity(echoes.arrivalDay == day ? 0.16 : 0.06), in: Capsule())
+          }.foregroundStyle(JournalPalette.lamp).padding(.horizontal, 10).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+            .background(JournalPalette.lamp.opacity(echoes.arrivalDay == day ? 0.16 : 0.06), in: Capsule())
             .animation(reduceMotion ? nil : .easeInOut(duration: 1.2), value: echoes.arrivalDay == day)
         }.buttonStyle(.plain)
           .accessibilityLabel(Self.label(page.matches.count))
@@ -50,9 +50,6 @@ struct JournalEchoSheet: View {
   let read: (JournalEchoDestination) -> Void
   @Environment(\.dynamicTypeSize) var typeSize
   @Environment(\.dismiss) var dismiss
-  var lamp: Color { Color(hex: appearance == .dark ? 0xe0b972 : 0x6b4d12) }
-  var secondaryInk: Color { Color(hex: appearance == .dark ? 0xa9a8a3 : 0x626264) }
-  var canvas: Color { Color(hex: appearance == .dark ? 0x0b0e16 : 0xf8f5ee) }
   var appearance: ColorScheme {
     let system = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.traitCollection.userInterfaceStyle
     return JournalEchoFixture.appearance ?? (system == .light ? .light : .dark)
@@ -64,18 +61,18 @@ struct JournalEchoSheet: View {
         if let page = echoes.pages[day] {
           VStack(alignment: .leading, spacing: 28) {
             VStack(alignment: .leading, spacing: 8) {
-              Text(Self.date(day)).font(.subheadline.monospaced()).foregroundStyle(secondaryInk)
+              Text(Self.date(day)).font(.subheadline.monospaced()).foregroundStyle(JournalPalette.inkDim)
               Text(JournalEchoButton.label(page.matches.count)).font(.headline).accessibilityAddTraits(.isHeader)
             }
             ForEach(page.matches, id: \.day) { match in
               VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                   Text(Self.date(match.day)).font(.subheadline.monospaced())
-                  Text(Self.distance(from: match.day, to: day)).font(.caption).foregroundStyle(secondaryInk)
+                  Text(Self.distance(from: match.day, to: day)).font(.caption).foregroundStyle(JournalPalette.inkDim)
                 }.accessibilityElement(children: .combine)
-                Text(match.text).font(.body).lineSpacing(5).foregroundStyle(lamp)
+                Text(match.text).font(.body).lineSpacing(5).foregroundStyle(JournalPalette.lamp)
                   .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                if let provenance = match.provenance { Text(provenance).font(.caption).foregroundStyle(secondaryInk) }
+                if let provenance = match.provenance { Text(provenance).font(.caption).foregroundStyle(JournalPalette.inkDim) }
                 Button {
                   let previous = echoes.destination
                   echoes.walk(from: day, to: match)
@@ -100,18 +97,18 @@ struct JournalEchoSheet: View {
             }
           }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
         }
-      }.background(canvas).navigationTitle("Echoes").navigationBarTitleDisplayMode(.inline)
+      }.background(JournalPalette.canvas).navigationTitle("Echoes").navigationBarTitleDisplayMode(.inline)
         .toolbar {
           ToolbarItem(placement: .confirmationAction) {
             Button("Done") { echoes.openDay = nil; dismiss() }.accessibilityIdentifier("echo-close")
           }
         }
-        .toolbarBackground(canvas, for: .navigationBar).toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(JournalPalette.canvas, for: .navigationBar).toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(appearance, for: .navigationBar)
-        .tint(lamp).accessibilityIdentifier("echo-sheet")
+        .tint(JournalPalette.lamp).accessibilityIdentifier("echo-sheet")
     }.presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.medium, .large])
       .presentationDragIndicator(.visible)
-      .presentationBackground(canvas)
+      .presentationBackground(JournalPalette.canvas)
       .environment(\.colorScheme, appearance)
   }
 
@@ -126,7 +123,7 @@ struct JournalEchoSheet: View {
       .accessibilityValue(match.useful == true ? "Selected" : "Not selected")
       .accessibilityIdentifier("echo-useful-\(match.day)")
     Button { Task { await echoes.answer(.dismiss, day: day, matchDay: match.day) } } label: {
-      Text("Not useful").font(.subheadline).foregroundStyle(secondaryInk).frame(minHeight: 48).contentShape(Rectangle())
+      Text("Not useful").font(.subheadline).foregroundStyle(JournalPalette.inkDim).frame(minHeight: 48).contentShape(Rectangle())
     }
       .accessibilityLabel("Not useful, \(Self.date(match.day))")
       .disabled(echoes.pendingDays.contains(day)).accessibilityIdentifier("echo-dismiss-\(match.day)")
@@ -156,7 +153,7 @@ struct JournalFirstEcho: View {
     if let day = echoes.firstEchoDay, day == echoes.access.today {
       Button { open(day) } label: {
         Text("Something you wrote before is close to this page.")
-          .font(.body).foregroundStyle(Design.lamp).multilineTextAlignment(.leading)
+          .font(.body).foregroundStyle(JournalPalette.lamp).multilineTextAlignment(.leading)
           .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
       }.buttonStyle(.plain).padding(.horizontal, 24)
         .accessibilityHint("Opens the earlier passage")
@@ -171,7 +168,7 @@ struct JournalEchoTrail: View {
     ViewThatFits(in: .horizontal) {
       HStack(spacing: 16) { controls }
       VStack(alignment: .leading, spacing: 0) { controls }
-    }.font(.subheadline).foregroundStyle(Design.lamp)
+    }.font(.subheadline).foregroundStyle(JournalPalette.lamp)
       .padding(.horizontal, 24).accessibilityElement(children: .contain).accessibilityIdentifier("echo-trail")
   }
   @ViewBuilder var controls: some View {

@@ -16,13 +16,11 @@ struct LogDatedChart: View {
   var bestID: String? = nil
   var compact = false
   var select: ((String) -> Void)? = nil
-  @Environment(\.colorScheme) var scheme
   @Namespace private var plotSpace
   @State var inspected: String?
   @State var revealID: String?
   @State var clearing: Task<Void, Never>?
   @State var viewportGeometry: ScrollGeometry?
-  var palette: LogPalette { LogPalette(dark: scheme == .dark) }
   var ordered: [LogPlotPoint] { points.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date } }
   var low: Double { let value = points.map(\.value).min() ?? 0; return value - padding }
   var high: Double { let value = points.map(\.value).max() ?? 1; return value + padding }
@@ -38,13 +36,13 @@ struct LogDatedChart: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       if !compact, let point = ordered.first(where: { $0.id == inspected }) ?? ordered.last {
-        Text(point.label).font(.subheadline.monospaced()).foregroundStyle(point.id == bestID ? palette.record : palette.ink)
+        Text(point.label).font(.subheadline.monospacedDigit()).foregroundStyle(point.id == bestID ? GymPalette.record : GymPalette.ink)
           .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("gym-chart-reading")
       }
       HStack(alignment: .top, spacing: 8) {
         VStack {
           Text(Readout.weight(high)); Spacer(); Text(Readout.weight(low))
-        }.font(.caption2.monospaced()).foregroundStyle(palette.dim).frame(height: compact ? 64 : 220).accessibilityHidden(true)
+        }.font(.caption2.monospacedDigit()).foregroundStyle(GymPalette.inkDim).frame(height: compact ? 64 : 220).accessibilityHidden(true)
         GeometryReader { geometry in
           let width = max(geometry.size.width, compact ? 0 : CGFloat(Set(points.map(\.date)).count) * 24)
           ScrollViewReader { proxy in
@@ -53,17 +51,17 @@ struct LogDatedChart: View {
               for fraction in [0.0, 0.5, 1.0] {
                 var grid = Path(); grid.move(to: CGPoint(x: 0, y: 6 + fraction * (size.height - 12)))
                 grid.addLine(to: CGPoint(x: size.width, y: 6 + fraction * (size.height - 12)))
-                context.stroke(grid, with: .color(palette.dim.opacity(0.15)), lineWidth: 1)
+                context.stroke(grid, with: .color(GymPalette.line), lineWidth: 1)
               }
               for (a, b) in zip(ordered, ordered.dropFirst()) where LogPresentation.day(a.date).days(until: LogPresentation.day(b.date)) <= gapDays {
                 var path = Path(); path.move(to: position(a, size: size)); path.addLine(to: position(b, size: size))
-                context.stroke(path, with: .color(palette.accent), lineWidth: 1.5)
+                context.stroke(path, with: .color(GymPalette.accent), lineWidth: 1.5)
               }
               for point in ordered {
                 let center = position(point, size: size), radius: CGFloat = point.id == inspected ? 6 : 3.5
                 let dot = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
-                context.fill(Path(ellipseIn: dot), with: .color(point.id == bestID ? palette.record : palette.accent))
-                if point.id == inspected { context.stroke(Path(ellipseIn: dot.insetBy(dx: -3, dy: -3)), with: .color(palette.ink), lineWidth: 1) }
+                context.fill(Path(ellipseIn: dot), with: .color(point.id == bestID ? GymPalette.record : GymPalette.accent))
+                if point.id == inspected { context.stroke(Path(ellipseIn: dot.insetBy(dx: -3, dy: -3)), with: .color(GymPalette.ink), lineWidth: 1) }
               }
             }.frame(width: width, height: compact ? 64 : 220).contentShape(Rectangle())
             .overlay {
@@ -113,14 +111,14 @@ struct LogDatedChart: View {
         }.frame(height: compact ? 64 : 220).contentShape(Rectangle()).clipped()
       }
       HStack { Text(LogPresentation.brief(visibleDates.lowerBound)); Spacer(); Text(LogPresentation.brief(visibleDates.upperBound)) }
-        .font(.caption2.monospaced()).foregroundStyle(palette.dim)
+        .font(.caption2.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
         .accessibilityElement(children: .ignore).accessibilityLabel("Visible dates")
         .accessibilityValue("\(LogPresentation.brief(visibleDates.lowerBound)) – \(LogPresentation.brief(visibleDates.upperBound))")
         .accessibilityIdentifier("gym-chart-dates").accessibilityHidden(compact)
       if !compact {
         ForEach(Array(gaps.enumerated()), id: \.offset) { _, gap in
           Text("\(gapDays == 7 ? "no weigh-in" : "no session") · \(LogPresentation.brief(gap.0.date)) – \(LogPresentation.brief(gap.1.date))")
-            .font(.caption.monospaced()).foregroundStyle(palette.dim)
+            .font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
         }
       }
     }.contentShape(Rectangle()).clipped().accessibilityElement(children: .contain)

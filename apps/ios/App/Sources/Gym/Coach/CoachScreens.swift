@@ -22,39 +22,6 @@ extension EnvironmentValues {
   }
 }
 
-nonisolated enum CoachPalette {
-  static let canvas = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 11/255, green: 17/255, blue: 17/255, alpha: 1) : .systemGroupedBackground })
-  static let surface = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 22/255, green: 28/255, blue: 29/255, alpha: 1) : .secondarySystemGroupedBackground })
-  static let onAccent = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 11/255, green: 17/255, blue: 17/255, alpha: 1) : .white })
-  static let accent = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(red: 95/255, green: 205/255, blue: 180/255, alpha: 1) : UIColor(red: 19/255, green: 122/255, blue: 108/255, alpha: 1) })
-}
-
-struct CoachPage: ViewModifier {
-  func body(content: Content) -> some View {
-    content.scrollContentBackground(.hidden).background(CoachPalette.canvas).tint(CoachPalette.accent)
-      .foregroundStyle(.primary).navigationBarTitleDisplayMode(.inline)
-  }
-}
-
-struct CoachNoticeBand: View {
-  let gym: GymModel
-  var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      if let error = gym.error {
-        Text(error).font(.callout).accessibilityIdentifier("gym-coach-error")
-        if gym.readFailed { Button("Try again") { gym.refresh() } }
-      }
-      ForEach(gym.notices, id: \.id) { notice in
-        Button("Dismiss message") { gym.dismissNotice(notice.id) }
-      }
-      ForEach(gym.undoOffers.reversed(), id: \.id) { offer in
-        Button("Undo") { _ = gym.undo(offer.id) }.accessibilityIdentifier("coach-engine-undo")
-      }
-    }.padding(gym.error == nil && gym.undoOffers.isEmpty ? 0 : 16).frame(maxWidth: .infinity, alignment: .leading)
-      .background(CoachPalette.surface)
-  }
-}
-
 extension GymModel {
   var coachNoteCount: Int { personalCounts[Note.type] ?? notes.count }
   var coachAccountAvailable: Bool { !isAnonymous && account != nil && !accountTransition }
@@ -78,23 +45,25 @@ struct GymSettingsScreen: View {
   @State var accountHint = false
   var body: some View {
     List {
-      Section {
-        Picker("Units", selection: Binding(get: { gym.preferences.units }, set: { gym.coachSaveUnits($0) })) {
-          Text("kg").tag("kg"); Text("lb").tag("lb")
-        }.pickerStyle(.segmented).accessibilityIdentifier("gym-units")
-      } footer: { Text("This phone still draws kg.") }
-      Section {
-        NavigationLink("Notes") { NotesScreen(gym: gym) }
-        NavigationLink("Connected log") { ConnectedLogScreen(gym: gym) }
-        Button("Account") { if let openAccount { openAccount() } else { accountHint = true } }
-        if gym.workoutHidden, gym.openSession != nil {
-          Button("Restore workout") { gym.restoreWorkout() }.accessibilityIdentifier("gym-restore-workout")
+      Group {
+        Section {
+          Picker("Units", selection: Binding(get: { gym.preferences.units }, set: { gym.coachSaveUnits($0) })) {
+            Text("kg").tag("kg"); Text("lb").tag("lb")
+          }.pickerStyle(.segmented).accessibilityIdentifier("gym-units")
+        } footer: { Text("This phone still draws kg.") }
+        Section {
+          NavigationLink("Notes") { NotesScreen(gym: gym) }
+          NavigationLink("Connected log") { ConnectedLogScreen(gym: gym) }
+          Button("Account") { if let openAccount { openAccount() } else { accountHint = true } }
+          if gym.workoutHidden, gym.openSession != nil {
+            Button("Restore workout") { gym.restoreWorkout() }.accessibilityIdentifier("gym-restore-workout")
+          }
+          if accountHint { Text("Open You and settings in the top bar.").font(.callout).foregroundStyle(GymPalette.inkDim) }
         }
-        if accountHint { Text("Open You and settings in the top bar.").font(.callout).foregroundStyle(.secondary) }
-      }
-    }.listStyle(.insetGrouped).navigationTitle("Gym settings").modifier(CoachPage())
+      }.listRowBackground(GymPalette.card)
+    }.listStyle(.insetGrouped).navigationTitle("Gym settings").modifier(GymPage())
       .toolbar(.hidden, for: .tabBar)
-      .safeAreaInset(edge: .bottom) { CoachNoticeBand(gym: gym) }
+      .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
       .accessibilityIdentifier("gym-settings")
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "settings"]) }
   }
@@ -106,54 +75,56 @@ struct NotesScreen: View {
   @State var ordered = false
   var body: some View {
     List {
-      if !gym.coachAccountAvailable {
-        Section { Text("Notes live with your account, so they need you signed in.") }
-      } else {
-        Section {
-          Text("what you write for Coach").foregroundStyle(.secondary)
-          Text("Any agent you connect can read these too.")
-            .padding(.leading, 12).overlay(alignment: .leading) { Rectangle().fill(CoachPalette.accent).frame(width: 3) }
-        }.listRowBackground(Color.clear)
-        Section {
-          ForEach(gym.notes, id: \.id) { note in
-            Button { editor = NoteEditorIdentity(note: note) } label: {
-              VStack(alignment: .leading, spacing: 5) {
-                Text(note.title).font(.body.weight(.semibold)).foregroundStyle(.primary)
-                if let line = note.body.split(whereSeparator: \.isNewline).first { Text(String(line)).font(.callout).foregroundStyle(.secondary).lineLimit(2) }
-              }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            }.listRowBackground(CoachPalette.surface)
-              .swipeActions { Button("Delete", role: .destructive) { _ = gym.run(DeleteNote(note.id)) } }
-              .contextMenu {
-                Button("Edit") { editor = NoteEditorIdentity(note: note) }
-                Button("Move up") { if let i = gym.notes.firstIndex(where: { $0.id == note.id }), i > 0 { if gym.coachMoveNote(note, to: i - 1) { ordered.toggle() } } }
-                Button("Move down") { if let i = gym.notes.firstIndex(where: { $0.id == note.id }), i < gym.notes.count - 1 { if gym.coachMoveNote(note, to: i + 1) { ordered.toggle() } } }
-                Button("Delete note", role: .destructive) { _ = gym.run(DeleteNote(note.id)) }
-              }
-              .accessibilityAction(named: "Move up") { if let i = gym.notes.firstIndex(where: { $0.id == note.id }), i > 0 { if gym.coachMoveNote(note, to: i - 1) { ordered.toggle() } } }
-              .accessibilityAction(named: "Move down") { if let i = gym.notes.firstIndex(where: { $0.id == note.id }), i < gym.notes.count - 1 { if gym.coachMoveNote(note, to: i + 1) { ordered.toggle() } } }
-              .accessibilityAction(named: "Delete note") { _ = gym.run(DeleteNote(note.id)) }
-          }.onMove { source, destination in
-            guard let from = source.first, source.count == 1 else { return }
-            if gym.coachMoveNote(gym.notes[from], to: destination > from ? destination - 1 : destination) { ordered.toggle() }
-          }.onDelete { offsets in
-            let ids = offsets.map { gym.notes[$0].id }; for id in ids { _ = gym.run(DeleteNote(id)) }
-          }
-          if gym.notes.isEmpty {
-            ForEach(["How I want to be talked to", "What I am training for"], id: \.self) { hint in
-              Button(hint) { editor = NoteEditorIdentity(note: Note(id: gym.runner.mint(Note.self)), hint: hint, isNew: true) }
-                .foregroundStyle(.secondary).listRowBackground(CoachPalette.surface)
+      Group {
+        if !gym.coachAccountAvailable {
+          Section { Text("Notes live with your account, so they need you signed in.") }
+        } else {
+          Section {
+            Text("what you write for Coach").foregroundStyle(GymPalette.inkDim)
+            Text("Any agent you connect can read these too.")
+              .padding(.leading, 12).overlay(alignment: .leading) { Rectangle().fill(GymPalette.accent).frame(width: 3) }
+          }.listRowBackground(Color.clear)
+          Section {
+            ForEach(gym.notes, id: \.id) { note in
+              Button { editor = NoteEditorIdentity(note: note) } label: {
+                VStack(alignment: .leading, spacing: 5) {
+                  Text(note.title).font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink)
+                  if let line = note.body.split(whereSeparator: \.isNewline).first { Text(String(line)).font(.callout).foregroundStyle(GymPalette.inkDim).lineLimit(2) }
+                }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+              }.listRowBackground(GymPalette.card)
+                .swipeActions { Button("Delete", role: .destructive) { _ = gym.run(DeleteNote(note.id)) } }
+                .contextMenu {
+                  Button("Edit") { editor = NoteEditorIdentity(note: note) }
+                  Button("Move up") { if let i = gym.notes.firstIndex(where: { $0.id == note.id }), i > 0 { if gym.coachMoveNote(note, to: i - 1) { ordered.toggle() } } }
+                  Button("Move down") { if let i = gym.notes.firstIndex(where: { $0.id == note.id }), i < gym.notes.count - 1 { if gym.coachMoveNote(note, to: i + 1) { ordered.toggle() } } }
+                  Button("Delete note", role: .destructive) { _ = gym.run(DeleteNote(note.id)) }
+                }
+                .accessibilityAction(named: "Move up") { if let i = gym.notes.firstIndex(where: { $0.id == note.id }), i > 0 { if gym.coachMoveNote(note, to: i - 1) { ordered.toggle() } } }
+                .accessibilityAction(named: "Move down") { if let i = gym.notes.firstIndex(where: { $0.id == note.id }), i < gym.notes.count - 1 { if gym.coachMoveNote(note, to: i + 1) { ordered.toggle() } } }
+                .accessibilityAction(named: "Delete note") { _ = gym.run(DeleteNote(note.id)) }
+            }.onMove { source, destination in
+              guard let from = source.first, source.count == 1 else { return }
+              if gym.coachMoveNote(gym.notes[from], to: destination > from ? destination - 1 : destination) { ordered.toggle() }
+            }.onDelete { offsets in
+              let ids = offsets.map { gym.notes[$0].id }; for id in ids { _ = gym.run(DeleteNote(id)) }
             }
-          }
-          if gym.coachNoteCount < 10 {
-            Button { editor = NoteEditorIdentity(note: Note(id: gym.runner.mint(Note.self)), isNew: true) } label: { Label("Add a note", systemImage: "plus") }
-              .accessibilityIdentifier("coach-add-note").listRowBackground(CoachPalette.surface)
-          } else { Text("10 of 10 notes. Delete one to add another.").foregroundStyle(.secondary) }
-        } footer: { Text("Top note wins.") }
-      }
-    }.listStyle(.insetGrouped).navigationTitle("Notes").modifier(CoachPage()).accessibilityIdentifier("gym-notes")
+            if gym.notes.isEmpty {
+              ForEach(["How I want to be talked to", "What I am training for"], id: \.self) { hint in
+                Button(hint) { editor = NoteEditorIdentity(note: Note(id: gym.runner.mint(Note.self)), hint: hint, isNew: true) }
+                  .foregroundStyle(GymPalette.inkDim).listRowBackground(GymPalette.card)
+              }
+            }
+            if gym.coachNoteCount < 10 {
+              Button { editor = NoteEditorIdentity(note: Note(id: gym.runner.mint(Note.self)), isNew: true) } label: { Label("Add a note", systemImage: "plus") }
+                .accessibilityIdentifier("coach-add-note").listRowBackground(GymPalette.card)
+            } else { Text("10 of 10 notes. Delete one to add another.").foregroundStyle(GymPalette.inkDim) }
+          } footer: { Text("Top note wins.") }
+        }
+      }.listRowBackground(GymPalette.card)
+    }.listStyle(.insetGrouped).navigationTitle("Notes").modifier(GymPage()).accessibilityIdentifier("gym-notes")
       .toolbar(.hidden, for: .tabBar)
       .toolbar { if gym.coachAccountAvailable, !gym.notes.isEmpty { EditButton() } }
-      .safeAreaInset(edge: .bottom) { CoachNoticeBand(gym: gym) }
+      .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
       .sheet(item: $editor) { identity in NoteEditor(gym: gym, identity: identity) }
       .sensoryFeedback(.selection, trigger: ordered)
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "notes"]) }
@@ -182,26 +153,28 @@ struct NoteEditor: View {
   var body: some View {
     NavigationStack {
       Form {
-        if owner != gym.account || !gym.coachAccountAvailable {
-          Text("The account changed. Open this note again.")
-        } else {
-        Section {
-          TextField(identity.hint, text: $draft.current.title, axis: .vertical).font(.title3.weight(.semibold)).focused($focus).accessibilityIdentifier("coach-note-title")
-          let titleCount = draft.current.title.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars.count
-          if titleCount >= 48 { Text("\(titleCount) of 60 characters").font(.caption.monospaced()).foregroundStyle(titleCount > 60 ? .red : .secondary) }
-          TextField("Write a note for Coach", text: $draft.current.body, axis: .vertical).lineLimit(8...20).accessibilityIdentifier("coach-note-body")
-          let bytes = draft.current.body.trimmingCharacters(in: .whitespacesAndNewlines).utf8.count
-          if bytes >= 400 { Text("\(bytes) of 500 bytes").font(.caption.monospaced()).foregroundStyle(bytes > 500 ? .red : .secondary) }
-        }.listRowBackground(CoachPalette.surface)
+        Group {
+          if owner != gym.account || !gym.coachAccountAvailable {
+            Text("The account changed. Open this note again.")
+          } else {
+          Section {
+            TextField(identity.hint, text: $draft.current.title, axis: .vertical).font(.title3.weight(.semibold)).focused($focus).accessibilityIdentifier("coach-note-title")
+            let titleCount = draft.current.title.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars.count
+            if titleCount >= 48 { Text("\(titleCount) of 60 characters").font(.caption.monospacedDigit()).foregroundStyle(titleCount > 60 ? GymPalette.alarm : GymPalette.inkDim) }
+            TextField("Write a note for Coach", text: $draft.current.body, axis: .vertical).lineLimit(8...20).accessibilityIdentifier("coach-note-body")
+            let bytes = draft.current.body.trimmingCharacters(in: .whitespacesAndNewlines).utf8.count
+            if bytes >= 400 { Text("\(bytes) of 500 bytes").font(.caption.monospacedDigit()).foregroundStyle(bytes > 500 ? GymPalette.alarm : GymPalette.inkDim) }
+        }.listRowBackground(GymPalette.card)
         if !identity.isNew {
           Section { Button("Delete note", role: .destructive) {
             guard owner == gym.account, gym.coachAccountAvailable else { return }
             if gym.run(DeleteNote(identity.note.id))?.refusal == nil, gym.error == nil { dismiss() }
           } }
         }
-        if let error = gym.error { Section { Text(error).foregroundStyle(.red) } }
         }
-      }.navigationTitle("Note").modifier(CoachPage())
+        }.listRowBackground(GymPalette.card)
+      }.navigationTitle("Note").modifier(GymPage())
+        .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
           ToolbarItem(placement: .confirmationAction) { Button("Save") {

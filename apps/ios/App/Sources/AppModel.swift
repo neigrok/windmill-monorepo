@@ -139,6 +139,7 @@ final class AppModel {
   var adoptionIsSingle: Bool { currentAdoption?.counts.filter { $0.key != "journalState" }.values.reduce(0, +) == 1 }
 
   func openJournal() { openRoom(.journal) }
+  func openYou() { journal.done(); sheet = pendingSignIn == nil && signInSession?.isComplete != false ? .you : .authPending }
   func openRoom(_ room: Room) {
     guard !editorReadOnly else { return }
     if !welcome, selectedRoom == .journal { journal.liftInk() }
@@ -151,8 +152,9 @@ final class AppModel {
   }
 
   func switchRoom(_ room: Room) {
-    guard !editorReadOnly, room != selectedRoom else { return }
+    guard !editorReadOnly else { return }
     if selectedRoom == .journal { journal.liftInk() }
+    guard room != selectedRoom else { return }
     journal.done()
     selectedRoom = room; preferences.set(room.rawValue, forKey: "lastRoom")
     telemetry.event("room_switched", properties: ["room": room.rawValue])
@@ -394,6 +396,13 @@ final class AppModel {
     } catch { if account == current, methodsGeneration == generation { showAuthError(error) } }
   }
 
+  func askToRemoveApple() { removingApple = true; screenViewed("24c") }
+  func confirmAppleRemoval() { removingApple = false; performAuthentication { await self.removeApple() } }
+  // Leaving the question any way but Remove Apple counts as Cancel, as the iOS 26 dialog has no Cancel button.
+  func cancelAppleRemoval() {
+    guard removingApple else { return }
+    removingApple = false; choose("cancel", screen: "24c")
+  }
   func removeApple() async {
     guard !working, let token = appleSessionToken, let auth = runtime?.auth else { return }
     choose("remove_apple", screen: "24c")

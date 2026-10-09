@@ -90,7 +90,7 @@ import SyncTesting
       try await capture(WorkoutScreen(gym: gym), name: "live-" + name, appearance: appearance)
       try await capture(WorkoutAssembly(workout: gym.workout, add: {}), name: "assembly-" + name, appearance: appearance)
       try await capture(WorkoutMovementPicker(gym: gym, workout: gym.workout), name: "movements-" + name, appearance: appearance)
-      try await capture(NavigationStack { CreateMovementSheet(gym: gym, draft: .constant(MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: "New movement")), includesTargets: false, account: gym.account, anonymous: gym.isAnonymous, onCreated: { _ in }) }.modifier(RoutineTint()), name: "create-movement-" + name, appearance: appearance)
+      try await capture(NavigationStack { CreateMovementSheet(gym: gym, draft: .constant(MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: "New movement")), includesTargets: false, account: gym.account, anonymous: gym.isAnonymous, onCreated: { _ in }) }.modifier(GymPage()), name: "create-movement-" + name, appearance: appearance)
       try await capture(WorkoutKeypadSheet(field: .weight, value: 100, commit: { _ in }), name: "weight-keypad-" + name, appearance: appearance)
       try await capture(WorkoutKeypadSheet(field: .reps, value: 5, commit: { _ in }), name: "reps-keypad-" + name, appearance: appearance)
       try await capture(WorkoutKeypadSheet(field: .weight, value: 501, commit: { _ in }), name: "invalid-keypad-" + name, appearance: appearance)
@@ -254,8 +254,8 @@ import SyncTesting
   }
 
   func testDynamicPaletteResolvesOffMainThreadInBothAppearances() async {
-    let colours = [WorkoutPalette.canvas, WorkoutPalette.surface, WorkoutPalette.accent,
-                   WorkoutPalette.onAccent, WorkoutPalette.logged, WorkoutPalette.record].map { UIColor($0) }
+    let colours = [GymPalette.canvas, GymPalette.card, GymPalette.accent,
+                   GymPalette.onAccent, GymPalette.done, GymPalette.record].map { UIColor($0) }
     let result = await Task.detached { @Sendable in
       let onMain = ({ @Sendable in Thread.isMainThread })()
       let values = [UIUserInterfaceStyle.dark, .light].map { appearance in
@@ -269,8 +269,8 @@ import SyncTesting
       return (onMain, values)
     }.value
     XCTAssertFalse(result.0)
-    XCTAssertEqual(result.1[0], [0x0b1111, 0x171d1d, 0x5fcdb4, 0x0b1111, 0x9aa859, 0xd6ac36])
-    XCTAssertEqual(result.1[1], [0xebe7e3, 0xf8f6f4, 0x4c4374, 0xf1f0eb, 0x7d8c43, 0x6e5217])
+    XCTAssertEqual(result.1[0], [0x0b1111, 0x161c1d, 0x5fcdb4, 0x1b1408, 0x9aa859, 0xd9b04c])
+    XCTAssertEqual(result.1[1], [0xebe7e3, 0xf8f6f4, 0x137a6c, 0xffffff, 0x7d8c43, 0x6e5217])
   }
 
   func testKeepAwakeStopsAtFinishAndRestoresPriorValue() async throws {

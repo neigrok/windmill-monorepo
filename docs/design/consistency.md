@@ -8,14 +8,12 @@ acceptance. Figma review tasks below need a fresh file inspection before editing
 
 - **F4 · Gym Daylight PR ink.** Web and the [approved specimen](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=874-7735)
   use gold-700 `#6E5217`; Android `GymSkin.kt` still uses `#A17822`. Align Android and check native
-  PR rows. `guidelines/superapp-shell.md` §8 says iOS gym defines only its Instrument palette;
-  `apps/ios` defines none (6v), and the rebuilt Daylight palette uses gold-700.
+  PR rows. iOS's shared `gym/record` asset uses gold-700 in Daylight.
 - **F7 / F29 · Mono weights.** `web/src/styles/fonts.js` loads JetBrains Mono 400/500/600.
   Gym and journal CSS request heavier mono weights. Normalize the uses or supply the faces.
 - **F8 · Unused numeral tokens.** `gymTokens.css` declares `--weight-size`, `--weight-leading`
   and `--reps-size`; no web rule consumes them. Remove them or give them a real consumer.
-- **4j · Text scaling.** `gym/briefs/12-native-idiom.md` says iOS's fixed-size fonts need Dynamic
-  Type behavior; `apps/ios` has no fonts (6v). Define Dynamic Type for the rebuilt rooms, and check
+- **4j · Text scaling.** Check iOS layout reflow against the shared Dynamic Type ramp and
   web text resizing across the gym's pixel-sized type.
 - **Published clay tokens.** Reconcile Design System `surface/card` dark mode with web's
   `#171719`. The recorded published value is `#17120B` (`VariableID:1:66`, key
@@ -230,17 +228,10 @@ places it disagrees with a drawing or a brief.
   hand-drawn glass fill and a drawn account glyph; the spec's room menu and `person.crop.circle`
   on system glass replace them. Redraw the top band of boards 02d, 05–07d, 08a–09k, 10–13b, 21a/21b
   and the Gym file's Coach-wave iOS boards from the new section's bar anatomy.
-- **9f · You's palette.** `AccountSheet.swift` draws You on system colours with the gym accent
-  when opened from Gym; canon (`superapp-shell.md` §6) and the spec keep You clay in both
-  appearances.
-- **9g · Live Activity accent.** `WorkoutActivityWidget.swift:128` defines its own green; the
-  spec gives the widget `gym/accent` from the shared theme folder.
 - **9h · Journal day inks.** `iOS First Run · Colour` light `journal/ink` `#2A2118`, `ink-dim`
   `#74654F`, `ink-faint` `#8E8272` are warm, as are the onboarding glimpse's; the web's journal day
   (`palettes.css`) and the spec are cool paper (`#161E28` / `#4E5968` / `#5E6979`). Align the
   collection and the glimpse when journal day ships.
-- **9i · `TabView` tint.** `GymRoom.swift:39` tints the whole `TabView`; `12-native-idiom.md`
-  and the spec forbid it. Build item 7.2.
 
 ## Onboarding
 
@@ -306,10 +297,17 @@ exception to `guidelines/superapp-flow.md` §3 and §8. Nothing is built.
   still describes a cut passage, withheld words and a free path. `journal.md` §6 requires full
   passages for everyone, without AI credits or a paywall; notes `34:294` and `43:360` agree.
   Reconcile the caption and the free-path labels on the phone echo boards `31:211` and `33:327`.
-- **iOS Journal daylight.** The canvas, source pages and echo trail retain the app's night tokens
-  and dark Journal preference. The Echoes sheet defines light and dark colours and selects system
-  appearance independently. Reconcile the canvas's daylight tokens with the wider iOS review;
-  screenshots of the light sheet do not establish a daylight canvas.
+- **iOS Journal daylight.** The canvas, source pages and echo trail stay night in both appearances
+  (`ios/ios-redesign.md` §2). The Echoes sheet follows the system appearance on the journal roles,
+  so in light it draws the spec's Day column. Its lamp is `#90651C` (4.82:1 on `#F7F7F5`); the web's
+  day lamp `#986B1E` (`palettes.css`) measures 4.39:1 on the same paper, under the 4.5:1 text floor.
+  Move the web and the Figma Day collection to `#90651C`.
+- **iOS gym and shell day contrast (owner decision).** `gym/accent` Daylight `#137A6C` measures
+  4.24:1 on `gym/canvas` `#EBE7E3` and 3.76:1 on `gym/raised` `#DFDAD5` as text; candidate
+  `#106B5F` measures 5.19:1 and 4.60:1 (white on it 6.38:1). `shell/brand` light `#BC6C42` carries a
+  white label at 3.92:1 and brand text on `shell/canvas` `#F9F5EB` at 3.60:1; candidate `#9F5B38`
+  measures 5.21:1 and 4.79:1. Both values are owner-ruled; the build keeps them until the owner
+  chooses.
 - **F34 · Type roles.** Reconcile the journal's unassigned first-run, talk, verdict, nudge,
   week-count and narrow scale styles with the named type ramp.
 - **F36 · Phone tools.** Check the fixed `.journal-tools` rail against the writing measure at

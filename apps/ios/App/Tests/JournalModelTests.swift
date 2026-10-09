@@ -246,6 +246,14 @@ import Synchronization
     #expect(recorder.entries.withLock { $0.filter { $0.properties["screen"] == "ink_notes" }.map(\.properties) } == [["screen": "ink_notes"]])
   }
 
+  @Test func choosingTheJournalAgainInTheRoomMenuLiftsItsInk() throws {
+    let (_, app) = try fixture(telemetry: TelemetryRecorder())
+    app.openJournal()
+    #expect(app.journal.inkVisible)
+    app.switchRoom(.journal)
+    #expect(app.selectedRoom == .journal && !app.journal.inkVisible)
+  }
+
   @Test(arguments: [false, true]) func journalInkNeverReplaysAfterAccountOrRoomNavigation(accountDoor: Bool) throws {
     let recorder = TelemetryRecorder()
     let (_, app) = try fixture(telemetry: recorder)

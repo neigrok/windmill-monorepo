@@ -5,17 +5,6 @@ import GymDomain
 import SyncAPI
 import SyncSchema
 
-struct LogPalette {
-  let dark: Bool
-  var canvas: Color { Color(hex: dark ? 0x0b1111 : 0xebe7e3) }
-  var surface: Color { Color(hex: dark ? 0x161c1d : 0xf8f6f4) }
-  var ink: Color { Color(hex: dark ? 0xf1f0eb : 0x1a1918) }
-  var dim: Color { Color(hex: dark ? 0xb6b5af : 0x4c4744) }
-  var accent: Color { Color(hex: dark ? 0x5fcdb4 : 0x4c4374) }
-  var record: Color { Color(hex: dark ? 0xd9b04c : 0x6e5217) }
-  var alarm: Color { Color(hex: dark ? 0xef9c82 : 0x9d3d28) }
-}
-
 nonisolated enum LogPresentation {
   static func progressEfforts(_ progress: MovementProgress) -> [PerformedFact] {
     let heaviest = progress.heaviest?.fact.heaviest
@@ -145,27 +134,5 @@ extension GymModel {
     guard sets.contains(where: { $0.id == original.id }) else { error = "That set is no longer here."; return false }
     guard let outcome = run(CorrectSet(value, original: original)) else { return false }
     return outcome.refusal == nil
-  }
-}
-
-struct LogNoticeBand: View {
-  let gym: GymModel
-  var body: some View {
-    if gym.error != nil || !gym.undoOffers.isEmpty || !gym.notices.isEmpty {
-      VStack(alignment: .leading, spacing: 8) {
-        if let error = gym.error, !gym.notices.contains(where: { gym.message($0.refusal) == error }) {
-          Text(error).font(.subheadline).accessibilityIdentifier("gym-log-error")
-        }
-        ForEach(gym.notices) { notice in
-          VStack(alignment: .leading, spacing: 4) {
-            Text(gym.message(notice.refusal)).font(.subheadline)
-            Button("Dismiss message", systemImage: "xmark") { gym.dismissNotice(notice.id) }
-          }
-        }
-        ForEach(gym.undoOffers.reversed()) { offer in
-          Button("Undo", systemImage: "arrow.uturn.backward") { _ = gym.undo(offer.id) }.accessibilityIdentifier("gym-log-undo")
-        }
-      }.padding().frame(maxWidth: .infinity, alignment: .leading).background(.regularMaterial)
-    }
   }
 }

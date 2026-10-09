@@ -189,7 +189,6 @@ struct SessionShareSheet: View {
   let gym: GymModel
   let sessionID: ID<Session>
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.colorScheme) private var colorScheme
   @State private var owner: String?
   @State private var sharing: SessionShareModel
 
@@ -200,62 +199,54 @@ struct SessionShareSheet: View {
                                                     revoke: { try await gym.revokeSessionShare(sessionID) }))
   }
 
-  var palette: LogPalette { LogPalette(dark: colorScheme == .dark) }
   var base: String { gym.runtime?.settings.baseURL?.absoluteString ?? "https://windmill.works" }
 
   var body: some View {
     NavigationStack {
       ScrollView {
         VStack(alignment: .leading, spacing: 20) {
-          Text(sharing.state.body(expiry: expiry)).font(.body).foregroundStyle(palette.dim)
+          Text(sharing.state.body(expiry: expiry)).font(.body).foregroundStyle(GymPalette.inkDim)
           if case .live(let share, _, _) = sharing.state {
             Text(share.link(base: base))
-              .font(.footnote.monospaced()).foregroundStyle(palette.accent)
+              .font(.footnote.monospacedDigit()).foregroundStyle(GymPalette.accent)
               .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-              .padding().background(palette.surface, in: RoundedRectangle(cornerRadius: 12))
+              .padding().background(GymPalette.card, in: RoundedRectangle(cornerRadius: 12))
               .accessibilityIdentifier("gym-share-link")
-          }
-          if let note = sharing.state.note {
-            Text(note).font(.body).foregroundStyle(palette.alarm)
-              .accessibilityIdentifier("gym-share-error")
           }
         }.frame(maxWidth: .infinity, alignment: .leading).padding()
       }
-      .background(palette.canvas)
+      .modifier(GymPage())
       .safeAreaInset(edge: .bottom) {
-        VStack(spacing: 12) {
-          Button {
+        VStack(spacing: 0) {
+          if let note = sharing.state.note {
+            RoomTransient(message: note, room: .gym)
+              .accessibilityIdentifier("gym-share-error").padding(.horizontal, RoomSpace.inset)
+          }
+          ActionBand(title: sharing.state.action, room: .gym,
+                     busy: sharing.state == .working, actionIdentifier: "gym-share-primary") {
             if case .live(let share, _, _) = sharing.state {
               guard gym.account == owner, !gym.accountTransition, !gym.authPaused else { sharing.accountChanged(); return }
               UIPasteboard.general.string = share.link(base: base); sharing.copied()
               gym.telemetry.event("gym_action", properties: ["screen": "session_share", "outcome": "ok"])
             } else { owner = gym.account; sharing.getLink() }
-          } label: {
-            Group {
-              if sharing.state == .working { ProgressView().accessibilityLabel("Working") }
-              else { Text(sharing.state.action).font(.body.weight(.semibold)) }
-            }.frame(maxWidth: .infinity, minHeight: 44)
           }
-          .buttonStyle(.borderedProminent).controlSize(.large).tint(palette.accent).foregroundStyle(colorScheme == .dark ? .black : .white)
-          .disabled(sharing.state == .working).accessibilityIdentifier("gym-share-primary")
           if case .live = sharing.state {
             Button("Revoke the link", role: .destructive) { sharing.revokeLink() }
-              .font(.body).foregroundStyle(palette.alarm).frame(minHeight: 44)
+              .font(.body).foregroundStyle(GymPalette.alarm).frame(minHeight: RoomSpace.minimumTarget)
               .accessibilityIdentifier("gym-share-revoke")
           }
-        }.padding().background(palette.canvas)
+        }.padding(.bottom, RoomSpace.inset)
       }
       .navigationTitle(sharing.state.title).navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
       }
-      .toolbarBackground(palette.canvas, for: .navigationBar)
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "session_share"]) }
       .onDisappear { sharing.cancel() }
       .onChange(of: gym.account) { _, _ in sharing.accountChanged() }
       .onChange(of: gym.accountTransition) { _, changing in if changing { sharing.accountChanged() } }
       .onChange(of: gym.authPaused) { _, paused in if paused { sharing.accountChanged() } }
-    }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+    }.presentationDetents([.medium])
   }
 
   var expiry: String {

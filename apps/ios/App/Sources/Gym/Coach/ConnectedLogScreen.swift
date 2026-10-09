@@ -75,53 +75,58 @@ struct ConnectedLogScreen: View {
   init(gym: GymModel) { self.gym = gym; _connections = State(initialValue: CoachConnections(gym: gym)) }
   var body: some View {
     List {
-      Section {
-        Text("Your log, read by Claude, Cursor or Codex.").font(.title3.weight(.semibold))
-      }.listRowBackground(Color.clear)
-      if gym.coachAccountAvailable {
-        Section("Connected") {
-          if connections.owner != gym.account || connections.reading { ProgressView("Reading your connections…") }
-          else if connections.failed {
-            Text(connections.connectionRequired ? "Connect to the internet to read your connections." : "Couldn’t read your connections.")
-            Button("Try again") { Task { await connections.load() } }
-          } else if let rows = connections.rows {
-            if rows.isEmpty { Text("nothing connected yet").foregroundStyle(.secondary) }
-            ForEach(rows) { row in
-              VStack(alignment: .leading, spacing: 5) { Text(row.name); Text(row.meta).font(.caption.monospaced()).foregroundStyle(.secondary) }
+      Group {
+        Section {
+          Text("Your log, read by Claude, Cursor or Codex.").font(.title3.weight(.semibold))
+        }.listRowBackground(Color.clear)
+        if gym.coachAccountAvailable {
+          Section("Connected") {
+            if connections.owner != gym.account || connections.reading { ProgressView("Reading your connections…") }
+            else if connections.failed {
+              Text(connections.connectionRequired ? "Connect to the internet to read your connections." : "Couldn’t read your connections.")
+              Button("Try again") { Task { await connections.load() } }
+            } else if let rows = connections.rows {
+              if rows.isEmpty { Text("nothing connected yet").foregroundStyle(GymPalette.inkDim) }
+              ForEach(rows) { row in
+                VStack(alignment: .leading, spacing: 5) { Text(row.name); Text(row.meta).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
+              }
             }
-          }
-        }.listRowBackground(CoachPalette.surface)
-      }
-      Section {
-        capability("Read", "sets, workouts, routines, records, notes, weigh-ins")
-        capability("Write", "logs sets · saves notes · adds routines · shares workouts · proposes changes")
-        capability("Delete", "discards a workout · ends a share")
-      } footer: { Text("A routine change waits for your Apply; the rest lands at once.") }
-      Section {
-        Button {
-          if gym.coachAccountAvailable { browse("connect") }
-          else if let openAccount { openAccount() } else { accountHint = true }
-        } label: { Label(gym.coachAccountAvailable ? "Connect a tool" : "Sign in first", systemImage: "arrow.up.forward") }
-          .accessibilityHint("opens in your browser").accessibilityIdentifier("coach-connect-tool")
-        if gym.coachAccountAvailable { Button { browse("settings") } label: { Label("Manage connections", systemImage: "arrow.up.forward") }.accessibilityHint("opens in your browser") }
-        if accountHint { Text("Open You and settings in the top bar.").font(.callout) }
-        if browserError { Text("The browser couldn’t be opened. Try again.").foregroundStyle(.red) }
-      }.listRowBackground(CoachPalette.surface)
+          }.listRowBackground(GymPalette.card)
+        }
+        Section {
+          capability("Read", "sets, workouts, routines, records, notes, weigh-ins")
+          capability("Write", "logs sets · saves notes · adds routines · shares workouts · proposes changes")
+          capability("Delete", "discards a workout · ends a share")
+        } footer: { Text("A routine change waits for your Apply; the rest lands at once.") }
+        Section {
+          Button {
+            if gym.coachAccountAvailable { browse("connect") }
+            else if let openAccount { openAccount() } else { accountHint = true }
+          } label: { Label(gym.coachAccountAvailable ? "Connect a tool" : "Sign in first", systemImage: "arrow.up.forward") }
+            .accessibilityHint("opens in your browser").accessibilityIdentifier("coach-connect-tool")
+          if gym.coachAccountAvailable { Button { browse("settings") } label: { Label("Manage connections", systemImage: "arrow.up.forward") }.accessibilityHint("opens in your browser") }
+          if accountHint { Text("Open You and settings in the top bar.").font(.callout) }
+      }.listRowBackground(GymPalette.card)
       Section {
         DisclosureGroup("How this works") {
           ForEach(["One URL pasted into your tool. Your browser opens once to approve.",
             "A shared workout is public for 30 days, until you end it.", "No tool can apply a proposal or edit a logged set.",
             "Delete is approved on its own, and a discard is permanent.", "End a connection under Settings → Connected tools; a key under API keys."], id: \.self) { Text($0).font(.callout) }
         }
-      }.listRowBackground(CoachPalette.surface)
-    }.listStyle(.insetGrouped).navigationTitle("Connected log").modifier(CoachPage()).accessibilityIdentifier("gym-connected-log")
+      }.listRowBackground(GymPalette.card)
+      }.listRowBackground(GymPalette.card)
+    }.listStyle(.insetGrouped).navigationTitle("Connected log").modifier(GymPage()).accessibilityIdentifier("gym-connected-log")
+      .safeAreaInset(edge: .bottom) {
+        GymTransient(gym: gym, message: browserError ? "The browser couldn’t be opened. Try again." : nil,
+                     dismiss: { browserError = false }, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
+      }
       .toolbar(.hidden, for: .tabBar)
       .refreshable { await connections.load() }
       .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition)") { await connections.load() }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "connected_log"]) }
   }
   func capability(_ title: String, _ line: String) -> some View {
-    VStack(alignment: .leading, spacing: 5) { Text(title).font(.body.weight(.semibold)); Text(line).font(.callout).foregroundStyle(.secondary) }
+    VStack(alignment: .leading, spacing: 5) { Text(title).font(.body.weight(.semibold)); Text(line).font(.callout).foregroundStyle(GymPalette.inkDim) }
   }
   func browse(_ route: String) {
     guard let base = gym.runtime?.settings.baseURL, let url = URL(string: "/#/" + route, relativeTo: base)?.absoluteURL else { browserError = true; return }

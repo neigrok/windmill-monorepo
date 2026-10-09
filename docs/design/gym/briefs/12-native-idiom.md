@@ -121,20 +121,20 @@ carries Gym alone and has no room menu.
 Rooms that host their own top bar declare that to the shell so it does not add a second top inset.
 The shared contract is in `../../guidelines/superapp-shell.md`.
 
-**A native tab bar's selected state is not the room's to paint.** On iOS 26 the system draws both tab
-labels itself and its own selection capsule behind the selected item, and ignores a room's tint
-outright — so the room applies none there (a tint on a `TabView` is an environment value that
-repaints every control in every tab and each sheet they raise, for nothing). The room's job on that
-platform is the **symbol**. Where a surface does own the selection — Android's navigation bar — it
-may not carry it in colour alone: a filled glyph against an outlined one, a bold label against a
-normal one, and an indicator behind the selected seat, with the brightest ink rather than the accent,
-because the accent against the faint ink separates by barely one to one.
+**A native tab bar's selected state carries the room's accent and nothing else.** On iOS 26 the
+system draws both tab labels and its own selection capsule behind the selected item, and colours the
+selected item with the tint the `TabView` inherits; the room tints its `TabView` with the accent and
+supplies the **symbol**, and draws no capsule, badge or label of its own. Where a surface does own
+the selection — Android's navigation bar — it may not carry it in colour alone: a filled glyph
+against an outlined one, a bold label against a normal one, and an indicator behind the selected
+seat, with the brightest ink rather than the accent, because the accent against the faint ink
+separates by barely one to one.
 
 ## Appearance
 
 Appearance is owned by the shell; the room supplies Instrument and Daylight palettes.
 Android follows system appearance through the shared theme context. A three-way Appearance
-control remains a follow-up. iOS palette and text-scaling gaps remain in `../../consistency.md`.
+control remains a follow-up. iOS shares its room colour assets with the Live Activity extension.
 
 Instrument uses emitted light; Daylight uses contrast, inked fills or a leading rule. Daylight
 has no set-done glow. Density, tabular numerals and semantic colour keep the room recognizable.
@@ -146,8 +146,8 @@ check both gesture and three-button navigation.
 
 ## Type
 
-iOS's custom fixed-size fonts still need Dynamic Type behavior. Android uses `sp`; layouts must
-grow and reflow at large text sizes. Track remaining failures in `../../consistency.md`.
+iOS uses the shared Dynamic Type ramp, and Android uses `sp`; layouts must grow and reflow at
+large text sizes. Track remaining failures in `../../consistency.md`.
 
 **Everything that is prose takes the platform's text styles** and scales with them. Nothing on a
 board is specified in points again; each role is a named text style plus a design and a weight —

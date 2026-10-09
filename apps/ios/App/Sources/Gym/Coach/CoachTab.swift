@@ -12,7 +12,6 @@ struct CoachTab: View {
   @State var history: CoachHistory
   @State var fixturePrepared = false
   @State private var destination: CoachDestination?
-  @State private var showMenu = false
   @State var review: ProposalReviewID?
   @State var photo: PhotosPickerItem?
   @State var preparing = false
@@ -28,18 +27,18 @@ struct CoachTab: View {
     VStack(spacing: 0) {
       NavigationLink { NotesScreen(gym: gym) } label: {
         HStack {
-          Text("Notes"); Text("what you write for Coach").font(.callout).foregroundStyle(.secondary)
-          Spacer(); Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-        }.padding(.horizontal, 16).frame(minHeight: 44).background(CoachPalette.surface)
+          Text("Notes"); Text("what you write for Coach").font(.callout).foregroundStyle(GymPalette.inkDim)
+          Spacer(); Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(GymPalette.inkDim)
+        }.padding(.horizontal, 16).frame(minHeight: 44).background(GymPalette.card)
       }.buttonStyle(.plain)
       ScrollViewReader { proxy in
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 20) {
-            Text("Coach needs a connection.").font(.callout).foregroundStyle(.secondary)
-            if !coach.allowed { Text(CoachCopy.signedOut).foregroundStyle(.secondary) }
+            Text("Coach needs a connection.").font(.callout).foregroundStyle(GymPalette.inkDim)
+            if !coach.allowed { Text(CoachCopy.signedOut).foregroundStyle(GymPalette.inkDim) }
             else if coach.saved.thread == nil, coach.saved.request == nil {
               Text("Ask about your training. Coach can create routines and propose changes — you decide on the diff.")
-              Text("Every conversation is kept so you can read it back, and yours to delete.").font(.callout).foregroundStyle(.secondary)
+              Text("Every conversation is kept so you can read it back, and yours to delete.").font(.callout).foregroundStyle(GymPalette.inkDim)
             }
             if coach.allowed {
             if coach.reading { ProgressView("Reading your conversation…") }
@@ -48,7 +47,7 @@ struct CoachTab: View {
               if turn.from == "lifter" { question(turn.text, attachments: turn.attachments) }
               else {
                 CoachAnswerView(gym: gym, thread: coach.saved.threadId, text: turn.text, receipt: turn.receipt, steps: turn.receipt?.steps ?? [], results: turn.results, review: { review = ProposalReviewID(id: $0) })
-                if turn.status == "failed" || turn.status == "stopped" { Text(turn.status == "failed" ? CoachCopy.interrupted : CoachCopy.stopped).font(.callout).foregroundStyle(.secondary) }
+                if turn.status == "failed" || turn.status == "stopped" { Text(turn.status == "failed" ? CoachCopy.interrupted : CoachCopy.stopped).font(.callout).foregroundStyle(GymPalette.inkDim) }
               }
             }
             ForEach(coach.saved.exchanges) { generation in generationView(generation) }
@@ -57,11 +56,6 @@ struct CoachTab: View {
               question(request.question, attachments: coach.saved.photo.map { [$0] } ?? [])
               if coach.asking { ProgressView("reading your log…") }
             }
-            if let error = coach.error {
-              Text(error).font(.callout).foregroundStyle(.secondary).accessibilityIdentifier("coach-error")
-                .onChange(of: error, initial: true) { _, error in UIAccessibility.post(notification: .announcement, argument: error) }
-            }
-            if coach.retryable { Button("Retry") { composing = false; coach.retry() }.accessibilityIdentifier("coach-retry") }
             if !coach.draftReadable { Button("Try again") { coach.reloadDraft() } }
             if !coach.canCompose, coach.allowed {
               if case .fresh = coach.refusal { Button("Ask something new") { coach.newChat() } }
@@ -69,32 +63,38 @@ struct CoachTab: View {
               NavigationLink("Notes") { NotesScreen(gym: gym) }
             }
             }
-            if accountHint { Text("Open You and settings in the top bar.").font(.callout).foregroundStyle(.secondary) }
+            if accountHint { Text("Open You and settings in the top bar.").font(.callout).foregroundStyle(GymPalette.inkDim) }
             Color.clear.frame(height: 1).id("latest")
           }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
         }.defaultScrollAnchor(.bottom, for: .sizeChanges).scrollDismissesKeyboard(.interactively)
           .onScrollGeometryChange(for: Bool.self) { geometry in geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 40 } action: { _, latest in atLatest = latest }
           .overlay(alignment: .bottomTrailing) {
-            if !atLatest { Button("Jump to latest") { withAnimation { proxy.scrollTo("latest", anchor: .bottom) } }.buttonStyle(.bordered).padding(16).background(.ultraThinMaterial, in: Capsule()) }
+            if !atLatest { Button("Jump to latest") { withAnimation { proxy.scrollTo("latest", anchor: .bottom) } }.modifier(RoomSecondaryStyle()).padding(16) }
           }
           .onChange(of: coach.saved.request?.requestId) { _, request in
             if request != nil { composing = false }
             proxy.scrollTo("latest", anchor: .bottom)
           }
       }
-    }.navigationTitle("Coach").modifier(CoachPage()).accessibilityIdentifier("gym-coach")
+    }.modifier(GymPage()).navigationTitle("Coach").accessibilityIdentifier("gym-coach")
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
-          Button { showMenu = true } label: { Label("More", systemImage: "ellipsis.circle") }.accessibilityIdentifier("coach-more")
+          Menu {
+            if coach.saved.request != nil || coach.saved.thread != nil {
+              Section { Button("New chat") { coach.newChat() }.disabled(coach.asking).accessibilityIdentifier("coach-menu-new-chat") }
+            }
+            Section {
+              Button("History") { destination = .history }.accessibilityIdentifier("coach-menu-history")
+              Button("Notes") { destination = .notes }.accessibilityIdentifier("coach-menu-notes")
+              Button("Connected log") { destination = .connections }.accessibilityIdentifier("coach-menu-connections")
+              Button("Gym settings") { destination = .settings }.accessibilityIdentifier("coach-menu-settings")
+            }
+            Section { Button("Account") { if let openAccount { openAccount() } else { accountHint = true } }.accessibilityIdentifier("coach-menu-account") }
+          } label: { Label("More", systemImage: "ellipsis.circle") }
+            .labelStyle(.iconOnly).accessibilityIdentifier("coach-more")
         }
-      }
-      .confirmationDialog("Coach", isPresented: $showMenu, titleVisibility: .hidden) {
-        Button("History") { destination = .history }
-        Button("Notes") { destination = .notes }
-        Button("Connected log") { destination = .connections }
-        Button("Gym settings") { destination = .settings }
-        if coach.saved.request != nil || coach.saved.thread != nil { Button("New chat") { coach.newChat() }.disabled(coach.asking) }
-        Button("Account") { if let openAccount { openAccount() } else { accountHint = true } }
+        if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
+        ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
       }
       .navigationDestination(item: $destination) { destination in
         switch destination {
@@ -104,7 +104,17 @@ struct CoachTab: View {
         case .settings: GymSettingsScreen(gym: gym)
         }
       }
-      .safeAreaInset(edge: .bottom) { VStack(spacing: 0) { composer; CoachNoticeBand(gym: gym) } }
+      .safeAreaInset(edge: .bottom) {
+        VStack(spacing: 0) {
+          let tooLong = coach.saved.text.utf8.count > 1000
+          GymTransient(gym: gym, message: tooLong ? "Keep your question within 1000 bytes." : coach.error ?? (coach.retryable ? CoachCopy.interrupted : nil),
+                       dismiss: tooLong || coach.retryable ? nil : { coach.error = nil },
+                       retryMessage: !tooLong && coach.retryable ? { composing = false; coach.retry() } : nil,
+                       errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
+            .onChange(of: coach.error) { _, error in if let error { UIAccessibility.post(notification: .announcement, argument: error) } }
+          composer
+        }
+      }
       .sheet(item: $review) { id in
         ProposalReviewSheet(gym: gym, proposalId: id.id) { name in composing = coach.newChat(seed: "Tell me about the proposal for \(name).") }
       }
@@ -139,7 +149,7 @@ struct CoachTab: View {
   @ViewBuilder var composer: some View {
     if coach.canCompose || coach.asking {
       VStack(alignment: .leading, spacing: 8) {
-        Text("Ten questions a day, three back to back.").font(.caption.monospaced()).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+        Text("Ten questions a day, three back to back.").font(.caption.monospaced()).foregroundStyle(GymPalette.inkDim).frame(maxWidth: .infinity)
         if preparing { ProgressView("Preparing photo…") }
         if coach.uploading { ProgressView("Photo upload").accessibilityLabel("Photo upload") }
         if let photo = coach.saved.photo, !coach.asking {
@@ -163,13 +173,12 @@ struct CoachTab: View {
           if coach.asking {
             Button { coach.stopResponse() } label: { Image(systemName: "stop.fill").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel(coach.uploading ? "Cancel upload" : "Stop response").disabled(coach.stopping).accessibilityIdentifier("coach-stop")
           } else {
-            Button { composing = false; coach.send() } label: { Image(systemName: "arrow.up").foregroundStyle(CoachPalette.onAccent).frame(minWidth: 44, minHeight: 44) }
-              .buttonStyle(.borderedProminent).clipShape(Circle()).accessibilityLabel("Ask Coach").accessibilityIdentifier("coach-send")
+            Button { composing = false; coach.send() } label: { Image(systemName: "arrow.up").frame(minWidth: 44, minHeight: 44) }
+              .modifier(RoomPrimaryStyle(room: .gym)).buttonBorderShape(.circle).accessibilityLabel("Ask Coach").accessibilityIdentifier("coach-send")
               .disabled(!CoachCopy.sendable(coach.saved.text, photo: coach.saved.photo != nil) || preparing)
           }
         }
-        if coach.saved.text.utf8.count > 1000 { Text("Keep your question within 1000 bytes.").font(.caption).foregroundStyle(.red) }
-      }.padding(12).background(CoachPalette.surface).tint(CoachPalette.accent)
+      }.padding(12).background(GymPalette.card).tint(GymPalette.accent)
     }
   }
   func question(_ text: String, attachments: [CoachAttachment]) -> some View {
@@ -178,7 +187,7 @@ struct CoachTab: View {
       VStack(alignment: .leading, spacing: 8) {
         if !text.isEmpty { Text(text).textSelection(.enabled).contextMenu { Button("Copy question") { UIPasteboard.general.string = text } } }
         ForEach(attachments) { attachment in CoachPhotoView(gym: gym, thread: coach.saved.threadId, attachment: attachment, local: nil) }
-      }.padding(12).background(CoachPalette.accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 16))
+      }.padding(12).background(GymPalette.accentSoft, in: RoundedRectangle(cornerRadius: 16))
     }
   }
   func generationView(_ generation: CoachGeneration) -> some View {
@@ -205,7 +214,7 @@ struct CoachAnswerView: View {
       CoachMarkdown(text: text).contextMenu { Button("Copy answer") { UIPasteboard.general.string = text } }
       if let receipt {
         DisclosureGroup(receipt.read.line) {
-          ForEach(Array(steps.enumerated()), id: \.offset) { _, step in if let phrase = step.phrase { Text(phrase).font(.callout).foregroundStyle(.secondary) } }
+          ForEach(Array(steps.enumerated()), id: \.offset) { _, step in if let phrase = step.phrase { Text(phrase).font(.callout).foregroundStyle(GymPalette.inkDim) } }
           ForEach(receipt.workouts) { source in
             DisclosureGroup(source.routine ?? "Workout") {
               Text(Date(timeIntervalSince1970: Double(source.startedAt) / 1000).formatted(date: .abbreviated, time: .shortened))
@@ -216,19 +225,19 @@ struct CoachAnswerView: View {
               CoachSourceWorkout(gym: gym, id: source.sessionId)
             }.font(.callout)
           }
-        }.font(.caption.monospaced()).foregroundStyle(.secondary)
+        }.font(.caption.monospaced()).foregroundStyle(GymPalette.inkDim)
         ForEach(receipt.proposals, id: \.self) { id in
           VStack(alignment: .leading, spacing: 12) {
             if let p = gym.proposals.first(where: { $0.id.record.string == id }) {
-              Text("PROPOSAL · " + (p.baseName ?? p.proposedName)).font(.caption.weight(.semibold)).foregroundStyle(CoachPalette.accent)
+              Text("PROPOSAL · " + (p.baseName ?? p.proposedName)).font(.caption.weight(.semibold)).foregroundStyle(GymPalette.accent)
               Text(p.summary.isEmpty ? "Proposal" : p.summary)
-              Text(p.intent == "remove" ? "a removal" : "\(p.changeCount ?? p.changes.filter { $0.kind != "kept" }.count) changes").font(.caption.monospaced()).foregroundStyle(.secondary)
-              Text(p.state == "pending" ? "still waiting" : p.state == "dismissed" ? "turned down" : p.state).font(.caption.monospaced()).foregroundStyle(.secondary)
+              Text(p.intent == "remove" ? "a removal" : "\(p.changeCount ?? p.changes.filter { $0.kind != "kept" }.count) changes").font(.caption.monospaced()).foregroundStyle(GymPalette.inkDim)
+              Text(p.state == "pending" ? "still waiting" : p.state == "dismissed" ? "turned down" : p.state).font(.caption.monospaced()).foregroundStyle(GymPalette.inkDim)
             }
             Button("Review") { review(id) }.frame(minHeight: 44)
-            if gym.proposals.first(where: { $0.id.record.string == id })?.state == "pending" { Text(CoachCopy.promise).font(.caption).foregroundStyle(.secondary) }
-          }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(CoachPalette.surface, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(CoachPalette.accent))
+            if gym.proposals.first(where: { $0.id.record.string == id })?.state == "pending" { Text(CoachCopy.promise).font(.caption).foregroundStyle(GymPalette.inkDim) }
+          }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(GymPalette.card, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(GymPalette.accent))
         }
       }
       ForEach(results.filter { $0.kind == "routine-created" }) { result in
@@ -288,9 +297,10 @@ struct CoachPhotoView: View {
     }.task(id: "\(gym.account ?? ""):\(thread):\(attachment.id)") { data = nil; if local == nil { await load() } }
       .sheet(isPresented: $enlarged) {
         NavigationStack {
-          Group { if owner == gym.account, gym.coachAccountAvailable, (local != nil || loadedOwner == gym.account), let data = data ?? local, let image = UIImage(data: data) { Image(uiImage: image).resizable().scaledToFit().padding() } }
-            .navigationTitle("Photo").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { enlarged = false } } }
-        }
+          ZStack { if owner == gym.account, gym.coachAccountAvailable, (local != nil || loadedOwner == gym.account), let data = data ?? local, let image = UIImage(data: data) { Image(uiImage: image).resizable().scaledToFit().padding() } }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .modifier(GymPage()).navigationTitle("Photo").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { enlarged = false } } }
+        }.presentationDetents([.large])
       }
   }
   func load() async {

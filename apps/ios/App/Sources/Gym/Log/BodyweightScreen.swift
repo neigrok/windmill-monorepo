@@ -79,34 +79,32 @@ struct BodyweightScreen: View {
     var domain: Bodyweight.Window { self == .recent ? .recent : .all }
   }
   let gym: GymModel
-  @Environment(\.colorScheme) private var scheme
   @State private var window = Window.recent
   @State private var correcting: Selection?
-  private var palette: LogPalette { LogPalette(dark: scheme == .dark) }
 
   var body: some View {
     List {
       if gym.readFailed {
         Section {
           Text("Your weigh-ins didn’t load.")
-            .foregroundStyle(palette.dim)
+            .foregroundStyle(GymPalette.inkDim)
           Button("Try again") { gym.refresh() }
             .accessibilityIdentifier("gym-bodyweight-retry")
-        }.listRowBackground(palette.surface)
+        }.listRowBackground(GymPalette.card)
       } else if gym.bodyweight == nil || gym.bodyweight?.stance == .unknown {
         Section {
           Text("Reading your weigh-ins…")
-            .foregroundStyle(palette.dim)
+            .foregroundStyle(GymPalette.inkDim)
             .accessibilityIdentifier("gym-bodyweight-loading")
-        }.listRowBackground(palette.surface)
+        }.listRowBackground(GymPalette.card)
       }
       if let weight = gym.bodyweight {
         if weight.stance == .empty && !gym.readFailed {
           Section {
             Text("No weigh-ins yet. Weigh in from the log.")
-              .foregroundStyle(palette.dim)
+              .foregroundStyle(GymPalette.inkDim)
               .accessibilityIdentifier("gym-bodyweight-empty")
-          }.listRowBackground(palette.surface)
+          }.listRowBackground(GymPalette.card)
         } else if weight.stance == .holding {
           Section {
             BodyweightWindowPicker(window: $window).frame(height: 32)
@@ -123,15 +121,15 @@ struct BodyweightScreen: View {
               .accessibilityIdentifier("gym-bodyweight-chart")
             } else if window == .recent && !gym.readFailed && gym.personalCounts[WeighIn.type, default: 0] == weight.entries.count {
               Text("no weigh-in in the last 90 days")
-                .foregroundStyle(palette.dim)
+                .foregroundStyle(GymPalette.inkDim)
                 .accessibilityIdentifier("gym-bodyweight-window-empty")
             }
             Text("\(window == .recent ? "90 days" : "All") · \(chart.dots.count) \(chart.dots.count == 1 ? "weigh-in" : "weigh-ins")")
-              .font(.footnote).foregroundStyle(palette.dim)
+              .font(.footnote).foregroundStyle(GymPalette.inkDim)
           } footer: {
             Text("Every point is a number you typed. Nothing here is estimated.")
-              .foregroundStyle(palette.dim)
-          }.listRowBackground(palette.surface)
+              .foregroundStyle(GymPalette.inkDim)
+          }.listRowBackground(GymPalette.card)
 
           Section {
             ForEach(weight.entries.reversed(), id: \.day) { entry in
@@ -140,11 +138,11 @@ struct BodyweightScreen: View {
               } label: {
                 HStack {
                   Text(LogPresentation.date(entry.day), format: .dateTime.day().month(.abbreviated).year())
-                    .foregroundStyle(palette.ink)
+                    .foregroundStyle(GymPalette.ink)
                   Spacer()
                   Text("\(BodyweightLogInput.kilograms(entry.kg)) kg")
-                    .monospacedDigit().foregroundStyle(palette.ink)
-                  Image(systemName: "pencil").font(.footnote).foregroundStyle(palette.dim)
+                    .monospacedDigit().foregroundStyle(GymPalette.ink)
+                  Image(systemName: "pencil").font(.footnote).foregroundStyle(GymPalette.inkDim)
                 }
               }
               .accessibilityLabel("\(BodyweightLogInput.kilograms(entry.kg)) kilograms, \(entry.day.text)")
@@ -158,21 +156,18 @@ struct BodyweightScreen: View {
           } header: {
             HStack { Text("Every weigh-in"); Spacer(); Text("\(weight.entries.count)") }
           } footer: {
-            Text("Coach can read this. It can never write it.").foregroundStyle(palette.dim)
-          }.listRowBackground(palette.surface)
+            Text("Coach can read this. It can never write it.").foregroundStyle(GymPalette.inkDim)
+          }.listRowBackground(GymPalette.card)
         }
       }
     }
     .listStyle(.insetGrouped)
-    .scrollContentBackground(.hidden)
-    .background(palette.canvas)
-    .foregroundStyle(palette.ink)
-    .tint(palette.accent)
+    .modifier(GymPage())
     .navigationTitle("Bodyweight")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar(.hidden, for: .tabBar)
     .accessibilityIdentifier("gym-bodyweight")
-    .safeAreaInset(edge: .bottom) { LogNoticeBand(gym: gym) }
+    .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo") }
     .sheet(item: $correcting) { WeighInSheet(gym: gym, entry: $0.entry) }
     .onChange(of: gym.account) { _, _ in correcting = nil }
     .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "bodyweight"]) }
@@ -206,7 +201,6 @@ struct WeighInSheet: View {
   let gym: GymModel
   let entry: Bodyweight.Entry?
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.colorScheme) private var scheme
   @FocusState private var weightFocused: Bool
   @State private var typed: String
   @State private var date: Date
@@ -214,7 +208,6 @@ struct WeighInSheet: View {
   @State private var saving = false
   @State private var saved = false
   @State private var refusal: String?
-  private var palette: LogPalette { LogPalette(dark: scheme == .dark) }
   private var today: LocalDay { gym.bodyweight?.today ?? LogPresentation.day(Date()) }
 
   init(gym: GymModel, entry: Bodyweight.Entry? = nil) {
@@ -234,38 +227,36 @@ struct WeighInSheet: View {
               .accessibilityLabel("Weight in kilograms")
               .accessibilityIdentifier("gym-weigh-in-weight")
               .onSubmit { save() }
-            Text("kg").foregroundStyle(palette.dim)
+            Text("kg").foregroundStyle(GymPalette.inkDim)
           }
           if let refusal {
-            Text(refusal).font(.footnote).foregroundStyle(palette.alarm)
+            Text(refusal).font(.footnote).foregroundStyle(GymPalette.alarm)
               .accessibilityIdentifier("gym-weigh-in-refusal")
           }
         } header: { Text("Weight") }
-          .listRowBackground(palette.surface)
+          .listRowBackground(GymPalette.card)
         Section {
           if let entry {
             LabeledContent("Date") {
               Text(LogPresentation.date(entry.day), format: .dateTime.day().month(.wide).year())
-                .foregroundStyle(palette.ink)
+                .foregroundStyle(GymPalette.ink)
             }.accessibilityIdentifier("gym-weigh-in-fixed-date")
           } else {
             DatePicker("Date", selection: $date, in: ...LogPresentation.date(today), displayedComponents: .date)
               .accessibilityIdentifier("gym-weigh-in-date")
           }
-        }.listRowBackground(palette.surface)
+        }.listRowBackground(GymPalette.card)
         if let entry {
           Section {
             Button("Delete weigh-in", role: .destructive) {
               if gym.logDeleteWeighIn(day: entry.day) { dismiss() }
               else { refusal = gym.error ?? "That weigh-in could not be deleted. Try again." }
-            }.foregroundStyle(palette.alarm).accessibilityIdentifier("gym-weigh-in-delete")
-          }.listRowBackground(palette.surface)
+            }.foregroundStyle(GymPalette.alarm).accessibilityIdentifier("gym-weigh-in-delete")
+          }.listRowBackground(GymPalette.card)
         }
       }
       .disabled(saving)
-      .scrollContentBackground(.hidden)
-      .background(palette.canvas)
-      .foregroundStyle(palette.ink)
+      .modifier(GymPage())
       .navigationTitle("Weigh in")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
@@ -274,14 +265,8 @@ struct WeighInSheet: View {
         }
       }
       .safeAreaInset(edge: .bottom) {
-        Button { save() } label: {
-          Text(saving ? "Saving…" : "Save weight").frame(maxWidth: .infinity).foregroundStyle(scheme == .dark ? .black : .white)
-        }
-          .buttonStyle(.borderedProminent)
-          .controlSize(.large)
-          .disabled(saving)
-          .accessibilityIdentifier("gym-weigh-in-save")
-          .padding().background(palette.canvas)
+        ActionBand(title: "Save weight", room: .gym,
+                   busy: saving, actionIdentifier: "gym-weigh-in-save") { save() }
       }
       .interactiveDismissDisabled(saving)
       .sensoryFeedback(.success, trigger: saved)
@@ -296,7 +281,7 @@ struct WeighInSheet: View {
         weightFocused = true
         gym.telemetry.event("gym_screen_viewed", properties: ["screen": "weigh_in"])
       }
-    }.tint(palette.accent)
+    }.modifier(GymPage()).presentationDetents([.medium])
   }
 
   private func save() {

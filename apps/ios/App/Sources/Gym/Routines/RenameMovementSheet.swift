@@ -39,21 +39,23 @@ struct RenameMovementSheet: View {
   var body: some View {
     NavigationStack {
       Form {
-        Section("Name") {
-          TextField("Name", text: $name).focused($nameFocused).autocorrectionDisabled().textInputAutocapitalization(.words)
-            .disabled(saving).accessibilityIdentifier("gym-rename-movement-name")
-          if let counter = MovementName.counter(name) { Text(counter).font(.caption.monospaced()).foregroundStyle(.secondary) }
-          if let problem = refusal ?? MovementName.problem(name), !saving {
-            Text(problem).foregroundStyle(.red).accessibilityIdentifier("gym-rename-movement-refusal")
+        Group {
+          Section("Name") {
+            TextField("Name", text: $name).focused($nameFocused).autocorrectionDisabled().textInputAutocapitalization(.words)
+              .disabled(saving).accessibilityIdentifier("gym-rename-movement-name")
+            if let counter = MovementName.counter(name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
+            if let problem = refusal ?? MovementName.problem(name), !saving {
+              Text(problem).foregroundStyle(GymPalette.alarm).accessibilityIdentifier("gym-rename-movement-refusal")
+            }
           }
-        }
-        Section {
-          Text("Renames this movement everywhere.")
-          Text("Your logged sets and records keep the same movement.").font(.footnote).foregroundStyle(.secondary)
-          Text("Old name: \(exercise.name)\nSearchable as an alias.").font(.footnote).foregroundStyle(.secondary)
-        }
+          Section {
+            Text("Renames this movement everywhere.")
+            Text("Your logged sets and records keep the same movement.").font(.footnote).foregroundStyle(GymPalette.inkDim)
+            Text("Old name: \(exercise.name)\nSearchable as an alias.").font(.footnote).foregroundStyle(GymPalette.inkDim)
+          }
+        }.listRowBackground(GymPalette.card)
       }
-      .navigationTitle("Rename movement").navigationBarTitleDisplayMode(.inline)
+      .modifier(GymPage()).navigationTitle("Rename movement").navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
         ToolbarItem(placement: .confirmationAction) {
@@ -82,6 +84,6 @@ struct RenameMovementSheet: View {
       .onChange(of: name) { _, value in name = MovementName.capped(value); refusal = nil }
       .accessibilityIdentifier("gym-rename-movement")
     }
-    .modifier(RoutineTint())
+    .modifier(GymPage()).presentationDetents([.medium])
   }
 }

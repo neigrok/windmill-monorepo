@@ -134,10 +134,10 @@ import XCTest
       let metrics = try XCTUnwrap(journalMetrics(in: editor))
       let lastLine = try XCTUnwrap(metrics["lastLine"] as? [Double])
       guard lastLine.count == 4 else { XCTFail("Invalid lastLine rectangle: \(lastLine)"); return }
-      let visibleBottom = min(editor.frame.maxY, app.scrollViews.firstMatch.frame.maxY) - 1
+      let visibleBottom = min(editor.frame.maxY, app.scrollViews["journal-canvas"].frame.maxY) - 1
       let tapY = min(lastLine[1] + lastLine[3] + belowLine, visibleBottom)
       XCTAssertGreaterThan(tapY, lastLine[1] + lastLine[3])
-      let viewport = app.scrollViews.firstMatch.frame
+      let viewport = app.scrollViews["journal-canvas"].frame
       app.coordinate(withNormalizedOffset: .zero).withOffset(
         CGVector(dx: viewport.minX + viewport.width * fraction,
                  dy: tapY)).tap()
@@ -167,6 +167,11 @@ import XCTest
     XCTAssertEqual(roomMenu.frame, frame)
     assertInkVisible(false, in: editor)
     XCTAssertFalse(app.keyboards.firstMatch.exists)
+    roomMenu.tap()
+    let showInk = app.buttons["Show ink notes"]
+    XCTAssertTrue(showInk.waitForExistence(timeout: 5))
+    showInk.tap()
+    assertInkVisible(true, in: editor)
     let screenshot = XCTAttachment(screenshot: app.screenshot())
     screenshot.name = "room-menu"
     screenshot.lifetime = .keepAlways
@@ -287,7 +292,7 @@ import XCTest
       let metrics = try XCTUnwrap(journalMetrics(in: editor))
       let lastLine = try XCTUnwrap(metrics["lastLine"] as? [Double])
       guard lastLine.count == 4 else { XCTFail("Invalid lastLine rectangle: \(lastLine)"); return }
-      let visibleBottom = min(editor.frame.maxY, app.scrollViews.firstMatch.frame.maxY) - 1
+      let visibleBottom = min(editor.frame.maxY, app.scrollViews["journal-canvas"].frame.maxY) - 1
       let tapY = min(lastLine[1] + lastLine[3] + 4, visibleBottom)
       XCTAssertGreaterThan(tapY, lastLine[1] + lastLine[3])
       app.coordinate(withNormalizedOffset: .zero).withOffset(
@@ -295,7 +300,7 @@ import XCTest
       assertCaretAtEnd(in: editor)
       XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, metrics["text"] as? String)
       try tapIntoLastLine(in: app)
-      let bottom = app.scrollViews.firstMatch.frame.maxY - 1
+      let bottom = app.scrollViews["journal-canvas"].frame.maxY - 1
       XCTAssertGreaterThan(bottom, lastLine[1] + lastLine[3])
       app.coordinate(withNormalizedOffset: .zero).withOffset(
         CGVector(dx: editor.frame.maxX - 1, dy: bottom)).tap()
@@ -359,7 +364,7 @@ import XCTest
                              file: StaticString = #filePath, line: UInt = #line) throws {
     let editor = app.textViews["journal-editor"]
     let done = app.buttons["done-writing"]
-    let visibleTop = app.scrollViews.firstMatch.frame.minY
+    let visibleTop = app.scrollViews["journal-canvas"].frame.minY
     let value = try XCTUnwrap(editor.value as? String, file: file, line: line)
     let metrics = try XCTUnwrap(journalMetrics(in: editor), file: file, line: line)
     let geometry = XCTAttachment(string: "\(value)\neditor: \(editor.frame)\nseat: \(done.frame)")
@@ -383,7 +388,7 @@ import XCTest
     app.launch()
     let editor = app.textViews["journal-editor"]
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
-    let scroll = app.scrollViews.firstMatch
+    let scroll = app.scrollViews["journal-canvas"]
     for _ in 0..<5 { scroll.swipeDown(velocity: .fast) }
     XCTAssertFalse(editor.isHittable)
     let screenshot = XCTAttachment(screenshot: app.screenshot())
@@ -430,7 +435,14 @@ import XCTest
     XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 10))
     let backedUp = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "backed up")).firstMatch
     XCTAssertTrue(backedUp.waitForExistence(timeout: 15))
-    app.buttons["you"].tap(); app.buttons["sign-out"].tap(); app.buttons["sign-out-keep"].tap()
+    app.buttons["you"].tap(); app.buttons["sign-out"].tap()
+    let signOut = app.alerts["Sign out?"]
+    XCTAssertTrue(signOut.waitForExistence(timeout: 10))
+    signOut.buttons["Cancel"].tap()
+    XCTAssertTrue(app.buttons["sign-out"].waitForExistence(timeout: 5))
+    app.buttons["sign-out"].tap()
+    XCTAssertTrue(signOut.waitForExistence(timeout: 10))
+    signOut.buttons["Sign out"].tap()
     XCTAssertTrue(app.buttons["open-journal"].waitForExistence(timeout: 10))
     app.buttons["Sign in"].tap(); app.buttons["email-sign-in"].tap()
     XCTAssertEqual(app.textFields["email-address"].value as? String, "flow@example.com")
@@ -440,21 +452,24 @@ import XCTest
     XCTAssertEqual(app.textViews["journal-editor"].value as? String, page)
   }
 
-  func testLargestTextKeepsJournalChromeAtNormalSize() {
+  func testLargestTextKeepsNativeJournalControlsReachable() {
     let app = XCUIApplication()
     app.launchArguments = ["-board", "05-journal-first-open"]
     app.launch()
     XCTAssertTrue(app.buttons["room-menu"].waitForExistence(timeout: 10))
-    let roomSize = app.buttons["room-menu"].frame.size
-    let accountSize = app.buttons["you"].frame.size
     let writeSize = app.buttons["write-today"].frame.size
     let bodyHeight = app.textViews["journal-editor"].frame.height
     app.terminate()
     app.launchArguments = ["-board", "05-journal-first-open-AX3"]
     app.launch()
     XCTAssertTrue(app.buttons["room-menu"].waitForExistence(timeout: 10))
-    XCTAssertEqual(app.buttons["room-menu"].frame.size, roomSize)
-    XCTAssertEqual(app.buttons["you"].frame.size, accountSize)
+    let room = app.buttons["room-menu"]
+    let account = app.buttons["you"]
+    XCTAssertTrue(room.isHittable)
+    XCTAssertTrue(account.isHittable)
+    XCTAssertTrue(app.frame.contains(room.frame))
+    XCTAssertTrue(app.frame.contains(account.frame))
+    XCTAssertFalse(room.frame.intersects(account.frame))
     XCTAssertEqual(app.buttons["write-today"].frame.size, writeSize)
     XCTAssertGreaterThan(app.textViews["journal-editor"].frame.height, bodyHeight)
     XCTAssertEqual(app.buttons["room-menu"].label, "Journal")

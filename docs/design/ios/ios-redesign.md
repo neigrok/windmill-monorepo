@@ -40,10 +40,10 @@ reviews screenshots against §11.
 
 ## 2. Colour roles
 
-Three palettes, one role vocabulary. Every role is a colour set in `Resources/Assets.xcassets`
+Three palettes, one role vocabulary. Every role is a colour set in `Sources/Theme/Theme.xcassets`
 (light and dark appearance values, named `gym/accent`, `shell/canvas`, …) read through one enum
-per palette — `GymPalette`, `JournalPalette`, `ShellPalette` — in a `Sources/Theme/` folder that
-`project.yml` compiles into both the app and the `WindmillWorkoutActivity` target, the way
+per palette — `GymPalette`, `JournalPalette`, `ShellPalette` — beside it in `Sources/Theme/`, the
+folder `project.yml` compiles into both the app and the `WindmillWorkoutActivity` target, the way
 `WorkoutActivityShared` already is. The style audit of 2026-10-08
 (`.claude/scratch/ios-design/style-audit.md`, Appendix B) maps every one of the 164 literals in
 the app to a role below; the refactor follows that map. Deleted: `CoachPalette`
@@ -54,12 +54,14 @@ the app to a role below; the refactor follows that map. Deleted: `CoachPalette`
 (`Onboarding.swift:24`, reads `ShellPalette` and the product palettes for its glimpses), the
 colour half of `Design` (`Design.swift:5`), `Color(hex:)` outside `Sources/Theme/`, and the
 `scheme == .dark ? … : …` branches in views. Onboarding's illustration kind colours
-(`OnboardingGlimpses.swift`) stay private to the glimpse as named specimen roles.
+(`OnboardingGlimpses.swift`) stay private to the glimpse as named specimen roles, colour sets
+under `onboarding/` in the app's own `Resources/Assets.xcassets`.
 
-**Tint.** The room accent is applied by the one page modifier (`GymPage`, §5) to the content of
-each tab's `NavigationStack` and to every sheet the room raises — never to the `TabView`
-(`GymRoom.swift:39` today). The tab bar's selection is the system's; the room supplies only the
-symbol (`gym/briefs/12-native-idiom.md`, "A native tab bar's selected state").
+**Tint.** The room accent is the tint of the Gym `TabView`, so the selected tab and every control
+in every tab inherit it whatever order a screen applies its modifiers in; the page modifier
+(`GymPage`, §5) carries the same tint into every sheet the room raises. The system draws the
+selection; the room supplies the symbol and the tint (`gym/briefs/12-native-idiom.md`, "A native
+tab bar's selected state").
 
 ### Gym — verdigris on verdigris-grey stone
 
@@ -105,15 +107,16 @@ the keyline; the banner ground stays the system's.
 | `journal/ink` | `#F1F0EC` | `#161E28` |
 | `journal/ink-dim` | `#B6B5B0` | `#4E5968` |
 | `journal/ink-faint` | `#737476` | `#5E6979` |
-| `journal/lamp` | `#E0B972` | `#986B1E` |
-| `journal/lamp-soft` | `#E0B972` at 18 % | `#986B1E` at 12 % |
+| `journal/lamp` | `#E0B972` | `#90651C` |
+| `journal/lamp-soft` | `#E0B972` at 18 % | `#90651C` at 12 % |
 | `journal/energy` | `#9AA859` | `#7D8C43` |
-| `journal/mood-*` | the eleven-step ramp in `Design.moodRamp` | `scales.md` |
+| `journal/mood-*` | the eleven-step ramp `journal/mood-0`…`mood-10` | `scales.md` |
 
-Journal renders night in both appearances in iteration 1 (`WindmillApp.swift:34` forces `.dark`
-on the Journal room and on Where to start?). The Day column is the web's journal day ramp — paper
-in north light with cool ink (`web/src/styles/tokens/palettes.css`, `[data-theme="light"][data-brand="journal"]`)
-— and is the contract for iteration 2, when Appearance arrives in You and the room answers light
+Journal renders night in both appearances in iteration 1: `RootScreen` gives the Journal room a
+dark environment, and the rest of the shell follows the system. The Day column is the web's journal
+day ramp — paper in north light with cool ink (`web/src/styles/tokens/palettes.css`,
+`[data-theme="light"][data-brand="journal"]`) — with the lamp darkened to `#90651C` for 4.5:1 text,
+and is the contract for iteration 2, when Appearance arrives in You and the room answers light
 with paper. The onboarding glimpse's warm day inks (`OnboardingGlimpses.swift:96-97,168-170`)
 move to these values then.
 
@@ -139,7 +142,7 @@ You, Keep and every sign-in step, Where to start?, onboarding and the launch gro
 
 The shell follows the system appearance in both rooms. You is clay whatever room opened it
 (`superapp-shell.md` §6): opened from Gym in light it is clay light, never `systemBackground`
-with a verdigris tint (`AccountSheet.swift:21-27` today). Where to start? draws each door in its
+with a verdigris tint. Where to start? draws each door in its
 room's accent: the Gym door's symbol and arrow are `gym/accent`, not `shell/brand`
 (`WindmillApp.swift:130,135`).
 
@@ -151,7 +154,7 @@ room's accent: the Gym door's symbol and arrow are `gym/accent`, not `shell/bran
   room; the room's canvas and card are the grounds. System *label* colours are fine where the
   system draws the text (toolbar titles, tab labels, menus, alerts).
 - A second accent. Olive, gold and brick are states, not accents.
-- `.red` for a refusal (19 sites today): a refusal is `ink` in the transient band or `alarm` in
+- `.red` for a refusal: a refusal is `ink` in the transient band or `alarm` in
   the field it belongs to.
 - `ink-faint` on an essential label — it is below 4.5:1 on both night canvases
   (`guidelines/system-architecture.md`, the grandfathered tertiaries).
@@ -228,8 +231,9 @@ Compliance frame 393 × 852 (iPhone 17); checked at 375 × 667 and at the larges
   `RoomSeat`/`AccountButton` chrome (`WindmillApp.swift`, `modifier(Glass…)`), the glass `Done`
   and round buttons in `AccountSheet.swift:42,361`, the glass *Keep it* in `JournalScreen.swift:174`.
   Nothing in the app draws a white-alpha fill or stroke.
-- **Journal gets a `NavigationStack`** so its bar is the system's: `.toolbarBackground(.hidden,
-  for: .navigationBar)` over the night canvas, no title, the room menu and account button as
+- **Journal gets a `NavigationStack`** so its bar is the system's: a visible bar filled
+  `journal/canvas` with `.toolbarColorScheme(.dark)`, so it reads as the night canvas and past pages
+  scroll beneath it instead of under the bar's items; no title, the room menu and account button as
   above. The ink notes anchor to the toolbar items' frames (`onGeometryChange` inside the labels).
 - Symbols in bars render monochrome at the bar's default weight. No `.fill` variants in bars;
   `.fill` is for a selected tab only.
@@ -256,8 +260,9 @@ CTA copy is at most three words: *Just start logging*, *Start workout*, *Log set
 
 The system `TabView` with the `Tab` API, `.tabBarMinimizeBehavior(.onScrollDown)` on iOS 26.
 Routines `list.bullet.rectangle` · The log `calendar` · Coach `bubble.left.and.bubble.right`.
-No tint on the `TabView`: the system draws the selection, the room supplies the symbol
-(`12-native-idiom.md`). Hidden on every pushed screen and sheet (as today).
+The `TabView` carries `gym/accent` as its tint, so the selected tab is verdigris; the system draws
+the selection, the room supplies the symbol (`12-native-idiom.md`). Hidden on every pushed screen
+and sheet.
 
 ## 5. Menus, sheets and transients
 
@@ -320,9 +325,9 @@ section; no third shape.
 ### One transient band
 
 The room has one component, `RoomTransient`, for refusals, notices, Undo and copied-link
-confirmations: a single-line `.footnote` message on `gym/card`, radius 16, with at most one
-trailing action (*Undo* · *Try again* · *Dismiss* as `xmark`), floating in the reach band above the
-primary, honouring the delete window (`gym/briefs/13-gestures.md`). It replaces `RoutineNotice`
+confirmations: a `.footnote` message on `gym/card` that wraps rather than truncates, radius 16,
+with at most one trailing action (*Undo* · *Try again* · *Dismiss* as `xmark`), floating in the
+reach band above the primary, honouring the delete window (`gym/briefs/13-gestures.md`). It replaces `RoutineNotice`
 (`RoutinesTab.swift:205`, list sections in red), `LogNoticeBand` (`LogPresentation.swift:151`),
 `CoachNoticeBand` (`CoachScreens.swift:39`), the share message section (`LogTab.swift:125`) and the
 message rows of `WorkoutNotice` (`WorkoutScreen.swift:351`). Refusal text is `gym/ink`, never
@@ -423,7 +428,7 @@ every `modifier(Glass…)`; Journal in a `NavigationStack`; the You/Keep/sign-in
 
 `Sources/Theme/` with the three palettes as asset-catalogue roles, compiled into the app and the
 widget; delete the four gym palettes, the Live Activity's own accent and the colour half of
-`Design`; `GymPage` carries the tint, the `TabView` none; no `scheme == .dark` branches;
+`Design`; the `TabView` and `GymPage` carry the tint; no `scheme == .dark` branches;
 `.systemGroupedBackground` gone from Coach, Notes, Settings, Connected log and Review. Light Gym
 is pietra, not iOS grey. The Workout rendering tests that pin the divergent values
 (`Tests/Gym/Workout/WorkoutRenderingTests.swift:211`) pin the roles instead.
@@ -568,8 +573,7 @@ Detents and dismissals per the table; `presentationCornerRadius` removed; keypad
 
 Unchanged in iteration 1 except the shell palette roles, the Gym door in `gym/accent`, the
 `RoomDoor` component and the system *Sign in* link style — and the appearance: Where to start?
-follows the system like the rest of the shell (`WindmillApp.swift:34` forces it dark, so the
-light build opens on a black screen and then a light room).
+follows the system like the rest of the shell.
 
 ### 7.13 Journal room
 
@@ -617,10 +621,9 @@ page ink and reader (Journal Figma boards 40/41 and 59/60) into the room's own c
 Recorded in `consistency.md` under *iOS*: 9a (light gym accent vs Figma Daylight `brand/base`),
 9b (phones weave, web keeps the strip), 9c (the rack's kind picker leaves iOS), 9d (two gym light
 grounds in the Design System collections), 9e (the first-run boards' W capsule and hand-drawn
-glass), 9f (You's palette), 9g (the Live Activity accent), 9h (the journal day inks in the Figma
-collection and the onboarding glimpse are warm; the web's and this spec's are cool paper), 9i (the
-`TabView` tint against `12-native-idiom.md`). 5m is closed by §7.7; 6o stays open only for the
-board redraw.
+glass), 9h (the journal day inks in the Figma collection and the onboarding glimpse are warm; the
+web's and this spec's are cool paper). 5m is closed by §7.7; 6o stays open only for the board
+redraw.
 
 ## 10. Drawings
 
@@ -678,8 +681,8 @@ Symbol they stand for; the build pulls the real glyph. Glass on a board is `glas
    but the system's rendering.
 2. Coach, signed in, empty: bar, canvas, composer. Zero sentences. The More menu opens anchored
    under `ellipsis.circle` with four items and a divider.
-3. Light Gym on `#EBE7E3` with `#137A6C` tint across Routines, The log, Coach, Settings and a
-   sheet — one hue, one ground.
+3. Light Gym on `#EBE7E3` with `#137A6C` tint across the selected tab, Routines, The log, Coach,
+   Settings and a sheet — one hue, one ground.
 4. The log with no horizontal strip and a seat, not a band, for Weigh in.
 5. The logger with no slot strip, no *Last time* line, no kind control; the rack on a card.
 6. The finish sheet titled *Well done.* with three tiles and one pinned button.
