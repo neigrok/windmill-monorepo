@@ -25,6 +25,8 @@ struct WindmillApp: App {
                              directory: URL.applicationSupportDirectory.appending(path: "WindmillTelemetry"), debug: debug)
     WorkoutActivityIntentHandler.telemetry = telemetry
     telemetry.event("app_started")
+    // An open iOS 26 menu never lets UIKit animations settle, so XCTest would stall after every menu tap.
+    if settings.automated { UIView.setAnimationsEnabled(false) }
   }
   var body: some Scene {
     WindowGroup {

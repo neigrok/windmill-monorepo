@@ -35,6 +35,7 @@ struct AppSettings {
   let report: String?
   let scenario: String?
   let codeFile: String?
+  let automated: Bool
   let telemetryInfo: [String: Any]
   init(arguments: [String] = ProcessInfo.processInfo.arguments, bundle: Bundle = .main) {
     func argument(_ name: String) -> String? {
@@ -55,6 +56,7 @@ struct AppSettings {
     #else
     board = nil; restoreBoard = false; modelServer = false; fakeApple = false; appleFixture = nil; scenario = nil; report = nil; codeFile = nil
     #endif
+    automated = modelServer || scenario != nil
     var info = bundle.infoDictionary ?? [:]
     #if DEBUG && targetEnvironment(simulator)
     if arguments.contains("-telemetry") { info["WMDebugTelemetry"] = "YES" }

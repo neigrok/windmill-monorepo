@@ -70,9 +70,8 @@ import UIKit
     XCTAssertTrue(item.wait(for: \.isHittable, toEqual: true, timeout: 10))
     let frame = item.frame
     XCTAssertTrue(frame.minX.isFinite && frame.minY.isFinite && frame.width > 0 && frame.height > 0)
-    // A gym menu keeps the app from idling, so XCTest can drop a tap on its item; tap again while it stays open.
-    for _ in 0..<3 where choices.exists { item.tap(); _ = choices.waitForNonExistence(timeout: 10) }
-    XCTAssertFalse(choices.exists)
+    item.tap()
+    XCTAssertTrue(choices.waitForNonExistence(timeout: 10))
     if ["History", "Notes", "Connected log", "Gym settings"].contains(name) { XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5)) }
   }
   func back(_ app: XCUIApplication, expecting title: String? = nil) {
