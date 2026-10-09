@@ -73,7 +73,7 @@ struct CoachTab: View {
           }
           .onChange(of: coach.saved.request?.requestId) { _, _ in proxy.scrollTo("latest", anchor: .bottom) }
       }
-    }.navigationTitle("Coach").modifier(GymPage()).accessibilityIdentifier("gym-coach")
+    }.modifier(GymPage()).navigationTitle("Coach").accessibilityIdentifier("gym-coach")
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
           Menu {
@@ -103,19 +103,12 @@ struct CoachTab: View {
       }
       .safeAreaInset(edge: .bottom) {
         VStack(spacing: 0) {
-          if !gym.undoOffers.isEmpty {
-            GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
-          } else if coach.saved.text.utf8.count > 1000 {
-            RoomTransient(message: "Keep your question within 1000 bytes.", room: .gym)
-              .padding(.horizontal, RoomSpace.inset)
-          } else if let error = coach.error ?? (coach.retryable ? CoachCopy.interrupted : nil) {
-            RoomTransient(message: error, room: .gym,
-                          actionTitle: coach.retryable ? "Try again" : "Dismiss message",
-                          actionSymbol: coach.retryable ? nil : "xmark", actionIdentifier: coach.retryable ? "coach-retry" : nil) {
-              if coach.retryable { coach.retry() } else { coach.error = nil }
-            }.accessibilityIdentifier("coach-error").padding(.horizontal, RoomSpace.inset)
-              .onChange(of: error, initial: true) { _, error in UIAccessibility.post(notification: .announcement, argument: error) }
-          } else { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
+          let tooLong = coach.saved.text.utf8.count > 1000
+          GymTransient(gym: gym, message: tooLong ? "Keep your question within 1000 bytes." : coach.error ?? (coach.retryable ? CoachCopy.interrupted : nil),
+                       dismiss: tooLong || coach.retryable ? nil : { coach.error = nil },
+                       retryMessage: !tooLong && coach.retryable ? { coach.retry() } : nil,
+                       errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
+            .onChange(of: coach.error) { _, error in if let error { UIAccessibility.post(notification: .announcement, argument: error) } }
           composer
         }
       }

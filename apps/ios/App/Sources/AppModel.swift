@@ -380,6 +380,13 @@ final class AppModel {
     } catch { if account == current, methodsGeneration == generation { showAuthError(error) } }
   }
 
+  func askToRemoveApple() { removingApple = true; screenViewed("24c") }
+  func confirmAppleRemoval() { removingApple = false; performAuthentication { await self.removeApple() } }
+  // Leaving the question any way but Remove Apple counts as Cancel, as the iOS 26 dialog has no Cancel button.
+  func cancelAppleRemoval() {
+    guard removingApple else { return }
+    removingApple = false; choose("cancel", screen: "24c")
+  }
   func removeApple() async {
     guard !working, let token = appleSessionToken, let auth = runtime?.auth else { return }
     choose("remove_apple", screen: "24c")

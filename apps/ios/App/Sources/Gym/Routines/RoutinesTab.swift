@@ -26,9 +26,6 @@ struct RoutinesTab: View {
         if !gym.isAnonymous, gym.adoptionWorkoutToReview != nil {
           Section { WorkoutAdoptionBand(gym: gym) }.listRowBackground(Color.clear)
         }
-        if gym.readFailed {
-          Section { Text("Your routines could not be read. Try again."); Button("Try again") { gym.refresh() } }
-        }
         ForEach(gym.coachRemovalReceipts.filter { $0.outcome != .pending }, id: \.proposal.id) { receipt in
           Section {
             Button { onReviewProposal?(receipt.proposal.id) } label: {
@@ -83,8 +80,8 @@ struct RoutinesTab: View {
         }
         Section { Button("Movements", systemImage: "list.bullet") { browsing = true } }
       }.listRowBackground(GymPalette.card)
-    }.listStyle(.insetGrouped).navigationTitle("Routines")
-      .accessibilityIdentifier("gym-routines")
+    }.listStyle(.insetGrouped).modifier(GymPage(titleDisplayMode: .large))
+      .navigationTitle("Routines").accessibilityIdentifier("gym-routines")
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
           Button("New routine", systemImage: "plus") { building = RoutineEditingSession(gym: gym, routine: nil) }
@@ -112,7 +109,6 @@ struct RoutinesTab: View {
       .navigationDestination(isPresented: Binding(get: { movement != nil && !browsing }, set: { if !$0 { movement = nil } })) {
         if let movement { RoutineMovementDoor(gym: gym, id: movement.id) }
       }
-      .modifier(GymPage(titleDisplayMode: .large))
       .preferredColorScheme(OnboardingFixture.appearance)
       .onAppear {
         #if DEBUG && targetEnvironment(simulator)
@@ -169,7 +165,8 @@ struct RoutineDetail: View {
           }
         } else { Text("That routine is no longer in your program. Everything you logged against it is still in the log.") }
       }.listRowBackground(GymPalette.card)
-    }.navigationTitle(routine?.name ?? "Routine").navigationBarTitleDisplayMode(.inline).toolbar(.hidden, for: .tabBar)
+    }.modifier(GymPage())
+      .navigationTitle(routine?.name ?? "Routine").accessibilityIdentifier("routine-detail").toolbar(.hidden, for: .tabBar)
       .toolbar { if routine != nil { ToolbarItem(placement: .topBarTrailing) { Button("Edit") { if let routine { editing = RoutineEditingSession(gym: gym, routine: routine) } }.accessibilityIdentifier("edit-routine") } } }
       .safeAreaInset(edge: .bottom) {
         VStack(spacing: 0) {
@@ -181,8 +178,6 @@ struct RoutineDetail: View {
         }
       }
       .sheet(item: $editing) { editing in RoutineBuilder(gym: gym, editing: editing) { _ in } }
-      .accessibilityIdentifier("routine-detail")
-      .modifier(GymPage())
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "routine"]) }
   }
 }
@@ -207,13 +202,13 @@ struct RoutineMovementDoor: View {
               } else if last.isFirstTime, !gym.readFailed { Text("Never logged") }
               else { Text("The log is still being read.") }
             }
-            if gym.readFailed { Text("The log didn’t answer. Try again."); Button("Try again") { gym.refresh() } }
           }
         } else { Text("This movement is no longer available.") }
       }.listRowBackground(GymPalette.card)
     }.navigationTitle(gym.catalogue.find(id)?.name ?? "Movement").navigationBarTitleDisplayMode(.inline).toolbar(.hidden, for: .tabBar)
       .sheet(isPresented: $renaming) { if let exercise = gym.catalogue.find(id) { RenameMovementSheet(gym: gym, exercise: exercise) } }
       .accessibilityIdentifier("routine-movement")
+      .safeAreaInset(edge: .bottom) { GymTransient(gym: gym) }
       .modifier(GymPage())
       .safeAreaInset(edge: .bottom) { GymTransient(gym: gym) }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "movement"]) }

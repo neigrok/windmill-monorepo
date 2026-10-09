@@ -32,7 +32,7 @@ struct GymRoom: View {
       SwiftUI.Tab("Coach", systemImage: "bubble.left.and.bubble.right", value: Tab.coach) {
         NavigationStack(path: $coachPath) { root(CoachTab(gym: gym, handoff: $coachHandoff)) }
       }
-    }.accessibilityHidden(gym.workout.isPresented)
+    }.tint(GymPalette.accent).accessibilityHidden(gym.workout.isPresented)
   }
 
   func root(_ screen: some View) -> some View {

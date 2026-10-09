@@ -59,8 +59,7 @@ struct LogTab: View {
           .listRowBackground(GymPalette.card)
       }
       if gym.readFailed {
-        Section { Text("Progress unavailable").font(.headline); Text("Your progress could not be read."); Button("Try again") { gym.refresh() } }
-          .listRowBackground(GymPalette.card)
+        EmptyView() // the transient band owns a failed read and its retry
       } else if gym.log == nil {
         Section { ProgressView("Reading progress…") }.listRowBackground(GymPalette.card)
       } else if gym.log?.firstPullComplete == false && !gym.isAnonymous {

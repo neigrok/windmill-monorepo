@@ -17,7 +17,7 @@ struct MovementRecordScreen: View {
   var body: some View {
     List {
       if gym.readFailed {
-        Section { Text("Record unavailable").font(.headline); Text("Your record could not be read."); Button("Try again") { gym.refresh() } }.listRowBackground(GymPalette.card)
+        EmptyView() // the transient band owns a failed read and its retry
       } else if !ready { Text("Your full training record needs a connection to finish syncing.").listRowBackground(GymPalette.card) }
       else if let progress, let log = gym.log {
         Section {

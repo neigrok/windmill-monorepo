@@ -15,6 +15,7 @@ struct AccountSheet: View {
   @State var answeringSignOut = false
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.colorScheme) var colorScheme
+  @Environment(\.dynamicTypeSize) var typeSize
   @ScaledMetric var methodRowHeight = 50.0
   var receipt: Bool { model.sheet == .appleAdded || ((model.sheet == .adoption || model.sheet == .discardAdoption) && model.appleLinkedReceipt) }
   var compact: Bool { model.compactAccountSheet }
@@ -61,7 +62,7 @@ struct AccountSheet: View {
     }
       .foregroundStyle(ink).font(ShellType.body).tint(brand)
       .presentationDragIndicator(.hidden)
-      .presentationDetents(compact ? [.medium] : [.large])
+      .presentationDetents(compact && !typeSize.isAccessibilitySize ? [.medium] : [.large])
       .presentationBackground(shell)
       .sheet(isPresented: $aboutWindmill) {
         NavigationStack {
@@ -387,16 +388,17 @@ struct AccountSheet: View {
     return List {
       methodRow("Email", model.accountEmail, symbol: "envelope")
       if let apple {
-        Button { model.removingApple = true; model.screenViewed("24c") } label: {
+        Button { model.askToRemoveApple() } label: {
           methodRow("Apple", apple.relay ? "Hide My Email" : apple.email, symbol: "apple.logo")
         }.buttonStyle(.plain).accessibilityIdentifier("apple-method")
-          .confirmationDialog("Remove Apple?", isPresented: $model.removingApple, titleVisibility: .visible) {
-            Button("Remove Apple", role: .destructive) { model.performAuthentication { await model.removeApple() } }
-            Button("Cancel", role: .cancel) { model.choose("cancel", screen: "24c") }
+          .confirmationDialog("Remove Apple?", isPresented: Binding(get: { model.removingApple }, set: { if !$0 { model.cancelAppleRemoval() } }),
+                              titleVisibility: .visible) {
+            Button("Remove Apple", role: .destructive) { model.confirmAppleRemoval() }
+            Button("Cancel", role: .cancel) { model.cancelAppleRemoval() }
           } message: {
             Text("You'll sign in with \(model.accountEmail) instead. Apple won't open this account.")
           }
-          .swipeActions { Button("Remove Apple", role: .destructive) { model.removingApple = true; model.screenViewed("24c") } }
+          .swipeActions { Button("Remove Apple", role: .destructive) { model.askToRemoveApple() } }
       }
     }.listStyle(.plain).scrollDisabled(true).scrollContentBackground(.hidden)
       .environment(\.defaultMinListRowHeight, methodRowHeight)

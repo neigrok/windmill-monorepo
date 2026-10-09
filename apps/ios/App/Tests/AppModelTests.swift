@@ -266,6 +266,18 @@ import SyncTesting
     #expect(journalLaunch.account == nil && journalLaunch.selectedRoom == .journal && !journalLaunch.welcome)
   }
 
+  @Test func leavingTheAppleRemovalQuestionCountsAsOneCancel() throws {
+    let recorder = TelemetryRecorder()
+    let (_, model) = try JournalModelTests().fixture(telemetry: recorder)
+    let cancels = { recorder.entries.withLock { $0.filter { $0.name == "first_run_choice" && $0.properties == ["screen": "24c", "action": "cancel"] }.count } }
+    model.askToRemoveApple()
+    #expect(model.removingApple)
+    model.cancelAppleRemoval(); model.cancelAppleRemoval()
+    #expect(!model.removingApple && cancels() == 1)
+    model.askToRemoveApple(); model.confirmAppleRemoval(); model.cancelAppleRemoval()
+    #expect(!model.removingApple && cancels() == 1)
+  }
+
   @Test func failedGymReadBlocksSignInUntilRoomCanBeFlushed() async throws {
     let fault = GymStoreFault(), recorder = TelemetryRecorder()
     let runtime = try GymModelTests().runtime(failing: fault, telemetry: recorder)
