@@ -196,7 +196,9 @@ builds with Xcode 26.3 and uploads to TestFlight; it does not run on push.
 
 The UI test bundle presses Home and activates SpringBoard, waiting for its event loop and animations
 to become idle. It requires the foreground Home screen and a hittable Safari icon before any test
-begins. A failed preflight stops the bundle before an app launch.
+begins. A failed preflight stops the bundle before an app launch. Launches with `-model-server`, a board or a scenario
+run without UIKit animations: an open iOS 26 menu never lets them settle, so XCTest would wait out its idle timeout
+after every menu tap.
 
 The Live Activity UI test waits for published Island content and presses SpringBoard's Activity
 container to expand it. To capture its

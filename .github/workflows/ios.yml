@@ -200,6 +200,12 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: "1"
         run: brew install xcodegen
 
+      # Spotlight indexes the checkout and the build while the tests run, and the app under test needs that CPU.
+      - name: Stop Spotlight indexing
+        run: |
+          sudo mdutil -a -i off || true
+          mdutil -s /System/Volumes/Data
+
       - name: Create and prepare the UI simulator
         timeout-minutes: 10
         run: |

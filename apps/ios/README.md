@@ -137,8 +137,8 @@ creates its own iPhone 17 on iOS 26.5 and prepares it with `App/Tools/prepare_si
 new local simulator the same way: it seeds English/US preferences, Live Activity consent and completed Apple
 Intelligence notification state before boot, waits for boot completion, then sets and checks accessibility
 automation, UTC, a fixed status bar and the software keyboard, with autocorrection and predictions off. The shard
-builds its tests before it runs them, so the build's memory is free before the first launch, and logs the runner's
-load every 15 seconds. Tests run serially on that UUID, and a result check requires every selected test to pass
+builds its tests before it runs them, so the build's memory is free before the first launch, turns off Spotlight
+indexing on the runner, and logs the runner's load every 15 seconds. Tests run serially on that UUID, and a result check requires every selected test to pass
 exactly once. A failed shard prints each failed test's app hierarchy at its failure and retains its logs and xcresult
 bundle for three days. Cleanup deletes the device even after failure. CI does not run `e2e.sh`, which needs the local
 backend.
