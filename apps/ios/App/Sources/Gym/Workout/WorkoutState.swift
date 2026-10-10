@@ -554,19 +554,23 @@ struct FinishWorkout: Action {
     }
   }
 
+  // A set the log accepted a moment ago is confirmed by the next pull. Online, Finish gives that pull this long; a
+  // server that answers nothing in time leaves the decision to what this phone holds.
+  static let confirmationWait = Duration.seconds(3)
+
+  // A tapped Finish always ends in a queued finish or a refusal, even when its task is cancelled while it waits.
   func finish() async {
-    guard !Task.isCancelled, !finishing, !paging, let session, session.isOpen, !gym.readFailed, !gym.accountTransition else { return }
+    guard !finishing, !paging, let session, session.isOpen, !gym.readFailed, !gym.accountTransition else { return }
     let account = gym.account
     finishing = true; message = nil
     defer { finishing = false }
-    // A set the log accepted a moment ago is confirmed by the next pull; online, Finish waits for that, never offline.
     let unconfirmed = try? gym.runner.read(Gym.scope) { read in
       let loaded = try FinishWorkout(id: session.id).load(read)
       return loaded.serverHeld && loaded.stranded
     }
     if unconfirmed == true, let runtime = gym.runtime, !gym.isAnonymous, runtime.engine.status.online, !syncFailed {
-      _ = await drainForFinish(operation: { await self.flushAndConfirm(session.id, finished: false) })
-      guard !Task.isCancelled, gym.account == account, sessionId == session.id, !gym.accountTransition else { return }
+      _ = await Self.drain(timeout: Self.confirmationWait) { await self.flushAndConfirm(session.id, finished: false) }
+      guard gym.account == account, sessionId == session.id, !gym.accountTransition else { return }
     }
     let pending: Bool
     do {
@@ -578,6 +582,7 @@ struct FinishWorkout: Action {
       guard let result = gym.run(FinishWorkout(id: session.id)), result.refusal == nil else {
         if case .sessionOpen = gym.refusal { message = "Finishing needs a connection. Some sets in this synced workout are saved only on this phone. You can keep logging or hide it." }
         else { message = gym.error }
+        gym.telemetry.event("gym_session_finished", properties: ["screen": "workout", "outcome": "refused"])
         return
       }
     }
@@ -603,7 +608,7 @@ struct FinishWorkout: Action {
     guard !Task.isCancelled, gym.account == account, sessionId == id, !gym.accountTransition else { return }
     runtime.engine.foreground()
     while !Task.isCancelled {
-      gym.refresh()
+      if runtime.engine.lastChange != gym.readThrough { gym.refresh() }
       guard gym.account == account, sessionId == id, !gym.accountTransition, !gym.isAnonymous, !gym.authPaused,
             runtime.engine.status.online, !syncFailed, !gym.readFailed else { return }
       do {

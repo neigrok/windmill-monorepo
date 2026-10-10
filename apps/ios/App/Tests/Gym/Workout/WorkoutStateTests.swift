@@ -249,6 +249,51 @@ import SyncTesting
     #expect(!receipt.session.isOpen && receipt.sets.map(\.weightKg) == [fixed.weightKg] && workout.message == nil)
   }
 
+  enum ConfirmationWait: CaseIterable { case stalledServer, cancelledWait, offline }
+
+  @Test(arguments: ConfirmationWait.allCases)
+  func finishOnASetTheLogHasNotConfirmedDecidesWithinItsWait(_ wait: ConfirmationWait) async throws {
+    let fault = WorkoutFaultTransport(), network = SwitchedConnectivity()
+    let runtime = try Self.faultRuntime(fault, connectivity: network, drivesLoops: true)
+    let identity = fault.model.identity(email: "finish-unconfirmed@example.com")
+    #expect(try await runtime.engine.signIn(account: identity.account, token: identity.token).isComplete)
+    let recorder = TelemetryRecorder(), gym = GymModel(runner: runtime.runner, runtime: runtime, telemetry: recorder)
+    _ = try #require(gym.startWorkout())
+    let workout = gym.workout, id = try #require(workout.sessionId)
+    workout.add(ID("back-squat")); workout.logSet()
+    await runtime.engine.start()
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    #expect(await Self.until { gym.refresh(); workout.reconcile(); return gym.workoutDeviceSets(workout.sets).isEmpty })
+    let original = try #require(workout.sets.first)
+    var fixed = original; fixed.weightKg += 2.5
+    fault.pullFailure.withLock { $0 = 503 }
+    #expect(gym.run(CorrectSet(fixed, original: original))?.refusal == nil)
+    await runtime.engine.flushOnLeave()
+    #expect(try runtime.runner.read(Gym.scope) { read in
+      let loaded = try FinishWorkout(id: id).load(read)
+      return try loaded.serverHeld && loaded.stranded && read.commands().isEmpty
+    })
+    fault.pullFailure.withLock { $0 = nil }
+    fault.pullDelay.withLock { $0 = .seconds(30) }
+    if wait == .offline { network.set(online: false) }
+    let requests = fault.pullRequests.withLock { $0 }, tapped = ContinuousClock.now
+    let finishing = Task { await workout.finish() }
+    if wait == .cancelledWait {
+      #expect(await Self.until { workout.finishing && fault.pullRequests.withLock { $0 } > requests })
+      finishing.cancel()
+    }
+    await finishing.value
+    let decided = tapped.duration(to: .now)
+    switch wait {
+    case .stalledServer: #expect(decided >= WorkoutState.confirmationWait && decided < WorkoutState.confirmationWait + .seconds(2))
+    case .cancelledWait, .offline: #expect(decided < .seconds(1))
+    }
+    #expect(!workout.finishing && !workout.finishQueued && workout.session?.isOpen == true && workout.receipt == nil && workout.canLog)
+    #expect(workout.message == "Finishing needs a connection. Some sets in this synced workout are saved only on this phone. You can keep logging or hide it.")
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_session_finished" }.map(\.properties) } == [["screen": "workout", "outcome": "refused"]])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "client_error" }.isEmpty })
+  }
+
   @Test func aFinishConfirmedAfterItsWaitStillEndsInItsReceipt() async throws {
     let fault = WorkoutFaultTransport(), runtime = try Self.faultRuntime(fault, drivesLoops: true)
     let identity = fault.model.identity(email: "finish-confirmed-late@example.com")
@@ -462,11 +507,12 @@ import SyncTesting
     return condition()
   }
 
-  static func faultRuntime(_ fault: WorkoutFaultTransport, clock: EngineClock = .system, drivesLoops: Bool = false) throws -> AppRuntime {
+  static func faultRuntime(_ fault: WorkoutFaultTransport, clock: EngineClock = .system, connectivity: SwitchedConnectivity = SwitchedConnectivity(),
+                           drivesLoops: Bool = false) throws -> AppRuntime {
     let store = try Store.inMemory(registry: SyncSchema.registry, commandResultWrites: AppRuntime.commandResultWrites), tokens = InMemoryTokenStore()
     let engine = try SyncEngine(config: EngineConfig(appVersion: "test", surface: .ios, drivesLoops: drivesLoops), store: store,
                                 transport: fault, tokens: tokens, forkGuard: InMemoryForkGuardStore(), clock: clock,
-                                random: SeededRandomSource(seed: 73), connectivity: SwitchedConnectivity())
+                                random: SeededRandomSource(seed: 73), connectivity: connectivity)
     let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
     return AppRuntime(settings: AppSettings(arguments: ["app", "-server", "https://gym.invalid"]), store: store, engine: engine,
                       auth: NativeAuth(baseURL: URL(string: "https://gym.invalid")), runner: runner,
@@ -1590,6 +1636,7 @@ nonisolated final class WorkoutFaultTransport: SyncTransport {
   let failure = Mutex<Int?>(nil)
   let pushDelay = Mutex<Duration?>(nil)
   let pullFailure = Mutex<Int?>(nil)
+  let pullDelay = Mutex<Duration?>(nil)
   let pullRequests = Mutex(0)
   func hello(token: SessionToken?) async -> Reply<HelloResponse> { await model.hello(token: token) }
   func push(_ request: PushRequest, token: SessionToken) async -> Reply<PushResponse> {
@@ -1603,6 +1650,9 @@ nonisolated final class WorkoutFaultTransport: SyncTransport {
   }
   func pull(_ request: PullRequest, token: SessionToken?) async -> Reply<PullResponse> {
     pullRequests.withLock { $0 += 1 }
+    if let delay = pullDelay.withLock({ $0 }) {
+      do { try await Task.sleep(for: delay) } catch { return .unreachable }
+    }
     if let status = pullFailure.withLock({ $0 }) { return .answered(.failed(HTTPFailure(status: status))) }
     return await model.pull(request, token: token)
   }

@@ -90,7 +90,7 @@ action `dismiss_ink` once when writing or a tap lifts it; no ink replay action i
 | Adoption | `room_adoption_answered` | room: journal, gym; action: add, discard; no counts or identifiers |
 | Gym screens | `gym_screen_viewed` | screen: routines, routine, routine_editor, movement, log, session, fix_set, record, bodyweight, weigh_in, session_share, coach, history, notes, note, settings, review, connected_log, workout |
 | Live Activity | `gym_activity_set_logged`, `gym_activity_offer_refused` | no properties; accepted durable set or stale offer refusal |
-| Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged`, `gym_routine_saved` | screen: workout; outcome: ok; routine action: create, update; storage: device, server |
+| Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged`, `gym_routine_saved` | screen: workout; outcome: ok, and refused for a Finish the phone cannot queue; routine action: create, update; storage: device, server |
 | Coach | `gym_ask_started`, `gym_ask_outcome` | screen: coach; outcome: answered, cancelled, failed, refused, capped, fresh, absent; cap: daily, ceiling; duration_ms |
 | Proposals | `gym_proposal_outcome` | screen: review; action: apply, dismiss; outcome: decided, failed |
 | Gym actions | `gym_action`, `gym_undo` | screen: gym; outcome: ok, refused, failed; no action payloads |
@@ -116,7 +116,10 @@ pairing or the whole page. The dismissal is optimistic and rolls back if its RES
 and emits no dismissed event.
 
 Gym boundary operation labels are `gym_read`, `gym_action`, `gym_undo`, `gym_flush`, `gym_rest`,
-`gym_activity_request` and `gym_activity_update`.
+`gym_activity_request` and `gym_activity_update`. A queued Finish whose background confirmation
+outlasts 15 seconds reports a `gym_flush` timeout under the offline rule below. The short wait before
+Finish reports nothing: when the server does not confirm in time, Finish ends in its local decision,
+and a refusal emits `gym_session_finished` with outcome refused.
 Expected REST refusals emit metrics. Missing network, refused connections, dropped connections
 and timeouts become one `api_request_failed` with `failure_kind=offline` and one informational
 Sentry event per offline stretch in the process. The Sentry state has no exception, message,
