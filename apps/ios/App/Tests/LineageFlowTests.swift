@@ -1,11 +1,13 @@
 import Foundation
 import Testing
 import DomainKit
+import GymDomain
 import JournalDomain
 import SyncCore
 import SyncAPI
 import SyncReplica
 import SyncEngine
+import struct SyncModelServer.ScopeKey
 import SyncSchema
 import SyncStore
 import SyncTesting
@@ -13,7 +15,7 @@ import Synchronization
 @testable import Windmill
 
 @Suite @MainActor struct LineageFlowTests {
-  func fixture(_ transport: JournalModelTransport, syncTransport: (any SyncTransport)? = nil, tokens: InMemoryTokenStore = InMemoryTokenStore(), revocations: InMemoryTokenStore = InMemoryTokenStore(), auth: NativeAuth? = nil, seed: UInt64 = 17, connectivity: SwitchedConnectivity = SwitchedConnectivity(), crashPoints: CrashPoints = .none, bindings: [any ProductBinding] = [], telemetry: any Telemetry = NoopTelemetry()) throws -> AppModel {
+  func fixture(_ transport: JournalModelTransport, syncTransport: (any SyncTransport)? = nil, tokens: InMemoryTokenStore = InMemoryTokenStore(), revocations: InMemoryTokenStore = InMemoryTokenStore(), auth: NativeAuth? = nil, seed: UInt64 = 17, connectivity: SwitchedConnectivity = SwitchedConnectivity(), crashPoints: CrashPoints = .none, bindings: [any ProductBinding] = [], telemetry: any Telemetry = NoopTelemetry(), authRetryNow: @escaping () -> Date = Date.init) throws -> AppModel {
     let store = try Store.inMemory(registry: SyncSchema.registry, crashPoints: crashPoints, commandResultWrites: JournalWriting.resultWrites, pendingDeviceWork: JournalWriting.pendingWork)
     let binding = GymBinding()
     let engine = try SyncEngine(config: EngineConfig(appVersion: "test", surface: .ios), bindings: [binding] + bindings, store: store,
@@ -21,7 +23,70 @@ import Synchronization
                                 clock: .system, random: SeededRandomSource(seed: seed), connectivity: connectivity, telemetry: telemetry)
     let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
     let runtime = AppRuntime(settings: AppSettings(arguments: ["app", "-model-server"]), store: store, engine: engine, auth: auth ?? NativeAuth(baseURL: nil, fake: transport), runner: runner, tokens: tokens, revocations: revocations, telemetry: telemetry, gymBinding: binding)
-    return try AppModel(runner: runner, preferences: UserDefaults(suiteName: UUID().uuidString)!, runtime: runtime, telemetry: telemetry)
+    return try AppModel(runner: runner, preferences: UserDefaults(suiteName: UUID().uuidString)!, runtime: runtime, telemetry: telemetry, authRetryNow: authRetryNow)
+  }
+
+  @Test func modelServerSnapshotRetainsWorkoutsAndAuthenticationAcrossRelaunch() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appending(path: "model-server.json")
+    let transport = JournalModelTransport(boardClock: true, snapshotURL: file)
+    let identity = transport.identity(email: "snapshot@example.com")
+    let id = ID<Session>("snapshot-workout"), at = Instant(ms: BoardClock().nowMs())
+    let start = StartSessionCommand(id: id, routineId: nil, startedAt: at)
+    let push = PushRequest(replica: "rp_00000000000000000000000000000001", account: identity.account, ackThrough: 0,
+      intents: [Intent(n: 1, scope: Gym.scope, command: Command(name: StartSessionCommand.name, args: .object(omittingNil: start.args)))])
+    guard case .answered(.ok) = await transport.push(push, token: identity.token) else {
+      Issue.record("The workout was not accepted by the model server"); return
+    }
+    let expected = transport.state.withLock { ($0.server.state, $0.sessions, $0.emails) }
+    let scope = ScopeKey(.product(account: identity.account, name: "gym"))
+    #expect(expected.0.rows[scope]?[RecordKey(Session.type, id.record)]?.lattice.fields["startedAt"]?.value == .of(at))
+    let restored = JournalModelTransport(boardClock: true, snapshotURL: file)
+    try restored.restore()
+    let actual = restored.state.withLock { ($0.server.state, $0.sessions, $0.emails) }
+    #expect(actual.0 == expected.0 && actual.1 == expected.1 && actual.2 == expected.2)
+    guard case .answered(.ok(let hello)) = await restored.hello(token: identity.token) else {
+      Issue.record("The restored model server did not recognize its bearer session"); return
+    }
+    #expect(hello.servedAs == identity.account)
+    #expect(try restored.signInMethods(token: identity.token) == [SignInMethod(kind: "email", email: identity.email)])
+  }
+
+  @Test(arguments: [nil, "not JSON", "{}"] as [String?])
+  func unreadableModelSnapshotDoesNotReplaceLiveState(contents: String?) throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appending(path: "model-server.json")
+    if let contents { try Data(contents.utf8).write(to: file) }
+    let transport = JournalModelTransport(snapshotURL: file)
+    let identity = transport.identity(email: "retained@example.com")
+    let before = transport.state.withLock { $0.server.state }
+    #expect(throws: (any Error).self) { try transport.restore() }
+    #expect(transport.state.withLock { $0.server.state == before && $0.sessions == [identity.token.value: identity.account] && $0.emails == [identity.email: identity.account] })
+  }
+
+  @Test func modelSnapshotWriteFailureCannotAcknowledgeLaterRequests() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    let file = directory.appending(path: "model-server.json")
+    try FileManager.default.createDirectory(at: file, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let transport = JournalModelTransport(snapshotURL: file), identity = transport.identity(email: "unwritable@example.com")
+    guard case .unreachable = await transport.hello(token: identity.token) else {
+      Issue.record("A model snapshot that could not be written was acknowledged"); return
+    }
+    #expect(transport.state.withLock { $0.persistenceFailed })
+    try FileManager.default.removeItem(at: file)
+    let push = PushRequest(replica: "rp_00000000000000000000000000000001", account: identity.account, ackThrough: 0, intents: [])
+    guard case .unreachable = await transport.push(push, token: identity.token),
+          case .unreachable = await transport.pull(PullRequest(scopes: []), token: identity.token),
+          case .unreachable = await transport.hello(token: identity.token) else {
+      Issue.record("A model server with a lost snapshot acknowledged later requests"); return
+    }
+    #expect(transport.state.withLock { $0.persistenceFailed })
+    #expect(!FileManager.default.fileExists(atPath: file.path))
   }
 
   @Test func emptyAccountAdoptsSilently() async throws {

@@ -3,12 +3,15 @@ import UIKit
 import DomainKit
 import JournalDomain
 
+nonisolated struct JournalWritingLayout: Equatable { let body: String; let contentHeight: CGFloat }
+
 struct JournalScreen: View {
   @Bindable var model: JournalModel
   let app: AppModel
   @State var focused = false
   @State var writeRequest = 0
   @State var appendRequest = 0
+  @State var editedBodyAtEnd: String?
   @State var inkMounted = false
   @State var inkFrames: [String: CGRect] = [:]
   @State var echoHighlight: JournalEchoDestination?
@@ -51,6 +54,7 @@ struct JournalScreen: View {
 
   var journal: some View {
     ScrollViewReader { scroll in
+      let renderedBody = model.document.body
       GeometryReader { geo in
         ZStack(alignment: .topLeading) {
           JournalBackdrop()
@@ -85,13 +89,18 @@ struct JournalScreen: View {
                 .padding(.top, typeSize.isAccessibilitySize && model.showPlaceholder ? 430 : 50)
                 .frame(minHeight: max(0, geo.size.height + (focused ? 0 : geo.safeAreaInsets.bottom) - (model.compactAccountSheet ? 406 : 0)), alignment: .bottom)
             }.accessibilityIdentifier("journal-canvas").defaultScrollAnchor(model.compactAccountSheet || (!focused && typeSize.isAccessibilitySize && model.showPlaceholder) ? .top : .bottom).scrollDismissesKeyboard(.interactively)
+              .onScrollGeometryChange(for: JournalWritingLayout.self) {
+                JournalWritingLayout(body: renderedBody, contentHeight: $0.contentSize.height)
+              } action: { _, layout in
+                guard focused, editedBodyAtEnd == layout.body else { return }
+                scroll.scrollTo("journal-today", anchor: .bottom)
+                editedBodyAtEnd = nil
+              }
               .ignoresSafeArea(.container, edges: focused ? [] : .bottom)
               .padding(.bottom, focused ? RoomSpace.minimumTarget + RoomSpace.inset : 0)
           }
           inkNotes(origin: geo.frame(in: .global).origin)
         }
-      }.onChange(of: model.document.body) { old, new in
-        if focused && new == old + "\n" { scroll.scrollTo("journal-today", anchor: .bottom) }
       }.task(id: echoDestination) {
         echoReadyDestination = nil
         guard let destination = echoDestination, validEchoDestination(destination) else { echoHighlight = nil; return }
@@ -249,7 +258,7 @@ struct JournalScreen: View {
           echoButton(model.editorDay.text)
         }.frame(minHeight: 44).padding(.bottom, 16)
         ZStack(alignment: .topLeading) {
-          JournalBodyText(text: Binding(get: { model.document.body }, set: { model.type($0) }), focused: $focused, fontSize: bodySize, editable: !model.editorReadOnly, appendRequest: appendRequest, inkVisible: inkMounted && model.inkVisible && !focused && model.sheet == nil)
+          JournalBodyText(text: Binding(get: { model.document.body }, set: { model.type($0) }), focused: $focused, fontSize: bodySize, editable: !model.editorReadOnly, appendRequest: appendRequest, inkVisible: inkMounted && model.inkVisible && !focused && model.sheet == nil, didEditAtEnd: { editedBodyAtEnd = $0 })
             .accessibilityFocused($echoFocus, equals: model.today.text)
             .frame(height: editorHeight(width: width))
             .allowsHitTesting(focused || model.editorReadOnly)
@@ -324,6 +333,7 @@ struct JournalBodyText: UIViewRepresentable {
   var editable = true
   var appendRequest = 0
   var inkVisible = false
+  var didEditAtEnd: (String?) -> Void = { _ in }
   var highlightedRange: NSRange? = nil
   var day: String? = nil
 
@@ -426,7 +436,11 @@ struct JournalBodyText: UIViewRepresentable {
     func textViewDidChange(_ textView: UITextView) {
       publishingText = true
       defer { publishingText = false }
-      parent.text = textView.text
+      // Native selection distinguishes end edits from insertions into repeated text.
+      let selection = textView.selectedRange
+      let text = textView.text ?? ""
+      parent.didEditAtEnd(textView.isFirstResponder && selection.length == 0 && selection.location == textView.textStorage.length ? text : nil)
+      parent.text = text
     }
     func textViewDidBeginEditing(_ textView: UITextView) { if !parent.focused { textView.resignFirstResponder() } }
     func textViewDidEndEditing(_ textView: UITextView) { if parent.focused { parent.focused = false } }

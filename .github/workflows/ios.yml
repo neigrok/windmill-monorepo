@@ -200,18 +200,131 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: "1"
         run: brew install xcodegen
 
-      - name: Build and run the UI shard
+      # Spotlight indexes the checkout and the build while the tests run, and the app under test needs that CPU.
+      - name: Stop Spotlight indexing
+        run: |
+          sudo mdutil -a -i off || true
+          mdutil -s /System/Volumes/Data
+
+      - name: Create and prepare the UI simulator
+        timeout-minutes: 10
+        run: |
+          UI_SIMULATOR=$(xcrun simctl create "Windmill CI ${{ matrix.shard }}" \
+            com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-26-5)
+          echo "UI_SIMULATOR=$UI_SIMULATOR" >> "$GITHUB_ENV"
+          python3 Tools/prepare_simulator.py "$UI_SIMULATOR"
+
+      # One line every 15 s of the runner's load, swap and busiest processes, simulator daemons included, for triage.
+      - name: Record the runner's load
+        run: |
+          cat > "$RUNNER_TEMP/ios-ui-load.sh" <<'SH'
+          while true; do
+            load=$(sysctl -n vm.loadavg | awk '{print $2}')
+            swap=$(sysctl -n vm.swapusage | sed -E 's/.*used = ([0-9.]+M).*/\1/')
+            free=$(memory_pressure -Q | awk '/percentage/ {print $5}')
+            top=$(ps -Ao %cpu=,comm= -r | head -4 | awk '{cpu = $1; $1 = ""; n = split($0, path, "/"); printf "%s %s, ", path[n], cpu}')
+            echo "$(date -u +%H:%M:%S) load $load swap $swap free $free top $top"
+            sleep 15
+          done
+          SH
+          nohup bash "$RUNNER_TEMP/ios-ui-load.sh" > "$RUNNER_TEMP/ios-ui-load.log" 2>&1 &
+
+      # The build finishes and releases its memory before the first test launches the app.
+      - name: Build the UI tests
         run: |
           python3 Tools/generate_project.py
-          xcodebuild test -project Windmill.xcodeproj -scheme Windmill \
-            -destination 'platform=iOS Simulator,name=iPhone 17' \
+          xcodebuild build-for-testing -project Windmill.xcodeproj -scheme Windmill \
+            -destination "platform=iOS Simulator,id=$UI_SIMULATOR" -derivedDataPath "$RUNNER_TEMP/ios-ui-build"
+
+      - name: Run the UI shard
+        shell: bash
+        run: |
+          xcodebuild test-without-building -xctestrun "$(ls "$RUNNER_TEMP"/ios-ui-build/Build/Products/*.xctestrun)" \
+            -destination "platform=iOS Simulator,id=$UI_SIMULATOR" \
+            -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
+            -testLanguage en -testRegion US \
             -resultBundlePath "$RUNNER_TEMP/ios-ui-${{ matrix.shard }}.xcresult" \
-            ${{ matrix.tests }}
+            ${{ matrix.tests }} 2>&1 | tee "$RUNNER_TEMP/ios-ui-${{ matrix.shard }}.log"
+
+      - name: Check every selected UI test ran once
+        env:
+          UI_TEST_SELECTION: ${{ matrix.tests }}
+          UI_TEST_LOG: ${{ runner.temp }}/ios-ui-${{ matrix.shard }}.log
+        run: |
+          python3 - <<'PY'
+          from collections import Counter
+          from pathlib import Path
+          import os
+          import re
+
+          selected = set(re.findall(r"-only-testing:WindmillUITests/(\w+)", os.environ["UI_TEST_SELECTION"]))
+          expected = Counter()
+          for source in Path("UITests").rglob("*.swift"):
+              text = source.read_text()
+              classes = re.findall(r"\bclass\s+(\w+)\s*:\s*XCTestCase", text)
+              if not classes or classes[0] not in selected:
+                  continue
+              assert len(classes) == 1, f"Expected one UI test class in {source}"
+              expected.update((classes[0], method) for method in re.findall(r"\bfunc\s+(test\w+)\s*\(", text))
+          log = Path(os.environ["UI_TEST_LOG"]).read_text()
+          started = Counter(re.findall(r"Test Case '-\[WindmillUITests\.(\w+) (test\w+)\]' started\.", log))
+          passed = Counter(re.findall(r"Test Case '-\[WindmillUITests\.(\w+) (test\w+)\]' passed ", log))
+          assert expected and started == expected, f"UI executions differ: expected={expected}, started={started}"
+          assert passed == expected, f"UI results differ: expected={expected}, passed={passed}"
+          print(f"All {sum(expected.values())} selected UI tests passed exactly once.")
+          PY
+
+      # Each failed test's app hierarchy at its failure, so the job log alone shows what the screen held.
+      - name: Show the screens of failed UI tests
+        if: ${{ failure() }}
+        env:
+          UI_RESULT: ${{ runner.temp }}/ios-ui-${{ matrix.shard }}.xcresult
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          import tempfile
+          from pathlib import Path
+
+          bundle = os.environ["UI_RESULT"]
+          if not Path(bundle).exists():
+              raise SystemExit("No result bundle: the shard failed before its tests ran.")
+          summary = json.loads(subprocess.check_output(["xcrun", "xcresulttool", "get", "test-results", "summary", "--path", bundle]))
+          failures = {}
+          for failure in summary.get("testFailures", []):
+              failures.setdefault(failure["testIdentifierString"], []).append(failure["failureText"])
+          for test, texts in failures.items():
+              print(f"::group::{test}")
+              print("\n".join(texts))
+              exported = Path(tempfile.mkdtemp())
+              subprocess.run(["xcrun", "xcresulttool", "export", "attachments", "--path", bundle, "--output-path", str(exported),
+                              "--test-id", test], check=True, stdout=subprocess.DEVNULL)
+              for entry in json.loads((exported / "manifest.json").read_text()):
+                  for attachment in entry["attachments"]:
+                      if attachment["suggestedHumanReadableName"].startswith("App UI hierarchy"):
+                          print((exported / attachment["exportedFileName"]).read_text())
+              print("::endgroup::")
+          PY
+
+      - name: Show the runner's load
+        if: ${{ always() }}
+        run: |
+          echo "::group::Runner load every 15 s"
+          cat "$RUNNER_TEMP/ios-ui-load.log" 2>/dev/null || echo "No load was recorded."
+          echo "::endgroup::"
 
       - name: Retain failed UI test results
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
           name: ios-ui-${{ matrix.shard }}-result
-          path: ${{ runner.temp }}/ios-ui-${{ matrix.shard }}.xcresult
+          path: |
+            ${{ runner.temp }}/ios-ui-${{ matrix.shard }}.xcresult
+            ${{ runner.temp }}/ios-ui-${{ matrix.shard }}.log
           retention-days: 3
+
+      - name: Delete the UI simulator
+        if: ${{ always() && env.UI_SIMULATOR != '' }}
+        timeout-minutes: 2
+        run: xcrun simctl delete "$UI_SIMULATOR"

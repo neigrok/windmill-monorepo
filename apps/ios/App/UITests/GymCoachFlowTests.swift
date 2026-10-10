@@ -2,6 +2,16 @@ import XCTest
 import UIKit
 
 @MainActor final class GymCoachFlowTests: XCTestCase {
+  override func setUp() {
+    continueAfterFailure = false
+    addUIInterruptionMonitor(withDescription: "Wait for notification banners to dismiss") { interruption in
+      MainActor.assumeIsolated {
+        guard interruption.identifier == "NotificationShortLookView" else { return false }
+        return interruption.waitForNonExistence(timeout: 30)
+      }
+    }
+  }
+
   func launch(_ appearance: String, fixture: Bool = true, arguments: [String] = []) -> XCUIApplication {
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", "shell-last-room", "-onboarding-appearance", appearance.lowercased()] + arguments
@@ -12,7 +22,7 @@ import UIKit
     XCTAssertTrue(menu.waitForExistence(timeout: 10)); menu.tap()
     let gym = app.buttons["room-gym"]
     XCTAssertTrue(gym.waitForExistence(timeout: 5)); gym.tap()
-    app.tabBars.buttons["Coach"].tap()
+    openTab("Coach", app)
     XCTAssertTrue(app.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 10))
     return app
   }
@@ -20,9 +30,37 @@ import UIKit
     let attachment = XCTAttachment(screenshot: app.screenshot())
     attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
   }
+  func waitForVisible(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+    let viewport = app.frame
+    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      guard let snapshot = try? element.snapshot() else { return false }
+      return snapshot.isEnabled && !snapshot.frame.isEmpty && viewport.contains(snapshot.frame)
+    }, object: nil)
+    return XCTWaiter.wait(for: [ready], timeout: 30) == .completed
+  }
+  // Scrolling minimizes the tab bar to its selected tab; tapping that tab brings the other tabs back.
+  func openTab(_ name: String, _ app: XCUIApplication) {
+    let viewport = app.frame
+    let tabBar = app.tabBars.firstMatch
+    var minimized = false
+    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      guard let bar = try? tabBar.snapshot(), !bar.frame.isEmpty, viewport.contains(bar.frame) else { return false }
+      @MainActor func buttons(_ element: any XCUIElementSnapshot) -> [any XCUIElementSnapshot] {
+        (element.elementType == .button ? [element] : []) + element.children.flatMap(buttons)
+      }
+      let shown = buttons(bar).filter { $0.isEnabled && !$0.frame.isEmpty && viewport.contains($0.frame) }
+      minimized = shown.contains { $0.value as? String == "Collapsed" }
+      return minimized || shown.contains { $0.identifier == name || $0.label == name }
+    }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed)
+    if minimized { app.tabBars.buttons.firstMatch.tap() }
+    let tab = app.tabBars.buttons[name]
+    XCTAssertTrue(tab.wait(for: \.isHittable, toEqual: true, timeout: 10)); tab.tap()
+  }
   func more(_ name: String, _ app: XCUIApplication, snapshot: String? = nil) {
     let menu = app.buttons["coach-more"]
-    XCTAssertTrue(menu.wait(for: \.isHittable, toEqual: true, timeout: 10))
+    XCTAssertTrue(waitForVisible(menu, in: app))
+    XCTAssertTrue(menu.isHittable)
     menu.tap()
     let ids = ["History": "history", "Notes": "notes", "Connected log": "connections", "Gym settings": "settings", "New chat": "new-chat", "Account": "account"]
     let choices = app.buttons["coach-menu-history"]
@@ -32,16 +70,16 @@ import UIKit
     XCTAssertTrue(item.wait(for: \.isHittable, toEqual: true, timeout: 10))
     let frame = item.frame
     XCTAssertTrue(frame.minX.isFinite && frame.minY.isFinite && frame.width > 0 && frame.height > 0)
-    // A gym menu keeps the app from idling, so XCTest can drop a tap on its item; tap again while it stays open.
-    for _ in 0..<3 where choices.exists { item.tap(); _ = choices.waitForNonExistence(timeout: 10) }
-    XCTAssertFalse(choices.exists)
+    item.tap()
+    XCTAssertTrue(choices.waitForNonExistence(timeout: 10))
     if ["History", "Notes", "Connected log", "Gym settings"].contains(name) { XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5)) }
   }
   func back(_ app: XCUIApplication, expecting title: String? = nil) {
     let previous = app.navigationBars.firstMatch
     let previousTitle = previous.identifier
     let button = previous.buttons.element(boundBy: 0)
-    XCTAssertTrue(button.wait(for: \.isHittable, toEqual: true, timeout: 10))
+    XCTAssertTrue(waitForVisible(button, in: app))
+    XCTAssertTrue(button.isHittable)
     let frame = button.frame
     XCTAssertTrue(frame.minX.isFinite && frame.minY.isFinite && frame.width > 0 && frame.height > 0)
     app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: frame.midX, dy: frame.midY)).press(forDuration: 0.1)
@@ -49,7 +87,8 @@ import UIKit
     if let title {
       XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5))
       let menu = app.buttons["coach-more"]
-      XCTAssertTrue(menu.wait(for: \.isHittable, toEqual: true, timeout: 10))
+      XCTAssertTrue(waitForVisible(menu, in: app))
+      XCTAssertTrue(menu.isHittable)
     }
   }
   func screens(_ appearance: String) {
@@ -60,10 +99,7 @@ import UIKit
     app.buttons["coach-send"].tap()
     XCTAssertTrue(app.buttons["Review"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
-    if app.keyboards.firstMatch.exists {
-      let done = app.buttons["coach-keyboard-done"]
-      XCTAssertTrue(done.waitForExistence(timeout: 5)); done.tap()
-    }
+    XCTAssertTrue(app.buttons["coach-keyboard-done"].waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
     capture("coach-answer-\(suffix)", app)
     app.scrollViews.firstMatch.swipeDown()
@@ -72,7 +108,8 @@ import UIKit
     app.buttons["Close"].tap()
     XCTAssertTrue(app.navigationBars["Photo"].waitForNonExistence(timeout: 5))
     let sources = app.buttons["read 214 sets · 6 weeks · 18 sessions"]
-    XCTAssertTrue(sources.wait(for: \.isHittable, toEqual: true, timeout: 10))
+    XCTAssertTrue(waitForVisible(sources, in: app))
+    XCTAssertTrue(sources.isHittable)
     sources.tap()
     let sourceWorkout = app.buttons["Push A workout"]
     XCTAssertTrue(sourceWorkout.waitForExistence(timeout: 5)); sourceWorkout.tap()
@@ -80,8 +117,7 @@ import UIKit
     app.buttons["Open workout"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
     back(app)
-    XCTAssertTrue(app.tabBars.buttons["Coach"].wait(for: \.isHittable, toEqual: true, timeout: 10))
-    app.tabBars.buttons["Coach"].tap()
+    openTab("Coach", app)
     app.scrollViews.firstMatch.swipeUp()
     app.buttons["Review"].tap()
     XCTAssertTrue(app.buttons["coach-apply-proposal"].waitForExistence(timeout: 5))
@@ -100,8 +136,7 @@ import UIKit
     XCTAssertTrue(app.navigationBars["Push A2"].waitForExistence(timeout: 5)); capture("coach-created-routine-\(suffix)", app)
     back(app)
     XCTAssertTrue(app.navigationBars["Routines"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.tabBars.buttons["Coach"].wait(for: \.isHittable, toEqual: true, timeout: 10))
-    app.tabBars.buttons["Coach"].tap()
+    openTab("Coach", app)
     more("History", app, snapshot: "coach-menu-\(suffix)")
     XCTAssertTrue(app.staticTexts["3 changes waiting"].waitForExistence(timeout: 5)); capture("coach-history-\(suffix)", app)
     XCTAssertFalse(app.tabBars.buttons["Coach"].isHittable)
@@ -163,7 +198,8 @@ import UIKit
     XCTAssertTrue(question.waitForExistence(timeout: 10)); question.tap(); question.typeText("Remove Push A.")
     app.buttons["coach-send"].tap()
     XCTAssertTrue(app.buttons["Review"].waitForExistence(timeout: 10))
-    if app.keyboards.firstMatch.exists { app.buttons["coach-keyboard-done"].tap() }
+    XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["coach-keyboard-done"].waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
     app.scrollViews.firstMatch.swipeUp(); app.buttons["Review"].tap()
     XCTAssertTrue(app.staticTexts["The whole routine is removed from your program. Every set you logged against it stays in the log."].waitForExistence(timeout: 5))
@@ -181,9 +217,9 @@ import UIKit
     app.buttons["Review"].tap()
     XCTAssertTrue(app.staticTexts["Applied"].waitForExistence(timeout: 5))
     app.buttons["Close"].tap()
-    app.tabBars.buttons["Routines"].tap()
+    openTab("Routines", app)
     XCTAssertFalse(app.buttons["routine-coach-fixture-routine"].exists)
-    app.tabBars.buttons["The log"].tap()
+    openTab("The log", app)
     XCTAssertTrue(app.buttons["gym-log-session-coach-fixture-session"].waitForExistence(timeout: 5))
     app.terminate()
   }

@@ -200,6 +200,11 @@ rendering contract is [`ios/ios-redesign.md`](ios/ios-redesign.md).
   the routine name; `ios/ios-redesign.md` §7.9 rules the title *Well done.* / *Ended early.* with
   the routine name as the subtitle. Board 02d labels the Routines primary *Start logging* where
   `gym/briefs/12-native-idiom.md` uses *Just start logging*. Redraw 13a/13b and 02d.
+- **6w · Keyboard bars on iOS 26.** `ios/ios-redesign.md` §6 moves Coach's *Done* into "the
+  keyboard's own accessory bar". On iOS 26 a SwiftUI `.keyboard` toolbar, once shown, leaves later
+  sheets' keyboard avoidance 82 pt short: after the routine targets' bar, the weigh-in sheet drew
+  *Save weight* under the decimal pad. The app draws *Next* and *Done* as a bar in the bottom inset
+  while a field is focused (routine targets, the Coach note). Restate §6's *Done* as that bar.
 
 ### iOS redesign · iteration 1
 

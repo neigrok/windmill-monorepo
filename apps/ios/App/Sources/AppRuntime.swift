@@ -35,6 +35,7 @@ struct AppSettings {
   let report: String?
   let scenario: String?
   let codeFile: String?
+  let automated: Bool
   let telemetryInfo: [String: Any]
   init(arguments: [String] = ProcessInfo.processInfo.arguments, bundle: Bundle = .main) {
     func argument(_ name: String) -> String? {
@@ -55,6 +56,7 @@ struct AppSettings {
     #else
     board = nil; restoreBoard = false; modelServer = false; fakeApple = false; appleFixture = nil; scenario = nil; report = nil; codeFile = nil
     #endif
+    automated = modelServer || scenario != nil
     var info = bundle.infoDictionary ?? [:]
     #if DEBUG && targetEnvironment(simulator)
     if arguments.contains("-telemetry") { info["WMDebugTelemetry"] = "YES" }
@@ -110,7 +112,9 @@ final class AppRuntime {
     let boardClock = settings.board != nil && settings.board?.hasPrefix("workout-live-activity") != true
     #if DEBUG
     if settings.modelServer {
-      let model = JournalModelTransport(boardClock: boardClock)
+      let snapshotURL = settings.scenario == "gym-e2e-conflict" ? storageDirectory.appending(path: "model-server.json") : nil
+      let model = JournalModelTransport(boardClock: boardClock, snapshotURL: snapshotURL)
+      if snapshotURL != nil, settings.restoreBoard { try model.restore() }
       model.state.withLock { state in
         if settings.appleFixture != nil || settings.board?.hasPrefix("23") == true || settings.board?.hasPrefix("24") == true {
           state.appleEmail = "sam@privaterelay.appleid.com"

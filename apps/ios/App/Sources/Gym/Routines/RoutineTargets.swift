@@ -293,19 +293,24 @@ struct RoutineTargetsSheet: View {
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onCancel) }
-      ToolbarItemGroup(placement: .keyboard) {
-        Spacer()
-        Button("Next") { nextField() }.frame(minWidth: 44, minHeight: 44).disabled(focus == nil || focus == lastFocus)
-        Button("Done") { focus = nil }.frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("gym-target-keyboard-done")
-      }
     }
     .safeAreaInset(edge: .bottom) {
-      ActionBand(title: draft.commitLabel, room: .gym,
-                 disabled: draft.refusal != nil, actionIdentifier: "gym-target-set") {
-        switch draft.reading {
-        case .open: onCommit(nil)
-        case .scheme(let sets): onCommit(sets)
-        case .refused: return
+      VStack(spacing: 0) {
+        ActionBand(title: draft.commitLabel, room: .gym,
+                   disabled: draft.refusal != nil, actionIdentifier: "gym-target-set") {
+          switch draft.reading {
+          case .open: onCommit(nil)
+          case .scheme(let sets): onCommit(sets)
+          case .refused: return
+          }
+        }
+        // Not a keyboard toolbar: on iOS 26 one shortens the keyboard avoidance of later sheets.
+        if focus != nil {
+          HStack {
+            Spacer()
+            Button("Next") { nextField() }.frame(minWidth: 44, minHeight: 44).disabled(focus == lastFocus)
+            Button("Done") { focus = nil }.frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("gym-target-keyboard-done")
+          }.padding(.horizontal)
         }
       }
     }

@@ -16,14 +16,16 @@ nonisolated final class JournalEchoWireProtocol: URLProtocol, @unchecked Sendabl
     var reply: Reply
     var requests: [URLRequest] = []
     var active: JournalEchoWireProtocol?
+    var started: Set<ObjectIdentifier> = []
     var stopped = 0
+    var stopWaiters: [CheckedContinuation<Void, Never>] = []
   }
   static let state = Mutex(State(reply: .stalled))
   override class func canInit(with request: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
   override func startLoading() {
     let reply = Self.state.withLock { state in
-      state.requests.append(request); state.active = self
+      state.requests.append(request); state.active = self; state.started.insert(ObjectIdentifier(self))
       return state.reply
     }
     switch reply {
@@ -40,8 +42,25 @@ nonisolated final class JournalEchoWireProtocol: URLProtocol, @unchecked Sendabl
                                                        headerFields: ["Set-Cookie": "session=private-marker; Path=/", "Cache-Control": "max-age=600"])!, cacheStoragePolicy: .notAllowed)
     client?.urlProtocol(self, didLoad: Data(body.utf8)); client?.urlProtocolDidFinishLoading(self)
   }
+  // A load an earlier test started may stop late, after the state was reset; only this test's loads count.
   override func stopLoading() {
-    Self.state.withLock { state in state.stopped += 1; if state.active === self { state.active = nil } }
+    let waiters = Self.state.withLock { state in
+      guard state.started.contains(ObjectIdentifier(self)) else { return [CheckedContinuation<Void, Never>]() }
+      state.stopped += 1; if state.active === self { state.active = nil }
+      defer { state.stopWaiters = [] }
+      return state.stopWaiters
+    }
+    for waiter in waiters { waiter.resume() }
+  }
+  // URLSession stops a cancelled load on the protocol's own thread, which may be after the caller holds its error.
+  static func firstStop() async {
+    await withCheckedContinuation { (stop: CheckedContinuation<Void, Never>) in
+      let stopped = state.withLock { state in
+        if state.stopped > 0 { return true }
+        state.stopWaiters.append(stop); return false
+      }
+      if stopped { stop.resume() }
+    }
   }
 }
 
@@ -210,7 +229,7 @@ nonisolated final class JournalEchoWireProtocol: URLProtocol, @unchecked Sendabl
     #expect(entries.last?.properties == ["operation": "journal_echoes", "failure_kind": "decode"])
   }
 
-  @Test func aPartialBodyCannotKeepAnEchoRequestAlivePastItsDeadline() async throws {
+  @Test(.timeLimit(.minutes(1))) func aPartialBodyCannotKeepAnEchoRequestAlivePastItsDeadline() async throws {
     let fixture = try await fixture(.partial)
     let started = ContinuousClock.now
     await #expect(throws: URLError(.timedOut)) { try await fixture.rest.list(through: "2026-10-08") }
@@ -218,15 +237,17 @@ nonisolated final class JournalEchoWireProtocol: URLProtocol, @unchecked Sendabl
     let entries = fixture.telemetry.entries.withLock { $0 }
     #expect(entries.map(\.name) == ["api_request_failed", "client_error"])
     #expect(entries.first?.properties == ["operation": "journal_echoes", "route": "/v1/journal", "method": "GET", "failure_kind": "timeout"])
+    await JournalEchoWireProtocol.firstStop()
     #expect(JournalEchoWireProtocol.state.withLock { $0.stopped } == 1)
   }
 
-  @Test func callerCancellationStopsStalledIOWithoutFailureTelemetry() async throws {
+  @Test(.timeLimit(.minutes(1))) func callerCancellationStopsStalledIOWithoutFailureTelemetry() async throws {
     let fixture = try await fixture(.stalled)
     let task = Task { try await fixture.rest.list(through: "2026-10-08") }
     _ = try await activeRequest()
     task.cancel()
     await #expect(throws: CancellationError.self) { try await task.value }
+    await JournalEchoWireProtocol.firstStop()
     #expect(JournalEchoWireProtocol.state.withLock { $0.stopped } == 1)
     #expect(fixture.telemetry.entries.withLock { $0.isEmpty })
   }

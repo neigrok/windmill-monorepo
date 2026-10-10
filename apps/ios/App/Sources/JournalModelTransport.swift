@@ -45,6 +45,7 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
     var appleSubject = "fake-apple"
     var ticketLifetime: TimeInterval = 900
     var dataAccounts: Set<String> = []
+    var persistenceFailed = false
   }
   struct Ticket: Sendable {
     let subject: String
@@ -53,7 +54,28 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
   }
   let state = Mutex(State())
   let boardClock: Bool
-  init(boardClock: Bool = false) { self.boardClock = boardClock }
+  let snapshotURL: URL?
+  init(boardClock: Bool = false, snapshotURL: URL? = nil) { self.boardClock = boardClock; self.snapshotURL = snapshotURL }
+  func restore() throws {
+    guard let snapshotURL else { throw AppFailure(message: "The model snapshot location is missing.") }
+    let saved = try JSON(parsing: Array(Data(contentsOf: snapshotURL)))
+    let server = ModelServer(registry: SyncSchema.registry, rules: ComposedServerRules.windmill(registry: SyncSchema.registry),
+                             state: try ServerState(json: saved.member("server")))
+    let sessions = try saved.member("sessions").asObject().members.map { (key: $0.key, value: try $0.value.asString()) }
+    let emails = try saved.member("emails").asObject().members.map { (key: $0.key, value: try $0.value.asString()) }
+    state.withLock { state in
+      state.server = server; state.sessions = Dictionary(uniqueKeysWithValues: sessions); state.emails = Dictionary(uniqueKeysWithValues: emails)
+    }
+  }
+  func persist(_ state: inout State) -> Bool {
+    guard let snapshotURL else { return true }
+    guard !state.persistenceFailed else { return false }
+    let saved: JSON = ["server": state.server.state.json,
+      "sessions": .object(JSON.Object(uniqueKeysWithValues: state.sessions.map { ($0.key, .string($0.value)) })),
+      "emails": .object(JSON.Object(uniqueKeysWithValues: state.emails.map { ($0.key, .string($0.value)) }))]
+    do { try Data(saved.jcs).write(to: snapshotURL, options: .atomic); return true }
+    catch { state.persistenceFailed = true; return false }
+  }
   var now: Int64 { boardClock ? BoardClock().nowMs() : SystemClock().nowMs() }
   func identity(email: String) -> AuthIdentity {
     let account = "model-" + email.lowercased()
@@ -188,6 +210,7 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
       if token != nil && state.helloFailuresRemaining > 0 { state.helloFailuresRemaining -= 1; return .unreachable }
       let c = credential(token, state)
       let reply = state.server.hello(credential: c, at: now)
+      guard persist(&state) else { return .unreachable }
       return Reply(status: reply.status, body: reply.body)
     }
   }
@@ -195,6 +218,7 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
     state.withLock { state in
       let c = credential(token, state)
       let reply = state.server.push(request.json, credential: c, at: now)
+      guard persist(&state) else { return .unreachable }
       return Reply(status: reply.status, body: reply.body)
     }
   }
@@ -202,6 +226,7 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
     state.withLock { state in
       let c = credential(token, state)
       let reply = state.server.pull(request.json, credential: c, at: now)
+      guard persist(&state) else { return .unreachable }
       return Reply(status: reply.status, body: reply.body)
     }
   }

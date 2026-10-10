@@ -16,6 +16,7 @@ import Synchronization
 final class Publisher: Sendable {
   struct State {
     var sequence: UInt64 = 0
+    var lastChange: UInt64 = 0
     var nextSubscriber = 0
     var subscribers: [Int: AsyncStream<EngineEvent>.Continuation] = [:]
     var taps: [@Sendable (EngineEvent) -> Void] = []
@@ -34,6 +35,7 @@ final class Publisher: Sendable {
     state.withLock { state in
       if !change.isEmpty {
         state.sequence += 1
+        state.lastChange = state.sequence
         feed.yield((state.sequence, change))
       }
       for event in events {
@@ -60,6 +62,9 @@ final class Publisher: Sendable {
 
   // The sequence of the last change sent to the views.
   var published: UInt64 { state.withLock(\.sequence) }
+
+  // The sequence of the last committed change; a nudge never moves it.
+  var lastChange: UInt64 { state.withLock(\.lastChange) }
 
   func events() -> AsyncStream<EngineEvent> {
     let (stream, continuation) = AsyncStream<EngineEvent>.makeStream()

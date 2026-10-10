@@ -57,6 +57,7 @@ struct WorkoutScreen: View {
   var body: some View {
     navigation.modifier(GymPage())
     .accessibilityIdentifier("gym-workout")
+    .modifier(WorkoutActivityFixtureProbe(gym: gym))
     .sheet(isPresented: $assembly, onDismiss: {
       if addAfterAssembly { addAfterAssembly = false; addMovement = true }
     }) {

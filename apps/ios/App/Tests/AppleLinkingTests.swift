@@ -1,11 +1,65 @@
 import Foundation
 import Testing
+import UIKit
 import SyncReplica
 import Synchronization
 @testable import Windmill
 
 @Suite @MainActor struct AppleLinkingTests {
-  func fixture(_ server: JournalModelTransport) throws -> AppModel { try LineageFlowTests().fixture(server) }
+  func fixture(_ server: JournalModelTransport, authRetryNow: @escaping () -> Date = Date.init) throws -> AppModel {
+    try LineageFlowTests().fixture(server, authRetryNow: authRetryNow)
+  }
+
+  @Test(arguments: [nil, false, true] as [Bool?])
+  func confirmationDismissalRunsItsActionExactlyOnce(coordinatorAccepts: Bool?) {
+    let controller = ConfirmationController()
+    controller.coordinator = coordinatorAccepts.map(ConfirmationTransition.init)
+    let presenter = AccountConfirmation.Presenter()
+    var actions = 0
+    presenter.afterDismissal(of: controller) { actions += 1 }
+    #expect(actions == 0)
+    #expect(controller.dismissals == (coordinatorAccepts == true ? 0 : 1))
+    controller.dismissalCompletion?()
+    #expect(actions == (coordinatorAccepts == true ? 0 : 1))
+    controller.coordinator?.completion?(controller.coordinator!)
+    #expect(actions == 1)
+    controller.dismissalCompletion?()
+    controller.coordinator?.completion?(controller.coordinator!)
+    #expect(actions == 1)
+  }
+
+  final class ConfirmationController: UIViewController {
+    var coordinator: ConfirmationTransition?
+    var dismissals = 0
+    var dismissalCompletion: (() -> Void)?
+    override var transitionCoordinator: (any UIViewControllerTransitionCoordinator)? { coordinator }
+    override func dismiss(animated flag: Bool, completion: (() -> Void)? = nil) {
+      dismissals += 1; dismissalCompletion = completion
+    }
+  }
+
+  final class ConfirmationTransition: NSObject, UIViewControllerTransitionCoordinator {
+    typealias Completion = (any UIViewControllerTransitionCoordinatorContext) -> Void
+    let accepts: Bool
+    var completion: Completion?
+    init(accepts: Bool) { self.accepts = accepts }
+    func animate(alongsideTransition animation: Completion?, completion: Completion?) -> Bool {
+      self.completion = completion; return accepts
+    }
+    func animateAlongsideTransition(in view: UIView?, animation: Completion?, completion: Completion?) -> Bool {
+      animate(alongsideTransition: animation, completion: completion)
+    }
+    func notifyWhenInteractionChanges(_ handler: @escaping Completion) {}
+    func notifyWhenInteractionEnds(_ handler: @escaping Completion) {}
+    func viewController(forKey key: UITransitionContextViewControllerKey) -> UIViewController? { nil }
+    func view(forKey key: UITransitionContextViewKey) -> UIView? { nil }
+    let isAnimated = true, initiallyInteractive = false, isInterruptible = true, isInteractive = false, isCancelled = false
+    let presentationStyle = UIModalPresentationStyle.overFullScreen
+    let transitionDuration: TimeInterval = 0
+    let percentComplete: CGFloat = 1, completionVelocity: CGFloat = 0
+    let completionCurve = UIView.AnimationCurve.easeInOut
+    let containerView = UIView(), targetTransform = CGAffineTransform.identity
+  }
 
   @Test func ticketCreatesNothingAndDismissalPreservesLocalWriting() async throws {
     let server = JournalModelTransport(), model = try fixture(server)
@@ -173,7 +227,8 @@ import Synchronization
       try await existing.signIn(server.identity(email: "sam@example.com"))
       existing.journal.type("Account page"); existing.journal.done(); await existing.beginSignOut(); await existing.finishSignOut(.keep)
     }
-    let model = try fixture(server)
+    let now = Date(timeIntervalSince1970: 1_790_424_000)
+    let model = try fixture(server, authRetryNow: { now })
     model.journal.type("Local page"); model.journal.done(); model.sheet = .keep
     await model.authenticateApple { [auth = model.runtime!.auth] token in try auth.authorizeFakeApple(token: token) }
     let ticket = try #require(model.appleTicket)
@@ -182,6 +237,7 @@ import Synchronization
       model.useAppleAccount(); model.email = "sam@example.com"; await model.sendCode(); model.code = "482913"; await model.verifyCode()
     } else { await model.createAppleAccount() }
     #expect(model.sheet == .authPending && model.account == nil && model.appleTicket == nil && model.pendingSignIn != nil && model.editorReadOnly)
+    #expect(model.authRetryAt == now.addingTimeInterval(5))
     #expect(model.journal.document.body == "Local page")
     #expect(throws: AuthRefusal.expired) { try server.createApple(ticket: ticket) }
     let sessions = server.state.withLock { $0.sessions }

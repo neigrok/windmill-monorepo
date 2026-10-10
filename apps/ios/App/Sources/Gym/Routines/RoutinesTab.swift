@@ -208,7 +208,6 @@ struct RoutineMovementDoor: View {
     }.navigationTitle(gym.catalogue.find(id)?.name ?? "Movement").navigationBarTitleDisplayMode(.inline).toolbar(.hidden, for: .tabBar)
       .sheet(isPresented: $renaming) { if let exercise = gym.catalogue.find(id) { RenameMovementSheet(gym: gym, exercise: exercise) } }
       .accessibilityIdentifier("routine-movement")
-      .safeAreaInset(edge: .bottom) { GymTransient(gym: gym) }
       .modifier(GymPage())
       .safeAreaInset(edge: .bottom) { GymTransient(gym: gym) }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "movement"]) }

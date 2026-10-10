@@ -24,8 +24,9 @@ data; `empty` binds it to an empty account whose door can move. Boards `23-start
 `24a`–`24d` seed the existing email account through the real engine. `23-start` opens Keep for full
 interaction; `23c` holds the linked receipt for screenshot inspection. A new address plus a valid
 code exercises `no-account`; wrong digits exercise the collapsed code refusal. `hello-failure` fails
-the first authenticated engine hello after an Apple ticket, so Try again exercises recovery without
-reusing the consumed ticket. `-restore-board` retains the board database and skips reseeding for
+the first authenticated engine hello after an Apple ticket and freezes the authentication backoff
+clock, so Try again exercises manual recovery without racing automatic recovery or reusing the
+consumed ticket. `-restore-board` retains the board database and skips reseeding for
 relaunch content checks. The model also
 supports subject/email matches, spent/unknown tickets, code reuse and a concurrent subject-binding
 race in `AppleLinkingTests`. All writes and reads use the existing auth diagnostics with bounded
@@ -35,6 +36,11 @@ labels; no fixture secret enters telemetry.
 backup, session revocation, same-account reauthentication, sign-out Keep, and a second sign-in. A local
 server run supplies `-code-file <absolute path>` with development codes in its isolated database.
 Gym end-to-end tests use `-scenario gym-e2e` (signed in) or `gym-e2e-anonymous`; for Gym, `-code-file` names a JSON native session (`account`, `token`, `email`). The verify skill's iOS gym fixtures mint it with the accounts `GymIntegrationFlowTests` reads. These simulator-only fixtures use the real engine and native UI.
+Without `WM_GYM_E2E_SERVER`, conflicting-workout adoption uses `-scenario gym-e2e-conflict`.
+A separate client seeds the model server through real Gym actions; atomic snapshots
+preserve server rows and email sessions across explicit app relaunches. A simulator-only accessibility
+value exposes confirmed rows to the same assertions used by REST verification. Missing, corrupt or
+unwritable snapshots fail the fixture. With a backend configured, the test uses REST verification.
 The report pauses at `revoke-session` and `signed-out`; a local verifier performs the server step and
 writes that checkpoint name to `<report>.ready`. The signed-out checkpoint includes the credential
 for local replay verification; the final report contains no credential.
@@ -124,7 +130,7 @@ Offline boundary observations:
 | Startup hello and pending-session recovery | Local reads and ordinary launch controls do not wait for hello. The engine bounds hello at `REQUEST_TIMEOUT_MS`, skips a known missing path, and ignores late cancellation results. Pending account recovery can be deferred with Done. |
 | Local journal, routines, sets, preferences and movement rename | Read and commit against the local replica. First-pull status describes incomplete history and backup confidence. Workout logging and restoration remain local during pending sign-in, including before Not now. Adoption recounts any new work before completion. |
 | Auth and Gym REST | No wait for connectivity; 8-second idle and 15-second total deadlines. Back, Close and Done cancel active auth work. Late responses cannot navigate or change the active account after cancellation. |
-| Workout Finish | Attempts the durable local action before network confirmation and releases controls. Unconfirmed sets on an already-synced workout remain editable and explain the connection requirement. The latest message leads the notice, so at accessibility text sizes the connection requirement shows unscrolled above the rack; the rest wraps and scrolls while Log set and Hide remain reachable. |
+| Workout Finish | Online, a set the log accepted but has not yet confirmed gets up to 3 seconds for its confirming pull, with Finish, Log set and Hide locked; offline there is no wait. Finish then attempts the durable local action, releases controls and confirms in the background. Cancelling the wait still ends in that decision. Unconfirmed sets on an already-synced workout remain editable and explain the connection requirement. The latest message leads the notice, so at accessibility text sizes the connection requirement shows unscrolled above the rack; the rest wraps and scrolls while Log set and Hide remain reachable. |
 | Coach streaming | Parsing runs off the main actor; 8-second idle and 120-second total deadlines. Stop releases the composer immediately. Its late reply preserves newer draft text and photos on the phone. |
 | Revocation and telemetry | Run independently of launch, room refresh and local sign-out. Offline events stay queued; repeated connection failures coalesce into one content-free state. |
 
@@ -188,7 +194,14 @@ privacy rules, queue behavior and release verification. CI uses `python3 Tools/g
 with a nonproduction DSN. The manual release workflow uses `--release` with the signing secrets,
 builds with Xcode 26.3 and uploads to TestFlight; it does not run on push.
 
-The Live Activity UI test waits for stable Island content before taking screenshots. To capture its
+The UI test bundle presses Home and activates SpringBoard, waiting for its event loop and animations
+to become idle. It requires the foreground Home screen and a hittable Safari icon before any test
+begins. A failed preflight stops the bundle before an app launch. Launches with `-model-server`, a board or a scenario
+run without UIKit animations: an open iOS 26 menu never lets them settle, so XCTest would wait out its idle timeout
+after every menu tap.
+
+The Live Activity UI test waits for published Island content and presses SpringBoard's Activity
+container to expand it. To capture its
 minimal layout, `WM_ACTIVITY_RENDER_MEDIA` can point to a local audio page whose Play QA tone button
 changes to QA tone is playing after playback starts. Audio must continue while Safari is backgrounded.
 The test finishes the workout and verifies that the Activity disappears after logging from the Island.

@@ -20,8 +20,8 @@ struct CoachTab: View {
   @Environment(\.coachOpenAccount) var openAccount
   @Environment(\.scenePhase) var phase
   @FocusState var composing: Bool
-  init(gym: GymModel, handoff: Binding<CoachHandoff?> = .constant(nil)) { self.gym = gym; _handoff = handoff; let rest = CoachFixture.rest(gym)
-    _coach = State(initialValue: CoachConversation(gym: gym, rest: rest)); _history = State(initialValue: CoachHistory(gym: gym, rest: rest)) }
+  init(gym: GymModel, handoff: Binding<CoachHandoff?> = .constant(nil), coach: CoachConversation? = nil) { self.gym = gym; _handoff = handoff; let rest = coach?.rest ?? CoachFixture.rest(gym)
+    _coach = State(initialValue: coach ?? CoachConversation(gym: gym, rest: rest)); _history = State(initialValue: CoachHistory(gym: gym, rest: rest)) }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -71,7 +71,10 @@ struct CoachTab: View {
           .overlay(alignment: .bottomTrailing) {
             if !atLatest { Button("Jump to latest") { withAnimation { proxy.scrollTo("latest", anchor: .bottom) } }.modifier(RoomSecondaryStyle()).padding(16) }
           }
-          .onChange(of: coach.saved.request?.requestId) { _, _ in proxy.scrollTo("latest", anchor: .bottom) }
+          .onChange(of: coach.saved.request?.requestId) { _, request in
+            if request != nil { composing = false }
+            proxy.scrollTo("latest", anchor: .bottom)
+          }
       }
     }.modifier(GymPage()).navigationTitle("Coach").accessibilityIdentifier("gym-coach")
       .toolbar {
@@ -106,7 +109,7 @@ struct CoachTab: View {
           let tooLong = coach.saved.text.utf8.count > 1000
           GymTransient(gym: gym, message: tooLong ? "Keep your question within 1000 bytes." : coach.error ?? (coach.retryable ? CoachCopy.interrupted : nil),
                        dismiss: tooLong || coach.retryable ? nil : { coach.error = nil },
-                       retryMessage: !tooLong && coach.retryable ? { coach.retry() } : nil,
+                       retryMessage: !tooLong && coach.retryable ? { composing = false; coach.retry() } : nil,
                        errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
             .onChange(of: coach.error) { _, error in if let error { UIAccessibility.post(notification: .announcement, argument: error) } }
           composer
@@ -166,6 +169,7 @@ struct CoachTab: View {
           PhotosPicker(selection: $photo, matching: .images) { Image(systemName: "photo.badge.plus").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel("Add photo").disabled(coach.asking || preparing)
           TextField("Ask about your training", text: Binding(get: { coach.saved.text }, set: { coach.edit($0) }), axis: .vertical)
             .lineLimit(1...5).focused($composing).disabled(coach.asking).accessibilityIdentifier("coach-question")
+            .id(coach.asking)
           if coach.asking {
             Button { coach.stopResponse() } label: { Image(systemName: "stop.fill").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel(coach.uploading ? "Cancel upload" : "Stop response").disabled(coach.stopping).accessibilityIdentifier("coach-stop")
           } else {

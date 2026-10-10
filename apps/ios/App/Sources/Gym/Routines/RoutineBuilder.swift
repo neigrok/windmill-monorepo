@@ -63,6 +63,19 @@ final class RoutineEditingSession: Identifiable {
       draft.current.entries.append(entry); path = []
     }
   }
+  func move(_ index: Int, by offset: Int) {
+    let destination = index + offset
+    guard draft.current.entries.indices.contains(index), draft.current.entries.indices.contains(destination) else { return }
+    draft.current.entries.swapAt(index, destination)
+  }
+  func remove(_ index: Int) {
+    guard draft.current.entries.indices.contains(index) else { return }
+    removed = (index, draft.current.entries.remove(at: index))
+  }
+  func undoRemoval() {
+    guard let (index, entry) = removed, draft.current.entries.count < 50 else { return }
+    draft.current.entries.insert(entry, at: min(index, draft.current.entries.count)); removed = nil
+  }
   @discardableResult func save(_ gym: GymModel) -> Bool {
     guard account == gym.account, anonymous == gym.isAnonymous else {
       failure = "The account changed while editing. Open the routine again."; return false
@@ -102,22 +115,20 @@ struct RoutineBuilder: View {
                   Text(Readout.target(entry.sets)).font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
                 }
               }.accessibilityIdentifier("builder-movement-\(entry.exerciseId)")
-                .swipeActions { Button("Remove", role: .destructive) { remove(index) } }
+                .swipeActions { Button("Remove", role: .destructive) { editing.remove(index) } }
                 .contextMenu {
-                  Button("Move up") { move(index, by: -1) }.disabled(index == 0)
-                  Button("Move down") { move(index, by: 1) }.disabled(index == editing.draft.current.entries.count - 1)
-                  Button("Remove movement", role: .destructive) { remove(index) }
+                  Button("Move up") { editing.move(index, by: -1) }.disabled(index == 0)
+                  Button("Move down") { editing.move(index, by: 1) }.disabled(index == editing.draft.current.entries.count - 1)
+                  Button("Remove movement", role: .destructive) { editing.remove(index) }
                 }
-                .accessibilityAction(named: "Move up") { move(index, by: -1) }
-                .accessibilityAction(named: "Move down") { move(index, by: 1) }
-                .accessibilityAction(named: "Remove movement") { remove(index) }
+                .accessibilityAction(named: "Move up") { editing.move(index, by: -1) }
+                .accessibilityAction(named: "Move down") { editing.move(index, by: 1) }
+                .accessibilityAction(named: "Remove movement") { editing.remove(index) }
             }.onMove { source, destination in editing.draft.current.entries.move(fromOffsets: source, toOffset: destination) }
             Button("Add movement", systemImage: "plus.circle.fill") { nameFocused = false; editing.pickMovement() }
               .accessibilityIdentifier("add-movement").disabled(editing.draft.current.entries.count >= 50)
           }
-          if let removed = editing.removed, editing.draft.current.entries.count < 50 { Section { Button("Undo movement removal") {
-            editing.draft.current.entries.insert(removed.1, at: min(removed.0, editing.draft.current.entries.count)); editing.removed = nil
-          } } }
+          if editing.removed != nil, editing.draft.current.entries.count < 50 { Section { Button("Undo movement removal") { editing.undoRemoval() } } }
           if !editing.draft.isNew { Section("History") {
             ForEach(gym.routineHistory(editing.draft.id).prefix(20), id: \.id) { session in Text(Date(timeIntervalSince1970: Double(session.startedAt.ms) / 1000), style: .date) }
             if gym.readFailed { Text("The log didn’t answer — this routine’s history is out of reach.") }
@@ -174,15 +185,6 @@ struct RoutineBuilder: View {
         .sensoryFeedback(.success, trigger: editing.saved)
         .accessibilityIdentifier("routine-builder")
     }.modifier(GymPage()).presentationDetents([.large])
-  }
-  private func remove(_ index: Int) {
-    guard editing.draft.current.entries.indices.contains(index) else { return }
-    editing.removed = (index, editing.draft.current.entries.remove(at: index))
-  }
-  private func move(_ index: Int, by offset: Int) {
-    let destination = index + offset
-    guard editing.draft.current.entries.indices.contains(destination) else { return }
-    editing.draft.current.entries.swapAt(index, destination)
   }
   private func save() {
     if editing.save(gym) { onSave(editing.id); dismiss() }

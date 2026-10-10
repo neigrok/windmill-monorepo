@@ -304,6 +304,8 @@ struct FinishWorkout: Action {
   var finishing = false { didSet { if oldValue != finishing { activityChanged() } } }
   var finishQueued = false { didSet { if oldValue != finishQueued { activityChanged() } } }
   var receipt: WorkoutReceiptData?
+  // Finish was taken: its receipt is owed until the log shows the finish, however late the confirmation lands.
+  @ObservationIgnored var receiptOwed = false
   var handoff: WorkoutHandoff?
   var rackEditing = false {
     didSet {
@@ -391,7 +393,7 @@ struct FinishWorkout: Action {
       message = "The session is saved. Its movement order could not be read. Try again."
       gym.error = "Gym could not be read from this phone. Try again."; gym.report("gym_read", error); return
     }
-    if sessionId != open.id { drafts = [:]; receipt = nil; handoff = nil }
+    if sessionId != open.id { drafts = [:]; receipt = nil; receiptOwed = false; handoff = nil }
     sessionId = open.id; (walk, finishQueued) = restored
     if message == "The session is saved. Its movement order could not be read. Try again." { message = nil }
     walk.merge(session: open, sets: sets)
@@ -404,7 +406,7 @@ struct FinishWorkout: Action {
     if gym.readFailed { gym.refresh(); guard !gym.readFailed else { finishQueued = true; return } }
     if let open = gym.openSession, open.id != sessionId { restore() }
     guard !gym.readFailed, let session else { return }
-    let awaitingReceipt = finishing || finishQueued, previousSelected = selected
+    let awaitingReceipt = finishing || finishQueued || receiptOwed, previousSelected = selected
     do {
       (walk, finishQueued) = try gym.runner.read(Gym.scope) { read in
         (try WorkoutWalk(read.device(WorkoutWalk.key(session.id))),
@@ -552,11 +554,24 @@ struct FinishWorkout: Action {
     }
   }
 
+  // A set the log accepted a moment ago is confirmed by the next pull. Online, Finish gives that pull this long; a
+  // server that answers nothing in time leaves the decision to what this phone holds.
+  static let confirmationWait = Duration.seconds(3)
+
+  // A tapped Finish always ends in a queued finish or a refusal, even when its task is cancelled while it waits.
   func finish() async {
-    guard !Task.isCancelled, !finishing, !paging, let session, session.isOpen, !gym.readFailed, !gym.accountTransition else { return }
+    guard !finishing, !paging, let session, session.isOpen, !gym.readFailed, !gym.accountTransition else { return }
     let account = gym.account
     finishing = true; message = nil
     defer { finishing = false }
+    let unconfirmed = try? gym.runner.read(Gym.scope) { read in
+      let loaded = try FinishWorkout(id: session.id).load(read)
+      return loaded.serverHeld && loaded.stranded
+    }
+    if unconfirmed == true, let runtime = gym.runtime, !gym.isAnonymous, runtime.engine.status.online, !syncFailed {
+      _ = await Self.drain(timeout: Self.confirmationWait) { await self.flushAndConfirm(session.id, finished: false) }
+      guard gym.account == account, sessionId == session.id, !gym.accountTransition else { return }
+    }
     let pending: Bool
     do {
       pending = try gym.runner.read(Gym.scope) { read in
@@ -567,14 +582,16 @@ struct FinishWorkout: Action {
       guard let result = gym.run(FinishWorkout(id: session.id)), result.refusal == nil else {
         if case .sessionOpen = gym.refusal { message = "Finishing needs a connection. Some sets in this synced workout are saved only on this phone. You can keep logging or hide it." }
         else { message = gym.error }
+        gym.telemetry.event("gym_session_finished", properties: ["screen": "workout", "outcome": "refused"])
         return
       }
     }
+    receiptOwed = true
     reconcile()
     finishing = false
     if receipt == nil { message = "Finish is saved on this phone. It will be confirmed when a connection is available." }
     if gym.runtime != nil, !gym.isAnonymous {
-      guard await drainForFinish(operation: { await self.flushAndConfirm(session.id) }) else { return }
+      guard await drainForFinish(operation: { await self.flushAndConfirm(session.id, finished: true) }) else { return }
       gym.refresh()
     }
     guard !Task.isCancelled, gym.account == account, sessionId == session.id, !gym.accountTransition else { return }
@@ -583,20 +600,21 @@ struct FinishWorkout: Action {
     }
     completeFinish(finished)
   }
-  // A successful push may precede its live hint. Confirmation runs after local controls are released.
-  func flushAndConfirm(_ id: ID<Session>) async {
+  // A successful push may precede its live hint: pull until the sets (before Finish) or the finish (after it) are confirmed.
+  func flushAndConfirm(_ id: ID<Session>, finished: Bool) async {
     guard let runtime = gym.runtime else { return }
     let account = gym.account
     await runtime.engine.flushOnLeave()
     guard !Task.isCancelled, gym.account == account, sessionId == id, !gym.accountTransition else { return }
     runtime.engine.foreground()
     while !Task.isCancelled {
-      gym.refresh()
+      if runtime.engine.lastChange != gym.readThrough { gym.refresh() }
       guard gym.account == account, sessionId == id, !gym.accountTransition, !gym.isAnonymous, !gym.authPaused,
             runtime.engine.status.online, !syncFailed, !gym.readFailed else { return }
       do {
         let waiting = try gym.runner.read(Gym.scope) { read in
           let loaded = try FinishWorkout(id: id).load(read)
+          if !finished { return loaded.serverHeld && loaded.stranded }
           guard loaded.training.drawn.first(where: { $0.id == id })?.isOpen == true else { return false }
           return try read.commands().contains { $0.command.name == Gym.Commands.finish && $0.command.args["sessionId"] == id.json }
         }
@@ -606,6 +624,7 @@ struct FinishWorkout: Action {
     }
   }
   func completeFinish(_ session: Session) {
+    receiptOwed = false
     guard receipt == nil, handoff == nil else { return }
     receipt = WorkoutReceiptData(session: session, sets: sets, routineId: gym.runner.mint(Routine.self),
                                  routinePosition: (gym.routines.map(\.position).max() ?? -1) + 1)
@@ -640,7 +659,7 @@ struct FinishWorkout: Action {
     gym.coachUnavailable = false
     sessionId = nil; walk = WorkoutWalk(); drafts = [:]; offerSession = nil; offerSets = []
     restoreRack(weightKg: Prefill.emptyBarKg, reps: Prefill.emptyBarReps, kind: .working); paging = false
-    receipt = nil; handoff = nil; message = nil; finishQueued = false; restore()
+    receipt = nil; receiptOwed = false; handoff = nil; message = nil; finishQueued = false; restore()
   }
 }
 

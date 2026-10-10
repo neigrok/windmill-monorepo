@@ -90,6 +90,7 @@ import XCTest
     let email = app.textFields["email-address"]
     XCTAssertTrue(email.waitForExistence(timeout: 5))
     email.tap(); email.typeText("shell@example.com")
+    XCTAssertTrue(email.waitForValue("shell@example.com"))
     app.buttons["Send code"].tap()
     let code = app.textFields["email-code"]
     XCTAssertTrue(code.waitForExistence(timeout: 5))

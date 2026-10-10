@@ -22,6 +22,7 @@ import XCTest
     app.buttons["email-sign-in"].tap()
     let email = app.textFields["email-address"]
     ready(email); email.tap(); email.typeText("shell@example.com")
+    XCTAssertTrue(email.waitForValue("shell@example.com"))
     app.buttons["Send code"].tap()
     let code = app.textFields["email-code"]
     ready(code); code.tap(); code.typeText("482913")
@@ -69,6 +70,7 @@ import XCTest
     let email = app.textFields["email-address"]
     ready(email)
     email.tap(); email.typeText("offline@example.invalid")
+    XCTAssertTrue(email.waitForValue("offline@example.invalid"))
     ready(app.buttons["Send code"])
     app.buttons["Send code"].tap()
     ready(app.buttons["Back"])
@@ -79,7 +81,7 @@ import XCTest
     app.buttons["write-today"].tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
     app.typeText(" Still writing.")
-    XCTAssertEqual(app.textViews["journal-editor"].value as? String, "Saved on this phone. Still writing.")
+    showsTyped(app.textViews["journal-editor"], "Saved on this phone. Still writing.")
   }
 
   func launch(mode: String, signedIn: Bool) -> XCUIApplication {
@@ -100,13 +102,11 @@ import XCTest
   func exercise(mode: String, signedIn: Bool, resumeDuringLaunch: Bool = false) {
     let app = launch(mode: mode, signedIn: signedIn)
     if resumeDuringLaunch {
-      XCUIDevice.shared.press(.home)
-      XCTAssertTrue(app.wait(for: .runningBackground, timeout: 3))
+      leaveForeground(app)
       app.activate()
     }
     useLocalRooms(app, suffix: " Cold.", signedIn: signedIn, restoringWorkout: false)
-    XCUIDevice.shared.press(.home)
-    XCTAssertTrue(app.wait(for: .runningBackground, timeout: 3))
+    leaveForeground(app)
     app.activate()
     useLocalRooms(app, suffix: " Resume.", signedIn: signedIn, restoringWorkout: true)
 
@@ -114,6 +114,23 @@ import XCTest
     app.launch()
     ready(app.buttons["room-menu"])
     XCTAssertEqual(app.textViews["journal-editor"].value as? String, "Saved on this phone. Cold. Resume.")
+  }
+
+  // The editor publishes its last keystrokes a moment after the keyboard has sent them.
+  func showsTyped(_ editor: XCUIElement, _ text: String, file: StaticString = #filePath, line: UInt = #line) {
+    let shown = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", text), object: editor)
+    XCTAssertEqual(XCTWaiter.wait(for: [shown], timeout: 5), .completed, "The editor must show what was typed: \(editor.value ?? "nothing")",
+                   file: file, line: line)
+  }
+
+  // Home hands the app to SpringBoard, which may keep it running or suspend it; either way it has left the foreground.
+  func leaveForeground(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+    XCUIDevice.shared.press(.home)
+    let backgrounded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      app.state == .runningBackground || app.state == .runningBackgroundSuspended
+    }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [backgrounded], timeout: 10), .completed, "The app must leave the foreground before it resumes.",
+                   file: file, line: line)
   }
 
   func useLocalRooms(_ app: XCUIApplication, suffix: String, signedIn: Bool, restoringWorkout: Bool) {
@@ -126,7 +143,7 @@ import XCTest
     app.buttons["write-today"].tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3))
     app.typeText(suffix)
-    XCTAssertEqual(editor.value as? String, previous + suffix)
+    showsTyped(editor, previous + suffix)
     app.buttons["done-writing"].tap()
 
     switchRoom("Gym", in: app)

@@ -471,6 +471,18 @@ struct AccountConfirmation: UIViewControllerRepresentable {
     var settling = false
     weak var dialog: UIAlertController?
     override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); showConfirmation() }
+    func afterDismissal(of controller: UIViewController, perform completion: @escaping () -> Void) {
+      // A rejected transition can still invoke its completion after dismissal.
+      var completed = false
+      let finish = {
+        guard !completed else { return }
+        completed = true
+        completion()
+      }
+      if let transition = controller.transitionCoordinator,
+         transition.animate(alongsideTransition: nil, completion: { _ in finish() }) { return }
+      controller.dismiss(animated: true, completion: finish)
+    }
     func showConfirmation() {
       guard let model, !settling, view.window != nil else { return }
       guard model.identityTaken || model.sheet == .adoption || model.sheet == .discardAdoption else {
@@ -492,9 +504,7 @@ struct AccountConfirmation: UIViewControllerRepresentable {
               self?.showConfirmation()
             }
           }
-          if let transition = alert.transitionCoordinator {
-            transition.animate(alongsideTransition: nil) { _ in finish() }
-          } else { alert.dismiss(animated: true, completion: finish) }
+          self.afterDismissal(of: alert, perform: finish)
         })
       }
       if model.identityTaken {

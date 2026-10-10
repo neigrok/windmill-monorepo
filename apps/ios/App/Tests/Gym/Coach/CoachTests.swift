@@ -62,6 +62,59 @@ import SyncModelServer
     return "event: snapshot\ndata: " + String(decoding: data, as: UTF8.self) + "\n\n"
   }
 
+  @Test(arguments: [false, true]) func completedRequestDismissesNativeComposerFocus(renderWhileAsking: Bool) async throws {
+    let (gym, rest, _) = try await authed(.stalled), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let coach = CoachConversation(gym: gym, rest: rest, store: cache)
+    await coach.activate(); coach.edit("Remove Push A.")
+    let tab = CoachTab(gym: gym, coach: coach)
+    let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+    let previousKeyWindow = scene.windows.first(where: \.isKeyWindow)
+    let window = UIWindow(windowScene: scene)
+    let host = UIHostingController(rootView: NavigationStack { tab })
+    window.rootViewController = host
+    window.makeKeyAndVisible()
+    defer {
+      coach.work?.cancel()
+      window.isHidden = true
+      window.rootViewController = nil
+      previousKeyWindow?.makeKeyAndVisible()
+    }
+    host.view.layoutIfNeeded()
+    func descendants(_ view: UIView) -> [UIView] {
+      view.subviews.flatMap { [$0] + descendants($0) }
+    }
+    let input = try #require(descendants(host.view).first { $0 is UITextField || $0 is UITextView })
+    #expect(((input as? UITextField)?.text ?? (input as? UITextView)?.text) == "Remove Push A.")
+    #expect(input.becomeFirstResponder())
+    host.view.setNeedsLayout(); host.view.layoutIfNeeded()
+    #expect(input.isFirstResponder)
+    coach.send()
+    let request = try #require(coach.saved.request), work = try #require(coach.work)
+    if renderWhileAsking {
+      host.view.setNeedsLayout(); host.view.layoutIfNeeded()
+      let waitingInput = try #require(descendants(host.view).first { $0 is UITextField || $0 is UITextView })
+      #expect(coach.asking)
+      #expect(((waitingInput as? UITextField)?.text ?? (waitingInput as? UITextView)?.text) == "Remove Push A.")
+      #expect(!waitingInput.isFirstResponder)
+      #expect(!input.isFirstResponder)
+    }
+    let body: [String: Any] = ["thread": request.thread, "generation": ["id": "focus-generation", "requestId": request.requestId,
+      "question": request.question, "status": "completed", "revision": 1, "answer": "The proposal is ready."]]
+    let response = String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self)
+    CoachTestProtocol.state.withLock { $0.reply = .http(200, response) }
+    await work.value
+    host.view.setNeedsLayout(); host.view.layoutIfNeeded()
+    #expect(coach.activeGeneration?.status == "completed" && !coach.asking)
+    #expect(coach.activeGeneration?.answer == "The proposal is ready.")
+    #expect(CoachTestProtocol.state.withLock { $0.requests.count == 1 })
+    let completedInput = try #require(descendants(host.view).first { $0 is UITextField || $0 is UITextView })
+    #expect(((completedInput as? UITextField)?.text ?? (completedInput as? UITextView)?.text) == "")
+    #expect(((completedInput as? UITextField)?.isEnabled ?? (completedInput as? UITextView)?.isEditable) == true)
+    #expect(!input.isFirstResponder)
+    #expect(!descendants(host.view).contains { $0.isFirstResponder })
+  }
+
   @Test func largeSnapshotsValidateCredentialsPerEvent() async throws {
     let answer = String(repeating: "private answer ", count: 2_048)
     let stream = try snapshotEvent(status: "running", revision: 1, answer: answer) + snapshotEvent(status: "completed", revision: 2, answer: answer)
@@ -224,7 +277,7 @@ import SyncModelServer
       catch { timedOut = (error as? URLError)?.code == .timedOut }
     }
     try await settle { CoachTestProtocol.state.withLock { !$0.requests.isEmpty } }
-    try await Task.sleep(for: .milliseconds(200))
+    try await settle { completed && rest.tasks.isEmpty }
     #expect(completed && timedOut && rest.tasks.isEmpty)
     call.cancel(); await call.value
     #expect(!telemetry.entries.withLock { $0.flatMap { $0.properties.values } }.contains { $0.contains("private") })

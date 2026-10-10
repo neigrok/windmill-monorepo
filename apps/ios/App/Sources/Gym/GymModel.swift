@@ -37,8 +37,10 @@ final class GymModel {
   var notices: [DomainNotice<GymRefusal>] = []
   var adoptionWorkouts: [SignedOutWorkout] = []
   @ObservationIgnored var observationTask: Task<Void, Never>?
+  @ObservationIgnored var clockTask: Task<Void, Never>?
   @ObservationIgnored var scopeViews: [RecordsView] = []
   @ObservationIgnored var observationGeneration = 0
+  @ObservationIgnored var readThrough: UInt64?
   @ObservationIgnored var proposalReadReplica: String?
   var coachRemovalReceipts: [RoutineRemovalReceipt] = []
   @ObservationIgnored var shownCoachRemovals: [String: Proposal] = [:]
@@ -91,6 +93,14 @@ final class GymModel {
         self?.refresh()
       }
     }
+    // Day labels, record windows and a stale workout's close move with the clock, never faster than a minute.
+    clockTask = Task { [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(60))
+        guard let self, !Task.isCancelled else { return }
+        self.refresh()
+      }
+    }
     refresh()
   }
 
@@ -106,17 +116,20 @@ final class GymModel {
     } onChange: { [weak self] in
       Task { @MainActor [weak self] in
         guard let self, self.observationGeneration == generation else { return }
-        self.observeScopes(generation); self.refresh()
+        self.observeScopes(generation)
+        // The views land a change one by one, after the store holds it; the first landing reads it all.
+        if self.runtime?.engine.lastChange != self.readThrough { self.refresh() }
       }
     }
   }
 
   func stop() {
     observationGeneration += 1; scopeViews = []
-    observationTask?.cancel(); observationTask = nil; rest.cancel()
+    observationTask?.cancel(); observationTask = nil; clockTask?.cancel(); clockTask = nil; rest.cancel()
   }
 
   func refresh() {
+    readThrough = runtime?.engine.lastChange
     defer { existingWorkoutActivity?.schedule() }
     let wasReadFailed = readFailed
     let previousAccount = account, previousAnonymous = isAnonymous
@@ -175,7 +188,7 @@ final class GymModel {
       readFailed = false
       if wasReadFailed, error == "Gym could not be read from this phone. Try again." { error = nil }
     } catch {
-      readFailed = true; self.error = "Gym could not be read from this phone. Try again."
+      readFailed = true; readThrough = nil; self.error = "Gym could not be read from this phone. Try again."
       report("gym_read", error)
     }
   }

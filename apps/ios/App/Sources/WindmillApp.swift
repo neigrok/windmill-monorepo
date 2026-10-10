@@ -25,6 +25,8 @@ struct WindmillApp: App {
                              directory: URL.applicationSupportDirectory.appending(path: "WindmillTelemetry"), debug: debug)
     WorkoutActivityIntentHandler.telemetry = telemetry
     telemetry.event("app_started")
+    // An open iOS 26 menu never lets UIKit animations settle, so XCTest would stall after every menu tap.
+    if settings.automated { UIView.setAnimationsEnabled(false) }
   }
   var body: some Scene {
     WindowGroup {
@@ -57,7 +59,9 @@ struct WindmillApp: App {
           let preferences = suite.map { UserDefaults(suiteName: $0)! } ?? .standard
           if settings.scenario != nil, !settings.restoreBoard, let suite { preferences.removePersistentDomain(forName: suite) }
           if !settings.restoreBoard, let board = settings.board { preferences.removePersistentDomain(forName: "board-\(board)") }
-          let created = try WorkoutActivityIntentHandler.model ?? AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: telemetry)
+          let authenticationTime = settings.appleFixture == "hello-failure" ? Date() : nil
+          let created = try WorkoutActivityIntentHandler.model ?? AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: telemetry,
+            authRetryNow: { authenticationTime ?? Date() })
           WorkoutActivityIntentHandler.model = created
           created.gym.startWorkoutActivity()
           var onboardingFixture = false
@@ -98,7 +102,15 @@ struct RootScreen: View {
       else if model.welcome { welcome.onAppear { model.screenViewed("welcome") } }
       else if model.selectedRoom == .journal { JournalScreen(model: model.journal, app: model).environment(\.colorScheme, .dark) }
       else { GymRoom(gym: model.gym, app: model) }
-    }.sheet(isPresented: Binding(get: { model.sheet != nil }, set: { if !$0 { model.cancelAuthentication(); model.sheet = nil } }), onDismiss: { model.dismissSheet() }) { AccountSheet(model: model) }
+    }
+    .background {
+      #if DEBUG && targetEnvironment(simulator)
+      if model.runtime?.settings.scenario == "gym-e2e-conflict" {
+        GymConflictFixtureStatus(model: model).frame(width: 1, height: 1).allowsHitTesting(false)
+      }
+      #endif
+    }
+    .sheet(isPresented: Binding(get: { model.sheet != nil }, set: { if !$0 { model.cancelAuthentication(); model.sheet = nil } }), onDismiss: { model.dismissSheet() }) { AccountSheet(model: model) }
       .environment(\.dynamicTypeSize, model.runtime?.settings.board?.contains("AX3") == true ? .accessibility3 : typeSize)
   }
 

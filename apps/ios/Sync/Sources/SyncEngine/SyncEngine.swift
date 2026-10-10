@@ -204,6 +204,9 @@ public final class SyncEngine: Replica {
   @MainActor public var undoOffers: UndoOffers { hub.undoOffers }
   @MainActor public var status: SyncStatus { hub.status }
 
+  // The sequence of the last change committed to the store; a read begun after taking it sees that change.
+  public var lastChange: UInt64 { core.publisher.lastChange }
+
   // Every event from now on, one stream per subscriber: terminal outcomes, telemetry and changes of the active replica.
   public func events() -> AsyncStream<EngineEvent> {
     core.publisher.events()
