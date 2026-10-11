@@ -51,6 +51,41 @@ jobs:
           printf '%s' "$ASC_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
           openssl pkey -in "$RUNNER_TEMP/AuthKey.p8" -noout
 
+      # Automatic signing reuses this one certificate. Only codesign may use its key; print its SHA-1, never its name.
+      - name: Install the development signing certificate
+        env:
+          IOS_DEV_CERT_P12_BASE64: ${{ secrets.IOS_DEV_CERT_P12_BASE64 }}
+          IOS_DEV_CERT_PASSWORD: ${{ secrets.IOS_DEV_CERT_PASSWORD }}
+        run: |
+          test -n "$IOS_DEV_CERT_P12_BASE64" || { echo 'IOS_DEV_CERT_P12_BASE64 is required.'; exit 1; }
+          test -n "$IOS_DEV_CERT_PASSWORD" || { echo 'IOS_DEV_CERT_PASSWORD is required.'; exit 1; }
+          umask 077
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password="$(openssl rand -hex 32)"
+          security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"[[:space:]]*$//' > "$RUNNER_TEMP/user-keychains"
+          printf '%s' "$IOS_DEV_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/signing.p12" -k "$keychain" -f pkcs12 -P "$IOS_DEV_CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/signing.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" > /dev/null
+          search_list=("$keychain")
+          while IFS= read -r path; do search_list+=("$path"); done < "$RUNNER_TEMP/user-keychains"
+          security list-keychains -d user -s "${search_list[@]}"
+          identities="$(security find-identity -v -p codesigning "$keychain")"
+          identity_count="$(grep -cE '^ *[0-9]+\) [0-9A-F]{40} "' <<< "$identities" || true)"
+          development_sha1="$(grep -E '^ *[0-9]+\) [0-9A-F]{40} "Apple Development: ' <<< "$identities" | awk '{ print $2 }' || true)"
+          echo "Valid code-signing identities in the signing keychain: $identity_count"
+          if [ "$identity_count" != 1 ] || [ -z "$development_sha1" ]; then
+            echo 'Expected exactly one valid Apple Development identity. The certificate may have expired or been revoked,'
+            echo 'IOS_DEV_CERT_P12_BASE64 may hold the wrong file, or it is not an Apple Development certificate with its key.'
+            exit 1
+          fi
+          echo "Signing certificate SHA-1: $development_sha1"
+          echo "SIGNING_CERT_SHA1=$development_sha1" >> "$GITHUB_ENV"
+
       # Automatic signing archives with a development profile; a device must be registered on the team.
       # App Store export re-signs that archive for distribution. Do not override the signing identity:
       # a command-line Apple Distribution identity also reaches SPM targets and breaks automatic signing.
@@ -62,6 +97,25 @@ jobs:
             -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: The archive is signed with the stored certificate
+        run: |
+          shopt -s nullglob
+          bundles=("$RUNNER_TEMP"/Windmill.xcarchive/Products/Applications/*.app)
+          test ${#bundles[@]} -eq 1 || { echo 'The archive should hold exactly one app.'; exit 1; }
+          bundles+=("${bundles[0]}"/PlugIns/*.appex)
+          expected_sha1="$(tr '[:lower:]' '[:upper:]' <<< "$SIGNING_CERT_SHA1")"
+          for bundle in "${bundles[@]}"; do
+            codesign -d --extract-certificates="$RUNNER_TEMP/archive-cert-" "$bundle"
+            signed_sha1="$(shasum -a 1 "$RUNNER_TEMP/archive-cert-0" | awk '{ print toupper($1) }')"
+            rm -f "$RUNNER_TEMP"/archive-cert-*
+            if [ "$signed_sha1" != "$expected_sha1" ]; then
+              echo "${bundle##*/} is signed with certificate $signed_sha1, not the stored certificate $expected_sha1."
+              echo 'Xcode signed with a different certificate, most likely one it just created: the stored certificate is not being picked up.'
+              exit 1
+            fi
+            echo "${bundle##*/} is signed with the stored certificate."
+          done
 
       - name: Retain release symbols
         uses: actions/upload-artifact@v4
@@ -92,6 +146,20 @@ jobs:
             -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: Remove the signing keychain
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/signing.p12" "$RUNNER_TEMP"/archive-cert-*
+          if [ -f "$RUNNER_TEMP/user-keychains" ]; then
+            search_list=()
+            while IFS= read -r path; do search_list+=("$path"); done < "$RUNNER_TEMP/user-keychains"
+            security list-keychains -d user -s "${search_list[@]}" || true
+            rm -f "$RUNNER_TEMP/user-keychains"
+          fi
+          if [ -e "$RUNNER_TEMP/signing.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+          fi
 
       - name: Remove the App Store Connect key
         if: always()

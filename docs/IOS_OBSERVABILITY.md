@@ -226,10 +226,15 @@ manifest follows [Apple's required API reasons](https://developer.apple.com/docu
 and [data collection categories](https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacycollecteddatatypes/nsprivacycollecteddatatype).
 
 `.github/workflows/ios-release.yml` runs only through `workflow_dispatch`, with Xcode 26.3. It uses
-`APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8_BASE64` and `IOS_SENTRY_DSN`. It archives
-with automatic development signing (a registered device is required), then exports/re-signs for
-App Store Connect and uploads. Build number is the workflow run number. It never forces a distribution
-identity onto SPM targets. dSYMs are retained as CI artifacts; uploading them to Sentry requires
+`APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8_BASE64`, `IOS_DEV_CERT_P12_BASE64`,
+`IOS_DEV_CERT_PASSWORD` and `IOS_SENTRY_DSN`. `IOS_DEV_CERT_P12_BASE64` is the base64 of a
+password-protected .p12 holding one Apple Development certificate and its private key; the workflow
+imports it into a temporary keychain, so automatic development signing reuses that certificate
+instead of creating one per run. It archives with automatic development signing (a registered device
+is required), fails if the app or its extension is signed by any other certificate, then
+exports/re-signs for App Store Connect and uploads. The certificate expires after a year; then export
+a new one from Keychain and set both secrets again. Build number is the workflow run number. It never
+forces a distribution identity onto SPM targets. dSYMs are retained as CI artifacts; uploading them to Sentry requires
 authentication beyond the DSN and is not configured with the existing secrets.
 
 ## Local checks
