@@ -1,4 +1,4 @@
-# iOS redesign — iteration 1
+# iOS redesign — iteration 2
 
 The design contract for the Windmill iOS app (`apps/ios/App`): the shell, the Journal room and the
 Gym room, on iOS 26 with Liquid Glass, deploying to iOS 18. It rules how the app renders; the
@@ -9,8 +9,10 @@ room. Where this file and a brief disagree, this file wins on iOS and the disagr
 
 Drawings of record: the Gym file section **iOS redesign · iteration 1 · 2026-10-08** on page `iOS`
 and the Design System file sections **7 · Shell chrome** and **2c · Echoes on iOS** on page
-`iOS · First run · 2026-09-26` (node ids in §10). Build from §7 in order; each later iteration
-reviews screenshots against §11.
+`iOS · First run · 2026-09-26` (node ids in §10). The boards draw iteration 1; where this text
+rules past them the difference is in `consistency.md` (9i–9n). Build from §7 in order; each
+iteration reviews screenshots against §11. The iteration-2 review of the iteration-1 build is
+`.claude/scratch/ios-design/phase2/designer-review.md`.
 
 ---
 
@@ -61,7 +63,9 @@ under `onboarding/` in the app's own `Resources/Assets.xcassets`.
 in every tab inherit it whatever order a screen applies its modifiers in; the page modifier
 (`GymPage`, §5) carries the same tint into every sheet the room raises. The system draws the
 selection; the room supplies the symbol and the tint (`gym/briefs/12-native-idiom.md`, "A native
-tab bar's selected state").
+tab bar's selected state"). The front room also sets the hosting window's `tintColor` to its
+accent, so the chrome UIKit draws outside the SwiftUI tree — the keyboard's return key, text
+selection, the share sheet — carries the room's colour and never the system blue.
 
 ### Gym — verdigris on verdigris-grey stone
 
@@ -96,7 +100,7 @@ the keyline; the banner ground stays the system's.
 
 ### Journal — lamp on ink
 
-| Role | Night | Day (iteration 2) |
+| Role | Night | Day |
 |---|---|---|
 | `journal/canvas` | `#0B0E16` | `#F7F7F5` |
 | `journal/card` | `#161921` | `#FFFFFF` |
@@ -112,13 +116,14 @@ the keyline; the banner ground stays the system's.
 | `journal/energy` | `#9AA859` | `#7D8C43` |
 | `journal/mood-*` | the eleven-step ramp `journal/mood-0`…`mood-10` | `scales.md` |
 
-Journal renders night in both appearances in iteration 1: `RootScreen` gives the Journal room a
-dark environment, and the rest of the shell follows the system. The Day column is the web's journal
-day ramp — paper in north light with cool ink (`web/src/styles/tokens/palettes.css`,
-`[data-theme="light"][data-brand="journal"]`) — with the lamp darkened to `#90651C` for 4.5:1 text,
-and is the contract for iteration 2, when Appearance arrives in You and the room answers light
-with paper. The onboarding glimpse's warm day inks (`OnboardingGlimpses.swift:96-97,168-170`)
-move to these values then.
+Journal answers dark with Night and light with Day; the choice is the shell's — Appearance
+(Light · Dark · System) in You's Settings, System by default (`superapp-shell.md` §6), stated as
+the window's `preferredColorScheme` and as an environment override down the tree. The Day column
+is the web's journal day ramp — paper in north light with cool ink
+(`web/src/styles/tokens/palettes.css`, `[data-theme="light"][data-brand="journal"]`) — with the
+lamp darkened to `#90651C` for 4.5:1 text. The onboarding glimpse's warm day inks
+(`OnboardingGlimpses.swift:96-97,168-170`) take these values with it. The status bar follows the
+room: a night canvas under a light status bar is a defect in either appearance.
 
 ### Shell — clay
 
@@ -188,7 +193,14 @@ ramp, by role:
 | Ink notes | Caveat 24 | |
 
 Monospaced digits on every numeral that changes while shown (clocks, weights). The monospaced
-*face* is reserved for the journal date line and gym read receipts.
+*face* is reserved for the journal date line and gym read receipts. A fact is `.footnote` in the
+text face, left-aligned with the prose above it; nothing is centred under left-aligned text.
+
+**Counts and labels.** Every count passes through one formatter with real plurals — *1 session*,
+*2 working sets*, *1 movement* — and the formatter is the only place a plural is spelled. A tile's
+label is a noun (*Duration · Working sets · Volume*), never a unit; the unit rides on the value
+(*1620 kg*). A chart's axis labels round to the step the series moves in — plate loads to the
+nearest 5 (*110 · 60*), bodyweight to one decimal — never to two decimals.
 
 The ramp is the public API: `Design.text(_:)`, `.strong(_:)`, `.title(_:)` and `.mono(_:)` with
 an arbitrary size (`Design.swift:18-22`, 99 call sites) are replaced by named roles
@@ -256,6 +268,11 @@ through the glass.
 CTA copy is at most three words: *Just start logging*, *Start workout*, *Log set · 100 × 5*,
 *Save routine*, *Share with Coach*, *Keep this log*, *Weigh in*, *Save the fix*, *Set*.
 
+**Doors and actions in a list.** A row that navigates is a `NavigationLink`: ink label, optional
+symbol, the system's chevron — *Movements*, *Open record*, *Gym settings*. A row that acts is a
+`Button` in `accent` with no chevron — *Add movement*, *New chat*. A screen's one primary is never a
+row; it is the band. Accent text on a door, or a chevron on an action, is a defect.
+
 ### The tab bar
 
 The system `TabView` with the `Tab` API, `.tabBarMinimizeBehavior(.onScrollDown)` on iOS 26.
@@ -319,8 +336,32 @@ demonstrated (§6 there):
 | `RoomDoor` — the Where to start? card, given a title, line, symbol, accent and ground | the two cards in `WindmillApp.swift:113,128` | Shell |
 | `IdentityRow`, `FactRow`, `DoorRow` in You | the custom rows in `AccountSheet.swift:308,315,358` | Shell |
 
-Empty states are `ContentUnavailableView` for a whole screen and one secondary line for an empty
-section; no third shape.
+### Lists
+
+Every list is `.insetGrouped` with the system's insets, and its sections follow four rules:
+
+- **Rows that belong together are one section.** A list is never a stack of one-row cards: the
+  routines, the proposal row and the *Movements* door are three sections at most; *Gym settings* and
+  *About Windmill* are two rows of one **Settings** section. A section stands alone only when it is a
+  door to another place or a destructive act (*Sign out*, *Erase data*).
+- **A header is the list's own**, sentence case, drawn by `Section`; never a hand-set uppercase
+  caption with its own padding. A field that is the section's only row carries no header: its
+  placeholder is the label (*Name*, *kg*).
+- **An empty section draws its one line as its footer** (*No workouts with this routine yet.*),
+  never as a row in a card. The end of a long list is the last section's footer (*First session ·
+  26 Sep*), never a card. A whole empty screen is `ContentUnavailableView`. No third shape.
+- **One caption per section, at most twelve words**, and never a caption that repeats a placeholder,
+  a title or the label on the button below it (`guidelines/text-budget.md`).
+
+### Status
+
+A state the lifter did not ask for — offline, unsent, paused, refused — is never a sentence at the
+head of the content. It is one of four things: the transient band (§5) when it is news; a disabled
+control with the reason as that section's footer when it blocks a door (*Sign-in needs a
+connection.* under the disabled Apple and email doors); a symbol on the row it describes (`iphone`
+on an unsent set or session); or a row in the one place that owns it (**On this phone**, §7.16).
+*Coach needs a connection.*, *3 sets are saved on this device only.* and *Your full training
+history needs a connection to finish syncing.* are bands, not canvas text.
 
 ### One transient band
 
@@ -331,9 +372,11 @@ reach band above the primary, honouring the delete window (`gym/briefs/13-gestur
 (`RoutinesTab.swift:205`, list sections in red), `LogNoticeBand` (`LogPresentation.swift:151`),
 `CoachNoticeBand` (`CoachScreens.swift:39`), the share message section (`LogTab.swift:125`) and the
 message rows of `WorkoutNotice` (`WorkoutScreen.swift:351`). Refusal text is `gym/ink`, never
-red: the band is the signal. `WorkoutAdoptionBand` (`GymWorkoutAdoption.swift:15`) keeps its
-own place as a card at the head of Routines, with its three sentences cut to one: *A signed-out
-workout is on this phone · 12 sets · Push A* and the one button *Keep as finished workout*.
+red: the band is the signal. A refusal is at most twelve words and names the way out (*Set not
+sent — ten unsent sets is the limit. Send or remove one.*); the copy is the brief's. The signed-out
+workout a signed-in account has not taken (`WorkoutAdoptionBand`, `GymWorkoutAdoption.swift:15`)
+is not a band and not a card on Routines: it is a row of **On this phone** at the head of The log
+(§7.16).
 
 ## 6. Coach, decluttered
 
@@ -365,13 +408,20 @@ Connected log
 
 **The composer** is one capsule on `gym/card`: `photo.badge.plus` (44 pt, leading, quiet) ·
 the field *Ask about your training* (1–5 lines) · the send button, a 36 pt circle filled
-`gym/accent` with `arrow.up` in `on-accent`, swapping to `stop.fill` while Coach answers. A chosen
-photo shows as a 56 pt thumbnail above the field with an `xmark.circle.fill` on its corner, not a
-*Remove photo* text button. The byte-limit refusal appears in the transient band.
+`gym/accent` with `arrow.up` in `on-accent`, swapping to `stop.fill` while Coach answers. Disabled
+— an empty field, offline, the allowance spent — it is the same circle at 40 % opacity, never a
+different size, shape or colour. A chosen photo shows as a 56 pt thumbnail above the field with an
+`xmark.circle.fill` on its corner, not a *Remove photo* text button. The byte-limit refusal appears
+in the transient band.
 
-**The lifter's turn** is a right-aligned bubble on `gym/accent-soft`, radius 18, max width 78 %.
-**Coach's turn** is plain prose on the canvas, no bubble, 16 pt gutter. Markdown headings
-`.headline`; code `.body.monospaced()`.
+**Offline** is a band, not a sentence on the canvas: *Coach needs a connection.* rises in the
+transient when the room opens offline and again on a send attempt, dismissable with `xmark`; the
+canvas holds the conversation and nothing else.
+
+**The lifter's turn** is a right-aligned bubble on `gym/accent-soft`, radius 18, max width 78 %; a
+sent photo is a 56 pt thumbnail, radius 8, under the text and trailing-aligned — the composer's
+draft thumbnail, not a bubble-wide image. **Coach's turn** is plain prose on the canvas, no bubble,
+16 pt gutter. Markdown headings `.headline`; code `.body.monospaced()`.
 
 **The read receipt** under an answer is one `.footnote` row in `ink-dim`: *read 214 sets · 6
 weeks · 18 sessions* with a trailing `chevron.right`. It is a door to a sheet *What Coach read*
@@ -399,20 +449,33 @@ phone allowance ships, when `09-coach.md` applies.
 **The Review sheet** (`ProposalReview.swift`) keeps its diff cards and its scroll-to-the-end
 Apply. *proposed by Coach · 26 Sep 18:42* becomes the sheet's subtitle; the label *Coach wrote:*
 goes (the quote bar is the attribution); *Ask Coach* is a quiet accent button under the cards;
-the band drops the explanatory sentence under Apply when Apply is enabled (the label *Apply all
-4* says it) and draws *Turn this down* in `gym/alarm`, not system red.
+*Turn this down* is `gym/alarm`, not system red. The band holds one caption slot under Apply, and
+the slot never empties, so Apply never moves: while the diff is unseen it reads the gate's sentence
+*Scroll to the end to apply.*; once the end has been seen it reads the atomic promise (*All 4 or
+none. Nothing is applied until you tap.*, or the removal's *The routine goes and your logged sets
+stay. Nothing is removed until you tap.*). A removal that waits on the log shows *Waiting for the
+log…* with a `ProgressView` for 15 seconds, then *Still waiting for the log.* with a quiet *Retry*
+that resends the same command; the receipt replaces both when it lands. Never a spinner without an
+end.
 
 **History** (`CoachHistory.swift`) is a plain list of conversation rows — question, state
-caption, date — each the door to its conversation. The sentence *Deleting a conversation keeps
-applied routine changes, created routines and saved notes.* leaves the screen and becomes the
-transient after a swipe-delete, beside its Undo. The pinned *Ask something new* goes: Back returns
-to the composer.
+caption in `ink-dim`, date — each the door to its conversation. The sentence *Deleting a
+conversation keeps applied routine changes, created routines and saved notes.* leaves the screen
+and becomes the transient after a swipe-delete, beside its Undo. The pinned *Ask something new*
+goes: Back returns to the composer.
 
-**Notes** drops the second heading line *what you write for Coach* and keeps the one fact *Any
-agent you connect can read these too.* (`10-notes.md`). **Gym settings** (`CoachScreens.swift:76`)
-loses its *Account* row and the hint, and loses the Units picker until the phone draws lb: a
-control whose footer says *This phone still draws kg.* is a control that does nothing here.
-Gym settings is then *Notes*, *Connected log* and, when a workout is hidden, *Restore workout*.
+**Notes** drops the second heading line *what you write for Coach* and the footer *Top note
+wins.* (the drag handle in Edit carries the order) and keeps the one fact *Any agent you connect
+can read these too.* (`10-notes.md`). **Gym settings** (`CoachScreens.swift:76`) loses its
+*Account* row and the hint, and loses the Units picker until the phone draws lb: a control whose
+footer says *This phone still draws kg.* is a control that does nothing here. Gym settings is then
+*Notes*, *Connected log* and, when a workout is hidden, *Restore workout* — and nothing about the
+account, the update or the phone's unsent work, which You and The log own (§7.15, §7.16).
+
+**Connected log** (`19-connected-log.md`) puts its one primary in the reach band: *Connect a tool*
+is the floating `ActionBand` with `arrow.up.forward` trailing (*Sign in first* signed out);
+*Manage connections* is a quiet row above the *How this works* disclosure; the head line *Your
+log, read by Claude, Cursor or Codex.* is `.subheadline ink-dim` on the canvas, not a heading.
 
 ## 7. Per-screen changes, in priority order
 
@@ -471,7 +534,17 @@ follow with 7.11 and 7.12.
   are not a screen.
 - The movement picker's rows are the two-line `MovementRow`: the name, then *Barbell · last
   80 × 5 · 3 days ago* or *Barbell · never logged* in `ink-dim`; the third mono line goes
-  (`MovementPicker.swift:252–259`). *Create movement* stays the pinned primary.
+  (`MovementPicker.swift:252–259`). *Create movement* stays the pinned primary. The picker is
+  titled *Add movement* from the builder and *Next movement* from the workout — never a question.
+- The builder's name field carries no section header: the placeholder *Name* is the label
+  (`15-the-routine.md`, "Name is the first field"). *History* is drawn only when it has rows; a
+  new routine has none and shows none.
+- The targets sheet keeps *You decide the numbers at the rack.* as its one line while the scheme is
+  open and draws no footer under the fields: *last time* and *max* as placeholders are the
+  disclosure.
+- Create movement refuses nothing on first paint. *Add to routine* enables once the name is
+  non-blank; a refusal appears on the attempt, one at a time, name first. An open target is a valid
+  target, so *Choose at least one set.* is never drawn.
 
 ### 7.6 The log
 
@@ -494,13 +567,22 @@ follow with 7.11 and 7.12.
   line already says the best, and the Record screen says the rest.
 - Older sessions load when the last row appears; the *Load older* button (`LogTab.swift:117`)
   becomes a `ProgressView` row, and a failed read a *Try again* row.
-- Large title *The log*; no room actions in the bar.
+- Large title *The log*; no room actions in the bar. Signed in, the head gains the **On this
+  phone** section when a workout waits (§7.16).
+- A moment is a quiet row: an 8 pt `gym/record` dot before the name, the facts in `.footnote` —
+  never a coin-sized disc. The end of the list is the last section's footer *First session ·
+  26 Sep* (§5 Lists).
 - The Record screen (`MovementRecordScreen.swift`): the equipment is the subtitle under the
   movement name, not a one-word card; *Best e1RM* and *Heaviest* are two `FactTiles` side by
   side, not two full-width cards; *Rename* moves into an `ellipsis.circle` menu with *Rename
   movement*, so the bar holds one symbol. Facts and axis labels keep monospaced digits in the
   text face, not the monospaced face (`LogTab.swift`, `MovementRecordScreen.swift`,
-  `SessionDetailScreen.swift` set `.monospaced()` on prose-length facts today).
+  `SessionDetailScreen.swift` set `.monospaced()` on prose-length facts today); axis labels round
+  to the plate step (§3).
+- Bodyweight (`BodyweightScreen.swift`): a weigh-in row is *26 Sep* · *82.4 kg* and nothing else —
+  no pencil, the row is the door to its repair sheet; the year appears only when it is not the
+  current one. The chart's caption *Every point is a number you typed. Nothing here is estimated.*
+  stays; *Coach can read this. It can never write it.* is the list's footer.
 
 ### 7.7 Workout
 
@@ -511,11 +593,18 @@ follow with 7.11 and 7.12.
   and Android; the Fix sheet keeps *Kind* as a segmented control (warmup · working · drop ·
   failure).
 - The rack is a panel on `gym/card`, top radius 20, padding 16: numeral row (`68` rounded bold ·
-  *kg* `.title3 ink-dim`), four glass ladder keys, the reps row (`minus` · *5 reps* `.title3` ·
-  `plus`), then *Log set · 100 × 5* prominent. Previous/Next are 44 pt glass circles beside the
-  movement name; *Movement 1 of 2* is the eyebrow above the name; the plan line *plan 4 × 5 @ 100*
-  sits under it in `ink-dim`.
-- The clocks are one `.footnote` line under the plan: *32:10 · 1:37 since last set*.
+  *kg* `.title3 ink-dim`), four glass ladder keys, the reps row (`minus` and `plus` as matching
+  44 pt glass circles either side of *5 reps* `.title3`), then *Log set · 100 × 5* prominent.
+  Previous/Next are 44 pt glass circles beside the movement name; *Movement 1 of 2* is the eyebrow
+  above the name; the plan line *plan 4 × 5 @ 100* sits under it in `ink-dim`.
+- The clocks are one `.footnote` line under the plan: *32:10 · 1:37 since last set*. The second
+  clock anchors to the latest valid set, falling back to the start, and never equals the first
+  while a set has been logged.
+- The ledger draws sets in the order they were logged, and that order is the same on every
+  draw and every surface; a warmup logged between working sets stays between them.
+- The current row is its ordinal, its target readout (*100 × 5*, or *open*) and the accent dot —
+  never the words *Current set* or *Target*, never a sentence (`16-the-workout.md`: the row names
+  its target without repeating the rack draft).
 - An unsent set is marked once: the trailing `iphone` symbol on its row (as in the log, 7.6).
   The caption *on this device* under every row and the banner *3 sets are saved on this device
   only.* (`WorkoutScreen.swift:212,370`) say the same thing three times; both go.
@@ -523,6 +612,14 @@ follow with 7.11 and 7.12.
   subtitle the start time (`.navigationSubtitle`).
 - The *This session* sheet drops its section header *3 sets logged* (`WorkoutSheets.swift:185`):
   each row already carries its count. *Hide workout* keeps its one-line footer.
+
+**The Live Activity** (`WorkoutActivityWidget`) is the ledger's current row on the lock screen,
+not a form. Banner and expanded Island: the routine name with the room symbol leading and the
+workout clock alone, unlabelled, trailing; the movement name; the prefilled set *100 kg × 5* as
+the one large line; under it one `.caption` line *Set 3 of 4 · 0:12 since last set*; *3 not sent
+yet* bottom-leading only while true; *Log set* bottom-trailing in `gym/accent`. No clock carries a
+label (`16-the-workout.md`). Compact Island: the room symbol and the workout clock leading, the
+since-last-set clock trailing. Minimal: the room symbol.
 
 ### 7.8 Session detail
 
@@ -533,15 +630,19 @@ follow with 7.11 and 7.12.
   an `ellipsis.circle` menu, destructive. The bottom section (`:70–73`) goes.
 - Set rows keep tap-to-fix and swipe-to-delete; a set row is *1 · 100 × 5* with the comparison
   as its trailing caption (*+2.5 over plan*), effort and note as a second line only when present.
+- A movement's plan is its row's subtitle in `ink-dim` (*plan 1 × 5 · 60*), never an accent row of
+  its own; a movement the plan did not hold reads *added today* in the same place. *On this
+  phone, not yet on your account.* is the head section's footer while true, never a row.
 
 ### 7.9 Finish receipt
 
 - Title *Well done.* / *Ended early.* (`16-the-workout.md`), subtitle *Push A · Tue 18 Aug* or
   *Free session · Sat 26 Sep*; the title row inside the list (`WorkoutReceipt.swift:174`) goes
   (`consistency.md` 6o).
-- Three `FactTiles`: Duration · Working sets · Top e1RM (when any), then *Personal record* in
-  `gym/record` on its own card, then *Performed*, then *Against plan* / *Against last Push A*.
-  The inline *4 Sets · 1600 kg · 1 Movements* row and the lone *1m* line go.
+- Three `FactTiles`: Duration · Working sets · Top e1RM (when any), labelled with nouns and never
+  a unit (§3), then *Personal record* in `gym/record` on its own card, then *Performed* in logged
+  order, then *Against plan* / *Against last Push A*. The inline *4 Sets · 1600 kg · 1 Movements*
+  row and the lone *1m* line go.
 - The one full-strength button is pinned in the reach band at full width: *Share with Coach*
   signed in, *Keep this log* signed out, with its one-line footer. Today *Keep this log* is a
   small pill inside a list row (`WorkoutReceipt.swift:212`). *Save as routine* is a card beneath
@@ -554,6 +655,13 @@ follow with 7.11 and 7.12.
 Detents and dismissals per the table; `presentationCornerRadius` removed; keypad at
 `.height(440)`; Weigh in `.medium`.
 
+- The Fix sheet (`SetEditor`) titles *Fix set* with the movement as its `.navigationSubtitle`,
+  not a section header. The set note carries no footer: a set note is a record and the field says
+  nothing about Coach (`09-coach.md`). *Clear note* is drawn only while the note has text. The
+  sheet's one caption is *Push A keeps its planned targets.* under *Delete set*.
+- The weigh-in sheet has no *Weight* header: the field with its *kg* suffix is the row under the
+  title *Weigh in*; *Date* and *Delete weigh-in* follow; *Save weight* is pinned.
+
 ### 7.11 You, Keep and sign-in (§2 shell)
 
 - You is a native `List` (`.insetGrouped`) in a `NavigationStack`, title *You*, *Done* trailing,
@@ -563,18 +671,29 @@ Detents and dismissals per the table; `presentationCornerRadius` removed; keypad
   **Your data**; **Settings** (*Gym settings* ›, *About Windmill* ›); *Sign out* / *Erase data* last,
   destructive. The sentence *One Windmill account keeps your journal and training together.*
   (`AccountSheet.swift:270`) goes.
+- The sections are `Section`s with the list's own headers (§5 Lists): no hand-set uppercase
+  captions (`AccountSheet.swift:358`). A room with nothing on the phone reads *nothing yet* as its
+  row value, never a sentence (*No Gym data on this phone yet.*).
+- Offline, the Apple and email doors disable and *Sign-in needs a connection.* is their section's
+  footer, never a line inside the identity card. Signed in, the identity card's state line reads
+  *Syncing paused · update Windmill* while the update is required (§7.15).
 - Keep, the Apple questions, the email and code steps keep their layout; their headings stay
-  Nunito; their buttons follow §4; *Back* and *Close* are toolbar items.
+  Nunito; their buttons follow §4; *Back* and *Close* are toolbar items. The symbol that heads a
+  shell sheet is the bare SF symbol in `shell/brand`, never a symbol inside a drawn tile.
+- The gym's Keep door opens the Keep sheet in the room's words (*Keep your log* · *It lives only on
+  this phone. Sign in to back it up and open it on the web.*), never You.
 - The doors are Apple and email (`superapp-flow.md` §6). *Use a sign-in link*
   (`AccountSheet.swift:162`) leaves You and Keep; it stays only on the code step, for someone
   holding a link.
-- Appearance (Light · Dark · System) is iteration 2, with Journal's day palette.
+- **Settings** holds Appearance (Light · Dark · System, a segmented row, System by default), *Gym
+  settings* › and *About Windmill* ›; the choice sets the window and the environment (§2) and the
+  rooms answer with their own palettes.
 
 ### 7.12 Where to start? and onboarding
 
-Unchanged in iteration 1 except the shell palette roles, the Gym door in `gym/accent`, the
+As the first-run boards draw them, with the shell palette roles, the Gym door in `gym/accent`, the
 `RoomDoor` component and the system *Sign in* link style — and the appearance: Where to start?
-follows the system like the rest of the shell.
+follows the system like the rest of the shell. The iteration-1 captures match; nothing changes.
 
 ### 7.13 Journal room
 
@@ -583,11 +702,91 @@ follows the system like the rest of the shell.
   Energy 4*, or *Mood 7* alone — and nothing when neither was. *Mood – Energy –* under every
   unscored page is noise the canvas never draws (`journal/journal.md` §4, "a day you didn't write
   is not drawn").
-- Night in both appearances until iteration 2 (§2).
+- Night in dark, Day in light (§2), chosen by Appearance in You. Until the Day column lands the
+  room is night in both and sets its dark scheme on the `NavigationStack` root, so the status bar
+  never reads dark on the night canvas.
+- While the first-open ink notes are shown the placeholder is *Start anywhere.* alone — the notes
+  already say *Just start typing* and *Saves as you go*; the line *Only you. No prompts, no
+  fields, nothing to fill in — write a line or a page.* stays as the canvas's one disclosure.
 
 ### 7.14 Echoes on iOS (§8)
 
 Built when the port lands; drawn now.
+
+### 7.15 Update required (§2 shell)
+
+When the engine reports the client too old (`engine.status.upgradeRequired`, or a 426 at
+sign-in), the shell says so once and keeps the fact in one place:
+
+- **One alert** when the flag flips to true, and once per cold launch while it holds — never
+  again mid-session: *Update required* · *Update Windmill to keep syncing. Your work is saved on
+  this phone.* · **Get the update** · *Keep working on this phone*. A 426 at sign-in raises the
+  same alert, never `localizedDescription`.
+- **The standing place is You**: the identity card's state line reads *Syncing paused · update
+  Windmill* and a *Get the update* row (`arrow.up.forward`) sits under the doors while the flag
+  holds. Gym settings carries nothing: You is one tap from every room root and Gym settings is
+  reached only through it.
+- *Get the update* opens the build's configured destination (TestFlight today). If it cannot
+  open, the transient reads *Couldn't open the update. Try again.*
+- Journal and Gym keep working on the phone; nothing is disabled, dimmed or counted down.
+- Event `client_update_required` {state, action: open · keep · dismiss, outcome}.
+
+### 7.16 On this phone — a workout the account has not taken (§5 Status)
+
+A signed-out workout prepared for the account at sign-in may wait (no connection), need a
+decision (the account has an open workout), or be refused by the log (overlap, a future time,
+over 200 sets, a missing movement, an identity already on the log, a changed routine). Android
+draws a card per refused workout in Settings and a door on every tab; iOS draws one section and
+one badge:
+
+- **The section.** Signed in, The log's head gains **On this phone** above Bodyweight: one row per
+  workout the account has not taken, each a door. Row title *Push A · 23 Sep · 12 sets*
+  (*Free session* when unlinked; *1 set from Push A · 23 Sep* for a stranded set); subtitle the
+  state — *adding…* with a trailing `ProgressView` while in flight, else the reason below. The
+  section leaves when it is empty. It replaces the adoption card on Routines.
+- **The badge.** The Log tab carries the system `badge` with the count of workouts waiting on the
+  lifter — refused, or waiting on Keep — never one merely in flight. It is the one badge the room
+  draws; Coach and the room menu draw none.
+- **The reason**, at most twelve words naming the way out, is the row's subtitle, the Inspect
+  head's footer and the transient after a failed retry:
+
+  | Refusal | Reason |
+  |---|---|
+  | `session-open` | *Your account has an open workout — keep this one as finished.* |
+  | `session-overlap` | *Overlaps another workout — fix its times.* |
+  | `session-id-taken` | *Already on your log as another workout — compare, then discard this copy.* |
+  | `bad-instant` · `clock-skew` | *Its time is in the future — fix the times.* |
+  | `too-many-sets` · `too-large` | *Over 200 sets — remove some, then retry.* |
+  | `frozen-plan-changed` · `routine-missing` · `stale` | *Its routine changed — unlink the routine, then retry.* |
+  | `source-numbering` | *Set numbers clash — renumber, then retry.* |
+  | `source-auto-closed` | *Closed by itself — mark it finished, then retry.* |
+  | `unknown-exercise` | *A movement is missing — restore it, then retry.* |
+  | `parent-dead` | *Its movement or routine was refused — restore it, then retry.* |
+  | `session-finished` · `recovery-*` | *A set missed its workout — retry puts it back.* |
+  | anything else | *Refused by the log — fix the workout, then retry.* (the code is the Inspect subtitle) |
+
+- **Inspect** is a pushed screen: title the routine name, subtitle the date; `FactTiles` Duration ·
+  Working sets · Volume with the reason as that section's footer; *Started* and *Finished* as fact
+  rows; then a section per movement of read-only set rows (*1 · 100 × 5*, kind as *W*, effort and
+  note as the second line). The band holds the reason's one primary: *Keep as finished*
+  (`session-open`), *Retry* (`session-finished`, `recovery-*`), *Open the other workout*
+  (`session-id-taken`, a door to that session), *Fix workout* for the rest. The bar's
+  `ellipsis.circle` holds *Fix workout* and *Discard workout* (destructive, the nine-second window).
+- **Fix workout** is a `.large` sheet: *Cancel* · *Fix workout* · *Save and retry* pinned.
+  Sections: **Times** — *Started* and *Finished* as compact `DatePicker` rows, an open workout's
+  *Finished* reading *Not finished* with a quiet *Mark finished* that fills it from the last set;
+  **Routine** — a *Linked to Push A* toggle whose off state drops the saved plan; **Sets** — a
+  section per movement, each row opening `SetEditor` (movement, kind, time, kg, reps, effort,
+  note, delete), *Renumber sets* as the section's one action only for `source-numbering`. Over 200
+  sets the band disables with the footer *Over 200 sets · remove 12.* Edits touch the phone's copy
+  only; the retry sends the corrected import under the same identity.
+- **Keep** and **Retry** act from the band; on success the row leaves, the transient reads *Push A
+  is on your log.*; on refusal the row's reason updates and the transient says the new one.
+- **A stranded set** (`session-finished`) retries into its finished workout with an additive
+  correction (`CorrectSession(preserveOtherSets: true)`), or into a separate workout under new
+  identities when that cannot apply — the domain's rule, with vectors before the screens.
+- Events `gym_import_recovery` {action: inspect · fix · keep · retry, state, outcome}; failures
+  `gym_import_fix` · `gym_import_keep` · `gym_import_retry`.
 
 ## 8. Echoes on iOS
 
@@ -623,8 +822,12 @@ Recorded in `consistency.md` under *iOS*: 9a (light gym accent vs Figma Daylight
 9b (phones weave, web keeps the strip), 9c (the rack's kind picker leaves iOS), 9d (two gym light
 grounds in the Design System collections), 9e (the first-run boards' W capsule and hand-drawn
 glass), 9h (the journal day inks in the Figma collection and the onboarding glimpse are warm; the
-web's and this spec's are cool paper). 5m is closed by §7.7; 6o stays open only for the board
-redraw.
+web's and this spec's are cool paper), 9i (the proposal card's fact rows vs `09-coach.md`'s "no
+diff rows" on iOS), 9j (the Review band's one caption slot vs the brief's two held slots), 9k
+(the signed-out workout moves from Routines to The log and the Log tab badge vs Android's door on
+every tab), 9l (the Live Activity's unlabelled clocks vs `14-live-activity.md`'s drawn banner),
+9m (the iteration-1 boards draw what §6–§7 no longer rule), 9n (the set-note footer the Fix sheet
+drew against `09-coach.md`). 5m is closed by §7.7; 6o stays open only for the board redraw.
 
 ## 10. Drawings
 
@@ -648,7 +851,9 @@ Gym file `vdmdiKWrmZoS1FtcvJRf6O`, page `iOS` (`11:2`), section
 
 The boards bind `Gym · Colour` roles and three file-local variables, `ios/accent`,
 `ios/accent-soft` and `ios/on-accent` (`1055:201`–`1055:203`), which carry the verdigris accent in
-both modes (9a).
+both modes (9a). They are iteration-1 drawings: the composer's disabled state, the one-slot Review
+band, the current row's readout, the Record tiles, **On this phone** and the Live Activity's
+anatomy are written here and not yet drawn (9m).
 
 Design System file `qoOwNbWOYE1GFi0yR5uGY2`, page `iOS · First run · 2026-09-26` (`112:2`),
 402 × 874 boards:
@@ -677,16 +882,36 @@ Symbol they stand for; the build pulls the real glyph. Glass on a board is `glas
 
 ## 11. What the next iteration's screenshots must show
 
-1. Top-left and top-right of every room root: one glass capsule with *Gym ⌄* (or *Journal ⌄*),
-   one glass circle with `person.crop.circle`, in light and dark, with nothing drawn inside them
-   but the system's rendering.
-2. Coach, signed in, empty: bar, canvas, composer. Zero sentences. The More menu opens anchored
-   under `ellipsis.circle` with four items and a divider.
-3. Light Gym on `#EBE7E3` with `#137A6C` tint across the selected tab, Routines, The log, Coach,
-   Settings and a sheet — one hue, one ground.
-4. The log with no horizontal strip and a seat, not a band, for Weigh in.
-5. The logger with no slot strip, no *Last time* line, no kind control; the rack on a card.
-6. The finish sheet titled *Well done.* with three tiles and one pinned button.
-7. Red text nowhere in a list; one transient band shape in every room.
-8. You on clay in both appearances, as a list.
-9. Each screen at 375 × 667 and at AX3 once, for the numerals and the bars.
+Iteration 2 kept 1, 3, 7 and 8 of iteration 1's list (the bars, the light gym, the one band, You
+on clay). Iteration 3's captures show:
+
+1. Coach, signed in, empty: bar, canvas, composer — zero sentences; the composer one capsule with
+   a 36 pt accent send circle, disabled at 40 % offline; the More menu with *New chat* · divider ·
+   History · Notes · Connected log. An answer with its one-row read receipt and a proposal card
+   with fact rows and a *Review 3 changes ›* row. The Review sheet's band with the gate sentence,
+   then the promise, Apply never moving.
+2. Routines as one section: two-line routine rows, *1 proposal* as a row, *Movements* as the last
+   row in ink with a chevron; no signed-out banner; `ContentUnavailableView` when empty. Routine
+   detail with the footer under Movements and no empty History. Create movement with no refusal
+   on first paint.
+3. The log woven — no strip, a moment with an 8 pt dot, two-line session rows with `iphone`
+   trailing, *First session* as a footer — and the Weigh in seat. The Record with the equipment
+   as subtitle, two tiles, *110 · 60* axis labels and an `ellipsis.circle`. Bodyweight rows
+   without pencils.
+4. The logger: no kind control, eyebrow above the name, one clock line, the current row as
+   *3 · 100 × 5 ●*, reps `minus`/`plus` as matching circles, `iphone` once per unsent set, logged
+   order stable between runs. The Fix sheet with the movement as subtitle and no note footer.
+5. The finish sheet titled *Well done.* / *Ended early.* with three noun-labelled tiles and one
+   pinned button. The Live Activity banner with no clock labels.
+6. Session detail with the date as subtitle, three tiles, the plan as a movement subtitle,
+   `square.and.arrow.up` in the bar.
+7. You as `Section`s with the list's headers, Settings holding Appearance · Gym settings · About
+   Windmill, *Sign out* in the last section, *nothing yet* for an empty room, the Keep sheet in
+   the gym's words. Connected log with *Connect a tool* in the band.
+8. Journal in light on the Day column with a readable status bar, past pages without *Mood –
+   Energy –*, the first-open placeholder as *Start anywhere.*
+9. The update-required alert, and You with *Syncing paused · update Windmill*. The log with an
+   **On this phone** row showing a reason, the Log tab badged, the Inspect screen with its one
+   primary, the Fix sheet.
+10. Each screen at 375 × 667 and at AX3 once, for the numerals and the bars — owed by every
+    track, not yet captured.

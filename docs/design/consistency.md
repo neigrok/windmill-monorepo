@@ -206,10 +206,10 @@ rendering contract is [`ios/ios-redesign.md`](ios/ios-redesign.md).
   *Save weight* under the decimal pad. The app draws *Next* and *Done* as a bar in the bottom inset
   while a field is focused (routine targets, the Coach note). Restate §6's *Done* as that bar.
 
-### iOS redesign · iteration 1
+### iOS redesign
 
-Spec: [`ios/ios-redesign.md`](ios/ios-redesign.md). It rules the iOS rendering; these are the
-places it disagrees with a drawing or a brief.
+Spec: [`ios/ios-redesign.md`](ios/ios-redesign.md) (iteration 2). It rules the iOS rendering;
+these are the places it disagrees with a drawing or a brief.
 
 - **9a · Light gym accent.** The Gym file's `brand/base` aliases to iris `#4C4374` in Daylight
   (F44); the spec, the owner's 2026-09-06 ruling and the decided onboarding boards use verdigris
@@ -232,6 +232,32 @@ places it disagrees with a drawing or a brief.
   `#74654F`, `ink-faint` `#8E8272` are warm, as are the onboarding glimpse's; the web's journal day
   (`palettes.css`) and the spec are cool paper (`#161E28` / `#4E5968` / `#5E6979`). Align the
   collection and the glimpse when journal day ships.
+- **9i · The proposal card's rows.** `gym/briefs/09-coach.md` ("One · the turn") says iOS's card
+  shows no diff rows; the spec's card (§6) draws up to three fact rows and a *+ 1 more* line, as
+  Android's does. Restate the brief for both phones.
+- **9j · The Review band's slots.** `09-coach.md` ("Two · the review") holds the gate's refusal
+  and the atomic promise as two slots, the promise always drawn; the spec (§6) gives the band one
+  caption slot that reads the gate sentence until the diff is seen and the promise after, so Apply
+  never moves and the band never says two things. Restate the brief; the Android band keeps the
+  brief's shape until its owner decides.
+- **9k · Where a signed-out workout waits.** The spec (§7.16) moves the account's untaken
+  workout from the head of Routines to an **On this phone** section at the head of The log, with
+  the Log tab's system badge as the one door from other tabs; Android draws a card in Settings and
+  a *Saved workouts need review (N)* door on every tab (`android-delivery.md`). The Gym Figma
+  boards draw neither. Decide whether Android adopts the log section; draw the section, the
+  Inspect screen and the Fix sheet.
+- **9l · Live Activity labels.** `gym/briefs/14-live-activity.md` lists the workout clock and the
+  since-last-set clock without ruling labels; the iteration-1 build labels both (*Workout*, *Since
+  last set*), which `16-the-workout.md` bans in the app. The spec (§7.7) draws both unlabelled.
+  Restate the brief and draw the banner, expanded and compact Island.
+- **9m · Iteration-1 boards.** The Gym file's *iOS redesign · iteration 1* boards (`1055:204`)
+  predate the iteration-2 rules: the composer's disabled state, the one-slot Review band, the
+  current row's readout, the Record tiles and axis labels, Bodyweight rows without pencils, the
+  Fix sheet's subtitle, You's native sections, **On this phone**, the update-required alert and
+  the Live Activity. Redraw from the spec, or retitle the section as superseded.
+- **9n · The set-note footer.** The iteration-1 Fix sheet drew *A record for you — not an
+  instruction to Coach.* under the set note; `09-coach.md` rules the set-note field says nothing.
+  The spec (§7.10) removes it; check the Android Fix sheet for the same line.
 
 ## Onboarding
 
