@@ -2,30 +2,6 @@ import SwiftUI
 import DomainKit
 import GymDomain
 
-enum MovementName {
-  static func trimmed(_ value: String) -> String { value.trimmingCharacters(in: .whitespacesAndNewlines) }
-
-  static func capped(_ value: String) -> String {
-    String(String.UnicodeScalarView(value.unicodeScalars.prefix(60)))
-  }
-
-  static func problem(_ value: String) -> String? {
-    let name = trimmed(value)
-    if name.isEmpty { return "Name it to save it." }
-    if name.unicodeScalars.count > 60 { return "Use 60 characters or fewer." }
-    return nil
-  }
-
-  static func counter(_ value: String) -> String? {
-    let count = value.unicodeScalars.count
-    return count < 48 ? nil : "\(count)/60"
-  }
-
-  static func changed(from: String, to: String) -> Bool {
-    problem(to) == nil && trimmed(to) != from
-  }
-}
-
 enum MovementPickerOptions {
   static let catalogueUnread = "The catalog didn’t load. It comes back when you have signal."
   static let openers: [ID<Exercise>] = [ID("back-squat"), ID("bench-press"), ID("deadlift"),
@@ -37,6 +13,7 @@ enum MovementPickerOptions {
     let alias: String?
     let selected: Bool
     var id: ID<Exercise> { exercise.id }
+    var line: String { [exercise.equipment.capitalized, alias.map { "was “\($0)”" }, meta].compactMap { $0 }.joined(separator: " · ") }
   }
 
   struct Result: Equatable {
@@ -251,15 +228,7 @@ struct MovementPicker: View {
     Button {
       onSelect(RoutineEntry(exerciseId: row.id))
     } label: {
-      HStack(alignment: .center, spacing: 12) {
-        VStack(alignment: .leading, spacing: 4) {
-          Text(row.exercise.name).font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink)
-          Text(row.exercise.equipment.capitalized).font(.caption).foregroundStyle(GymPalette.inkDim)
-          if let alias = row.alias { Text("was “\(alias)”").font(.caption).foregroundStyle(GymPalette.inkDim) }
-          if let meta = row.meta { Text(meta).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim).monospacedDigit() }
-        }.frame(maxWidth: .infinity, alignment: .leading)
-        Image(systemName: row.selected ? "checkmark" : "plus").foregroundStyle(GymPalette.inkDim)
-      }.padding(.vertical, 4)
+      MovementRow(title: row.exercise.name, meta: row.line, trailing: row.selected ? .check : nil)
     }
     .disabled(row.selected || gym.accountTransition)
     .accessibilityElement(children: .combine)

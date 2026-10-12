@@ -173,11 +173,11 @@ struct WorkoutReceipt: View {
         Group {
           Section {
             Text(receipt.slight ? "Ended early." : "Well done.").font(.title2.weight(.bold))
-            HStack {
-              fact("Sets", "\(receipt.readout.workingSetCount)")
-              fact("kg", Readout.weight(receipt.readout.volumeKg))
-              fact("Movements", "\(receipt.readout.movementCount)")
-            }
+            FactTiles(facts: [
+              .init(value: "\(receipt.readout.workingSetCount)", label: "Sets"),
+              .init(value: Readout.weight(receipt.readout.volumeKg), label: "kg"),
+              .init(value: "\(receipt.readout.movementCount)", label: "Movements"),
+            ])
             if let duration = receipt.readout.durationMs { Text(Readout.duration(duration)).font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
           }
           Section("Performed") {
@@ -237,11 +237,5 @@ struct WorkoutReceipt: View {
       .task { await receipt.loadReview(gym) }
       .onAppear { receipt.reconcile(gym) }
       .onChange(of: gym.notices.map(\.id)) { _, _ in receipt.reconcile(gym) }
-  }
-  func fact(_ label: String, _ value: String) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Text(value).font(.title3.monospacedDigit().weight(.semibold)).minimumScaleFactor(0.5)
-      Text(label).font(.caption).foregroundStyle(GymPalette.inkDim)
-    }.frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .combine)
   }
 }

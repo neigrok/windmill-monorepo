@@ -102,7 +102,7 @@ struct RoutineBuilder: View {
           Section("Name") {
             TextField("Routine name", text: $editing.draft.current.name).focused($nameFocused).submitLabel(.done)
               .onSubmit { nameFocused = false }.accessibilityIdentifier("routine-name")
-            if editing.draft.current.name.unicodeScalars.count >= 48 { Text("\(editing.draft.current.name.unicodeScalars.count)/60").font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
+            if let counter = MovementName.counter(editing.draft.current.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
           }
           Section("Movements") {
             ForEach(Array(editing.draft.current.entries.enumerated()), id: \.element.exerciseId) { index, entry in
@@ -110,10 +110,7 @@ struct RoutineBuilder: View {
                 nameFocused = false
                 if let exercise = gym.catalogue.find(entry.exerciseId) { editing.openTargets(exercise: exercise, sets: entry.sets) }
               } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                  Text(gym.catalogue.find(entry.exerciseId)?.name ?? "Movement unavailable").foregroundStyle(GymPalette.ink)
-                  Text(Readout.target(entry.sets)).font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
-                }
+                MovementRow(title: gym.catalogue.find(entry.exerciseId)?.name ?? "Movement unavailable", meta: Readout.target(entry.sets))
               }.accessibilityIdentifier("builder-movement-\(entry.exerciseId)")
                 .swipeActions { Button("Remove", role: .destructive) { editing.remove(index) } }
                 .contextMenu {

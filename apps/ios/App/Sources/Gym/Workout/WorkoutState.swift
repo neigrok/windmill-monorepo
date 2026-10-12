@@ -7,42 +7,6 @@ import SyncAPI
 import SyncCore
 import SyncSchema
 
-struct WorkoutKeypad {
-  enum Field { case weight, reps }
-  let field: Field
-  let keeping: Double
-  var text: String
-  var seeded = true
-
-  init(_ field: Field, value: Double) {
-    self.field = field; keeping = value; text = Readout.weight(value).replacingOccurrences(of: "−", with: "-")
-  }
-  mutating func press(_ key: String) {
-    if field == .reps && ["±", ".", ","].contains(key) { return }
-    if key == "⌫" { text = String(text.dropLast()); seeded = false; return }
-    if key == "±" {
-      if text.hasPrefix("-") { text.removeFirst() }
-      else if text.count < 8 { text = "-" + text }
-      seeded = false; return
-    }
-    let held = seeded ? "" : text
-    guard held.count < 8 else { return }
-    text = held + key; seeded = false
-  }
-  var reading: (value: Double?, message: String) {
-    let raw = text.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: ".")
-    if raw.isEmpty || raw == "-" { return (nil, "Enter a number, or cancel to keep \(Readout.weight(keeping))") }
-    if raw.filter({ $0 == "." }).count > 1 { return (nil, "One decimal point only.") }
-    guard let number = Double(raw), number.isFinite else { return (nil, "That is not a number yet.") }
-    if field == .weight {
-      guard abs(number) <= 500 else { return (nil, "Over 500 kg — check the number.") }
-      return (WeightLadder.round(number), "kg")
-    }
-    guard number.rounded() == number && (1...99).contains(number) else { return (nil, "Whole reps, 1 to 99.") }
-    return (number, "whole reps")
-  }
-}
-
 struct WorkoutClocks: Equatable {
   let workoutMs: Int64
   let sinceSetMs: Int64

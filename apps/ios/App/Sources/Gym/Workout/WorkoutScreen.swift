@@ -13,7 +13,7 @@ struct WorkoutScreen: View {
   @State var addMovement = false
   @State var addAfterAssembly = false
   @State var fixing: TrainingSet?
-  @State var keypad: WorkoutKeypad.Field?
+  @State var keypad: SetKeypad.Field?
   @State var finishTask: Task<Void, Never>?
   @State var idleTimerWasDisabled = false
   @State var awake = false
@@ -65,11 +65,11 @@ struct WorkoutScreen: View {
     }
     .sheet(isPresented: $addMovement) { WorkoutMovementPicker(gym: gym, workout: workout) }
     .sheet(isPresented: Binding(get: { fixing != nil }, set: { if !$0 { fixing = nil } })) {
-      if let set = fixing { WorkoutFixSheet(gym: gym, set: set, routine: workout.session?.plan?.routine) }
+      if let set = fixing { SetEditor(gym: gym, set: set, routine: workout.session?.plan?.routine, identifier: "workout-fix") }
     }
     .sheet(isPresented: Binding(get: { keypad != nil }, set: { if !$0 { keypad = nil } })) {
       if let keypad {
-        WorkoutKeypadSheet(field: keypad, value: keypad == .weight ? workout.weightKg : Double(workout.reps)) { value in
+        SetKeypadSheet(field: keypad, value: keypad == .weight ? workout.weightKg : Double(workout.reps)) { value in
           if keypad == .weight { workout.weightKg = value } else { workout.reps = Int(value) }
         }
       }
@@ -285,7 +285,7 @@ struct WorkoutElapsed: View {
 
 struct WorkoutRack: View {
   @Bindable var workout: WorkoutState
-  let edit: (WorkoutKeypad.Field) -> Void
+  let edit: (SetKeypad.Field) -> Void
   @Environment(\.dynamicTypeSize) var typeSize
   var body: some View {
     VStack(spacing: 8) {
@@ -298,23 +298,7 @@ struct WorkoutRack: View {
   }
   var controls: some View {
     VStack(spacing: 8) {
-      HStack(alignment: .firstTextBaseline) {
-        Button { edit(.weight) } label: {
-          Text(Readout.weight(workout.weightKg)).modifier(GymNumeral())
-            .monospacedDigit().minimumScaleFactor(0.5).lineLimit(1)
-        }.buttonStyle(.plain).accessibilityLabel("Weight, \(Readout.weight(workout.weightKg)) kilograms")
-          .accessibilityIdentifier("workout-weight")
-        if !typeSize.isAccessibilitySize { Text("kg").foregroundStyle(GymPalette.inkDim); Spacer() }
-      }.frame(maxWidth: .infinity, alignment: .leading)
-      if typeSize.isAccessibilitySize { Text("kg").foregroundStyle(GymPalette.inkDim).frame(maxWidth: .infinity, alignment: .leading) }
-      LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: typeSize.isAccessibilitySize ? 2 : 4), spacing: 8) {
-        ForEach(0..<4) { index in
-          Button(WeightLadder.labels(workout.weightKg)[index]) {
-            workout.weightKg = WeightLadder.bump(workout.weightKg, direction: index < 2 ? -1 : 1, big: index == 0 || index == 3)
-          }.modifier(RoomSecondaryStyle()).frame(maxWidth: .infinity, minHeight: 44)
-            .accessibilityLabel("\(WeightLadder.labels(workout.weightKg)[index]) kilograms")
-        }
-      }.font(.body.monospacedDigit())
+      WeightInstrument(weightKg: $workout.weightKg, identifier: "workout-weight") { edit(.weight) }
       ViewThatFits(in: .horizontal) {
       HStack {
         Button("Fewer reps", systemImage: "minus") { workout.reps = max(1, workout.reps - 1) }.labelStyle(.iconOnly)

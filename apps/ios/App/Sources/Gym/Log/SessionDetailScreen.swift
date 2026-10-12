@@ -23,9 +23,11 @@ struct SessionDetailScreen: View {
           let readout = SessionReadout(session: session, sets: sets)
           Text(LogPresentation.date(session.startedAt).formatted(.dateTime.day().month(.wide).year().hour().minute()))
             .font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
-          Text("\(readout.durationMs.map(Readout.duration) ?? "—") · \(readout.workingSetCount) working sets · \(readout.movementCount) movements")
-            .font(.subheadline.monospacedDigit())
-          Text("\(Readout.weight(readout.volumeKg)) kg volume").font(.subheadline.monospacedDigit())
+          FactTiles(facts: [
+            .init(value: readout.durationMs.map(Readout.duration) ?? "—", label: "Duration"),
+            .init(value: "\(readout.workingSetCount)", label: readout.workingSetCount == 1 ? "Working set" : "Working sets"),
+            .init(value: "\(Readout.weight(readout.volumeKg)) kg", label: "Volume"),
+          ])
           if session.plan != nil { Label("Plan saved at start", systemImage: "snowflake").font(.caption).foregroundStyle(GymPalette.accent) }
           if session.closedBy == "stale" { Text("Closed after four hours without a set").font(.subheadline).foregroundStyle(GymPalette.inkDim) }
           if gym.logSessionIsDeviceOnly(sessionID) { Label("On this device", systemImage: "iphone").font(.caption).foregroundStyle(GymPalette.inkDim) }
@@ -77,7 +79,7 @@ struct SessionDetailScreen: View {
       .toolbar(.hidden, for: .tabBar).accessibilityIdentifier("gym-session-detail")
       .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo") }
       .sheet(isPresented: Binding(get: { fixing != nil }, set: { if !$0 { fixing = nil } })) {
-        if let fixing { FinishedSetFixSheet(gym: gym, original: fixing) }
+        if let fixing { SetEditor(gym: gym, set: fixing, routine: session?.plan?.routine, identifier: "gym-fix") }
       }
       .sheet(isPresented: $sharing) { SessionShareSheet(gym: gym, sessionID: sessionID) }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "session"]) }
@@ -85,95 +87,5 @@ struct SessionDetailScreen: View {
   func discard() {
     guard let outcome = gym.run(DiscardSession(sessionID)), outcome.refusal == nil else { return }
     dismiss()
-  }
-}
-
-struct FinishedSetDraft: Equatable {
-  var original: TrainingSet
-  var weight: String
-  var reps: String
-  var rpe: Double?
-  var note: String
-  init(_ set: TrainingSet) { original = set; weight = Readout.weight(set.weightKg).replacingOccurrences(of: "−", with: "-"); reps = String(set.reps); rpe = set.rpe; note = set.note }
-  var problem: String? {
-    let raw = weight.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: ".")
-    if raw.filter({ $0 == "." }).count > 1 { return "One decimal point only." }
-    guard let kg = Double(raw), kg.isFinite else { return "That is not a number yet." }
-    guard (-500...500).contains(kg) else { return "Between −500 and 500 kg — check the number." }
-    guard let n = Int(reps), (1...99).contains(n) else { return "Whole reps, 1–99." }
-    guard note.utf8.count <= 4000 else { return "A set note runs to 4000 bytes." }
-    return nil
-  }
-  var value: TrainingSet? {
-    guard problem == nil else { return nil }
-    var value = original
-    value.weightKg = Double(weight.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: "."))!
-    value.reps = Int(reps)!; value.rpe = rpe; value.note = note
-    return value
-  }
-}
-
-struct FinishedSetFixSheet: View {
-  let gym: GymModel
-  let original: TrainingSet
-  let account: String?
-  @Environment(\.dismiss) var dismiss
-  @State var draft: FinishedSetDraft
-  @State var failed: String?
-  @State var saved = false
-  init(gym: GymModel, original: TrainingSet) {
-    self.gym = gym; self.original = original; account = gym.account
-    _draft = State(initialValue: FinishedSetDraft(original))
-  }
-  var body: some View {
-    NavigationStack {
-      Form {
-        Section(gym.catalogue.find(original.exerciseId)?.name ?? "Movement") {
-          LabeledContent("Weight (kg)") {
-            TextField("Weight in kg", text: $draft.weight).keyboardType(.numbersAndPunctuation).multilineTextAlignment(.trailing).accessibilityIdentifier("gym-fix-weight")
-          }
-          LabeledContent("Reps") {
-            TextField("Reps", text: $draft.reps).keyboardType(.numberPad).multilineTextAlignment(.trailing).accessibilityIdentifier("gym-fix-reps")
-          }
-          Picker("Effort", selection: $draft.rpe) {
-            Text("Unrated").tag(Optional<Double>.none)
-            ForEach(Array(stride(from: 6.0, through: 10.0, by: 0.5)), id: \.self) { value in Text("RPE \(Readout.weight(value))").tag(Optional(value)) }
-          }.accessibilityIdentifier("gym-fix-rpe")
-        }.listRowBackground(GymPalette.card)
-        Section("Set note") {
-          TextField("Note", text: $draft.note, axis: .vertical).lineLimit(3...8).accessibilityIdentifier("gym-fix-note")
-          Text("\(draft.note.utf8.count) / 4000 bytes").font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
-        }.listRowBackground(GymPalette.card)
-        Section {
-          Text("Routine targets stay unchanged.").font(.subheadline).foregroundStyle(GymPalette.inkDim)
-          Button("Delete set", systemImage: "trash", role: .destructive) {
-            guard gym.account == account, !gym.readFailed, let outcome = gym.run(DeleteSet(original.id)), outcome.refusal == nil else { failed = gym.error; return }
-            dismiss()
-          }.foregroundStyle(GymPalette.alarm).accessibilityIdentifier("gym-fix-delete")
-        }.listRowBackground(GymPalette.card)
-      }.modifier(GymPage())
-        .navigationTitle("Fix set").navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-        .safeAreaInset(edge: .bottom) {
-          VStack(spacing: 0) {
-            GymTransient(gym: gym, message: failed ?? draft.problem)
-            ActionBand(title: "Save the fix", room: .gym,
-                       disabled: draft.problem != nil || gym.accountTransition, actionIdentifier: "gym-fix-save") {
-            guard let value = draft.value else { return }
-            if gym.correctLoggedSet(draft.original, to: value, account: account) {
-              draft.original = gym.sets.first { $0.id == original.id } ?? value
-              saved = true; dismiss()
-            }
-            else if !gym.readFailed && !gym.sets.contains(where: { $0.id == original.id }) { dismiss() }
-            else { failed = (gym.error ?? "That fix did not save.") + " The set is unchanged." }
-            }
-          }
-        }
-        .sensoryFeedback(.success, trigger: saved)
-        .onChange(of: draft) { _, _ in failed = nil }
-        .onChange(of: gym.sets) { _, sets in if !gym.readFailed && !sets.contains(where: { $0.id == original.id }) { dismiss() } }
-        .onChange(of: gym.account) { _, _ in dismiss() }
-        .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "fix_set"]) }
-    }.modifier(GymPage()).presentationDetents([.large])
   }
 }

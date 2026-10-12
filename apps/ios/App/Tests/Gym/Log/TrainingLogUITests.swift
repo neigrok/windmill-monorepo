@@ -117,22 +117,6 @@ import SyncTesting
     #expect(LogPresentation.instant(day, in: CalendarZone(value: zone)).ms == Int64(expected.timeIntervalSince1970 * 1000))
   }
 
-  @Test func finishedCorrectionPreservesPlanIdentityAndHistoryAndRetriesStorageFailure() throws {
-    let (harness, gym) = fixture()
-    let value = try session(gym, daysAgo: 1)
-    let original = try #require(gym.sets.first { $0.sessionId == value.id })
-    var correction = original; correction.weightKg = 80; correction.reps = 8; correction.rpe = 8.5; correction.note = "Private note"
-    harness.failNextCommit()
-    #expect(!gym.correctLoggedSet(original, to: correction, account: nil))
-    #expect(gym.sets.first { $0.id == original.id } == original)
-    #expect(gym.correctLoggedSet(original, to: correction, account: nil))
-    #expect(gym.sets.first { $0.id == original.id } == correction)
-    #expect(gym.sessions.first { $0.id == value.id } == value)
-    #expect(!gym.correctLoggedSet(original, to: correction, account: nil))
-    #expect(gym.refusal == .stale(original.id.ref, .predicted))
-    #expect(gym.error == "This changed elsewhere. Review the latest version.")
-  }
-
   @Test func finishedDeleteDiscardAndUndoRestoreSessionReadout() throws {
     let (_, gym) = fixture(), value = try session(gym, daysAgo: 1)
     let set = try #require(gym.sets.first)
@@ -154,58 +138,11 @@ import SyncTesting
     fault.point.withLock { $0 = .read }; gym.refresh()
     #expect(gym.readFailed && gym.log?.sets(session: value.id) == saved)
     #expect(gym.finishedLogSessions.contains { $0.id == value.id })
-    #expect(!gym.correctLoggedSet(original, to: original, account: nil))
+    let draft = SetFixDraft(original, account: nil)
+    #expect(!draft.save(gym) && draft.failure == "The workout changed. Check the current set")
     fault.point.withLock { $0 = nil }; gym.refresh()
     #expect(!gym.readFailed && gym.log?.sets(session: value.id) == saved)
     #expect(gym.log?.readout(session: value.id)?.workingSetCount == 1)
-  }
-
-  @Test func correctionRefusesChangedAccountAndGoneSet() throws {
-    let (_, gym) = fixture(), value = try session(gym, daysAgo: 1)
-    let original = try #require(gym.sets.first { $0.sessionId == value.id })
-    var changed = original; changed.weightKg = 62.5
-    #expect(!gym.correctLoggedSet(original, to: changed, account: "some-account"))
-    gym.run(DeleteSet(original.id))
-    #expect(!gym.correctLoggedSet(original, to: changed, account: nil))
-    #expect(gym.error == "That set is no longer here.")
-  }
-
-  @Test func finishedCorrectionAcceptsCanonicalAdmissionAndRefusesCompetingEdit() throws {
-    let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000),
-                          rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
-    let gym = GymModel(runner: harness.runner)
-    let id = gym.runner.mint(Exercise.self)
-    #expect(gym.run(CreateExercise(Exercise(id: id, name: "Test press", pattern: "press", equipment: "barbell", stepKg: 2.5)))?.receipt != nil)
-    let session = try #require(gym.startWorkout())
-    let set = TrainingSet(id: gym.runner.mint(TrainingSet.self), sessionId: session, exerciseId: id,
-                          weightKg: 60, reps: 5, completedAt: try gym.runner.moment().now)
-    #expect(gym.run(AppendSet(set))?.receipt != nil)
-    let original = try #require(gym.sets.first)
-    #expect(original.setNumber == nil)
-    harness.sync(); gym.refresh()
-    var corrected = original; corrected.weightKg = 62.5
-    #expect(gym.correctLoggedSet(original, to: corrected, account: nil))
-    let latest = try #require(gym.sets.first)
-    #expect(latest.weightKg == 62.5 && latest.setNumber == 1)
-    var concurrent = latest; concurrent.note = "Another edit"
-    #expect(gym.run(CorrectSet(concurrent))?.receipt != nil)
-    var stale = latest; stale.reps = 8
-    #expect(!gym.correctLoggedSet(latest, to: stale, account: nil) && gym.refusal == .stale(latest.id.ref, .predicted))
-    #expect(gym.sets == [concurrent])
-  }
-
-  @Test func fixDraftAcceptsSignedLoadsClearEffortAndNotesAndRefusesBounds() throws {
-    let (_, gym) = fixture(); _ = try session(gym, daysAgo: 1)
-    var draft = FinishedSetDraft(try #require(gym.sets.first))
-    draft.weight = "-20,5"; draft.reps = "99"; draft.rpe = nil; draft.note = ""
-    #expect(draft.value?.weightKg == -20.5 && draft.value?.reps == 99 && draft.value?.rpe == nil && draft.value?.note == "")
-    draft.weight = "1.2.3"; #expect(draft.problem == "One decimal point only.")
-    draft.weight = "NaN"; #expect(draft.problem == "That is not a number yet.")
-    draft.weight = "501"; #expect(draft.problem == "Between −500 and 500 kg — check the number.")
-    draft.weight = "-500"; draft.reps = "100"; #expect(draft.problem == "Whole reps, 1–99.")
-    draft.reps = "1"; draft.note = String(repeating: "é", count: 2001)
-    #expect(draft.problem == "A set note runs to 4000 bytes.")
-    draft.note = String(repeating: "é", count: 2000); #expect(draft.problem == nil)
   }
 
   @Test func performedVersusFrozenPlanUsesNthWorkingSlotAndLoadBeforeReps() throws {

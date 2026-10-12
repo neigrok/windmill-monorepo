@@ -26,25 +26,8 @@ struct MovementRecordScreen: View {
             Text("Nothing logged for this movement yet. The first set you log lands here.").accessibilityIdentifier("gym-record-empty")
           }
         }.listRowBackground(GymPalette.card)
-        if let best = progress.best?.fact.estimate {
-          Section {
-            VStack(alignment: .leading, spacing: 5) {
-              Text("Best e1RM").font(.caption).foregroundStyle(GymPalette.inkDim)
-              Text(Readout.estimatedWeight(best.e1rm)).font(.largeTitle.monospacedDigit().weight(.bold)).foregroundStyle(GymPalette.record)
-              Text("kg · \(LogPresentation.brief(LogPresentation.date(progress.best!.startedAt)))").font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
-            }.accessibilityIdentifier("gym-record-best")
-          }.listRowBackground(GymPalette.card)
-        }
-        ForEach(LogPresentation.progressEfforts(progress), id: \.setId) { heaviest in
-          Section {
-            VStack(alignment: .leading, spacing: 5) {
-              Text(heaviest.weightKg == 0 ? "Most reps" : "Heaviest").font(.caption).foregroundStyle(GymPalette.inkDim)
-              Text(heaviest.weightKg == 0 ? String(heaviest.reps) : Readout.weight(heaviest.weightKg))
-                .font(.largeTitle.monospacedDigit().weight(.bold))
-              Text(heaviest.weightKg == 0 ? "reps · no added load" : "kg · \(heaviest.reps) reps").font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
-            }.accessibilityIdentifier(heaviest.weightKg == 0 ? "gym-record-bodyweight-reps" : "gym-record-heaviest")
-          }.listRowBackground(GymPalette.card)
-        }
+        let tiles = facts(progress)
+        if !tiles.isEmpty { Section { FactTiles(facts: tiles) }.listRowBackground(GymPalette.card) }
         if !progress.estimates.isEmpty {
           let display = all ? progress : progress.window(now: log.moment.now, zone: log.moment.zone)
           Section("Estimated strength") {
@@ -94,9 +77,21 @@ struct MovementRecordScreen: View {
       .navigationTitle(movement?.name ?? "Movement").navigationBarTitleDisplayMode(.inline).toolbar(.hidden, for: .tabBar)
       .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Rename") { renaming = true }.disabled(gym.readFailed || gym.accountTransition || movement == nil) } }
       .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo") }
-      .sheet(isPresented: $renaming) { if let movement { LogRenameSheet(gym: gym, movement: movement) } }
+      .sheet(isPresented: $renaming) { if let movement { RenameMovementSheet(gym: gym, exercise: movement) } }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "record"]) }
       .accessibilityIdentifier("gym-movement-record")
+  }
+  func facts(_ progress: MovementProgress) -> [FactTiles.Fact] {
+    let best = progress.best.flatMap { best in best.fact.estimate.map { estimate in
+      FactTiles.Fact(value: "\(Readout.estimatedWeight(estimate.e1rm)) kg",
+                     label: "Best e1RM · \(LogPresentation.brief(LogPresentation.date(best.startedAt)))", record: true, identifier: "gym-record-best")
+    } }
+    let efforts = LogPresentation.progressEfforts(progress).map { effort in
+      effort.weightKg == 0
+        ? FactTiles.Fact(value: "\(effort.reps) reps", label: "Most reps · no added load", identifier: "gym-record-bodyweight-reps")
+        : FactTiles.Fact(value: "\(Readout.weight(effort.weightKg)) kg", label: "Heaviest · \(effort.reps) reps", identifier: "gym-record-heaviest")
+    }
+    return [best].compactMap { $0 } + efforts
   }
 }
 
@@ -120,45 +115,5 @@ private struct RecordWindowPicker: UIViewRepresentable {
     @objc func changed(_ control: UISegmentedControl) {
       window.wrappedValue = control.selectedSegmentIndex == 1 ? .all : .recent
     }
-  }
-}
-
-struct LogRenameSheet: View {
-  let gym: GymModel
-  let movement: Exercise
-  let account: String?
-  @Environment(\.dismiss) var dismiss
-  @State var name: String
-  @State var failure: String?
-  init(gym: GymModel, movement: Exercise) { self.gym = gym; self.movement = movement; account = gym.account; _name = State(initialValue: movement.name) }
-  var trimmed: String { name.trimmingCharacters(in: .whitespacesAndNewlines).precomposedStringWithCanonicalMapping }
-  var problem: String? { trimmed.isEmpty ? "Name it to save it" : trimmed.unicodeScalars.count > 60 ? "Use 60 characters or fewer" : nil }
-  var body: some View {
-    NavigationStack {
-      Form {
-        Section {
-          TextField("Name", text: $name).autocorrectionDisabled().accessibilityIdentifier("gym-rename-name")
-          Text("\(trimmed.unicodeScalars.count) / 60").font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
-          if let message = failure ?? problem { Text(message).foregroundStyle(GymPalette.alarm) }
-          Text("Renames this movement everywhere.")
-          Text("Your logged sets and records keep the same movement.").font(.subheadline).foregroundStyle(GymPalette.inkDim)
-          Text("Old name: \(movement.name)\nSearchable as an alias.").font(.subheadline).foregroundStyle(GymPalette.inkDim)
-        }.listRowBackground(GymPalette.card)
-      }.modifier(GymPage())
-        .navigationTitle("Rename movement").navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-          ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-          ToolbarItem(placement: .confirmationAction) { Button("Rename") { rename() }.disabled(problem != nil || trimmed == movement.name || gym.accountTransition) }
-        }
-    }.modifier(GymPage()).presentationDetents([.medium]).accessibilityIdentifier("gym-rename-sheet")
-      .onChange(of: name) { _, _ in failure = nil }
-      .onChange(of: gym.account) { _, _ in dismiss() }
-  }
-  func rename() {
-    gym.refresh()
-    guard gym.account == account, !gym.readFailed, gym.catalogue.find(movement.id)?.name == movement.name else { failure = "That movement changed. Review its name."; return }
-    if gym.isAnonymous && SeedExercises.all.contains(where: { $0.id == movement.id }) { failure = "renaming a catalog movement needs your account — sign in first"; return }
-    guard let result = gym.run(RenameExercise(movement.id, name: trimmed)), result.refusal == nil else { failure = gym.error ?? "That movement kept its name."; return }
-    dismiss()
   }
 }

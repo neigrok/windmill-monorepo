@@ -2,6 +2,30 @@ import SwiftUI
 import DomainKit
 import GymDomain
 
+enum MovementName {
+  static func trimmed(_ value: String) -> String { value.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+  static func capped(_ value: String) -> String {
+    String(String.UnicodeScalarView(value.unicodeScalars.prefix(60)))
+  }
+
+  static func problem(_ value: String) -> String? {
+    let name = trimmed(value)
+    if name.isEmpty { return "Name it to save it." }
+    if name.unicodeScalars.count > 60 { return "Use 60 characters or fewer." }
+    return nil
+  }
+
+  static func counter(_ value: String) -> String? {
+    let count = value.unicodeScalars.count
+    return count < 48 ? nil : "\(count)/60"
+  }
+
+  static func changed(from: String, to: String) -> Bool {
+    problem(to) == nil && trimmed(to) != from
+  }
+}
+
 extension GymModel {
   func renameMovement(_ exercise: Exercise, to name: String) -> Bool {
     if let problem = MovementName.problem(name) { error = problem; return false }
@@ -39,23 +63,17 @@ struct RenameMovementSheet: View {
   var body: some View {
     NavigationStack {
       Form {
-        Group {
-          Section("Name") {
-            TextField("Name", text: $name).focused($nameFocused).autocorrectionDisabled().textInputAutocapitalization(.words)
-              .disabled(saving).accessibilityIdentifier("gym-rename-movement-name")
-            if let counter = MovementName.counter(name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
-            if let problem = refusal ?? MovementName.problem(name), !saving {
-              Text(problem).foregroundStyle(GymPalette.alarm).accessibilityIdentifier("gym-rename-movement-refusal")
-            }
+        Section {
+          TextField("Name", text: $name).focused($nameFocused).autocorrectionDisabled().textInputAutocapitalization(.words)
+            .disabled(saving).accessibilityIdentifier("gym-rename-movement-name")
+          if let counter = MovementName.counter(name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
+          if let problem = refusal ?? MovementName.problem(name), !saving {
+            Text(problem).foregroundStyle(GymPalette.alarm).accessibilityIdentifier("gym-rename-movement-refusal")
           }
-          Section {
-            Text("Renames this movement everywhere.")
-            Text("Your logged sets and records keep the same movement.").font(.footnote).foregroundStyle(GymPalette.inkDim)
-            Text("Old name: \(exercise.name)\nSearchable as an alias.").font(.footnote).foregroundStyle(GymPalette.inkDim)
-          }
-        }.listRowBackground(GymPalette.card)
+        } footer: { Text("Renames it everywhere; the old name still finds it.") }
+          .listRowBackground(GymPalette.card)
       }
-      .modifier(GymPage()).navigationTitle("Rename movement").navigationBarTitleDisplayMode(.inline)
+      .modifier(GymPage()).navigationTitle("Rename movement")
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
         ToolbarItem(placement: .confirmationAction) {
@@ -82,6 +100,7 @@ struct RenameMovementSheet: View {
       .interactiveDismissDisabled(saving)
       .onAppear { nameFocused = true; gym.telemetry.event("gym_screen_viewed", properties: ["screen": "movement"]) }
       .onChange(of: name) { _, value in name = MovementName.capped(value); refusal = nil }
+      .onChange(of: gym.account) { _, _ in dismiss() }
       .accessibilityIdentifier("gym-rename-movement")
     }
     .modifier(GymPage()).presentationDetents([.medium])

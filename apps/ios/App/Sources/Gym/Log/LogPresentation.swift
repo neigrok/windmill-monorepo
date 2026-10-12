@@ -127,12 +127,4 @@ extension GymModel {
     if isAnonymous { return true }
     return (try? runner.read(Gym.scope) { try $0.confirmed(Session.self, id) == nil }) ?? false
   }
-
-  func correctLoggedSet(_ original: TrainingSet, to value: TrainingSet, account expectedAccount: String?) -> Bool {
-    refresh()
-    guard account == expectedAccount, !accountTransition, !readFailed else { error = "The workout changed. Check the current set"; return false }
-    guard sets.contains(where: { $0.id == original.id }) else { error = "That set is no longer here."; return false }
-    guard let outcome = run(CorrectSet(value, original: original)) else { return false }
-    return outcome.refusal == nil
-  }
 }

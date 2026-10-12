@@ -261,33 +261,19 @@ import XCTest
     snapshot("session-\(appearance)", app: app)
     let correctedSet = firstSet(app)
     correctedSet.tap()
-    XCTAssertTrue(app.textFields["gym-fix-weight"].waitForExistence(timeout: 5))
+    let weight = app.buttons["gym-fix-weight"]
+    XCTAssertTrue(weight.waitForExistence(timeout: 5))
     snapshot("fix-\(appearance)", app: app)
-    let weight = app.textFields["gym-fix-weight"]
-    // Focusing tap first; a tap past the end of the focused, trailing-aligned text then puts the caret after it.
     weight.tap()
-    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-    weight.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5)).tap()
-    weight.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: weight.value.map { "\($0)" }?.count ?? 0))
-    @MainActor func find(_ identifier: String, in snapshot: any XCUIElementSnapshot) -> (any XCUIElementSnapshot)? {
-      if snapshot.identifier == identifier { return snapshot }
-      for child in snapshot.children {
-        if let match = find(identifier, in: child) { return match }
-      }
-      return nil
-    }
-    let cleared = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      guard let snapshot = try? app.snapshot(),
-        let field = find("gym-fix-weight", in: snapshot),
-        let save = find("gym-fix-save", in: snapshot) else { return false }
-      if let value = field.value {
-        guard let text = value as? String, text.isEmpty || text == field.placeholderValue else { return false }
-      }
-      return !save.isEnabled
-    }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [cleared], timeout: 30), .completed)
-    weight.typeText("90")
-    let entered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "90"), object: weight)
+    let delete = app.buttons["workout-key-delete"]
+    XCTAssertTrue(delete.waitForExistence(timeout: 5))
+    for _ in 0..<8 where app.staticTexts["workout-keypad-value"].label != "—" { delete.tap() }
+    XCTAssertEqual(app.staticTexts["workout-keypad-value"].label, "—")
+    XCTAssertFalse(app.buttons["workout-keypad-set"].isEnabled)
+    app.buttons["workout-key-9"].tap(); app.buttons["workout-key-0"].tap()
+    XCTAssertEqual(app.staticTexts["workout-keypad-value"].label, "90")
+    app.buttons["workout-keypad-set"].tap()
+    let entered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Weight, 90 kilograms"), object: weight)
     XCTAssertEqual(XCTWaiter.wait(for: [entered], timeout: 5), .completed)
     app.buttons["gym-fix-save"].tap()
     XCTAssertTrue(weight.waitForNonExistence(timeout: 5))
@@ -310,7 +296,7 @@ import XCTest
     XCTAssertTrue(chart.exists)
     chart.press(forDuration: 0.5); chart.swipeRight()
     app.buttons["Rename"].tap()
-    XCTAssertTrue(app.textFields["gym-rename-name"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.textFields["gym-rename-movement-name"].waitForExistence(timeout: 5))
     snapshot("rename-\(appearance)", app: app)
     app.buttons["Cancel"].tap(); back(app)
     app.swipeUp()

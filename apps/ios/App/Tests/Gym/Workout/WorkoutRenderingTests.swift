@@ -91,11 +91,11 @@ import SyncTesting
       try await capture(WorkoutAssembly(workout: gym.workout, add: {}), name: "assembly-" + name, appearance: appearance)
       try await capture(WorkoutMovementPicker(gym: gym, workout: gym.workout), name: "movements-" + name, appearance: appearance)
       try await capture(NavigationStack { CreateMovementSheet(gym: gym, draft: .constant(MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: "New movement")), includesTargets: false, account: gym.account, anonymous: gym.isAnonymous, onCreated: { _ in }) }.modifier(GymPage()), name: "create-movement-" + name, appearance: appearance)
-      try await capture(WorkoutKeypadSheet(field: .weight, value: 100, commit: { _ in }), name: "weight-keypad-" + name, appearance: appearance)
-      try await capture(WorkoutKeypadSheet(field: .reps, value: 5, commit: { _ in }), name: "reps-keypad-" + name, appearance: appearance)
-      try await capture(WorkoutKeypadSheet(field: .weight, value: 501, commit: { _ in }), name: "invalid-keypad-" + name, appearance: appearance)
+      try await capture(SetKeypadSheet(field: .weight, value: 100, commit: { _ in }), name: "weight-keypad-" + name, appearance: appearance)
+      try await capture(SetKeypadSheet(field: .reps, value: 5, commit: { _ in }), name: "reps-keypad-" + name, appearance: appearance)
+      try await capture(SetKeypadSheet(field: .weight, value: 501, commit: { _ in }), name: "invalid-keypad-" + name, appearance: appearance)
       let set = try XCTUnwrap(gym.workout.sets.last)
-      try await capture(WorkoutFixSheet(gym: gym, set: set, routine: "Lower A"), name: "fix-" + name, appearance: appearance)
+      try await capture(SetEditor(gym: gym, set: set, routine: "Lower A", identifier: "workout-fix"), name: "fix-" + name, appearance: appearance)
       gym.workout.weightKg = 105; gym.workout.logSet(); gym.workout.select(ID("romanian-deadlift"))
       let offer = try XCTUnwrap(gym.workout.deviation)
       try await capture(WorkoutDeviationSheet(workout: gym.workout, offer: offer), name: "heavier-" + name, appearance: appearance)
@@ -203,8 +203,8 @@ import SyncTesting
         let (_, gym) = try fixture()
         gym.workout.weightKg = -500
         try await capture(WorkoutScreen(gym: gym), name: "live-\(name)-\(skin)", appearance: appearance, type: type)
-        try await capture(WorkoutKeypadSheet(field: .weight, value: -500, commit: { _ in }), name: "keypad-\(name)-\(skin)", appearance: appearance, type: type)
-        try await capture(WorkoutFixSheet(gym: gym, set: try XCTUnwrap(gym.sets.last), routine: "Lower A"), name: "fix-\(name)-\(skin)", appearance: appearance, type: type)
+        try await capture(SetKeypadSheet(field: .weight, value: -500, commit: { _ in }), name: "keypad-\(name)-\(skin)", appearance: appearance, type: type)
+        try await capture(SetEditor(gym: gym, set: try XCTUnwrap(gym.sets.last), routine: "Lower A", identifier: "workout-fix"), name: "fix-\(name)-\(skin)", appearance: appearance, type: type)
       }
     }
   }

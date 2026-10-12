@@ -312,8 +312,8 @@ demonstrated (§6 there):
 | `RoomTransient` (below) | four notice bands | Theme (shape), Gym (adapter) |
 | `ActionBand` — the one floating primary, with its optional one-line footer, disabled and busy states | `RoutineActionBand` (`RoutinesTab.swift:165`), the bands in `RoutineTargets.swift:304`, `MovementPicker.swift:330`, `CoachHistory.swift:141`, `WorkoutSheets.swift:138`, `BodyweightScreen.swift:276` | Theme |
 | `WeightInstrument` — the big numeral, unit, four-key ladder, accessibility reflow | `WorkoutScreen.swift:283`, `WorkoutSheets.swift:96` | Gym |
-| `SetEditor` — weight, reps, effort, note, Kind (segmented), delete; validation and its refusal text; the note's byte counter only from 3,200 bytes (the finished-set sheet shows *16 / 4000 bytes* today) | `FinishedSetFixSheet` (`SessionDetailScreen.swift:118`), `WorkoutFixSheet` (`WorkoutSheets.swift:81`) | Gym |
-| `RenameMovementSheet` — one sheet, `.medium`, the name field, a counter only from 48 characters, and one help line: *Renames it everywhere; the old name still finds it.* (the three explanatory rows in `MovementRecordScreen.swift:148–150` go) | `LogRenameSheet` (`MovementRecordScreen.swift:128`), `RenameMovementSheet.swift:23` | Gym |
+| `SetEditor` — weight, reps, effort, note, Kind (segmented), delete; validation and its refusal text; the note's byte counter only from 3,200 bytes | `FinishedSetFixSheet` (`SessionDetailScreen.swift:118`), `WorkoutFixSheet` (`WorkoutSheets.swift:81`) | Gym |
+| `RenameMovementSheet` — one sheet, `.medium`, the name field, a counter only from 48 characters, and one help line: *Renames it everywhere; the old name still finds it.* | `LogRenameSheet` (`MovementRecordScreen.swift:128`), `RenameMovementSheet.swift:23` | Gym |
 | `MovementRow` — title, one meta line, optional trailing fact or check | `RoutineBuilder.swift:99`, `RoutinesTab.swift:129`, `MovementPicker.swift:252`, `WorkoutSheets.swift:170` | Gym |
 | `FactTiles` — up to three value-over-label tiles | the receipt's `fact(_:_:)` (`WorkoutReceipt.swift:242`), session detail's head, the record screen's tiles | Gym |
 | `RoomDoor` — the Where to start? card, given a title, line, symbol, accent and ground | the two cards in `WindmillApp.swift:113,128` | Shell |
@@ -441,7 +441,8 @@ Menu instead of the dialog; the seven removals; the composer; the receipt row; t
 
 One band, every tab and the workout; red text gone from lists. The floating primary and the page
 modifier land in the same change, since every tab's bottom and ground change with them. The other
-shared components (§5) follow as each screen in 7.5–7.11 is touched.
+Gym shared components (§5) live in `Sources/Gym/Components/` and 7.5–7.9 build on them; the shell's
+follow with 7.11 and 7.12.
 
 ### 7.5 Routines
 

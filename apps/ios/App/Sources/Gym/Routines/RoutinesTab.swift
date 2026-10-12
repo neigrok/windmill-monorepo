@@ -139,12 +139,10 @@ struct RoutineDetail: View {
           Section("Movements") {
             ForEach(Array(routine.entries.enumerated()), id: \.offset) { index, entry in
               NavigationLink { RoutineMovementDoor(gym: gym, id: entry.exerciseId) } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                  let exercise = gym.catalogue.find(entry.exerciseId)
-                  let custom = exercise != nil && !SeedExercises.all.contains { $0.id == entry.exerciseId }
-                  Text("\(index + 1). \(exercise?.name ?? "Movement unavailable")\(custom ? " · yours" : "")")
-                  Text(Readout.target(entry.sets)).font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
-                }
+                let exercise = gym.catalogue.find(entry.exerciseId)
+                let custom = exercise != nil && !SeedExercises.all.contains { $0.id == entry.exerciseId }
+                MovementRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")\(custom ? " · yours" : "")",
+                            meta: Readout.target(entry.sets))
               }.accessibilityIdentifier("routine-detail-movement-\(entry.exerciseId)")
             }
           }
