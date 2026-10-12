@@ -53,12 +53,94 @@ extension GymModel {
     }
   }
 
-  var adoptionWorkoutToReview: SignedOutWorkout? {
-    adoptionWorkouts.first { workout in !sessions.contains { $0.id == workout.session.id } } ?? adoptionWorkouts.first
+  // The saved workouts the account has not taken, each with why; the count is the door's.
+  var workoutsToReview: [WorkoutRecovery] {
+    guard let log else { return [] }
+    return WorkoutRecovery.review(adoptionWorkouts, notices: notices, log: log, catalogue: catalogue)
+  }
+
+  var adoptionWorkoutToReview: SignedOutWorkout? { workoutsToReview.first?.workout ?? adoptionWorkouts.first }
+
+  func inspectWorkout(_ id: ID<Session>) -> WorkoutRecovery? {
+    guard let recovery = workoutsToReview.first(where: { $0.id == id }) else { return nil }
+    recorded(.inspect, recovery.reason)
+    return recovery
+  }
+
+  // The editor's draft; a landed workout's stranded sets are placed by Retry, not edited.
+  func fixWorkout(_ id: ID<Session>) -> WorkoutFix? {
+    guard let recovery = workoutsToReview.first(where: { $0.id == id }), recovery.retry != .restoreSets else { return nil }
+    recorded(.fix, recovery.reason)
+    return WorkoutFix(recovery.workout)
+  }
+
+  func fixRefusal(_ fix: WorkoutFix) -> GymRefusal? {
+    guard let log else { return nil }
+    return fix.refusal(at: log.moment, among: log.drawnSessions)
   }
 
   func keepAdoptedWorkout(_ id: ID<Session>) {
-    _ = run(AdoptWorkout(id, mode: .keep))
+    recover(id, step: .keep) { run(AdoptWorkout(id, mode: .keep)) }
+  }
+
+  func retryWorkout(_ id: ID<Session>) {
+    guard let recovery = workoutsToReview.first(where: { $0.id == id }) else { return }
+    recover(id, step: .retry) {
+      switch recovery.retry {
+      case .importWorkout: run(AdoptWorkout(id, mode: .keep))
+      case .restartWorkout: restartWorkout(id, revised: nil)
+      case .restoreSets: restoreStrandedSets(id)
+      }
+    }
+  }
+
+  // The corrected copy replaces the saved one only once its retry is queued; a refusal reaches the editor, which keeps the draft.
+  @discardableResult
+  func saveAndRetryWorkout(_ fix: WorkoutFix) -> Bool {
+    let id = fix.original.session.id
+    return recover(id, step: .saveAndRetry) {
+      fix.isOpen ? restartWorkout(id, revised: fix.workout) : run(AdoptWorkout(id, mode: .keep, revised: fix.workout))
+    }
+  }
+
+  // One recovery step over a saved workout: its attempt, the notices it answers dismissed once queued, and the step recorded.
+  @discardableResult
+  func recover(_ id: ID<Session>, step: RecoveryStep, _ attempt: () -> Outcome<Void, GymRefusal>?) -> Bool {
+    let recovery = workoutsToReview.first { $0.id == id }
+    let outcome = attempt()
+    if outcome?.receipt != nil { for notice in recovery?.noticeIds ?? [] { dismissNotice(notice) } }
+    let result = outcome == nil ? "failed" : outcome?.refusal == nil ? "ok" : "refused"
+    recorded(step, recovery?.reason ?? .unsent, outcome: result)
+    return result == "ok"
+  }
+
+  // An open workout's start, then each saved set the log does not draw, in the order performed.
+  func restartWorkout(_ id: ID<Session>, revised: SignedOutWorkout?) -> Outcome<Void, GymRefusal>? {
+    let started = run(AdoptWorkout(id, mode: .restart, revised: revised))
+    guard let started, started.refusal == nil else { return started }
+    for set in adoptionWorkouts.first(where: { $0.session.id == id })?.sets ?? [] where !sets.contains(where: { $0.id == set.id }) {
+      guard let appended = run(AppendSet(set)) else { return nil }
+      if let refusal = appended.refusal { return .refused(refusal) }
+    }
+    return started
+  }
+
+  // The sets inside the landed workout's window first, then the ones outside it as a workout of their own.
+  func restoreStrandedSets(_ id: ID<Session>) -> Outcome<Void, GymRefusal>? {
+    let inside = run(RecoverStrandedSets(id, .intoWorkout))
+    guard let inside, inside.refusal == nil else { return inside }
+    let outside = run(RecoverStrandedSets(id, .separately))
+    guard let outside, outside.refusal == nil else { return outside }
+    return inside.receipt != nil ? inside : outside
+  }
+
+  enum RecoveryStep: String { case inspect, fix, keep, retry, saveAndRetry = "save_and_retry" }
+
+  // Content-free: the step, the bounded reason and, for a commit, its outcome.
+  func recorded(_ step: RecoveryStep, _ reason: WorkoutRecovery.Reason, outcome: String? = nil) {
+    var properties = ["step": step.rawValue, "reason": reason.rawValue]
+    if let outcome { properties["outcome"] = outcome }
+    telemetry.event("gym_import_recovery", properties: properties)
   }
 }
 

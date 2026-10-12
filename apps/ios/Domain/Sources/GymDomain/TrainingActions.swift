@@ -226,16 +226,27 @@ public struct ImportSession: Action {
   public func load(_ read: Reader) throws -> Loaded {
     (try TrainingState(read), try routineId.flatMap { try read.repository(Routine.self).find($0, in: .drawn) })
   }
+  // The import's own checks, before the account's: instants in bounds, at most 200 distinct sets, every set inside the window and valid.
+  public func checked(at moment: Moment) -> Result<[TrainingSet], GymRefusal> {
+    do throws(Violation) {
+      try SessionRules.instant(startedAt, rule: "session.startedAt", at: "startedAt")
+      try SessionRules.instant(finishedAt, rule: "session.finishedAt", at: "finishedAt")
+      guard sets.count <= 200 && Set(sets.map(\.id)).count == sets.count else { throw Violation(rule: "session.sets", path: "sets", reason: .custom("invalid")) }
+      guard finishedAt >= startedAt && sets.allSatisfy({ $0.completedAt >= startedAt && $0.completedAt <= finishedAt }) else {
+        return .failure(.badInstant(Refused(Gym.Codes.badInstant, subject: id.ref, path: .predicted)))
+      }
+      var checked: [TrainingSet] = []
+      for set in sets {
+        checked.append(try Valid(set.value(session: id), at: moment).value)
+      }
+      return .success(checked)
+    } catch { return .failure(.invalid(error)) }
+  }
   public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<ID<Session>, GymRefusal> {
-    try SessionRules.instant(startedAt, rule: "session.startedAt", at: "startedAt")
-    try SessionRules.instant(finishedAt, rule: "session.finishedAt", at: "finishedAt")
-    guard sets.count <= 200 && Set(sets.map(\.id)).count == sets.count else { throw Violation(rule: "session.sets", path: "sets", reason: .custom("invalid")) }
-    guard finishedAt >= startedAt && sets.allSatisfy({ $0.completedAt >= startedAt && $0.completedAt <= finishedAt }) else {
-      return .refuse(.badInstant(Refused(Gym.Codes.badInstant, subject: id.ref, path: .predicted)))
-    }
-    var checked: [TrainingSet] = []
-    for set in sets {
-      checked.append(try Valid(set.value(session: id), at: loaded.state.moment).value)
+    let checked: [TrainingSet]
+    switch self.checked(at: loaded.state.moment) {
+    case .failure(let refusal): return .refuse(refusal)
+    case .success(let sets): checked = sets
     }
     let routine = loaded.routine
     let predicted = Session(id: id, startedAt: startedAt, finishedAt: finishedAt, closedBy: "finish", routineId: routine?.id, plan: routine.map(SessionPlan.init))

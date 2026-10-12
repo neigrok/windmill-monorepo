@@ -40,14 +40,26 @@ public struct SignedOutWorkout: Equatable, Sendable {
       sets: sets.map { ImportedSet(id: $0.id, exerciseId: $0.exerciseId, weightKg: $0.weightKg, reps: $0.reps,
         completedAt: $0.completedAt, kind: $0.kind, rpe: $0.rpe, note: $0.note, rpeNamed: true) }, routineId: session.routineId)
   }
+  // What this phone refuses before asking the account: the import's own checks, then a crossing with a finished workout on the log.
+  public func importRefusal(at moment: Moment, among sessions: [Session]) -> GymRefusal? {
+    let action = importAction
+    if case .failure(let refusal) = action.checked(at: moment) { return refusal }
+    let crossed = sessions.filter { $0.id != session.id && SessionRules.crosses(action.startedAt, action.finishedAt, other: $0) }
+      .min { $0.startedAt == $1.startedAt ? $0.id < $1.id : $0.startedAt < $1.startedAt }
+    guard let crossed else { return nil }
+    return .sessionOverlap(Refused(Gym.Codes.sessionOverlap, subject: session.id.ref, detail: ["sessionId": crossed.id.json], path: .predicted))
+  }
   public static func read(_ read: Reader) throws -> [SignedOutWorkout] {
     guard case .object(let rows)? = try read.device(key) else { return [] }
     return try rows.members.map { try SignedOutWorkout($0.value) }.sorted { $0.session.id < $1.session.id }
   }
 }
 
+// `prepare` turns a signed-out workout into one import, or a non-joining start, before the replica changes hands.
+// `keep` imports the saved copy as finished at its last set; `restart` resubmits an open one's start, its sets appended after.
+// Both take a revised copy, which replaces the saved one only when the retry is queued.
 public struct AdoptWorkout: Action {
-  public enum Mode: Sendable { case prepare, keep }
+  public enum Mode: Sendable { case prepare, keep, restart }
   public struct Loaded {
     let anonymous: Bool
     let commands: [QueuedCommand]
@@ -59,21 +71,23 @@ public struct AdoptWorkout: Action {
   }
   public let id: ID<Session>
   public let mode: Mode
-  public init(_ id: ID<Session>, mode: Mode) { self.id = id; self.mode = mode }
+  public let revised: SignedOutWorkout?
+  public init(_ id: ID<Session>, mode: Mode, revised: SignedOutWorkout? = nil) {
+    precondition(revised == nil || (mode != .prepare && revised?.session.id == id), "a revision keeps the saved workout's identity")
+    self.id = id; self.mode = mode; self.revised = revised
+  }
   public var scope: ScopeRef { Gym.scope }
   public func load(_ read: Reader) throws -> Loaded {
-    let backup = try SignedOutWorkout.read(read)
-    let session = try read.repository(Session.self).find(id, in: .drawn)
-    var sets = try read.repository(TrainingSet.self).children(of: id, via: "sessionId", in: .drawn)
-    if case .prepare = mode, let previous = backup.first(where: { $0.session.id == id }) {
-      for set in previous.sets where !sets.contains(where: { $0.id == set.id }) {
+    let backup = try SignedOutWorkout.read(read), saved = backup.first { $0.session.id == id }
+    let workout: SignedOutWorkout?
+    if case .prepare = mode {
+      let session = try read.repository(Session.self).find(id, in: .drawn)
+      var sets = try read.repository(TrainingSet.self).children(of: id, via: "sessionId", in: .drawn)
+      for set in saved?.sets ?? [] where !sets.contains(where: { $0.id == set.id }) {
         if try read.repository(TrainingSet.self).record(set.id, in: .stored) == nil { sets.append(set) }
       }
-    }
-    let workout: SignedOutWorkout?
-    if case .prepare = mode, let session {
-      workout = SignedOutWorkout(session: SessionRules.drawn(session, sets: sets, now: read.moment.now), sets: sets)
-    } else { workout = backup.first { $0.session.id == id } }
+      workout = session.map { SignedOutWorkout(session: SessionRules.drawn($0, sets: sets, now: read.moment.now), sets: sets) }
+    } else { workout = saved.map { revised ?? $0 } }
     return Loaded(anonymous: read.isAnonymous, commands: try read.commands(), backup: backup, workout: workout,
       imported: try workout?.importAction.load(read), confirmed: try read.confirmed(Session.self, id) != nil,
       firstPullComplete: try read.firstPullComplete())
@@ -99,15 +113,27 @@ public struct AdoptWorkout: Action {
         plan = try Plan(running: command, predicting: [.create(Session.self, id, workout.session.fields)])
         plan.supersede([start.gestureId])
       }
-    case .keep:
-      guard !loaded.anonymous, loaded.firstPullComplete, !loaded.confirmed,
-            !commands.contains(where: { $0.command.name == Gym.Commands.start }), let imported = loaded.imported else {
+    case .keep, .restart:
+      guard !loaded.anonymous, loaded.firstPullComplete, !commands.contains(where: { $0.command.name == Gym.Commands.start }) else {
         return .refuse(.sessionOpen(Refused(Gym.Codes.sessionOpen, subject: id.ref, path: .predicted)))
       }
-      switch workout.importAction.decision(imported, ids: ids) {
-      case .write(let imported, _): plan = imported
-      case .refuse(let refusal): return .refuse(refusal)
-      case .unchanged: return .unchanged(())
+      guard !loaded.confirmed else { return .refuse(.taken(id.ref, .predicted)) }
+      guard let imported = loaded.imported else { return .unchanged(()) }
+      backups[id.description] = workout.json
+      if case .restart = mode {
+        guard workout.session.isOpen else { return .refuse(.sessionFinished(Refused(Gym.Codes.sessionFinished, subject: id.ref, path: .predicted))) }
+        guard !imported.state.stored.contains(where: { SessionRules.drawn($0, sets: imported.state.sets, now: imported.state.moment.now).isOpen }) else {
+          return .refuse(.sessionOpen(Refused(Gym.Codes.sessionOpen, subject: id.ref, path: .predicted)))
+        }
+        try SessionRules.instant(workout.session.startedAt, rule: "session.startedAt", at: "startedAt")
+        plan = try Plan(running: NonJoiningWorkoutStart(session: workout.session), predicting: [.create(Session.self, id, workout.session.fields)])
+      } else {
+        if let refusal = workout.importRefusal(at: imported.state.moment, among: imported.state.stored) { return .refuse(refusal) }
+        switch workout.importAction.decision(imported, ids: ids) {
+        case .write(let imported, _): plan = imported
+        case .refuse(let refusal): return .refuse(refusal)
+        case .unchanged: return .unchanged(())
+        }
       }
     }
     plan.device(SignedOutWorkout.key, .object(backups))

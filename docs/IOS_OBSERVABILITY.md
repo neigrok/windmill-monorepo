@@ -94,6 +94,7 @@ action `dismiss_ink` once when writing or a tap lifts it; no ink replay action i
 | Coach | `gym_ask_started`, `gym_ask_outcome` | screen: coach; outcome: answered, cancelled, failed, refused, capped, fresh, absent; cap: daily, ceiling; duration_ms |
 | Proposals | `gym_proposal_outcome` | screen: review; action: apply, dismiss; outcome: decided, failed |
 | Gym actions | `gym_action`, `gym_undo` | screen: gym; outcome: ok, refused, failed; no action payloads |
+| Import recovery | `gym_import_recovery` | step: inspect, fix, keep, retry, save_and_retry; reason: session-open, session-overlap, id-taken, bad-instant, too-many-sets, invalid-set, unknown-exercise, log-full, session-finished, unsent, other; outcome (keep, retry, save_and_retry only): ok, refused, failed |
 | Optional scales | `scale_invitation_shown`, `scale_invitation_answered` | action: answered, declined |
 | Writing | `journal_line_saved` | day_kind: today; emitted after a changed, nonempty body saves, never for scale-only changes |
 | Echoes | `journal_echo_shown`, `journal_echo_opened`, `journal_echo_dismissed`, `journal_echo_useful` | no properties; passage exposure, following its source, Not useful, and Useful |
@@ -146,6 +147,15 @@ joined into the account workout. The recovery copy is refreshed before each chan
 failed refresh reports through `gym_action` and aborts that account change, which its auth operation
 also reports. Recovery commits use the existing bounded `gym_action` outcomes;
 adoption approvals use `room_adoption_answered`, without workout counts, content or identifiers.
+
+A saved workout the account refused stays on the phone with the reason the engine notice or the
+phone's own import checks give it. Inspect, Fix, Keep, Retry and Save and retry each emit one
+`gym_import_recovery` with the step and the reason as bounded labels; Keep, Retry and Save and retry
+add the outcome. A retry that lands dismisses the notices it answered. Sets a landed workout refused
+go back into it through an additive correction, or into a separate workout when their times fall
+outside it. The commits run through the gym action path, so a storage or engine failure reports to
+Sentry under `gym_action` and the step's outcome is `failed`. No times, movement names, set values,
+notes, counts or identifiers enter the event.
 
 Screen and choice events also record visits when the same screens are revisited after first run.
 Apple auth operations use static labels `auth_apple`, `auth_apple_create`, `auth_verify_code`,

@@ -37,7 +37,7 @@ nonisolated enum TelemetryPrivacy {
     "sync_pull_outcome", "sync_push_outcome", "api_request_failed", "client_error",
     "onboarding_screen_viewed", "onboarding_skipped", "onboarding_finished", "onboarding_replayed", "room_switched", "room_adoption_answered", "gym_screen_viewed", "gym_action", "gym_undo",
     "gym_activity_set_logged", "gym_activity_offer_refused", "gym_session_started", "gym_session_finished", "gym_set_logged", "gym_routine_saved",
-    "gym_ask_started", "gym_ask_outcome", "gym_proposal_outcome"
+    "gym_ask_started", "gym_ask_outcome", "gym_proposal_outcome", "gym_import_recovery"
   ]
   static let labels: [String: Set<String>] = [
     "room": ["journal", "gym"],
@@ -47,6 +47,8 @@ nonisolated enum TelemetryPrivacy {
     "action": ["create", "update", "apply", "dismiss", "open_gym", "open_journal", "dismiss_ink", "write", "done_writing", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "answered", "declined", "use_account", "create_account", "remove_apple", "retry"],
     "outcome": ["answered", "capped", "fresh", "absent", "decided", "refused", "ok", "failed", "cancelled", "signed_in", "signed_out", "paused", "anonymous", "linked"],
     "storage": ["device", "server"],
+    "step": ["inspect", "fix", "keep", "retry", "save_and_retry"],
+    "reason": ["session-open", "session-overlap", "id-taken", "bad-instant", "too-many-sets", "invalid-set", "unknown-exercise", "log-full", "session-finished", "unsent", "other"],
     "cap": ["daily", "ceiling"],
     "method": ["GET", "POST", "PUT", "DELETE", "email", "apple"],
     "day_kind": ["today"],
