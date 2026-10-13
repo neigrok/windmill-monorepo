@@ -38,6 +38,7 @@ struct WorkoutScreen: View {
       }
       .navigationTitle(workout.session?.name ?? Readout.noRoutine)
       .navigationBarTitleDisplayMode(.inline)
+      .navigationSubtitleIfAvailable(workout.session.flatMap { $0.isOpen ? $0.startedAt.date.formatted(date: .omitted, time: .shortened) : nil })
       .toolbar {
         if workout.session?.isOpen == true {
           ToolbarItem(placement: .topBarLeading) {
@@ -115,52 +116,49 @@ struct WorkoutScreen: View {
         }
       } else {
         movementHead
-        if !typeSize.isAccessibilitySize { WorkoutElapsed(workout: workout) }
         WorkoutPager(gym: gym, workout: workout, fix: { fixing = $0 })
       }
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
-      if workout.selected != nil || workout.message != nil || gym.workoutNotice != nil || gym.error != nil || gym.readFailed || !gym.undoOffers.isEmpty || gym.workoutBanner(gym.workoutStrandedSets.count) != nil {
-        VStack(spacing: 8) {
-          notices.modifier(BoundedBand())
+      let transient = GymTransient(gym: gym, message: workout.message, dismiss: { workout.message = nil }, noticeMessage: gym.workoutNotice,
+                                   retry: { gym.workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
+      if workout.selected != nil || transient.shown != nil {
+        VStack(spacing: RoomSpace.related) {
+          if transient.shown != nil { transient.modifier(BoundedBand()) }
           if workout.selected != nil {
             WorkoutRack(workout: workout, edit: { keypad = $0 })
               .padding(RoomSpace.inset)
-              .background(GymPalette.card, in: UnevenRoundedRectangle(topLeadingRadius: RoomSpace.panel, topTrailingRadius: RoomSpace.panel))
+              .background {
+                UnevenRoundedRectangle(topLeadingRadius: RoomSpace.panel, topTrailingRadius: RoomSpace.panel)
+                  .fill(GymPalette.card).ignoresSafeArea(edges: .bottom)
+              }
           }
         }.frame(maxWidth: .infinity).padding(.top, RoomSpace.related)
       }
     }
   }
-  // The message leads and the banner follows it in one bounded band, so the rack stays in reach.
-  var notices: some View {
-    VStack(spacing: 8) {
-      GymTransient(gym: gym, message: workout.message, dismiss: { workout.message = nil }, noticeMessage: gym.workoutNotice, retry: { gym.workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
-      if let banner = gym.workoutBanner(gym.workoutStrandedSets.count) {
-        Text(banner).font(.footnote).foregroundStyle(GymPalette.inkDim)
-          .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
-          .padding(.horizontal, RoomSpace.inset)
-      }
-    }
-  }
+  // The eyebrow over the name, Previous and Next beside it; at accessibility sizes the eyebrow, plan and clocks move into the ledger.
   var movementHead: some View {
-    VStack(spacing: 2) {
-      let position = workout.walk.order.firstIndex { $0 == workout.selected } ?? 0
-      HStack {
-        Button("Previous movement", systemImage: "chevron.left") { workout.select(workout.walk.order[position - 1]) }
-          .labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44).disabled(position == 0 || workout.paging)
-          .accessibilityIdentifier("workout-previous")
+    let order = workout.walk.order, position = workout.walk.position(of: workout.selected)
+    return VStack(spacing: RoomSpace.small) {
+      if let position, !typeSize.isAccessibilitySize { WorkoutFacts.eyebrow(position) }
+      HStack(spacing: RoomSpace.related) {
+        if let position {
+          WorkoutCircle(title: "Previous movement", symbol: "chevron.left") { workout.select(order[position.index - 1]) }
+            .disabled(position.index == 0 || workout.paging).accessibilityIdentifier("workout-previous")
+        }
         Button { assembly = true } label: {
           Text(gym.catalogue.find(workout.selected ?? ID("missing"))?.name ?? "Movement")
             .font(typeSize.isAccessibilitySize ? .caption.weight(.bold) : .title2.weight(.bold))
-            .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity)
-        }.buttonStyle(.plain).accessibilityHint("Open this session’s movements")
-        Button("Next movement", systemImage: "chevron.right") { workout.select(workout.walk.order[position + 1]) }
-          .labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44)
-          .disabled(position + 1 >= workout.walk.order.count || workout.paging).accessibilityIdentifier("workout-next")
+            .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity)
+        }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).accessibilityHint("Open this session’s movements")
+        if let position {
+          WorkoutCircle(title: "Next movement", symbol: "chevron.right") { workout.select(order[position.index + 1]) }
+            .disabled(position.index + 1 >= position.count || workout.paging).accessibilityIdentifier("workout-next")
+        }
       }
-      if workout.walk.order.count > 1 { Text("Movement \(position + 1) of \(workout.walk.order.count)").font(.caption2).foregroundStyle(GymPalette.inkDim) }
-    }.padding(.horizontal, 16)
+      if !typeSize.isAccessibilitySize { WorkoutFacts(workout: workout, plan: workout.entry?.sets) }
+    }.padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.inset)
   }
   func saved(_ session: Session) -> some View {
     SessionDetailScreen(gym: gym, sessionID: session.id)
@@ -175,6 +173,7 @@ struct WorkoutScreen: View {
   }
 }
 
+// One movement's sets in the order they were logged, then the current set and the plan still ahead.
 struct WorkoutLedger: View {
   let gym: GymModel
   let workout: WorkoutState
@@ -185,101 +184,106 @@ struct WorkoutLedger: View {
     let sets = workout.sets.filter { $0.exerciseId == exerciseId }
     let working = sets.filter { $0.kind == "working" }.count
     let targets = workout.session?.plan?.entries.first { $0.exerciseId == exerciseId }?.sets ?? []
-    let pending = gym.workoutDeviceSets(workout.sets)
+    let current = working < targets.count ? Readout.setTarget(targets[working]) : Readout.openTarget
+    let unsent = gym.workoutUnsentSets
     ScrollViewReader { scroll in
     List {
-      if typeSize.isAccessibilitySize { Section { WorkoutElapsed(workout: workout) }.listRowBackground(GymPalette.canvas) }
-      if !targets.isEmpty {
+      if typeSize.isAccessibilitySize {
         Section {
-          ScrollView(.horizontal) {
-            HStack(spacing: 12) {
-              ForEach(Array(targets.enumerated()), id: \.offset) { index, target in
-                VStack(spacing: 4) {
-                  Label("Set \(index + 1)", systemImage: index < working ? "checkmark.circle.fill" : index == working ? "circle.inset.filled" : "circle")
-                    .foregroundStyle(index < working ? GymPalette.done : index == working ? GymPalette.accent : GymPalette.inkDim)
-                  Text(Readout.setTarget(target)).font(.caption.monospacedDigit())
-                }.font(.caption).accessibilityElement(children: .combine)
-              }
-            }.padding(.vertical, 4)
-          }.accessibilityIdentifier("workout-slots")
-        }.listRowBackground(GymPalette.canvas)
-      }
-      if let last = gym.log?.lastTime(for: exerciseId), let top = last.sets.last {
-        Section {
-          Text("Last time · \(Readout.weight(top.weightKg)) kg × \(top.reps)")
-            .font(.subheadline).foregroundStyle(GymPalette.inkDim)
+          WorkoutFacts(workout: workout, plan: targets, position: workout.walk.position(of: exerciseId)).frame(maxWidth: .infinity)
         }.listRowBackground(GymPalette.canvas)
       }
       Section {
         ForEach(Array(sets.enumerated()), id: \.element.id) { index, set in
           let ordinal = sets.prefix(index + 1).filter { $0.kind == "working" }.count
-          let marker = set.kind == "working" ? "\(ordinal)" : String(set.kind.prefix(1)).uppercased()
+          let name = set.kind == "working" ? "Set \(ordinal)" : set.kind.capitalized
           Button { fix(set) } label: {
-            HStack {
-              Text(marker)
-                .font(.body.monospacedDigit()).frame(minWidth: 24)
-              Image(systemName: "checkmark").foregroundStyle(GymPalette.done)
-              VStack(alignment: .leading, spacing: 4) {
-                Text("\(Readout.weight(set.weightKg)) kg × \(set.reps)").font(.body.monospacedDigit())
-                if pending.contains(set.id) { Text("on this device").font(.caption).foregroundStyle(GymPalette.inkDim) }
-              }
-              Spacer()
-            }.frame(minHeight: 44).foregroundStyle(GymPalette.ink)
+            WorkoutLedgerRow(marker: set.kind == "working" ? "\(ordinal)" : String(set.kind.prefix(1)).uppercased(),
+                             readout: Readout.effort(weightKg: set.weightKg, reps: set.reps),
+                             state: unsent.contains(set.id) ? .unsent : .sent)
           }.disabled(workout.paging || workout.finishing || workout.finishQueued || gym.accountTransition)
-            .accessibilityLabel("\(set.kind == "working" ? "Set \(ordinal)" : set.kind.capitalized), logged, \(Readout.weight(set.weightKg)) kg, \(set.reps) reps\(pending.contains(set.id) ? ", on this device" : "")")
+            .accessibilityLabel("\(name), logged, \(Readout.weight(set.weightKg)) kg, \(set.reps) reps\(unsent.contains(set.id) ? ", on this phone" : "")")
             .accessibilityHint("Correct this set").accessibilityIdentifier("workout-set-\(set.id.record)")
         }
-        Group {
-        if typeSize.isAccessibilitySize {
-          VStack(alignment: .leading, spacing: 4) {
-            Text("Set \(working + 1) · Current set").font(.caption2.weight(.semibold))
-            Text(working < targets.count ? "Target · \(Readout.setTarget(targets[working]))" : "You decide the numbers at the rack.")
-              .font(.subheadline).foregroundStyle(GymPalette.inkDim)
-          }.frame(maxWidth: .infinity, alignment: .leading)
-        } else { HStack {
-          Text("\(working + 1)").font(.body.monospacedDigit()).frame(minWidth: 24)
-          VStack(alignment: .leading) {
-            Text("Current set").font(.body.weight(.semibold))
-            if working < targets.count { Text("Target · \(Readout.setTarget(targets[working]))").font(.subheadline).foregroundStyle(GymPalette.inkDim) }
-            else { Text("You decide the numbers at the rack.").font(.subheadline).foregroundStyle(GymPalette.inkDim) }
-          }
-          Spacer()
-          Image(systemName: "circle.fill").font(.caption).foregroundStyle(.tint)
-        } }
-        }.frame(minHeight: 44).accessibilityElement(children: .combine).accessibilityIdentifier("workout-current-set").id("current")
+        WorkoutLedgerRow(marker: "\(working + 1)", readout: current, state: .current)
+          .accessibilityElement(children: .combine).accessibilityLabel("Set \(working + 1), current, target \(current)")
+          .accessibilityIdentifier("workout-current-set").id("current")
         if working + 1 < targets.count {
           ForEach((working + 1)..<targets.count, id: \.self) { index in
-            HStack {
-              Text("\(index + 1)").frame(minWidth: 24)
-              Text(Readout.setTarget(targets[index])); Spacer(); Text("planned")
-            }.font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim).frame(minHeight: 44)
-              .accessibilityLabel("Set \(index + 1), planned, \(Readout.setTarget(targets[index]))")
+            WorkoutLedgerRow(marker: "\(index + 1)", readout: Readout.setTarget(targets[index]), state: .planned)
+              .accessibilityElement(children: .ignore).accessibilityLabel("Set \(index + 1), planned, \(Readout.setTarget(targets[index]))")
           }
         }
       }.listRowBackground(GymPalette.card)
-      Color.clear.frame(height: 32).listRowSeparator(.hidden).listRowBackground(GymPalette.canvas).accessibilityHidden(true)
-    }.listStyle(.plain).modifier(GymPage())
+    }.listStyle(.insetGrouped).listSectionSpacing(.compact).contentMargins(.top, RoomSpace.related, for: .scrollContent)
+      .contentMargins(.bottom, RoomSpace.minimumTarget, for: .scrollContent).modifier(GymPage())
       .onAppear { scroll.scrollTo("current", anchor: .bottom) }
       .onChange(of: sets.count) { _, _ in scroll.scrollTo("current", anchor: .bottom) }
     }
   }
 }
 
-struct WorkoutElapsed: View {
-  let workout: WorkoutState
+// One line of the ledger: the set's place, its numbers, and its state at the trailing edge.
+struct WorkoutLedgerRow: View {
+  enum State { case sent, unsent, current, planned }
+  let marker: String
+  let readout: String
+  let state: State
   var body: some View {
-    TimelineView(.periodic(from: .now, by: 1)) { context in
-      if let session = workout.session {
-        let clocks = WorkoutClocks(session: session, sets: workout.sets,
-                                   now: Instant(ms: Int64(context.date.timeIntervalSince1970 * 1_000)))
-        HStack(spacing: 16) {
-          Label(WorkoutClocks.reading(clocks.workoutMs), systemImage: "clock")
-            .accessibilityLabel("Workout time").accessibilityValue(WorkoutClocks.reading(clocks.workoutMs))
-          Label(WorkoutClocks.reading(clocks.sinceSetMs), systemImage: "stopwatch")
-            .accessibilityLabel(clocks.sinceSetName).accessibilityValue(WorkoutClocks.reading(clocks.sinceSetMs))
-        }.font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim).padding(.bottom, 8)
+    HStack(spacing: RoomSpace.inset) {
+      Text(marker).foregroundStyle(state == .current ? GymPalette.accent : state == .planned ? GymPalette.inkFaint : GymPalette.inkDim)
+        .frame(minWidth: 24, alignment: .leading)
+      Text(readout).foregroundStyle(state == .planned ? GymPalette.inkFaint : GymPalette.ink)
+      Spacer(minLength: RoomSpace.related)
+      switch state {
+      case .sent: Image(systemName: "checkmark").foregroundStyle(GymPalette.done)
+      case .unsent: Image(systemName: "iphone").foregroundStyle(GymPalette.inkDim)
+      case .current: Circle().fill(GymPalette.accent).frame(width: RoomSpace.related, height: RoomSpace.related)
+      case .planned: EmptyView()
+      }
+    }.font(.body.monospacedDigit()).frame(minHeight: RoomSpace.minimumTarget)
+  }
+}
+
+// The movement's plan and the one clock line under its name, led by its place in the walk where the head has no room for it.
+struct WorkoutFacts: View {
+  let workout: WorkoutState
+  let plan: [SetTarget]?
+  var position: (index: Int, count: Int)?
+  static func eyebrow(_ position: (index: Int, count: Int)) -> some View {
+    Text("Movement \(position.index + 1) of \(position.count)").font(.caption).textCase(.uppercase).foregroundStyle(GymPalette.inkFaint)
+  }
+  var body: some View {
+    VStack(spacing: RoomSpace.small) {
+      if let position { Self.eyebrow(position) }
+      if let plan, !plan.isEmpty {
+        Text("plan \(Readout.target(plan))").font(.subheadline).monospacedDigit().foregroundStyle(GymPalette.inkDim)
+      }
+      TimelineView(.periodic(from: .now, by: 1)) { _ in
+        if let clocks = workout.clocks {
+          HStack(spacing: 0) {
+            Text(WorkoutClocks.reading(clocks.workoutMs))
+              .accessibilityLabel("Workout time").accessibilityValue(WorkoutClocks.reading(clocks.workoutMs))
+            if let since = clocks.sinceSetMs {
+              Text(" · \(WorkoutClocks.reading(since)) since last set")
+                .accessibilityLabel("Since last set").accessibilityValue(WorkoutClocks.reading(since))
+            }
+          }.font(.footnote.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
+        }
       }
     }
+  }
+}
+
+// A 44 pt glass circle holding one symbol: Previous and Next beside the movement, fewer and more reps beside the count.
+struct WorkoutCircle: View {
+  let title: String
+  let symbol: String
+  let action: () -> Void
+  @Environment(\.isEnabled) var enabled
+  var body: some View {
+    Button(title, systemImage: symbol, action: action).labelStyle(.iconOnly).buttonStyle(RoomSeatStyle())
+      .foregroundStyle(GymPalette.ink).opacity(enabled ? 1 : 0.4)
   }
 }
 
@@ -288,37 +292,28 @@ struct WorkoutRack: View {
   let edit: (SetKeypad.Field) -> Void
   @Environment(\.dynamicTypeSize) var typeSize
   var body: some View {
-    VStack(spacing: 8) {
+    VStack(spacing: RoomSpace.related) {
       if typeSize.isAccessibilitySize {
         ScrollView { controls }.frame(height: 220)
       } else { controls }
-      Button { workout.logSet() } label: { Text("Log set").frame(maxWidth: .infinity, minHeight: 44) }
-        .modifier(RoomPrimaryStyle(room: .gym)).disabled(!workout.canLog).accessibilityIdentifier("workout-log")
+      Button { workout.logSet() } label: {
+        ViewThatFits(in: .horizontal) {
+          Text("Log set · \(Readout.effort(weightKg: workout.weightKg, reps: workout.reps))").lineLimit(1)
+          Text("Log set")
+        }.frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget)
+      }.modifier(RoomPrimaryStyle(room: .gym)).disabled(!workout.canLog).accessibilityIdentifier("workout-log")
     }.disabled(workout.paging || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
   }
   var controls: some View {
-    VStack(spacing: 8) {
-      WeightInstrument(weightKg: $workout.weightKg, identifier: "workout-weight") { edit(.weight) }
-      ViewThatFits(in: .horizontal) {
-      HStack {
-        Button("Fewer reps", systemImage: "minus") { workout.reps = max(1, workout.reps - 1) }.labelStyle(.iconOnly)
-          .frame(minWidth: 44, minHeight: 44).modifier(RoomSecondaryStyle())
-        Button("\(workout.reps) reps") { edit(.reps) }.font(.title3.monospacedDigit()).frame(maxWidth: .infinity, minHeight: 44)
-          .accessibilityIdentifier("workout-reps")
-        Button("More reps", systemImage: "plus") { workout.reps = min(99, workout.reps + 1) }.labelStyle(.iconOnly)
-          .frame(minWidth: 44, minHeight: 44).modifier(RoomSecondaryStyle())
-        Picker("Set kind", selection: $workout.kind) {
-          ForEach(SetKind.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
-        }.pickerStyle(.menu).accessibilityIdentifier("workout-kind")
-      }
-      VStack {
-        HStack {
-          Button("Fewer reps", systemImage: "minus") { workout.reps = max(1, workout.reps - 1) }.labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44)
-          Button("\(workout.reps) reps") { edit(.reps) }.frame(maxWidth: .infinity, minHeight: 44)
-          Button("More reps", systemImage: "plus") { workout.reps = min(99, workout.reps + 1) }.labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44)
-        }
-        Picker("Set kind", selection: $workout.kind) { ForEach(SetKind.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) } }.pickerStyle(.menu)
-      }
+    VStack(spacing: RoomSpace.related) {
+      WeightInstrument(weightKg: $workout.weightKg, identifier: "workout-weight", alignment: .center) { edit(.weight) }
+      HStack(spacing: RoomSpace.related) {
+        WorkoutCircle(title: "Fewer reps", symbol: "minus") { workout.reps = max(1, workout.reps - 1) }
+        Button { edit(.reps) } label: {
+          Text("^[\(workout.reps) rep](inflect: true)").font(.title3).monospacedDigit()
+            .frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget)
+        }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).accessibilityIdentifier("workout-reps")
+        WorkoutCircle(title: "More reps", symbol: "plus") { workout.reps = min(99, workout.reps + 1) }
       }
     }
   }

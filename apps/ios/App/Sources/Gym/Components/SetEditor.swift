@@ -89,11 +89,12 @@ struct SetKeypadSheet: View {
 struct WeightInstrument: View {
   @Binding var weightKg: Double
   let identifier: String
+  var alignment = HorizontalAlignment.leading
   let edit: () -> Void
   @Environment(\.dynamicTypeSize) private var typeSize
 
   var body: some View {
-    VStack(alignment: .leading, spacing: RoomSpace.related) {
+    VStack(alignment: alignment, spacing: RoomSpace.related) {
       HStack(alignment: .firstTextBaseline, spacing: RoomSpace.related) {
         Button(action: edit) {
           Text(Readout.weight(weightKg)).modifier(GymNumeral()).lineLimit(1).minimumScaleFactor(0.5)
@@ -111,7 +112,7 @@ struct WeightInstrument: View {
             .accessibilityLabel("\(label) kilograms")
         }
       }.font(.body.monospacedDigit())
-    }.frame(maxWidth: .infinity, alignment: .leading)
+    }.frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
   }
 
   var unit: some View { Text("kg").font(.title3).foregroundStyle(GymPalette.inkDim) }
@@ -211,7 +212,7 @@ struct SetEditor: View {
             Picker("Kind", selection: $draft.kind) {
               ForEach(SetKind.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0.rawValue) }
             }.pickerStyle(.segmented).accessibilityIdentifier("\(identifier)-kind")
-          } header: { Text(gym.catalogue.find(draft.original.exerciseId)?.name ?? "Movement") }
+          }
           Section {
             TextEditor(text: $draft.note).frame(minHeight: 100).accessibilityLabel("Set note")
               .accessibilityIdentifier("\(identifier)-note")
@@ -220,7 +221,7 @@ struct SetEditor: View {
               Text(counter).font(.caption.monospacedDigit())
                 .foregroundStyle(draft.noteBytes > 4_000 ? GymPalette.alarm : GymPalette.inkDim)
             }
-          } header: { Text("Set note") } footer: { Text("A record for you — not an instruction to Coach.") }
+          } header: { Text("Set note") }
           Section {
             Button("Delete set", systemImage: "trash", role: .destructive) { if draft.delete(gym) { dismiss() } }
               .foregroundStyle(GymPalette.alarm).accessibilityIdentifier("\(identifier)-delete")
@@ -228,6 +229,7 @@ struct SetEditor: View {
         }.listRowBackground(GymPalette.card)
       }.modifier(GymPage()).disabled(draft.busy || gym.accountTransition)
         .navigationTitle("Fix set")
+        .navigationSubtitleIfAvailable(gym.catalogue.find(draft.original.exerciseId)?.name ?? "Movement")
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(draft.busy) } }
         .safeAreaInset(edge: .bottom) {
           VStack(spacing: 0) {
@@ -254,5 +256,12 @@ struct SetEditor: View {
       }
       .onChange(of: gym.account) { _, _ in dismiss() }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "fix_set"]) }
+  }
+}
+
+extension View {
+  // iOS 26 draws a subtitle under the inline title; earlier systems keep the title alone.
+  @ViewBuilder func navigationSubtitleIfAvailable(_ subtitle: String?) -> some View {
+    if #available(iOS 26, *), let subtitle { navigationSubtitle(subtitle) } else { self }
   }
 }

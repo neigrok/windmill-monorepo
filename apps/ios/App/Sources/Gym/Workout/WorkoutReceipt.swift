@@ -31,6 +31,25 @@ import SyncCore
   }
   var readout: SessionReadout { SessionReadout(session: session, sets: sets) }
   var slight: Bool { readout.workingSetCount < 4 }
+  var title: String { slight ? "Ended early." : "Well done." }
+  var subtitle: String { "\(session.name ?? Readout.noRoutine) · \(session.startedAt.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))" }
+  var facts: [FactTiles.Fact] {
+    let readout = readout
+    var facts: [FactTiles.Fact] = []
+    if let duration = readout.durationMs { facts.append(.init(value: Readout.duration(duration), label: "Duration")) }
+    facts.append(.init(value: "\(readout.workingSetCount)", label: "Working sets"))
+    if let e1rm = readout.topE1rm { facts.append(.init(value: "\(Readout.estimatedWeight(e1rm)) kg", label: "Top e1RM")) }
+    return facts
+  }
+  // Each movement once, in the order its first set was logged, with its working sets — or every set when none was working.
+  var performed: [(exerciseId: ID<Exercise>, reading: String)] {
+    var ids: [ID<Exercise>] = []
+    for set in sets where !ids.contains(set.exerciseId) { ids.append(set.exerciseId) }
+    return ids.map { id in
+      let all = sets.filter { $0.exerciseId == id }, working = all.filter { $0.kind == "working" }
+      return (id, Readout.target((working.isEmpty ? all : working).map { SetTarget(reps: $0.reps, weightKg: $0.weightKg) }))
+    }
+  }
   var offersRoutine: Bool { session.routineId == nil && !slight }
   var nameRefusal: String? {
     if routine.current.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Name it to save it." }
@@ -171,71 +190,70 @@ struct WorkoutReceipt: View {
     NavigationStack {
       List {
         Group {
-          Section {
-            Text(receipt.slight ? "Ended early." : "Well done.").font(.title2.weight(.bold))
-            FactTiles(facts: [
-              .init(value: "\(receipt.readout.workingSetCount)", label: "Sets"),
-              .init(value: Readout.weight(receipt.readout.volumeKg), label: "kg"),
-              .init(value: "\(receipt.readout.movementCount)", label: "Movements"),
-            ])
-            if let duration = receipt.readout.durationMs { Text(Readout.duration(duration)).font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
-          }
-          Section("Performed") {
-            let ids = receipt.sets.reduce(into: [ID<Exercise>]()) { result, set in if !result.contains(set.exerciseId) { result.append(set.exerciseId) } }
-            ForEach(ids, id: \.self) { id in
-              VStack(alignment: .leading, spacing: 6) {
-                Text(gym.catalogue.find(id)?.name ?? "Movement").font(.body.weight(.semibold))
-                let working = receipt.sets.filter { $0.exerciseId == id && $0.kind == "working" }
-                if !working.isEmpty { Text(Readout.target(working.map { SetTarget(reps: $0.reps, weightKg: $0.weightKg) })).font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
-                ForEach(receipt.sets.filter { $0.exerciseId == id }, id: \.id) { set in
-                  Text("\(set.kind == "warmup" ? "W · " : "")\(Readout.weight(set.weightKg)) kg × \(set.reps)").font(.subheadline.monospacedDigit())
-                }
-              }
-            }
-          }
+          Section { FactTiles(facts: receipt.facts).padding(.vertical, RoomSpace.small) }
           if let sentence = receipt.review?.record?.sentence(gym.catalogue) {
             Section("Personal record") { Text(sentence).font(.body.weight(.semibold)).foregroundStyle(GymPalette.record) }
+          }
+          Section("Performed") {
+            ForEach(receipt.performed, id: \.exerciseId) { movement in
+              MovementRow(title: gym.catalogue.find(movement.exerciseId)?.name ?? "Movement", trailing: .fact(movement.reading))
+            }
           }
           if let against = receipt.review?.against {
             Section(against.title) {
               ForEach(Array(against.movements.enumerated()), id: \.offset) { _, movement in
-                VStack(alignment: .leading, spacing: 4) {
-                  Text(gym.catalogue.find(ID(RecordID(movement.exerciseId)))?.name ?? "Movement")
-                  Text((Set(against.movements.map(\.source)).count > 1 ? "\(movement.source): " : "") + movement.detail)
-                    .font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
-                }
+                MovementRow(title: gym.catalogue.find(ID(RecordID(movement.exerciseId)))?.name ?? "Movement",
+                            meta: (Set(against.movements.map(\.source)).count > 1 ? "\(movement.source): " : "") + movement.detail)
               }
             }
           }
-          if receipt.readingReview { Section { ProgressView("Reading the log…") } }
-          if receipt.reviewFailed { Section { Text("the log didn’t answer — the session is saved"); Button("Try again") { Task { await receipt.loadReview(gym) } } } }
-          if gym.isAnonymous {
-            Section { Button("Keep this log") { gym.workout.handoff = .keep; dismiss() }.modifier(RoomPrimaryStyle(room: .gym)) } footer: { Text("This log is only on this phone.") }
-          } else if gym.workout.coachAvailable && !gym.authPaused {
-            Section {
-              Button("Share with Coach") { gym.workout.handoff = .coach; dismiss() }
-                .modifier(RoomPrimaryStyle(room: .gym)).disabled(gym.accountTransition).accessibilityIdentifier("workout-share-coach")
-            } footer: { Text("Sends Coach one line — “Check my last session.” — and opens the answer.") }
-          }
+          if receipt.readingReview { Section { ProgressView().frame(maxWidth: .infinity) } }
           if receipt.offersRoutine {
             Section("Save as routine") {
               if let name = receipt.keptName { Text("Kept as \(name).").accessibilityIdentifier("workout-routine-kept") }
               else {
-                TextField("Routine name", text: $receipt.routine.current.name).accessibilityIdentifier("workout-routine-name")
-                Button(receipt.saving ? "Saving…" : "Save as routine") { _ = receipt.saveRoutine(gym) }
-                  .disabled(receipt.nameRefusal != nil || receipt.saving || gym.accountTransition).accessibilityIdentifier("workout-save-routine")
-                if !receipt.saving, let refusal = receipt.nameRefusal { Text(refusal).font(.footnote) }
+                TextField("Name", text: $receipt.routine.current.name).accessibilityIdentifier("workout-routine-name")
+                if !receipt.saving, let refusal = receipt.nameRefusal { Text(refusal).font(.footnote).foregroundStyle(GymPalette.alarm) }
                 if let failure = receipt.failure { Text(failure).font(.footnote).accessibilityIdentifier("workout-routine-failure") }
+                Button { _ = receipt.saveRoutine(gym) } label: { Text("Save routine").frame(maxWidth: .infinity) }
+                  .modifier(RoomSecondaryStyle()).disabled(receipt.nameRefusal != nil || receipt.saving || gym.accountTransition)
+                  .accessibilityIdentifier("workout-save-routine")
               }
             }
           }
         }.listRowBackground(GymPalette.card)
-      }.modifier(GymPage()).navigationTitle(receipt.session.name ?? Readout.noRoutine).navigationBarTitleDisplayMode(.inline)
+      }.modifier(GymPage()).navigationTitle(receipt.title).navigationSubtitleIfAvailable(receipt.subtitle)
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        .safeAreaInset(edge: .bottom) { band }
     }.modifier(GymPage()).presentationDetents([.large])
       .sensoryFeedback(.success, trigger: receipt.keptName) { old, new in old == nil && new != nil }
       .task { await receipt.loadReview(gym) }
       .onAppear { receipt.reconcile(gym) }
       .onChange(of: gym.notices.map(\.id)) { _, _ in receipt.reconcile(gym) }
+  }
+
+  // The reach band: a failed review read, then the one primary with its line — Keep signed out, Share with Coach signed in.
+  var band: some View {
+    VStack(spacing: 0) {
+      if receipt.reviewFailed {
+        RoomTransient(message: "The log didn’t answer. The workout is saved.", room: .gym, actionTitle: "Try again",
+                      actionIdentifier: "workout-review-retry") { Task { await receipt.loadReview(gym) } }
+          .padding(.horizontal, RoomSpace.inset).padding(.top, RoomSpace.small)
+      }
+      if gym.isAnonymous {
+        ActionBand(title: "Keep this log", room: .gym) { gym.workout.handoff = .keep; dismiss() }
+        footer("This log is only on this phone.")
+      } else if gym.workout.coachAvailable && !gym.authPaused {
+        ActionBand(title: "Share with Coach", room: .gym, disabled: gym.accountTransition, actionIdentifier: "workout-share-coach") {
+          gym.workout.handoff = .coach; dismiss()
+        }
+        footer("Sends Coach one line — “Check my last session.” — and opens the answer.")
+      }
+    }
+  }
+
+  func footer(_ line: String) -> some View {
+    Text(line).font(.footnote).foregroundStyle(GymPalette.inkDim).multilineTextAlignment(.center)
+      .padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.related)
   }
 }

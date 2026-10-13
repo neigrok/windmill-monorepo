@@ -110,6 +110,14 @@ import SyncTesting
     #expect(!workout.canLog && !workout.logActivityOffer(next) && workout.sets == retained)
   }
 
+  @Test(arguments: [true, false])
+  func lockScreenCountsOnlyTheSetsTheLedgerMarksUnsent(anonymous: Bool) throws {
+    let (_, gym) = try fixtures.fixture(anonymous: anonymous), workout = try fixtures.begin(gym)
+    #expect(workout.logSet() && gym.workoutDeviceSets(workout.sets).count == 1)
+    let content = try WorkoutActivityController(gym: gym).content(session: try #require(workout.session), offer: nil)
+    #expect(content.state.unsyncedSetCount == (anonymous ? 1 : 0) && gym.workoutUnsentSets.count == content.state.unsyncedSetCount)
+  }
+
   @Test func activityPayloadReprojectsDatesWhenTheServerCorrectionChanges() throws {
     let clock = SimClock(wallMs: fixtures.start.ms), runtime = try WorkoutStateTests.faultRuntime(WorkoutFaultTransport(), clock: clock.engineClock)
     let reading = clock.reading(), firstOffset: Int64 = 3_600_000
@@ -193,7 +201,7 @@ import SyncTesting
     let runtime = try #require(initial.runtime), id = try #require(initial.gym.startWorkout())
     let initialWorkout = initial.gym.workout
     initialWorkout.add(ID("bench-press")); #expect(initialWorkout.logSet())
-    initialWorkout.weightKg = 62.5; initialWorkout.reps = 9; initialWorkout.kind = .warmup
+    initialWorkout.weightKg = 62.5; initialWorkout.reps = 9
     let stale = try #require(initialWorkout.activityOffer()), sets = initialWorkout.sets
     #expect(initial.gym.hideWorkout())
     let identity = server.identity(email: "activity-open-pending@example.com")
@@ -206,7 +214,7 @@ import SyncTesting
     #expect(app.pendingSignIn != nil && app.signInDeferred == deferred && app.editorReadOnly == !deferred)
     #expect(!app.gym.accountTransition && app.gym.workoutHidden && !workout.isPresented)
     #expect(workout.sessionId == id && workout.sets == sets)
-    #expect(workout.weightKg == 62.5 && workout.reps == 9 && workout.kind == .warmup)
+    #expect(workout.weightKg == 62.5 && workout.reps == 9)
     #expect(!workout.activityIdentityResolved && workout.activityOffer() == nil)
     if viaIntent {
       let previous = WorkoutActivityIntentHandler.model
@@ -219,7 +227,7 @@ import SyncTesting
     }
     #expect(app.selectedRoom == .gym && !app.welcome && !app.gym.workoutHidden && workout.isPresented)
     #expect(workout.sessionId == id && workout.sets == sets && !workout.sets.contains { $0.id.description == stale.setID })
-    #expect(workout.weightKg == 62.5 && workout.reps == 9 && workout.kind == .warmup)
+    #expect(workout.weightKg == 62.5 && workout.reps == 9)
     #expect(try workout.activityRecord() == record)
     #expect(!workout.activityIdentityResolved && workout.activityOffer() == nil)
     #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.map(\.properties) } == [[:]])
@@ -260,15 +268,14 @@ import SyncTesting
     #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_set_logged" }.isEmpty })
   }
 
-  @Test(arguments: ["movement", "load", "reps", "kind"])
+  @Test(arguments: ["movement", "load", "reps"])
   func changedRackInvalidatesThePersistedOffer(field: String) throws {
     let recorder = TelemetryRecorder(), (_, gym) = try fixtures.fixture(telemetry: recorder)
     let workout = try fixtures.begin(gym), stale = try #require(workout.activityOffer())
     switch field {
     case "movement": workout.add(fixtures.second); workout.select(fixtures.second)
     case "load": workout.weightKg += 1
-    case "reps": workout.reps += 1
-    default: workout.kind = .warmup
+    default: workout.reps += 1
     }
     #expect(!workout.logActivityOffer(stale) && workout.sets.isEmpty)
     let current = try #require(workout.activityOffer())
@@ -359,7 +366,7 @@ import SyncTesting
 
   @Test func explicitRestoreClearsManualDismissalAndPreservesTheCurrentDraft() throws {
     let (_, gym) = try fixtures.fixture(), workout = try fixtures.begin(gym)
-    workout.weightKg = 62.5; workout.reps = 9; workout.kind = .warmup
+    workout.weightKg = 62.5; workout.reps = 9
     let offer = try #require(workout.activityOffer())
     var record = try #require(try workout.activityRecord())
     record.dismissed = true; record.activityID = "previous-system-activity"
@@ -369,7 +376,7 @@ import SyncTesting
     #expect(gym.restoreWorkout())
     record.dismissed = false; record.activityID = nil
     #expect(try workout.activityRecord() == record && workout.activityOffer() == offer)
-    #expect(workout.weightKg == 62.5 && workout.reps == 9 && workout.kind == .warmup && workout.sets.isEmpty)
+    #expect(workout.weightKg == 62.5 && workout.reps == 9 && workout.sets.isEmpty)
   }
 
   @Test(arguments: [(false, false), (true, false), (true, true)])
@@ -472,14 +479,14 @@ import SyncTesting
     #expect(!local.gym.accountTransition && workout.canLog)
     #expect(!workout.activityIdentityResolved && workout.activityOffer() == nil)
     #expect(!workout.logActivityOffer(stale) && workout.sets == original)
-    workout.weightKg = 62.5; workout.reps = 9; workout.kind = .warmup
+    workout.weightKg = 62.5; workout.reps = 9
     let coldGym = GymModel(runner: local.runner, runtime: local.runtime), cold = coldGym.workout
-    #expect(cold.weightKg == 62.5 && cold.reps == 9 && cold.kind == .warmup)
+    #expect(cold.weightKg == 62.5 && cold.reps == 9)
     #expect(cold.activityOffer() == nil && !cold.logActivityOffer(stale))
     #expect(workout.logSet())
     let retained = workout.sets
     #expect(retained.count == 2 && retained.first == original.first)
-    #expect(retained.last?.weightKg == 62.5 && retained.last?.reps == 9 && retained.last?.kind == "warmup")
+    #expect(retained.last?.weightKg == 62.5 && retained.last?.reps == 9 && retained.last?.kind == "working")
     #expect(local.gym.hideWorkout() && local.gym.workoutHidden)
     #expect(local.gym.restoreWorkout() && !local.gym.workoutHidden && workout.isPresented)
     #expect(workout.sets == retained && !workout.logActivityOffer(stale))
@@ -746,10 +753,10 @@ import SyncTesting
   @Test func coldRestorePreservesTheDurableDraftAndReplayIdentity() throws {
     let recorder = TelemetryRecorder(), (harness, gym) = try fixtures.fixture(telemetry: recorder)
     let workout = try fixtures.begin(gym)
-    workout.weightKg = 62.5; workout.reps = 9; workout.kind = .warmup
+    workout.weightKg = 62.5; workout.reps = 9
     let offer = try #require(workout.activityOffer())
     let reopened = GymModel(runner: harness.runner, telemetry: recorder), restored = reopened.workout
-    #expect(restored.weightKg == 62.5 && restored.reps == 9 && restored.kind == .warmup)
+    #expect(restored.weightKg == 62.5 && restored.reps == 9)
     #expect(restored.activityOffer() == offer)
     #expect(restored.logActivityOffer(offer))
     let retained = restored.sets
@@ -879,7 +886,7 @@ import SyncTesting
     #expect(next.movementID == fixtures.second.description && next.setID != heavier.setID)
     #expect(reopened.logActivityOffer(next))
     let logged = TrainingSet(id: ID(RecordID(next.setID)), sessionId: session.id, exerciseId: fixtures.second,
-      weightKg: next.weightKg, reps: next.reps, kind: next.kind, completedAt: fixtures.start)
+      weightKg: next.weightKg, reps: next.reps, kind: next.kind, completedAt: Instant(ms: retained.completedAt.ms + 1))
     #expect(reopened.sets.sorted { $0.id < $1.id } == [retained, logged].sorted { $0.id < $1.id })
     harness.sync(); reopenedGym.refresh(); reopened.reconcile()
     let confirmed = TrainingSet(id: logged.id, sessionId: logged.sessionId, exerciseId: logged.exerciseId,

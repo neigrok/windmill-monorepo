@@ -130,7 +130,7 @@ extension WorkoutState {
         return nil
       }
       let candidate = WorkoutActivityOffer(ownerID: record.ownerID, sessionID: session.id.description, movementID: selected.description,
-        weightKg: weightKg, reps: reps, kind: kind.rawValue, setID: record.offer?.setID ?? gym.runner.mint(TrainingSet.self).description)
+        weightKg: weightKg, reps: reps, kind: SetKind.working.rawValue, setID: record.offer?.setID ?? gym.runner.mint(TrainingSet.self).description)
       if record.offer == candidate && record.baseline == activityBaseline { return candidate }
       record.offer = WorkoutActivityOffer(ownerID: candidate.ownerID, sessionID: candidate.sessionID, movementID: candidate.movementID,
         weightKg: candidate.weightKg, reps: candidate.reps, kind: candidate.kind, setID: gym.runner.mint(TrainingSet.self).description)
@@ -141,7 +141,7 @@ extension WorkoutState {
   func restoreActivityDraft() {
     guard let record = try? activityRecord(), record.baseline == activityBaseline, let offer = record.offer,
           offer.movementID == selected?.description else { return }
-    restoreRack(weightKg: offer.weightKg, reps: offer.reps, kind: SetKind(rawValue: offer.kind))
+    restoreRack(weightKg: offer.weightKg, reps: offer.reps)
   }
   @discardableResult func logActivityOffer(_ offer: WorkoutActivityOffer) -> Bool {
     gym.refresh()
@@ -253,12 +253,12 @@ extension WorkoutState {
     let last = latest ?? session.startedAt
     let state = WorkoutActivityAttributes.ContentState(title: session.name ?? Readout.noRoutine,
       movement: workout.selected.flatMap { gym.catalogue.find($0)?.name } ?? "Choose a movement",
-      load: Readout.weight(workout.weightKg) + " kg", reps: workout.reps, setKind: workout.kind.rawValue,
+      load: Readout.weight(workout.weightKg) + " kg", reps: workout.reps,
       workingSetOrdinal: workout.currentSets.filter { $0.kind == "working" }.count + 1,
       plannedWorkingSetCount: workout.entry?.sets?.count, startedAt: Date(timeIntervalSince1970: (Double(session.startedAt.ms) - correction) / 1000),
       lastSetAt: latest.map { Date(timeIntervalSince1970: (Double($0.ms) - correction) / 1000) },
       staleAt: Date(timeIntervalSince1970: (Double(last.ms) - correction + Double(SessionRules.staleAfterMs)) / 1000),
-      unsyncedSetCount: gym.workoutDeviceSets(workout.sets).count, offer: offer)
+      unsyncedSetCount: gym.workoutUnsentSets.count, offer: offer)
     return ActivityContent(state: state, staleDate: state.staleAt)
   }
   func observe(_ value: Activity<WorkoutActivityAttributes>) {

@@ -211,7 +211,7 @@ import SyncTesting
 
   func testConnectionWarningLeadsTheRackAtLargestText() async throws {
     let (_, gym) = try fixture()
-    gym.workout.message = "Finishing needs a connection. Some sets in this synced workout are saved only on this phone. You can keep logging or hide it."
+    gym.workout.message = "Finish needs a connection — keep logging, or hide the workout."
     let window = try host(WorkoutScreen(gym: gym).environment(\.dynamicTypeSize, .accessibility5), appearance: .light)
     defer { window.isHidden = true; window.rootViewController = nil }
     try await Task.sleep(for: .milliseconds(450))
@@ -248,7 +248,7 @@ import SyncTesting
         rendered += " " + (try visibleText())
       }
     }
-    for phrase in ["keep logging", "or hide", "saved on this device only"] {
+    for phrase in ["keep logging", "or hide"] {
       XCTAssertTrue(rendered.contains(phrase), "The warning never showed ‘\(phrase)’: \(rendered)")
     }
   }

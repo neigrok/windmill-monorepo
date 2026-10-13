@@ -596,10 +596,9 @@ follow with 7.11 and 7.12.
   *kg* `.title3 ink-dim`), four glass ladder keys, the reps row (`minus` and `plus` as matching
   44 pt glass circles either side of *5 reps* `.title3`), then *Log set · 100 × 5* prominent.
   Previous/Next are 44 pt glass circles beside the movement name; *Movement 1 of 2* is the eyebrow
-  above the name; the plan line *plan 4 × 5 @ 100* sits under it in `ink-dim`.
+  above the name; the plan line *plan 4 × 5 · 100* sits under it in `ink-dim`.
 - The clocks are one `.footnote` line under the plan: *32:10 · 1:37 since last set*. The second
-  clock anchors to the latest valid set, falling back to the start, and never equals the first
-  while a set has been logged.
+  clock anchors to the latest valid set; until the first set the line is the workout clock alone.
 - The ledger draws sets in the order they were logged, and that order is the same on every
   draw and every surface; a warmup logged between working sets stays between them.
 - The current row is its ordinal, its target readout (*100 × 5*, or *open*) and the accent dot —
