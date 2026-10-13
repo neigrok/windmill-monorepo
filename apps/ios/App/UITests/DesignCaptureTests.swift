@@ -401,13 +401,17 @@ import XCTest
   func testRoutinesLight() { routines("light") }
   func testRoutinesDark() { routines("dark") }
 
+  // A lazy list keeps rows it scrolled away with an empty frame, and asking those for hittability raises.
+  func onScreen(_ element: XCUIElement, _ app: XCUIApplication) -> Bool {
+    element.exists && !element.frame.isEmpty && app.frame.intersects(element.frame) && element.isHittable
+  }
   // Drags without momentum until the element sits fully inside the content between the bar and the bottom inset, then lets the list settle.
   func revealInLog(_ element: XCUIElement, _ app: XCUIApplication, above bottomID: String = "gym-weigh-in") {
     for _ in 0..<12 {
       let top = app.navigationBars.firstMatch.frame.maxY + 8
       let bottom = (app.buttons[bottomID].exists ? app.buttons[bottomID].frame.minY : app.frame.maxY - 100) - 12
-      if element.exists, element.frame.minY > top, element.frame.maxY < bottom, element.isHittable { break }
-      let down = element.exists && element.frame.minY <= top
+      if onScreen(element, app), element.frame.minY > top, element.frame.maxY < bottom { break }
+      let down = element.exists && !element.frame.isEmpty && element.frame.minY <= top
       let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0)).withOffset(CGVector(dx: 0, dy: (top + bottom) / 2))
       start.press(forDuration: 0.01, thenDragTo: start.withOffset(CGVector(dx: 0, dy: down ? 160 : -160)), withVelocity: .slow, thenHoldForDuration: 0.2)
     }
@@ -445,10 +449,10 @@ import XCTest
     revealInLog(moment, app); moment.tap()
     XCTAssertTrue(app.buttons["Open record"].waitForNonExistence(timeout: 5))
     let first = app.staticTexts["gym-log-first-session"]
-    for _ in 0..<30 where !(first.exists && first.isHittable) { app.swipeUp(velocity: .fast) }
+    for _ in 0..<30 where !onScreen(first, app) { app.swipeUp(velocity: .fast) }
     revealInLog(first, app)
     capture(name("gym-log-end"), app)
-    for _ in 0..<30 where !app.buttons["gym-bodyweight-door"].isHittable { app.swipeDown(velocity: .fast) }
+    for _ in 0..<30 where !onScreen(app.buttons["gym-bodyweight-door"], app) { app.swipeDown(velocity: .fast) }
     RunLoop.current.run(until: Date().addingTimeInterval(0.6))
     app.buttons["gym-weigh-in"].tap()
     XCTAssertTrue(app.textFields["gym-weigh-in-weight"].waitForExistence(timeout: 5))
@@ -460,7 +464,7 @@ import XCTest
     XCTAssertTrue(app.descendants(matching: .any)["gym-bodyweight"].waitForExistence(timeout: 5))
     capture(name("gym-bodyweight"), app)
     let weighIn = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-weigh-in-2026-")).firstMatch
-    for _ in 0..<4 where !(weighIn.exists && weighIn.isHittable) { app.swipeUp(velocity: .slow) }
+    for _ in 0..<4 where !onScreen(weighIn, app) { app.swipeUp(velocity: .slow) }
     capture(name("gym-bodyweight-rows"), app)
     XCTAssertTrue(weighIn.waitForExistence(timeout: 5)); weighIn.tap()
     XCTAssertTrue(app.textFields["gym-weigh-in-weight"].waitForExistence(timeout: 5))

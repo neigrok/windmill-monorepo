@@ -122,7 +122,7 @@ import XCTest
     assertDateAxisFollowsPan(app, chartID: "gym-record-chart")
     back(app); back(app)
     let bodyweight = app.buttons["gym-bodyweight-door"]
-    for _ in 0..<3 where !(bodyweight.exists && bodyweight.isHittable && bodyweight.frame.minY >= app.navigationBars.firstMatch.frame.maxY) {
+    for _ in 0..<3 where !(bodyweight.exists && !bodyweight.frame.isEmpty && bodyweight.isHittable && bodyweight.frame.minY >= app.navigationBars.firstMatch.frame.maxY) {
       app.swipeDown()
     }
     XCTAssertTrue(bodyweight.isHittable)
@@ -183,7 +183,7 @@ import XCTest
     XCTAssertTrue(sessionRow(app).waitForExistence(timeout: 20))
     let older = app.descendants(matching: .any)["gym-log-older"]
     let first = app.staticTexts["gym-log-first-session"]
-    for _ in 0..<30 where !(first.exists && first.isHittable) { app.swipeUp(velocity: .fast) }
+    for _ in 0..<30 where !(first.exists && !first.frame.isEmpty && first.isHittable) { app.swipeUp(velocity: .fast) }
     snapshot("log-end", app: app)
     XCTAssertTrue(first.isHittable)
     XCTAssertTrue(first.label.hasPrefix("First session · "))
