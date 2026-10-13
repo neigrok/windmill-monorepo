@@ -56,16 +56,10 @@ extension GymModel {
   // The saved workouts the account has not taken, each with why; their count is the Log tab's badge.
   var workoutsToReview: [WorkoutRecovery] {
     guard let log else { return [] }
-    return WorkoutRecovery.review(adoptionWorkouts, notices: notices, log: log, catalogue: catalogue)
+    return WorkoutRecovery.review(adoptionWorkouts, notices: recoveryNotices, log: log, catalogue: catalogue)
   }
 
   var adoptionWorkoutToReview: SignedOutWorkout? { workoutsToReview.first?.workout ?? adoptionWorkouts.first }
-
-  // The saved workout the room's latest notice refused, so a band can say it in recovery's words.
-  var latestRecoveryNotice: WorkoutRecovery? {
-    guard let latest = notices.last?.id else { return nil }
-    return workoutsToReview.first { $0.noticeIds.contains(latest) }
-  }
 
   // Keep, Retry and Save and retry queue an account write: they wait for the account's first pull and a live session.
   var canSendRecovery: Bool { !accountTransition && !authPaused && !readFailed && log?.firstPullComplete == true }
@@ -121,7 +115,8 @@ extension GymModel {
   }
 
   // One recovery commit over a saved workout: its attempt under the action's own failure operation, the notices it
-  // answers dismissed once queued or its refusal said in recovery's words, and the action recorded with its outcome.
+  // answers dismissed once queued (so none outlives the copy into the room's band) or its refusal said in recovery's
+  // words, and the action recorded with its outcome.
   @discardableResult
   func recover(_ id: ID<Session>, _ action: RecoveryAction, _ attempt: (String) -> Outcome<Void, GymRefusal>?) -> Bool {
     let recovery = workoutsToReview.first { $0.id == id }

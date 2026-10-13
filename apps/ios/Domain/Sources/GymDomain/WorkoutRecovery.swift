@@ -49,38 +49,47 @@ public struct WorkoutRecovery: Equatable, Sendable, Identifiable {
   // A landed workout's stranded sets are placed by Retry, and a spent identity stays spent whatever the copy says.
   public var canFix: Bool { retry != .restoreSets && reason != .identityTaken }
 
-  // Every saved workout the account has not taken and nothing is carrying: refused by a notice, refused by this phone, or
-  // never sent. A workout drawn on the log is on its way, or there, and is listed only for the sets it refused.
+  // Every saved workout the account has not taken and nothing is carrying: refused by a notice it owns, refused by this
+  // phone, or never sent. `notices` holds the dismissed ones too, so a reason outlives its notice; a retry answers it
+  // instead. A workout drawn on the log is on its way, or there, and waits only on its own sets the log does not draw.
   public static func review(_ workouts: [SignedOutWorkout], notices: [DomainNotice<GymRefusal>], log: TrainingLog,
                             catalogue: Catalogue) -> [WorkoutRecovery] {
     let sessions = log.drawnSessions
     return workouts.compactMap { workout in
       let id = workout.session.id
-      let linked = notices.filter { notice in
-        guard let subject = notice.subject else { return false }
-        if subject == id.ref { return true }
-        return subject.type == TrainingSet.type && notice.values(of: subject)["sessionId"] == id.json
-      }
+      let owned = notices.filter(workout.owns)
       let landed = sessions.contains { $0.id == id }
       let retry: Retry = landed ? .restoreSets : workout.session.isOpen ? .restartWorkout : .importWorkout
       let names = Dictionary(uniqueKeysWithValues: Set(workout.sets.map(\.exerciseId)).compactMap { exercise in
         catalogue.find(exercise).map { (exercise, $0.name) }
       })
-      let reviewed = { (reason: Reason, refusal: GymRefusal?) in
-        WorkoutRecovery(workout: workout, reason: reason, refusal: refusal, retry: retry, noticeIds: linked.map(\.id),
-                      strandedSets: workout.sets.filter { set in linked.contains { $0.subject == set.id.ref } }, movementNames: names)
+      let reviewed = { (reason: Reason, refusal: GymRefusal?, stranded: [DomainNotice<GymRefusal>]) in
+        WorkoutRecovery(workout: workout, reason: reason, refusal: refusal, retry: retry, noticeIds: owned.map(\.id),
+                        strandedSets: workout.sets.filter { set in stranded.contains { $0.subject == set.id.ref } }, movementNames: names)
       }
       if landed {
-        guard let latest = linked.last(where: { $0.subject?.type == TrainingSet.type }) else { return nil }
-        return reviewed(Reason(latest.refusal), latest.refusal)
+        let missing = owned.filter { notice in
+          notice.subject?.type == TrainingSet.type && !log.sets.contains { $0.id.ref == notice.subject }
+        }
+        guard let latest = missing.last else { return nil }
+        return reviewed(Reason(latest.refusal), latest.refusal, missing)
       }
-      if let latest = linked.last { return reviewed(Reason(latest.refusal), latest.refusal) }
-      if let refusal = workout.importRefusal(at: log.moment, among: sessions) { return reviewed(Reason(refusal), refusal) }
+      if let latest = owned.last { return reviewed(Reason(latest.refusal), latest.refusal, []) }
+      if let refusal = workout.importRefusal(at: log.moment, among: sessions) { return reviewed(Reason(refusal), refusal, []) }
       if workout.session.isOpen, log.open != nil {
-        return reviewed(.accountWorkoutOpen, .sessionOpen(Refused(Gym.Codes.sessionOpen, subject: id.ref, path: .predicted)))
+        return reviewed(.accountWorkoutOpen, .sessionOpen(Refused(Gym.Codes.sessionOpen, subject: id.ref, path: .predicted)), [])
       }
-      return reviewed(.unsent, nil)
+      return reviewed(.unsent, nil, [])
     }
+  }
+}
+
+extension SignedOutWorkout {
+  // A notice this copy owns: its session refused, or one of its own sets. Its reason belongs to the copy's row, not to
+  // the room's band.
+  public func owns(_ notice: DomainNotice<GymRefusal>) -> Bool {
+    guard let subject = notice.subject else { return false }
+    return subject == session.id.ref || sets.contains { $0.id.ref == subject }
   }
 }
 

@@ -747,8 +747,9 @@ per refused workout in Settings and a door on every tab; iOS draws one section a
   lifter — refused, or waiting on Keep — never one merely in flight. It is the one badge the room
   draws; Coach and the room menu draw none.
 - **The reason**, at most twelve words naming the way out, is the row's subtitle, the Inspect
-  head's footer and the transient after a refused retry. The table holds what iOS receives, by the
-  reason label its events carry:
+  head's footer and the transient after a refused retry. A saved workout's refusal never reaches the
+  room's band, and dismissing its notice never loses it: the reason stays until a retry answers it.
+  The table holds what iOS receives, by the reason label its events carry:
 
   | Reason | Line |
   |---|---|

@@ -34,7 +34,10 @@ final class GymModel {
   var error: String?
   var readFailed = false
   var undoOffers: [UndoOffer] = []
+  // The room's refusals: undismissed, and none a saved workout owns, since that one is its row's on The log.
   var notices: [DomainNotice<GymRefusal>] = []
+  // Every gym notice the replica keeps, dismissed ones too: the saved workouts' review reads their reasons here.
+  var recoveryNotices: [DomainNotice<GymRefusal>] = []
   var adoptionWorkouts: [SignedOutWorkout] = []
   @ObservationIgnored var observationTask: Task<Void, Never>?
   @ObservationIgnored var clockTask: Task<Void, Never>?
@@ -166,8 +169,8 @@ final class GymModel {
         let replica = try runtime.storageRead { try $0.device().activeReplica }
         account = replica.meta.state == .bound ? replica.meta.account : nil
         authPaused = replica.meta.authPaused
-        let incoming = replica.notices.filter { $0.scope == Gym.scope && !$0.isDismissed }
-          .map { DomainNotice<GymRefusal>($0, registry: SyncSchema.registry) }
+        recoveryNotices = replica.notices.filter { $0.scope == Gym.scope }.map { DomainNotice<GymRefusal>($0, registry: SyncSchema.registry) }
+        let incoming = recoveryNotices.filter { notice in !notice.notice.isDismissed && !adoptionWorkouts.contains { $0.owns(notice) } }
         if let latest = incoming.last, !notices.contains(where: { $0.id == latest.id }) {
           refusal = latest.refusal; error = message(latest.refusal)
         }

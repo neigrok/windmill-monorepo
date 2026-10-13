@@ -2,8 +2,9 @@ import SwiftUI
 import DomainKit
 import GymDomain
 
-// A saved workout the account has not taken, read-only, with the one way out its reason names in the band. A workout
-// that lands stays on screen as last seen until the lifter goes back. Discard is held for the room's nine-second window
+// A saved workout the account has not taken, read-only, with the one way out its reason names in the band; a refusal
+// that arrives while it is open is said there too. A workout that lands stays on screen as last seen until the lifter
+// goes back. Discard is held for the room's nine-second window
 // on this screen; leaving the screen or the app ends the window.
 struct WorkoutInspectScreen: View {
   let gym: GymModel
@@ -48,6 +49,7 @@ struct WorkoutInspectScreen: View {
       }
       .onAppear { seen = saved ?? seen; _ = gym.inspectWorkout(id) }
       .onChange(of: saved) { _, saved in if let saved { seen = saved } }
+      .onChange(of: recovery?.noticeIds.last) { _, latest in if latest != nil, let recovery { message = recovery.line } }
       .onDisappear { if discarding != nil { discard(leaving: true) } }
       .onChange(of: phase) { _, phase in if phase == .background, discarding != nil { discard(leaving: false) } }
   }
@@ -95,7 +97,6 @@ struct WorkoutInspectScreen: View {
       } else {
         GymTransient(gym: gym, message: message ?? (waiting ? gym.recoveryWait : nil),
                      dismiss: message == nil ? nil : { message = nil },
-                     noticeMessage: gym.latestRecoveryNotice.flatMap { $0.id == id ? $0.line : nil },
                      errorIdentifier: "recovery-error", undoIdentifier: "recovery-undo")
       }
       if let recovery, let primary {

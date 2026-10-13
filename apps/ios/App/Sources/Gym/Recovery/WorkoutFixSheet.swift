@@ -69,9 +69,7 @@ struct WorkoutFixSheet: View {
     let held = excess > 0 ? "Over 200 sets · remove \(excess)."
       : refusal.map { WorkoutRecovery.Reason($0).line(stranded: 0) } ?? (gym.canSendRecovery ? nil : gym.recoveryWait)
     return VStack(spacing: 0) {
-      GymTransient(gym: gym, message: held,
-                   noticeMessage: gym.latestRecoveryNotice.flatMap { $0.id == fix.original.session.id ? $0.line : nil },
-                   errorIdentifier: "recovery-fix-held")
+      GymTransient(gym: gym, message: held, errorIdentifier: "recovery-fix-held")
       ActionBand(title: "Save and retry", room: .gym, disabled: held != nil || !gym.canSendRecovery,
                  actionIdentifier: "recovery-fix-save") { save() }
     }
