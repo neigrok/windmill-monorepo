@@ -105,7 +105,7 @@ struct RoutinesTab: View {
       HStack(spacing: RoomSpace.related) {
         MovementRow(title: title, meta: meta)
         Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(GymPalette.ink.tertiary)
-          .dynamicTypeSize(...DynamicTypeSize.xxxLarge).accessibilityHidden(true)
+          .dynamicTypeSize(...DynamicTypeSize.accessibility2).accessibilityHidden(true)
       }
     }
   }
