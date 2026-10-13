@@ -19,8 +19,6 @@ struct WorkoutActivityWidget: Widget {
         }
         WorkoutActivityDetails(state: context.state, isStale: context.isStale)
       }.padding(16)
-        .activityBackgroundTint(Color(.systemBackground))
-        .activitySystemActionForegroundColor(.primary)
         .widgetURL(WorkoutActivityAttributes.workoutURL)
     } dynamicIsland: { context in
       DynamicIsland {
