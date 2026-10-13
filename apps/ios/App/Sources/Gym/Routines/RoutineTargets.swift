@@ -264,8 +264,6 @@ struct RoutineTargetsSheet: View {
           headField("kg", field: .weight, placeholder: draft.varies(.weight) ? "varies" : "last time", focus: .weight)
           Toggle("Vary by set", isOn: $draft.varyBySet)
             .disabled(!draft.canChangeVariation)
-        } footer: {
-          Text("kg blank: pick it at the rack the first time; after that, last time fills it.")
         }
         if !draft.isOpen && draft.varyBySet {
           Section("Each set") {
@@ -287,7 +285,7 @@ struct RoutineTargetsSheet: View {
           Section { fillMenu }
         }
       }.listRowBackground(GymPalette.card)
-    }
+    }.listStyle(.insetGrouped)
     .accessibilityIdentifier("gym-routine-targets")
     .navigationTitle(exercise.name)
     .navigationBarTitleDisplayMode(.inline)

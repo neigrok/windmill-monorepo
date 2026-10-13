@@ -92,30 +92,50 @@ struct MovementCreationDraft {
              stepKg: ExerciseRules.defaultStepKg(equipment: equipment))
   }
 
-  func problem(includesTargets: Bool) -> String? {
+  var problem: String? {
     if let problem = MovementName.problem(name) { return problem }
     if !Self.equipmentChoices.contains(equipment) { return "check the movement name and equipment" }
-    if includesTargets && (sets?.isEmpty ?? true) { return "Choose at least one set." }
     return nil
   }
 }
 
 extension GymModel {
-  func createMovement(_ draft: inout MovementCreationDraft, includesTargets: Bool) -> RoutineEntry? {
-    if let problem = draft.problem(includesTargets: includesTargets) { draft.refusal = problem; return nil }
+  func createMovement(_ draft: inout MovementCreationDraft) -> RoutineEntry? {
+    if let problem = draft.problem { draft.refusal = problem; return nil }
     guard let outcome = run(CreateExercise(draft.exercise)), outcome.refusal == nil else {
       draft.refusal = error ?? "The movement wasn’t created. Try again."
       return nil
     }
     draft.refusal = nil
-    return RoutineEntry(exerciseId: draft.id, sets: includesTargets ? draft.sets : nil)
+    return RoutineEntry(exerciseId: draft.id, sets: draft.sets)
   }
 }
 
 struct MovementPicker: View {
+  // Where the picker opens decides its title, what a row does and what a created movement joins.
+  enum Purpose {
+    case routine, workout, browse
+
+    var title: String {
+      switch self {
+      case .routine: "Add movement"
+      case .workout: "Next movement"
+      case .browse: "Movements"
+      }
+    }
+    var createTitle: String {
+      switch self {
+      case .routine: "Add to routine"
+      case .workout: "Create and add"
+      case .browse: "Create movement"
+      }
+    }
+    var screen: String { self == .routine ? "routine_editor" : "movement" }
+  }
+
   let gym: GymModel
+  let purpose: Purpose
   let selected: Set<ID<Exercise>>
-  let includesTargets: Bool
   let onSelect: (RoutineEntry) -> Void
   let onBuildRoutine: (() -> Void)?
   let externalQuery: Binding<String>?
@@ -127,16 +147,24 @@ struct MovementPicker: View {
   @State var ranking = MovementPickerRanking()
   @State var creation: MovementCreationDraft?
   @State var showingCreation = false
+  @State private var created: ID<Exercise>?
+  @State private var opened: ID<Exercise>?
   @State private var pickingAccount: String?
   @State private var pickingAnonymous: Bool
 
-  init(gym: GymModel, selected: Set<ID<Exercise>>, includesTargets: Bool,
-       onBuildRoutine: (() -> Void)? = nil, query: Binding<String>? = nil,
-       onCreate: (() -> Void)? = nil, onCancel: (() -> Void)? = nil, onSelect: @escaping (RoutineEntry) -> Void) {
-    self.gym = gym; self.selected = selected; self.includesTargets = includesTargets
+  init(gym: GymModel, purpose: Purpose, selected: Set<ID<Exercise>> = [], onBuildRoutine: (() -> Void)? = nil,
+       query: Binding<String>? = nil, onCreate: (() -> Void)? = nil, onCancel: (() -> Void)? = nil,
+       onSelect: @escaping (RoutineEntry) -> Void = { _ in }) {
+    self.gym = gym; self.purpose = purpose; self.selected = selected
     self.onBuildRoutine = onBuildRoutine; self.onSelect = onSelect
     externalQuery = query; self.onCreate = onCreate; self.onCancel = onCancel
     _pickingAccount = State(initialValue: gym.account); _pickingAnonymous = State(initialValue: gym.isAnonymous)
+  }
+
+  // The workout's picker sheet still asks by includesTargets.
+  init(gym: GymModel, selected: Set<ID<Exercise>>, includesTargets: Bool, onBuildRoutine: (() -> Void)? = nil,
+       onSelect: @escaping (RoutineEntry) -> Void) {
+    self.init(gym: gym, purpose: includesTargets ? .routine : .workout, selected: selected, onBuildRoutine: onBuildRoutine, onSelect: onSelect)
   }
 
   var firstSession: Bool { MovementPickerOptions.firstSession(log: gym.log, routines: gym.routines, readFailed: gym.readFailed) }
@@ -149,38 +177,45 @@ struct MovementPicker: View {
     }
     .accessibilityIdentifier("gym-movement-picker")
     .autocorrectionDisabled()
-    .navigationTitle(includesTargets ? "Add movement" : firstSession ? "What are you starting with?" : "What are you lifting?")
+    .navigationTitle(purpose.title)
     .navigationBarTitleDisplayMode(.inline)
-    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { if let onCancel { onCancel() } else { dismiss() } } } }
+    .toolbar {
+      if purpose != .browse {
+        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { if let onCancel { onCancel() } else { dismiss() } } }
+      }
+    }
     .safeAreaInset(edge: .bottom) {
       VStack(spacing: 0) {
         GymTransient(gym: gym)
         ActionBand(title: "Create movement", room: .gym,
                    disabled: gym.accountTransition, actionIdentifier: "gym-create-movement") {
-        searchFocused = false
-        if let onCreate { onCreate(); return }
-        if creation == nil { creation = MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: MovementName.capped(MovementName.trimmed(query))) }
-        showingCreation = true
+          searchFocused = false
+          if let onCreate { onCreate(); return }
+          if creation == nil { creation = MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: MovementName.capped(MovementName.trimmed(query))) }
+          showingCreation = true
         }
       }
     }
     .onAppear {
       ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log)
-      gym.telemetry.event("gym_screen_viewed", properties: ["screen": includesTargets ? "routine_editor" : "movement"])
+      gym.telemetry.event("gym_screen_viewed", properties: ["screen": purpose.screen])
     }
     .onChange(of: gym.sessions) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
     .onChange(of: gym.sets) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
     .onChange(of: gym.log?.firstPullComplete) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
-    .sheet(isPresented: $showingCreation) {
+    .sheet(isPresented: $showingCreation, onDismiss: { if let created { creation = nil; opened = created; self.created = nil } }) {
       if let draft = creation {
         NavigationStack {
-          CreateMovementSheet(gym: gym, draft: Binding(get: { creation ?? draft }, set: { creation = $0 }), includesTargets: includesTargets,
+          CreateMovementSheet(gym: gym, draft: Binding(get: { creation ?? draft }, set: { creation = $0 }), purpose: purpose,
                               account: pickingAccount, anonymous: pickingAnonymous) { entry in
-            onSelect(entry)
+            if purpose == .browse { created = entry.exerciseId; showingCreation = false }
+            else { onSelect(entry) }
           }
         }.modifier(GymPage()).presentationDetents([.large])
       }
     }
+    .navigationDestination(item: $opened) { id in MovementRecordScreen(gym: gym, exerciseID: id) }
+    .toolbar(purpose == .browse ? .hidden : .automatic, for: .tabBar)
     .modifier(GymPage())
   }
 
@@ -188,6 +223,7 @@ struct MovementPicker: View {
     let query = externalQuery?.wrappedValue ?? self.query
     let options = MovementPickerOptions.matching(query: query, catalogue: gym.catalogue.exercises, selected: selected,
                                                  log: gym.log, featured: ranking.ids, readFailed: gym.readFailed)
+    let note = options.empty ?? (gym.readFailed ? nil : options.unread)
     return List {
       Group {
         if let externalQuery {
@@ -202,10 +238,9 @@ struct MovementPicker: View {
                   .buttonStyle(.plain).accessibilityLabel("Clear search").accessibilityIdentifier("gym-movement-search-clear")
               }
             }
-          }
-        }
-        if let unread = options.unread {
-          Section { Text(unread).foregroundStyle(GymPalette.inkDim); Button("Try again") { gym.refresh() } }
+          } footer: { if let note { Text(note) } }
+        } else if let note {
+          Section {} footer: { Text(note) }
         }
         if !options.six.isEmpty { Section("The six") { ForEach(options.six) { movementRow($0) } } }
         if !options.matches.isEmpty {
@@ -213,71 +248,78 @@ struct MovementPicker: View {
             ForEach(options.matches) { movementRow($0) }
           }
         }
-        if let empty = options.empty { Section { Text(empty).foregroundStyle(GymPalette.inkDim) } }
-        if !includesTargets && firstSession {
+        if purpose == .workout && firstSession {
           Section {
             Text(gym.isAnonymous ? "Have a written program? An agent can build it — sign in first." : "Have a written program? Ask Coach to build it into a routine.")
             if let onBuildRoutine { Button("Build my routine") { dismiss(); onBuildRoutine() }.accessibilityIdentifier("gym-build-written-program") }
           }
         }
       }.listRowBackground(GymPalette.card)
-    }
+    }.listStyle(.insetGrouped)
   }
 
-  func movementRow(_ row: MovementPickerOptions.Row) -> some View {
-    Button {
-      onSelect(RoutineEntry(exerciseId: row.id))
-    } label: {
-      MovementRow(title: row.exercise.name, meta: row.line, trailing: row.selected ? .check : nil)
+  @ViewBuilder func movementRow(_ row: MovementPickerOptions.Row) -> some View {
+    if purpose == .browse {
+      NavigationLink { MovementRecordScreen(gym: gym, exerciseID: row.id) } label: {
+        MovementRow(title: row.exercise.name, meta: row.line)
+      }.accessibilityIdentifier("gym-movement-\(row.id.record.string ?? "")")
+    } else {
+      Button {
+        onSelect(RoutineEntry(exerciseId: row.id))
+      } label: {
+        MovementRow(title: row.exercise.name, meta: row.line, trailing: row.selected ? .check : nil)
+      }
+      .disabled(row.selected || gym.accountTransition)
+      .accessibilityElement(children: .combine)
+      .accessibilityAddTraits(row.selected ? [.isSelected] : [])
+      .accessibilityHint(row.selected ? "Already added" : "Add movement")
+      .accessibilityIdentifier("gym-movement-\(row.id.record.string ?? "")")
     }
-    .disabled(row.selected || gym.accountTransition)
-    .accessibilityElement(children: .combine)
-    .accessibilityAddTraits(row.selected ? [.isSelected] : [])
-    .accessibilityHint(row.selected ? "Already added" : "Add movement")
-    .accessibilityIdentifier("gym-movement-\(row.id.record.string ?? "")")
   }
 }
 
 struct CreateMovementSheet: View {
   let gym: GymModel
   @Binding var draft: MovementCreationDraft
-  let includesTargets: Bool
+  let purpose: MovementPicker.Purpose
   let onCreated: (RoutineEntry) -> Void
   let onCancel: (() -> Void)?
-  let onTargets: (() -> Void)?
   @Environment(\.dismiss) var dismiss
   @FocusState var nameFocused: Bool
   @State var busy = false
   @State private var creatingAccount: String?
   @State private var creatingAnonymous: Bool
 
-  init(gym: GymModel, draft: Binding<MovementCreationDraft>, includesTargets: Bool, account: String?, anonymous: Bool,
-       onCancel: (() -> Void)? = nil, onTargets: (() -> Void)? = nil, onCreated: @escaping (RoutineEntry) -> Void) {
-    self.gym = gym; _draft = draft; self.includesTargets = includesTargets; self.onCreated = onCreated
-    self.onCancel = onCancel; self.onTargets = onTargets
+  init(gym: GymModel, draft: Binding<MovementCreationDraft>, purpose: MovementPicker.Purpose, account: String?, anonymous: Bool,
+       onCancel: (() -> Void)? = nil, onCreated: @escaping (RoutineEntry) -> Void) {
+    self.gym = gym; _draft = draft; self.purpose = purpose; self.onCreated = onCreated; self.onCancel = onCancel
     _creatingAccount = State(initialValue: account); _creatingAnonymous = State(initialValue: anonymous)
+  }
+
+  // The workout rendering tests still ask by includesTargets.
+  init(gym: GymModel, draft: Binding<MovementCreationDraft>, includesTargets: Bool, account: String?, anonymous: Bool,
+       onCreated: @escaping (RoutineEntry) -> Void) {
+    self.init(gym: gym, draft: draft, purpose: includesTargets ? .routine : .workout, account: account, anonymous: anonymous, onCreated: onCreated)
   }
 
   var body: some View {
     Form {
       Group {
-        Section("Name") {
-          TextField("Movement name", text: $draft.name).focused($nameFocused).autocorrectionDisabled().textInputAutocapitalization(.words).submitLabel(.done).onSubmit { nameFocused = false }
+        Section {
+          TextField("Name", text: $draft.name).focused($nameFocused).autocorrectionDisabled().textInputAutocapitalization(.words).submitLabel(.done).onSubmit { nameFocused = false }
             .disabled(busy).accessibilityIdentifier("gym-movement-name")
           if let counter = MovementName.counter(draft.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
-          if let problem = MovementName.problem(draft.name), !busy { Text(problem).font(.footnote).foregroundStyle(GymPalette.alarm) }
         }
         Section("Equipment") {
           Picker("Equipment", selection: $draft.equipment) {
             ForEach(MovementCreationDraft.equipmentChoices, id: \.self) { Text($0.capitalized).tag($0) }
           }.labelsHidden().pickerStyle(.inline).disabled(busy).accessibilityIdentifier("gym-movement-equipment")
         }
-        if includesTargets {
+        if purpose == .routine {
           Section {
-            Button { nameFocused = false; onTargets?() } label: {
-              HStack { Text("Targets"); Spacer(); Text(Readout.target(draft.sets)).foregroundStyle(GymPalette.inkDim).monospacedDigit() }
+            NavigationLink(value: RoutineEditingSession.Step.targets(draft.id)) {
+              LabeledContent { Text(Readout.target(draft.sets)).monospacedDigit() } label: { Text("Targets").foregroundStyle(GymPalette.ink) }
             }.disabled(busy).accessibilityIdentifier("gym-movement-targets")
-            if draft.sets?.isEmpty ?? true { Text("Choose at least one set.").font(.footnote).foregroundStyle(GymPalette.alarm) }
           }
         }
       }.listRowBackground(GymPalette.card)
@@ -288,28 +330,28 @@ struct CreateMovementSheet: View {
     .safeAreaInset(edge: .bottom) {
       VStack(spacing: 0) {
         GymTransient(gym: gym, message: draft.refusal, dismiss: { draft.refusal = nil }, errorIdentifier: "gym-movement-creation-refusal")
-        ActionBand(title: includesTargets ? "Add to routine" : "Create and add", room: .gym,
-                   disabled: gym.accountTransition || draft.problem(includesTargets: includesTargets) != nil,
+        ActionBand(title: purpose.createTitle, room: .gym,
+                   disabled: gym.accountTransition || MovementName.trimmed(draft.name).isEmpty,
                    busy: busy, actionIdentifier: "gym-movement-create-commit") {
-        guard creatingAccount == gym.account, creatingAnonymous == gym.isAnonymous else {
-          draft.refusal = "the account changed while creating"; return
-        }
-        busy = true; nameFocused = false
-        let account = gym.account, anonymous = gym.isAnonymous
-        Task { @MainActor in
-          await Task.yield()
-          guard account == gym.account && anonymous == gym.isAnonymous else {
-            draft.refusal = "the account changed while creating"; busy = false; return
+          guard creatingAccount == gym.account, creatingAnonymous == gym.isAnonymous else {
+            draft.refusal = "the account changed while creating"; return
           }
-          let entry = gym.createMovement(&draft, includesTargets: includesTargets)
-          busy = false
-          if let entry { onCreated(entry) }
-        }
+          busy = true; nameFocused = false
+          let account = gym.account, anonymous = gym.isAnonymous
+          Task { @MainActor in
+            await Task.yield()
+            guard account == gym.account && anonymous == gym.isAnonymous else {
+              draft.refusal = "the account changed while creating"; busy = false; return
+            }
+            let entry = gym.createMovement(&draft)
+            busy = false
+            if let entry { onCreated(entry) }
+          }
         }
       }
     }
     .interactiveDismissDisabled(busy)
-    .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": includesTargets ? "routine_editor" : "movement"]) }
+    .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": purpose.screen]) }
     .onChange(of: draft.name) { _, value in draft.name = MovementName.capped(value); draft.refusal = nil }
     .onChange(of: draft.equipment) { _, _ in draft.refusal = nil }
   }

@@ -57,20 +57,23 @@ import SyncSchema
     var stored = draft(gym)
     #expect(gym.saveRoutine(&stored))
     let editing = RoutineEditingSession(gym: gym, routine: stored.current)
-    let exercise = try #require(gym.catalogue.find(ID("bench-press")))
-    editing.openTargets(exercise: exercise, sets: stored.current.entries[0].sets)
+    editing.follow([.targets(ID("bench-press"))])
+    #expect(editing.targetDraft == RoutineTargetDraft(sets: [SetTarget(reps: 8, weightKg: 60)]))
     editing.targetDraft.type("12", field: .reps)
     editing.cancelTargets()
     #expect(editing.path.isEmpty && editing.draft.current == stored.current)
     #expect(gym.routines == [stored.current])
+    editing.follow([.targets(ID("bench-press"))])
+    #expect(editing.targetDraft == RoutineTargetDraft(sets: [SetTarget(reps: 8, weightKg: 60)]))
+    editing.cancelTargets()
     editing.pickMovement(); editing.query = "Custom press"
     editing.createMovement(gym)
     let createdID = try #require(editing.creation?.id)
     editing.creation?.name = "Custom press kept"
-    editing.path.removeLast()
+    editing.follow([.movements])
     editing.createMovement(gym)
     #expect(editing.query == "Custom press" && editing.creation?.id == createdID && editing.creation?.name == "Custom press kept")
-    editing.path = []
+    editing.follow([])
     editing.draft.current.name = "Revised"
     let pending = editing.draft.current
     gym.account = "another-owner"; gym.isAnonymous = false
@@ -95,11 +98,87 @@ import SyncSchema
     editing.move(0, by: -1); editing.move(2, by: 1)
     #expect(editing.draft.current.entries == [bench, chinUp, deadlift])
     editing.remove(1)
-    #expect(editing.draft.current.entries == [bench, deadlift] && editing.removed?.0 == 1 && editing.removed?.1 == chinUp)
+    #expect(editing.draft.current.entries == [bench, deadlift] && editing.removed?.index == 1 && editing.removed?.entry == chinUp)
     editing.undoRemoval()
     #expect(editing.draft.current.entries == [bench, chinUp, deadlift] && editing.removed == nil)
     editing.remove(0); editing.select(bench)
     #expect(editing.draft.current.entries == [chinUp, deadlift, bench] && editing.removed == nil)
+  }
+
+  @Test func targetsOpenOnTheSchemeTheirMovementHoldsAndCommitIntoIt() throws {
+    let (_, gym) = fixture()
+    let editing = RoutineEditingSession(gym: gym, routine: nil)
+    editing.select(RoutineEntry(exerciseId: ID("bench-press"), sets: [SetTarget(reps: 5, weightKg: 100)]))
+    editing.pickMovement(); editing.query = "Sled push"
+    editing.createMovement(gym)
+    let created = try #require(editing.creation?.id)
+    editing.follow([.movements, .creation, .targets(created)])
+    #expect(editing.targetDraft == RoutineTargetDraft(sets: nil) && editing.targetDraft.reading == .open)
+    editing.targetDraft.type("2", field: .sets)
+    editing.setTargets([SetTarget(), SetTarget()])
+    #expect(editing.path == [.movements, .creation] && editing.creation?.sets == [SetTarget(), SetTarget()])
+    editing.follow([.movements, .creation, .targets(created)])
+    #expect(editing.targetDraft == RoutineTargetDraft(sets: [SetTarget(), SetTarget()]))
+    editing.follow([.targets(ID("bench-press"))])
+    #expect(editing.targetDraft == RoutineTargetDraft(sets: [SetTarget(reps: 5, weightKg: 100)]))
+    editing.setTargets(nil)
+    #expect(editing.path.isEmpty && editing.draft.current.entries == [RoutineEntry(exerciseId: ID("bench-press"))])
+    editing.setTargets([SetTarget(reps: 1)])
+    #expect(editing.draft.current.entries == [RoutineEntry(exerciseId: ID("bench-press"))])
+  }
+
+  @Test func aPendingMovementUndoQuietsTheLiveRefusalButNeverASaveFailure() {
+    let (_, gym) = fixture()
+    let editing = RoutineEditingSession(gym: gym, routine: nil)
+    #expect(editing.refusal == nil)
+    editing.draft.current.name = "Push A"
+    #expect(editing.refusal == "A routine is at least one movement.")
+    editing.select(RoutineEntry(exerciseId: ID("bench-press")))
+    #expect(editing.refusal == nil)
+    editing.remove(0)
+    #expect(editing.refusal == nil && editing.removals == 1)
+    editing.failure = "This routine could not be saved. Try again."
+    #expect(editing.refusal == "This routine could not be saved. Try again.")
+    editing.failure = nil; editing.undoRemoval()
+    #expect(editing.refusal == nil && editing.draft.current.entries == [RoutineEntry(exerciseId: ID("bench-press"))])
+    editing.draft.current.name = " "
+    #expect(editing.refusal == "Name it to save it.")
+  }
+
+  @Test func rowsCountWithRealPluralsAndClaimNeverTrainedOnlyFromAKnownHistory() {
+    let moment = Moment(now: Instant(ms: 1_790_424_000_000), zone: FixedZone(offsetSeconds: 0))
+    let one = Routine(id: ID("one"), name: "One", entries: [RoutineEntry(exerciseId: ID("bench-press"))])
+    let four = Routine(id: ID("four"), name: "Four", entries: ["bench-press", "deadlift", "chin-up", "back-squat"].map { RoutineEntry(exerciseId: ID(RecordID($0))) })
+    #expect(RoutineLines.routine(one, lastTrained: nil, historyKnown: true, moment: moment) == "1 movement · never trained")
+    #expect(RoutineLines.routine(four, lastTrained: nil, historyKnown: false, moment: moment) == "4 movements")
+    #expect(RoutineLines.routine(four, lastTrained: Instant(ms: moment.now.ms - 3 * 86_400_000), historyKnown: true, moment: moment) == "4 movements · trained 3 days ago")
+    #expect(RoutineLines.routine(one, lastTrained: Instant(ms: moment.now.ms - 86_400_000), historyKnown: false, moment: moment) == "1 movement · trained yesterday")
+    #expect(RoutineLines.routine(one, lastTrained: moment.now, historyKnown: true, moment: nil) == "1 movement · never trained")
+    let session = Session(id: ID("s"), startedAt: Instant(ms: 1), finishedAt: Instant(ms: 2))
+    let set = TrainingSet(id: ID("set-one1"), sessionId: session.id, exerciseId: ID("bench-press"), weightKg: 100, reps: 5, completedAt: Instant(ms: 1))
+    let warmup = TrainingSet(id: ID("set-two2"), sessionId: session.id, exerciseId: ID("deadlift"), weightKg: 60, reps: 5, kind: "warmup", completedAt: Instant(ms: 1))
+    #expect(RoutineLines.session(SessionReadout(session: session, sets: [set])) == "1 working set · 1 movement")
+    #expect(RoutineLines.session(SessionReadout(session: session, sets: [set, warmup])) == "1 working set · 2 movements")
+    #expect(RoutineLines.session(SessionReadout(session: session, sets: [warmup])) == "0 working sets · 1 movement")
+    #expect([Readout.count(1, .proposal), Readout.count(2, .proposal), Readout.count(2, .workingSet)] == ["1 proposal", "2 proposals", "2 working sets"])
+  }
+
+  @Test func aProposalSaysWhoProposedItAndOnlyAServerStampedTime() {
+    let moment = Moment(now: Instant(ms: 1_790_424_000_000), zone: FixedZone(offsetSeconds: 0))
+    let coach = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [])
+    let agent = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [], door: "mcp", connection: "My laptop", agent: "Claude")
+    let unnamed = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [], door: "mcp", connection: "My laptop")
+    let anonymous = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [], door: "mcp")
+    let other = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [], door: "import")
+    #expect(RoutineLines.proposal(coach, createdAt: nil, moment: moment) == "from Coach")
+    #expect([agent, unnamed, anonymous, other].map { RoutineLines.proposal($0, createdAt: nil, moment: moment) }
+            == ["from Claude", "from My laptop", "from a connected tool", "from a connected tool"])
+    let earlier = Instant(ms: moment.now.ms - 2 * 86_400_000)
+    let time = Date(timeIntervalSince1970: Double(earlier.ms) / 1000).formatted(.dateTime.hour().minute())
+    #expect(RoutineLines.proposal(coach, createdAt: earlier, moment: moment) == "from Coach · 24 Sep \(time)")
+    let todayTime = Date(timeIntervalSince1970: Double(moment.now.ms) / 1000).formatted(.dateTime.hour().minute())
+    #expect(RoutineLines.proposal(coach, createdAt: moment.now, moment: moment) == "from Coach · today \(todayTime)")
+    #expect(RoutineLines.proposal(coach, createdAt: moment.now, moment: nil) == "from Coach")
   }
 
   @Test func saveFailureRetainsExactDraftAndRetryUsesSameID() {
