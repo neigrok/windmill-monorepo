@@ -62,6 +62,11 @@ final class AppModel {
   var signInSession: SignInSession?
   var signOutSession: SignOutSession? { didSet { gym.accountChanging = signingOut || signOutSession != nil } }
   var adoptionAnswers: [String: LineageAnswer] = [:]
+  var appearance: Appearance
+  var updateRequiredAtSignIn = false
+  var updateAlert = false
+  var updateOpenFailed = false
+  @ObservationIgnored var updateAlertShown = false
   @ObservationIgnored var observationTask: Task<Void, Never>?
   @ObservationIgnored var timerTask: Task<Void, Never>?
   @ObservationIgnored var polledThrough: UInt64?
@@ -74,6 +79,11 @@ final class AppModel {
     case journal, gym
     var title: String { self == .journal ? "Journal" : "Gym" }
     var symbol: String { self == .journal ? "book.closed" : "dumbbell" }
+  }
+  enum Appearance: String, CaseIterable {
+    case light, dark, system
+    var title: String { rawValue.capitalized }
+    init(preferences: UserDefaults) { self = Appearance(rawValue: preferences.string(forKey: "appearance") ?? "") ?? .system }
   }
   enum Sheet: String, Identifiable {
     case keep, address, code, you, adoption, discardAdoption, signOut
@@ -106,6 +116,7 @@ final class AppModel {
     selectedRoom = Room(rawValue: preferences.string(forKey: "lastRoom") ?? "") ?? .journal
     welcome = preferences.string(forKey: "lastRoom") == nil && (!preferences.bool(forKey: "journalOpened") || preferences.bool(forKey: "roomWelcomeRequired"))
     keepDismissed = preferences.bool(forKey: "keepDismissed")
+    appearance = Appearance(preferences: preferences)
     journal.app = self
     refresh()
     if let account { accountEmail = preferences.string(forKey: "accountEmail:\(account)") ?? "" }
@@ -128,11 +139,52 @@ final class AppModel {
 
   func reportBoundary(_ operation: String, error: any Error) {
     guard Store.failureKind(error) == nil, !(error is KeychainError), !(error is CancellationError),
-          (error as? EngineError) != .unreachable else { return }
+          (error as? EngineError) != .unreachable, (error as? EngineError) != .upgradeRequired else { return }
     telemetry.failure(operation, kind: "unexpected")
   }
   func screenViewed(_ screen: String) { telemetry.event("first_run_screen_viewed", properties: ["screen": screen]) }
   func choose(_ action: String, screen: String) { telemetry.event("first_run_choice", properties: ["screen": screen, "action": action]) }
+
+  func chooseAppearance(_ next: Appearance) {
+    guard next != appearance else { return }
+    appearance = next; preferences.set(next.rawValue, forKey: "appearance")
+    telemetry.event("appearance_chosen", properties: ["appearance": next.rawValue])
+  }
+
+  // The server needs a newer app: the engine's flag, or a 426 at sign-in.
+  var updateRequired: Bool { runtime?.engine.status.upgradeRequired == true || updateRequiredAtSignIn }
+  var updateState: String { updateRequiredAtSignIn ? "sign_in" : "sync" }
+
+  // Once per launch while the flag holds; a sign-in refused for it asks again, as that attempt's answer.
+  func noticeUpdateRequired() {
+    guard updateRequired, !updateAlertShown else { return }
+    presentUpdateAlert()
+  }
+
+  func requireUpdateAtSignIn() {
+    updateRequiredAtSignIn = true; error = nil
+    presentUpdateAlert()
+  }
+
+  func presentUpdateAlert() {
+    updateAlertShown = true; updateAlert = true
+    telemetry.event("client_update_required", properties: ["state": updateState])
+  }
+
+  func keepWorkingWithoutUpdate() {
+    updateAlert = false
+    telemetry.event("client_update_required", properties: ["state": updateState, "action": "keep"])
+  }
+
+  func updateOpened(_ accepted: Bool) {
+    updateAlert = false; updateOpenFailed = !accepted
+    telemetry.event("client_update_required", properties: ["state": updateState, "action": "open", "outcome": accepted ? "ok" : "failed"])
+  }
+
+  func dismissUpdateFailure() {
+    updateOpenFailed = false
+    telemetry.event("client_update_required", properties: ["state": updateState, "action": "dismiss"])
+  }
 
   var backup: String { journal.backup }
   var adoptionCount: Int { currentAdoption?.counts["page"] ?? 0 }
@@ -227,6 +279,7 @@ final class AppModel {
           try? await Task.sleep(for: .milliseconds(350))
           guard let self, !Task.isCancelled else { return }
           if self.pollDue { self.poll() }
+          self.noticeUpdateRequired()
           self.expireAppleTicket()
           if !self.signInDeferred, !self.restoringSignIn, self.pendingSignIn != nil, !self.working, !self.accountTransition, self.authRetryAt <= self.authRetryNow() {
             self.performAuthentication { await self.retryAuthenticatedSignIn() }
@@ -355,6 +408,9 @@ final class AppModel {
   }
 
   func showAuthError(_ failure: any Error, appleFlow: Bool = false) {
+    if (failure as? EngineError) == .upgradeRequired || (failure as? AuthRefusal)?.code == AuthRefusal.updateRequired.code {
+      requireUpdateAtSignIn(); return
+    }
     if let refusal = failure as? AuthRefusal {
       if refusal.code == "apple-ticket-expired" { appleTicket = nil; appleAuthorization = nil; error = nil; sheet = .appleExpired; return }
       if refusal.code == "no-account" { error = nil; sheet = .appleNoAccount; return }
@@ -519,6 +575,10 @@ final class AppModel {
     } catch {
       guard !Task.isCancelled else { return }
       telemetry.event("auth_signed_in", properties: ["method": pending.method, "outcome": "failed"])
+      if (error as? EngineError) == .upgradeRequired {
+        // The sign-in waits for the update; the rooms stay open meanwhile.
+        signInDeferred = true; sheet = .authPending; requireUpdateAtSignIn(); return
+      }
       if let refusal = error as? AuthRefusal, pending.needsAppleAttachment, refusal.code != "offline" {
         pendingSignIn = nil; appleAuthorization = nil; sheet = .you; showAuthError(error)
         preferences.removeObject(forKey: "pendingAuthMethod"); preferences.removeObject(forKey: "pendingAuthLinked")

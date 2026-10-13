@@ -152,6 +152,7 @@ struct InkLabel: View {
   let dim: Bool
   let visible: Bool
   @Environment(\.accessibilityReduceMotion) var reduceMotion
+  @Environment(\.colorScheme) var colorScheme
   @State var shown = false
   static func textSize(_ text: String, size: CGFloat, width: CGFloat) -> CGSize {
     let font = JournalType.handFont(size: size) as CTFont
@@ -164,10 +165,11 @@ struct InkLabel: View {
   }
   var lettering: some View {
     let measured = Self.textSize(text, size: size, width: width)
+    var appearance = EnvironmentValues(); appearance.colorScheme = colorScheme
     let font = JournalType.handFont(size: size) as CTFont
     let setter = CTFramesetterCreateWithAttributedString(NSAttributedString(string: text, attributes: [
       NSAttributedString.Key(kCTFontAttributeName as String): font,
-      NSAttributedString.Key(kCTForegroundColorAttributeName as String): JournalPalette.nightColor(dim ? JournalPalette.inkDim : JournalPalette.lamp).cgColor,
+      NSAttributedString.Key(kCTForegroundColorAttributeName as String): (dim ? JournalPalette.inkDim : JournalPalette.lamp).resolve(in: appearance).cgColor,
     ]))
     // CoreText preserves Caveat's overhang when native Text is rasterized.
     return Canvas { context, _ in

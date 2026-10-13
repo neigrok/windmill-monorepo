@@ -366,8 +366,9 @@ history needs a connection to finish syncing.* are bands, not canvas text.
 ### One transient band
 
 The room has one component, `RoomTransient`, for refusals, notices, Undo and copied-link
-confirmations: a `.footnote` message on `gym/card` that wraps rather than truncates, radius 16,
-with at most one trailing action (*Undo* · *Try again* · *Dismiss* as `xmark`), floating in the
+confirmations: a `.footnote` message on the system's floating surface — Liquid Glass on iOS 26, the
+regular material with the system shadow on iOS 18 — never a row's `card`, so it reads as floating over
+the list it answers; it wraps rather than truncates, radius 16, with at most one trailing action (*Undo* · *Try again* · *Dismiss* as `xmark`), floating in the
 reach band above the primary, honouring the delete window (`gym/briefs/13-gestures.md`). It replaces `RoutineNotice`
 (`RoutinesTab.swift:205`, list sections in red), `LogNoticeBand` (`LogPresentation.swift:151`),
 `CoachNoticeBand` (`CoachScreens.swift:39`), the share message section (`LogTab.swift:125`) and the
@@ -702,16 +703,16 @@ follows the system like the rest of the shell. The iteration-1 captures match; n
   Energy 4*, or *Mood 7* alone — and nothing when neither was. *Mood – Energy –* under every
   unscored page is noise the canvas never draws (`journal/journal.md` §4, "a day you didn't write
   is not drawn").
-- Night in dark, Day in light (§2), chosen by Appearance in You. Until the Day column lands the
-  room is night in both and sets its dark scheme on the `NavigationStack` root, so the status bar
-  never reads dark on the night canvas.
+- Night in dark, Day in light (§2), chosen by Appearance in You; the status bar, the bar and the
+  keyboard follow the window's appearance with the canvas.
 - While the first-open ink notes are shown the placeholder is *Start anywhere.* alone — the notes
   already say *Just start typing* and *Saves as you go*; the line *Only you. No prompts, no
   fields, nothing to fill in — write a line or a page.* stays as the canvas's one disclosure.
 
 ### 7.14 Echoes on iOS (§8)
 
-Built when the port lands; drawn now.
+As §8 draws it. The ink's *Useful* marks the passages the ink shows; *Not useful* retires the
+page's echo in one request, as the web's page-level answer does.
 
 ### 7.15 Update required (§2 shell)
 

@@ -46,6 +46,8 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
     var ticketLifetime: TimeInterval = 900
     var dataAccounts: Set<String> = []
     var persistenceFailed = false
+    // Requests made as an account meet a 426, as from a server that needs a newer app.
+    var upgradeRequired = false
   }
   struct Ticket: Sendable {
     let subject: String
@@ -208,6 +210,7 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
     state.withLock { state in
       if token != nil && !state.helloOnline { return .unreachable }
       if token != nil && state.helloFailuresRemaining > 0 { state.helloFailuresRemaining -= 1; return .unreachable }
+      if token != nil && state.upgradeRequired { return Reply(status: 426, body: ["error": "upgrade-required"]) }
       let c = credential(token, state)
       let reply = state.server.hello(credential: c, at: now)
       guard persist(&state) else { return .unreachable }
@@ -216,6 +219,7 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
   }
   func push(_ request: PushRequest, token: SessionToken) async -> Reply<PushResponse> {
     state.withLock { state in
+      if state.upgradeRequired { return Reply(status: 426, body: ["error": "upgrade-required"]) }
       let c = credential(token, state)
       let reply = state.server.push(request.json, credential: c, at: now)
       guard persist(&state) else { return .unreachable }
@@ -224,6 +228,7 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
   }
   func pull(_ request: PullRequest, token: SessionToken?) async -> Reply<PullResponse> {
     state.withLock { state in
+      if token != nil && state.upgradeRequired { return Reply(status: 426, body: ["error": "upgrade-required"]) }
       let c = credential(token, state)
       let reply = state.server.pull(request.json, credential: c, at: now)
       guard persist(&state) else { return .unreachable }

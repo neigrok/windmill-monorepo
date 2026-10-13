@@ -63,16 +63,14 @@ final class GymModel {
   }
   var hasData: Bool { personalCounts.values.contains { $0 > 0 } }
   var phoneSummary: String {
-    let kinds = [(Session.type, "workout", "workouts"), (Routine.type, "routine", "routines"),
-                 (TrainingSet.type, "set", "sets"), (Note.type, "note", "notes"),
-                 (WeighIn.type, "weigh-in", "weigh-ins"), (Exercise.type, "custom movement", "custom movements"),
-                 (ExerciseName.type, "movement name", "movement names"), (Proposal.type, "proposal", "proposals"),
-                 (GymPreferences.type, "preference record", "preference records")]
+    let kinds = [(Routine.type, "routine", "routines"), (Session.type, "workout", "workouts"),
+                 (WeighIn.type, "weigh-in", "weigh-ins"), (Note.type, "note", "notes"),
+                 (Exercise.type, "custom movement", "custom movements")]
     let lines = kinds.compactMap { type, singular, plural -> String? in
       let count = personalCounts[type] ?? 0
       return count == 0 ? nil : "\(count) \(count == 1 ? singular : plural)"
     }
-    return lines.isEmpty ? "No Gym data on this phone yet." : lines.joined(separator: " · ")
+    return lines.isEmpty ? "nothing yet" : lines.joined(separator: " · ")
   }
 
   func start() {

@@ -294,6 +294,58 @@ import SyncTesting
     #expect(try runtime.account() == nil)
   }
 
+  @Test func updateRequiredAtSignInAsksOnceKeepsTheSignInPendingAndTheRoomsOpen() async throws {
+    let recorder = TelemetryRecorder()
+    let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server, telemetry: recorder)
+    let updates = { recorder.entries.withLock { $0.filter { $0.name == "client_update_required" }.map(\.properties) } }
+    model.openJournal()
+    server.state.withLock { $0.upgradeRequired = true }
+    model.sheet = .code; model.email = "update@example.com"; model.code = "482913"
+    await model.verifyCode()
+    #expect(model.updateAlert && model.updateRequired && model.updateState == "sign_in")
+    #expect(model.error == nil && model.sheet == .authPending && model.pendingSignIn != nil && model.account == nil)
+    #expect(!model.editorReadOnly && recorder.entries.withLock { !$0.contains { $0.name == "client_error" } })
+    model.keepWorkingWithoutUpdate(); model.noticeUpdateRequired()
+    #expect(!model.updateAlert)
+    model.journal.type("Written while the update waits"); model.journal.done()
+    #expect(model.journal.document.body == "Written while the update waits" && !model.journal.dirty)
+    model.updateOpened(false)
+    #expect(model.updateOpenFailed)
+    model.dismissUpdateFailure()
+    #expect(!model.updateOpenFailed)
+    #expect(updates() == [["state": "sign_in"], ["state": "sign_in", "action": "keep"],
+                          ["state": "sign_in", "action": "open", "outcome": "failed"], ["state": "sign_in", "action": "dismiss"]])
+  }
+
+  @Test func theEnginesUpdateFlagSpeaksOncePerLaunch() async throws {
+    let recorder = TelemetryRecorder()
+    let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server, telemetry: recorder)
+    try await model.signIn(server.identity(email: "flag@example.com"))
+    model.noticeUpdateRequired()
+    #expect(!model.updateAlert && !model.updateRequired)
+    server.state.withLock { $0.upgradeRequired = true }
+    await model.runtime?.engine.start()
+    for _ in 0..<100 where model.runtime?.engine.status.upgradeRequired != true { try await Task.sleep(for: .milliseconds(20)) }
+    model.noticeUpdateRequired()
+    #expect(model.updateAlert && model.updateState == "sync")
+    model.updateOpened(true); model.noticeUpdateRequired()
+    #expect(!model.updateAlert && !model.updateOpenFailed)
+    let relaunched = try AppModel(runner: model.runner, preferences: model.preferences, runtime: model.runtime, telemetry: recorder)
+    relaunched.noticeUpdateRequired()
+    #expect(relaunched.updateAlert)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "client_update_required" }.map(\.properties) } ==
+            [["state": "sync"], ["state": "sync", "action": "open", "outcome": "ok"], ["state": "sync"]])
+  }
+
+  @Test func appearanceIsChosenOnceAndRemembered() throws {
+    let recorder = TelemetryRecorder()
+    let (_, model) = try JournalModelTests().fixture(telemetry: recorder)
+    #expect(model.appearance == .system)
+    model.chooseAppearance(.dark); model.chooseAppearance(.dark)
+    #expect(try AppModel(runner: model.runner, preferences: model.preferences).appearance == .dark)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "appearance_chosen" }.map(\.properties) } == [["appearance": "dark"]])
+  }
+
   @Test func signOutKeepPreservesBothRoomsForTheirAccountOnly() async throws {
     let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server)
     let owner = server.identity(email: "gym-lineage@example.com")

@@ -4,6 +4,7 @@ import XCTest
   var today: String { day(offset: 0) }
   var firstSource: String { day(offset: -120) }
   var secondSource: String { day(offset: -240) }
+  var thirdSource: String { day(offset: -400) }
   let sourceQuote = "The long walk home helped me notice the evening."
 
   func day(offset: Int) -> String {
@@ -17,8 +18,7 @@ import XCTest
   func launch(_ appearance: String, board: String = "journal-echoes", layout: Bool = false) -> XCUIApplication {
     continueAfterFailure = false
     let app = XCUIApplication()
-    app.launchArguments = ["-model-server", "-board", board]
-    app.launchEnvironment["WM_IOS_ECHO_APPEARANCE"] = appearance
+    app.launchArguments = ["-model-server", "-board", board, "-onboarding-appearance", appearance]
     if layout { app.launchArguments.append("-journal-layout-test") }
     app.launch()
     XCTAssertTrue(app.textViews["journal-editor"].waitForExistence(timeout: 15))
@@ -124,28 +124,49 @@ import XCTest
     let app = launch(appearance, layout: true)
     let disclosure = app.buttons["journal-echo-\(today)"]
     reveal(disclosure, in: app, towardTop: true)
-    XCTAssertEqual(disclosure.label, "2 passages you wrote before")
+    XCTAssertEqual(disclosure.label, "3 passages you wrote before")
     XCTAssertGreaterThanOrEqual(disclosure.frame.height, 44)
     XCTAssertFalse(app.keyboards.firstMatch.exists)
-    try capture("night-canvas-echo-collapsed-sheet-\(appearance)", app)
+    try capture("canvas-echo-tab-closed-\(appearance)", app)
 
+    let dateRow = app.descendants(matching: .any)["journal-date"]
+    let closed = dateRow.frame
     disclosure.tap()
     let open = app.buttons["echo-open-\(firstSource)"]
+    XCTAssertTrue(open.waitForExistence(timeout: 5))
+    XCTAssertEqual(dateRow.frame.minY, closed.minY, accuracy: 1, "The ink opens below the page; nothing above it moves")
     reveal(open, in: app)
-    XCTAssertFalse(app.keyboards.firstMatch.exists)
-    XCTAssertTrue(app.staticTexts["from your voice note"].exists)
-    XCTAssertTrue(app.staticTexts["something you copied down"].exists)
-    XCTAssertFalse(app.buttons["write-today"].isHittable)
-    try capture("echo-opened-\(appearance)", app)
+    XCTAssertTrue(app.buttons["echo-open-\(secondSource)"].exists)
+    XCTAssertFalse(app.buttons["echo-open-\(thirdSource)"].exists, "The ink shows two passages; the reader holds the rest")
+    XCTAssertTrue(open.label.contains("from your voice note"))
+    XCTAssertTrue(app.buttons["echo-open-\(secondSource)"].label.contains("something you copied down"))
+    XCTAssertTrue(app.buttons["write-today"].isHittable)
+    try capture("canvas-echo-ink-open-\(appearance)", app)
+    disclosure.tap()
+    XCTAssertTrue(open.waitForNonExistence(timeout: 5), "Tapping the count again closes the ink")
+    disclosure.tap()
+    reveal(open, in: app)
 
-    let useful = app.buttons["echo-useful-\(firstSource)"]
+    let useful = app.buttons["echo-useful-page"]
     reveal(useful, in: app); useful.tap()
     let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "Selected"), object: useful)
     XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 5), .completed)
-    try capture("echo-useful-\(appearance)", app)
+    try capture("canvas-echo-useful-\(appearance)", app)
+
+    let more = app.buttons["echo-more"]
+    reveal(more, in: app); more.tap()
+    let reader = app.scrollViews["echo-sheet"]
+    XCTAssertTrue(reader.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.navigationBars["From your journal"].exists)
+    XCTAssertTrue(app.buttons["echo-read-\(thirdSource)"].waitForExistence(timeout: 5))
+    try capture("echo-reader-sheet-\(appearance)", app)
+    app.buttons["echo-close"].tap()
+    XCTAssertTrue(reader.waitForNonExistence(timeout: 5))
+
     reveal(open, in: app, towardTop: true); open.tap()
     try assertSourcePassageCentered(in: app, appearance: appearance)
-    try capture("night-canvas-echo-source-trail-sheet-\(appearance)", app)
+    XCTAssertFalse(open.exists, "Reading a source closes the ink")
+    try capture("canvas-echo-source-trail-\(appearance)", app)
 
     let back = app.buttons["echo-back-to-tonight"]
     XCTAssertTrue(back.isHittable); back.tap()
@@ -153,22 +174,40 @@ import XCTest
     reveal(disclosure, in: app, towardTop: true); disclosure.tap()
     reveal(useful, in: app)
     XCTAssertEqual(useful.value as? String, "Selected")
-    let dismiss = app.buttons["echo-dismiss-\(firstSource)"]
-    reveal(dismiss, in: app); dismiss.tap()
-    XCTAssertTrue(open.waitForNonExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["echo-open-\(secondSource)"].exists)
-    try capture("echo-one-dismissed-\(appearance)", app)
-    let dismissPage = app.buttons["echo-dismiss-page"]
-    reveal(dismissPage, in: app); dismissPage.tap()
+    let write = app.buttons["write-today"]
+    XCTAssertTrue(write.wait(for: \.isHittable, toEqual: true, timeout: 5)); write.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    XCTAssertTrue(open.waitForNonExistence(timeout: 5), "The keyboard closes the ink")
+    XCTAssertFalse(disclosure.exists, "Today's count does not draw while writing")
+    app.buttons["done-writing"].tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    reveal(disclosure, in: app, towardTop: true); disclosure.tap()
+    let notUseful = app.buttons["echo-dismiss-page"]
+    reveal(notUseful, in: app); notUseful.tap()
     XCTAssertTrue(disclosure.waitForNonExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["echo-close"].waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.buttons["write-today"].wait(for: \.isHittable, toEqual: true, timeout: 5))
-    try capture("night-canvas-echo-dismissed-sheet-\(appearance)", app)
+    try capture("canvas-echo-dismissed-\(appearance)", app)
     app.terminate()
   }
 
   func testLightEchoOpensSourceAndAcceptsFeedback() throws { try flow("light") }
   func testDarkEchoOpensSourceAndAcceptsFeedback() throws { try flow("dark") }
+
+  func testFirstEchoCardHeadsTheInkOnce() throws {
+    let app = launch("dark", board: "journal-echoes-first")
+    let disclosure = app.buttons["journal-echo-\(today)"]
+    reveal(disclosure, in: app, towardTop: true); disclosure.tap()
+    let gotIt = app.buttons["echo-introduction-done"]
+    reveal(gotIt, in: app)
+    XCTAssertTrue(app.staticTexts["Older lines that echo what you wrote today. Only you see them; they cost nothing."].exists)
+    try capture("canvas-echo-first-card-dark", app)
+    gotIt.tap()
+    XCTAssertTrue(gotIt.waitForNonExistence(timeout: 5))
+    disclosure.tap(); disclosure.tap()
+    XCTAssertTrue(app.buttons["echo-open-\(firstSource)"].waitForExistence(timeout: 5))
+    XCTAssertFalse(gotIt.exists, "The first-echo card shows once")
+    app.terminate()
+  }
 
   func testEquivalentSourceEditKeepsReadNavigationAndRealEditRetractsEcho() throws {
     for appearance in ["light", "dark"] {
@@ -176,27 +215,23 @@ import XCTest
       let app = launch(appearance, board: decomposed ? "journal-echoes-unicode-decomposed" : "journal-echoes-unicode", layout: true)
       let disclosure = app.buttons["journal-echo-\(today)"]
       reveal(disclosure, in: app, towardTop: true); disclosure.tap()
-      let useful = app.buttons["echo-useful-\(firstSource)"]
-      reveal(useful, in: app); useful.tap()
-      let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "Selected"), object: useful)
-      XCTAssertEqual(XCTWaiter.wait(for: [selected], timeout: 5), .completed)
       let open = app.buttons["echo-open-\(firstSource)"]
-      reveal(open, in: app, towardTop: true); open.tap()
+      reveal(open, in: app); open.tap()
       let quote = decomposed ? "I remembered the cafe\u{301} by the river." : "I remembered the café by the river."
       try assertSourcePassageCentered(in: app, appearance: "unicode-\(appearance)", quote: quote)
       let source = app.textViews["journal-body-\(firstSource)"]
       let text = try XCTUnwrap(sourceMetrics(source)?["text"] as? String)
       let expected = decomposed ? text.decomposedStringWithCanonicalMapping : text.precomposedStringWithCanonicalMapping
       XCTAssertEqual(Array(text.utf8), Array(expected.utf8), "The text view must contain the current source bytes")
-      try capture("night-canvas-echo-unicode-source-sheet-\(appearance)", app)
+      try capture("canvas-echo-unicode-source-\(appearance)", app)
       app.buttons["echo-back-to-tonight"].tap()
       reveal(disclosure, in: app, towardTop: true); disclosure.tap()
-      let changeWords = app.buttons["echo-useful-\(secondSource)"]
-      reveal(changeWords, in: app); changeWords.tap()
+      let useful = app.buttons["echo-useful-page"]
+      reveal(useful, in: app); useful.tap()
       XCTAssertTrue(open.waitForNonExistence(timeout: 5))
       XCTAssertTrue(app.buttons["echo-open-\(secondSource)"].exists)
-      XCTAssertTrue(app.staticTexts["1 passage you wrote before"].exists)
-      try capture("echo-unicode-real-edit-retracted-\(appearance)", app)
+      XCTAssertEqual(disclosure.label, "2 passages you wrote before")
+      try capture("canvas-echo-unicode-real-edit-retracted-\(appearance)", app)
       app.terminate()
     }
   }
@@ -209,7 +244,7 @@ import XCTest
     XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "journal-echo-")).count, 0)
     XCTAssertFalse(app.descendants(matching: .any)["echo-sheet"].exists)
     XCTAssertFalse(app.staticTexts["No echo on this page."].exists)
-    try capture("night-canvas-echo-\(empty ? "empty" : "offline")-sheet-\(appearance)", app)
+    try capture("canvas-echo-\(empty ? "empty" : "offline")-\(appearance)", app)
     let write = app.buttons["write-today"]
     XCTAssertTrue(write.wait(for: \.isHittable, toEqual: true, timeout: 5)); write.tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
@@ -222,7 +257,7 @@ import XCTest
     XCTAssertEqual(editor.value as? String, initial + addition)
     XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "journal-echo-")).count, 0)
     XCTAssertFalse(app.staticTexts["Couldn't read echoes."].exists)
-    try capture("night-canvas-echo-\(empty ? "empty" : "offline")-written-sheet-\(appearance)", app)
+    try capture("canvas-echo-\(empty ? "empty" : "offline")-written-\(appearance)", app)
     app.terminate()
   }
 
@@ -239,21 +274,21 @@ import XCTest
       let app = launch(appearance, board: "journal-echoes-AX3-RM", layout: true)
       let disclosure = app.buttons["journal-echo-\(today)"]
       reveal(disclosure, in: app, towardTop: true)
-      XCTAssertEqual(disclosure.label, "2 passages you wrote before")
+      XCTAssertEqual(disclosure.label, "3 passages you wrote before")
       disclosure.tap()
       let open = app.buttons["echo-open-\(firstSource)"]
       reveal(open, in: app)
       XCTAssertGreaterThanOrEqual(open.frame.height, 44)
       XCTAssertLessThanOrEqual(open.frame.maxX, app.frame.maxX)
       XCTAssertGreaterThanOrEqual(open.frame.minX, app.frame.minX)
-      try capture("echo-opened-ax3-rm-\(appearance)", app)
-      let useful = app.buttons["echo-useful-\(firstSource)"]
-      reveal(useful, in: app)
-      XCTAssertGreaterThanOrEqual(useful.frame.height, 44)
-      let dismiss = app.buttons["echo-dismiss-\(firstSource)"]
-      reveal(dismiss, in: app)
-      XCTAssertGreaterThanOrEqual(dismiss.frame.height, 44)
-      try capture("echo-actions-ax3-rm-\(appearance)", app)
+      try capture("canvas-echo-ink-ax3-rm-\(appearance)", app)
+      for identifier in ["echo-useful-page", "echo-dismiss-page", "echo-more"] {
+        let action = app.buttons[identifier]
+        reveal(action, in: app)
+        XCTAssertGreaterThanOrEqual(action.frame.height, 44)
+        XCTAssertLessThanOrEqual(action.frame.maxX, app.frame.maxX)
+      }
+      try capture("canvas-echo-actions-ax3-rm-\(appearance)", app)
       reveal(open, in: app, towardTop: true); open.tap()
       try assertSourcePassageCentered(in: app, appearance: "ax3-rm-\(appearance)")
       let back = app.buttons["echo-back-to-tonight"]
@@ -261,12 +296,12 @@ import XCTest
       XCTAssertGreaterThanOrEqual(back.frame.height, 44)
       XCTAssertLessThanOrEqual(back.frame.maxX, app.frame.maxX)
       XCTAssertGreaterThanOrEqual(back.frame.minX, app.frame.minX)
-      try capture("night-canvas-echo-source-trail-ax3-rm-sheet-\(appearance)", app)
+      try capture("canvas-echo-source-trail-ax3-rm-\(appearance)", app)
       back.tap()
       XCTAssertTrue(back.waitForNonExistence(timeout: 5))
       XCTAssertTrue(app.textViews["journal-editor"].wait(for: \.isHittable, toEqual: true, timeout: 5))
       XCTAssertFalse(app.keyboards.firstMatch.exists)
-      try capture("night-canvas-echo-returned-ax3-rm-sheet-\(appearance)", app)
+      try capture("canvas-echo-returned-ax3-rm-\(appearance)", app)
       app.terminate()
     }
   }

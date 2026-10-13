@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 import Testing
 import CoreText
+import JournalDomain
 @testable import Windmill
 
 @Suite @MainActor struct JournalScreenTests {
@@ -17,18 +18,18 @@ import CoreText
     return editor
   }
 
-  @Test func journalEditorUsesNightInkInALightShell() throws {
+  @Test func journalEditorInkAnswersEachAppearanceWithItsColumn() throws {
     let light = UITraitCollection(userInterfaceStyle: .light)
     let dark = UITraitCollection(userInterfaceStyle: .dark)
-    var foreground: UIColor?
-    light.performAsCurrent {
-      let attributes = JournalBodyText.attributes(fontSize: JournalType.bodySize)
-      foreground = attributes[.foregroundColor] as? UIColor
-    }
-    let ink = try #require(foreground)
-    // Independent §2 values catch a broken SwiftUI → UIKit bridge as well as wrong appearance.
+    let ink = try #require(JournalBodyText.attributes(fontSize: JournalType.bodySize)[.foregroundColor] as? UIColor)
+    // Independent §2 values: Day ink in light, Night ink in dark, and the window tints the rooms lend UIKit.
     let colors: [(UIColor, [CGFloat])] = [
-      (ink.resolvedColor(with: light), [241, 240, 236]),
+      (ink.resolvedColor(with: light), [22, 30, 40]),
+      (ink.resolvedColor(with: dark), [241, 240, 236]),
+      (JournalPalette.uiLamp.resolvedColor(with: light), [144, 101, 28]),
+      (JournalPalette.uiLamp.resolvedColor(with: dark), [224, 185, 114]),
+      (GymPalette.uiAccent.resolvedColor(with: dark), [95, 205, 180]),
+      (ShellPalette.uiBrand.resolvedColor(with: dark), [208, 138, 94]),
       (UIColor(ShellPalette.canvas).resolvedColor(with: light), [249, 245, 235]),
       (UIColor(ShellPalette.canvas).resolvedColor(with: dark), [11, 11, 12]),
     ]
@@ -40,6 +41,13 @@ import CoreText
       }
       #expect(alpha == 1)
     }
+  }
+
+  @Test func aPastDaysScaleLineDrawsOnlyWhatWasSet() {
+    #expect(JournalScreen.scaleLine(PageDocument(body: "A page.", mood: 7, energy: 4)) == "Mood 7 · Energy 4")
+    #expect(JournalScreen.scaleLine(PageDocument(body: "A page.", mood: 7)) == "Mood 7")
+    #expect(JournalScreen.scaleLine(PageDocument(body: "A page.", energy: 0)) == "Energy 0")
+    #expect(JournalScreen.scaleLine(PageDocument(body: "A page.")) == nil)
   }
 
   @Test func inkFontIsRegisteredFromTheAppBundle() throws {

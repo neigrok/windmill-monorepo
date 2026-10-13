@@ -229,9 +229,9 @@ these are the places it disagrees with a drawing or a brief.
   on system glass replace them. Redraw the top band of boards 02d, 05–07d, 08a–09k, 10–13b, 21a/21b
   and the Gym file's Coach-wave iOS boards from the new section's bar anatomy.
 - **9h · Journal day inks.** `iOS First Run · Colour` light `journal/ink` `#2A2118`, `ink-dim`
-  `#74654F`, `ink-faint` `#8E8272` are warm, as are the onboarding glimpse's; the web's journal day
-  (`palettes.css`) and the spec are cool paper (`#161E28` / `#4E5968` / `#5E6979`). Align the
-  collection and the glimpse when journal day ships.
+  `#74654F`, `ink-faint` `#8E8272` are warm; the web's journal day (`palettes.css`), the spec and
+  the app's onboarding glimpse are cool paper (`#161E28` / `#4E5968` / `#5E6979`). Align the
+  collection.
 - **9i · The proposal card's rows.** `gym/briefs/09-coach.md` ("One · the turn") says iOS's card
   shows no diff rows; the spec's card (§6) draws up to three fact rows and a *+ 1 more* line, as
   Android's does. Restate the brief for both phones.
@@ -323,11 +323,10 @@ exception to `guidelines/superapp-flow.md` §3 and §8. Nothing is built.
   still describes a cut passage, withheld words and a free path. `journal.md` §6 requires full
   passages for everyone, without AI credits or a paywall; notes `34:294` and `43:360` agree.
   Reconcile the caption and the free-path labels on the phone echo boards `31:211` and `33:327`.
-- **iOS Journal daylight.** The canvas, source pages and echo trail stay night in both appearances
-  (`ios/ios-redesign.md` §2). The Echoes sheet follows the system appearance on the journal roles,
-  so in light it draws the spec's Day column. Its lamp is `#90651C` (4.82:1 on `#F7F7F5`); the web's
-  day lamp `#986B1E` (`palettes.css`) measures 4.39:1 on the same paper, under the 4.5:1 text floor.
-  Move the web and the Figma Day collection to `#90651C`.
+- **iOS Journal daylight.** The journal room answers light with the spec's Day column
+  (`ios/ios-redesign.md` §2): the canvas, source pages, the echo ink and the reader. Its lamp is
+  `#90651C` (4.82:1 on `#F7F7F5`); the web's day lamp `#986B1E` (`palettes.css`) measures 4.39:1 on
+  the same paper, under the 4.5:1 text floor. Move the web and the Figma Day collection to `#90651C`.
 - **iOS gym and shell day contrast (owner decision).** `gym/accent` Daylight `#137A6C` measures
   4.24:1 on `gym/canvas` `#EBE7E3` and 3.76:1 on `gym/raised` `#DFDAD5` as text; candidate
   `#106B5F` measures 5.19:1 and 4.60:1 (white on it 6.38:1). `shell/brand` light `#BC6C42` carries a

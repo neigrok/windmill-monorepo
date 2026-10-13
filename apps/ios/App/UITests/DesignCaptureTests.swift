@@ -81,19 +81,6 @@ import XCTest
     capture("gym-you-signed-out-\(appearance)", app)
     closeSheet(app)
     roomMenuOpen("gym-room-menu-open-\(appearance)", app, current: "gym")
-    let signIn = app.buttons["routines-sign-in"]
-    if signIn.waitForExistence(timeout: 5) {
-      signIn.tap()
-      XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 5))
-      capture("gym-keep-sheet-\(appearance)", app)
-      app.buttons["link-sign-in"].tap()
-      XCTAssertTrue(app.textFields["sign-in-link"].waitForExistence(timeout: 5))
-      capture("shell-sign-in-link-\(appearance)", app)
-      app.buttons["Use email instead"].tap()
-      XCTAssertTrue(app.textFields["email-address"].waitForExistence(timeout: 5))
-      capture("gym-sign-in-email-address-\(appearance)", app)
-      closeSheet(app)
-    } else { XCTFail("routines-sign-in door missing on the empty Routines tab") }
     app.tabBars.buttons["The log"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-log"].waitForExistence(timeout: 10))
     capture("gym-log-empty-signed-out-\(appearance)", app, settle: 1.5)
@@ -105,6 +92,65 @@ import XCTest
   }
   func testGymSignedOutLight() { gymSignedOut("light") }
   func testGymSignedOutDark() { gymSignedOut("dark") }
+
+  func gymKeepAndSignIn(_ appearance: String) {
+    let app = launch("keep-gym", appearance: appearance)
+    XCTAssertTrue(app.staticTexts["Keep your log"].waitForExistence(timeout: 15))
+    capture("gym-keep-sheet-\(appearance)", app)
+    app.buttons["email-sign-in"].tap()
+    let email = app.textFields["email-address"]
+    XCTAssertTrue(email.waitForExistence(timeout: 5))
+    capture("gym-sign-in-email-address-\(appearance)", app)
+    email.typeText("you@example.com"); app.buttons["Send code"].tap()
+    XCTAssertTrue(app.buttons["link-sign-in"].waitForExistence(timeout: 10))
+    capture("shell-sign-in-code-\(appearance)", app)
+    app.buttons["link-sign-in"].tap()
+    XCTAssertTrue(app.textFields["sign-in-link"].waitForExistence(timeout: 5))
+    capture("shell-sign-in-link-\(appearance)", app)
+    app.terminate()
+  }
+  func testGymKeepAndSignInLight() { gymKeepAndSignIn("light") }
+  func testGymKeepAndSignInDark() { gymKeepAndSignIn("dark") }
+
+  func updateRequired(_ appearance: String) {
+    let app = launch("update-required", appearance: appearance)
+    let alert = app.alerts["Update required"]
+    XCTAssertTrue(alert.waitForExistence(timeout: 20))
+    capture("shell-update-required-alert-\(appearance)", app)
+    alert.buttons["Keep working on this phone"].tap()
+    XCTAssertTrue(alert.waitForNonExistence(timeout: 5))
+    app.buttons["you"].tap()
+    XCTAssertTrue(app.staticTexts["Syncing paused · update Windmill"].waitForExistence(timeout: 5))
+    capture("shell-you-update-required-\(appearance)", app)
+    app.buttons["get-update"].tap()
+    XCTAssertTrue(app.staticTexts["Couldn't open the update. Try again."].waitForExistence(timeout: 5))
+    capture("shell-you-update-transient-\(appearance)", app)
+    app.terminate()
+  }
+  func testUpdateRequiredLight() { updateRequired("light") }
+  func testUpdateRequiredDark() { updateRequired("dark") }
+
+  func journalEchoes(_ appearance: String) {
+    let app = launch("journal-echoes-first", appearance: appearance)
+    let tab = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "journal-echo-")).firstMatch
+    XCTAssertTrue(tab.waitForExistence(timeout: 20))
+    capture("journal-echo-tab-\(appearance)", app, settle: 1.5)
+    tab.tap()
+    let gotIt = app.buttons["echo-introduction-done"]
+    XCTAssertTrue(gotIt.waitForExistence(timeout: 5))
+    capture("journal-echo-first-card-\(appearance)", app)
+    gotIt.tap()
+    let more = app.buttons["echo-more"]
+    XCTAssertTrue(more.waitForExistence(timeout: 5))
+    for _ in 0..<3 where !more.isHittable { app.swipeUp() }
+    capture("journal-echo-ink-\(appearance)", app)
+    more.tap()
+    XCTAssertTrue(app.scrollViews["echo-sheet"].waitForExistence(timeout: 5))
+    capture("journal-echo-reader-\(appearance)", app)
+    app.terminate()
+  }
+  func testJournalEchoesLight() { journalEchoes("light") }
+  func testJournalEchoesDark() { journalEchoes("dark") }
 
   func gymRoutinesPopulatedSignedOut(_ appearance: String) {
     let app = launch("shell-anonymous", appearance: appearance, arguments: ["-gym-log-fixture"])
