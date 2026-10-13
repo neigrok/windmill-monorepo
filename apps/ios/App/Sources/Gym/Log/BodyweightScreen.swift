@@ -74,47 +74,30 @@ struct BodyweightScreen: View {
     let entry: Bodyweight.Entry
     var id: LocalDay { entry.day }
   }
-  enum Window: Hashable {
-    case recent, all
-    var domain: Bodyweight.Window { self == .recent ? .recent : .all }
-  }
   let gym: GymModel
-  @State private var window = Window.recent
+  @State private var window = ChartWindow.recent
   @State private var correcting: Selection?
 
   var body: some View {
     List {
-      if gym.readFailed {
-        Section {
-          Text("Your weigh-ins didn’t load.")
-            .foregroundStyle(GymPalette.inkDim)
-          Button("Try again") { gym.refresh() }
-            .accessibilityIdentifier("gym-bodyweight-retry")
-        }.listRowBackground(GymPalette.card)
-      } else if gym.bodyweight == nil || gym.bodyweight?.stance == .unknown {
-        Section {
-          Text("Reading your weigh-ins…")
-            .foregroundStyle(GymPalette.inkDim)
-            .accessibilityIdentifier("gym-bodyweight-loading")
-        }.listRowBackground(GymPalette.card)
+      if !gym.readFailed && (gym.bodyweight == nil || gym.bodyweight?.stance == .unknown) {
+        ProgressView().frame(maxWidth: .infinity).listRowBackground(GymPalette.canvas)
+          .accessibilityIdentifier("gym-bodyweight-loading")
       }
       if let weight = gym.bodyweight {
         if weight.stance == .empty && !gym.readFailed {
-          Section {
-            Text("No weigh-ins yet. Weigh in from the log.")
-              .foregroundStyle(GymPalette.inkDim)
-              .accessibilityIdentifier("gym-bodyweight-empty")
-          }.listRowBackground(GymPalette.card)
+          ContentUnavailableView("No weigh-ins yet", systemImage: "scalemass", description: Text("Weigh in from the log."))
+            .listRowBackground(GymPalette.canvas).accessibilityIdentifier("gym-bodyweight-empty")
         } else if weight.stance == .holding {
           Section {
-            BodyweightWindowPicker(window: $window).frame(height: 32)
-            let chart = weight.chart(window.domain)
+            ChartWindowPicker(recent: "90 days", identifier: "gym-bodyweight-window", window: $window)
+            let chart = weight.chart(window == .recent ? .recent : .all)
             if !chart.dots.isEmpty {
               LogDatedChart(points: chart.dots.map { entry in
                 LogPlotPoint(id: entry.day.text, date: LogPresentation.date(entry.day), value: entry.kg,
                              label: "\(BodyweightLogInput.kilograms(entry.kg)) kg · \(LogPresentation.brief(LogPresentation.date(entry.day)))")
               }, from: LogPresentation.date(window == .recent ? weight.today.adding(days: -89) : chart.dots[0].day),
-              through: LogPresentation.date(weight.today), gapDays: Bodyweight.gapDays, select: { id in
+              through: LogPresentation.date(weight.today), series: .bodyweight, select: { id in
                 guard let entry = weight.entries.first(where: { $0.day.text == id }) else { return }
                 correcting = Selection(entry: entry)
               })
@@ -124,8 +107,8 @@ struct BodyweightScreen: View {
                 .foregroundStyle(GymPalette.inkDim)
                 .accessibilityIdentifier("gym-bodyweight-window-empty")
             }
-            Text("\(window == .recent ? "90 days" : "All") · \(chart.dots.count) \(chart.dots.count == 1 ? "weigh-in" : "weigh-ins")")
-              .font(.footnote).foregroundStyle(GymPalette.inkDim)
+            Text("\(window == .recent ? "90 days" : "All") · \(Readout.count(chart.dots.count, "weigh-in"))")
+              .font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim)
           } footer: {
             Text("Every point is a number you typed. Nothing here is estimated.")
               .foregroundStyle(GymPalette.inkDim)
@@ -137,12 +120,9 @@ struct BodyweightScreen: View {
                 correcting = Selection(entry: entry)
               } label: {
                 HStack {
-                  Text(LogPresentation.date(entry.day), format: .dateTime.day().month(.abbreviated).year())
-                    .foregroundStyle(GymPalette.ink)
+                  Text(LogPresentation.brief(entry.day, today: weight.today)).foregroundStyle(GymPalette.ink)
                   Spacer()
-                  Text("\(BodyweightLogInput.kilograms(entry.kg)) kg")
-                    .monospacedDigit().foregroundStyle(GymPalette.ink)
-                  Image(systemName: "pencil").font(.footnote).foregroundStyle(GymPalette.inkDim)
+                  Text("\(BodyweightLogInput.kilograms(entry.kg)) kg").monospacedDigit().foregroundStyle(GymPalette.ink)
                 }
               }
               .accessibilityLabel("\(BodyweightLogInput.kilograms(entry.kg)) kilograms, \(entry.day.text)")
@@ -154,7 +134,7 @@ struct BodyweightScreen: View {
               .accessibilityAction(named: "Delete weigh-in") { gym.logDeleteWeighIn(day: entry.day) }
             }
           } header: {
-            HStack { Text("Every weigh-in"); Spacer(); Text("\(weight.entries.count)") }
+            Text("Every weigh-in")
           } footer: {
             Text("Coach can read this. It can never write it.").foregroundStyle(GymPalette.inkDim)
           }.listRowBackground(GymPalette.card)
@@ -171,29 +151,6 @@ struct BodyweightScreen: View {
     .sheet(item: $correcting) { WeighInSheet(gym: gym, entry: $0.entry) }
     .onChange(of: gym.account) { _, _ in correcting = nil }
     .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "bodyweight"]) }
-  }
-}
-
-private struct BodyweightWindowPicker: UIViewRepresentable {
-  @Binding var window: BodyweightScreen.Window
-  func makeCoordinator() -> Coordinator { Coordinator(window: $window) }
-  func makeUIView(context: Context) -> UISegmentedControl {
-    let control = UISegmentedControl(items: ["90 days", "All"])
-    control.accessibilityIdentifier = "gym-bodyweight-window"
-    control.accessibilityLabel = "Window"
-    control.addTarget(context.coordinator, action: #selector(Coordinator.changed), for: .valueChanged)
-    return control
-  }
-  func updateUIView(_ control: UISegmentedControl, context: Context) {
-    context.coordinator.window = $window
-    control.selectedSegmentIndex = window == .all ? 1 : 0
-  }
-  final class Coordinator: NSObject {
-    var window: Binding<BodyweightScreen.Window>
-    init(window: Binding<BodyweightScreen.Window>) { self.window = window }
-    @objc func changed(_ control: UISegmentedControl) {
-      window.wrappedValue = control.selectedSegmentIndex == 1 ? .all : .recent
-    }
   }
 }
 
@@ -233,8 +190,7 @@ struct WeighInSheet: View {
             Text(refusal).font(.footnote).foregroundStyle(GymPalette.alarm)
               .accessibilityIdentifier("gym-weigh-in-refusal")
           }
-        } header: { Text("Weight") }
-          .listRowBackground(GymPalette.card)
+        }.listRowBackground(GymPalette.card)
         Section {
           if let entry {
             LabeledContent("Date") {

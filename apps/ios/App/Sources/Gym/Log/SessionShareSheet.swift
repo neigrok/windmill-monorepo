@@ -189,6 +189,7 @@ struct SessionShareSheet: View {
   let gym: GymModel
   let sessionID: ID<Session>
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.dynamicTypeSize) private var typeSize
   @State private var owner: String?
   @State private var sharing: SessionShareModel
 
@@ -246,7 +247,7 @@ struct SessionShareSheet: View {
       .onChange(of: gym.account) { _, _ in sharing.accountChanged() }
       .onChange(of: gym.accountTransition) { _, changing in if changing { sharing.accountChanged() } }
       .onChange(of: gym.authPaused) { _, paused in if paused { sharing.accountChanged() } }
-    }.presentationDetents([.medium])
+    }.presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.medium])
   }
 
   var expiry: String {

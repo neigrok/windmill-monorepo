@@ -5,6 +5,11 @@ import GymDomain
 import SyncAPI
 import SyncSchema
 
+extension Readout {
+  // The one place a count is spelled: 1 session, 2 working sets.
+  nonisolated static func count(_ count: Int, _ noun: String) -> String { "\(count) \(count == 1 ? noun : noun + "s")" }
+}
+
 nonisolated enum LogPresentation {
   static func progressEfforts(_ progress: MovementProgress) -> [PerformedFact] {
     let heaviest = progress.heaviest?.fact.heaviest
@@ -22,16 +27,49 @@ nonisolated enum LogPresentation {
     LocalDay(Instant(ms: Int64(date.timeIntervalSince1970 * 1000)), offsetSeconds: TimeZone.current.secondsFromGMT(for: date))
   }
   static func brief(_ date: Date) -> String { date.formatted(.dateTime.day().month(.abbreviated)) }
+  // A past day names its year only when it is not this one.
+  static func brief(_ day: LocalDay, today: LocalDay) -> String {
+    day.year == today.year ? brief(date(day)) : date(day).formatted(.dateTime.day().month(.abbreviated).year())
+  }
   static func dayLabel(_ day: LocalDay, today: LocalDay) -> String {
     if day == today { return "Today" }
     if day == today.adding(days: -1) { return "Yesterday" }
     return date(day).formatted(.dateTime.weekday(.abbreviated).day())
   }
+  // When a new best's previous best was: its day within the same month, its month within the year, else month and year.
+  static func since(_ previous: LocalDay, best: LocalDay) -> String {
+    if previous.year != best.year { return date(previous).formatted(.dateTime.month(.wide).year()) }
+    if previous.month == best.month { return brief(date(previous)) }
+    return date(previous).formatted(.dateTime.month(.wide))
+  }
+  static func ago(days: Int) -> String {
+    switch days {
+    case ...0: "today"
+    case 1: "yesterday"
+    default: "\(days) days ago"
+    }
+  }
+  // The session's day and its clock span: Tue 18 Aug · 18:12 – 19:15.
+  static func span(_ session: Session) -> String {
+    let start = date(session.startedAt)
+    let day = start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+    guard let finished = session.finishedAt.map(date), finished > start else { return "\(day) · \(start.formatted(date: .omitted, time: .shortened))" }
+    return "\(day) · \((start..<finished).formatted(.interval.hour().minute()))"
+  }
+  static func sessionFacts(_ readout: SessionReadout) -> String {
+    [Readout.count(readout.workingSetCount, "working set"), readout.durationMs.map(Readout.duration)].compactMap { $0 }.joined(separator: " · ")
+  }
+  // A movement's line under its name on a finished session: what the plan held for it, or that the plan did not.
+  static func planLine(_ exercise: ID<Exercise>, plan: SessionPlan?) -> String? {
+    guard let plan else { return nil }
+    let entries = plan.entries.filter { $0.exerciseId == exercise }
+    if entries.isEmpty { return "added today" }
+    return entries.count == 1 ? "plan \(Readout.target(entries[0].sets))" : nil
+  }
   static func comparison(_ set: TrainingSet, preceding: [TrainingSet], plan: SessionPlan?) -> String? {
     guard set.kind == "working" else { return set.kind }
     guard let plan else { return nil }
     let entries = plan.entries.filter { $0.exerciseId == set.exerciseId }
-    if entries.isEmpty { return preceding.contains { $0.kind == "working" } ? nil : "added today" }
     guard entries.count == 1, let targets = entries[0].sets else { return nil }
     let slot = preceding.filter { $0.kind == "working" }.count
     guard targets.indices.contains(slot) else { return nil }
@@ -47,6 +85,27 @@ nonisolated enum LogPresentation {
       return "\(words[difference] ?? String(difference)) short"
     }
     return "on plan"
+  }
+}
+
+// A pushed screen's title with its subtitle; iOS 18 stacks the two in the bar's principal slot.
+struct TitledPage: ViewModifier {
+  let title: String
+  let subtitle: String?
+
+  func body(content: Content) -> some View {
+    if #available(iOS 26.0, *), let subtitle {
+      content.navigationTitle(title).navigationSubtitle(subtitle)
+    } else if let subtitle {
+      content.navigationTitle(title).toolbar {
+        ToolbarItem(placement: .principal) {
+          VStack(spacing: 0) {
+            Text(title).font(.headline).foregroundStyle(GymPalette.ink)
+            Text(subtitle).font(.caption).foregroundStyle(GymPalette.inkDim)
+          }.accessibilityElement(children: .combine)
+        }
+      }
+    } else { content.navigationTitle(title) }
   }
 }
 
@@ -123,8 +182,17 @@ extension GymModel {
     return result
   }
 
-  func logSessionIsDeviceOnly(_ id: ID<Session>) -> Bool {
-    if isAnonymous { return true }
+  // The record a finished session set, as its row's second line: Record · Bench Press 84 × 5.
+  func logRecordFact(_ session: ID<Session>, progress: StatsProgress?) -> String? {
+    guard let progress, let fact = progress.sessions.first(where: { $0.sessionId == session })?.movements.first(where: { fact in
+      progress.movement(fact.exerciseId).records.contains { $0.id == session }
+    }), let estimate = fact.estimate else { return nil }
+    return "Record · \(catalogue.find(fact.exerciseId)?.name ?? "Movement") \(Readout.effort(weightKg: estimate.weightKg, reps: estimate.reps))"
+  }
+
+  // On this phone and not yet on the signed-in account. Signed out, every session is the phone's, so none is marked.
+  func logSessionIsUnsent(_ id: ID<Session>) -> Bool {
+    guard !isAnonymous else { return false }
     return (try? runner.read(Gym.scope) { try $0.confirmed(Session.self, id) == nil }) ?? false
   }
 }

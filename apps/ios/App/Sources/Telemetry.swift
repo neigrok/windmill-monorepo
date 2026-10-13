@@ -37,7 +37,8 @@ nonisolated enum TelemetryPrivacy {
     "sync_pull_outcome", "sync_push_outcome", "api_request_failed", "client_error",
     "onboarding_screen_viewed", "onboarding_skipped", "onboarding_finished", "onboarding_replayed", "room_switched", "room_adoption_answered", "gym_screen_viewed", "gym_action", "gym_undo",
     "gym_activity_set_logged", "gym_activity_offer_refused", "gym_session_started", "gym_session_finished", "gym_set_logged", "gym_routine_saved",
-    "gym_ask_started", "gym_ask_outcome", "gym_proposal_outcome", "gym_import_recovery"
+    "gym_ask_started", "gym_ask_outcome", "gym_proposal_outcome", "gym_import_recovery",
+    "gym_moment_opened"
   ]
   static let labels: [String: Set<String>] = [
     "room": ["journal", "gym"],

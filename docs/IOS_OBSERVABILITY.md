@@ -94,6 +94,7 @@ action `dismiss_ink` once when writing or a tap lifts it; no ink replay action i
 | Coach | `gym_ask_started`, `gym_ask_outcome` | screen: coach; outcome: answered, cancelled, failed, refused, capped, fresh, absent; cap: daily, ceiling; duration_ms |
 | Proposals | `gym_proposal_outcome` | screen: review; action: apply, dismiss; outcome: decided, failed |
 | Gym actions | `gym_action`, `gym_undo` | screen: gym; outcome: ok, refused, failed; no action payloads |
+| Log moments | `gym_moment_opened` | no properties; a new-best moment on the log expanded in place |
 | Import recovery | `gym_import_recovery` | step: inspect, fix, keep, retry, save_and_retry; reason: session-open, session-overlap, id-taken, bad-instant, too-many-sets, invalid-set, unknown-exercise, log-full, session-finished, unsent, other; outcome (keep, retry, save_and_retry only): ok, refused, failed |
 | Optional scales | `scale_invitation_shown`, `scale_invitation_answered` | action: answered, declined |
 | Writing | `journal_line_saved` | day_kind: today; emitted after a changed, nonempty body saves, never for scale-only changes |

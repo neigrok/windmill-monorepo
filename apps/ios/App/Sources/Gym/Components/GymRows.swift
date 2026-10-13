@@ -1,6 +1,6 @@
 import SwiftUI
 
-// A movement's title over one meta line; the caller wraps it in the row's Button or NavigationLink and says when it is selected.
+// The room's two-line row, a title over one meta line (a movement, the Bodyweight door); the caller wraps it in its Button or NavigationLink and says when it is selected.
 struct MovementRow: View {
   enum Trailing: Equatable { case fact(String), check }
   let title: String
