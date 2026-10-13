@@ -12,6 +12,7 @@ import SyncSchema
 import SyncEngine
 import enum SyncEngine.Reply
 import SyncModelServer
+import SyncTesting
 @testable import Windmill
 
 @Suite(.serialized) @MainActor struct CoachTests {
@@ -44,9 +45,10 @@ import SyncModelServer
     return try JSONDecoder().decode(CoachSnapshot.self, from: JSONSerialization.data(withJSONObject: value))
   }
   func store() -> CoachDraftStore { CoachDraftStore(directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)) }
-  func authed(_ reply: CoachTestProtocol.Reply, timeout: TimeInterval = 60) async throws -> (GymModel, GymRESTClient, TelemetryRecorder) {
+  func authed(_ reply: CoachTestProtocol.Reply, timeout: TimeInterval = 60,
+              connectivity: SwitchedConnectivity = SwitchedConnectivity()) async throws -> (GymModel, GymRESTClient, TelemetryRecorder) {
     let telemetry = TelemetryRecorder(), transport = JournalModelTransport()
-    let runtime = try GymModelTests().runtime(telemetry: telemetry, transport: transport)
+    let runtime = try GymModelTests().runtime(telemetry: telemetry, transport: transport, connectivity: connectivity)
     let identity = transport.identity(email: "coach-test@example.com")
     _ = try await runtime.engine.signIn(account: identity.account, token: identity.token)
     let gym = GymModel(runner: runtime.runner, runtime: runtime, telemetry: telemetry)
@@ -259,7 +261,7 @@ import SyncModelServer
     let coach = CoachConversation(gym: gym, rest: rest, store: cache)
     await coach.activate(); coach.edit("A private draft"); coach.send()
     await coach.work?.value
-    #expect(coach.error == "Coach needs a connection. Your draft is saved on this phone.")
+    #expect(coach.error == "Coach needs a connection.")
     #expect(!coach.asking && coach.canCompose && coach.retryable && rest.tasks.isEmpty)
     #expect(try cache.read(gym.account!).request == coach.saved.request)
     #expect(coach.saved.text == "A private draft")
@@ -635,7 +637,7 @@ import SyncModelServer
     try await settle { coach.uploading && CoachTestProtocol.state.withLock { !$0.requests.isEmpty } }
     coach.stopResponse(); try await settle { !coach.asking }
     #expect(coach.saved.photo != nil && coach.saved.photoData != nil && coach.retryable)
-    #expect(coach.error == "Upload cancelled. Retry to send this photo.")
+    #expect(coach.error == "Upload cancelled.")
     let call = try #require(CoachTestProtocol.state.withLock { $0.requests.first })
     #expect(call.method == "PUT" && call.mediaType == "image/png" && call.body == coach.saved.photoData)
     #expect(call.authorization?.hasPrefix("Bearer ") == true && !call.path.contains("ask"))
@@ -820,7 +822,7 @@ import SyncModelServer
     try FileManager.default.createDirectory(at: cache.directory, withIntermediateDirectories: true)
     try Data("corrupt".utf8).write(to: cache.file("coach-owner"))
     let coach = CoachConversation(gym: gym, store: cache); await coach.activate()
-    #expect(!coach.draftReadable && !coach.canCompose && coach.error == "Your draft couldn’t be read. Try again.")
+    #expect(!coach.draftReadable && !coach.canCompose && coach.error == "Your draft couldn’t be read.")
     try FileManager.default.removeItem(at: cache.file("coach-owner")); coach.reloadDraft()
     #expect(coach.draftReadable && coach.canCompose)
     try FileManager.default.removeItem(at: cache.directory)
@@ -882,8 +884,8 @@ import SyncModelServer
     #expect(bytes.count == attachment.bytes && bytes.count <= 5 * 1024 * 1024 && UIImage(data: bytes) != nil)
     #expect(throws: AppFailure.self) { try CoachPhotoPreparation.prepare(Data("not an image".utf8)) }
   }
-  @Test func notesCreateEditReorderCeilingDeleteUndoAndUnitsUseEngine() throws {
-    let (h, gym) = fixture()
+  @Test func notesCreateEditReorderCeilingDeleteAndUndoUseEngine() throws {
+    let (_, gym) = fixture()
     var first = Draft(new: Note(id: ID("first"), title: "First", body: "Original"), placed: .bottom)
     var second = Draft(new: Note(id: ID("second"), title: "Second"), placed: .bottom)
     #expect({ if case .saved = gym.save(&first) { return true }; return false }())
@@ -900,9 +902,6 @@ import SyncModelServer
     first.current.title = String(repeating: "x", count: 61); #expect({ if case .refused = gym.save(&first) { return true }; return false }())
     first.current.title = "First"; first.current.body = String(repeating: "é", count: 251)
     #expect({ if case .refused = gym.save(&first) { return true }; return false }())
-    gym.coachSaveUnits("lb"); h.sync(); gym.refresh()
-    #expect(gym.preferences.units == "lb")
-    gym.coachSaveUnits("kg"); #expect(gym.preferences.units == "kg")
   }
   @Test func proposalDecisionsBlockWorkoutAndWaitForAtomicEngineReceipt() throws {
     let (h, gym) = fixture()
@@ -1172,6 +1171,119 @@ import SyncModelServer
     #expect(rows.map(\.created) == [1000, 3000, 4000])
     #expect(rows.last?.meta.hasPrefix("API key · whole account · since ") == true)
     #expect(throws: DecodingError.self) { try CoachConnection.decode(grants: grants, keys: Data("{}".utf8)) }
+  }
+  @Test func countsAgreeWithTheirNounsInReceiptsAndHistory() throws {
+    #expect([GymCount.of(0, "change"), GymCount.of(1, "working set"), GymCount.of(2, "working set")] == ["0 changes", "1 working set", "2 working sets"])
+    #expect(CoachRead(sets: 1, sessions: 1, weeks: 1).line == "read 1 set · 1 week · 1 session")
+    func line(_ kind: String, _ changes: Int) throws -> String? {
+      try JSONDecoder().decode(CoachThread.Outcome.self, from: Data(#"{"kind":"\#(kind)","changes":\#(changes),"routine":"Push A"}"#.utf8)).line
+    }
+    #expect(try ["proposed", "applied", "dismissed", "superseded", "created"].map { try line($0, 1) }
+      == ["1 change waiting", "1 change → Push A", "1 change turned down", "1 change superseded", "created Push A"])
+    #expect(try [line("proposed", 3), line("created", 2)] == ["3 changes waiting", "2 routines created"])
+  }
+  @Test func offlineSendSaysWhyInTheBandAndKeepsTheDraft() async throws {
+    let connectivity = SwitchedConnectivity()
+    let (gym, rest, telemetry) = try await authed(.http(200, "{}"), connectivity: connectivity), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
+    coach.noteOffline()
+    #expect(coach.error == nil && coach.blockedReason == nil)
+    connectivity.set(online: false)
+    try await settle { coach.offline }
+    coach.noteOffline()
+    #expect(coach.error == "Coach needs a connection." && coach.blockedReason == "Coach needs a connection.")
+    coach.error = nil; coach.edit("A private draft"); coach.send()
+    #expect(coach.error == "Coach needs a connection." && !coach.asking && coach.saved.request == nil && coach.saved.text == "A private draft")
+    #expect(CoachTestProtocol.state.withLock { $0.requests.isEmpty })
+    #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_ask_outcome" }.map(\.properties) } == [["screen": "coach", "outcome": "offline"]])
+    connectivity.set(online: true)
+    try await settle { !coach.offline }
+    #expect(coach.blockedReason == nil)
+  }
+  @Test func spentAllowanceKeepsTheDraftAndRepeatsItsReasonOnSend() async throws {
+    let (_, gym) = fixture(), coach = CoachConversation(gym: gym, store: store())
+    defer { try? FileManager.default.removeItem(at: coach.store.directory) }
+    await coach.activate(); coach.edit("Private question")
+    coach.refusal = .daily("The next question frees up in a couple of hours.")
+    coach.send()
+    #expect(coach.error == "The next question frees up in a couple of hours." && coach.saved.request == nil && !coach.asking)
+    #expect(coach.saved.text == "Private question" && !coach.canCompose)
+    coach.refusal = .fresh("This conversation is unavailable. Start a new one.")
+    #expect(coach.blockedReason == "This conversation is unavailable. Start a new one.")
+    coach.newChat(seed: "Private question")
+    #expect(coach.blockedReason == nil && coach.canCompose)
+  }
+  @Test func proposalCardDrawsChangedMovementsThenTheNameAndCountsWhatApplyApplies() throws {
+    let (h, gym) = fixture()
+    gym.run(CreateExercise(Exercise(id: ID("card-squat"), name: "Squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)))
+    gym.run(CreateExercise(Exercise(id: ID("card-bench"), name: "Bench", pattern: "press", equipment: "barbell", stepKg: 2.5)))
+    var routine = Draft(new: Routine(id: ID("card-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("card-squat"), sets: [SetTarget(reps: 5, weightKg: 80)])]))
+    #expect(saved(gym.save(&routine)))
+    h.sync(); gym.refresh()
+    _ = try h.runner.run(ProposeRoutine(id: ID("card-proposal"), routineId: routine.id, name: "Push A2", entries: [
+      RoutineEntry(exerciseId: ID("card-squat"), sets: [SetTarget(reps: 3, weightKg: 90)]), RoutineEntry(exerciseId: ID("card-bench"))], summary: "Triples"))
+    _ = try h.runner.run(ProposeRoutine(id: ID("card-removal"), routineId: routine.id, name: "", entries: [], summary: "Remove", removing: true))
+    h.sync(); gym.refresh()
+    let revision = try #require(gym.proposals.first { $0.id == ID("card-proposal") })
+    #expect(gym.coachProposalFacts(revision).map { "\($0.title) | \($0.fact)" } == ["Squat | 1 × 5 · 80 → 1 × 3 · 90", "Bench | added · open", "Name | Push A → Push A2"])
+    #expect(gym.coachChangeCount(revision) == 3)
+    #expect(ProposalReviewSheet(gym: gym, proposalId: revision.id.record.string!).applyLabel == "Apply all 3")
+    let removal = try #require(gym.proposals.first { $0.id == ID("card-removal") })
+    #expect(gym.coachProposalFacts(removal).isEmpty)
+    #expect(ProposalReviewSheet(gym: gym, proposalId: removal.id.record.string!).applyLabel == "Remove Push A")
+  }
+  @Test func settingsRowStatesWhatReachesTheLog() async throws {
+    let (gym, rest, _) = try await authed(.http(200, #"{"keys":[]}"#))
+    CoachTestProtocol.state.withLock { $0.replies["/v1/oauth/grants"] = .http(200, #"{"grants":[{"clientId":"a","name":"Claude Desktop","grantedMs":1000,"scope":"gym:read gym:write"}]}"#) }
+    let connections = CoachConnections(gym: gym, rest: rest)
+    #expect(connections.summary == "your AI tools")
+    await connections.load()
+    #expect(connections.summary == "Claude Desktop · read · write")
+    CoachTestProtocol.state.withLock { $0.replies["/v1/mcp-keys"] = .http(200, #"{"keys":[{"id":"k","createdMs":4000}]}"#) }
+    await connections.load()
+    #expect(connections.summary == "2 tools")
+    CoachTestProtocol.state.withLock { $0.replies["/v1/oauth/grants"] = .http(200, #"{"grants":[]}"#); $0.replies["/v1/mcp-keys"] = .http(200, #"{"keys":[]}"#) }
+    await connections.load()
+    #expect(connections.summary == "nothing connected yet")
+    CoachTestProtocol.state.withLock { $0.replies["/v1/oauth/grants"] = .failure(.notConnectedToInternet) }
+    await connections.load()
+    #expect(connections.summary == "your AI tools")
+    gym.isAnonymous = true; gym.account = nil
+    #expect(connections.summary == "nothing connected yet")
+  }
+  @Test func waitingDecisionSaysSoAfterItsWaitAndRetryPushesTheSameCommand() async throws {
+    let transport = WorkoutFaultTransport(), telemetry = TelemetryRecorder(), runtime = try WorkoutStateTests.faultRuntime(transport, drivesLoops: true)
+    let owner = transport.model.identity(email: "removal-owner@example.com")
+    #expect(try await runtime.engine.signIn(account: owner.account, token: owner.token).isComplete)
+    await runtime.engine.start()
+    let gym = GymModel(runner: runtime.runner, runtime: runtime, telemetry: telemetry)
+    defer { gym.stop() }
+    var routine = Draft(new: Routine(id: ID("waiting-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("bench-press"))]))
+    #expect(saved(gym.save(&routine)))
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.routines.first?.revision != nil }
+    #expect(gym.run(ProposeRoutine(id: ID("waiting-removal"), routineId: routine.id, name: "", entries: [], summary: "Remove this routine.", removing: true))?.receipt != nil)
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.proposals.first?.baseRevision != nil }
+    let proposal = try #require(gym.proposals.first)
+    transport.failure.withLock { $0 = 503 }
+    #expect(gym.coachDecideProposal(proposal, apply: true))
+    try await settle { runtime.engine.status.failedPushes[Gym.scope]?.isEmpty == false }
+    let review = ProposalReviewSheet(gym: gym, proposalId: proposal.id.description, stallAfter: .milliseconds(200))
+    #expect(review.pending && gym.coachQueuedDecision(proposal.id) == "apply")
+    let window = UIWindow(frame: UIScreen.main.bounds)
+    window.rootViewController = RemovalReceiptHost(rootView: review.environment(\.scenePhase, .active)); window.makeKeyAndVisible()
+    defer { window.isHidden = true; window.rootViewController = nil }
+    let outcomes = { telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map(\.properties) } }
+    try await settle { outcomes().contains(["screen": "review", "action": "apply", "outcome": "stalled"]) }
+    transport.failure.withLock { $0 = nil }
+    gym.coachResendDecision()
+    try await settle { gym.refresh(); return !review.pending }
+    #expect(gym.proposals.first?.state == "applied" && gym.routines.isEmpty)
+    #expect(try runtime.runner.read(Gym.scope) { try $0.commands().isEmpty })
+    #expect(outcomes() == [["screen": "review", "action": "apply", "outcome": "stalled"], ["screen": "review", "action": "retry", "outcome": "ok"],
+                           ["screen": "review", "action": "apply", "outcome": "decided"]])
   }
 }
 

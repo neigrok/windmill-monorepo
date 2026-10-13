@@ -293,7 +293,7 @@ import XCTest
     for _ in 0..<4 where !share.isHittable { signed.swipeUp() }
     XCTAssertTrue(share.waitForExistence(timeout: 5)); share.tap()
     XCTAssertTrue(signed.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 15))
-    let review = signed.buttons["Review"]
+    let review = signed.buttons["coach-review"]
     for _ in 0..<4 {
       if review.waitForExistence(timeout: 3), review.isHittable { break }
       signed.swipeUp()

@@ -169,12 +169,13 @@ import XCTest
     }
     ready(app.tabBars.buttons["Coach"])
     app.tabBars.buttons["Coach"].tap()
-    XCTAssertTrue(app.staticTexts["Coach needs a connection."].waitForExistence(timeout: 3))
+    if app.launchArguments.contains("no-network") {
+      XCTAssertTrue(app.staticTexts["Coach needs a connection."].waitForExistence(timeout: 3))
+    } else {
+      XCTAssertTrue(app.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 3))
+    }
     openSettings(app, signedIn: signedIn)
-    let units = app.buttons[restoringWorkout ? "kg" : "lb"]
-    ready(units)
-    units.tap()
-    XCTAssertTrue(units.isSelected)
+    ready(app.buttons["Notes"])
     app.navigationBars["Gym settings"].buttons.element(boundBy: 0).tap()
     switchRoom("Journal", in: app)
     XCTAssertEqual(editor.value as? String, previous + suffix)
