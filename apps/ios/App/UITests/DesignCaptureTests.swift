@@ -567,4 +567,57 @@ import XCTest
   }
   func testWorkoutTransientsLight() { workoutTransients("light") }
   func testWorkoutTransientsDark() { workoutTransients("dark") }
+
+  // On this phone (§7.16): the log's section and badge, Inspect for each primary, Fix workout and its set, the held
+  // discard, and a paused account's workout on its way. `size` names a Dynamic Type category for the AX3 pass.
+  func recovery(_ appearance: String, size: String? = nil) {
+    let suffix = size == nil ? appearance : "\(appearance)-ax3"
+    let app = launch("recovery", appearance: appearance, arguments: size.map { ["-UIPreferredContentSizeCategoryName", $0] } ?? [])
+    XCTAssertTrue(app.tabBars.buttons["The log"].waitForExistence(timeout: 30)); app.tabBars.buttons["The log"].tap()
+    XCTAssertTrue(app.buttons["recovery-row-fixture-overlap"].waitForExistence(timeout: 20))
+    capture("gym-log-on-this-phone-\(suffix)", app, settle: 1.5)
+    for (id, name) in [("fixture-open-copy", "keep"), ("fixture-overlap", "fix"), ("fixture-landed-push", "retry"), ("fixture-id-taken", "discard-only")] {
+      let row = app.buttons["recovery-row-" + id]
+      for _ in 0..<8 where !row.isHittable { app.swipeUp(velocity: .slow) }
+      row.tap()
+      XCTAssertTrue(app.descendants(matching: .any)["recovery-inspect"].waitForExistence(timeout: 10))
+      capture("gym-recovery-inspect-\(name)-\(suffix)", app)
+      if name == "fix" {
+        app.buttons["recovery-primary"].tap()
+        XCTAssertTrue(app.navigationBars["Fix workout"].waitForExistence(timeout: 5))
+        capture("gym-recovery-fix-workout-\(suffix)", app)
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "recovery-fix-set-")).firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Fix set"].waitForExistence(timeout: 5))
+        capture("gym-recovery-fix-set-\(suffix)", app)
+        app.navigationBars["Fix set"].buttons["Cancel"].tap()
+        XCTAssertTrue(app.navigationBars["Fix workout"].waitForExistence(timeout: 5))
+        app.navigationBars["Fix workout"].buttons["Cancel"].tap()
+        XCTAssertTrue(app.navigationBars["Fix workout"].waitForNonExistence(timeout: 5))
+      }
+      if name == "discard-only" {
+        for _ in 0..<3 where !app.buttons["recovery-discard"].exists {
+          app.buttons["recovery-more"].tap(); _ = app.buttons["recovery-discard"].waitForExistence(timeout: 5)
+        }
+        capture("gym-recovery-more-menu-\(suffix)", app, settle: 0.6)
+        app.buttons["recovery-discard"].tap()
+        XCTAssertTrue(app.staticTexts["Workout discarded"].waitForExistence(timeout: 5))
+        capture("gym-recovery-discard-held-\(suffix)", app)
+        app.buttons["recovery-undo"].tap()
+      }
+      back(app)
+      XCTAssertTrue(app.descendants(matching: .any)["recovery-inspect"].waitForNonExistence(timeout: 5))
+    }
+    app.terminate()
+    let paused = launch("recovery-paused", appearance: appearance, arguments: size.map { ["-UIPreferredContentSizeCategoryName", $0] } ?? [])
+    XCTAssertTrue(paused.tabBars.buttons["The log"].waitForExistence(timeout: 30)); paused.tabBars.buttons["The log"].tap()
+    XCTAssertTrue(paused.buttons["recovery-row-fixture-sending"].waitForExistence(timeout: 20))
+    capture("gym-log-on-this-phone-paused-\(suffix)", paused, settle: 1.5)
+    paused.buttons["recovery-row-fixture-unsent"].tap()
+    XCTAssertTrue(paused.descendants(matching: .any)["recovery-inspect"].waitForExistence(timeout: 10))
+    capture("gym-recovery-inspect-blocked-\(suffix)", paused)
+    paused.terminate()
+  }
+  func testRecoveryLight() { recovery("light") }
+  func testRecoveryDark() { recovery("dark") }
+  func testRecoveryAccessibilityLight() { recovery("light", size: "UICTContentSizeCategoryAccessibilityXL") }
 }

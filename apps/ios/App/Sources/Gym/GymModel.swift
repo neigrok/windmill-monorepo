@@ -193,8 +193,9 @@ final class GymModel {
     }
   }
 
+  // `failure` names the static operation an unexpected failure reports under; a feature with its own names passes one.
   @discardableResult
-  func run<A: Action>(_ action: A) -> Outcome<A.Result, GymRefusal>? where A.Refusal == GymRefusal {
+  func run<A: Action>(_ action: A, failure operation: String = "gym_action") -> Outcome<A.Result, GymRefusal>? where A.Refusal == GymRefusal {
     guard !accountTransition else { error = "Wait for the account change to finish."; return nil }
     precondition(action.scope == Gym.scope, "Gym runs actions in its own scope")
     refusal = nil; error = nil
@@ -210,7 +211,7 @@ final class GymModel {
     } catch {
       self.error = "Gym could not save this change. Try again."
       telemetry.event("gym_action", properties: ["screen": "gym", "outcome": "failed"])
-      report("gym_action", error)
+      report(operation, error)
       return nil
     }
   }

@@ -53,7 +53,7 @@ extension GymModel {
     }
   }
 
-  // The saved workouts the account has not taken, each with why; the count is the door's.
+  // The saved workouts the account has not taken, each with why; their count is the Log tab's badge.
   var workoutsToReview: [WorkoutRecovery] {
     guard let log else { return [] }
     return WorkoutRecovery.review(adoptionWorkouts, notices: notices, log: log, catalogue: catalogue)
@@ -61,15 +61,23 @@ extension GymModel {
 
   var adoptionWorkoutToReview: SignedOutWorkout? { workoutsToReview.first?.workout ?? adoptionWorkouts.first }
 
+  // The saved workout the room's latest notice refused, so a band can say it in recovery's words.
+  var latestRecoveryNotice: WorkoutRecovery? {
+    guard let latest = notices.last?.id else { return nil }
+    return workoutsToReview.first { $0.noticeIds.contains(latest) }
+  }
+
+  // Keep, Retry and Save and retry queue an account write: they wait for the account's first pull and a live session.
+  var canSendRecovery: Bool { !accountTransition && !authPaused && !readFailed && log?.firstPullComplete == true }
+
   func inspectWorkout(_ id: ID<Session>) -> WorkoutRecovery? {
     guard let recovery = workoutsToReview.first(where: { $0.id == id }) else { return nil }
     recorded(.inspect, recovery.reason)
     return recovery
   }
 
-  // The editor's draft; a landed workout's stranded sets are placed by Retry, not edited.
   func fixWorkout(_ id: ID<Session>) -> WorkoutFix? {
-    guard let recovery = workoutsToReview.first(where: { $0.id == id }), recovery.retry != .restoreSets else { return nil }
+    guard let recovery = workoutsToReview.first(where: { $0.id == id }), recovery.canFix else { return nil }
     recorded(.fix, recovery.reason)
     return WorkoutFix(recovery.workout)
   }
@@ -79,17 +87,19 @@ extension GymModel {
     return fix.refusal(at: log.moment, among: log.drawnSessions)
   }
 
-  func keepAdoptedWorkout(_ id: ID<Session>) {
-    recover(id, step: .keep) { run(AdoptWorkout(id, mode: .keep)) }
+  @discardableResult
+  func keepAdoptedWorkout(_ id: ID<Session>) -> Bool {
+    recover(id, .keep) { failure in run(AdoptWorkout(id, mode: .keep), failure: failure) }
   }
 
-  func retryWorkout(_ id: ID<Session>) {
-    guard let recovery = workoutsToReview.first(where: { $0.id == id }) else { return }
-    recover(id, step: .retry) {
+  @discardableResult
+  func retryWorkout(_ id: ID<Session>) -> Bool {
+    guard let recovery = workoutsToReview.first(where: { $0.id == id }) else { return false }
+    return recover(id, .retry) { failure in
       switch recovery.retry {
-      case .importWorkout: run(AdoptWorkout(id, mode: .keep))
-      case .restartWorkout: restartWorkout(id, revised: nil)
-      case .restoreSets: restoreStrandedSets(id)
+      case .importWorkout: run(AdoptWorkout(id, mode: .keep), failure: failure)
+      case .restartWorkout: restartWorkout(id, revised: nil, failure: failure)
+      case .restoreSets: restoreStrandedSets(id, failure: failure)
       }
     }
   }
@@ -98,47 +108,56 @@ extension GymModel {
   @discardableResult
   func saveAndRetryWorkout(_ fix: WorkoutFix) -> Bool {
     let id = fix.original.session.id
-    return recover(id, step: .saveAndRetry) {
-      fix.isOpen ? restartWorkout(id, revised: fix.workout) : run(AdoptWorkout(id, mode: .keep, revised: fix.workout))
+    return recover(id, .fix) { failure in
+      fix.isOpen ? restartWorkout(id, revised: fix.workout, failure: failure)
+        : run(AdoptWorkout(id, mode: .keep, revised: fix.workout), failure: failure)
     }
   }
 
-  // One recovery step over a saved workout: its attempt, the notices it answers dismissed once queued, and the step recorded.
+  // The saved copy and the notices it carried go; the screen holds the gesture for the room's window first.
   @discardableResult
-  func recover(_ id: ID<Session>, step: RecoveryStep, _ attempt: () -> Outcome<Void, GymRefusal>?) -> Bool {
+  func discardWorkout(_ id: ID<Session>) -> Bool {
+    recover(id, .discard) { failure in run(DiscardSignedOutWorkout(id), failure: failure) }
+  }
+
+  // One recovery commit over a saved workout: its attempt under the action's own failure operation, the notices it
+  // answers dismissed once queued or its refusal said in recovery's words, and the action recorded with its outcome.
+  @discardableResult
+  func recover(_ id: ID<Session>, _ action: RecoveryAction, _ attempt: (String) -> Outcome<Void, GymRefusal>?) -> Bool {
     let recovery = workoutsToReview.first { $0.id == id }
-    let outcome = attempt()
+    let outcome = attempt("gym_import_\(action.rawValue)")
     if outcome?.receipt != nil { for notice in recovery?.noticeIds ?? [] { dismissNotice(notice) } }
+    if let refusal = outcome?.refusal { error = WorkoutRecovery.Reason(refusal).line(stranded: recovery?.strandedSets.count ?? 0) }
     let result = outcome == nil ? "failed" : outcome?.refusal == nil ? "ok" : "refused"
-    recorded(step, recovery?.reason ?? .unsent, outcome: result)
+    recorded(action, recovery?.reason ?? .unsent, outcome: result)
     return result == "ok"
   }
 
   // An open workout's start, then each saved set the log does not draw, in the order performed.
-  func restartWorkout(_ id: ID<Session>, revised: SignedOutWorkout?) -> Outcome<Void, GymRefusal>? {
-    let started = run(AdoptWorkout(id, mode: .restart, revised: revised))
+  func restartWorkout(_ id: ID<Session>, revised: SignedOutWorkout?, failure: String) -> Outcome<Void, GymRefusal>? {
+    let started = run(AdoptWorkout(id, mode: .restart, revised: revised), failure: failure)
     guard let started, started.refusal == nil else { return started }
     for set in adoptionWorkouts.first(where: { $0.session.id == id })?.sets ?? [] where !sets.contains(where: { $0.id == set.id }) {
-      guard let appended = run(AppendSet(set)) else { return nil }
+      guard let appended = run(AppendSet(set), failure: failure) else { return nil }
       if let refusal = appended.refusal { return .refused(refusal) }
     }
     return started
   }
 
   // The sets inside the landed workout's window first, then the ones outside it as a workout of their own.
-  func restoreStrandedSets(_ id: ID<Session>) -> Outcome<Void, GymRefusal>? {
-    let inside = run(RecoverStrandedSets(id, .intoWorkout))
+  func restoreStrandedSets(_ id: ID<Session>, failure: String) -> Outcome<Void, GymRefusal>? {
+    let inside = run(RecoverStrandedSets(id, .intoWorkout), failure: failure)
     guard let inside, inside.refusal == nil else { return inside }
-    let outside = run(RecoverStrandedSets(id, .separately))
+    let outside = run(RecoverStrandedSets(id, .separately), failure: failure)
     guard let outside, outside.refusal == nil else { return outside }
     return inside.receipt != nil ? inside : outside
   }
 
-  enum RecoveryStep: String { case inspect, fix, keep, retry, saveAndRetry = "save_and_retry" }
+  enum RecoveryAction: String { case inspect, fix, keep, retry, discard }
 
-  // Content-free: the step, the bounded reason and, for a commit, its outcome.
-  func recorded(_ step: RecoveryStep, _ reason: WorkoutRecovery.Reason, outcome: String? = nil) {
-    var properties = ["step": step.rawValue, "reason": reason.rawValue]
+  // Content-free: the action, the bounded reason and, for a commit or a cancel, its outcome.
+  func recorded(_ action: RecoveryAction, _ reason: WorkoutRecovery.Reason, outcome: String? = nil) {
+    var properties = ["action": action.rawValue, "reason": reason.rawValue]
     if let outcome { properties["outcome"] = outcome }
     telemetry.event("gym_import_recovery", properties: properties)
   }

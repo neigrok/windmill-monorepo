@@ -54,7 +54,7 @@ struct WorkoutRecoveryTests {
   }
 
   func describe(_ review: WorkoutRecovery) -> String {
-    "\(review.id) \(review.reason.rawValue) \(review.retry) notices=\(review.noticeIds.count) stranded=\(review.strandedSets.map(\.id.description)) keep=\(review.canKeep)"
+    "\(review.id) \(review.reason.rawValue) \(review.retry) notices=\(review.noticeIds.count) stranded=\(review.strandedSets.map(\.id.description)) fix=\(review.canFix)"
   }
 
   @Test func reviewNamesEveryRefusalTheAccountOrThePhoneGives() throws {
@@ -64,7 +64,7 @@ struct WorkoutRecoveryTests {
       (finished("b-id-taken", from: day + 100_000, to: day + 160_000), .idTaken, nil),
       (finished("c-instant", from: day + 200_000, to: day + 260_000), Gym.Codes.badInstant, nil),
       (finished("d-exercise", from: day + 300_000, to: day + 360_000), Gym.Codes.unknownExercise, nil),
-      (finished("e-log-full", from: day + 400_000, to: day + 460_000), .cap, ["type": .string(Session.type), "cap": 10]),
+      (finished("e-parent-dead", from: day + 400_000, to: day + 460_000), .parentDead, nil),
       (finished("f-conflict", from: day + 500_000, to: day + 560_000), Gym.Codes.payloadConflict, nil),
       (finished("g-stale-copy", from: day + 600_000, to: day + 660_000), .stale, nil),
     ]
@@ -99,19 +99,19 @@ struct WorkoutRecoveryTests {
 
     let reviews = try review(h)
     #expect(reviews.map(describe) == [
-      "a-overlap session-overlap importWorkout notices=1 stranded=[] keep=true",
-      "b-id-taken id-taken importWorkout notices=1 stranded=[] keep=true",
-      "c-instant bad-instant importWorkout notices=1 stranded=[] keep=true",
-      "d-exercise unknown-exercise importWorkout notices=1 stranded=[] keep=true",
-      "e-log-full log-full importWorkout notices=1 stranded=[] keep=true",
-      "f-conflict id-taken importWorkout notices=1 stranded=[] keep=true",
-      "g-stale-copy other importWorkout notices=1 stranded=[] keep=true",
-      "h-open-start session-open restartWorkout notices=1 stranded=[] keep=true",
-      "j-many-sets too-many-sets importWorkout notices=0 stranded=[] keep=true",
-      "k-late-set bad-instant importWorkout notices=0 stranded=[] keep=true",
-      "l-crossing session-overlap importWorkout notices=0 stranded=[] keep=true",
-      "m-unsent unsent importWorkout notices=0 stranded=[] keep=true",
-      "o-open-again session-open restartWorkout notices=0 stranded=[] keep=true",
+      "a-overlap session-overlap importWorkout notices=1 stranded=[] fix=true",
+      "b-id-taken id-taken importWorkout notices=1 stranded=[] fix=false",
+      "c-instant bad-instant importWorkout notices=1 stranded=[] fix=true",
+      "d-exercise unknown-exercise importWorkout notices=1 stranded=[] fix=true",
+      "e-parent-dead other importWorkout notices=1 stranded=[] fix=true",
+      "f-conflict id-taken importWorkout notices=1 stranded=[] fix=false",
+      "g-stale-copy other importWorkout notices=1 stranded=[] fix=true",
+      "h-open-start session-open restartWorkout notices=1 stranded=[] fix=true",
+      "j-many-sets too-many-sets importWorkout notices=0 stranded=[] fix=true",
+      "k-late-set bad-instant importWorkout notices=0 stranded=[] fix=true",
+      "l-crossing session-overlap importWorkout notices=0 stranded=[] fix=true",
+      "m-unsent unsent importWorkout notices=0 stranded=[] fix=true",
+      "o-open-again session-open restartWorkout notices=0 stranded=[] fix=true",
     ])
     let notices = try h.notices(GymRefusal.self)
     #expect(reviews.prefix(8).map(\.noticeIds) == notices.map { [$0.id] })
@@ -152,8 +152,11 @@ struct WorkoutRecoveryTests {
     #expect(fix.refusal(at: moment, among: []) == .invalid(Violation(rule: "set.reps", path: "reps", reason: .below(min: 1))))
     fix.sets[0].reps = 5; fix.finishedAt = nil
     #expect(fix.isOpen && fix.workout.session.isOpen && fix.workout.session.closedBy == nil)
+    let accountOpen = Session(id: ID("account-open"), startedAt: Instant(ms: Self.now - 5_000))
+    #expect(fix.refusal(at: moment, among: [accountOpen, original.session]) == .sessionOpen(Refused(Gym.Codes.sessionOpen, subject: original.session.id.ref, path: .predicted)))
     fix.markFinished()
     #expect(fix.finishedAt == Instant(ms: Self.now - 85_000) && fix.workout.session.closedBy == "finish")
+    #expect(fix.refusal(at: moment, among: [accountOpen]) == nil)
     #expect(WorkoutFix(finished("stale-kept", from: Self.now - 50_000, to: Self.now - 40_000, closedBy: "stale")).workout.session.closedBy == "stale")
   }
 
@@ -196,7 +199,7 @@ struct WorkoutRecoveryTests {
     #expect(try h.runner.read(Gym.scope) { try SignedOutWorkout.read($0) } == [saved])
     let notice = try #require(try h.notices(GymRefusal.self).first)
     #expect(notice.gestureId == first.gestureId && notice.subject == saved.session.id.ref)
-    #expect(try review(h).map(describe) == ["refused-once session-overlap importWorkout notices=1 stranded=[] keep=true"])
+    #expect(try review(h).map(describe) == ["refused-once session-overlap importWorkout notices=1 stranded=[] fix=true"])
     let retried = try #require(try h.runner.run(AdoptWorkout(saved.session.id, mode: .keep)).receipt)
     #expect(retried.gestureId != first.gestureId)
     #expect(try h.runner.run(AdoptWorkout(saved.session.id, mode: .keep)).receipt == nil)
@@ -205,6 +208,20 @@ struct WorkoutRecoveryTests {
     #expect(try h.stored(Session.self).map(\.id) == [saved.session.id])
     #expect(try h.stored(TrainingSet.self).map(\.id) == saved.sets.map(\.id))
     #expect(try h.notices(GymRefusal.self).map(\.id) == [notice.id])
+  }
+
+  @Test func discardDropsOneSavedCopyAndTheRowWithTheLast() throws {
+    let h = try harness()
+    let first = finished("discard-first", from: Self.now - 100_000, to: Self.now - 90_000)
+    let second = finished("discard-second", from: Self.now - 80_000, to: Self.now - 70_000)
+    _ = try h.runner.run(SaveSignedOutWorkouts(workouts: [first, second]))
+    #expect(try h.runner.run(DiscardSignedOutWorkout(first.session.id)).receipt != nil)
+    #expect(try h.runner.read(Gym.scope) { try SignedOutWorkout.read($0) } == [second])
+    #expect(try h.runner.run(DiscardSignedOutWorkout(first.session.id)).receipt == nil)
+    #expect(try h.runner.run(DiscardSignedOutWorkout(second.session.id)).receipt != nil)
+    #expect(try h.runner.read(Gym.scope) { try $0.device(SignedOutWorkout.key) } == nil)
+    #expect(try h.runner.read(Gym.scope) { try $0.commands().isEmpty })
+    #expect(try review(h).isEmpty)
   }
 
   @Test func restartResubmitsAnOpenWorkoutsStartWithoutJoiningAndItsSetsFollow() throws {
@@ -248,7 +265,7 @@ struct WorkoutRecoveryTests {
     #expect(try h.stored(Session.self).map { ($0.id, $0.finishedAt) }.elementsEqual([(id, Instant(ms: Self.now - 70_000))], by: ==))
     #expect(try h.stored(TrainingSet.self).isEmpty)
     #expect(try h.notices(GymRefusal.self).map(\.subject) == [inside.id.ref, late.id.ref])
-    #expect(try review(h).map(describe) == ["landed-open session-finished restoreSets notices=2 stranded=[\"inside-set\", \"late-set\"] keep=false"])
+    #expect(try review(h).map(describe) == ["landed-open session-finished restoreSets notices=2 stranded=[\"inside-set\", \"late-set\"] fix=false"])
 
     #expect(try h.runner.run(RecoverStrandedSets(id, .intoWorkout)).receipt != nil)
     let correction = try #require(try h.runner.read(Gym.scope) { try $0.commands().first })

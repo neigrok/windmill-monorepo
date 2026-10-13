@@ -14,7 +14,6 @@ public struct WorkoutRecovery: Equatable, Sendable, Identifiable {
     case tooManySets = "too-many-sets"
     case invalidSet = "invalid-set"
     case unknownMovement = "unknown-exercise"
-    case logFull = "log-full"
     case strandedSets = "session-finished"
     case unsent = "unsent"
     case other = "other"
@@ -29,9 +28,8 @@ public struct WorkoutRecovery: Equatable, Sendable, Identifiable {
       case .invalid(let violation) where ["session.startedAt", "session.finishedAt", "set.completedAt"].contains(violation.rule): self = .badTime
       case .invalid: self = .invalidSet
       case .unknownExercise: self = .unknownMovement
-      case .full: self = .logFull
       case .sessionFinished: self = .strandedSets
-      case .stale, .gone, .future, .proposalSettled, .proposalSuperseded, .other: self = .other
+      case .full, .stale, .gone, .future, .proposalSettled, .proposalSuperseded, .other: self = .other
       }
     }
   }
@@ -48,7 +46,8 @@ public struct WorkoutRecovery: Equatable, Sendable, Identifiable {
   public let movementNames: [ID<Exercise>: String]
 
   public var id: ID<Session> { workout.session.id }
-  public var canKeep: Bool { retry != .restoreSets }
+  // A landed workout's stranded sets are placed by Retry, and a spent identity stays spent whatever the copy says.
+  public var canFix: Bool { retry != .restoreSets && reason != .identityTaken }
 
   // Every saved workout the account has not taken and nothing is carrying: refused by a notice, refused by this phone, or
   // never sent. A workout drawn on the log is on its way, or there, and is listed only for the sets it refused.
@@ -140,9 +139,28 @@ public struct WorkoutFix: Equatable, Sendable {
     return SignedOutWorkout(session: session, sets: sets.map { $0.set(in: session.id) })
   }
 
-  // The editor's live line: what this phone would refuse before asking the account.
+  // The editor's live line: what this phone would refuse before asking the account. An open copy restarts only while
+  // the account has no open workout of its own.
   public func refusal(at moment: Moment, among sessions: [Session]) -> GymRefusal? {
-    workout.importRefusal(at: moment, among: sessions)
+    if isOpen, sessions.contains(where: { $0.isOpen && $0.id != original.session.id }) {
+      return .sessionOpen(Refused(Gym.Codes.sessionOpen, subject: original.session.id.ref, path: .predicted))
+    }
+    return workout.importRefusal(at: moment, among: sessions)
+  }
+}
+
+// Drops a saved copy the account has not taken, with every set it holds.
+public struct DiscardSignedOutWorkout: Action {
+  public let id: ID<Session>
+  public init(_ id: ID<Session>) { self.id = id }
+  public var scope: ScopeRef { Gym.scope }
+  public func load(_ read: Reader) throws -> [SignedOutWorkout] { try SignedOutWorkout.read(read) }
+  public func decide(_ saved: [SignedOutWorkout], ids: IDSource) -> Decision<Void, GymRefusal> {
+    guard saved.contains(where: { $0.session.id == id }) else { return .unchanged(()) }
+    let kept = JSON.Object(uniqueKeysWithValues: saved.filter { $0.session.id != id }.map { ($0.session.id.description, $0.json) })
+    var plan = Plan()
+    plan.device(SignedOutWorkout.key, kept.isEmpty ? nil : .object(kept))
+    return .write(plan)
   }
 }
 
