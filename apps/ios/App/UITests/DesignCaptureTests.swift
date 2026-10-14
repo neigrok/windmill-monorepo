@@ -642,7 +642,7 @@ import XCTest
     XCTAssertTrue(app.staticTexts["Check the weight and reps before logging."].waitForExistence(timeout: 10))
     capture("gym-workout-transient-\(appearance)", app)
     app.otherElements["workout-refusal"].buttons["Dismiss message"].tap()
-    XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "never reached the log")).firstMatch.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "not sent.")).firstMatch.waitForExistence(timeout: 5))
     capture("gym-workout-durable-refusal-\(appearance)", app)
   }
   func testWorkoutTransientsLight() { workoutTransients("light") }

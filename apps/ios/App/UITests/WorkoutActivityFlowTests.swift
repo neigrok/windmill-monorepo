@@ -24,6 +24,8 @@ import XCTest
       thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)))
     let bannerDeadline = Date().addingTimeInterval(20)
     XCTAssertTrue(springboard.staticTexts["Lower A"].waitForExistence(timeout: max(0, bannerDeadline.timeIntervalSinceNow)))
+    let allow = springboard.buttons.matching(NSPredicate(format: "label IN %@", ["Allow", "Always Allow"])).firstMatch
+    if allow.waitForExistence(timeout: 2) { allow.tap() }
     XCTAssertTrue(springboard.buttons["Log set"].waitForExistence(timeout: max(0, bannerDeadline.timeIntervalSinceNow)))
     XCTAssertTrue(springboard.buttons["Log set"].wait(for: \.isHittable, toEqual: true, timeout: max(0, bannerDeadline.timeIntervalSinceNow)))
     let banner = XCTAttachment(screenshot: springboard.screenshot())

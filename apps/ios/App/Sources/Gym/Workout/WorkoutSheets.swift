@@ -19,7 +19,7 @@ struct WorkoutAssembly: View {
               } label: {
                 let sets = workout.sets.filter { $0.exerciseId == id }
                 MovementRow(title: workout.gym.catalogue.find(id)?.name ?? "Movement",
-                            meta: sets.isEmpty ? "Nothing logged yet" : "\(sets.count) sets logged",
+                            meta: sets.isEmpty ? "Nothing logged yet" : String(AttributedString(localized: "^[\(sets.count) set](inflect: true) logged").characters),
                             trailing: workout.selected == id ? .check : nil)
               }
               .accessibilityAddTraits(workout.selected == id ? .isSelected : [])
@@ -34,7 +34,7 @@ struct WorkoutAssembly: View {
                 if let index = workout.walk.order.firstIndex(of: id), index + 1 < workout.walk.order.count { workout.move(from: IndexSet(integer: index), to: index + 2) }
               }
             }.onMove { workout.move(from: $0, to: $1) }
-          } header: { Text("\(workout.sets.count) sets logged") }
+          }
           Section { Button("Add movement", systemImage: "plus", action: add).accessibilityIdentifier("workout-assembly-add") }
           Section {
             Button("Hide workout") { if workout.gym.hideWorkout() { dismiss() } }
@@ -43,9 +43,9 @@ struct WorkoutAssembly: View {
         }.listRowBackground(GymPalette.card)
       }.modifier(GymPage()).navigationTitle("This session").navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
-          GymTransient(gym: workout.gym, message: workout.message, dismiss: { workout.message = nil },
-                       noticeMessage: workout.gym.workoutNotice, retry: { workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
-            .modifier(BoundedBand())
+          let transient = GymTransient(gym: workout.gym, message: workout.message, dismiss: { workout.message = nil },
+                                       noticeMessage: workout.gym.workoutNotice, retry: { workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
+          if transient.shown != nil { transient.modifier(BoundedBand()) }
         }
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }

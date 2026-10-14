@@ -101,7 +101,7 @@ import Vision
     let app = launch("workout-notice")
     XCTAssertTrue(app.staticTexts["Check the weight and reps before logging."].waitForExistence(timeout: 5))
     app.otherElements["workout-refusal"].buttons["Dismiss message"].tap()
-    let retained = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "never reached the log")).firstMatch
+    let retained = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "not sent.")).firstMatch
     XCTAssertTrue(retained.waitForExistence(timeout: 5))
     app.otherElements["workout-refusal"].buttons["Dismiss message"].tap()
     XCTAssertTrue(retained.waitForNonExistence(timeout: 5))
@@ -118,7 +118,7 @@ import Vision
     let log = app.buttons["workout-log"]
     XCTAssertTrue(log.waitForExistence(timeout: 3)); XCTAssertTrue(log.isEnabled); XCTAssertTrue(log.isHittable)
     log.tap(); app.buttons["workout-finish"].tap()
-    let message = "Finishing needs a connection. Some sets in this synced workout are saved only on this phone. You can keep logging or hide it."
+    let message = "Finish needs a connection — keep logging, or hide the workout."
     XCTAssertTrue(app.staticTexts[message].waitForExistence(timeout: 3))
     var captures = 0
     func visibleText() throws -> String {

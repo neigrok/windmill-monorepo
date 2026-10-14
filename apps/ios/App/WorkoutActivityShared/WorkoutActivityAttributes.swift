@@ -24,7 +24,6 @@ nonisolated struct WorkoutActivityAttributes: ActivityAttributes, Sendable {
     let movement: String
     let load: String
     let reps: Int
-    let setKind: String
     let workingSetOrdinal: Int
     let plannedWorkingSetCount: Int?
     let startedAt: Date

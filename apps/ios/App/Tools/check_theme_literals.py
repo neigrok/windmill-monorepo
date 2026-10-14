@@ -20,8 +20,6 @@ ALLOWED = [
      "Apple's own Continue with Apple control keeps its black and white"),
     ("Sources/AccountSheet.swift", "signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)",
      "Apple's own Continue with Apple control keeps its black and white"),
-    ("WorkoutActivityWidget/WorkoutActivityWidget.swift", ".activityBackgroundTint(Color(.systemBackground))",
-     "the Live Activity banner ground stays the system's"),
     ("Sources/OnboardingGlimpses.swift", ".mask { OnboardingCheck().trim(from: 0, to: check).stroke(.white,",
      "a mask uses only alpha; white is opaque coverage, not a colour"),
     ("Sources/OnboardingGlimpses.swift", 'Color("onboarding/',
