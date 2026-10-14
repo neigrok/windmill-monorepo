@@ -566,7 +566,7 @@ follow with 7.11 and 7.12.
   *Open record* door — three rows. The *heaviest* and *best e1RM* rows go: the moment's own
   line already says the best, and the Record screen says the rest.
 - Older sessions load when the last row appears; the *Load older* button (`LogTab.swift:117`)
-  becomes a `ProgressView` row, and a failed read a *Try again* row.
+  becomes a `ProgressView` row. A failed read is the band's, with its *Try again* (§5).
 - Large title *The log*; no room actions in the bar. Signed in, the head gains the **On this
   phone** section when a workout waits (§7.16).
 - A moment is a quiet row: an 8 pt `gym/record` dot before the name, the facts in `.footnote` —

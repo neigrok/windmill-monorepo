@@ -158,7 +158,55 @@ import SyncTesting
     set.kind = "warmup"
     #expect(LogPresentation.comparison(set, preceding: [], plan: plan) == "warmup")
     set.kind = "working"
-    #expect(LogPresentation.comparison(set, preceding: [], plan: SessionPlan(routine: "Frozen", entries: [])) == "added today")
+    #expect(LogPresentation.comparison(set, preceding: [], plan: SessionPlan(routine: "Frozen", entries: [])) == nil)
+  }
+
+  @Test func aMovementsPlanLineNamesItsTargetsOrThatThePlanDidNotHoldIt() {
+    let bench = ID<Exercise>(RecordID("bench-press")), squat = ID<Exercise>(RecordID("back-squat"))
+    let plan = SessionPlan(routine: "Push A", entries: [RoutineEntry(exerciseId: bench, sets: [SetTarget(reps: 5, weightKg: 60)])])
+    #expect(LogPresentation.planLine(bench, plan: plan) == "plan 1 × 5 · 60")
+    #expect(LogPresentation.planLine(squat, plan: plan) == "added today")
+    #expect(LogPresentation.planLine(bench, plan: nil) == nil)
+    let twice = SessionPlan(routine: "Push A", entries: plan.entries + plan.entries)
+    #expect(LogPresentation.planLine(bench, plan: twice) == nil)
+  }
+
+  @Test func countsSpellTheirPluralsAndASessionRowReadsItsWorkingSetsAndDuration() throws {
+    #expect([0, 1, 2].map { Readout.count($0, "working set") } == ["0 working sets", "1 working set", "2 working sets"])
+    #expect(Readout.count(1, "weigh-in") == "1 weigh-in" && Readout.count(40, "weigh-in") == "40 weigh-ins")
+    let (_, gym) = fixture(), value = try session(gym, daysAgo: 1)
+    let readout = try #require(gym.log?.readout(session: value.id))
+    #expect(LogPresentation.sessionFacts(readout) == "1 working set · 33m")
+    #expect(gym.logRecordFact(value.id, progress: gym.log?.progress) == "Record · \(SeedExercises.all.first!.name) 60 × 5")
+    let second = try session(gym, daysAgo: 0, kg: 50)
+    #expect(gym.logRecordFact(second.id, progress: gym.log?.progress) == nil)
+    #expect(!gym.logSessionIsUnsent(value.id))
+  }
+
+  @Test func theMomentEventIsAllowlisted() {
+    #expect(TelemetryPrivacy.events.contains("gym_moment_opened"))
+    #expect(TelemetryPrivacy.properties(["screen": "log"]) == ["screen": .label("log")])
+  }
+
+  @Test func aDayNamesItsYearOnlyWhenItIsNotThisOne() {
+    let today = LocalDay("2026-09-28")!
+    #expect(LogPresentation.brief(LocalDay("2026-09-26")!, today: today) == LogPresentation.brief(LogPresentation.date(LocalDay("2026-09-26")!)))
+    #expect(LogPresentation.brief(LocalDay("2025-12-30")!, today: today).contains("2025"))
+    #expect(!LogPresentation.brief(LocalDay("2026-01-02")!, today: today).contains("2026"))
+    #expect([0, 1, 3].map(LogPresentation.ago(days:)) == ["today", "yesterday", "3 days ago"])
+    let best = LocalDay("2026-09-23")!
+    #expect(LogPresentation.since(LocalDay("2026-09-20")!, best: best) == LogPresentation.brief(LogPresentation.date(LocalDay("2026-09-20")!)))
+    #expect(LogPresentation.since(LocalDay("2026-08-30")!, best: best) == LogPresentation.date(LocalDay("2026-08-30")!).formatted(.dateTime.month(.wide)))
+    #expect(LogPresentation.since(LocalDay("2025-12-30")!, best: best).contains("2025"))
+  }
+
+  @Test func chartAxesSitOnTheSeriesStep() {
+    #expect(LogDatedChart.axis([61.88, 109.62], step: 5) == 60...110)
+    #expect(LogDatedChart.axis([100, 100], step: 5) == 95...105)
+    let bodyweight = LogDatedChart.axis([81.4, 84.5], step: 0.1)
+    #expect([bodyweight.lowerBound, bodyweight.upperBound].map { Readout.weight($0) } == ["81.4", "84.5"])
+    let flat = LogDatedChart.axis([82.4], step: 0.1)
+    #expect([flat.lowerBound, flat.upperBound].map { Readout.weight($0) } == ["81.4", "83.4"])
   }
 
   @Test func recordQualificationWindowGapsAndStandingProgression() throws {
@@ -191,7 +239,7 @@ import SyncTesting
     let thirtyDays = first.addingTimeInterval(2_592_000)
     let sixtyDays = first.addingTimeInterval(5_184_000)
     let last = first.addingTimeInterval(7_776_000)
-    let chart = LogDatedChart(points: [], from: first, through: last, gapDays: 21)
+    let chart = LogDatedChart(points: [], from: first, through: last, series: .strength)
     let middle = chart.dateInterval(in: CGRect(x: 306, y: 0, width: 300, height: 220), contentWidth: 912)
     let whole = chart.dateInterval(in: CGRect(x: 0, y: 0, width: 912, height: 220), contentWidth: 912)
     let leading = chart.dateInterval(in: CGRect(x: -30, y: 0, width: 336, height: 220), contentWidth: 912)
@@ -200,7 +248,7 @@ import SyncTesting
     #expect(whole == (first...last))
     #expect(leading == (first...thirtyDays))
     #expect(trailing == (sixtyDays...last))
-    let empty = LogDatedChart(points: [], from: first, through: first, gapDays: 7)
+    let empty = LogDatedChart(points: [], from: first, through: first, series: .bodyweight)
     let emptyInterval = empty.dateInterval(in: .zero, contentWidth: 0)
     #expect(emptyInterval == (first...first))
   }

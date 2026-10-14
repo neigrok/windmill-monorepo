@@ -106,6 +106,31 @@ import SyncStore
     #expect(gym.bodyweight?.entries.isEmpty == true && gym.undoOffers.isEmpty)
   }
 
+  @Test func reweighingADayInsideItsDeleteWindowRetiresTheUndoAndAFailedReweighKeepsIt() throws {
+    let fault = GymStoreFault(), runtime = try GymModelTests().runtime(failing: fault)
+    let gym = GymModel(runner: runtime.runner, runtime: runtime), day = try gym.runner.moment().today
+    var first = try gym.logWeighInDraft(day: day)
+    first.current.kg = 80
+    #expect(gym.logSaveWeighIn(&first) == nil)
+    #expect(gym.logDeleteWeighIn(day: day))
+    let held = try #require(gym.undoOffers.first)
+    fault.point.withLock { $0 = .beforeCommit(.commit) }
+    var failed = try gym.logWeighInDraft(day: day)
+    failed.current.kg = 82.45
+    #expect(gym.logSaveWeighIn(&failed) == "That weigh-in could not be saved. Try again.")
+    fault.point.withLock { $0 = nil }; gym.refresh()
+    #expect(gym.undoOffers.map(\.id) == [held.id] && gym.bodyweight?.entries.isEmpty == true)
+    #expect(gym.undo(held.id))
+    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 80)])
+    #expect(gym.logDeleteWeighIn(day: day))
+    let again = try #require(gym.undoOffers.first)
+    var reweigh = try gym.logWeighInDraft(day: day)
+    reweigh.current.kg = 82.45
+    #expect(gym.logSaveWeighIn(&reweigh) == nil)
+    #expect(gym.undoOffers.isEmpty && !gym.undo(again.id))
+    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 82.45)])
+  }
+
   @Test func unknownEmptyRecentAllAndGapsFollowLocalCalendar() throws {
     let (_, gym) = fixture(), moment = try gym.runner.moment(), today = moment.today
     let empty = Bodyweight(stored: [], drawn: [], firstPullComplete: true, at: moment)
