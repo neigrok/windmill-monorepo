@@ -95,7 +95,7 @@ action `dismiss_ink` once when writing or a tap lifts it; no ink replay action i
 | Proposals | `gym_proposal_outcome` | screen: review; action: apply, dismiss; outcome: decided, failed |
 | Gym actions | `gym_action`, `gym_undo` | screen: gym; outcome: ok, refused, failed; no action payloads |
 | Log moments | `gym_moment_opened` | no properties; a new-best moment on the log expanded in place |
-| Import recovery | `gym_import_recovery` | step: inspect, fix, keep, retry, save_and_retry; reason: session-open, session-overlap, id-taken, bad-instant, too-many-sets, invalid-set, unknown-exercise, log-full, session-finished, unsent, other; outcome (keep, retry, save_and_retry only): ok, refused, failed |
+| Import recovery | `gym_import_recovery` | action: inspect, fix, keep, retry, discard; reason: session-open, session-overlap, id-taken, bad-instant, too-many-sets, invalid-set, unknown-exercise, session-finished, unsent, other; outcome (a commit or a close only): ok, refused, failed, cancelled |
 | Optional scales | `scale_invitation_shown`, `scale_invitation_answered` | action: answered, declined |
 | Writing | `journal_line_saved` | day_kind: today; emitted after a changed, nonempty body saves, never for scale-only changes |
 | Echoes | `journal_echo_shown`, `journal_echo_opened`, `journal_echo_dismissed`, `journal_echo_useful` | no properties; passage exposure, following its source, Not useful, and Useful |
@@ -118,7 +118,8 @@ pairing or the whole page. The dismissal is optimistic and rolls back if its RES
 and emits no dismissed event.
 
 Gym boundary operation labels are `gym_read`, `gym_action`, `gym_undo`, `gym_flush`, `gym_rest`,
-`gym_activity_request` and `gym_activity_update`. A queued Finish whose background confirmation
+`gym_activity_request`, `gym_activity_update`, and `gym_import_fix`, `gym_import_keep`, `gym_import_retry`
+and `gym_import_discard` for the commits that recover a saved workout. A queued Finish whose background confirmation
 outlasts 15 seconds reports a `gym_flush` timeout under the offline rule below. The short wait before
 Finish reports nothing: when the server does not confirm in time, Finish ends in its local decision,
 and a refusal emits `gym_session_finished` with outcome refused.
@@ -143,20 +144,24 @@ acknowledge a shown receipt reports through `gym_action` and leaves it available
 Gym adoption uses the verified account's explicit per-product Add/Discard decision. Finished
 signed-out workouts use one whole-session import, with their original set identities and values.
 An unfinished workout refused by an account's open workout retains a durable recovery copy; an
-explicit Keep as finished workout action imports it as finished at its last set. It is never silently
+explicit Keep as finished imports it as finished at its last set. It is never silently
 joined into the account workout. The recovery copy is refreshed before each change of the replica; a
 failed refresh reports through `gym_action` and aborts that account change, which its auth operation
-also reports. Recovery commits use the existing bounded `gym_action` outcomes;
+also reports. Recovery commits also emit the bounded `gym_action` outcomes;
 adoption approvals use `room_adoption_answered`, without workout counts, content or identifiers.
 
-A saved workout the account refused stays on the phone with the reason the engine notice or the
-phone's own import checks give it. Inspect, Fix, Keep, Retry and Save and retry each emit one
-`gym_import_recovery` with the step and the reason as bounded labels; Keep, Retry and Save and retry
-add the outcome. A retry that lands dismisses the notices it answered. Sets a landed workout refused
-go back into it through an additive correction, or into a separate workout when their times fall
-outside it. The commits run through the gym action path, so a storage or engine failure reports to
-Sentry under `gym_action` and the step's outcome is `failed`. No times, movement names, set values,
-notes, counts or identifiers enter the event.
+A saved workout the account has not taken is a row of The log's **On this phone** section with the
+reason the engine notice or the phone's own import checks give it; the Log tab's badge counts the
+rows waiting on the lifter. Opening Inspect, opening Fix workout, Keep, Retry, Save and retry and
+Discard each emit one `gym_import_recovery` with the action and the reason as bounded labels. Save
+and retry is `fix` with its outcome, and closing Fix workout without it is `fix` with `cancelled`;
+Keep, Retry and Discard carry their outcome, and Undo inside the discard window is `discard` with
+`cancelled`. A retry that lands dismisses the notices it answered. Sets a landed workout refused go
+back into it through an additive correction, or into a separate workout when their times fall
+outside it. An unexpected storage or engine failure of a commit reports to Sentry under its action's
+own operation (`gym_import_fix`, `gym_import_keep`, `gym_import_retry`, `gym_import_discard`) and the
+outcome is `failed`; a refusal is the outcome `refused` and never a Sentry issue. No times, movement
+names, set values, notes, counts or identifiers enter the event.
 
 Screen and choice events also record visits when the same screens are revisited after first run.
 Apple auth operations use static labels `auth_apple`, `auth_apple_create`, `auth_verify_code`,

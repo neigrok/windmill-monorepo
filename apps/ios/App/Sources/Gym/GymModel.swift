@@ -34,7 +34,10 @@ final class GymModel {
   var error: String?
   var readFailed = false
   var undoOffers: [UndoOffer] = []
+  // The room's refusals: undismissed, and none a saved workout owns, since that one is its row's on The log.
   var notices: [DomainNotice<GymRefusal>] = []
+  // Every gym notice the replica keeps, dismissed ones too: the saved workouts' review reads their reasons here.
+  var recoveryNotices: [DomainNotice<GymRefusal>] = []
   var adoptionWorkouts: [SignedOutWorkout] = []
   @ObservationIgnored var observationTask: Task<Void, Never>?
   @ObservationIgnored var clockTask: Task<Void, Never>?
@@ -166,8 +169,8 @@ final class GymModel {
         let replica = try runtime.storageRead { try $0.device().activeReplica }
         account = replica.meta.state == .bound ? replica.meta.account : nil
         authPaused = replica.meta.authPaused
-        let incoming = replica.notices.filter { $0.scope == Gym.scope && !$0.isDismissed }
-          .map { DomainNotice<GymRefusal>($0, registry: SyncSchema.registry) }
+        recoveryNotices = replica.notices.filter { $0.scope == Gym.scope }.map { DomainNotice<GymRefusal>($0, registry: SyncSchema.registry) }
+        let incoming = recoveryNotices.filter { notice in !notice.notice.isDismissed && !adoptionWorkouts.contains { $0.owns(notice) } }
         if let latest = incoming.last, !notices.contains(where: { $0.id == latest.id }) {
           refusal = latest.refusal; error = message(latest.refusal)
         }
@@ -193,8 +196,9 @@ final class GymModel {
     }
   }
 
+  // `failure` names the static operation an unexpected failure reports under; a feature with its own names passes one.
   @discardableResult
-  func run<A: Action>(_ action: A) -> Outcome<A.Result, GymRefusal>? where A.Refusal == GymRefusal {
+  func run<A: Action>(_ action: A, failure operation: String = "gym_action") -> Outcome<A.Result, GymRefusal>? where A.Refusal == GymRefusal {
     guard !accountTransition else { error = "Wait for the account change to finish."; return nil }
     precondition(action.scope == Gym.scope, "Gym runs actions in its own scope")
     refusal = nil; error = nil
@@ -210,7 +214,7 @@ final class GymModel {
     } catch {
       self.error = "Gym could not save this change. Try again."
       telemetry.event("gym_action", properties: ["screen": "gym", "outcome": "failed"])
-      report("gym_action", error)
+      report(operation, error)
       return nil
     }
   }

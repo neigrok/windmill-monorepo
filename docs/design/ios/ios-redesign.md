@@ -733,13 +733,12 @@ sign-in), the shell says so once and keeps the fact in one place:
 ### 7.16 On this phone — a workout the account has not taken (§5 Status)
 
 A signed-out workout prepared for the account at sign-in may wait (no connection), need a
-decision (the account has an open workout), or be refused by the log (overlap, a future time,
-over 200 sets, a missing movement, an identity already on the log, a changed routine). Android
-draws a card per refused workout in Settings and a door on every tab; iOS draws one section and
-one badge:
+decision (the account has an open workout), or be refused by the log (an overlap, times that do
+not line up, over 200 sets, a missing movement, an identity already spent). Android draws a card
+per refused workout in Settings and a door on every tab; iOS draws one section and one badge:
 
 - **The section.** Signed in, The log's head gains **On this phone** above Bodyweight: one row per
-  workout the account has not taken, each a door. Row title *Push A · 23 Sep · 12 sets*
+  workout the account has not taken, each a door to Inspect. Row title *Push A · 23 Sep · 12 sets*
   (*Free session* when unlinked; *1 set from Push A · 23 Sep* for a stranded set); subtitle the
   state — *adding…* with a trailing `ProgressView` while in flight, else the reason below. The
   section leaves when it is empty. It replaces the adoption card on Routines.
@@ -747,45 +746,54 @@ one badge:
   lifter — refused, or waiting on Keep — never one merely in flight. It is the one badge the room
   draws; Coach and the room menu draw none.
 - **The reason**, at most twelve words naming the way out, is the row's subtitle, the Inspect
-  head's footer and the transient after a failed retry:
+  head's footer and the transient after a refused retry. A saved workout's refusal never reaches the
+  room's band, and dismissing its notice never loses it: the reason stays until a retry answers it.
+  The table holds what iOS receives, by the reason label its events carry:
 
-  | Refusal | Reason |
+  | Reason | Line |
   |---|---|
   | `session-open` | *Your account has an open workout — keep this one as finished.* |
   | `session-overlap` | *Overlaps another workout — fix its times.* |
-  | `session-id-taken` | *Already on your log as another workout — compare, then discard this copy.* |
-  | `bad-instant` · `clock-skew` | *Its time is in the future — fix the times.* |
-  | `too-many-sets` · `too-large` | *Over 200 sets — remove some, then retry.* |
-  | `frozen-plan-changed` · `routine-missing` · `stale` | *Its routine changed — unlink the routine, then retry.* |
-  | `source-numbering` | *Set numbers clash — renumber, then retry.* |
-  | `source-auto-closed` | *Closed by itself — mark it finished, then retry.* |
-  | `unknown-exercise` | *A movement is missing — restore it, then retry.* |
-  | `parent-dead` | *Its movement or routine was refused — restore it, then retry.* |
-  | `session-finished` · `recovery-*` | *A set missed its workout — retry puts it back.* |
-  | anything else | *Refused by the log — fix the workout, then retry.* (the code is the Inspect subtitle) |
+  | `id-taken` (`id-taken` · `id-spent` · `payload-conflict`) | *Already added once — discard this copy.* |
+  | `bad-instant` | *Its times don't line up — fix the times.* |
+  | `too-many-sets` | *Over 200 sets — remove some, then retry.* |
+  | `unknown-exercise` | *A movement is missing — fix its sets, then retry.* |
+  | `session-finished` | *A set missed its workout — retry puts it back.* (*2 sets missed their workout — retry puts them back.*) |
+  | `unsent` (refused before, its notice dismissed) | *Not on your log yet — retry to add it.* |
+  | `invalid-set` · `other` (`parent-dead`, `too-large`, `stale`, …) | *Refused by the log — fix the workout, then retry.* (the code beside the date in Inspect's subtitle) |
 
+  iOS imports carry no set numbers and always carry their finish, a routine the log cannot read only
+  drops the plan, and the engine recovers `clock-skew` on its own, so Android's `source-numbering`,
+  `source-auto-closed`, `frozen-plan-changed`/`routine-missing` and `recovery-*` rows have no iOS line.
 - **Inspect** is a pushed screen: title the routine name, subtitle the date; `FactTiles` Duration ·
   Working sets · Volume with the reason as that section's footer; *Started* and *Finished* as fact
   rows; then a section per movement of read-only set rows (*1 · 100 × 5*, kind as *W*, effort and
-  note as the second line). The band holds the reason's one primary: *Keep as finished*
-  (`session-open`), *Retry* (`session-finished`, `recovery-*`), *Open the other workout*
-  (`session-id-taken`, a door to that session), *Fix workout* for the rest. The bar's
-  `ellipsis.circle` holds *Fix workout* and *Discard workout* (destructive, the nine-second window).
+  note as the second line). A stranded set shows Working sets · Volume and its own rows only. The
+  band holds the reason's one primary: *Keep as finished* (`session-open`), *Retry*
+  (`session-finished`, `unsent`), *Fix workout* for the rest, and none for `id-taken`, whose way out
+  is *Discard workout*. Keep and Retry disable until the log's first pull is complete, with *Adding it
+  needs a connection.* in the band's transient above them, and while backup is paused, with *Sign in
+  again to add it.*
+  The bar's `ellipsis.circle` holds *Fix workout* when the copy can be fixed and Fix is not already
+  the primary, and *Discard workout* (destructive, the nine-second window: *Workout discarded* ·
+  *Undo*). A workout on its way has no band and no menu.
 - **Fix workout** is a `.large` sheet: *Cancel* · *Fix workout* · *Save and retry* pinned.
   Sections: **Times** — *Started* and *Finished* as compact `DatePicker` rows, an open workout's
-  *Finished* reading *Not finished* with a quiet *Mark finished* that fills it from the last set;
-  **Routine** — a *Linked to Push A* toggle whose off state drops the saved plan; **Sets** — a
-  section per movement, each row opening `SetEditor` (movement, kind, time, kg, reps, effort,
-  note, delete), *Renumber sets* as the section's one action only for `source-numbering`. Over 200
-  sets the band disables with the footer *Over 200 sets · remove 12.* Edits touch the phone's copy
-  only; the retry sends the corrected import under the same identity.
-- **Keep** and **Retry** act from the band; on success the row leaves, the transient reads *Push A
-  is on your log.*; on refusal the row's reason updates and the transient says the new one.
+  *Finished* reading *Not finished* with a quiet *Mark finished* that fills it from the last set; a
+  *Linked to Push A* toggle whose off state drops the saved plan; then a section per movement, each
+  row opening the Fix set sheet (weight, reps, effort, kind, movement, time, note, delete). Over 200
+  sets the band disables with *Over 200 sets · remove 12.* in its transient above *Save and retry*;
+  any other refusal the phone predicts disables it with that reason's line in the same place. Edits
+  touch the phone's copy only; the retry sends the corrected import under the same identity.
+- **Keep** and **Retry** act from the band; once queued, Inspect's transient reads *Push A is on your
+  log.*, the row reads *adding…* and both leave when the log confirms it; on refusal the row's
+  reason updates and the transient says the new one.
 - **A stranded set** (`session-finished`) retries into its finished workout with an additive
   correction (`CorrectSession(preserveOtherSets: true)`), or into a separate workout under new
   identities when that cannot apply — the domain's rule, with vectors before the screens.
-- Events `gym_import_recovery` {action: inspect · fix · keep · retry, state, outcome}; failures
-  `gym_import_fix` · `gym_import_keep` · `gym_import_retry`.
+- Events `gym_import_recovery` {action: inspect · fix · keep · retry · discard, reason, outcome: ok ·
+  refused · failed · cancelled}; Save and retry is `fix` with an outcome. Failures `gym_import_fix` ·
+  `gym_import_keep` · `gym_import_retry` · `gym_import_discard`.
 
 ## 8. Echoes on iOS
 

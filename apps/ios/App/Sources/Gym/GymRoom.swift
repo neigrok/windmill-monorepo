@@ -28,7 +28,7 @@ struct GymRoom: View {
       }
       SwiftUI.Tab("The log", systemImage: "calendar", value: Tab.log) {
         NavigationStack(path: $logPath) { root(LogTab(gym: gym)) }
-      }
+      }.badge(gym.isAnonymous ? 0 : gym.workoutsToReview.count)
       SwiftUI.Tab("Coach", systemImage: "bubble.left.and.bubble.right", value: Tab.coach) {
         NavigationStack(path: $coachPath) { root(CoachTab(gym: gym, handoff: $coachHandoff)) }
       }
