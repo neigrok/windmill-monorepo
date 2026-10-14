@@ -53,6 +53,13 @@ import XCTest
     let item = app.buttons["coach-menu-" + ids[name]!]
     XCTAssertTrue(item.wait(for: \.isHittable, toEqual: true, timeout: 5)); item.tap()
   }
+  // A row below the fold, at 375 points or the largest text, scrolls into reach before it is tapped.
+  func reach(_ element: XCUIElement, _ app: XCUIApplication) -> XCUIElement {
+    _ = element.waitForExistence(timeout: 5)
+    for _ in 0..<8 where !(element.exists && element.isHittable) { app.swipeUp(velocity: .slow) }
+    XCTAssertTrue(element.isHittable)
+    return element
+  }
   func roomMenuOpen(_ name: String, _ app: XCUIApplication, current: String) {
     let menu = app.buttons["room-menu"]
     XCTAssertTrue(menu.wait(for: \.isHittable, toEqual: true, timeout: 10)); menu.tap()
@@ -184,9 +191,9 @@ import XCTest
     XCTAssertTrue(app.buttons["gym-log-session-coach-fixture-session"].waitForExistence(timeout: 10))
     capture("gym-log-one-session-signed-in-\(appearance)", app, settle: 1.5)
     app.buttons["you"].tap()
-    XCTAssertTrue(app.buttons["sign-out"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.navigationBars["You"].waitForExistence(timeout: 5))
     capture("gym-you-signed-in-\(appearance)", app)
-    app.buttons["sign-out"].tap()
+    reach(app.buttons["sign-out"], app).tap()
     XCTAssertTrue(app.alerts["Sign out?"].waitForExistence(timeout: 5))
     capture("gym-sign-out-sheet-\(appearance)", app)
     app.terminate()
@@ -616,8 +623,7 @@ import XCTest
     capture("gym-coach-connected-log-details-\(appearance)", app)
     back(app)
     app.buttons["you"].tap()
-    XCTAssertTrue(app.buttons["you-gym-settings"].waitForExistence(timeout: 5))
-    app.buttons["you-gym-settings"].tap()
+    reach(app.buttons["you-gym-settings"], app).tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-settings"].waitForExistence(timeout: 5))
     capture("gym-settings-\(appearance)", app)
     back(app)
