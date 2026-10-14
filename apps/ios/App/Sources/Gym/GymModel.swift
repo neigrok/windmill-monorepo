@@ -93,8 +93,8 @@ final class GymModel {
   // Signed out nothing is unsent: there is no account to send to. Signed in, what the log has not confirmed is unsent
   // only while something holds it back — no connection, a paused session or its own refused push — never in flight.
   func unsentSets(_ sets: [TrainingSet]) -> Set<ID<TrainingSet>> {
-    guard !isAnonymous else { return [] }
-    return unconfirmedSets(sets).filter { heldBack($0.ref) }
+    let held = isAnonymous ? [] : sets.filter { heldBack($0.id.ref) }
+    return held.isEmpty ? [] : unconfirmedSets(held)
   }
 
   // A workout is unsent while its own record or any of its sets is.

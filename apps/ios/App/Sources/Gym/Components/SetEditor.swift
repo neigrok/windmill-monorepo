@@ -231,7 +231,8 @@ struct SetEditor: View {
           }
           if !logged {
             Section {
-              Picker("Movement", selection: $draft.exerciseId) {
+              // Bound through the draft, not its state: a write back through the state leaves the picker's page open.
+              Picker("Movement", selection: Bindable(draft).exerciseId) {
                 if gym.catalogue.find(draft.original.exerciseId) == nil { Text("Missing movement").tag(draft.original.exerciseId) }
                 ForEach(gym.catalogue.exercises, id: \.id) { Text($0.name).tag($0.id) }
               }.pickerStyle(.navigationLink).accessibilityIdentifier("\(identifier)-movement")
