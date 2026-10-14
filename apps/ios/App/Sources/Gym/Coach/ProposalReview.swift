@@ -230,15 +230,14 @@ struct ProposalReviewSheet: View {
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
       }.onScrollGeometryChange(for: CoachReviewPosition.self) { geometry in
         let extent = CoachReviewExtent(content: geometry.contentSize.height, viewport: geometry.containerSize.height, width: geometry.containerSize.width)
-        return CoachReviewPosition(extent: extent, atEnd: geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height + geometry.contentInsets.bottom - 1)
+        return CoachReviewPosition(extent: extent, atEnd: geometry.visibleRect.maxY - geometry.contentInsets.bottom >= geometry.contentSize.height - 1)
       } action: { _, position in
         extent = position.extent
         if position.atEnd, position.extent.viewport > 0, position.extent.content > 0 { seen = position.extent }
       }
       .navigationTitle(routine?.name ?? proposal?.baseName ?? "Proposal").modifier(GymPage())
-      .modifier(ReviewSubtitle(text: proposal.map(gym.coachProposalSource)))
+      .modifier(ReviewChrome(subtitle: proposal.map(gym.coachProposalSource), band: band))
       .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
-      .safeAreaInset(edge: .bottom) { band }
       .alert("Turn this down?", isPresented: $turningDown) {
         Button("Turn down", role: .destructive) { if let proposal { submitted = gym.coachDecideProposal(proposal, apply: false) } }
         Button("Keep it", role: .cancel) {}
@@ -332,10 +331,13 @@ struct ProposalReviewSheet: View {
   }
 }
 
-// iOS 26 carries who proposed it, and when, under the title; earlier systems draw it as the sheet's first line.
-struct ReviewSubtitle: ViewModifier {
-  let text: String?
+// iOS 26 carries who proposed it, and when, under the title, and softens the diff where it scrolls under the band;
+// earlier systems draw the proposer as the sheet's first line.
+struct ReviewChrome<Band: View>: ViewModifier {
+  let subtitle: String?
+  let band: Band
   @ViewBuilder func body(content: Content) -> some View {
-    if #available(iOS 26, *), let text { content.navigationSubtitle(text) } else { content }
+    if #available(iOS 26, *) { content.navigationSubtitle(subtitle ?? "").safeAreaBar(edge: .bottom) { band } }
+    else { content.safeAreaInset(edge: .bottom) { band } }
   }
 }

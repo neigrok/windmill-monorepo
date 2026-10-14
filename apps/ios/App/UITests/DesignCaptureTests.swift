@@ -490,9 +490,9 @@ import XCTest
     XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
     capture("gym-coach-conversation-\(appearance)", app)
-    app.scrollViews.firstMatch.swipeDown()
-    capture("gym-coach-conversation-top-\(appearance)", app)
     let photo = app.buttons["Enlarge photo"].firstMatch
+    for _ in 0..<4 where !photo.isHittable { app.scrollViews.firstMatch.swipeDown() }
+    capture("gym-coach-conversation-top-\(appearance)", app)
     XCTAssertTrue(photo.waitForExistence(timeout: 5)); photo.tap()
     XCTAssertTrue(app.navigationBars["Photo"].waitForExistence(timeout: 5))
     capture("gym-coach-photo-sheet-\(appearance)", app)
@@ -574,7 +574,10 @@ import XCTest
     let apply = app.buttons["coach-apply-proposal"]
     XCTAssertTrue(apply.waitForExistence(timeout: 5))
     capture("gym-coach-removal-review-\(appearance)", app)
-    app.scrollViews.firstMatch.swipeUp()
+    // The conversation behind the sheet is the first scroll view, so the drag starts in the sheet itself.
+    for _ in 0..<6 where !apply.isEnabled {
+      app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)))
+    }
     XCTAssertTrue(apply.wait(for: \.isEnabled, toEqual: true, timeout: 5))
     capture("gym-coach-removal-review-promise-\(appearance)", app)
     apply.tap()

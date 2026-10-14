@@ -48,11 +48,7 @@ struct CoachTab: View {
         VStack(spacing: 0) {
           band
           if composing {
-            Button { composing = false } label: {
-              Image(systemName: "keyboard.chevron.compact.down").font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink)
-                .frame(width: 36, height: 36).modifier(GlassCircle())
-                .frame(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget).contentShape(Circle())
-            }.buttonStyle(.plain).accessibilityLabel("Done").accessibilityIdentifier("coach-keyboard-done")
+            Button { composing = false } label: { GlassCircle(symbol: "keyboard.chevron.compact.down") }.buttonStyle(.plain).accessibilityLabel("Done").accessibilityIdentifier("coach-keyboard-done")
               .frame(maxWidth: .infinity, alignment: .trailing).padding(.horizontal, 12)
           }
           if coach.allowed, coach.refusal != .absent { composer }
@@ -149,11 +145,7 @@ struct CoachTab: View {
         } action: { _, latest in atLatest = latest }
         .overlay(alignment: .bottomTrailing) {
           if !atLatest, !composing {
-            Button { withAnimation { proxy.scrollTo("latest", anchor: .bottom) } } label: {
-              Image(systemName: "chevron.down").font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink)
-                .frame(width: 36, height: 36).modifier(GlassCircle())
-                .frame(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget).contentShape(Circle())
-            }.buttonStyle(.plain).accessibilityLabel("Jump to latest").accessibilityIdentifier("coach-jump-to-latest").padding(12)
+            Button { withAnimation { proxy.scrollTo("latest", anchor: .bottom) } } label: { GlassCircle(symbol: "chevron.down") }.buttonStyle(.plain).accessibilityLabel("Jump to latest").accessibilityIdentifier("coach-jump-to-latest").padding(12)
           }
         }
         .onChange(of: coach.saved.request?.requestId) { _, request in
@@ -241,10 +233,14 @@ struct CoachTab: View {
 }
 
 // The 36 pt glass circle of the room's two "down" controls: Jump to latest, and the keyboard's Done while typing.
-struct GlassCircle: ViewModifier {
-  @ViewBuilder func body(content: Content) -> some View {
-    if #available(iOS 26.0, *) { content.glassEffect(.regular.interactive(), in: Circle()) }
-    else { content.background(.regularMaterial, in: Circle()) }
+struct GlassCircle: View {
+  let symbol: String
+  var body: some View {
+    let image = Image(systemName: symbol).font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink).frame(width: 36, height: 36)
+    Group {
+      if #available(iOS 26.0, *) { image.glassEffect(.regular.interactive(), in: Circle()) }
+      else { image.background(.regularMaterial, in: Circle()) }
+    }.frame(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget).contentShape(Circle())
   }
 }
 
@@ -320,11 +316,15 @@ struct CoachProposalCard: View {
   let gym: GymModel
   let id: String
   let review: () -> Void
+  @Environment(\.dynamicTypeSize) var typeSize
   var body: some View {
     let proposal = gym.proposals.first { $0.id.record.string == id }
     let facts = proposal.map(gym.coachProposalFacts) ?? []
     let label = proposal.map { $0.intent == "remove" ? "Review removal" : "Review " + GymCount.of(gym.coachChangeCount($0), "change") } ?? "Review proposal"
     let state = proposal.map { ["pending": "still waiting", "dismissed": "turned down"][$0.state] ?? $0.state }
+    // At accessibility sizes a fact sits under its movement and the state under the door's label.
+    let pair = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: RoomSpace.small))
+      : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 12))
     VStack(alignment: .leading, spacing: 12) {
       Text("Proposal" + (proposal.map { " · " + ($0.baseName ?? $0.proposedName) } ?? ""))
         .font(.caption.weight(.semibold)).textCase(.uppercase).foregroundStyle(GymPalette.accent)
@@ -332,10 +332,10 @@ struct CoachProposalCard: View {
       if !facts.isEmpty {
         VStack(alignment: .leading, spacing: 6) {
           ForEach(Array(facts.prefix(3).enumerated()), id: \.offset) { _, fact in
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
+            pair {
               Text(fact.title).font(.subheadline).foregroundStyle(GymPalette.ink)
-              Spacer(minLength: 0)
-              Text(fact.fact).font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim).multilineTextAlignment(.trailing)
+              if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
+              Text(fact.fact).font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim)
             }
           }
           if facts.count > 3 { Text("+ \(facts.count - 3) more").font(.footnote).foregroundStyle(GymPalette.inkFaint) }
@@ -343,9 +343,12 @@ struct CoachProposalCard: View {
       }
       Button(action: review) {
         HStack(spacing: RoomSpace.related) {
-          Text(label).foregroundStyle(GymPalette.accent)
-          Spacer(minLength: 0)
-          if let state { Text(state).font(.footnote).foregroundStyle(GymPalette.inkDim) }
+          pair {
+            Text(label).foregroundStyle(GymPalette.accent)
+            if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
+            if let state { Text(state).font(.footnote).foregroundStyle(GymPalette.inkDim) }
+          }
+          if typeSize.isAccessibilitySize { Spacer(minLength: 0) }
           Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(GymPalette.inkDim)
         }.frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
       }.buttonStyle(.plain).accessibilityLabel(label).accessibilityValue(state ?? "").accessibilityIdentifier("coach-review")

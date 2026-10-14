@@ -285,6 +285,23 @@ import UIKit
     XCTAssertTrue(app.staticTexts["Waiting for the log…"].waitForExistence(timeout: 5))
     app.terminate()
   }
+  func testLongReviewGatesApplyUntilItsEndWithoutMovingIt() {
+    let app = launch("Light", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
+    ask("Is Push A still doing anything?", app)
+    let review = app.buttons["coach-review"]
+    for _ in 0..<4 where !review.isHittable { app.scrollViews.firstMatch.swipeUp() }
+    review.tap()
+    let apply = app.buttons["coach-apply-proposal"]
+    XCTAssertTrue(apply.waitForExistence(timeout: 5))
+    XCTAssertFalse(apply.isEnabled, "Apply waits until the diff has been seen to its end.")
+    let gated = apply.frame
+    capture("coach-review-gate-ax3", app)
+    for _ in 0..<6 where !apply.isEnabled { app.scrollViews.firstMatch.swipeUp() }
+    XCTAssertTrue(apply.wait(for: \.isEnabled, toEqual: true, timeout: 5))
+    XCTAssertEqual(apply.frame, gated, "Apply never moves when the caption slot changes.")
+    capture("coach-review-promise-ax3", app)
+    app.terminate()
+  }
   func testOfflineRoomRaisesTheBandAndDimsSend() {
     for appearance in ["Light", "Dark"] {
       let suffix = appearance.lowercased(), app = launch(appearance, arguments: ["-coach-offline"])
