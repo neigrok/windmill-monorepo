@@ -64,8 +64,10 @@ in every tab inherit it whatever order a screen applies its modifiers in; the pa
 (`GymPage`, §5) carries the same tint into every sheet the room raises. The system draws the
 selection; the room supplies the symbol and the tint (`gym/briefs/12-native-idiom.md`, "A native
 tab bar's selected state"). The front room also sets the hosting window's `tintColor` to its
-accent, so the chrome UIKit draws outside the SwiftUI tree — the keyboard's return key, text
-selection, the share sheet — carries the room's colour and never the system blue.
+accent, so the chrome UIKit draws outside the SwiftUI tree — text selection, the share sheet —
+carries the room's colour and never the system blue. The keyboard draws its own keys and takes no
+tint: an emphasized return key (*Done*, *Go*) is always the system's blue, so the room's fields keep
+the plain return key; a `.searchable` field's *Search* key stays the system's.
 
 ### Gym — verdigris on verdigris-grey stone
 

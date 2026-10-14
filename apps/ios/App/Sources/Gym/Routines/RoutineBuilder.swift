@@ -146,7 +146,7 @@ struct RoutineBuilder: View {
     List {
       Group {
         Section {
-          TextField("Name", text: $editing.draft.current.name).focused($nameFocused).submitLabel(.done)
+          TextField("Name", text: $editing.draft.current.name).focused($nameFocused)
             .onSubmit { nameFocused = false }.accessibilityIdentifier("routine-name")
           if let counter = MovementName.counter(editing.draft.current.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
         }

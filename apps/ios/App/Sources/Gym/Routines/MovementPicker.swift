@@ -225,7 +225,7 @@ struct MovementPicker: View {
             HStack {
               Image(systemName: "magnifyingglass").foregroundStyle(GymPalette.inkDim)
               TextField("Search movements", text: externalQuery).focused($searchFocused)
-                .textInputAutocapitalization(.never).submitLabel(.done).onSubmit { searchFocused = false }
+                .textInputAutocapitalization(.never).onSubmit { searchFocused = false }
                 .accessibilityIdentifier("gym-movement-search")
               if !query.isEmpty {
                 Button { externalQuery.wrappedValue = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(GymPalette.inkDim).frame(minWidth: 44, minHeight: 44) }
@@ -294,7 +294,7 @@ struct CreateMovementSheet: View {
     Form {
       Group {
         Section {
-          TextField("Name", text: $draft.name).focused($nameFocused).autocorrectionDisabled().textInputAutocapitalization(.words).submitLabel(.done).onSubmit { nameFocused = false }
+          TextField("Name", text: $draft.name).focused($nameFocused).autocorrectionDisabled().textInputAutocapitalization(.words).onSubmit { nameFocused = false }
             .disabled(busy).accessibilityIdentifier("gym-movement-name")
           if let counter = MovementName.counter(draft.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
         }

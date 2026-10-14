@@ -87,8 +87,9 @@ Gym includes routine planning and movement creation, the live set rack and finis
 Both rooms and the shell follow Appearance in You's Settings (Light · Dark · System, System by default): Gym
 answers with Instrument or Daylight, Journal with Night or Day. The choice is the hosting window's interface style,
 so the status bar, keyboards and sheets follow it too. The window also carries the front room's accent as its tint —
-the shell's brand while You, Keep, sign-in or Where to start? is in front — so the keyboard's return key, selection
-and the share sheet never fall back to system blue. You is one inset-grouped list: the identity with its Apple and
+the shell's brand while You, Keep, sign-in or Where to start? is in front — so selection and the share sheet never
+fall back to system blue. The keyboard takes no tint, so the gym's fields keep the plain return key rather than a blue
+*Done*; a searchable field's *Search* key stays the system's. You is one inset-grouped list: the identity with its Apple and
 email doors (disabled offline, with *Sign-in needs a connection.* as their footer), **On this phone** or **How you
 sign in** and **Your data**, **Settings** (Appearance, Gym settings, About Windmill), and *Sign out* last. A sign-in
 link is offered only on the code step.
