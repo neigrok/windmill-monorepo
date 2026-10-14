@@ -220,7 +220,9 @@ these are the places it disagrees with a drawing or a brief.
   strip. The brief now says so; the Progress section's iOS strip boards (`459:29`, `531:532`)
   are superseded.
 - **9c · The rack's kind picker.** `16-the-workout.md` kept iOS's kind picker at the rack; the
-  spec moves Kind into the Fix sheet on iOS as on web and Android. The brief now says so.
+  spec moves Kind off the rack into the Fix sheet on iOS, and a new set is Working, as on web and
+  Android. The brief now says so. Android's Fix sheet has no Kind control: `FixSheet.kt` carries a
+  set's kind through unchanged.
 - **9d · Two gym light grounds.** Design System `iOS First Run · Colour` has `gym/canvas` light
   `#F4F4EB` and `gym/card` `#F9FDFC`; `Onboarding · Colour` and the Gym file have `#EBE7E3` and
   `#F8F6F4`, which the spec adopts. Align the first-run collection.
