@@ -77,7 +77,24 @@ Gym's `accountTransition` pauses training only while sign-out is open (`accountC
 app) and while the engine changes the replica (`replicaChanging`, set by `GymBinding`). Pending
 sign-in, hello and adoption questions leave training available. `rest` is the authenticated
 client handle for Coach, shares and Connected log; engine-backed training writes use domain actions.
-Gym includes routine planning and movement creation, the live set rack and finish receipt, session history/sharing and strength/bodyweight charts, and account-only Coach, proposal review, Notes and Connected log. Gym follows system light/dark appearance; Journal keeps its night canvas.
+Gym includes routine planning and movement creation, the live set rack and finish receipt, session history/sharing and strength/bodyweight charts, and account-only Coach, proposal review, Notes and Connected log.
+
+Both rooms and the shell follow Appearance in You's Settings (Light · Dark · System, System by default): Gym
+answers with Instrument or Daylight, Journal with Night or Day. The choice is the hosting window's interface style,
+so the status bar, keyboards and sheets follow it too. The window also carries the front room's accent as its tint —
+the shell's brand while You, Keep, sign-in or Where to start? is in front — so the keyboard's return key, selection
+and the share sheet never fall back to system blue. You is one inset-grouped list: the identity with its Apple and
+email doors (disabled offline, with *Sign-in needs a connection.* as their footer), **On this phone** or **How you
+sign in** and **Your data**, **Settings** (Appearance, Gym settings, About Windmill), and *Sign out* last. A sign-in
+link is offered only on the code step.
+
+When the server needs a newer app — the engine's `status.upgradeRequired`, or a 426 at sign-in — one *Update
+required* alert speaks when the flag flips, and once more per cold launch while it holds; a sign-in refused for it
+asks again as that attempt's answer, and keeps the sign-in pending for the update. You's identity reads *Syncing
+paused · update Windmill* with a *Get the update* row; both open TestFlight, and a destination that cannot open
+leaves the shell's transient *Couldn't open the update. Try again.* The rooms keep working on the phone. The
+`update-required` board signs in against a model server that answers 426 (and keeps answering it across
+`-restore-board`); `update-sign-in` answers 426 only to the sign-in; `keep-gym` opens the gym's Keep sheet.
 
 Debug simulator Coach launches add `-coach-fixture`: a signed-in account with a routine, a workout and a
 proposal, and a scripted Coach service over the real REST boundary. `-coach-removal` makes the proposal
@@ -145,15 +162,20 @@ The network-dependent native features are Coach, journal echoes, account authent
 connected-log management. None blocks the local rooms: echoes show nothing extra offline, and the others
 state their connection requirement.
 
-Journal echoes live in `Sources/Journal/Echoes`. `JournalEchoView.swift` owns their presentation:
-a 44 pt count beside a day, a native quotation sheet, source highlighting and a trail back to
-tonight. The sheet follows the system light/dark appearance on the journal palette roles, while the
-canvas stays night.
+Journal echoes live in `Sources/Journal/Echoes`. `JournalEchoView.swift` owns their presentation, as
+the iOS contract's §8 draws it: a lamp count in a 22 pt capsule at the end of a day's date line, whose
+44 pt target opens that day's ink below its body — up to two older passages beside their mono date
+stamps, *Useful · Not useful*, and *N more* when the reader holds the rest. Useful marks the passages
+the ink shows; Not useful retires the page's echo. One day's ink is open at a time; the count again, a
+tap outside the ink, or the keyboard closes it, and today's count does not draw while writing. The
+reader is a sheet of every passage for the day, grouped by year. A passage, in the ink or the reader,
+flies the canvas to its source with highlighting and a trail back to tonight. The first echo an install
+receives heads its ink with a card, once.
 The model re-locates every full quotation in the phone's current pages before showing its count.
 Shared journal vectors pin NFC-equivalent matching and UTF-16 anchors into the unchanged source;
 equivalent edits retain an echo, while edits that remove its quotation retract it. The model
-follows the server's 20-page floor and waiver, provenance and Useful state. A first-echo
-introduction requires an explicit server flag; the current list route does not supply it.
+follows the server's 20-page floor and waiver, provenance and Useful state. The first-echo
+card requires an explicit server flag; the current list route does not supply it.
 Reads poll every 15 seconds only while the room is active. All reads and verdicts use the existing
 REST echoes routes; writing continues through the sync engine. Offline, empty and failed reads
 show no echo surface. Requests are cancelled and old replies discarded across account or lifecycle
@@ -161,11 +183,11 @@ changes. Verdict failures roll back without a retry queue; opened signals never 
 navigation. HTTP caching is disabled.
 
 `journal-echoes`, `journal-echoes-offline` and `journal-echoes-empty` board fixtures use real
-journal actions with a deterministic echoes service. `journal-echoes-AX3-RM` covers larger type
-and the source-scroll Reduce Motion path, including Back to tonight. `journal-echoes-unicode`
-and `journal-echoes-unicode-decomposed` apply real source edits while the sheet is open: Useful
-on the first quotation changes only its normalization; Useful on the second removes the first
-quotation. The source quote sits after 14 paragraphs; navigation tests use the Debug simulator's
+journal actions with a deterministic echoes service; `journal-echoes-first` carries the first-echo flag.
+`journal-echoes-AX3-RM` covers larger type and the source-scroll Reduce Motion path, including Back to
+tonight. `journal-echoes-unicode` and `journal-echoes-unicode-decomposed` apply real source edits:
+reading the first source changes only its normalization; Useful, reaching the second passage, removes
+the first quotation. The source quote sits after 14 paragraphs; navigation tests use the Debug simulator's
 UIKit quote rectangle to check that the exact passage reaches the visible canvas centre and
 remains read-only. `JournalEchoFlowTests`
 belongs to CI's routines-journal shard; its screenshots are XCTest attachments, or PNGs when
@@ -214,8 +236,7 @@ changes to QA tone is playing after playback starts. Audio must continue while S
 The test finishes the workout and verifies that the Activity disappears after logging from the Island.
 
 `DesignCaptureTests` is an opt-in design review suite. It captures onboarding, both rooms, account
-flows, pushed screens and sheets in light and dark; Journal keeps its night canvas in either system
-appearance. XCTest skips it unless the test runner sees `WM_DESIGN_CAPTURE=1`; Xcode forwards
+flows, pushed screens and sheets in light and dark. XCTest skips it unless the test runner sees `WM_DESIGN_CAPTURE=1`; Xcode forwards
 `TEST_RUNNER_`-prefixed variables to the runner without the prefix. The CI shards leave the class out
 and check that its guard remains. From this directory, with one simulator and a fresh result path:
 

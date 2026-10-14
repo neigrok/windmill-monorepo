@@ -33,3 +33,28 @@ struct RoomSeatStyle: ButtonStyle {
     else { content.background(.regularMaterial, in: Circle()) }
   }
 }
+
+// iOS 26 draws the subtitle under the inline title; iOS 18 stacks the two in the bar's principal slot.
+struct RoomTitle: ViewModifier {
+  let title: String
+  let subtitle: String?
+
+  func body(content: Content) -> some View {
+    if #available(iOS 26.0, *), let subtitle {
+      content.navigationTitle(title).navigationSubtitle(subtitle)
+    } else if let subtitle {
+      content.navigationTitle(title).toolbar {
+        ToolbarItem(placement: .principal) {
+          VStack(spacing: 0) {
+            Text(title).font(.headline)
+            Text(subtitle).font(.caption).foregroundStyle(.secondary)
+          }.accessibilityElement(children: .combine)
+        }
+      }
+    } else { content.navigationTitle(title) }
+  }
+}
+
+extension View {
+  func roomTitle(_ title: String, subtitle: String?) -> some View { modifier(RoomTitle(title: title, subtitle: subtitle)) }
+}

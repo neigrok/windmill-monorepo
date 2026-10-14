@@ -91,9 +91,9 @@ struct OnboardingGlimpse: View {
     VStack(spacing: 10) {
       ForEach(0..<3, id: \.self) { index in
         let ground = index == 0 ? ShellPalette.canvas : index == 1 ? JournalPalette.canvas : GymPalette.canvas
-        let line = index == 0 ? ShellPalette.line : index == 1 ? OnboardingSpecimen.journalLine : GymPalette.line
-        let ink = index == 0 ? ShellPalette.ink : index == 1 ? OnboardingSpecimen.journalInk : GymPalette.ink
-        let dim = index == 0 ? ShellPalette.inkDim : index == 1 ? OnboardingSpecimen.journalDim : GymPalette.inkDim
+        let line = index == 0 ? ShellPalette.line : index == 1 ? JournalPalette.line : GymPalette.line
+        let ink = index == 0 ? ShellPalette.ink : index == 1 ? JournalPalette.ink : GymPalette.ink
+        let dim = index == 0 ? ShellPalette.inkDim : index == 1 ? JournalPalette.inkDim : GymPalette.inkDim
         card(ground, line, radius: 20) {
           ZStack(alignment: .topLeading) {
             Circle().fill(index == 0 ? ShellPalette.brand : index == 1 ? JournalPalette.lamp : GymPalette.accent).frame(width: 7, height: 7).offset(x: 20, y: 29)
@@ -164,10 +164,10 @@ struct OnboardingGlimpse: View {
   }
 
   var journal: some View {
-    let ink = OnboardingSpecimen.journalInk
-    let dim = OnboardingSpecimen.journalDim
-    let faint = OnboardingSpecimen.journalFaint
-    return card(JournalPalette.canvas, OnboardingSpecimen.journalLine) {
+    let ink = JournalPalette.ink
+    let dim = JournalPalette.inkDim
+    let faint = JournalPalette.inkFaint
+    return card(JournalPalette.canvas, JournalPalette.line) {
       ZStack(alignment: .topLeading) {
         RadialGradient(colors: [JournalPalette.lamp.opacity(0.18 * glow), .clear], center: .init(x: 0.5, y: 1.15), startRadius: 0, endRadius: 240)
         text("YESTERDAY", OnboardingSpecimenType.caption, faint, x: 24, y: 22).tracking(1.2)
@@ -236,12 +236,8 @@ struct OnboardingCheck: Shape {
   }
 }
 
-// Illustration roles frozen for the glimpses; the journal glimpse keeps its iteration-one warm day ink.
+// Illustration roles frozen for the glimpses; the journal glimpse draws with the journal palette itself.
 enum OnboardingSpecimen {
-  static let journalInk = Color("onboarding/journal-ink")
-  static let journalDim = Color("onboarding/journal-dim")
-  static let journalFaint = Color("onboarding/journal-faint")
-  static let journalLine = Color("onboarding/journal-line")
   static let completed = Color("onboarding/completed")
   static let completedOutline = Color("onboarding/completed-outline")
   static let skyKind = Color("onboarding/sky-kind")

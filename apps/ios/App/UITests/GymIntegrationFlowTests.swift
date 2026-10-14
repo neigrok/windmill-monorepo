@@ -106,8 +106,10 @@ import XCTest
       app.buttons["email-sign-in"].tap(); replace(app.textFields["email-address"], "gym-mail-failure@example.com")
       XCTAssertTrue(app.textFields["email-address"].waitForValue("gym-mail-failure@example.com")); app.buttons["Send code"].tap()
       XCTAssertTrue(app.staticTexts["Can't reach windmill.works. Nothing you've written is lost."].waitForExistence(timeout: 10))
-      capture(app, "e2e-auth-mail-unavailable"); app.buttons["Back"].tap()
-      app.buttons["link-sign-in"].tap(); replace(app.textFields["sign-in-link"], link); app.buttons["sign-in-link-submit"].tap()
+      capture(app, "e2e-auth-mail-unavailable")
+      replace(app.textFields["email-address"], "gym-adopt@example.com"); app.buttons["Send code"].tap()
+      XCTAssertTrue(app.buttons["link-sign-in"].waitForExistence(timeout: 10)); app.buttons["link-sign-in"].tap()
+      replace(app.textFields["sign-in-link"], link); app.buttons["sign-in-link-submit"].tap()
     } else {
       app.buttons["email-sign-in"].tap(); replace(app.textFields["email-address"], "gym-adopt@example.com")
       XCTAssertTrue(app.textFields["email-address"].waitForValue("gym-adopt@example.com")); app.buttons["Send code"].tap()
@@ -138,7 +140,9 @@ import XCTest
     XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 5)); app.buttons["you"].tap()
     if server != nil {
       let link = try XCTUnwrap(identity["link"])
-      XCTAssertTrue(app.buttons["link-sign-in"].waitForExistence(timeout: 5)); app.buttons["link-sign-in"].tap()
+      app.buttons["email-sign-in"].tap(); replace(app.textFields["email-address"], "gym-conflict-link@example.com")
+      XCTAssertTrue(app.textFields["email-address"].waitForValue("gym-conflict-link@example.com")); app.buttons["Send code"].tap()
+      XCTAssertTrue(app.buttons["link-sign-in"].waitForExistence(timeout: 10)); app.buttons["link-sign-in"].tap()
       replace(app.textFields["sign-in-link"], link); app.buttons["sign-in-link-submit"].tap()
     } else {
       let address = try XCTUnwrap(identity["email"])
@@ -316,7 +320,7 @@ import XCTest
     let keep = anonymous.buttons["Keep this log"]
     for _ in 0..<4 where !keep.isHittable { anonymous.swipeUp() }
     keep.tap()
-    XCTAssertTrue(anonymous.staticTexts["Keep your training"].waitForExistence(timeout: 10))
+    XCTAssertTrue(anonymous.staticTexts["Keep your log"].waitForExistence(timeout: 10))
   }
 
   func verifyServer(_ kind: String, edited: Bool) {

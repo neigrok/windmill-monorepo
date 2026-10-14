@@ -16,7 +16,7 @@ struct AccountSheet: View {
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.colorScheme) var colorScheme
   @Environment(\.dynamicTypeSize) var typeSize
-  @ScaledMetric var methodRowHeight = 50.0
+  @Environment(\.openURL) var openURL
   var receipt: Bool { model.sheet == .appleAdded || ((model.sheet == .adoption || model.sheet == .discardAdoption) && model.appleLinkedReceipt) }
   var compact: Bool { model.compactAccountSheet }
   var inputStep: Bool { [.code, .address, .appleAddress].contains(model.sheet) }
@@ -27,40 +27,18 @@ struct AccountSheet: View {
   var dim: Color { ShellPalette.inkDim }
   var faint: Color { ShellPalette.inkFaint }
   var brand: Color { ShellPalette.brand }
+  var offline: Bool { model.runtime?.engine.status.online == false }
   var body: some View {
     NavigationStack {
-      ScrollView {
-        VStack(alignment: .leading, spacing: 16) {
-          switch model.sheet {
-          case .keep: keep
-          case .address: address
-          case .code: code
-          case .you: you
-          case .adoption, .discardAdoption: if model.appleLinkedReceipt { appleAdded } else { code }
-          case .signOut: signOut
-          case .appleQuestion: appleQuestion
-          case .appleAddress: address
-          case .appleAdded: appleAdded
-          case .appleNoAccount: appleNoAccount
-          case .appleExpired: appleExpired
-          case .authPending:
-            Text("Finish signing in").font(ShellType.title)
-            Text("Sign-in needs a connection. You can keep using this phone while offline.").foregroundStyle(dim)
-            Button { model.choose("retry", screen: "auth_pending"); model.performAuthentication { await model.retryAuthenticatedSignIn() } } label: {
-              Text("Try again").frame(maxWidth: .infinity)
-            }.font(ShellType.action).modifier(RoomPrimaryStyle(room: .shell)).accessibilityIdentifier("auth-retry")
-          case nil: EmptyView()
-          }
-          if model.sheet != .code, let error = model.error { errorText(error) }
-        }.padding(.horizontal, model.sheet == .you ? 16 : 24).padding(.top, receipt ? 218 : inputStep ? 130 : compact ? 18 : 14).padding(.bottom, inputStep ? 0 : 26)
-      }.defaultScrollAnchor(inputStep ? .bottom : .top)
-        .background(shell)
+      Group {
+        if model.sheet == .you { you } else { steps }
+      }.background(shell)
         .navigationTitle(sheetTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(shell, for: .navigationBar)
         .toolbar { accountToolbar }
     }
-      .foregroundStyle(ink).font(ShellType.body).tint(brand)
+      .tint(brand)
       .presentationDragIndicator(.hidden)
       .presentationDetents(compact && !typeSize.isAccessibilitySize ? [.medium] : [.large])
       .presentationBackground(shell)
@@ -75,8 +53,7 @@ struct AccountSheet: View {
                 Button("Done") { aboutWindmill = false }.accessibilityIdentifier("onboarding-exit")
               }
             }
-        }.preferredColorScheme(OnboardingFixture.appearance)
-          .presentationDetents([.large]).presentationDragIndicator(.hidden)
+        }.presentationDetents([.large]).presentationDragIndicator(.hidden)
       }
       .interactiveDismissDisabled(model.signInSession?.isComplete == false || model.signOutSession != nil)
       .disabled(answeringSignOut)
@@ -99,6 +76,49 @@ struct AccountSheet: View {
       .background {
         AccountConfirmation(model: model, isPresented: model.identityTaken || model.sheet == .adoption || model.sheet == .discardAdoption).frame(width: 0, height: 0)
       }
+  }
+
+  var steps: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 16) {
+        switch model.sheet {
+        case .keep: keep
+        case .address, .appleAddress: address
+        case .code: code
+        case .adoption, .discardAdoption: if model.appleLinkedReceipt { appleAdded } else { code }
+        case .signOut: signOut
+        case .appleQuestion: appleQuestion
+        case .appleAdded: appleAdded
+        case .appleNoAccount: appleNoAccount
+        case .appleExpired: appleExpired
+        case .authPending: authPending
+        case .you, nil: EmptyView()
+        }
+        if model.sheet != .code, let error = model.error { errorText(error) }
+      }.padding(.horizontal, 24).padding(.top, receipt ? 218 : inputStep ? 130 : compact ? 18 : 14).padding(.bottom, inputStep ? 0 : 26)
+    }.defaultScrollAnchor(inputStep ? .bottom : .top).foregroundStyle(ink).font(ShellType.body)
+  }
+
+  func head(_ symbol: String) -> some View {
+    Image(systemName: symbol).font(.largeTitle).foregroundStyle(brand).accessibilityHidden(true)
+  }
+
+  @ViewBuilder var authPending: some View {
+    Text("Finish signing in").font(ShellType.title)
+    if model.updateRequired {
+      Text("Syncing paused · update Windmill").foregroundStyle(dim)
+      Button(action: openUpdate) { Text("Get the update").frame(maxWidth: .infinity) }
+        .font(ShellType.action).modifier(RoomPrimaryStyle(room: .shell)).accessibilityIdentifier("get-update")
+    } else {
+      Text("Sign-in needs a connection. You can keep using this phone while offline.").foregroundStyle(dim)
+      Button { model.choose("retry", screen: "auth_pending"); model.performAuthentication { await model.retryAuthenticatedSignIn() } } label: {
+        Text("Try again").frame(maxWidth: .infinity)
+      }.font(ShellType.action).modifier(RoomPrimaryStyle(room: .shell)).accessibilityIdentifier("auth-retry")
+    }
+  }
+
+  func openUpdate() {
+    openURL(AppSettings.updateDestination) { model.updateOpened($0) }
   }
 
   var sheetTitle: String {
@@ -154,7 +174,7 @@ struct AccountSheet: View {
 
   var appleQuestion: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Image("AppleAccountQuestion").renderingMode(.original).frame(width: 34, height: 34).accessibilityHidden(true)
+      head("person.crop.circle.badge.questionmark")
       Text("Already on Windmill?").font(ShellType.title)
       Text("This Apple ID doesn't open a Windmill account yet. If you have one, confirm its email and Apple will open it too.").font(ShellType.body).tracking(-0.3).foregroundStyle(dim).lineSpacing(2)
       VStack(spacing: 12) {
@@ -166,7 +186,7 @@ struct AccountSheet: View {
 
   var appleNoAccount: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Image("AppleAccountQuestion").renderingMode(.original).frame(width: 34, height: 34).accessibilityHidden(true)
+      head("person.crop.circle.badge.questionmark")
       Text("No account at this email").font(ShellType.title)
       Text("\(model.email) doesn't open a Windmill account. Try the address you signed up with, or create one with Apple.").font(ShellType.body).tracking(-0.3).foregroundStyle(dim).lineSpacing(2)
       VStack(spacing: 12) {
@@ -178,7 +198,7 @@ struct AccountSheet: View {
 
   var appleExpired: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Image(systemName: "clock.arrow.circlepath").font(.system(size: 28)).foregroundStyle(brand).frame(height: 34)
+      head("clock.arrow.circlepath")
       Text("Continue with Apple again").font(ShellType.title)
       Text(AuthRefusal.expired.message).foregroundStyle(dim).lineSpacing(3)
       authDoors.padding(.top, 14)
@@ -197,14 +217,9 @@ struct AccountSheet: View {
 
   @ViewBuilder var receiptSymbol: some View {
     if #available(iOS 26.0, *) {
-      if reduceMotion {
-        Image(systemName: "checkmark.circle").font(.system(size: 28)).foregroundStyle(brand).frame(height: 34).transition(.opacity)
-      } else {
-        Image(systemName: "checkmark.circle").font(.system(size: 28)).foregroundStyle(brand).frame(height: 34).transition(.symbolEffect(.drawOn))
-      }
-    } else {
-      Image(systemName: "checkmark.circle").font(.system(size: 28)).foregroundStyle(brand).frame(height: 34)
-    }
+      if reduceMotion { head("checkmark.circle").transition(.opacity) }
+      else { head("checkmark.circle").transition(.symbolEffect(.drawOn)) }
+    } else { head("checkmark.circle") }
   }
 
   func equalButton(_ label: String, action: @escaping () -> Void) -> some View {
@@ -215,26 +230,33 @@ struct AccountSheet: View {
   func errorText(_ error: String) -> some View { Text(error).font(ShellType.meta).foregroundStyle(brand).accessibilityIdentifier("auth-error") }
 
   var keep: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      Image(systemName: "checkmark.icloud").font(.system(size: 27)).foregroundStyle(brand)
-      Text(model.selectedRoom == .journal ? "Keep your pages" : "Keep your training").font(ShellType.title)
-      Text("They live only on this phone. Sign in to back them up and open them on the web.").foregroundStyle(dim).lineSpacing(4)
+    let journal = model.selectedRoom == .journal || model.welcome
+    return VStack(alignment: .leading, spacing: 14) {
+      head("checkmark.icloud")
+      Text(journal ? "Keep your pages" : "Keep your log").font(ShellType.title)
+      Text(journal ? "They live only on this phone. Sign in to back them up and open them on the web."
+           : "It lives only on this phone. Sign in to back it up and open it on the web.").foregroundStyle(dim).lineSpacing(4)
       if model.canSignIn {
         authDoors.padding(.top, 10)
       } else {
-        Text("Backup is not connected in this build. Your pages stay on this phone.").font(ShellType.subheadline).foregroundStyle(dim)
+        Text("Backup is not connected in this build. Your work stays on this phone.").font(ShellType.subheadline).foregroundStyle(dim)
       }
     }
   }
 
   var authDoors: some View {
     VStack(spacing: 16) {
-      Text("Sign-in needs a connection.").font(ShellType.meta).foregroundStyle(dim)
       appleDoor
-      Button("Use email instead") { model.cancelAuthentication(); usingLink = false; model.choose("email", screen: model.sheet?.telemetryName ?? "keep"); model.appleTicket = nil; model.appleAuthorization = nil; model.error = nil; model.sheet = .address }.font(ShellType.action).frame(maxWidth: .infinity, minHeight: 44).accessibilityIdentifier("email-sign-in")
-      Button("Use a sign-in link") { model.cancelAuthentication(); usingLink = true; model.error = nil; model.appleTicket = nil; model.appleAuthorization = nil; model.sheet = .address }
-        .font(ShellType.action).frame(maxWidth: .infinity, minHeight: 44).accessibilityIdentifier("link-sign-in")
-    }.buttonStyle(.plain)
+      emailDoor.frame(maxWidth: .infinity, minHeight: 44)
+      if offline { Text("Sign-in needs a connection.").font(ShellType.meta).foregroundStyle(dim) }
+    }
+  }
+
+  var emailDoor: some View {
+    Button("Use email instead") {
+      model.cancelAuthentication(); usingLink = false; model.choose("email", screen: model.sheet?.telemetryName ?? "keep")
+      model.appleTicket = nil; model.appleAuthorization = nil; model.error = nil; model.sheet = .address
+    }.font(ShellType.action).foregroundStyle(brand).buttonStyle(.plain).disabled(offline).accessibilityIdentifier("email-sign-in")
   }
 
   @ViewBuilder var appleDoor: some View {
@@ -249,7 +271,7 @@ struct AccountSheet: View {
             }
           } label: {
             HStack { Image(systemName: "apple.logo"); Text("Continue with Apple").font(ShellType.action) }.frame(maxWidth: .infinity).frame(height: 52).foregroundStyle(colorScheme == .dark ? .black : .white).background(colorScheme == .dark ? .white : .black, in: Capsule())
-          }.accessibilityIdentifier("apple-sign-in")
+          }.disabled(offline).opacity(offline ? 0.4 : 1).accessibilityIdentifier("apple-sign-in")
         } else {
           SignInWithAppleButton(.continue) { request in
             appleNonce = UUID().uuidString + UUID().uuidString
@@ -272,6 +294,7 @@ struct AccountSheet: View {
               }
             }
           }.signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black).frame(height: 52).clipShape(Capsule())
+            .disabled(offline).opacity(offline ? 0.4 : 1)
         }
       }
   }
@@ -320,7 +343,8 @@ struct AccountSheet: View {
       if let error = model.error { errorText(error) }
       else { Text("It works once and lasts 15 minutes.").font(ShellType.meta).foregroundStyle(faint) }
       if model.appleTicket == nil {
-        Button("Use a sign-in link") { model.cancelAuthentication(); usingLink = true; model.code = ""; model.sheet = .address }.frame(minHeight: 44)
+        Button("Use a sign-in link") { model.cancelAuthentication(); usingLink = true; model.code = ""; model.sheet = .address }
+          .frame(minHeight: 44).accessibilityIdentifier("link-sign-in")
       }
       TimelineView(.periodic(from: .now, by: 1)) { context in
         let remaining = max(0, 30 - Int(context.date.timeIntervalSince(model.codeSentAt ?? .distantPast)))
@@ -331,88 +355,118 @@ struct AccountSheet: View {
   }
 
   var you: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      Text("One Windmill account keeps your journal and training together.").font(ShellType.subheadline).foregroundStyle(dim)
-      VStack(alignment: .leading, spacing: 16) {
-        HStack(spacing: 14) {
-          if model.account == nil { Image(systemName: "person.crop.circle").font(.system(size: 28)) }
-          else { Text(String(model.accountName.prefix(1))).font(ShellType.title).foregroundStyle(ShellPalette.onBrand).frame(width: 52, height: 52).background(brand, in: Circle()) }
-          VStack(alignment: .leading, spacing: 5) {
-            Text(model.account == nil ? "Not signed in" : model.accountName).font(ShellType.action)
-            Text(model.account == nil ? "Everything lives on this phone" : model.authPaused ? "Backup is paused. Sign in again to resume." : "Signed in with email").font(ShellType.meta).foregroundStyle(dim)
-          }
+    let signedIn = model.account != nil
+    let doors = model.canSignIn && (!signedIn || model.authPaused)
+    let apple = model.signInMethods.first { $0.kind == "apple" }
+    return List {
+      Section {
+        identityRow
+        if doors {
+          appleDoor.listRowSeparator(.hidden)
+          emailDoor.frame(maxWidth: .infinity, minHeight: 44).listRowSeparator(.hidden)
         }
-        if model.account == nil && model.canSignIn { authDoors }
-        if model.account != nil && model.authPaused && model.canSignIn {
-          Text("Sign in to the same account. Your writing stays on this phone.").font(ShellType.meta).foregroundStyle(dim)
-          authDoors
+        if model.updateRequired {
+          Button(action: openUpdate) {
+            HStack { Text("Get the update"); Spacer(); Image(systemName: "arrow.up.forward").accessibilityHidden(true) }
+              .foregroundStyle(brand).contentShape(Rectangle())
+          }.buttonStyle(.plain).accessibilityIdentifier("get-update")
         }
-      }.padding(.horizontal, 16).padding(.vertical, 14).frame(maxWidth: .infinity, alignment: .leading).background(card, in: RoundedRectangle(cornerRadius: 22))
-      if model.account == nil {
-        Text("ON THIS PHONE").font(ShellType.caption).foregroundStyle(faint)
-        let count = model.journal.room?.days.filter { $0.document.isWritten }.count ?? 0
-        fact("Journal", "\(count) \(count == 1 ? "page" : "pages")")
-        fact("Gym", model.gym.phoneSummary)
+      } footer: {
+        if doors && offline { Text("Sign-in needs a connection.") }
+        else if doors && signedIn { Text("Sign in to the same account. Your writing stays on this phone.") }
+      }.listRowBackground(card)
+      if !signedIn {
+        Section("On this phone") {
+          let pages = model.journal.room?.days.filter { $0.document.isWritten }.count ?? 0
+          factRow("Journal", pages == 0 ? "nothing yet" : "\(pages) \(pages == 1 ? "page" : "pages")", symbol: AppModel.Room.journal.symbol)
+          factRow("Gym", model.gym.phoneSummary, symbol: AppModel.Room.gym.symbol)
+        }.listRowBackground(card)
       } else {
         if !model.authPaused {
-          Text("How you sign in").textCase(.uppercase).font(ShellType.caption).foregroundStyle(faint).padding(.leading, 16).padding(.top, 10)
-          methodRows
-          if !model.signInMethods.contains(where: { $0.kind == "apple" }) { appleDoor }
-          Text(model.signInMethods.contains(where: { $0.kind == "apple" }) ? "Either one opens this account." : "Apple will open this same account.")
-            .font(ShellType.meta).foregroundStyle(dim).padding(.horizontal, 16)
+          Section {
+            factRow("Email", model.accountEmail, symbol: "envelope")
+            if let apple {
+              Button { model.askToRemoveApple() } label: {
+                factRow("Apple", apple.relay ? "Hide My Email" : apple.email, symbol: "apple.logo").contentShape(Rectangle())
+              }.buttonStyle(.plain).accessibilityIdentifier("apple-method")
+                .confirmationDialog("Remove Apple?", isPresented: Binding(get: { model.removingApple }, set: { if !$0 { model.cancelAppleRemoval() } }),
+                                    titleVisibility: .visible) {
+                  Button("Remove Apple", role: .destructive) { model.confirmAppleRemoval() }
+                  Button("Cancel", role: .cancel) { model.cancelAppleRemoval() }
+                } message: {
+                  Text("You'll sign in with \(model.accountEmail) instead. Apple won't open this account.")
+                }
+                .swipeActions { Button("Remove Apple", role: .destructive) { model.askToRemoveApple() } }
+            } else { appleDoor }
+          } header: { Text("How you sign in") } footer: {
+            Text(apple == nil ? "Apple will open this same account." : "Either one opens this account.")
+          }.listRowBackground(card)
         }
-        Text("YOUR DATA").font(ShellType.caption).foregroundStyle(faint)
-        fact("Backup", model.authPaused ? "Paused" : model.backup == "backed up" ? "Up to date" : "Not backed up yet")
-        Button("Sign out", role: .destructive) { model.performAuthentication { await model.beginSignOut() } }.frame(minHeight: 52).accessibilityIdentifier("sign-out")
+        Section("Your data") {
+          factRow("Backup", model.authPaused ? "Paused" : model.backup == "backed up" ? "Up to date" : "Not backed up yet", symbol: "checkmark.icloud")
+        }.listRowBackground(card)
       }
-      Button {
-        model.cancelAuthentication(); model.sheet = nil
-        model.gymSettingsRequested = true
-        model.openRoom(.gym)
-      } label: {
-        HStack { Text("Gym settings"); Spacer(); Image(systemName: "chevron.right") }
-          .padding(16).frame(minHeight: 52).background(card, in: RoundedRectangle(cornerRadius: 20))
-      }.buttonStyle(.plain).accessibilityIdentifier("you-gym-settings")
-      Button {
-        model.telemetry.event("onboarding_replayed", properties: ["presentation": "replay"])
-        aboutWindmill = true
-      } label: {
-        HStack { Text("About Windmill"); Spacer(); Image(systemName: "chevron.right") }
-          .padding(16).frame(minHeight: 52).background(card, in: RoundedRectangle(cornerRadius: 20))
-      }.buttonStyle(.plain).accessibilityIdentifier("about-windmill")
+      Section("Settings") {
+        Picker("Appearance", selection: Binding(get: { model.appearance }, set: { model.chooseAppearance($0) })) {
+          ForEach(AppModel.Appearance.allCases, id: \.self) { Text($0.title).tag($0) }
+        }.pickerStyle(.segmented).accessibilityIdentifier("appearance")
+        doorRow("Gym settings", identifier: "you-gym-settings") {
+          model.cancelAuthentication(); model.sheet = nil
+          model.gymSettingsRequested = true
+          model.openRoom(.gym)
+        }
+        doorRow("About Windmill", identifier: "about-windmill") {
+          model.telemetry.event("onboarding_replayed", properties: ["presentation": "replay"])
+          aboutWindmill = true
+        }
+      }.listRowBackground(card)
+      if signedIn {
+        Section {
+          Button(role: .destructive) { model.performAuthentication { await model.beginSignOut() } } label: {
+            Text("Sign out").foregroundStyle(ShellPalette.danger)
+          }.accessibilityIdentifier("sign-out")
+        }.listRowBackground(card)
+      }
+    }.listStyle(.insetGrouped).scrollContentBackground(.hidden).listRowSeparatorTint(ShellPalette.line)
+      .safeAreaInset(edge: .bottom) { if model.updateOpenFailed { UpdateFailure(model: model) } }
+  }
+
+  var identityRow: some View {
+    HStack(spacing: 14) {
+      if model.account == nil { Image(systemName: "person.crop.circle").font(.largeTitle).foregroundStyle(dim) }
+      else {
+        Text(String(model.accountName.prefix(1))).font(ShellType.title).foregroundStyle(ShellPalette.onBrand)
+          .frame(width: 52, height: 52).background(brand, in: Circle())
+      }
+      VStack(alignment: .leading, spacing: 3) {
+        Text(model.account == nil ? "Not signed in" : model.accountName).font(ShellType.action).foregroundStyle(ink)
+        Text(identityState).font(ShellType.subheadline).foregroundStyle(dim)
+      }
+    }.padding(.vertical, 4)
+  }
+
+  var identityState: String {
+    if model.account == nil { return "Everything lives on this phone" }
+    if model.updateRequired { return "Syncing paused · update Windmill" }
+    return model.authPaused ? "Backup is paused. Sign in again to resume." : "Signed in with email"
+  }
+
+  func factRow(_ name: String, _ value: String, symbol: String) -> some View {
+    LabeledContent {
+      Text(value).foregroundStyle(dim)
+    } label: {
+      Label { Text(name).foregroundStyle(ink) } icon: { Image(systemName: symbol).foregroundStyle(dim) }
     }
   }
 
-  var methodRows: some View {
-    let apple = model.signInMethods.first { $0.kind == "apple" }
-    return List {
-      methodRow("Email", model.accountEmail, symbol: "envelope")
-      if let apple {
-        Button { model.askToRemoveApple() } label: {
-          methodRow("Apple", apple.relay ? "Hide My Email" : apple.email, symbol: "apple.logo")
-        }.buttonStyle(.plain).accessibilityIdentifier("apple-method")
-          .confirmationDialog("Remove Apple?", isPresented: Binding(get: { model.removingApple }, set: { if !$0 { model.cancelAppleRemoval() } }),
-                              titleVisibility: .visible) {
-            Button("Remove Apple", role: .destructive) { model.confirmAppleRemoval() }
-            Button("Cancel", role: .cancel) { model.cancelAppleRemoval() }
-          } message: {
-            Text("You'll sign in with \(model.accountEmail) instead. Apple won't open this account.")
-          }
-          .swipeActions { Button("Remove Apple", role: .destructive) { model.askToRemoveApple() } }
-      }
-    }.listStyle(.plain).scrollDisabled(true).scrollContentBackground(.hidden)
-      .environment(\.defaultMinListRowHeight, methodRowHeight)
-      .frame(height: methodRowHeight * (apple == nil ? 1 : 2) + (apple == nil ? 0 : 1))
-      .background(card, in: RoundedRectangle(cornerRadius: 22)).clipShape(RoundedRectangle(cornerRadius: 22))
-  }
-
-  func methodRow(_ name: String, _ value: String, symbol: String) -> some View {
-    HStack(spacing: 12) {
-      Image(systemName: symbol).frame(width: 20).foregroundStyle(ink)
-      Text(name).font(ShellType.body); Spacer(minLength: 8)
-      Text(value).font(ShellType.subheadline).foregroundStyle(dim)
-    }.contentShape(Rectangle()).listRowBackground(card).listRowInsets(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
-      .listRowSeparatorTint(ShellPalette.line).alignmentGuide(.listRowSeparatorLeading) { _ in 32 }
+  func doorRow(_ title: String, identifier: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      HStack {
+        Text(title).foregroundStyle(ink)
+        Spacer()
+        Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(faint).accessibilityHidden(true)
+      }.contentShape(Rectangle())
+    }.buttonStyle(.plain).accessibilityIdentifier(identifier)
   }
 
   var signOut: some View {
@@ -450,11 +504,6 @@ struct AccountSheet: View {
       answeringSignOut = false
     }
   }
-
-  func fact(_ name: String, _ value: String) -> some View {
-    HStack { Text(name); Spacer(); Text(value).foregroundStyle(dim) }.padding(16).frame(minHeight: 52).background(card, in: RoundedRectangle(cornerRadius: 20))
-  }
-
 }
 
 struct AccountConfirmation: UIViewControllerRepresentable {

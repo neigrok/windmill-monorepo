@@ -12,10 +12,14 @@ struct WindmillApp: App {
   @UIApplicationDelegateAdaptor(OnboardingLaunchDelegate.self) var launchDelegate
   let settings: AppSettings
   let telemetry: AppTelemetry
+  let suite: String?
+  let preferences: UserDefaults
   init() {
     OfflineFixture.install()
     let settings = AppSettings()
     self.settings = settings
+    suite = settings.board.map { "board-\($0)" } ?? settings.scenario.map { "scenario-\($0)" }
+    preferences = suite.map { UserDefaults(suiteName: $0)! } ?? .standard
     #if DEBUG
     let debug = true
     #else
@@ -38,7 +42,10 @@ struct WindmillApp: App {
         } else if let failure {
           ZStack { ShellPalette.canvas.ignoresSafeArea(); Text(failure).foregroundStyle(ShellPalette.ink).padding(24) }
         } else { ShellPalette.canvas.ignoresSafeArea() }
-      }.preferredColorScheme(OnboardingFixture.appearance)
+      }.background {
+        WindowChrome(tint: windowTint, style: OnboardingFixture.appearance.map(UIUserInterfaceStyle.init)
+          ?? (model?.appearance ?? AppModel.Appearance(preferences: preferences)).style)
+      }
         .onOpenURL { url in
           launchLink = true; introduction = false
           if url.scheme == "windmill", url.host == "workout" { workoutLink = true; model?.openActivityWorkout() }
@@ -55,10 +62,7 @@ struct WindmillApp: App {
         guard !Task.isCancelled else { return }
         do {
           let runtime = try WorkoutActivityIntentHandler.model?.runtime ?? OfflineFixture.runtime(settings: settings, telemetry: telemetry) ?? AppRuntime(settings: settings, telemetry: telemetry)
-          let suite = settings.board.map { "board-\($0)" } ?? settings.scenario.map { "scenario-\($0)" }
-          let preferences = suite.map { UserDefaults(suiteName: $0)! } ?? .standard
-          if settings.scenario != nil, !settings.restoreBoard, let suite { preferences.removePersistentDomain(forName: suite) }
-          if !settings.restoreBoard, let board = settings.board { preferences.removePersistentDomain(forName: "board-\(board)") }
+          if !settings.restoreBoard, let suite { preferences.removePersistentDomain(forName: suite) }
           let authenticationTime = settings.appleFixture == "hello-failure" ? Date() : nil
           let created = try WorkoutActivityIntentHandler.model ?? AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: telemetry,
             authRetryNow: { authenticationTime ?? Date() })
@@ -67,7 +71,7 @@ struct WindmillApp: App {
           var onboardingFixture = false
           if let board = settings.board, !settings.restoreBoard {
             onboardingFixture = await OnboardingFixture.prepare(board, model: created)
-            if !onboardingFixture { await BoardFixture.prepare(board, model: created) }
+            if !onboardingFixture, await !ShellFixture.prepare(board, model: created) { await BoardFixture.prepare(board, model: created) }
           }
           try await OfflineFixture.prepare(created)
           if settings.board == nil && settings.scenario == nil || onboardingFixture {
@@ -78,6 +82,67 @@ struct WindmillApp: App {
         } catch { failure = "Couldn't open the journal on this phone. \(error.localizedDescription)" }
       }
     }
+  }
+}
+
+extension WindmillApp {
+  // The front room's accent: the shell's brand while You, Keep or Where to start? is in front.
+  var windowTint: UIColor {
+    guard let model, !introduction, !model.welcome, model.sheet == nil else { return ShellPalette.uiBrand }
+    return model.selectedRoom == .journal ? JournalPalette.uiLamp : GymPalette.uiAccent
+  }
+}
+
+extension AppModel.Appearance {
+  var style: UIUserInterfaceStyle {
+    switch self {
+    case .light: .light
+    case .dark: .dark
+    case .system: .unspecified
+    }
+  }
+}
+
+// The keyboard, selection, share sheet and status bar take the window's tint and appearance, outside the SwiftUI tree.
+struct WindowChrome: UIViewRepresentable {
+  let tint: UIColor
+  let style: UIUserInterfaceStyle
+  func makeUIView(context: Context) -> ChromeView { ChromeView() }
+  func updateUIView(_ view: ChromeView, context: Context) {
+    view.tint = tint; view.style = style
+    view.apply()
+  }
+  final class ChromeView: UIView {
+    var tint: UIColor?
+    var style = UIUserInterfaceStyle.unspecified
+    override func didMoveToWindow() { super.didMoveToWindow(); apply() }
+    func apply() {
+      guard let window else { return }
+      if window.tintColor != tint { window.tintColor = tint }
+      if window.overrideUserInterfaceStyle != style { window.overrideUserInterfaceStyle = style }
+    }
+  }
+}
+
+// Plain UIKit over whatever is in front: a view controller in the tree joins SwiftUI's focus graph and cycles on focus.
+enum UpdateRequiredAlert {
+  static func present(for model: AppModel) {
+    guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows)
+            .first(where: \.isKeyWindow), var front = window.rootViewController else { return }
+    while let next = front.presentedViewController, !next.isBeingDismissed { front = next }
+    guard !(front is UIAlertController) else { return }
+    if let transition = front.transitionCoordinator {
+      transition.animate(alongsideTransition: nil) { _ in if model.updateAlert { present(for: model) } }
+      return
+    }
+    let alert = UIAlertController(title: "Update required", message: "Update Windmill to keep syncing. Your work is saved on this phone.",
+                                  preferredStyle: .alert)
+    alert.addAction(UIAlertAction(title: "Keep working on this phone", style: .cancel) { _ in model.keepWorkingWithoutUpdate() })
+    let update = UIAlertAction(title: "Get the update", style: .default) { _ in
+      UIApplication.shared.open(AppSettings.updateDestination) { model.updateOpened($0) }
+    }
+    alert.addAction(update); alert.preferredAction = update
+    front.present(alert, animated: true)
   }
 }
 
@@ -100,8 +165,14 @@ struct RootScreen: View {
     Group {
       if model.runtime?.settings.board == "01-launch" { ShellPalette.canvas.ignoresSafeArea() }
       else if model.welcome { welcome.onAppear { model.screenViewed("welcome") } }
-      else if model.selectedRoom == .journal { JournalScreen(model: model.journal, app: model).environment(\.colorScheme, .dark) }
+      else if model.selectedRoom == .journal { JournalScreen(model: model.journal, app: model) }
       else { GymRoom(gym: model.gym, app: model) }
+    }
+    .onChange(of: model.updateAlert, initial: true) { _, show in if show { UpdateRequiredAlert.present(for: model) } }
+    .overlay(alignment: .bottom) {
+      if model.updateOpenFailed && model.sheet == nil {
+        UpdateFailure(model: model).padding(.bottom, RoomSpace.minimumTarget + 2 * RoomSpace.inset)
+      }
     }
     .background {
       #if DEBUG && targetEnvironment(simulator)
@@ -124,33 +195,10 @@ struct RootScreen: View {
             Text("WINDMILL").font(ShellType.caption).foregroundStyle(ShellPalette.inkDim).padding(.bottom, 8)
             Text("Where to start?").font(ShellType.display).foregroundStyle(ShellPalette.ink).padding(.bottom, 8)
             Text("Your journal and training, no account needed.").font(ShellType.body).foregroundStyle(ShellPalette.inkDim).padding(.bottom, 24)
-            Button { model.openJournal() } label: {
-              HStack {
-                VStack(alignment: .leading, spacing: 6) {
-                  RoundedRectangle(cornerRadius: 1).fill(JournalPalette.lamp).frame(width: 3, height: 24).padding(.bottom, 2)
-                  Text("Journal").font(ShellType.title)
-                  Text("Write tonight’s page").font(ShellType.subheadline).foregroundStyle(JournalPalette.inkDim)
-                }
-                Spacer()
-                Image(systemName: "arrow.right").foregroundStyle(JournalPalette.lamp).frame(width: 40, height: 40).background(JournalPalette.lampSoft, in: Circle())
-              }.foregroundStyle(JournalPalette.ink).padding(24).frame(maxWidth: .infinity, alignment: .leading).frame(minHeight: 140)
-                .background { ZStack { JournalPalette.canvas; LinearGradient(colors: [.clear, JournalPalette.lamp.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing) }.clipShape(RoundedRectangle(cornerRadius: 28)) }
-                .overlay(RoundedRectangle(cornerRadius: 28).stroke(JournalPalette.line, lineWidth: 1))
-            }.buttonStyle(.plain).accessibilityIdentifier("open-journal")
-              .padding(.horizontal, -8)
-            Button { model.openRoom(.gym) } label: {
-              HStack {
-                VStack(alignment: .leading, spacing: 6) {
-                  Image(systemName: "dumbbell").foregroundStyle(GymPalette.accent)
-                  Text("Gym").font(ShellType.title)
-                  Text("Log sets · see last time").font(ShellType.subheadline).foregroundStyle(GymPalette.inkDim)
-                }
-                Spacer()
-                Image(systemName: "arrow.right").foregroundStyle(GymPalette.accent)
-              }.foregroundStyle(GymPalette.ink).padding(24).frame(maxWidth: .infinity, alignment: .leading).frame(minHeight: 140)
-                .background(GymPalette.card, in: RoundedRectangle(cornerRadius: 28))
-                .overlay(RoundedRectangle(cornerRadius: 28).stroke(GymPalette.line, lineWidth: 1))
-            }.buttonStyle(.plain).accessibilityIdentifier("open-gym").padding(.horizontal, -8).padding(.top, 12)
+            VStack(spacing: 12) {
+              RoomDoor(room: .journal, line: "Write tonight’s page") { model.openJournal() }
+              RoomDoor(room: .gym, line: "Log sets · see last time") { model.openRoom(.gym) }
+            }.padding(.horizontal, -8)
             if model.canSignIn { Button("Sign in") { model.choose("keep", screen: "welcome"); model.sheet = .keep }.font(ShellType.action).foregroundStyle(ShellPalette.inkDim).frame(maxWidth: .infinity, minHeight: 52).padding(.top, 10) }
             if model.keptWork {
               Text("Changes you kept will return when you sign in to the same account.").font(ShellType.meta).foregroundStyle(ShellPalette.inkDim).padding(.top, 8)
@@ -159,6 +207,42 @@ struct RootScreen: View {
         }
       }
     }
+  }
+}
+
+struct RoomDoor: View {
+  let room: AppModel.Room
+  let line: String
+  let open: () -> Void
+  var body: some View {
+    let journal = room == .journal
+    let accent = journal ? JournalPalette.lamp : GymPalette.accent
+    let glow = journal ? JournalPalette.lampSoft : GymPalette.accentSoft
+    Button(action: open) {
+      HStack {
+        VStack(alignment: .leading, spacing: 6) {
+          Image(systemName: room.symbol).foregroundStyle(accent).accessibilityHidden(true)
+          Text(room.title).font(ShellType.title).foregroundStyle(journal ? JournalPalette.ink : GymPalette.ink)
+          Text(line).font(ShellType.subheadline).foregroundStyle(journal ? JournalPalette.inkDim : GymPalette.inkDim)
+        }
+        Spacer()
+        Image(systemName: "arrow.right").foregroundStyle(accent).frame(width: 40, height: 40).background(glow, in: Circle())
+      }.padding(24).frame(maxWidth: .infinity, alignment: .leading).frame(minHeight: 140)
+        .background {
+          ZStack { journal ? JournalPalette.canvas : GymPalette.card; LinearGradient(colors: [.clear, glow], startPoint: .topLeading, endPoint: .bottomTrailing) }
+            .clipShape(RoundedRectangle(cornerRadius: 28))
+        }
+        .overlay(RoundedRectangle(cornerRadius: 28).stroke(journal ? JournalPalette.line : GymPalette.line, lineWidth: 1))
+    }.buttonStyle(.plain).accessibilityIdentifier("open-" + room.rawValue)
+  }
+}
+
+struct UpdateFailure: View {
+  let model: AppModel
+  var body: some View {
+    RoomTransient(message: "Couldn't open the update. Try again.", room: .shell, actionTitle: "Dismiss", actionSymbol: "xmark",
+                  actionIdentifier: "update-failure-dismiss", action: model.dismissUpdateFailure)
+      .padding(.horizontal, RoomSpace.inset)
   }
 }
 
