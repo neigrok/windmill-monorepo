@@ -6,9 +6,20 @@ import SyncEngine
 import SyncIOS
 import SyncStore
 import UIKit
+#if DEBUG
+import struct SyncModelServer.ModelServer
+#endif
 
 // Simulator fixtures use the real engine actions and the authenticated REST boundary.
 enum CoachFixture {
+  nonisolated static var offline: Bool {
+    #if DEBUG && targetEnvironment(simulator)
+    ProcessInfo.processInfo.arguments.contains("-coach-offline")
+    #else
+    false
+    #endif
+  }
+
   static func rest(_ gym: GymModel) -> GymRESTClient {
     #if DEBUG && targetEnvironment(simulator)
     if ProcessInfo.processInfo.arguments.contains("-coach-fixture") {
@@ -45,6 +56,10 @@ enum CoachFixture {
         entries: [RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 3, weightKg: 90)]), RoutineEntry(exerciseId: ID("bench-press"))],
         summary: removing ? "Remove this routine." : "Three triples at 90 keeps the weekly tonnage and gives you a top set to push.", removing: removing))
       await runtime.engine.flushOnLeave(); gym.refresh()
+      // A removal Apply then waits on the log past the review's 15-second wait.
+      if ProcessInfo.processInfo.arguments.contains("-coach-removal-stall") {
+        server.state.withLock { $0.server.refuse(next: 1_000, code: .clockSkew) }
+      }
     } catch {
       let reason = failureReason(error)
       NSLog("Gym Coach fixture failed: %@", reason)
@@ -81,6 +96,9 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
   override func startLoading() {
     let path = request.url!.path
+    if CoachFixture.offline {
+      client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet)); return
+    }
     var body: [String: Any] = [:]
     if let data = request.httpBody { body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:] }
     if body.isEmpty, let stream = request.httpBodyStream {

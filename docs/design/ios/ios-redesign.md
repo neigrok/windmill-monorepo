@@ -498,7 +498,11 @@ is pietra, not iOS grey. The Workout rendering tests that pin the divergent valu
 
 ### 7.3 Coach (§6)
 
-Menu instead of the dialog; the seven removals; the composer; the receipt row; the card.
+Menu instead of the dialog; the seven removals; the composer; the receipt row; the card. The
+keyboard's own bar cannot carry *Done* on iOS 26 (`consistency.md` 6w), so while typing *Done* is a
+36 pt glass `keyboard.chevron.compact.down` circle above the composer's trailing edge, the slot
+*Jump to latest* takes otherwise; Send, a swipe down the conversation or a tap on it also put the
+keyboard away.
 
 ### 7.4 `RoomTransient`, `ActionBand`, `GymPage` (§5)
 

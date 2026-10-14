@@ -47,8 +47,8 @@ operation, `failure_kind`, optional numeric status label and `duration_ms`. Dura
 clock through response consumption and decoding. Sync outcomes also cover application of the reply
 to the local store. Expected statuses 400, 401, 403, 404, 409, 410, 422 and 429 are product/API metrics,
 not Sentry Issues. Coach HTTP or SSE `503 ask-not-configured` is an expected unavailable-deployment
-refusal: `api_request_failed` carries status `503`, `gym_ask_outcome` carries `absent`, and the composer
-offers the unavailable stance without a retry. Offline/DNS/connect failures are metrics; cancellation
+refusal: `api_request_failed` carries status `503`, `gym_ask_outcome` carries `absent`, and the room
+states the unavailable stance with no composer and no retry. Offline/DNS/connect failures are metrics; cancellation
 is quiet. Timeouts, TLS,
 unexpected HTTP responses and decoding failures are reportable. No URL, dynamic identifier, query
 string, authorization header or response body enters telemetry.
@@ -88,11 +88,11 @@ action `dismiss_ink` once when writing or a tap lifts it; no ink replay action i
 | Choices | `first_run_choice` | screen; action: open_journal, open_gym, dismiss_ink, write, done_writing, keep, close, email, back, change_email, resend, add, discard, cancel, sign_out, use_account, create_account, remove_apple, retry |
 | Rooms | `room_switched` | room: journal, gym; emitted after switching |
 | Adoption | `room_adoption_answered` | room: journal, gym; action: add, discard; no counts or identifiers |
-| Gym screens | `gym_screen_viewed` | screen: routines, routine, routine_editor, movement, log, session, fix_set, record, bodyweight, weigh_in, session_share, coach, history, notes, note, settings, review, connected_log, workout |
+| Gym screens | `gym_screen_viewed` | screen: routines, routine, routine_editor, movement, log, session, fix_set, record, bodyweight, weigh_in, session_share, coach, history, notes, note, settings, review, connected_log, sources (What Coach read), workout |
 | Live Activity | `gym_activity_set_logged`, `gym_activity_offer_refused` | no properties; accepted durable set or stale offer refusal |
 | Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged`, `gym_routine_saved` | screen: workout; outcome: ok, and refused for a Finish the phone cannot queue; routine action: create, update; storage: device, server |
-| Coach | `gym_ask_started`, `gym_ask_outcome` | screen: coach; outcome: answered, cancelled, failed, refused, capped, fresh, absent; cap: daily, ceiling; duration_ms |
-| Proposals | `gym_proposal_outcome` | screen: review; action: apply, dismiss; outcome: decided, failed |
+| Coach | `gym_ask_started`, `gym_ask_outcome` | screen: coach; outcome: answered, cancelled, failed, refused, capped, fresh, absent, and offline for a send the phone held back with no network; cap: daily, ceiling; duration_ms |
+| Proposals | `gym_proposal_outcome` | screen: review; action: apply, dismiss, retry; outcome: decided, failed, stalled (unanswered after 15 seconds), ok (Retry pushed the decision again) |
 | Gym actions | `gym_action`, `gym_undo` | screen: gym; outcome: ok, refused, failed; no action payloads |
 | Log moments | `gym_moment_opened` | no properties; a new-best moment on the log expanded in place |
 | Import recovery | `gym_import_recovery` | action: inspect, fix, keep, retry, discard; reason: session-open, session-overlap, id-taken, bad-instant, too-many-sets, invalid-set, unknown-exercise, session-finished, unsent, other; outcome (a commit or a close only): ok, refused, failed, cancelled |
@@ -138,7 +138,8 @@ attachments are unchanged. These local identifiers remain outside event properti
 Gym engine notices retain typed refusals for local UI only. No movement/routine names, set values,
 notes, Coach messages, counts, IDs or REST bodies enter telemetry.
 Removal receipts emit the same bounded proposal outcome when their durable result is observed,
-including after relaunch. Reading their local journal reports through `gym_read`; failure to
+including after relaunch. A decision the log has not answered after 15 seconds emits its action
+with outcome `stalled`; Retry pushes the queued command again and emits action `retry`. Reading their local journal reports through `gym_read`; failure to
 acknowledge a shown receipt reports through `gym_action` and leaves it available for retry.
 
 Gym adoption uses the verified account's explicit per-product Add/Discard decision. Finished
