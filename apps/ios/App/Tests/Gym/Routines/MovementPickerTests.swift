@@ -146,7 +146,7 @@ import SyncModelServer
 
   @Test func firstWorkoutKeepsItsWelcomeAndFourSetsAcrossRelaunch() throws {
     let (harness, gym) = fixture()
-    let picker = MovementPicker(gym: gym, selected: [], includesTargets: false) { _ in }
+    let picker = MovementPicker(gym: gym, purpose: .workout)
     #expect(picker.firstSession)
     let id = try #require(gym.startWorkout())
     #expect(picker.firstSession && gym.workout.selected == nil)
@@ -160,7 +160,7 @@ import SyncModelServer
     #expect(gym.workout.logSet() && picker.firstSession)
 
     let reopened = GymModel(runner: harness.runner), workout = reopened.workout
-    let restoredPicker = MovementPicker(gym: reopened, selected: [], includesTargets: false) { _ in }
+    let restoredPicker = MovementPicker(gym: reopened, purpose: .workout)
     #expect(restoredPicker.firstSession && workout.sessionId == id)
     #expect(workout.sets.map(\.weightKg) == [100, 100, 102.5, 80])
     #expect(workout.sets.map(\.reps) == [5, 5, 5, 8])
@@ -180,19 +180,16 @@ import SyncModelServer
     #expect(failed == MovementPickerOptions.Result(six: [], matches: [], unread: MovementPickerOptions.catalogueUnread, empty: nil))
   }
 
-  @Test func creationOffersOnlyTheFourAndroidEquipmentChoicesAndRequiresTargetsInBuilder() {
+  @Test func creationOffersOnlyTheFourAndroidEquipmentChoicesAndAcceptsOpenTargets() {
     #expect(MovementCreationDraft.equipmentChoices == ["barbell", "dumbbell", "machine", "bodyweight"])
     var draft = MovementCreationDraft(id: ID("movement1"), name: " \n")
-    #expect(draft.problem(includesTargets: true) == "Name it to save it.")
+    #expect(draft.problem == "Name it to save it.")
     draft.name = "Custom"
-    #expect(draft.problem(includesTargets: true) == "Choose at least one set.")
-    #expect(draft.problem(includesTargets: false) == nil)
-    draft.sets = []
-    #expect(draft.problem(includesTargets: true) == "Choose at least one set.")
+    #expect(draft.problem == nil)
     draft.sets = [SetTarget()]
-    #expect(draft.problem(includesTargets: true) == nil)
+    #expect(draft.problem == nil)
     draft.equipment = "cable"
-    #expect(draft.problem(includesTargets: true) == "check the movement name and equipment")
+    #expect(draft.problem == "check the movement name and equipment")
   }
 
   @Test func creationRetainsDraftAndIdentityOnCommitFailureThenRetryAddsTheTargets() {
@@ -201,24 +198,25 @@ import SyncModelServer
     var draft = MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: "  Custom press  ", equipment: "machine", sets: targets)
     let identity = draft.id
     harness.failNextCommit()
-    #expect(gym.createMovement(&draft, includesTargets: true) == nil)
+    #expect(gym.createMovement(&draft) == nil)
     #expect(draft.name == "  Custom press  " && draft.equipment == "machine" && draft.sets == targets && draft.id == identity)
     #expect(draft.refusal == "Gym could not save this change. Try again." && gym.catalogue.find(identity) == nil)
-    #expect(gym.createMovement(&draft, includesTargets: true) == RoutineEntry(exerciseId: identity, sets: targets))
+    #expect(gym.createMovement(&draft) == RoutineEntry(exerciseId: identity, sets: targets))
     #expect(draft.refusal == nil && gym.catalogue.find(identity) == draft.exercise)
     harness.sync(); gym.refresh()
     #expect(gym.catalogue.exercises.filter { $0.id == identity }.count == 1)
     #expect(harness.server.rows(Gym.scope, of: nil).isEmpty)
   }
 
-  @Test func creationWithOpenTargetsAndDuringAccountChangeWritesNothing() {
+  @Test func creationDuringAccountChangeWritesNothingAndOpenTargetsCreateAnOpenEntry() {
     let (_, gym) = fixture()
-    var draft = MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: "Custom")
-    #expect(gym.createMovement(&draft, includesTargets: true) == nil && draft.refusal == "Choose at least one set.")
+    var draft = MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: " ")
+    #expect(gym.createMovement(&draft) == nil && draft.refusal == "Name it to save it.")
+    draft.name = "Custom"
     gym.accountChanging = true
-    #expect(gym.createMovement(&draft, includesTargets: false) == nil)
+    #expect(gym.createMovement(&draft) == nil)
     #expect(draft.name == "Custom" && draft.refusal == "Wait for the account change to finish." && gym.catalogue.find(draft.id) == nil)
     gym.accountChanging = false
-    #expect(gym.createMovement(&draft, includesTargets: false) == RoutineEntry(exerciseId: draft.id))
+    #expect(gym.createMovement(&draft) == RoutineEntry(exerciseId: draft.id) && draft.refusal == nil)
   }
 }

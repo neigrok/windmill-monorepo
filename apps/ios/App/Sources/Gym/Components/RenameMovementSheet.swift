@@ -67,8 +67,8 @@ struct RenameMovementSheet: View {
           TextField("Name", text: $name).focused($nameFocused).autocorrectionDisabled().textInputAutocapitalization(.words)
             .disabled(saving).accessibilityIdentifier("gym-rename-movement-name")
           if let counter = MovementName.counter(name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
-          if let problem = refusal ?? MovementName.problem(name), !saving {
-            Text(problem).foregroundStyle(GymPalette.alarm).accessibilityIdentifier("gym-rename-movement-refusal")
+          if let refusal, !saving {
+            Text(refusal).foregroundStyle(GymPalette.alarm).accessibilityIdentifier("gym-rename-movement-refusal")
           }
         } footer: { Text("Renames it everywhere; the old name still finds it.") }
           .listRowBackground(GymPalette.card)

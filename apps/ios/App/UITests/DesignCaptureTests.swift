@@ -81,19 +81,6 @@ import XCTest
     capture("gym-you-signed-out-\(appearance)", app)
     closeSheet(app)
     roomMenuOpen("gym-room-menu-open-\(appearance)", app, current: "gym")
-    let signIn = app.buttons["routines-sign-in"]
-    if signIn.waitForExistence(timeout: 5) {
-      signIn.tap()
-      XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 5))
-      capture("gym-keep-sheet-\(appearance)", app)
-      app.buttons["link-sign-in"].tap()
-      XCTAssertTrue(app.textFields["sign-in-link"].waitForExistence(timeout: 5))
-      capture("shell-sign-in-link-\(appearance)", app)
-      app.buttons["Use email instead"].tap()
-      XCTAssertTrue(app.textFields["email-address"].waitForExistence(timeout: 5))
-      capture("gym-sign-in-email-address-\(appearance)", app)
-      closeSheet(app)
-    } else { XCTFail("routines-sign-in door missing on the empty Routines tab") }
     app.tabBars.buttons["The log"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-log"].waitForExistence(timeout: 10))
     capture("gym-log-empty-signed-out-\(appearance)", app, settle: 1.5)
@@ -129,6 +116,10 @@ import XCTest
     XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons["routine-proposal"].waitForExistence(timeout: 10))
     capture("gym-routines-populated-signed-in-\(appearance)", app, settle: 1.5)
+    app.buttons["routine-coach-fixture-routine"].tap()
+    XCTAssertTrue(app.buttons["routine-history-coach-fixture-session"].waitForExistence(timeout: 10))
+    capture("gym-routine-detail-history-\(appearance)", app)
+    back(app)
     app.tabBars.buttons["The log"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-log"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons["gym-log-session-coach-fixture-session"].waitForExistence(timeout: 10))
@@ -363,6 +354,8 @@ import XCTest
   func routines(_ appearance: String) {
     let app = launch("shell-last-room", appearance: appearance)
     openGymFromJournal(app)
+    XCTAssertTrue(app.staticTexts["No routines yet"].waitForExistence(timeout: 5))
+    capture("gym-routines-empty-\(appearance)", app)
     app.buttons["new-routine"].tap()
     let name = app.textFields["routine-name"]
     XCTAssertTrue(name.waitForExistence(timeout: 5))
@@ -391,10 +384,16 @@ import XCTest
     XCTAssertTrue(app.navigationBars["Edit routine"].waitForExistence(timeout: 5))
     capture("gym-routine-edit-\(appearance)", app)
     app.navigationBars["Edit routine"].buttons["Cancel"].tap()
-    app.buttons["routine-detail-movement-bench-press"].tap()
-    XCTAssertTrue(app.buttons["rename-movement"].waitForExistence(timeout: 5))
-    capture("gym-routine-movement-\(appearance)", app)
-    app.buttons["rename-movement"].tap()
+    back(app)
+    XCTAssertTrue(app.buttons["Movements"].waitForExistence(timeout: 5))
+    capture("gym-routines-one-routine-\(appearance)", app)
+    app.buttons["Movements"].tap()
+    XCTAssertTrue(app.navigationBars["Movements"].waitForExistence(timeout: 5))
+    capture("gym-movements-\(appearance)", app)
+    app.buttons["gym-movement-bench-press"].tap()
+    XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
+    if app.buttons["Rename"].waitForExistence(timeout: 2) { app.buttons["Rename"].tap() }
+    else { app.navigationBars.buttons["More"].tap(); app.buttons["Rename movement"].tap() }
     XCTAssertTrue(app.textFields["gym-rename-movement-name"].waitForExistence(timeout: 5))
     capture("gym-routine-rename-movement-sheet-\(appearance)", app)
   }
