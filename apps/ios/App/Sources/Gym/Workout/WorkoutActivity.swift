@@ -258,7 +258,7 @@ extension WorkoutState {
       plannedWorkingSetCount: workout.entry?.sets?.count, startedAt: Date(timeIntervalSince1970: (Double(session.startedAt.ms) - correction) / 1000),
       lastSetAt: latest.map { Date(timeIntervalSince1970: (Double($0.ms) - correction) / 1000) },
       staleAt: Date(timeIntervalSince1970: (Double(last.ms) - correction + Double(SessionRules.staleAfterMs)) / 1000),
-      unsyncedSetCount: gym.workoutUnsentSets.count, offer: offer)
+      unsentSetCount: gym.unsentSets(workout.sets).count, offer: offer)
     return ActivityContent(state: state, staleDate: state.staleAt)
   }
   func observe(_ value: Activity<WorkoutActivityAttributes>) {

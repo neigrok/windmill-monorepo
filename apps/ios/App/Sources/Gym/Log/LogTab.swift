@@ -80,7 +80,7 @@ struct LogTab: View {
   func head(_ progress: StatsProgress?) -> some View {
     Section {
       NavigationLink { BodyweightScreen(gym: gym) } label: {
-        MovementRow(title: "Bodyweight", meta: gym.bodyweight?.reading.map { "\(Readout.weight($0.entry.kg)) kg · \(LogPresentation.ago(days: $0.daysAgo))" })
+        GymRow(title: "Bodyweight", meta: gym.bodyweight?.reading.map { "\(Readout.weight($0.entry.kg)) kg · \(Readout.ago(days: $0.daysAgo))" })
       }.accessibilityIdentifier("gym-bodyweight-door")
     } footer: {
       if let progress, let log = gym.log, !gym.readFailed, let weeks = progress.consistency(now: log.moment.now, zone: log.moment.zone) {
@@ -123,7 +123,7 @@ struct LogTab: View {
           Text(facts).font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim)
         }.frame(maxWidth: .infinity, alignment: .leading)
         HStack(spacing: RoomSpace.related) {
-          if gym.logSessionIsUnsent(session.id) {
+          if gym.sessionIsUnsent(session.id) {
             Image(systemName: "iphone").font(.footnote).foregroundStyle(GymPalette.inkDim).accessibilityLabel("On this phone")
           }
           Text(LogPresentation.dayLabel(LocalDay(session.startedAt, in: moment.zone), today: moment.today)).font(.footnote).foregroundStyle(GymPalette.inkDim)
@@ -145,18 +145,18 @@ struct LogTab: View {
     let value = point.fact.estimate!.e1rm
     let change = previous.map {
       "up \(Readout.estimatedWeight(value - $0.fact.estimate!.e1rm)) kg since \(LogPresentation.since(LocalDay($0.startedAt, in: zone), best: LocalDay(point.startedAt, in: zone)))"
-    } ?? LogPresentation.brief(LogPresentation.date(point.startedAt))
+    } ?? LogPresentation.brief(point.startedAt.date)
     let window = progress?.movement(id).window(now: point.startedAt, zone: zone)
     return DisclosureGroup(isExpanded: Binding(get: { expanded == entry.id }, set: { open in
       expanded = open ? entry.id : nil
       if open { gym.telemetry.event("gym_moment_opened", properties: [:]) }
     })) {
       if let window, window.hasChart(in: zone), let first = window.logPlotPoints.first {
-        LogDatedChart(points: window.logPlotPoints, from: first.date, through: LogPresentation.date(point.startedAt), series: .strength,
+        LogDatedChart(points: window.logPlotPoints, from: first.date, through: point.startedAt.date, series: .strength,
                       bestID: window.best?.id.description, compact: true)
       }
       if let window {
-        Text("Last 12 weeks · \(Readout.count(window.sessions.count, "session"))").font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim)
+        Text("Last 12 weeks · \(GymCount.of(window.sessions.count, "session"))").font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim)
       }
       NavigationLink { MovementRecordScreen(gym: gym, exerciseID: id) } label: { Text("Open record").foregroundStyle(GymPalette.ink) }
         .accessibilityIdentifier("gym-open-record")

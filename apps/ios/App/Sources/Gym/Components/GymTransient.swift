@@ -7,7 +7,7 @@ struct GymTransient: View {
     var text: String {
       switch self {
       case .local(let text), .error(let text), .notice(_, let text), .held(let text): text
-      case .undo(_, let count): count == 1 ? "Change deleted" : "\(count) changes deleted"
+      case .undo(_, let count): count == 1 ? "Change deleted" : GymCount.of(count, "change") + " deleted"
       }
     }
   }
@@ -78,8 +78,6 @@ struct GymTransient: View {
                     actionSymbol: title == "Dismiss message" ? "xmark" : nil,
                     actionIdentifier: undo ? undoIdentifier : nil, action: action(shown))
       .accessibilityIdentifier(undo ? undoIdentifier + "-band" : errorIdentifier)
-      .padding(.horizontal, RoomSpace.inset)
-      .padding(.vertical, RoomSpace.small)
     }
   }
 }

@@ -133,14 +133,9 @@ struct CoachHistoryScreen: View {
               if coach.saved.threadId == row.id, coach.saved.thread != nil { dismiss() }
             }
           } label: {
-            HStack(spacing: RoomSpace.related) {
-              VStack(alignment: .leading, spacing: RoomSpace.small) {
-                Text(row.title.isEmpty ? "Conversation" : row.title).font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink).lineLimit(2)
-                let meta = [row.outcome?.line, row.askedAt > 0 ? CoachCopy.day(row.askedAt) : nil].compactMap { $0 }
-                if !meta.isEmpty { Text(meta.joined(separator: " · ")).font(.subheadline).monospacedDigit().foregroundStyle(GymPalette.inkDim) }
-              }.frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget, alignment: .leading)
-              if opening == row.id { ProgressView() }
-            }
+            let meta = [row.outcome?.line, row.askedAt > 0 ? CoachCopy.day(row.askedAt) : nil].compactMap { $0 }
+            GymRow(title: row.title.isEmpty ? "Conversation" : row.title, meta: meta.isEmpty ? nil : meta.joined(separator: " · "),
+                   trailing: opening == row.id ? .progress : nil, lineLimit: 2)
           }.disabled(opening != nil || coach.asking)
             .swipeActions { Button("Delete", role: .destructive) { history.remove(row) } }
             .contextMenu { Button("Delete conversation", role: .destructive) { history.remove(row) } }

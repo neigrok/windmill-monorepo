@@ -8,7 +8,7 @@ import SyncEngine
 import SyncSchema
 import SyncStore
 
-// UI tracks use this engine-backed model and add GymModel extensions only in their own Routines, Log, Coach or Workout folders.
+// The room's engine-backed model. An extension one track reads lives in that track's folder; a rule several read lives here.
 @Observable @MainActor
 final class GymModel {
   let runner: ActionRunner
@@ -66,14 +66,46 @@ final class GymModel {
   }
   var hasData: Bool { personalCounts.values.contains { $0 > 0 } }
   var phoneSummary: String {
-    let kinds = [(Routine.type, "routine", "routines"), (Session.type, "workout", "workouts"),
-                 (WeighIn.type, "weigh-in", "weigh-ins"), (Note.type, "note", "notes"),
-                 (Exercise.type, "custom movement", "custom movements")]
-    let lines = kinds.compactMap { type, singular, plural -> String? in
+    let kinds = [(Routine.type, "routine"), (Session.type, "workout"), (WeighIn.type, "weigh-in"), (Note.type, "note"),
+                 (Exercise.type, "custom movement")]
+    let lines = kinds.compactMap { type, noun -> String? in
       let count = personalCounts[type] ?? 0
-      return count == 0 ? nil : "\(count) \(count == 1 ? singular : plural)"
+      return count == 0 ? nil : GymCount.of(count, noun)
     }
     return lines.isEmpty ? "nothing yet" : lines.joined(separator: " · ")
+  }
+
+  // The sets the log has not confirmed as this phone holds them: absent there, hidden or changed since.
+  func unconfirmedSets(_ sets: [TrainingSet]) -> Set<ID<TrainingSet>> {
+    if isAnonymous { return Set(sets.map(\.id)) }
+    do {
+      return try runner.read(Gym.scope) { read in
+        var pending = Set<ID<TrainingSet>>()
+        for set in sets {
+          guard let confirmed = try read.confirmed(TrainingSet.self, set.id), confirmed.isVisible,
+                try TrainingSet(Fields(confirmed)) == set else { pending.insert(set.id); continue }
+        }
+        return pending
+      }
+    } catch { report("gym_read", error); return Set(sets.map(\.id)) }
+  }
+
+  // Signed out nothing is unsent: there is no account to send to. Signed in, what the log has not confirmed is unsent
+  // only while something holds it back — no connection, a paused session or its own refused push — never in flight.
+  func unsentSets(_ sets: [TrainingSet]) -> Set<ID<TrainingSet>> {
+    guard !isAnonymous else { return [] }
+    return unconfirmedSets(sets).filter { heldBack($0.ref) }
+  }
+
+  // A workout is unsent while its own record or any of its sets is.
+  func sessionIsUnsent(_ id: ID<Session>) -> Bool {
+    guard !isAnonymous else { return false }
+    if heldBack(id.ref), (try? runner.read(Gym.scope) { try $0.confirmed(Session.self, id) == nil }) == true { return true }
+    return !unsentSets(log?.sets(session: id) ?? []).isEmpty
+  }
+
+  func heldBack(_ record: RecordRef) -> Bool {
+    authPaused || runtime?.engine.status.online == false || runtime?.engine.status.failedPushes[Gym.scope]?.contains(record.key) == true
   }
 
   func start() {

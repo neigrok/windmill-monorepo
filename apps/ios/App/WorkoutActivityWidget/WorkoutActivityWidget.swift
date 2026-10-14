@@ -68,7 +68,7 @@ struct WorkoutActivityDetails: View {
       HStack(alignment: .bottom) {
         VStack(alignment: .leading, spacing: 2) {
           if isStale { Text("Open workout to continue") }
-          if state.unsyncedSetCount > 0 { Text("\(state.unsyncedSetCount) not sent yet") }
+          if state.unsentSetCount > 0 { Text("\(state.unsentSetCount) not sent yet") }
         }.font(.caption).foregroundStyle(.secondary)
         Spacer(minLength: 8)
         if !isStale, let offer = state.offer {

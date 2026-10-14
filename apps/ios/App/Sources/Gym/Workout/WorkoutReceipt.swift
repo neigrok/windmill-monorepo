@@ -43,9 +43,7 @@ import SyncCore
   }
   // Each movement once, in the order its first set was logged, with its working sets — or every set when none was working.
   var performed: [(exerciseId: ID<Exercise>, reading: String)] {
-    var ids: [ID<Exercise>] = []
-    for set in sets where !ids.contains(set.exerciseId) { ids.append(set.exerciseId) }
-    return ids.map { id in
+    SetRow.movements(sets).map { id in
       let all = sets.filter { $0.exerciseId == id }, working = all.filter { $0.kind == "working" }
       return (id, Readout.target((working.isEmpty ? all : working).map { SetTarget(reps: $0.reps, weightKg: $0.weightKg) }))
     }
@@ -196,13 +194,13 @@ struct WorkoutReceipt: View {
           }
           Section("Performed") {
             ForEach(receipt.performed, id: \.exerciseId) { movement in
-              MovementRow(title: gym.catalogue.find(movement.exerciseId)?.name ?? "Movement", trailing: .fact(movement.reading))
+              GymRow(title: gym.catalogue.find(movement.exerciseId)?.name ?? "Movement", trailing: .fact(movement.reading))
             }
           }
           if let against = receipt.review?.against {
             Section(against.title) {
               ForEach(Array(against.movements.enumerated()), id: \.offset) { _, movement in
-                MovementRow(title: gym.catalogue.find(ID(RecordID(movement.exerciseId)))?.name ?? "Movement",
+                GymRow(title: gym.catalogue.find(ID(RecordID(movement.exerciseId)))?.name ?? "Movement",
                             meta: (Set(against.movements.map(\.source)).count > 1 ? "\(movement.source): " : "") + movement.detail)
               }
             }
@@ -222,7 +220,7 @@ struct WorkoutReceipt: View {
             }
           }
         }.listRowBackground(GymPalette.card)
-      }.modifier(GymPage()).navigationTitle(receipt.title).navigationSubtitleIfAvailable(receipt.subtitle)
+      }.modifier(GymPage()).roomTitle(receipt.title, subtitle: receipt.subtitle)
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         .safeAreaInset(edge: .bottom) { band }
     }.modifier(GymPage()).presentationDetents([.large])
@@ -238,22 +236,15 @@ struct WorkoutReceipt: View {
       if receipt.reviewFailed {
         RoomTransient(message: "The log didn’t answer. The workout is saved.", room: .gym, actionTitle: "Try again",
                       actionIdentifier: "workout-review-retry") { Task { await receipt.loadReview(gym) } }
-          .padding(.horizontal, RoomSpace.inset).padding(.top, RoomSpace.small)
       }
       if gym.isAnonymous {
-        ActionBand(title: "Keep this log", room: .gym) { gym.workout.handoff = .keep; dismiss() }
-        footer("This log is only on this phone.")
+        ActionBand(title: "Keep this log", room: .gym, footer: "This log is only on this phone.") { gym.workout.handoff = .keep; dismiss() }
       } else if gym.workout.coachAvailable && !gym.authPaused {
-        ActionBand(title: "Share with Coach", room: .gym, disabled: gym.accountTransition, actionIdentifier: "workout-share-coach") {
+        ActionBand(title: "Share with Coach", room: .gym, disabled: gym.accountTransition, actionIdentifier: "workout-share-coach",
+                   footer: "Sends Coach one line — “Check my last session.” — and opens the answer.") {
           gym.workout.handoff = .coach; dismiss()
         }
-        footer("Sends Coach one line — “Check my last session.” — and opens the answer.")
       }
     }
-  }
-
-  func footer(_ line: String) -> some View {
-    Text(line).font(.footnote).foregroundStyle(GymPalette.inkDim).multilineTextAlignment(.center)
-      .padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.related)
   }
 }

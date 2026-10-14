@@ -18,8 +18,8 @@ struct WorkoutAssembly: View {
                 if workout.selected == id { dismiss() }
               } label: {
                 let sets = workout.sets.filter { $0.exerciseId == id }
-                MovementRow(title: workout.gym.catalogue.find(id)?.name ?? "Movement",
-                            meta: sets.isEmpty ? "Nothing logged yet" : String(AttributedString(localized: "^[\(sets.count) set](inflect: true) logged").characters),
+                GymRow(title: workout.gym.catalogue.find(id)?.name ?? "Movement",
+                            meta: sets.isEmpty ? "Nothing logged yet" : GymCount.of(sets.count, "set") + " logged",
                             trailing: workout.selected == id ? .check : nil)
               }
               .accessibilityAddTraits(workout.selected == id ? .isSelected : [])
@@ -43,9 +43,9 @@ struct WorkoutAssembly: View {
         }.listRowBackground(GymPalette.card)
       }.modifier(GymPage()).navigationTitle("This session").navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
-          let transient = GymTransient(gym: workout.gym, message: workout.message, dismiss: { workout.message = nil },
-                                       noticeMessage: workout.gym.workoutNotice, retry: { workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
-          if transient.shown != nil { transient.modifier(BoundedBand()) }
+          GymTransient(gym: workout.gym, message: workout.message, dismiss: { workout.message = nil }, noticeMessage: workout.gym.workoutNotice,
+                       retry: { workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
+            .modifier(BoundedBand())
         }
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
@@ -61,9 +61,9 @@ struct WorkoutMovementPicker: View {
   @Environment(\.dismiss) private var dismiss
   var body: some View {
     NavigationStack {
-      MovementPicker(gym: gym, selected: Set(workout.walk.order), includesTargets: false, onBuildRoutine: {
-        if gym.hideWorkout() { workout.handoff = .writtenProgram }
-      }) { workout.add($0.exerciseId); dismiss() }
+      MovementPicker(gym: gym, purpose: .workout, selected: Set(workout.walk.order),
+                     onBuildRoutine: { if gym.hideWorkout() { workout.handoff = .writtenProgram } },
+                     onSelect: { workout.add($0.exerciseId); dismiss() })
     }.modifier(GymPage()).presentationDetents([.large])
   }
 }

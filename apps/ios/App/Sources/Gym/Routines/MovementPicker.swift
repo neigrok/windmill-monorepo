@@ -161,12 +161,6 @@ struct MovementPicker: View {
     _pickingAccount = State(initialValue: gym.account); _pickingAnonymous = State(initialValue: gym.isAnonymous)
   }
 
-  // The workout's picker sheet still asks by includesTargets.
-  init(gym: GymModel, selected: Set<ID<Exercise>>, includesTargets: Bool, onBuildRoutine: (() -> Void)? = nil,
-       onSelect: @escaping (RoutineEntry) -> Void) {
-    self.init(gym: gym, purpose: includesTargets ? .routine : .workout, selected: selected, onBuildRoutine: onBuildRoutine, onSelect: onSelect)
-  }
-
   var firstSession: Bool { MovementPickerOptions.firstSession(log: gym.log, routines: gym.routines, readFailed: gym.readFailed) }
 
   var body: some View {
@@ -261,13 +255,13 @@ struct MovementPicker: View {
   @ViewBuilder func movementRow(_ row: MovementPickerOptions.Row) -> some View {
     if purpose == .browse {
       NavigationLink { MovementRecordScreen(gym: gym, exerciseID: row.id) } label: {
-        MovementRow(title: row.exercise.name, meta: row.line)
+        GymRow(title: row.exercise.name, meta: row.line)
       }.accessibilityIdentifier("gym-movement-\(row.id.record.string ?? "")")
     } else {
       Button {
         onSelect(RoutineEntry(exerciseId: row.id))
       } label: {
-        MovementRow(title: row.exercise.name, meta: row.line, trailing: row.selected ? .check : nil)
+        GymRow(title: row.exercise.name, meta: row.line, trailing: row.selected ? .check : nil)
       }
       .disabled(row.selected || gym.accountTransition)
       .accessibilityElement(children: .combine)
@@ -294,12 +288,6 @@ struct CreateMovementSheet: View {
        onCancel: (() -> Void)? = nil, onCreated: @escaping (RoutineEntry) -> Void) {
     self.gym = gym; _draft = draft; self.purpose = purpose; self.onCreated = onCreated; self.onCancel = onCancel
     _creatingAccount = State(initialValue: account); _creatingAnonymous = State(initialValue: anonymous)
-  }
-
-  // The workout rendering tests still ask by includesTargets.
-  init(gym: GymModel, draft: Binding<MovementCreationDraft>, includesTargets: Bool, account: String?, anonymous: Bool,
-       onCreated: @escaping (RoutineEntry) -> Void) {
-    self.init(gym: gym, draft: draft, purpose: includesTargets ? .routine : .workout, account: account, anonymous: anonymous, onCreated: onCreated)
   }
 
   var body: some View {

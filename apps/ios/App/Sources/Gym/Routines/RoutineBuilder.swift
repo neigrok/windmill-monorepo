@@ -154,7 +154,7 @@ struct RoutineBuilder: View {
           ForEach(Array(editing.draft.current.entries.enumerated()), id: \.element.exerciseId) { index, entry in
             let exercise = gym.catalogue.find(entry.exerciseId)
             NavigationLink(value: exercise.map { RoutineEditingSession.Step.targets($0.id) }) {
-              MovementRow(title: exercise?.name ?? "Movement unavailable", meta: Readout.target(entry.sets))
+              GymRow(title: exercise?.name ?? "Movement unavailable", meta: Readout.target(entry.sets))
             }.accessibilityIdentifier("builder-movement-\(entry.exerciseId)")
               .swipeActions { Button("Remove", role: .destructive) { editing.remove(index) } }
               .contextMenu {
@@ -173,7 +173,7 @@ struct RoutineBuilder: View {
         if !history.isEmpty {
           Section("History") {
             ForEach(history, id: \.id) { session in
-              MovementRow(title: RoutineLines.day(session.startedAt, now: gym.log?.moment.now ?? session.startedAt),
+              GymRow(title: RoutineLines.day(session.startedAt, now: gym.log?.moment.now ?? session.startedAt),
                           meta: RoutineLines.session(SessionReadout(session: session, sets: gym.sets)))
             }
           }

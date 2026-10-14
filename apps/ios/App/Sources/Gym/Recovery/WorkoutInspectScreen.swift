@@ -28,18 +28,16 @@ struct WorkoutInspectScreen: View {
         ContentUnavailableView("This workout is no longer here", systemImage: "iphone").listRowBackground(GymPalette.canvas)
       }
     }.listStyle(.insetGrouped).modifier(GymPage()).accessibilityIdentifier("recovery-inspect")
-      .navigationTitle(workout?.name ?? Readout.noRoutine)
-      .modifier(RecoverySubtitle(text: subtitle(recovery)))
+      .roomTitle(workout?.name ?? Readout.noRoutine, subtitle: subtitle(recovery))
       .toolbar(.hidden, for: .tabBar)
       .toolbar {
         if let recovery, discarding == nil {
           ToolbarItem(placement: .topBarTrailing) {
-            Menu {
+            MoreMenu(identifier: "recovery-more") {
               if recovery.canFix, recovery.primary != .fix { Button("Fix workout", systemImage: "pencil") { fix() } }
               Button("Discard workout", systemImage: "trash", role: .destructive) { hold() }
                 .accessibilityIdentifier("recovery-discard")
-            } label: { Image(systemName: "ellipsis.circle").accessibilityLabel("More") }
-              .accessibilityIdentifier("recovery-more")
+            }
           }
         }
       }
@@ -62,7 +60,7 @@ struct WorkoutInspectScreen: View {
     let duration = FactTiles.Fact(value: readout.durationMs.map(Readout.duration) ?? "—", label: "Duration")
     Section {
       FactTiles(facts: (stranded ? [] : [duration]) + [
-        .init(value: "\(readout.workingSetCount)", label: readout.workingSetCount == 1 ? "Working set" : "Working sets"),
+        .init(value: "\(readout.workingSetCount)", label: "Working sets"),
         .init(value: "\(Readout.weight(readout.volumeKg)) kg", label: "Volume"),
       ])
     } footer: {
@@ -70,16 +68,14 @@ struct WorkoutInspectScreen: View {
     }
     if !stranded {
       Section {
-        LabeledContent("Started", value: SavedSetRow.time(workout.session.startedAt, day: true))
-        LabeledContent("Finished", value: workout.session.finishedAt.map { SavedSetRow.time($0, day: true) } ?? "Not finished")
+        LabeledContent("Started", value: SignedOutWorkout.time(workout.session.startedAt, day: true))
+        LabeledContent("Finished", value: workout.session.finishedAt.map { SignedOutWorkout.time($0, day: true) } ?? "Not finished")
       }.monospacedDigit()
     }
-    ForEach(SavedSetRow.movements(sets), id: \.self) { exercise in
+    ForEach(SetRow.movements(sets), id: \.self) { exercise in
       Section(recovery?.movementNames[exercise] ?? gym.catalogue.find(exercise)?.name ?? "Missing movement") {
         let performed = sets.filter { $0.exerciseId == exercise }
-        ForEach(Array(performed.enumerated()), id: \.element.id) { index, set in
-          SavedSetRow(set: set, ordinal: performed.prefix(index + 1).filter { $0.kind == "working" }.count)
-        }
+        ForEach(performed, id: \.id) { set in SetRow(marker: SetRow.marker(set, in: performed), set: set) }
       }
     }
   }
@@ -93,7 +89,6 @@ struct WorkoutInspectScreen: View {
       if discarding != nil {
         RoomTransient(message: "Workout discarded", room: .gym, actionTitle: "Undo", actionIdentifier: "recovery-undo") { undo(recovery) }
           .accessibilityIdentifier("recovery-undo-band")
-          .padding(.horizontal, RoomSpace.inset).padding(.vertical, RoomSpace.small)
       } else {
         GymTransient(gym: gym, message: message ?? (waiting ? gym.recoveryWait : nil),
                      dismiss: message == nil ? nil : { message = nil },
@@ -108,7 +103,7 @@ struct WorkoutInspectScreen: View {
   // The date, and the refusal's own code when the line is the catch-all.
   func subtitle(_ recovery: WorkoutRecovery?) -> String? {
     guard let workout else { return nil }
-    let day = LogPresentation.date(workout.session.startedAt).formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+    let day = workout.session.startedAt.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
     return recovery?.code.map { "\(day) · \($0)" } ?? day
   }
 
@@ -145,46 +140,3 @@ struct WorkoutInspectScreen: View {
   }
 }
 
-// A saved set read back: `1 · 100 × 5` for a working set, its kind's letter for any other; effort and note as the second
-// line when present, after the time when the row is `timed` from its workout's start (the day too, when it differs).
-struct SavedSetRow: View {
-  let set: TrainingSet
-  let ordinal: Int
-  var timed: Instant?
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: RoomSpace.small) {
-      let marker = set.kind == "working" ? "\(ordinal)" : String(set.kind.prefix(1)).uppercased()
-      Text("\(marker) · \(Readout.effort(weightKg: set.weightKg, reps: set.reps))").font(.body).monospacedDigit()
-        .foregroundStyle(GymPalette.ink)
-      let time = timed.map { Self.time(set.completedAt, day: !Calendar.current.isDate(LogPresentation.date($0), inSameDayAs: LogPresentation.date(set.completedAt))) }
-      let second = [time, set.rpe.map { "RPE \(Readout.weight($0))" },
-                    set.note.isEmpty ? nil : set.note].compactMap { $0 }
-      if !second.isEmpty {
-        Text(second.joined(separator: " · ")).font(.subheadline).monospacedDigit().foregroundStyle(GymPalette.inkDim)
-      }
-    }.frame(maxWidth: .infinity, alignment: .leading)
-      .accessibilityElement(children: .combine)
-  }
-
-  static func time(_ instant: Instant, day: Bool) -> String {
-    let date = LogPresentation.date(instant)
-    return day ? date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute())
-      : date.formatted(.dateTime.hour().minute())
-  }
-
-  static func movements(_ sets: [TrainingSet]) -> [ID<Exercise>] {
-    var ids: [ID<Exercise>] = []
-    for set in sets where !ids.contains(set.exerciseId) { ids.append(set.exerciseId) }
-    return ids
-  }
-}
-
-// The date under a recovery screen's title; iOS 18 draws the title alone.
-struct RecoverySubtitle: ViewModifier {
-  let text: String?
-
-  func body(content: Content) -> some View {
-    if #available(iOS 26.0, *), let text { content.navigationSubtitle(text) } else { content }
-  }
-}

@@ -121,17 +121,20 @@ struct WeightInstrument: View {
 @Observable nonisolated final class SetFixDraft {
   private(set) var original: TrainingSet
   let account: String?
+  var exerciseId: ID<Exercise>
   var weightKg: Double
   var reps: Int
   var kind: String
   var rpe: Double?
   var note: String
+  var completedAt: Instant
   var failure: String?
   var busy = false
 
   init(_ set: TrainingSet, account: String?) {
     original = set; self.account = account
-    weightKg = set.weightKg; reps = set.reps; kind = set.kind; rpe = set.rpe; note = set.note
+    exerciseId = set.exerciseId; weightKg = set.weightKg; reps = set.reps; kind = set.kind; rpe = set.rpe; note = set.note
+    completedAt = set.completedAt
   }
 
   var noteBytes: Int { note.utf8.count }
@@ -144,9 +147,8 @@ struct WeightInstrument: View {
     return nil
   }
   var value: TrainingSet {
-    var set = original
-    set.weightKg = weightKg; set.reps = reps; set.kind = kind; set.rpe = rpe; set.note = note
-    return set
+    TrainingSet(id: original.id, sessionId: original.sessionId, exerciseId: exerciseId, weightKg: weightKg, reps: reps, kind: kind,
+                rpe: rpe, note: note, completedAt: completedAt, setNumber: original.setNumber)
   }
 
   // A fix re-reads first, so it never lands on another account's log or over a log the phone failed to read.
@@ -179,10 +181,16 @@ struct WeightInstrument: View {
   }
 }
 
-// The Fix set sheet for a live or a finished set; `identifier` prefixes each control's accessibility identifier.
+// The Fix set sheet; `identifier` prefixes each control's accessibility identifier. A logged set's fix lands on the log;
+// a saved workout's set returns to the caller's draft, and may take another movement and time, since a copy can carry
+// either wrong.
 struct SetEditor: View {
+  enum Landing {
+    case log(routine: String?)
+    case draft((TrainingSet?) -> Void)
+  }
   let gym: GymModel
-  let routine: String?
+  let landing: Landing
   let identifier: String
   @Environment(\.dismiss) private var dismiss
   @State private var draft: SetFixDraft
@@ -190,9 +198,17 @@ struct SetEditor: View {
   @State private var saved = false
 
   init(gym: GymModel, set: TrainingSet, routine: String?, identifier: String) {
-    self.gym = gym; self.routine = routine; self.identifier = identifier
+    self.gym = gym; landing = .log(routine: routine); self.identifier = identifier
     _draft = State(initialValue: SetFixDraft(set, account: gym.account))
   }
+
+  init(gym: GymModel, set: TrainingSet, identifier: String, commit: @escaping (TrainingSet?) -> Void) {
+    self.gym = gym; landing = .draft(commit); self.identifier = identifier
+    _draft = State(initialValue: SetFixDraft(set, account: gym.account))
+  }
+
+  var logged: Bool { if case .log = landing { true } else { false } }
+  var movement: String { gym.catalogue.find(draft.exerciseId)?.name ?? (logged ? "Movement" : "Missing movement") }
 
   var body: some View {
     NavigationStack {
@@ -213,6 +229,15 @@ struct SetEditor: View {
               ForEach(SetKind.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0.rawValue) }
             }.pickerStyle(.segmented).accessibilityIdentifier("\(identifier)-kind")
           }
+          if !logged {
+            Section {
+              Picker("Movement", selection: $draft.exerciseId) {
+                if gym.catalogue.find(draft.original.exerciseId) == nil { Text("Missing movement").tag(draft.original.exerciseId) }
+                ForEach(gym.catalogue.exercises, id: \.id) { Text($0.name).tag($0.id) }
+              }.pickerStyle(.navigationLink).accessibilityIdentifier("\(identifier)-movement")
+              DatePicker("Time", selection: $draft.completedAt.date)
+            }
+          }
           Section {
             TextEditor(text: $draft.note).frame(minHeight: 100).accessibilityLabel("Set note")
               .accessibilityIdentifier("\(identifier)-note")
@@ -223,22 +248,19 @@ struct SetEditor: View {
             }
           } header: { Text("Set note") }
           Section {
-            Button("Delete set", systemImage: "trash", role: .destructive) { if draft.delete(gym) { dismiss() } }
+            Button("Delete set", systemImage: "trash", role: .destructive) { delete() }
               .foregroundStyle(GymPalette.alarm).accessibilityIdentifier("\(identifier)-delete")
-          } footer: { if let routine { Text("\(routine) keeps its planned targets.") } }
+          } footer: { if case .log(let routine?) = landing { Text("\(routine) keeps its planned targets.") } }
         }.listRowBackground(GymPalette.card)
       }.modifier(GymPage()).disabled(draft.busy || gym.accountTransition)
-        .navigationTitle("Fix set")
-        .navigationSubtitleIfAvailable(gym.catalogue.find(draft.original.exerciseId)?.name ?? "Movement")
+        .roomTitle("Fix set", subtitle: movement)
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(draft.busy) } }
         .safeAreaInset(edge: .bottom) {
           VStack(spacing: 0) {
             GymTransient(gym: gym, message: draft.failure ?? draft.problem,
                          dismiss: draft.failure == nil ? nil : { draft.failure = nil }, errorIdentifier: "\(identifier)-failure")
             ActionBand(title: "Save the fix", room: .gym, disabled: draft.problem != nil || gym.accountTransition,
-                       busy: draft.busy, actionIdentifier: "\(identifier)-save") {
-              if draft.save(gym) { saved = true; dismiss() }
-            }
+                       busy: draft.busy, actionIdentifier: "\(identifier)-save") { save() }
           }
         }
     }.modifier(GymPage()).presentationDetents([.large])
@@ -252,16 +274,25 @@ struct SetEditor: View {
       .sensoryFeedback(.success, trigger: saved)
       .onChange(of: draft.value) { _, _ in draft.failure = nil }
       .onChange(of: gym.sets) { _, sets in
-        if !gym.readFailed && !sets.contains(where: { $0.id == draft.original.id }) { dismiss() }
+        if logged, !gym.readFailed, !sets.contains(where: { $0.id == draft.original.id }) { dismiss() }
       }
-      .onChange(of: gym.account) { _, _ in dismiss() }
+      .onChange(of: gym.account) { _, _ in if logged { dismiss() } }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "fix_set"]) }
   }
-}
 
-extension View {
-  // iOS 26 draws a subtitle under the inline title; earlier systems keep the title alone.
-  @ViewBuilder func navigationSubtitleIfAvailable(_ subtitle: String?) -> some View {
-    if #available(iOS 26, *), let subtitle { navigationSubtitle(subtitle) } else { self }
+  func save() {
+    switch landing {
+    case .log: guard draft.save(gym) else { return }
+    case .draft(let commit): guard draft.problem == nil else { return }; commit(draft.value)
+    }
+    saved = true; dismiss()
+  }
+
+  func delete() {
+    switch landing {
+    case .log: guard draft.delete(gym) else { return }
+    case .draft(let commit): commit(nil)
+    }
+    dismiss()
   }
 }

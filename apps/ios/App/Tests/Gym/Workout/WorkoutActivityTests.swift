@@ -32,7 +32,7 @@ import SyncTesting
     harness.sync(); gym.refresh(); workout.reconcile()
     let confirmed = TrainingSet(id: expected.id, sessionId: expected.sessionId, exerciseId: expected.exerciseId,
                                 weightKg: expected.weightKg, reps: expected.reps, kind: expected.kind, completedAt: expected.completedAt, setNumber: 1)
-    #expect(workout.sets == [confirmed] && gym.workoutDeviceSets(workout.sets).isEmpty)
+    #expect(workout.sets == [confirmed] && gym.unconfirmedSets(workout.sets).isEmpty)
     #expect(try harness.notices(GymRefusal.self).isEmpty)
   }
 
@@ -113,9 +113,9 @@ import SyncTesting
   @Test(arguments: [true, false])
   func lockScreenCountsOnlyTheSetsTheLedgerMarksUnsent(anonymous: Bool) throws {
     let (_, gym) = try fixtures.fixture(anonymous: anonymous), workout = try fixtures.begin(gym)
-    #expect(workout.logSet() && gym.workoutDeviceSets(workout.sets).count == 1)
+    #expect(workout.logSet() && gym.unconfirmedSets(workout.sets).count == 1)
     let content = try WorkoutActivityController(gym: gym).content(session: try #require(workout.session), offer: nil)
-    #expect(content.state.unsyncedSetCount == (anonymous ? 1 : 0) && gym.workoutUnsentSets.count == content.state.unsyncedSetCount)
+    #expect(content.state.unsentSetCount == 0 && gym.unsentSets(workout.sets).isEmpty)
   }
 
   @Test func activityPayloadReprojectsDatesWhenTheServerCorrectionChanges() throws {

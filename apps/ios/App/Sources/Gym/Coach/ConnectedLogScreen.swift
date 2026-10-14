@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import DomainKit
 
 nonisolated struct CoachConnection: Identifiable, Equatable {
   let id: String
@@ -8,7 +9,7 @@ nonisolated struct CoachConnection: Identifiable, Equatable {
   let levels: String
   let key: Bool
   var meta: String {
-    let day = Date(timeIntervalSince1970: Double(created) / 1000).formatted(.dateTime.day().month(.abbreviated))
+    let day = Instant(ms: created).date.formatted(.dateTime.day().month(.abbreviated))
     return (key ? "API key · " : "") + levels + " · since " + day
   }
   struct Grant: Decodable { let clientId: String; let name: String?; let grantedMs: Int64; let scope: String? }
@@ -94,18 +95,13 @@ struct ConnectedLogScreen: View {
             if unknown {
               Text(connections.connectionRequired ? "Connect to the internet to read your connections." : "Couldn’t read your connections.").foregroundStyle(GymPalette.inkDim)
             }
-            ForEach(listed) { row in
-              VStack(alignment: .leading, spacing: RoomSpace.small) {
-                Text(row.name)
-                Text(row.meta).font(.subheadline).monospacedDigit().foregroundStyle(GymPalette.inkDim)
-              }
-            }
+            ForEach(listed) { row in GymRow(title: row.name, meta: row.meta) }
           }
         }
         Section {
-          capability("Read", "sets, workouts, routines, records, notes, weigh-ins")
-          capability("Write", "logs sets · saves notes · adds routines · shares workouts · proposes changes")
-          capability("Delete", "discards a workout · ends a share")
+          GymRow(title: "Read", meta: "sets, workouts, routines, records, notes, weigh-ins")
+          GymRow(title: "Write", meta: "logs sets · saves notes · adds routines · shares workouts · proposes changes")
+          GymRow(title: "Delete", meta: "discards a workout · ends a share")
         } header: {
           if !drawsConnections { Text("Your log, read by Claude, Cursor or Codex.").font(.subheadline).foregroundStyle(GymPalette.inkDim).textCase(nil) }
         } footer: { Text("A routine change waits for your Apply; the rest lands at once.") }
@@ -134,24 +130,12 @@ struct ConnectedLogScreen: View {
       .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition)") { await connections.load() }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "connected_log"]) }
   }
-  // The screen's one primary. ActionBand draws no symbol, and this one names the browser it leaves for.
+  // The screen's one primary; signed in, its symbol names the browser it leaves for.
   var connect: some View {
-    let title = gym.coachAccountAvailable ? "Connect a tool" : "Sign in first"
-    return Button {
+    ActionBand(title: gym.coachAccountAvailable ? "Connect a tool" : "Sign in first", room: .gym, actionIdentifier: "coach-connect-tool",
+               symbol: gym.coachAccountAvailable ? "arrow.up.forward" : nil) {
       if gym.coachAccountAvailable { browse("connect") } else { openAccount?() }
-    } label: {
-      HStack(spacing: RoomSpace.related) {
-        Text(title)
-        if gym.coachAccountAvailable { Image(systemName: "arrow.up.forward").accessibilityHidden(true) }
-      }.frame(maxWidth: .infinity)
-    }.modifier(RoomPrimaryStyle(room: .gym))
-      .accessibilityLabel(title)
-      .accessibilityHint(gym.coachAccountAvailable ? "opens in your browser" : "")
-      .accessibilityIdentifier("coach-connect-tool")
-      .padding(RoomSpace.inset)
-  }
-  func capability(_ title: String, _ line: String) -> some View {
-    VStack(alignment: .leading, spacing: RoomSpace.small) { Text(title).font(.body.weight(.semibold)); Text(line).font(.subheadline).foregroundStyle(GymPalette.inkDim) }
+    }.accessibilityHint(gym.coachAccountAvailable ? "opens in your browser" : "")
   }
   func browse(_ route: String) {
     guard let base = gym.runtime?.settings.baseURL, let url = URL(string: "/#/" + route, relativeTo: base)?.absoluteURL else { browserError = true; return }

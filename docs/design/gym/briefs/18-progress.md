@@ -188,11 +188,8 @@ announced on each change while scrubbing.
 
 ## Three surfaces
 
-**iOS.** The strip is a horizontal `ScrollView` inside the log's head section, `.scrollTargetBehavior(.viewAligned)`,
-cards 280 pt wide with the room's card gap, the first card inset from the leading edge by the
-gutter so the shell's home swipe at depth zero is never contested. Each card is a `NavigationLink`
-onto `.movement(id)` in the log tab's path. The chart is a `Canvas`; the dots are one accessibility
-element carrying the card's whole label.
+**iOS.** No strip: moments are rows of The log's list, and an expanded moment is its compact chart, its window line
+and *Open record ›* (`../../ios/ios-redesign.md` §7.6).
 
 **Android.** No strip. Moments are items of the log's `LazyColumn`, keyed like sessions and dated
 by the session or weigh-in that earned them; an expanded moment is the same item grown in place

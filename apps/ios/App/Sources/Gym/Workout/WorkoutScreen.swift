@@ -24,7 +24,7 @@ struct WorkoutScreen: View {
       Group {
         if let session = workout.session {
           if session.isOpen { live(session) }
-          else { saved(session) }
+          else { SessionDetailScreen(gym: gym, sessionID: session.id) }
         } else {
           ContentUnavailableView("This workout is no longer open", systemImage: "dumbbell")
         }
@@ -36,9 +36,9 @@ struct WorkoutScreen: View {
       .sensoryFeedback(.success, trigger: workout.receipt?.session.id) { (old: ID<Session>?, new: ID<Session>?) in
         old == nil && new != nil
       }
-      .navigationTitle(workout.session?.name ?? Readout.noRoutine)
+      .roomTitle(workout.session?.name ?? Readout.noRoutine,
+                 subtitle: workout.session.flatMap { $0.isOpen ? $0.startedAt.date.formatted(date: .omitted, time: .shortened) : nil })
       .navigationBarTitleDisplayMode(.inline)
-      .navigationSubtitleIfAvailable(workout.session.flatMap { $0.isOpen ? $0.startedAt.date.formatted(date: .omitted, time: .shortened) : nil })
       .toolbar {
         if workout.session?.isOpen == true {
           ToolbarItem(placement: .topBarLeading) {
@@ -120,21 +120,20 @@ struct WorkoutScreen: View {
       }
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
-      let transient = GymTransient(gym: gym, message: workout.message, dismiss: { workout.message = nil }, noticeMessage: gym.workoutNotice,
-                                   retry: { gym.workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
-      if workout.selected != nil || transient.shown != nil {
-        VStack(spacing: RoomSpace.related) {
-          if transient.shown != nil { transient.modifier(BoundedBand()) }
-          if workout.selected != nil {
-            WorkoutRack(workout: workout, edit: { keypad = $0 })
-              .padding(RoomSpace.inset)
-              .background {
-                UnevenRoundedRectangle(topLeadingRadius: RoomSpace.panel, topTrailingRadius: RoomSpace.panel)
-                  .fill(GymPalette.card).ignoresSafeArea(edges: .bottom)
-              }
-          }
-        }.frame(maxWidth: .infinity).padding(.top, RoomSpace.related)
-      }
+      VStack(spacing: 0) {
+        GymTransient(gym: gym, message: workout.message, dismiss: { workout.message = nil }, noticeMessage: gym.workoutNotice,
+                     retry: { gym.workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
+          .modifier(BoundedBand())
+        if workout.selected != nil {
+          WorkoutRack(workout: workout, edit: { keypad = $0 })
+            .padding(RoomSpace.inset)
+            .background {
+              UnevenRoundedRectangle(topLeadingRadius: RoomSpace.panel, topTrailingRadius: RoomSpace.panel)
+                .fill(GymPalette.card).ignoresSafeArea(edges: .bottom)
+            }
+            .padding(.top, RoomSpace.related)
+        }
+      }.frame(maxWidth: .infinity)
     }
   }
   // The eyebrow over the name, Previous and Next beside it; at accessibility sizes the eyebrow, plan and clocks move into the ledger.
@@ -160,9 +159,6 @@ struct WorkoutScreen: View {
       if !typeSize.isAccessibilitySize { WorkoutFacts(workout: workout, plan: workout.entry?.sets) }
     }.padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.inset)
   }
-  func saved(_ session: Session) -> some View {
-    SessionDetailScreen(gym: gym, sessionID: session.id)
-  }
   func updateAwake() {
     let live = scenePhase == .active && workout.session?.isOpen == true
     if live && !awake { idleTimerWasDisabled = UIApplication.shared.isIdleTimerDisabled; UIApplication.shared.isIdleTimerDisabled = true; awake = true }
@@ -185,7 +181,7 @@ struct WorkoutLedger: View {
     let working = sets.filter { $0.kind == "working" }.count
     let targets = workout.session?.plan?.entries.first { $0.exerciseId == exerciseId }?.sets ?? []
     let current = working < targets.count ? Readout.setTarget(targets[working]) : Readout.openTarget
-    let unsent = gym.workoutUnsentSets
+    let unsent = gym.unsentSets(workout.sets)
     ScrollViewReader { scroll in
     List {
       if typeSize.isAccessibilitySize {
@@ -198,7 +194,7 @@ struct WorkoutLedger: View {
           let ordinal = sets.prefix(index + 1).filter { $0.kind == "working" }.count
           let name = set.kind == "working" ? "Set \(ordinal)" : set.kind.capitalized
           Button { fix(set) } label: {
-            WorkoutLedgerRow(marker: set.kind == "working" ? "\(ordinal)" : String(set.kind.prefix(1)).uppercased(),
+            WorkoutLedgerRow(marker: SetRow.marker(set, in: sets),
                              readout: Readout.effort(weightKg: set.weightKg, reps: set.reps),
                              state: unsent.contains(set.id) ? .unsent : .sent)
           }.disabled(workout.paging || workout.finishing || workout.finishQueued || gym.accountTransition)
@@ -310,17 +306,13 @@ struct WorkoutRack: View {
       HStack(spacing: RoomSpace.related) {
         WorkoutCircle(title: "Fewer reps", symbol: "minus") { workout.reps = max(1, workout.reps - 1) }
         Button { edit(.reps) } label: {
-          Text("^[\(workout.reps) rep](inflect: true)").font(.title3).monospacedDigit()
+          Text(GymCount.of(workout.reps, "rep")).font(.title3).monospacedDigit()
             .frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget)
         }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).accessibilityIdentifier("workout-reps")
         WorkoutCircle(title: "More reps", symbol: "plus") { workout.reps = min(99, workout.reps + 1) }
       }
     }
   }
-}
-
-extension Instant {
-  nonisolated var date: Date { Date(timeIntervalSince1970: Double(ms) / 1_000) }
 }
 
 struct WorkoutPager: UIViewControllerRepresentable {

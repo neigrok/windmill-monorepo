@@ -48,7 +48,8 @@ struct CoachTab: View {
         VStack(spacing: 0) {
           band
           if composing {
-            Button { composing = false } label: { GlassCircle(symbol: "keyboard.chevron.compact.down") }.buttonStyle(.plain).accessibilityLabel("Done").accessibilityIdentifier("coach-keyboard-done")
+            Button { composing = false } label: { glassSymbol("keyboard.chevron.compact.down") }.buttonStyle(RoomSeatStyle(diameter: 36))
+              .accessibilityLabel("Done").accessibilityIdentifier("coach-keyboard-done")
               .frame(maxWidth: .infinity, alignment: .trailing).padding(.horizontal, 12)
           }
           if coach.allowed, coach.refusal != .absent { composer }
@@ -97,7 +98,7 @@ struct CoachTab: View {
   }
 
   var more: some View {
-    Menu {
+    MoreMenu(identifier: "coach-more") {
       if coach.saved.request != nil || coach.saved.thread != nil {
         Section { Button("New chat") { coach.newChat() }.disabled(coach.asking).accessibilityIdentifier("coach-menu-new-chat") }
       }
@@ -106,8 +107,7 @@ struct CoachTab: View {
         Button("Notes") { destination = .notes }.accessibilityIdentifier("coach-menu-notes")
         Button("Connected log") { destination = .connections }.accessibilityIdentifier("coach-menu-connections")
       }
-    } label: { Label("More", systemImage: "ellipsis.circle") }
-      .labelStyle(.iconOnly).accessibilityIdentifier("coach-more")
+    }
   }
 
   var conversation: some View {
@@ -145,7 +145,8 @@ struct CoachTab: View {
         } action: { _, latest in atLatest = latest }
         .overlay(alignment: .bottomTrailing) {
           if !atLatest, !composing {
-            Button { withAnimation { proxy.scrollTo("latest", anchor: .bottom) } } label: { GlassCircle(symbol: "chevron.down") }.buttonStyle(.plain).accessibilityLabel("Jump to latest").accessibilityIdentifier("coach-jump-to-latest").padding(12)
+            Button { withAnimation { proxy.scrollTo("latest", anchor: .bottom) } } label: { glassSymbol("chevron.down") }
+              .buttonStyle(RoomSeatStyle(diameter: 36)).accessibilityLabel("Jump to latest").accessibilityIdentifier("coach-jump-to-latest").padding(12)
           }
         }
         .onChange(of: coach.saved.request?.requestId) { _, request in
@@ -209,6 +210,9 @@ struct CoachTab: View {
       .frame(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget).contentShape(Circle())
   }
 
+  // The symbol of the room's two 36 pt "down" seats: Jump to latest, and the keyboard's Done while typing.
+  func glassSymbol(_ symbol: String) -> some View { Image(systemName: symbol).font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink) }
+
   func progress(_ label: String) -> some View {
     HStack(spacing: RoomSpace.related) { ProgressView(); Text(label).font(.footnote).foregroundStyle(GymPalette.inkDim) }
   }
@@ -229,18 +233,6 @@ struct CoachTab: View {
       if generation.answer.isEmpty, generation.status == "running" { progress("reading your log…") }
       answer(generation.answer, receipt: generation.receipt, steps: generation.steps, results: generation.results)
     }
-  }
-}
-
-// The 36 pt glass circle of the room's two "down" controls: Jump to latest, and the keyboard's Done while typing.
-struct GlassCircle: View {
-  let symbol: String
-  var body: some View {
-    let image = Image(systemName: symbol).font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink).frame(width: 36, height: 36)
-    Group {
-      if #available(iOS 26.0, *) { image.glassEffect(.regular.interactive(), in: Circle()) }
-      else { image.background(.regularMaterial, in: Circle()) }
-    }.frame(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget).contentShape(Circle())
   }
 }
 
@@ -291,7 +283,7 @@ struct CoachAnswerView: View {
             HStack(spacing: RoomSpace.related) {
               Text(receipt.read.line).multilineTextAlignment(.leading)
               Spacer(minLength: 0)
-              Image(systemName: "chevron.right").fontWeight(.semibold)
+              DoorChevron()
             }.font(.footnote.monospaced()).foregroundStyle(GymPalette.inkDim).frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
           }.buttonStyle(.plain).accessibilityLabel(receipt.read.line).accessibilityIdentifier("coach-read-receipt")
         }
@@ -303,7 +295,7 @@ struct CoachAnswerView: View {
             Image(systemName: "list.bullet.rectangle").foregroundStyle(GymPalette.accent)
             Text("Open routine · " + result.routineName).foregroundStyle(GymPalette.ink)
             Spacer(minLength: 0)
-            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(GymPalette.inkDim)
+            DoorChevron()
           }.frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityLabel("Open routine · " + result.routineName)
       }
@@ -349,7 +341,7 @@ struct CoachProposalCard: View {
             if let state { Text(state).font(.footnote).foregroundStyle(GymPalette.inkDim) }
           }
           if typeSize.isAccessibilitySize { Spacer(minLength: 0) }
-          Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(GymPalette.inkDim)
+          DoorChevron()
         }.frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
       }.buttonStyle(.plain).accessibilityLabel(label).accessibilityValue(state ?? "").accessibilityIdentifier("coach-review")
     }.padding(RoomSpace.inset).frame(maxWidth: .infinity, alignment: .leading)
@@ -399,15 +391,9 @@ struct CoachSourcesSheet: View {
     let available = gym.sessions.contains { $0.id.record.string == source.sessionId }
     let facts = source.workout.map { [GymCount.of($0.workingSetCount, "working set"), Readout.weight($0.tonnageKg) + " kg"] } ?? []
     return Button { dismiss(); openSession?(source.sessionId) } label: {
-      HStack(spacing: RoomSpace.related) {
-        VStack(alignment: .leading, spacing: RoomSpace.small) {
-          Text(source.routine ?? "Workout").font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink)
-          Text(available ? ([CoachCopy.day(source.startedAt)] + facts).joined(separator: " · ") : "no longer available")
-            .font(.subheadline).monospacedDigit().foregroundStyle(GymPalette.inkDim)
-        }
-        Spacer(minLength: 0)
-        if available { Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(GymPalette.inkDim) }
-      }.frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
+      GymRow(title: source.routine ?? "Workout",
+             meta: available ? ([CoachCopy.day(source.startedAt)] + facts).joined(separator: " · ") : "no longer available",
+             trailing: available ? .door : nil).contentShape(Rectangle())
     }.buttonStyle(.plain).disabled(!available).accessibilityIdentifier("coach-source-" + source.sessionId)
   }
 }

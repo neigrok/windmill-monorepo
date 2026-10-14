@@ -242,7 +242,6 @@ struct UpdateFailure: View {
   var body: some View {
     RoomTransient(message: "Couldn't open the update. Try again.", room: .shell, actionTitle: "Dismiss", actionSymbol: "xmark",
                   actionIdentifier: "update-failure-dismiss", action: model.dismissUpdateFailure)
-      .padding(.horizontal, RoomSpace.inset)
   }
 }
 

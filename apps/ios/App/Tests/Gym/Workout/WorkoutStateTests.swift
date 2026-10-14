@@ -159,16 +159,16 @@ import SyncTesting
     #expect(try runtime.runner.read(Gym.scope) { try $0.commands().contains { $0.command.name == Gym.Commands.start && $0.isAdmitted } })
     workout.logSet()
     let pending = try #require(workout.sets.first)
-    #expect(gym.workoutUnsentSets.isEmpty)
+    #expect(gym.unsentSets(gym.workout.sets).isEmpty)
     fault.failure.withLock { $0 = 503 }
     await engine.flushOnLeave()
     for _ in 0..<100 where !workout.syncFailed { try await Task.sleep(for: .milliseconds(2)) }
     gym.refresh(); workout.reconcile()
-    #expect(workout.syncFailed && gym.workoutUnsentSets == [pending.id])
+    #expect(workout.syncFailed && gym.unsentSets(gym.workout.sets) == [pending.id])
     #expect(workout.logSet())
     let retained = workout.sets
-    #expect(retained.count == 2 && gym.workoutDeviceSets(retained) == Set(retained.map(\.id)))
-    #expect(gym.workoutUnsentSets == [pending.id])
+    #expect(retained.count == 2 && gym.unconfirmedSets(retained) == Set(retained.map(\.id)))
+    #expect(gym.unsentSets(gym.workout.sets) == [pending.id])
     await workout.finish()
     #expect(workout.session?.isOpen == true && workout.receipt == nil && workout.isPresented)
     #expect(workout.sets == retained && workout.message == "Finish needs a connection — keep logging, or hide the workout.")
@@ -179,9 +179,9 @@ import SyncTesting
     await engine.start()
     #expect(await Self.until {
       gym.refresh(); workout.reconcile()
-      return !workout.syncFailed && gym.workoutDeviceSets(workout.sets).isEmpty
+      return !workout.syncFailed && gym.unconfirmedSets(workout.sets).isEmpty
     })
-    #expect(!workout.syncFailed && gym.workoutUnsentSets.isEmpty && gym.workoutDeviceSets(workout.sets).isEmpty)
+    #expect(!workout.syncFailed && gym.unsentSets(gym.workout.sets).isEmpty && gym.unconfirmedSets(workout.sets).isEmpty)
     await workout.finish()
     #expect(workout.session?.isOpen == false && workout.receipt != nil && workout.isPresented)
     workout.closeReceipt()
@@ -198,17 +198,17 @@ import SyncTesting
     await runtime.engine.flushOnLeave()
     let workout = try begin(gym)
     workout.logSet()
-    #expect(gym.workoutDeviceSets(workout.sets).count == 1)
+    #expect(gym.unconfirmedSets(workout.sets).count == 1)
     await runtime.engine.start()
     await runtime.engine.flushOnLeave(); runtime.engine.foreground()
-    #expect(await Self.until { gym.refresh(); workout.reconcile(); return gym.workoutDeviceSets(workout.sets).isEmpty })
+    #expect(await Self.until { gym.refresh(); workout.reconcile(); return gym.unconfirmedSets(workout.sets).isEmpty })
     let finishing = Task { await workout.finish() }
     #expect(await Self.until { workout.finishQueued || workout.receipt != nil })
     #expect(!workout.finishing)
     await finishing.value
     let receipt = try #require(workout.receipt)
     #expect(!receipt.session.isOpen && receipt.sets.count == 1 && workout.isPresented && !workout.finishing)
-    #expect(gym.workoutDeviceSets(receipt.sets).isEmpty && workout.message == nil)
+    #expect(gym.unconfirmedSets(receipt.sets).isEmpty && workout.message == nil)
     #expect(try runtime.runner.read(Gym.scope) { try $0.commands().isEmpty })
   }
 
@@ -222,7 +222,7 @@ import SyncTesting
     workout.add(ID("back-squat")); workout.logSet()
     await runtime.engine.start()
     await runtime.engine.flushOnLeave(); runtime.engine.foreground()
-    #expect(await Self.until { gym.refresh(); workout.reconcile(); return gym.workoutDeviceSets(workout.sets).isEmpty })
+    #expect(await Self.until { gym.refresh(); workout.reconcile(); return gym.unconfirmedSets(workout.sets).isEmpty })
     let original = try #require(workout.sets.first)
     var fixed = original; fixed.weightKg += 2.5
     fault.pullFailure.withLock { $0 = 503 }
@@ -253,7 +253,7 @@ import SyncTesting
     workout.add(ID("back-squat")); workout.logSet()
     await runtime.engine.start()
     await runtime.engine.flushOnLeave(); runtime.engine.foreground()
-    #expect(await Self.until { gym.refresh(); workout.reconcile(); return gym.workoutDeviceSets(workout.sets).isEmpty })
+    #expect(await Self.until { gym.refresh(); workout.reconcile(); return gym.unconfirmedSets(workout.sets).isEmpty })
     let original = try #require(workout.sets.first)
     var fixed = original; fixed.weightKg += 2.5
     fault.pullFailure.withLock { $0 = 503 }
@@ -294,7 +294,7 @@ import SyncTesting
     workout.add(ID("back-squat")); workout.logSet()
     await runtime.engine.start()
     await runtime.engine.flushOnLeave(); runtime.engine.foreground()
-    #expect(await Self.until { gym.refresh(); workout.reconcile(); return gym.workoutDeviceSets(workout.sets).isEmpty })
+    #expect(await Self.until { gym.refresh(); workout.reconcile(); return gym.unconfirmedSets(workout.sets).isEmpty })
     fault.pullFailure.withLock { $0 = 503 }
     await workout.finish()
     #expect(workout.receipt == nil && workout.finishQueued && gym.openSession?.id == id)
@@ -317,7 +317,7 @@ import SyncTesting
     workout.add(ID("back-squat")); workout.logSet()
     await runtime.engine.start()
     await runtime.engine.flushOnLeave(); runtime.engine.foreground()
-    #expect(await Self.until { gym.refresh(); workout.reconcile(); return gym.workoutDeviceSets(workout.sets).isEmpty })
+    #expect(await Self.until { gym.refresh(); workout.reconcile(); return gym.unconfirmedSets(workout.sets).isEmpty })
     let retained = workout.sets
     let requests = fault.pullRequests.withLock { $0 }
     fault.pullFailure.withLock { $0 = 503 }
@@ -354,11 +354,11 @@ import SyncTesting
     await runtime.engine.start()
     #expect(await Self.until {
       reopened.refresh(); reopened.workout.reconcile()
-      return reopened.workoutDeviceSets(reopened.workout.sets).isEmpty
+      return reopened.unconfirmedSets(reopened.workout.sets).isEmpty
     })
     #expect(reopened.workout.session?.id == started.id && reopened.workout.session?.isOpen == true)
     #expect(reopened.workout.sets.map(\.id) == retained.map(\.id) && reopened.workout.sets.map(\.weightKg) == retained.map(\.weightKg))
-    #expect(reopened.notices.isEmpty && reopened.workoutDeviceSets(reopened.workout.sets).isEmpty)
+    #expect(reopened.notices.isEmpty && reopened.unconfirmedSets(reopened.workout.sets).isEmpty)
   }
 
   @Test func neverAdmittedStartCanFinishOnDeviceWhileItsPushIsUnavailable() async throws {
@@ -373,7 +373,7 @@ import SyncTesting
     await workout.finish()
     #expect(workout.receipt != nil && workout.session?.isOpen == false && workout.isPresented)
     #expect(try runtime.runner.read(Gym.scope) { try $0.commands().contains { $0.command.name == Gym.Commands.start && !$0.isAdmitted } })
-    #expect(gym.workoutDeviceSets(workout.sets) == Set(workout.sets.map(\.id)))
+    #expect(gym.unconfirmedSets(workout.sets) == Set(workout.sets.map(\.id)))
   }
 
   @Test func localFinishDoesNotWaitForAStalledPush() async throws {
@@ -804,7 +804,7 @@ import SyncTesting
     #expect(gym.readFailed && workout.finishQueued && !workout.canLog)
     #expect(gym.error == "Gym could not be read from this phone. Try again.")
     #expect(workout.session == session && workout.sets == retained && workout.walk == walk)
-    #expect(gym.workoutDeviceSets(retained) == Set(retained.map(\.id)))
+    #expect(gym.unconfirmedSets(retained) == Set(retained.map(\.id)))
     fault.point.withLock { $0 = nil }; workout.retryRead()
     #expect(!gym.readFailed && gym.error == nil && !workout.finishQueued && workout.canLog)
     #expect(workout.session == session && workout.sets == retained && workout.walk == walk)
@@ -812,23 +812,24 @@ import SyncTesting
     #expect(workout.sets.count == retained.count + 1)
   }
 
-  @Test func everyUnconfirmedSetIsUnsentSignedOutOrPaused() async throws {
+  @Test func nothingIsUnsentSignedOutAndEveryUnconfirmedSetIsWhilePaused() async throws {
     let (_, anonymous) = try fixture(), local = try begin(anonymous)
-    #expect(local.logSet() && local.sets.count == 1 && anonymous.workoutUnsentSets == Set(local.sets.map(\.id)))
+    #expect(local.logSet() && local.sets.count == 1 && anonymous.unconfirmedSets(local.sets) == Set(local.sets.map(\.id)))
+    #expect(anonymous.unsentSets(local.sets).isEmpty)
     let transport = JournalModelTransport(), runtime = try GymModelTests().runtime(transport: transport)
     let owner = transport.identity(email: "unsent-owner@example.com")
     #expect(try await runtime.engine.signIn(account: owner.account, token: owner.token).isComplete)
     let gym = GymModel(runner: runtime.runner, runtime: runtime)
     #expect(gym.run(CreateExercise(Exercise(id: first, name: "Workout squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)))?.receipt != nil)
     await runtime.engine.flushOnLeave(); gym.refresh()
-    #expect(!gym.isAnonymous && !gym.authPaused && runtime.engine.status.online && gym.workoutUnsentSets.isEmpty)
+    #expect(!gym.isAnonymous && !gym.authPaused && runtime.engine.status.online && gym.unsentSets(gym.workout.sets).isEmpty)
     transport.state.withLock { $0.sessions[owner.token.value] = nil }
     let workout = try begin(gym)
     #expect(workout.logSet())
     await runtime.engine.flushOnLeave()
     for _ in 0..<100 where !runtime.engine.status.authPaused { try await Task.sleep(for: .milliseconds(2)) }
     gym.refresh(); workout.reconcile()
-    #expect(gym.authPaused && workout.sets.count == 1 && gym.workoutUnsentSets == Set(workout.sets.map(\.id)))
+    #expect(gym.authPaused && workout.sets.count == 1 && gym.unsentSets(gym.workout.sets) == Set(workout.sets.map(\.id)))
   }
 
   @Test func offlineWorkoutAndSetsSurviveReopeningAndAdmitAfterReconnect() async throws {
@@ -867,8 +868,8 @@ import SyncTesting
       try await Task.sleep(for: .milliseconds(2))
       workout.weightKg = 35; workout.reps = 6; workout.logSet()
       let session = try #require(workout.session), retained = workout.sets
-      #expect(retained.count == 2 && gym.workoutDeviceSets(retained) == Set(retained.map(\.id)))
-      #expect(gym.workoutUnsentSets == Set(retained.map(\.id)))
+      #expect(retained.count == 2 && gym.unconfirmedSets(retained) == Set(retained.map(\.id)))
+      #expect(gym.unsentSets(gym.workout.sets) == Set(retained.map(\.id)))
       await engine.flushOnLeave(); gym.refresh()
       #expect(try runtime.runner.read(Gym.scope) { try $0.confirmed(Session.self, session.id) } == nil)
       return (session, retained, workout.walk)
@@ -880,23 +881,23 @@ import SyncTesting
       let runtime = try reopen(), engine = runtime.engine, runner = runtime.runner
       let reopened = GymModel(runner: runner, runtime: runtime), restored = reopened.workout
       #expect(restored.session == session && restored.sets == retained && restored.walk == walk && restored.canLog)
-      #expect(restored.weightKg == 35 && restored.reps == 6 && reopened.workoutDeviceSets(retained) == Set(retained.map(\.id)))
+      #expect(restored.weightKg == 35 && restored.reps == 6 && reopened.unconfirmedSets(retained) == Set(retained.map(\.id)))
       connectivity.set(online: true)
       for _ in 0..<100 where !engine.status.online { try await Task.sleep(for: .milliseconds(2)) }
       await engine.start()
       await engine.flushOnLeave()
       for _ in 0..<200 {
         reopened.refresh(); restored.reconcile()
-        if try runner.read(Gym.scope, { try $0.commands().isEmpty }), reopened.workoutDeviceSets(restored.sets).isEmpty { break }
+        if try runner.read(Gym.scope, { try $0.commands().isEmpty }), reopened.unconfirmedSets(restored.sets).isEmpty { break }
         try await Task.sleep(for: .milliseconds(10))
       }
-      #expect(reopened.notices.isEmpty && reopened.workoutDeviceSets(restored.sets).isEmpty,
+      #expect(reopened.notices.isEmpty && reopened.unconfirmedSets(restored.sets).isEmpty,
               "Replay diagnostics: \(telemetry.entries.withLock { $0.map { ($0.name, $0.properties) } })")
       #expect(restored.session?.id == session.id && restored.session?.isOpen == true && restored.walk == walk)
       #expect(restored.sets.map(\.id) == retained.map(\.id))
       #expect(restored.sets.map(\.weightKg) == [-20, 35] && restored.sets.map(\.reps) == [8, 6])
       #expect(restored.sets.map(\.completedAt) == retained.map(\.completedAt))
-      #expect(reopened.workoutUnsentSets.isEmpty && restored.canLog)
+      #expect(reopened.unsentSets(reopened.workout.sets).isEmpty && restored.canLog)
       #expect(try runner.read(Gym.scope) { try $0.commands().isEmpty })
     }
     try await admitRestored()

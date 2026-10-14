@@ -65,15 +65,13 @@ struct MovementRecordScreen: View {
         }
       }
     }.listStyle(.insetGrouped).modifier(GymPage())
-      .modifier(TitledPage(title: movement?.name ?? "Movement", subtitle: movement?.equipment.capitalized))
+      .roomTitle(movement?.name ?? "Movement", subtitle: movement?.equipment.capitalized)
       .toolbar(.hidden, for: .tabBar)
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
-          Menu {
+          MoreMenu(identifier: "gym-record-more") {
             Button("Rename movement", systemImage: "pencil") { renaming = true }.accessibilityIdentifier("gym-record-rename")
-          } label: { Image(systemName: "ellipsis.circle") }
-            .accessibilityLabel("More").accessibilityIdentifier("gym-record-more")
-            .disabled(gym.readFailed || gym.accountTransition || movement == nil)
+          }.disabled(gym.readFailed || gym.accountTransition || movement == nil)
         }
       }
       .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo") }
@@ -89,13 +87,13 @@ struct MovementRecordScreen: View {
         ChartWindowPicker(recent: "12 weeks", identifier: "gym-record-window", window: $window)
         if display.hasChart(in: log.moment.zone), let first = display.logPlotPoints.first {
           LogDatedChart(points: display.logPlotPoints, from: all ? first.date : LogPresentation.date(log.moment.today.adding(days: -84)),
-                        through: LogPresentation.date(log.moment.now), series: .strength, bestID: progress.best?.id.description)
+                        through: log.moment.now.date, series: .strength, bestID: progress.best?.id.description)
             .accessibilityIdentifier("gym-record-chart")
         } else if let best = display.best, best.id != progress.best?.id, let estimate = best.fact.estimate {
           Text("Best in 12 weeks: \(Readout.estimate(estimate.e1rm)), from \(Readout.effort(weightKg: estimate.weightKg, reps: estimate.reps)).")
             .font(.subheadline).monospacedDigit().foregroundStyle(GymPalette.ink)
         }
-        Text("\(all ? "All" : "Last 12 weeks") · \(Readout.count(display.sessions.count, "session"))")
+        Text("\(all ? "All" : "Last 12 weeks") · \(GymCount.of(display.sessions.count, "session"))")
           .font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim)
         if display.estimates.isEmpty { Text("No eligible estimate in this window.").font(.subheadline).foregroundStyle(GymPalette.inkDim) }
       }
@@ -105,12 +103,12 @@ struct MovementRecordScreen: View {
   func facts(_ progress: MovementProgress) -> [FactTiles.Fact] {
     let best = progress.best.flatMap { best in best.fact.estimate.map { estimate in
       FactTiles.Fact(value: "\(Readout.estimatedWeight(estimate.e1rm)) kg",
-                     label: "Best e1RM · \(LogPresentation.brief(LogPresentation.date(best.startedAt)))", record: true, identifier: "gym-record-best")
+                     label: "Best e1RM · \(LogPresentation.brief(best.startedAt.date))", record: true, identifier: "gym-record-best")
     } }
     let efforts = LogPresentation.progressEfforts(progress).map { effort in
       effort.weightKg == 0
-        ? FactTiles.Fact(value: Readout.count(effort.reps, "rep"), label: "Most reps · no added load", identifier: "gym-record-bodyweight-reps")
-        : FactTiles.Fact(value: "\(Readout.weight(effort.weightKg)) kg", label: "Heaviest · \(Readout.count(effort.reps, "rep"))", identifier: "gym-record-heaviest")
+        ? FactTiles.Fact(value: GymCount.of(effort.reps, "rep"), label: "Most reps · no added load", identifier: "gym-record-bodyweight-reps")
+        : FactTiles.Fact(value: "\(Readout.weight(effort.weightKg)) kg", label: "Heaviest · \(GymCount.of(effort.reps, "rep"))", identifier: "gym-record-heaviest")
     }
     return [best].compactMap { $0 } + efforts
   }

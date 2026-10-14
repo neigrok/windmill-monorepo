@@ -150,37 +150,56 @@ import XCTest
       XCTAssertTrue(app.textFields["email-address"].waitForValue(address)); app.buttons["Send code"].tap(); replace(app.textFields["email-code"], "482913")
     }
     XCTAssertTrue(app.alerts.buttons["Add"].waitForExistence(timeout: 15)); app.alerts.buttons["Add"].tap()
-    let recovery = app.descendants(matching: .any)["gym-adoption-recovery"]
-    XCTAssertTrue(recovery.waitForExistence(timeout: 20))
+    let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "recovery-row-"))
+    openLog(app)
+    let row = rows.firstMatch
+    XCTAssertTrue(row.waitForExistence(timeout: 20))
     capture(app, "adoption-recovery-ready")
     let hierarchy = XCTAttachment(string: app.debugDescription)
     hierarchy.name = "adoption-recovery-hierarchy"; hierarchy.lifetime = .keepAlways; add(hierarchy)
-    let keep = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-adoption-keep-")).firstMatch
-    XCTAssertTrue(keep.waitForExistence(timeout: 20)); XCTAssertEqual(keep.label, "Keep as finished workout")
-    let recoveredID = String(keep.identifier.dropFirst("gym-adoption-keep-".count))
+    let recoveredID = String(row.identifier.dropFirst("recovery-row-".count))
     XCTAssertFalse(recoveredID.isEmpty); XCTAssertNotEqual(recoveredID, accountWorkout)
+    XCTAssertTrue(row.label.hasSuffix("Your account has an open workout — keep this one as finished."), row.label)
+    let keep = app.buttons["recovery-primary"]
+    row.tap(); XCTAssertTrue(keep.waitForExistence(timeout: 10)); XCTAssertEqual(keep.label, "Keep as finished")
     capture(app, "adoption-recovery-light")
     let finishedSets = verifyConflictServer(app, identity: identity, stage: "before-keep")
     XCTAssertEqual(finishedSets.count, 2)
     app.terminate()
     if let appearance = app.launchArguments.firstIndex(of: "-onboarding-appearance") { app.launchArguments[appearance + 1] = "dark" }
     app.launchArguments += ["-restore-board"]; app.launch()
-    XCTAssertTrue(recovery.waitForExistence(timeout: 20))
-    let restoredKeep = app.buttons["gym-adoption-keep-" + recoveredID]
-    XCTAssertTrue(restoredKeep.waitForExistence(timeout: 5)); XCTAssertEqual(restoredKeep.label, "Keep as finished workout")
+    openLog(app)
+    let restoredRow = app.buttons["recovery-row-" + recoveredID]
+    XCTAssertTrue(restoredRow.waitForExistence(timeout: 20)); restoredRow.tap()
+    XCTAssertTrue(keep.waitForExistence(timeout: 10)); XCTAssertEqual(keep.label, "Keep as finished")
     capture(app, "adoption-recovery-dark")
     XCTAssertEqual(verifyConflictServer(app, identity: identity, stage: "restored-before-keep"), finishedSets)
-    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in restoredKeep.isEnabled && restoredKeep.isHittable }, object: restoredKeep)
-    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed); restoredKeep.tap()
-    XCTAssertTrue(restoredKeep.waitForNonExistence(timeout: 15))
+    let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in keep.isEnabled && keep.isHittable }, object: keep)
+    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed); keep.tap()
+    XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label ENDSWITH %@", " is on your log.")).firstMatch.waitForExistence(timeout: 10))
+    back(app)
+    XCTAssertTrue(restoredRow.waitForNonExistence(timeout: 30), "A kept workout's row leaves once the log confirms it")
     let allAnonymousSets = verifyConflictServer(app, identity: identity, stage: "after-keep", recoveryID: recoveredID)
     XCTAssertEqual(allAnonymousSets.count, 4); XCTAssertTrue(allAnonymousSets.isSuperset(of: finishedSets))
     app.terminate(); app.launch()
-    let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.buttons["workout-log"].exists || app.buttons["you"].exists }, object: app)
-    XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 20), .completed)
-    XCTAssertFalse(restoredKeep.exists)
-    XCTAssertTrue(recovery.waitForNonExistence(timeout: 20), "A kept workout's recovery band retires once the log confirms it")
+    openLog(app)
+    XCTAssertTrue(app.descendants(matching: .any)["gym-log"].waitForExistence(timeout: 20))
+    XCTAssertEqual(rows.count, 0)
     XCTAssertEqual(verifyConflictServer(app, identity: identity, stage: "relaunch-after-keep", recoveryID: recoveredID), allAnonymousSets)
+  }
+
+  // Signed in, a workout the account has not taken waits under On this phone at the head of The log; the account's own
+  // open workout, when it comes to the front, is hidden first.
+  func openLog(_ app: XCUIApplication) {
+    let log = app.tabBars.buttons["The log"], rack = app.buttons["workout-log"]
+    let either = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in rack.exists || log.isHittable }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [either], timeout: 30), .completed)
+    if rack.exists {
+      app.buttons["workout-assembly"].tap()
+      XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
+    }
+    XCTAssertTrue(log.wait(for: \.isHittable, toEqual: true, timeout: 30)); log.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["gym-log"].waitForExistence(timeout: 20))
   }
 
   func conflictModelSnapshot(_ app: XCUIApplication, expectedSessions: Int) throws -> [String: Any] {

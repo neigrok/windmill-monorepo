@@ -96,7 +96,7 @@ extension GymModel {
       let date = try runner.read(Gym.scope) { read in
         try read.repository(Proposal.self).record(proposal.id, in: .stored).flatMap { try Fields($0).optionalInstant("createdAt") }
       }
-      if let date { return source + " · " + Date(timeIntervalSince1970: Double(date.ms) / 1000).formatted(.dateTime.day().month(.abbreviated).hour().minute()) }
+      if let date { return source + " · " + date.date.formatted(.dateTime.day().month(.abbreviated).hour().minute()) }
     } catch { report("gym_read", error) }
     return source
   }
@@ -198,7 +198,6 @@ struct ProposalReviewSheet: View {
           } else if gym.readFailed {
             Text("That proposal could not be read."); Button("Try again") { gym.refresh() }
           } else if let proposal {
-            if #available(iOS 26, *) {} else { Text(gym.coachProposalSource(proposal)).font(.footnote).foregroundStyle(GymPalette.inkDim) }
             if !proposal.summary.isEmpty {
               Text(proposal.summary).padding(.leading, 12).overlay(alignment: .leading) { Rectangle().fill(GymPalette.accent).frame(width: 3) }
             }
@@ -235,8 +234,8 @@ struct ProposalReviewSheet: View {
         extent = position.extent
         if position.atEnd, position.extent.viewport > 0, position.extent.content > 0 { seen = position.extent }
       }
-      .navigationTitle(routine?.name ?? proposal?.baseName ?? "Proposal").modifier(GymPage())
-      .modifier(ReviewChrome(subtitle: proposal.map(gym.coachProposalSource), band: band))
+      .roomTitle(routine?.name ?? proposal?.baseName ?? "Proposal", subtitle: proposal.map(gym.coachProposalSource)).modifier(GymPage())
+      .modifier(ReviewBand(band: band))
       .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
       .alert("Turn this down?", isPresented: $turningDown) {
         Button("Turn down", role: .destructive) { if let proposal { submitted = gym.coachDecideProposal(proposal, apply: false) } }
@@ -331,13 +330,11 @@ struct ProposalReviewSheet: View {
   }
 }
 
-// iOS 26 carries who proposed it, and when, under the title, and softens the diff where it scrolls under the band;
-// earlier systems draw the proposer as the sheet's first line.
-struct ReviewChrome<Band: View>: ViewModifier {
-  let subtitle: String?
+// iOS 26 softens the diff where it scrolls under the band; earlier systems inset it.
+struct ReviewBand<Band: View>: ViewModifier {
   let band: Band
   @ViewBuilder func body(content: Content) -> some View {
-    if #available(iOS 26, *) { content.navigationSubtitle(subtitle ?? "").safeAreaBar(edge: .bottom) { band } }
+    if #available(iOS 26, *) { content.safeAreaBar(edge: .bottom) { band } }
     else { content.safeAreaInset(edge: .bottom) { band } }
   }
 }

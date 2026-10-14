@@ -21,9 +21,7 @@ struct GymRoom: View {
     TabView(selection: $tab) {
       SwiftUI.Tab("Routines", systemImage: "list.bullet.rectangle", value: Tab.routines) {
         NavigationStack(path: $routinesPath) {
-          root(RoutinesTab(gym: gym, onAccount: app.openYou,
-                           onWrittenProgram: { if gym.isAnonymous || gym.authPaused { app.openYou() } else { ask("Help me turn my written program into a routine.") } },
-                           onReviewProposal: { proposal = ProposalReviewID(id: $0.description) }))
+          root(RoutinesTab(gym: gym, onReviewProposal: { proposal = ProposalReviewID(id: $0.description) }))
         }
       }
       SwiftUI.Tab("The log", systemImage: "calendar", value: Tab.log) {

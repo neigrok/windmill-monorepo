@@ -22,15 +22,48 @@ struct RoomSecondaryStyle: ViewModifier {
   }
 }
 
+// A glass circle holding one symbol, 44 pt unless a smaller seat is asked for; its target is 44 pt either way.
 struct RoomSeatStyle: ButtonStyle {
+  var diameter = RoomSpace.minimumTarget
+
   func makeBody(configuration: Configuration) -> some View {
-    seat(configuration.label.frame(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget)
-      .contentShape(Circle()))
+    seat(configuration.label.frame(width: diameter, height: diameter))
+      .frame(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget).contentShape(Circle())
   }
 
   @ViewBuilder private func seat<V: View>(_ content: V) -> some View {
     if #available(iOS 26.0, *) { content.glassEffect(.regular.interactive(), in: Circle()) }
     else { content.background(.regularMaterial, in: Circle()) }
+  }
+}
+
+// The one floating primary of a screen, in the reach band, with an optional trailing symbol and one-line footer.
+struct ActionBand: View {
+  let title: String
+  let room: RoomColors
+  var disabled = false
+  var busy = false
+  var actionIdentifier: String?
+  var footer: String?
+  var symbol: String?
+  let action: () -> Void
+
+  var body: some View {
+    VStack(spacing: RoomSpace.related) {
+      Button(action: action) {
+        HStack(spacing: RoomSpace.related) {
+          if busy { ProgressView().tint(room.onAccent) }
+          Text(title)
+          if let symbol { Image(systemName: symbol).accessibilityHidden(true) }
+        }.frame(maxWidth: .infinity)
+      }.modifier(RoomPrimaryStyle(room: room))
+        .disabled(disabled || busy)
+        .accessibilityIdentifier(actionIdentifier ?? title)
+      if let footer {
+        Text(footer).font(.footnote).foregroundStyle(room.inkDim).multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+    }.padding(RoomSpace.inset)
   }
 }
 

@@ -107,7 +107,7 @@ import SyncTesting
 
   nonisolated struct CalendarZone: Zone {
     let value: TimeZone
-    func offsetSeconds(at instant: Instant) -> Int { value.secondsFromGMT(for: LogPresentation.date(instant)) }
+    func offsetSeconds(at instant: Instant) -> Int { value.secondsFromGMT(for: instant.date) }
   }
   @Test(arguments: [("America/Santiago", "2026-09-06"), ("America/Havana", "2026-03-08"), ("Europe/Belgrade", "2026-03-29")])
   func momentsStayOnTheirDayAcrossOffsetChanges(value: (String, String)) throws {
@@ -171,16 +171,14 @@ import SyncTesting
     #expect(LogPresentation.planLine(bench, plan: twice) == nil)
   }
 
-  @Test func countsSpellTheirPluralsAndASessionRowReadsItsWorkingSetsAndDuration() throws {
-    #expect([0, 1, 2].map { Readout.count($0, "working set") } == ["0 working sets", "1 working set", "2 working sets"])
-    #expect(Readout.count(1, "weigh-in") == "1 weigh-in" && Readout.count(40, "weigh-in") == "40 weigh-ins")
+  @Test func aSessionRowReadsItsWorkingSetsAndDurationAndItsRecord() throws {
     let (_, gym) = fixture(), value = try session(gym, daysAgo: 1)
     let readout = try #require(gym.log?.readout(session: value.id))
     #expect(LogPresentation.sessionFacts(readout) == "1 working set · 33m")
     #expect(gym.logRecordFact(value.id, progress: gym.log?.progress) == "Record · \(SeedExercises.all.first!.name) 60 × 5")
     let second = try session(gym, daysAgo: 0, kg: 50)
     #expect(gym.logRecordFact(second.id, progress: gym.log?.progress) == nil)
-    #expect(!gym.logSessionIsUnsent(value.id))
+    #expect(!gym.sessionIsUnsent(value.id))
   }
 
   @Test func theMomentEventIsAllowlisted() {
@@ -193,7 +191,7 @@ import SyncTesting
     #expect(LogPresentation.brief(LocalDay("2026-09-26")!, today: today) == LogPresentation.brief(LogPresentation.date(LocalDay("2026-09-26")!)))
     #expect(LogPresentation.brief(LocalDay("2025-12-30")!, today: today).contains("2025"))
     #expect(!LogPresentation.brief(LocalDay("2026-01-02")!, today: today).contains("2026"))
-    #expect([0, 1, 3].map(LogPresentation.ago(days:)) == ["today", "yesterday", "3 days ago"])
+    #expect([0, 1, 3].map(Readout.ago(days:)) == ["today", "yesterday", "3 days ago"])
     let best = LocalDay("2026-09-23")!
     #expect(LogPresentation.since(LocalDay("2026-09-20")!, best: best) == LogPresentation.brief(LogPresentation.date(LocalDay("2026-09-20")!)))
     #expect(LogPresentation.since(LocalDay("2026-08-30")!, best: best) == LogPresentation.date(LocalDay("2026-08-30")!).formatted(.dateTime.month(.wide)))

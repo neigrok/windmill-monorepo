@@ -327,11 +327,14 @@ demonstrated (§6 there):
 |---|---|---|
 | `GymPage` modifier — canvas, hidden scroll background, tint, inline/large title | `CoachPage` (`CoachScreens.swift:32`), `WorkoutAppearance` (`WorkoutScreen.swift:342`), the inline chains in `LogTab.swift:30`, `RoutinesTab.swift:232` | Gym |
 | `RoomTransient` (below) | four notice bands | Theme (shape), Gym (adapter) |
-| `ActionBand` — the one floating primary, with its optional one-line footer, disabled and busy states | `RoutineActionBand` (`RoutinesTab.swift:165`), the bands in `RoutineTargets.swift:304`, `MovementPicker.swift:330`, `CoachHistory.swift:141`, `WorkoutSheets.swift:138`, `BodyweightScreen.swift:276` | Theme |
+| `roomTitle(_:subtitle:)` — the inline title with its `.navigationSubtitle`, the two stacked in the bar's principal slot on iOS 18 | the four subtitle helpers the tracks drew | Theme |
+| `ActionBand` — the one floating primary, with its optional trailing symbol and one-line footer, disabled and busy states | `RoutineActionBand` (`RoutinesTab.swift:165`), the bands in `RoutineTargets.swift:304`, `MovementPicker.swift:330`, `CoachHistory.swift:141`, `WorkoutSheets.swift:138`, `BodyweightScreen.swift:276` | Theme |
 | `WeightInstrument` — the big numeral, unit, four-key ladder, accessibility reflow | `WorkoutScreen.swift:283`, `WorkoutSheets.swift:96` | Gym |
-| `SetEditor` — weight, reps, effort, note, Kind (segmented), delete; validation and its refusal text; the note's byte counter only from 3,200 bytes | `FinishedSetFixSheet` (`SessionDetailScreen.swift:118`), `WorkoutFixSheet` (`WorkoutSheets.swift:81`) | Gym |
+| `SetEditor` — weight, reps, effort, note, Kind (segmented), delete; validation and its refusal text; the note's byte counter only from 3,200 bytes; over a saved workout's set also movement and time, returned to that workout's draft | `FinishedSetFixSheet` (`SessionDetailScreen.swift:118`), `WorkoutFixSheet` (`WorkoutSheets.swift:81`) | Gym |
 | `RenameMovementSheet` — one sheet, `.medium`, the name field, a counter only from 48 characters, and one help line: *Renames it everywhere; the old name still finds it.* | `LogRenameSheet` (`MovementRecordScreen.swift:128`), `RenameMovementSheet.swift:23` | Gym |
-| `MovementRow` — title, one meta line, optional trailing fact or check | `RoutineBuilder.swift:99`, `RoutinesTab.swift:129`, `MovementPicker.swift:252`, `WorkoutSheets.swift:170` | Gym |
+| `GymRow` — title, one meta line, an optional trailing fact, check, progress or a sheet door's chevron | `RoutineBuilder.swift:99`, `RoutinesTab.swift:129`, `MovementPicker.swift:252`, `WorkoutSheets.swift:170`, and every list row of a title over one line | Gym |
+| `SetRow` — a set read back: its place, its numbers, a trailing caption, then time, effort and note when present | session detail's set rows, the saved workout's rows in Inspect and Fix workout | Gym |
+| `MoreMenu` — `ellipsis.circle` in the bar presenting the native Menu | the bar menus of Coach, session detail, the Record and Inspect | Gym |
 | `FactTiles` — up to three value-over-label tiles | the receipt's `fact(_:_:)` (`WorkoutReceipt.swift:242`), session detail's head, the record screen's tiles | Gym |
 | `RoomDoor` — the Where to start? card, given a title, line, symbol, accent and ground | the two cards in `WindmillApp.swift:113,128` | Shell |
 | `IdentityRow`, `FactRow`, `DoorRow` in You | the custom rows in `AccountSheet.swift:308,315,358` | Shell |
@@ -360,6 +363,10 @@ head of the content. It is one of four things: the transient band (§5) when it 
 control with the reason as that section's footer when it blocks a door (*Sign-in needs a
 connection.* under the disabled Apple and email doors); a symbol on the row it describes (`iphone`
 on an unsent set or session); or a row in the one place that owns it (**On this phone**, §7.16).
+Signed out nothing is unsent — there is no account to send it to. Signed in, a set is unsent while
+the log has not confirmed it and something holds it back — no connection, a paused session, its own
+refused push — never while it is merely on its way; a workout is unsent while it or any of its sets
+is. The ledger, the log's rows, session detail and the Live Activity's count follow this one rule.
 *Coach needs a connection.*, *3 sets are saved on this device only.* and *Your full training
 history needs a connection to finish syncing.* are bands, not canvas text.
 
@@ -373,11 +380,10 @@ reach band above the primary, honouring the delete window (`gym/briefs/13-gestur
 (`RoutinesTab.swift:205`, list sections in red), `LogNoticeBand` (`LogPresentation.swift:151`),
 `CoachNoticeBand` (`CoachScreens.swift:39`), the share message section (`LogTab.swift:125`) and the
 message rows of `WorkoutNotice` (`WorkoutScreen.swift:351`). Refusal text is `gym/ink`, never
-red: the band is the signal. A refusal is at most twelve words and names the way out (*Set not
-sent — ten unsent sets is the limit. Send or remove one.*); the copy is the brief's. The signed-out
-workout a signed-in account has not taken (`WorkoutAdoptionBand`, `GymWorkoutAdoption.swift:15`)
-is not a band and not a card on Routines: it is a row of **On this phone** at the head of The log
-(§7.16).
+red: the band is the signal. A refusal is at most twelve words and names the way out (*Overlaps
+another workout — fix its times.*); the copy is the brief's. The signed-out
+workout a signed-in account has not taken is not a band and not a card on Routines: it is a row of
+**On this phone** at the head of The log (§7.16).
 
 ## 6. Coach, decluttered
 
@@ -537,7 +543,7 @@ follow with 7.11 and 7.12.
   the Record screen directly, which already carries the equipment, Rename and the last sets.
   Three one-row cards (*Barbell · Rename movement*, *Open record ›*, *Last time · Never logged*)
   are not a screen.
-- The movement picker's rows are the two-line `MovementRow`: the name, then *Barbell · last
+- The movement picker's rows are the two-line `GymRow`: the name, then *Barbell · last
   80 × 5 · 3 days ago* or *Barbell · never logged* in `ink-dim`; the third mono line goes
   (`MovementPicker.swift:252–259`). *Create movement* stays the pinned primary. The picker is
   titled *Add movement* from the builder and *Next movement* from the workout — never a question.

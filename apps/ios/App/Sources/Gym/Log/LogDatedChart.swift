@@ -205,7 +205,7 @@ extension MovementProgress {
   var logPlotPoints: [LogPlotPoint] {
     estimates.compactMap { point in
       guard let fact = point.fact.estimate else { return nil }
-      let date = LogPresentation.date(point.startedAt)
+      let date = point.startedAt.date
       return LogPlotPoint(id: point.id.description, date: date, value: fact.e1rm,
         label: "\(Readout.estimatedWeight(fact.e1rm)) kg est · \(LogPresentation.brief(date)) · \(Readout.effort(weightKg: fact.weightKg, reps: fact.reps))")
     }

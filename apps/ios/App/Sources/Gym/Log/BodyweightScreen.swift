@@ -107,7 +107,7 @@ struct BodyweightScreen: View {
                 .foregroundStyle(GymPalette.inkDim)
                 .accessibilityIdentifier("gym-bodyweight-window-empty")
             }
-            Text("\(window == .recent ? "90 days" : "All") · \(Readout.count(chart.dots.count, "weigh-in"))")
+            Text("\(window == .recent ? "90 days" : "All") · \(GymCount.of(chart.dots.count, "weigh-in"))")
               .font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim)
           } footer: {
             Text("Every point is a number you typed. Nothing here is estimated.")

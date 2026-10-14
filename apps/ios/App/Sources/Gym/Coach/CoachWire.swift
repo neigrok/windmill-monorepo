@@ -1,4 +1,5 @@
 import Foundation
+import DomainKit
 import GymDomain
 
 nonisolated struct CoachAttachment: Codable, Equatable, Identifiable, Sendable {
@@ -207,7 +208,7 @@ nonisolated enum CoachCopy {
   }
   static func escaped(_ component: String) -> String { component.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "" }
   static func day(_ ms: Int64, now: Date = Date()) -> String {
-    let date = Date(timeIntervalSince1970: Double(ms) / 1000)
+    let date = Instant(ms: ms).date
     let sameYear = Calendar.current.isDate(date, equalTo: now, toGranularity: .year)
     return date.formatted(sameYear ? .dateTime.day().month(.abbreviated) : .dateTime.day().month(.abbreviated).year())
   }

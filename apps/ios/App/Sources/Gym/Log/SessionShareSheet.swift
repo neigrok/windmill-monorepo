@@ -220,8 +220,7 @@ struct SessionShareSheet: View {
       .safeAreaInset(edge: .bottom) {
         VStack(spacing: 0) {
           if let note = sharing.state.note {
-            RoomTransient(message: note, room: .gym)
-              .accessibilityIdentifier("gym-share-error").padding(.horizontal, RoomSpace.inset)
+            RoomTransient(message: note, room: .gym).accessibilityIdentifier("gym-share-error")
           }
           ActionBand(title: sharing.state.action, room: .gym,
                      busy: sharing.state == .working, actionIdentifier: "gym-share-primary") {
@@ -252,6 +251,6 @@ struct SessionShareSheet: View {
 
   var expiry: String {
     guard case .live(let share, _, _) = sharing.state else { return "" }
-    return LogPresentation.brief(LogPresentation.date(Instant(ms: share.expiresAt)))
+    return LogPresentation.brief(Instant(ms: share.expiresAt).date)
   }
 }

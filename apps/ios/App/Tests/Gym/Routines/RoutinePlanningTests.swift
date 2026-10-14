@@ -160,7 +160,6 @@ import SyncSchema
     #expect(RoutineLines.session(SessionReadout(session: session, sets: [set])) == "1 working set · 1 movement")
     #expect(RoutineLines.session(SessionReadout(session: session, sets: [set, warmup])) == "1 working set · 2 movements")
     #expect(RoutineLines.session(SessionReadout(session: session, sets: [warmup])) == "0 working sets · 1 movement")
-    #expect([Readout.count(1, .proposal), Readout.count(2, .proposal), Readout.count(2, .workingSet)] == ["1 proposal", "2 proposals", "2 working sets"])
   }
 
   @Test func aProposalSaysWhoProposedItAndOnlyAServerStampedTime() {

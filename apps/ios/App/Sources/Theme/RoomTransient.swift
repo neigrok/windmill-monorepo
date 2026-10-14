@@ -32,6 +32,7 @@ struct RoomTransient: View {
       .frame(minHeight: RoomSpace.minimumTarget)
       .modifier(FloatingSurface())
       .accessibilityElement(children: .contain)
+      .padding(.horizontal, RoomSpace.inset).padding(.vertical, RoomSpace.small)
   }
 }
 
@@ -66,32 +67,5 @@ struct CappedHeight: Layout {
 
   func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
     subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
-  }
-}
-
-struct ActionBand: View {
-  let title: String
-  let room: RoomColors
-  var disabled = false
-  var busy = false
-  var actionIdentifier: String?
-  var footer: String?
-  let action: () -> Void
-
-  var body: some View {
-    VStack(spacing: RoomSpace.related) {
-      Button(action: action) {
-        HStack(spacing: RoomSpace.related) {
-          if busy { ProgressView().tint(room.onAccent) }
-          Text(title)
-        }.frame(maxWidth: .infinity)
-      }.modifier(RoomPrimaryStyle(room: room))
-        .disabled(disabled || busy)
-        .accessibilityIdentifier(actionIdentifier ?? title)
-      if let footer {
-        Text(footer).font(.footnote).foregroundStyle(room.inkDim).multilineTextAlignment(.center)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-    }.padding(RoomSpace.inset)
   }
 }

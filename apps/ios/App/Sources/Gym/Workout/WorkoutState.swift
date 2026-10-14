@@ -346,7 +346,7 @@ struct FinishWorkout: Action {
   // The clocks read the log's time, which stamped the start and the sets; this phone's time stands in when it cannot be read.
   var clocks: WorkoutClocks? {
     guard let session else { return nil }
-    let now = (try? gym.runner.moment().now) ?? Instant(ms: Int64(Date.now.timeIntervalSince1970 * 1_000))
+    let now = (try? gym.runner.moment().now) ?? Instant(Date.now)
     return WorkoutClocks(session: session, sets: sets, now: now)
   }
   var isPresented: Bool { (!gym.workoutHidden && gym.openSession != nil) || finishing || receipt != nil }
@@ -683,26 +683,6 @@ extension GymModel {
     guard workoutHidden else { return true }
     var next = workout.walk; next.hidden = false
     return workout.keep(next)
-  }
-  func workoutDeviceSets(_ sets: [TrainingSet]) -> Set<ID<TrainingSet>> {
-    if isAnonymous { return Set(sets.map(\.id)) }
-    do {
-      return try runner.read(Gym.scope) { read in
-        var pending = Set<ID<TrainingSet>>()
-        for set in sets {
-          guard let confirmed = try read.confirmed(TrainingSet.self, set.id), confirmed.isVisible,
-                try TrainingSet(Fields(confirmed)) == set else { pending.insert(set.id); continue }
-        }
-        return pending
-      }
-    } catch { report("gym_read", error); return Set(sets.map(\.id)) }
-  }
-  // A set this phone holds for a reason the lifter can act on — signed out, paused, offline or a failed push — not one in flight.
-  var workoutUnsentSets: Set<ID<TrainingSet>> {
-    let pending = workoutDeviceSets(workout.sets)
-    if isAnonymous || authPaused || runtime?.engine.status.online == false { return pending }
-    let failed = runtime?.engine.status.failedPushes[Gym.scope] ?? []
-    return Set(pending.filter { failed.contains($0.ref.key) })
   }
   var workoutNotice: String? {
     guard let notice = notices.last else { return nil }

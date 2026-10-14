@@ -302,13 +302,8 @@ struct RoutineTargetsSheet: View {
           case .refused: return
           }
         }
-        // Not a keyboard toolbar: on iOS 26 one shortens the keyboard avoidance of later sheets.
         if focus != nil {
-          HStack {
-            Spacer()
-            Button("Next") { nextField() }.frame(minWidth: 44, minHeight: 44).disabled(focus == lastFocus)
-            Button("Done") { focus = nil }.frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("gym-target-keyboard-done")
-          }.padding(.horizontal)
+          KeyboardBar(next: { nextField() }, nextDisabled: focus == lastFocus, doneIdentifier: "gym-target-keyboard-done") { focus = nil }
         }
       }
     }

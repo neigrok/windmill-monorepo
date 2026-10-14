@@ -350,7 +350,10 @@ public enum Readout {
   }
 
   public static func ago(_ instant: Instant, now: Instant, zone: any Zone) -> String {
-    let days = LocalDay(instant, in: zone).days(until: LocalDay(now, in: zone))
+    ago(days: LocalDay(instant, in: zone).days(until: LocalDay(now, in: zone)))
+  }
+
+  public static func ago(days: Int) -> String {
     if days <= 0 { return "today" }
     return days == 1 ? "yesterday" : "\(days) days ago"
   }

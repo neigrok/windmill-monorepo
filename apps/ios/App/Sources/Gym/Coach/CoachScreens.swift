@@ -93,10 +93,7 @@ struct NotesScreen: View {
         Group {
           ForEach(gym.notes, id: \.id) { note in
             Button { editor = NoteEditorIdentity(note: note) } label: {
-              VStack(alignment: .leading, spacing: RoomSpace.small) {
-                Text(note.title).font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink)
-                if let line = note.body.split(whereSeparator: \.isNewline).first { Text(String(line)).font(.subheadline).foregroundStyle(GymPalette.inkDim).lineLimit(2) }
-              }.frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget, alignment: .leading)
+              GymRow(title: note.title, meta: note.body.split(whereSeparator: \.isNewline).first.map(String.init), lineLimit: 2)
             }
               .swipeActions { Button("Delete", role: .destructive) { _ = gym.run(DeleteNote(note.id)) } }
               .contextMenu {
@@ -187,10 +184,7 @@ struct NoteEditor: View {
             if case .saved = gym.save(&draft) { saved = true; dismiss() }
           }.disabled(owner != gym.account || !gym.coachAccountAvailable || draft.current.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).accessibilityIdentifier("coach-note-save") }
         }
-        .safeAreaInset(edge: .bottom) {
-          // Not a keyboard toolbar: on iOS 26 one shortens the keyboard avoidance of later sheets.
-          if focus { HStack { Spacer(); Button("Done") { focus = false }.frame(minWidth: 44, minHeight: 44) }.padding(.horizontal).background(.bar) }
-        }
+        .safeAreaInset(edge: .bottom) { if focus { KeyboardBar(doneIdentifier: "coach-note-keyboard-done") { focus = false } } }
         .sensoryFeedback(.success, trigger: saved)
     }.presentationDetents([.large])
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "note"]) }

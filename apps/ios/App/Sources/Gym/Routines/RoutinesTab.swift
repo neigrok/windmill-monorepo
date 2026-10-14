@@ -7,15 +7,10 @@ import SyncEngine
 
 struct RoutinesTab: View {
   let gym: GymModel
-  let onReviewProposal: ((ID<Proposal>) -> Void)?
+  var onReviewProposal: ((ID<Proposal>) -> Void)?
   @Environment(\.coachOpenAccount) private var openAccount
   @State private var building: RoutineEditingSession?
   @State private var savedID: ID<Routine>?
-  // GymRoom's call still names an account door and a written-program door; Routines draws neither.
-  init(gym: GymModel, onAccount: (() -> Void)? = nil, onWrittenProgram: (() -> Void)? = nil,
-       onReviewProposal: ((ID<Proposal>) -> Void)? = nil) {
-    self.gym = gym; self.onReviewProposal = onReviewProposal
-  }
 
   var body: some View {
     let waiting = gym.waitingRoutineProposals
@@ -29,13 +24,15 @@ struct RoutinesTab: View {
             if !receipts.isEmpty || !waiting.isEmpty {
               Section {
                 ForEach(receipts, id: \.proposal.id) { receipt in
-                  sheetDoor(title: receipt.proposal.baseName ?? "Routine removal",
-                            meta: receipt.outcome == .applied ? "Removed" : "Nothing was applied") { onReviewProposal?(receipt.proposal.id) }
-                    .accessibilityIdentifier("routine-removal-receipt")
+                  Button { onReviewProposal?(receipt.proposal.id) } label: {
+                    GymRow(title: receipt.proposal.baseName ?? "Routine removal",
+                           meta: receipt.outcome == .applied ? "Removed" : "Nothing was applied", trailing: .door)
+                  }.accessibilityIdentifier("routine-removal-receipt")
                 }
                 if let newest = waiting.first {
-                  sheetDoor(title: Readout.count(waiting.count, .proposal), meta: gym.proposalLine(newest)) { onReviewProposal?(newest.id) }
-                    .accessibilityIdentifier("routine-proposal")
+                  Button { onReviewProposal?(newest.id) } label: {
+                    GymRow(title: GymCount.of(waiting.count, "proposal"), meta: gym.proposalLine(newest), trailing: .door)
+                  }.accessibilityIdentifier("routine-proposal")
                 }
               }
             }
@@ -43,9 +40,9 @@ struct RoutinesTab: View {
               ForEach(gym.routinesByLastTraining, id: \.id) { routine in
                 NavigationLink { RoutineDetail(gym: gym, id: routine.id) } label: {
                   HStack(spacing: RoomSpace.related) {
-                    MovementRow(title: routine.name, meta: gym.routineLine(routine))
+                    GymRow(title: routine.name, meta: gym.routineLine(routine))
                     if waiting.dropFirst().contains(where: { $0.routineId == routine.id }) {
-                      Text(Readout.count(1, .proposal)).font(.footnote).foregroundStyle(GymPalette.accent)
+                      Text(GymCount.of(1, "proposal")).font(.footnote).foregroundStyle(GymPalette.accent)
                     }
                   }
                 }.accessibilityIdentifier("routine-\(routine.id)")
@@ -98,17 +95,6 @@ struct RoutinesTab: View {
         gym.telemetry.event("gym_screen_viewed", properties: ["screen": "routines"])
       }
   }
-
-  // The review opens as the room's sheet, so this door draws the chevron a pushed door gets from the system.
-  func sheetDoor(title: String, meta: String, open: @escaping () -> Void) -> some View {
-    Button(action: open) {
-      HStack(spacing: RoomSpace.related) {
-        MovementRow(title: title, meta: meta)
-        Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(GymPalette.ink.tertiary)
-          .dynamicTypeSize(...DynamicTypeSize.accessibility2).accessibilityHidden(true)
-      }
-    }
-  }
 }
 
 struct RoutineDetail: View {
@@ -128,7 +114,7 @@ struct RoutineDetail: View {
                 NavigationLink { MovementRecordScreen(gym: gym, exerciseID: entry.exerciseId) } label: {
                   let exercise = gym.catalogue.find(entry.exerciseId)
                   let custom = exercise != nil && !SeedExercises.all.contains { $0.id == entry.exerciseId }
-                  MovementRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")\(custom ? " · yours" : "")",
+                  GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")\(custom ? " · yours" : "")",
                               meta: Readout.target(entry.sets))
                 }.accessibilityIdentifier("routine-detail-movement-\(entry.exerciseId)")
               }
@@ -139,7 +125,7 @@ struct RoutineDetail: View {
               Section {
                 ForEach(history, id: \.id) { session in
                   NavigationLink { SessionDetailScreen(gym: gym, sessionID: session.id) } label: {
-                    MovementRow(title: RoutineLines.day(session.startedAt, now: gym.log?.moment.now ?? session.startedAt),
+                    GymRow(title: RoutineLines.day(session.startedAt, now: gym.log?.moment.now ?? session.startedAt),
                                 meta: RoutineLines.session(SessionReadout(session: session, sets: gym.sets)))
                   }.accessibilityIdentifier("routine-history-\(session.id)")
                 }
@@ -177,26 +163,10 @@ struct RoutineDetail: View {
   }
 }
 
-extension Readout {
-  enum Noun {
-    case movement, workingSet, proposal
-
-    var forms: (one: String, many: String) {
-      switch self {
-      case .movement: ("movement", "movements")
-      case .workingSet: ("working set", "working sets")
-      case .proposal: ("proposal", "proposals")
-      }
-    }
-  }
-
-  static func count(_ count: Int, _ noun: Noun) -> String { "\(count) \(count == 1 ? noun.forms.one : noun.forms.many)" }
-}
-
 // What a routine, a waiting proposal and a past workout say on their rows.
 enum RoutineLines {
   static func routine(_ routine: Routine, lastTrained: Instant?, historyKnown: Bool, moment: Moment?) -> String {
-    let movements = Readout.count(routine.entries.count, .movement)
+    let movements = GymCount.of(routine.entries.count, "movement")
     if let lastTrained, let moment { return "\(movements) · trained \(Readout.ago(lastTrained, now: moment.now, zone: moment.zone))" }
     return historyKnown ? "\(movements) · never trained" : movements
   }
@@ -209,16 +179,16 @@ enum RoutineLines {
     case .other: source = "a connected tool"
     }
     guard let createdAt, let moment else { return "from \(source)" }
-    let time = Date(timeIntervalSince1970: Double(createdAt.ms) / 1000).formatted(.dateTime.hour().minute())
+    let time = createdAt.date.formatted(.dateTime.hour().minute())
     return "from \(source) · \(Readout.briefDay(createdAt, now: moment.now, zone: moment.zone)) \(time)"
   }
 
   static func session(_ readout: SessionReadout) -> String {
-    "\(Readout.count(readout.workingSetCount, .workingSet)) · \(Readout.count(readout.movementCount, .movement))"
+    "\(GymCount.of(readout.workingSetCount, "working set")) · \(GymCount.of(readout.movementCount, "movement"))"
   }
 
   static func day(_ instant: Instant, now: Instant) -> String {
-    let date = Date(timeIntervalSince1970: Double(instant.ms) / 1000), today = Date(timeIntervalSince1970: Double(now.ms) / 1000)
+    let date = instant.date, today = now.date
     let style = Date.FormatStyle.dateTime.weekday(.abbreviated).day().month(.abbreviated)
     return date.formatted(Calendar.current.isDate(date, equalTo: today, toGranularity: .year) ? style : style.year())
   }

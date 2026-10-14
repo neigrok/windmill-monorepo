@@ -15,14 +15,8 @@ struct OnThisPhoneSection: View {
         ForEach(workouts, id: \.session.id) { workout in
           let recovery = waiting.first { $0.id == workout.session.id }
           NavigationLink { WorkoutInspectScreen(gym: gym, id: workout.session.id) } label: {
-            HStack(spacing: RoomSpace.related) {
-              VStack(alignment: .leading, spacing: RoomSpace.small) {
-                Text(recovery?.title(at: moment) ?? workout.title(at: moment)).font(.body.weight(.semibold)).monospacedDigit()
-                  .foregroundStyle(GymPalette.ink)
-                Text(recovery?.line ?? "adding…").font(.subheadline).foregroundStyle(GymPalette.inkDim)
-              }.frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget, alignment: .leading)
-              if recovery == nil { ProgressView() }
-            }.accessibilityElement(children: .combine)
+            GymRow(title: recovery?.title(at: moment) ?? workout.title(at: moment), meta: recovery?.line ?? "adding…",
+                   trailing: recovery == nil ? .progress : nil)
           }.accessibilityIdentifier("recovery-row-\(workout.session.id)")
         }
       }.listRowBackground(GymPalette.card)
@@ -60,7 +54,7 @@ extension WorkoutRecovery {
 
   func title(at moment: Moment) -> String {
     guard retry == .restoreSets else { return workout.title(at: moment) }
-    return "\(SignedOutWorkout.sets(strandedSets.count)) from \(workout.name) · \(workout.day(at: moment))"
+    return "\(GymCount.of(strandedSets.count, "set")) from \(workout.name) · \(workout.day(at: moment))"
   }
 
   // The refusal's own code, beside the date on Inspect, when the line is the catch-all.
@@ -83,7 +77,7 @@ extension WorkoutRecovery.Reason {
     case .tooManySets: "Over 200 sets — remove some, then retry."
     case .unknownMovement: "A movement is missing — fix its sets, then retry."
     case .strandedSets: stranded == 1 ? "A set missed its workout — retry puts it back."
-      : "\(stranded) sets missed their workout — retry puts them back."
+      : "\(GymCount.of(stranded, "set")) missed their workout — retry puts them back."
     case .unsent: "Not on your log yet — retry to add it."
     case .invalidSet, .other: "Refused by the log — fix the workout, then retry."
     }
@@ -103,7 +97,11 @@ extension SignedOutWorkout {
 
   func day(at moment: Moment) -> String { Readout.briefDay(session.startedAt, now: moment.now, zone: moment.zone) }
 
-  func title(at moment: Moment) -> String { "\(name) · \(day(at: moment)) · \(Self.sets(sets.count))" }
+  func title(at moment: Moment) -> String { "\(name) · \(day(at: moment)) · \(GymCount.of(sets.count, "set"))" }
 
-  static func sets(_ count: Int) -> String { count == 1 ? "1 set" : "\(count) sets" }
+  // A saved time read back, with its day where the reader needs one.
+  static func time(_ instant: Instant, day: Bool) -> String {
+    day ? instant.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute())
+      : instant.date.formatted(.dateTime.hour().minute())
+  }
 }

@@ -62,14 +62,19 @@ The Gym UI contract is `Sources/Gym/GymModel.swift` plus `GymRoom.swift`. `GymRo
 native TabView (Routines · The log · Coach), independent NavigationStacks and full-screen
 `WorkoutScreen` while logging, finishing or showing its receipt. Hidden workouts restore from Gym settings. Each UI track owns its folder and root view:
 `Routines/RoutinesTab.swift`, `Log/LogTab.swift`, `Coach/CoachTab.swift`, and
-`Workout/WorkoutScreen.swift`. Each root takes `gym: GymModel`; the room supplies account/navigation callbacks and Coach handoffs. Add model extensions
-only in the owning track's folder, never in `GymModel.swift`. What more than one track draws lives once in
-`Components/`: the page modifier, the transient band, movement rows and fact tiles, the weight instrument,
-keypad and Fix set editor, and the rename sheet with its model extension.
+`Workout/WorkoutScreen.swift`; `Recovery/` holds the signed-out workouts the account has not taken — the log's
+**On this phone** section, Inspect and Fix workout — with their model. Each root takes `gym: GymModel`; the room
+supplies account/navigation callbacks and Coach handoffs. A model extension lives in the folder of the one track that
+reads it; a rule several tracks read, such as what is unsent, is `GymModel.swift`'s own. What more than one track
+draws lives once in `Components/`: the page chrome (page modifier, keyboard bar, More menu), the transient band, the
+two-line row, the set row and fact tiles, the weight instrument, keypad and Fix set editor, the rename sheet with its
+model extension, and the one count formatter with the Instant–Date bridge.
 
 `GymModel(runner:runtime:telemetry:)` exposes engine-backed log/catalogue/routines/notes/bodyweight/
 preferences/proposals, sessions/sets/openSession, account/isAnonymous/authPaused, notices,
-refusal/error/readFailed and undoOffers. Use `run(_:)` for GymDomain actions, `save(_:)` for drafts,
+refusal/error/readFailed and undoOffers, and the one unsent rule: signed out nothing is unsent; signed in,
+`unsentSets(_:)` and `sessionIsUnsent(_:)` mark what the log has not confirmed while no connection, a paused session
+or a refused push holds it back. Use `run(_:)` for GymDomain actions, `save(_:)` for drafts,
 `undo(_:)` for held gestures, `dismissNotice(_:)`, and `refresh()`; `start()`/`stop()` observe engine
 changes. `flush()` releases holds before account transitions; real backgrounding ends Undo windows.
 An inactive scene persists Journal drafts while Gym live sync, REST work and pending Undo windows continue.

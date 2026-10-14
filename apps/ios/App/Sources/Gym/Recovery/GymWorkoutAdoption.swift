@@ -59,8 +59,6 @@ extension GymModel {
     return WorkoutRecovery.review(adoptionWorkouts, notices: recoveryNotices, log: log, catalogue: catalogue)
   }
 
-  var adoptionWorkoutToReview: SignedOutWorkout? { workoutsToReview.first?.workout ?? adoptionWorkouts.first }
-
   // Keep, Retry and Save and retry queue an account write: they wait for the account's first pull and a live session.
   var canSendRecovery: Bool { !accountTransition && !authPaused && !readFailed && log?.firstPullComplete == true }
 
@@ -155,27 +153,5 @@ extension GymModel {
     var properties = ["action": action.rawValue, "reason": reason.rawValue]
     if let outcome { properties["outcome"] = outcome }
     telemetry.event("gym_import_recovery", properties: properties)
-  }
-}
-
-struct WorkoutAdoptionBand: View {
-  let gym: GymModel
-  var body: some View {
-    if !gym.isAnonymous, let workout = gym.adoptionWorkoutToReview {
-      let saving = gym.sessions.contains { $0.id == workout.session.id }
-      VStack(alignment: .leading, spacing: RoomSpace.related) {
-        Text(saving ? "Adding your signed-out workout…" : "A signed-out workout is on this phone · \(workout.sets.count) sets · \(workout.session.name ?? "No routine")")
-          .font(.footnote).foregroundStyle(GymPalette.ink)
-        if !saving {
-          Button("Keep as finished workout") { gym.keepAdoptedWorkout(workout.session.id) }
-            .disabled(gym.accountTransition || gym.authPaused || gym.readFailed || gym.log?.firstPullComplete != true)
-            .accessibilityIdentifier("gym-adoption-keep-\(workout.session.id)")
-          if gym.log?.firstPullComplete != true { Text("Adding this workout to your account needs a connection. It stays saved on this phone.").font(.footnote) }
-        }
-      }.frame(maxWidth: .infinity, alignment: .leading).padding(RoomSpace.inset)
-        .background(GymPalette.card, in: RoundedRectangle(cornerRadius: RoomSpace.cardRadius))
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("gym-adoption-recovery")
-    }
   }
 }

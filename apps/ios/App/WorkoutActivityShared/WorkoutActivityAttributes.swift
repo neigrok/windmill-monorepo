@@ -29,7 +29,7 @@ nonisolated struct WorkoutActivityAttributes: ActivityAttributes, Sendable {
     let startedAt: Date
     let lastSetAt: Date?
     let staleAt: Date
-    let unsyncedSetCount: Int
+    let unsentSetCount: Int
     let offer: WorkoutActivityOffer?
   }
 }

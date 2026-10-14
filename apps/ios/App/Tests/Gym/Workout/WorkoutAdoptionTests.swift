@@ -44,7 +44,6 @@ struct SaveSignedOutWorkouts: Action {
     let crossing = finished("crossing", exercise: squat, from: now - 90_000, to: now - 70_000, sets: [1_000, 15_000])
     #expect(gym.run(SaveSignedOutWorkouts(workouts: [unsent, crossing]))?.receipt != nil)
     #expect(gym.workoutsToReview.map { "\($0.id) \($0.reason.rawValue) \($0.retry)" } == ["crossing session-overlap importWorkout", "unsent-copy unsent importWorkout"])
-    #expect(gym.adoptionWorkoutToReview == crossing)
     #expect(gym.inspectWorkout(ID("nope")) == nil)
     #expect(gym.inspectWorkout(unsent.session.id)?.movementNames == [squat: "Workout squat"])
 
@@ -60,10 +59,10 @@ struct SaveSignedOutWorkouts: Action {
     #expect(gym.error == nil && gym.adoptionWorkouts == [fix.workout, unsent])
     #expect(gym.workoutsToReview.map(\.id) == [unsent.session.id])
     gym.retryWorkout(unsent.session.id)
-    #expect(gym.workoutsToReview.isEmpty && gym.adoptionWorkoutToReview == fix.workout)
+    #expect(gym.workoutsToReview.isEmpty && gym.adoptionWorkouts.first == fix.workout)
     #expect(try harness.runner.read(Gym.scope) { try $0.commands().map { $0.command.args["id"] } } == [crossing.session.id.json, unsent.session.id.json])
     harness.sync(); gym.refresh()
-    #expect(gym.adoptionWorkouts.isEmpty && gym.adoptionWorkoutToReview == nil)
+    #expect(gym.adoptionWorkouts.isEmpty)
     #expect(gym.sessions.map(\.id) == [crossing.session.id, unsent.session.id, landed.session.id])
     #expect(gym.sets.filter { $0.sessionId == crossing.session.id }.map(\.completedAt) == [Instant(ms: now - 39_000), Instant(ms: now - 25_000)])
 
@@ -240,25 +239,6 @@ struct SaveSignedOutWorkouts: Action {
                                             ["operation": "gym_import_discard", "failure_kind": "storage"]])
     #expect(failures.allSatisfy { TelemetryPrivacy.properties($0.properties).count == 2 })
     gym.stop()
-  }
-
-  @Test func recoveryPrioritizesUnlandedWorkoutBeforeFinishedImportAwaitingConfirmation() throws {
-    let fixture = WorkoutStateTests(), (harness, gym) = try fixture.fixture()
-    let start = Instant(ms: 1_790_424_000_000)
-    let finishedID = ID<Session>("a-finished")
-    let set = ImportedSet(id: ID("a-set-0001"), exerciseId: fixture.first, weightKg: 60, reps: 8, completedAt: start)
-    #expect(try harness.runner.run(ImportSession(id: finishedID, startedAt: start, finishedAt: start, sets: [set])).receipt != nil)
-    gym.refresh()
-    let finished = try #require(gym.sessions.first { $0.id == finishedID })
-    let open = Session(id: ID("z-open-session"), startedAt: start)
-    let backups = [SignedOutWorkout(session: finished, sets: []), SignedOutWorkout(session: open, sets: [])]
-    gym.adoptionWorkouts = backups
-    #expect(gym.adoptionWorkoutToReview?.session.id == open.id)
-    #expect(try harness.runner.run(StartSession(id: open.id, startedAt: start)).receipt != nil)
-    gym.refresh(); gym.adoptionWorkouts = backups
-    #expect(gym.adoptionWorkoutToReview?.session.id == finished.id)
-    gym.adoptionWorkouts = []
-    #expect(gym.adoptionWorkoutToReview == nil)
   }
 
   @Test func liveActivityOffersCannotCrossConflictingAdoptionOrKeepImports() async throws {
