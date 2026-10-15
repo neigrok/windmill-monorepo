@@ -2357,9 +2357,10 @@ Frames are at most `LIVE_FRAME_BYTES`.
 | 503 | `unavailable` (`retryAfterMs`) | back off |
 
 A client records every failed request as a metric. A status the server answers on purpose — `400`,
-`401`, `403`, `404`, `409`, `410`, `422`, `426`, `429` — is never a crash-reporter issue: Swift's one
+`401`, `403`, `404`, `409`, `410`, `422`, `426`, `429` — is never a crash-reporter issue: Swift's
 `ExpectedStatuses.all` serves the engine, the app's sign-in and its REST clients, and Kotlin's
-transport counts the same set as refusals.
+transport counts the same set as refusals. Swift's engine also expects a push's `413`, which §7.4
+halves or refuses `too-large` (`ExpectedStatuses.push`); Kotlin's transport counts it as a failure.
 
 | Refusal code | Source |
 |---|---|

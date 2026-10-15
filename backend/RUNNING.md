@@ -93,6 +93,42 @@ pull; live uses `/v1/sync/live?schema=6`. Existing web and Android callers omit 
 receive their existing bodies. Read [AUTH.md](AUTH.md) for native Apple configuration and its
 identity-token/nonce exchange.
 
+#### A server that requires an update (426)
+
+Hello, push, pull and the live upgrade answer `426 upgrade-required` to a registry version below the
+server's minimum. `SyncApi` takes that minimum from the `minVersion` of the gym and journal
+registries embedded at build time; no environment variable changes it. To drive the app's update
+path, build a second binary from a copy of the contract whose two registries both stand one version
+ahead, with `minVersion` equal to `version`:
+
+```sh
+WM_426_CONTRACT=$(mktemp -d)/api-contract
+cp -R ../packages/api-contract "$WM_426_CONTRACT"
+python3 - "$WM_426_CONTRACT/sync" <<'PY'
+import json, sys
+for name in ("gym.registry.json", "journal.registry.json"):
+    path = f"{sys.argv[1]}/{name}"
+    with open(path) as file:
+        registry = json.load(file)
+    registry["version"] = registry["minVersion"] = registry["version"] + 1
+    with open(path, "w") as file:
+        json.dump(registry, file, indent=2)
+PY
+cmake -S . -B build-426 -DWM_API_CONTRACT_DIR="$WM_426_CONTRACT"
+cmake --build build-426 --target windmill_server
+```
+
+Stop the engine server by its port and serve `./build-426/windmill_server` with the same command and
+database. A hello at version 7 answers `"schema":7,"minSchema":7`, and the app's version 6 is refused:
+
+```sh
+curl -si "http://127.0.0.1:$WM_ENGINE_PORT/v1/sync/hello" -H 'Sync-Schema: 6'
+# HTTP/1.1 426 Upgrade Required … {"epoch":"…","error":"upgrade-required","serverTime":…}
+```
+
+Serving `./build/windmill_server` again lowers the minimum. An engine that has seen the 426 stops
+syncing for the rest of its process, so the app syncs again once it relaunches.
+
 After the simulator run, stop the listener by its chosen port and remove the local database:
 
 ```sh

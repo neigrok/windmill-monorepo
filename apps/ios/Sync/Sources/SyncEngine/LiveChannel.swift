@@ -216,8 +216,8 @@ package actor LiveChannel {
     let mono = now()
     if let pongDue = current.pongDue, pongDue <= mono {
       // The heartbeat deadline is an engine-owned timeout; closing its socket is a normal client close.
-      TransportDiagnostics.report(core.telemetry, operation: "sync_live", method: "GET", kind: "timeout",
-                                  durationMs: max(0, mono - (pongDue - Constants.livePongMs)))
+      core.diagnostics.report(operation: "sync_live", method: "GET", kind: "timeout",
+                              durationMs: max(0, mono - (pongDue - Constants.livePongMs)))
       return reopenLater()
     }
     do {
@@ -257,6 +257,7 @@ package actor LiveChannel {
     switch frame {
     case .pong:
       self.socket?.pongDue = nil
+      core.diagnostics.succeeded("sync_live")
     case .other:
       break
     case .change:
