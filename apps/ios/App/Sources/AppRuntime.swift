@@ -68,6 +68,12 @@ struct AppSettings {
     telemetryInfo = info
     appleEnabled = fakeApple || (baseURL != nil && bundle.object(forInfoDictionaryKey: "WMAppleSignInEnabled") as? String == "YES")
   }
+
+  // You's How you sign in footer: what Apple opens, said only where this build offers Apple.
+  func signInFooter(_ methods: [SignInMethod]) -> String? {
+    if methods.contains(where: { $0.kind == "apple" }) { return "Either one opens this account." }
+    return appleEnabled ? "Apple will open this same account." : nil
+  }
 }
 
 final class AppRuntime {

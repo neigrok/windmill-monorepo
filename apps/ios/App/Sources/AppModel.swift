@@ -472,7 +472,6 @@ final class AppModel {
       signInMethods = methods
       accountEmail = methods.first(where: { $0.kind == "email" })?.email ?? accountEmail
       if let account { preferences.set(accountEmail, forKey: "accountEmail:\(account)") }
-      screenViewed(methods.contains(where: { $0.kind == "apple" }) ? "24b" : "24a")
     } catch { if account == current, methodsGeneration == generation { showAuthError(error) } }
   }
 
@@ -490,7 +489,7 @@ final class AppModel {
     let generation = authGeneration
     working = true; error = nil
     defer { if authGeneration == generation { working = false } }
-    do { try await auth.removeApple(token: token); signInMethods.removeAll { $0.kind == "apple" }; screenViewed("24a") }
+    do { try await auth.removeApple(token: token); signInMethods.removeAll { $0.kind == "apple" } }
     catch { showAuthError(error) }
   }
 

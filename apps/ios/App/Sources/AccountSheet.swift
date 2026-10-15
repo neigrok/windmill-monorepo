@@ -402,7 +402,7 @@ struct AccountSheet: View {
                 .swipeActions { Button("Remove Apple", role: .destructive) { model.askToRemoveApple() } }
             } else { appleDoor }
           } header: { Text("How you sign in") } footer: {
-            Text(apple == nil ? "Apple will open this same account." : "Either one opens this account.")
+            if let footer = model.runtime?.settings.signInFooter(model.signInMethods) { Text(footer) }
           }.listRowBackground(card)
         }
         Section("Your data") {

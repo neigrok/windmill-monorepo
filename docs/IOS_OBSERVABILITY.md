@@ -86,7 +86,7 @@ action `dismiss_ink` once when writing or a tap lifts it; no ink replay action i
 | Sign-out | `auth_signed_out` | outcome: ok |
 | Introduction | `onboarding_screen_viewed`, `onboarding_skipped`, `onboarding_finished` | page: windmill, roadmap, journal, gym; presentation: first_launch, replay |
 | Introduction replay | `onboarding_replayed` | presentation: replay |
-| First-run screens | `first_run_screen_viewed` | screen: welcome, journal, ink_notes, gym, routines, log, coach, workout, keep, address, code, you, adoption, discard_adoption, sign_out, 23a, 23b, 23c, 24a, 24b, 24c, 24d, apple_no_account, apple_expired, auth_pending |
+| First-run screens | `first_run_screen_viewed` | screen: welcome, journal, ink_notes, gym, routines, log, coach, workout, keep, address, code, you, adoption, discard_adoption, sign_out, 23a, 23b, 23c, 24c, 24d, apple_no_account, apple_expired, auth_pending |
 | Choices | `first_run_choice` | screen; action: open_journal, open_gym, dismiss_ink, write, done_writing, keep, close, email, back, change_email, resend, add, discard, cancel, sign_out, use_account, create_account, remove_apple, retry |
 | Rooms | `room_switched` | room: journal, gym; emitted after switching |
 | Appearance | `appearance_chosen` | appearance: light, dark, system; emitted when You's Settings changes it |
