@@ -155,7 +155,7 @@ import SyncTesting
     let (harness, gym) = try fixtures.fixture(), workout = try fixtures.begin(gym)
     let offer = try #require(workout.activityOffer()), session = try #require(workout.session)
     let value = TrainingSet(id: ID(RecordID(offer.setID)), sessionId: session.id, exerciseId: fixtures.first,
-                            weightKg: offer.weightKg, reps: offer.reps, kind: offer.kind, completedAt: fixtures.start)
+                            weightKg: offer.weightKg, reps: offer.reps, kind: "working", completedAt: fixtures.start)
     let result = try harness.runner.run(LogWorkoutSet(value: value, session: session, previousSets: workout.sets, offer: offer))
     let receipt = try #require(result.receipt)
     #expect(committed(result) == value.id)
@@ -243,7 +243,7 @@ import SyncTesting
       exerciseId: field == "movement" ? fixtures.second : fixtures.first,
       weightKg: field == "load" ? offer.weightKg + 1 : offer.weightKg,
       reps: field == "reps" ? offer.reps + 1 : offer.reps,
-      kind: field == "kind" ? "warmup" : offer.kind, completedAt: fixtures.start)
+      kind: field == "kind" ? "warmup" : "working", completedAt: fixtures.start)
     let result = try harness.runner.run(LogWorkoutSet(value: attempted, session: session, previousSets: workout.sets, offer: offer))
     #expect(result.refusal == .stale(session.id.ref, .predicted) && result.receipt == nil)
     #expect(try harness.stored(TrainingSet.self).isEmpty)
@@ -251,7 +251,7 @@ import SyncTesting
     #expect(try workout.activityRecord()?.offer == offer)
   }
 
-  @Test(arguments: ["movement", "load", "reps", "session", "owner", "set", "kind"])
+  @Test(arguments: ["movement", "load", "reps", "session", "owner", "set"])
   func staleOfferFieldsWriteNothingAndEmitContentFreeRefusal(field: String) throws {
     let recorder = TelemetryRecorder(), (_, gym) = try fixtures.fixture(telemetry: recorder)
     let workout = try fixtures.begin(gym), current = try #require(workout.activityOffer())
@@ -260,7 +260,6 @@ import SyncTesting
       movementID: field == "movement" ? fixtures.second.description : current.movementID,
       weightKg: field == "load" ? current.weightKg + 1 : current.weightKg,
       reps: field == "reps" ? current.reps + 1 : current.reps,
-      kind: field == "kind" ? "warmup" : current.kind,
       setID: field == "set" ? gym.runner.mint(TrainingSet.self).description : current.setID)
     #expect(!workout.logActivityOffer(stale))
     #expect(workout.sets.isEmpty && workout.activityOffer() == current)
@@ -818,7 +817,7 @@ import SyncTesting
     let concurrent = fixtures.value(gym, session: session, weight: 90)
     #expect(gym.run(AppendSet(concurrent))?.receipt != nil)
     let attempted = TrainingSet(id: ID(RecordID(offer.setID)), sessionId: session.id, exerciseId: fixtures.first,
-      weightKg: offer.weightKg, reps: offer.reps, kind: offer.kind, completedAt: fixtures.start)
+      weightKg: offer.weightKg, reps: offer.reps, kind: "working", completedAt: fixtures.start)
     let result = try harness.runner.run(LogWorkoutSet(value: attempted, session: session, previousSets: workout.sets, offer: offer))
     #expect(result.refusal == .stale(session.id.ref, .predicted) && result.receipt == nil)
     #expect(try harness.drawn(TrainingSet.self) == [concurrent])
@@ -886,7 +885,7 @@ import SyncTesting
     #expect(next.movementID == fixtures.second.description && next.setID != heavier.setID)
     #expect(reopened.logActivityOffer(next))
     let logged = TrainingSet(id: ID(RecordID(next.setID)), sessionId: session.id, exerciseId: fixtures.second,
-      weightKg: next.weightKg, reps: next.reps, kind: next.kind, completedAt: Instant(ms: retained.completedAt.ms + 1))
+      weightKg: next.weightKg, reps: next.reps, kind: "working", completedAt: Instant(ms: retained.completedAt.ms + 1))
     #expect(reopened.sets.sorted { $0.id < $1.id } == [retained, logged].sorted { $0.id < $1.id })
     harness.sync(); reopenedGym.refresh(); reopened.reconcile()
     let confirmed = TrainingSet(id: logged.id, sessionId: logged.sessionId, exerciseId: logged.exerciseId,
@@ -894,6 +893,48 @@ import SyncTesting
     #expect(reopened.sets.sorted { $0.id < $1.id } == [retained, confirmed].sorted { $0.id < $1.id })
     #expect(reopened.deviation == nil && reopened.walk.asked == [fixtures.first])
     #expect(reopenedGym.routines.first { $0.id == plan.id } == current)
+  }
+
+  // The lock screen's count follows the connection: a status the store does not hold redraws it at once, not at the
+  // next clock tick.
+  @Test func goingOfflineRedrawsTheLockScreenCount() async throws {
+    let connectivity = SwitchedConnectivity(), fault = WorkoutFaultTransport()
+    let runtime = try WorkoutStateTests.faultRuntime(fault, connectivity: connectivity, drivesLoops: true), engine = runtime.engine
+    let identity = fault.model.identity(email: "activity-status@example.com")
+    #expect(try await engine.signIn(account: identity.account, token: identity.token).isComplete)
+    let gym = GymModel(runner: runtime.runner, runtime: runtime)
+    #expect(gym.run(CreateExercise(Exercise(id: fixtures.first, name: "Workout squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)))?.receipt != nil)
+    await engine.flushOnLeave(); gym.refresh()
+    gym.start(); gym.startWorkoutActivity()
+    let controller = try #require(gym.existingWorkoutActivity)
+    let workout = try fixtures.begin(gym)
+    // The test host asks ActivityKit for nothing: the state is computed, not drawn.
+    controller.requestedSession = workout.sessionId
+    await engine.flushOnLeave(); gym.refresh(); workout.reconcile()
+    #expect(workout.logSet())
+    for _ in 0..<600 where controller.reconciled?.unsentSetCount != 0 { try await Task.sleep(for: .milliseconds(5)) }
+    #expect(controller.reconciled?.unsentSetCount == 0, "online, a set on its way is not unsent")
+    connectivity.set(online: false)
+    for _ in 0..<600 where controller.reconciled?.unsentSetCount != 1 { try await Task.sleep(for: .milliseconds(5)) }
+    #expect(controller.reconciled?.unsentSetCount == 1, "a status-only change redraws the lock screen")
+    gym.stop()
+  }
+
+  // An Activity the previous build started still draws after the update: its state named the count `unsyncedSetCount`
+  // and carried a `setKind` and the offer's `kind`.
+  @Test func aContentStateFromThePreviousBuildStillDecodes() throws {
+    let previous = """
+      {"title":"Push A","movement":"Back squat","load":"100 kg","reps":5,"setKind":"working","workingSetOrdinal":2,
+       "plannedWorkingSetCount":5,"startedAt":0,"lastSetAt":60,"staleAt":14400,"unsyncedSetCount":1,
+       "offer":{"ownerID":"rp:bound:s1","sessionID":"s1","movementID":"back-squat","weightKg":100,"reps":5,"kind":"working","setID":"t1"}}
+      """
+    let state = try JSONDecoder().decode(WorkoutActivityAttributes.ContentState.self, from: Data(previous.utf8))
+    let current = WorkoutActivityAttributes.ContentState(title: "Push A", movement: "Back squat", load: "100 kg", reps: 5, workingSetOrdinal: 2,
+      plannedWorkingSetCount: 5, startedAt: Date(timeIntervalSinceReferenceDate: 0), lastSetAt: Date(timeIntervalSinceReferenceDate: 60),
+      staleAt: Date(timeIntervalSinceReferenceDate: 14_400), unsentSetCount: 1,
+      offer: WorkoutActivityOffer(ownerID: "rp:bound:s1", sessionID: "s1", movementID: "back-squat", weightKg: 100, reps: 5, setID: "t1"))
+    #expect(state == current)
+    #expect(try JSONDecoder().decode(WorkoutActivityAttributes.ContentState.self, from: JSONEncoder().encode(current)) == current)
   }
 }
 

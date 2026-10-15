@@ -116,6 +116,9 @@ public struct HTTPFailure: Sendable, Hashable, Served {
   // §9.6: a push naming an account other than the one it was served as.
   public var isAccountMismatch: Bool { status == 409 && error.map { $0.utf8.elementsEqual("account-mismatch".utf8) } == true }
 
+  // §9.2: the server's own 426 names its cause; a bare 426 (a proxy, a captive portal) is a failure like any other.
+  public var requiresUpgrade: Bool { status == 426 && error.map { $0.utf8.elementsEqual("upgrade-required".utf8) } == true }
+
   public var isRecoveryConflict: Bool {
     guard status == 409, let error, ["gap", "replica-forked", "replica-foreign"].contains(where: { $0.utf8.elementsEqual(error.utf8) }),
           let epoch, !epoch.isEmpty, let serverTime, serverTime >= 0, serverTime <= JSON.maxSafeInteger else { return false }

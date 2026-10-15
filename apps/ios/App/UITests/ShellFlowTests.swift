@@ -210,6 +210,7 @@ import XCTest
     XCTAssertTrue(code.waitForExistence(timeout: 5)); code.typeText("482913")
     let alert = app.alerts["Update required"]
     XCTAssertTrue(alert.waitForExistence(timeout: 15))
+    XCTAssertTrue(alert.staticTexts["Update Windmill to sign in. Your work is saved on this phone."].exists, "Signed out, nothing syncs")
     alert.buttons["Keep working on this phone"].tap()
     XCTAssertTrue(app.staticTexts["Syncing paused · update Windmill"].waitForExistence(timeout: 5))
     XCTAssertFalse(app.staticTexts["the server requires a newer app"].exists)
@@ -217,5 +218,38 @@ import XCTest
     app.navigationBars.buttons["Done"].tap()
     XCTAssertTrue(app.buttons["write-today"].wait(for: \.isHittable, toEqual: true, timeout: 5))
     XCTAssertFalse(app.alerts["Update required"].exists)
+  }
+
+  // A sign-in the server refuses for an old app leaves You whole: the update line and Get the update above Settings,
+  // and a way to give the sign-in up.
+  func testUpdateAtSignInLeavesYouReachable() {
+    let app = launch("update-sign-in")
+    XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 15)); app.buttons["email-sign-in"].tap()
+    let email = app.textFields["email-address"]
+    XCTAssertTrue(email.waitForExistence(timeout: 5)); email.typeText("update@example.com")
+    XCTAssertTrue(email.waitForValue("update@example.com"))
+    app.buttons["Send code"].tap()
+    let code = app.textFields["email-code"]
+    XCTAssertTrue(code.waitForExistence(timeout: 5)); code.typeText("482913")
+    let alert = app.alerts["Update required"]
+    XCTAssertTrue(alert.waitForExistence(timeout: 15))
+    alert.buttons["Keep working on this phone"].tap()
+    XCTAssertTrue(app.navigationBars["You"].waitForExistence(timeout: 5))
+    app.navigationBars.buttons["Done"].tap()
+    XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 5)); app.buttons["you"].tap()
+    XCTAssertTrue(app.staticTexts["Finish signing in"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Syncing paused · update Windmill"].exists)
+    XCTAssertTrue(app.buttons["get-update"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["appearance"].exists, "You's Settings stay reachable")
+    XCTAssertTrue(app.buttons["you-gym-settings"].exists, "Gym settings stay reachable")
+    XCTAssertFalse(app.buttons["email-sign-in"].exists, "No second sign-in starts over a pending one")
+    app.buttons["auth-cancel"].tap()
+    XCTAssertTrue(app.staticTexts["Finish signing in"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Everything lives on this phone"].exists)
+    XCTAssertTrue(app.buttons["email-sign-in"].exists)
+    app.navigationBars.buttons["Done"].tap()
+    app.terminate(); app.launchArguments.append("-restore-board"); app.launch()
+    XCTAssertTrue(app.buttons["write-today"].waitForExistence(timeout: 20))
+    XCTAssertFalse(app.navigationBars["You"].exists, "Nothing resumes at the next launch")
   }
 }

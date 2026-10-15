@@ -1253,6 +1253,15 @@ struct PullerTests {
     #expect(rig.engine.status.upgradeRequired)
   }
 
+  @MainActor @Test func aBare426BacksOffAndRequiresNoUpgrade() async throws {
+    let rig = try Rig(account: "A")
+    rig.random.queue(raw: .max, count: 1)
+    rig.transport.willAnswerPull(426)
+    #expect(await rig.engine.puller.step() == .backoff(ms: 1_000))
+    await rig.engine.settle()
+    #expect(!rig.engine.status.upgradeRequired)
+  }
+
   // A 503 holds every pull for its `retryAfterMs`, through a kick.
   @Test func a503HoldsEveryPullForTheServersPause() async throws {
     let rig = try Rig(account: "A")

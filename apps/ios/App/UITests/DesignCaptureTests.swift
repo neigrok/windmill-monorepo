@@ -137,6 +137,25 @@ import XCTest
   func testUpdateRequiredLight() { updateRequired("light") }
   func testUpdateRequiredDark() { updateRequired("dark") }
 
+  func updateAtSignIn(_ appearance: String) {
+    let app = launch("update-sign-in", appearance: appearance)
+    XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 20)); app.buttons["email-sign-in"].tap()
+    let email = app.textFields["email-address"]
+    XCTAssertTrue(email.waitForExistence(timeout: 5)); email.typeText("update@example.com")
+    app.buttons["Send code"].tap()
+    let code = app.textFields["email-code"]
+    XCTAssertTrue(code.waitForExistence(timeout: 5)); code.typeText("482913")
+    let alert = app.alerts["Update required"]
+    XCTAssertTrue(alert.waitForExistence(timeout: 15))
+    capture("shell-update-required-alert-signed-out-\(appearance)", app)
+    alert.buttons["Keep working on this phone"].tap()
+    XCTAssertTrue(app.staticTexts["Finish signing in"].waitForExistence(timeout: 5))
+    capture("shell-you-sign-in-pending-update-\(appearance)", app)
+    app.terminate()
+  }
+  func testUpdateAtSignInLight() { updateAtSignIn("light") }
+  func testUpdateAtSignInDark() { updateAtSignIn("dark") }
+
   func journalEchoes(_ appearance: String) {
     let app = launch("journal-echoes-first", appearance: appearance)
     let tab = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "journal-echo-")).firstMatch

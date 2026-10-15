@@ -236,13 +236,13 @@ import Synchronization
     if link {
       model.useAppleAccount(); model.email = "sam@example.com"; await model.sendCode(); model.code = "482913"; await model.verifyCode()
     } else { await model.createAppleAccount() }
-    #expect(model.sheet == .authPending && model.account == nil && model.appleTicket == nil && model.pendingSignIn != nil && model.editorReadOnly)
+    #expect(model.sheet == .you && model.account == nil && model.appleTicket == nil && model.pendingSignIn != nil && model.editorReadOnly)
     #expect(model.authRetryAt == now.addingTimeInterval(5))
     #expect(model.journal.document.body == "Local page")
     #expect(throws: AuthRefusal.expired) { try server.createApple(ticket: ticket) }
     let sessions = server.state.withLock { $0.sessions }
     await model.retryAuthenticatedSignIn()
-    #expect(model.sheet == .authPending && server.state.withLock { $0.sessions == sessions })
+    #expect(model.sheet == .you && server.state.withLock { $0.sessions == sessions })
     server.state.withLock { $0.helloOnline = true; $0.authOnline = false }
     await model.retryAuthenticatedSignIn()
     #expect(model.pendingSignIn == nil && server.state.withLock { $0.sessions == sessions })
@@ -264,7 +264,7 @@ import Synchronization
     let runtime = try #require(model.runtime), sessions = server.state.withLock { $0.sessions }
     let recorder = TelemetryRecorder()
     let restored = try AppModel(runner: runtime.runner, preferences: model.preferences, runtime: runtime, telemetry: recorder)
-    #expect(restored.pendingSignIn != nil && restored.sheet == .authPending && restored.appleTicket == nil)
+    #expect(restored.pendingSignIn != nil && restored.sheet == .you && restored.appleTicket == nil)
     server.state.withLock { $0.helloOnline = true; $0.authOnline = false }
     await restored.start()
     defer { restored.timerTask?.cancel(); restored.observationTask?.cancel() }

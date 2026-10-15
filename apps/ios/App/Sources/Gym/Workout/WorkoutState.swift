@@ -213,7 +213,7 @@ struct LogWorkoutSet: Action {
             record.baseline == WorkoutActivityRecord.snapshot(session: session, sets: current),
             record.offer == offer, value.id.description == offer.setID,
             value.sessionId.description == offer.sessionID, value.exerciseId.description == offer.movementID,
-            value.weightKg == offer.weightKg, value.reps == offer.reps, value.kind == offer.kind,
+            value.weightKg == offer.weightKg, value.reps == offer.reps, value.kind == SetKind.working.rawValue,
             SessionRules.autoCloseAt(session, sets: loaded.sets, now: loaded.moment.now) == nil else { return .refuse(.stale(session.id.ref, .predicted)) }
     }
     guard loaded.drawn.first(where: { $0.id == session.id }) == session,
@@ -305,8 +305,7 @@ struct FinishWorkout: Action {
            weightKg.isFinite, abs(weightKg) <= 500, (1...99).contains(reps),
            let session, offerSession == session, LogWorkoutSet.matchesOfferedSets(sets, offerSets), let selected {
           record.offer = WorkoutActivityOffer(ownerID: record.ownerID, sessionID: session.id.description,
-            movementID: selected.description, weightKg: weightKg, reps: reps, kind: SetKind.working.rawValue,
-            setID: gym.runner.mint(TrainingSet.self).description)
+            movementID: selected.description, weightKg: weightKg, reps: reps, setID: gym.runner.mint(TrainingSet.self).description)
           record.baseline = activityBaseline
         }
         let result = try gym.runner.run(KeepWorkoutActivity(sessionID: sessionId, record: record, walk: walk))
@@ -554,7 +553,9 @@ struct FinishWorkout: Action {
     } catch { message = "The workout could not be read. Try Finish again."; gym.report("gym_read", error); return }
     if !pending {
       guard let result = gym.run(FinishWorkout(id: session.id)), result.refusal == nil else {
-        if case .sessionOpen = gym.refusal { message = "Finish needs a connection — keep logging, or hide the workout." }
+        // What holds the finish back is named: the update the server requires, else the connection.
+        if case .sessionOpen = gym.refusal, gym.runtime?.engine.status.upgradeRequired == true { message = "Finish needs the update — keep logging, or hide the workout." }
+        else if case .sessionOpen = gym.refusal { message = "Finish needs a connection — keep logging, or hide the workout." }
         else { message = gym.error }
         gym.telemetry.event("gym_session_finished", properties: ["screen": "workout", "outcome": "refused"])
         return

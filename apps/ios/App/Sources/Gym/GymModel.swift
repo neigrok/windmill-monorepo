@@ -92,7 +92,8 @@ final class GymModel {
   }
 
   // Signed out nothing is unsent: there is no account to send to. Signed in, what the log has not confirmed is unsent
-  // only while something holds it back — no connection, a paused session or its own refused push — never in flight.
+  // only while something holds it back — no connection, a paused session, the update the server requires or its own
+  // refused push — never in flight.
   func unsentSets(_ sets: [TrainingSet]) -> Set<ID<TrainingSet>> {
     let held = isAnonymous ? [] : sets.filter { heldBack($0.id.ref) }
     return held.isEmpty ? [] : unconfirmedSets(held)
@@ -106,7 +107,8 @@ final class GymModel {
   }
 
   func heldBack(_ record: RecordRef) -> Bool {
-    authPaused || runtime?.engine.status.online == false || runtime?.engine.status.failedPushes[Gym.scope]?.contains(record.key) == true
+    guard let status = runtime?.engine.status else { return authPaused }
+    return authPaused || !status.online || status.upgradeRequired || status.failedPushes[Gym.scope]?.contains(record.key) == true
   }
 
   func start() {
@@ -144,15 +146,17 @@ final class GymModel {
       for view in scopeViews { _ = view.state }
       let status = runtime.engine.status
       _ = status.account; _ = status.authPaused; _ = status.pendingSignIn; _ = status.ready; _ = status.sent
-      _ = status.failedPushes
+      _ = status.failedPushes; _ = status.online; _ = status.upgradeRequired
       _ = runtime.engine.notices("gym").notices
       _ = runtime.engine.undoOffers.offers
     } onChange: { [weak self] in
       Task { @MainActor [weak self] in
         guard let self, self.observationGeneration == generation else { return }
         self.observeScopes(generation)
-        // The views land a change one by one, after the store holds it; the first landing reads it all.
-        if self.runtime?.engine.lastChange != self.readThrough { self.refresh() }
+        // The views land a change one by one, after the store holds it; the first landing reads it all. A status the
+        // store does not hold (the connection, a failed push, the update) moves only what is unsent: the views read it
+        // as they draw, and the lock screen is redrawn here.
+        if self.runtime?.engine.lastChange != self.readThrough { self.refresh() } else { self.existingWorkoutActivity?.schedule() }
       }
     }
   }
@@ -384,7 +388,7 @@ final class GymModel {
       guard (200..<300).contains(response.statusCode) else {
         kind = "http"
         let refusal = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        expectedRefusal = [400, 401, 403, 404, 409, 410, 422, 429].contains(response.statusCode) || refusal["code"] as? String == "ask-busy"
+        expectedRefusal = ExpectedStatuses.contains(response.statusCode) || refusal["code"] as? String == "ask-busy"
         let message = refusal["error"] as? String ?? "Gym could not complete this request. Try again."
         let detail = refusal["detail"] as? String ?? ""
         throw GymRESTFailure(status: response.statusCode, body: data, message: message + (detail.isEmpty ? "" : ". " + detail))

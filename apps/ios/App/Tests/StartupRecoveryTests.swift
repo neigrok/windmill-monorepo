@@ -96,7 +96,7 @@ import Synchronization
       #expect(try runtime.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == identity.account)
       model.journal.type("Writing while recovery is deferred"); model.journal.done()
       await transport.release()
-      model.sheet = .authPending
+      model.sheet = .you
       model.performAuthentication { await model.retryAuthenticatedSignIn() }
       await model.authTask?.value
       #expect(model.journal.document.body == "Writing while recovery is deferred")
@@ -140,7 +140,7 @@ import Synchronization
     let (runtime, identity) = try await pendingRuntime(transport: transport, directory: directory, service: service)
     let preferences = UserDefaults(suiteName: service)!, recorder = TelemetryRecorder()
     let model = try AppModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: recorder)
-    #expect(model.restoringSignIn && model.pendingSignIn != nil && model.sheet == .authPending && model.editorReadOnly)
+    #expect(model.restoringSignIn && model.pendingSignIn != nil && model.sheet == .you && model.editorReadOnly)
     let phase = RecoveryPhase()
     let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
     let window = UIWindow(windowScene: scene)
@@ -196,7 +196,7 @@ import Synchronization
     await first.value
     await repeated.value
     #expect(!model.syncStarted && !model.accountTransition)
-    #expect(model.restoringSignIn && model.pendingSignIn != nil && model.sheet == .authPending)
+    #expect(model.restoringSignIn && model.pendingSignIn != nil && model.sheet == .you)
     #expect(!model.journal.inkVisible && !preferences.bool(forKey: "inkShown"))
     #expect(model.recoveryDue == nil && model.recoveryDelayMs == Constants.backoffBaseMs)
     #expect(try runtime.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == identity.account)
@@ -226,7 +226,7 @@ import Synchronization
     }
     await model.start()
     #expect(!model.syncStarted && !model.accountTransition)
-    #expect(model.restoringSignIn && model.pendingSignIn != nil && model.sheet == .authPending)
+    #expect(model.restoringSignIn && model.pendingSignIn != nil && model.sheet == .you)
     #expect(!model.journal.inkVisible && !preferences.bool(forKey: "inkShown"))
     #expect(try runtime.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == identity.account)
     #expect(recorder.entries.withLock { $0.map(\.name) } == ["auth_restore"])

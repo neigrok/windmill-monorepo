@@ -125,24 +125,32 @@ struct WindowChrome: UIViewRepresentable {
 }
 
 // Plain UIKit over whatever is in front: a view controller in the tree joins SwiftUI's focus graph and cycles on focus.
+// The alert waits its turn behind a transition or another alert, and is recorded once it is on screen.
 enum UpdateRequiredAlert {
   static func present(for model: AppModel) {
-    guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows)
+    guard model.updateAlert, let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows)
             .first(where: \.isKeyWindow), var front = window.rootViewController else { return }
     while let next = front.presentedViewController, !next.isBeingDismissed { front = next }
-    guard !(front is UIAlertController) else { return }
     if let transition = front.transitionCoordinator {
-      transition.animate(alongsideTransition: nil) { _ in if model.updateAlert { present(for: model) } }
+      transition.animate(alongsideTransition: nil) { _ in present(for: model) }
       return
     }
-    let alert = UIAlertController(title: "Update required", message: "Update Windmill to keep syncing. Your work is saved on this phone.",
-                                  preferredStyle: .alert)
+    // An alert presents nothing and announces no dismissal, so the next look is a short wait away.
+    if front is UIAlertController {
+      Task { @MainActor in
+        try? await Task.sleep(for: .milliseconds(250))
+        present(for: model)
+      }
+      return
+    }
+    let alert = UIAlertController(title: "Update required", message: model.updateMessage, preferredStyle: .alert)
     alert.addAction(UIAlertAction(title: "Keep working on this phone", style: .cancel) { _ in model.keepWorkingWithoutUpdate() })
     let update = UIAlertAction(title: "Get the update", style: .default) { _ in
+      model.getUpdate()
       UIApplication.shared.open(AppSettings.updateDestination) { model.updateOpened($0) }
     }
     alert.addAction(update); alert.preferredAction = update
-    front.present(alert, animated: true)
+    front.present(alert, animated: true) { model.updateAlertPresented() }
   }
 }
 

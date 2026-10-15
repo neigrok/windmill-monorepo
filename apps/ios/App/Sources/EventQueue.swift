@@ -1,4 +1,5 @@
 import Foundation
+import SyncEngine
 
 nonisolated enum EventValue: Codable, Sendable, Equatable {
   case label(String)
@@ -194,7 +195,7 @@ actor EventQueue {
           if [.notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .networkConnectionLost].contains(error.code) { return }
           if error.code == .timedOut { kind = "timeout" }
         }
-        if let status, [400, 401, 403, 404, 409, 422, 429].contains(status) { return }
+        if ExpectedStatuses.contains(status) { return }
         if !failed {
           failed = true
           let elapsed = start.duration(to: .now).components

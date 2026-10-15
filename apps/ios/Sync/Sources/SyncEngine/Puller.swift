@@ -345,13 +345,14 @@ package actor Puller {
     return try core.pauseAuth(replica, sentUnder: token) ? .paused : .again
   }
 
-  // The puller column's other failures: a 426 stops; a 503 pauses every pull for its `retryAfterMs`, a pause no kick cuts
-  // short, and backs off no less; anything else backs off.
+  // The puller column's other failures: the server's 426 stops; a 503 pauses every pull for its `retryAfterMs`, a pause
+  // no kick cuts short, and backs off no less; anything else backs off.
   func next(after failure: HTTPFailure) -> PullerStep {
-    switch failure.status {
-    case 426:
+    if failure.requiresUpgrade {
       core.requireUpgrade()
       return .stopped
+    }
+    switch failure.status {
     case 503:
       let asked = failure.retryAfterMs ?? 0
       serverAskEnd = now() + asked

@@ -14,8 +14,9 @@ import SyncStore
 // count as a reconnect, so the puller pulls every scope at once; a close the client makes (leaving, going offline, a
 // replica change) pulls nothing. The next socket after a reconnect opens after the channel's own backoff, with its own
 // `k` and a 30 s ceiling, `k` reset once a socket has stayed open 30 s; a re-authentication that clears the pause opens
-// the next one at once, with `k` reset. A 401 at the handshake pauses the replica, and a 426 stops the channel for the
-// process. When the loops run, a reader task per socket receives its frames; in step mode the caller receives them.
+// the next one at once, with `k` reset. A 401 at the handshake pauses the replica; a 426 at the handshake carries no body,
+// so it reconnects like any refusal, and the channel stops once a hello, push or pull has required the upgrade. When the
+// loops run, a reader task per socket receives its frames; in step mode the caller receives them.
 
 package enum LiveStep: Sendable, Hashable {
   // Look again now: the socket was closed or replaced while this step waited, the seat changed during the handshake, or a
@@ -27,7 +28,7 @@ package enum LiveStep: Sendable, Hashable {
   case open(ms: Int64)
   // 401, or no token for the account: wait for re-authentication's kick.
   case paused
-  // 426: no socket is opened again by this process.
+  // An upgrade required: no socket is opened again by this process.
   case stopped
   // The socket could not open or has ended: open another in `ms`.
   case backoff(ms: Int64)
@@ -182,9 +183,8 @@ package actor LiveChannel {
       core.pullWants.all()
       puller.wake.kick()
       return (try? core.pauseAuth(meta.replica, sentUnder: token)) == true ? .paused : .again
-    case .answered(.failed(let failure)) where failure.status == 426:
-      core.requireUpgrade()
-      return .stopped
+    // A handshake's refusal carries no body, so a 426 here proves nothing: the pull it kicks hears the server's own
+    // verdict, and a required upgrade ends the channel through `wanted`.
     case .answered(.failed), .unreachable:
       return reopenLater()
     }
