@@ -174,11 +174,12 @@ adoption approvals use `room_adoption_answered`, without workout counts, content
 
 A saved workout the account has not taken is a row of The log's **On this phone** section with the
 reason the engine notice or the phone's own import checks give it; the Log tab's badge counts the
-rows waiting on the lifter. Opening Inspect, opening Fix workout, Keep, Retry, Save and Discard each
+rows waiting on the lifter. Opening Inspect, opening Fix workout, Keep, Retry, Save and retry and Discard each
 emit one `gym_import_recovery` with the action and the reason as bounded labels, in the vocabulary
 Android's event uses. Opening Inspect or Fix workout is `state=opened`. A queued commit is
-`outcome=completed`; closing Fix workout without saving is `fix` with `cancelled`, and Undo inside the
-discard window is `discard` with `cancelled`. A retry that lands dismisses the notices it answered. A
+`outcome=completed`; closing Fix workout without saving is `fix` with `cancelled`. Discard returns to The log,
+which holds it for the room's window: Undo there is `discard` with `cancelled`, and the window's end, or the app
+leaving the foreground, is `discard` with its commit's outcome. A retry that lands dismisses the notices it answered. A
 restart queues the start and every saved set in one plan, or refuses whole; sets a landed workout
 refused go back into it in one plan, appended while it is open or through an additive correction,
 and the ones outside its window become a saved copy of their own whose import is queued. An
