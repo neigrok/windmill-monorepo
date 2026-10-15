@@ -1657,7 +1657,7 @@ run. Records are engine §9.1 `Row`s listed per view (`drawn`, `stored`), which 
 |---|---|
 | `domain/rules.json` | the rule book and entity facts, pinned (§6.3) |
 | `domain/values.json` | each LOCAL rule: spec cases, the kit's value-vector forms (§15.2) over a spec of the book, and entity cases (`{entity, id, fields, now, offsetSeconds}` → `{fields}` or `{violation}`) pinning check order |
-| `domain/<feature>-actions.json` | each action and draft save of a feature: `{action, input, records: {drawn, stored?}, ids, now, offsetSeconds}` → `{decision}`: the action's `load` and `decision` over the records, `stored` defaulting to `drawn`, minting `ids` in order; a draft save's decision over the draft its editor opens there |
+| `domain/<feature>-actions.json` | each action and draft save of a feature: `{action, input, records: {drawn, stored?, device?}, ids, now, offsetSeconds}` → `{decision}`: the action's `load` and `decision` over the records and the device keys, `stored` defaulting to `drawn`, minting `ids` in order, opaque ones included; a draft save's decision over the draft its editor opens there |
 | `domain/README.md` | each action's and read's `input` and result, and the forms of the product refusal |
 | `rules/<read>.json` | each derived read (§7.4; for gym, gym Coach §3.5 `rules/`): `{read, input?, records: {drawn, stored?}, firstPullComplete?, now, offsetSeconds}` → `{result}`, the read over a reader of the records in its scope at the moment, `firstPullComplete` defaulting to true |
 

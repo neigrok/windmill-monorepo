@@ -40,17 +40,20 @@ extension WorkoutRecovery {
 
   var line: String { reason.line(stranded: strandedSets.count) }
 
-  // Sets a landed workout refused only go back through Retry; a spent identity has no primary, since its way out is
-  // Discard, which is never a prominent fill.
+  // The one way out the reason names; a retry is offered only for a reason a retry can change. A spent identity has no
+  // primary, since its way out is Discard, which is never a prominent fill.
   var primary: Primary? {
-    guard retry != .restoreSets else { return .retry }
     switch reason {
-    case .accountWorkoutOpen: return .keep
-    case .strandedSets, .unsent: return .retry
-    case .identityTaken: return nil
-    case .overlap, .badTime, .tooManySets, .invalidSet, .unknownMovement, .other: return .fix
+    case .accountWorkoutOpen: .keep
+    case .strandedSets, .unsent: .retry
+    case .identityTaken: nil
+    case .overlap, .badTime, .tooManySets, .invalidSet, .unknownMovement, .other: .fix
     }
   }
+
+  // What Discard drops: the whole copy, or the sets of a landed workout it still holds.
+  var discardTitle: String { retry == .restoreSets ? "Discard \(GymCount.of(strandedSets.count, "set"))" : "Discard workout" }
+  var discardedLine: String { retry == .restoreSets ? (strandedSets.count == 1 ? "Set discarded" : "Sets discarded") : "Workout discarded" }
 
   func title(at moment: Moment) -> String {
     guard retry == .restoreSets else { return workout.title(at: moment) }

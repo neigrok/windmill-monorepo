@@ -2,8 +2,9 @@ import SwiftUI
 import DomainKit
 import GymDomain
 
-// The phone's copy of a refused workout, corrected before one retry under the same identity. Nothing here reaches the
-// account until Save and retry, which the phone holds while it would refuse the copy, saying why above it.
+// The phone's copy of a refused workout, corrected before one retry under the same identity: its times, routine link and
+// sets, or a landed workout's stranded sets alone. Nothing here reaches the account until Save, which the phone holds
+// while it would refuse the copy, saying why in the band below.
 struct WorkoutFixSheet: View {
   let gym: GymModel
   let reason: WorkoutRecovery.Reason
@@ -19,22 +20,25 @@ struct WorkoutFixSheet: View {
   }
 
   var body: some View {
+    let now = gym.log?.moment.now.date ?? Date()
     NavigationStack {
       Form {
         Group {
-          Section("Times") {
-            DatePicker("Started", selection: $fix.startedAt.date)
-            if let finished = Binding($fix.finishedAt) {
-              DatePicker("Finished", selection: finished.date)
-            } else {
-              LabeledContent("Finished", value: "Not finished")
-              Button("Mark finished") { fix.markFinished() }.accessibilityIdentifier("recovery-fix-mark-finished")
+          if !fix.landed {
+            Section("Times") {
+              DatePicker("Started", selection: $fix.startedAt.date, in: ...now)
+              if let finished = Binding($fix.finishedAt) {
+                DatePicker("Finished", selection: finished.date, in: ...now)
+              } else {
+                LabeledContent("Finished", value: "Not finished")
+                Button("Mark finished") { fix.markFinished() }.accessibilityIdentifier("recovery-fix-mark-finished")
+              }
+            }
+            if fix.hasRoutine, let routine = fix.original.session.name {
+              Section { Toggle("Linked to \(routine)", isOn: $fix.keepsRoutine) }
             }
           }
-          if fix.hasRoutine, let routine = fix.original.session.name {
-            Section { Toggle("Linked to \(routine)", isOn: $fix.keepsRoutine) }
-          }
-          let sets = fix.workout.sets
+          let sets = fix.sets.map { $0.set(in: fix.original.session.id) }
           ForEach(SetRow.movements(sets), id: \.self) { exercise in
             Section(gym.catalogue.find(exercise)?.name ?? "Missing movement") {
               let performed = sets.filter { $0.exerciseId == exercise }
@@ -49,8 +53,11 @@ struct WorkoutFixSheet: View {
         }.listRowBackground(GymPalette.card)
       }.modifier(GymPage()).disabled(gym.accountTransition)
         .navigationTitle("Fix workout")
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-        .safeAreaInset(edge: .bottom) { band }
+        .toolbar {
+          ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+          ToolbarItem(placement: .confirmationAction) { saveButton }
+        }
+        .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, message: held, errorIdentifier: "recovery-fix-held") }
     }.modifier(GymPage()).presentationDetents([.large]).interactiveDismissDisabled(fix.isChanged)
       .sheet(isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
         if let index = fix.sets.firstIndex(where: { $0.id == editing }) {
@@ -62,24 +69,29 @@ struct WorkoutFixSheet: View {
       .onDisappear { if !saved { gym.recorded(.fix, reason, outcome: "cancelled") } }
   }
 
-  // What holds Save and retry is said in the band above it, as the Fix set sheet says its problem.
-  var band: some View {
-    let excess = fix.sets.count - 200
-    let refusal = gym.fixRefusal(fix)
-    let held = excess > 0 ? "Over 200 sets · remove \(excess)."
-      : refusal.map { WorkoutRecovery.Reason($0).line(stranded: 0) } ?? (gym.canSendRecovery ? nil : gym.recoveryWait)
-    return VStack(spacing: 0) {
-      GymTransient(gym: gym, message: held, errorIdentifier: "recovery-fix-held")
-      ActionBand(title: "Save and retry", room: .gym, disabled: held != nil || !gym.canSendRecovery,
-                 actionIdentifier: "recovery-fix-save") { save() }
+  // The bar's commit: the system's prominent confirm on iOS 26, a bold Save before it.
+  @ViewBuilder var saveButton: some View {
+    let disabled = held != nil || !gym.canSendRecovery
+    if #available(iOS 26, *) {
+      Button("Save", role: .confirm) { save() }.disabled(disabled).accessibilityIdentifier("recovery-fix-save")
+    } else {
+      Button("Save") { save() }.bold().disabled(disabled).accessibilityIdentifier("recovery-fix-save")
     }
   }
 
-  // A refusal stays here with the draft, in the band; a queued retry closes the sheet and Inspect says so.
+  // What holds Save is said in the band below the form, as the Fix set sheet says its problem.
+  var held: String? {
+    let excess = fix.sets.count - 200
+    if excess > 0 { return "Over 200 sets · remove \(excess)." }
+    if let refusal = gym.fixRefusal(fix) { return WorkoutRecovery.Reason(refusal).line(stranded: 0) }
+    return gym.canSendRecovery ? nil : gym.recoveryWait
+  }
+
+  // A refusal stays here with the draft, in the band; a queued retry closes the sheet and Inspect says it is on its way.
   func save() {
     guard gym.saveAndRetryWorkout(fix) else { return }
     saved = true
-    landed("\(fix.workout.name) is on your log.")
+    landed("Adding \(fix.workout.name) to your log.")
     dismiss()
   }
 }

@@ -46,55 +46,46 @@ public struct WorkoutRecovery: Equatable, Sendable, Identifiable {
   public let movementNames: [ID<Exercise>: String]
 
   public var id: ID<Session> { workout.session.id }
-  // A landed workout's stranded sets are placed by Retry, and a spent identity stays spent whatever the copy says.
-  public var canFix: Bool { retry != .restoreSets && reason != .identityTaken }
+  // The copy is the phone's to correct, except that a spent identity stays spent whatever the copy says.
+  public var canFix: Bool { reason != .identityTaken }
 
   // Every saved workout the account has not taken and nothing is carrying: refused by a notice it owns, refused by this
-  // phone, or never sent. `notices` holds the dismissed ones too, so a reason outlives its notice; a retry answers it
-  // instead. A workout drawn on the log is on its way, or there, and waits only on its own sets the log does not draw.
+  // phone, or never sent. A retry dismisses the notices it answers, so a dismissed notice says nothing here; the newest
+  // live one is the reason. A workout drawn on the log is there or on its way, and waits only on its own sets the log
+  // does not draw: with none missing it is still adding, or confirmed and about to leave.
   public static func review(_ workouts: [SignedOutWorkout], notices: [DomainNotice<GymRefusal>], log: TrainingLog,
                             catalogue: Catalogue) -> [WorkoutRecovery] {
     let sessions = log.drawnSessions
     return workouts.compactMap { workout in
       let id = workout.session.id
-      let owned = notices.filter(workout.owns)
-      let landed = sessions.contains { $0.id == id }
-      let retry: Retry = landed ? .restoreSets : workout.session.isOpen ? .restartWorkout : .importWorkout
+      let live = notices.filter { workout.owns($0) && !$0.notice.isDismissed }
       let names = Dictionary(uniqueKeysWithValues: Set(workout.sets.map(\.exerciseId)).compactMap { exercise in
         catalogue.find(exercise).map { (exercise, $0.name) }
       })
-      let reviewed = { (reason: Reason, refusal: GymRefusal?, stranded: [DomainNotice<GymRefusal>]) in
-        WorkoutRecovery(workout: workout, reason: reason, refusal: refusal, retry: retry, noticeIds: owned.map(\.id),
-                        strandedSets: workout.sets.filter { set in stranded.contains { $0.subject == set.id.ref } }, movementNames: names)
+      let reviewed = { (reason: Reason, refusal: GymRefusal?, retry: Retry, stranded: [TrainingSet]) in
+        WorkoutRecovery(workout: workout, reason: reason, refusal: refusal, retry: retry, noticeIds: live.map(\.id),
+                        strandedSets: stranded, movementNames: names)
       }
-      if landed {
-        let missing = owned.filter { notice in
-          notice.subject?.type == TrainingSet.type && !log.sets.contains { $0.id.ref == notice.subject }
-        }
-        guard let latest = missing.last else { return nil }
-        return reviewed(Reason(latest.refusal), latest.refusal, missing)
+      if sessions.contains(where: { $0.id == id }) {
+        let missing = workout.sets.filter { set in !log.sets.contains { $0.id == set.id } }
+        guard !missing.isEmpty else { return nil }
+        guard let latest = live.last else { return reviewed(.unsent, nil, .restoreSets, missing) }
+        return reviewed(Reason(latest.refusal), latest.refusal, .restoreSets, missing)
       }
-      if let latest = owned.last { return reviewed(Reason(latest.refusal), latest.refusal, []) }
-      if let refusal = workout.importRefusal(at: log.moment, among: sessions) { return reviewed(Reason(refusal), refusal, []) }
+      let retry: Retry = workout.session.isOpen ? .restartWorkout : .importWorkout
+      if let latest = live.last { return reviewed(Reason(latest.refusal), latest.refusal, retry, []) }
+      if let refusal = workout.importRefusal(at: log.moment, among: sessions, catalogue: catalogue) { return reviewed(Reason(refusal), refusal, retry, []) }
       if workout.session.isOpen, log.open != nil {
-        return reviewed(.accountWorkoutOpen, .sessionOpen(Refused(Gym.Codes.sessionOpen, subject: id.ref, path: .predicted)), [])
+        return reviewed(.accountWorkoutOpen, .sessionOpen(Refused(Gym.Codes.sessionOpen, subject: id.ref, path: .predicted)), retry, [])
       }
-      return reviewed(.unsent, nil, [])
+      return reviewed(.unsent, nil, retry, [])
     }
   }
 }
 
-extension SignedOutWorkout {
-  // A notice this copy owns: its session refused, or one of its own sets. Its reason belongs to the copy's row, not to
-  // the room's band.
-  public func owns(_ notice: DomainNotice<GymRefusal>) -> Bool {
-    guard let subject = notice.subject else { return false }
-    return subject == session.id.ref || sets.contains { $0.id.ref == subject }
-  }
-}
-
-// The editor over a saved workout the account refused: its times, its routine link and each set. `workout` is the corrected
-// copy a retry submits; a set is removed by taking it out of `sets`.
+// The editor over a saved workout the account refused: its times, its routine link and each set, or, once the workout
+// is on the log, its stranded sets alone, since its times and routine are the log's. `workout` is the corrected copy a
+// retry submits; a set is removed by taking it out of `sets`.
 public struct WorkoutFix: Equatable, Sendable {
   public struct SetFix: Equatable, Sendable, Identifiable {
     public let id: ID<TrainingSet>
@@ -117,16 +108,25 @@ public struct WorkoutFix: Equatable, Sendable {
   }
 
   public let original: SignedOutWorkout
+  public let landed: Bool
   public var startedAt: Instant
   public var finishedAt: Instant?
   public var keepsRoutine: Bool
   public var sets: [SetFix]
+  let edited: Set<ID<TrainingSet>>
 
   public init(_ workout: SignedOutWorkout) {
-    original = workout
+    self.init(workout, editing: workout.sets, landed: false)
+  }
+  public init(_ recovery: WorkoutRecovery) {
+    self.init(recovery.workout, editing: recovery.retry == .restoreSets ? recovery.strandedSets : recovery.workout.sets,
+              landed: recovery.retry == .restoreSets)
+  }
+  init(_ workout: SignedOutWorkout, editing: [TrainingSet], landed: Bool) {
+    original = workout; self.landed = landed
     startedAt = workout.session.startedAt; finishedAt = workout.session.finishedAt
     keepsRoutine = workout.session.routineId != nil
-    sets = workout.sets.map(SetFix.init)
+    sets = editing.map(SetFix.init); edited = Set(editing.map(\.id))
   }
 
   public var hasRoutine: Bool { original.session.routineId != nil }
@@ -145,16 +145,24 @@ public struct WorkoutFix: Equatable, Sendable {
                           routineId: keepsRoutine ? saved.routineId : nil, historyRoutineId: keepsRoutine ? saved.historyRoutineId : nil,
                           plan: keepsRoutine ? saved.plan : nil, displayName: saved.displayName,
                           unreadablePlan: keepsRoutine ? saved.unreadablePlan : nil)
-    return SignedOutWorkout(session: session, sets: sets.map { $0.set(in: session.id) })
+    return SignedOutWorkout(session: session, sets: original.sets.filter { !edited.contains($0.id) } + sets.map { $0.set(in: session.id) })
   }
 
-  // The editor's live line: what this phone would refuse before asking the account. An open copy restarts only while
-  // the account has no open workout of its own.
-  public func refusal(at moment: Moment, among sessions: [Session]) -> GymRefusal? {
+  // The editor's live line: what this phone would refuse before asking the account. A landed workout's sets must be
+  // valid and on known movements; a whole copy must pass the import's checks, and an open one restarts only while the
+  // account has no open workout of its own.
+  public func refusal(at moment: Moment, among sessions: [Session], catalogue: Catalogue) -> GymRefusal? {
+    if landed {
+      for set in sets {
+        do throws(Violation) { _ = try Valid(set.set(in: original.session.id), at: moment) } catch { return .invalid(error) }
+        guard catalogue.find(set.exerciseId) != nil else { return .unknownExercise(Refused(Gym.Codes.unknownExercise, subject: set.id.ref, path: .predicted)) }
+      }
+      return nil
+    }
     if isOpen, sessions.contains(where: { $0.isOpen && $0.id != original.session.id }) {
       return .sessionOpen(Refused(Gym.Codes.sessionOpen, subject: original.session.id.ref, path: .predicted))
     }
-    return workout.importRefusal(at: moment, among: sessions)
+    return workout.importRefusal(at: moment, among: sessions, catalogue: catalogue)
   }
 }
 
@@ -166,19 +174,21 @@ public struct DiscardSignedOutWorkout: Action {
   public func load(_ read: Reader) throws -> [SignedOutWorkout] { try SignedOutWorkout.read(read) }
   public func decide(_ saved: [SignedOutWorkout], ids: IDSource) -> Decision<Void, GymRefusal> {
     guard saved.contains(where: { $0.session.id == id }) else { return .unchanged(()) }
-    let kept = JSON.Object(uniqueKeysWithValues: saved.filter { $0.session.id != id }.map { ($0.session.id.description, $0.json) })
     var plan = Plan()
-    plan.device(SignedOutWorkout.key, kept.isEmpty ? nil : .object(kept))
+    plan.device(SignedOutWorkout.key, SignedOutWorkout.saved(saved, replacing: [], dropping: [id]))
     return .write(plan)
   }
 }
 
-// A set the account refused after its workout had landed and finished lives only in its notice; the saved copy still holds
-// it. `intoWorkout` puts the sets inside the workout's window back into it, numbered after the ones it kept, and leaves its
-// times alone; `separately` imports the ones outside it as a workout of their own, from the first to the last.
+// A set the account refused after its workout had landed lives only in its notice; the saved copy still holds it.
+// `intoWorkout` puts the sets inside the workout's window back into it: appended while it is open, else corrected in,
+// numbered after the ones it kept, its times left alone. `separately` makes the sets outside the window a saved copy of
+// their own, from the first to the last, and queues its import, so a refusal of it is that copy's to fix. Either takes a
+// revised copy, which replaces the saved one only when the retry is queued.
 public struct RecoverStrandedSets: Action {
   public enum Placement: Sendable { case intoWorkout, separately }
   public struct Loaded {
+    let backup: [SignedOutWorkout]
     let workout: SignedOutWorkout?
     let session: Session?
     let stranded: [TrainingSet]
@@ -186,48 +196,81 @@ public struct RecoverStrandedSets: Action {
   }
   public let id: ID<Session>
   public let placement: Placement
-  public init(_ id: ID<Session>, _ placement: Placement) { self.id = id; self.placement = placement }
+  public let revised: SignedOutWorkout?
+  public init(_ id: ID<Session>, _ placement: Placement, revised: SignedOutWorkout? = nil) {
+    precondition(revised == nil || revised?.session.id == id, "a revision keeps the saved workout's identity")
+    self.id = id; self.placement = placement; self.revised = revised
+  }
   public var scope: ScopeRef { Gym.scope }
   public func load(_ read: Reader) throws -> Loaded {
     let state = try TrainingState(read)
-    let workout = try SignedOutWorkout.read(read).first { $0.session.id == id }
+    let backup = try SignedOutWorkout.read(read)
+    let workout = backup.first { $0.session.id == id }.map { revised ?? $0 }
     var stranded: [TrainingSet] = []
     for set in workout?.sets ?? [] where try read.confirmed(TrainingSet.self, set.id) == nil && !state.drawnSets.contains(where: { $0.id == set.id }) {
       stranded.append(set)
     }
-    return Loaded(workout: workout, session: try read.repository(Session.self).find(id, in: .stored), stranded: stranded, state: state)
+    return Loaded(backup: backup, workout: workout, session: try read.repository(Session.self).find(id, in: .stored), stranded: stranded, state: state)
   }
   public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
-    guard loaded.workout != nil, !loaded.stranded.isEmpty else { return .unchanged(()) }
+    guard let workout = loaded.workout, !loaded.stranded.isEmpty else { return .unchanged(()) }
     guard let session = loaded.session else { return .refuse(.gone(id.ref, .predicted)) }
-    guard let finish = session.finishedAt else { return .refuse(.sessionOpen(Refused(Gym.Codes.sessionOpen, subject: id.ref, path: .predicted))) }
-    let inside = loaded.stranded.filter { $0.completedAt >= session.startedAt && $0.completedAt <= finish }
+    let inside = loaded.stranded.filter { set in
+      set.completedAt >= session.startedAt && (session.finishedAt.map { set.completedAt <= $0 } ?? true)
+    }
     switch placement {
     case .intoWorkout:
       guard !inside.isEmpty else { return .unchanged(()) }
-      var numbers: [ID<Exercise>: Int] = [:]
-      var corrected: [CorrectedSet] = []
-      for set in inside {
-        let next = numbers[set.exerciseId] ?? SetRules.nextNumber(loaded.state.sets, sessionId: id, exerciseId: set.exerciseId)
-        guard let next, next <= SetRules.maxNumber else { throw Violation(rule: "set.setNumber", path: "setNumber", reason: .above(max: Double(SetRules.maxNumber))) }
-        numbers[set.exerciseId] = next + 1
-        corrected.append(CorrectedSet(id: set.id, exerciseId: set.exerciseId, setNumber: next, weightKg: set.weightKg, reps: set.reps,
-                                      completedAt: set.completedAt, rpe: set.rpe, note: set.note, rpeNamed: true, kind: set.kind))
-      }
-      let correction = CorrectSession(id: id, requestId: ids.opaqueID(), startedAt: session.startedAt, finishedAt: finish,
-                                      routineName: session.displayName, sets: corrected, preserveOtherSets: true)
-      return correction.decision(loaded.state, ids: ids)
-    case .separately:
-      let outside = loaded.stranded.filter { set in !inside.contains { $0.id == set.id } }
-      guard let first = outside.first, let last = outside.last else { return .unchanged(()) }
-      let imported = ImportSession(id: ids.mint(Session.self), startedAt: first.completedAt, finishedAt: last.completedAt,
-        sets: outside.map { ImportedSet(id: $0.id, exerciseId: $0.exerciseId, weightKg: $0.weightKg, reps: $0.reps,
-          completedAt: $0.completedAt, kind: $0.kind, rpe: $0.rpe, note: $0.note, rpeNamed: true) })
-      switch imported.decision((state: loaded.state, routine: nil), ids: ids) {
-      case .write(let plan, _): return .write(plan)
+      var plan: Plan
+      switch try placed(inside, in: session, state: loaded.state, ids: ids) {
+      case .write(let placing, _): plan = placing
       case .refuse(let refusal): return .refuse(refusal)
       case .unchanged: return .unchanged(())
       }
+      plan.device(SignedOutWorkout.key, SignedOutWorkout.saved(loaded.backup, replacing: [workout]))
+      return .write(plan)
+    case .separately:
+      let outside = loaded.stranded.filter { set in !inside.contains { $0.id == set.id } }
+      guard let first = outside.first, let last = outside.last else { return .unchanged(()) }
+      let separate = Session(id: ids.mint(Session.self), startedAt: first.completedAt, finishedAt: last.completedAt, closedBy: "finish")
+      let copy = SignedOutWorkout(session: separate, sets: outside.map { set in
+        TrainingSet(id: set.id, sessionId: separate.id, exerciseId: set.exerciseId, weightKg: set.weightKg, reps: set.reps, kind: set.kind,
+                    rpe: set.rpe, note: set.note, completedAt: set.completedAt)
+      })
+      if let refusal = copy.importRefusal(at: loaded.state.moment, among: loaded.state.stored, catalogue: loaded.state.catalogue) { return .refuse(refusal) }
+      var plan: Plan
+      switch copy.importAction.decision((state: loaded.state, routine: nil), ids: ids) {
+      case .write(let imported, _): plan = imported
+      case .refuse(let refusal): return .refuse(refusal)
+      case .unchanged: return .unchanged(())
+      }
+      let kept = SignedOutWorkout(session: workout.session, sets: workout.sets.filter { set in !outside.contains { $0.id == set.id } })
+      plan.device(SignedOutWorkout.key, SignedOutWorkout.saved(loaded.backup, replacing: [kept, copy]))
+      return .write(plan)
     }
+  }
+
+  func placed(_ sets: [TrainingSet], in session: Session, state: TrainingState, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
+    guard let finish = session.finishedAt else {
+      var plan = Plan(), planned: [TrainingSet] = []
+      for set in sets {
+        let valid = try Valid(set, at: state.moment)
+        if let refusal = try AppendSet.refusal(appending: valid, to: session, state: state, planned: planned) { return .refuse(refusal) }
+        plan.create(valid); planned.append(valid.value)
+      }
+      return .write(plan)
+    }
+    var numbers: [ID<Exercise>: Int] = [:]
+    var corrected: [CorrectedSet] = []
+    for set in sets {
+      let next = numbers[set.exerciseId] ?? SetRules.nextNumber(state.sets, sessionId: id, exerciseId: set.exerciseId)
+      guard let next, next <= SetRules.maxNumber else { throw Violation(rule: "set.setNumber", path: "setNumber", reason: .above(max: Double(SetRules.maxNumber))) }
+      numbers[set.exerciseId] = next + 1
+      corrected.append(CorrectedSet(id: set.id, exerciseId: set.exerciseId, setNumber: next, weightKg: set.weightKg, reps: set.reps,
+                                    completedAt: set.completedAt, rpe: set.rpe, note: set.note, rpeNamed: true, kind: set.kind))
+    }
+    let correction = CorrectSession(id: id, requestId: ids.opaqueID(), startedAt: session.startedAt, finishedAt: finish,
+                                    routineName: session.displayName, sets: corrected, preserveOtherSets: true)
+    return correction.decision(state, ids: ids)
   }
 }

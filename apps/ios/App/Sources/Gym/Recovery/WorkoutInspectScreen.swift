@@ -35,7 +35,7 @@ struct WorkoutInspectScreen: View {
           ToolbarItem(placement: .topBarTrailing) {
             MoreMenu(identifier: "recovery-more") {
               if recovery.canFix, recovery.primary != .fix { Button("Fix workout", systemImage: "pencil") { fix() } }
-              Button("Discard workout", systemImage: "trash", role: .destructive) { hold() }
+              Button(recovery.discardTitle, systemImage: "trash", role: .destructive) { hold() }
                 .accessibilityIdentifier("recovery-discard")
             }
           }
@@ -87,7 +87,7 @@ struct WorkoutInspectScreen: View {
     return VStack(spacing: 0) {
       // The lifter's own discard is the news while its window is open, ahead of any refusal the room holds.
       if discarding != nil {
-        RoomTransient(message: "Workout discarded", room: .gym, actionTitle: "Undo", actionIdentifier: "recovery-undo") { undo(recovery) }
+        RoomTransient(message: recovery?.discardedLine ?? "Workout discarded", room: .gym, actionTitle: "Undo", actionIdentifier: "recovery-undo") { undo(recovery) }
           .accessibilityIdentifier("recovery-undo-band")
       } else {
         GymTransient(gym: gym, message: message ?? (waiting ? gym.recoveryWait : nil),
@@ -107,7 +107,7 @@ struct WorkoutInspectScreen: View {
     return recovery?.code.map { "\(day) · \($0)" } ?? day
   }
 
-  // A queued Keep or Retry says so here; a refused one says its reason in the room's band.
+  // A queued Keep or Retry says so here, until the log confirms it and the row leaves; a refused one says its reason.
   func act(_ primary: WorkoutRecovery.Primary, _ recovery: WorkoutRecovery) {
     let queued: Bool
     switch primary {
@@ -115,7 +115,7 @@ struct WorkoutInspectScreen: View {
     case .keep: queued = gym.keepAdoptedWorkout(id)
     case .retry: queued = gym.retryWorkout(id)
     }
-    if queued { message = "\(recovery.workout.name) is on your log." }
+    if queued { message = "Adding \(recovery.workout.name) to your log." }
   }
 
   func fix() { fixing = gym.fixWorkout(id) }

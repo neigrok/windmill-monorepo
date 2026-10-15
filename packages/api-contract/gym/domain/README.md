@@ -17,6 +17,7 @@ for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCr
 | `catalogue-actions.json` | Create, rename, seed overrides, aliases, byte-sensitive search, decoding failures |
 | `preferences-actions.json` | Draft preference saves and rest defaults |
 | `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
+| `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery and discard. Runs in Swift `GymDomain`; Kotlin adopts it when Android's recovery (`WorkoutImports.kt`, in the store today) moves into its domain |
 | `proposals-actions.json` | Propose, apply/dismiss, ordered diff, change count, provenance and optional R118 metadata reads |
 | `training-reads.json` | Prefill, last time, readouts, the canonical estimate, complete progress projection, movement records, chart windows and shared history documents |
 | `units.json` | Units, signed weight ladder, formatting, rounding and rep steps |
@@ -25,8 +26,9 @@ for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCr
 
 Every JSON vector file is an array of `{name, input, expect}`. The kit's
 [forms](../../domain-kit/README.md) define specs, violations, row scenes, gestures and decisions.
-An action scene has `{action, input, records:{drawn, stored?}, ids?, now, offsetSeconds}`;
-`stored` defaults to `drawn`. A read scene replaces `action` with `read` and may specify
+An action scene has `{action, input, records:{drawn, stored?, device?}, ids?, now, offsetSeconds}`;
+`stored` defaults to `drawn`, and `device` lists device keys with their values (the saved
+workouts under `rack:adoption`); `ids` are minted in order, a correction's `requestId` included. A read scene replaces `action` with `read` and may specify
 `firstPullComplete:false`. That flag prevents absence and lifetime-best claims over a booting history.
 Pure value reads use their input directly. Malformed decode cases return
 `{decodeError:{type,field,reason}}`. An unreadable frozen session plan is retained as exact JSON,
@@ -73,6 +75,9 @@ separately and is outside the v4 rule book because v4 has no such type.
 | `DiscardSession` | `{id}` | `null`; held, refuses an active non-stale session |
 | `ImportSession` | `{id,routineId?,startedAt,finishedAt,sets:[ImportedSet]}` | Session id |
 | `CorrectSession` | `{sessionId,requestId,startedAt,finishedAt,routineName,sets:[CorrectedSet],preserveOtherSets?}` | `null` |
+| `AdoptWorkout` | `{id, mode: "keep" \| "restart", revised?}` over the saved copy under `rack:adoption` | `null`; keep imports the copy after the phone's checks (window, past now, movements, crossing); restart queues the start and every set in one plan or refuses the first set the phone would |
+| `RecoverStrandedSets` | `{id, placement: "intoWorkout" \| "separately", revised?}` | `null`; the window's sets append to an open workout or correct into a finished one; the rest become a saved copy of their own with its import queued |
+| `DiscardSignedOutWorkout` | `{id}` | `null`; the copy leaves the device key |
 | `ProposeRoutine` | `{id,routineId,name,entries,summary,removing?}` | Proposal id; guards routine name and entries |
 | `ApplyProposal`, `DismissProposal` | `{id}` | `null` |
 
@@ -83,6 +88,12 @@ A decision is `{decision:{write:{gesture,result}}}`, `{decision:{unchanged:{resu
 holding the complete `{code,subject,detail,path}`. Predicted and notice paths retain their meaning.
 
 ## Reads
+
+`WorkoutRecovery` (read scene with `input.notices` in the kit's notice form, `dismissed?` added) lists a row per
+saved copy the account has not taken: the newest live notice it owns names the reason, else the phone's import
+checks, else `unsent`; a landed copy's row holds the saved sets the log does not draw, and none when every set is
+drawn. `owns` answers whether a notice is the copy's: its import, start or correction, or the creation of one of its
+sets. `WorkoutFix` opens the review's row (a landed copy edits its stranded sets alone) and reports its live refusal.
 
 `TrainingLog` draws local staleness without submitting `gym.closeStale`, hides sets with an absent
 parent and orders ties by id. `SessionRules` pins the four-hour boundary, late-set admission,

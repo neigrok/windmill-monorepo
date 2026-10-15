@@ -6,7 +6,8 @@ import SyncEngine
 import SyncSchema
 
 // `-board recovery`: a signed-in account whose phone holds a saved workout for every reason the log can give, reached
-// through the real engine — the phone's own checks, refusals from the model server, and a set a landed workout refused.
+// through the real engine — the phone's own checks (a crossing, a late set, a missing movement, over 200 sets),
+// refusals from the model server, and a set a landed workout refused.
 // `recovery-paused` revokes the session first, so one workout waits on its way and the rest wait on sign-in.
 enum RecoveryFixture {
   #if DEBUG && targetEnvironment(simulator)
@@ -121,8 +122,8 @@ enum RecoveryFixture {
       await runtime.engine.flushOnLeave()
       try await refused(copy("fixture-id-taken", routine: nil, exercise: "barbell-row", start: now - 6 * Self.day, finish: now - 6 * Self.day + Self.hour, count: 4), .idTaken, runtime: runtime, server: server)
       try await refused(copy("fixture-parent-dead", routine: nil, exercise: "overhead-press", start: now - 7 * Self.day, finish: now - 7 * Self.day + Self.hour, count: 3), .parentDead, runtime: runtime, server: server)
-      try await refused(copy("fixture-missing-movement", routine: nil, exercise: "fixture-retired-movement", start: now - 5 * Self.day, finish: now - 5 * Self.day + Self.hour, count: 3), Gym.Codes.unknownExercise, runtime: runtime, server: server)
       try run(Save(workouts: [
+        copy("fixture-missing-movement", routine: nil, exercise: "fixture-retired-movement", start: now - 5 * Self.day, finish: now - 5 * Self.day + Self.hour, count: 3),
         copy("fixture-open-copy", routine: pull, exercise: "barbell-row", start: now - 3 * Self.hour, finish: nil, count: 3),
         copy("fixture-overlap", routine: push, exercise: "bench-press", start: now - 2 * Self.day + 1_800_000, finish: now - 2 * Self.day + 2 * Self.hour, count: 12),
         copy("fixture-late-set", routine: legs, exercise: "back-squat", start: now - 4 * Self.day, finish: now - 4 * Self.day + Self.hour, count: 4, late: true),
