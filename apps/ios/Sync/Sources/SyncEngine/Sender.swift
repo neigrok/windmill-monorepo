@@ -128,9 +128,11 @@ package actor Sender {
         core.telemetry.failure("sync_push", kind: "decode")
       }
       let next = try record(reply, to: request, under: token, timing: Timing(send: send, recv: core.clock.wall.reading()))
+      // A 400 or 413 was halved or refused, so the next push differs, and a conflict re-identifies; every other failure
+      // holds the entries it named back.
       switch reply {
       case .answered(.ok): core.recordPushFailure(request, failed: false)
-      case .answered(.failed(let failure)): core.recordPushFailure(request, failed: failure.status >= 500)
+      case .answered(.failed(let failure)): core.recordPushFailure(request, failed: ![400, 409, 413].contains(failure.status))
       default: if !Task.isCancelled { core.recordPushFailure(request, failed: true) }
       }
       core.outcome("sync_push_outcome", reply: reply, since: send.mono, failureKind: failureKind)
@@ -212,20 +214,21 @@ package actor Sender {
   }
 
   // Design §6.3's rows for the other failures: a 400 or 413 was halved or refused, so the next push differs; a conflict
-  // re-identified, and a second one in a row backs off; a 426 stops; a 503 sleeps the longer of its `retryAfterMs`, a
-  // pause no kick cuts short, and a backoff.
+  // re-identified, and a second one in a row backs off; the server's 426 stops; a 503 sleeps the longer of its
+  // `retryAfterMs`, a pause no kick cuts short, and a backoff.
   func next(after failure: HTTPFailure) -> SenderStep {
     if failure.status == 409 && !failure.isRecoveryConflict {
       conflicts = 0
       return .backoff(ms: nextBackoff(floorMs: 0))
     }
     conflicts = failure.status == 409 ? conflicts + 1 : 0
+    if failure.requiresUpgrade {
+      core.requireUpgrade()
+      return .stopped
+    }
     switch failure.status {
     case 400, 413: return .again
     case 409: return conflicts == 1 ? .again : .backoff(ms: nextBackoff(floorMs: 0))
-    case 426:
-      core.requireUpgrade()
-      return .stopped
     case 503:
       let asked = failure.retryAfterMs ?? 0
       wait.serverAsks(until: core.clock.wall.reading().mono + asked)

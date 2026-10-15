@@ -501,7 +501,7 @@ final class NativeAuth {
       var properties = ["method": method, "route": path.hasPrefix("v1/me") ? "/v1/me" : "/v1/auth", "operation": operation, "failure_kind": kind]
       if let status { properties["status"] = String(status) }
       telemetry.event("api_request_failed", properties: properties, durationMs: ms)
-      if kind != "offline" && ![400, 401, 403, 404, 409, 410, 422, 426, 429].contains(status ?? 0) {
+      if kind != "offline" && !ExpectedStatuses.contains(status) {
         telemetry.failure(operation, kind: kind, properties: properties, durationMs: ms)
       }
       throw error

@@ -160,14 +160,15 @@ struct TelemetryTests {
 
   @Test func expectedHTTPFailuresAreMetricsWithoutIssuesOrSensitiveData() async throws {
     let recorder = Recorder()
-    for status in [400, 401, 403, 404, 409, 422, 429] {
+    #expect(ExpectedStatuses.all == [400, 401, 403, 404, 409, 410, 422, 426, 429])
+    for status in ExpectedStatuses.all.sorted() {
       let transport = TransportTests.Stub.transport("telemetry-status-\(status).test", telemetry: recorder) { _, _ in
         (status, #"{"error":"private journal and bearer token","email":"person@example.test"}"#)
       }
       _ = await transport.hello(token: SessionToken("secret-session"))
     }
     #expect(recorder.failures.isEmpty)
-    #expect(recorder.events.count == 7)
+    #expect(recorder.events.count == ExpectedStatuses.all.count)
     for event in recorder.events {
       #expect(event.name == "api_request_failed")
       #expect(event.properties["operation"] == "sync_hello")

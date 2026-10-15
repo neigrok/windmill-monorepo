@@ -329,6 +329,25 @@ struct LifecycleTests {
     #expect(rig.transport.calls.filter { if case .hello = $0 { true } else { false } }.count == 3)
   }
 
+  // A pending sign-in the person gives up leaves nothing behind: no pending account, no token, nothing to resume, and the
+  // work made signed out stays on the anon replica.
+  @Test func aCancelledPendingSignInLeavesNothingToResume() async throws {
+    let rig = try Rig()
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "Offline")], gestureId: "g1"))
+    let session = try await rig.signIn("A", holds: ["probe": true])
+    #expect(!session.isComplete && rig.tokens.accounts() == ["A"])
+    try rig.engine.cancelSignIn()
+    #expect(try rig.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == nil)
+    #expect(rig.tokens.accounts().isEmpty)
+    #expect(try rig.replicas() == ["anon active entries: 1 new id"])
+    await #expect(throws: EngineError.signInEnded) { try await session.complete(["probe": .add]) }
+    let relaunched = try rig.relaunch()
+    await relaunched.start()
+    #expect(try await relaunched.resumeSignIn() == nil)
+    #expect(try rig.replicas() == ["anon active entries: 1 new id"])
+    try relaunched.cancelSignIn()
+  }
+
   // Answers count for the work the person was shown: a decision left unanswered throws, and work made signed out while
   // the question was up changes it, so the answer changes nothing and the question is asked again. The count alone does
   // not say so: an edit of the card shown leaves it as it was.

@@ -65,6 +65,7 @@ package final class Simulator {
     case loseForkGuardCopy
     case corruptDigest
     case signIn(LineageAnswer?)
+    case cancelSignIn
     case signOut(SignOutChoice?)
     case discardDormant, revokeSession, foreignSession, reauthenticate
     case online(Bool)
@@ -453,6 +454,7 @@ package final class Simulator {
       count("fork guard copy lost")
     case .corruptDigest: corruptDigest(on: phone)
     case .signIn(let answer): await signIn(phone, answering: answer)
+    case .cancelSignIn: cancelSignIn(phone)
     case .signOut(let choice): await signOut(phone, choosing: choice)
     case .discardDormant: discardDormant(on: phone)
     case .revokeSession:
@@ -743,6 +745,16 @@ package final class Simulator {
       count("sign-in \(answer)")
     } catch {
       count("sign-in failed \(error)")
+    }
+  }
+
+  // The pending sign-in given up; with none pending nothing happens.
+  func cancelSignIn(_ phone: Phone) {
+    do {
+      try phone.engine.cancelSignIn()
+      count("sign-in cancelled")
+    } catch {
+      count("sign-in cancel failed \(error)")
     }
   }
 

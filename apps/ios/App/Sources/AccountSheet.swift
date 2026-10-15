@@ -91,7 +91,6 @@ struct AccountSheet: View {
         case .appleAdded: appleAdded
         case .appleNoAccount: appleNoAccount
         case .appleExpired: appleExpired
-        case .authPending: authPending
         case .you, nil: EmptyView()
         }
         if model.sheet != .code, let error = model.error { errorText(error) }
@@ -103,21 +102,24 @@ struct AccountSheet: View {
     Image(systemName: symbol).font(.largeTitle).foregroundStyle(brand).accessibilityHidden(true)
   }
 
-  @ViewBuilder var authPending: some View {
-    Text("Finish signing in").font(ShellType.title)
-    if model.updateRequired {
-      Text("Syncing paused · update Windmill").foregroundStyle(dim)
-      Button(action: openUpdate) { Text("Get the update").frame(maxWidth: .infinity) }
-        .font(ShellType.action).modifier(RoomPrimaryStyle(room: .shell)).accessibilityIdentifier("get-update")
-    } else {
-      Text("Sign-in needs a connection. You can keep using this phone while offline.").foregroundStyle(dim)
-      Button { model.choose("retry", screen: "auth_pending"); model.performAuthentication { await model.retryAuthenticatedSignIn() } } label: {
-        Text("Try again").frame(maxWidth: .infinity)
-      }.font(ShellType.action).modifier(RoomPrimaryStyle(room: .shell)).accessibilityIdentifier("auth-retry")
-    }
+  // A verified sign-in the engine has not finished: a section of You, above everything the phone still offers.
+  var signInPending: some View {
+    Section {
+      Text(model.updateRequired ? "Your sign-in finishes once Windmill is updated." : "Sign-in needs a connection. Your pages are safe on this phone.")
+        .foregroundStyle(dim)
+      if !model.updateRequired {
+        Button("Try again") { model.choose("retry", screen: "auth_pending"); model.performAuthentication { await model.retryAuthenticatedSignIn() } }
+          .foregroundStyle(brand).accessibilityIdentifier("auth-retry")
+      }
+      Button("Cancel sign-in", role: .destructive) { model.cancelSignIn() }
+        .foregroundStyle(ShellPalette.danger).accessibilityIdentifier("auth-cancel")
+    } header: { Text("Finish signing in") } footer: {
+      if let error = model.error { Text(error).foregroundStyle(ShellPalette.danger).accessibilityIdentifier("auth-error") }
+    }.listRowBackground(card).onAppear { model.screenViewed("auth_pending") }
   }
 
   func openUpdate() {
+    model.getUpdate()
     openURL(AppSettings.updateDestination) { model.updateOpened($0) }
   }
 
@@ -134,7 +136,7 @@ struct AccountSheet: View {
   @ToolbarContentBuilder var accountToolbar: some ToolbarContent {
     ToolbarItem(placement: .cancellationAction) { backOrClose }
     ToolbarItem(placement: .confirmationAction) {
-      if [.you, .authPending, .adoption, .discardAdoption].contains(model.sheet) {
+      if [.you, .adoption, .discardAdoption].contains(model.sheet) {
         Button("Done") { model.cancelAuthentication(); model.choose("close", screen: "you"); model.sheet = nil }
       } else if inputStep {
         Button("Close", role: .cancel, action: closeSignIn)
@@ -356,9 +358,10 @@ struct AccountSheet: View {
 
   var you: some View {
     let signedIn = model.account != nil
-    let doors = model.canSignIn && (!signedIn || model.authPaused)
+    let doors = model.canSignIn && !model.signInPending && (!signedIn || model.authPaused)
     let apple = model.signInMethods.first { $0.kind == "apple" }
     return List {
+      if model.signInPending { signInPending }
       Section {
         identityRow
         if doors {
@@ -410,11 +413,7 @@ struct AccountSheet: View {
         Picker("Appearance", selection: Binding(get: { model.appearance }, set: { model.chooseAppearance($0) })) {
           ForEach(AppModel.Appearance.allCases, id: \.self) { Text($0.title).tag($0) }
         }.pickerStyle(.segmented).accessibilityIdentifier("appearance")
-        doorRow("Gym settings", identifier: "you-gym-settings") {
-          model.cancelAuthentication(); model.sheet = nil
-          model.gymSettingsRequested = true
-          model.openRoom(.gym)
-        }
+        doorRow("Gym settings", identifier: "you-gym-settings") { model.openGymSettings() }
         doorRow("About Windmill", identifier: "about-windmill") {
           model.telemetry.event("onboarding_replayed", properties: ["presentation": "replay"])
           aboutWindmill = true
@@ -446,8 +445,8 @@ struct AccountSheet: View {
   }
 
   var identityState: String {
+    if model.updateRequired, model.account != nil || model.signInPending { return "Syncing paused · update Windmill" }
     if model.account == nil { return "Everything lives on this phone" }
-    if model.updateRequired { return "Syncing paused · update Windmill" }
     return model.authPaused ? "Backup is paused. Sign in again to resume." : "Signed in with email"
   }
 

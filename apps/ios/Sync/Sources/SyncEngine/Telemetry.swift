@@ -81,13 +81,23 @@ public final class BoundedTelemetry: Telemetry {
   }
 }
 
+// The HTTP statuses the server answers on purpose — a refusal the client handles, an app it finds too old (426), a
+// session or ticket gone (410) — which every boundary (sync, auth, the REST clients, the event queue) records as an
+// `api_request_failed` metric and never as a Sentry Issue.
+public enum ExpectedStatuses {
+  public static let all: Set<Int> = [400, 401, 403, 404, 409, 410, 422, 426, 429]
+
+  public static func contains(_ status: Int?) -> Bool {
+    status.map(all.contains) ?? false
+  }
+}
+
 enum TransportDiagnostics {
   final class Invocation: Sendable {
     let kind = Mutex<String?>(nil)
   }
   // The request race and URLSession share one report token; separate concurrent requests inherit separate tokens.
   @TaskLocal static var invocation: Invocation?
-  static let expectedStatuses: Set<Int> = [400, 401, 403, 404, 409, 422, 429]
 
   static func kind(_ error: any Error) -> String? {
     if error is CancellationError { return nil }
@@ -121,7 +131,7 @@ enum TransportDiagnostics {
     var properties = ["operation": operation, "method": method, "route": "/v1/sync", "failure_kind": kind]
     if let status { properties["status"] = String(status) }
     telemetry.event("api_request_failed", properties: properties, durationMs: durationMs)
-    if kind != "offline", status.map({ !expectedStatuses.contains($0) }) ?? true {
+    if kind != "offline", !ExpectedStatuses.contains(status) {
       telemetry.failure(operation, kind: kind, properties: properties, durationMs: durationMs)
     }
   }

@@ -213,6 +213,10 @@ extension Store {
     try onDevice(.signInBegin) { device in try planners.lifecycle.beginSignIn(&device, account: account) }
   }
 
+  public func cancelSignIn() throws -> Written<Void> {
+    try onDevice(.signInCancel) { device in planners.lifecycle.cancelSignIn(&device) }
+  }
+
   // The corpus's sign-in step: complete when every due decision is answered, and each pin in `counted` still holds; else
   // incomplete with nothing more changed.
   public func signIn(account: String, holdsRecords: [String: Bool], decisions: [String: LineageAnswer],

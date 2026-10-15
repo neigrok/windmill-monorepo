@@ -77,7 +77,7 @@ struct KillEveryStepTests {
 // begins, and the steps it counts.
 enum KillScenario: String, CaseIterable, CustomTestStringConvertible {
   case holdUndoRelease, leaveFlush, refusalFold, joiningWriteMap, clockSkew, epochChange, digestMismatch, signInAdd
-  case signInDiscard, signOutKeep, signOutDiscard, dormantDiscard, forkGuard, replicaForked, localRefusals, authPause
+  case signInDiscard, signInCancel, signOutKeep, signOutDiscard, dormantDiscard, forkGuard, replicaForked, localRefusals, authPause
   case liveFrame, subscriptions, launch, settling
 
   typealias Step = (action: Simulator.Action, phone: Int)
@@ -100,7 +100,7 @@ enum KillScenario: String, CaseIterable, CustomTestStringConvertible {
   static let send = Simulator.Action.send(.deliver, PushFaults())
   static let pull = Simulator.Action.pull(.deliver)
 
-  var signsIn: Bool { self == .signInAdd || self == .signInDiscard }
+  var signsIn: Bool { self == .signInAdd || self == .signInDiscard || self == .signInCancel }
 
   func world() async throws -> (simulator: Simulator, killer: Killer) {
     let killer = Killer()
@@ -120,7 +120,7 @@ enum KillScenario: String, CaseIterable, CustomTestStringConvertible {
   var setUp: [Step] {
     let shared: [Step] = [(Self.card("card000b", "Other"), Self.other), (Self.send, Self.other), (Self.pull, Self.phone)]
     switch self {
-    case .signInAdd, .signInDiscard:
+    case .signInAdd, .signInDiscard, .signInCancel:
       return shared + [(Self.card("card000p", "Signed out"), Self.phone)]
     case .signOutKeep, .signOutDiscard, .dormantDiscard:
       return shared + [(Self.card("card000s", "Sent"), Self.phone), (Self.send, Self.phone), (.online(false), Self.phone),
@@ -168,6 +168,8 @@ enum KillScenario: String, CaseIterable, CustomTestStringConvertible {
       return [(.signIn(.add), Self.phone), (Self.send, Self.phone), (Self.pull, Self.phone)]
     case .signInDiscard:
       return [(.signIn(.discard), Self.phone), (Self.send, Self.phone), (Self.pull, Self.phone)]
+    case .signInCancel:
+      return [(.signIn(nil), Self.phone), (.cancelSignIn, Self.phone), (.signIn(.add), Self.phone), (Self.send, Self.phone), (Self.pull, Self.phone)]
     case .signOutKeep:
       return [(.signOut(.keep), Self.phone), (.sweep, Self.phone)]
     case .signOutDiscard:

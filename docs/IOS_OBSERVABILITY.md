@@ -88,7 +88,7 @@ action `dismiss_ink` once when writing or a tap lifts it; no ink replay action i
 | Choices | `first_run_choice` | screen; action: open_journal, open_gym, dismiss_ink, write, done_writing, keep, close, email, back, change_email, resend, add, discard, cancel, sign_out, use_account, create_account, remove_apple, retry |
 | Rooms | `room_switched` | room: journal, gym; emitted after switching |
 | Appearance | `appearance_chosen` | appearance: light, dark, system; emitted when You's Settings changes it |
-| Update required | `client_update_required` | state: sync (the engine's flag), sign_in (a 426 at sign-in); no action when the alert shows; action: open (Get the update, from the alert or You), keep (Keep working on this phone), dismiss (the could-not-open transient); outcome on open: ok, failed |
+| Update required | `client_update_required` | Android's vocabulary: state: shown with status: 426 once the alert is on screen; action: update (Get the update, from the alert or You), keep (Keep working on this phone); outcome: failed when the destination could not open. trigger: sync (the engine's flag), sign_in (a 426 at sign-in) on every row. Dismissing the could-not-open transient emits nothing |
 | Adoption | `room_adoption_answered` | room: journal, gym; action: add, discard; no counts or identifiers |
 | Gym screens | `gym_screen_viewed` | screen: routines, routine, routine_editor, movement, log, session, fix_set, record, bodyweight, weigh_in, session_share, coach, history, notes, note, settings, review, connected_log, sources (What Coach read), workout |
 | Live Activity | `gym_activity_set_logged`, `gym_activity_offer_refused` | no properties; accepted durable set or stale offer refusal |
@@ -166,10 +166,13 @@ own operation (`gym_import_fix`, `gym_import_keep`, `gym_import_retry`, `gym_imp
 outcome is `failed`; a refusal is the outcome `refused` and never a Sentry issue. No times, movement
 names, set values, notes, counts or identifiers enter the event.
 
-An app the server finds too old is an expected refusal, never a Sentry Issue: the engine's upgrade-required sign-in
-error is skipped by the auth boundary report, and a 426 from an auth route is an `api_request_failed` metric whose
-message never reaches the screen. `client_update_required` records the alert, which the app shows once per launch
-while the flag holds and again for each sign-in the server refuses for it.
+An app the server finds too old is an expected refusal, never a Sentry Issue: every HTTP boundary reads the one
+`ExpectedStatuses` set, so a 426 from sync or an auth route is an `api_request_failed` metric whose message never
+reaches the screen, and the engine's upgrade-required sign-in error is skipped by the auth boundary report. The engine
+requires the upgrade only for a 426 whose body names `upgrade-required`; a bare 426 (a proxy) backs off like any
+failure. `client_update_required` records the alert once it is on screen — after the introduction or another alert,
+when one is in front — which the app shows once per launch while the flag holds and again for each sign-in the
+server refuses for it. Signed out the alert reads *Update Windmill to sign in.*; signed in, *to keep syncing*.
 
 Screen and choice events also record visits when the same screens are revisited after first run.
 Apple auth operations use static labels `auth_apple`, `auth_apple_create`, `auth_verify_code`,
@@ -179,8 +182,10 @@ and `DELETE` for share revocation and Coach conversations; gym records are writt
 engine.
 The simulator model follows the same auth-boundary failure reporting, without secrets in diagnostics.
 A legacy Apple door returning `created: true` is a decode failure; its session never reaches the engine.
-`auth_pending` marks authenticated sign-in awaiting engine recovery; `retry` resumes the retained
-identity without repeating code verification or ticket creation. In-process authenticated sign-in retries
+`auth_pending` is You's *Finish signing in* section, an authenticated sign-in awaiting engine recovery, drawn above
+the rest of You; `retry` resumes the retained identity without repeating code verification or ticket creation, and
+`cancel` gives the sign-in up: the engine forgets it, the verified session is revoked and `auth_signed_in` carries
+outcome `cancelled`. In-process authenticated sign-in retries
 also run after a five-second delay while the app is open; restored engine sign-ins use the account
 recovery cooldown below. Completing a restored app sign-in retains its method and linked outcome.
 Paused Apple linking validates the verified account id before bearer attachment. Apple removal treats

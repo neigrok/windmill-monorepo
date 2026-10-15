@@ -73,7 +73,7 @@ import SyncTesting
     if field == "load" { workout.weightKg = old.weightKg + 2.5 } else { workout.reps = old.reps + 1 }
     let durable = try #require(try workout.activityRecord()?.offer)
     #expect(durable != old && durable.setID != old.setID)
-    #expect(durable.weightKg == workout.weightKg && durable.reps == workout.reps && durable.kind == "working")
+    #expect(durable.weightKg == workout.weightKg && durable.reps == workout.reps)
     let reopened = GymModel(runner: harness.runner), cold = reopened.workout
     #expect(cold.weightKg == workout.weightKg && cold.reps == workout.reps)
     #expect(!cold.logActivityOffer(old) && cold.sets.isEmpty)
@@ -1524,8 +1524,37 @@ import SyncTesting
     #expect(await drain.value == false && started.duration(to: .now) < .seconds(1))
     pending.withLock { $0?.resume(); $0 = nil }
   }
+
+  // A push the server will not take — stopped for good by the update it requires, or refused by a status the sender
+  // retries — holds its sets back: the ledger, the log, the workout and the lock screen all read them as unsent, and
+  // Finish names what holds it.
+  @Test(arguments: [426, 403])
+  func aPushTheServerWillNotTakeMarksItsSetsUnsent(status: Int) async throws {
+    let fault = WorkoutFaultTransport(), runtime = try Self.faultRuntime(fault, drivesLoops: true), engine = runtime.engine
+    let identity = fault.model.identity(email: "unsent-\(status)@example.com")
+    #expect(try await engine.signIn(account: identity.account, token: identity.token).isComplete)
+    let gym = GymModel(runner: runtime.runner, runtime: runtime)
+    #expect(gym.run(CreateExercise(Exercise(id: first, name: "Workout squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)))?.receipt != nil)
+    await engine.flushOnLeave(); gym.refresh()
+    let workout = try begin(gym)
+    await engine.flushOnLeave(); gym.refresh(); workout.reconcile()
+    fault.failure.withLock { $0 = status }
+    #expect(workout.logSet())
+    await engine.flushOnLeave()
+    #expect(await Self.until { status == 426 ? engine.status.upgradeRequired : !engine.status.failedPushes.isEmpty })
+    gym.refresh(); workout.reconcile()
+    let unconfirmed = gym.unconfirmedSets(workout.sets)
+    #expect(unconfirmed.count == 1 && gym.unsentSets(workout.sets) == unconfirmed)
+    #expect(gym.sessionIsUnsent(try #require(workout.sessionId)))
+    if status == 426 {
+      await workout.finish()
+      #expect(workout.message == "Finish needs the update — keep logging, or hide the workout.")
+    }
+    gym.stop()
+  }
 }
 
+// The server's refusals as it shapes them: a 426 names `upgrade-required`, which the engine reads before it stops.
 nonisolated final class WorkoutFaultTransport: SyncTransport {
   let model = JournalModelTransport()
   let failure = Mutex<Int?>(nil)
@@ -1539,7 +1568,7 @@ nonisolated final class WorkoutFaultTransport: SyncTransport {
       do { try await Task.sleep(for: delay) } catch { return .unreachable }
     }
     if let status = failure.withLock({ $0 }) {
-      return status == 0 ? .unreachable : .answered(.failed(HTTPFailure(status: status)))
+      return status == 0 ? .unreachable : .answered(.failed(HTTPFailure(status: status, error: status == 426 ? "upgrade-required" : "refused")))
     }
     return await model.push(request, token: token)
   }

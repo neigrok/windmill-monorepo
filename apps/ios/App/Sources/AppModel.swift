@@ -87,7 +87,7 @@ final class AppModel {
   }
   enum Sheet: String, Identifiable {
     case keep, address, code, you, adoption, discardAdoption, signOut
-    case appleQuestion = "23a", appleAddress = "23b", appleAdded = "23c", appleNoAccount, appleExpired, authPending
+    case appleQuestion = "23a", appleAddress = "23b", appleAdded = "23c", appleNoAccount, appleExpired
     var id: String { rawValue }
     var telemetryName: String {
       switch self {
@@ -95,7 +95,6 @@ final class AppModel {
       case .signOut: "sign_out"
       case .appleNoAccount: "apple_no_account"
       case .appleExpired: "apple_expired"
-      case .authPending: "auth_pending"
       default: rawValue
       }
     }
@@ -124,14 +123,16 @@ final class AppModel {
     if let runtime, let pending = try runtime.store.read({ try $0.device().meta.pendingSignIn }), let token = runtime.tokens.token(for: pending) {
       let identity = AuthIdentity(account: pending, token: token, name: accountName, email: preferences.string(forKey: "accountEmail:\(pending)") ?? "")
       pendingSignIn = PendingSignIn(identity: identity, method: preferences.string(forKey: "pendingAuthMethod") ?? "email", linked: preferences.bool(forKey: "pendingAuthLinked"), needsAppleAttachment: false, receiptPending: false)
-      restoringSignIn = true; sheet = .authPending; welcome = false
+      restoringSignIn = true; sheet = .you; welcome = false
     }
   }
 
   var canSignIn: Bool { runtime?.settings.baseURL != nil || runtime?.settings.modelServer == true }
   var authPaused: Bool { runtime?.engine.status.authPaused == true }
+  // A sign-in the server has verified but the engine has not finished: You carries it until it lands or is given up.
+  var signInPending: Bool { pendingSignIn != nil || signInSession?.isComplete == false }
   var compactAccountSheet: Bool { [.keep, .appleQuestion, .appleNoAccount, .appleExpired].contains(sheet) }
-  var editorReadOnly: Bool { working || accountTransition || (!signInDeferred && (pendingSignIn != nil || signInSession?.isComplete == false)) || signOutSession != nil }
+  var editorReadOnly: Bool { working || accountTransition || (!signInDeferred && signInPending) || signOutSession != nil }
   var appleSessionToken: SessionToken? {
     guard !authPaused, let account else { return nil }
     return runtime?.tokens.token(for: account)
@@ -153,45 +154,63 @@ final class AppModel {
 
   // The server needs a newer app: the engine's flag, or a 426 at sign-in.
   var updateRequired: Bool { runtime?.engine.status.upgradeRequired == true || updateRequiredAtSignIn }
-  var updateState: String { updateRequiredAtSignIn ? "sign_in" : "sync" }
+  var updateTrigger: String { updateRequiredAtSignIn ? "sign_in" : "sync" }
+  // Signed out nothing syncs: the update unlocks the sign-in.
+  var updateMessage: String {
+    account == nil ? "Update Windmill to sign in. Your work is saved on this phone." : "Update Windmill to keep syncing. Your work is saved on this phone."
+  }
 
   // Once per launch while the flag holds; a sign-in refused for it asks again, as that attempt's answer.
   func noticeUpdateRequired() {
     guard updateRequired, !updateAlertShown else { return }
-    presentUpdateAlert()
+    askForUpdate()
   }
 
   func requireUpdateAtSignIn() {
     updateRequiredAtSignIn = true; error = nil
-    presentUpdateAlert()
+    askForUpdate()
   }
 
-  func presentUpdateAlert() {
+  // The alert is asked for here and recorded by `updateAlertPresented` once it is on screen, which the introduction or
+  // another alert may delay.
+  func askForUpdate() {
     updateAlertShown = true; updateAlert = true
-    telemetry.event("client_update_required", properties: ["state": updateState])
+  }
+
+  func updateAlertPresented() {
+    telemetry.event("client_update_required", properties: ["state": "shown", "status": "426", "trigger": updateTrigger])
   }
 
   func keepWorkingWithoutUpdate() {
     updateAlert = false
-    telemetry.event("client_update_required", properties: ["state": updateState, "action": "keep"])
+    telemetry.event("client_update_required", properties: ["action": "keep", "trigger": updateTrigger])
+  }
+
+  // Get the update, from the alert or You; the caller opens the destination and reports whether it could.
+  func getUpdate() {
+    updateAlert = false
+    telemetry.event("client_update_required", properties: ["action": "update", "trigger": updateTrigger])
   }
 
   func updateOpened(_ accepted: Bool) {
-    updateAlert = false; updateOpenFailed = !accepted
-    telemetry.event("client_update_required", properties: ["state": updateState, "action": "open", "outcome": accepted ? "ok" : "failed"])
+    updateOpenFailed = !accepted
+    if !accepted { telemetry.event("client_update_required", properties: ["action": "update", "outcome": "failed", "trigger": updateTrigger]) }
   }
 
-  func dismissUpdateFailure() {
-    updateOpenFailed = false
-    telemetry.event("client_update_required", properties: ["state": updateState, "action": "dismiss"])
-  }
+  func dismissUpdateFailure() { updateOpenFailed = false }
 
   var backup: String { journal.backup }
   var adoptionCount: Int { currentAdoption?.counts["page"] ?? 0 }
   var adoptionIsSingle: Bool { currentAdoption?.counts.filter { $0.key != "journalState" }.values.reduce(0, +) == 1 }
 
   func openJournal() { openRoom(.journal) }
-  func openYou() { journal.done(); sheet = pendingSignIn == nil && signInSession?.isComplete != false ? .you : .authPending }
+  func openYou() { journal.done(); sheet = .you }
+  // You's door into Gym settings: a room switch, never a first-run choice.
+  func openGymSettings() {
+    cancelAuthentication(); sheet = nil; gymSettingsRequested = true
+    welcome = false; preferences.set(false, forKey: "roomWelcomeRequired")
+    switchRoom(.gym)
+  }
   func openRoom(_ room: Room) {
     guard !editorReadOnly else { return }
     if !welcome, selectedRoom == .journal { journal.liftInk() }
@@ -577,18 +596,39 @@ final class AppModel {
       telemetry.event("auth_signed_in", properties: ["method": pending.method, "outcome": "failed"])
       if (error as? EngineError) == .upgradeRequired {
         // The sign-in waits for the update; the rooms stay open meanwhile.
-        signInDeferred = true; sheet = .authPending; requireUpdateAtSignIn(); return
+        signInDeferred = true; sheet = .you; requireUpdateAtSignIn(); return
       }
       if let refusal = error as? AuthRefusal, pending.needsAppleAttachment, refusal.code != "offline" {
         pendingSignIn = nil; appleAuthorization = nil; sheet = .you; showAuthError(error)
         preferences.removeObject(forKey: "pendingAuthMethod"); preferences.removeObject(forKey: "pendingAuthLinked")
         return
       }
-      authRetryAt = authRetryNow().addingTimeInterval(5); sheet = .authPending
-      if (error as? EngineError) == .unreachable || (error as? AuthRefusal)?.code == "offline" || error is URLError {
-        self.error = "Can't reach windmill.works. Your pages are safe on this phone. Try again to finish signing in."
-      } else { self.error = error.localizedDescription }
+      // You's Finish signing in section says a connection is needed; only another refusal has words of its own.
+      authRetryAt = authRetryNow().addingTimeInterval(5); sheet = .you
+      let offline = (error as? EngineError) == .unreachable || (error as? AuthRefusal)?.code == "offline" || error is URLError
+      self.error = offline ? nil : error.localizedDescription
     }
+  }
+
+  // The pending sign-in given up: the phone stays signed out with its work, the verified session is revoked, and nothing
+  // resumes at the next launch.
+  func cancelSignIn() {
+    guard signInPending, !working, !accountTransition, let runtime else { return }
+    let account = pendingSignIn?.identity.account ?? signInSession?.account
+    let method = pendingSignIn?.method ?? preferences.string(forKey: "pendingAuthMethod") ?? "email"
+    cancelAuthentication()
+    choose("cancel", screen: "auth_pending")
+    do {
+      if let account { _ = try runtime.prepareRevocation(account: account) }
+      try runtime.engine.cancelSignIn()
+    } catch { reportBoundary("auth_sign_in", error: error); self.error = "Couldn't cancel the sign-in. Try again."; return }
+    pendingSignIn = nil; signInSession = nil; appleAuthorization = nil
+    restoringSignIn = false; signInDeferred = false; updateRequiredAtSignIn = false; error = nil
+    preferences.removeObject(forKey: "pendingAuthMethod"); preferences.removeObject(forKey: "pendingAuthLinked")
+    clearAdoptionAnswers()
+    telemetry.event("auth_signed_in", properties: ["method": method, "outcome": "cancelled"])
+    Task { await runtime.revokeSignedOutSessions(force: true) }
+    refresh()
   }
 
   func signIn(_ identity: AuthIdentity, presentResult: Bool = true) async throws {
@@ -822,8 +862,8 @@ final class AppModel {
     } catch {
       guard !Task.isCancelled else { return }
       reportBoundary("auth_adopt", error: error)
-      sheet = .authPending
-      self.error = (error as? EngineError) == .unreachable ? AuthRefusal.offline.message : "Couldn't refresh your choices. Your work stays on this phone."
+      sheet = .you
+      self.error = (error as? EngineError) == .unreachable ? nil : "Couldn't refresh your choices. Your work stays on this phone."
     }
   }
 }

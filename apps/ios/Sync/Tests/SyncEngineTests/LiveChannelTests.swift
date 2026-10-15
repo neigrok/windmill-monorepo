@@ -519,12 +519,20 @@ struct LiveChannelTests {
     #expect(await live.step() == .idle)
   }
 
-  @MainActor @Test func aHandshake426StopsTheChannelForTheProcess() async throws {
+  // A handshake's 426 carries no body, so it reconnects like any refusal; the server's own 426, heard where a body comes
+  // (here the hello), stops the channel for the process.
+  @MainActor @Test func aHandshake426ReconnectsUntilABodiedRouteRequiresTheUpgrade() async throws {
     let rig = try Rig(account: "A")
+    rig.random.queue(raw: .max, count: 1)
     rig.transport.willRefuseLive(426)
+    #expect(await rig.engine.live.step() == .backoff(ms: 1_000))
+    await rig.engine.settle()
+    #expect(!rig.engine.status.upgradeRequired)
+    rig.transport.willAnswerHello(426, Rig.failure("upgrade-required"))
+    _ = await rig.engine.hello(token: SessionToken("token-1"))
     #expect(await rig.engine.live.step() == .stopped)
     #expect(await rig.engine.live.step() == .stopped)
-    #expect(rig.transport.calls.count == 1)
+    #expect(rig.transport.calls.count == 2)
     await rig.engine.settle()
     #expect(rig.engine.status.upgradeRequired)
   }

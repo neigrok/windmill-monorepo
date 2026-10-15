@@ -96,7 +96,7 @@ public final class SyncEngine: Replica {
 
   // §9.2 under `token`, or none: the answer's offset sample is recorded for the active replica (§10.4); an answer handled
   // as a 401 (§9.1: a 401, or a hello served as anyone but the active replica's account) pauses it while `token` is
-  // still the account's; and a `minSchema` above the registry's version, or a 426, requires an upgrade.
+  // still the account's; and a `minSchema` above the registry's version, or the server's 426, requires an upgrade.
   package func hello(token: SessionToken?) async -> Reply<HelloResponse> {
     guard core.connectivity.isOnline, !Task.isCancelled else { return .unreachable }
     let send = core.clock.wall.reading()
@@ -112,7 +112,7 @@ public final class SyncEngine: Replica {
     }
     switch answer {
     case .ok(let hello): if hello.minSchema > core.registry.version { core.requireUpgrade() }
-    case .failed(let failure): if failure.status == 426 { core.requireUpgrade() }
+    case .failed(let failure): if failure.requiresUpgrade { core.requireUpgrade() }
     }
     return reply
   }

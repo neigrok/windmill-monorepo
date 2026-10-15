@@ -127,7 +127,7 @@ nonisolated enum JournalEchoFailure: Error, Equatable {
       var properties = ["method": method, "route": "/v1/journal", "operation": "journal_echoes", "failure_kind": kind]
       if let status { properties["status"] = String(status) }
       telemetry.event("api_request_failed", properties: properties, durationMs: ms)
-      if kind != "offline", ![400, 401, 403, 404, 409, 410, 422, 429].contains(status ?? 0) {
+      if kind != "offline", !ExpectedStatuses.contains(status) {
         telemetry.failure("journal_echoes", kind: kind, properties: properties, durationMs: ms)
       }
       throw error
