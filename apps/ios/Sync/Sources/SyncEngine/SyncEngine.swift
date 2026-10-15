@@ -322,6 +322,8 @@ final class EngineCore: Sendable {
   let identities: any IdentitySource & Sendable
   let connectivity: any Connectivity
   let telemetry: any Telemetry
+  // The engine's own sync failures, a request's deadline and the live heartbeat, each filed once per outage.
+  let diagnostics: TransportDiagnostics
   let publisher = Publisher()
   let wakes = Wakes()
   let pullWants = PullWants()
@@ -352,6 +354,7 @@ final class EngineCore: Sendable {
     self.connectivity = connectivity
     let telemetry: any Telemetry = telemetry is NoopTelemetry || telemetry is BoundedTelemetry ? telemetry : BoundedTelemetry(telemetry)
     self.telemetry = telemetry
+    diagnostics = TransportDiagnostics(telemetry)
     slices = Mutex(WriterSlices(config.slicing))
     publisher.tap { event in
       switch event {
@@ -446,9 +449,9 @@ final class EngineCore: Sendable {
                                _ call: @escaping @Sendable () async -> Reply<Body>) async
     -> (reply: Reply<Body>, failureKind: String?) {
     guard !Task.isCancelled else { return (.unreachable, nil) }
-    let diagnostics = TransportDiagnostics.Invocation()
+    let invocation = TransportDiagnostics.Invocation()
     let start = clock.wall.reading().mono
-    return await TransportDiagnostics.$invocation.withValue(diagnostics) {
+    return await TransportDiagnostics.$invocation.withValue(invocation) {
       let race = RequestRace<Body>()
       let request = Task(executorPreference: SyncEngine.taskExecutor) {
         guard !Task.isCancelled else { return race.settle(.stopped) }
@@ -471,13 +474,15 @@ final class EngineCore: Sendable {
         request.cancel()
       }
       switch outcome {
-      case .answered(let reply): return (reply, diagnostics.kind.withLock { $0 })
+      case .answered(let reply):
+        if case .answered(.ok) = reply { diagnostics.succeeded(operation) }
+        return (reply, invocation.kind.withLock { $0 })
       case .timedOut:
         if !Task.isCancelled {
-          TransportDiagnostics.report(telemetry, operation: operation, method: method, kind: "timeout",
-                                      durationMs: max(0, clock.wall.reading().mono - start))
+          diagnostics.report(operation: operation, method: method, kind: "timeout",
+                             durationMs: max(0, clock.wall.reading().mono - start))
         }
-        return (.unreachable, diagnostics.kind.withLock { $0 })
+        return (.unreachable, invocation.kind.withLock { $0 })
       case .stopped: return (.unreachable, nil)
       }
     }

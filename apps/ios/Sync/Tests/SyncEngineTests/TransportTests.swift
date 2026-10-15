@@ -231,6 +231,21 @@ struct TransportTests {
       let context = NWConnection.ContentContext(identifier: "text", metadata: [NWProtocolWebSocket.Metadata(opcode: .text)])
       seen.state.withLock(\.connection)?.send(content: Data(text.utf8), contentContext: context, completion: .idempotent)
     }
+
+    // Ends the socket with no close frame, as a server that stops does: its connection closes, or is reset.
+    func drop(reset: Bool) {
+      let connection = seen.state.withLock(\.connection)
+      if reset { connection?.forceCancel() } else { connection?.cancel() }
+    }
+
+    // Ends the socket with a close frame that carries `code`.
+    func close(_ code: NWProtocolWebSocket.CloseCode) {
+      let metadata = NWProtocolWebSocket.Metadata(opcode: .close)
+      metadata.closeCode = code
+      let connection = seen.state.withLock(\.connection)
+      connection?.send(content: nil, contentContext: NWConnection.ContentContext(identifier: "close", metadata: [metadata]),
+                       completion: .contentProcessed { _ in connection?.cancel() })
+    }
   }
 
   // A server that reads each request's head, keeps it, and answers with `status` and no upgrade.
@@ -297,16 +312,73 @@ struct TransportTests {
     connection.close()
   }
 
-  // A frame above LIVE_FRAME_BYTES fails the socket.
+  // A frame above LIVE_FRAME_BYTES fails the socket, a transport fault.
   @Test(.timeLimit(.minutes(1))) func aFrameAboveTheLimitFailsTheSocket() async throws {
+    let recorder = TelemetryTests.Recorder()
     let server = try SocketServer()
     let port = try await server.loopback.start()
-    let transport = HTTPTransport(baseURL: URL(string: "http://127.0.0.1:\(port)/")!, schema: 3)
+    let transport = HTTPTransport(baseURL: URL(string: "http://127.0.0.1:\(port)/")!, schema: 3, telemetry: recorder)
     guard case .answered(.ok(let connection)) = await transport.openLive(token: SessionToken("secret")) else {
       throw RigError("the socket did not open")
     }
     server.send(#"{"op": "other", "pad": ""# + String(repeating: "x", count: Constants.liveFrameBytes) + #""}"#)
-    await #expect(throws: (any Error).self) { _ = try await connection.receive() }
+    let error = await #expect(throws: POSIXError.self) { _ = try await connection.receive() }
+    #expect(error?.code == .EMSGSIZE)
+    let properties = ["operation": "sync_live_receive", "method": "GET", "route": "/v1/sync", "failure_kind": "transport"]
+    #expect(recorder.undated == [
+      TelemetryTests.Recorded(name: "api_request_failed", kind: nil, properties: properties, durationMs: nil),
+      TelemetryTests.Recorded(name: "sync_live_receive", kind: "transport", properties: properties, durationMs: nil),
+    ])
+  }
+
+  // A server that stops, or a reset, drops the socket with no close frame. The socket fails with the POSIX error the
+  // connection ended with, ENOTCONN or ECONNRESET, which is offline: a metric and no Issue.
+  @Test(.timeLimit(.minutes(1)), arguments: [(false, POSIXErrorCode.ENOTCONN), (true, POSIXErrorCode.ECONNRESET)])
+  func aDroppedSocketIsOffline(_ reset: Bool, _ code: POSIXErrorCode) async throws {
+    let recorder = TelemetryTests.Recorder()
+    let server = try SocketServer()
+    let port = try await server.loopback.start()
+    let transport = HTTPTransport(baseURL: URL(string: "http://127.0.0.1:\(port)/")!, schema: 3, telemetry: recorder)
+    guard case .answered(.ok(let connection)) = await transport.openLive(token: SessionToken("secret")) else {
+      throw RigError("the socket did not open")
+    }
+    server.drop(reset: reset)
+    let error = await #expect(throws: POSIXError.self) { _ = try await connection.receive() }
+    #expect(error?.code == code)
+    let properties = ["operation": "sync_live_receive", "method": "GET", "route": "/v1/sync", "failure_kind": "offline"]
+    #expect(recorder.undated == [TelemetryTests.Recorded(name: "api_request_failed", kind: nil, properties: properties, durationMs: nil)])
+  }
+
+  // A close frame with a fault's code ends the socket as the server chose to, which is a transport fault.
+  @Test(.timeLimit(.minutes(1))) func aCloseForAFaultIsATransportFailure() async throws {
+    let recorder = TelemetryTests.Recorder()
+    let server = try SocketServer()
+    let port = try await server.loopback.start()
+    let transport = HTTPTransport(baseURL: URL(string: "http://127.0.0.1:\(port)/")!, schema: 3, telemetry: recorder)
+    guard case .answered(.ok(let connection)) = await transport.openLive(token: SessionToken("secret")) else {
+      throw RigError("the socket did not open")
+    }
+    server.close(.protocolCode(.internalServerError))
+    #expect(try await connection.receive() == nil)
+    let properties = ["operation": "sync_live_receive", "method": "GET", "route": "/v1/sync", "failure_kind": "transport"]
+    #expect(recorder.undated == [
+      TelemetryTests.Recorded(name: "api_request_failed", kind: nil, properties: properties, durationMs: nil),
+      TelemetryTests.Recorded(name: "sync_live_receive", kind: "transport", properties: properties, durationMs: nil),
+    ])
+  }
+
+  // An outage at the handshake files one Issue, and a metric for each refused upgrade.
+  @Test(.timeLimit(.minutes(1))) func refusedUpgradesFileOneIssue() async throws {
+    let recorder = TelemetryTests.Recorder()
+    let server = try RefusingServer(status: 502)
+    let port = try await server.loopback.start()
+    let transport = HTTPTransport(baseURL: URL(string: "http://127.0.0.1:\(port)/")!, schema: 3, telemetry: recorder)
+    for _ in 0..<3 { _ = await transport.openLive(token: SessionToken("secret")) }
+    let properties = ["operation": "sync_live", "method": "GET", "route": "/v1/sync", "failure_kind": "http", "status": "502"]
+    let metric = TelemetryTests.Recorded(name: "api_request_failed", kind: nil, properties: properties, durationMs: nil)
+    #expect(recorder.undated == [
+      metric, TelemetryTests.Recorded(name: "sync_live", kind: "http", properties: properties, durationMs: nil), metric, metric,
+    ])
   }
 
   // An upgrade answered with a status opens no socket, and answers that status.

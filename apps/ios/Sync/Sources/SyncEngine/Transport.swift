@@ -58,7 +58,7 @@ public final class HTTPTransport: SyncTransport {
   let schema: Int
   let session: URLSession
   let liveSession: URLSession
-  let telemetry: any Telemetry
+  let diagnostics: TransportDiagnostics
 
   // `schema`: the registry version the engine was built with.
   public init(baseURL: URL, schema: Int, configuration: URLSessionConfiguration = .ephemeral,
@@ -72,7 +72,7 @@ public final class HTTPTransport: SyncTransport {
     configuration.timeoutIntervalForResource = TimeInterval(Constants.requestTimeoutMs) / 1000
     self.baseURL = baseURL
     self.schema = schema
-    self.telemetry = telemetry
+    diagnostics = TransportDiagnostics(telemetry)
     session = URLSession(configuration: configuration)
     liveSession = URLSession(configuration: live)
   }
@@ -82,7 +82,8 @@ public final class HTTPTransport: SyncTransport {
   }
 
   public func push(_ request: PushRequest, token: SessionToken) async -> Reply<PushResponse> {
-    await exchange("POST", "v1/sync/push", operation: "sync_push", body: request.body, token: token)
+    await exchange("POST", "v1/sync/push", operation: "sync_push", expected: ExpectedStatuses.push, body: request.body,
+                   token: token)
   }
 
   public func pull(_ request: PullRequest, token: SessionToken?) async -> Reply<PullResponse> {
@@ -105,25 +106,27 @@ public final class HTTPTransport: SyncTransport {
     task.resume()
     switch await withTaskCancellationHandler(operation: { await opening.outcome() }, onCancel: { task.cancel() }) {
     case .open:
-      return .answered(.ok(WebSocketConnection(task: task, telemetry: telemetry)))
+      diagnostics.succeeded("sync_live")
+      return .answered(.ok(WebSocketConnection(task: task, diagnostics: diagnostics)))
     case .refused(let status):
       task.cancel()
       if !Task.isCancelled {
-        TransportDiagnostics.report(telemetry, operation: "sync_live", method: "GET", kind: "http", status: status,
-                                    durationMs: TransportDiagnostics.elapsed(since: start))
+        diagnostics.report(operation: "sync_live", method: "GET", kind: "http", status: status,
+                           durationMs: TransportDiagnostics.elapsed(since: start))
       }
       return .answered(.failed(HTTPFailure(status: status)))
     case .unanswered(let kind):
       task.cancel()
       if !Task.isCancelled, let kind {
-        TransportDiagnostics.report(telemetry, operation: "sync_live", method: "GET", kind: kind,
-                                    durationMs: TransportDiagnostics.elapsed(since: start))
+        diagnostics.report(operation: "sync_live", method: "GET", kind: kind,
+                           durationMs: TransportDiagnostics.elapsed(since: start))
       }
       return .unreachable
     }
   }
 
-  func exchange<Body: ResponseBody>(_ method: String, _ path: String, operation: String, body: [UInt8]?,
+  func exchange<Body: ResponseBody>(_ method: String, _ path: String, operation: String,
+                                    expected: Set<Int> = ExpectedStatuses.all, body: [UInt8]?,
                                     token: SessionToken?) async -> Reply<Body> {
     let start = ContinuousClock.now
     var request = URLRequest(url: baseURL.appending(path: path))
@@ -138,23 +141,25 @@ public final class HTTPTransport: SyncTransport {
       let (data, response) = try await session.data(for: request)
       guard !Task.isCancelled else { return .unreachable }
       guard let http = response as? HTTPURLResponse else {
-        TransportDiagnostics.report(telemetry, operation: operation, method: method, kind: "transport",
-                                    durationMs: TransportDiagnostics.elapsed(since: start))
+        diagnostics.report(operation: operation, method: method, kind: "transport",
+                           durationMs: TransportDiagnostics.elapsed(since: start))
         return .unreachable
       }
       let reply = Reply<Body>(status: http.statusCode, body: try? JSON(parsing: [UInt8](data)))
       if http.statusCode != 200 {
-        TransportDiagnostics.report(telemetry, operation: operation, method: method, kind: "http", status: http.statusCode,
-                                    durationMs: TransportDiagnostics.elapsed(since: start))
+        diagnostics.report(operation: operation, method: method, kind: "http", status: http.statusCode, expected: expected,
+                           durationMs: TransportDiagnostics.elapsed(since: start))
       } else if case .unreachable = reply {
-        TransportDiagnostics.report(telemetry, operation: operation, method: method, kind: "decode", status: 200,
-                                    durationMs: TransportDiagnostics.elapsed(since: start))
+        diagnostics.report(operation: operation, method: method, kind: "decode", status: 200,
+                           durationMs: TransportDiagnostics.elapsed(since: start))
+      } else {
+        diagnostics.succeeded(operation)
       }
       return reply
     } catch {
       if !Task.isCancelled, let kind = TransportDiagnostics.kind(error) {
-        TransportDiagnostics.report(telemetry, operation: operation, method: method, kind: kind,
-                                    durationMs: TransportDiagnostics.elapsed(since: start))
+        diagnostics.report(operation: operation, method: method, kind: kind,
+                           durationMs: TransportDiagnostics.elapsed(since: start))
       }
       return .unreachable
     }
@@ -210,14 +215,15 @@ final class WebSocketOpening: NSObject, URLSessionWebSocketDelegate, Sendable {
   }
 }
 
-// An open `URLSessionWebSocketTask`: each message one JCS text frame, each frame read by the `SyncCore` parser.
+// An open `URLSessionWebSocketTask`: each message one JCS text frame, each frame read by the `SyncCore` parser. A close
+// frame with any code but a normal closure or going away is a fault; a socket that ends with none fails as it ended.
 final class WebSocketConnection: LiveConnection {
   let task: URLSessionWebSocketTask
-  let telemetry: any Telemetry
+  let diagnostics: TransportDiagnostics
 
-  init(task: URLSessionWebSocketTask, telemetry: any Telemetry = NoopTelemetry()) {
+  init(task: URLSessionWebSocketTask, diagnostics: TransportDiagnostics) {
     self.task = task
-    self.telemetry = telemetry
+    self.diagnostics = diagnostics
   }
 
   func send(_ request: LiveRequest) async throws {
@@ -227,6 +233,7 @@ final class WebSocketConnection: LiveConnection {
       report(error, operation: "sync_live_send", since: start)
       throw error
     }
+    diagnostics.succeeded("sync_live_send")
   }
 
   func receive() async throws -> LiveFrame? {
@@ -235,28 +242,40 @@ final class WebSocketConnection: LiveConnection {
     do {
       message = try await task.receive()
     } catch {
-      if task.closeCode == .normalClosure || task.closeCode == .goingAway { return nil }
-      report(error, operation: "sync_live_receive", since: start)
-      if task.closeCode != .invalid { return nil }
-      throw error
+      switch task.closeCode {
+      case .normalClosure, .goingAway:
+        return nil
+      case .invalid:
+        report(error, operation: "sync_live_receive", since: start)
+        throw error
+      default:
+        if !Task.isCancelled {
+          diagnostics.report(operation: "sync_live_receive", method: "GET", kind: "transport",
+                             durationMs: TransportDiagnostics.elapsed(since: start))
+        }
+        return nil
+      }
     }
+    let frame: LiveFrame
     do {
       switch message {
-      case .string(let text): return try LiveFrame(json: JSON(parsing: Array(text.utf8)))
-      case .data(let data): return try LiveFrame(json: JSON(parsing: [UInt8](data)))
+      case .string(let text): frame = try LiveFrame(json: JSON(parsing: Array(text.utf8)))
+      case .data(let data): frame = try LiveFrame(json: JSON(parsing: [UInt8](data)))
       @unknown default: throw JSONError.shape("a live message of an unknown kind")
       }
     } catch {
-      TransportDiagnostics.report(telemetry, operation: "sync_live_receive", method: "GET", kind: "decode",
-                                  durationMs: TransportDiagnostics.elapsed(since: start))
+      diagnostics.report(operation: "sync_live_receive", method: "GET", kind: "decode",
+                         durationMs: TransportDiagnostics.elapsed(since: start))
       throw error
     }
+    diagnostics.succeeded("sync_live_receive")
+    return frame
   }
 
   func report(_ error: any Error, operation: String, since start: ContinuousClock.Instant) {
     if !Task.isCancelled, let kind = TransportDiagnostics.kind(error) {
-      TransportDiagnostics.report(telemetry, operation: operation, method: "GET", kind: kind,
-                                  durationMs: TransportDiagnostics.elapsed(since: start))
+      diagnostics.report(operation: operation, method: "GET", kind: kind,
+                         durationMs: TransportDiagnostics.elapsed(since: start))
     }
   }
 

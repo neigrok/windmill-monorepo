@@ -21,6 +21,10 @@ struct TelemetryTests {
     let records = Mutex<[Recorded]>([])
     var events: [Recorded] { records.withLock { $0.filter { $0.kind == nil } } }
     var failures: [Recorded] { records.withLock { $0.filter { $0.kind != nil } } }
+    // Every record in order, without the durations a real clock measured.
+    var undated: [Recorded] {
+      records.withLock { $0.map { Recorded(name: $0.name, kind: $0.kind, properties: $0.properties, durationMs: nil) } }
+    }
     func event(_ name: String, properties: [String: String], durationMs: Int64?) {
       records.withLock { $0.append(Recorded(name: name, kind: nil, properties: properties, durationMs: durationMs)) }
     }
@@ -180,6 +184,73 @@ struct TelemetryTests {
     }
   }
 
+  // §7.4 halves a push the server finds too large, or refuses its one intent too-large, so a push's 413 is a metric. No
+  // other request answers 413 on purpose: a pull's is an Issue.
+  @Test func onlyAPushesTooLargeIsExpected() async throws {
+    let recorder = Recorder()
+    let transport = TransportTests.Stub.transport("telemetry-too-large.test", telemetry: recorder) { _, _ in
+      (413, #"{"error":"request-too-large"}"#)
+    }
+    _ = await transport.push(TransportTests.request, token: SessionToken("secret-session"))
+    _ = await transport.pull(PullRequest(scopes: [PullRequest.Pulled(scope: .product("probe"), cursor: nil)]),
+                             token: SessionToken("secret-session"))
+    let push = ["operation": "sync_push", "method": "POST", "route": "/v1/sync", "failure_kind": "http", "status": "413"]
+    let pull = ["operation": "sync_pull", "method": "POST", "route": "/v1/sync", "failure_kind": "http", "status": "413"]
+    #expect(recorder.undated == [
+      Recorded(name: "api_request_failed", kind: nil, properties: push, durationMs: nil),
+      Recorded(name: "api_request_failed", kind: nil, properties: pull, durationMs: nil),
+      Recorded(name: "sync_pull", kind: "http", properties: pull, durationMs: nil),
+    ])
+  }
+
+  // Each failed attempt is a metric, and an outage files one Issue: a failure like its operation's last files none until
+  // the operation succeeds or fails another way, offline included. Each operation keeps its own.
+  @Test func anOutageFilesOneIssueUntilItsOperationSucceedsOrFailsAnotherWay() async throws {
+    let recorder = Recorder()
+    let pushes: Mutex<[Int?]> = Mutex([500, 500, 500, 200, 500, 502, 500, nil, 500, 500])
+    let transport = TransportTests.Stub.transport("telemetry-outage.test", telemetry: recorder) { request, _ in
+      guard request.url?.path == "/v1/sync/push" else { return (500, "") }
+      guard let status = pushes.withLock({ $0.removeFirst() }) else { return nil }
+      guard status == 200 else { return (status, #"{"error":"internal"}"#) }
+      return (200, #"{"serverTime": 1000, "epoch": "ep-1", "as": "A", "lastN": 5, "results": [{"n": 5, "s": "ok", "seq": 12, "write": []}]}"#)
+    }
+    for _ in 0..<10 { _ = await transport.push(TransportTests.request, token: SessionToken("secret-session")) }
+    for _ in 0..<2 {
+      _ = await transport.pull(PullRequest(scopes: [PullRequest.Pulled(scope: .product("probe"), cursor: nil)]),
+                               token: SessionToken("secret-session"))
+    }
+    func push(_ status: Int) -> [String: String] {
+      ["operation": "sync_push", "method": "POST", "route": "/v1/sync", "failure_kind": "http", "status": String(status)]
+    }
+    let offline = ["operation": "sync_push", "method": "POST", "route": "/v1/sync", "failure_kind": "offline"]
+    let pull = ["operation": "sync_pull", "method": "POST", "route": "/v1/sync", "failure_kind": "http", "status": "500"]
+    func metric(_ properties: [String: String]) -> Recorded {
+      Recorded(name: "api_request_failed", kind: nil, properties: properties, durationMs: nil)
+    }
+    func issue(_ properties: [String: String]) -> Recorded {
+      Recorded(name: properties["operation"]!, kind: properties["failure_kind"]!, properties: properties, durationMs: nil)
+    }
+    #expect(recorder.undated == [
+      metric(push(500)), issue(push(500)), metric(push(500)), metric(push(500)),
+      metric(push(500)), issue(push(500)),
+      metric(push(502)), issue(push(502)),
+      metric(push(500)), issue(push(500)),
+      metric(offline),
+      metric(push(500)), issue(push(500)), metric(push(500)),
+      metric(pull), issue(pull), metric(pull),
+    ])
+  }
+
+  // A socket the server or the network drops fails with its POSIX error, not a URLError, and is offline as one is; any
+  // other socket error is a transport fault.
+  @Test func aDroppedSocketsPOSIXErrorIsOffline() {
+    #expect(TransportDiagnostics.kind(POSIXError(.ENOTCONN)) == "offline")
+    #expect(TransportDiagnostics.kind(POSIXError(.ECONNRESET)) == "offline")
+    #expect(TransportDiagnostics.kind(NSError(domain: NSPOSIXErrorDomain, code: Int(POSIXErrorCode.ENOTCONN.rawValue))) == "offline")
+    #expect(TransportDiagnostics.kind(POSIXError(.ETIMEDOUT)) == "timeout")
+    #expect(TransportDiagnostics.kind(POSIXError(.EMSGSIZE)) == "transport")
+  }
+
   @Test func serverAndMalformedSuccessfulResponsesReportOnlyBoundedDiagnostics() async throws {
     let recorder = Recorder()
     let server = TransportTests.Stub.transport("telemetry-server.test", telemetry: recorder) { _, _ in (503, "secret response body") }
@@ -246,7 +317,7 @@ struct TelemetryTests {
     async let exchanging = rig.engine.core.answered(operation: "sync_push") {
       let reply = await rig.transport.push(TransportTests.request, token: SessionToken("private-session"))
       // A late transport callback after the engine cancels it must not create a second metric or Issue.
-      TransportDiagnostics.report(recorder, operation: "sync_push", method: "POST", kind: "transport", durationMs: 60_000)
+      TransportDiagnostics(recorder).report(operation: "sync_push", method: "POST", kind: "transport", durationMs: 60_000)
       return reply
     }
     await rig.clock.asleep(until: Constants.requestTimeoutMs)
@@ -260,6 +331,61 @@ struct TelemetryTests {
     #expect(recorder.failures.first?.durationMs == Constants.requestTimeoutMs)
   }
 
+  // The engine's deadline files once per outage as the wire does: a second deadline in a row is a metric alone, and one
+  // after a request the server answered files again.
+  @Test(.timeLimit(.minutes(1))) func repeatedDeadlinesFileOneIssueUntilARequestSucceeds() async throws {
+    let recorder = Recorder()
+    let rig = try Rig(telemetry: recorder)
+    for answered in [false, false, true, false] {
+      if answered {
+        rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 2)]))
+      } else {
+        rig.transport.willNotAnswerPush()
+      }
+      let deadline = rig.clock.reading().mono + Constants.requestTimeoutMs
+      async let exchanging = rig.engine.core.answered(operation: "sync_push") {
+        await rig.transport.push(TransportTests.request, token: SessionToken("private-session"))
+      }
+      if !answered {
+        await rig.clock.asleep(until: deadline)
+        rig.clock.advance(ms: Constants.requestTimeoutMs)
+      }
+      _ = await exchanging
+    }
+    await drain(rig.engine.core.telemetry)
+    let properties = ["operation": "sync_push", "method": "POST", "route": "/v1/sync", "failure_kind": "timeout"]
+    let metric = Recorded(name: "api_request_failed", kind: nil, properties: properties, durationMs: Constants.requestTimeoutMs)
+    let issue = Recorded(name: "sync_push", kind: "timeout", properties: properties, durationMs: Constants.requestTimeoutMs)
+    #expect(recorder.records.withLock { $0 } == [metric, issue, metric, metric, issue])
+  }
+
+  // The heartbeat too: pongs missed on socket after socket file one Issue, and a miss after a pong files again.
+  @Test func missedPongsFileOneIssueUntilAPongIsHeard() async throws {
+    let recorder = Recorder()
+    let rig = try Rig(account: "A", telemetry: recorder)
+    for pongs in [false, false, true] {
+      let socket = FakeLiveConnection()
+      rig.transport.willOpenLive(socket)
+      #expect(await rig.engine.live.step() == .open(ms: 25_000))
+      rig.clock.advance(ms: 25_000)
+      #expect(await rig.engine.live.step() == .open(ms: 10_000))
+      if pongs {
+        socket.deliver(.pong)
+        #expect(await rig.engine.live.receiveNext())
+        rig.clock.advance(ms: 25_000)
+        #expect(await rig.engine.live.step() == .open(ms: 10_000))
+      }
+      rig.clock.advance(ms: 10_000)
+      guard case .backoff(let ms) = await rig.engine.live.step() else { throw RigError("a missed pong kept the socket") }
+      rig.clock.advance(ms: ms)
+    }
+    await drain(rig.engine.core.telemetry)
+    let properties = ["operation": "sync_live", "method": "GET", "route": "/v1/sync", "failure_kind": "timeout"]
+    let metric = Recorded(name: "api_request_failed", kind: nil, properties: properties, durationMs: Constants.livePongMs)
+    let issue = Recorded(name: "sync_live", kind: "timeout", properties: properties, durationMs: Constants.livePongMs)
+    #expect(recorder.records.withLock { $0 } == [metric, issue, metric, metric, issue])
+  }
+
   @Test(.timeLimit(.minutes(1)), arguments: [false, true])
   func aRequestDeadlineReturnsEvenWhenTheTransportIgnoresCancellation(_ cancelled: Bool) throws {
     let recorder = Recorder(), gate = Gate(), finished = DispatchSemaphore(value: 0)
@@ -269,7 +395,7 @@ struct TelemetryTests {
         let exchange = await rig.engine.core.answered(operation: "sync_push") {
           await gate.pass()
           if !Task.isCancelled {
-            TransportDiagnostics.report(recorder, operation: "sync_push", method: "POST", kind: "transport", durationMs: 60_000)
+            TransportDiagnostics(recorder).report(operation: "sync_push", method: "POST", kind: "transport", durationMs: 60_000)
           }
           return Reply<PushResponse>.unreachable
         }

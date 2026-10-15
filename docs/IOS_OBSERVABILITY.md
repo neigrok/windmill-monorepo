@@ -48,12 +48,14 @@ HTTP failures carry method, coarse route family (`/v1/auth`, `/v1/me`, `/v1/sync
 operation, `failure_kind`, optional numeric status label and `duration_ms`. Duration uses a monotonic
 clock through response consumption and decoding. Sync outcomes also cover application of the reply
 to the local store. Expected statuses 400, 401, 403, 404, 409, 410, 422, 426 and 429 are product/API metrics,
-not Sentry Issues. Coach HTTP or SSE `503 ask-not-configured` is an expected unavailable-deployment
-refusal: `api_request_failed` carries status `503`, `gym_ask_outcome` carries `absent`, and the room
-states the unavailable stance with no composer and no retry. Offline/DNS/connect failures are metrics; cancellation
-is quiet. Timeouts, TLS,
-unexpected HTTP responses and decoding failures are reportable. No URL, dynamic identifier, query
-string, authorization header or response body enters telemetry.
+not Sentry Issues, and so is a sync push's 413, which the engine halves or refuses too-large. Coach HTTP or SSE
+`503 ask-not-configured` is an expected unavailable-deployment refusal: `api_request_failed` carries status `503`,
+`gym_ask_outcome` carries `absent`, and the room states the unavailable stance with no composer and no retry.
+Offline/DNS/connect failures are metrics, and so is a live socket the server or the network drops with no close
+frame; cancellation is quiet. Timeouts, TLS, unexpected HTTP responses and decoding failures are reportable. Sync
+files each once per outage: a retry that fails as the one before it did is a metric alone until its operation
+succeeds or fails another way. No URL, dynamic identifier, query string, authorization header or response body
+enters telemetry.
 
 The promise is **Only you.** Never send journal text, text length, mood or energy values, email
 addresses, Apple subjects/tickets/identity tokens, session tokens or response bodies. Apple tickets
@@ -182,8 +184,8 @@ unexpected storage or engine failure of a commit reports to Sentry under its act
 `failed`; a refusal the phone or the log gives is the outcome `refused` and never a Sentry issue. No
 times, movement names, set values, notes, counts or identifiers enter the event.
 
-An app the server finds too old is an expected refusal, never a Sentry Issue: every HTTP boundary reads the one
-`ExpectedStatuses` set, so a 426 from sync or an auth route is an `api_request_failed` metric whose message never
+An app the server finds too old is an expected refusal, never a Sentry Issue: every HTTP boundary reads
+`ExpectedStatuses`, so a 426 from sync or an auth route is an `api_request_failed` metric whose message never
 reaches the screen, and the engine's upgrade-required sign-in error is skipped by the auth boundary report. The engine
 requires the upgrade only for a 426 whose body names `upgrade-required`; a bare 426 (a proxy) backs off like any
 failure. `client_update_required` records the alert once it is on screen — after the introduction or another alert,
