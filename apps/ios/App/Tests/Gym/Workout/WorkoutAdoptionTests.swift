@@ -80,8 +80,8 @@ struct SaveSignedOutWorkouts: Action {
     gym.recoveryNotices = try harness.notices(GymRefusal.self); gym.refresh()
     #expect(gym.recoveryNotices.map(\.subject) == [inside.id.ref, late.id.ref] && gym.sets.filter { $0.sessionId == id }.isEmpty)
     #expect(gym.workoutsToReview.map { "\($0.id) \($0.reason.rawValue) \($0.retry) \($0.strandedSets.map(\.id.description)) fix=\($0.canFix)" }
-      == ["landed-open session-finished restoreSets [\"inside-set\", \"late-set\"] fix=false"])
-    #expect(gym.fixWorkout(id) == nil)
+      == ["landed-open session-finished restoreSets [\"inside-set\", \"late-set\"] fix=true"])
+    #expect(gym.fixWorkout(id)?.sets.map(\.id) == [inside.id, late.id])
     gym.retryWorkout(id)
     #expect(gym.recoveryNotices.count == 2 && gym.workoutsToReview.isEmpty && gym.error == nil)
     #expect(try harness.runner.read(Gym.scope) { try $0.commands().map(\.command.name) } == [Gym.Commands.correctSession, Gym.Commands.importSession])
@@ -104,14 +104,15 @@ struct SaveSignedOutWorkouts: Action {
     #expect(gym.adoptionWorkouts.isEmpty && gym.workoutsToReview.isEmpty)
 
     #expect(recovered(recorder) == [
-      ["action": "inspect", "reason": "unsent"],
+      ["action": "inspect", "reason": "unsent", "state": "opened"],
       ["action": "keep", "reason": "session-overlap", "outcome": "refused"],
-      ["action": "fix", "reason": "session-overlap"],
-      ["action": "fix", "reason": "session-overlap", "outcome": "ok"],
-      ["action": "retry", "reason": "unsent", "outcome": "ok"],
-      ["action": "retry", "reason": "session-finished", "outcome": "ok"],
-      ["action": "keep", "reason": "unsent", "outcome": "ok"],
-      ["action": "discard", "reason": "unknown-exercise", "outcome": "ok"],
+      ["action": "fix", "reason": "session-overlap", "state": "opened"],
+      ["action": "fix", "reason": "session-overlap", "outcome": "completed"],
+      ["action": "retry", "reason": "unsent", "outcome": "completed"],
+      ["action": "fix", "reason": "session-finished", "state": "opened"],
+      ["action": "retry", "reason": "session-finished", "outcome": "completed"],
+      ["action": "keep", "reason": "unsent", "outcome": "completed"],
+      ["action": "discard", "reason": "unknown-exercise", "outcome": "completed"],
     ])
     for properties in recovered(recorder) {
       #expect(TelemetryPrivacy.properties(properties).count == properties.count)
@@ -168,14 +169,14 @@ struct SaveSignedOutWorkouts: Action {
     #expect(local.gym.sessions.contains { $0.id == onTheLog.session.id } && local.gym.notices.isEmpty)
     #expect(try local.runtime!.store.read { try $0.device().activeReplica.notices.allSatisfy(\.isDismissed) })
     #expect(recovered(recorder) == [
-      ["action": "inspect", "reason": "session-overlap"],
-      ["action": "fix", "reason": "session-overlap"],
-      ["action": "fix", "reason": "session-overlap", "outcome": "ok"],
+      ["action": "inspect", "reason": "session-overlap", "state": "opened"],
+      ["action": "fix", "reason": "session-overlap", "state": "opened"],
+      ["action": "fix", "reason": "session-overlap", "outcome": "completed"],
     ])
     remote.gym.stop(); local.gym.stop()
   }
 
-  @Test func aSavedWorkoutsRefusalIsItsRowsNotTheRoomsAndOutlivesItsDismissal() async throws {
+  @Test func aSavedWorkoutsRefusalIsItsRowsNotTheRoomsAndARetryAnswersIt() async throws {
     let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server)
     try await model.signIn(server.identity(email: "recovery-notices@example.com"))
     let runtime = try #require(model.runtime), gym = model.gym
@@ -199,10 +200,8 @@ struct SaveSignedOutWorkouts: Action {
     let waiting = { gym.workoutsToReview.map { "\($0.id) \($0.reason.rawValue) \($0.noticeIds)" } }
     #expect(waiting() == ["refused-on-the-phone unknown-exercise [\"\(owned.id)\"]"])
 
-    gym.dismissNotice(owned.id)
-    #expect(gym.recoveryNotices.map(\.notice.isDismissed) == [false, true] && gym.notices.map(\.id) == [room.id])
-    #expect(waiting() == ["refused-on-the-phone unknown-exercise [\"\(owned.id)\"]"])
     #expect(gym.retryWorkout(copy.session.id))
+    #expect(gym.recoveryNotices.map(\.notice.isDismissed) == [false, true] && gym.notices.map(\.id) == [room.id])
     #expect(waiting().isEmpty && gym.adoptionWorkouts == [copy])
     await runtime.engine.flushOnLeave()
     #expect(await WorkoutStateTests.until { model.refresh(); return gym.adoptionWorkouts.isEmpty })
@@ -312,5 +311,156 @@ struct SaveSignedOutWorkouts: Action {
     #expect(local.gym.workout.activityOffer() == resumed)
     #expect(Set(local.gym.sets.map { $0.id.description }) == [finishedOffer.setID, openOffer.setID])
     remote.gym.stop(); local.gym.stop()
+  }
+
+  // A restart is one decision: the phone refuses the whole copy at the first set it would refuse, and once corrected the
+  // start and every set queue together, so no valid set is ever left behind a permanent adding.
+  @Test func aRestartSendsEverySetOrNone() throws {
+    let recorder = TelemetryRecorder(), fixture = WorkoutStateTests(), (harness, gym) = try fixture.fixture(anonymous: false, telemetry: recorder)
+    let now = fixture.start.ms, squat = fixture.first
+    let id = ID<Session>("open-copy-restart"), session = Session(id: id, startedAt: Instant(ms: now - 30_000))
+    let s1 = TrainingSet(id: ID("restart-set-1"), sessionId: id, exerciseId: squat, weightKg: 60, reps: 5, completedAt: Instant(ms: now - 29_000))
+    let s2 = TrainingSet(id: ID("restart-set-2"), sessionId: id, exerciseId: ID("ghost-movement"), weightKg: 20, reps: 10, completedAt: Instant(ms: now - 28_000))
+    let s3 = TrainingSet(id: ID("restart-set-3"), sessionId: id, exerciseId: squat, weightKg: 65, reps: 5, completedAt: Instant(ms: now - 27_000))
+    #expect(gym.run(SaveSignedOutWorkouts(workouts: [SignedOutWorkout(session: session, sets: [s1, s2, s3])]))?.receipt != nil)
+    #expect(gym.workoutsToReview.map { "\($0.id) \($0.reason.rawValue) \($0.retry) fix=\($0.canFix)" } == ["open-copy-restart unknown-exercise restartWorkout fix=true"])
+    var fix = try #require(gym.fixWorkout(id))
+    #expect(gym.fixRefusal(fix) == .unknownExercise(Refused(Gym.Codes.unknownExercise, subject: s2.id.ref, path: .predicted)))
+    #expect(!gym.saveAndRetryWorkout(fix) && gym.error == "A movement is missing — fix its sets, then retry.")
+    #expect(try harness.runner.read(Gym.scope) { try $0.commands().isEmpty } && gym.sets.isEmpty)
+    fix.sets[1].exerciseId = squat
+    #expect(gym.fixRefusal(fix) == nil && gym.saveAndRetryWorkout(fix))
+    #expect(try harness.runner.read(Gym.scope) { try $0.commands().map(\.command.name) } == [Gym.Commands.start])
+    #expect(gym.sets.map(\.id) == [s1.id, s2.id, s3.id] && gym.openSession?.id == id && gym.workoutsToReview.isEmpty)
+    harness.sync(); gym.refresh()
+    #expect(gym.adoptionWorkouts.isEmpty && gym.sets.filter { $0.sessionId == id }.count == 3 && gym.openSession?.id == id)
+    #expect(recovered(recorder).map { $0["outcome"] ?? $0["state"]! } == ["opened", "refused", "completed"])
+  }
+
+  // A landed workout whose saved sets the log does not draw is a row with Retry, never adding; while it is open the
+  // retry appends them into it in one plan.
+  @Test func aLandedOpenWorkoutsMissingSetsAreARowAndRetryAppendsThem() throws {
+    let fixture = WorkoutStateTests(), (harness, gym) = try fixture.fixture(anonymous: false)
+    let now = fixture.start.ms, squat = fixture.first
+    let id = ID<Session>("landed-still-open")
+    #expect(gym.run(StartSession(id: id, startedAt: Instant(ms: now - 15_000)))?.receipt != nil)
+    harness.sync(); gym.refresh()
+    let a = TrainingSet(id: ID("open-stranded-a"), sessionId: id, exerciseId: squat, weightKg: 60, reps: 5, completedAt: Instant(ms: now - 12_000))
+    let b = TrainingSet(id: ID("open-stranded-b"), sessionId: id, exerciseId: squat, weightKg: 62.5, reps: 5, completedAt: Instant(ms: now - 11_000))
+    #expect(gym.run(SaveSignedOutWorkouts(workouts: [SignedOutWorkout(session: Session(id: id, startedAt: Instant(ms: now - 15_000)), sets: [a, b])]))?.receipt != nil)
+    let row = try #require(gym.workoutsToReview.first)
+    #expect(row.reason == .unsent && row.retry == .restoreSets && row.strandedSets.map(\.id) == [a.id, b.id] && row.canFix)
+    #expect(row.line == "Not on your log yet — retry to add it." && row.discardTitle == "Discard 2 sets" && row.discardedLine == "Sets discarded")
+    #expect(gym.retryWorkout(id) && gym.error == nil)
+    #expect(gym.sets.filter { $0.sessionId == id }.map(\.id) == [a.id, b.id] && gym.workoutsToReview.isEmpty)
+    #expect(try harness.runner.read(Gym.scope) { try $0.commands().filter { $0.command.name != Gym.Commands.start }.isEmpty })
+    harness.sync(); gym.refresh()
+    #expect(gym.adoptionWorkouts.isEmpty && gym.sets.filter { $0.sessionId == id }.count == 2 && gym.openSession?.id == id)
+  }
+
+  // A refused recovery correction has the session as its subject; its reason, the newest the copy owns, names the row.
+  @Test func aRefusedCorrectionsReasonReachesTheRow() throws {
+    let fixture = WorkoutStateTests(), (harness, gym) = try fixture.fixture(anonymous: false)
+    let now = fixture.start.ms, squat = fixture.first
+    let id = ID<Session>("landed-correction")
+    #expect(gym.run(StartSession(id: id, startedAt: Instant(ms: now - 15_000)))?.receipt != nil)
+    harness.sync(); gym.refresh()
+    let a = TrainingSet(id: ID("correction-a1"), sessionId: id, exerciseId: squat, weightKg: 60, reps: 5, completedAt: Instant(ms: now - 12_000))
+    #expect(gym.run(AppendSet(a))?.receipt != nil)
+    #expect(gym.run(FinishSession(id: id, finishedAt: Instant(ms: now - 10_000)))?.receipt != nil)
+    #expect(gym.run(SaveSignedOutWorkouts(workouts: [SignedOutWorkout(session: Session(id: id, startedAt: Instant(ms: now - 15_000)), sets: [a])]))?.receipt != nil)
+    harness.server.refuse(next: 1, code: Gym.Codes.sessionFinished)
+    harness.sync()
+    gym.recoveryNotices = try harness.notices(GymRefusal.self); gym.refresh()
+    #expect(gym.workoutsToReview.first?.reason == .strandedSets && gym.workoutsToReview.first?.title(at: gym.log!.moment).hasPrefix("1 set from") == true)
+    #expect(gym.retryWorkout(id))
+    harness.server.refuse(next: 1, code: .invalid)
+    harness.sync()
+    gym.recoveryNotices = try harness.notices(GymRefusal.self); gym.refresh()
+    let row = try #require(gym.workoutsToReview.first)
+    #expect(row.reason == .other && row.strandedSets.map(\.id) == [a.id] && row.primary == .fix && row.noticeIds.last == gym.recoveryNotices.last?.id)
+    #expect(gym.recoveryNotices.map(\.subject) == [a.id.ref, id.ref] && gym.notices.isEmpty)
+  }
+
+  // Stranded sets outside their workout's window become a saved copy of their own: its refusal is that copy's row, with
+  // Fix, and never the room's band; the workout they left is confirmed and leaves.
+  @Test func strandedSetsOutsideTheWindowBecomeTheirOwnFixableCopy() throws {
+    let fixture = WorkoutStateTests(), (harness, gym) = try fixture.fixture(anonymous: false)
+    let now = fixture.start.ms, squat = fixture.first
+    let id = ID<Session>("landed-late-copy")
+    #expect(gym.run(StartSession(id: id, startedAt: Instant(ms: now - 60_000)))?.receipt != nil)
+    harness.sync(); gym.refresh()
+    let late = TrainingSet(id: ID("late-outside-1"), sessionId: id, exerciseId: squat, weightKg: 70, reps: 3, completedAt: Instant(ms: now - 5_000))
+    #expect(gym.run(AppendSet(late))?.receipt != nil)
+    #expect(gym.run(FinishSession(id: id, finishedAt: Instant(ms: now - 30_000)))?.receipt != nil)
+    #expect(gym.run(SaveSignedOutWorkouts(workouts: [SignedOutWorkout(session: Session(id: id, startedAt: Instant(ms: now - 60_000)), sets: [late])]))?.receipt != nil)
+    harness.server.refuse(next: 1, code: Gym.Codes.sessionFinished)
+    harness.sync()
+    gym.recoveryNotices = try harness.notices(GymRefusal.self); gym.refresh()
+    #expect(gym.workoutsToReview.map(\.reason) == [.strandedSets])
+    #expect(gym.retryWorkout(id))
+    let separate = try #require(gym.adoptionWorkouts.first { $0.session.id != id })
+    #expect(separate.sets.map { ($0.id, $0.sessionId) }.elementsEqual([(late.id, separate.session.id)], by: ==))
+    #expect(try harness.runner.read(Gym.scope) { try $0.commands().map { "\($0.command.name) \($0.command.args["id"] ?? .null)" } } == ["\(Gym.Commands.importSession) \(separate.session.id.json)"])
+    harness.server.refuse(next: 1, code: Gym.Codes.sessionOverlap)
+    harness.sync()
+    gym.recoveryNotices = try harness.notices(GymRefusal.self); gym.refresh()
+    let newest = try #require(gym.recoveryNotices.last)
+    #expect(newest.subject == separate.session.id.ref && separate.owns(newest) && gym.notices.isEmpty)
+    #expect(gym.adoptionWorkouts.map(\.session.id) == [separate.session.id])
+    #expect(gym.workoutsToReview.map { "\($0.id) \($0.reason.rawValue) \($0.retry) fix=\($0.canFix)" } == ["\(separate.session.id) session-overlap importWorkout fix=true"])
+    #expect(gym.workoutsToReview.first?.primary == .fix)
+    #expect(gym.fixWorkout(separate.session.id)?.sets.map(\.id) == [late.id])
+  }
+
+  // A copy kept for a stranded set owns the gestures recovery queued, not every later write on its records: a refused
+  // edit of a set that landed reaches the room's band.
+  @Test func aSavedCopyOwnsOnlyRecoverysGestures() async throws {
+    let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server)
+    try await model.signIn(server.identity(email: "recovery-owns@example.com"))
+    let runtime = try #require(model.runtime), gym = model.gym
+    await runtime.engine.start()
+    #expect(await WorkoutStateTests.until { model.refresh(); return gym.log?.firstPullComplete == true })
+    let now = try gym.runner.moment().now.ms
+    let id = ID<Session>("owned-session"), bench = ID<Exercise>("bench-press")
+    #expect(gym.run(StartSession(id: id, startedAt: Instant(ms: now - 60_000)))?.receipt != nil)
+    await runtime.engine.flushOnLeave()
+    let stranded = TrainingSet(id: ID("owned-stranded"), sessionId: id, exerciseId: bench, weightKg: 60, reps: 5, completedAt: Instant(ms: now - 50_000))
+    server.state.withLock { $0.server.refuse(code: Gym.Codes.sessionFinished) }
+    #expect(gym.run(AppendSet(stranded))?.receipt != nil)
+    await runtime.engine.flushOnLeave()
+    let landed = TrainingSet(id: ID("owned-landed"), sessionId: id, exerciseId: bench, weightKg: 60, reps: 5, completedAt: Instant(ms: now - 40_000))
+    #expect(gym.run(AppendSet(landed))?.receipt != nil)
+    #expect(gym.run(FinishSession(id: id, finishedAt: Instant(ms: now - 30_000)))?.receipt != nil)
+    await runtime.engine.flushOnLeave()
+    #expect(gym.run(SaveSignedOutWorkouts(workouts: [SignedOutWorkout(session: Session(id: id, startedAt: Instant(ms: now - 60_000)), sets: [stranded, landed])]))?.receipt != nil)
+    #expect(await WorkoutStateTests.until { model.refresh(); return gym.recoveryNotices.count == 1 && gym.sets.contains { $0.id == landed.id } })
+    #expect(gym.workoutsToReview.map { "\($0.id) \($0.reason.rawValue) \($0.strandedSets.map(\.id.description))" } == ["owned-session session-finished [\"owned-stranded\"]"] && gym.notices.isEmpty)
+    let current = try #require(gym.sets.first { $0.id == landed.id })
+    var edited = current; edited.weightKg = 70
+    server.state.withLock { $0.server.refuse(code: .invalid) }
+    #expect(gym.run(CorrectSet(edited, original: current))?.receipt != nil)
+    await runtime.engine.flushOnLeave()
+    #expect(await WorkoutStateTests.until { model.refresh(); return gym.recoveryNotices.count == 2 })
+    #expect(gym.notices.map(\.subject) == [landed.id.ref] && gym.error == "Gym could not accept this change. Try again.")
+    #expect(gym.workoutsToReview.map(\.reason) == [.strandedSets])
+    gym.stop()
+  }
+
+  // The saved workouts are parsed and reconciled once per engine change, not on every refresh.
+  @Test func savedWorkoutsAreReadOncePerChange() async throws {
+    let fault = WorkoutFaultTransport(), runtime = try WorkoutStateTests.faultRuntime(fault), engine = runtime.engine
+    let identity = fault.model.identity(email: "recovery-read-once@example.com")
+    #expect(try await engine.signIn(account: identity.account, token: identity.token).isComplete)
+    let gym = GymModel(runner: runtime.runner, runtime: runtime)
+    let copy = finished("read-once", exercise: WorkoutStateTests().first, from: 1_000_000, to: 2_000_000, sets: [1_000])
+    #expect(gym.run(SaveSignedOutWorkouts(workouts: [copy]))?.receipt != nil)
+    #expect(gym.adoptionWorkouts == [copy])
+    gym.adoptionWorkouts = []
+    gym.refresh()
+    #expect(gym.adoptionWorkouts.isEmpty, "a refresh with nothing changed reads no saved workout")
+    #expect(gym.run(CreateExercise(Exercise(id: ID("read-once-movement"), name: "Read once", pattern: "squat", equipment: "barbell", stepKg: 2.5)))?.receipt != nil)
+    #expect(gym.adoptionWorkouts == [copy], "a change reads them again")
+    gym.stop()
   }
 }

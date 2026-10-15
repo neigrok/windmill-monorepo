@@ -44,6 +44,7 @@ final class GymModel {
   @ObservationIgnored var scopeViews: [RecordsView] = []
   @ObservationIgnored var observationGeneration = 0
   @ObservationIgnored var readThrough: UInt64?
+  @ObservationIgnored var adoptionReadThrough: UInt64?
   @ObservationIgnored var proposalReadReplica: String?
   var coachRemovalReceipts: [RoutineRemovalReceipt] = []
   @ObservationIgnored var shownCoachRemovals: [String: Proposal] = [:]
@@ -167,10 +168,13 @@ final class GymModel {
     let wasReadFailed = readFailed
     let previousAccount = account, previousAnonymous = isAnonymous
     do {
-      adoptionWorkouts = try runner.read(Gym.scope) { try SignedOutWorkout.read($0) }
-      if !adoptionWorkouts.isEmpty {
-        _ = try runner.run(ReconcileAdoptedWorkouts())
+      // The saved workouts are parsed, and the ones the account took dropped, once per change, not per refresh.
+      if runtime == nil || adoptionReadThrough != readThrough {
+        adoptionReadThrough = readThrough
         adoptionWorkouts = try runner.read(Gym.scope) { try SignedOutWorkout.read($0) }
+        if !adoptionWorkouts.isEmpty, try runner.run(ReconcileAdoptedWorkouts()).receipt != nil {
+          adoptionWorkouts = try runner.read(Gym.scope) { try SignedOutWorkout.read($0) }
+        }
       }
       let snapshot = try runner.read(Gym.scope) { read in
         let storedSessions = try read.repository(Session.self).all(in: .stored)

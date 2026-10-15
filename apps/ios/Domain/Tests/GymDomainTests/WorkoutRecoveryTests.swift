@@ -141,22 +141,23 @@ struct WorkoutRecoveryTests {
       TrainingSet(id: original.sets[1].id, sessionId: original.session.id, exerciseId: squat, weightKg: 60, reps: 5, note: "Private set note", completedAt: Instant(ms: Self.now - 75_000)),
     ])
     let moment = Moment(now: Instant(ms: Self.now), zone: FixedZone(offsetSeconds: 0))
-    #expect(fix.refusal(at: moment, among: []) == nil)
+    let catalogue = Catalogue(custom: [Exercise(id: squat, name: "Recovery squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)], names: [])
+    #expect(fix.refusal(at: moment, among: [], catalogue: catalogue) == nil)
     let crossing = Session(id: ID("account-earlier"), startedAt: Instant(ms: Self.now - 72_000), finishedAt: Instant(ms: Self.now - 10_000), closedBy: "finish")
-    #expect(fix.refusal(at: moment, among: [crossing, original.session]) == .sessionOverlap(Refused(Gym.Codes.sessionOverlap, subject: original.session.id.ref, detail: ["sessionId": crossing.id.json], path: .predicted)))
+    #expect(fix.refusal(at: moment, among: [crossing, original.session], catalogue: catalogue) == .sessionOverlap(Refused(Gym.Codes.sessionOverlap, subject: original.session.id.ref, detail: ["sessionId": crossing.id.json], path: .predicted)))
     fix.sets.removeLast()
     fix.finishedAt = Instant(ms: Self.now - 86_000)
-    #expect(fix.refusal(at: moment, among: []) == .badInstant(Refused(Gym.Codes.badInstant, subject: original.session.id.ref, path: .predicted)))
+    #expect(fix.refusal(at: moment, among: [], catalogue: catalogue) == .badInstant(Refused(Gym.Codes.badInstant, subject: original.session.id.ref, path: .predicted)))
     fix.sets[0].reps = 0
     fix.finishedAt = Instant(ms: Self.now - 70_000)
-    #expect(fix.refusal(at: moment, among: []) == .invalid(Violation(rule: "set.reps", path: "reps", reason: .below(min: 1))))
+    #expect(fix.refusal(at: moment, among: [], catalogue: catalogue) == .invalid(Violation(rule: "set.reps", path: "reps", reason: .below(min: 1))))
     fix.sets[0].reps = 5; fix.finishedAt = nil
     #expect(fix.isOpen && fix.workout.session.isOpen && fix.workout.session.closedBy == nil)
     let accountOpen = Session(id: ID("account-open"), startedAt: Instant(ms: Self.now - 5_000))
-    #expect(fix.refusal(at: moment, among: [accountOpen, original.session]) == .sessionOpen(Refused(Gym.Codes.sessionOpen, subject: original.session.id.ref, path: .predicted)))
+    #expect(fix.refusal(at: moment, among: [accountOpen, original.session], catalogue: catalogue) == .sessionOpen(Refused(Gym.Codes.sessionOpen, subject: original.session.id.ref, path: .predicted)))
     fix.markFinished()
     #expect(fix.finishedAt == Instant(ms: Self.now - 85_000) && fix.workout.session.closedBy == "finish")
-    #expect(fix.refusal(at: moment, among: [accountOpen]) == nil)
+    #expect(fix.refusal(at: moment, among: [accountOpen], catalogue: catalogue) == nil)
     #expect(WorkoutFix(finished("stale-kept", from: Self.now - 50_000, to: Self.now - 40_000, closedBy: "stale")).workout.session.closedBy == "stale")
   }
 
@@ -224,17 +225,22 @@ struct WorkoutRecoveryTests {
     #expect(try review(h).isEmpty)
   }
 
-  @Test func restartResubmitsAnOpenWorkoutsStartWithoutJoiningAndItsSetsFollow() throws {
+  @Test func restartResubmitsAnOpenWorkoutsStartWithoutJoiningAndItsSetsInOnePlanOrRefusesItWhole() throws {
     let h = try harness()
     let saved = open("reopened", from: Self.now - 30_000, sets: [1_000, 2_000])
-    _ = try h.runner.run(SaveSignedOutWorkouts(workouts: [saved]))
-    #expect(try h.runner.run(AdoptWorkout(saved.session.id, mode: .restart)).receipt != nil)
+    let ghost = TrainingSet(id: ID("ghost-set"), sessionId: saved.session.id, exerciseId: ID("ghost-movement"), weightKg: 20, reps: 10, completedAt: Instant(ms: Self.now - 28_500))
+    _ = try h.runner.run(SaveSignedOutWorkouts(workouts: [SignedOutWorkout(session: saved.session, sets: saved.sets + [ghost])]))
+    #expect(try h.runner.run(AdoptWorkout(saved.session.id, mode: .restart)).refusal == .unknownExercise(Refused(Gym.Codes.unknownExercise, subject: ghost.id.ref, path: .predicted)))
+    #expect(try h.runner.read(Gym.scope) { try $0.commands().isEmpty } && h.drawn(Session.self).isEmpty && h.drawn(TrainingSet.self).isEmpty)
+    #expect(try h.runner.run(AdoptWorkout(saved.session.id, mode: .restart, revised: saved)).receipt != nil)
     let start = try #require(try h.runner.read(Gym.scope) { try $0.commands().first })
     #expect(start.command.name == Gym.Commands.start && start.command.args["joinOpenSession"] == false && start.command.args["id"] == saved.session.id.json)
     #expect(try h.drawn(Session.self).map(\.isOpen) == [true])
-    #expect(try h.drawn(TrainingSet.self).isEmpty)
-    for set in saved.sets { #expect(try h.runner.run(AppendSet(set)).receipt != nil) }
+    #expect(try h.drawn(TrainingSet.self).map(\.id) == saved.sets.map(\.id))
+    #expect(try h.runner.read(Gym.scope) { try SignedOutWorkout.read($0) } == [saved])
+    #expect(try review(h).isEmpty)
     h.sync()
+    #expect(try h.notices(GymRefusal.self).isEmpty)
     #expect(try h.stored(Session.self).map { ($0.id, $0.isOpen) }.elementsEqual([(saved.session.id, true)], by: ==))
     #expect(try h.stored(TrainingSet.self).map(\.id) == saved.sets.map(\.id))
     #expect(try h.runner.run(AdoptWorkout(saved.session.id, mode: .restart)).refusal == .taken(saved.session.id.ref, .predicted))
@@ -265,7 +271,7 @@ struct WorkoutRecoveryTests {
     #expect(try h.stored(Session.self).map { ($0.id, $0.finishedAt) }.elementsEqual([(id, Instant(ms: Self.now - 70_000))], by: ==))
     #expect(try h.stored(TrainingSet.self).isEmpty)
     #expect(try h.notices(GymRefusal.self).map(\.subject) == [inside.id.ref, late.id.ref])
-    #expect(try review(h).map(describe) == ["landed-open session-finished restoreSets notices=2 stranded=[\"inside-set\", \"late-set\"] fix=false"])
+    #expect(try review(h).map(describe) == ["landed-open session-finished restoreSets notices=2 stranded=[\"inside-set\", \"late-set\"] fix=true"])
     let notices = try h.notices(GymRefusal.self)
     #expect(notices.map(saved.owns) == [true, true])
     #expect(notices.map(SignedOutWorkout(session: saved.session, sets: [inside]).owns) == [true, false])
@@ -276,13 +282,18 @@ struct WorkoutRecoveryTests {
     #expect(correction.command.args["startedAt"] == .of(start) && correction.command.args["finishedAt"] == .of(Instant(ms: Self.now - 70_000)))
     #expect(correction.command.args["sets"] == .array([CorrectedSet(id: inside.id, exerciseId: squat, setNumber: 1, weightKg: 60, reps: 5, completedAt: inside.completedAt, rpe: nil, note: "", rpeNamed: true, kind: "working").json]))
     #expect(try h.drawn(TrainingSet.self).map(\.id) == [inside.id])
-    #expect(try review(h).map(describe) == ["landed-open session-finished restoreSets notices=2 stranded=[\"late-set\"] fix=false"])
+    #expect(try review(h).map(describe) == ["landed-open session-finished restoreSets notices=2 stranded=[\"late-set\"] fix=true"])
     #expect(try h.runner.run(RecoverStrandedSets(id, .intoWorkout)).receipt == nil)
     #expect(try h.runner.run(RecoverStrandedSets(id, .separately)).receipt != nil)
     let separate = try #require(try h.runner.read(Gym.scope) { try $0.commands().last })
     #expect(separate.command.name == Gym.Commands.importSession && separate.command.args["id"] != id.json)
     #expect(separate.command.args["startedAt"] == .of(late.completedAt) && separate.command.args["finishedAt"] == .of(late.completedAt))
     #expect(separate.command.args["sets"] == .array([ImportedSet(id: late.id, exerciseId: squat, weightKg: 65, reps: 3, completedAt: late.completedAt, kind: "drop", rpe: 8, note: "Private late note", rpeNamed: true).json]))
+    let separateId = ID<Session>(try RecordID(json: #require(separate.command.args["id"])))
+    let copies = try h.runner.read(Gym.scope) { try SignedOutWorkout.read($0) }
+    #expect(copies.first { $0.session.id == id }?.sets.map(\.id) == [inside.id])
+    let separateCopy = try #require(copies.first { $0.session.id == separateId })
+    #expect(separateCopy.sets.map { ($0.id, $0.sessionId) }.elementsEqual([(late.id, separateId)], by: ==) && separateCopy.session.finishedAt == late.completedAt)
     #expect(try h.runner.run(RecoverStrandedSets(id, .separately)).receipt == nil)
     #expect(try review(h).isEmpty && h.notices(GymRefusal.self).count == 2)
     h.sync()
@@ -298,5 +309,74 @@ struct WorkoutRecoveryTests {
     #expect(try h.runner.run(ReconcileAdoptedWorkouts()).receipt != nil)
     #expect(try h.runner.read(Gym.scope) { try SignedOutWorkout.read($0).isEmpty })
     #expect(try h.runner.run(RecoverStrandedSets(id, .intoWorkout)).receipt == nil)
+  }
+}
+
+// The shared recovery vectors, packages/api-contract/gym/domain/recovery-actions.json: the review and its reasons, the
+// fix editor's live line, ownership of a notice, and the adoption, stranded-set and discard decisions, each over the saved
+// copies the scene lists under the device key.
+extension WorkoutRecoveryTests {
+  @Test(arguments: try Contract.vectors("gym/domain/recovery-actions.json"))
+  func vector(_ vector: Vector) throws {
+    let corpus = ProductCorpus(GymRules.book), input = try vector.input.member("input")
+    let result: JSON
+    if let read = vector.input["read"] {
+      result = try corpus.read(vector, in: Gym.scope) { reader in
+        let saved = try SignedOutWorkout.read(reader), log = try TrainingLog(reader), catalogue = try Catalogue(reader)
+        let notices = try (input["notices"]?.asArray() ?? []).map(Self.notice)
+        let rows = WorkoutRecovery.review(saved, notices: notices, log: log, catalogue: catalogue)
+        switch try read.asString() {
+        case "WorkoutRecovery":
+          return .array(rows.map { row in
+            ["id": row.id.json, "reason": .string(row.reason.rawValue), "retry": .string("\(row.retry)"), "noticeIds": .array(row.noticeIds.map { .string($0) }),
+             "strandedSets": .array(row.strandedSets.map(\.id.json)), "refusal": row.refusal?.form ?? .null, "canFix": .bool(row.canFix)]
+          })
+        case "owns":
+          let copy = try #require(saved.first { $0.session.id == ID(try RecordID(json: input.member("id"))) })
+          return .bool(copy.owns(try Self.notice(input.member("notice"))))
+        case "WorkoutFix":
+          let id = ID<Session>(try RecordID(json: input.member("id")))
+          var fix = try #require(rows.first { $0.id == id }.map(WorkoutFix.init) ?? saved.first { $0.session.id == id }.map(WorkoutFix.init))
+          if let started = input["startedAt"] { fix.startedAt = Instant(ms: try started.asInteger()) }
+          if let finished = input["finishedAt"] { fix.finishedAt = finished.isNull ? nil : Instant(ms: try finished.asInteger()) }
+          if let sets = input["sets"] {
+            fix.sets = try sets.asArray().map { set in
+              var fields = try set.asObject(); fields["sessionId"] = id.json
+              return WorkoutFix.SetFix(try TrainingSet(form: ["id": try set.member("id"), "fields": .object(fields)]))
+            }
+          }
+          return ["landed": .bool(fix.landed), "sets": .array(fix.sets.map(\.id.json)),
+                  "refusal": fix.refusal(at: log.moment, among: log.drawnSessions, catalogue: catalogue)?.form ?? .null]
+        case let name: throw ContractError("unclaimed recovery read \(name)")
+        }
+      }
+    } else {
+      let id = ID<Session>(try RecordID(json: input.member("id")))
+      let revised = try input["revised"].map { try SignedOutWorkout($0) }
+      switch try vector.input.member("action").asString() {
+      case "AdoptWorkout":
+        let mode: AdoptWorkout.Mode = try input.member("mode").asString() == "keep" ? .keep : .restart
+        result = try corpus.decision(of: AdoptWorkout(id, mode: mode, revised: revised), vector, result: { _ in .null }, refusal: \.form)
+      case "RecoverStrandedSets":
+        let placement: RecoverStrandedSets.Placement = try input.member("placement").asString() == "intoWorkout" ? .intoWorkout : .separately
+        result = try corpus.decision(of: RecoverStrandedSets(id, placement, revised: revised), vector, result: { _ in .null }, refusal: \.form)
+      case "DiscardSignedOutWorkout":
+        result = try corpus.decision(of: DiscardSignedOutWorkout(id), vector, result: { _ in .null }, refusal: \.form)
+      case let name: throw ContractError("unclaimed recovery action \(name)")
+      }
+    }
+    #expect(result == vector.expect, "\(vector)\n  got    \(result.jcsText)\n  expect \(vector.expect.jcsText)")
+  }
+
+  // The kit corpus's notice form, `{id, scope, code, detail?, content: {d, cmd?, dependents?}, at, dismissed?}`.
+  static func notice(_ json: JSON) throws -> DomainNotice<GymRefusal> {
+    func content(_ json: JSON) throws -> NoticeContent {
+      NoticeContent(deltas: try (json["d"]?.asArray() ?? []).map { try Delta(json: $0) }, command: try json["cmd"].map { try Command(json: $0) },
+                    dependents: try (json["dependents"]?.asArray() ?? []).map(content))
+    }
+    let notice = Notice(id: try json.member("id").asString(), product: "gym", scope: try ScopeRef(json.member("scope").asString()),
+                        code: RefusalCode(try json.member("code").asString()), detail: json["detail"], content: try content(json.member("content")),
+                        at: try json["at"]?.asInteger() ?? 0, isDismissed: try json["dismissed"]?.asBool() ?? false)
+    return DomainNotice(notice, registry: SyncSchema.registry)
   }
 }

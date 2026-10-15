@@ -25,9 +25,9 @@ import XCTest
     reach(row(id, app), app).tap()
     XCTAssertTrue(app.descendants(matching: .any)["recovery-inspect"].waitForExistence(timeout: 10))
   }
-  // A queued retry says so on Inspect and stays there; back on the log its row leaves once the log confirms it.
+  // A queued retry says it is on its way on Inspect and stays there; back on the log its row leaves once the log confirms it.
   func landed(_ name: String, _ id: String, _ app: XCUIApplication) {
-    XCTAssertTrue(app.staticTexts["\(name) is on your log."].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["Adding \(name) to your log."].waitForExistence(timeout: 10))
     XCTAssertFalse(app.buttons["recovery-primary"].exists || app.buttons["recovery-more"].exists)
     app.navigationBars.buttons.element(boundBy: 0).tap()
     XCTAssertTrue(app.descendants(matching: .any)["recovery-inspect"].waitForNonExistence(timeout: 5))
