@@ -35,6 +35,8 @@ const valuesFile = 'gym/domain/values.json';
 const ladderFile = 'gym-ladder.json';
 /** @type {string[]} */
 const pending = [];
+/** @type {Record<string, string>} */
+const notApplicable = { 'gym/domain/recovery-actions.json': 'the web holds no signed-out workout: its gym opens behind the account gate' };
 
 /** @param {{ day: LocalDay, kg: number }} value */
 const entryForm = (value) => ({ day: value.day.text, kg: value.kg });
@@ -359,8 +361,9 @@ const handlers = {
 test('the gym corpus is closed: every file is claimed and nothing is pending', (t) => {
   const claimed = [rulesFile, ladderFile, ...Object.keys(handlers)].sort();
   const files = [...Contract.files('gym'), ladderFile].sort();
-  assert.equal(new Set([...claimed, ...pending]).size, claimed.length + pending.length, 'a file is claimed twice or still pending');
-  assert.deepEqual([...claimed, ...pending].sort(), files);
+  const accounted = [...claimed, ...pending, ...Object.keys(notApplicable)];
+  assert.equal(new Set(accounted).size, accounted.length, 'a file is claimed twice, still pending or marked as not applying');
+  assert.deepEqual(accounted.sort(), files);
   assert.deepEqual(pending, [], 'the completed gym domain has no pending files');
   for (const path of [rulesFile, valuesFile, 'gym/domain/bodyweight-actions.json', 'gym/domain/preferences-actions.json', 'gym/rules/bodyweight.json']) assert.ok(claimed.includes(path), `W1 claim regressed: ${path}`);
   assert.ok(claimed.includes('gym/domain/notes-actions.json'), 'W2 notes claim regressed');
@@ -371,7 +374,7 @@ test('the gym corpus is closed: every file is claimed and nothing is pending', (
   const ladder = /** @type {{weightCases: Json[], roundCases: Json[], repCases: Json[]}} */ (Contract.json(ladderFile));
   const count = Object.keys(handlers).reduce((total, path) => total + Contract.vectors(path).length, 0)
     + ladder.weightCases.length + ladder.roundCases.length + ladder.repCases.length;
-  t.diagnostic(`gym corpus: ${claimed.length}/${files.length} files, ${count} vectors, ${pending.length} pending files`);
+  t.diagnostic(`gym corpus: ${claimed.length}/${files.length} files, ${count} vectors, ${pending.length} pending files, ${Object.keys(notApplicable).length} not applying`);
 });
 
 test('gym-ladder.json runs byte for byte through the domain weight ladder', () => {

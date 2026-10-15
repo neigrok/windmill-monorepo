@@ -20,7 +20,7 @@ struct JournalEchoTab: View {
         Button(action: toggle) {
           Text(page.matches.count.formatted()).font(JournalType.date).monospacedDigit().foregroundStyle(JournalPalette.lamp)
             .padding(.horizontal, 7).frame(minWidth: capsule, minHeight: capsule)
-            .background(kindled ? JournalPalette.lamp.opacity(0.4) : JournalPalette.lampSoft, in: Capsule())
+            .background(kindled ? JournalPalette.kindled : JournalPalette.lampSoft, in: Capsule())
             .animation(.easeOut(duration: reduceMotion ? 0.2 : 1.2), value: kindled)
             .frame(minWidth: RoomSpace.minimumTarget, minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
         }.buttonStyle(.plain)
@@ -70,7 +70,7 @@ struct JournalEchoInk: View {
       }.font(.footnote).buttonStyle(.plain).padding(.leading, indent).padding(.vertical, -12)
       if remaining > 0 {
         Button { echoes.openReader(day) } label: {
-          HStack(spacing: 4) { Text("\(remaining) more"); Image(systemName: "chevron.right").font(.caption.weight(.semibold)) }
+          HStack(spacing: 4) { Text("\(remaining) more"); DoorChevron(room: .journal) }
             .foregroundStyle(JournalPalette.lamp).frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
         }.buttonStyle(.plain).padding(.leading, indent).accessibilityIdentifier("echo-more")
       }

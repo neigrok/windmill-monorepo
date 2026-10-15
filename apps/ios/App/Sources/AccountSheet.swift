@@ -463,7 +463,7 @@ struct AccountSheet: View {
       HStack {
         Text(title).foregroundStyle(ink)
         Spacer()
-        Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(faint).accessibilityHidden(true)
+        DoorChevron(room: .shell)
       }.contentShape(Rectangle())
     }.buttonStyle(.plain).accessibilityIdentifier(identifier)
   }

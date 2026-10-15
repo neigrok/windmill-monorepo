@@ -1479,7 +1479,7 @@ loop while state = bound ∧ ¬authPaused ∧ online:
                                   ready: it takes precedence); wait, then continue
   401, account-mismatch, or a 200 or 409 served as another principal (§9.1)
                                 → authPaused := true (no retry consumed), nothing applied
-  426                           → stop until upgraded
+  426 upgrade-required          → stop until upgraded
   400 or 413, several intents   → halve the batch: resend its first ⌈count/2⌉ entries by n
   400 or 413, one intent        → nextN := its n, every later sent entry returns to ready, and the
                                   entry is refused by §7.7 (400: invalid, 413: too-large) with its
@@ -1506,6 +1506,12 @@ server-requested wait: a 503's or a retry's retryAfterMs, from the response's re
          starts before it ends: a kick wakes the sender no earlier, and a leave (§7.3) attempts no
          push during it
 ```
+
+**What holds work back.** The Swift engine publishes it as `SyncStatus`: `online`, `authPaused`,
+`upgradeRequired` and `failedPushes`, the records of the unsent entries of each scope whose last push
+failed with anything but a `400`, `409` or `413`, until a push of that scope is answered `200` or one
+of those three (a `400` or `413` changes the next push, a `409` re-identifies). A product shows an
+unconfirmed record as unsent while any of the four holds it back.
 
 The principal check precedes epoch handling. A `409` used for recovery MUST carry a nonempty string
 `epoch`, a nonnegative safe-integer `serverTime`, and one of the three conflict codes above;
@@ -1566,7 +1572,11 @@ resets once a socket has stayed open 30 s. A `401` at the upgrade, where the
 client can read it, sets `authPaused` too; a browser, which cannot, learns it from its next pull or
 push. A frame served as another principal (§9.1) sets `authPaused`, applies nothing, and the client
 closes the socket. A re-authentication that clears `authPaused` opens the socket again at once, with
-`k := 0`. A `426` from any request stops sync until the app is upgraded (§9.6), on every tab (§7.8).
+`k := 0`. The server's `426 upgrade-required` from any request stops sync until the app is upgraded
+(§9.6), on every tab (§7.8). The Swift engine reads that cause from the body (`HTTPFailure.requiresUpgrade`):
+a bare `426`, a proxy's or a captive portal's, is a failure like any other, and a `426` at the socket's
+upgrade, which carries no body, opens again after the backoff while the pull the failed open runs hears
+the server's verdict. The web and Kotlin engines stop on any `426`.
 
 1. Update the offset (§10.4) before observing any stamp. A null `serverEpoch` takes the response
    epoch, with no epoch change: a replica holds no acked entry while its `serverEpoch` is null (§7.4),
@@ -1966,9 +1976,11 @@ incomplete, `DeviceMeta.pendingSignIn` holds A.
   When the entries or device work differ at the answer (a commit, edit, undo or result in between), the decision is due again with the new
   count. How the decisions are presented is product canon. Until every due decision is made the
   sign-in is not complete: the
-  `anon` replica stays active, no replica changes and nothing is sent. Cancelling an incomplete
+  `anon` replica stays active, no replica changes and nothing is sent. Leaving an incomplete
   sign-in changes nothing more; it resumes, with a new hello and every decision still due, at the
-  next engine start.
+  next engine start. Cancelling it (Swift `SyncEngine.cancelSignIn()`, store transaction
+  `signInCancel`) clears `pendingSignIn` and deletes A's credential: the `anon` replica stays active
+  and nothing resumes.
 - **Adoption boundary:** entries of another account's lineage are never adopted. A `dormant(B)`
   replica stays dormant.
 
@@ -2343,6 +2355,11 @@ Frames are at most `LIVE_FRAME_BYTES`.
 | 413 | `request-too-large` | §7.4 |
 | 426 | `upgrade-required` | stop until upgraded |
 | 503 | `unavailable` (`retryAfterMs`) | back off |
+
+A client records every failed request as a metric. A status the server answers on purpose — `400`,
+`401`, `403`, `404`, `409`, `410`, `422`, `426`, `429` — is never a crash-reporter issue: Swift's one
+`ExpectedStatuses.all` serves the engine, the app's sign-in and its REST clients, and Kotlin's
+transport counts the same set as refusals.
 
 | Refusal code | Source |
 |---|---|

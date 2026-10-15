@@ -483,7 +483,7 @@ struct JournalBodyText: UIViewRepresentable {
       guard range != highlightedRange else { return }
       view.textStorage.removeAttribute(.backgroundColor, range: NSRange(location: 0, length: view.textStorage.length))
       if let range, range.location >= 0, NSMaxRange(range) <= view.textStorage.length {
-        view.textStorage.addAttribute(.backgroundColor, value: JournalPalette.uiLamp.withAlphaComponent(0.24), range: range)
+        view.textStorage.addAttribute(.backgroundColor, value: JournalPalette.uiHighlight, range: range)
         highlightedRange = range
         #if DEBUG && targetEnvironment(simulator)
         (view as? JournalLayoutTextView)?.echoTarget = range

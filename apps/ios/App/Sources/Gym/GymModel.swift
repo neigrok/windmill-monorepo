@@ -204,7 +204,7 @@ final class GymModel {
          planUnreadable: storedSessions.contains(where: \.planUnreadable) || training.sessions.contains(where: \.planUnreadable))
       }
       (log, catalogue, routines, notes, bodyweight, preferences, _, isAnonymous, personalCounts, workoutHidden, _) = snapshot
-      if snapshot.planUnreadable { telemetry.failure("gym_read", kind: "unexpected") }
+      if snapshot.planUnreadable { report("gym_read", UnreadablePlan()) }
       updateCoachProposals(replica: snapshot.coach.replica, receipts: snapshot.coach.receipts, proposals: snapshot.coach.proposals)
       if let runtime {
         let replica = try runtime.storageRead { try $0.device().activeReplica }
@@ -425,6 +425,9 @@ final class GymModel {
             .cannotFindHost, .dnsLookupFailed, .timedOut].contains(error.code)
   }
 }
+
+// A session whose saved plan this build cannot read: the session still draws, and the read reports it once.
+nonisolated struct UnreadablePlan: Error {}
 
 nonisolated struct GymRESTFailure: Error, LocalizedError {
   let status: Int

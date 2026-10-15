@@ -81,6 +81,7 @@ import XCTest
     app.buttons["recovery-primary"].tap()
     XCTAssertTrue(app.navigationBars["Fix workout"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.descendants(matching: .any)["recovery-fix-held"].staticTexts["Its times don't line up — fix the times."].exists)
+    XCTAssertEqual(app.buttons["recovery-fix-save"].label, "Save and retry")
     XCTAssertFalse(app.buttons["recovery-fix-save"].isEnabled)
     XCTAssertTrue(app.switches["Linked to Legs"].exists)
     reach(app.buttons["recovery-fix-set-fixture-late-set-set-3"], app).tap()

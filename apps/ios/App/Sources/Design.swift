@@ -6,7 +6,7 @@ struct JournalBackdrop: View {
     GeometryReader { proxy in
       ZStack {
         JournalPalette.canvas
-        RadialGradient(colors: [JournalPalette.lamp.opacity(0.09), .clear], center: .init(x: 0.5, y: 1.12), startRadius: 0, endRadius: proxy.size.width * 0.85)
+        RadialGradient(colors: [JournalPalette.glow, .clear], center: .init(x: 0.5, y: 1.12), startRadius: 0, endRadius: proxy.size.width * 0.85)
       }
     }.ignoresSafeArea()
   }
@@ -42,21 +42,21 @@ struct ScaleRow: View {
         }
         Capsule().fill(color).frame(width: value == nil || value == 0 ? 0 : offset + 8, height: 4)
         if value == 10 && name == "Energy" {
-          Capsule().fill(LinearGradient(colors: [.clear, JournalPalette.ink.opacity(0.28), .clear], startPoint: .top, endPoint: .bottom)).frame(width: offset + 8, height: 4)
+          Capsule().fill(LinearGradient(colors: [.clear, JournalPalette.sheen, .clear], startPoint: .top, endPoint: .bottom)).frame(width: offset + 8, height: 4)
         }
         if value == 0 && name == "Energy" { Rectangle().fill(color).frame(height: 1).offset(y: 7) }
         if name == "Mood" {
           Circle().fill(value == nil ? JournalPalette.canvas : color)
-            .overlay(Circle().stroke(value == nil ? JournalPalette.inkFaint : JournalPalette.ink.opacity(0.78), lineWidth: 1.3))
+            .overlay(Circle().stroke(value == nil ? JournalPalette.inkFaint : JournalPalette.ring, lineWidth: 1.3))
             .frame(width: value == nil ? 12 : 16, height: value == nil ? 12 : 16)
             .shadow(color: value == nil ? .clear : color.opacity(value == 10 ? 0.78 : 0.45), radius: value == 10 ? 6 : 4).offset(x: offset)
         } else {
           Capsule().fill(value == nil ? JournalPalette.canvas : color)
-            .overlay(Capsule().stroke(value == nil ? JournalPalette.inkFaint : JournalPalette.ink.opacity(0.78), lineWidth: 1.3))
+            .overlay(Capsule().stroke(value == nil ? JournalPalette.inkFaint : JournalPalette.ring, lineWidth: 1.3))
             .frame(width: value == nil ? 5 : 8, height: value == nil ? 13 : 18)
             .shadow(color: value == nil ? .clear : color.opacity(value == 10 ? 0.78 : 0.45), radius: value == 10 ? 6 : 4).offset(x: offset + 5)
         }
-        if value == 0 && name == "Mood" { Circle().stroke(JournalPalette.ink.opacity(0.78), lineWidth: 1).frame(width: 28, height: 28).offset(x: offset - 6) }
+        if value == 0 && name == "Mood" { Circle().stroke(JournalPalette.ring, lineWidth: 1).frame(width: 28, height: 28).offset(x: offset - 6) }
       }.frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44, alignment: .leading).contentShape(Rectangle())
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { trackWidth = $0 }
         .gesture(DragGesture(minimumDistance: 0).onChanged { gesture in

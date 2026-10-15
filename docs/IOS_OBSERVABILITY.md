@@ -131,7 +131,8 @@ and roll back if a request fails. Closing the reader dismisses no echo and recor
 Gym boundary operation labels are `gym_read`, `gym_action`, `gym_undo`, `gym_flush`, `gym_rest`,
 `gym_activity_request`, `gym_activity_update`, and `gym_import_fix`, `gym_import_keep`, `gym_import_retry`
 and `gym_import_discard` for the commits that recover a saved workout. The gym model reports each distinct `gym_read`
-failure once per launch, so a record a view reads on every render files one report; every failed write reports. A queued Finish whose background confirmation
+failure once per launch, a session whose saved plan this build cannot read included, so a record a view reads on every
+render files one report; every failed write reports. A queued Finish whose background confirmation
 outlasts 15 seconds reports a `gym_flush` timeout under the offline rule below. The short wait before
 Finish reports nothing: when the server does not confirm in time, Finish ends in its local decision,
 and a refusal emits `gym_session_finished` with outcome refused.

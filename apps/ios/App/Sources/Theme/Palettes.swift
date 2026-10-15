@@ -33,6 +33,14 @@ nonisolated enum JournalPalette {
   static func mood(_ value: Int) -> Color { moodRamp[min(10, max(0, value))] }
   static let uiInk = UIColor(named: "journal/ink")!
   static let uiLamp = UIColor(named: "journal/lamp")!
+  // Faded roles: the lamp's glow at the canvas's foot and in the onboarding glimpse, a kindled echo count, a passage's
+  // highlight under its ink, full energy's sheen, a set scale thumb's ring.
+  static let glow = lamp.opacity(0.09)
+  static let glimpseGlow = lamp.opacity(0.18)
+  static let kindled = lamp.opacity(0.4)
+  static var uiHighlight: UIColor { uiLamp.withAlphaComponent(0.24) }
+  static let sheen = ink.opacity(0.28)
+  static let ring = ink.opacity(0.78)
 }
 
 nonisolated enum ShellPalette {
@@ -48,9 +56,12 @@ nonisolated enum ShellPalette {
   static let onBrand = Color("shell/on-brand")
   static let danger = Color("shell/danger")
   static let uiBrand = UIColor(named: "shell/brand")!
+  // Faded roles: the brand's wash under a brand tag, a page control's resting dots.
+  static let brandWash = brand.opacity(0.16)
+  static let inkResting = ink.opacity(0.28)
 }
 
-// What a shared control takes from the room that hosts it; the shell lends its brand as the accent.
+// What a shared control takes from the room that hosts it; the shell lends its brand as the accent, the journal its lamp.
 struct RoomColors {
   let ink: Color
   let inkDim: Color
@@ -62,4 +73,6 @@ struct RoomColors {
                               onAccent: GymPalette.onAccent)
   static let shell = RoomColors(ink: ShellPalette.ink, inkDim: ShellPalette.inkDim, card: ShellPalette.card, accent: ShellPalette.brand,
                                 onAccent: ShellPalette.onBrand)
+  static let journal = RoomColors(ink: JournalPalette.ink, inkDim: JournalPalette.inkDim, card: JournalPalette.card,
+                                  accent: JournalPalette.lamp, onAccent: JournalPalette.canvas)
 }

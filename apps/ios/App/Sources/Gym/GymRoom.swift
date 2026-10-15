@@ -22,19 +22,20 @@ struct GymRoom: View {
       SwiftUI.Tab("Routines", systemImage: "list.bullet.rectangle", value: Tab.routines) {
         NavigationStack(path: $routinesPath) {
           root(RoutinesTab(gym: gym, onReviewProposal: { proposal = ProposalReviewID(id: $0.description) }))
-        }
+        }.roomBar(.gym)
       }
       SwiftUI.Tab("The log", systemImage: "calendar", value: Tab.log) {
-        NavigationStack(path: $logPath) { root(LogTab(gym: gym)) }
+        NavigationStack(path: $logPath) { root(LogTab(gym: gym)) }.roomBar(.gym)
       }.badge(gym.isAnonymous ? 0 : gym.workoutsToReview.count)
       SwiftUI.Tab("Coach", systemImage: "bubble.left.and.bubble.right", value: Tab.coach) {
-        NavigationStack(path: $coachPath) { root(CoachTab(gym: gym, handoff: $coachHandoff)) }
+        NavigationStack(path: $coachPath) { root(CoachTab(gym: gym, handoff: $coachHandoff)) }.roomBar(.gym)
       }
     }.tint(GymPalette.accent).accessibilityHidden(gym.workout.isPresented)
   }
 
+  // The stacks' back chevrons and the room menu take the label colour; each screen's page keeps the accent.
   func root(_ screen: some View) -> some View {
-    screen.toolbar { roomToolbar }.navigationDestination(for: Destination.self, destination: destination)
+    screen.toolbar { roomToolbar }.roomBar(.gym).navigationDestination(for: Destination.self, destination: destination)
   }
 
   var body: some View {

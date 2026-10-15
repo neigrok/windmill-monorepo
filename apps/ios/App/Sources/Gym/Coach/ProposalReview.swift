@@ -257,7 +257,7 @@ struct ProposalReviewSheet: View {
         if position.atEnd, position.extent.viewport > 0, position.extent.content > 0 { seen = position.extent }
       }
       .roomTitle(routine?.name ?? proposal?.baseName ?? "Proposal", subtitle: proposal.map(gym.coachProposalSource)).modifier(GymPage())
-      .modifier(ReviewBand(band: band))
+      .reachBand { band }
       .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
       .alert("Turn this down?", isPresented: $turningDown) {
         Button("Turn down", role: .destructive) { if let proposal { submitted = gym.coachDecideProposal(proposal, apply: false) } }
@@ -352,11 +352,3 @@ struct ProposalReviewSheet: View {
   }
 }
 
-// iOS 26 softens the diff where it scrolls under the band; earlier systems inset it.
-struct ReviewBand<Band: View>: ViewModifier {
-  let band: Band
-  @ViewBuilder func body(content: Content) -> some View {
-    if #available(iOS 26, *) { content.safeAreaBar(edge: .bottom) { band } }
-    else { content.safeAreaInset(edge: .bottom) { band } }
-  }
-}

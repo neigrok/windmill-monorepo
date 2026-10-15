@@ -53,11 +53,9 @@ struct WorkoutFixSheet: View {
         }.listRowBackground(GymPalette.card)
       }.modifier(GymPage()).disabled(gym.accountTransition)
         .navigationTitle("Fix workout")
-        .toolbar {
-          ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-          ToolbarItem(placement: .confirmationAction) { saveButton }
-        }
-        .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, message: held, errorIdentifier: "recovery-fix-held") }
+        .sheetCommit("Save and retry", identifier: "recovery-fix-save", disabled: held != nil || !gym.canSendRecovery,
+                     dismiss: { dismiss() }, commit: save)
+        .reachBand { GymTransient(gym: gym, message: held, errorIdentifier: "recovery-fix-held") }
     }.modifier(GymPage()).presentationDetents([.large]).interactiveDismissDisabled(fix.isChanged)
       .sheet(isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
         if let index = fix.sets.firstIndex(where: { $0.id == editing }) {
@@ -69,17 +67,7 @@ struct WorkoutFixSheet: View {
       .onDisappear { if !saved { gym.recorded(.fix, reason, outcome: "cancelled") } }
   }
 
-  // The bar's commit: the system's prominent confirm on iOS 26, a bold Save before it.
-  @ViewBuilder var saveButton: some View {
-    let disabled = held != nil || !gym.canSendRecovery
-    if #available(iOS 26, *) {
-      Button("Save", role: .confirm) { save() }.disabled(disabled).accessibilityIdentifier("recovery-fix-save")
-    } else {
-      Button("Save") { save() }.bold().disabled(disabled).accessibilityIdentifier("recovery-fix-save")
-    }
-  }
-
-  // What holds Save is said in the band below the form, as the Fix set sheet says its problem.
+  // What holds Save and retry is said in the band below the form, as the Fix set sheet says its problem.
   var held: String? {
     let excess = fix.sets.count - 200
     if excess > 0 { return "Over 200 sets · remove \(excess)." }

@@ -45,6 +45,8 @@ import SyncTesting
     var corrected = set; corrected.reps = 9
     #expect(gym.run(CorrectSet(corrected))?.receipt != nil)
     #expect(gym.run(DiscardSession(id))?.receipt != nil)
+    #expect(telemetry.entries.withLock { $0.filter { $0.properties["operation"] == "gym_read" }.map(\.properties) } ==
+            [["operation": "gym_read", "failure_kind": "unexpected"]])
     let retainedPlan: JSON? = try runner.read(Gym.scope) { try $0.repository(Session.self).find(id, in: .stored)?.fields["plan"] }
     #expect(retainedPlan == plan)
     #expect(telemetry.entries.withLock { $0.allSatisfy { !$0.properties.values.contains { $0.contains("PRIVATE_FROZEN_PLAN") } } })
