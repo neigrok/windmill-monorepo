@@ -25,10 +25,12 @@ import XCTest
     reach(row(id, app), app).tap()
     XCTAssertTrue(app.descendants(matching: .any)["recovery-inspect"].waitForExistence(timeout: 10))
   }
-  // A queued retry says it is on its way on Inspect and stays there; back on the log its row leaves once the log confirms it.
+  // A queued retry leaves Inspect's band and menu; Inspect says the workout is on its way only until the log confirms
+  // it, and back on the log its row has left.
   func landed(_ name: String, _ id: String, _ app: XCUIApplication) {
-    XCTAssertTrue(app.staticTexts["Adding \(name) to your log."].waitForExistence(timeout: 10))
-    XCTAssertFalse(app.buttons["recovery-primary"].exists || app.buttons["recovery-more"].exists)
+    XCTAssertTrue(app.buttons["recovery-primary"].waitForNonExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["recovery-more"].exists)
+    XCTAssertTrue(app.staticTexts["Adding \(name) to your log."].waitForNonExistence(timeout: 60), "\(name) lands and the line leaves")
     app.navigationBars.buttons.element(boundBy: 0).tap()
     XCTAssertTrue(app.descendants(matching: .any)["recovery-inspect"].waitForNonExistence(timeout: 5))
     XCTAssertTrue(row(id, app).waitForNonExistence(timeout: 60), "\(id) leaves once the log confirms it")

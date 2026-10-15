@@ -62,6 +62,23 @@ extension GymModel {
     return WorkoutRecovery.review(waitingWorkouts, notices: recoveryNotices, log: log, catalogue: catalogue)
   }
 
+  // A waiting workout with no reason to give is on its way: Inspect says so until the log confirms it and the copy leaves.
+  func addingLine(_ id: ID<Session>) -> String? {
+    guard let saved = waitingWorkouts.first(where: { $0.session.id == id }), !workoutsToReview.contains(where: { $0.id == id }) else { return nil }
+    return "Adding \(saved.name) to your log."
+  }
+
+  // A queued Keep, Retry or Save and retry is recorded `completed`; when the log's answer reaches the copy's row it is
+  // recorded `refused`, once, with the row's new reason. A copy the account took has nothing more to say.
+  func recordAnsweredRecoveries() {
+    for (id, action) in awaitedRecoveries {
+      if let recovery = workoutsToReview.first(where: { $0.id == id }), !recovery.noticeIds.isEmpty {
+        awaitedRecoveries[id] = nil
+        recorded(action, recovery.reason, outcome: "refused")
+      } else if !adoptionWorkouts.contains(where: { $0.session.id == id }) { awaitedRecoveries[id] = nil }
+    }
+  }
+
   // Keep, Retry and Save and retry queue an account write: they wait for the account's first pull and a live session.
   var canSendRecovery: Bool { !accountTransition && !authPaused && !readFailed && log?.firstPullComplete == true }
 
@@ -142,6 +159,7 @@ extension GymModel {
     if let refusal = outcome?.refusal { error = WorkoutRecovery.Reason(refusal).line(stranded: recovery?.strandedSets.count ?? 0) }
     let result = outcome == nil ? "failed" : outcome?.refusal == nil ? "completed" : "refused"
     recorded(action, recovery?.reason ?? .unsent, outcome: result)
+    if result == "completed", action != .discard { awaitedRecoveries[id] = action }
     return result == "completed"
   }
 

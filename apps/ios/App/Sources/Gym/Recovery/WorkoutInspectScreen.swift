@@ -40,7 +40,7 @@ struct WorkoutInspectScreen: View {
       }
       .reachBand { band(recovery) }
       .sheet(isPresented: Binding(get: { fixing != nil }, set: { if !$0 { fixing = nil } })) {
-        if let fixing, let recovery { WorkoutFixSheet(gym: gym, fix: fixing, reason: recovery.reason) { message = $0 } }
+        if let fixing, let recovery { WorkoutFixSheet(gym: gym, fix: fixing, reason: recovery.reason) { message = nil } }
       }
       .onAppear { seen = saved ?? seen; _ = gym.inspectWorkout(id) }
       .onChange(of: saved) { _, saved in if let saved { seen = saved } }
@@ -80,7 +80,7 @@ struct WorkoutInspectScreen: View {
     let primary = recovery?.primary
     let waiting = primary.map { $0 != .fix } == true && !gym.canSendRecovery
     return VStack(spacing: 0) {
-      GymTransient(gym: gym, message: message ?? (waiting ? gym.recoveryWait : nil),
+      GymTransient(gym: gym, message: message ?? gym.addingLine(id) ?? (waiting ? gym.recoveryWait : nil),
                    dismiss: message == nil ? nil : { message = nil },
                    errorIdentifier: "recovery-error", undoIdentifier: "recovery-undo")
       if let recovery, let primary {
@@ -96,15 +96,14 @@ struct WorkoutInspectScreen: View {
     return recovery?.code.map { "\(day) · \($0)" } ?? day
   }
 
-  // A queued Keep or Retry says so here, until the log confirms it and the row leaves; a refused one says its reason.
+  // A queued Keep or Retry clears what the band last said: the workout on its way is the model's line until the log
+  // confirms it, and a refusal that comes back says its reason.
   func act(_ primary: WorkoutRecovery.Primary, _ recovery: WorkoutRecovery) {
-    let queued: Bool
     switch primary {
-    case .fix: fix(); return
-    case .keep: queued = gym.keepAdoptedWorkout(id)
-    case .retry: queued = gym.retryWorkout(id)
+    case .fix: fix()
+    case .keep: if gym.keepAdoptedWorkout(id) { message = nil }
+    case .retry: if gym.retryWorkout(id) { message = nil }
     }
-    if queued { message = "Adding \(recovery.workout.name) to your log." }
   }
 
   func fix() { fixing = gym.fixWorkout(id) }

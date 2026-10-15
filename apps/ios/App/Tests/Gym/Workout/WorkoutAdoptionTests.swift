@@ -34,6 +34,18 @@ struct SaveSignedOutWorkouts: Action {
     recorder.entries.withLock { $0.filter { $0.name == "gym_import_recovery" }.map(\.properties) }
   }
 
+  @Test func inspectSaysAWorkoutIsOnItsWayUntilTheLogConfirmsIt() throws {
+    let fixture = WorkoutStateTests(), (harness, gym) = try fixture.fixture(anonymous: false, telemetry: TelemetryRecorder())
+    let now = fixture.start.ms
+    let copy = finished("kept-copy", exercise: fixture.first, from: now - 60_000, to: now - 50_000, sets: [1_000])
+    #expect(gym.run(SaveSignedOutWorkouts(workouts: [copy]))?.receipt != nil)
+    #expect(gym.workoutsToReview.map(\.reason) == [.unsent] && gym.addingLine(copy.session.id) == nil)
+    #expect(gym.keepAdoptedWorkout(copy.session.id))
+    #expect(gym.workoutsToReview.isEmpty && gym.addingLine(copy.session.id) == "Adding \(Readout.noRoutine) to your log.")
+    harness.sync(); gym.refresh()
+    #expect(gym.adoptionWorkouts.isEmpty && gym.addingLine(copy.session.id) == nil)
+  }
+
   @Test func aDiscardLeavesTheLogAtOnceAndItsWindowEndsInOneDiscard() throws {
     let recorder = TelemetryRecorder(), fixture = WorkoutStateTests(), (_, gym) = try fixture.fixture(anonymous: false, telemetry: recorder)
     let now = fixture.start.ms
@@ -119,6 +131,7 @@ struct SaveSignedOutWorkouts: Action {
     harness.sync()
     gym.recoveryNotices = try harness.notices(GymRefusal.self); gym.refresh()
     #expect(gym.workoutsToReview.map { "\($0.id) \($0.reason.rawValue) fix=\($0.canFix)" } == ["refused-copy unknown-exercise fix=true"])
+    gym.refresh()
     #expect(gym.discardWorkout(refusedCopy.session.id))
     #expect(gym.adoptionWorkouts.isEmpty && gym.workoutsToReview.isEmpty)
 
@@ -131,6 +144,7 @@ struct SaveSignedOutWorkouts: Action {
       ["action": "fix", "reason": "session-finished", "state": "opened"],
       ["action": "retry", "reason": "session-finished", "outcome": "completed"],
       ["action": "keep", "reason": "unsent", "outcome": "completed"],
+      ["action": "keep", "reason": "unknown-exercise", "outcome": "refused"],
       ["action": "discard", "reason": "unknown-exercise", "outcome": "completed"],
     ])
     for properties in recovered(recorder) {

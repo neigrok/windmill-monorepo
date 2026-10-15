@@ -53,6 +53,7 @@ final class GymModel {
   var coachRemovalReceipts: [RoutineRemovalReceipt] = []
   @ObservationIgnored var shownCoachRemovals: [String: Proposal] = [:]
   @ObservationIgnored var awaitedCoachDecisions: [ID<Proposal>: CoachQueuedDecision] = [:]
+  @ObservationIgnored var awaitedRecoveries: [ID<Session>: RecoveryAction] = [:]
 
   init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry()) {
     self.runner = runner; self.runtime = runtime; self.telemetry = telemetry
@@ -235,6 +236,7 @@ final class GymModel {
         let now = (try? runner.moment().now.ms) ?? 0
         publish(\.undoOffers, undoOffers.filter { $0.releaseAt > now })
       }
+      recordAnsweredRecoveries()
       if previousAccount != account || previousAnonymous != isAnonymous { publish(\.coachUnavailable, false) }
       publish(\.readFailed, false)
       if wasReadFailed, error == "Gym could not be read from this phone. Try again." { error = nil }

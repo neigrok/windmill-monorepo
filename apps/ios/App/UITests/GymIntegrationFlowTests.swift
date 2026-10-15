@@ -176,7 +176,9 @@ import XCTest
     XCTAssertEqual(verifyConflictServer(app, identity: identity, stage: "restored-before-keep"), finishedSets)
     let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in keep.isEnabled && keep.isHittable }, object: keep)
     XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed); keep.tap()
-    XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label ENDSWITH %@", " is on your log.")).firstMatch.waitForExistence(timeout: 10))
+    XCTAssertTrue(keep.waitForNonExistence(timeout: 10), "A queued Keep leaves the band")
+    let adding = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@ AND label ENDSWITH %@", "Adding ", " to your log.")).firstMatch
+    XCTAssertTrue(adding.waitForNonExistence(timeout: 30), "Inspect says the workout is on its way only until the log confirms it")
     back(app)
     XCTAssertTrue(restoredRow.waitForNonExistence(timeout: 30), "A kept workout's row leaves once the log confirms it")
     let allAnonymousSets = verifyConflictServer(app, identity: identity, stage: "after-keep", recoveryID: recoveredID)

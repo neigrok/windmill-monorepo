@@ -8,14 +8,14 @@ import GymDomain
 struct WorkoutFixSheet: View {
   let gym: GymModel
   let reason: WorkoutRecovery.Reason
-  let landed: (String) -> Void
+  let queued: () -> Void
   @State var fix: WorkoutFix
   @State var editing: ID<TrainingSet>?
   @State var saved = false
   @Environment(\.dismiss) var dismiss
 
-  init(gym: GymModel, fix: WorkoutFix, reason: WorkoutRecovery.Reason, landed: @escaping (String) -> Void) {
-    self.gym = gym; self.reason = reason; self.landed = landed
+  init(gym: GymModel, fix: WorkoutFix, reason: WorkoutRecovery.Reason, queued: @escaping () -> Void) {
+    self.gym = gym; self.reason = reason; self.queued = queued
     _fix = State(initialValue: fix)
   }
 
@@ -79,7 +79,7 @@ struct WorkoutFixSheet: View {
   func save() {
     guard gym.saveAndRetryWorkout(fix) else { return }
     saved = true
-    landed("Adding \(fix.workout.name) to your log.")
+    queued()
     dismiss()
   }
 }
