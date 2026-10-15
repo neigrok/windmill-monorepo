@@ -1,6 +1,6 @@
 # Notes — the context a lifter writes for Coach
 
-A gym-only screen, reached from gym settings and from Coach's own room: **title-and-text pairs the
+A gym-only screen, reached from Coach's own room and, on Android, from gym settings: **title-and-text pairs the
 lifter writes and Coach reads, including useful user-provided insights Coach saves.** A note holds anything from *keep your tone blunt* to the exact
 programme they are running and the goal they are chasing.
 
@@ -92,7 +92,7 @@ notes"*, and the read receipt keeps its promise that every answer states what it
 
 ## Where it lives
 
-**Notes is its own screen**, reached from Coach and gym settings.
+**Notes is its own screen**, reached from Coach and, on Android, from gym settings.
 
 That is not tidiness. The honesty line has to be literally true, and on a screen that also holds the
 dials a line about what Coach reads *here* would be a lie, because Coach reads none of them. A rule
@@ -103,10 +103,11 @@ thread implies Coach owns the notes, which is the opposite of what the honesty l
 a third action crowds a phone top bar that already carries a two-line title. A lifter thinks about
 what Coach knows while they are talking to Coach, so that is where the door belongs.
 
-**Settings carries the secondary door**, and it lives in the product zone — registered as a `main`
-section, not a `data` one. That is one word, and it is the difference between sitting with the
-product's own settings and sitting at the bottom of the account page beside the button that closes
-your account.
+**On Android, settings carries the secondary door**, and it lives in the product zone — registered
+as a `main` section, not a `data` one. That is one word, and it is the difference between sitting
+with the product's own settings and sitting at the bottom of the account page beside the button that
+closes your account. iOS has no gym settings page: Notes is an item of Coach's More menu, its one
+door (`../../ios/ios-redesign.md` §6; ledger `9r`).
 
 **Its own resource.** Notes are never stored inside the preferences document, which is a
 whole-document last-write-wins replace — two screens open at once would silently discard one. That is

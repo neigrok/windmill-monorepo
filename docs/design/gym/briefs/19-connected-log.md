@@ -1,6 +1,7 @@
 # Connected log
 
-The native gym screen for connected tools, reached from Settings and Coach. Web uses the shared
+The native gym screen for connected tools, reached from Coach on both phones and from Settings on
+Android; iOS has no gym settings page (`../../ios/ios-redesign.md` §6). Web uses the shared
 `/app/connect` page and shared connection management. Gym has no CSV export; account export
 belongs to the shell.
 
@@ -34,10 +35,10 @@ Top to bottom on iOS and Android, with platform-native chrome.
    `contentDescription` *opens in your browser*). Signed out on a phone the log is device-local and a
    grant belongs to an account, so the label is `Sign in first` and the tap opens the sign-in door;
    no caption explains it, because the label names what will happen.
-6. **The disclosure** — `How this works`, closed by default, the platform's own control: an iOS
-   `DisclosureGroup` in its own `List` section, an Android expandable list item with the
-   `expand_more` chevron. It opens in place and holds five lines, each a fact
-   with a home nowhere else on the screen:
+6. **The disclosure** — `How this works`. On Android it is an expandable list item with the
+   `expand_more` chevron, closed by default, that opens in place; on iOS it is a door row to a
+   pushed page (`../../ios/ios-redesign.md` §6). It holds five lines, each a fact with a home
+   nowhere else on the screen:
 
    > One URL pasted into your tool. Your browser opens once to approve.
    > A shared workout is public for 30 days, until you end it.
@@ -74,6 +75,11 @@ The head line steps aside for the list of what is connected; everything else sta
    Disconnecting is the shell's act and is not drawn twice.
 7. **The disclosure**, unchanged.
 
+On iOS a connected screen is **Connected**, then the **How this works** door row, whose page also
+holds the three level rows and the caption, with *Connect a tool* in the band; each connection row
+opens the shell's connection settings in the browser, so no *Manage connections* row is drawn
+(`../../ios/ios-redesign.md` §6; ledger `9t`).
+
 **Both reads or neither.** A static key reaches the same tools and never appears in the grants
 list, so either read failing makes the answer *unknown*, never an undercount. Unknown is drawn as
 one row in the `Connected` section — `Couldn’t read your connections.` — and the section takes the
@@ -81,9 +87,9 @@ platform's pull-to-refresh (`.refreshable`, `PullToRefreshBox`). The
 invitation still stands under it: an invitation is not a claim about state.
 
 
-## The native settings row
+## The Android settings row
 
-One row, title `Connected log`, meta the state and nothing else:
+On Android's gym settings, one row, title `Connected log`, meta the state and nothing else:
 
 | State | Meta |
 |---|---|
@@ -92,7 +98,7 @@ One row, title `Connected log`, meta the state and nothing else:
 | one | `<name> · <levels>` — `Claude Desktop · read · write` |
 | several | `2 tools` (a numeral) |
 
-The row opens this screen on both native surfaces. Its metadata states connection status.
+The row opens this screen. Its metadata states connection status.
 
 ## The other doors onto this screen
 
