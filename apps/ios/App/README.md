@@ -85,6 +85,23 @@ sign-in, hello and adoption questions leave training available. `rest` is the au
 client handle for Coach, shares and Connected log; engine-backed training writes use domain actions.
 Gym includes routine planning and movement creation, the live set rack and finish receipt, session history/sharing and strength/bodyweight charts, and account-only Coach, proposal review, Notes and Connected log.
 
+`GymRoom` keeps `WorkoutScreen` as its full-screen cover through finish and receipt and, on
+dismissal, consumes the workout's handoff once: a finished workout's detail opens in The log, Keep
+opens the account flow, Share with Coach sends *Check my last session.* in a new conversation, and
+the movement picker's written-program door opens You signed out or paused, Coach otherwise.
+`gym.startWorkout(routineId:)` never joins an open workout (`joinOpenSession: false`); with one
+open, the start is refused and the open workout returns. The device row `rack:<session-id>` holds
+the workout's movement order, selected movement, hidden status and deviation offer — the offered
+entry and the routine's revision, which Save guards; an offer the routine has moved past is rebuilt
+against the current routine. A set logged before the clock passes the latest set completes 1 ms
+after it, so every surface draws sets in logged order. Before the engine changes the replica,
+`GymBinding` ends the Live Activity and snapshots each signed-out workout for recovery; a failed
+snapshot aborts the account change. `WorkoutActivityController` keeps the Live Activity's
+pre-minted offer and its dismissal in the device row `rack:liveactivity`; the widget's
+`WorkoutLogSetIntent` runs in the app and logs through the same runner as the rack only while the
+offer still matches this phone's open workout, its owner and a resolved identity, and otherwise
+opens the workout. Parity with Android is tracked in `PARITY.md`.
+
 Both rooms and the shell follow Appearance in You's Settings (Light · Dark · System, System by default): Gym
 answers with Instrument or Daylight, Journal with Night or Day. The choice is the hosting window's interface style,
 so the status bar, keyboards and sheets follow it too. The window also carries the front room's accent as its tint —
@@ -260,13 +277,3 @@ python3 Tools/export_design_captures.py --result "$RESULT" --output "$CAPTURES"
 
 Each PNG names its screen, state and appearance. The exporter suffixes a name that already exists in
 the output folder and writes a `capture-manifest.json` linking each PNG to its test and result bundle.
-
-Coordinator-owned documentation outside this worktree's territory still describes the earlier app:
-`CLAUDE.md:12`, `docs/design/guidelines/onboarding.md:138`/`:141` and `docs/design/consistency.md`
-entry 5m need the two-room availability update.
-Consistency's iOS auth/adoption entries 8a and 8h predate the current Apple ticket flow,
-`AppModel` and per-room Add/Discard counts; `docs/design/guidelines/account-linking.md:90` needs a
-two-room adoption example.
-`docs/foundation/domain-kit.md:970` needs “two writing operations”: read guards may accompany one
-write to a record. Figma `_Room capsule` variant `117:52` retains a stale You-row description;
-set `226:4315` and boards 21a/21b match Journal · Gym only.

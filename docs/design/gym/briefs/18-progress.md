@@ -19,21 +19,30 @@ Record screen — and a second room onto the same chart is two doors onto one va
 > trained in the last twelve weeks, most recently trained first. **Every card is a door to that
 > movement's Record screen.** Nothing on a card writes.
 
-> **Both phones (Android boards `837:14824` and `837:14932`; iOS `../../ios/ios-redesign.md`
-> §7.6): no strip and no head
-> numbers. Progress is woven into the session list where it happened.** A **moment** is a quiet
-> one-line outlined card between the sessions, dated like them: *Bench Press · new best · 76 kg
-> est · up 4 kg since August* with a dot trail, *Weighed in · 82.4 kg*, or *Trained 4 of the last
-> 4 weeks* when a month is trained in full. Three kinds, at most one card a week. Tapping a moment
-> **expands it in place** to the movement's dot chart, its window line, best and heaviest, and
-> `Open record ›`; a weigh-in moment opens Bodyweight. Numbers appear only on the day they mean
-> something, so a plateau reads as a calm list. The Record stays reachable from every movement
-> name on a session's readback (`Caption · Readback` `850:14915`), so a lifter without a moment
-> to open still has a door.
+> **Both phones: no strip and no head numbers. Progress is woven into the session list where it
+> happened.** A **moment** sits between the sessions, dated like them: *Bench Press · new best ·
+> 76 kg est · up 4 kg since August*, *Weighed in · 82.4 kg*, or *Trained 4 of the last 4 weeks*
+> when a month is trained in full. Three kinds, at most one a week. Numbers appear only on the day
+> they mean something, so a plateau reads as a calm list. The Record stays reachable from every
+> movement name on a session's readback (`Caption · Readback` `850:14915`), so a lifter without a
+> moment to open still has a door.
+
+> **Android (boards `837:14824` and `837:14932`):** a moment is a quiet one-line outlined card
+> with a dot trail. Tapping it **expands it in place** to the movement's dot chart, its window
+> line, best and heaviest, and `Open record ›`; a weigh-in moment opens Bodyweight.
+
+> **iOS (`../../ios/ios-redesign.md` §7.6):** a moment is a row of The log's list, and it is a
+> door, never an expander. A best moment — an 8 pt record dot, *Bench Press · new best*, its facts
+> as the subtitle — opens the movement's Record with that session's point selected; a weigh-in
+> moment opens Bodyweight, and is woven only once a newer weigh-in exists, since the newest is the
+> log's head; a month moment opens nothing. A record is stated once: by its moment, or, when the
+> one-a-week cap leaves a record session without one, by a record dot after the session's name. A
+> movement's first logged session sets no record.
 
 The head scrolls away, and that is right: a chart is read sitting down, and the reach band keeps
-exactly one control, the weigh-in chip, at every scroll position. A card is a destination and may
-stand in the top band (`12-native-idiom.md`: a destination is not an action).
+exactly one control, the weigh-in chip, at every scroll position. On iOS *Weigh in* is The log's
+bar action instead, and nothing floats over the list. A card is a destination and may stand in the
+top band (`12-native-idiom.md`: a destination is not an action).
 
 The strip has no cap. A lifter following a written program works six to ten movements; a strip of
 ten cards scrolls sideways and says nothing about which of them matter.
@@ -77,7 +86,8 @@ The Record screen and the card draw the dated-dot primitive `11-bodyweight.md` o
 > after. **The window is stated**: *last 12 weeks · 9 sessions*, *the whole series · 23 sessions*.
 
 The twenty-one-day threshold lives in one constant per surface — `SESSION_GAP_DAYS` in `progress.js`,
-`Progress.gapDays` in `Progress.swift`, `MovementProgress.maxGapDays` in Android `Progress.kt` — and in no sentence.
+`MovementProgress.gapDays` in the iOS domain kit (`GymDomain/TrainingReads.swift`),
+`MovementProgress.maxGapDays` in Android `Progress.kt` — and in no sentence.
 The bodyweight chart keeps seven. One primitive, two series, two thresholds.
 
 **The standing best takes the resolved PR token** on exactly one dot, when the session that set it
@@ -91,11 +101,12 @@ number the log does not hold.
 
 ## The card
 
-Ours on every surface, identical to the pixel (`12-native-idiom.md`: a chart is Windmill's
+The web's strip and Android's expanded moment draw the card; iOS draws none. It is ours on every
+surface that draws it, identical to the pixel (`12-native-idiom.md`: a chart is Windmill's
 vocabulary, not the platform's). Top to bottom:
 
 1. **The name**, row-title style, with the door's chevron.
-2. **The chart**, 90dp tall on Android and 64pt on the other surfaces, with two axis labels — the window's ceiling and floor — and the two
+2. **The chart**, 90dp tall on Android and 64 px on the web, with two axis labels — the window's ceiling and floor — and the two
    end dates under it. The compact chart draws no gap labels; a gap is an empty span, and the
    Record screen's full chart names it.
 3. **The window line**, the chart's own label: `last 12 weeks · 9 sessions`.
@@ -158,8 +169,8 @@ moves; the readout says the estimate, the day and the set — `102.5 kg est · 3
 follows the finger. It **never covers the dot it names**: it sits above the dot, and beside it —
 on the side with more room — when the dot is in the top quarter of the plot. The selected dot grows
 by one ring and every other dot keeps its ink. Lifting the finger keeps the readout for
-**`SCRUB_HOLD_MS` = 1500** and then clears it; the constant lives in `progress.js`,
-`Progress.scrubHold` in `Progress.swift`, and in no sentence. Each change of selected dot fires the platform's light tick — `.selection` feedback on
+**`SCRUB_HOLD_MS` = 1500** and then clears it; the value lives in `progress.js` and in the iOS
+Record chart (`LogDatedChart.swift`), and in no sentence. Each change of selected dot fires the platform's light tick — `.selection` feedback on
 iOS, `HapticFeedbackType.SegmentFrequentTick` on Android — and never the impact the record row
 uses. The readout is one line in the fact style, the same bytes in both skins and at every text
 size; at the largest size it wraps to two lines above the plot rather than shrinking.
@@ -188,8 +199,10 @@ announced on each change while scrubbing.
 
 ## Three surfaces
 
-**iOS.** No strip: moments are rows of The log's list, and an expanded moment is its compact chart, its window line
-and *Open record ›* (`../../ios/ios-redesign.md` §7.6).
+**iOS.** No strip. Moments are rows of The log's list, each a `NavigationLink`: a best moment opens
+the Record with a zoom from its dot, the chart scrolled to that session and its point selected; a
+weigh-in moment opens Bodyweight; a month moment is a plain row with no chevron. No moment expands
+in place (`../../ios/ios-redesign.md` §7.6).
 
 **Android.** No strip. Moments are items of the log's `LazyColumn`, keyed like sessions and dated
 by the session or weigh-in that earned them; an expanded moment is the same item grown in place
