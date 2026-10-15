@@ -41,6 +41,8 @@ final class GymModel {
   // Every gym notice the replica keeps, dismissed ones too: the saved workouts' review reads their reasons here.
   var recoveryNotices: [DomainNotice<GymRefusal>] = []
   var adoptionWorkouts: [SignedOutWorkout] = []
+  // A saved workout's Discard inside the room's nine-second window: its row has left and The log's band offers Undo.
+  var discardHold: DiscardHold?
   @ObservationIgnored var observationTask: Task<Void, Never>?
   @ObservationIgnored var clockTask: Task<Void, Never>?
   @ObservationIgnored var scopeViews: [RecordsView] = []
@@ -301,6 +303,7 @@ final class GymModel {
   @discardableResult
   func flush() -> Bool {
     rest.cancel()
+    endDiscardWindow()
     refresh()
     guard !readFailed else { return false }
     guard let runtime else { return !readFailed }
@@ -318,6 +321,7 @@ final class GymModel {
 
   func background() {
     rest.cancel()
+    endDiscardWindow()
     do { try runtime?.engine.leave(); undoOffers = []; refresh() }
     catch { self.error = "Gym could not keep pending changes. Try again."; report("gym_flush", error) }
   }

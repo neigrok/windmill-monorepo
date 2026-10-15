@@ -53,10 +53,13 @@ extension GymModel {
     }
   }
 
-  // The saved workouts the account has not taken, each with why; their count is the Log tab's badge.
+  // The saved workouts The log draws: every one the account has not taken but a discard still inside its window.
+  var waitingWorkouts: [SignedOutWorkout] { adoptionWorkouts.filter { $0.session.id != discardHold?.id } }
+
+  // The waiting workouts, each with why; their count is the Log tab's badge.
   var workoutsToReview: [WorkoutRecovery] {
     guard let log else { return [] }
-    return WorkoutRecovery.review(adoptionWorkouts, notices: recoveryNotices, log: log, catalogue: catalogue)
+    return WorkoutRecovery.review(waitingWorkouts, notices: recoveryNotices, log: log, catalogue: catalogue)
   }
 
   // Keep, Retry and Save and retry queue an account write: they wait for the account's first pull and a live session.
@@ -98,7 +101,31 @@ extension GymModel {
     return recover(id, .fix) { failure in self.retry(retry, id, revised: fix.workout, failure: failure) }
   }
 
-  // The saved copy and the notices it carried go; the screen holds the gesture for the room's window first.
+  // Discard is held for the room's nine-second window: the row leaves The log at once and its band offers Undo. The
+  // window's end, a second Discard, or the app leaving the foreground or the account discards the copy.
+  func holdDiscard(_ id: ID<Session>) {
+    guard let recovery = workoutsToReview.first(where: { $0.id == id }) else { return }
+    endDiscardWindow()
+    let window = Task { [weak self] in
+      do { try await Task.sleep(for: .seconds(9)) } catch { return }
+      self?.endDiscardWindow()
+    }
+    discardHold = DiscardHold(id: id, line: recovery.discardedLine, reason: recovery.reason, window: window)
+  }
+
+  func undoDiscard() {
+    guard let hold = discardHold else { return }
+    hold.window.cancel(); discardHold = nil
+    recorded(.discard, hold.reason, outcome: "cancelled")
+  }
+
+  func endDiscardWindow() {
+    guard let hold = discardHold else { return }
+    hold.window.cancel(); discardHold = nil
+    discardWorkout(hold.id)
+  }
+
+  // The saved copy and the notices it carried go.
   @discardableResult
   func discardWorkout(_ id: ID<Session>) -> Bool {
     recover(id, .discard) { failure in run(DiscardSignedOutWorkout(id), failure: failure) }
@@ -134,6 +161,13 @@ extension GymModel {
   }
 
   enum RecoveryAction: String { case inspect, fix, keep, retry, discard }
+
+  struct DiscardHold {
+    let id: ID<Session>
+    let line: String
+    let reason: WorkoutRecovery.Reason
+    let window: Task<Void, Never>
+  }
 
   // Content-free, in the vocabulary Android's `gym_import_recovery` uses: a screen opening is `state=opened`; a commit or
   // a close carries its outcome; the bounded reason rides along.

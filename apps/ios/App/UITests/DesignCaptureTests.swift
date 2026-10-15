@@ -899,7 +899,7 @@ import XCTest
   func testWorkoutTransientsDark() { workoutTransients("dark") }
 
   // On this phone (§7.16): the log's section and badge, Inspect for each primary, Fix workout and its set, the held
-  // discard, and a paused account's workout on its way. `size` names a Dynamic Type category for the AX3 pass.
+  // discard back on The log, and a paused account's workout on its way. `size` names a Dynamic Type category for the AX3 pass.
   func recovery(_ appearance: String, size: String? = nil) {
     let suffix = size == nil ? appearance : "\(appearance)-ax3"
     let app = launch("recovery", appearance: appearance, arguments: size.map { ["-UIPreferredContentSizeCategoryName", $0] } ?? [])
@@ -930,9 +930,11 @@ import XCTest
         }
         capture("gym-recovery-more-menu-\(suffix)", app, settle: 0.6)
         app.buttons["recovery-discard"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["recovery-inspect"].waitForNonExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Workout discarded"].waitForExistence(timeout: 5))
         capture("gym-recovery-discard-held-\(suffix)", app)
-        app.buttons["recovery-undo"].tap()
+        app.buttons["gym-log-undo"].tap()
+        continue
       }
       back(app)
       XCTAssertTrue(app.descendants(matching: .any)["recovery-inspect"].waitForNonExistence(timeout: 5))

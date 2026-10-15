@@ -34,6 +34,25 @@ struct SaveSignedOutWorkouts: Action {
     recorder.entries.withLock { $0.filter { $0.name == "gym_import_recovery" }.map(\.properties) }
   }
 
+  @Test func aDiscardLeavesTheLogAtOnceAndItsWindowEndsInOneDiscard() throws {
+    let recorder = TelemetryRecorder(), fixture = WorkoutStateTests(), (_, gym) = try fixture.fixture(anonymous: false, telemetry: recorder)
+    let now = fixture.start.ms
+    let copy = finished("held-copy", exercise: fixture.first, from: now - 60_000, to: now - 50_000, sets: [1_000])
+    #expect(gym.run(SaveSignedOutWorkouts(workouts: [copy]))?.receipt != nil)
+    gym.holdDiscard(copy.session.id)
+    #expect(gym.discardHold?.line == "Workout discarded" && gym.waitingWorkouts.isEmpty && gym.workoutsToReview.isEmpty)
+    #expect(gym.adoptionWorkouts == [copy])
+    gym.undoDiscard()
+    #expect(gym.discardHold == nil && gym.workoutsToReview.map(\.id) == [copy.session.id])
+    gym.holdDiscard(copy.session.id)
+    gym.background()
+    #expect(gym.discardHold == nil && gym.adoptionWorkouts.isEmpty && gym.workoutsToReview.isEmpty)
+    #expect(recovered(recorder) == [
+      ["action": "discard", "reason": "unsent", "outcome": "cancelled"],
+      ["action": "discard", "reason": "unsent", "outcome": "completed"],
+    ])
+  }
+
   @Test func reviewStepsOverAHarnessRecordBoundedLabelsAndMoveEveryRefusedWorkout() throws {
     let recorder = TelemetryRecorder(), fixture = WorkoutStateTests(), (harness, gym) = try fixture.fixture(anonymous: false, telemetry: recorder)
     let now = fixture.start.ms, squat = fixture.first

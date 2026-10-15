@@ -145,7 +145,11 @@ import SyncModelServer
     catch { #expect((error as? AppFailure)?.message == "Sharing needs your account. Sign in first.") }
     do { try await gym.revokeSessionShare(id); Issue.record("Expected account refusal") }
     catch { #expect((error as? AppFailure)?.message == "Sharing needs your account. Sign in first.") }
-    gym.isAnonymous = false; gym.account = "account"; gym.authPaused = true
+    #expect(gym.sharingNeedsSignIn)
+    gym.isAnonymous = false; gym.account = "account"
+    #expect(!gym.sharingNeedsSignIn)
+    gym.authPaused = true
+    #expect(gym.sharingNeedsSignIn, "A paused account is offered the same sign-in door")
     do { _ = try await gym.mintSessionShare(id); Issue.record("Expected paused-account refusal") }
     catch { #expect((error as? AppFailure)?.message == "Sharing needs your account. Sign in first.") }
     #expect(gym.rest.tasks.isEmpty)

@@ -6,15 +6,12 @@ import SyncAPI
 struct LogTab: View {
   let gym: GymModel
   @Environment(\.coachOpenAccount) private var openAccount
+  @Environment(\.gymShareSession) private var share
   @Environment(\.dynamicTypeSize) private var typeSize
   @ScaledMetric(relativeTo: .body) private var dot = 8.0
   @State var limit = 30
   @State var expanded: String?
   @State var weighing = false
-  @State var sharing: String?
-  @State var shareMessage: String?
-  @State var shareGeneration = 0
-  @State var shareTask: Task<Void, Never>?
   @State var historyNoticeDismissed = false
 
   var body: some View {
@@ -58,22 +55,19 @@ struct LogTab: View {
         ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
       }.roomBar(.gym)
       .reachBand {
-        GymTransient(gym: gym, message: shareMessage ?? historyNotice,
-                     dismiss: { if shareMessage != nil { shareMessage = nil } else { historyNoticeDismissed = true } },
+        GymTransient(gym: gym, message: historyNotice, dismiss: { historyNoticeDismissed = true },
+                     held: gym.discardHold.map { hold in .init(text: hold.line, undo: gym.undoDiscard) },
                      errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo")
       }
       .sheet(isPresented: $weighing) { WeighInSheet(gym: gym) }
       .onAppear { prepareLogFixture(); gym.telemetry.event("gym_screen_viewed", properties: ["screen": "log"]) }
-      .onDisappear { shareGeneration += 1; shareTask?.cancel(); sharing = nil }
-      .onChange(of: gym.account) { _, _ in
-        shareGeneration += 1; shareTask?.cancel(); sharing = nil; shareMessage = nil; limit = 30; expanded = nil; historyNoticeDismissed = false
-      }
+      .onChange(of: gym.account) { _, _ in limit = 30; expanded = nil; historyNoticeDismissed = false }
   }
 
   // Signed in before the first pull lands, the band says the history is still arriving; it never covers a refusal or an Undo.
   var historyNotice: String? {
     guard !gym.isAnonymous, gym.log?.firstPullComplete == false, !historyNoticeDismissed,
-          gym.error == nil, gym.notices.isEmpty, gym.undoOffers.isEmpty else { return nil }
+          gym.error == nil, gym.notices.isEmpty, gym.undoOffers.isEmpty, gym.discardHold == nil else { return nil }
     return "Your full training history needs a connection to finish syncing."
   }
 
@@ -132,13 +126,11 @@ struct LogTab: View {
     }.accessibilityIdentifier("gym-log-session-\(session.id)")
       .contextMenu {
         NavigationLink("Open workout") { SessionDetailScreen(gym: gym, sessionID: session.id) }
-        if !gym.sharingNeedsSignIn {
-          Button("Share this workout", systemImage: "square.and.arrow.up") { share(session.id) }.disabled(sharing != nil)
-        }
+        Button("Share this workout", systemImage: "square.and.arrow.up") { share?(session.id) }
         Button("Discard workout", systemImage: "trash", role: .destructive) { gym.run(DiscardSession(session.id)) }
       }
       .swipeActions { Button("Discard", role: .destructive) { gym.run(DiscardSession(session.id)) } }
-      .accessibilityActions { if !gym.sharingNeedsSignIn { Button("Share this workout") { share(session.id) } } }
+      .accessibilityAction(named: "Share this workout") { share?(session.id) }
       .accessibilityAction(named: "Discard workout") { gym.run(DiscardSession(session.id)) }
   }
 
@@ -180,23 +172,5 @@ struct LogTab: View {
     return Circle().fill(GymPalette.record).frame(width: size, height: size)
       .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + size * 0.75 }
       .accessibilityHidden(true)
-  }
-
-  func share(_ id: ID<Session>) {
-    guard sharing == nil else { return }
-    sharing = id.description; shareMessage = nil; shareGeneration += 1
-    let generation = shareGeneration
-    shareTask = Task {
-      defer { if generation == shareGeneration { sharing = nil } }
-      do {
-        let link = try await gym.mintSessionShare(id)
-        try Task.checkCancellation()
-        UIPasteboard.general.string = link.link(base: gym.runtime?.settings.baseURL?.absoluteString ?? "https://windmill.works")
-        shareMessage = "Link copied — anyone who has it can read this workout"
-      } catch {
-        guard !Task.isCancelled, generation == shareGeneration else { return }
-        shareMessage = SessionShareModel.message(error, revoking: false)
-      }
-    }
   }
 }

@@ -217,6 +217,30 @@ import XCTest
     XCTAssertTrue(app.buttons[id].waitForExistence(timeout: 5))
   }
 
+  // The row's context menu opens the same sheet as the session's bar, signed out too, and Sign in to share comes back to
+  // the share once the account is signed in.
+  func testTheRowsShareDoorSignsInAndReturnsToTheShare() {
+    let app = launch("light")
+    visibleSessionRow(app).press(forDuration: 1.2)
+    let door = app.buttons["Share this workout"]
+    XCTAssertTrue(door.waitForExistence(timeout: 5)); door.tap()
+    let signIn = app.buttons["gym-share-sign-in"]
+    XCTAssertTrue(signIn.waitForExistence(timeout: 5))
+    XCTAssertEqual(signIn.label, "Sign in to share")
+    signIn.tap()
+    let email = app.buttons["email-sign-in"]
+    XCTAssertTrue(email.waitForExistence(timeout: 5)); email.tap()
+    let address = app.textFields["email-address"]
+    XCTAssertTrue(address.waitForExistence(timeout: 5)); address.typeText("share@example.com")
+    app.buttons["Send code"].tap()
+    let code = app.textFields["email-code"]
+    XCTAssertTrue(code.waitForExistence(timeout: 5)); code.typeText("482913")
+    let primary = app.buttons["gym-share-primary"]
+    XCTAssertTrue(primary.waitForExistence(timeout: 20), "Signed in, the share returns")
+    XCTAssertEqual(primary.label, "Get a link")
+    XCTAssertFalse(signIn.exists)
+  }
+
   func inspectScreens(_ appearance: String) {
     let app = launch(appearance)
     XCTAssertTrue(sessionRow(app).waitForExistence(timeout: 20))
@@ -338,6 +362,7 @@ import XCTest
     XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 5))
     app.navigationBars.buttons["Done"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
+    XCTAssertFalse(signIn.waitForExistence(timeout: 2), "A sign-in left unfinished shares nothing")
     back(app)
     for _ in 0..<3 where !app.buttons["gym-bodyweight-door"].exists { app.swipeDown() }
     app.buttons["gym-bodyweight-door"].tap()

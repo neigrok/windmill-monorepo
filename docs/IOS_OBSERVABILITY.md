@@ -128,6 +128,11 @@ opened signal is best effort. *Useful* records one `journal_echo_useful` per tap
 one REST signal each; *Not useful* records one `journal_echo_dismissed` and retires the page's echo. Both are optimistic
 and roll back if a request fails. Closing the reader dismisses no echo and records nothing.
 
+Every door to Share this workout opens one sheet, which records `gym_screen_viewed` with screen `session_share` each
+time it is presented. Signed out or paused, its *Sign in to share* opens You (`first_run_screen_viewed` with screen
+`you`); when You closes signed in, the sheet is presented again and records its view again, and a sign-in left
+unfinished shares nothing and records nothing more.
+
 Gym boundary operation labels are `gym_read`, `gym_action`, `gym_undo`, `gym_flush`, `gym_rest`,
 `gym_activity_request`, `gym_activity_update`, and `gym_import_fix`, `gym_import_keep`, `gym_import_retry`
 and `gym_import_discard` for the commits that recover a saved workout. The gym model reports each distinct `gym_read`

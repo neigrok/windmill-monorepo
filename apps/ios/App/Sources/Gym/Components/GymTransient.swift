@@ -12,7 +12,7 @@ struct GymTransient: View {
     }
   }
 
-  // A hold the screen keeps outside the room's undo offers, such as a deleted Coach conversation.
+  // A hold kept outside the engine's undo offers, such as a deleted Coach conversation or a saved workout's discard.
   struct Held {
     let text: String
     let undo: () -> Void

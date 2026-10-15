@@ -16,6 +16,8 @@ struct GymRoom: View {
   @State var proposal: ProposalReviewID?
   @State var coachHandoff: CoachHandoff?
   @State var finishedHandoff: WorkoutHandoff?
+  @State var share: SessionShareID?
+  @State var shareAfterSignIn: ID<Session>?
 
   var tabs: some View {
     TabView(selection: $tab) {
@@ -46,11 +48,22 @@ struct GymRoom: View {
     .environment(\.coachOpenAccount, app.openYou)
     .environment(\.coachOpenRoutine, { id in tab = .routines; routinesPath.append(Destination.routine(id)) })
     .environment(\.coachOpenSession, { id in tab = .log; logPath.append(Destination.session(id)) })
+    .environment(\.gymShareSession, { id in share = SessionShareID(id: id) })
     .sheet(item: $proposal) { proposal in
       ProposalReviewSheet(gym: gym, proposalId: proposal.id) { name in
         self.proposal = nil
         ask("Tell me about the proposal for \(name).")
       }
+    }
+    // Sign in to share closes the sheet into You; when You closes signed in the share returns, and otherwise nothing is
+    // shared (docs/design/guidelines/superapp-flow.md §5).
+    .sheet(item: $share, onDismiss: { if shareAfterSignIn != nil { app.openYou() } }) { request in
+      SessionShareSheet(gym: gym, sessionID: request.id) { shareAfterSignIn = request.id }
+    }
+    .onChange(of: app.sheet) { closed, sheet in
+      guard sheet == nil, closed != nil, let pending = shareAfterSignIn else { return }
+      shareAfterSignIn = nil
+      if !gym.sharingNeedsSignIn { share = SessionShareID(id: pending) }
     }
     .fullScreenCover(isPresented: Binding(get: { gym.workout.isPresented }, set: { if !$0 { gym.hideWorkout() } }), onDismiss: receiveWorkout) {
       WorkoutScreen(gym: gym).interactiveDismissDisabled()

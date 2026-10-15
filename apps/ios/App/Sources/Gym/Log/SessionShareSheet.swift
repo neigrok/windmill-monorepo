@@ -139,14 +139,25 @@ nonisolated enum SessionShareState: Equatable, Sendable {
   }
 }
 
+// The session row's context menu and accessibility action and the session's bar all open the room's one Share this
+// workout sheet, in every account state.
+nonisolated struct SessionShareID: Identifiable { let id: ID<Session> }
+private struct SessionShareDoor: EnvironmentKey { static let defaultValue: (@MainActor (ID<Session>) -> Void)? = nil }
+extension EnvironmentValues {
+  var gymShareSession: (@MainActor (ID<Session>) -> Void)? {
+    get { self[SessionShareDoor.self] }
+    set { self[SessionShareDoor.self] = newValue }
+  }
+}
+
 extension GymModel {
-  // A link is minted on the account, so a phone signed out offers sign-in where sharing would be.
-  var sharingNeedsSignIn: Bool { isAnonymous || account == nil }
+  // A link is minted on the account, so a phone signed out, or paused, offers sign-in where sharing would be.
+  var sharingNeedsSignIn: Bool { isAnonymous || account == nil || authPaused }
 
   func mintSessionShare(_ id: ID<Session>) async throws -> SessionPublicLink {
     do {
       guard !accountTransition else { throw AppFailure(message: "Wait for the account change to finish.") }
-      guard !sharingNeedsSignIn, let owner = account, !authPaused else { throw AppFailure(message: "Sharing needs your account. Sign in first.") }
+      guard !sharingNeedsSignIn, let owner = account else { throw AppFailure(message: "Sharing needs your account. Sign in first.") }
       let data = try await rest.request("/v1/gym/sessions/\(id)/share", method: "POST")
       try Task.checkCancellation()
       guard account == owner, !accountTransition, !authPaused else { throw CancellationError() }
@@ -170,7 +181,7 @@ extension GymModel {
   func revokeSessionShare(_ id: ID<Session>) async throws {
     do {
       guard !accountTransition else { throw AppFailure(message: "Wait for the account change to finish.") }
-      guard !sharingNeedsSignIn, let owner = account, !authPaused else { throw AppFailure(message: "Sharing needs your account. Sign in first.") }
+      guard !sharingNeedsSignIn, let owner = account else { throw AppFailure(message: "Sharing needs your account. Sign in first.") }
       _ = try await rest.request("/v1/gym/sessions/\(id)/share", method: "DELETE")
       try Task.checkCancellation()
       guard account == owner, !accountTransition, !authPaused else { throw CancellationError() }

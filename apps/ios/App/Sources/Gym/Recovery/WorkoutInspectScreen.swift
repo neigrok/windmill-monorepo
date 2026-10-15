@@ -4,17 +4,14 @@ import GymDomain
 
 // A saved workout the account has not taken, read-only, with the one way out its reason names in the band; a refusal
 // that arrives while it is open is said there too. A workout that lands stays on screen as last seen until the lifter
-// goes back. Discard is held for the room's nine-second window
-// on this screen; leaving the screen or the app ends the window.
+// goes back. Discard returns to The log, which holds it for the room's window with Undo in its band.
 struct WorkoutInspectScreen: View {
   let gym: GymModel
   let id: ID<Session>
   @State var seen: SignedOutWorkout?
   @State var fixing: WorkoutFix?
   @State var message: String?
-  @State var discarding: Task<Void, Never>?
   @Environment(\.dismiss) var dismiss
-  @Environment(\.scenePhase) var phase
 
   var saved: SignedOutWorkout? { gym.adoptionWorkouts.first { $0.session.id == id } }
   var workout: SignedOutWorkout? { saved ?? seen }
@@ -31,25 +28,23 @@ struct WorkoutInspectScreen: View {
       .roomTitle(workout?.name ?? Readout.noRoutine, subtitle: subtitle(recovery))
       .toolbar(.hidden, for: .tabBar)
       .toolbar {
-        if let recovery, discarding == nil {
+        if let recovery {
           ToolbarItem(placement: .topBarTrailing) {
             MoreMenu(identifier: "recovery-more") {
               if recovery.canFix, recovery.primary != .fix { Button("Fix workout", systemImage: "pencil") { fix() } }
-              Button(recovery.discardTitle, systemImage: "trash", role: .destructive) { hold() }
+              Button(recovery.discardTitle, systemImage: "trash", role: .destructive) { gym.holdDiscard(id); dismiss() }
                 .accessibilityIdentifier("recovery-discard")
             }
           }
         }
       }
-      .safeAreaInset(edge: .bottom) { band(recovery) }
+      .reachBand { band(recovery) }
       .sheet(isPresented: Binding(get: { fixing != nil }, set: { if !$0 { fixing = nil } })) {
         if let fixing, let recovery { WorkoutFixSheet(gym: gym, fix: fixing, reason: recovery.reason) { message = $0 } }
       }
       .onAppear { seen = saved ?? seen; _ = gym.inspectWorkout(id) }
       .onChange(of: saved) { _, saved in if let saved { seen = saved } }
       .onChange(of: recovery?.noticeIds.last) { _, latest in if latest != nil, let recovery { message = recovery.line } }
-      .onDisappear { if discarding != nil { discard(leaving: true) } }
-      .onChange(of: phase) { _, phase in if phase == .background, discarding != nil { discard(leaving: false) } }
   }
 
   // Tiles, then the times, then a section per movement; a stranded set has only its own tiles and rows.
@@ -82,18 +77,12 @@ struct WorkoutInspectScreen: View {
 
   // Keep and Retry wait for the account with the reason in the band above them, as Save and retry does.
   func band(_ recovery: WorkoutRecovery?) -> some View {
-    let primary = discarding == nil ? recovery?.primary : nil
+    let primary = recovery?.primary
     let waiting = primary.map { $0 != .fix } == true && !gym.canSendRecovery
     return VStack(spacing: 0) {
-      // The lifter's own discard is the news while its window is open, ahead of any refusal the room holds.
-      if discarding != nil {
-        RoomTransient(message: recovery?.discardedLine ?? "Workout discarded", room: .gym, actionTitle: "Undo", actionIdentifier: "recovery-undo") { undo(recovery) }
-          .accessibilityIdentifier("recovery-undo-band")
-      } else {
-        GymTransient(gym: gym, message: message ?? (waiting ? gym.recoveryWait : nil),
-                     dismiss: message == nil ? nil : { message = nil },
-                     errorIdentifier: "recovery-error", undoIdentifier: "recovery-undo")
-      }
+      GymTransient(gym: gym, message: message ?? (waiting ? gym.recoveryWait : nil),
+                   dismiss: message == nil ? nil : { message = nil },
+                   errorIdentifier: "recovery-error", undoIdentifier: "recovery-undo")
       if let recovery, let primary {
         ActionBand(title: primary.title, room: .gym, disabled: waiting, actionIdentifier: "recovery-primary") { act(primary, recovery) }
       }
@@ -119,24 +108,5 @@ struct WorkoutInspectScreen: View {
   }
 
   func fix() { fixing = gym.fixWorkout(id) }
-
-  func hold() {
-    message = nil
-    discarding = Task {
-      do { try await Task.sleep(for: .seconds(9)) } catch { return }
-      discard(leaving: false)
-    }
-  }
-
-  func undo(_ recovery: WorkoutRecovery?) {
-    discarding?.cancel(); discarding = nil
-    gym.recorded(.discard, recovery?.reason ?? .unsent, outcome: "cancelled")
-  }
-
-  // The window closes into the discard; the screen goes with the workout unless it is already going.
-  func discard(leaving: Bool) {
-    discarding?.cancel(); discarding = nil
-    if gym.discardWorkout(id), !leaving { dismiss() }
-  }
 }
 

@@ -461,6 +461,26 @@ import UIKit
     XCTAssertTrue(app.staticTexts["Open movements have no target — you decide the numbers at the rack."].exists)
   }
 
+  // The builder's search is a field in its list, so the pushed Create movement's bar checkmark takes the tap.
+  func testBuilderSearchCreatesAMovementThatCommitsFromItsBar() {
+    let app = launch()
+    app.buttons["new-routine"].tap()
+    replace(app.textFields["routine-name"], with: "Zercher day")
+    app.buttons["add-movement"].tap()
+    replace(app.textFields["gym-movement-search"], with: "Zercher squat")
+    let offer = app.buttons["gym-create-movement"]
+    XCTAssertTrue(offer.waitForExistence(timeout: 5))
+    XCTAssertEqual(offer.label, "Create “Zercher squat”")
+    offer.tap()
+    let commit = app.buttons["gym-movement-create-commit"]
+    XCTAssertTrue(commit.wait(for: \.isEnabled, toEqual: true, timeout: 5))
+    XCTAssertEqual(app.textFields["gym-movement-name"].value as? String, "Zercher squat")
+    commit.tap()
+    XCTAssertTrue(app.buttons["save-routine"].waitForExistence(timeout: 5), "The bar's checkmark committed the movement")
+    let added = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "builder-movement-", "Zercher squat"))
+    XCTAssertTrue(added.firstMatch.waitForExistence(timeout: 5))
+  }
+
   func testBuilderCustomCreationTakesOpenTargetsAndCancelKeepsQuery() {
     let app = launch()
     app.buttons["new-routine"].tap()

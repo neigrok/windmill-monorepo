@@ -9,7 +9,7 @@ struct OnThisPhoneSection: View {
 
   var body: some View {
     let waiting = gym.workoutsToReview
-    let workouts = gym.adoptionWorkouts.sorted { $0.session.startedAt > $1.session.startedAt }
+    let workouts = gym.waitingWorkouts.sorted { $0.session.startedAt > $1.session.startedAt }
     if !gym.isAnonymous, !workouts.isEmpty, let moment = gym.log?.moment {
       Section("On this phone") {
         ForEach(workouts, id: \.session.id) { workout in
