@@ -240,18 +240,20 @@ curl -s localhost:8088/v1/gym/sessions -H "$C"
 
 ### As a phone writes: `/v1/sync`
 
-Every request carries `Sync-Schema` (hello answers the server's `schema` and `minSchema`). A push
+Every request carries `Sync-Schema`, the registry version the apps speak. Hello answers the server's
+`schema` and `minSchema`, and a version below the minimum is `426 upgrade-required`; to get one,
+[RUNNING.md](../../../backend/RUNNING.md) builds a server whose minimum is above the apps'. A push
 names a replica (`rp_` + 32 hex), the account it binds to, and numbered intents; stamps are
 `ms:counter:actor`, the actor `r_` + 12 `[a-z0-9]`. A weigh-in is the smallest record:
 
 ```sh
-S5='Sync-Schema: 5'; DAY=$(date -u +%F); ST="$NOW:0:r_verifyprobe"
+S6='Sync-Schema: 6'; DAY=$(date -u +%F); ST="$NOW:0:r_verifyprobe"
 REPLICA=rp_$(openssl rand -hex 16)
-curl -s localhost:8088/v1/sync/hello -H "$C" -H "$S5"
-curl -s -X POST localhost:8088/v1/sync/push -H "$C" -H "$S5" -H "$J" -d "{\"replica\":\"$REPLICA\",
+curl -s localhost:8088/v1/sync/hello -H "$C" -H "$S6"
+curl -s -X POST localhost:8088/v1/sync/push -H "$C" -H "$S6" -H "$J" -d "{\"replica\":\"$REPLICA\",
   \"account\":\"$PROBE_USER_ID\",\"ackThrough\":0,\"intents\":[{\"n\":1,\"scope\":\"self/gym\",\"d\":[
   {\"t\":\"weighin\",\"id\":\"$DAY\",\"life\":[\"alive\",\"$ST\"],\"f\":{\"kg\":[80.4,\"$ST\"],\"recordedAt\":[$NOW,\"$ST\"]}}]}]}"
-curl -s -X POST localhost:8088/v1/sync/pull -H "$C" -H "$S5" -H "$J" \
+curl -s -X POST localhost:8088/v1/sync/pull -H "$C" -H "$S6" -H "$J" \
   -d '{"scopes":[{"scope":"self/gym","cursor":null}]}'            # every row as the replica sees it
 curl -s localhost:8088/v1/gym/bodyweight -H "$C"
 ```
@@ -259,7 +261,7 @@ curl -s localhost:8088/v1/gym/bodyweight -H "$C"
 A result is `ok` with its `seq`, or `refused` with a `code` (engine §9.6). The next push from the
 same replica takes `n: 2`; resending an `n` with a different body is `409 replica-forked`. The
 records, fields and commands are [engine Appendix A](../../../docs/foundation/engine.md); the
-corpus under `packages/api-contract/sync/corpus/gym/` holds admitted examples of each.
+corpus under `packages/api-contract/sync/corpus/gym/` holds admitted examples.
 
 Traps:
 
@@ -267,8 +269,8 @@ Traps:
   carry a different id than you sent — always compare, or a script pours its sets into whatever was
   already open. Send `"joinOpenSession": false` for a backfill; with a workout open it is refused.
   `routineId` is read only on the path that actually creates a session.
-- **One open session per user**; an idle one closes itself four hours after its last set, not
-  after its start, so give a probe workout recent instants.
+- **One open session per user**; an idle one closes itself four hours after its last set, or after
+  its start while it has none, so give a probe workout recent instants.
 - Retries keep the same id and body and answer the stored result. A reused id with a changed body
   is refused by `gym_log_sets`, `gym_create_routine` and the import door, while `gym_log_set`
   answers the stored set whatever the body. A new set in a finished workout is refused, so log
