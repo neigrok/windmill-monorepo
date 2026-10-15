@@ -28,12 +28,6 @@ struct JournalScreen: View {
   @ScaledMetric(relativeTo: .body) var bodySize = JournalType.bodySize
   @ScaledMetric(relativeTo: .callout) var echoControlWidth = 60.0
   var reduceMotion: Bool { systemReduceMotion || model.runtime?.settings.board?.hasSuffix("-RM") == true }
-  var echoAccess: JournalEchoAccess {
-    JournalEchoAccess(account: app.account, today: model.today.text,
-      available: scenePhase == .active && model.runtime?.engine.status.online == true &&
-        !model.authPaused && !model.editorReadOnly && !model.readFailed)
-  }
-  var echoesVisible: Bool { echoAccess.available && model.echoes.access == echoAccess }
   var body: some View {
     NavigationStack {
       journal
@@ -53,7 +47,13 @@ struct JournalScreen: View {
   }
 
   var journal: some View {
-    ScrollViewReader { scroll in
+    // Today is a read of the store's clock: the canvas takes it once per render, never once per page.
+    let currentDay = model.today
+    let echoAccess = JournalEchoAccess(account: app.account, today: currentDay.text,
+      available: scenePhase == .active && model.runtime?.engine.status.online == true &&
+        !model.authPaused && !model.editorReadOnly && !model.readFailed)
+    let echoesVisible = echoAccess.available && model.echoes.access == echoAccess
+    return ScrollViewReader { scroll in
       let renderedBody = model.document.body
       GeometryReader { geo in
         ZStack(alignment: .topLeading) {
@@ -62,22 +62,10 @@ struct JournalScreen: View {
             if echoesVisible && !model.echoes.hops.isEmpty { JournalEchoTrail(echoes: model.echoes) }
             ScrollView {
               VStack(alignment: .leading, spacing: 40) {
-                ForEach(model.room?.days.filter { $0.day < model.today } ?? [], id: \.day) { day in
-                  VStack(alignment: .leading, spacing: 18) {
-                    HStack {
-                      Text(date(day.day)).font(JournalType.date).tracking(JournalType.dateTracking).foregroundStyle(JournalPalette.inkDim)
-                      Spacer(minLength: 8)
-                      echoButton(day.day.text, scroll: scroll)
-                    }.frame(minHeight: 44).modifier(DateRowMark(day: day.day.text, marks: marks))
-                    pastBody(day.document.body, day: day.day.text, width: geo.size.width - 48)
-                    echoInk(day.day.text)
-                    if let scales = Self.scaleLine(day.document) {
-                      Text(scales).font(ShellType.meta).monospacedDigit().foregroundStyle(JournalPalette.inkDim)
-                    }
-                  }.padding(.horizontal, 24).id("journal-day-\(day.day.text)")
-                    .accessibilityElement(children: .contain).accessibilityIdentifier("journal-day-\(day.day.text)")
+                ForEach(model.room?.days.filter { $0.day < currentDay } ?? [], id: \.day) { day in
+                  pastDay(day, width: geo.size.width - 48, scroll: scroll, echoesVisible: echoesVisible)
                 }
-                today(width: geo.size.width - 48, scroll: scroll)
+                today(width: geo.size.width - 48, scroll: scroll, echoesVisible: echoesVisible)
                   .padding(.horizontal, 24)
                   .padding(.bottom, focused ? 18 : (model.compactAccountSheet ? 18 : (geo.size.height < 700 ? 12 : 92)) + geo.safeAreaInsets.bottom)
                   .contentShape(Rectangle())
@@ -210,32 +198,45 @@ struct JournalScreen: View {
     scroll.scrollTo("journal-date-" + day, anchor: UnitPoint(x: 0.5, y: (row.minY - marks.canvas.minY) / room))
   }
 
-  func echoButton(_ day: String, scroll: ScrollViewProxy) -> some View {
+  func echoButton(_ day: String, scroll: ScrollViewProxy, visible: Bool) -> some View {
     Color.clear.frame(width: echoControlWidth, height: 44).overlay {
-      if echoesVisible && !(focused && day == model.editorDay.text) {
+      if visible && !(focused && day == model.editorDay.text) {
         JournalEchoTab(echoes: model.echoes, day: day, writing: focused || model.sheet != nil || model.echoes.readerDay != nil) {
           focused = false; model.liftInk()
           changeInk(holding: day, scroll: scroll) { model.echoes.toggle(day) }
         }.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { marks.tabs[day] = $0 }
           .onDisappear { marks.tabs[day] = nil }
       }
-    }.accessibilityHidden(!echoesVisible || model.echoes.pages[day] == nil)
+    }.accessibilityHidden(!visible || model.echoes.pages[day] == nil)
   }
 
-  @ViewBuilder func echoInk(_ day: String) -> some View {
-    if echoesVisible && model.echoes.inkDay == day {
+  @ViewBuilder func echoInk(_ day: String, visible: Bool) -> some View {
+    if visible && model.echoes.inkDay == day {
       JournalEchoInk(echoes: model.echoes, day: day) { match in model.echoes.walk(from: day, to: match) }
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { marks.ink = $0 }
         .onDisappear { marks.ink = nil }
     }
   }
 
-  static func scaleLine(_ document: PageDocument) -> String? {
-    let parts = [document.mood.map { "Mood \($0)" }, document.energy.map { "Energy \($0)" }].compactMap { $0 }
-    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+  // A read-only earlier page: its date and echo count, its words, its ink when open, and only the scales its day set.
+  func pastDay(_ day: JournalRoom.Day, width: CGFloat, scroll: ScrollViewProxy, echoesVisible: Bool) -> some View {
+    let scales = [day.document.mood.map { "Mood \($0)" }, day.document.energy.map { "Energy \($0)" }].compactMap { $0 }
+    return VStack(alignment: .leading, spacing: 18) {
+      HStack {
+        Text(date(day.day)).font(JournalType.date).tracking(JournalType.dateTracking).foregroundStyle(JournalPalette.inkDim)
+        Spacer(minLength: 8)
+        echoButton(day.day.text, scroll: scroll, visible: echoesVisible)
+      }.frame(minHeight: 44).modifier(DateRowMark(day: day.day.text, marks: marks))
+      pastBody(day.document.body, day: day.day.text, width: width, echoesVisible: echoesVisible)
+      echoInk(day.day.text, visible: echoesVisible)
+      if !scales.isEmpty {
+        Text(scales.joined(separator: " · ")).font(ShellType.meta).monospacedDigit().foregroundStyle(JournalPalette.inkDim)
+      }
+    }.padding(.horizontal, 24).id("journal-day-\(day.day.text)")
+      .accessibilityElement(children: .contain).accessibilityIdentifier("journal-day-\(day.day.text)")
   }
 
-  func pastBody(_ body: String, day: String, width: CGFloat) -> some View {
+  func pastBody(_ body: String, day: String, width: CGFloat, echoesVisible: Bool) -> some View {
     let destination = echoHighlight?.day == day && echoNavigationAccount == app.account ? echoHighlight : nil
     let range = destination.flatMap { destination in
       destination.text.flatMap { JournalEchoMatch(day: day, text: $0, occurrenceHint: destination.occurrenceHint).range(in: body) }
@@ -276,7 +277,7 @@ struct JournalScreen: View {
     }
   }
 
-  func today(width: CGFloat, scroll: ScrollViewProxy) -> some View {
+  func today(width: CGFloat, scroll: ScrollViewProxy, echoesVisible: Bool) -> some View {
     VStack(alignment: .leading, spacing: 0) {
       VStack(alignment: .leading, spacing: 0) {
         HStack(spacing: 6) {
@@ -286,7 +287,7 @@ struct JournalScreen: View {
             if model.firstKept && model.scalesDue { Image(systemName: "checkmark").font(.system(size: 10)).foregroundStyle(JournalPalette.lamp) }
           }.accessibilityElement(children: .combine).accessibilityIdentifier("journal-date").inkAnchor("date", enabled: inkMounted, frames: $inkFrames)
           Spacer(minLength: 8)
-          echoButton(model.editorDay.text, scroll: scroll)
+          echoButton(model.editorDay.text, scroll: scroll, visible: echoesVisible)
         }.frame(minHeight: 44).modifier(DateRowMark(day: model.editorDay.text, marks: marks)).padding(.bottom, 16)
         ZStack(alignment: .topLeading) {
           JournalBodyText(text: Binding(get: { model.document.body }, set: { model.type($0) }), focused: $focused, fontSize: bodySize, editable: !model.editorReadOnly, appendRequest: appendRequest, inkVisible: inkMounted && model.inkVisible && !focused && model.sheet == nil, didEditAtEnd: { editedBodyAtEnd = $0 })
@@ -318,7 +319,7 @@ struct JournalScreen: View {
           if !model.editorReadOnly && model.sheet == nil && model.echoes.readerDay == nil && !focused { focused = true }
         }, including: focused ? .subviews : .all)
       if !focused {
-        echoInk(model.editorDay.text).padding(.bottom, 8)
+        echoInk(model.editorDay.text, visible: echoesVisible).padding(.bottom, 8)
         if model.scalesDue {
           HStack {
             Text("How did today feel?").font(ShellType.secondaryAction); Spacer()

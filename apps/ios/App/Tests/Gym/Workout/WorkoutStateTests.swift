@@ -1429,9 +1429,9 @@ import SyncTesting
     #expect(entries.filter { $0.name == "gym_session_started" }.map(\.properties) == [["screen": "workout", "outcome": "ok"]])
     #expect(entries.filter { $0.name == "gym_set_logged" }.map(\.properties) == [["screen": "workout", "outcome": "ok"]])
     #expect(entries.filter { $0.name == "gym_session_finished" }.map(\.properties) == [["screen": "workout", "outcome": "ok"]])
-    #expect(entries.filter { $0.name == "gym_routine_saved" }.map(\.properties) == [["screen": "workout", "outcome": "ok"]])
-    #expect(entries.allSatisfy { Set($0.properties.keys).isSubset(of: ["screen", "outcome", "operation", "failure_kind"]) })
-    #expect(entries.allSatisfy { $0.properties.values.allSatisfy { ["workout", "gym", "ok", "refused", "failed"].contains($0) } })
+    #expect(entries.filter { $0.name == "gym_routine_saved" }.map(\.properties) == [["screen": "workout", "action": "update"]])
+    #expect(entries.allSatisfy { Set($0.properties.keys).isSubset(of: ["screen", "action", "outcome", "operation", "failure_kind"]) })
+    #expect(entries.allSatisfy { $0.properties.values.allSatisfy { ["workout", "gym", "update", "ok", "refused", "failed"].contains($0) } })
   }
 
   @Test func drainReturnsSuccessAndCancelsTimeoutChild() async {

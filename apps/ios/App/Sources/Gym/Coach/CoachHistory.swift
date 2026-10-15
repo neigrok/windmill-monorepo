@@ -57,13 +57,18 @@ import Observation
       self.held.removeAll { $0.id == row.id }
       do {
         _ = try await self.rest.coachRequest("/v1/gym/threads/\(CoachCopy.escaped(row.id))", method: "DELETE", expectedAccount: account)
+        self.gym.telemetry.event("gym_action", properties: ["screen": "history", "outcome": "ok"])
         let cleared = conversation?.deletedConversation(row.id, account: account) ?? true
         if self.gym.account == account, !cleared { self.error = "Your deleted conversation couldn’t be cleared. Try again." }
       } catch {
         if (error as? GymRESTFailure)?.status == 404 {
+          self.gym.telemetry.event("gym_action", properties: ["screen": "history", "outcome": "ok"])
           let cleared = conversation?.deletedConversation(row.id, account: account) ?? true
           if self.gym.account == account, !cleared { self.error = "Your deleted conversation couldn’t be cleared. Try again." }
           return
+        }
+        if !(error is CancellationError || (error as? URLError)?.code == .cancelled) {
+          self.gym.telemetry.event("gym_action", properties: ["screen": "history", "outcome": error is AppFailure || error is GymRESTFailure ? "refused" : "failed"])
         }
         guard self.gym.account == account else { return }
         self.rows.removeAll { $0.id == row.id }; self.rows.append(row); self.rows.sort { $0.askedAt > $1.askedAt }
@@ -74,8 +79,11 @@ import Observation
     held.append(Held(row: row, account: account, until: Date().addingTimeInterval(9), task: task))
   }
   func undo(_ id: String) {
-    guard let offer = held.first(where: { $0.id == id }) else { error = "That change has already been kept."; return }
-    guard offer.until > Date() else { error = "That change has already been kept."; return }
+    guard let offer = held.first(where: { $0.id == id }), offer.until > Date() else {
+      error = "That change has already been kept."
+      gym.telemetry.event("gym_undo", properties: ["screen": "history", "outcome": "refused"]); return
+    }
+    gym.telemetry.event("gym_undo", properties: ["screen": "history", "outcome": "ok"])
     offer.task.cancel(); held.removeAll { $0.id == id }
     if offer.account == gym.account { rows.append(offer.row); rows.sort { $0.askedAt > $1.askedAt } }
   }

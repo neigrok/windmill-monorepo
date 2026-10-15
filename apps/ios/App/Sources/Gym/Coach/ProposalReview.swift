@@ -1,6 +1,7 @@
 import SwiftUI
 import GymDomain
 import DomainKit
+import SyncAPI
 import SyncSchema
 
 nonisolated struct ProposalReviewID: Identifiable { let id: String }
@@ -10,6 +11,8 @@ nonisolated struct CoachReviewExtent: Equatable {
   let width: CGFloat
 }
 nonisolated struct CoachReviewPosition: Equatable { let extent: CoachReviewExtent; let atEnd: Bool }
+// The decision a proposal waits on the log for; an unreadable queue may hold one, and cannot say which.
+nonisolated enum CoachQueuedDecision: String { case apply, dismiss, unreadable }
 
 extension GymModel {
   nonisolated static func readCoachProposals(_ read: Reader) throws -> (replica: String, receipts: [RoutineRemovalReceipt], proposals: [Proposal]) {
@@ -26,7 +29,7 @@ extension GymModel {
   func updateCoachProposals(replica: String, receipts: [RoutineRemovalReceipt], proposals: [Proposal]) {
     let changedAccount = proposalReadReplica != replica || isAnonymous
     let previous = changedAccount ? [] : coachRemovalReceipts
-    if changedAccount { shownCoachRemovals = [:] }
+    if changedAccount { shownCoachRemovals = [:]; awaitedCoachDecisions = [:] }
     proposalReadReplica = replica
     coachRemovalReceipts = receipts
     var visible = proposals
@@ -39,20 +42,35 @@ extension GymModel {
         telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": "apply", "outcome": receipt.outcome == .applied ? "decided" : "failed"])
       }
     }
+    // Any other decision is recorded once the log's answer reaches the phone: the queue lets it go, the proposal says how.
+    for (id, decision) in awaitedCoachDecisions where coachQueuedDecision(id) == nil {
+      awaitedCoachDecisions[id] = nil
+      let taken = visible.first { $0.id == id }?.state == (decision == .apply ? "applied" : "dismissed")
+      telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": decision.rawValue, "outcome": taken ? "decided" : "failed"])
+    }
   }
-  // The decision on a proposal the log has not answered yet, "apply" or "dismiss"; an unreadable queue counts as waiting.
-  func coachQueuedDecision(_ id: ID<Proposal>) -> String? {
-    if coachRemovalReceipts.contains(where: { $0.proposal.id == id && $0.outcome == .pending }) { return "apply" }
+  nonisolated static func queuedDecision(_ id: ID<Proposal>, in read: Reader) throws -> QueuedCommand? {
+    try read.commands().first { queued in
+      [Gym.Commands.applyProposal, Gym.Commands.dismissProposal].contains(queued.command.name) && queued.command.args["proposalId"] == id.json
+    }
+  }
+  // The decision on a proposal the log has not answered yet; an unreadable queue reports and counts as waiting.
+  func coachQueuedDecision(_ id: ID<Proposal>) -> CoachQueuedDecision? {
+    if coachRemovalReceipts.contains(where: { $0.proposal.id == id && $0.outcome == .pending }) { return .apply }
     do {
-      let name = try runner.read(Gym.scope) { read in
-        try read.commands().first { queued in
-          [Gym.Commands.applyProposal, Gym.Commands.dismissProposal].contains(queued.command.name) && queued.command.args["proposalId"] == id.json
-        }?.command.name
-      }
-      return name.map { $0 == Gym.Commands.dismissProposal ? "dismiss" : "apply" }
-    } catch { return "apply" }
+      let queued = try runner.read(Gym.scope) { try Self.queuedDecision(id, in: $0) }
+      return queued.map { $0.command.name == Gym.Commands.dismissProposal ? .dismiss : .apply }
+    } catch { report("gym_read", error); return .unreadable }
   }
   func coachProposalAwaitingReceipt(_ id: ID<Proposal>) -> Bool { coachQueuedDecision(id) != nil }
+  // After the review's wait, a decision still queued has stalled; the event names it unless the queue cannot be read.
+  func coachDecisionStalled(_ id: ID<Proposal>) -> Bool {
+    guard let decision = coachQueuedDecision(id) else { return false }
+    var properties = ["screen": "review", "outcome": "stalled"]
+    if decision != .unreadable { properties["action"] = decision.rawValue }
+    telemetry.event("gym_proposal_outcome", properties: properties)
+    return true
+  }
   func coachRemovalReceiptShown(_ id: ID<Proposal>, owner: String?) {
     guard owner == account, coachAccountAvailable, !readFailed, let replica = proposalReadReplica,
           let receipt = coachRemovalReceipts.first(where: { $0.proposal.id == id && $0.outcome != .pending }) else { return }
@@ -66,23 +84,16 @@ extension GymModel {
     guard coachAccountAvailable, !authPaused else { error = "Sign in to review this proposal."; return false }
     guard openSession == nil else { error = "Finish this session"; return false }
     start()
+    let decision: CoachQueuedDecision = apply ? .apply : .dismiss
     let outcome = apply ? run(ApplyProposalKeepingReceipt(proposal.id)) : run(DismissProposal(proposal.id))
     let ok = outcome != nil && outcome?.refusal == nil
     let removal = apply && proposal.intent == "remove"
-    let awaiting = coachProposalAwaitingReceipt(proposal.id)
-    if !ok || (!awaiting && !removal) {
-      telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": apply ? "apply" : "dismiss", "outcome": ok ? "decided" : "failed"])
+    // A removal's answer is its receipt; any other queued decision waits for updateCoachProposals to see the log's answer.
+    if ok && !removal && coachProposalAwaitingReceipt(proposal.id) { awaitedCoachDecisions[proposal.id] = decision }
+    else if !ok || !removal {
+      telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": decision.rawValue, "outcome": ok ? "decided" : "failed"])
     }
-    if ok, let runtime {
-      Task {
-        await runtime.engine.flushOnLeave(); runtime.engine.foreground(); refresh()
-        if awaiting && !removal {
-          let state = proposals.first { $0.id == proposal.id }?.state
-          let confirmed = !coachProposalAwaitingReceipt(proposal.id) && ["applied", "dismissed"].contains(state ?? "")
-          telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": apply ? "apply" : "dismiss", "outcome": confirmed ? "decided" : "failed"])
-        }
-      }
-    }
+    if ok, let runtime { Task { await runtime.engine.flushOnLeave(); runtime.engine.foreground(); refresh() } }
     return ok
   }
   func coachProposalSource(_ proposal: Proposal) -> String {
@@ -126,14 +137,21 @@ extension GymModel {
     if proposal.state == "pending", let routine = coachRoutine(proposal), coachReorders(proposal, routine) { facts.append(("Order", "changed")) }
     return facts
   }
-  // A decision the log has not answered goes again: the queued command is pushed once more, never written twice.
-  func coachResendDecision() {
+  // Retry pushes the queued decision once more, never writing it twice, and records whether the log took it.
+  func coachResendDecision(_ id: ID<Proposal>) {
     guard coachAccountAvailable, !authPaused, let runtime else {
       telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": "retry", "outcome": "failed"]); return
     }
-    telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": "retry", "outcome": "ok"])
     start()
-    Task { await runtime.engine.flushOnLeave(); runtime.engine.foreground(); refresh() }
+    Task {
+      await runtime.engine.flushOnLeave()
+      let taken: Bool
+      do { taken = try runner.read(Gym.scope) { try Self.queuedDecision(id, in: $0)?.isAdmitted ?? true } }
+      catch { report("gym_read", error); taken = false }
+      let outcome = taken ? "ok" : runtime.engine.status.online ? "failed" : "offline"
+      telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": "retry", "outcome": outcome])
+      runtime.engine.foreground(); refresh()
+    }
   }
 }
 
@@ -247,9 +265,8 @@ struct ProposalReviewSheet: View {
         stalled = false
         guard pending else { return }
         do { try await Task.sleep(for: stallAfter) } catch { return }
-        guard let proposal, let action = gym.coachQueuedDecision(proposal.id) else { return }
-        stalled = true
-        gym.telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": action, "outcome": "stalled"])
+        guard let proposal else { return }
+        stalled = gym.coachDecisionStalled(proposal.id)
       }
     }.presentationDetents([.large])
       .accessibilityIdentifier("gym-proposal-review")
@@ -278,7 +295,7 @@ struct ProposalReviewSheet: View {
         HStack(spacing: RoomSpace.related) {
           if stalled {
             Text("Still waiting for the log.").foregroundStyle(GymPalette.inkDim)
-            Button("Retry") { resent += 1; gym.coachResendDecision() }.foregroundStyle(GymPalette.accent).accessibilityIdentifier("coach-review-retry")
+            Button("Retry") { resent += 1; if let proposal { gym.coachResendDecision(proposal.id) } }.foregroundStyle(GymPalette.accent).accessibilityIdentifier("coach-review-retry")
           } else {
             ProgressView()
             Text("Waiting for the log…").foregroundStyle(GymPalette.inkDim)

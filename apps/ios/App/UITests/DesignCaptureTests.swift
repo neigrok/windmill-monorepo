@@ -137,27 +137,31 @@ import XCTest
   func testUpdateRequiredLight() { updateRequired("light") }
   func testUpdateRequiredDark() { updateRequired("dark") }
 
-  func journalEchoes(_ appearance: String) {
-    let app = launch("journal-echoes-first", appearance: appearance)
+  func journalEchoes(_ appearance: String, arguments: [String] = [], variant: String = "") {
+    let app = launch("journal-echoes-first", appearance: appearance, arguments: arguments)
+    let frame = app.frame.width < 380 ? "-375" : ""
+    func name(_ screen: String) -> String { "\(screen)\(frame)\(variant)-\(appearance)" }
     let tab = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "journal-echo-")).firstMatch
     XCTAssertTrue(tab.waitForExistence(timeout: 20))
-    capture("journal-echo-tab-\(appearance)", app, settle: 1.5)
-    tab.tap()
+    capture(name("journal-echo-tab"), app, settle: 1.5)
+    reach(tab, app).tap()
     let gotIt = app.buttons["echo-introduction-done"]
     XCTAssertTrue(gotIt.waitForExistence(timeout: 5))
-    capture("journal-echo-first-card-\(appearance)", app)
-    gotIt.tap()
+    capture(name("journal-echo-first-card"), app)
+    reach(gotIt, app).tap()
     let more = app.buttons["echo-more"]
     XCTAssertTrue(more.waitForExistence(timeout: 5))
-    for _ in 0..<3 where !more.isHittable { app.swipeUp() }
-    capture("journal-echo-ink-\(appearance)", app)
-    more.tap()
+    let reachable = reach(more, app)
+    if reachable.frame.maxY > app.frame.maxY - 120 { app.swipeUp(velocity: .slow) }
+    capture(name("journal-echo-ink"), app)
+    reachable.tap()
     XCTAssertTrue(app.scrollViews["echo-sheet"].waitForExistence(timeout: 5))
-    capture("journal-echo-reader-\(appearance)", app)
+    capture(name("journal-echo-reader"), app)
     app.terminate()
   }
   func testJournalEchoesLight() { journalEchoes("light") }
   func testJournalEchoesDark() { journalEchoes("dark") }
+  func testJournalEchoesAccessibilityLight() { journalEchoes("light", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"], variant: "-ax3") }
 
   func gymRoutinesPopulatedSignedOut(_ appearance: String) {
     let app = launch("shell-anonymous", appearance: appearance, arguments: ["-gym-log-fixture"])

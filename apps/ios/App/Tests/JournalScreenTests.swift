@@ -2,8 +2,28 @@ import SwiftUI
 import UIKit
 import Testing
 import CoreText
+import Synchronization
+import DomainKit
 import JournalDomain
+import SyncAPI
+import SyncCore
+import SyncModelServer
+import SyncSchema
+import SyncTesting
 @testable import Windmill
+
+// The engine as the journal reads it, counting each read of the clock.
+nonisolated final class ClockCountingReplica: Replica {
+  let base: any Replica
+  let clockReads = Mutex(0)
+  init(_ base: any Replica) { self.base = base }
+  func commit<T>(_ scope: ScopeRef, _ body: (any CommitContext) throws -> (SyncAPI.Gesture?, T)) throws -> (outcome: CommitOutcome?, value: T) { try base.commit(scope, body) }
+  func undo(_ gestureId: String) throws -> Bool { try base.undo(gestureId) }
+  func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T { try base.read(scope, body) }
+  func mintID(_ type: String) throws -> RecordID { try base.mintID(type) }
+  func physNow() throws -> Int64 { clockReads.withLock { $0 += 1 }; return try base.physNow() }
+  func dismissNotice(_ id: String) throws { try base.dismissNotice(id) }
+}
 
 @Suite @MainActor struct JournalScreenTests {
   func editor(_ text: String) -> JournalEditorView {
@@ -16,6 +36,38 @@ import JournalDomain
     editor.frame = CGRect(x: 0, y: 0, width: 320, height: 1000)
     editor.layoutIfNeeded()
     return editor
+  }
+
+  @Test func theCanvasReadsTheClockOncePerRenderNotOncePerPage() async throws {
+    let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+    func clockReadsOfOneRender(pastPages count: Int) async throws -> Int {
+      let engine = SteppedEngine(registry: SyncSchema.registry, startMs: 1_790_424_000_000, account: nil,
+                                 rules: ComposedServerRules.windmill(registry: SyncSchema.registry),
+                                 commandResultWrites: JournalWriting.resultWrites, pendingDeviceWork: JournalWriting.pendingWork)
+      let replica = ClockCountingReplica(engine.replica)
+      let runner = ActionRunner(replica: replica, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
+      for _ in 0..<count {
+        let page = SavePage(day: try runner.moment().today, document: PageDocument(body: "An earlier walk."), retiring: ["placeholder", "scales"])
+        #expect(try runner.run(page).refusal == nil)
+        engine.advance(ms: 86_400_000)
+      }
+      let app = try AppModel(runner: runner, preferences: UserDefaults(suiteName: UUID().uuidString)!)
+      app.openJournal()
+      let window = UIWindow(windowScene: scene)
+      window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+      let host = UIHostingController(rootView: JournalScreen(model: app.journal, app: app))
+      window.rootViewController = host; window.makeKeyAndVisible()
+      defer { app.journal.saveTask?.cancel(); window.isHidden = true; window.rootViewController = nil }
+      host.view.layoutIfNeeded()
+      try await Task.sleep(for: .milliseconds(200))
+      replica.clockReads.withLock { $0 = 0 }
+      app.journal.error = "A change the canvas draws."
+      host.view.setNeedsLayout(); host.view.layoutIfNeeded()
+      try await Task.sleep(for: .milliseconds(200))
+      return replica.clockReads.withLock { $0 }
+    }
+    let few = try await clockReadsOfOneRender(pastPages: 2), many = try await clockReadsOfOneRender(pastPages: 12)
+    #expect(few > 0 && many == few, "A render reads the clock \(few) times with 2 earlier pages and \(many) with 12")
   }
 
   @Test func journalEditorInkAnswersEachAppearanceWithItsColumn() throws {
@@ -41,13 +93,6 @@ import JournalDomain
       }
       #expect(alpha == 1)
     }
-  }
-
-  @Test func aPastDaysScaleLineDrawsOnlyWhatWasSet() {
-    #expect(JournalScreen.scaleLine(PageDocument(body: "A page.", mood: 7, energy: 4)) == "Mood 7 · Energy 4")
-    #expect(JournalScreen.scaleLine(PageDocument(body: "A page.", mood: 7)) == "Mood 7")
-    #expect(JournalScreen.scaleLine(PageDocument(body: "A page.", energy: 0)) == "Energy 0")
-    #expect(JournalScreen.scaleLine(PageDocument(body: "A page.")) == nil)
   }
 
   @Test func inkFontIsRegisteredFromTheAppBundle() throws {

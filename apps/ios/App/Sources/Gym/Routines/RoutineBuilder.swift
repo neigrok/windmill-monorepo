@@ -223,7 +223,7 @@ extension GymModel {
     if let problem = RoutinePlanning.problem(draft.current) { error = problem; return false }
     let creating = draft.isNew
     guard case .saved(let receipt) = save(&draft) else { return false }
-    if receipt != nil { telemetry.event("gym_routine_saved", properties: ["action": creating ? "create" : "update", "storage": "device"]) }
+    if receipt != nil { telemetry.event("gym_routine_saved", properties: ["screen": "routine_editor", "action": creating ? "create" : "update"]) }
     return true
   }
 }

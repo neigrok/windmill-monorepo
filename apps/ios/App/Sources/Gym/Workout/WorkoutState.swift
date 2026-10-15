@@ -506,7 +506,7 @@ struct FinishWorkout: Action {
       if case .stale = result.refusal { rebuildDeviation(offer); return }
       guard result.refusal == nil else { message = gym.error; return }
       walk = next; message = nil
-      gym.telemetry.event("gym_routine_saved", properties: ["screen": "workout", "outcome": "ok"])
+      gym.telemetry.event("gym_routine_saved", properties: ["screen": "workout", "action": "update"])
       return
     }
     next.offer = nil; next.offerNotices = []
