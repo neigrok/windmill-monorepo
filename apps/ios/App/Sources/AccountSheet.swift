@@ -427,7 +427,7 @@ struct AccountSheet: View {
         }.listRowBackground(card)
       }
     }.listStyle(.insetGrouped).scrollContentBackground(.hidden).listRowSeparatorTint(ShellPalette.line)
-      .reachBand { if model.updateOpenFailed { UpdateFailure(model: model) } }
+      .safeAreaInset(edge: .bottom) { if model.updateOpenFailed { UpdateFailure(model: model) } }
   }
 
   var identityRow: some View {
