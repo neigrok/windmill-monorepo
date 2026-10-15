@@ -22,18 +22,10 @@ struct GymRow: View {
       case .fact(let fact): Text(fact).font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim)
       case .check: Image(systemName: "checkmark").foregroundStyle(.tint).accessibilityHidden(true)
       case .progress: ProgressView()
-      case .door: DoorChevron()
+      case .door: DoorChevron(room: .gym)
       case nil: EmptyView()
       }
     }.frame(minHeight: RoomSpace.minimumTarget)
-  }
-}
-
-// The chevron of a door a Button opens, drawn as the system draws a NavigationLink's.
-struct DoorChevron: View {
-  var body: some View {
-    Image(systemName: "chevron.forward").font(.footnote.weight(.semibold)).foregroundStyle(GymPalette.ink.tertiary)
-      .dynamicTypeSize(...DynamicTypeSize.accessibility2).accessibilityHidden(true)
   }
 }
 

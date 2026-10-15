@@ -74,29 +74,9 @@ struct RenameMovementSheet: View {
           .listRowBackground(GymPalette.card)
       }
       .modifier(GymPage()).navigationTitle("Rename movement")
-      .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
-        ToolbarItem(placement: .confirmationAction) {
-          Button(saving ? "Renaming…" : "Rename") {
-            guard editingAccount == gym.account, editingAnonymous == gym.isAnonymous else {
-              refusal = "The account changed while renaming."; return
-            }
-            saving = true; nameFocused = false
-            let account = gym.account, anonymous = gym.isAnonymous
-            Task { @MainActor in
-              await Task.yield()
-              guard account == gym.account && anonymous == gym.isAnonymous else {
-                refusal = "The account changed while renaming."; saving = false; return
-              }
-              let renamed = gym.renameMovement(exercise, to: name)
-              saving = false
-              if renamed { dismiss() } else { refusal = gym.error }
-            }
-          }
-          .disabled(saving || gym.accountTransition || !MovementName.changed(from: exercise.name, to: name))
-          .accessibilityIdentifier("gym-rename-movement-commit")
-        }
-      }
+      .sheetCommit("Rename", identifier: "gym-rename-movement-commit",
+                   disabled: gym.accountTransition || !MovementName.changed(from: exercise.name, to: name), busy: saving,
+                   dismiss: { dismiss() }, commit: rename)
       .interactiveDismissDisabled(saving)
       .onAppear { nameFocused = true; gym.telemetry.event("gym_screen_viewed", properties: ["screen": "movement"]) }
       .onChange(of: name) { _, value in name = MovementName.capped(value); refusal = nil }
@@ -104,5 +84,22 @@ struct RenameMovementSheet: View {
       .accessibilityIdentifier("gym-rename-movement")
     }
     .modifier(GymPage()).presentationDetents([.medium])
+  }
+
+  func rename() {
+    guard editingAccount == gym.account, editingAnonymous == gym.isAnonymous else {
+      refusal = "The account changed while renaming."; return
+    }
+    saving = true; nameFocused = false
+    let account = gym.account, anonymous = gym.isAnonymous
+    Task { @MainActor in
+      await Task.yield()
+      guard account == gym.account && anonymous == gym.isAnonymous else {
+        refusal = "The account changed while renaming."; saving = false; return
+      }
+      let renamed = gym.renameMovement(exercise, to: name)
+      saving = false
+      if renamed { dismiss() } else { refusal = gym.error }
+    }
   }
 }

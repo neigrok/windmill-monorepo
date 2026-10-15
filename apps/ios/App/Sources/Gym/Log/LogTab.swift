@@ -18,7 +18,7 @@ struct LogTab: View {
   @State var historyNoticeDismissed = false
 
   var body: some View {
-    let progress = gym.log?.progress
+    let progress = gym.logRecords?.progress
     let months = gym.logTimeline(limit: limit)
     let older = limit < gym.finishedLogSessions.count
     List {
@@ -49,18 +49,18 @@ struct LogTab: View {
       }
     }.listStyle(.insetGrouped).modifier(GymPage(titleDisplayMode: .large))
       .navigationTitle("The log").accessibilityIdentifier("gym-log")
-      .toolbar { ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) } }
-      .safeAreaInset(edge: .bottom) {
-        VStack(alignment: .trailing, spacing: 0) {
-          GymTransient(gym: gym, message: shareMessage ?? historyNotice,
-                       dismiss: { if shareMessage != nil { shareMessage = nil } else { historyNoticeDismissed = true } },
-                       errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo")
-          Button { weighing = true } label: {
-            Image(systemName: "scalemass").font(.system(size: 18)).foregroundStyle(GymPalette.ink)
-          }.buttonStyle(RoomSeatStyle())
-            .accessibilityLabel("Weigh in").accessibilityIdentifier("gym-weigh-in")
-            .padding(.trailing, RoomSpace.inset).padding(.bottom, RoomSpace.inset)
-        }.frame(maxWidth: .infinity, alignment: .trailing)
+      .toolbar {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button("Weigh in", systemImage: "scalemass") { weighing = true }.labelStyle(.iconOnly)
+            .accessibilityIdentifier("gym-weigh-in").disabled(gym.accountTransition)
+        }
+        if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
+        ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
+      }.roomBar(.gym)
+      .reachBand {
+        GymTransient(gym: gym, message: shareMessage ?? historyNotice,
+                     dismiss: { if shareMessage != nil { shareMessage = nil } else { historyNoticeDismissed = true } },
+                     errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo")
       }
       .sheet(isPresented: $weighing) { WeighInSheet(gym: gym) }
       .onAppear { prepareLogFixture(); gym.telemetry.event("gym_screen_viewed", properties: ["screen": "log"]) }
@@ -92,7 +92,7 @@ struct LogTab: View {
 
   @ViewBuilder func row(_ entry: LogTimelineEntry, progress: StatsProgress?, moment: Moment) -> some View {
     switch entry.kind {
-    case .session(let session): sessionRow(session, progress: progress, moment: moment)
+    case .session(let session): sessionRow(session, moment: moment)
     case .best(let id, let point, let previous): bestMoment(entry, id: id, point: point, previous: previous, progress: progress, zone: moment.zone)
     case .month(_, let weeks):
       Text("Trained \(weeks) of \(weeks) weeks").foregroundStyle(GymPalette.ink).monospacedDigit()
@@ -108,8 +108,8 @@ struct LogTab: View {
     }
   }
 
-  func sessionRow(_ session: Session, progress: StatsProgress?, moment: Moment) -> some View {
-    let record = gym.logRecordFact(session.id, progress: progress)
+  func sessionRow(_ session: Session, moment: Moment) -> some View {
+    let record = gym.logRecordFact(session.id)
     let facts = record ?? gym.log?.readout(session: session.id).map(LogPresentation.sessionFacts) ?? ""
     let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: RoomSpace.small))
       : AnyLayout(HStackLayout(spacing: RoomSpace.related))
@@ -132,11 +132,13 @@ struct LogTab: View {
     }.accessibilityIdentifier("gym-log-session-\(session.id)")
       .contextMenu {
         NavigationLink("Open workout") { SessionDetailScreen(gym: gym, sessionID: session.id) }
-        Button("Share this workout", systemImage: "square.and.arrow.up") { share(session.id) }.disabled(sharing != nil)
+        if !gym.sharingNeedsSignIn {
+          Button("Share this workout", systemImage: "square.and.arrow.up") { share(session.id) }.disabled(sharing != nil)
+        }
         Button("Discard workout", systemImage: "trash", role: .destructive) { gym.run(DiscardSession(session.id)) }
       }
       .swipeActions { Button("Discard", role: .destructive) { gym.run(DiscardSession(session.id)) } }
-      .accessibilityAction(named: "Share this workout") { share(session.id) }
+      .accessibilityActions { if !gym.sharingNeedsSignIn { Button("Share this workout") { share(session.id) } } }
       .accessibilityAction(named: "Discard workout") { gym.run(DiscardSession(session.id)) }
   }
 

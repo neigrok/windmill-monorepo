@@ -147,7 +147,7 @@ struct BodyweightScreen: View {
     .navigationBarTitleDisplayMode(.inline)
     .toolbar(.hidden, for: .tabBar)
     .accessibilityIdentifier("gym-bodyweight")
-    .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo") }
+    .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo") }
     .sheet(item: $correcting) { WeighInSheet(gym: gym, entry: $0.entry) }
     .onChange(of: gym.account) { _, _ in correcting = nil }
     .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "bodyweight"]) }
@@ -215,15 +215,8 @@ struct WeighInSheet: View {
       .modifier(GymPage())
       .navigationTitle("Weigh in")
       .navigationBarTitleDisplayMode(.inline)
-      .toolbar {
-        ToolbarItem(placement: .cancellationAction) {
-          Button("Cancel") { dismiss() }.disabled(saving).accessibilityIdentifier("gym-weigh-in-cancel")
-        }
-      }
-      .safeAreaInset(edge: .bottom) {
-        ActionBand(title: "Save weight", room: .gym,
-                   busy: saving, actionIdentifier: "gym-weigh-in-save") { save() }
-      }
+      .sheetCommit("Save", identifier: "gym-weigh-in-save", dismissalIdentifier: "gym-weigh-in-cancel", busy: saving,
+                   dismiss: { dismiss() }, commit: save)
       .interactiveDismissDisabled(saving)
       .sensoryFeedback(.success, trigger: saved)
       .onChange(of: typed) { _, _ in refusal = nil }

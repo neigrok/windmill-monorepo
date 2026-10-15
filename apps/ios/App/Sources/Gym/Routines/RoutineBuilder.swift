@@ -10,7 +10,8 @@ final class RoutineEditingSession: Identifiable {
   let id: ID<Routine>
   let account: String?
   let anonymous: Bool
-  var draft: Draft<Routine>
+  // A refusal answers an attempt — a Save, or leaving a name the owner changed — and the next edit clears it.
+  var draft: Draft<Routine> { didSet { if draft.current != oldValue.current { refusal = nil } } }
   var path: [Step] = []
   var query = ""
   var creation: MovementCreationDraft?
@@ -18,7 +19,7 @@ final class RoutineEditingSession: Identifiable {
   var saving = false
   var saved = false
   var editMode = EditMode.inactive
-  var failure: String?
+  var refusal: String?
   var removed: (index: Int, entry: RoutineEntry)?
   var removals = 0
   var appeared = false
@@ -30,9 +31,9 @@ final class RoutineEditingSession: Identifiable {
     id = initialDraft.id
   }
 
-  var refusal: String? {
-    if let failure { return failure }
-    return draft.isDirty && removed == nil ? RoutinePlanning.problem(draft.current) : nil
+  func leaveName() {
+    guard draft.current.name != draft.base.name, let problem = MovementName.problem(draft.current.name) else { return }
+    refusal = problem
   }
 
   // The stack hands every link push here, so a targets screen opens on the scheme its movement holds now.
@@ -46,8 +47,9 @@ final class RoutineEditingSession: Identifiable {
     query = ""; creation = nil; path = [.movements]
   }
   func createMovement(_ gym: GymModel) {
-    if creation == nil { creation = MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: MovementName.capped(MovementName.trimmed(query))) }
-    path.append(.creation)
+    var draft = creation ?? MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: "")
+    draft.takeQuery(query)
+    creation = draft; path.append(.creation)
   }
   func cancelTargets() {
     if case .targets? = path.last { path.removeLast() }
@@ -84,12 +86,13 @@ final class RoutineEditingSession: Identifiable {
   }
   @discardableResult func save(_ gym: GymModel) -> Bool {
     guard account == gym.account, anonymous == gym.isAnonymous else {
-      failure = "The account changed while editing. Open the routine again."; return false
+      refusal = "The account changed while editing. Open the routine again."; return false
     }
+    if let problem = RoutinePlanning.problem(draft.current) { refusal = problem; return false }
     saving = true
     defer { saving = false }
     if gym.saveRoutine(&draft) { saved = true; return true }
-    failure = gym.error ?? "This routine could not be saved. Try again."
+    refusal = gym.error ?? "This routine could not be saved. Try again."
     return false
   }
 }
@@ -105,23 +108,13 @@ struct RoutineBuilder: View {
     NavigationStack(path: Binding(get: { editing.path }, set: { editing.follow($0) })) {
       plan
         .navigationTitle(editing.draft.isNew ? "New routine" : "Edit routine").navigationBarTitleDisplayMode(.inline)
-        .safeAreaInset(edge: .bottom) {
+        .accessibilityIdentifier("routine-builder")
+        .sheetCommit("Save", identifier: "save-routine", disabled: gym.accountTransition || !editing.draft.isDirty, busy: editing.saving,
+                     dismiss: { dismiss() }, commit: save)
+        .reachBand {
           GymTransient(gym: gym, message: editing.refusal,
                        held: editing.removed.map { _ in GymTransient.Held(text: "Movement removed", undo: editing.undoRemoval) },
                        errorIdentifier: "routine-refusal", undoIdentifier: "builder-undo")
-        }
-        .toolbar {
-          ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(editing.saving) }
-          if editing.draft.current.entries.count > 1 {
-            ToolbarItem(placement: .topBarTrailing) {
-              Button(editing.editMode.isEditing ? "Done reordering" : "Reorder") { editing.editMode = editing.editMode.isEditing ? .inactive : .active }
-                .accessibilityIdentifier("reorder-movements")
-            }
-          }
-          ToolbarItem(placement: .confirmationAction) {
-            Button(editing.saving ? "Saving…" : "Save") { save() }
-              .disabled(editing.saving || gym.accountTransition || !editing.draft.isDirty || RoutinePlanning.problem(editing.draft.current) != nil).accessibilityIdentifier("save-routine")
-          }
         }
         .navigationDestination(for: RoutineEditingSession.Step.self, destination: destination)
         .onAppear {
@@ -129,7 +122,7 @@ struct RoutineBuilder: View {
           gym.telemetry.event("gym_screen_viewed", properties: ["screen": "routine_editor"])
         }
         .onChange(of: editing.path) { _, _ in nameFocused = false }
-        .onChange(of: editing.draft.current) { _, _ in editing.failure = nil }
+        .onChange(of: nameFocused) { _, focused in if !focused { editing.leaveName() } }
         // A removed movement's Undo lasts the room's nine seconds, like every other held change.
         .task(id: editing.removals) {
           guard editing.removed != nil else { return }
@@ -138,7 +131,6 @@ struct RoutineBuilder: View {
         }
         .sensoryFeedback(.selection, trigger: editing.draft.current.entries.map(\.exerciseId))
         .sensoryFeedback(.success, trigger: editing.saved)
-        .accessibilityIdentifier("routine-builder")
     }.modifier(GymPage()).presentationDetents([.large])
   }
 
@@ -150,7 +142,7 @@ struct RoutineBuilder: View {
             .onSubmit { nameFocused = false }.accessibilityIdentifier("routine-name")
           if let counter = MovementName.counter(editing.draft.current.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
         }
-        Section("Movements") {
+        Section {
           ForEach(Array(editing.draft.current.entries.enumerated()), id: \.element.exerciseId) { index, entry in
             let exercise = gym.catalogue.find(entry.exerciseId)
             NavigationLink(value: exercise.map { RoutineEditingSession.Step.targets($0.id) }) {
@@ -168,6 +160,15 @@ struct RoutineBuilder: View {
           }.onMove { source, destination in editing.draft.current.entries.move(fromOffsets: source, toOffset: destination) }
           Button("Add movement", systemImage: "plus.circle.fill") { nameFocused = false; editing.pickMovement() }
             .accessibilityIdentifier("add-movement").disabled(editing.draft.current.entries.count >= 50)
+        } header: {
+          HStack {
+            Text("Movements")
+            Spacer()
+            if editing.draft.current.entries.count > 1 {
+              Button(editing.editMode.isEditing ? "Done" : "Reorder") { editing.editMode = editing.editMode.isEditing ? .inactive : .active }
+                .font(.subheadline).textCase(nil).accessibilityIdentifier("reorder-movements")
+            }
+          }
         }
         let history = gym.routineHistory(editing.draft.id).prefix(20)
         if !history.isEmpty {
@@ -205,6 +206,7 @@ struct RoutineBuilder: View {
   }
 
   private func save() {
+    nameFocused = false
     if editing.save(gym) { onSave(editing.id); dismiss() }
   }
 }

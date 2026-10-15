@@ -45,14 +45,14 @@ struct WorkoutScreen: View {
             Button("This session", systemImage: "list.bullet") { assembly = true }.labelStyle(.iconOnly)
               .accessibilityIdentifier("workout-assembly")
           }
-          ToolbarItem(placement: .topBarTrailing) {
+          ToolbarItem(placement: .confirmationAction) {
             Button(workout.finishing ? "Finishing…" : "Finish") {
               finishTask = Task { await workout.finish(); updateAwake() }
             }.disabled(workout.finishing || workout.paging || gym.accountTransition || gym.readFailed)
-              .accessibilityIdentifier("workout-finish")
+              .accessibilityIdentifier("workout-finish").tint(GymPalette.accent)
           }
         }
-      }
+      }.roomBar(.gym)
     }
   }
   var body: some View {
@@ -75,9 +75,7 @@ struct WorkoutScreen: View {
         }
       }
     }
-    .sheet(isPresented: Binding(get: { workout.deviation != nil && !assembly && !addMovement }, set: { if !$0 { workout.resolveDeviation(save: false) } })) {
-      if let offer = workout.deviation { WorkoutDeviationSheet(workout: workout, offer: offer) }
-    }
+    .modifier(WorkoutDeviationOffer(workout: workout, held: assembly || addMovement))
     .sheet(isPresented: Binding(get: { workout.receipt != nil }, set: { if !$0 { workout.closeReceipt() } })) {
       if let receipt = workout.receipt { WorkoutReceipt(gym: gym, receipt: receipt) }
     }
@@ -119,7 +117,8 @@ struct WorkoutScreen: View {
         WorkoutPager(gym: gym, workout: workout, fix: { fixing = $0 })
       }
     }
-    .safeAreaInset(edge: .bottom, spacing: 0) {
+    .modifier(GymPage())
+    .reachBand(spacing: 0) {
       VStack(spacing: 0) {
         GymTransient(gym: gym, message: workout.message, dismiss: { workout.message = nil }, noticeMessage: gym.workoutNotice,
                      retry: { gym.workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
@@ -211,8 +210,8 @@ struct WorkoutLedger: View {
           }
         }
       }.listRowBackground(GymPalette.card)
-    }.listStyle(.insetGrouped).listSectionSpacing(.compact).contentMargins(.top, RoomSpace.related, for: .scrollContent)
-      .contentMargins(.bottom, RoomSpace.minimumTarget, for: .scrollContent).modifier(GymPage())
+    }.listStyle(.insetGrouped).listSectionSpacing(.compact)
+      .contentMargins(.bottom, RoomSpace.minimumTarget, for: .scrollContent).modifier(GymPage()).modifier(SoftTopEdge())
       .onAppear { scroll.scrollTo("current", anchor: .bottom) }
       .onChange(of: sets.count) { _, _ in scroll.scrollTo("current", anchor: .bottom) }
     }
@@ -279,28 +278,16 @@ struct WorkoutCircle: View {
   @Environment(\.isEnabled) var enabled
   var body: some View {
     Button(title, systemImage: symbol, action: action).labelStyle(.iconOnly).buttonStyle(RoomSeatStyle())
-      .foregroundStyle(GymPalette.ink).opacity(enabled ? 1 : 0.4)
+      .foregroundStyle(enabled ? GymPalette.ink : GymPalette.inkFaint)
   }
 }
 
+// The rack never scrolls and never clips: its labels stop growing at the first accessibility size, where the ladder
+// stands two by two and the ledger above gives up its height first.
 struct WorkoutRack: View {
   @Bindable var workout: WorkoutState
   let edit: (SetKeypad.Field) -> Void
-  @Environment(\.dynamicTypeSize) var typeSize
   var body: some View {
-    VStack(spacing: RoomSpace.related) {
-      if typeSize.isAccessibilitySize {
-        ScrollView { controls }.frame(height: 220)
-      } else { controls }
-      Button { workout.logSet() } label: {
-        ViewThatFits(in: .horizontal) {
-          Text("Log set · \(Readout.effort(weightKg: workout.weightKg, reps: workout.reps))").lineLimit(1)
-          Text("Log set")
-        }.frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget)
-      }.modifier(RoomPrimaryStyle(room: .gym)).disabled(!workout.canLog).accessibilityIdentifier("workout-log")
-    }.disabled(workout.paging || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
-  }
-  var controls: some View {
     VStack(spacing: RoomSpace.related) {
       WeightInstrument(weightKg: $workout.weightKg, identifier: "workout-weight", alignment: .center) { edit(.weight) }
       HStack(spacing: RoomSpace.related) {
@@ -311,7 +298,12 @@ struct WorkoutRack: View {
         }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).accessibilityIdentifier("workout-reps")
         WorkoutCircle(title: "More reps", symbol: "plus") { workout.reps = min(99, workout.reps + 1) }
       }
-    }
+      Button { workout.logSet() } label: { Text("Log set").frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget) }
+        .modifier(RoomPrimaryStyle(room: .gym)).disabled(!workout.canLog)
+        .accessibilityLabel("Log set, \(Readout.weight(workout.weightKg)) kilograms, \(GymCount.of(workout.reps, "rep"))")
+        .accessibilityIdentifier("workout-log")
+    }.dynamicTypeSize(...DynamicTypeSize.accessibility1)
+      .disabled(workout.paging || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
   }
 }
 

@@ -36,7 +36,7 @@ struct CoachTab: View {
         ToolbarItem(placement: .topBarTrailing) { more }
         if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
         ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
-      }
+      }.roomBar(.gym)
       .navigationDestination(item: $destination) { destination in
         switch destination {
         case .history: CoachHistoryScreen(gym: gym, coach: coach, history: history)
@@ -182,7 +182,9 @@ struct CoachTab: View {
       }
       HStack(alignment: .bottom, spacing: 0) {
         let target = RoomSpace.minimumTarget
-        PhotosPicker(selection: $photo, matching: .images) { Image(systemName: "photo.badge.plus").frame(width: target, height: target) }.accessibilityLabel("Add photo").disabled(coach.asking || preparing || !coach.draftReadable)
+        PhotosPicker(selection: $photo, matching: .images) {
+          Image(systemName: "photo.badge.plus").dynamicTypeSize(...DynamicTypeSize.xxxLarge).frame(width: target, height: target)
+        }.accessibilityLabel("Add photo").disabled(coach.asking || preparing || !coach.draftReadable)
         TextField("Ask about your training", text: Binding(get: { coach.saved.text }, set: { coach.edit($0) }), axis: .vertical)
           .lineLimit(1...5).focused($composing).disabled(coach.asking || !coach.draftReadable).accessibilityIdentifier("coach-question")
           .id(coach.asking).padding(.vertical, 11)
@@ -283,7 +285,7 @@ struct CoachAnswerView: View {
             HStack(spacing: RoomSpace.related) {
               Text(receipt.read.line).multilineTextAlignment(.leading)
               Spacer(minLength: 0)
-              DoorChevron()
+              DoorChevron(room: .gym)
             }.font(.footnote.monospaced()).foregroundStyle(GymPalette.inkDim).frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
           }.buttonStyle(.plain).accessibilityLabel(receipt.read.line).accessibilityIdentifier("coach-read-receipt")
         }
@@ -295,7 +297,7 @@ struct CoachAnswerView: View {
             Image(systemName: "list.bullet.rectangle").foregroundStyle(GymPalette.accent)
             Text("Open routine · " + result.routineName).foregroundStyle(GymPalette.ink)
             Spacer(minLength: 0)
-            DoorChevron()
+            DoorChevron(room: .gym)
           }.frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityLabel("Open routine · " + result.routineName)
       }
@@ -341,7 +343,7 @@ struct CoachProposalCard: View {
             if let state { Text(state).font(.footnote).foregroundStyle(GymPalette.inkDim) }
           }
           if typeSize.isAccessibilitySize { Spacer(minLength: 0) }
-          DoorChevron()
+          DoorChevron(room: .gym)
         }.frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
       }.buttonStyle(.plain).accessibilityLabel(label).accessibilityValue(state ?? "").accessibilityIdentifier("coach-review")
     }.padding(RoomSpace.inset).frame(maxWidth: .infinity, alignment: .leading)

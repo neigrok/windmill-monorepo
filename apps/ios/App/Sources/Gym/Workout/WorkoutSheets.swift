@@ -42,14 +42,14 @@ struct WorkoutAssembly: View {
           } footer: { Text("Your sets stay saved. Restore this workout from Gym settings.") }
         }.listRowBackground(GymPalette.card)
       }.modifier(GymPage()).navigationTitle("This session").navigationBarTitleDisplayMode(.inline)
-        .safeAreaInset(edge: .bottom) {
-          GymTransient(gym: workout.gym, message: workout.message, dismiss: { workout.message = nil }, noticeMessage: workout.gym.workoutNotice,
-                       retry: { workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
-            .modifier(BoundedBand())
-        }
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
           ToolbarItem(placement: .topBarTrailing) { EditButton() }
+        }.roomBar(.gym)
+        .reachBand {
+          GymTransient(gym: workout.gym, message: workout.message, dismiss: { workout.message = nil }, noticeMessage: workout.gym.workoutNotice,
+                       retry: { workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
+            .modifier(BoundedBand())
         }
     }.modifier(GymPage()).presentationDetents([.large])
   }
@@ -68,6 +68,33 @@ struct WorkoutMovementPicker: View {
   }
 }
 
+// Heavier than the plan: one target asks once, in a dialog; a varied scheme opens its before and after rows in a sheet.
+// Only the dialog's answers and the sheet's two bar actions resolve the offer.
+struct WorkoutDeviationOffer: ViewModifier {
+  @Bindable var workout: WorkoutState
+  let held: Bool
+
+  func body(content: Content) -> some View {
+    let offer = held ? nil : workout.deviation
+    content
+      .confirmationDialog(offer.map { $0.saveLabel + "?" } ?? "", isPresented: .constant(offer.map { !$0.varied } ?? false),
+                          titleVisibility: .visible, presenting: offer) { offer in
+        Button("Save to \(offer.routine)") { workout.resolveDeviation(save: true) }
+          .disabled(workout.gym.accountTransition).accessibilityIdentifier("workout-deviation-save")
+        // iOS 26 hides a dialog's cancel and runs it on a tap outside, so Today only is drawn as an answer and kept as the cancel.
+        if #available(iOS 26.0, *) {
+          Button("Today only") { workout.resolveDeviation(save: false) }.accessibilityIdentifier("workout-deviation-today")
+          Button("Today only", role: .cancel) { workout.resolveDeviation(save: false) }
+        } else {
+          Button("Today only", role: .cancel) { workout.resolveDeviation(save: false) }.accessibilityIdentifier("workout-deviation-today")
+        }
+      } message: { _ in Text("Today’s workout already has it.") }
+      .sheet(isPresented: Binding(get: { offer?.varied == true }, set: { if !$0 { workout.resolveDeviation(save: false) } })) {
+        if let offer { WorkoutDeviationSheet(workout: workout, offer: offer) }
+      }
+  }
+}
+
 struct WorkoutDeviationSheet: View {
   @Bindable var workout: WorkoutState
   let offer: WorkoutDeviation
@@ -75,32 +102,23 @@ struct WorkoutDeviationSheet: View {
     let offer = workout.deviation ?? self.offer
     NavigationStack {
       List {
-        Group {
-          Section { Text(offer.sentence(workout.gym.catalogue.find(offer.exerciseId)?.name ?? "movement")) }
-          if offer.varied {
-            Section {
-              ForEach(0..<max(offer.scheme.count, offer.proposed.count), id: \.self) { index in
-                LabeledContent("Set \(index + 1)") {
-                  Text("\(index < offer.scheme.count ? Readout.setTarget(offer.scheme[index]) : "—") → \(index < offer.proposed.count ? Readout.setTarget(offer.proposed[index]) : "—")")
-                    .font(.body.monospacedDigit())
-                }
-              }
+        Section {
+          ForEach(0..<max(offer.scheme.count, offer.proposed.count), id: \.self) { index in
+            LabeledContent("Set \(index + 1)") {
+              Text("\(index < offer.scheme.count ? Readout.setTarget(offer.scheme[index]) : "—") → \(index < offer.proposed.count ? Readout.setTarget(offer.proposed[index]) : "—")")
+                .font(.body.monospacedDigit())
             }
           }
-          Section { Button("Today only") { workout.resolveDeviation(save: false) }.accessibilityIdentifier("workout-deviation-today") }
-        }.listRowBackground(GymPalette.card)
-      }.modifier(GymPage()).navigationTitle("Heavier than the plan").navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { workout.resolveDeviation(save: false) } } }
-        .safeAreaInset(edge: .bottom) {
-          VStack(spacing: 0) {
-            GymTransient(gym: workout.gym, message: workout.message, dismiss: { workout.message = nil },
-                         noticeMessage: workout.gym.workoutNotice, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
-            ActionBand(title: offer.saveLabel, room: .gym,
-                       disabled: workout.gym.accountTransition, actionIdentifier: "workout-deviation-save") {
-              workout.resolveDeviation(save: true)
-            }
-          }
+        } footer: { Text(offer.sentence(workout.gym.catalogue.find(offer.exerciseId)?.name ?? "movement")) }
+          .listRowBackground(GymPalette.card)
+      }.modifier(GymPage()).roomTitle("Heavier than the plan", subtitle: offer.routine)
+        .sheetCommit("Save", identifier: "workout-deviation-save", dismissal: "Today only", dismissalIdentifier: "workout-deviation-today",
+                     disabled: workout.gym.accountTransition, dismiss: { workout.resolveDeviation(save: false) },
+                     commit: { workout.resolveDeviation(save: true) })
+        .reachBand {
+          GymTransient(gym: workout.gym, message: workout.message, dismiss: { workout.message = nil },
+                       noticeMessage: workout.gym.workoutNotice, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
         }
-    }.modifier(GymPage()).presentationDetents([.large])
+    }.modifier(GymPage()).presentationDetents([.medium])
   }
 }

@@ -453,7 +453,7 @@ import XCTest
     app.buttons["add-movement"].tap()
     XCTAssertTrue(app.buttons["gym-movement-bench-press"].waitForExistence(timeout: 5))
     capture("gym-movement-picker-\(appearance)", app)
-    app.buttons["gym-create-movement"].tap()
+    app.buttons["gym-new-movement"].tap()
     XCTAssertTrue(app.textFields["gym-movement-name"].waitForExistence(timeout: 5))
     capture("gym-create-movement-\(appearance)", app)
     app.navigationBars["Create movement"].buttons["Cancel"].tap()
@@ -493,11 +493,11 @@ import XCTest
   func onScreen(_ element: XCUIElement, _ app: XCUIApplication) -> Bool {
     element.exists && !element.frame.isEmpty && app.frame.intersects(element.frame) && element.isHittable
   }
-  // Drags without momentum until the element sits fully inside the content between the bar and the bottom inset, then lets the list settle.
-  func revealInLog(_ element: XCUIElement, _ app: XCUIApplication, above bottomID: String = "gym-weigh-in") {
+  // Drags without momentum until the element sits fully inside the content between the bar and the tab bar, then lets the list settle.
+  func revealInLog(_ element: XCUIElement, _ app: XCUIApplication) {
     for _ in 0..<12 {
       let top = app.navigationBars.firstMatch.frame.maxY + 8
-      let bottom = (app.buttons[bottomID].exists ? app.buttons[bottomID].frame.minY : app.frame.maxY - 100) - 12
+      let bottom = (app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame.minY : app.frame.maxY - 100) - 12
       if onScreen(element, app), element.frame.minY > top, element.frame.maxY < bottom { break }
       let down = element.exists && !element.frame.isEmpty && element.frame.minY <= top
       let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0)).withOffset(CGVector(dx: 0, dy: (top + bottom) / 2))
@@ -587,11 +587,8 @@ import XCTest
     app.buttons["Cancel"].tap()
     XCTAssertTrue(app.textFields["gym-rename-movement-name"].waitForNonExistence(timeout: 5)); back(app)
     app.buttons["gym-session-share"].tap()
-    XCTAssertTrue(app.buttons["Get a link"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["gym-share-sign-in"].waitForExistence(timeout: 5))
     capture(name("gym-session-share-sheet"), app)
-    app.buttons["Get a link"].tap()
-    XCTAssertTrue(app.staticTexts["sharing needs your account — sign in first"].waitForExistence(timeout: 5))
-    capture(name("gym-session-share-transient"), app)
   }
   func testLogScreensLight() { logScreens("light") }
   func testLogScreensDark() { logScreens("dark") }
@@ -767,8 +764,8 @@ import XCTest
     app.buttons["workout-log"].tap()
     app.buttons["workout-next"].tap()
     XCTAssertTrue(app.buttons["workout-deviation-today"].waitForExistence(timeout: 5))
-    capture("gym-workout-heavier-than-plan-sheet-\(appearance)", app)
-    app.buttons["workout-deviation-today"].tap()
+    capture("gym-workout-heavier-than-plan-dialog-\(appearance)", app)
+    app.buttons["workout-deviation-today"].firstMatch.tap()
     XCTAssertTrue(app.buttons["workout-finish"].waitForExistence(timeout: 5)); app.buttons["workout-finish"].tap()
     XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 10))
     capture("gym-workout-finish-receipt-\(appearance)", app)
@@ -786,6 +783,118 @@ import XCTest
     XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "not sent.")).firstMatch.waitForExistence(timeout: 5))
     capture("gym-workout-durable-refusal-\(appearance)", app)
   }
+  // The floating layer (designer-review-3 §2.7): bands that clear the rows, sheets that commit from the bar, Weigh in in
+  // The log's bar, the transient on glass, and the instruments at AX3. Run on a 375 pt phone for the -375 set.
+  func layout(_ appearance: String, accessibility: Bool = false) {
+    let size = accessibility ? ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"] : []
+    func name(_ screen: String, _ app: XCUIApplication) -> String {
+      "gym-layout-\(screen)\(app.frame.width < 380 ? "-375" : "")\(accessibility ? "-ax3" : "")-\(appearance)"
+    }
+    let workout = launch("workout-planned", appearance: appearance, arguments: size)
+    XCTAssertTrue(workout.buttons["workout-log"].waitForExistence(timeout: 10))
+    capture(name("rack", workout), workout, settle: 1.5)
+    let ledger = workout.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch
+    workout.buttons["workout-log"].tap(); workout.buttons["workout-log"].tap()
+    capture(name("rack-ledger-scrolled", workout), workout)
+    workout.buttons["workout-weight"].tap()
+    XCTAssertTrue(workout.buttons["workout-keypad-set"].waitForExistence(timeout: 5))
+    capture(name("keypad", workout), workout)
+    workout.navigationBars["Weight"].buttons["Cancel"].tap()
+    XCTAssertTrue(ledger.waitForExistence(timeout: 5)); ledger.tap()
+    XCTAssertTrue(workout.buttons["workout-fix-save"].waitForExistence(timeout: 5))
+    capture(name("fix-set", workout), workout)
+    workout.navigationBars["Fix set"].buttons["Cancel"].tap()
+    XCTAssertTrue(workout.buttons["workout-fix-save"].waitForNonExistence(timeout: 5))
+    workout.buttons["workout-weight"].tap()
+    for key in ["1", "0", "5"] { workout.buttons["workout-key-\(key)"].tap() }
+    workout.buttons["workout-keypad-set"].tap()
+    workout.buttons["workout-log"].tap(); workout.buttons["workout-next"].tap()
+    XCTAssertTrue(workout.buttons["workout-deviation-today"].waitForExistence(timeout: 5))
+    capture(name("heavier-dialog", workout), workout)
+    workout.buttons["workout-deviation-today"].firstMatch.tap()
+    XCTAssertTrue(workout.buttons["workout-finish"].waitForExistence(timeout: 5)); workout.buttons["workout-finish"].tap()
+    XCTAssertTrue(workout.buttons["Done"].waitForExistence(timeout: 10))
+    capture(name("receipt", workout), workout)
+    workout.swipeUp(velocity: .slow)
+    capture(name("receipt-scrolled", workout), workout)
+    workout.buttons["Done"].tap()
+    XCTAssertTrue(workout.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 10))
+    capture(name("session-detail", workout), workout)
+    workout.terminate()
+
+    let notice = launch("workout-notice", appearance: appearance, arguments: size)
+    XCTAssertTrue(notice.staticTexts["Check the weight and reps before logging."].waitForExistence(timeout: 10))
+    capture(name("transient-band", notice), notice)
+    notice.terminate()
+
+    let routines = launch("shell-last-room", appearance: appearance, arguments: size)
+    openGymFromJournal(routines)
+    routines.buttons["new-routine"].tap()
+    let routineName = routines.textFields["routine-name"]
+    XCTAssertTrue(routineName.waitForExistence(timeout: 5)); routineName.typeText("Upper body strength day")
+    capture(name("builder-typing", routines), routines)
+    routines.buttons["save-routine"].tap()
+    XCTAssertTrue(routines.otherElements["routine-refusal"].waitForExistence(timeout: 5))
+    capture(name("builder-refusal", routines), routines)
+    for id in ["bench-press", "deadlift"] {
+      routines.buttons["add-movement"].tap()
+      reach(routines.buttons["gym-movement-" + id], routines).tap()
+    }
+    XCTAssertTrue(routines.buttons["builder-movement-deadlift"].waitForExistence(timeout: 5))
+    capture(name("builder", routines), routines)
+    reach(routines.buttons["reorder-movements"], routines).tap()
+    capture(name("builder-reorder", routines), routines)
+    routines.buttons["reorder-movements"].tap()
+    reach(routines.buttons["builder-movement-bench-press"], routines).tap()
+    XCTAssertTrue(routines.buttons["gym-target-set"].waitForExistence(timeout: 5))
+    capture(name("targets", routines), routines)
+    routines.navigationBars["Targets"].buttons["Cancel"].tap()
+    reach(routines.buttons["add-movement"], routines).tap()
+    let search = routines.textFields["gym-movement-search"]
+    XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("Zercher")
+    XCTAssertTrue(routines.buttons["gym-create-movement"].waitForExistence(timeout: 5))
+    capture(name("picker-query", routines), routines)
+    routines.buttons["gym-create-movement"].tap()
+    XCTAssertTrue(routines.textFields["gym-movement-name"].waitForExistence(timeout: 5))
+    capture(name("create-movement", routines), routines)
+    routines.terminate()
+
+    let log = launch("shell-anonymous", appearance: appearance, arguments: ["-gym-log-fixture"] + size)
+    XCTAssertTrue(log.buttons["open-gym"].waitForExistence(timeout: 15)); log.buttons["open-gym"].tap()
+    XCTAssertTrue(log.tabBars.buttons["The log"].waitForExistence(timeout: 10)); log.tabBars.buttons["The log"].tap()
+    let session = log.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-log-session-")).firstMatch
+    XCTAssertTrue(session.waitForExistence(timeout: 20))
+    capture(name("log", log), log, settle: 1.5)
+    log.swipeUp(velocity: .slow)
+    capture(name("log-scrolled", log), log)
+    log.buttons["gym-weigh-in"].tap()
+    XCTAssertTrue(log.textFields["gym-weigh-in-weight"].waitForExistence(timeout: 5))
+    capture(name("weigh-in", log), log)
+    log.buttons["gym-weigh-in-cancel"].tap()
+    XCTAssertTrue(log.textFields["gym-weigh-in-weight"].waitForNonExistence(timeout: 5))
+    revealInLog(session, log)
+    session.swipeLeft()
+    let discard = log.buttons["Discard"]
+    XCTAssertTrue(discard.wait(for: \.isHittable, toEqual: true, timeout: 5)); discard.tap()
+    XCTAssertTrue(log.buttons["gym-log-undo"].waitForExistence(timeout: 5))
+    capture(name("log-undo-band", log), log)
+    log.terminate()
+
+    let coach = launch("shell-last-room", appearance: appearance, arguments: ["-coach-fixture"] + size)
+    openGymFromJournal(coach)
+    coach.tabBars.buttons["Coach"].tap()
+    let question = coach.descendants(matching: .any)["coach-question"]
+    XCTAssertTrue(question.waitForExistence(timeout: 20))
+    capture(name("coach-composer", coach), coach, settle: 1.5)
+    question.tap(); question.typeText("Is Push A still doing anything for my bench?")
+    capture(name("coach-composing", coach), coach)
+    coach.terminate()
+  }
+  func testLayoutLight() { layout("light") }
+  func testLayoutDark() { layout("dark") }
+  func testLayoutAccessibilityLight() { layout("light", accessibility: true) }
+  func testLayoutAccessibilityDark() { layout("dark", accessibility: true) }
+
   func testWorkoutTransientsLight() { workoutTransients("light") }
   func testWorkoutTransientsDark() { workoutTransients("dark") }
 

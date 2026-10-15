@@ -15,7 +15,9 @@ final class GymModel {
   let runtime: AppRuntime?
   let telemetry: any Telemetry
   let rest: GymRESTClient
-  var log: TrainingLog?
+  var log: TrainingLog? { didSet { logRecordsRead = nil } }
+  // The log's records, worked out on the first read after the log changes (Log/LogPresentation.swift).
+  @ObservationIgnored var logRecordsRead: ProgressRecords?
   var catalogue = Catalogue(custom: [], names: [])
   var routines: [Routine] = []
   var notes: [Note] = []
