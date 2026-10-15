@@ -66,7 +66,8 @@ native TabView (Routines · The log · Coach), independent NavigationStacks and 
 **On this phone** section, Inspect and Fix workout — with their model. Each root takes `gym: GymModel`; the room
 supplies account/navigation callbacks and Coach handoffs. A model extension lives in the folder of the one track that
 reads it; a rule several tracks read, such as what is unsent, is `GymModel.swift`'s own. What more than one track
-draws lives once in `Components/`: the page chrome (page modifier, keyboard bar, More menu), the transient band, the
+draws lives once in `Components/`: the page chrome (page modifier, an editing sheet's commit from its bar, keyboard
+bar, More menu), the transient band, the
 two-line row, the set row and fact tiles, the weight instrument, keypad and Fix set editor, the rename sheet with its
 model extension, and the one count formatter with the Instant–Date bridge.
 
@@ -210,15 +211,18 @@ Fonts are bundled from official OFL sources, with licences alongside each family
 - [Caveat](https://github.com/google/fonts/tree/main/ofl/caveat), regular ink notes.
 
 Inter and Nunito are static instances of the official variable fonts. The room colour roles (one
-asset catalogue, one palette enum per room), the named type roles and the spacing scale live in
+asset catalogue, one palette enum per room), the named type roles, the spacing scale and the room-neutral controls
+(the reach band and its primary, the transient, the bar's tint, the soft top edge, the door chevron) live in
 `Sources/Theme/`, which the Live Activity extension compiles too; their values follow
 [the iOS redesign contract](../../../docs/design/ios/ios-redesign.md). The onboarding glimpses keep
 their illustration colours under `onboarding/` in `Resources/Assets.xcassets`.
 `python3 Tools/check_theme_literals.py` rejects, outside `Sources/Theme/` in the app, widget and
 Activity shared sources, numeric and hex colour construction, system named colours, the asset accent
-colour, UIKit semantic colours, asset colour lookups by string and appearance branches between
-colours. Its short allowlist names each remaining exception and why; an entry that no longer matches
-fails the check. Project generation and both target builds run the check;
+colour, UIKit semantic and label colours, the system's label hierarchy (`.primary` to `.quinary`,
+`.placeholder`, `.separator`), a palette role faded with `opacity` or `withAlphaComponent`, asset colour
+lookups by string and appearance branches between colours. Its allowlist names each remaining exception
+and why, the check prints every allowed line with its reason, and an entry that no longer matches fails
+the check. Project generation and both target builds run the check;
 `python3 -m unittest discover -s Tools/tests -v` includes its rejection cases.
 
 Telemetry uses Sentry Cocoa for failures and first-party `/v1/events` for product events. Debug
