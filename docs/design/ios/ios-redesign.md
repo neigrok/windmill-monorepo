@@ -258,9 +258,10 @@ at 375 × 667 and at the largest accessibility size.
   `journal/canvas` in the room's appearance, so past pages scroll beneath it instead of under the
   bar's items; no title, the room menu and account button as above. The ink notes anchor to the
   toolbar items' frames (`onGeometryChange` inside the labels).
-- **Bar items render in the label colour** at the bar's default weight in every room
-  (`.tint(.primary)` on toolbar content); the room accent appears in a bar only on a confirmation
-  action. No `.fill` variants in bars; `.fill` is for a selected tab only.
+- **Bar items render in the room's ink** at the bar's default weight in every room (`.roomBar`,
+  applied after a screen's toolbar), the room menu and the back chevron included. The room accent
+  appears in a bar only on a confirmation action: *Finish*, the receipt's *Done*, a sheet's
+  checkmark. No `.fill` variants in bars; `.fill` is for a selected tab only.
 - **Top bars keep the system's soft scroll-edge effect**; no page hides it, so content passing
   under a bar's title softens instead of reading through it.
 
@@ -274,10 +275,11 @@ at 375 × 667 and at the largest accessibility size.
 | Destructive | `role: .destructive` in a Menu or list row | same | never a prominent fill, except a removal's primary (§6) |
 | Seat | a 44 pt glass circle with one symbol, bottom-trailing, 16 pt from the edges | material circle | Journal *Write* |
 
-**The reach band.** A primary in the reach band is placed with `.safeAreaBar(edge: .bottom)` on
-iOS 26, so the system's scroll-edge effect softens what passes beneath it; on iOS 18 it is
-`safeAreaInset(edge: .bottom)` with the `.bar` material, drawn only while content is beneath. At
-rest the list's last row clears the band. A band floats only where reach or a gate rules it:
+**The reach band.** Whatever stands at the foot of a screen — its one primary, its footer, its
+transient — is placed with `.reachBand { }`: `safeAreaBar(edge: .bottom)` on iOS 26, so the
+system's scroll-edge effect softens what passes beneath it; on iOS 18 `safeAreaInset(edge:
+.bottom)` with the `.bar` material, drawn only while content is beneath. At rest the list's last
+row clears the band. A band floats only where reach or a gate rules it:
 *Log set*, *Start workout*, *Just start logging*, *Apply*, *Keep this log* / *Share with Coach*,
 *Connect a tool*, Inspect's recovery primary, and the steps of a flow (sign-in, Keep, onboarding).
 A sheet that edits a record commits from its bar (§5).
@@ -287,7 +289,8 @@ CTA copy is at most three words: *Just start logging*, *Start workout*, *Log set
 
 **Doors and actions in a list.** A row that navigates is a `NavigationLink`: ink label, optional
 symbol, the system's chevron — *Movements*, *Hidden*, *About Windmill*. A row that opens a sheet is
-a `Button` drawing the same chevron (`GymRow`'s sheet door). A row that acts is a `Button` in
+a `Button` drawing the same chevron (`DoorChevron`, `chevron.forward`, never a hand-set
+`chevron.right`). A row that acts is a `Button` in
 `accent` with no chevron — *Add movement*, *Add a note*. A screen's one primary is never a row; it is
 the band. Accent text on a door, or a chevron on an action, is a defect. The only row that unfolds
 in place is a kept run in the Review diff (§6); it carries a rotating `chevron.down`, never the
@@ -334,19 +337,22 @@ content:
 | Sheet | Detent | Bar |
 |---|---|---|
 | Keypad | `.height(440)`; `.large` at accessibility sizes | *Cancel* · title *Weight* / *Reps* |
-| Weigh in, Create movement, Targets, Rename movement | `.medium` | *Cancel* · title · *Save* / *Add* / *Done* / *Rename* |
-| Heavier than the plan, varied scheme | `.medium` | *Today only* · title · *Save* |
+| Weigh in, Rename movement, Create movement from Movements or the workout's picker | `.medium` | *Cancel* · title · ✓ (*Save* / *Rename* / *Add*) |
+| Heavier than the plan, varied scheme | `.medium` | *Today only* · title · ✓ (*Save*) |
 | Share this workout | `.medium`; `.large` at accessibility sizes | *Close* |
-| Fix set, Fix workout, the builder, Note | `.large` | *Cancel* · title · *Save* (Fix workout: *Save and retry*) |
+| Fix set, Note | `.large` | *Cancel* · title · ✓ (*Save*) |
+| Fix workout | `.large` | *Cancel* · title · ✓ (*Save and retry*) |
+| The builder | `.large`; *Add movement*, Create movement and Targets are steps pushed inside it, each with *Cancel* and its own ✓ (*Add* / *Done*) | *Cancel* · title · ✓ (*Save*) |
 | This session | `.large` | *Close* · title · *Edit* |
 | Review | `.large` | *Close* · title; *Apply* in the band |
-| Finish | `.medium`, growing to `.large` past five rows | *Done* |
+| Finish | `.medium` up to five rows, `.large` past five or at accessibility sizes | *Done* |
 | You, sign-in steps | `.large`; Keep and the Apple questions `.medium` | *Done* / *Close* |
 
-A sheet that edits a record commits from its bar's `.confirmationAction` — on iOS 26 the system's
-prominent checkmark, on iOS 18 a bold *Save* — never from a pill at its foot; its destructive act is
-the form's last row in `alarm`. That is how Calendar, Contacts, Reminders and Health's *Add Data*
-commit.
+A sheet that edits a record commits from its bar's `.confirmationAction`, drawn once by
+`.sheetCommit`: *Cancel* leading and, on iOS 26, a `role: .confirm` checkmark on `.glassProminent`
+whose glyph is `on-accent` and whose accessibility label is the commit's name (✓ above); on iOS 18
+the name in bold. Never a pill at its foot; its destructive act, when it has one, is the form's
+last row in `alarm`. That is how Calendar, Contacts, Reminders and Health's *Add Data* commit.
 
 `presentationDragIndicator(.visible)` only where the bar carries no dismissal.
 `presentationCornerRadius` is never set. A pinned primary inside a sheet uses the reach-band rule
@@ -362,11 +368,16 @@ product-neutral), and every feature uses the one:
 | `GymPage` modifier | the canvas, the tint, the inline or large title; it keeps the bars' scroll-edge effect | Gym |
 | `RoomTransient` | the one band (below); `GymTransient` adapts it to the room | Theme (shape), Gym (adapter) |
 | `roomTitle(_:subtitle:)` | the inline title with its `.navigationSubtitle`, the two stacked in the bar's principal slot on iOS 18 | Theme |
+| `.reachBand { }` | the bar every bottom band stands in (§4) | Theme |
+| `.roomBar` | the room's ink as the toolbar's tint (§4) | Theme |
+| `SoftTopEdge` | a 16 pt fade on a list that scrolls under a fixed head rather than a bar, where the system draws no scroll edge | Theme |
+| `DoorChevron` | the chevron of a door a `Button` opens, drawn as the system draws a `NavigationLink`'s | Theme |
 | `ActionBand` | the one floating primary in the reach band, with its optional trailing symbol, its one-line footer on the band's own surface (never bare text over the list), and disabled and busy states | Theme |
+| `.sheetCommit` | an edit sheet's bar: *Cancel* and the checkmark (§5 Sheets) | Gym |
 | `WeightInstrument` | the big numeral with its unit at the numeral's baseline, the four-key ladder and its accessibility reflow; centred wherever it is drawn | Gym |
 | `SetEditor` | weight, reps, effort, note, Kind (segmented), delete; validation and its refusal text; the note's byte counter only from 3,200 bytes; over a saved workout's set also movement and time, returned to that workout's draft | Gym |
 | `RenameMovementSheet` | one sheet, `.medium`, the name field, a counter only from 48 characters, and one help line: *Renames it everywhere; the old name still finds it.* | Gym |
-| `GymRow` | a title over one meta line, with an optional leading symbol or dot and an optional trailing fact, `iphone`, check, progress or a sheet door's chevron; every list row of a title over one line, The log's included | Gym |
+| `GymRow` | a title over one meta line, with an optional leading symbol or dot and an optional trailing fact, `iphone`, check, progress or `DoorChevron`; every list row of a title over one line, The log's included | Gym |
 | `SetRow` | a set read back: its place, its numbers, a trailing caption, then time, effort and note when present. Its place is one rule everywhere — the ledger, session detail, Inspect and Fix workout: a working set by its count among the working sets so far (*1*, *2*), any other kind by its letter (*W*, *D*, *F*) | Gym |
 | `MoreMenu` | `ellipsis.circle` in the bar presenting the native Menu | Gym |
 | `FactTiles` | up to three value-over-label tiles, drawing only the facts that are known | Gym |
@@ -397,8 +408,9 @@ control with the reason as that section's footer when it blocks a door (*Sign-in
 connection.* under the disabled Apple and email doors); a symbol on the row it describes (`iphone`
 on an unsent set or session); or a row in the one place that owns it (**On this phone**, §7.16).
 Signed out nothing is unsent — there is no account to send it to. Signed in, a set is unsent while
-the log has not confirmed it and something holds it back — no connection, a paused session, its own
-refused push — never while it is merely on its way; a workout is unsent while it or any of its sets
+the log has not confirmed it and something holds it back — no connection, a paused session, a
+server that needs a newer app (§7.15), its own refused push — never while it is merely on its way;
+a workout is unsent while it or any of its sets
 is. The ledger, the log's rows, session detail and the Live Activity's count follow this one rule.
 *Coach needs a connection.* and *Your full training history needs a connection to finish syncing.*
 are bands, not canvas text.
@@ -610,18 +622,27 @@ with 7.11 and 7.12.
 - Every movement search — the builder's *Add movement*, the workout's *Next movement*,
   *Movements* — is `.searchable(placement: .navigationBarDrawer(displayMode: .always))` over the
   two-line `GymRow`: the name, then *Barbell · 80 × 5 · 3 days ago*, or *Barbell* alone before the
-  first log. A query with no exact match leads the results with a row **Create "<query>"**
+  first log. A query with no exact match leads the results with a row **Create “<query>”**
   (`plus.circle.fill`, accent) opening Create movement with the name filled; with an empty query,
-  `plus` in the bar (*New movement*). No floating button in a picker. The picker is titled *Add
-  movement* from the builder and *Next movement* from the workout — never a question.
-- The builder's name field carries no header (`15-the-routine.md`, "Name is the first field").
-  *History* is drawn only when it has rows; a new routine has none and shows none.
-- Targets is a `.medium` sheet titled *Targets* with the movement as subtitle, *Done* in the bar;
-  *You decide the numbers at the rack.* is its section footer while the scheme is open; *last time*
-  and *max* as placeholders are the rest of the disclosure.
-- Create movement is a `.medium` sheet: *Name*, *Equipment* as a `Picker(.menu)` row, *Targets* ›,
-  *Add* in the bar, enabled once the name is non-blank; a refusal appears on the attempt, one at a
-  time, name first. An open target is a valid target, so *Choose at least one set.* is never drawn.
+  `plus` in the bar (*New movement*). No floating button in a picker, and no pinned *Create
+  movement* or *Add to routine*. Creating ends the search first (`dismissSearch`), so the pushed
+  Create movement's bar takes its taps. The picker is titled *Add movement* from the builder and
+  *Next movement* from the workout — never a question.
+- The builder's bar is *Cancel* · title · ✓ (*Save*) and nothing else: *Reorder* (*Done* while
+  reordering) is the Movements section's header action. Its name field carries no header
+  (`15-the-routine.md`, "Name is the first field"). *History* is drawn only when it has rows; a new
+  routine has none and shows none. A refusal (*A routine is at least one movement.*) appears on a
+  Save attempt, or when the lifter leaves a name they changed, never on a keystroke; the next edit
+  clears it.
+- Inside the builder, *Add movement*, Create movement and Targets are steps pushed in its own sheet,
+  each with *Cancel* leading and its own ✓.
+- Targets is titled *Targets* with the movement as subtitle, ✓ (*Done*) in the bar; *You decide the
+  numbers at the rack.* is its section footer while the scheme is open; *last time* and *max* as
+  placeholders are the rest of the disclosure.
+- Create movement — a step of the builder, or a `.medium` sheet from Movements and the workout's
+  picker — is *Name*, *Equipment* as a `Picker(.menu)` row, *Targets* ›, and ✓ (*Add*) in the bar,
+  enabled once the name is non-blank; a refusal appears on the attempt, one at a time, name first.
+  An open target is a valid target, so *Choose at least one set.* is never drawn.
 
 ### 7.6 The log
 
@@ -680,23 +701,29 @@ with 7.11 and 7.12.
 - The clocks are one `.footnote` line: *32:10 · 1:37 since last set*. The second clock anchors to
   the latest valid set; until the first set the line is the workout clock alone.
 - The ledger draws sets in the order they were logged, the same on every draw and every surface; a
-  warmup logged between working sets stays between them. It sits under the system's soft top scroll
-  edge and rests with the current row and the one before it fully visible.
+  warmup logged between working sets stays between them. It scrolls under the rack's head, not a
+  bar, so the system draws no scroll edge there: its top fades over 16 pt (`SoftTopEdge`), and at
+  rest the current row and the one before it are fully visible.
 - The current row is its place, its target (*100 × 5*, or *open*) and the accent dot — never the
   words *Current set* or *Target*, never a sentence (`16-the-workout.md`). An unsent set is marked
   once, by a trailing `iphone`.
 - **At accessibility sizes the rack never scrolls and never clips**: its labels cap at
   `.accessibility1`, the ladder is 2 × 2, the reps row always shows, and the ledger gives up height
   first, down to the current row alone.
-- The bar: *This session* `list.bullet` leading, *Finish* trailing, title the routine, subtitle the
-  start time.
+- The bar: *This session* `list.bullet` leading, *Finish* trailing in accent (a confirmation), title
+  the routine, subtitle the start time.
+- A Finish the phone cannot complete says what holds it back, in the refusal band: *Finish needs a
+  connection — keep logging, or hide the workout.*, or, while the server needs a newer app (§7.15),
+  *Finish needs the update — keep logging, or hide the workout.*
 - *This session* lists each movement with *2 of 4 sets* against plan (*3 sets* without one); a
   `gym/done` check only when every planned set is logged; *Add movement* is the section's last row,
   `plus.circle.fill`. *Hide workout*'s footer: *Your sets stay saved. Find it under Hidden in The
   log.*
 - **Heavier than the plan** is a `.confirmationDialog`: *Save 105 to Lower A?* · *Today's workout
-  already has it.* · **Save to Lower A** · **Today only** (cancel). A varied scheme opens a `.medium`
-  sheet with its before/after rows, *Today only* leading and *Save* in the bar.
+  already has it.* · **Save to Lower A** · **Today only**. *Today only* is drawn as an answer and is
+  also the dialog's cancel, since iOS 26 hides a cancel button and runs it on a tap outside: leaving
+  the dialog means today only. A varied scheme opens a `.medium` sheet with its before/after rows,
+  *Today only* leading and ✓ (*Save*) in the bar.
 - The refusal band is §5's glass band; its copy stays at twelve words naming the way out.
 
 **The Live Activity** (`WorkoutActivityWidget`) is the ledger's current row on the lock screen,
@@ -723,8 +750,10 @@ since-last-set clock trailing. Minimal: the room symbol.
 - **Share this workout** is a `.medium` sheet with *Close*, its sentences and one primary, *Get a
   link*. Signed out, or while backup is paused, the primary is a sign-in door, *Sign in to share*,
   in place of a primary that cannot succeed: it opens the sign-in door and, signed in, returns to
-  the share (`superapp-flow.md` §5). The session row's context menu and accessibility action open
-  the same sheet.
+  the share (`superapp-flow.md` §5). A mint that meets no account is refused in the band with
+  *Sharing needs your account. Sign in first.* The bar's `square.and.arrow.up`, the session row's
+  context menu and its accessibility action open the same sheet in every account state, so the
+  door reads the same from every place it is offered.
 
 ### 7.9 Finish receipt
 
@@ -772,6 +801,14 @@ Detents, dismissals and commits per §5; `presentationCornerRadius` never set.
   own palettes.
 - There is no *Your data* section and no *Gym settings* row (§6). `superapp-shell.md` §6's *Your
   data*, *Erase data* and *Delete account* are not part of this contract (`consistency.md` 9w).
+- **Finish signing in.** A sign-in the phone has verified but the engine has not finished is a
+  section of You, headed *Finish signing in*, above the identity row; it is never a sheet of its own,
+  and You always opens. Its line is *Sign-in needs a connection. Your pages are safe on this
+  phone.*, or *Your sign-in finishes once Windmill is updated.* while the update is required (§7.15).
+  Then *Try again* (absent while the update is required) and *Cancel sign-in*, destructive; a refusal
+  is the section's footer in `shell/danger`. While it is pending the Apple and email doors are not
+  drawn, and the identity row's state line reads *Syncing paused · update Windmill* while the update
+  is required.
 - *Sign out* raises its `.alert` directly — *Sign out?* · *Your pages and log stay in your account
   and leave this phone.* · *Cancel* · **Sign out** — never a sheet; when the account has not
   confirmed some changes, the alert is `superapp-flow.md` §7's variant with **Keep** · **Discard** ·
@@ -783,9 +820,8 @@ Detents, dismissals and commits per §5; `presentationCornerRadius` never set.
 - Keep, the Apple questions, the email and code steps keep their layout; their headings are
   Nunito; their buttons follow §4; *Back* and *Close* are toolbar items. The symbol that heads a
   shell sheet is the bare SF symbol in `shell/brand`, never in a drawn tile; Keep's is
-  `icloud.and.arrow.up`, and Keep draws no bar title, only *Close*. *Finish signing in* offline
-  reads *Sign-in needs a connection. Your pages are safe on this phone.* over *Try again*, with no
-  second paragraph. Refusal text is `shell/danger` when it is needed at all.
+  `icloud.and.arrow.up`, and Keep draws no bar title, only *Close*. Refusal text is `shell/danger`
+  when it is needed at all.
 - The gym's Keep door opens the Keep sheet in the room's words (*Keep your log* · *It lives only on
   this phone. Sign in to back it up and open it on the web.*), never You.
 - The doors are Apple and email (`superapp-flow.md` §6). *Use a sign-in link* appears only on the
@@ -825,15 +861,23 @@ sign-in), the shell says so once and keeps the fact in one place:
 
 - **One alert** when the flag flips to true, and once per cold launch while it holds — never
   again mid-session: *Update required* · *Update Windmill to keep syncing. Your work is saved on
-  this phone.* · **Get the update** · *Keep working on this phone*. A 426 at sign-in raises the
-  same alert, never `localizedDescription`.
+  this phone.* with an account, *Update Windmill to sign in. Your work is saved on this phone.*
+  without one · **Get the update** · *Keep working on this phone*. A 426 at sign-in raises the same
+  alert, never `localizedDescription`. It waits behind the introduction or another alert and is
+  presented once nothing else is.
 - **The standing place is You**: the identity row's state line reads *Syncing paused · update
-  Windmill* and a *Get the update* row (`arrow.up.forward`) sits under the doors while the flag
-  holds. You is one tap from every room root.
+  Windmill* — for an account, or for a sign-in still finishing (§7.11) — and a *Get the update* row
+  (`arrow.up.forward`) sits in the identity section while the flag holds. You is one tap from every
+  room root.
 - *Get the update* opens the build's configured destination (TestFlight). If it cannot open, the
   transient reads *Couldn't open the update. Try again.*
-- Journal and Gym keep working on the phone; nothing is disabled, dimmed or counted down.
-- Event `client_update_required` {state, action: open · keep · dismiss, outcome}.
+- Journal and Gym keep working on the phone; nothing is disabled, dimmed or counted down. A Finish
+  the server would refuse says so (§7.7).
+- Event `client_update_required`, every row carrying `trigger` (*sync*, the engine's flag; *sign_in*,
+  a 426 at sign-in): {state: shown, status: 426} once the alert is on screen; {action: update} for
+  *Get the update* from the alert or You, then {action: update, outcome: failed} when the destination
+  cannot open; {action: keep} for *Keep working on this phone*. Dismissing the could-not-open
+  transient records nothing.
 
 ### 7.16 On this phone — a workout the account has not taken (§5 Status)
 
@@ -854,8 +898,8 @@ per refused workout in Settings and a door on every tab; iOS draws one row and o
   room draws; Coach and the room menu draw none.
 - **The reason**, at most twelve words naming the way out, is the row's subtitle, the Inspect
   head's footer and the transient after a refused retry. A saved workout's refusal never reaches the
-  room's band, and dismissing its notice never loses it: the reason stays until a retry answers it.
-  The table holds what iOS receives, by the reason label its events carry:
+  room's band, and the lifter cannot dismiss its notice: only a queued retry answers it, and until
+  then the reason stays. The table holds what iOS receives, by the reason label its events carry:
 
   | Reason | Line |
   |---|---|
@@ -866,7 +910,7 @@ per refused workout in Settings and a door on every tab; iOS draws one row and o
   | `too-many-sets` | *Over 200 sets — remove some, then retry.* |
   | `unknown-exercise` | *A movement is missing — fix its sets, then retry.* |
   | `session-finished` | *A set missed its workout — retry puts it back.* (*2 sets missed their workout — retry puts them back.*) |
-  | `unsent` (refused before, its notice dismissed) | *Not on your log yet — retry to add it.* |
+  | `unsent` (not on the log, with no refusal on record) | *Not on your log yet — retry to add it.* |
   | `invalid-set` · `other` (`parent-dead`, `too-large`, `stale`, …) | *Refused by the log — fix the workout, then retry.* (the code beside the date in Inspect's subtitle) |
 
   iOS imports carry no set numbers and always carry their finish, a routine the log cannot read only
@@ -877,34 +921,46 @@ per refused workout in Settings and a door on every tab; iOS draws one row and o
   reason as that section's footer; *Started* and *Finished* as fact rows holding the time alone (a
   finish on a later day adds its day); then a section per movement of read-only `SetRow`s (*1 · 100
   × 5*, *W* for a warmup, effort and note as the second line). A stranded set shows Working sets ·
-  Volume and its own rows only. The band holds the reason's one primary: *Keep as finished*
-  (`session-open`), *Retry* (`session-finished`, `unsent`), *Fix workout* for the rest, and none for
-  `id-taken`, whose way out is *Discard workout*. Keep and Retry disable until the log's first pull
-  is complete, with *Adding it needs a connection.* in the band's transient above them, and while
+  Volume and its own rows only. The band holds the reason's one primary, chosen by the reason alone
+  and the same for a stranded set: *Keep as finished* (`session-open`), *Retry* (`session-finished`,
+  `unsent`), *Fix workout* for every other reason, and none for `id-taken`, whose way out is
+  *Discard workout*. A retry is offered only for a reason a retry can change. A stranded set's *Fix
+  workout* edits the stranded sets alone. Keep and Retry disable until the log's first pull is
+  complete, with *Adding it needs a connection.* in the band's transient above them, and while
   backup is paused, with *Sign in again to add it.*
-  The bar's `ellipsis.circle` holds *Fix workout* when the copy can be fixed and Fix is not already
-  the primary, and *Discard workout* (destructive, the nine-second window). Discard pops to The log,
-  where the band reads *Workout discarded* · *Undo*. For a stranded set the item reads *Discard 1
-  set* / *Discard 3 sets*, and the band *Set discarded* / *Sets discarded* · *Undo*. A workout on its
-  way has no band and no menu.
+  The bar's `ellipsis.circle` holds *Fix workout* when the copy can be fixed (every reason but
+  `id-taken`) and Fix is not already the primary, and *Discard workout* (destructive, the
+  nine-second window). Discard pops to The log, where the band reads *Workout discarded* · *Undo*.
+  For a stranded set the item reads *Discard 1 set* / *Discard 3 sets*, and the band *Set
+  discarded* / *Sets discarded* · *Undo*. A workout on its way has no band and no menu.
 - **Fix workout** is a `.large` sheet that commits from its bar like every edit sheet: *Cancel* ·
-  *Fix workout* · *Save and retry* (the iOS 26 checkmark's label). Sections: **Times** — *Started*
+  *Fix workout* · ✓, the checkmark's label *Save and retry* (on iOS 18 the bold words), since the
+  commit both saves the copy and sends it. Sections: **Times** — *Started*
   and *Finished* as compact `DatePicker` rows, an open workout's *Finished* reading *Not finished*
   with a quiet *Mark finished* that fills it from the last set; a *Linked to Push A* toggle whose off
   state drops the saved plan; then a section per movement, each row opening the Fix set sheet
-  (weight, reps, effort, kind, movement, time, note, delete). Over 200 sets the bar's *Save and
-  retry* disables and the band's transient reads *Over 200 sets · remove 12.*; any other refusal
-  the phone predicts disables it with that reason's line in the same place. Edits touch the phone's
-  copy only; the retry sends the corrected import under the same identity.
+  (weight, reps, effort, kind, movement, time, note, delete). The sheet has no destructive row:
+  Discard lives on Inspect, with its window. Over 200 sets the bar's ✓ disables and the held reason,
+  *Over 200 sets · remove 12.*, stands in the band at the sheet's foot; any other refusal the phone
+  predicts — a movement the catalogue lacks, a finish after now, times that cross another workout —
+  disables it with that reason's line in the same place. Edits touch the phone's copy only; the
+  retry sends the corrected import under the same identity.
 - **Keep** and **Retry** act from the band. While a kept or fixed workout is queued, Inspect's
   transient reads *Adding Push A to your log.* (the workout's name), never that it is on the log,
   and the row reads *Adding…*; both leave when the log confirms it; on refusal the row's reason
   updates and the transient says the new one.
-- **A stranded set** (`session-finished`) retries into its finished workout with an additive
-  correction (`CorrectSession(preserveOtherSets: true)`), or into a separate workout under new
-  identities when that cannot apply — the domain's rule, with vectors before the screens.
-- Events `gym_import_recovery` {action: inspect · fix · keep · retry · discard, reason, outcome: ok ·
-  refused · failed · cancelled}; Save and retry is `fix` with an outcome. Failures `gym_import_fix` ·
+- **A retry sends every set or none.** Retrying an open saved workout starts it and sends each of
+  its sets in one plan, so a refusal leaves nothing half-sent.
+- **A stranded set** (`session-finished`) goes back in one plan: the stranded sets inside its
+  workout's window are appended while that workout is open, or corrected in once it is finished
+  (`CorrectSession(preserveOtherSets: true)`), numbered after the sets it kept and with their times
+  left alone. The sets outside the window become a saved copy of their own — a new workout from the
+  first of them to the last, under a new identity — whose import is queued, so its refusal is that
+  copy's own row, with Fix. This is the domain's rule (`RecoverStrandedSets`), with vectors before
+  the screens.
+- Events `gym_import_recovery` {action: inspect · fix · keep · retry · discard, reason}: a screen
+  opening carries {state: opened}; a commit or a close carries {outcome: completed · cancelled ·
+  refused · failed}. Save and retry is `fix` with an outcome. Failures `gym_import_fix` ·
   `gym_import_keep` · `gym_import_retry` · `gym_import_discard`.
 
 ### 7.17 Dates and counts (§3)
@@ -1040,14 +1096,17 @@ Iteration 3's captures show:
    *Heavier than the plan* as a dialog. Search-to-create in a picker with a query. *Sign out* as one
    alert. Share this workout signed out with *Sign in to share*.
 5. **On this phone** with one waiting workout, and with nine (one row and the pushed list); a
-   queued workout reading *Adding Push A to your log.*; a stranded set's *Discard 1 set* and *Set
-   discarded*.
-6. **One date formatter:** a screen of each form — log rows, Record, receipt subtitle, session
+   queued workout reading *Adding Push A to your log.*; a stranded set with *Fix workout* for a
+   fixable reason, its *Discard 1 set* and *Set discarded*; Discard returning to The log.
+6. **Update and sign-in:** the update alert signed in and signed out; You with *Finish signing in*
+   offline and while the update is required; a Finish refused for the update; the room menu and back
+   chevrons in ink.
+7. **One date formatter:** a screen of each form — log rows, Record, receipt subtitle, session
    subtitle, Inspect, weigh-in.
-7. **AX3 in both appearances** for: the rack (reps visible), the keypad (*0* reachable), the Coach
+8. **AX3 in both appearances** for: the rack (reps visible), the keypad (*0* reachable), the Coach
    composer, Fix set, the receipt, Inspect, You. **375 × 667** for the same, plus Journal and the
    shell.
-8. **The Live Activity:** banner, expanded, compact and minimal Island, both appearances, with no
+9. **The Live Activity:** banner, expanded, compact and minimal Island, both appearances, with no
    clock labels.
-9. **Five interactions as screen recordings**, since a still cannot show them: Log set, a ladder
+10. **Five interactions as screen recordings**, since a still cannot show them: Log set, a ladder
    tap, Apply to receipt, a moment opening the Record, the band rising and dismissing (§5 Motion).
