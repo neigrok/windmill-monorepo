@@ -63,7 +63,7 @@ struct GymSettingsScreen: View {
       }.listRowBackground(GymPalette.card)
     }.listStyle(.insetGrouped).navigationTitle("Gym settings").modifier(GymPage())
       .toolbar(.hidden, for: .tabBar)
-      .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
+      .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
       .accessibilityIdentifier("gym-settings")
       .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition)") { await connections.load() }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "settings"]) }
@@ -82,7 +82,7 @@ struct NotesScreen: View {
     }.navigationTitle("Notes").modifier(GymPage()).accessibilityIdentifier("gym-notes")
       .toolbar(.hidden, for: .tabBar)
       .toolbar { if gym.coachAccountAvailable, !gym.notes.isEmpty { EditButton() } }
-      .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
+      .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
       .sheet(item: $editor) { identity in NoteEditor(gym: gym, identity: identity) }
       .sensoryFeedback(.selection, trigger: ordered)
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "notes"]) }
@@ -176,7 +176,7 @@ struct NoteEditor: View {
         }
         }.listRowBackground(GymPalette.card)
       }.navigationTitle("Note").modifier(GymPage())
-        .safeAreaInset(edge: .bottom) { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
+        .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
           ToolbarItem(placement: .confirmationAction) { Button("Save") {

@@ -118,7 +118,7 @@ struct CoachHistoryScreen: View {
     }.navigationTitle("History").modifier(GymPage()).accessibilityIdentifier("gym-coach-history")
       .toolbar(.hidden, for: .tabBar)
       .task(id: gym.account) { await history.load() }
-      .safeAreaInset(edge: .bottom) {
+      .reachBand {
         GymTransient(gym: gym, message: coach.error ?? history.error,
                      dismiss: coach.error == nil ? nil : { coach.error = nil },
                      retryMessage: coach.error == nil && history.error != nil ? { Task { await history.load() } } : nil,

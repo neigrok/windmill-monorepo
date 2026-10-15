@@ -118,7 +118,7 @@ struct ConnectedLogScreen: View {
         }
       }.listRowBackground(GymPalette.card)
     }.listStyle(.insetGrouped).navigationTitle("Connected log").modifier(GymPage()).accessibilityIdentifier("gym-connected-log")
-      .safeAreaInset(edge: .bottom) {
+      .reachBand {
         VStack(spacing: 0) {
           GymTransient(gym: gym, message: browserError ? "The browser couldn’t be opened. Try again." : nil,
                        dismiss: { browserError = false }, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
