@@ -296,10 +296,11 @@ these are the places it disagrees with a drawing, a brief or the build.
   (`LogReadout.kt`) and the woven *new best* moment — and the iOS build draws both
   (`LogPresentation.swift`). Decide whether Android follows, and rule the first-session case for
   every surface.
-- **9q · Weigh in in the bar.** `18-progress.md` keeps one control in the reach band, the weigh-in
-  chip; the spec (§4, §7.6) puts *Weigh in* in The log's bar (`scalemass`) and floats nothing over
-  the list, since a floating control over rows that end in dates and chevrons always covers one.
-  The brief states both. The iOS build draws a floating seat (`LogTab.swift`).
+- **9q · Weigh in is a bar action on iOS.** `18-progress.md` keeps one control in Android's reach
+  band, the weigh-in chip; the spec (§4, §7.6) and the iOS build put *Weigh in* in The log's bar
+  (`scalemass`, before the account button) and float nothing over the list, since a floating control
+  over rows that end in dates and chevrons always covers one. The brief states both. Decide whether
+  Android follows.
 - **9r · No Gym settings on iOS.** The spec (§6) draws no Gym settings page: Notes and Connected
   log are reached from Coach's More, and a hidden workout from **Hidden** at the end of The log.
   `guidelines/superapp-shell.md` §5–6 has You list each room's settings, and Android's You carries
