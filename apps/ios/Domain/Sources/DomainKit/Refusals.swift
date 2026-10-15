@@ -53,7 +53,7 @@ public protocol ProductRefusal: Error, Sendable {
 }
 
 // §12.3 an engine notice as the product reads it.
-public struct DomainNotice<R: ProductRefusal>: Identifiable, Sendable {
+public struct DomainNotice<R: ProductRefusal>: Identifiable, Equatable, Sendable {
   public let id: String
   public let gestureId: String
   public let subject: RecordRef?
@@ -75,6 +75,9 @@ public struct DomainNotice<R: ProductRefusal>: Identifiable, Sendable {
     DomainNotice.fold(notice.content, of: record.key, into: &values)
     return values
   }
+
+  // Two notices are the same notice when the engine's are: what the product reads is derived from it.
+  public static func == (lhs: DomainNotice, rhs: DomainNotice) -> Bool { lhs.notice == rhs.notice }
 
   // The notice id is `notice:<gestureId>/<k>` (engine §7.7 step 4).
   static func gestureId(ofNotice id: String) -> String {

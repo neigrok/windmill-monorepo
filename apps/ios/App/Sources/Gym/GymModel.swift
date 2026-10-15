@@ -180,10 +180,11 @@ final class GymModel {
       // The saved workouts are parsed, and the ones the account took dropped, once per change, not per refresh.
       if runtime == nil || adoptionReadThrough != readThrough {
         adoptionReadThrough = readThrough
-        adoptionWorkouts = try runner.read(Gym.scope) { try SignedOutWorkout.read($0) }
-        if !adoptionWorkouts.isEmpty, try runner.run(ReconcileAdoptedWorkouts()).receipt != nil {
-          adoptionWorkouts = try runner.read(Gym.scope) { try SignedOutWorkout.read($0) }
+        var saved = try runner.read(Gym.scope) { try SignedOutWorkout.read($0) }
+        if !saved.isEmpty, try runner.run(ReconcileAdoptedWorkouts()).receipt != nil {
+          saved = try runner.read(Gym.scope) { try SignedOutWorkout.read($0) }
         }
+        publish(\.adoptionWorkouts, saved)
       }
       let snapshot = try runner.read(Gym.scope) { read in
         let storedSessions = try read.repository(Session.self).all(in: .stored)
@@ -198,40 +199,44 @@ final class GymModel {
                       GymPreferences.type: try read.repository(GymPreferences.self).all(in: .stored).count]
         let training = try TrainingLog(read)
         let hidden = try training.open.map { try WorkoutWalk(read.device(WorkoutWalk.key($0.id))).hidden } ?? false
-        return (training, try Catalogue(read),
-         Routine.ordered(try read.repository(Routine.self).all(in: .drawn)),
-         try read.repository(Note.self).all(in: .drawn), try Bodyweight(read),
-         try read.repository(GymPreferences.self).find(ID("prefs"), in: .drawn) ?? GymPreferences(),
-         coach: try Self.readCoachProposals(read), read.isAnonymous, counts, hidden,
-         planUnreadable: storedSessions.contains(where: \.planUnreadable) || training.sessions.contains(where: \.planUnreadable))
+        return (log: training, catalogue: try Catalogue(read),
+                routines: Routine.ordered(try read.repository(Routine.self).all(in: .drawn)),
+                notes: try read.repository(Note.self).all(in: .drawn), bodyweight: try Bodyweight(read),
+                preferences: try read.repository(GymPreferences.self).find(ID("prefs"), in: .drawn) ?? GymPreferences(),
+                coach: try Self.readCoachProposals(read), anonymous: read.isAnonymous, counts: counts, hidden: hidden,
+                planUnreadable: storedSessions.contains(where: \.planUnreadable) || training.sessions.contains(where: \.planUnreadable))
       }
-      (log, catalogue, routines, notes, bodyweight, preferences, _, isAnonymous, personalCounts, workoutHidden, _) = snapshot
+      if log.map({ !$0.drawsTheSame(as: snapshot.log) }) ?? true { log = snapshot.log }
+      publish(\.catalogue, snapshot.catalogue); publish(\.routines, snapshot.routines); publish(\.notes, snapshot.notes)
+      publish(\.bodyweight, snapshot.bodyweight); publish(\.preferences, snapshot.preferences)
+      publish(\.isAnonymous, snapshot.anonymous); publish(\.personalCounts, snapshot.counts); publish(\.workoutHidden, snapshot.hidden)
       if snapshot.planUnreadable { report("gym_read", UnreadablePlan()) }
       updateCoachProposals(replica: snapshot.coach.replica, receipts: snapshot.coach.receipts, proposals: snapshot.coach.proposals)
       if let runtime {
         let replica = try runtime.storageRead { try $0.device().activeReplica }
-        account = replica.meta.state == .bound ? replica.meta.account : nil
-        authPaused = replica.meta.authPaused
-        recoveryNotices = replica.notices.filter { $0.scope == Gym.scope }.map { DomainNotice<GymRefusal>($0, registry: SyncSchema.registry) }
+        publish(\.account, replica.meta.state == .bound ? replica.meta.account : nil)
+        publish(\.authPaused, replica.meta.authPaused)
+        publish(\.recoveryNotices, replica.notices.filter { $0.scope == Gym.scope }.map { DomainNotice<GymRefusal>($0, registry: SyncSchema.registry) })
         let incoming = recoveryNotices.filter { notice in !notice.notice.isDismissed && !adoptionWorkouts.contains { $0.owns(notice) } }
         if let latest = incoming.last, !notices.contains(where: { $0.id == latest.id }) {
           refusal = latest.refusal; error = message(latest.refusal)
         }
-        notices = incoming
+        publish(\.notices, incoming)
         let outbox = replica.outbox.filter { $0.scope == Gym.scope }
-        undoOffers = []
-        for entry in outbox where !undoOffers.contains(where: { $0.id == entry.gestureId }) {
+        var offers: [UndoOffer] = []
+        for entry in outbox where !offers.contains(where: { $0.id == entry.gestureId }) {
           let gesture = outbox.filter { $0.gestureId == entry.gestureId }
           if gesture.allSatisfy({ $0.state == .held }) {
-            undoOffers.append(UndoOffer(id: entry.gestureId, scope: entry.scope, releaseAt: entry.releaseAt))
+            offers.append(UndoOffer(id: entry.gestureId, scope: entry.scope, releaseAt: entry.releaseAt))
           }
         }
+        publish(\.undoOffers, offers)
       } else {
         let now = (try? runner.moment().now.ms) ?? 0
-        undoOffers.removeAll { $0.releaseAt <= now }
+        publish(\.undoOffers, undoOffers.filter { $0.releaseAt > now })
       }
-      if previousAccount != account || previousAnonymous != isAnonymous { coachUnavailable = false }
-      readFailed = false
+      if previousAccount != account || previousAnonymous != isAnonymous { publish(\.coachUnavailable, false) }
+      publish(\.readFailed, false)
       if wasReadFailed, error == "Gym could not be read from this phone. Try again." { error = nil }
     } catch {
       readFailed = true; readThrough = nil; self.error = "Gym could not be read from this phone. Try again."
@@ -324,6 +329,12 @@ final class GymModel {
     endDiscardWindow()
     do { try runtime?.engine.leave(); undoOffers = []; refresh() }
     catch { self.error = "Gym could not keep pending changes. Try again."; report("gym_flush", error) }
+  }
+
+  // A refresh sets what it read only where it changed, so an engine event or the clock that changes nothing redraws
+  // nothing: a screen redrawn under an open menu rebuilds the menu and drops the tap on it.
+  func publish<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<GymModel, Value>, _ value: Value) {
+    if self[keyPath: keyPath] != value { self[keyPath: keyPath] = value }
   }
 
   // A read failure reports once per launch, since views read on every render; every failed write reports.

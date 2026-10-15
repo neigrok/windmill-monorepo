@@ -31,12 +31,12 @@ extension GymModel {
     let previous = changedAccount ? [] : coachRemovalReceipts
     if changedAccount { shownCoachRemovals = [:]; awaitedCoachDecisions = [:] }
     proposalReadReplica = replica
-    coachRemovalReceipts = receipts
+    publish(\.coachRemovalReceipts, receipts)
     var visible = proposals
     for proposal in coachRemovalReceipts.map(\.proposal) + Array(shownCoachRemovals.values) where !visible.contains(where: { $0.id == proposal.id }) {
       visible.append(proposal)
     }
-    self.proposals = visible
+    publish(\.proposals, visible)
     for receipt in coachRemovalReceipts where receipt.outcome != .pending {
       if previous.first(where: { $0.proposal.id == receipt.proposal.id })?.outcome != receipt.outcome {
         telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": "apply", "outcome": receipt.outcome == .applied ? "decided" : "failed"])

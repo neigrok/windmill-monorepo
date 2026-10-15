@@ -248,7 +248,12 @@ final class AppModel {
       telemetry.event("api_request_failed", properties: ["operation": "sync_hello", "route": "/v1/sync", "method": "GET", "failure_kind": "offline"])
     }
     do {
-      if let runtime { account = try runtime.account(); keptWork = try runtime.hasKeptWork() }
+      // Set only when they changed, so a poll that changes nothing redraws nothing (GymModel.publish).
+      if let runtime {
+        let polled = try runtime.account(), kept = try runtime.hasKeptWork()
+        if account != polled { account = polled }
+        if keptWork != kept { keptWork = kept }
+      }
     } catch {
       polledThrough = nil
       reportBoundary("auth_restore", error: error); self.error = "Couldn't read the account. Your work stays on this phone. Try again."

@@ -5,7 +5,7 @@ import SyncSchema
 
 // A note: a title and a body the lifter writes for Coach, ten to an account, in the order they take precedence.
 
-public struct Note: Draftable, Removable, Ordered {
+public struct Note: Draftable, Removable, Ordered, Equatable {
   public static let type = Gym.Types.note
   public static let scope = Gym.scope
   public static let orderField = "ord"
