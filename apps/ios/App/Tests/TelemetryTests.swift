@@ -55,6 +55,8 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     #expect(CrashReports.options(info: disabled, debug: true) == nil)
     #expect(CrashReports.options(info: disabled, debug: false)?.releaseName == "ios-0.2.0-abc123")
     #expect(CrashReports.options(info: info, debug: true)?.dist == "71")
+    let options = CrashReports.options(info: info, debug: false)
+    #expect(options?.enableAppHangTracking == true && options?.appHangTimeoutInterval == 2 && options?.enableMetricKit == false)
   }
 
   @Test func propertyFilterExcludesAllContentAndRetainsNumericLatency() throws {
@@ -79,13 +81,16 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
       #expect(TelemetryPrivacy.properties(["screen": screen, "name": "private-marker", "load": "100", "note": "private-marker", "question": "private-marker"]) == ["screen": .label(screen)])
     }
     #expect(TelemetryPrivacy.properties(["action": "apply", "outcome": "decided", "method": "PUT", "cap": "daily", "storage": "device"]) ==
-            ["action": .label("apply"), "outcome": .label("decided"), "method": .label("PUT"), "cap": .label("daily"), "storage": .label("device")])
-    #expect(TelemetryPrivacy.properties(["cap": "private-marker", "screen": "private-marker", "storage": "private-marker"]).isEmpty)
+            ["action": .label("apply"), "outcome": .label("decided"), "method": .label("PUT"), "cap": .label("daily")])
+    #expect(TelemetryPrivacy.properties(["cap": "private-marker", "screen": "private-marker", "action": "private-marker"]).isEmpty)
   }
 
   @Test func echoNamesAndDiagnosticsAllowOnlyContentFreeLabels() {
     #expect(TelemetryPrivacy.events.filter { $0.hasPrefix("journal_echo_") } ==
-            Set(["journal_echo_shown", "journal_echo_opened", "journal_echo_dismissed", "journal_echo_useful"]))
+            Set(["journal_echo_shown", "journal_echo_opened", "journal_echo_dismissed", "journal_echo_useful", "journal_echo_ink",
+                 "journal_echo_reader_opened", "journal_echo_intro_dismissed"]))
+    #expect(TelemetryPrivacy.properties(["action": "open"]) == ["action": .label("open")])
+    #expect(TelemetryPrivacy.properties(["action": "close"]) == ["action": .label("close")])
     let content = ["text": "private-marker", "excerpt": "private-marker", "reason": "private-marker",
                    "date": "2026-10-08", "source_day": "2025-01-01", "target_day": "2026-10-08",
                    "score": "0.94", "count": "3", "echo_id": "private-marker", "page_id": "private-marker",

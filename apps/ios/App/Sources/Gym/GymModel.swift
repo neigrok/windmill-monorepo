@@ -48,6 +48,7 @@ final class GymModel {
   @ObservationIgnored var proposalReadReplica: String?
   var coachRemovalReceipts: [RoutineRemovalReceipt] = []
   @ObservationIgnored var shownCoachRemovals: [String: Proposal] = [:]
+  @ObservationIgnored var awaitedCoachDecisions: [ID<Proposal>: CoachQueuedDecision] = [:]
 
   init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry()) {
     self.runner = runner; self.runtime = runtime; self.telemetry = telemetry
@@ -319,9 +320,12 @@ final class GymModel {
     catch { self.error = "Gym could not keep pending changes. Try again."; report("gym_flush", error) }
   }
 
+  // A read failure reports once per launch, since views read on every render; every failed write reports.
+  @ObservationIgnored var reportedReadFailures: Set<String> = []
   func report(_ operation: String, _ error: any Error) {
     guard Store.failureKind(error) == nil else { return }
     let kind = (error as? CommitFailure)?.kind == .storeFailure ? "storage" : "unexpected"
+    if operation == "gym_read" { guard reportedReadFailures.insert("\(kind) \(String(reflecting: error))").inserted else { return } }
     telemetry.failure(operation, kind: kind)
   }
 

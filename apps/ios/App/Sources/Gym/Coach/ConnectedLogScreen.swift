@@ -107,7 +107,7 @@ struct ConnectedLogScreen: View {
         } footer: { Text("A routine change waits for your Apply; the rest lands at once.") }
         Section {
           if drawsConnections {
-            Button { browse("settings") } label: { Label("Manage connections", systemImage: "arrow.up.forward") }
+            Button { browse("settings", action: "manage") } label: { Label("Manage connections", systemImage: "arrow.up.forward") }
               .accessibilityHint("opens in your browser")
           }
           DisclosureGroup("How this works") {
@@ -134,13 +134,18 @@ struct ConnectedLogScreen: View {
   var connect: some View {
     ActionBand(title: gym.coachAccountAvailable ? "Connect a tool" : "Sign in first", room: .gym, actionIdentifier: "coach-connect-tool",
                symbol: gym.coachAccountAvailable ? "arrow.up.forward" : nil) {
-      if gym.coachAccountAvailable { browse("connect") } else { openAccount?() }
+      if gym.coachAccountAvailable { browse("connect", action: "connect") } else { openAccount?() }
     }.accessibilityHint(gym.coachAccountAvailable ? "opens in your browser" : "")
   }
-  func browse(_ route: String) {
-    guard let base = gym.runtime?.settings.baseURL, let url = URL(string: "/#/" + route, relativeTo: base)?.absoluteURL else { browserError = true; return }
+  // Connect a tool and Manage connections leave for the browser; the event records whether it opened.
+  func browse(_ route: String, action: String) {
+    guard let base = gym.runtime?.settings.baseURL, let url = URL(string: "/#/" + route, relativeTo: base)?.absoluteURL else {
+      browserError = true
+      gym.telemetry.event("gym_connect_tool", properties: ["action": action, "outcome": "failed"]); return
+    }
     openURL(url) { accepted in
       browserError = !accepted
+      gym.telemetry.event("gym_connect_tool", properties: ["action": action, "outcome": accepted ? "ok" : "failed"])
       if !accepted { gym.telemetry.failure("gym_action", kind: "unexpected") }
     }
   }

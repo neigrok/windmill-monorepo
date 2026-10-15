@@ -275,6 +275,19 @@ import SyncTesting
     #expect(rest.tasks.isEmpty && telemetry.entries.withLock { $0.filter { $0.properties["operation"] == "gym_rest" }.isEmpty })
   }
 
+  @Test func aRecordViewsReadOnEveryRenderReportsItsFailureOncePerLaunch() throws {
+    let fault = GymStoreFault(), telemetry = TelemetryRecorder()
+    let gym = GymModel(runner: try runtime(failing: fault, telemetry: telemetry).runner, telemetry: telemetry)
+    let reports = { telemetry.entries.withLock { $0.filter { $0.name == "client_error" }.map(\.properties) } }
+    #expect(reports().isEmpty)
+    fault.point.withLock { $0 = .read }
+    for _ in 0..<3 { #expect(gym.waitingRoutineProposals.isEmpty) }
+    #expect(reports() == [["operation": "gym_read", "failure_kind": "unexpected"]])
+    for _ in 0..<2 { gym.report("gym_action", AppFailure(message: "private injected storage detail")) }
+    #expect(reports() == [["operation": "gym_read", "failure_kind": "unexpected"], ["operation": "gym_action", "failure_kind": "unexpected"],
+                          ["operation": "gym_action", "failure_kind": "unexpected"]])
+  }
+
   @Test func lateSuccessIsRejectedAfterRequestGenerationChanges() async throws {
     let telemetry = TelemetryRecorder(), (rest, _) = try await rest(.stalled, telemetry: telemetry)
     let request = Task { try await rest.request("/v1/gym/threads") }

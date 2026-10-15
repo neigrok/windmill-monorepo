@@ -222,15 +222,17 @@ import XCTest
     XCTAssertEqual(editor.value as? String, "Today's line.")
   }
 
-  func testPastPagesDrawNoScalesTheyNeverSet() {
+  func testPastPagesDrawOnlyTheScalesTheySet() {
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", "journal-history"]
     app.launch()
     XCTAssertTrue(app.textViews["journal-editor"].waitForExistence(timeout: 10))
     let pastDays = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "journal-day-"))
-    XCTAssertGreaterThan(pastDays.count, 0)
+    XCTAssertEqual(pastDays.count, 12)
+    let scored = pastDays.containing(NSPredicate(format: "label == %@", "Mood 7 · Energy 4"))
+    XCTAssertEqual(scored.count, 1, "The one scored past page draws its scales")
     let scaleLines = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@ OR label CONTAINS %@", "Mood ", "Energy ", "–"))
-    XCTAssertEqual(scaleLines.count, 0, "An unscored past page draws no scale line")
+    XCTAssertEqual(scaleLines.allElementsBoundByIndex.map(\.label), ["Mood 7 · Energy 4"], "Unscored past pages draw no scale line")
   }
 
   func testWriteSeatReturnsFromPastDayToToday() {

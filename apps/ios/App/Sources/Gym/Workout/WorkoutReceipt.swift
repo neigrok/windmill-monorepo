@@ -59,7 +59,7 @@ import SyncCore
     saving = true; failure = nil; defer { saving = false }
     guard case .saved = gym.save(&routine) else { failure = gym.error ?? "The routine wasn’t saved. Try again."; return false }
     keptName = routine.current.name
-    gym.telemetry.event("gym_routine_saved", properties: ["screen": "workout", "outcome": "ok"])
+    gym.telemetry.event("gym_routine_saved", properties: ["screen": "workout", "action": "create"])
     return true
   }
   @MainActor func reconcile(_ gym: GymModel) {

@@ -151,50 +151,50 @@ extension JournalEchoMatch {
     }
   }
 
-  func shown(_ day: String) {
-    guard let page = pages[day] else { return }
-    for match in page.matches {
-      if presented.insert(Passage(trigger: day, day: match.day, text: match.text)).inserted {
-        telemetry.event("journal_echo_shown")
-      }
-    }
+  // A passage is shown once per foreground session, when its row draws in the ink or the reader; the count shows none.
+  func shown(_ match: JournalEchoMatch, on day: String) {
+    guard pages[day] != nil, presented.insert(Passage(trigger: day, day: match.day, text: match.text)).inserted else { return }
+    telemetry.event("journal_echo_shown")
   }
 
   func open(_ day: String) {
     guard pages[day] != nil else { return }
     inkDay = day; arrivalDay = nil
     if day == firstEchoDay { introducing = day; claimFirstEcho() }
+    telemetry.event("journal_echo_ink", properties: ["action": "open"])
   }
 
   func toggle(_ day: String) {
     if inkDay == day { closeInk() } else { open(day) }
   }
 
-  func closeInk() { inkDay = nil; introducing = nil }
+  // The person closes the ink: its count again, a tap outside it, or the keyboard. The room's own closes record nothing.
+  func closeInk() {
+    guard inkDay != nil else { return }
+    inkDay = nil; introducing = nil
+    telemetry.event("journal_echo_ink", properties: ["action": "close"])
+  }
 
-  func dismissIntroduction() { introducing = nil }
+  func dismissIntroduction() {
+    guard introducing != nil else { return }
+    introducing = nil
+    telemetry.event("journal_echo_intro_dismissed")
+  }
 
   func openReader(_ day: String) {
     guard pages[day] != nil else { return }
     readerDay = day
+    telemetry.event("journal_echo_reader_opened")
   }
 
   func inkMatches(_ day: String) -> [JournalEchoMatch] { Array(pages[day]?.matches.prefix(2) ?? []) }
-
-  // Useful marks the passages the ink shows; Not useful retires the page's echo in one request.
-  func answerInk(_ signal: JournalEchoSignal, day: String) async {
-    guard signal == .useful else { await answer(.dismiss, day: day); return }
-    for match in inkMatches(day) where match.useful != true {
-      await answer(.useful, day: day, matchDay: match.day)
-    }
-  }
 
   func claimFirstEcho() {
     guard firstEchoDay == access.today else { return }
     preferences.set(true, forKey: "journalFirstEchoSeen"); firstEchoDay = nil
   }
 
-  func clearWalk() { closeInk(); readerDay = nil; hops = []; destination = nil; arrivalDay = nil }
+  func clearWalk() { inkDay = nil; introducing = nil; readerDay = nil; hops = []; destination = nil; arrivalDay = nil }
 
   func settleArrival(_ day: String) { if arrivalDay == day { arrivalDay = nil } }
 
@@ -210,7 +210,7 @@ extension JournalEchoMatch {
     var trail = hops.isEmpty ? [access.today] : hops
     if let seen = trail.firstIndex(of: match.day) { trail = Array(trail.prefix(through: seen)) }
     else { trail.append(match.day) }
-    hops = trail; closeInk(); readerDay = nil; arrivalDay = nil
+    clearWalk(); hops = trail
     destination = JournalEchoDestination(day: match.day, text: match.text, occurrenceHint: match.occurrenceHint)
     telemetry.event("journal_echo_opened")
     let id = UUID(), mine = generation, service = service
@@ -220,7 +220,8 @@ extension JournalEchoMatch {
       do { try await service.signal(.opened, triggerDay: trigger, matchDay: match.day) }
       catch {
         if let self, self.generation == mine, Self.offline(error) {
-          self.raw = []; self.closeInk(); self.readerDay = nil; self.hops = []; self.arrivalDay = nil; self.validate()
+          let kept = self.destination
+          self.raw = []; self.clearWalk(); self.destination = kept; self.validate()
         }
       }
     }
@@ -230,31 +231,30 @@ extension JournalEchoMatch {
     guard day == access.today || bodies[day] != nil else { return }
     if let index = hops.firstIndex(of: day), index > 0 { hops = Array(hops.prefix(through: index)) }
     else { hops = [] }
-    closeInk(); destination = JournalEchoDestination(day: day)
+    inkDay = nil; introducing = nil; destination = JournalEchoDestination(day: day)
   }
 
-  func answer(_ signal: JournalEchoSignal, day: String, matchDay: String? = nil) async {
-    guard signal != .opened, access.available, let previous = raw.first(where: { $0.day == day }),
-          let page = pages[day], !pendingDays.contains(day),
-          matchDay == nil || page.matches.contains(where: { $0.day == matchDay }),
-          signal != .useful || matchDay != nil else { return }
-    if signal == .useful, page.matches.first(where: { $0.day == matchDay })?.useful == true { return }
-    let mine = generation, id = UUID()
+  // One verdict, one event: Useful marks the passages the ink shows, Not useful retires the page; a failure rolls back.
+  func answer(_ signal: JournalEchoSignal, day: String) async {
+    let marking = inkMatches(day).filter { $0.useful != true }.map(\.day)
+    guard signal != .opened, access.available, let previous = raw.first(where: { $0.day == day }), pages[day] != nil,
+          !pendingDays.contains(day), signal == .dismiss || !marking.isEmpty else { return }
+    let mine = generation, id = UUID(), service = service
     revision += 1; readTask?.cancel(); readTask = nil; readID = nil
     pendingDays.insert(day)
     raw = raw.compactMap { page in
       guard page.day == day else { return page }
-      if signal == .dismiss && matchDay == nil { return nil }
-      let matches = page.matches.compactMap { match -> JournalEchoMatch? in
-        guard match.day == matchDay else { return match }
-        if signal == .dismiss { return nil }
-        var useful = match; useful.useful = true; return useful
-      }
-      return JournalEchoPage(day: page.day, matches: matches)
+      guard signal == .useful else { return nil }
+      return JournalEchoPage(day: day, matches: page.matches.map { match in
+        var marked = match
+        if marking.contains(match.day) { marked.useful = true }
+        return marked
+      })
     }
     validate()
     telemetry.event(signal == .dismiss ? "journal_echo_dismissed" : "journal_echo_useful")
-    let task = Task { try await service.signal(signal, triggerDay: day, matchDay: matchDay) }
+    let requests: [String?] = signal == .dismiss ? [nil] : marking.map { $0 }
+    let task = Task { for matchDay in requests { try await service.signal(signal, triggerDay: day, matchDay: matchDay) } }
     signals[id] = task
     defer { if generation == mine { pendingDays.remove(day) }; signals[id] = nil }
     do {

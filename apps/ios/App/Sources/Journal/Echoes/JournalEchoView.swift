@@ -27,8 +27,7 @@ struct JournalEchoTab: View {
           .accessibilityLabel(Self.label(page.matches.count))
           .accessibilityValue(echoes.inkDay == day ? "Open" : "Closed")
           .accessibilityIdentifier("journal-echo-\(day)")
-          .onScrollVisibilityChange { value in visible = value; if value { echoes.shown(day) } }
-          .onChange(of: page.matches) { _, _ in if visible { echoes.shown(day) } }
+          .onScrollVisibilityChange { visible = $0 }
           .task(id: visible && !writing && kindled) {
             guard visible, !writing, kindled else { return }
             if UIAccessibility.isVoiceOverRunning, echoes.claimArrivalAnnouncement(day) {
@@ -61,13 +60,13 @@ struct JournalEchoInk: View {
     VStack(alignment: .leading, spacing: 18) {
       if echoes.introducing == day { introduction }
       ForEach(shown, id: \.day) { match in
-        Button { read(match) } label: { JournalEchoRow(match: match, trigger: day) }.buttonStyle(.plain)
+        Button { read(match) } label: { JournalEchoRow(echoes: echoes, match: match, trigger: day) }.buttonStyle(.plain)
           .accessibilityHint("Opens this page in the canvas")
           .accessibilityIdentifier("echo-open-\(match.day)")
       }
       ViewThatFits(in: .horizontal) {
-        HStack(spacing: 6) { verdict(useful: useful, pending: pending) }
-        VStack(alignment: .leading, spacing: 0) { verdict(useful: useful, pending: pending) }
+        HStack(spacing: 6) { verdict(useful: useful, pending: pending, inline: true) }
+        VStack(alignment: .leading, spacing: 0) { verdict(useful: useful, pending: pending, inline: false) }
       }.font(.footnote).buttonStyle(.plain).padding(.leading, indent).padding(.vertical, -12)
       if remaining > 0 {
         Button { echoes.openReader(day) } label: {
@@ -78,14 +77,15 @@ struct JournalEchoInk: View {
     }.frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .contain).accessibilityIdentifier("echo-ink-\(day)")
   }
 
-  @ViewBuilder func verdict(useful: Bool, pending: Bool) -> some View {
-    Button { Task { await echoes.answerInk(.useful, day: day) } } label: {
+  // Side by side the two verdicts keep their dot at every text size; stacked, they need none.
+  @ViewBuilder func verdict(useful: Bool, pending: Bool, inline: Bool) -> some View {
+    Button { Task { await echoes.answer(.useful, day: day) } } label: {
       Text("Useful").foregroundStyle(useful ? JournalPalette.lamp : JournalPalette.inkDim)
         .frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
     }.disabled(useful || pending)
       .accessibilityValue(useful ? "Selected" : "Not selected").accessibilityIdentifier("echo-useful-page")
-    if !typeSize.isAccessibilitySize { Text("·").foregroundStyle(JournalPalette.inkFaint).accessibilityHidden(true) }
-    Button { Task { await echoes.answerInk(.dismiss, day: day) } } label: {
+    if inline { Text("·").foregroundStyle(JournalPalette.inkFaint).accessibilityHidden(true) }
+    Button { Task { await echoes.answer(.dismiss, day: day) } } label: {
       Text("Not useful").foregroundStyle(JournalPalette.inkDim).frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
     }.disabled(pending).accessibilityIdentifier("echo-dismiss-page")
   }
@@ -107,7 +107,9 @@ struct JournalEchoInk: View {
   }
 }
 
+// One passage as the ink and the reader draw it; on screen, it counts as shown.
 struct JournalEchoRow: View {
+  let echoes: JournalEchoes
   let match: JournalEchoMatch
   let trigger: String
   @Environment(\.dynamicTypeSize) var typeSize
@@ -130,6 +132,7 @@ struct JournalEchoRow: View {
       }
     }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
       .accessibilityElement(children: .combine)
+      .onScrollVisibilityChange { visible in if visible { echoes.shown(match, on: trigger) } }
   }
 }
 
@@ -154,7 +157,7 @@ struct JournalEchoReader: View {
                 let previous = echoes.destination
                 echoes.walk(from: day, to: match)
                 if let destination = echoes.destination, destination != previous { read(destination) }
-              } label: { JournalEchoRow(match: match, trigger: day) }.buttonStyle(.plain)
+              } label: { JournalEchoRow(echoes: echoes, match: match, trigger: day) }.buttonStyle(.plain)
                 .accessibilityHint("Opens this page in the canvas")
                 .accessibilityIdentifier("echo-read-\(match.day)")
             }
