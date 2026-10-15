@@ -190,6 +190,15 @@ import SyncModelServer
     #expect(MovementPickerOptions.matching(query: long, catalogue: catalogue, selected: [], log: nil).create == String(repeating: "a", count: 60))
   }
 
+  @Test func aReopenedDraftKeepsItsNameAndANamelessOneTakesTheSearch() {
+    var draft = MovementCreationDraft(id: ID("movement1"), name: "")
+    draft.takeQuery("  Cable curl ")
+    #expect(draft.name == "Cable curl")
+    draft.name = "Cable curl kept"
+    draft.takeQuery("Cable")
+    #expect(draft.name == "Cable curl kept")
+  }
+
   @Test func creationOffersOnlyTheFourAndroidEquipmentChoicesAndAcceptsOpenTargets() {
     #expect(MovementCreationDraft.equipmentChoices == ["barbell", "dumbbell", "machine", "bodyweight"])
     var draft = MovementCreationDraft(id: ID("movement1"), name: " \n")

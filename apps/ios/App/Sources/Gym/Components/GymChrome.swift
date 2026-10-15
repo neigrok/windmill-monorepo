@@ -36,9 +36,13 @@ struct SheetCommit: ViewModifier {
     }.roomBar(.gym)
   }
 
+  // The checkmark is drawn on-accent, as the band's primary is, so it reads at 4.5:1 on the prominent fill.
   @ViewBuilder var confirm: some View {
-    if #available(iOS 26.0, *) { Button(role: .confirm, action: commit).accessibilityLabel(title) }
-    else { Button(action: commit) { Text(title).bold() } }
+    if #available(iOS 26.0, *) {
+      Button(role: .confirm, action: commit) {
+        Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(disabled || busy ? GymPalette.inkFaint : GymPalette.onAccent)
+      }.buttonStyle(.glassProminent).accessibilityLabel(title)
+    } else { Button(action: commit) { Text(title).bold() } }
   }
 }
 

@@ -99,6 +99,11 @@ struct MovementCreationDraft {
     if !Self.equipmentChoices.contains(equipment) { return "check the movement name and equipment" }
     return nil
   }
+
+  // A draft reopens as the owner left it; a nameless one takes the search it opens from.
+  mutating func takeQuery(_ query: String) {
+    if MovementName.trimmed(name).isEmpty { name = MovementName.capped(MovementName.trimmed(query)) }
+  }
 }
 
 extension GymModel {
@@ -158,63 +163,85 @@ struct MovementPicker: View {
 
   var firstSession: Bool { MovementPickerOptions.firstSession(log: gym.log, routines: gym.routines, readFailed: gym.readFailed) }
 
+  // The builder pushes Create movement over its picker, so its search stays a field in the list: a search controller left
+  // active under the pushed step would take the taps meant for its bar.
   var body: some View {
-    movementList
-      .searchable(text: externalQuery ?? $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search movements")
-      .searchFocused($searchFocused)
-      .accessibilityIdentifier("gym-movement-picker")
-      .autocorrectionDisabled()
-      .modifier(GymPage())
-      .navigationTitle(purpose.title)
-      .toolbar {
-        if purpose != .browse {
-          ToolbarItem(placement: .cancellationAction) { Button("Cancel") { if let onCancel { onCancel() } else { dismiss() } } }
+    Group {
+      if externalQuery == nil {
+        movementList.searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search movements")
+          .searchFocused($searchFocused)
+      } else { movementList }
+    }
+    .accessibilityIdentifier("gym-movement-picker")
+    .autocorrectionDisabled()
+    .modifier(GymPage())
+    .navigationTitle(purpose.title)
+    .toolbar {
+      if purpose != .browse {
+        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { if let onCancel { onCancel() } else { dismiss() } } }
+      }
+      if MovementName.trimmed(externalQuery?.wrappedValue ?? query).isEmpty {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button("New movement", systemImage: "plus") { create() }.labelStyle(.iconOnly)
+            .disabled(gym.accountTransition).accessibilityIdentifier("gym-new-movement")
         }
-        if MovementName.trimmed(externalQuery?.wrappedValue ?? query).isEmpty {
-          ToolbarItem(placement: .topBarTrailing) {
-            Button("New movement", systemImage: "plus") { create() }.labelStyle(.iconOnly)
-              .disabled(gym.accountTransition).accessibilityIdentifier("gym-new-movement")
+      }
+    }.roomBar(.gym)
+    .reachBand { GymTransient(gym: gym) }
+    .onAppear {
+      ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log)
+      gym.telemetry.event("gym_screen_viewed", properties: ["screen": purpose.screen])
+    }
+    .onChange(of: gym.sessions) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
+    .onChange(of: gym.sets) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
+    .onChange(of: gym.log?.firstPullComplete) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
+    .sheet(isPresented: $showingCreation, onDismiss: { if let created { creation = nil; opened = created; self.created = nil } }) {
+      if let draft = creation {
+        NavigationStack {
+          CreateMovementSheet(gym: gym, draft: Binding(get: { creation ?? draft }, set: { creation = $0 }), purpose: purpose,
+                              account: pickingAccount, anonymous: pickingAnonymous) { entry in
+            if purpose == .browse { created = entry.exerciseId; showingCreation = false }
+            else { onSelect(entry) }
           }
-        }
-      }.roomBar(.gym)
-      .reachBand { GymTransient(gym: gym) }
-      .onAppear {
-        ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log)
-        gym.telemetry.event("gym_screen_viewed", properties: ["screen": purpose.screen])
+        }.modifier(GymPage()).presentationDetents([.medium])
       }
-      .onChange(of: gym.sessions) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
-      .onChange(of: gym.sets) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
-      .onChange(of: gym.log?.firstPullComplete) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
-      .sheet(isPresented: $showingCreation, onDismiss: { if let created { creation = nil; opened = created; self.created = nil } }) {
-        if let draft = creation {
-          NavigationStack {
-            CreateMovementSheet(gym: gym, draft: Binding(get: { creation ?? draft }, set: { creation = $0 }), purpose: purpose,
-                                account: pickingAccount, anonymous: pickingAnonymous) { entry in
-              if purpose == .browse { created = entry.exerciseId; showingCreation = false }
-              else { onSelect(entry) }
-            }
-          }.modifier(GymPage()).presentationDetents([.medium])
-        }
-      }
-      .navigationDestination(item: $opened) { id in MovementRecordScreen(gym: gym, exerciseID: id) }
-      .toolbar(purpose == .browse ? .hidden : .automatic, for: .tabBar)
+    }
+    .navigationDestination(item: $opened) { id in MovementRecordScreen(gym: gym, exerciseID: id) }
+    .toolbar(purpose == .browse ? .hidden : .automatic, for: .tabBar)
   }
 
   // Create movement opens with the query as its name: the builder's own step, or this picker's sheet.
   func create() {
     searchFocused = false
     if let onCreate { onCreate(); return }
-    if creation == nil { creation = MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: MovementName.capped(MovementName.trimmed(query))) }
-    showingCreation = true
+    var draft = creation ?? MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: "")
+    draft.takeQuery(query)
+    creation = draft; showingCreation = true
   }
 
   private var movementList: some View {
     let query = externalQuery?.wrappedValue ?? self.query
     let options = MovementPickerOptions.matching(query: query, catalogue: gym.catalogue.exercises, selected: selected,
                                                  log: gym.log, featured: ranking.ids, readFailed: gym.readFailed)
+    let unread = gym.readFailed ? nil : options.unread
     return List {
       Group {
-        if let unread = gym.readFailed ? nil : options.unread { Section {} footer: { Text(unread) } }
+        if let externalQuery {
+          Section {
+            HStack {
+              Image(systemName: "magnifyingglass").foregroundStyle(GymPalette.inkDim)
+              TextField("Search movements", text: externalQuery).focused($searchFocused)
+                .textInputAutocapitalization(.never).onSubmit { searchFocused = false }
+                .accessibilityIdentifier("gym-movement-search")
+              if !query.isEmpty {
+                Button { externalQuery.wrappedValue = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(GymPalette.inkDim).frame(minWidth: 44, minHeight: 44) }
+                  .buttonStyle(.plain).accessibilityLabel("Clear search").accessibilityIdentifier("gym-movement-search-clear")
+              }
+            }
+          } footer: { if let unread { Text(unread) } }
+        } else if let unread {
+          Section {} footer: { Text(unread) }
+        }
         if let name = options.create {
           Section {
             Button { create() } label: { Label("Create “\(name)”", systemImage: "plus.circle.fill") }

@@ -32,9 +32,9 @@ import XCTest
     }
     field.typeText(text)
   }
-  func pickBench(_ app: XCUIApplication) {
+  func pickBench(_ app: XCUIApplication, routineEditor: Bool = false) {
     capture(app, "picker-after-opening")
-    let search = app.searchFields.firstMatch
+    let search = routineEditor ? app.textFields["gym-movement-search"] : app.searchFields.firstMatch
     XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("Bench")
     XCTAssertTrue(app.buttons["gym-movement-bench-press"].waitForExistence(timeout: 5)); app.buttons["gym-movement-bench-press"].tap()
   }
@@ -61,7 +61,7 @@ import XCTest
     let app = launch()
     app.buttons["new-routine"].tap(); replace(app.textFields["routine-name"], "Integration A")
     app.buttons["add-movement"].tap()
-    pickBench(app)
+    pickBench(app, routineEditor: true)
     app.buttons["builder-movement-bench-press"].tap()
     replace(app.textFields["gym-target-sets"], "4"); replace(app.textFields["gym-target-reps"], "8"); replace(app.textFields["gym-target-weight"], "60")
     app.buttons["gym-target-set"].tap(); app.buttons["save-routine"].tap()

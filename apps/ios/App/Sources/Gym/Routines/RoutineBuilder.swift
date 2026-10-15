@@ -47,8 +47,9 @@ final class RoutineEditingSession: Identifiable {
     query = ""; creation = nil; path = [.movements]
   }
   func createMovement(_ gym: GymModel) {
-    if creation == nil { creation = MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: MovementName.capped(MovementName.trimmed(query))) }
-    path.append(.creation)
+    var draft = creation ?? MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: "")
+    draft.takeQuery(query)
+    creation = draft; path.append(.creation)
   }
   func cancelTargets() {
     if case .targets? = path.last { path.removeLast() }

@@ -827,7 +827,7 @@ import XCTest
     capture(name("targets", routines), routines)
     routines.navigationBars["Targets"].buttons["Cancel"].tap()
     reach(routines.buttons["add-movement"], routines).tap()
-    let search = routines.searchFields.firstMatch
+    let search = routines.textFields["gym-movement-search"]
     XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("Zercher")
     XCTAssertTrue(routines.buttons["gym-create-movement"].waitForExistence(timeout: 5))
     capture(name("picker-query", routines), routines)

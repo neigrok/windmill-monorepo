@@ -51,7 +51,7 @@ import UIKit
     }
     return nil
   }
-  // A band's primary is a wide pill; a sheet's commit is the bar's prominent checkmark, a circle.
+  // A band's primary is a wide pill; a sheet's commit is the bar's prominent checkmark, about 29 pt wide.
   func waitForPrimaryButton(_ button: XCUIElement, minimumWidth: CGFloat = 100) -> Bool {
     let rendered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
       guard let snapshot = try? button.snapshot() else { return false }
@@ -178,14 +178,14 @@ import UIKit
       app.buttons["gym-movement-bench-press"].tap()
       let movement = app.buttons["builder-movement-bench-press"]
       XCTAssertTrue(movement.waitForExistence(timeout: 5)); movement.tap()
-      assertPrimaryLabelContrast(app.buttons["gym-target-set"], appearance: appearance, minimumWidth: 30)
+      assertPrimaryLabelContrast(app.buttons["gym-target-set"], appearance: appearance, minimumWidth: 24)
       capture(app, "targets-open-" + appearance)
       replace(app.textFields["gym-target-sets"], with: "3")
       replace(app.textFields["gym-target-reps"], with: "8")
       replace(app.textFields["gym-target-weight"], with: "60")
       app.buttons["gym-target-keyboard-done"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1)
       XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
-      assertPrimaryLabelContrast(app.buttons["gym-target-set"], appearance: appearance, minimumWidth: 30)
+      assertPrimaryLabelContrast(app.buttons["gym-target-set"], appearance: appearance, minimumWidth: 24)
       capture(app, "targets-straight-" + appearance)
       let vary = app.switches["Vary by set"]
       let control = vary.descendants(matching: .switch).firstMatch
@@ -233,7 +233,7 @@ import UIKit
       XCTAssertTrue(ramp.waitForExistence(timeout: 5)); ramp.tap()
       XCTAssertTrue(ramp.waitForNonExistence(timeout: 5))
       XCTAssertEqual(app.textFields["gym-target-row-2-weight"].value as? String, "80")
-      assertPrimaryLabelContrast(app.buttons["gym-target-set"], appearance: appearance, minimumWidth: 30)
+      assertPrimaryLabelContrast(app.buttons["gym-target-set"], appearance: appearance, minimumWidth: 24)
       capture(app, "targets-varied-" + appearance)
       app.buttons["gym-target-set"].tap()
       capture(app, "builder-" + appearance)
@@ -328,7 +328,7 @@ import UIKit
       XCTAssertFalse(app.buttons["gym-new-movement"].exists)
       offer.tap()
       XCTAssertEqual(app.textFields["gym-movement-name"].value as? String, "Cable curl")
-      assertPrimaryLabelContrast(commit, appearance: appearance, minimumWidth: 30)
+      assertPrimaryLabelContrast(commit, appearance: appearance, minimumWidth: 24)
       capture(app, "creation-" + appearance)
       commit.tap()
       XCTAssertTrue(app.navigationBars["Cable curl"].waitForExistence(timeout: 10))
@@ -466,7 +466,7 @@ import UIKit
     app.buttons["new-routine"].tap()
     replace(app.textFields["routine-name"], with: "Custom day")
     app.buttons["add-movement"].tap()
-    replace(app.searchFields.firstMatch, with: "Custom press")
+    replace(app.textFields["gym-movement-search"], with: "Custom press")
     app.buttons["gym-create-movement"].tap()
     let commit = app.buttons["gym-movement-create-commit"]
     XCTAssertTrue(commit.waitForExistence(timeout: 5))
@@ -482,7 +482,7 @@ import UIKit
     XCTAssertFalse(app.staticTexts["Name it to save it."].exists)
     replace(name, with: "Custom press kept")
     app.navigationBars["Create movement"].buttons["Cancel"].tap()
-    XCTAssertEqual(app.searchFields.firstMatch.value as? String, "Custom press")
+    XCTAssertEqual(app.textFields["gym-movement-search"].value as? String, "Custom press")
     app.buttons["gym-create-movement"].tap()
     XCTAssertEqual(app.textFields["gym-movement-name"].value as? String, "Custom press kept")
     app.textFields["gym-movement-name"].tap()
@@ -516,7 +516,7 @@ import UIKit
     XCTAssertEqual(app.buttons["gym-movement-targets"].label, "Targets, 1 × max")
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5), "Returning from Targets must keep the dismissed keyboard closed")
     let create = app.buttons["gym-movement-create-commit"]
-    XCTAssertTrue(waitForPrimaryButton(create, minimumWidth: 30))
+    XCTAssertTrue(waitForPrimaryButton(create, minimumWidth: 24))
     XCTAssertTrue(create.isEnabled)
     let createFrame = create.frame
     XCTAssertFalse(createFrame.isEmpty)
