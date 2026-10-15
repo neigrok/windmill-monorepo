@@ -54,6 +54,22 @@ public struct SignedOutWorkout: Equatable, Sendable {
     guard let crossed else { return nil }
     return .sessionOverlap(Refused(Gym.Codes.sessionOverlap, subject: session.id.ref, detail: ["sessionId": crossed.id.json], path: .predicted))
   }
+  // What this phone refuses before a retry asks the account. A finished copy is an import, with the import's checks.
+  // An open copy restarts as a start that does not join, with its sets appended: the log refuses that while it holds an
+  // open workout of its own, and never for crossing a finished one.
+  public func retryRefusal(at moment: Moment, among sessions: [Session], catalogue: Catalogue) -> GymRefusal? {
+    guard session.isOpen else { return importRefusal(at: moment, among: sessions, catalogue: catalogue) }
+    if sessions.contains(where: { $0.isOpen && $0.id != session.id }) {
+      return .sessionOpen(Refused(Gym.Codes.sessionOpen, subject: session.id.ref, path: .predicted))
+    }
+    do throws(Violation) { try SessionRules.instant(session.startedAt, rule: "session.startedAt", at: "startedAt") } catch { return .invalid(error) }
+    guard session.startedAt <= moment.now else { return .badInstant(Refused(Gym.Codes.badInstant, subject: session.id.ref, path: .predicted)) }
+    for set in sets {
+      do throws(Violation) { _ = try Valid(set, at: moment) } catch { return .invalid(error) }
+      guard catalogue.find(set.exerciseId) != nil else { return .unknownExercise(Refused(Gym.Codes.unknownExercise, subject: set.id.ref, path: .predicted)) }
+    }
+    return nil
+  }
   // A notice this copy owns: a refusal of the gestures recovery queues for it, its import, its start with its sets, a
   // correction of its session or the creation of one of its sets. A later edit of a set that landed is the room's.
   public func owns(_ notice: DomainNotice<GymRefusal>) -> Bool {

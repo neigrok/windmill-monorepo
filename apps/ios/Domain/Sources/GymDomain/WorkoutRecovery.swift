@@ -73,12 +73,27 @@ public struct WorkoutRecovery: Equatable, Sendable, Identifiable {
         return reviewed(Reason(latest.refusal), latest.refusal, .restoreSets, missing)
       }
       let retry: Retry = workout.session.isOpen ? .restartWorkout : .importWorkout
-      if let latest = live.last { return reviewed(Reason(latest.refusal), latest.refusal, retry, []) }
-      if let refusal = workout.importRefusal(at: log.moment, among: sessions, catalogue: catalogue) { return reviewed(Reason(refusal), refusal, retry, []) }
-      if workout.session.isOpen, log.open != nil {
-        return reviewed(.accountWorkoutOpen, .sessionOpen(Refused(Gym.Codes.sessionOpen, subject: id.ref, path: .predicted)), retry, [])
-      }
+      if let latest = live.last, stands(latest.refusal, against: workout, on: log) { return reviewed(Reason(latest.refusal), latest.refusal, retry, []) }
+      if let refusal = workout.retryRefusal(at: log.moment, among: sessions, catalogue: catalogue) { return reviewed(Reason(refusal), refusal, retry, []) }
       return reviewed(.unsent, nil, retry, [])
+    }
+  }
+
+  // A notice names what held the copy back when the account answered. While the phone's log is complete it can tell
+  // that the account's open workout has closed, or that the workout the copy crossed no longer crosses it; then the
+  // notice no longer stands, and the copy's own state is its reason. A workout the log does not draw may be one the
+  // phone has not pulled yet, so a crossing with it stands.
+  static func stands(_ refusal: GymRefusal, against workout: SignedOutWorkout, on log: TrainingLog) -> Bool {
+    guard log.firstPullComplete else { return true }
+    let sessions = log.drawnSessions
+    switch refusal {
+    case .sessionOpen: return sessions.contains { $0.isOpen && $0.id != workout.session.id }
+    case .sessionOverlap(let refused):
+      guard let crossed = refused.detail?["sessionId"].flatMap({ try? RecordID(json: $0) }) else { return true }
+      let action = workout.importAction
+      guard let other = sessions.first(where: { $0.id.record == crossed }) else { return true }
+      return SessionRules.crosses(action.startedAt, action.finishedAt, other: other)
+    default: return true
     }
   }
 }
@@ -149,8 +164,7 @@ public struct WorkoutFix: Equatable, Sendable {
   }
 
   // The editor's live line: what this phone would refuse before asking the account. A landed workout's sets must be
-  // valid and on known movements; a whole copy must pass the import's checks, and an open one restarts only while the
-  // account has no open workout of its own.
+  // valid and on known movements; a whole copy passes what its retry would meet (`SignedOutWorkout.retryRefusal`).
   public func refusal(at moment: Moment, among sessions: [Session], catalogue: Catalogue) -> GymRefusal? {
     if landed {
       for set in sets {
@@ -159,10 +173,7 @@ public struct WorkoutFix: Equatable, Sendable {
       }
       return nil
     }
-    if isOpen, sessions.contains(where: { $0.isOpen && $0.id != original.session.id }) {
-      return .sessionOpen(Refused(Gym.Codes.sessionOpen, subject: original.session.id.ref, path: .predicted))
-    }
-    return workout.importRefusal(at: moment, among: sessions, catalogue: catalogue)
+    return workout.retryRefusal(at: moment, among: sessions, catalogue: catalogue)
   }
 }
 
