@@ -122,7 +122,7 @@ nonisolated enum SessionShareState: Equatable, Sendable {
   }
 
   func accountChanged() {
-    cancel(); state = .closed(note: "sharing needs your account — sign in first")
+    cancel(); state = .closed()
   }
 
   static func isCancellation(_ error: any Error) -> Bool {
@@ -140,12 +140,13 @@ nonisolated enum SessionShareState: Equatable, Sendable {
 }
 
 extension GymModel {
+  // A link is minted on the account, so a phone signed out offers sign-in where sharing would be.
+  var sharingNeedsSignIn: Bool { isAnonymous || account == nil }
+
   func mintSessionShare(_ id: ID<Session>) async throws -> SessionPublicLink {
     do {
       guard !accountTransition else { throw AppFailure(message: "Wait for the account change to finish.") }
-      guard !isAnonymous, let owner = account, !authPaused else {
-        throw AppFailure(message: "sharing needs your account — sign in first")
-      }
+      guard !sharingNeedsSignIn, let owner = account, !authPaused else { throw AppFailure(message: "Sharing needs your account. Sign in first.") }
       let data = try await rest.request("/v1/gym/sessions/\(id)/share", method: "POST")
       try Task.checkCancellation()
       guard account == owner, !accountTransition, !authPaused else { throw CancellationError() }
@@ -169,9 +170,7 @@ extension GymModel {
   func revokeSessionShare(_ id: ID<Session>) async throws {
     do {
       guard !accountTransition else { throw AppFailure(message: "Wait for the account change to finish.") }
-      guard !isAnonymous, let owner = account, !authPaused else {
-        throw AppFailure(message: "sharing needs your account — sign in first")
-      }
+      guard !sharingNeedsSignIn, let owner = account, !authPaused else { throw AppFailure(message: "Sharing needs your account. Sign in first.") }
       _ = try await rest.request("/v1/gym/sessions/\(id)/share", method: "DELETE")
       try Task.checkCancellation()
       guard account == owner, !accountTransition, !authPaused else { throw CancellationError() }
@@ -188,13 +187,14 @@ extension GymModel {
 struct SessionShareSheet: View {
   let gym: GymModel
   let sessionID: ID<Session>
+  let signIn: () -> Void
   @Environment(\.dismiss) private var dismiss
   @Environment(\.dynamicTypeSize) private var typeSize
   @State private var owner: String?
   @State private var sharing: SessionShareModel
 
-  init(gym: GymModel, sessionID: ID<Session>) {
-    self.gym = gym; self.sessionID = sessionID
+  init(gym: GymModel, sessionID: ID<Session>, signIn: @escaping () -> Void) {
+    self.gym = gym; self.sessionID = sessionID; self.signIn = signIn
     _owner = State(initialValue: gym.account)
     _sharing = State(initialValue: SessionShareModel(mint: { try await gym.mintSessionShare(sessionID) },
                                                     revoke: { try await gym.revokeSessionShare(sessionID) }))
@@ -217,18 +217,26 @@ struct SessionShareSheet: View {
         }.frame(maxWidth: .infinity, alignment: .leading).padding()
       }
       .modifier(GymPage())
-      .safeAreaInset(edge: .bottom) {
+      .navigationTitle(sharing.state.title).navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+      }.roomBar(.gym)
+      .reachBand {
         VStack(spacing: 0) {
           if let note = sharing.state.note {
             RoomTransient(message: note, room: .gym).accessibilityIdentifier("gym-share-error")
           }
-          ActionBand(title: sharing.state.action, room: .gym,
-                     busy: sharing.state == .working, actionIdentifier: "gym-share-primary") {
-            if case .live(let share, _, _) = sharing.state {
-              guard gym.account == owner, !gym.accountTransition, !gym.authPaused else { sharing.accountChanged(); return }
-              UIPasteboard.general.string = share.link(base: base); sharing.copied()
-              gym.telemetry.event("gym_action", properties: ["screen": "session_share", "outcome": "ok"])
-            } else { owner = gym.account; sharing.getLink() }
+          if gym.sharingNeedsSignIn {
+            ActionBand(title: "Sign in to share", room: .gym, actionIdentifier: "gym-share-sign-in") { signIn(); dismiss() }
+          } else {
+            ActionBand(title: sharing.state.action, room: .gym,
+                       busy: sharing.state == .working, actionIdentifier: "gym-share-primary") {
+              if case .live(let share, _, _) = sharing.state {
+                guard gym.account == owner, !gym.accountTransition, !gym.authPaused else { sharing.accountChanged(); return }
+                UIPasteboard.general.string = share.link(base: base); sharing.copied()
+                gym.telemetry.event("gym_action", properties: ["screen": "session_share", "outcome": "ok"])
+              } else { owner = gym.account; sharing.getLink() }
+            }
           }
           if case .live = sharing.state {
             Button("Revoke the link", role: .destructive) { sharing.revokeLink() }
@@ -236,10 +244,6 @@ struct SessionShareSheet: View {
               .accessibilityIdentifier("gym-share-revoke")
           }
         }.padding(.bottom, RoomSpace.inset)
-      }
-      .navigationTitle(sharing.state.title).navigationBarTitleDisplayMode(.inline)
-      .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
       }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "session_share"]) }
       .onDisappear { sharing.cancel() }

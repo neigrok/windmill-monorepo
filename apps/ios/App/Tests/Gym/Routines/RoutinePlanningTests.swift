@@ -78,7 +78,7 @@ import SyncSchema
     let pending = editing.draft.current
     gym.account = "another-owner"; gym.isAnonymous = false
     #expect(!editing.save(gym))
-    #expect(editing.failure == "The account changed while editing. Open the routine again.")
+    #expect(editing.refusal == "The account changed while editing. Open the routine again.")
     #expect(editing.draft.current == pending && gym.routines == [stored.current])
     gym.account = nil; gym.isAnonymous = true
     harness.failNextCommit()
@@ -127,21 +127,25 @@ import SyncSchema
     #expect(editing.draft.current.entries == [RoutineEntry(exerciseId: ID("bench-press"))])
   }
 
-  @Test func aPendingMovementUndoQuietsTheLiveRefusalButNeverASaveFailure() {
+  @Test func aRefusalAnswersASaveOrLeavingAChangedNameAndTheNextEditClearsIt() {
     let (_, gym) = fixture()
     let editing = RoutineEditingSession(gym: gym, routine: nil)
+    editing.leaveName()
     #expect(editing.refusal == nil)
     editing.draft.current.name = "Push A"
-    #expect(editing.refusal == "A routine is at least one movement.")
+    #expect(editing.refusal == nil)
+    #expect(!editing.save(gym) && editing.refusal == "A routine is at least one movement." && gym.error == nil)
     editing.select(RoutineEntry(exerciseId: ID("bench-press")))
     #expect(editing.refusal == nil)
     editing.remove(0)
     #expect(editing.refusal == nil && editing.removals == 1)
-    editing.failure = "This routine could not be saved. Try again."
+    editing.refusal = "This routine could not be saved. Try again."
     #expect(editing.refusal == "This routine could not be saved. Try again.")
-    editing.failure = nil; editing.undoRemoval()
+    editing.undoRemoval()
     #expect(editing.refusal == nil && editing.draft.current.entries == [RoutineEntry(exerciseId: ID("bench-press"))])
     editing.draft.current.name = " "
+    #expect(editing.refusal == nil)
+    editing.leaveName()
     #expect(editing.refusal == "Name it to save it.")
   }
 

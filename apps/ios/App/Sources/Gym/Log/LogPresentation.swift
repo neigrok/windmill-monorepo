@@ -94,15 +94,20 @@ struct LogMonth: Identifiable {
 extension GymModel {
   var finishedLogSessions: [Session] { sessions.filter { !$0.isOpen && $0.startedAt <= (log?.moment.now ?? Instant(ms: 0)) } }
 
+  // The log's records, worked out once per change of the log rather than per row per render.
+  var logRecords: ProgressRecords? {
+    if logRecordsRead == nil, let log { logRecordsRead = ProgressRecords(log.progress) }
+    return logRecordsRead
+  }
+
   func logTimeline(limit: Int) -> [LogMonth] {
-    guard let log else { return [] }
+    guard let log, let records = logRecords else { return [] }
     let now = log.moment.now, today = log.moment.today, zone = log.moment.zone
-    let progress = log.progress
+    let progress = records.progress
     var moments: [LogTimelineEntry] = []
-    let ids = Set(progress.sessions.flatMap { $0.movements.map(\.exerciseId) }).sorted()
     if progress.isComplete && !readFailed {
-      for id in ids {
-        let records = progress.movement(id).records.filter { $0.startedAt <= now }
+      for id in records.movements.keys.sorted() {
+        let records = (records.movements[id] ?? []).filter { $0.startedAt <= now }
         for (index, record) in records.enumerated() {
           moments.append(LogTimelineEntry(id: "best:\(id):\(record.id)", at: record.startedAt,
             kind: .best(id, record, index == 0 ? nil : records[index - 1])))
@@ -149,10 +154,8 @@ extension GymModel {
   }
 
   // The record a finished session set, as its row's second line: Record · Bench Press 84 × 5.
-  func logRecordFact(_ session: ID<Session>, progress: StatsProgress?) -> String? {
-    guard let progress, let fact = progress.sessions.first(where: { $0.sessionId == session })?.movements.first(where: { fact in
-      progress.movement(fact.exerciseId).records.contains { $0.id == session }
-    }), let estimate = fact.estimate else { return nil }
+  func logRecordFact(_ session: ID<Session>) -> String? {
+    guard let fact = logRecords?.sessions[session], let estimate = fact.estimate else { return nil }
     return "Record · \(catalogue.find(fact.exerciseId)?.name ?? "Movement") \(Readout.effort(weightKg: estimate.weightKg, reps: estimate.reps))"
   }
 }

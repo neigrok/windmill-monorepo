@@ -41,7 +41,7 @@ import SyncModelServer
     #expect(options.six.map(\.id) == MovementPickerOptions.openers)
     #expect(options.matches.map(\.id) == catalogue.filter { !MovementPickerOptions.openers.contains($0.id) }.map(\.id))
     #expect(options.six.count + options.matches.count == catalogue.count)
-    #expect(options.unread == nil && options.empty == nil)
+    #expect(options.unread == nil && options.create == nil)
   }
 
   @Test func searchMatchesNamesAndFormerNamesAndCapsTheShortlist() {
@@ -52,7 +52,7 @@ import SyncModelServer
     let renamed = MovementPickerOptions.matching(query: "earlier 8", catalogue: catalogue, selected: [], log: nil)
     #expect(renamed.matches == [MovementPickerOptions.Row(exercise: catalogue[8], meta: nil, alias: "Earlier 8", selected: false)])
     #expect(renamed.matches.map(\.line) == ["Barbell · was “Earlier 8”"])
-    #expect(renamed.unread == nil && renamed.empty == nil)
+    #expect(renamed.unread == nil && renamed.create == nil)
   }
 
   @Test func nameMatchTakesPrecedenceOverAliasAndSelectedMovementStaysVisible() {
@@ -172,12 +172,22 @@ import SyncModelServer
 
   @Test func absentCatalogueAndFailedReadAreDistinctFromNoMatch() {
     let catalogue = Catalogue(custom: [], names: []).exercises
-    let noMatch = MovementPickerOptions.matching(query: "unfindable", catalogue: catalogue, selected: [], log: nil)
-    #expect(noMatch == MovementPickerOptions.Result(six: [], matches: [], unread: nil, empty: "No movement by that name."))
+    let noMatch = MovementPickerOptions.matching(query: " Zercher squat ", catalogue: catalogue, selected: [], log: nil)
+    #expect(noMatch == MovementPickerOptions.Result(six: [], matches: [], unread: nil, create: "Zercher squat"))
     let absent = MovementPickerOptions.matching(query: "", catalogue: [], selected: [], log: nil)
-    #expect(absent == MovementPickerOptions.Result(six: [], matches: [], unread: MovementPickerOptions.catalogueUnread, empty: nil))
+    #expect(absent == MovementPickerOptions.Result(six: [], matches: [], unread: MovementPickerOptions.catalogueUnread, create: nil))
     let failed = MovementPickerOptions.matching(query: "unfindable", catalogue: catalogue, selected: [], log: log(), readFailed: true)
-    #expect(failed == MovementPickerOptions.Result(six: [], matches: [], unread: MovementPickerOptions.catalogueUnread, empty: nil))
+    #expect(failed == MovementPickerOptions.Result(six: [], matches: [], unread: MovementPickerOptions.catalogueUnread, create: nil))
+  }
+
+  @Test func aQueryWithoutAnExactNameOrFormerNameOffersToCreateIt() {
+    let catalogue = [exercise("bench", name: "Bench Press", aliases: ["Flat bench"]), exercise("row", name: "Barbell Row")]
+    let partial = MovementPickerOptions.matching(query: "bench", catalogue: catalogue, selected: [], log: nil)
+    #expect(partial.matches.map(\.id) == [ID("bench")] && partial.create == "bench")
+    #expect(MovementPickerOptions.matching(query: "  bench PRESS ", catalogue: catalogue, selected: [], log: nil).create == nil)
+    #expect(MovementPickerOptions.matching(query: "flat bench", catalogue: catalogue, selected: [], log: nil).create == nil)
+    let long = String(repeating: "a", count: 70)
+    #expect(MovementPickerOptions.matching(query: long, catalogue: catalogue, selected: [], log: nil).create == String(repeating: "a", count: 60))
   }
 
   @Test func creationOffersOnlyTheFourAndroidEquipmentChoicesAndAcceptsOpenTargets() {

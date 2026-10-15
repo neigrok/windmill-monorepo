@@ -224,7 +224,11 @@ struct ProposalReviewSheet: View {
               }
             }
             if superseded { Text("This routine has changed since the proposal was written, so it can no longer be applied — nothing here was. What the routine now says is what stands.").font(.callout).foregroundStyle(GymPalette.inkDim) }
-            if let ask { Button("Ask Coach") { dismiss(); ask(routine?.name ?? proposal.baseName ?? "this routine") }.frame(minHeight: RoomSpace.minimumTarget) }
+            if let ask {
+              Button { dismiss(); ask(routine?.name ?? proposal.baseName ?? "this routine") } label: {
+                Text("Ask Coach").frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
+              }
+            }
           } else { Text("That proposal is gone.") }
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
       }.onScrollGeometryChange(for: CoachReviewPosition.self) { geometry in
@@ -271,8 +275,9 @@ struct ProposalReviewSheet: View {
           ForEach(captions, id: \.self) { Text($0).hidden() }
           Text(caption).foregroundStyle(GymPalette.inkDim)
         }.font(.footnote).multilineTextAlignment(.center).padding(.horizontal, RoomSpace.inset).accessibilityHidden(true)
-        Button("Turn this down", role: .destructive) { turningDown = true }.foregroundStyle(GymPalette.alarm)
-          .frame(minHeight: RoomSpace.minimumTarget).disabled(gym.openSession != nil)
+        Button(role: .destructive) { turningDown = true } label: {
+          Text("Turn this down").frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
+        }.foregroundStyle(GymPalette.alarm).disabled(gym.openSession != nil)
       } else if owner != gym.account || !gym.coachAccountAvailable { EmptyView() }
       else if pending {
         HStack(spacing: RoomSpace.related) {

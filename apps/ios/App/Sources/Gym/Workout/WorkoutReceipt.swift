@@ -184,6 +184,12 @@ struct WorkoutReceipt: View {
   let gym: GymModel
   @Bindable var receipt: WorkoutReceiptData
   @Environment(\.dismiss) var dismiss
+  @Environment(\.dynamicTypeSize) var typeSize
+  // The tiles, the record, the movements and the comparison; the sheet opens at half height while they fit in five rows.
+  var rows: Int {
+    1 + (receipt.review?.record == nil ? 0 : 1) + receipt.performed.count + (receipt.review?.against?.movements.count ?? 0)
+      + (receipt.offersRoutine ? 1 : 0)
+  }
   var body: some View {
     NavigationStack {
       List {
@@ -221,9 +227,9 @@ struct WorkoutReceipt: View {
           }
         }.listRowBackground(GymPalette.card)
       }.modifier(GymPage()).roomTitle(receipt.title, subtitle: receipt.subtitle)
-        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-        .safeAreaInset(edge: .bottom) { band }
-    }.modifier(GymPage()).presentationDetents([.large])
+        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.tint(GymPalette.accent) } }.roomBar(.gym)
+        .reachBand { band }
+    }.modifier(GymPage()).presentationDetents(rows <= 5 && !typeSize.isAccessibilitySize ? [.medium, .large] : [.large])
       .sensoryFeedback(.success, trigger: receipt.keptName) { old, new in old == nil && new != nil }
       .task { await receipt.loadReview(gym) }
       .onAppear { receipt.reconcile(gym) }

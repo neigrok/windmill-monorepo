@@ -101,16 +101,6 @@ nonisolated struct RoutineTargetDraft: Equatable, Sendable {
     !isOpen && (!varyBySet || refusal == nil || headRefusal != nil)
   }
 
-  var commitLabel: String {
-    switch reading {
-    case .open: return "Set · open"
-    case .refused: return "Set"
-    case .scheme(let sets):
-      let straight = sets.dropFirst().allSatisfy { $0 == sets.first }
-      return "Set · " + (straight ? Readout.target(sets) : "\(sets.count) sets")
-    }
-  }
-
   func shared(_ field: Field) -> String {
     if field == .sets { return countText }
     let values = visibleRows.map { (field == .reps ? $0.reps : $0.weight).trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -256,14 +246,13 @@ struct RoutineTargetsSheet: View {
     List {
       Group {
         Section {
-          if draft.isOpen && draft.refusal == nil {
-            Text("You decide the numbers at the rack.").foregroundStyle(GymPalette.inkDim)
-          }
           headField("Sets", field: .sets, placeholder: "open", focus: .sets)
           headField("Reps", field: .reps, placeholder: draft.varies(.reps) ? "varies" : "max", focus: .reps)
           headField("kg", field: .weight, placeholder: draft.varies(.weight) ? "varies" : "last time", focus: .weight)
           Toggle("Vary by set", isOn: $draft.varyBySet)
             .disabled(!draft.canChangeVariation)
+        } footer: {
+          if draft.isOpen && draft.refusal == nil { Text("You decide the numbers at the rack.") }
         }
         if !draft.isOpen && draft.varyBySet {
           Section("Each set") {
@@ -287,24 +276,18 @@ struct RoutineTargetsSheet: View {
       }.listRowBackground(GymPalette.card)
     }.listStyle(.insetGrouped)
     .accessibilityIdentifier("gym-routine-targets")
-    .navigationTitle(exercise.name)
-    .navigationBarTitleDisplayMode(.inline)
-    .toolbar {
-      ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onCancel) }
+    .modifier(GymPage())
+    .roomTitle("Targets", subtitle: exercise.name)
+    .sheetCommit("Done", identifier: "gym-target-set", disabled: draft.refusal != nil, dismiss: onCancel) {
+      switch draft.reading {
+      case .open: onCommit(nil)
+      case .scheme(let sets): onCommit(sets)
+      case .refused: return
+      }
     }
-    .safeAreaInset(edge: .bottom) {
-      VStack(spacing: 0) {
-        ActionBand(title: draft.commitLabel, room: .gym,
-                   disabled: draft.refusal != nil, actionIdentifier: "gym-target-set") {
-          switch draft.reading {
-          case .open: onCommit(nil)
-          case .scheme(let sets): onCommit(sets)
-          case .refused: return
-          }
-        }
-        if focus != nil {
-          KeyboardBar(next: { nextField() }, nextDisabled: focus == lastFocus, doneIdentifier: "gym-target-keyboard-done") { focus = nil }
-        }
+    .reachBand {
+      if focus != nil {
+        KeyboardBar(next: { nextField() }, nextDisabled: focus == lastFocus, doneIdentifier: "gym-target-keyboard-done") { focus = nil }
       }
     }
     .sensoryFeedback(.selection, trigger: feedback)
@@ -315,7 +298,6 @@ struct RoutineTargetsSheet: View {
       }
     }
     .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "routine_editor"]) }
-    .modifier(GymPage())
   }
   private func headField(_ label: String, field: RoutineTargetDraft.Field, placeholder: String, focus target: Focus) -> some View {
     let refused = draft.headRefusal?.field == field

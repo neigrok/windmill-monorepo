@@ -16,11 +16,12 @@ enum MovementPickerOptions {
     var line: String { [exercise.equipment.capitalized, alias.map { "was “\($0)”" }, meta].compactMap { $0 }.joined(separator: " · ") }
   }
 
+  // `create` is the query as a new movement's name, offered while no movement or former name is exactly it.
   struct Result: Equatable {
     let six: [Row]
     let matches: [Row]
     let unread: String?
-    let empty: String?
+    let create: String?
   }
 
   static func mostTrained(catalogue: [Exercise], log: TrainingLog?) -> [ID<Exercise>] {
@@ -64,8 +65,9 @@ enum MovementPickerOptions {
     }
     let matches = term.isEmpty ? rest : Array(rest.prefix(7))
     let unread = readFailed || catalogue.isEmpty ? catalogueUnread : nil
+    let exact = catalogue.contains { ([$0.name] + $0.aliases).contains { MovementName.trimmed($0).lowercased() == term } }
     return Result(six: six, matches: matches, unread: unread,
-                  empty: six.isEmpty && matches.isEmpty && unread == nil ? "No movement by that name." : nil)
+                  create: term.isEmpty || exact || unread != nil ? nil : MovementName.capped(MovementName.trimmed(query)))
   }
 }
 
@@ -123,13 +125,6 @@ struct MovementPicker: View {
       case .browse: "Movements"
       }
     }
-    var createTitle: String {
-      switch self {
-      case .routine: "Add to routine"
-      case .workout: "Create and add"
-      case .browse: "Create movement"
-      }
-    }
     var screen: String { self == .routine ? "routine_editor" : "movement" }
   }
 
@@ -164,77 +159,67 @@ struct MovementPicker: View {
   var firstSession: Bool { MovementPickerOptions.firstSession(log: gym.log, routines: gym.routines, readFailed: gym.readFailed) }
 
   var body: some View {
-    Group {
-      if externalQuery == nil {
-        movementList.searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search movements")
-      } else { movementList }
-    }
-    .accessibilityIdentifier("gym-movement-picker")
-    .autocorrectionDisabled()
-    .navigationTitle(purpose.title)
-    .navigationBarTitleDisplayMode(.inline)
-    .toolbar {
-      if purpose != .browse {
-        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { if let onCancel { onCancel() } else { dismiss() } } }
+    movementList
+      .searchable(text: externalQuery ?? $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search movements")
+      .searchFocused($searchFocused)
+      .accessibilityIdentifier("gym-movement-picker")
+      .autocorrectionDisabled()
+      .modifier(GymPage())
+      .navigationTitle(purpose.title)
+      .toolbar {
+        if purpose != .browse {
+          ToolbarItem(placement: .cancellationAction) { Button("Cancel") { if let onCancel { onCancel() } else { dismiss() } } }
+        }
+        if MovementName.trimmed(externalQuery?.wrappedValue ?? query).isEmpty {
+          ToolbarItem(placement: .topBarTrailing) {
+            Button("New movement", systemImage: "plus") { create() }.labelStyle(.iconOnly)
+              .disabled(gym.accountTransition).accessibilityIdentifier("gym-new-movement")
+          }
+        }
+      }.roomBar(.gym)
+      .reachBand { GymTransient(gym: gym) }
+      .onAppear {
+        ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log)
+        gym.telemetry.event("gym_screen_viewed", properties: ["screen": purpose.screen])
       }
-    }
-    .safeAreaInset(edge: .bottom) {
-      VStack(spacing: 0) {
-        GymTransient(gym: gym)
-        ActionBand(title: "Create movement", room: .gym,
-                   disabled: gym.accountTransition, actionIdentifier: "gym-create-movement") {
-          searchFocused = false
-          if let onCreate { onCreate(); return }
-          if creation == nil { creation = MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: MovementName.capped(MovementName.trimmed(query))) }
-          showingCreation = true
+      .onChange(of: gym.sessions) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
+      .onChange(of: gym.sets) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
+      .onChange(of: gym.log?.firstPullComplete) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
+      .sheet(isPresented: $showingCreation, onDismiss: { if let created { creation = nil; opened = created; self.created = nil } }) {
+        if let draft = creation {
+          NavigationStack {
+            CreateMovementSheet(gym: gym, draft: Binding(get: { creation ?? draft }, set: { creation = $0 }), purpose: purpose,
+                                account: pickingAccount, anonymous: pickingAnonymous) { entry in
+              if purpose == .browse { created = entry.exerciseId; showingCreation = false }
+              else { onSelect(entry) }
+            }
+          }.modifier(GymPage()).presentationDetents([.medium])
         }
       }
-    }
-    .onAppear {
-      ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log)
-      gym.telemetry.event("gym_screen_viewed", properties: ["screen": purpose.screen])
-    }
-    .onChange(of: gym.sessions) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
-    .onChange(of: gym.sets) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
-    .onChange(of: gym.log?.firstPullComplete) { _, _ in ranking.capture(catalogue: gym.catalogue.exercises, log: gym.log) }
-    .sheet(isPresented: $showingCreation, onDismiss: { if let created { creation = nil; opened = created; self.created = nil } }) {
-      if let draft = creation {
-        NavigationStack {
-          CreateMovementSheet(gym: gym, draft: Binding(get: { creation ?? draft }, set: { creation = $0 }), purpose: purpose,
-                              account: pickingAccount, anonymous: pickingAnonymous) { entry in
-            if purpose == .browse { created = entry.exerciseId; showingCreation = false }
-            else { onSelect(entry) }
-          }
-        }.modifier(GymPage()).presentationDetents([.large])
-      }
-    }
-    .navigationDestination(item: $opened) { id in MovementRecordScreen(gym: gym, exerciseID: id) }
-    .toolbar(purpose == .browse ? .hidden : .automatic, for: .tabBar)
-    .modifier(GymPage())
+      .navigationDestination(item: $opened) { id in MovementRecordScreen(gym: gym, exerciseID: id) }
+      .toolbar(purpose == .browse ? .hidden : .automatic, for: .tabBar)
+  }
+
+  // Create movement opens with the query as its name: the builder's own step, or this picker's sheet.
+  func create() {
+    searchFocused = false
+    if let onCreate { onCreate(); return }
+    if creation == nil { creation = MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: MovementName.capped(MovementName.trimmed(query))) }
+    showingCreation = true
   }
 
   private var movementList: some View {
     let query = externalQuery?.wrappedValue ?? self.query
     let options = MovementPickerOptions.matching(query: query, catalogue: gym.catalogue.exercises, selected: selected,
                                                  log: gym.log, featured: ranking.ids, readFailed: gym.readFailed)
-    let note = options.empty ?? (gym.readFailed ? nil : options.unread)
     return List {
       Group {
-        if let externalQuery {
+        if let unread = gym.readFailed ? nil : options.unread { Section {} footer: { Text(unread) } }
+        if let name = options.create {
           Section {
-            HStack {
-              Image(systemName: "magnifyingglass").foregroundStyle(GymPalette.inkDim)
-              TextField("Search movements", text: externalQuery).focused($searchFocused)
-                .textInputAutocapitalization(.never).onSubmit { searchFocused = false }
-                .accessibilityIdentifier("gym-movement-search")
-              if !query.isEmpty {
-                Button { externalQuery.wrappedValue = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(GymPalette.inkDim).frame(minWidth: 44, minHeight: 44) }
-                  .buttonStyle(.plain).accessibilityLabel("Clear search").accessibilityIdentifier("gym-movement-search-clear")
-              }
-            }
-          } footer: { if let note { Text(note) } }
-        } else if let note {
-          Section {} footer: { Text(note) }
+            Button { create() } label: { Label("Create “\(name)”", systemImage: "plus.circle.fill") }
+              .disabled(gym.accountTransition).accessibilityIdentifier("gym-create-movement")
+          }
         }
         if !options.six.isEmpty { Section("The six") { ForEach(options.six) { movementRow($0) } } }
         if !options.matches.isEmpty {
@@ -297,11 +282,9 @@ struct CreateMovementSheet: View {
           TextField("Name", text: $draft.name).focused($nameFocused).autocorrectionDisabled().textInputAutocapitalization(.words).onSubmit { nameFocused = false }
             .disabled(busy).accessibilityIdentifier("gym-movement-name")
           if let counter = MovementName.counter(draft.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
-        }
-        Section("Equipment") {
           Picker("Equipment", selection: $draft.equipment) {
             ForEach(MovementCreationDraft.equipmentChoices, id: \.self) { Text($0.capitalized).tag($0) }
-          }.labelsHidden().pickerStyle(.inline).disabled(busy).accessibilityIdentifier("gym-movement-equipment")
+          }.pickerStyle(.menu).disabled(busy).accessibilityIdentifier("gym-movement-equipment")
         }
         if purpose == .routine {
           Section {
@@ -313,34 +296,33 @@ struct CreateMovementSheet: View {
       }.listRowBackground(GymPalette.card)
     }
     .modifier(GymPage()).accessibilityIdentifier("gym-movement-creation")
-    .navigationTitle("Create movement").navigationBarTitleDisplayMode(.inline)
-    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { if let onCancel { onCancel() } else { dismiss() } }.disabled(busy) } }
-    .safeAreaInset(edge: .bottom) {
-      VStack(spacing: 0) {
-        GymTransient(gym: gym, message: draft.refusal, dismiss: { draft.refusal = nil }, errorIdentifier: "gym-movement-creation-refusal")
-        ActionBand(title: purpose.createTitle, room: .gym,
-                   disabled: gym.accountTransition || MovementName.trimmed(draft.name).isEmpty,
-                   busy: busy, actionIdentifier: "gym-movement-create-commit") {
-          guard creatingAccount == gym.account, creatingAnonymous == gym.isAnonymous else {
-            draft.refusal = "the account changed while creating"; return
-          }
-          busy = true; nameFocused = false
-          let account = gym.account, anonymous = gym.isAnonymous
-          Task { @MainActor in
-            await Task.yield()
-            guard account == gym.account && anonymous == gym.isAnonymous else {
-              draft.refusal = "the account changed while creating"; busy = false; return
-            }
-            let entry = gym.createMovement(&draft)
-            busy = false
-            if let entry { onCreated(entry) }
-          }
-        }
-      }
+    .navigationTitle("Create movement")
+    .sheetCommit("Add", identifier: "gym-movement-create-commit",
+                 disabled: gym.accountTransition || MovementName.trimmed(draft.name).isEmpty, busy: busy,
+                 dismiss: { if let onCancel { onCancel() } else { dismiss() } }, commit: add)
+    .reachBand {
+      GymTransient(gym: gym, message: draft.refusal, dismiss: { draft.refusal = nil }, errorIdentifier: "gym-movement-creation-refusal")
     }
     .interactiveDismissDisabled(busy)
     .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": purpose.screen]) }
     .onChange(of: draft.name) { _, value in draft.name = MovementName.capped(value); draft.refusal = nil }
     .onChange(of: draft.equipment) { _, _ in draft.refusal = nil }
+  }
+
+  func add() {
+    guard creatingAccount == gym.account, creatingAnonymous == gym.isAnonymous else {
+      draft.refusal = "the account changed while creating"; return
+    }
+    busy = true; nameFocused = false
+    let account = gym.account, anonymous = gym.isAnonymous
+    Task { @MainActor in
+      await Task.yield()
+      guard account == gym.account && anonymous == gym.isAnonymous else {
+        draft.refusal = "the account changed while creating"; busy = false; return
+      }
+      let entry = gym.createMovement(&draft)
+      busy = false
+      if let entry { onCreated(entry) }
+    }
   }
 }

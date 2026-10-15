@@ -39,8 +39,11 @@ struct SetKeypad {
   }
 }
 
+// The keypad's digits are instruments: they stop growing at the first accessibility size, as Phone's do, and the sheet
+// takes the whole height there so every key and Set stay in reach.
 struct SetKeypadSheet: View {
   @Environment(\.dismiss) var dismiss
+  @Environment(\.dynamicTypeSize) private var typeSize
   @State var pad: SetKeypad
   let commit: (Double) -> Void
   init(field: SetKeypad.Field, value: Double, commit: @escaping (Double) -> Void) {
@@ -58,30 +61,30 @@ struct SetKeypadSheet: View {
             .accessibilityIdentifier("workout-keypad-hint")
           LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: RoomSpace.small) {
             ForEach(["1", "2", "3", "4", "5", "6", "7", "8", "9", "±", "0", "."], id: \.self) { key in
-              Button { pad.press(key) } label: { Text(key).font(.title2.monospacedDigit()).frame(maxWidth: .infinity) }
+              Button { pad.press(key) } label: { Text(key).font(.title2.monospacedDigit()).foregroundStyle(GymPalette.ink).frame(maxWidth: .infinity) }
                 .modifier(RoomSecondaryStyle()).frame(minHeight: RoomSpace.minimumTarget)
                 .disabled(pad.field == .reps && ["±", "."].contains(key))
                 .accessibilityLabel(key == "±" ? "Flip the sign — band-assisted" : key)
                 .accessibilityIdentifier("workout-key-\(key)")
             }
-          }
+          }.dynamicTypeSize(...DynamicTypeSize.accessibility1)
         }.padding(RoomSpace.inset)
       }.modifier(GymPage())
-      .navigationTitle(pad.field == .weight ? "Weight · kg" : "Reps")
+      .navigationTitle(pad.field == .weight ? "Weight" : "Reps")
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
         ToolbarItem(placement: .topBarTrailing) {
           Button("Delete", systemImage: "delete.left") { pad.press("⌫") }
             .labelStyle(.iconOnly).accessibilityIdentifier("workout-key-delete")
         }
-      }
-      .safeAreaInset(edge: .bottom) {
+      }.roomBar(.gym)
+      .reachBand {
         ActionBand(title: "Set", room: .gym,
                    disabled: pad.reading.value == nil, actionIdentifier: "workout-keypad-set") {
           if let value = pad.reading.value { commit(value); dismiss() }
         }
       }
-    }.modifier(GymPage()).presentationDetents([.height(440)])
+    }.modifier(GymPage()).presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.height(440)])
   }
 }
 
@@ -215,7 +218,7 @@ struct SetEditor: View {
       Form {
         Group {
           Section {
-            WeightInstrument(weightKg: $draft.weightKg, identifier: "\(identifier)-weight") { keypad = .weight }
+            WeightInstrument(weightKg: $draft.weightKg, identifier: "\(identifier)-weight", alignment: .center) { keypad = .weight }
             LabeledContent("Reps") {
               Button("\(draft.reps)") { keypad = .reps }.font(.title2.monospacedDigit()).accessibilityIdentifier("\(identifier)-reps")
             }
@@ -228,6 +231,13 @@ struct SetEditor: View {
             Picker("Kind", selection: $draft.kind) {
               ForEach(SetKind.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0.rawValue) }
             }.pickerStyle(.segmented).accessibilityIdentifier("\(identifier)-kind")
+            TextField("Note", text: $draft.note, axis: .vertical).lineLimit(1...6).accessibilityLabel("Set note")
+              .accessibilityIdentifier("\(identifier)-note")
+            if !draft.note.isEmpty { Button("Clear note") { draft.note = "" } }
+            if let counter = draft.noteCounter {
+              Text(counter).font(.caption.monospacedDigit())
+                .foregroundStyle(draft.noteBytes > 4_000 ? GymPalette.alarm : GymPalette.inkDim)
+            }
           }
           if !logged {
             Section {
@@ -240,29 +250,17 @@ struct SetEditor: View {
             }
           }
           Section {
-            TextEditor(text: $draft.note).frame(minHeight: 100).accessibilityLabel("Set note")
-              .accessibilityIdentifier("\(identifier)-note")
-            if !draft.note.isEmpty { Button("Clear note") { draft.note = "" } }
-            if let counter = draft.noteCounter {
-              Text(counter).font(.caption.monospacedDigit())
-                .foregroundStyle(draft.noteBytes > 4_000 ? GymPalette.alarm : GymPalette.inkDim)
-            }
-          } header: { Text("Set note") }
-          Section {
             Button("Delete set", systemImage: "trash", role: .destructive) { delete() }
               .foregroundStyle(GymPalette.alarm).accessibilityIdentifier("\(identifier)-delete")
           } footer: { if case .log(let routine?) = landing { Text("\(routine) keeps its planned targets.") } }
         }.listRowBackground(GymPalette.card)
       }.modifier(GymPage()).disabled(draft.busy || gym.accountTransition)
         .roomTitle("Fix set", subtitle: movement)
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(draft.busy) } }
-        .safeAreaInset(edge: .bottom) {
-          VStack(spacing: 0) {
-            GymTransient(gym: gym, message: draft.failure ?? draft.problem,
-                         dismiss: draft.failure == nil ? nil : { draft.failure = nil }, errorIdentifier: "\(identifier)-failure")
-            ActionBand(title: "Save the fix", room: .gym, disabled: draft.problem != nil || gym.accountTransition,
-                       busy: draft.busy, actionIdentifier: "\(identifier)-save") { save() }
-          }
+        .sheetCommit("Save", identifier: "\(identifier)-save", disabled: draft.problem != nil || gym.accountTransition,
+                     busy: draft.busy, dismiss: { dismiss() }, commit: save)
+        .reachBand {
+          GymTransient(gym: gym, message: draft.failure ?? draft.problem,
+                       dismiss: draft.failure == nil ? nil : { draft.failure = nil }, errorIdentifier: "\(identifier)-failure")
         }
     }.modifier(GymPage()).presentationDetents([.large])
       .sheet(isPresented: Binding(get: { keypad != nil }, set: { if !$0 { keypad = nil } })) {

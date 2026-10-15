@@ -19,10 +19,9 @@ struct RoomTransient: View {
         Button(action: action) {
           Group {
             if let actionSymbol {
-              Image(systemName: actionSymbol).accessibilityLabel(actionTitle ?? "Dismiss")
-            } else { Text(actionTitle ?? "Dismiss") }
-          }.foregroundStyle(.tint)
-            .frame(minWidth: RoomSpace.minimumTarget, minHeight: RoomSpace.minimumTarget)
+              Image(systemName: actionSymbol).foregroundStyle(room.inkDim).accessibilityLabel(actionTitle ?? "Dismiss")
+            } else { Text(actionTitle ?? "Dismiss").foregroundStyle(room.accent) }
+          }.frame(minWidth: RoomSpace.minimumTarget, minHeight: RoomSpace.minimumTarget)
             .contentShape(Rectangle())
         }.buttonStyle(.plain)
           .accessibilityIdentifier(actionIdentifier ?? actionTitle ?? "transient-action")
@@ -36,7 +35,8 @@ struct RoomTransient: View {
   }
 }
 
-// A band floats over the list it answers, so it stands on the system's floating surface, never on a row's card.
+// A band floats over the list it answers, so it stands on glass — the regular material with the system shadow before
+// iOS 26 — never on a row's card.
 struct FloatingSurface: ViewModifier {
   @ViewBuilder func body(content: Content) -> some View {
     let shape = RoundedRectangle(cornerRadius: RoomSpace.cardRadius)

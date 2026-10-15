@@ -175,9 +175,9 @@ import SyncTesting
     let (_, gym) = fixture(), value = try session(gym, daysAgo: 1)
     let readout = try #require(gym.log?.readout(session: value.id))
     #expect(LogPresentation.sessionFacts(readout) == "1 working set · 33m")
-    #expect(gym.logRecordFact(value.id, progress: gym.log?.progress) == "Record · \(SeedExercises.all.first!.name) 60 × 5")
+    #expect(gym.logRecordFact(value.id) == "Record · \(SeedExercises.all.first!.name) 60 × 5")
     let second = try session(gym, daysAgo: 0, kg: 50)
-    #expect(gym.logRecordFact(second.id, progress: gym.log?.progress) == nil)
+    #expect(gym.logRecordFact(second.id) == nil)
     #expect(!gym.sessionIsUnsent(value.id))
   }
 

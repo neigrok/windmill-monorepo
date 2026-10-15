@@ -70,8 +70,8 @@ struct RoutinesTab: View {
         }
         if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
         ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
-      }
-      .safeAreaInset(edge: .bottom) {
+      }.roomBar(.gym)
+      .reachBand {
         VStack(spacing: 0) {
           GymTransient(gym: gym)
           ActionBand(title: "Just start logging", room: .gym,
@@ -148,8 +148,8 @@ struct RoutineDetail: View {
             Button("Edit") { editing = RoutineEditingSession(gym: gym, routine: routine) }.accessibilityIdentifier("edit-routine")
           }
         }
-      }
-      .safeAreaInset(edge: .bottom) {
+      }.roomBar(.gym)
+      .reachBand {
         VStack(spacing: 0) {
           GymTransient(gym: gym)
           if let routine {
