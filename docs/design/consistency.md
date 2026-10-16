@@ -222,12 +222,16 @@ these are the places it disagrees with a drawing, a brief or the build.
 - **iOS gym and shell day contrast.** The spec and the iOS build use the light values the owner
   adopted for text: `gym/accent` `#106B5F` (5.19:1 on `gym/canvas` · 5.92:1 card · 4.60:1 raised ·
   white on it 6.38:1), with `accent-soft` tracking it, and `shell/brand` `#9F5B38` (4.79:1 on
-  `shell/canvas` · 5.21:1 card · 5.04:1 raised). The other surfaces keep the earlier values:
+  `shell/canvas` · 5.21:1 card · 5.04:1 raised). Darkening clay brought it within ΔE2000 6 of the
+  brick `shell/danger` `#A84E35`, so on You *Done* and *Sign out* read as one colour; the spec (§2)
+  moves `shell/danger` to a red brick, `#A62B2B` light (6.43:1 on `shell/canvas`) and `#F2685A`
+  dark, ΔE2000 14.8 and 15.3 from clay. `gym/alarm` keeps `#A84E35`: no clay sits in the gym
+  room. The other surfaces keep the earlier values:
   Android's onboarding glimpses draw the gym accent `#137A6C` (`OnboardingGlimpses.kt`,
   `OnboardingPager.kt`), and the web's clay and roadmap `--color-brand` is `#BC6C42`
   (`--accent-terracotta-500`). To do: the Figma colour collections take the iOS values — the Gym
   file's `ios/accent` and `ios/accent-soft` (`1055:201`–`1055:202`) and the Design System's
-  `shell/brand`.
+  `shell/brand` and `shell/danger`.
 - **9b · Phones weave.** `gym/briefs/18-progress.md` gives web and iOS the movement strip and
   Android the woven moments; the spec gives both phones the woven timeline and only the web the
   strip. The brief now says so; the Progress section's iOS strip boards (`459:29`, `531:532`)
@@ -252,9 +256,9 @@ these are the places it disagrees with a drawing, a brief or the build.
   and keeps the promise on the card while pending; ("Two · the review") a closed review leaves the
   card reading *still waiting*, and the sheet heads its quote with *Coach wrote:*. The spec (§6)
   draws no summary on the card (the answer above is the reasoning), up to three change rows and
-  *+ N more* as Android's skim does, a door *Review changes* with no count, no caption while pending
-  and *Applied* / *Turned down* once settled, and no kicker: the sheet's subtitle names the source.
-  Restate the brief for both phones.
+  *+ N more* as Android's skim does, a door *Review changes* (*Review removal* on a removal) with no
+  count, no caption while pending and the settled word once settled (10f), and no kicker: the
+  sheet's subtitle names the source. Restate the brief for both phones.
 - **9j · The Review band's slots.** `09-coach.md` ("Two · the review") holds the gate's refusal
   and the atomic promise as two slots, the promise always drawn; the spec (§6) gives the band one
   caption slot that reads the gate sentence until the diff is seen and the promise after, so Apply
@@ -347,8 +351,10 @@ these are the places it disagrees with a drawing, a brief or the build.
   9 sessions* / *the whole series · 23 sessions* and the month moment *Trained 4 of the last 4
   weeks*, and the spec follows it with *workouts* for *sessions* (9z). The iOS build draws *Last
   12 weeks · N sessions* and *All · N sessions* (`MovementRecordScreen.swift`, pinned by
-  `GymLogFlowTests.testMovementRecordWindows`) and *Trained 4 of 4 weeks* (`LogTab.swift`). Align
-  the build.
+  `GymLogFlowTests.testMovementRecordWindows`) and *Trained 4 of 4 weeks* (`LogTab.swift`), and
+  Bodyweight draws *90 days · N weigh-ins* and *All · N weigh-ins* (`BodyweightScreen.swift`)
+  against `11-bodyweight.md`'s *last 90 days* and *the whole series*, which the spec (§7.6) follows.
+  Align the build.
 - **10b · The newest weigh-in woven.** The spec (§7.6) and `18-progress.md`'s iOS paragraph weave a
   weigh-in moment only once a newer weigh-in exists, since the newest is the head's *Bodyweight*
   row. The build weaves every weigh-in up to today, the newest included (`LogPresentation.swift`),
@@ -370,6 +376,28 @@ these are the places it disagrees with a drawing, a brief or the build.
   time* line (spec §7.7), so the door promises what the room does not show. The spec (§7.12) rules
   *Log today's sets*, beside the Journal door's *Write tonight's page*. Align the build, and check the
   first-run *Where to start?* boards for the old line.
+- **10f · What Coach did, in iOS's words.** `09-coach.md` puts the phrase table's words in a step
+  list behind the read receipt ("What the room does not print") and gives *save a useful insight* a
+  truthful saved-note step ("The verbs"). iOS draws no step list (spec §6): the receipt row opens
+  *What Coach read*, and the table's words stand where iOS says what Coach did — the receipt's *Read
+  your movement history* for a totals-only read and *Read nothing from your log*, *Also read your
+  notes.* under *What Coach read*, and one row per act, *Open routine · Push A* and *Saved a note* /
+  *Could not confirm a note save*. The brief is right that a saved note is never silent; the
+  iOS build was the stale side, drawing no saved-note line anywhere, and the spec now rules the row.
+  The settled words differ too: the brief's return receipt reads *Applied · Push A · 4 changes*,
+  *Applied · Push A · routine removed* and *Turned down · nothing changed.* ("Four · the return"), as
+  the web's `receiptLine` does; the iOS Review's band says the word alone — *Applied*, *Removed*,
+  *Turned down* — since its title names the routine and its header the count, and the card,
+  History and band share one table that adds *Out of date* for a superseded proposal, which no
+  canon word covers. Restate the brief's step-list and phrase-table paragraphs for iOS (6v already
+  holds its `Ask.swift` reference), and decide whether web and Android take *Removed* and *Out of
+  date*.
+- **10g · Backend: the read receipt's weeks.** The server's read receipt counts weeks no
+  observation names: `GymTools.cpp` adds every week `get_stats` returns, empty ones included, and
+  `ReadReceipt.cpp` each set's week. iOS counts weeks only from the workouts *What Coach read*
+  lists and never prints `read.weeks`, so a totals-only answer reads *Read your movement history*
+  with no number (spec §6); web and Android print the server's weeks (`coach.js` `readLine`,
+  `Ask.kt`). The fix belongs to the backend: dogfood node `coach-receipt-weeks-provable`.
 - **Proposal · one suggestion on an empty Coach (owner decision).** The spec (§6) and
   `gym/feedback-contract.md` draw an empty Coach as the bar, the canvas and the composer only. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen
