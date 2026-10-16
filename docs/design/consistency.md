@@ -302,7 +302,8 @@ these are the places it disagrees with a drawing, a brief or the build.
   over rows that end in dates and chevrons always covers one. The brief states both. Decide whether
   Android follows.
 - **9r · No Gym settings on iOS.** The spec (§6) draws no Gym settings page: Notes and Connected
-  log are reached from Coach's More, and a hidden workout from **Hidden** at the end of The log.
+  log are reached from Coach's More, and a hidden workout from the **Hidden** row at the head of The
+  log.
   `guidelines/superapp-shell.md` §5–6 has You list each room's settings, and Android's You carries
   *Gym settings* and *Connected log* (`GymRoom.kt`). `gym/briefs/10-notes.md` and
   `19-connected-log.md` now give iOS Coach's More as the one door and keep settings as Android's
@@ -373,17 +374,25 @@ these are the places it disagrees with a drawing, a brief or the build.
   Cancel while the query still holds its text — against `15-the-routine.md`, which preserves the
   query on Cancel. This differs from that brief's "native search on phones" and from one search
   shape for every picker. Revisit when the system's search keeps its text across a pushed step.
+- **10e · The Gym door's line.** The build draws the *Where to start?* Gym door as *Log sets · see
+  last time* (`WindmillApp.swift`), and no written canon pins the line; the rack draws no *Last
+  time* line (spec §7.7), so the door promises what the room does not show. The spec (§7.12) rules
+  *Log today's sets*, beside the Journal door's *Write tonight's page*. Align the build, and check the
+  first-run *Where to start?* boards for the old line.
 - **Proposal · the open workout as a tab-bar accessory (owner decision).** While a session is open,
   both phones draw the logger over every other screen (`16-the-workout.md`, `09-coach.md`). On
   iOS 26, `tabViewBottomAccessory` is the native slot for something running (Music's mini player):
   *Lower A · 32:10 · Set 3*, tap to return, so a lifter could glance at The log mid-workout without
   leaving the app. It changes canon — `09-coach.md` says no review is reachable mid-workout and Coach
-  is refused there — so it waits on the owner and is not in the spec.
+  is refused there — so it waits on the owner and is not in the spec. A narrower use changes no
+  canon: the accessory only while the lifter has hidden the workout, as the restore door the spec's
+  **Hidden** row (§7.6) is today, with the row staying on iOS 18.
 - **Proposal · Controls and App Intents (owner decision).** An iOS 18 `ControlWidget` for Control
   Center, the Lock Screen and the Action button: *Start workout* when none is open, *Log set* while
-  one is — the intent the Live Activity's button already runs (`WorkoutLogSetIntent`). Siri phrases
-  (*Log 100 for 5*) would let the room's most frequent act need no drawn control. It waits on the
-  owner and is not in the spec.
+  one is — the intent the Live Activity's button already runs (`WorkoutLogSetIntent`) — with the
+  prefilled set (*100 × 5*) as the control's value, so nothing logs that the lifter has not seen.
+  Siri phrases (*Log 100 for 5*) would let the room's most frequent act need no drawn control. It
+  waits on the owner and is not in the spec.
 
 ## Onboarding
 
