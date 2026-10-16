@@ -57,13 +57,18 @@ import Observation
       self.held.removeAll { $0.id == row.id }
       do {
         _ = try await self.rest.coachRequest("/v1/gym/threads/\(CoachCopy.escaped(row.id))", method: "DELETE", expectedAccount: account)
+        self.gym.telemetry.event("gym_action", properties: ["screen": "history", "outcome": "ok"])
         let cleared = conversation?.deletedConversation(row.id, account: account) ?? true
         if self.gym.account == account, !cleared { self.error = "Your deleted conversation couldn’t be cleared. Try again." }
       } catch {
         if (error as? GymRESTFailure)?.status == 404 {
+          self.gym.telemetry.event("gym_action", properties: ["screen": "history", "outcome": "ok"])
           let cleared = conversation?.deletedConversation(row.id, account: account) ?? true
           if self.gym.account == account, !cleared { self.error = "Your deleted conversation couldn’t be cleared. Try again." }
           return
+        }
+        if !(error is CancellationError || (error as? URLError)?.code == .cancelled) {
+          self.gym.telemetry.event("gym_action", properties: ["screen": "history", "outcome": error is AppFailure || error is GymRESTFailure ? "refused" : "failed"])
         }
         guard self.gym.account == account else { return }
         self.rows.removeAll { $0.id == row.id }; self.rows.append(row); self.rows.sort { $0.askedAt > $1.askedAt }
@@ -74,8 +79,11 @@ import Observation
     held.append(Held(row: row, account: account, until: Date().addingTimeInterval(9), task: task))
   }
   func undo(_ id: String) {
-    guard let offer = held.first(where: { $0.id == id }) else { error = "That change has already been kept."; return }
-    guard offer.until > Date() else { error = "That change has already been kept."; return }
+    guard let offer = held.first(where: { $0.id == id }), offer.until > Date() else {
+      error = "That change has already been kept."
+      gym.telemetry.event("gym_undo", properties: ["screen": "history", "outcome": "refused"]); return
+    }
+    gym.telemetry.event("gym_undo", properties: ["screen": "history", "outcome": "ok"])
     offer.task.cancel(); held.removeAll { $0.id == id }
     if offer.account == gym.account { rows.append(offer.row); rows.sort { $0.askedAt > $1.askedAt } }
   }
@@ -95,61 +103,56 @@ struct CoachHistoryScreen: View {
   @State var opening: String?
   @Environment(\.dismiss) var dismiss
   @Environment(\.scenePhase) var phase
+  @Environment(\.coachOpenAccount) var openAccount
   init(gym: GymModel, coach: CoachConversation, history: CoachHistory) {
     self.gym = gym; self.coach = coach; history.coach = coach; _history = State(initialValue: history)
   }
   var body: some View {
-    List {
-      Group {
-        if !gym.coachAccountAvailable {
-          Text(CoachCopy.signedOut)
-        } else if history.owner != gym.account {
-          ProgressView("Reading your conversations…")
-        } else {
-          Section {
-            if history.reading, !history.loaded { ProgressView("Reading your conversations…") }
-            if history.loaded, history.rows.isEmpty, history.error == nil { Text("Nothing here yet. Every conversation you have with Coach is kept until you delete it.") }
-            ForEach(history.rows) { row in
-              Button {
-                opening = row.id
-                Task {
-                  await coach.open(row.id); opening = nil
-                  if coach.saved.threadId == row.id, coach.saved.thread != nil { dismiss() }
-                }
-              } label: {
-                VStack(alignment: .leading, spacing: 8) {
-                  Text(row.title.isEmpty ? "Conversation" : row.title).font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink)
-                  if let line = row.outcome?.line { Text(line).font(.callout).foregroundStyle(GymPalette.accent) }
-                  if row.askedAt > 0 { Text(Date(timeIntervalSince1970: Double(row.askedAt) / 1000).formatted(date: .abbreviated, time: .omitted)).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
-                  if opening == row.id { ProgressView("Opening conversation…") }
-                }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-              }.disabled(opening != nil || coach.asking).listRowBackground(GymPalette.card)
-                .swipeActions { Button("Delete", role: .destructive) { history.remove(row) } }
-                .contextMenu { Button("Delete conversation", role: .destructive) { history.remove(row) } }
-            }
-            if history.nextCursor != nil { Button("Earlier conversations") { Task { await history.load(earlier: true) } }.disabled(history.reading) }
-          } footer: { Text("Deleting a conversation keeps applied routine changes, created routines and saved notes.") }
-        }
-      }.listRowBackground(GymPalette.card)
-    }.listStyle(.insetGrouped).navigationTitle("History").modifier(GymPage()).accessibilityIdentifier("gym-coach-history")
+    Group {
+      if !gym.coachAccountAvailable { CoachUnavailable(sentence: CoachCopy.signedOut, signIn: openAccount) }
+      else if history.owner != gym.account || (history.reading && !history.loaded) { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
+      else if history.loaded, history.rows.isEmpty, history.held.isEmpty, history.error == nil {
+        ContentUnavailableView("No conversations yet", systemImage: "bubble.left.and.bubble.right",
+                               description: Text("Every conversation you have with Coach is kept until you delete it."))
+      } else { conversations }
+    }.navigationTitle("History").modifier(GymPage()).accessibilityIdentifier("gym-coach-history")
       .toolbar(.hidden, for: .tabBar)
-      .refreshable { await history.load() }
       .task(id: gym.account) { await history.load() }
-      .safeAreaInset(edge: .bottom) {
-        VStack(spacing: 0) {
-          let removed = history.held.count
-          GymTransient(gym: gym, message: coach.error ?? history.error,
-                       dismiss: coach.error == nil ? nil : { coach.error = nil },
-                       retryMessage: coach.error == nil && history.error != nil ? { Task { await history.load() } } : nil,
-                       held: history.held.last.map { offer in
-                         .init(text: removed == 1 ? "Conversation removed" : "\(removed) conversations removed") { history.undo(offer.id) }
-                       },
-                       errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
-          ActionBand(title: "Ask something new", room: .gym,
-                     disabled: coach.asking) { if coach.newChat() { dismiss() } }
-        }
+      .reachBand {
+        GymTransient(gym: gym, message: coach.error ?? history.error,
+                     dismiss: coach.error == nil ? nil : { coach.error = nil },
+                     retryMessage: coach.error == nil && history.error != nil ? { Task { await history.load() } } : nil,
+                     held: history.held.last.map { offer in
+                       .init(text: "Deleting a conversation keeps applied routine changes, created routines and saved notes.") { history.undo(offer.id) }
+                     },
+                     errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
       }
       .onChange(of: phase) { _, phase in if phase == .background { history.abandon() } }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "history"]) }
+  }
+  var conversations: some View {
+    List {
+      Section {
+        ForEach(history.rows) { row in
+          Button {
+            opening = row.id
+            Task {
+              await coach.open(row.id); opening = nil
+              if coach.saved.threadId == row.id, coach.saved.thread != nil { dismiss() }
+            }
+          } label: {
+            let meta = [row.outcome?.line, row.askedAt > 0 ? CoachCopy.day(row.askedAt) : nil].compactMap { $0 }
+            GymRow(title: row.title.isEmpty ? "Conversation" : row.title, meta: meta.isEmpty ? nil : meta.joined(separator: " · "),
+                   trailing: opening == row.id ? .progress : nil, lineLimit: 2)
+          }.disabled(opening != nil || coach.asking)
+            .swipeActions { Button("Delete", role: .destructive) { history.remove(row) } }
+            .contextMenu { Button("Delete conversation", role: .destructive) { history.remove(row) } }
+        }
+        if history.nextCursor != nil {
+          ProgressView().frame(maxWidth: .infinity).task { await history.load(earlier: true) }
+        }
+      }.listRowBackground(GymPalette.card)
+    }.listStyle(.insetGrouped)
+      .refreshable { await history.load() }
   }
 }

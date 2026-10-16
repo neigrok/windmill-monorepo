@@ -1,4 +1,5 @@
 import Foundation
+import DomainKit
 import GymDomain
 
 nonisolated struct CoachAttachment: Codable, Equatable, Identifiable, Sendable {
@@ -40,8 +41,7 @@ nonisolated struct CoachRead: Codable, Equatable, Sendable {
     weeks = try c.decodeIfPresent(Int.self, forKey: .weeks) ?? 0
   }
   var line: String {
-    let parts = [(sets, "set"), (weeks, "week"), (sessions, "session")].filter { $0.0 > 0 }
-      .map { "\($0.0) \($0.1)\($0.0 == 1 ? "" : "s")" }
+    let parts = [(sets, "set"), (weeks, "week"), (sessions, "session")].filter { $0.0 > 0 }.map { GymCount.of($0.0, $0.1) }
     return parts.isEmpty ? "read nothing from your log" : "read " + parts.joined(separator: " · ")
   }
 }
@@ -159,11 +159,11 @@ nonisolated struct CoachThread: Codable, Equatable, Identifiable, Sendable {
     let routine: String?
     var line: String? {
       switch kind {
-      case "created": return changes == 1 ? "created \(routine ?? "1 routine")" : "\(changes) routines created"
-      case "applied": return "\(changes) changes → \(routine ?? "your routines")"
-      case "dismissed": return "\(changes) changes turned down"
-      case "proposed": return "\(changes) changes waiting"
-      case "superseded": return "\(changes) changes superseded"
+      case "created": return changes == 1 ? "created \(routine ?? "1 routine")" : GymCount.of(changes, "routine") + " created"
+      case "applied": return GymCount.of(changes, "change") + " → " + (routine ?? "your routines")
+      case "dismissed": return GymCount.of(changes, "change") + " turned down"
+      case "proposed": return GymCount.of(changes, "change") + " waiting"
+      case "superseded": return GymCount.of(changes, "change") + " superseded"
       default: return nil
       }
     }
@@ -195,18 +195,23 @@ nonisolated struct CoachThreadPage: Decodable, Sendable { let threads: [CoachThr
 nonisolated struct CoachSnapshot: Decodable, Sendable { let thread: String; let generation: CoachGeneration }
 
 nonisolated enum CoachCopy {
-  static let interrupted = "Response interrupted. Retry to continue this response."
+  static let interrupted = "Response interrupted."
   static let stopped = "Response stopped."
   static let noAnswer = "Coach didn’t answer. Try again in a moment"
-  static let connectionRequired = "Coach needs a connection. Your draft is saved on this phone."
+  static let offline = "Coach needs a connection."
   static let signedOut = "Coach reads your log, so it needs you signed in."
   static let absent = "Coach isn’t part of this Windmill. Your log is still yours to read."
-  static let promise = "Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal."
+  static let unreadableDraft = "Your draft couldn’t be read."
   static func sendable(_ text: String, photo: Bool) -> Bool {
     let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
     return (!text.isEmpty || photo) && text.utf8.count <= 1000
   }
   static func escaped(_ component: String) -> String { component.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "" }
+  static func day(_ ms: Int64, now: Date = Date()) -> String {
+    let date = Instant(ms: ms).date
+    let sameYear = Calendar.current.isDate(date, equalTo: now, toGranularity: .year)
+    return date.formatted(sameYear ? .dateTime.day().month(.abbreviated) : .dateTime.day().month(.abbreviated).year())
+  }
 }
 
 nonisolated enum CoachRefusal: Equatable {

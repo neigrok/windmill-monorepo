@@ -84,6 +84,18 @@ import XCTest
     showsTyped(app.textViews["journal-editor"], "Saved on this phone. Still writing.")
   }
 
+  func testNoNetworkYouDisablesTheSignInDoorsAndSaysWhyOnce() {
+    let app = launch(mode: "no-network", signedIn: false)
+    ready(app.buttons["you"])
+    app.buttons["you"].tap()
+    let email = app.buttons["email-sign-in"]
+    XCTAssertTrue(email.waitForExistence(timeout: 5))
+    XCTAssertFalse(email.isEnabled, "Offline, the email door waits for a connection")
+    if app.buttons["apple-sign-in"].exists { XCTAssertFalse(app.buttons["apple-sign-in"].isEnabled, "Offline, the Apple door waits too") }
+    XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "Sign-in needs a connection.")).count, 1)
+    XCTAssertTrue(app.buttons["you-gym-settings"].isEnabled, "Settings stay reachable offline")
+  }
+
   func launch(mode: String, signedIn: Bool) -> XCUIApplication {
     let state = signedIn ? "signed-in" : "signed-out"
     let scenario = "offline-\(mode)-\(state)"
@@ -169,12 +181,13 @@ import XCTest
     }
     ready(app.tabBars.buttons["Coach"])
     app.tabBars.buttons["Coach"].tap()
-    XCTAssertTrue(app.staticTexts["Coach needs a connection."].waitForExistence(timeout: 3))
+    if app.launchArguments.contains("no-network") {
+      XCTAssertTrue(app.staticTexts["Coach needs a connection."].waitForExistence(timeout: 3))
+    } else {
+      XCTAssertTrue(app.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 3))
+    }
     openSettings(app, signedIn: signedIn)
-    let units = app.buttons[restoringWorkout ? "kg" : "lb"]
-    ready(units)
-    units.tap()
-    XCTAssertTrue(units.isSelected)
+    ready(app.buttons["Notes"])
     app.navigationBars["Gym settings"].buttons.element(boundBy: 0).tap()
     switchRoom("Journal", in: app)
     XCTAssertEqual(editor.value as? String, previous + suffix)

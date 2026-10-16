@@ -1,21 +1,9 @@
 import Foundation
-import SwiftUI
 import DomainKit
 import JournalDomain
 import SyncSchema
 
 enum JournalEchoFixture {
-  static var appearance: ColorScheme? {
-    #if DEBUG && targetEnvironment(simulator)
-    switch ProcessInfo.processInfo.environment["WM_IOS_ECHO_APPEARANCE"] {
-    case "light": return .light
-    case "dark": return .dark
-    default: return nil
-    }
-    #else
-    return nil
-    #endif
-  }
   static func prepare(_ board: String, model: AppModel) async -> Bool {
     #if DEBUG && targetEnvironment(simulator)
     guard board.hasPrefix("journal-echoes") else { return false }
@@ -27,7 +15,7 @@ enum JournalEchoFixture {
       model.openJournal()
       model.keepDismissed = true
       let today = model.journal.today
-      let first = today.adding(days: -120), second = today.adding(days: -240)
+      let first = today.adding(days: -120), second = today.adding(days: -240), third = today.adding(days: -400)
       let unicode = board.contains("unicode"), decomposedEdit = board.contains("decomposed")
       let unicodeQuote = "I remembered the café by the river."
       let spoken = unicode ? (decomposedEdit ? unicodeQuote : unicodeQuote.decomposedStringWithCanonicalMapping)
@@ -38,7 +26,7 @@ enum JournalEchoFixture {
       }.joined(separator: "\n\n") + "\n\n\(spoken)\n\nI made tea when I got back. The kitchen window was still open, and the room had cooled down.\n\nI put my shoes by the door and left the rest of the evening unplanned."
       let empty = board.contains("empty")
       if !empty {
-        for offset in Array(1...18) + [120, 240] {
+        for offset in Array(1...18) + [120, 240, 400] {
           let zone = FixedZone(offsetSeconds: DeviceZone().offsetSeconds(at: Instant(ms: BoardClock().nowMs())) - offset * 86_400)
           let runner = ActionRunner(replica: runtime.engine, registry: SyncSchema.registry, zone: zone)
           let body = offset == 120 ? longSource
@@ -57,13 +45,16 @@ enum JournalEchoFixture {
       let response = JournalEchoResponse(pages: empty ? [] : [JournalEchoPage(day: today.text, matches: [
         JournalEchoMatch(day: first.text, text: spoken, isSelf: true, source: "spoken", useful: false, occurrenceHint: 0),
         JournalEchoMatch(day: second.text, text: copied, isSelf: false, source: "typed", useful: false, occurrenceHint: 0),
-      ])], pagesWritten: empty ? 0 : 21, floorWaived: false)
+        JournalEchoMatch(day: third.text, text: "a short walk", isSelf: true, source: "typed", useful: false, occurrenceHint: 0),
+      ])], pagesWritten: empty ? 0 : 22, floorWaived: false, firstEchoEver: board.contains("first"))
       let service = JournalEchoFixtureService(response: response, offline: board.contains("offline"))
       if unicode {
-        service.onUseful = { [weak model] day in
+        // Reading the first source re-encodes its page, an equivalent edit; Useful on the second removes the quotation.
+        service.onSignal = { [weak model] signal, day in
+          guard (signal == .opened && day == first.text) || (signal == .useful && day == second.text) else { return }
           let zone = FixedZone(offsetSeconds: DeviceZone().offsetSeconds(at: Instant(ms: BoardClock().nowMs())) - 120 * 86_400)
           let runner = ActionRunner(replica: runtime.engine, registry: SyncSchema.registry, zone: zone)
-          let body = day == first.text
+          let body = signal == .opened
             ? (decomposedEdit ? longSource.decomposedStringWithCanonicalMapping : longSource.precomposedStringWithCanonicalMapping)
             : longSource.replacingOccurrences(of: spoken, with: "The river path is closed.")
           let result = try runner.run(SavePage(day: first, document: PageDocument(body: body, source: "spoken")))
@@ -88,7 +79,7 @@ enum JournalEchoFixture {
 @MainActor final class JournalEchoFixtureService: JournalEchoServing {
   var response: JournalEchoResponse
   let offline: Bool
-  var onUseful: ((String?) throws -> Void)?
+  var onSignal: ((JournalEchoSignal, String?) throws -> Void)?
 
   init(response: JournalEchoResponse, offline: Bool) {
     self.response = response; self.offline = offline
@@ -101,8 +92,8 @@ enum JournalEchoFixture {
 
   func signal(_ signal: JournalEchoSignal, triggerDay: String, matchDay: String?) async throws {
     if offline { throw URLError(.notConnectedToInternet) }
+    try onSignal?(signal, matchDay)
     guard signal != .opened else { return }
-    if signal == .useful { try onUseful?(matchDay) }
     response.pages = response.pages.compactMap { page in
       guard page.day == triggerDay else { return page }
       if signal == .dismiss && matchDay == nil { return nil }

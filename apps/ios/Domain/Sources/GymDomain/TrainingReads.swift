@@ -281,6 +281,33 @@ public struct MovementProgress: Equatable, Sendable {
   }
 }
 
+// A log's records, worked out in one pass for a reader that looks them up per row: each movement's run of new bests,
+// and the record a session set — the first of its movements whose best it is.
+public struct ProgressRecords: Equatable, Sendable {
+  public let progress: StatsProgress
+  public let movements: [ID<Exercise>: [MovementProgress.Point]]
+  public let sessions: [ID<Session>: MovementSessionFact]
+
+  public init(_ progress: StatsProgress) {
+    self.progress = progress
+    var points: [ID<Exercise>: [MovementProgress.Point]] = [:]
+    for session in progress.sessions {
+      for fact in session.movements {
+        points[fact.exerciseId, default: []].append(MovementProgress.Point(id: session.sessionId, startedAt: session.startedAt, fact: fact))
+      }
+    }
+    let movements = Dictionary(uniqueKeysWithValues: points.map { id, points in
+      (id, MovementProgress(exerciseId: id, isComplete: progress.isComplete, sessions: points).records)
+    })
+    let bests = movements.mapValues { Set($0.map(\.id)) }
+    var sessions: [ID<Session>: MovementSessionFact] = [:]
+    for session in progress.sessions {
+      sessions[session.sessionId] = session.movements.first { bests[$0.exerciseId]?.contains(session.sessionId) == true }
+    }
+    self.movements = movements; self.sessions = sessions
+  }
+}
+
 extension TrainingLog {
   public func readout(session id: ID<Session>) -> SessionReadout? {
     drawnSessions.first { $0.id == id }.map { SessionReadout(session: $0, sets: sets(session: id)) }
@@ -350,7 +377,10 @@ public enum Readout {
   }
 
   public static func ago(_ instant: Instant, now: Instant, zone: any Zone) -> String {
-    let days = LocalDay(instant, in: zone).days(until: LocalDay(now, in: zone))
+    ago(days: LocalDay(instant, in: zone).days(until: LocalDay(now, in: zone)))
+  }
+
+  public static func ago(days: Int) -> String {
     if days <= 0 { return "today" }
     return days == 1 ? "yesterday" : "\(days) days ago"
   }

@@ -19,10 +19,9 @@ struct RoomTransient: View {
         Button(action: action) {
           Group {
             if let actionSymbol {
-              Image(systemName: actionSymbol).accessibilityLabel(actionTitle ?? "Dismiss")
-            } else { Text(actionTitle ?? "Dismiss") }
-          }.foregroundStyle(.tint)
-            .frame(minWidth: RoomSpace.minimumTarget, minHeight: RoomSpace.minimumTarget)
+              Image(systemName: actionSymbol).foregroundStyle(room.inkDim).accessibilityLabel(actionTitle ?? "Dismiss")
+            } else { Text(actionTitle ?? "Dismiss").foregroundStyle(room.accent) }
+          }.frame(minWidth: RoomSpace.minimumTarget, minHeight: RoomSpace.minimumTarget)
             .contentShape(Rectangle())
         }.buttonStyle(.plain)
           .accessibilityIdentifier(actionIdentifier ?? actionTitle ?? "transient-action")
@@ -30,42 +29,43 @@ struct RoomTransient: View {
     }.font(.footnote)
       .padding(.horizontal, RoomSpace.inset).padding(.vertical, RoomSpace.small)
       .frame(minHeight: RoomSpace.minimumTarget)
-      .background(room.card, in: RoundedRectangle(cornerRadius: RoomSpace.cardRadius))
+      .modifier(FloatingSurface())
       .accessibilityElement(children: .contain)
+      .padding(.horizontal, RoomSpace.inset).padding(.vertical, RoomSpace.small)
   }
 }
 
-// At accessibility sizes a floating band scrolls within a bounded height, so the controls beneath stay in reach.
+// A band floats over the list it answers, so it stands on glass — the regular material with the system shadow before
+// iOS 26 — never on a row's card.
+struct FloatingSurface: ViewModifier {
+  @ViewBuilder func body(content: Content) -> some View {
+    let shape = RoundedRectangle(cornerRadius: RoomSpace.cardRadius)
+    if #available(iOS 26.0, *) { content.glassEffect(.regular, in: shape) }
+    else { content.background(.regularMaterial, in: shape).shadow(radius: 8, y: 2) }
+  }
+}
+
+// At accessibility sizes a band scrolls within a bounded height, so the controls beneath stay in reach.
 struct BoundedBand: ViewModifier {
   @Environment(\.dynamicTypeSize) private var typeSize
 
   func body(content: Content) -> some View {
     if typeSize.isAccessibilitySize {
-      ViewThatFits(in: .vertical) {
-        content.fixedSize(horizontal: false, vertical: true)
-        ScrollView { content }.scrollBounceBehavior(.basedOnSize)
-      }.frame(maxHeight: 180)
+      CappedHeight(limit: 180) { ScrollView { content }.scrollBounceBehavior(.basedOnSize) }
     } else { content }
   }
 }
 
-struct ActionBand: View {
-  let title: String
-  let room: RoomColors
-  var disabled = false
-  var busy = false
-  var actionIdentifier: String?
-  let action: () -> Void
+struct CappedHeight: Layout {
+  let limit: CGFloat
 
-  var body: some View {
-    Button(action: action) {
-      HStack(spacing: RoomSpace.related) {
-        if busy { ProgressView().tint(room.onAccent) }
-        Text(title)
-      }.frame(maxWidth: .infinity)
-    }.modifier(RoomPrimaryStyle(room: room))
-      .disabled(disabled || busy)
-      .accessibilityIdentifier(actionIdentifier ?? title)
-      .padding(RoomSpace.inset)
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    guard let content = subviews.first else { return .zero }
+    let ideal = content.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+    return CGSize(width: proposal.width ?? ideal.width, height: min(ideal.height, limit))
+  }
+
+  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size))
   }
 }

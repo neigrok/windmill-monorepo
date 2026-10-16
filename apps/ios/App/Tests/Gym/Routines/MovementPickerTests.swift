@@ -41,7 +41,7 @@ import SyncModelServer
     #expect(options.six.map(\.id) == MovementPickerOptions.openers)
     #expect(options.matches.map(\.id) == catalogue.filter { !MovementPickerOptions.openers.contains($0.id) }.map(\.id))
     #expect(options.six.count + options.matches.count == catalogue.count)
-    #expect(options.unread == nil && options.empty == nil)
+    #expect(options.unread == nil && options.create == nil)
   }
 
   @Test func searchMatchesNamesAndFormerNamesAndCapsTheShortlist() {
@@ -51,7 +51,8 @@ import SyncModelServer
     #expect(named.matches.allSatisfy { $0.alias == nil && $0.meta == nil })
     let renamed = MovementPickerOptions.matching(query: "earlier 8", catalogue: catalogue, selected: [], log: nil)
     #expect(renamed.matches == [MovementPickerOptions.Row(exercise: catalogue[8], meta: nil, alias: "Earlier 8", selected: false)])
-    #expect(renamed.unread == nil && renamed.empty == nil)
+    #expect(renamed.matches.map(\.line) == ["Barbell · was “Earlier 8”"])
+    #expect(renamed.unread == nil && renamed.create == nil)
   }
 
   @Test func nameMatchTakesPrecedenceOverAliasAndSelectedMovementStaysVisible() {
@@ -70,6 +71,7 @@ import SyncModelServer
     ])
     let result = MovementPickerOptions.matching(query: "custom", catalogue: [movement], selected: [], log: history)
     #expect(result.matches.first?.meta == "last −5 × 6 · yesterday")
+    #expect(result.matches.map(\.line) == ["Barbell · last −5 × 6 · yesterday"])
   }
 
   @Test func neverLoggedRequiresACompleteSuccessfulRead() {
@@ -77,7 +79,8 @@ import SyncModelServer
     #expect(MovementPickerOptions.matching(query: "custom", catalogue: [movement], selected: [], log: nil).matches.first?.meta == nil)
     #expect(MovementPickerOptions.matching(query: "custom", catalogue: [movement], selected: [], log: log(complete: false)).matches.first?.meta == nil)
     #expect(MovementPickerOptions.matching(query: "custom", catalogue: [movement], selected: [], log: log(), readFailed: true).matches.first?.meta == nil)
-    #expect(MovementPickerOptions.matching(query: "custom", catalogue: [movement], selected: [], log: log()).matches.first?.meta == "never logged")
+    let logged = MovementPickerOptions.matching(query: "custom", catalogue: [movement], selected: [], log: log())
+    #expect(logged.matches.map(\.meta) == ["never logged"] && logged.matches.map(\.line) == ["Barbell · never logged"])
   }
 
   @Test func rankingCountsEachFinishedSessionOnceOverFiftyAndTopsUpCanonically() {
@@ -143,7 +146,7 @@ import SyncModelServer
 
   @Test func firstWorkoutKeepsItsWelcomeAndFourSetsAcrossRelaunch() throws {
     let (harness, gym) = fixture()
-    let picker = MovementPicker(gym: gym, selected: [], includesTargets: false) { _ in }
+    let picker = MovementPicker(gym: gym, purpose: .workout)
     #expect(picker.firstSession)
     let id = try #require(gym.startWorkout())
     #expect(picker.firstSession && gym.workout.selected == nil)
@@ -157,7 +160,7 @@ import SyncModelServer
     #expect(gym.workout.logSet() && picker.firstSession)
 
     let reopened = GymModel(runner: harness.runner), workout = reopened.workout
-    let restoredPicker = MovementPicker(gym: reopened, selected: [], includesTargets: false) { _ in }
+    let restoredPicker = MovementPicker(gym: reopened, purpose: .workout)
     #expect(restoredPicker.firstSession && workout.sessionId == id)
     #expect(workout.sets.map(\.weightKg) == [100, 100, 102.5, 80])
     #expect(workout.sets.map(\.reps) == [5, 5, 5, 8])
@@ -169,27 +172,43 @@ import SyncModelServer
 
   @Test func absentCatalogueAndFailedReadAreDistinctFromNoMatch() {
     let catalogue = Catalogue(custom: [], names: []).exercises
-    let noMatch = MovementPickerOptions.matching(query: "unfindable", catalogue: catalogue, selected: [], log: nil)
-    #expect(noMatch == MovementPickerOptions.Result(six: [], matches: [], unread: nil, empty: "No movement by that name."))
+    let noMatch = MovementPickerOptions.matching(query: " Zercher squat ", catalogue: catalogue, selected: [], log: nil)
+    #expect(noMatch == MovementPickerOptions.Result(six: [], matches: [], unread: nil, create: "Zercher squat"))
     let absent = MovementPickerOptions.matching(query: "", catalogue: [], selected: [], log: nil)
-    #expect(absent == MovementPickerOptions.Result(six: [], matches: [], unread: MovementPickerOptions.catalogueUnread, empty: nil))
+    #expect(absent == MovementPickerOptions.Result(six: [], matches: [], unread: MovementPickerOptions.catalogueUnread, create: nil))
     let failed = MovementPickerOptions.matching(query: "unfindable", catalogue: catalogue, selected: [], log: log(), readFailed: true)
-    #expect(failed == MovementPickerOptions.Result(six: [], matches: [], unread: MovementPickerOptions.catalogueUnread, empty: nil))
+    #expect(failed == MovementPickerOptions.Result(six: [], matches: [], unread: MovementPickerOptions.catalogueUnread, create: nil))
   }
 
-  @Test func creationOffersOnlyTheFourAndroidEquipmentChoicesAndRequiresTargetsInBuilder() {
+  @Test func aQueryWithoutAnExactNameOrFormerNameOffersToCreateIt() {
+    let catalogue = [exercise("bench", name: "Bench Press", aliases: ["Flat bench"]), exercise("row", name: "Barbell Row")]
+    let partial = MovementPickerOptions.matching(query: "bench", catalogue: catalogue, selected: [], log: nil)
+    #expect(partial.matches.map(\.id) == [ID("bench")] && partial.create == "bench")
+    #expect(MovementPickerOptions.matching(query: "  bench PRESS ", catalogue: catalogue, selected: [], log: nil).create == nil)
+    #expect(MovementPickerOptions.matching(query: "flat bench", catalogue: catalogue, selected: [], log: nil).create == nil)
+    let long = String(repeating: "a", count: 70)
+    #expect(MovementPickerOptions.matching(query: long, catalogue: catalogue, selected: [], log: nil).create == String(repeating: "a", count: 60))
+  }
+
+  @Test func aReopenedDraftKeepsItsNameAndANamelessOneTakesTheSearch() {
+    var draft = MovementCreationDraft(id: ID("movement1"), name: "")
+    draft.takeQuery("  Cable curl ")
+    #expect(draft.name == "Cable curl")
+    draft.name = "Cable curl kept"
+    draft.takeQuery("Cable")
+    #expect(draft.name == "Cable curl kept")
+  }
+
+  @Test func creationOffersOnlyTheFourAndroidEquipmentChoicesAndAcceptsOpenTargets() {
     #expect(MovementCreationDraft.equipmentChoices == ["barbell", "dumbbell", "machine", "bodyweight"])
     var draft = MovementCreationDraft(id: ID("movement1"), name: " \n")
-    #expect(draft.problem(includesTargets: true) == "Name it to save it.")
+    #expect(draft.problem == "Name it to save it.")
     draft.name = "Custom"
-    #expect(draft.problem(includesTargets: true) == "Choose at least one set.")
-    #expect(draft.problem(includesTargets: false) == nil)
-    draft.sets = []
-    #expect(draft.problem(includesTargets: true) == "Choose at least one set.")
+    #expect(draft.problem == nil)
     draft.sets = [SetTarget()]
-    #expect(draft.problem(includesTargets: true) == nil)
+    #expect(draft.problem == nil)
     draft.equipment = "cable"
-    #expect(draft.problem(includesTargets: true) == "check the movement name and equipment")
+    #expect(draft.problem == "check the movement name and equipment")
   }
 
   @Test func creationRetainsDraftAndIdentityOnCommitFailureThenRetryAddsTheTargets() {
@@ -198,24 +217,25 @@ import SyncModelServer
     var draft = MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: "  Custom press  ", equipment: "machine", sets: targets)
     let identity = draft.id
     harness.failNextCommit()
-    #expect(gym.createMovement(&draft, includesTargets: true) == nil)
+    #expect(gym.createMovement(&draft) == nil)
     #expect(draft.name == "  Custom press  " && draft.equipment == "machine" && draft.sets == targets && draft.id == identity)
     #expect(draft.refusal == "Gym could not save this change. Try again." && gym.catalogue.find(identity) == nil)
-    #expect(gym.createMovement(&draft, includesTargets: true) == RoutineEntry(exerciseId: identity, sets: targets))
+    #expect(gym.createMovement(&draft) == RoutineEntry(exerciseId: identity, sets: targets))
     #expect(draft.refusal == nil && gym.catalogue.find(identity) == draft.exercise)
     harness.sync(); gym.refresh()
     #expect(gym.catalogue.exercises.filter { $0.id == identity }.count == 1)
     #expect(harness.server.rows(Gym.scope, of: nil).isEmpty)
   }
 
-  @Test func creationWithOpenTargetsAndDuringAccountChangeWritesNothing() {
+  @Test func creationDuringAccountChangeWritesNothingAndOpenTargetsCreateAnOpenEntry() {
     let (_, gym) = fixture()
-    var draft = MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: "Custom")
-    #expect(gym.createMovement(&draft, includesTargets: true) == nil && draft.refusal == "Choose at least one set.")
+    var draft = MovementCreationDraft(id: gym.runner.mint(Exercise.self), name: " ")
+    #expect(gym.createMovement(&draft) == nil && draft.refusal == "Name it to save it.")
+    draft.name = "Custom"
     gym.accountChanging = true
-    #expect(gym.createMovement(&draft, includesTargets: false) == nil)
+    #expect(gym.createMovement(&draft) == nil)
     #expect(draft.name == "Custom" && draft.refusal == "Wait for the account change to finish." && gym.catalogue.find(draft.id) == nil)
     gym.accountChanging = false
-    #expect(gym.createMovement(&draft, includesTargets: false) == RoutineEntry(exerciseId: draft.id))
+    #expect(gym.createMovement(&draft) == RoutineEntry(exerciseId: draft.id) && draft.refusal == nil)
   }
 }

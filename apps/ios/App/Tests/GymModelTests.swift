@@ -22,14 +22,15 @@ import SyncTesting
     return (harness, GymModel(runner: harness.runner))
   }
 
-  func runtime(failing: GymStoreFault = GymStoreFault(), telemetry: any Telemetry = NoopTelemetry(), transport: any SyncTransport = JournalModelTransport(), drivesLoops: Bool = false) throws -> AppRuntime {
+  func runtime(failing: GymStoreFault = GymStoreFault(), telemetry: any Telemetry = NoopTelemetry(), transport: any SyncTransport = JournalModelTransport(), drivesLoops: Bool = false,
+               connectivity: SwitchedConnectivity = SwitchedConnectivity()) throws -> AppRuntime {
     let store = try Store.inMemory(registry: SyncSchema.registry, crashPoints: CrashPoints { point in
       if failing.point.withLock({ $0 == point }) { throw AppFailure(message: "private injected storage detail") }
     }, commandResultWrites: AppRuntime.commandResultWrites)
     let tokens = InMemoryTokenStore()
     let engine = try SyncEngine(config: EngineConfig(appVersion: "test", surface: .ios, drivesLoops: drivesLoops), store: store,
                                 transport: transport, tokens: tokens, forkGuard: InMemoryForkGuardStore(),
-                                clock: .system, random: SeededRandomSource(seed: 17), connectivity: SwitchedConnectivity(), telemetry: telemetry)
+                                clock: .system, random: SeededRandomSource(seed: 17), connectivity: connectivity, telemetry: telemetry)
     let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
     return AppRuntime(settings: AppSettings(arguments: ["app", "-server", "https://gym.invalid"]), store: store, engine: engine,
                       auth: NativeAuth(baseURL: URL(string: "https://gym.invalid")), runner: runner,
@@ -272,6 +273,19 @@ import SyncTesting
     rest.cancel()
     await #expect(throws: (any Error).self) { try await request.value }
     #expect(rest.tasks.isEmpty && telemetry.entries.withLock { $0.filter { $0.properties["operation"] == "gym_rest" }.isEmpty })
+  }
+
+  @Test func aRecordViewsReadOnEveryRenderReportsItsFailureOncePerLaunch() throws {
+    let fault = GymStoreFault(), telemetry = TelemetryRecorder()
+    let gym = GymModel(runner: try runtime(failing: fault, telemetry: telemetry).runner, telemetry: telemetry)
+    let reports = { telemetry.entries.withLock { $0.filter { $0.name == "client_error" }.map(\.properties) } }
+    #expect(reports().isEmpty)
+    fault.point.withLock { $0 = .read }
+    for _ in 0..<3 { #expect(gym.waitingRoutineProposals.isEmpty) }
+    #expect(reports() == [["operation": "gym_read", "failure_kind": "unexpected"]])
+    for _ in 0..<2 { gym.report("gym_action", AppFailure(message: "private injected storage detail")) }
+    #expect(reports() == [["operation": "gym_read", "failure_kind": "unexpected"], ["operation": "gym_action", "failure_kind": "unexpected"],
+                          ["operation": "gym_action", "failure_kind": "unexpected"]])
   }
 
   @Test func lateSuccessIsRejectedAfterRequestGenerationChanges() async throws {

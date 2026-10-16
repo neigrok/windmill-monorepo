@@ -6,219 +6,171 @@ import SyncAPI
 struct LogTab: View {
   let gym: GymModel
   @Environment(\.coachOpenAccount) private var openAccount
-  @Environment(\.dynamicTypeSize) var typeSize
+  @Environment(\.gymShareSession) private var share
+  @Environment(\.dynamicTypeSize) private var typeSize
+  @ScaledMetric(relativeTo: .body) private var dot = 8.0
   @State var limit = 30
-  @State var loading = false
-  @State var olderFailed = false
   @State var expanded: String?
   @State var weighing = false
-  @State var sharing: String?
-  @State var shareMessage: String?
-  @State var shareGeneration = 0
-  @State var shareTask: Task<Void, Never>?
+  @State var historyNoticeDismissed = false
 
   var body: some View {
-    let progress = gym.log?.progress
+    let progress = gym.logRecords?.progress
+    let months = gym.logTimeline(limit: limit)
+    let older = limit < gym.finishedLogSessions.count
     List {
-      logHead
-      progressStrip(progress)
-      ForEach(gym.logTimeline(limit: limit)) { month in
-        Section(month.title) { ForEach(month.entries) { entry in timelineRow(entry, progress: progress) } }.listRowBackground(GymPalette.card)
-      }
-      logFooter
-    }.listStyle(.insetGrouped).modifier(GymPage(titleDisplayMode: .large))
-      .navigationTitle("The log").accessibilityIdentifier("gym-log")
-      .toolbar { ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) } }
-      .safeAreaInset(edge: .bottom) {
-        VStack(spacing: 0) {
-          GymTransient(gym: gym, message: shareMessage, dismiss: { shareMessage = nil },
-                       errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo")
-          ActionBand(title: "Weigh in", room: .gym,
-                     actionIdentifier: "gym-weigh-in") { weighing = true }
-        }
-      }
-      .sheet(isPresented: $weighing) { WeighInSheet(gym: gym) }
-      .onAppear { prepareLogFixture(); gym.telemetry.event("gym_screen_viewed", properties: ["screen": "log"]) }
-      .onDisappear { shareGeneration += 1; shareTask?.cancel(); sharing = nil }
-      .onChange(of: gym.account) { _, _ in shareGeneration += 1; shareTask?.cancel(); sharing = nil; shareMessage = nil; limit = 30; expanded = nil }
-  }
-
-  @ViewBuilder var logHead: some View {
-      if let reading = gym.bodyweight?.reading {
-        Section {
-          NavigationLink { BodyweightScreen(gym: gym) } label: {
-            VStack(alignment: .leading, spacing: 5) {
-              Text("Bodyweight")
-              Text("\(Readout.weight(reading.entry.kg)) kg · \(reading.daysAgo == 0 ? "today" : reading.daysAgo == 1 ? "yesterday" : "\(reading.daysAgo) days ago")")
-                .font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
-            }
-          }.accessibilityIdentifier("gym-bodyweight-door")
-        } footer: { Text("Coach can read this. It can never write it.") }.listRowBackground(GymPalette.card)
-      } else {
-        Section { NavigationLink("Bodyweight") { BodyweightScreen(gym: gym) }.accessibilityIdentifier("gym-bodyweight-door") }
-          .listRowBackground(GymPalette.card)
-      }
-      if gym.readFailed {
-        EmptyView() // the transient band owns a failed read and its retry
-      } else if gym.log == nil {
-        Section { ProgressView("Reading progress…") }.listRowBackground(GymPalette.card)
-      } else if gym.log?.firstPullComplete == false && !gym.isAnonymous {
-        Section { Text("Your full training history needs a connection to finish syncing.") }.listRowBackground(GymPalette.card)
-      }
-      if gym.logTimeline(limit: limit).isEmpty && !gym.readFailed && (gym.isAnonymous || gym.log?.firstPullComplete == true) {
+      OnThisPhoneSection(gym: gym)
+      head(progress)
+      if gym.log == nil && !gym.readFailed {
+        ProgressView().frame(maxWidth: .infinity).listRowBackground(GymPalette.canvas)
+      } else if months.isEmpty && !gym.readFailed && (gym.isAnonymous || gym.log?.firstPullComplete == true) {
         ContentUnavailableView("No sessions yet", systemImage: "clock", description: Text("Your training will land here."))
           .listRowBackground(GymPalette.canvas)
       }
-  }
-
-  @ViewBuilder func progressStrip(_ snapshot: StatsProgress?) -> some View {
-    if let snapshot, let log = gym.log, !gym.readFailed, snapshot.isComplete {
-      let ids = Set(snapshot.sessions.flatMap { $0.movements.map(\.exerciseId) })
-      let movements = ids.map { snapshot.movement($0).window(now: log.moment.now, zone: log.moment.zone) }
-        .filter { !$0.sessions.isEmpty }.sorted {
-          let a = $0.sessions.last?.startedAt ?? Instant(ms: 0), b = $1.sessions.last?.startedAt ?? Instant(ms: 0)
-          return a == b ? $0.exerciseId < $1.exerciseId : a > b
-        }
-      if !movements.isEmpty {
-        Section {
-          if let count = snapshot.consistency(now: log.moment.now, zone: log.moment.zone) {
-            Text("Trained \(count) of the last 4 weeks").font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
-          }
-          ScrollView(.horizontal) {
-            HStack(alignment: .top, spacing: 16) {
-              ForEach(movements, id: \.exerciseId) { progress in
-                NavigationLink { MovementRecordScreen(gym: gym, exerciseID: progress.exerciseId) } label: {
-                  VStack(alignment: .leading, spacing: 8) {
-                    Label(gym.catalogue.find(progress.exerciseId)?.name ?? "Movement", systemImage: "chevron.right").font(.headline)
-                    if progress.hasChart(in: log.moment.zone), let first = progress.logPlotPoints.first {
-                      LogDatedChart(points: progress.logPlotPoints, from: first.date, through: LogPresentation.date(log.moment.now), gapDays: 21, bestID: progress.best?.id.description, compact: true)
-                    }
-                    Text("Last 12 weeks · \(progress.sessions.count) sessions").font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
-                    if let best = progress.best?.fact.estimate { Text("best \(Readout.estimate(best.e1rm))").font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.record) }
-                    ForEach(LogPresentation.progressEfforts(progress), id: \.setId) { heavy in
-                      Text(heavy.weightKg == 0 ? "most reps \(heavy.reps) · bodyweight" : "heaviest \(Readout.effort(weightKg: heavy.weightKg, reps: heavy.reps))").font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
-                    }
-                  }.padding(12).containerRelativeFrame(.horizontal, alignment: .leading) { width, _ in
-                    typeSize.isAccessibilitySize ? width : min(284, width)
-                  }.background(GymPalette.card, in: RoundedRectangle(cornerRadius: 12))
-                }.buttonStyle(.plain).accessibilityIdentifier("gym-progress-movement")
-              }
-            }.scrollTargetLayout()
-          }.scrollTargetBehavior(.viewAligned).scrollIndicators(.hidden).accessibilityLabel("Progress by movement")
-        }.listRowBackground(GymPalette.canvas).listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
-      }
-    }
-  }
-
-  @ViewBuilder var logFooter: some View {
-      if !gym.finishedLogSessions.isEmpty {
-        Section {
-          if limit < gym.finishedLogSessions.count || olderFailed {
-            Button(olderFailed ? "Retry" : loading ? "Loading…" : "Load older") { loadOlder() }
-              .disabled(loading).accessibilityIdentifier("gym-log-older")
-            if olderFailed { Text("That read failed.").font(.subheadline) }
-          } else if let first = gym.finishedLogSessions.last {
-            Text("First session · \(LogPresentation.brief(LogPresentation.date(first.startedAt)))").font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
-          }
-        }.listRowBackground(GymPalette.card)
-      }
-  }
-
-  @ViewBuilder func timelineRow(_ entry: LogTimelineEntry, progress: StatsProgress?) -> some View {
-            switch entry.kind {
-            case .session(let session): sessionRow(session, progress: progress)
-            case .best(let id, let point, let previous): bestMoment(entry, id: id, point: point, previous: previous, snapshot: progress)
-            case .month(let day, let weeks):
-              DisclosureGroup(isExpanded: Binding(get: { expanded == entry.id }, set: { expanded = $0 ? entry.id : nil })) {
-                Text("A working-set workout in every week of \(LogPresentation.date(day).formatted(.dateTime.month(.wide))).")
-                  .font(.subheadline).foregroundStyle(GymPalette.inkDim)
-              } label: { Label("Trained \(weeks) of \(weeks) weeks", systemImage: "calendar") }
-              .accessibilityIdentifier("gym-month-moment")
-            case .weight(let weight):
-              NavigationLink { BodyweightScreen(gym: gym) } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                  Label("Weighed in · \(Readout.weight(weight.kg)) kg", systemImage: "scalemass")
-                  Text(LogPresentation.dayLabel(weight.day, today: gym.log?.moment.today ?? weight.day)).font(.caption).foregroundStyle(GymPalette.inkDim)
-                }
-              }.accessibilityIdentifier("gym-weight-moment")
+      if let moment = gym.log?.moment {
+        ForEach(months) { month in
+          let last = month.id == months.last?.id
+          Section {
+            ForEach(month.entries) { entry in row(entry, progress: progress, moment: moment) }
+            if last && older {
+              ProgressView().frame(maxWidth: .infinity).id(limit)
+                .accessibilityIdentifier("gym-log-older").onAppear { limit += 30 }
             }
+          } header: { Text(month.title) } footer: {
+            if last && !older, let first = gym.finishedLogSessions.last {
+              Text("First session · \(LogPresentation.brief(LocalDay(first.startedAt, in: moment.zone), today: moment.today))")
+                .monospacedDigit().foregroundStyle(GymPalette.inkFaint).accessibilityIdentifier("gym-log-first-session")
+            }
+          }.listRowBackground(GymPalette.card)
+        }
+      }
+    }.listStyle(.insetGrouped).modifier(GymPage(titleDisplayMode: .large))
+      .navigationTitle("The log").accessibilityIdentifier("gym-log")
+      .toolbar {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button("Weigh in", systemImage: "scalemass") { weighing = true }.labelStyle(.iconOnly)
+            .accessibilityIdentifier("gym-weigh-in").disabled(gym.accountTransition)
+        }
+        if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
+        ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
+      }.roomBar(.gym)
+      .reachBand {
+        GymTransient(gym: gym, message: historyNotice, dismiss: { historyNoticeDismissed = true },
+                     held: gym.discardHold.map { hold in .init(text: hold.line, undo: gym.undoDiscard) },
+                     errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo")
+      }
+      .sheet(isPresented: $weighing) { WeighInSheet(gym: gym) }
+      .onAppear { prepareLogFixture(); gym.telemetry.event("gym_screen_viewed", properties: ["screen": "log"]) }
+      .onChange(of: gym.account) { _, _ in limit = 30; expanded = nil; historyNoticeDismissed = false }
   }
 
-  func sessionRow(_ session: Session, progress: StatsProgress?) -> some View {
-    let readout = gym.log?.readout(session: session.id)
-    let record = progress?.sessions.first { $0.sessionId == session.id }?.movements.first { fact in
-      progress?.movement(fact.exerciseId).records.contains { $0.id == session.id } == true
+  // Signed in before the first pull lands, the band says the history is still arriving; it never covers a refusal or an Undo.
+  var historyNotice: String? {
+    guard !gym.isAnonymous, gym.log?.firstPullComplete == false, !historyNoticeDismissed,
+          gym.error == nil, gym.notices.isEmpty, gym.undoOffers.isEmpty, gym.discardHold == nil else { return nil }
+    return "Your full training history needs a connection to finish syncing."
+  }
+
+  func head(_ progress: StatsProgress?) -> some View {
+    Section {
+      NavigationLink { BodyweightScreen(gym: gym) } label: {
+        GymRow(title: "Bodyweight", meta: gym.bodyweight?.reading.map { "\(Readout.weight($0.entry.kg)) kg · \(Readout.ago(days: $0.daysAgo))" })
+      }.accessibilityIdentifier("gym-bodyweight-door")
+    } footer: {
+      if let progress, let log = gym.log, !gym.readFailed, let weeks = progress.consistency(now: log.moment.now, zone: log.moment.zone) {
+        Text("Trained \(weeks) of the last 4 weeks").monospacedDigit().foregroundStyle(GymPalette.inkDim)
+          .accessibilityIdentifier("gym-log-consistency")
+      }
+    }.listRowBackground(GymPalette.card)
+  }
+
+  @ViewBuilder func row(_ entry: LogTimelineEntry, progress: StatsProgress?, moment: Moment) -> some View {
+    switch entry.kind {
+    case .session(let session): sessionRow(session, moment: moment)
+    case .best(let id, let point, let previous): bestMoment(entry, id: id, point: point, previous: previous, progress: progress, zone: moment.zone)
+    case .month(_, let weeks):
+      Text("Trained \(weeks) of \(weeks) weeks").foregroundStyle(GymPalette.ink).monospacedDigit()
+        .accessibilityIdentifier("gym-month-moment")
+    case .weight(let weight):
+      NavigationLink { BodyweightScreen(gym: gym) } label: {
+        HStack {
+          Text("Weighed in · \(Readout.weight(weight.kg)) kg").foregroundStyle(GymPalette.ink).monospacedDigit()
+          Spacer()
+          Text(LogPresentation.dayLabel(weight.day, today: moment.today)).font(.footnote).foregroundStyle(GymPalette.inkDim)
+        }
+      }.accessibilityIdentifier("gym-weight-moment")
     }
-    let seconds = (readout?.durationMs ?? 0) / 60_000
-    let fact = record?.estimate.map { "Record · \(gym.catalogue.find(record!.exerciseId)?.name ?? "Movement") \(Readout.effort(weightKg: $0.weightKg, reps: $0.reps))" } ?? (seconds == 0 ? "<1 min" : "\(seconds) min")
+  }
+
+  func sessionRow(_ session: Session, moment: Moment) -> some View {
+    let record = gym.logRecordFact(session.id)
+    let facts = record ?? gym.log?.readout(session: session.id).map(LogPresentation.sessionFacts) ?? ""
+    let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: RoomSpace.small))
+      : AnyLayout(HStackLayout(spacing: RoomSpace.related))
     return NavigationLink { SessionDetailScreen(gym: gym, sessionID: session.id) } label: {
-      VStack(alignment: .leading, spacing: 5) {
-        Text(session.name ?? Readout.noRoutine).font(.headline)
-        Text(fact).font(.subheadline.monospacedDigit()).foregroundStyle(record == nil ? GymPalette.inkDim : GymPalette.record)
-        Text(LogPresentation.dayLabel(LogPresentation.day(LogPresentation.date(session.startedAt)), today: gym.log?.moment.today ?? LogPresentation.day(Date())))
-          .font(.caption).foregroundStyle(GymPalette.inkDim)
-        if gym.logSessionIsDeviceOnly(session.id) { Label("On this device", systemImage: "iphone").font(.caption).foregroundStyle(GymPalette.inkDim) }
+      layout {
+        VStack(alignment: .leading, spacing: RoomSpace.small) {
+          HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(session.name ?? Readout.noRoutine).font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink)
+            if record != nil { recordDot }
+          }
+          Text(facts).font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+        HStack(spacing: RoomSpace.related) {
+          if gym.sessionIsUnsent(session.id) {
+            Image(systemName: "iphone").font(.footnote).foregroundStyle(GymPalette.inkDim).accessibilityLabel("On this phone")
+          }
+          Text(LogPresentation.dayLabel(LocalDay(session.startedAt, in: moment.zone), today: moment.today)).font(.footnote).foregroundStyle(GymPalette.inkDim)
+        }
       }
     }.accessibilityIdentifier("gym-log-session-\(session.id)")
       .contextMenu {
         NavigationLink("Open workout") { SessionDetailScreen(gym: gym, sessionID: session.id) }
-        Button("Share this workout", systemImage: "square.and.arrow.up") { share(session.id) }.disabled(sharing != nil)
+        Button("Share this workout", systemImage: "square.and.arrow.up") { share?(session.id) }
         Button("Discard workout", systemImage: "trash", role: .destructive) { gym.run(DiscardSession(session.id)) }
       }
       .swipeActions { Button("Discard", role: .destructive) { gym.run(DiscardSession(session.id)) } }
-      .accessibilityAction(named: "Share this workout") { share(session.id) }
+      .accessibilityAction(named: "Share this workout") { share?(session.id) }
       .accessibilityAction(named: "Discard workout") { gym.run(DiscardSession(session.id)) }
   }
 
-  func bestMoment(_ entry: LogTimelineEntry, id: ID<Exercise>, point: MovementProgress.Point, previous: MovementProgress.Point?, snapshot: StatsProgress?) -> some View {
+  func bestMoment(_ entry: LogTimelineEntry, id: ID<Exercise>, point: MovementProgress.Point, previous: MovementProgress.Point?,
+                  progress: StatsProgress?, zone: any Zone) -> some View {
     let value = point.fact.estimate!.e1rm
-    let name = gym.catalogue.find(id)?.name ?? "Movement"
-    let change = previous.map { "up \(Readout.estimatedWeight(value - $0.fact.estimate!.e1rm)) kg since \(LogPresentation.date($0.startedAt).formatted(.dateTime.month(.wide)))" }
-      ?? LogPresentation.brief(LogPresentation.date(point.startedAt))
-    let progress = snapshot?.movement(id).window(now: point.startedAt, zone: gym.log!.moment.zone)
-    return DisclosureGroup(isExpanded: Binding(get: { expanded == entry.id }, set: { expanded = $0 ? entry.id : nil })) {
-      if let progress {
-        if progress.hasChart(in: gym.log!.moment.zone), let first = progress.logPlotPoints.first {
-          LogDatedChart(points: progress.logPlotPoints, from: first.date, through: LogPresentation.date(point.startedAt), gapDays: 21, bestID: progress.best?.id.description, compact: true)
-        }
-        Text("Last 12 weeks · \(progress.sessions.count) sessions").font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
-        if let heaviest = progress.heaviest?.fact.heaviest { Text("heaviest \(Readout.effort(weightKg: heaviest.weightKg, reps: heaviest.reps))").font(.subheadline.monospacedDigit()) }
-        Text("best e1RM \(Readout.estimatedWeight(value))").font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.record)
+    let change = previous.map {
+      "up \(Readout.estimatedWeight(value - $0.fact.estimate!.e1rm)) kg since \(LogPresentation.since(LocalDay($0.startedAt, in: zone), best: LocalDay(point.startedAt, in: zone)))"
+    } ?? LogPresentation.brief(point.startedAt.date)
+    let window = progress?.movement(id).window(now: point.startedAt, zone: zone)
+    return DisclosureGroup(isExpanded: Binding(get: { expanded == entry.id }, set: { open in
+      expanded = open ? entry.id : nil
+      if open { gym.telemetry.event("gym_moment_opened", properties: [:]) }
+    })) {
+      if let window, window.hasChart(in: zone), let first = window.logPlotPoints.first {
+        LogDatedChart(points: window.logPlotPoints, from: first.date, through: point.startedAt.date, series: .strength,
+                      bestID: window.best?.id.description, compact: true)
       }
-      NavigationLink("Open record") { MovementRecordScreen(gym: gym, exerciseID: id) }.accessibilityIdentifier("gym-open-record")
+      if let window {
+        Text("Last 12 weeks · \(GymCount.of(window.sessions.count, "session"))").font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim)
+      }
+      NavigationLink { MovementRecordScreen(gym: gym, exerciseID: id) } label: { Text("Open record").foregroundStyle(GymPalette.ink) }
+        .accessibilityIdentifier("gym-open-record")
     } label: {
-      VStack(alignment: .leading, spacing: 4) {
-        Label("\(name) · new best", systemImage: "circle.fill").foregroundStyle(GymPalette.record).font(.subheadline.weight(.semibold))
-        Text("\(Readout.estimatedWeight(value)) kg est · \(change)").font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
+      VStack(alignment: .leading, spacing: RoomSpace.small) {
+        HStack(alignment: .firstTextBaseline, spacing: RoomSpace.related) {
+          recordDot
+          Text("\(gym.catalogue.find(id)?.name ?? "Movement") · new best").foregroundStyle(GymPalette.ink)
+        }
+        Text("\(Readout.estimatedWeight(value)) kg est · \(change)").font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim)
       }
     }.accessibilityIdentifier("gym-best-moment")
       .accessibilityValue(expanded == entry.id ? "Expanded" : "Collapsed")
   }
 
-  func loadOlder() {
-    loading = true
-    Task { @MainActor in
-      gym.refresh()
-      olderFailed = gym.readFailed
-      if !olderFailed { limit += 30 }
-      loading = false
-    }
-  }
-  func share(_ id: ID<Session>) {
-    guard sharing == nil else { return }
-    sharing = id.description; shareMessage = nil; shareGeneration += 1
-    let generation = shareGeneration
-    shareTask = Task {
-      defer { if generation == shareGeneration { sharing = nil } }
-      do {
-        let link = try await gym.mintSessionShare(id)
-        try Task.checkCancellation()
-        UIPasteboard.general.string = link.link(base: gym.runtime?.settings.baseURL?.absoluteString ?? "https://windmill.works")
-        shareMessage = "Link copied — anyone who has it can read this workout"
-      } catch {
-        guard !Task.isCancelled, generation == shareGeneration else { return }
-        shareMessage = SessionShareModel.message(error, revoking: false)
-      }
-    }
+  // 8 pt at the default size, centred on the first line's capitals at every size.
+  var recordDot: some View {
+    let size = dot
+    return Circle().fill(GymPalette.record).frame(width: size, height: size)
+      .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + size * 0.75 }
+      .accessibilityHidden(true)
   }
 }

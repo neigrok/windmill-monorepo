@@ -75,10 +75,38 @@ class ThemeLiteralTests(unittest.TestCase):
             with self.subTest(source=example):
                 self.assertTrue(check_theme_literals.violations(example))
 
+    def test_rejects_the_system_label_hierarchy_and_faded_palette_roles(self):
+        examples = [
+            'Text("x").foregroundStyle(.secondary)',
+            'Text("x").foregroundStyle(.primary)',
+            'Image(systemName: "x").foregroundStyle(.tertiary)',
+            'Text("x").foregroundStyle(.placeholder)',
+            "Divider().background(.separator)",
+            "let native: Color = .primary",
+            "let paint = Color.secondary",
+            "let paint = HierarchicalShapeStyle.tertiary",
+            "let paint = GymPalette.ink.tertiary",
+            "let paint = UIColor.label",
+            "let paint = UIColor.secondaryLabel",
+            "let paint = UIColor.separator",
+            "let paint = Color(uiColor: .label)",
+            "let paint = Color(uiColor: .tertiaryLabel)",
+            "let paint = GymPalette.ink.opacity(0.28)",
+            "let paint = UIColor(ShellPalette.ink.opacity(0.28))",
+            "Capsule().fill(JournalPalette.lamp.opacity(0.4))",
+            "let paint = JournalPalette.uiLamp.withAlphaComponent(0.24)",
+        ]
+        for example in examples:
+            with self.subTest(source=example):
+                self.assertTrue(check_theme_literals.violations(example))
+
     def test_allows_hierarchical_styles_scheme_choices_and_system_values(self):
         source = """
-        Text("x").foregroundStyle(.secondary)
         Text("x").foregroundStyle(.tint)
+        Text("x").redacted(reason: .placeholder)
+        ToolbarItem(placement: .primaryAction) { button }
+        let caption = button.label
+        let ranked = item.secondary
         let clear = Color.clear
         let font = UIFont.systemFont(ofSize: 12)
         let uptime = ProcessInfo.processInfo.systemUptime
@@ -105,7 +133,6 @@ class ThemeLiteralTests(unittest.TestCase):
         source = '''
         let roles = [GymPalette.accent, GymPalette.ink]
         let bridge = UIColor(GymPalette.accent)
-        let native: Color = .primary
         let clear = Color.clear
         let byteMask = 0xff
         let recordID = 0x123456
@@ -144,6 +171,20 @@ class ThemeLiteralTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, re.escape(str(path)) + ":1: error:"):
                         check_theme_literals.check(source)
                     path.unlink()
+
+    def test_allowlisted_lines_print_their_reasons(self):
+        with TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            for root in check_theme_literals.SOURCE_ROOTS:
+                (source / root).mkdir()
+            transport = source / "Sources/Gym/Coach/CoachTransport.swift"
+            transport.parent.mkdir(parents=True)
+            transport.write_text("let flattened = true\nif !png { UIColor.white.setFill(); context.fill(rect) }\n")
+            command = [sys.executable, str(Path(check_theme_literals.__file__)), "--source", str(source)]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, result.returncode)
+            self.assertEqual("Sources/Gym/Coach/CoachTransport.swift:2: allowed: a JPEG has no alpha, so a photo is flattened onto white before encoding\n"
+                             "Theme colour literal check passed: 0 literals outside Sources/Theme.\n", result.stdout)
 
     def test_missing_source_root_fails_closed(self):
         with TemporaryDirectory() as temporary:

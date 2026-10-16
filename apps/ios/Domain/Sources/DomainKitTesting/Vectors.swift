@@ -76,7 +76,7 @@ public struct ProductCorpus {
   func scene(of vector: Vector, in scope: ScopeRef) throws -> (VectorReader, Moment) {
     let input = vector.input
     let rows = try input.member("records")
-    let records = try VectorRecords(drawn: rows["drawn"], stored: rows["stored"] ?? rows["drawn"], registry: book.registry)
+    let records = try VectorRecords(drawn: rows["drawn"], stored: rows["stored"] ?? rows["drawn"], device: rows["device"], registry: book.registry)
     let (moment, ids) = (try Moment(form: input), try (input["ids"]?.asArray() ?? []).map { try RecordID(json: $0) })
     let firstPullComplete = try input["firstPullComplete"]?.asBool() ?? true
     let reader = VectorReader(records: records, now: moment.now.ms, ids: ids, firstPullComplete: firstPullComplete,
@@ -95,14 +95,17 @@ extension Moment {
 
 // MARK: - Records
 
-// The records a vector lists per view (§15.1), each an engine row as the engine's readers hand it to a product.
+// The records a vector lists per view (§15.1), each an engine row as the engine's readers hand it to a product, and the
+// device keys it lists, each key's value.
 package struct VectorRecords: Sendable {
   package var drawn: [Record]
   package var stored: [Record]
+  package var device: JSON.Object
 
-  package init(drawn: JSON?, stored: JSON?, registry: Registry) throws {
+  package init(drawn: JSON?, stored: JSON?, device: JSON? = nil, registry: Registry) throws {
     self.drawn = try VectorRecords.records(drawn, registry: registry)
     self.stored = try VectorRecords.records(stored, registry: registry)
+    self.device = try device?.asObject() ?? [:]
   }
 
   static func records(_ rows: JSON?, registry: Registry) throws -> [Record] {
@@ -112,7 +115,7 @@ package struct VectorRecords: Sendable {
 
 // A reader over a vector's records: the folded record by id visible or not, and the visible records of a type in id
 // order, as the engine's readers answer (ER-3, ER-12). Given a scope, it refuses a type of another scope as they do. It
-// mints the ids the vector lists, in order, and no other; the replica it writes to is one no vector names.
+// mints the ids the vector lists, in order, opaque ones included, and no other; the replica it writes to is one no vector names.
 package final class VectorReader: CommitContext {
   let records: VectorRecords
   package let now: Int64
@@ -151,13 +154,19 @@ package final class VectorReader: CommitContext {
     throw CommitFailure.malformed("\(type) is no type of \(scope.ref)")
   }
 
-  package func device(_ key: String) throws -> JSON? { nil }
+  package func device(_ key: String) throws -> JSON? { records.device[key] }
   package func firstPullComplete() throws -> Bool { pulled }
   package func confirmed(_ type: String, _ id: RecordID) throws -> Record? { try stored(type, id) }
   package func checkpoint() throws -> ScopeCheckpoint { ScopeCheckpoint() }
-  package func devices(prefix: String) throws -> JSON.Object { [:] }
+  package func devices(prefix: String) throws -> JSON.Object {
+    JSON.Object(uniqueKeysWithValues: records.device.members.filter { $0.key.hasPrefix(prefix) }.map { ($0.key, $0.value) })
+  }
   package func commands() throws -> [QueuedCommand] { [] }
-  package func opaqueID() throws -> String { throw CommitFailure.malformed("the vector lists no opaque identity") }
+
+  package func opaqueID() throws -> String {
+    guard !ids.isEmpty else { throw CommitFailure.malformed("the vector lists no id left to mint an opaque identity") }
+    return try ids.removeFirst().json.asString()
+  }
 
   package func mintID(_ type: String) throws -> RecordID {
     guard !ids.isEmpty else { throw CommitFailure.malformed("the vector lists no id left to mint a \(type)") }

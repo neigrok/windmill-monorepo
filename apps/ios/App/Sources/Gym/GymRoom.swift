@@ -16,27 +16,28 @@ struct GymRoom: View {
   @State var proposal: ProposalReviewID?
   @State var coachHandoff: CoachHandoff?
   @State var finishedHandoff: WorkoutHandoff?
+  @State var share: SessionShareID?
+  @State var shareAfterSignIn: ID<Session>?
 
   var tabs: some View {
     TabView(selection: $tab) {
       SwiftUI.Tab("Routines", systemImage: "list.bullet.rectangle", value: Tab.routines) {
         NavigationStack(path: $routinesPath) {
-          root(RoutinesTab(gym: gym, onAccount: app.openYou,
-                           onWrittenProgram: { if gym.isAnonymous || gym.authPaused { app.openYou() } else { ask("Help me turn my written program into a routine.") } },
-                           onReviewProposal: { proposal = ProposalReviewID(id: $0.description) }))
-        }
+          root(RoutinesTab(gym: gym, onReviewProposal: { proposal = ProposalReviewID(id: $0.description) }))
+        }.roomBar(.gym)
       }
       SwiftUI.Tab("The log", systemImage: "calendar", value: Tab.log) {
-        NavigationStack(path: $logPath) { root(LogTab(gym: gym)) }
-      }
+        NavigationStack(path: $logPath) { root(LogTab(gym: gym)) }.roomBar(.gym)
+      }.badge(gym.isAnonymous ? 0 : gym.workoutsToReview.count)
       SwiftUI.Tab("Coach", systemImage: "bubble.left.and.bubble.right", value: Tab.coach) {
-        NavigationStack(path: $coachPath) { root(CoachTab(gym: gym, handoff: $coachHandoff)) }
+        NavigationStack(path: $coachPath) { root(CoachTab(gym: gym, handoff: $coachHandoff)) }.roomBar(.gym)
       }
     }.tint(GymPalette.accent).accessibilityHidden(gym.workout.isPresented)
   }
 
+  // The stacks' back chevrons and the room menu take the label colour; each screen's page keeps the accent.
   func root(_ screen: some View) -> some View {
-    screen.toolbar { roomToolbar }.navigationDestination(for: Destination.self, destination: destination)
+    screen.toolbar { roomToolbar }.roomBar(.gym).navigationDestination(for: Destination.self, destination: destination)
   }
 
   var body: some View {
@@ -47,11 +48,22 @@ struct GymRoom: View {
     .environment(\.coachOpenAccount, app.openYou)
     .environment(\.coachOpenRoutine, { id in tab = .routines; routinesPath.append(Destination.routine(id)) })
     .environment(\.coachOpenSession, { id in tab = .log; logPath.append(Destination.session(id)) })
+    .environment(\.gymShareSession, { id in share = SessionShareID(id: id) })
     .sheet(item: $proposal) { proposal in
       ProposalReviewSheet(gym: gym, proposalId: proposal.id) { name in
         self.proposal = nil
         ask("Tell me about the proposal for \(name).")
       }
+    }
+    // Sign in to share closes the sheet into You; when You closes signed in the share returns, and otherwise nothing is
+    // shared (docs/design/guidelines/superapp-flow.md §5).
+    .sheet(item: $share, onDismiss: { if shareAfterSignIn != nil { app.openYou() } }) { request in
+      SessionShareSheet(gym: gym, sessionID: request.id) { shareAfterSignIn = request.id }
+    }
+    .onChange(of: app.sheet) { closed, sheet in
+      guard sheet == nil, closed != nil, let pending = shareAfterSignIn else { return }
+      shareAfterSignIn = nil
+      if !gym.sharingNeedsSignIn { share = SessionShareID(id: pending) }
     }
     .fullScreenCover(isPresented: Binding(get: { gym.workout.isPresented }, set: { if !$0 { gym.hideWorkout() } }), onDismiss: receiveWorkout) {
       WorkoutScreen(gym: gym).interactiveDismissDisabled()

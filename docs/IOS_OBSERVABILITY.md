@@ -29,7 +29,9 @@ first-party intake proves storage, not asynchronous Amplitude receipt.
 
 ## Error coverage and privacy
 
-Sentry starts before session or SQLite storage reads. The SDK captures native crashes. Handled
+Sentry starts before session or SQLite storage reads. The SDK captures native crashes and App Hangs: a main thread
+unresponsive for 2 seconds or more (`appHangTimeoutInterval`), fully or partly blocked, as an error event with its stack
+traces and no other content. Handled
 reports cover HTTP/transport and successful-body decoding, journal and gym storage and drafts, Journal Echoes REST, held Gym deletes and Undo, Gym REST, SQLite
 reads/writes, protected-storage preparation, fork-guard I/O, Keychain reads/writes/deletions and
 enumeration, session restoration, code authentication, Apple ticket creation/linking, sign-in-method
@@ -45,13 +47,15 @@ diagnostics to avoid a second report and retains the failure kind in pull/push o
 HTTP failures carry method, coarse route family (`/v1/auth`, `/v1/me`, `/v1/sync`, `/v1/gym`, `/v1/journal` or `/v1/events`), a static
 operation, `failure_kind`, optional numeric status label and `duration_ms`. Duration uses a monotonic
 clock through response consumption and decoding. Sync outcomes also cover application of the reply
-to the local store. Expected statuses 400, 401, 403, 404, 409, 410, 422 and 429 are product/API metrics,
-not Sentry Issues. Coach HTTP or SSE `503 ask-not-configured` is an expected unavailable-deployment
-refusal: `api_request_failed` carries status `503`, `gym_ask_outcome` carries `absent`, and the composer
-offers the unavailable stance without a retry. Offline/DNS/connect failures are metrics; cancellation
-is quiet. Timeouts, TLS,
-unexpected HTTP responses and decoding failures are reportable. No URL, dynamic identifier, query
-string, authorization header or response body enters telemetry.
+to the local store. Expected statuses 400, 401, 403, 404, 409, 410, 422, 426 and 429 are product/API metrics,
+not Sentry Issues, and so is a sync push's 413, which the engine halves or refuses too-large. Coach HTTP or SSE
+`503 ask-not-configured` is an expected unavailable-deployment refusal: `api_request_failed` carries status `503`,
+`gym_ask_outcome` carries `absent`, and the room states the unavailable stance with no composer and no retry.
+Offline/DNS/connect failures are metrics, and so is a live socket the server or the network drops with no close
+frame; cancellation is quiet. Timeouts, TLS, unexpected HTTP responses and decoding failures are reportable. Sync
+files each once per outage: a retry that fails as the one before it did is a metric alone until its operation
+succeeds or fails another way. No URL, dynamic identifier, query string, authorization header or response body
+enters telemetry.
 
 The promise is **Only you.** Never send journal text, text length, mood or energy values, email
 addresses, Apple subjects/tickets/identity tokens, session tokens or response bodies. Apple tickets
@@ -75,28 +79,36 @@ was answered or declined; neither the scale name nor its value is recorded. Jour
 `first_run_screen_viewed` with screen `ink_notes` for each automatic or requested presentation and `first_run_choice` with
 action `dismiss_ink` once when writing or a tap lifts it; no ink replay action is allowlisted.
 
-| Area | Events | Useful properties |
+| Area | Events | Properties, as each emitter sends them |
 | --- | --- | --- |
 | Application | `app_started`, `app_foregrounded`, `app_backgrounded` | common metadata |
 | Authentication | `auth_restore` | outcome: anonymous, signed_in, paused, failed |
-| Email code | `auth_code_requested`, `auth_code_sent` | method: email; outcome: ok, failed |
-| Sign-in | `auth_sign_in_started`, `auth_signed_in` | method: email, apple; outcome: ok, linked, failed, cancelled; linked follows a code link or signed-in attach |
+| Email code | `auth_code_requested`, `auth_code_sent` | method: email; outcome: ok, failed (on `auth_code_sent` only) |
+| Sign-in | `auth_sign_in_started`, `auth_signed_in` | method: email, apple; outcome: ok, linked, failed, cancelled (on `auth_signed_in` only, linked following a code link or signed-in attach) |
 | Sign-out | `auth_signed_out` | outcome: ok |
 | Introduction | `onboarding_screen_viewed`, `onboarding_skipped`, `onboarding_finished` | page: windmill, roadmap, journal, gym; presentation: first_launch, replay |
 | Introduction replay | `onboarding_replayed` | presentation: replay |
-| First-run screens | `first_run_screen_viewed` | screen: welcome, journal, ink_notes, gym, routines, log, coach, workout, keep, address, code, you, adoption, discard_adoption, sign_out, 23a, 23b, 23c, 24a, 24b, 24c, 24d, apple_no_account, apple_expired, auth_pending |
+| First-run screens | `first_run_screen_viewed` | screen: welcome, journal, ink_notes, gym, routines, log, coach, workout, keep, address, code, you, adoption, discard_adoption, sign_out, 23a, 23b, 23c, 24c, 24d, apple_no_account, apple_expired, auth_pending |
 | Choices | `first_run_choice` | screen; action: open_journal, open_gym, dismiss_ink, write, done_writing, keep, close, email, back, change_email, resend, add, discard, cancel, sign_out, use_account, create_account, remove_apple, retry |
 | Rooms | `room_switched` | room: journal, gym; emitted after switching |
+| Appearance | `appearance_chosen` | appearance: light, dark, system; emitted when You's Settings changes it |
+| Update required | `client_update_required` | Android's vocabulary: state: shown with status: 426 once the alert is on screen; action: update (Get the update, from the alert or You), keep (Keep working on this phone); outcome: failed when the destination could not open. trigger: sync (the engine's flag), sign_in (a 426 at sign-in) on every row. Dismissing the could-not-open transient emits nothing |
 | Adoption | `room_adoption_answered` | room: journal, gym; action: add, discard; no counts or identifiers |
-| Gym screens | `gym_screen_viewed` | screen: routines, routine, routine_editor, movement, log, session, fix_set, record, bodyweight, weigh_in, session_share, coach, history, notes, note, settings, review, connected_log, workout |
+| Gym screens | `gym_screen_viewed` | screen: routines, routine, routine_editor, movement, log, session, fix_set, record, bodyweight, weigh_in, session_share, coach, history, notes, note, settings, review, connected_log, sources (What Coach read), workout |
 | Live Activity | `gym_activity_set_logged`, `gym_activity_offer_refused` | no properties; accepted durable set or stale offer refusal |
-| Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged`, `gym_routine_saved` | screen: workout; outcome: ok, and refused for a Finish the phone cannot queue; routine action: create, update; storage: device, server |
-| Coach | `gym_ask_started`, `gym_ask_outcome` | screen: coach; outcome: answered, cancelled, failed, refused, capped, fresh, absent; cap: daily, ceiling; duration_ms |
-| Proposals | `gym_proposal_outcome` | screen: review; action: apply, dismiss; outcome: decided, failed |
-| Gym actions | `gym_action`, `gym_undo` | screen: gym; outcome: ok, refused, failed; no action payloads |
-| Optional scales | `scale_invitation_shown`, `scale_invitation_answered` | action: answered, declined |
+| Training | `gym_session_started`, `gym_set_logged`, `gym_session_finished` | screen: workout; outcome: ok, and refused for a Finish the phone cannot queue |
+| Routines | `gym_routine_saved` | screen: routine_editor, workout; action: create, update (the editor creates or updates, a workout's kept targets update its routine, the receipt's routine is created) |
+| Coach | `gym_ask_started`, `gym_ask_outcome` | screen: coach; outcome: answered, cancelled, failed, refused, capped, fresh, absent, and offline for a send the phone held back with no network; cap: daily, ceiling; duration_ms |
+| Proposals | `gym_proposal_outcome` | screen: review; action: apply, dismiss, retry; outcome: decided, failed, stalled, ok, offline (a decision is decided when the log took it and failed when the log refused it, stalled when unanswered after 15 seconds with no action when the queue cannot be read, and Retry is ok when the log took it, offline when nothing left the phone, failed otherwise) |
+| Connected log | `gym_connect_tool` | action: connect, manage (Connect a tool, Manage connections); outcome: ok, failed (whether the browser opened) |
+| Gym actions | `gym_action` | screen: gym, session_share, history (engine actions and saves, a share link minted, copied or revoked, a Coach conversation deleted); outcome: ok, refused, failed; no action payloads |
+| Undo | `gym_undo` | screen: gym, history (a held engine gesture, a held conversation delete); outcome: ok, refused, failed (failed on gym only) |
+| Log moments | `gym_moment_opened` | no properties; a new-best moment on the log expanded in place |
+| Import recovery | `gym_import_recovery` | Android's vocabulary: action: inspect, fix, keep, retry, discard; state (a screen opening only): opened; outcome (a commit or a close only): completed, cancelled, and the iOS-only refused, failed; reason, iOS-only: session-open, session-overlap, id-taken, bad-instant, too-many-sets, invalid-set, unknown-exercise, session-finished, unsent, other |
+| Optional scales | `scale_invitation_shown`, `scale_invitation_answered` | action: answered, declined (on `scale_invitation_answered` only) |
 | Writing | `journal_line_saved` | day_kind: today; emitted after a changed, nonempty body saves, never for scale-only changes |
-| Echoes | `journal_echo_shown`, `journal_echo_opened`, `journal_echo_dismissed`, `journal_echo_useful` | no properties; passage exposure, following its source, Not useful, and Useful |
+| Echo ink | `journal_echo_ink` | action: open, close |
+| Echoes | `journal_echo_shown`, `journal_echo_reader_opened`, `journal_echo_intro_dismissed`, `journal_echo_opened`, `journal_echo_useful`, `journal_echo_dismissed` | no properties |
 | Synchronization | `sync_pull_outcome`, `sync_push_outcome` | outcome: ok, failed; failure_kind, status, duration_ms |
 | Reliability | `api_request_failed`, `client_error` | operation, method, route, status, failure_kind, duration_ms; optional coarse scope_kind |
 
@@ -106,17 +118,28 @@ and coarse route `/v1/journal`. Expected HTTP refusals and offline/DNS/connect f
 failures also reach Sentry. Offline, Echoes adds no cached echo, placeholder, spinner or error to the
 journal and never blocks writing. Product events contain no journal text, excerpts, connection
 reasons, dates, similarity scores, echo/page identifiers or counts. Echoes REST bodies and dynamic
-routes never enter telemetry. Only common app metadata accompanies the four Echoes events.
+routes never enter telemetry. Echo events carry only common app metadata, and `journal_echo_ink` its action.
 
-`journal_echo_shown` records each verified passage when its visible day control first exposes it in a
-foreground session. `journal_echo_opened` records following a passage to its source in the canvas;
-the REST opened signal is best effort. `journal_echo_dismissed` records explicit Not useful on a
-pairing or the whole page. The dismissal is optimistic and rolls back if its REST request fails.
-`journal_echo_useful` records explicit Useful. Closing the native sheet does not dismiss a server echo
-and emits no dismissed event.
+A day's count opens its ink with `journal_echo_ink` action `open`. The count again, a tap outside the ink or the
+keyboard closes it with action `close`; the room's own closes (following a passage, Not useful, the trail, an offline
+or failed read) record none. `journal_echo_shown` records each verified passage once per foreground session, when its
+row is on screen in the ink or the reader; the count draws no passage and records nothing. *N more* records
+`journal_echo_reader_opened`, and the first-echo card's *Got it* `journal_echo_intro_dismissed`.
+`journal_echo_opened` records following a passage to its source in the canvas, from the ink or the reader; the REST
+opened signal is best effort. *Useful* records one `journal_echo_useful` per tap and marks every passage the ink shows,
+one REST signal each; *Not useful* records one `journal_echo_dismissed` and retires the page's echo. Both are optimistic
+and roll back if a request fails. Closing the reader dismisses no echo and records nothing.
+
+Every door to Share this workout opens one sheet, which records `gym_screen_viewed` with screen `session_share` each
+time it is presented. Signed out or paused, its *Sign in to share* opens You (`first_run_screen_viewed` with screen
+`you`); when You closes signed in, the sheet is presented again and records its view again, and a sign-in left
+unfinished shares nothing and records nothing more.
 
 Gym boundary operation labels are `gym_read`, `gym_action`, `gym_undo`, `gym_flush`, `gym_rest`,
-`gym_activity_request` and `gym_activity_update`. A queued Finish whose background confirmation
+`gym_activity_request`, `gym_activity_update`, and `gym_import_fix`, `gym_import_keep`, `gym_import_retry`
+and `gym_import_discard` for the commits that recover a saved workout. The gym model reports each distinct `gym_read`
+failure once per launch, a session whose saved plan this build cannot read included, so a record a view reads on every
+render files one report; every failed write reports. A queued Finish whose background confirmation
 outlasts 15 seconds reports a `gym_flush` timeout under the offline rule below. The short wait before
 Finish reports nothing: when the server does not confirm in time, Finish ends in its local decision,
 and a refusal emits `gym_session_finished` with outcome refused.
@@ -135,17 +158,47 @@ attachments are unchanged. These local identifiers remain outside event properti
 Gym engine notices retain typed refusals for local UI only. No movement/routine names, set values,
 notes, Coach messages, counts, IDs or REST bodies enter telemetry.
 Removal receipts emit the same bounded proposal outcome when their durable result is observed,
-including after relaunch. Reading their local journal reports through `gym_read`; failure to
+including after relaunch. Any other decision records `decided` or `failed` when the log's answer reaches the phone in
+the launch that sent it; one still waiting when the app quits records none. A decision the log has not answered after
+15 seconds emits its action with outcome `stalled`; a queue that cannot be read reports through `gym_read` and the
+stall carries no action. Retry pushes the queued command again and emits action `retry` with the push's outcome.
+Reading their local journal reports through `gym_read`; failure to
 acknowledge a shown receipt reports through `gym_action` and leaves it available for retry.
 
 Gym adoption uses the verified account's explicit per-product Add/Discard decision. Finished
 signed-out workouts use one whole-session import, with their original set identities and values.
 An unfinished workout refused by an account's open workout retains a durable recovery copy; an
-explicit Keep as finished workout action imports it as finished at its last set. It is never silently
+explicit Keep as finished imports it as finished at its last set. It is never silently
 joined into the account workout. The recovery copy is refreshed before each change of the replica; a
 failed refresh reports through `gym_action` and aborts that account change, which its auth operation
-also reports. Recovery commits use the existing bounded `gym_action` outcomes;
+also reports. Recovery commits also emit the bounded `gym_action` outcomes;
 adoption approvals use `room_adoption_answered`, without workout counts, content or identifiers.
+
+A saved workout the account has not taken is a row of The log's **On this phone** section with the
+reason the engine notice or the phone's own retry checks give it; the Log tab's badge counts the
+rows waiting on the lifter. Opening Inspect, opening Fix workout, Keep, Retry, Save and retry and Discard each
+emit one `gym_import_recovery` with the action and the reason as bounded labels, in the vocabulary
+Android's event uses. Opening Inspect or Fix workout is `state=opened`. A queued commit is
+`outcome=completed`; when the log refuses it, the action is recorded again with `outcome=refused` and the row's new
+reason once that answer reaches the row (kept in memory, so an answer that arrives after the app quits records nothing).
+Closing Fix workout without saving is `fix` with `cancelled`. Discard returns to The log,
+which holds it for the room's window: Undo there is `discard` with `cancelled`, and the window's end, or the app
+leaving the foreground, is `discard` with its commit's outcome. A retry that lands dismisses the notices it answered. A
+restart queues the start and every saved set in one plan, or refuses whole; sets a landed workout
+refused go back into it in one plan, appended while it is open or through an additive correction,
+and the ones outside its window become a saved copy of their own whose import is queued. An
+unexpected storage or engine failure of a commit reports to Sentry under its action's own operation
+(`gym_import_fix`, `gym_import_keep`, `gym_import_retry`, `gym_import_discard`) and the outcome is
+`failed`; a refusal the phone or the log gives is the outcome `refused` and never a Sentry issue. No
+times, movement names, set values, notes, counts or identifiers enter the event.
+
+An app the server finds too old is an expected refusal, never a Sentry Issue: every HTTP boundary reads
+`ExpectedStatuses`, so a 426 from sync or an auth route is an `api_request_failed` metric whose message never
+reaches the screen, and the engine's upgrade-required sign-in error is skipped by the auth boundary report. The engine
+requires the upgrade only for a 426 whose body names `upgrade-required`; a bare 426 (a proxy) backs off like any
+failure. `client_update_required` records the alert once it is on screen — after the introduction or another alert,
+when one is in front — which the app shows once per launch while the flag holds and again for each sign-in the
+server refuses for it. Signed out the alert reads *Update Windmill to sign in.*; signed in, *to keep syncing*.
 
 Screen and choice events also record visits when the same screens are revisited after first run.
 Apple auth operations use static labels `auth_apple`, `auth_apple_create`, `auth_verify_code`,
@@ -155,8 +208,10 @@ and `DELETE` for share revocation and Coach conversations; gym records are writt
 engine.
 The simulator model follows the same auth-boundary failure reporting, without secrets in diagnostics.
 A legacy Apple door returning `created: true` is a decode failure; its session never reaches the engine.
-`auth_pending` marks authenticated sign-in awaiting engine recovery; `retry` resumes the retained
-identity without repeating code verification or ticket creation. In-process authenticated sign-in retries
+`auth_pending` is You's *Finish signing in* section, an authenticated sign-in awaiting engine recovery, drawn above
+the rest of You; `retry` resumes the retained identity without repeating code verification or ticket creation, and
+`cancel` gives the sign-in up: the engine forgets it, the verified session is revoked and `auth_signed_in` carries
+outcome `cancelled`. In-process authenticated sign-in retries
 also run after a five-second delay while the app is open; restored engine sign-ins use the account
 recovery cooldown below. Completing a restored app sign-in retains its method and linked outcome.
 Paused Apple linking validates the verified account id before bearer attachment. Apple removal treats

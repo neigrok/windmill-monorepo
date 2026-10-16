@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import GymDomain
 
 struct LogPlotPoint: Identifiable, Equatable {
@@ -9,10 +10,18 @@ struct LogPlotPoint: Identifiable, Equatable {
 }
 
 struct LogDatedChart: View {
+  // What the dots are: a session's estimated strength in plate loads, or a typed bodyweight to one decimal.
+  enum Series {
+    case strength, bodyweight
+    var gapDays: Int { self == .strength ? MovementProgress.gapDays : Bodyweight.gapDays }
+    var axisStep: Double { self == .strength ? 5 : 0.1 }
+    var point: String { self == .strength ? "session" : "weigh-in" }
+    var title: String { self == .strength ? "Estimated strength chart" : "Bodyweight chart" }
+  }
   let points: [LogPlotPoint]
   let from: Date
   let through: Date
-  let gapDays: Int
+  let series: Series
   var bestID: String? = nil
   var compact = false
   var select: ((String) -> Void)? = nil
@@ -22,11 +31,11 @@ struct LogDatedChart: View {
   @State var clearing: Task<Void, Never>?
   @State var viewportGeometry: ScrollGeometry?
   var ordered: [LogPlotPoint] { points.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date } }
-  var low: Double { let value = points.map(\.value).min() ?? 0; return value - padding }
-  var high: Double { let value = points.map(\.value).max() ?? 1; return value + padding }
-  var padding: Double { max(1, ((points.map(\.value).max() ?? 1) - (points.map(\.value).min() ?? 0)) * 0.12) }
+  var axis: ClosedRange<Double> { Self.axis(points.map(\.value), step: series.axisStep) }
+  var low: Double { axis.lowerBound }
+  var high: Double { axis.upperBound }
   var gaps: [(LogPlotPoint, LogPlotPoint)] {
-    zip(ordered, ordered.dropFirst()).filter { LogPresentation.day($0.date).days(until: LogPresentation.day($1.date)) > gapDays }
+    zip(ordered, ordered.dropFirst()).filter { LogPresentation.day($0.date).days(until: LogPresentation.day($1.date)) > series.gapDays }
   }
   var visibleDates: ClosedRange<Date> {
     guard let viewportGeometry else { return from...through }
@@ -42,7 +51,7 @@ struct LogDatedChart: View {
       HStack(alignment: .top, spacing: 8) {
         VStack {
           Text(Readout.weight(high)); Spacer(); Text(Readout.weight(low))
-        }.font(.caption2.monospacedDigit()).foregroundStyle(GymPalette.inkDim).frame(height: compact ? 64 : 220).accessibilityHidden(true)
+        }.font(.caption2.monospacedDigit()).foregroundStyle(GymPalette.inkFaint).frame(height: compact ? 64 : 220).accessibilityHidden(true)
         GeometryReader { geometry in
           let width = max(geometry.size.width, compact ? 0 : CGFloat(Set(points.map(\.date)).count) * 24)
           ScrollViewReader { proxy in
@@ -53,7 +62,7 @@ struct LogDatedChart: View {
                 grid.addLine(to: CGPoint(x: size.width, y: 6 + fraction * (size.height - 12)))
                 context.stroke(grid, with: .color(GymPalette.line), lineWidth: 1)
               }
-              for (a, b) in zip(ordered, ordered.dropFirst()) where LogPresentation.day(a.date).days(until: LogPresentation.day(b.date)) <= gapDays {
+              for (a, b) in zip(ordered, ordered.dropFirst()) where LogPresentation.day(a.date).days(until: LogPresentation.day(b.date)) <= series.gapDays {
                 var path = Path(); path.move(to: position(a, size: size)); path.addLine(to: position(b, size: size))
                 context.stroke(path, with: .color(GymPalette.accent), lineWidth: 1.5)
               }
@@ -111,24 +120,33 @@ struct LogDatedChart: View {
         }.frame(height: compact ? 64 : 220).contentShape(Rectangle()).clipped()
       }
       HStack { Text(LogPresentation.brief(visibleDates.lowerBound)); Spacer(); Text(LogPresentation.brief(visibleDates.upperBound)) }
-        .font(.caption2.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
+        .font(.caption2.monospacedDigit()).foregroundStyle(GymPalette.inkFaint)
         .accessibilityElement(children: .ignore).accessibilityLabel("Visible dates")
         .accessibilityValue("\(LogPresentation.brief(visibleDates.lowerBound)) – \(LogPresentation.brief(visibleDates.upperBound))")
         .accessibilityIdentifier("gym-chart-dates").accessibilityHidden(compact)
       if !compact {
         ForEach(Array(gaps.enumerated()), id: \.offset) { _, gap in
-          Text("\(gapDays == 7 ? "no weigh-in" : "no session") · \(LogPresentation.brief(gap.0.date)) – \(LogPresentation.brief(gap.1.date))")
+          Text("no \(series.point) · \(LogPresentation.brief(gap.0.date)) – \(LogPresentation.brief(gap.1.date))")
             .font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
         }
       }
     }.contentShape(Rectangle()).clipped().accessibilityElement(children: .contain)
-      .accessibilityLabel(gapDays == 7 ? "Bodyweight chart" : "Estimated strength chart")
+      .accessibilityLabel(series.title)
       .accessibilityValue((ordered.first { $0.id == inspected } ?? ordered.last)?.label ?? "No points")
-      .accessibilityAction(named: gapDays == 7 ? "earlier weigh-in" : "earlier session") { step(-1) }
-      .accessibilityAction(named: gapDays == 7 ? "later weigh-in" : "later session") { step(1) }
+      .accessibilityAction(named: "earlier \(series.point)") { step(-1) }
+      .accessibilityAction(named: "later \(series.point)") { step(1) }
       .sensoryFeedback(.selection, trigger: inspected)
       .onDisappear { clearing?.cancel() }
       .onChange(of: points) { _, _ in clearing?.cancel(); inspected = nil }
+  }
+
+  // The plot's bounds on the series' own step, so an axis label reads 110 or 82.4, never 109.62.
+  static func axis(_ values: [Double], step: Double) -> ClosedRange<Double> {
+    guard let lowest = values.min(), let highest = values.max() else { return 0...step }
+    let reach = max(step, 1)
+    let middle = (lowest + highest) / 2
+    let bottom = min(lowest, middle - reach), top = max(highest, middle + reach)
+    return ((bottom / step + 1e-9).rounded(.down) * step)...((top / step - 1e-9).rounded(.up) * step)
   }
 
   func dateInterval(in viewport: CGRect, contentWidth: CGFloat) -> ClosedRange<Date> {
@@ -151,11 +169,43 @@ struct LogDatedChart: View {
   }
 }
 
+// A chart's span: its recent stretch or everything logged.
+enum ChartWindow: Hashable { case recent, all }
+
+struct ChartWindowPicker: UIViewRepresentable {
+  let recent: String
+  let identifier: String
+  @Binding var window: ChartWindow
+  func makeCoordinator() -> Coordinator { Coordinator(window: $window) }
+  func makeUIView(context: Context) -> UISegmentedControl {
+    let control = UISegmentedControl(items: [recent, "All"])
+    control.setTitleTextAttributes([.font: UIFont.preferredFont(forTextStyle: .subheadline)], for: .normal)
+    control.accessibilityIdentifier = identifier
+    control.accessibilityLabel = "Window"
+    control.addTarget(context.coordinator, action: #selector(Coordinator.changed), for: .valueChanged)
+    return control
+  }
+  func updateUIView(_ control: UISegmentedControl, context: Context) {
+    context.coordinator.window = $window
+    control.selectedSegmentIndex = window == .all ? 1 : 0
+  }
+  func sizeThatFits(_ proposal: ProposedViewSize, uiView control: UISegmentedControl, context: Context) -> CGSize? {
+    CGSize(width: proposal.width ?? control.intrinsicContentSize.width, height: max(32, control.intrinsicContentSize.height))
+  }
+  final class Coordinator: NSObject {
+    var window: Binding<ChartWindow>
+    init(window: Binding<ChartWindow>) { self.window = window }
+    @objc func changed(_ control: UISegmentedControl) {
+      window.wrappedValue = control.selectedSegmentIndex == 1 ? .all : .recent
+    }
+  }
+}
+
 extension MovementProgress {
   var logPlotPoints: [LogPlotPoint] {
     estimates.compactMap { point in
       guard let fact = point.fact.estimate else { return nil }
-      let date = LogPresentation.date(point.startedAt)
+      let date = point.startedAt.date
       return LogPlotPoint(id: point.id.description, date: date, value: fact.e1rm,
         label: "\(Readout.estimatedWeight(fact.e1rm)) kg est · \(LogPresentation.brief(date)) · \(Readout.effort(weightKg: fact.weightKg, reps: fact.reps))")
     }

@@ -12,6 +12,12 @@ COLOUR_NAME = re.compile(r"color|colour|palette|ramp|tint|accent|canvas|ink|lamp
 NAMED_COLOURS = {"red", "orange", "yellow", "green", "mint", "teal", "cyan", "blue", "indigo", "purple", "pink",
                  "brown", "gray", "grey", "black", "white", "darkGray", "lightGray", "magenta"}
 SEMANTIC_COLOUR = re.compile(r"(secondary|tertiary|quaternary)?[sS]ystem[A-Z]\w*$")
+LABEL_STYLES = {"primary", "secondary", "tertiary", "quaternary", "quinary"}
+STYLE_TYPES = {"Color", "HierarchicalShapeStyle", "ShapeStyle"}
+UIKIT_ROLES = {"label", "secondaryLabel", "tertiaryLabel", "quaternaryLabel", "placeholderText", "separator",
+               "opaqueSeparator", "link", "lightText", "darkText"}
+SHAPE_STYLE_ROLES = {"placeholder", "separator"}
+FADES = {"opacity", "withAlphaComponent"}
 NUMBER = re.compile(r"(0[xX][0-9a-fA-F_]+|[0-9][0-9_]*(\.[0-9_]+)?|\.[0-9]+)$")
 
 # Each entry is a source path, a line fragment and why that line may keep a colour outside Sources/Theme.
@@ -20,14 +26,14 @@ ALLOWED = [
      "Apple's own Continue with Apple control keeps its black and white"),
     ("Sources/AccountSheet.swift", "signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)",
      "Apple's own Continue with Apple control keeps its black and white"),
-    ("WorkoutActivityWidget/WorkoutActivityWidget.swift", ".activityBackgroundTint(Color(.systemBackground))",
-     "the Live Activity banner ground stays the system's"),
     ("Sources/OnboardingGlimpses.swift", ".mask { OnboardingCheck().trim(from: 0, to: check).stroke(.white,",
      "a mask uses only alpha; white is opaque coverage, not a colour"),
     ("Sources/OnboardingGlimpses.swift", 'Color("onboarding/',
      "the glimpse's specimen roles stay private to it, as asset colours"),
     ("Sources/Gym/Coach/CoachTransport.swift", "if !png { UIColor.white.setFill()",
      "a JPEG has no alpha, so a photo is flattened onto white before encoding"),
+    ("WorkoutActivityWidget/WorkoutActivityWidget.swift", ".foregroundStyle(.secondary)",
+     "the same view draws on the Island's black and on the lock screen in either appearance; only the system's hierarchy reads on both"),
 ]
 
 
@@ -152,6 +158,17 @@ def violations(source):
             issues.add((item.line, "the asset accent colour belongs in Sources/Theme"))
         if SEMANTIC_COLOUR.match(item.value) and (implicit or explicit) and after != "(":
             issues.add((item.line, "UIKit semantic colours belong in Sources/Theme"))
+        palette_member = before == "." and index > 3 and items[index - 3].value == "." and items[index - 4].value.endswith("Palette")
+        if item.value in LABEL_STYLES and after != "(" and (implicit or palette_member or (before == "." and owner in STYLE_TYPES)):
+            issues.add((item.line, "the system's label hierarchy belongs in Sources/Theme"))
+        if item.value in UIKIT_ROLES and after != "(" and before == "." and owner in ("UIColor", "NSColor"):
+            issues.add((item.line, "UIKit semantic colours belong in Sources/Theme"))
+        if item.value in UIKIT_ROLES and implicit and index > 2 and items[index - 3].value == "uiColor":
+            issues.add((item.line, "UIKit semantic colours belong in Sources/Theme"))
+        if item.value in SHAPE_STYLE_ROLES and implicit and after != "(" and not (index > 2 and items[index - 3].value == "reason"):
+            issues.add((item.line, "the system's label hierarchy belongs in Sources/Theme"))
+        if item.value in FADES and after == "(" and palette_member:
+            issues.add((item.line, "a faded palette role belongs in Sources/Theme as a named role"))
         if item.value in colour_types and after == "(" and index + 2 < len(items) and items[index + 2].value == '"string"':
             issues.add((item.line, "asset colour lookups belong in Sources/Theme"))
         if item.value in ("UIColor", "NSColor") and after == "(" and index + 2 < len(items) and items[index + 2].value == "named":
@@ -204,6 +221,7 @@ def violations(source):
 
 def check(source):
     failures = []
+    allowed = []
     used = set()
     for directory in SOURCE_ROOTS:
         root = source / directory
@@ -219,6 +237,7 @@ def check(source):
                 allowance = next((entry for entry in ALLOWED if relative == entry[0] and entry[1] in lines[line - 1]), None)
                 if allowance:
                     used.add(allowance)
+                    allowed.append(f"{relative}:{line}: allowed: {allowance[2]}")
                     continue
                 failures.append(f"{path}:{line}: error: {message}; use a named palette role")
     for entry in ALLOWED:
@@ -226,6 +245,7 @@ def check(source):
             failures.append(f"{source / entry[0]}: error: allowlisted colour no longer appears: {entry[1]}")
     if failures:
         raise ValueError("\n".join(failures))
+    return list(dict.fromkeys(allowed))
 
 
 if __name__ == "__main__":
@@ -233,7 +253,9 @@ if __name__ == "__main__":
     parser.add_argument("--source", type=Path, default=Path(__file__).resolve().parents[1])
     args = parser.parse_args()
     try:
-        check(args.source.resolve())
+        allowed = check(args.source.resolve())
     except (OSError, ValueError) as error:
         raise SystemExit(str(error))
+    for line in allowed:
+        print(line)
     print("Theme colour literal check passed: 0 literals outside Sources/Theme.")

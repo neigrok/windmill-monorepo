@@ -92,6 +92,13 @@ struct CoachDraftStore {
     guard let generation = activeGeneration else { return saved.thread?.turns ?? [] }
     return saved.thread?.turns.filter { $0.generationId != generation.id && $0.requestId != generation.requestId } ?? []
   }
+  var offline: Bool { CoachFixture.offline || gym.runtime?.engine.status.online == false }
+  // Why a send cannot go now; a dimmed Send says it in the band when tapped.
+  var blockedReason: String? {
+    if offline { return CoachCopy.offline }
+    switch refusal { case .daily(let message), .ceiling(let message), .fresh(let message): return message; default: break }
+    return draftReadable ? nil : CoachCopy.unreadableDraft
+  }
   var retryable: Bool {
     guard saved.request != nil, !asking else { return false }
     if activeGeneration?.status == "stopped" || activeGeneration?.status == "completed" { return false }
@@ -107,7 +114,7 @@ struct CoachDraftStore {
       owner = next; saved = CoachSaved(); refusal = nil; error = nil; draftReadable = true
       guard let next else { return }
       do { saved = try store.read(next) }
-      catch { draftReadable = false; self.error = "Your draft couldn’t be read. Try again."; gym.report("gym_read", error); return }
+      catch { draftReadable = false; self.error = CoachCopy.unreadableDraft; gym.report("gym_read", error); return }
     }
     guard let owner, draftReadable else { return }
     if gym.coachUnavailable { refusal = .absent; error = CoachCopy.absent; return }
@@ -153,8 +160,17 @@ struct CoachDraftStore {
     if handoff.send { send() }
     return true
   }
+  func noteOffline() {
+    if offline, error == nil { error = CoachCopy.offline }
+  }
   func send() {
-    guard canCompose, !asking, let owner, CoachCopy.sendable(saved.text, photo: saved.photo != nil) else { return }
+    guard allowed, !asking, CoachCopy.sendable(saved.text, photo: saved.photo != nil) else { return }
+    if let reason = blockedReason {
+      error = reason
+      if offline { gym.telemetry.event("gym_ask_outcome", properties: ["screen": "coach", "outcome": "offline"]) }
+      return
+    }
+    guard canCompose, let owner else { return }
     invalidateRead()
     let question = saved.text.trimmingCharacters(in: .whitespacesAndNewlines)
     let attachmentIds = saved.photo.map { [$0.id] } ?? []
@@ -179,7 +195,7 @@ struct CoachDraftStore {
   func reloadDraft() {
     guard let owner, allowed else { return }
     do { saved = try store.read(owner); invalidateRead(); draftReadable = true; error = nil; Task { await activate() } }
-    catch { self.error = "Your draft couldn’t be read. Try again."; gym.report("gym_read", error) }
+    catch { self.error = CoachCopy.unreadableDraft; gym.report("gym_read", error) }
   }
   func retry() {
     guard allowed, !asking, let owner, let request = saved.request else { return }
@@ -224,16 +240,16 @@ struct CoachDraftStore {
       } catch {
         guard self.owner == owner, self.saved.threadId == request.thread, self.workGeneration == generation else { return }
         if error is CancellationError || (error as? URLError)?.code == .cancelled {
-          if uploading { self.error = "Upload cancelled. Retry to send this photo." }
+          if uploading { self.error = "Upload cancelled." }
           else if activeGeneration?.terminal != true { self.error = CoachCopy.interrupted }
           gym.telemetry.event("gym_ask_outcome", properties: ["screen": "coach", "outcome": "cancelled"], durationMs: Int64((ProcessInfo.processInfo.systemUptime - started) * 1000))
           return
         }
         if error is DecodingError { gym.report("gym_rest", error) }
         if GymRESTClient.needsConnection(error) {
-          refusal = .retry(CoachCopy.connectionRequired); self.error = CoachCopy.connectionRequired
+          refusal = .retry(CoachCopy.offline); self.error = CoachCopy.offline
         } else if uploading {
-          self.error = "Photo didn’t upload. Retry to send this photo."
+          self.error = "Photo didn’t upload."
         } else if let failure = error as? GymRESTFailure {
           let object = (try? JSONSerialization.jsonObject(with: failure.body)) as? [String: Any] ?? [:]
           if let value = object["generation"], let data = try? JSONSerialization.data(withJSONObject: value),
@@ -274,7 +290,7 @@ struct CoachDraftStore {
     let wasAsking = asking, wasUploading = uploading
     workGeneration += 1; let generation = workGeneration
     work?.cancel(); work = nil; asking = false; uploading = false
-    error = wasUploading ? "Upload cancelled. Retry to send this photo." : CoachCopy.interrupted
+    error = wasUploading ? "Upload cancelled." : CoachCopy.interrupted
     if wasAsking { gym.telemetry.event("gym_ask_outcome", properties: ["screen": "coach", "outcome": "cancelled"]) }
     if wasUploading { return }
     stopGeneration += 1; let stop = stopGeneration

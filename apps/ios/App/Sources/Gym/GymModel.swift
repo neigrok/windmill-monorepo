@@ -8,14 +8,16 @@ import SyncEngine
 import SyncSchema
 import SyncStore
 
-// UI tracks use this engine-backed model and add GymModel extensions only in their own Routines, Log, Coach or Workout folders.
+// The room's engine-backed model. An extension one track reads lives in that track's folder; a rule several read lives here.
 @Observable @MainActor
 final class GymModel {
   let runner: ActionRunner
   let runtime: AppRuntime?
   let telemetry: any Telemetry
   let rest: GymRESTClient
-  var log: TrainingLog?
+  var log: TrainingLog? { didSet { logRecordsRead = nil } }
+  // The log's records, worked out on the first read after the log changes (Log/LogPresentation.swift).
+  @ObservationIgnored var logRecordsRead: ProgressRecords?
   var catalogue = Catalogue(custom: [], names: [])
   var routines: [Routine] = []
   var notes: [Note] = []
@@ -34,16 +36,24 @@ final class GymModel {
   var error: String?
   var readFailed = false
   var undoOffers: [UndoOffer] = []
+  // The room's refusals: undismissed, and none a saved workout owns, since that one is its row's on The log.
   var notices: [DomainNotice<GymRefusal>] = []
+  // Every gym notice the replica keeps, dismissed ones too: the saved workouts' review reads their reasons here.
+  var recoveryNotices: [DomainNotice<GymRefusal>] = []
   var adoptionWorkouts: [SignedOutWorkout] = []
+  // A saved workout's Discard inside the room's nine-second window: its row has left and The log's band offers Undo.
+  var discardHold: DiscardHold?
   @ObservationIgnored var observationTask: Task<Void, Never>?
   @ObservationIgnored var clockTask: Task<Void, Never>?
   @ObservationIgnored var scopeViews: [RecordsView] = []
   @ObservationIgnored var observationGeneration = 0
   @ObservationIgnored var readThrough: UInt64?
+  @ObservationIgnored var adoptionReadThrough: UInt64?
   @ObservationIgnored var proposalReadReplica: String?
   var coachRemovalReceipts: [RoutineRemovalReceipt] = []
   @ObservationIgnored var shownCoachRemovals: [String: Proposal] = [:]
+  @ObservationIgnored var awaitedCoachDecisions: [ID<Proposal>: CoachQueuedDecision] = [:]
+  @ObservationIgnored var awaitedRecoveries: [ID<Session>: RecoveryAction] = [:]
 
   init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry()) {
     self.runner = runner; self.runtime = runtime; self.telemetry = telemetry
@@ -63,16 +73,48 @@ final class GymModel {
   }
   var hasData: Bool { personalCounts.values.contains { $0 > 0 } }
   var phoneSummary: String {
-    let kinds = [(Session.type, "workout", "workouts"), (Routine.type, "routine", "routines"),
-                 (TrainingSet.type, "set", "sets"), (Note.type, "note", "notes"),
-                 (WeighIn.type, "weigh-in", "weigh-ins"), (Exercise.type, "custom movement", "custom movements"),
-                 (ExerciseName.type, "movement name", "movement names"), (Proposal.type, "proposal", "proposals"),
-                 (GymPreferences.type, "preference record", "preference records")]
-    let lines = kinds.compactMap { type, singular, plural -> String? in
+    let kinds = [(Routine.type, "routine"), (Session.type, "workout"), (WeighIn.type, "weigh-in"), (Note.type, "note"),
+                 (Exercise.type, "custom movement")]
+    let lines = kinds.compactMap { type, noun -> String? in
       let count = personalCounts[type] ?? 0
-      return count == 0 ? nil : "\(count) \(count == 1 ? singular : plural)"
+      return count == 0 ? nil : GymCount.of(count, noun)
     }
-    return lines.isEmpty ? "No Gym data on this phone yet." : lines.joined(separator: " · ")
+    return lines.isEmpty ? "nothing yet" : lines.joined(separator: " · ")
+  }
+
+  // The sets the log has not confirmed as this phone holds them: absent there, hidden or changed since.
+  func unconfirmedSets(_ sets: [TrainingSet]) -> Set<ID<TrainingSet>> {
+    if isAnonymous { return Set(sets.map(\.id)) }
+    do {
+      return try runner.read(Gym.scope) { read in
+        var pending = Set<ID<TrainingSet>>()
+        for set in sets {
+          guard let confirmed = try read.confirmed(TrainingSet.self, set.id), confirmed.isVisible,
+                try TrainingSet(Fields(confirmed)) == set else { pending.insert(set.id); continue }
+        }
+        return pending
+      }
+    } catch { report("gym_read", error); return Set(sets.map(\.id)) }
+  }
+
+  // Signed out nothing is unsent: there is no account to send to. Signed in, what the log has not confirmed is unsent
+  // only while something holds it back — no connection, a paused session, the update the server requires or its own
+  // refused push — never in flight.
+  func unsentSets(_ sets: [TrainingSet]) -> Set<ID<TrainingSet>> {
+    let held = isAnonymous ? [] : sets.filter { heldBack($0.id.ref) }
+    return held.isEmpty ? [] : unconfirmedSets(held)
+  }
+
+  // A workout is unsent while its own record or any of its sets is.
+  func sessionIsUnsent(_ id: ID<Session>) -> Bool {
+    guard !isAnonymous else { return false }
+    if heldBack(id.ref), (try? runner.read(Gym.scope) { try $0.confirmed(Session.self, id) == nil }) == true { return true }
+    return !unsentSets(log?.sets(session: id) ?? []).isEmpty
+  }
+
+  func heldBack(_ record: RecordRef) -> Bool {
+    guard let status = runtime?.engine.status else { return authPaused }
+    return authPaused || !status.online || status.upgradeRequired || status.failedPushes[Gym.scope]?.contains(record.key) == true
   }
 
   func start() {
@@ -110,15 +152,17 @@ final class GymModel {
       for view in scopeViews { _ = view.state }
       let status = runtime.engine.status
       _ = status.account; _ = status.authPaused; _ = status.pendingSignIn; _ = status.ready; _ = status.sent
-      _ = status.failedPushes
+      _ = status.failedPushes; _ = status.online; _ = status.upgradeRequired
       _ = runtime.engine.notices("gym").notices
       _ = runtime.engine.undoOffers.offers
     } onChange: { [weak self] in
       Task { @MainActor [weak self] in
         guard let self, self.observationGeneration == generation else { return }
         self.observeScopes(generation)
-        // The views land a change one by one, after the store holds it; the first landing reads it all.
-        if self.runtime?.engine.lastChange != self.readThrough { self.refresh() }
+        // The views land a change one by one, after the store holds it; the first landing reads it all. A status the
+        // store does not hold (the connection, a failed push, the update) moves only what is unsent: the views read it
+        // as they draw, and the lock screen is redrawn here.
+        if self.runtime?.engine.lastChange != self.readThrough { self.refresh() } else { self.existingWorkoutActivity?.schedule() }
       }
     }
   }
@@ -134,10 +178,14 @@ final class GymModel {
     let wasReadFailed = readFailed
     let previousAccount = account, previousAnonymous = isAnonymous
     do {
-      adoptionWorkouts = try runner.read(Gym.scope) { try SignedOutWorkout.read($0) }
-      if !adoptionWorkouts.isEmpty {
-        _ = try runner.run(ReconcileAdoptedWorkouts())
-        adoptionWorkouts = try runner.read(Gym.scope) { try SignedOutWorkout.read($0) }
+      // The saved workouts are parsed, and the ones the account took dropped, once per change, not per refresh.
+      if runtime == nil || adoptionReadThrough != readThrough {
+        adoptionReadThrough = readThrough
+        var saved = try runner.read(Gym.scope) { try SignedOutWorkout.read($0) }
+        if !saved.isEmpty, try runner.run(ReconcileAdoptedWorkouts()).receipt != nil {
+          saved = try runner.read(Gym.scope) { try SignedOutWorkout.read($0) }
+        }
+        publish(\.adoptionWorkouts, saved)
       }
       let snapshot = try runner.read(Gym.scope) { read in
         let storedSessions = try read.repository(Session.self).all(in: .stored)
@@ -152,40 +200,45 @@ final class GymModel {
                       GymPreferences.type: try read.repository(GymPreferences.self).all(in: .stored).count]
         let training = try TrainingLog(read)
         let hidden = try training.open.map { try WorkoutWalk(read.device(WorkoutWalk.key($0.id))).hidden } ?? false
-        return (training, try Catalogue(read),
-         Routine.ordered(try read.repository(Routine.self).all(in: .drawn)),
-         try read.repository(Note.self).all(in: .drawn), try Bodyweight(read),
-         try read.repository(GymPreferences.self).find(ID("prefs"), in: .drawn) ?? GymPreferences(),
-         coach: try Self.readCoachProposals(read), read.isAnonymous, counts, hidden,
-         planUnreadable: storedSessions.contains(where: \.planUnreadable) || training.sessions.contains(where: \.planUnreadable))
+        return (log: training, catalogue: try Catalogue(read),
+                routines: Routine.ordered(try read.repository(Routine.self).all(in: .drawn)),
+                notes: try read.repository(Note.self).all(in: .drawn), bodyweight: try Bodyweight(read),
+                preferences: try read.repository(GymPreferences.self).find(ID("prefs"), in: .drawn) ?? GymPreferences(),
+                coach: try Self.readCoachProposals(read), anonymous: read.isAnonymous, counts: counts, hidden: hidden,
+                planUnreadable: storedSessions.contains(where: \.planUnreadable) || training.sessions.contains(where: \.planUnreadable))
       }
-      (log, catalogue, routines, notes, bodyweight, preferences, _, isAnonymous, personalCounts, workoutHidden, _) = snapshot
-      if snapshot.planUnreadable { telemetry.failure("gym_read", kind: "unexpected") }
+      if log.map({ !$0.drawsTheSame(as: snapshot.log) }) ?? true { log = snapshot.log }
+      publish(\.catalogue, snapshot.catalogue); publish(\.routines, snapshot.routines); publish(\.notes, snapshot.notes)
+      publish(\.bodyweight, snapshot.bodyweight); publish(\.preferences, snapshot.preferences)
+      publish(\.isAnonymous, snapshot.anonymous); publish(\.personalCounts, snapshot.counts); publish(\.workoutHidden, snapshot.hidden)
+      if snapshot.planUnreadable { report("gym_read", UnreadablePlan()) }
       updateCoachProposals(replica: snapshot.coach.replica, receipts: snapshot.coach.receipts, proposals: snapshot.coach.proposals)
       if let runtime {
         let replica = try runtime.storageRead { try $0.device().activeReplica }
-        account = replica.meta.state == .bound ? replica.meta.account : nil
-        authPaused = replica.meta.authPaused
-        let incoming = replica.notices.filter { $0.scope == Gym.scope && !$0.isDismissed }
-          .map { DomainNotice<GymRefusal>($0, registry: SyncSchema.registry) }
+        publish(\.account, replica.meta.state == .bound ? replica.meta.account : nil)
+        publish(\.authPaused, replica.meta.authPaused)
+        publish(\.recoveryNotices, replica.notices.filter { $0.scope == Gym.scope }.map { DomainNotice<GymRefusal>($0, registry: SyncSchema.registry) })
+        let incoming = recoveryNotices.filter { notice in !notice.notice.isDismissed && !adoptionWorkouts.contains { $0.owns(notice) } }
         if let latest = incoming.last, !notices.contains(where: { $0.id == latest.id }) {
           refusal = latest.refusal; error = message(latest.refusal)
         }
-        notices = incoming
+        publish(\.notices, incoming)
         let outbox = replica.outbox.filter { $0.scope == Gym.scope }
-        undoOffers = []
-        for entry in outbox where !undoOffers.contains(where: { $0.id == entry.gestureId }) {
+        var offers: [UndoOffer] = []
+        for entry in outbox where !offers.contains(where: { $0.id == entry.gestureId }) {
           let gesture = outbox.filter { $0.gestureId == entry.gestureId }
           if gesture.allSatisfy({ $0.state == .held }) {
-            undoOffers.append(UndoOffer(id: entry.gestureId, scope: entry.scope, releaseAt: entry.releaseAt))
+            offers.append(UndoOffer(id: entry.gestureId, scope: entry.scope, releaseAt: entry.releaseAt))
           }
         }
+        publish(\.undoOffers, offers)
       } else {
         let now = (try? runner.moment().now.ms) ?? 0
-        undoOffers.removeAll { $0.releaseAt <= now }
+        publish(\.undoOffers, undoOffers.filter { $0.releaseAt > now })
       }
-      if previousAccount != account || previousAnonymous != isAnonymous { coachUnavailable = false }
-      readFailed = false
+      recordAnsweredRecoveries()
+      if previousAccount != account || previousAnonymous != isAnonymous { publish(\.coachUnavailable, false) }
+      publish(\.readFailed, false)
       if wasReadFailed, error == "Gym could not be read from this phone. Try again." { error = nil }
     } catch {
       readFailed = true; readThrough = nil; self.error = "Gym could not be read from this phone. Try again."
@@ -193,8 +246,9 @@ final class GymModel {
     }
   }
 
+  // `failure` names the static operation an unexpected failure reports under; a feature with its own names passes one.
   @discardableResult
-  func run<A: Action>(_ action: A) -> Outcome<A.Result, GymRefusal>? where A.Refusal == GymRefusal {
+  func run<A: Action>(_ action: A, failure operation: String = "gym_action") -> Outcome<A.Result, GymRefusal>? where A.Refusal == GymRefusal {
     guard !accountTransition else { error = "Wait for the account change to finish."; return nil }
     precondition(action.scope == Gym.scope, "Gym runs actions in its own scope")
     refusal = nil; error = nil
@@ -210,7 +264,7 @@ final class GymModel {
     } catch {
       self.error = "Gym could not save this change. Try again."
       telemetry.event("gym_action", properties: ["screen": "gym", "outcome": "failed"])
-      report("gym_action", error)
+      report(operation, error)
       return nil
     }
   }
@@ -256,6 +310,7 @@ final class GymModel {
   @discardableResult
   func flush() -> Bool {
     rest.cancel()
+    endDiscardWindow()
     refresh()
     guard !readFailed else { return false }
     guard let runtime else { return !readFailed }
@@ -273,13 +328,23 @@ final class GymModel {
 
   func background() {
     rest.cancel()
+    endDiscardWindow()
     do { try runtime?.engine.leave(); undoOffers = []; refresh() }
     catch { self.error = "Gym could not keep pending changes. Try again."; report("gym_flush", error) }
   }
 
+  // A refresh sets what it read only where it changed, so an engine event or the clock that changes nothing redraws
+  // nothing: a screen redrawn under an open menu rebuilds the menu and drops the tap on it.
+  func publish<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<GymModel, Value>, _ value: Value) {
+    if self[keyPath: keyPath] != value { self[keyPath: keyPath] = value }
+  }
+
+  // A read failure reports once per launch, since views read on every render; every failed write reports.
+  @ObservationIgnored var reportedReadFailures: Set<String> = []
   func report(_ operation: String, _ error: any Error) {
     guard Store.failureKind(error) == nil else { return }
     let kind = (error as? CommitFailure)?.kind == .storeFailure ? "storage" : "unexpected"
+    if operation == "gym_read" { guard reportedReadFailures.insert("\(kind) \(String(reflecting: error))").inserted else { return } }
     telemetry.failure(operation, kind: kind)
   }
 
@@ -346,7 +411,7 @@ final class GymModel {
       guard (200..<300).contains(response.statusCode) else {
         kind = "http"
         let refusal = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        expectedRefusal = [400, 401, 403, 404, 409, 410, 422, 429].contains(response.statusCode) || refusal["code"] as? String == "ask-busy"
+        expectedRefusal = ExpectedStatuses.contains(response.statusCode) || refusal["code"] as? String == "ask-busy"
         let message = refusal["error"] as? String ?? "Gym could not complete this request. Try again."
         let detail = refusal["detail"] as? String ?? ""
         throw GymRESTFailure(status: response.statusCode, body: data, message: message + (detail.isEmpty ? "" : ". " + detail))
@@ -377,6 +442,9 @@ final class GymModel {
             .cannotFindHost, .dnsLookupFailed, .timedOut].contains(error.code)
   }
 }
+
+// A session whose saved plan this build cannot read: the session still draws, and the read reports it once.
+nonisolated struct UnreadablePlan: Error {}
 
 nonisolated struct GymRESTFailure: Error, LocalizedError {
   let status: Int

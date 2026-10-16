@@ -36,6 +36,31 @@ struct SenderTests {
     #expect(try rig.outbox() == ["g1/0 acked 1", "g2/0 acked 2"])
   }
 
+  // A push the server will not take holds its entries back for the person to see, whether it stopped for good (the
+  // server's 426) or backs off (a 403); a 400 or 413 is halved or refused, so the next push differs and nothing is held.
+  @Test(arguments: [(403, SenderStep.backoff(ms: 1_000)), (426, .stopped), (400, .again), (413, .again)])
+  func onlyAPushTheServerWillNotTakeNamesItsRecords(status: Int, step: SenderStep) async throws {
+    let rig = try Rig(account: "A")
+    rig.random.queue(raw: .max, count: 1)
+    try rig.commit(Self.card1)
+    rig.transport.willAnswerPush(status, Rig.failure(status == 426 ? "upgrade-required" : "refused"))
+    #expect(await rig.engine.sender.step() == step)
+    await rig.engine.settle()
+    let held: [ScopeRef: Set<RecordKey>] = step == .again ? [:] : [Rig.scope: [RecordKey("card", RecordID("card0001"))]]
+    #expect(await MainActor.run { rig.engine.status.failedPushes } == held)
+  }
+
+  // A 426 without the server's own `upgrade-required` (a proxy, a captive portal) stops nothing: it backs off.
+  @Test func aBare426IsAFailureLikeAnyOther() async throws {
+    let rig = try Rig(account: "A")
+    rig.random.queue(raw: .max, count: 1)
+    try rig.commit(Self.card1)
+    rig.transport.willAnswerPush(426)
+    #expect(await rig.engine.sender.step() == .backoff(ms: 1_000))
+    await rig.engine.settle()
+    #expect(await MainActor.run { !rig.engine.status.upgradeRequired })
+  }
+
   @Test func cancelledPushDoesNotInventAFailedPushStatus() async throws {
     let rig = try Rig(account: "A")
     try rig.commit(Self.card1)

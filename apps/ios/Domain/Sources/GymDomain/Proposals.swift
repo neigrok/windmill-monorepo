@@ -66,7 +66,7 @@ public enum ProposalProvenance: Equatable, Sendable {
   case other(door: String, connection: String, agent: String)
 }
 
-public struct Proposal: Writable {
+public struct Proposal: Writable, Equatable {
   public static let type = Gym.Types.proposal
   public static let scope = Gym.scope
 
@@ -372,7 +372,7 @@ public struct DismissProposal: Action {
   }
 }
 
-public struct RoutineRemovalReceipt: Sendable {
+public struct RoutineRemovalReceipt: Equatable, Sendable {
   public enum Outcome: String, Sendable { case pending, applied, refused }
   public static let key = "rack:removalReceipts"
   public let proposal: Proposal

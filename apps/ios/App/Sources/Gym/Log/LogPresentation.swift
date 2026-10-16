@@ -10,7 +10,6 @@ nonisolated enum LogPresentation {
     let heaviest = progress.heaviest?.fact.heaviest
     return [heaviest.flatMap { $0.weightKg == 0 ? nil : $0 }, progress.bodyweightReps?.fact.bodyweightReps].compactMap { $0 }
   }
-  static func date(_ instant: Instant) -> Date { Date(timeIntervalSince1970: Double(instant.ms) / 1000) }
   static func date(_ day: LocalDay) -> Date { Calendar(identifier: .gregorian).date(from: DateComponents(year: day.year, month: day.month, day: day.day))! }
   static func instant(_ day: LocalDay, in zone: any Zone) -> Instant {
     let utc = Int64(LocalDay("1970-01-01")!.days(until: day)) * 86_400_000
@@ -19,19 +18,45 @@ nonisolated enum LogPresentation {
     return LocalDay(second, in: zone) == day ? second : first
   }
   static func day(_ date: Date) -> LocalDay {
-    LocalDay(Instant(ms: Int64(date.timeIntervalSince1970 * 1000)), offsetSeconds: TimeZone.current.secondsFromGMT(for: date))
+    LocalDay(Instant(date), offsetSeconds: TimeZone.current.secondsFromGMT(for: date))
   }
   static func brief(_ date: Date) -> String { date.formatted(.dateTime.day().month(.abbreviated)) }
+  // A past day names its year only when it is not this one.
+  static func brief(_ day: LocalDay, today: LocalDay) -> String {
+    day.year == today.year ? brief(date(day)) : date(day).formatted(.dateTime.day().month(.abbreviated).year())
+  }
   static func dayLabel(_ day: LocalDay, today: LocalDay) -> String {
     if day == today { return "Today" }
     if day == today.adding(days: -1) { return "Yesterday" }
     return date(day).formatted(.dateTime.weekday(.abbreviated).day())
   }
+  // When a new best's previous best was: its day within the same month, its month within the year, else month and year.
+  static func since(_ previous: LocalDay, best: LocalDay) -> String {
+    if previous.year != best.year { return date(previous).formatted(.dateTime.month(.wide).year()) }
+    if previous.month == best.month { return brief(date(previous)) }
+    return date(previous).formatted(.dateTime.month(.wide))
+  }
+  // The session's day and its clock span: Tue 18 Aug · 18:12 – 19:15.
+  static func span(_ session: Session) -> String {
+    let start = session.startedAt.date
+    let day = start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+    guard let finished = session.finishedAt?.date, finished > start else { return "\(day) · \(start.formatted(date: .omitted, time: .shortened))" }
+    return "\(day) · \((start..<finished).formatted(.interval.hour().minute()))"
+  }
+  static func sessionFacts(_ readout: SessionReadout) -> String {
+    [GymCount.of(readout.workingSetCount, "working set"), readout.durationMs.map(Readout.duration)].compactMap { $0 }.joined(separator: " · ")
+  }
+  // A movement's line under its name on a finished session: what the plan held for it, or that the plan did not.
+  static func planLine(_ exercise: ID<Exercise>, plan: SessionPlan?) -> String? {
+    guard let plan else { return nil }
+    let entries = plan.entries.filter { $0.exerciseId == exercise }
+    if entries.isEmpty { return "added today" }
+    return entries.count == 1 ? "plan \(Readout.target(entries[0].sets))" : nil
+  }
   static func comparison(_ set: TrainingSet, preceding: [TrainingSet], plan: SessionPlan?) -> String? {
     guard set.kind == "working" else { return set.kind }
     guard let plan else { return nil }
     let entries = plan.entries.filter { $0.exerciseId == set.exerciseId }
-    if entries.isEmpty { return preceding.contains { $0.kind == "working" } ? nil : "added today" }
     guard entries.count == 1, let targets = entries[0].sets else { return nil }
     let slot = preceding.filter { $0.kind == "working" }.count
     guard targets.indices.contains(slot) else { return nil }
@@ -69,15 +94,20 @@ struct LogMonth: Identifiable {
 extension GymModel {
   var finishedLogSessions: [Session] { sessions.filter { !$0.isOpen && $0.startedAt <= (log?.moment.now ?? Instant(ms: 0)) } }
 
+  // The log's records, worked out once per change of the log rather than per row per render.
+  var logRecords: ProgressRecords? {
+    if logRecordsRead == nil, let log { logRecordsRead = ProgressRecords(log.progress) }
+    return logRecordsRead
+  }
+
   func logTimeline(limit: Int) -> [LogMonth] {
-    guard let log else { return [] }
+    guard let log, let records = logRecords else { return [] }
     let now = log.moment.now, today = log.moment.today, zone = log.moment.zone
-    let progress = log.progress
+    let progress = records.progress
     var moments: [LogTimelineEntry] = []
-    let ids = Set(progress.sessions.flatMap { $0.movements.map(\.exerciseId) }).sorted()
     if progress.isComplete && !readFailed {
-      for id in ids {
-        let records = progress.movement(id).records.filter { $0.startedAt <= now }
+      for id in records.movements.keys.sorted() {
+        let records = (records.movements[id] ?? []).filter { $0.startedAt <= now }
         for (index, record) in records.enumerated() {
           moments.append(LogTimelineEntry(id: "best:\(id):\(record.id)", at: record.startedAt,
             kind: .best(id, record, index == 0 ? nil : records[index - 1])))
@@ -123,16 +153,9 @@ extension GymModel {
     return result
   }
 
-  func logSessionIsDeviceOnly(_ id: ID<Session>) -> Bool {
-    if isAnonymous { return true }
-    return (try? runner.read(Gym.scope) { try $0.confirmed(Session.self, id) == nil }) ?? false
-  }
-
-  func correctLoggedSet(_ original: TrainingSet, to value: TrainingSet, account expectedAccount: String?) -> Bool {
-    refresh()
-    guard account == expectedAccount, !accountTransition, !readFailed else { error = "The workout changed. Check the current set"; return false }
-    guard sets.contains(where: { $0.id == original.id }) else { error = "That set is no longer here."; return false }
-    guard let outcome = run(CorrectSet(value, original: original)) else { return false }
-    return outcome.refusal == nil
+  // The record a finished session set, as its row's second line: Record · Bench Press 84 × 5.
+  func logRecordFact(_ session: ID<Session>) -> String? {
+    guard let fact = logRecords?.sessions[session], let estimate = fact.estimate else { return nil }
+    return "Record · \(catalogue.find(fact.exerciseId)?.name ?? "Movement") \(Readout.effort(weightKg: estimate.weightKg, reps: estimate.reps))"
   }
 }

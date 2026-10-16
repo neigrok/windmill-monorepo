@@ -188,6 +188,14 @@ public struct TrainingLog: Sendable {
   }
   public var open: Session? { drawnSessions.first { $0.isOpen } }
   public var liveHint: Bool { open != nil }
+
+  // Two reads draw the same log while their records and completeness agree, the sessions are drawn alike at their own
+  // moments (a stale workout closes on the millisecond), and both moments fall in one local minute (days and ages).
+  public func drawsTheSame(as other: TrainingLog) -> Bool {
+    let minute = { (moment: Moment) in (moment.now.ms / 1000 + Int64(moment.zone.offsetSeconds(at: moment.now))) / 60 }
+    return sessions == other.sessions && sets == other.sets && firstPullComplete == other.firstPullComplete
+      && minute(moment) == minute(other.moment) && drawnSessions == other.drawnSessions
+  }
   public func sets(session: ID<Session>) -> [TrainingSet] {
     guard sessions.contains(where: { $0.id == session }) else { return [] }
     return sets.filter { $0.sessionId == session }.sorted { $0.completedAt == $1.completedAt ? $0.id < $1.id : $0.completedAt < $1.completedAt }

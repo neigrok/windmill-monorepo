@@ -294,6 +294,118 @@ import SyncTesting
     #expect(try runtime.account() == nil)
   }
 
+  @Test func updateRequiredAtSignInAsksOnceKeepsTheSignInPendingAndTheRoomsOpen() async throws {
+    let recorder = TelemetryRecorder()
+    let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server, telemetry: recorder)
+    let updates = { recorder.entries.withLock { $0.filter { $0.name == "client_update_required" }.map(\.properties) } }
+    model.openJournal()
+    server.state.withLock { $0.upgradeRequired = true }
+    model.sheet = .code; model.email = "update@example.com"; model.code = "482913"
+    await model.verifyCode()
+    #expect(model.updateAlert && model.updateRequired && model.updateTrigger == "sign_in" && model.signInPending)
+    #expect(model.error == nil && model.sheet == .you && model.pendingSignIn != nil && model.account == nil)
+    #expect(model.updateMessage == "Update Windmill to sign in. Your work is saved on this phone.")
+    #expect(!model.editorReadOnly && recorder.entries.withLock { !$0.contains { $0.name == "client_error" } })
+    // Asking records nothing; the alert is recorded by the presenter once it is on screen.
+    #expect(updates().isEmpty)
+    model.updateAlertPresented()
+    model.keepWorkingWithoutUpdate(); model.noticeUpdateRequired()
+    #expect(!model.updateAlert)
+    model.journal.type("Written while the update waits"); model.journal.done()
+    #expect(model.journal.document.body == "Written while the update waits" && !model.journal.dirty)
+    model.getUpdate(); model.updateOpened(false)
+    #expect(model.updateOpenFailed)
+    model.dismissUpdateFailure()
+    #expect(!model.updateOpenFailed)
+    #expect(updates() == [["state": "shown", "status": "426", "trigger": "sign_in"], ["action": "keep", "trigger": "sign_in"],
+                          ["action": "update", "trigger": "sign_in"], ["action": "update", "outcome": "failed", "trigger": "sign_in"]])
+  }
+
+  // Signed out nothing syncs, so the alert names what the update unlocks.
+  @Test func theUpdateAlertNamesSyncingOnlyForAnAccount() async throws {
+    let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server)
+    #expect(model.updateMessage == "Update Windmill to sign in. Your work is saved on this phone.")
+    try await model.signIn(server.identity(email: "message@example.com"))
+    #expect(model.updateMessage == "Update Windmill to keep syncing. Your work is saved on this phone.")
+  }
+
+  // A sign-in an old app cannot finish is not a dead end: You stays You, with Settings, and the sign-in can be given up,
+  // which revokes the verified session and leaves nothing for the next launch to resume.
+  @Test func aPendingSignInIsASectionOfYouAndCanBeCancelled() async throws {
+    let recorder = TelemetryRecorder()
+    let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server, telemetry: recorder)
+    let runtime = try #require(model.runtime)
+    model.openJournal()
+    server.state.withLock { $0.upgradeRequired = true }
+    model.sheet = .code; model.email = "update@example.com"; model.code = "482913"
+    await model.verifyCode()
+    #expect(model.signInPending && model.updateRequired && model.sheet == .you)
+    let pending = try #require(model.pendingSignIn)
+    #expect(try runtime.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == pending.identity.account)
+    #expect(runtime.tokens.token(for: pending.identity.account) == pending.identity.token)
+    model.openYou()
+    #expect(model.sheet == .you)
+    model.cancelSignIn()
+    #expect(!model.signInPending && model.sheet == .you && model.error == nil && !model.editorReadOnly)
+    // The engine heard the server's 426 at the sign-in hello and keeps it; only the sign-in's own flag is cleared.
+    #expect(!model.updateRequiredAtSignIn && model.updateTrigger == "sync")
+    #expect(model.preferences.string(forKey: "pendingAuthMethod") == nil)
+    #expect(try runtime.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == nil)
+    #expect(runtime.tokens.token(for: pending.identity.account) == nil)
+    for _ in 0..<100 where server.state.withLock({ $0.sessions[pending.identity.token.value] != nil }) { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(server.state.withLock { $0.sessions[pending.identity.token.value] } == nil, "the verified session is revoked")
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "auth_signed_in" }.map(\.properties) } ==
+            [["method": "email", "outcome": "failed"], ["method": "email", "outcome": "cancelled"]])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "first_run_choice" }.map(\.properties) }.contains(["screen": "auth_pending", "action": "cancel"]))
+    let relaunched = try AppModel(runner: model.runner, preferences: model.preferences, runtime: runtime, telemetry: recorder)
+    #expect(relaunched.pendingSignIn == nil && !relaunched.restoringSignIn && relaunched.sheet == nil)
+  }
+
+  // You's door into Gym settings is a room switch, never a first-run welcome choice.
+  @Test func gymSettingsFromYouSwitchesTheRoomWithoutAFirstRunChoice() throws {
+    let recorder = TelemetryRecorder()
+    let (_, model) = try JournalModelTests().fixture(telemetry: recorder)
+    model.openJournal()
+    recorder.entries.withLock { $0.removeAll() }
+    model.sheet = .you
+    model.openGymSettings()
+    #expect(model.selectedRoom == .gym && model.sheet == nil && model.gymSettingsRequested && !model.welcome)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "room_switched" }.map(\.properties) } == [["room": "gym"]])
+    #expect(recorder.entries.withLock { !$0.contains { $0.name == "first_run_choice" && $0.properties["action"] == "open_gym" } })
+  }
+
+  @Test func theEnginesUpdateFlagSpeaksOncePerLaunch() async throws {
+    let recorder = TelemetryRecorder()
+    let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server, telemetry: recorder)
+    try await model.signIn(server.identity(email: "flag@example.com"))
+    model.noticeUpdateRequired()
+    #expect(!model.updateAlert && !model.updateRequired)
+    server.state.withLock { $0.upgradeRequired = true }
+    await model.runtime?.engine.start()
+    for _ in 0..<100 where model.runtime?.engine.status.upgradeRequired != true { try await Task.sleep(for: .milliseconds(20)) }
+    model.noticeUpdateRequired()
+    #expect(model.updateAlert && model.updateTrigger == "sync")
+    #expect(model.updateMessage == "Update Windmill to keep syncing. Your work is saved on this phone.")
+    model.updateAlertPresented()
+    model.getUpdate(); model.updateOpened(true); model.noticeUpdateRequired()
+    #expect(!model.updateAlert && !model.updateOpenFailed)
+    let relaunched = try AppModel(runner: model.runner, preferences: model.preferences, runtime: model.runtime, telemetry: recorder)
+    relaunched.noticeUpdateRequired()
+    #expect(relaunched.updateAlert)
+    relaunched.updateAlertPresented()
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "client_update_required" }.map(\.properties) } ==
+            [["state": "shown", "status": "426", "trigger": "sync"], ["action": "update", "trigger": "sync"], ["state": "shown", "status": "426", "trigger": "sync"]])
+  }
+
+  @Test func appearanceIsChosenOnceAndRemembered() throws {
+    let recorder = TelemetryRecorder()
+    let (_, model) = try JournalModelTests().fixture(telemetry: recorder)
+    #expect(model.appearance == .system)
+    model.chooseAppearance(.dark); model.chooseAppearance(.dark)
+    #expect(try AppModel(runner: model.runner, preferences: model.preferences).appearance == .dark)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "appearance_chosen" }.map(\.properties) } == [["appearance": "dark"]])
+  }
+
   @Test func signOutKeepPreservesBothRoomsForTheirAccountOnly() async throws {
     let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server)
     let owner = server.identity(email: "gym-lineage@example.com")

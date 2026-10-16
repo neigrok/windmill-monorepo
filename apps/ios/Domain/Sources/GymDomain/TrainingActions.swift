@@ -130,13 +130,23 @@ public struct AppendSet: Action {
   public func decide(_ loaded: TrainingState, ids: IDSource) throws(Violation) -> Decision<ID<TrainingSet>, GymRefusal> {
     let valid = try Valid(value, at: loaded.moment)
     guard let session = loaded.session(value.sessionId), loaded.drawn.contains(where: { $0.id == session.id }) else { return .refuse(.gone(value.sessionId.ref, .predicted)) }
-    guard SessionRules.lateSetLands(session, completedAt: value.completedAt) else { return .refuse(.sessionFinished(Refused(Gym.Codes.sessionFinished, subject: value.id.ref, path: .predicted))) }
-    guard loaded.catalogue.find(value.exerciseId) != nil else { return .refuse(.unknownExercise(Refused(Gym.Codes.unknownExercise, subject: value.id.ref, path: .predicted))) }
-    guard !loaded.sets.contains(where: { $0.id == value.id }) else { return .refuse(.taken(value.id.ref, .predicted)) }
-    guard SetRules.nextNumber(loaded.sets, sessionId: value.sessionId, exerciseId: value.exerciseId) != nil else {
+    if let refusal = try Self.refusal(appending: valid, to: session, state: loaded) { return .refuse(refusal) }
+    var plan = Plan(); plan.create(valid); return .write(plan, value.id)
+  }
+
+  // The phone's checks before a set joins a session: the session still takes a set at that time, the catalogue knows its
+  // movement, its identity is fresh and a number is left for it. `planned` are the sets the same plan appends before it.
+  public static func refusal(appending valid: Valid<TrainingSet>, to session: Session, state: TrainingState,
+                             planned: [TrainingSet] = []) throws(Violation) -> GymRefusal? {
+    let value = valid.value
+    guard SessionRules.lateSetLands(session, completedAt: value.completedAt) else { return .sessionFinished(Refused(Gym.Codes.sessionFinished, subject: value.id.ref, path: .predicted)) }
+    guard state.catalogue.find(value.exerciseId) != nil else { return .unknownExercise(Refused(Gym.Codes.unknownExercise, subject: value.id.ref, path: .predicted)) }
+    guard !(state.sets + planned).contains(where: { $0.id == value.id }) else { return .taken(value.id.ref, .predicted) }
+    let numbered = planned.filter { $0.sessionId == value.sessionId && $0.exerciseId == value.exerciseId }.count
+    guard let next = SetRules.nextNumber(state.sets, sessionId: value.sessionId, exerciseId: value.exerciseId), next + numbered <= SetRules.maxNumber else {
       throw Violation(rule: "set.setNumber", path: "setNumber", reason: .above(max: Double(SetRules.maxNumber)))
     }
-    var plan = Plan(); plan.create(valid); return .write(plan, value.id)
+    return nil
   }
 }
 
@@ -226,16 +236,27 @@ public struct ImportSession: Action {
   public func load(_ read: Reader) throws -> Loaded {
     (try TrainingState(read), try routineId.flatMap { try read.repository(Routine.self).find($0, in: .drawn) })
   }
+  // The import's own checks, before the account's: instants in bounds, at most 200 distinct sets, every set inside the window and valid.
+  public func checked(at moment: Moment) -> Result<[TrainingSet], GymRefusal> {
+    do throws(Violation) {
+      try SessionRules.instant(startedAt, rule: "session.startedAt", at: "startedAt")
+      try SessionRules.instant(finishedAt, rule: "session.finishedAt", at: "finishedAt")
+      guard sets.count <= 200 && Set(sets.map(\.id)).count == sets.count else { throw Violation(rule: "session.sets", path: "sets", reason: .custom("invalid")) }
+      guard finishedAt >= startedAt && sets.allSatisfy({ $0.completedAt >= startedAt && $0.completedAt <= finishedAt }) else {
+        return .failure(.badInstant(Refused(Gym.Codes.badInstant, subject: id.ref, path: .predicted)))
+      }
+      var checked: [TrainingSet] = []
+      for set in sets {
+        checked.append(try Valid(set.value(session: id), at: moment).value)
+      }
+      return .success(checked)
+    } catch { return .failure(.invalid(error)) }
+  }
   public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<ID<Session>, GymRefusal> {
-    try SessionRules.instant(startedAt, rule: "session.startedAt", at: "startedAt")
-    try SessionRules.instant(finishedAt, rule: "session.finishedAt", at: "finishedAt")
-    guard sets.count <= 200 && Set(sets.map(\.id)).count == sets.count else { throw Violation(rule: "session.sets", path: "sets", reason: .custom("invalid")) }
-    guard finishedAt >= startedAt && sets.allSatisfy({ $0.completedAt >= startedAt && $0.completedAt <= finishedAt }) else {
-      return .refuse(.badInstant(Refused(Gym.Codes.badInstant, subject: id.ref, path: .predicted)))
-    }
-    var checked: [TrainingSet] = []
-    for set in sets {
-      checked.append(try Valid(set.value(session: id), at: loaded.state.moment).value)
+    let checked: [TrainingSet]
+    switch self.checked(at: loaded.state.moment) {
+    case .failure(let refusal): return .refuse(refusal)
+    case .success(let sets): checked = sets
     }
     let routine = loaded.routine
     let predicted = Session(id: id, startedAt: startedAt, finishedAt: finishedAt, closedBy: "finish", routineId: routine?.id, plan: routine.map(SessionPlan.init))

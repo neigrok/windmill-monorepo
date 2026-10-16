@@ -213,6 +213,11 @@ public struct ReplicaLifecycle: Sendable {
     device.setMeta(DeviceMeta(forkGuard: device.meta.forkGuard, pendingSignIn: account), active: device.active)
   }
 
+  // The pending sign-in given up: the device records none, and nothing resumes at the next engine start.
+  public func cancelSignIn(_ device: inout LoadedDevice) {
+    device.setMeta(DeviceMeta(forkGuard: device.meta.forkGuard), active: device.active)
+  }
+
   // §7.10 after a hello as `account`: holds are released; a signed-out decision is due for each product in which the
   // account holds records and the anon replica has entries. Each answer covers the entries its decision counted:
   // `counted[product]` pins their local ids, and a decision whose entries differ now (a commit or an undo in between) is

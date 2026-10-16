@@ -213,8 +213,30 @@ import Synchronization
     #expect(try runtime.store.read { try $0.device().activeReplica.meta.replica } == replica)
   }
 
+  // You is one screen: reading its sign-in methods, linking Apple and removing it record no screen of their own.
+  @Test func youRecordsNoScreenOfItsOwnForItsSignInMethods() async throws {
+    let server = JournalModelTransport(), recorder = TelemetryRecorder()
+    let model = try LineageFlowTests().fixture(server, telemetry: recorder)
+    try await model.signIn(server.identity(email: "sam@example.com"))
+    model.sheet = .you; await model.loadSignInMethods()
+    await model.authenticateApple { [auth = model.runtime!.auth] token in try auth.authorizeFakeApple(token: token) }
+    await model.removeApple()
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "first_run_screen_viewed" }.map(\.properties) } == [])
+    #expect(model.signInMethods == [SignInMethod(kind: "email", email: "sam@example.com")])
+  }
+
+  // Apple's promise in the footer of How you sign in stands only where this build offers Apple.
+  @Test func theSignInFooterPromisesAppleOnlyWhereAppleIsOffered() {
+    let email = SignInMethod(kind: "email", email: "sam@example.com"), apple = SignInMethod(kind: "apple", email: "apple@example.com")
+    let off = AppSettings(arguments: ["app"], bundle: Bundle(for: TelemetryRecorder.self)), on = AppSettings(arguments: ["app", "-model-server"])
+    #expect(!off.appleEnabled && on.appleEnabled)
+    #expect(off.signInFooter([email]) == nil)
+    #expect(on.signInFooter([email]) == "Apple will open this same account.")
+    #expect(on.signInFooter([email, apple]) == "Either one opens this account.")
+  }
+
   @Test func telemetryAllowsBoardsAndLinkedButRejectsSecrets() throws {
-    for screen in ["23a", "23b", "23c", "24a", "24b", "24c", "24d"] {
+    for screen in ["23a", "23b", "23c", "24c", "24d"] {
       #expect(TelemetryPrivacy.properties(["screen": screen, "ticket": "secret", "email": "private", "subject": "secret", "token": "secret"]) == ["screen": .label(screen)])
     }
     #expect(TelemetryPrivacy.properties(["method": "apple", "outcome": "linked"]) == ["method": .label("apple"), "outcome": .label("linked")])
@@ -236,13 +258,13 @@ import Synchronization
     if link {
       model.useAppleAccount(); model.email = "sam@example.com"; await model.sendCode(); model.code = "482913"; await model.verifyCode()
     } else { await model.createAppleAccount() }
-    #expect(model.sheet == .authPending && model.account == nil && model.appleTicket == nil && model.pendingSignIn != nil && model.editorReadOnly)
+    #expect(model.sheet == .you && model.account == nil && model.appleTicket == nil && model.pendingSignIn != nil && model.editorReadOnly)
     #expect(model.authRetryAt == now.addingTimeInterval(5))
     #expect(model.journal.document.body == "Local page")
     #expect(throws: AuthRefusal.expired) { try server.createApple(ticket: ticket) }
     let sessions = server.state.withLock { $0.sessions }
     await model.retryAuthenticatedSignIn()
-    #expect(model.sheet == .authPending && server.state.withLock { $0.sessions == sessions })
+    #expect(model.sheet == .you && server.state.withLock { $0.sessions == sessions })
     server.state.withLock { $0.helloOnline = true; $0.authOnline = false }
     await model.retryAuthenticatedSignIn()
     #expect(model.pendingSignIn == nil && server.state.withLock { $0.sessions == sessions })
@@ -264,7 +286,7 @@ import Synchronization
     let runtime = try #require(model.runtime), sessions = server.state.withLock { $0.sessions }
     let recorder = TelemetryRecorder()
     let restored = try AppModel(runner: runtime.runner, preferences: model.preferences, runtime: runtime, telemetry: recorder)
-    #expect(restored.pendingSignIn != nil && restored.sheet == .authPending && restored.appleTicket == nil)
+    #expect(restored.pendingSignIn != nil && restored.sheet == .you && restored.appleTicket == nil)
     server.state.withLock { $0.helloOnline = true; $0.authOnline = false }
     await restored.start()
     defer { restored.timerTask?.cancel(); restored.observationTask?.cancel() }

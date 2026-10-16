@@ -91,9 +91,9 @@ struct OnboardingGlimpse: View {
     VStack(spacing: 10) {
       ForEach(0..<3, id: \.self) { index in
         let ground = index == 0 ? ShellPalette.canvas : index == 1 ? JournalPalette.canvas : GymPalette.canvas
-        let line = index == 0 ? ShellPalette.line : index == 1 ? OnboardingSpecimen.journalLine : GymPalette.line
-        let ink = index == 0 ? ShellPalette.ink : index == 1 ? OnboardingSpecimen.journalInk : GymPalette.ink
-        let dim = index == 0 ? ShellPalette.inkDim : index == 1 ? OnboardingSpecimen.journalDim : GymPalette.inkDim
+        let line = index == 0 ? ShellPalette.line : index == 1 ? JournalPalette.line : GymPalette.line
+        let ink = index == 0 ? ShellPalette.ink : index == 1 ? JournalPalette.ink : GymPalette.ink
+        let dim = index == 0 ? ShellPalette.inkDim : index == 1 ? JournalPalette.inkDim : GymPalette.inkDim
         card(ground, line, radius: 20) {
           ZStack(alignment: .topLeading) {
             Circle().fill(index == 0 ? ShellPalette.brand : index == 1 ? JournalPalette.lamp : GymPalette.accent).frame(width: 7, height: 7).offset(x: 20, y: 29)
@@ -101,7 +101,7 @@ struct OnboardingGlimpse: View {
             text(["Map what you're learning", "Notice what happened", "Keep a training log"][index], OnboardingSpecimenType.roomLine, dim, x: 36, y: 50, width: 218)
             if index == 0 { miniatureTree }
             if index == 1 {
-              RadialGradient(colors: [JournalPalette.lamp.opacity(0.18), .clear], center: .bottomTrailing, startRadius: 0, endRadius: 140)
+              RadialGradient(colors: [JournalPalette.glimpseGlow, .clear], center: .bottomTrailing, startRadius: 0, endRadius: 140)
               ForEach(0..<3, id: \.self) { row in
                 Capsule().fill(row == 2 ? ink : dim.opacity(0.45)).frame(width: [72.0, 46, 60][row], height: 3).offset(x: 254, y: [30.0, 40, 61][row])
               }
@@ -123,7 +123,7 @@ struct OnboardingGlimpse: View {
       Path { path in
         path.move(to: CGPoint(x: 258, y: 50)); path.addQuadCurve(to: CGPoint(x: 302, y: 32), control: CGPoint(x: 280, y: 39)); path.addLine(to: CGPoint(x: 332, y: 20))
         path.move(to: CGPoint(x: 258, y: 50)); path.addQuadCurve(to: CGPoint(x: 302, y: 68), control: CGPoint(x: 280, y: 66)); path.addLine(to: CGPoint(x: 332, y: 80))
-      }.stroke(ShellPalette.inkDim.opacity(0.5), lineWidth: 1.5)
+      }.stroke(OnboardingSpecimen.branch, lineWidth: 1.5)
       Circle().fill(OnboardingSpecimen.completed.opacity(0.28)).frame(width: 30, height: 30).offset(x: 243, y: 35)
       Circle().fill(OnboardingSpecimen.completed).overlay(Circle().stroke(OnboardingSpecimen.completedOutline, lineWidth: 2)).frame(width: 18, height: 18).offset(x: 249, y: 41)
       Circle().fill(ShellPalette.canvas).overlay(Circle().stroke(OnboardingSpecimen.skyKind, lineWidth: 2)).frame(width: 12, height: 12).offset(x: 296, y: 26)
@@ -164,12 +164,12 @@ struct OnboardingGlimpse: View {
   }
 
   var journal: some View {
-    let ink = OnboardingSpecimen.journalInk
-    let dim = OnboardingSpecimen.journalDim
-    let faint = OnboardingSpecimen.journalFaint
-    return card(JournalPalette.canvas, OnboardingSpecimen.journalLine) {
+    let ink = JournalPalette.ink
+    let dim = JournalPalette.inkDim
+    let faint = JournalPalette.inkFaint
+    return card(JournalPalette.canvas, JournalPalette.line) {
       ZStack(alignment: .topLeading) {
-        RadialGradient(colors: [JournalPalette.lamp.opacity(0.18 * glow), .clear], center: .init(x: 0.5, y: 1.15), startRadius: 0, endRadius: 240)
+        RadialGradient(colors: [JournalPalette.glimpseGlow, .clear], center: .init(x: 0.5, y: 1.15), startRadius: 0, endRadius: 240).opacity(glow)
         text("YESTERDAY", OnboardingSpecimenType.caption, faint, x: 24, y: 22).tracking(1.2)
         text("Walked before work. Slept better than the week before.", OnboardingSpecimenType.journalPast, dim, x: 24, y: 42).lineSpacing(4)
         Circle().fill(JournalPalette.lamp).frame(width: 6, height: 6).offset(x: 24, y: 122)
@@ -236,12 +236,8 @@ struct OnboardingCheck: Shape {
   }
 }
 
-// Illustration roles frozen for the glimpses; the journal glimpse keeps its iteration-one warm day ink.
+// Illustration roles frozen for the glimpses; the journal glimpse draws with the journal palette itself.
 enum OnboardingSpecimen {
-  static let journalInk = Color("onboarding/journal-ink")
-  static let journalDim = Color("onboarding/journal-dim")
-  static let journalFaint = Color("onboarding/journal-faint")
-  static let journalLine = Color("onboarding/journal-line")
   static let completed = Color("onboarding/completed")
   static let completedOutline = Color("onboarding/completed-outline")
   static let skyKind = Color("onboarding/sky-kind")
@@ -255,6 +251,7 @@ enum OnboardingSpecimen {
   static let clayLockedOutline = Color("onboarding/clay-locked-outline")
   static let openEdge = Color("onboarding/open-edge")
   static let lockedEdge = Color("onboarding/locked-edge")
+  static let branch = Color("onboarding/branch")
 }
 
 enum OnboardingSpecimenType {

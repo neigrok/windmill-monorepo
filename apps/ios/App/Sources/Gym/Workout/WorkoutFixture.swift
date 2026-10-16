@@ -32,13 +32,17 @@ enum WorkoutFixture {
       guard case .saved = gym.save(&draft) else { return true }
       routineId = draft.current.id
     }
-    guard let id = gym.startWorkout(routineId: routineId) else { return true }
+    // The board's workout began 32:10 ago and its sets were logged in turn, the last 1:37 ago, so the clocks read as at the rack.
+    let now = (try? gym.runner.moment().now) ?? Instant(ms: BoardClock().nowMs())
+    let id = gym.runner.mint(Session.self)
+    guard gym.run(StartSession(id: id, routineId: routineId, startedAt: Instant(ms: now.ms - 1_930_000)))?.refusal == nil,
+          gym.restoreWorkout() else { return true }
     if !planned { gym.workout.add(ID("back-squat")); gym.workout.add(ID("romanian-deadlift")) }
     if !board.contains("empty") {
-      for index in 0..<3 {
+      for (index, agoMs) in [1_630_000, 1_210_000, 97_000].enumerated() {
         let set = TrainingSet(id: gym.runner.mint(TrainingSet.self), sessionId: id, exerciseId: ID("back-squat"),
                               weightKg: index == 0 ? 80 : 100, reps: index == 0 ? 3 : 5,
-                              kind: index == 0 ? "warmup" : "working", completedAt: (try? gym.runner.moment().now) ?? Instant(ms: BoardClock().nowMs()))
+                              kind: index == 0 ? "warmup" : "working", completedAt: Instant(ms: now.ms - Int64(agoMs)))
         _ = gym.run(AppendSet(set))
       }
     }

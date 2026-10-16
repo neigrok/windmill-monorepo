@@ -10,10 +10,8 @@ struct RoutineTargetsTests {
     #expect(draft.reading == .scheme(straight))
     #expect(draft.countText == "3" && !draft.varyBySet)
     #expect(draft.shared(.reps) == "8" && draft.shared(.weight) == "60")
-    #expect(draft.commitLabel == "Set · 3 × 8 · 60")
     let open = RoutineTargetDraft(sets: nil)
     #expect(open.reading == .open && open.visibleRows.isEmpty)
-    #expect(open.commitLabel == "Set · open")
   }
 
   @Test func openAndCountReductionRetainHiddenDraftRows() {
@@ -27,7 +25,6 @@ struct RoutineTargetsTests {
     #expect(draft.rows == original.map(RoutineTargetDraft.Row.init))
     draft.type("3", field: .sets)
     #expect(draft.reading == .scheme(original) && draft.varyBySet)
-    #expect(draft.commitLabel == "Set · 3 sets")
   }
 
   @Test func sharedTypingReplacesColumnsAndBlankFieldsMeanMaxAndLastTime() {
@@ -121,7 +118,6 @@ struct RoutineTargetsTests {
     draft.type(typed, field: .weight)
     #expect(draft.reading == .refused(.init(row: 0, field: .weight, message: message)))
     #expect(draft.headRefusal == draft.refusal && draft.shared(.weight) == typed)
-    #expect(draft.commitLabel == "Set")
   }
 
   @Test(arguments: ["1.5", "−1", "101", "1e100"])
@@ -145,7 +141,7 @@ struct RoutineTargetsTests {
     for (typed, message) in [("0", RoutineTargetDraft.zeroTarget), ("−", RoutineTargetDraft.notANumber), ("1,2.3", RoutineTargetDraft.onePoint)] {
       draft.type(typed, field: field)
       #expect(draft.refusal == .init(row: field == .sets ? nil : 0, field: field, message: message))
-      #expect(draft.shared(field) == typed && draft.commitLabel == "Set")
+      #expect(draft.shared(field) == typed)
     }
   }
 
@@ -191,7 +187,7 @@ struct RoutineTargetsTests {
       SetTarget(reps: 10, weightKg: 17), SetTarget(reps: 9, weightKg: 25), SetTarget(reps: 7, weightKg: 35),
       SetTarget(reps: 6, weightKg: 45), SetTarget(reps: 4, weightKg: 53),
     ]))
-    #expect(draft.varyBySet && draft.commitLabel == "Set · 5 sets")
+    #expect(draft.varyBySet)
     var assisted = RoutineTargetDraft(sets: [SetTarget(weightKg: -10), SetTarget(), SetTarget(weightKg: -13)])
     assisted.rampUp()
     #expect(assisted.reading == .scheme([SetTarget(weightKg: -10), SetTarget(weightKg: -12), SetTarget(weightKg: -13)]))

@@ -122,7 +122,7 @@ public struct Written<Value> {
 // The transactions of the design's §3.5 table, by name.
 public enum TxName: String, Sendable, Hashable, CaseIterable {
   case firstLaunch, commit, undo, release, engineStart, number, offset, results, localRefusal, authPause, authResume, reidentify
-  case epochChange, pullPage, liveFrame, subscriptions, signInBegin, signInComplete, signOutRelease, signOutCount
+  case epochChange, pullPage, liveFrame, subscriptions, signInBegin, signInComplete, signInCancel, signOutRelease, signOutCount
   case signOutFinish, discardDormant, dismissNotice, sweep, settle
 }
 

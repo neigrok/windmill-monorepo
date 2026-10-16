@@ -111,7 +111,7 @@ struct OnboardingScreen: View {
                     if let location = item.location {
                       Text(location).font(ShellType.caption).foregroundStyle(item == .journal ? ShellPalette.brand : ShellPalette.inkDim)
                         .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(item == .journal ? ShellPalette.brand.opacity(0.16) : ShellPalette.raised, in: Capsule())
+                        .background(item == .journal ? ShellPalette.brandWash : ShellPalette.raised, in: Capsule())
                         .overlay(Capsule().stroke(item == .journal ? ShellPalette.brand : ShellPalette.lineStrong, lineWidth: 1))
                         .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("onboarding-tag").accessibilitySortPriority(40)
                     }
@@ -181,7 +181,7 @@ struct OnboardingPageControl: UIViewRepresentable {
   func updateUIView(_ control: UIPageControl, context: Context) {
     control.currentPage = page.rawValue
     control.currentPageIndicatorTintColor = UIColor(ShellPalette.ink)
-    control.pageIndicatorTintColor = UIColor(ShellPalette.ink.opacity(0.28))
+    control.pageIndicatorTintColor = UIColor(ShellPalette.inkResting)
     control.accessibilityLabel = "Page \(page.rawValue + 1) of 4"
     context.coordinator.change = change
   }

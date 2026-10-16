@@ -11,7 +11,8 @@ import Testing
 struct GymRulesTests {
   @Test func everySharedFileHasARunner() throws {
     let handled = ["rules.json", "values.json", "notes-actions.json", "bodyweight-actions.json", "routines-actions.json",
-                   "catalogue-actions.json", "preferences-actions.json", "proposals-actions.json", "training-actions.json", "training-reads.json", "units.json"]
+                   "catalogue-actions.json", "preferences-actions.json", "proposals-actions.json", "recovery-actions.json", "training-actions.json",
+                   "training-reads.json", "units.json"]
     #expect(try Contract.files(under: "gym/domain") == handled.map { "gym/domain/" + $0 }.sorted())
   }
 

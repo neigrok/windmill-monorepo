@@ -37,6 +37,8 @@ struct AppSettings {
   let codeFile: String?
   let automated: Bool
   let telemetryInfo: [String: Any]
+  // TestFlight offers this build's successor.
+  static let updateDestination = URL(string: "itms-beta://")!
   init(arguments: [String] = ProcessInfo.processInfo.arguments, bundle: Bundle = .main) {
     func argument(_ name: String) -> String? {
       guard let index = arguments.firstIndex(of: "-" + name), index + 1 < arguments.count else { return nil }
@@ -65,6 +67,12 @@ struct AppSettings {
     #endif
     telemetryInfo = info
     appleEnabled = fakeApple || (baseURL != nil && bundle.object(forInfoDictionaryKey: "WMAppleSignInEnabled") as? String == "YES")
+  }
+
+  // You's How you sign in footer: what Apple opens, said only where this build offers Apple.
+  func signInFooter(_ methods: [SignInMethod]) -> String? {
+    if methods.contains(where: { $0.kind == "apple" }) { return "Either one opens this account." }
+    return appleEnabled ? "Apple will open this same account." : nil
   }
 }
 
@@ -122,6 +130,7 @@ final class AppRuntime {
         if settings.appleFixture == "expired" { state.ticketLifetime = -1 }
         if settings.appleFixture == "offline" { state.offlineAfterApple = true }
         if settings.appleFixture == "hello-failure" { state.failHelloAfterApple = true }
+        if settings.board == "update-required" && settings.restoreBoard { state.upgradeRequired = true }
         if settings.appleFixture == "taken" || settings.appleFixture == "empty" {
           state.emails["other@example.com"] = "model-other@example.com"
           state.appleDoors[state.appleSubject] = "model-other@example.com"
@@ -258,6 +267,7 @@ nonisolated struct AuthRefusal: Error, LocalizedError, Equatable {
   static let wrongCode = AuthRefusal(code: "invalid-code", message: "That code didn't work. Check the digits, or send a fresh one.")
   static let identityTaken = AuthRefusal(code: "identity-taken", message: "It opens another Windmill account with its own data. Windmill doesn't merge accounts. Remove Apple there first.")
   static let offline = AuthRefusal(code: "offline", message: "Sign-in needs a connection. Your work stays on this phone.")
+  static let updateRequired = AuthRefusal(code: "upgrade-required", message: "Update Windmill to keep syncing. Your work is saved on this phone.")
 }
 
 nonisolated struct AppFailure: Error, LocalizedError {
@@ -422,6 +432,7 @@ final class NativeAuth {
       case "no-account", "not-found": 404
       case "invalid-code", "unverified-email": 400
       case "unauthorized": 401
+      case "upgrade-required": 426
       default: nil
       }
       let kind = code == "offline" ? "offline" : status == nil ? "unexpected" : "http"
@@ -472,6 +483,7 @@ final class NativeAuth {
         if code == "apple-ticket-expired" { throw AuthRefusal.expired }
         if code == "identity-taken" { throw AuthRefusal.identityTaken }
         if code == "no-account" { throw AuthRefusal(code: code, message: "No account at this email") }
+        if response.statusCode == 426 { throw AuthRefusal.updateRequired }
         if path == "v1/auth/verify-code", [400, 401, 422].contains(response.statusCode) { throw AuthRefusal.wrongCode }
         if let message = refusal["error"] as? String, !message.isEmpty {
           let detail = refusal["detail"] as? String ?? ""
@@ -495,7 +507,7 @@ final class NativeAuth {
       var properties = ["method": method, "route": path.hasPrefix("v1/me") ? "/v1/me" : "/v1/auth", "operation": operation, "failure_kind": kind]
       if let status { properties["status"] = String(status) }
       telemetry.event("api_request_failed", properties: properties, durationMs: ms)
-      if kind != "offline" && ![400, 401, 403, 404, 409, 410, 422, 429].contains(status ?? 0) {
+      if kind != "offline" && !ExpectedStatuses.contains(status) {
         telemetry.failure(operation, kind: kind, properties: properties, durationMs: ms)
       }
       throw error

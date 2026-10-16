@@ -143,6 +143,18 @@ nonisolated final class AuthWireProtocol: URLProtocol, @unchecked Sendable {
     #expect(!entries.contains { $0.properties.values.contains { $0.contains("secret-marker") } })
   }
 
+  @Test func a426AtSignInIsTheUpdateRefusalAndNeverASentryIssue() async throws {
+    let server = JournalModelTransport(), recorder = TelemetryRecorder()
+    let wire = auth(replies: [(426, #"{"error":"Upgrade Required"}"#)], telemetry: recorder)
+    await #expect(throws: AuthRefusal.updateRequired) { _ = try await wire.verifyCode(email: "sam@example.com", code: "482913") }
+    #expect(recorder.entries.withLock { $0.map(\.name) } == ["api_request_failed"])
+    #expect(recorder.entries.withLock { $0.first?.properties["status"] } == "426")
+    let model = try LineageFlowTests().fixture(server)
+    model.sheet = .code
+    model.showAuthError(AuthRefusal.updateRequired)
+    #expect(model.updateAlert && model.updateRequiredAtSignIn && model.error == nil)
+  }
+
   @Test(arguments: ["true", "\"true\"", "null"]) func legacyCreatedAppleSessionIsRefusedBeforeEngineOrAdoption(created: String) async throws {
     let server = JournalModelTransport(), recorder = TelemetryRecorder()
     let wire = auth(replies: [(200, "{\"user\":{\"id\":\"legacy-account\",\"email\":\"relay@privaterelay.appleid.com\",\"name\":\"Sam\"},\"session\":\"legacy-secret\",\"created\":\(created)}")], telemetry: recorder)

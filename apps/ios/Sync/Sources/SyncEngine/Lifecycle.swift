@@ -64,6 +64,14 @@ extension SyncEngine {
     return try await continueSignIn(as: account)
   }
 
+  // The pending sign-in given up: the device stays signed out, its account's token goes, and nothing resumes at the
+  // next engine start. Nothing to give up is nothing to do.
+  public func cancelSignIn() throws {
+    guard let account = try core.storageRead({ try $0.deviceMeta()?.meta.pendingSignIn }) else { return }
+    try core.write { store, _ in try store.cancelSignIn() }
+    try? core.tokens.delete(for: account)
+  }
+
   // The hello as `account`, then the lineage rule before any answer: complete when no decision is due.
   func continueSignIn(as account: String) async throws -> SignInSession {
     let holdsRecords = try await holdsRecords(of: account)
@@ -109,7 +117,7 @@ extension SyncEngine {
       guard hello.isServed(to: account), let holdsRecords = hello.holdsRecords else { throw EngineError.unauthenticated }
       return holdsRecords
     case .answered(.failed(let failure)) where failure.status == 401: throw EngineError.unauthenticated
-    case .answered(.failed(let failure)) where failure.status == 426: throw EngineError.upgradeRequired
+    case .answered(.failed(let failure)) where failure.requiresUpgrade: throw EngineError.upgradeRequired
     case .answered(.failed), .unreachable: throw EngineError.unreachable
     }
   }

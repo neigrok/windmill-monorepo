@@ -1,4 +1,6 @@
 import Foundation
+import SwiftUI
+import UIKit
 import Testing
 import DomainKit
 import DomainKitTesting
@@ -123,7 +125,7 @@ import SyncTesting
     #expect(initial == edited && !initial.utf8.elementsEqual(edited.utf8))
     fixture.model.updateBodies([Self.today: Self.bodies[Self.today]!, match.day: edited])
     #expect(fixture.model.pages[Self.today]?.matches == [match])
-    #expect(fixture.model.openDay == Self.today)
+    #expect(fixture.model.inkDay == Self.today)
     let range = try #require(match.range(in: edited))
     #expect((edited as NSString).substring(with: range) == match.text)
     fixture.model.walk(from: Self.today, to: match)
@@ -189,7 +191,7 @@ import SyncTesting
     var bodies = Self.bodies
     bodies[Self.recent.day] = remove ? nil : "The old quoted passage was edited away."
     fixture.model.updateBodies(bodies)
-    #expect(fixture.model.pages.isEmpty && fixture.model.openDay == nil && fixture.model.destination == nil)
+    #expect(fixture.model.pages.isEmpty && fixture.model.inkDay == nil && fixture.model.destination == nil)
     fixture.model.walk(from: Self.today, to: Self.recent)
     #expect(fixture.model.destination == nil)
     try await waitUntil { fixture.service.signals.count == 1 }
@@ -217,7 +219,7 @@ import SyncTesting
     fixture.model.activate(JournalEchoAccess(account: "account-a", today: Self.today, available: false))
     await fixture.model.reload()
     #expect(fixture.service.lists.isEmpty && fixture.service.signals.isEmpty)
-    #expect(fixture.model.pages.isEmpty && fixture.model.openDay == nil)
+    #expect(fixture.model.pages.isEmpty && fixture.model.inkDay == nil)
     #expect(fixture.recorder.entries.withLock { $0.isEmpty })
   }
 
@@ -228,7 +230,7 @@ import SyncTesting
     fixture.model.open(Self.today)
     fixture.service.listError = URLError(.notConnectedToInternet)
     await fixture.model.reload()
-    #expect(fixture.model.pages.isEmpty && fixture.model.openDay == nil && fixture.model.arrivalDay == nil)
+    #expect(fixture.model.pages.isEmpty && fixture.model.inkDay == nil && fixture.model.arrivalDay == nil)
     #expect(fixture.model.hops.isEmpty && fixture.model.destination == nil)
     try await waitUntil { fixture.service.signals.count == 1 }
   }
@@ -244,13 +246,13 @@ import SyncTesting
     fixture.model.open(Self.today)
     try await waitUntil { fixture.service.pendingSignals[0] != nil }
     fixture.model.suspend()
-    #expect(!fixture.model.access.available && fixture.model.pages.isEmpty && fixture.model.openDay == nil)
+    #expect(!fixture.model.access.available && fixture.model.pages.isEmpty && fixture.model.inkDay == nil)
     #expect(fixture.model.hops.isEmpty && fixture.model.destination == nil && fixture.model.pendingDays.isEmpty)
     fixture.service.finishList(1, .success(Self.response)); fixture.service.finishSignal(0, .success(()))
     await reading.value
     try await waitUntil { fixture.service.cancelledSignals == [0] }
     #expect(fixture.service.cancelledLists == [1])
-    #expect(fixture.model.pages.isEmpty && fixture.model.openDay == nil)
+    #expect(fixture.model.pages.isEmpty && fixture.model.inkDay == nil)
   }
 
   @Test func aLateAccountAReadCannotReplaceAccountBOrSurviveSignOut() async throws {
@@ -283,7 +285,7 @@ import SyncTesting
     #expect(fixture.model.pages.isEmpty && fixture.model.pendingDays == [Self.today])
     fixture.model.activate(JournalEchoAccess(account: nil, today: Self.today, available: false))
     fixture.service.finishSignal(0, .failure(JournalEchoFailure.http(503))); await answering.value
-    #expect(fixture.model.pages.isEmpty && fixture.model.pendingDays.isEmpty && fixture.model.openDay == nil)
+    #expect(fixture.model.pages.isEmpty && fixture.model.pendingDays.isEmpty && fixture.model.inkDay == nil)
     #expect(fixture.service.cancelledSignals == [0])
   }
 
@@ -295,26 +297,26 @@ import SyncTesting
     try await waitUntil { fixture.service.pendingLists[1] != nil }
     await fixture.model.reload()
     #expect(fixture.service.lists.count == 2)
-    let answering = Task { await fixture.model.answer(.dismiss, day: Self.today, matchDay: Self.recent.day) }
+    let answering = Task { await fixture.model.answer(.dismiss, day: Self.today) }
     defer { answering.cancel() }
     try await waitUntil { fixture.service.pendingSignals[0] != nil }
     await fixture.model.reload()
     #expect(fixture.service.lists.count == 2)
     fixture.service.finishList(1, .success(Self.response)); await staleRead.value
-    #expect(fixture.model.pages[Self.today]?.matches == [Self.older])
+    #expect(fixture.model.pages.isEmpty)
     fixture.service.finishSignal(0, .success(())); await answering.value
-    #expect(fixture.model.pages[Self.today]?.matches == [Self.older] && fixture.model.pendingDays.isEmpty)
+    #expect(fixture.model.pages.isEmpty && fixture.model.pendingDays.isEmpty)
     #expect(fixture.service.cancelledLists == [1])
   }
 
   @Test func usefulIsOptimisticAndRollsBackWithoutRetryingOrDoubleSending() async throws {
     let fixture = Fixture(); defer { fixture.close() }
     await fixture.model.reload(); fixture.service.holdSignals = true
-    let answering = Task { await fixture.model.answer(.useful, day: Self.today, matchDay: Self.recent.day) }
+    let answering = Task { await fixture.model.answer(.useful, day: Self.today) }
     defer { answering.cancel() }
     try await waitUntil { fixture.service.pendingSignals[0] != nil }
-    #expect(fixture.model.pages[Self.today]?.matches.first?.useful == true)
-    await fixture.model.answer(.useful, day: Self.today, matchDay: Self.recent.day)
+    #expect(fixture.model.pages[Self.today]?.matches.map(\.useful) == [true, true])
+    await fixture.model.answer(.useful, day: Self.today)
     #expect(fixture.service.signals == [.init(kind: .useful, trigger: Self.today, match: Self.recent.day)])
     fixture.service.finishSignal(0, .failure(JournalEchoFailure.http(503))); await answering.value
     #expect(fixture.model.pages == [Self.today: Self.response.pages[0]] && fixture.model.pendingDays.isEmpty)
@@ -322,15 +324,14 @@ import SyncTesting
     #expect(fixture.service.signals.count == 1)
   }
 
-  @Test(arguments: [false, true]) func pairAndPageDismissalRollBackWithoutARetryQueue(wholePage: Bool) async throws {
+  @Test func pageDismissalRollsBackWithoutARetryQueue() async throws {
     let fixture = Fixture(); defer { fixture.close() }
     await fixture.model.reload(); fixture.model.open(Self.today); fixture.service.holdSignals = true
-    let match = wholePage ? nil : Self.recent.day
-    let answering = Task { await fixture.model.answer(.dismiss, day: Self.today, matchDay: match) }
+    let answering = Task { await fixture.model.answer(.dismiss, day: Self.today) }
     defer { answering.cancel() }
     try await waitUntil { fixture.service.pendingSignals[0] != nil }
-    #expect(fixture.model.pages[Self.today]?.matches == (wholePage ? nil : [Self.older]))
-    #expect(fixture.service.signals == [.init(kind: .dismiss, trigger: Self.today, match: match)])
+    #expect(fixture.model.pages.isEmpty && fixture.model.inkDay == nil)
+    #expect(fixture.service.signals == [.init(kind: .dismiss, trigger: Self.today, match: nil)])
     fixture.service.finishSignal(0, .failure(JournalEchoFailure.http(500))); await answering.value
     #expect(fixture.model.pages == [Self.today: Self.response.pages[0]] && fixture.model.pendingDays.isEmpty)
     await fixture.model.reload()
@@ -343,8 +344,8 @@ import SyncTesting
     fixture.model.walk(from: Self.today, to: Self.recent)
     try await waitUntil { fixture.service.signals.count == 1 }
     fixture.model.open(Self.today); fixture.service.signalError = URLError(.networkConnectionLost)
-    await fixture.model.answer(signal, day: Self.today, matchDay: Self.recent.day)
-    #expect(fixture.model.pages.isEmpty && fixture.model.openDay == nil && fixture.model.pendingDays.isEmpty)
+    await fixture.model.answer(signal, day: Self.today)
+    #expect(fixture.model.pages.isEmpty && fixture.model.inkDay == nil && fixture.model.pendingDays.isEmpty)
     #expect(fixture.model.hops.isEmpty && fixture.model.destination == nil)
     await fixture.model.reload()
     #expect(fixture.service.signals.count == 2)
@@ -354,7 +355,7 @@ import SyncTesting
     let fixture = Fixture(); defer { fixture.close() }
     await fixture.model.reload(); fixture.model.open(Self.today); fixture.service.holdSignals = true
     fixture.model.walk(from: Self.today, to: Self.recent)
-    #expect(fixture.model.openDay == nil && fixture.model.hops == [Self.today, Self.recent.day])
+    #expect(fixture.model.inkDay == nil && fixture.model.hops == [Self.today, Self.recent.day])
     #expect(fixture.model.destination?.day == Self.recent.day && fixture.model.destination?.text == Self.recent.text)
     let destination = fixture.model.destination
     try await waitUntil { fixture.service.pendingSignals[0] != nil }
@@ -379,7 +380,7 @@ import SyncTesting
     try await waitUntil { fixture.service.finishedSignals == [0] }
     #expect(fixture.service.signals == [.init(kind: .opened, trigger: Self.today, match: Self.recent.day)])
     #expect(fixture.model.destination == destination)
-    #expect(fixture.model.pages.isEmpty && fixture.model.openDay == nil && fixture.model.hops.isEmpty && fixture.model.arrivalDay == nil)
+    #expect(fixture.model.pages.isEmpty && fixture.model.inkDay == nil && fixture.model.hops.isEmpty && fixture.model.arrivalDay == nil)
   }
 
   @Test func followingAnEarlierPassageFoldsLoopsAndReturningToTonightClearsTheTrail() async throws {
@@ -443,9 +444,9 @@ import SyncTesting
     fixture.model.open(Self.today)
     fixture.service.response = Self.response
     await fixture.model.reload()
-    #expect(fixture.model.pages == [Self.today: Self.response.pages[0]] && fixture.model.openDay == Self.today)
+    #expect(fixture.model.pages == [Self.today: Self.response.pages[0]] && fixture.model.inkDay == Self.today)
     #expect(fixture.model.arrivalDay == nil && !fixture.model.claimArrivalAnnouncement(Self.today))
-    fixture.model.openDay = nil
+    fixture.model.closeInk()
     await fixture.model.reload()
     #expect(fixture.model.arrivalDay == nil && !fixture.model.claimArrivalAnnouncement(Self.today))
   }
@@ -474,23 +475,61 @@ import SyncTesting
     #expect(!fixture.model.claimArrivalAnnouncement(Self.today))
   }
 
-  @Test func firstEchoClaimRequiresServerFlagAndVisibleClaim() async {
+  @Test func firstEchoCardHeadsTheInkTheFirstTimeItOpensAndNeverAgain() async {
     let fixture = Fixture(); defer { fixture.close() }
     await fixture.model.reload()
     #expect(!fixture.model.pages.isEmpty && fixture.model.firstEchoDay == nil)
-    fixture.model.claimFirstEcho()
-    #expect(!fixture.preferences.bool(forKey: "journalFirstEchoSeen"))
+    fixture.model.open(Self.today)
+    #expect(fixture.model.introducing == nil && !fixture.preferences.bool(forKey: "journalFirstEchoSeen"))
+    fixture.model.closeInk()
     fixture.service.response.firstEchoEver = true
     await fixture.model.reload()
-    #expect(fixture.model.firstEchoDay == Self.today)
-    fixture.model.open(Self.today); fixture.model.openDay = nil
-    #expect(fixture.model.firstEchoDay == Self.today && !fixture.preferences.bool(forKey: "journalFirstEchoSeen"))
-    fixture.model.shown(Self.today)
-    fixture.model.claimFirstEcho()
-    #expect(fixture.preferences.bool(forKey: "journalFirstEchoSeen"))
+    #expect(fixture.model.firstEchoDay == Self.today && fixture.model.introducing == nil)
+    fixture.model.open(Self.today)
+    #expect(fixture.model.introducing == Self.today && fixture.preferences.bool(forKey: "journalFirstEchoSeen"))
     await fixture.model.reload()
-    #expect(fixture.model.firstEchoDay == nil && !fixture.model.pages.isEmpty)
+    #expect(fixture.model.introducing == Self.today && fixture.model.firstEchoDay == nil)
+    fixture.model.dismissIntroduction()
+    #expect(fixture.model.introducing == nil && fixture.model.inkDay == Self.today)
+    fixture.model.closeInk(); fixture.model.open(Self.today)
+    #expect(fixture.model.introducing == nil && !fixture.model.pages.isEmpty)
     #expect(fixture.service.signals.isEmpty)
+  }
+
+  @Test func theInkShowsTwoPassagesAndItsVerdictAnswersThem() async throws {
+    let fixture = Fixture(); defer { fixture.close() }
+    let third = JournalEchoMatch(day: "2026-01-02", text: "I have felt this ease after walking before.")
+    var bodies = Self.bodies
+    bodies[third.day] = third.text
+    fixture.model.updateBodies(bodies)
+    fixture.service.response.pages[0].matches.append(third)
+    await fixture.model.reload()
+    #expect(fixture.model.inkMatches(Self.today) == [Self.recent, Self.older])
+    fixture.model.toggle(Self.today)
+    #expect(fixture.model.inkDay == Self.today)
+    fixture.model.openReader(Self.today)
+    #expect(fixture.model.readerDay == Self.today)
+    await fixture.model.answer(.useful, day: Self.today)
+    #expect(fixture.service.signals == [.init(kind: .useful, trigger: Self.today, match: Self.recent.day),
+                                        .init(kind: .useful, trigger: Self.today, match: Self.older.day)])
+    #expect(fixture.model.inkMatches(Self.today).allSatisfy { $0.useful == true })
+    await fixture.model.answer(.useful, day: Self.today)
+    #expect(fixture.service.signals.count == 2)
+    await fixture.model.answer(.dismiss, day: Self.today)
+    #expect(fixture.service.signals.last == .init(kind: .dismiss, trigger: Self.today, match: nil))
+    #expect(fixture.model.pages.isEmpty && fixture.model.inkDay == nil && fixture.model.readerDay == nil)
+    fixture.model.toggle(Self.today)
+    #expect(fixture.model.inkDay == nil)
+  }
+
+  @Test func echoStampsFollowTheWebGrammar() {
+    #expect(JournalEchoStamp.head("2026-03-14") == "14 MAR" && JournalEchoStamp.year("2026-03-14") == "2026")
+    #expect(JournalEchoStamp.distance(from: "2026-03-14", to: "2026-08-21") == "5 MO")
+    #expect(JournalEchoStamp.distance(from: "2026-02-22", to: "2026-08-21") == "6 MO")
+    #expect(JournalEchoStamp.distance(from: "2026-08-11", to: "2026-08-21") == "1 WK")
+    #expect(JournalEchoStamp.distance(from: "2026-07-22", to: "2026-08-21") == "1 MO")
+    #expect(JournalEchoStamp.distance(from: "2025-08-21", to: "2026-08-21") == "1 Y")
+    #expect(JournalEchoStamp.distance(from: "2024-06-01", to: "2026-08-21") == "2 Y 3")
   }
 
   @Test func firstEchoOnAnOlderTriggerCannotConsumeTodaysIntroduction() async {
@@ -499,39 +538,91 @@ import SyncTesting
                                                    firstEchoEver: true)
     await fixture.model.reload()
     #expect(fixture.model.firstEchoDay == Self.recent.day)
-    fixture.model.shown(Self.recent.day); fixture.model.open(Self.recent.day)
+    fixture.model.open(Self.recent.day)
     fixture.model.claimFirstEcho()
     #expect(!fixture.preferences.bool(forKey: "journalFirstEchoSeen"))
     fixture.service.response.pages.append(JournalEchoPage(day: Self.today, matches: [Self.recent]))
     await fixture.model.reload()
     #expect(fixture.model.firstEchoDay == Self.today)
-    fixture.model.shown(Self.today); fixture.model.claimFirstEcho()
+    fixture.model.claimFirstEcho()
     #expect(fixture.preferences.bool(forKey: "journalFirstEchoSeen"))
   }
 
-  @Test func visibleEchoEventsContainNoPropertiesAndSheetClosureDoesNotDismiss() async throws {
+  @Test func aDrawnPassageCountsOncePerForegroundSessionAndClosingTheReaderDismissesNothing() async throws {
     let fixture = Fixture(); defer { fixture.close() }
-    fixture.service.response.firstEchoEver = true
     await fixture.model.reload()
     #expect(fixture.recorder.entries.withLock { $0.isEmpty })
-    #expect(fixture.model.firstEchoDay == Self.today)
-    fixture.model.shown(Self.today); fixture.model.shown(Self.today); fixture.model.shown("2026-10-07")
-    fixture.model.claimFirstEcho()
-    fixture.model.open(Self.today); fixture.model.openDay = nil
-    #expect(fixture.service.signals.isEmpty && fixture.preferences.bool(forKey: "journalFirstEchoSeen"))
-    fixture.model.walk(from: Self.today, to: Self.recent)
-    await fixture.model.answer(.useful, day: Self.today, matchDay: Self.recent.day)
-    await fixture.model.answer(.dismiss, day: Self.today, matchDay: Self.older.day)
-    #expect(fixture.recorder.entries.withLock { $0.map(\.name) } == [
-      "journal_echo_shown", "journal_echo_shown", "journal_echo_opened", "journal_echo_useful", "journal_echo_dismissed"
-    ])
+    fixture.model.shown(Self.recent, on: Self.today); fixture.model.shown(Self.recent, on: Self.today)
+    fixture.model.shown(Self.older, on: Self.today); fixture.model.shown(Self.recent, on: "2026-10-07")
+    fixture.model.openReader(Self.today); fixture.model.readerDay = nil
+    #expect(fixture.service.signals.isEmpty && fixture.model.pages == [Self.today: Self.response.pages[0]])
+    #expect(fixture.recorder.entries.withLock { $0.map(\.name) } == ["journal_echo_shown", "journal_echo_shown", "journal_echo_reader_opened"])
     #expect(fixture.recorder.entries.withLock { $0.allSatisfy { $0.properties.isEmpty } })
-    try await waitUntil { fixture.service.signals.count == 3 }
     fixture.model.suspend()
     fixture.model.activate(JournalEchoAccess(account: "account-a", today: Self.today, available: true))
-    await fixture.model.reload(); fixture.model.shown(Self.today)
-    #expect(fixture.model.firstEchoDay == nil)
-    #expect(fixture.recorder.entries.withLock { $0.filter { $0.name == "journal_echo_shown" }.count } == 4)
+    await fixture.model.reload(); fixture.model.shown(Self.recent, on: Self.today)
+    #expect(fixture.recorder.entries.withLock { $0.filter { $0.name == "journal_echo_shown" }.count } == 3)
+  }
+
+  @Test func eachStepOfTheInkSendsOneEventWithBoundedLabels() async throws {
+    let fixture = Fixture(); defer { fixture.close() }
+    let third = JournalEchoMatch(day: "2026-01-02", text: "I have felt this ease after walking before.")
+    var bodies = Self.bodies
+    bodies[third.day] = third.text
+    fixture.model.updateBodies(bodies)
+    fixture.service.response.pages[0].matches.append(third)
+    fixture.service.response.firstEchoEver = true
+    await fixture.model.reload()
+    fixture.model.toggle(Self.today)
+    fixture.model.dismissIntroduction(); fixture.model.dismissIntroduction()
+    fixture.model.openReader(Self.today); fixture.model.readerDay = nil
+    fixture.model.toggle(Self.today)
+    fixture.model.closeInk()
+    fixture.model.toggle(Self.today)
+    await fixture.model.answer(.useful, day: Self.today)
+    fixture.model.closeInk()
+    fixture.model.toggle(Self.today)
+    fixture.model.walk(from: Self.today, to: fixture.model.inkMatches(Self.today)[0])
+    fixture.model.closeInk()
+    await fixture.model.answer(.dismiss, day: Self.today)
+    #expect(fixture.recorder.entries.withLock { $0.map { ([$0.name] + $0.properties.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }).joined(separator: " ") } } == [
+      "journal_echo_ink action=open", "journal_echo_intro_dismissed", "journal_echo_reader_opened", "journal_echo_ink action=close",
+      "journal_echo_ink action=open", "journal_echo_useful", "journal_echo_ink action=close", "journal_echo_ink action=open",
+      "journal_echo_opened", "journal_echo_dismissed"
+    ])
+    try await waitUntil { fixture.service.signals.count == 4 }
+    #expect(Array(fixture.service.signals.prefix(2)) == [.init(kind: .useful, trigger: Self.today, match: Self.recent.day),
+                                                        .init(kind: .useful, trigger: Self.today, match: Self.older.day)])
+    #expect(Set(fixture.service.signals.suffix(2).map(\.kind)) == [.opened, .dismiss])
+  }
+
+  @Test func aPassageIsShownWhenItsRowIsDrawnNeverWhenOnlyItsCountIs() async throws {
+    let fixture = Fixture(); defer { fixture.close() }
+    let third = JournalEchoMatch(day: "2026-01-02", text: "I have felt this ease after walking before.")
+    var bodies = Self.bodies
+    bodies[third.day] = third.text
+    fixture.model.updateBodies(bodies)
+    fixture.service.response.pages[0].matches.append(third)
+    await fixture.model.reload()
+    let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+    let window = UIWindow(windowScene: scene)
+    window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+    let host = UIHostingController(rootView: AnyView(EchoInkProbe(echoes: fixture.model, day: Self.today)))
+    window.rootViewController = host; window.makeKeyAndVisible()
+    defer { window.isHidden = true; window.rootViewController = nil }
+    func shown() -> Int { fixture.recorder.entries.withLock { $0.filter { $0.name == "journal_echo_shown" }.count } }
+    func settle(until count: Int) async throws {
+      for _ in 0..<40 where shown() != count { host.view.layoutIfNeeded(); try await Task.sleep(for: .milliseconds(50)) }
+      try await Task.sleep(for: .milliseconds(300))
+    }
+    try await settle(until: 0)
+    #expect(shown() == 0, "The count draws no passage")
+    fixture.model.toggle(Self.today)
+    try await settle(until: 2)
+    #expect(shown() == 2, "The ink draws two passages")
+    host.rootView = AnyView(JournalEchoReader(echoes: fixture.model, day: Self.today) { _ in })
+    try await settle(until: 3)
+    #expect(shown() == 3, "The reader draws the third; the two the ink drew count once")
   }
 
   @Test func anEmptyJournalDoesNotFetchAndAStalledEchoReadNeverBlocksTypingOrSaving() async throws {
@@ -558,5 +649,19 @@ import SyncTesting
     fixture.service.finishList(0, .failure(URLError(.notConnectedToInternet))); await reading.value
     #expect(journal.document.body == "First private line. Writing continues while echoes wait.")
     #expect(journal.error == nil && journal.backup == "saved" && journal.echoes.pages.isEmpty)
+  }
+}
+
+// The canvas around one day's echo: its count, and its ink while open.
+struct EchoInkProbe: View {
+  let echoes: JournalEchoes
+  let day: String
+  var body: some View {
+    ScrollView {
+      VStack {
+        JournalEchoTab(echoes: echoes, day: day, writing: false) { echoes.toggle(day) }
+        if echoes.inkDay == day { JournalEchoInk(echoes: echoes, day: day) { _ in } }
+      }
+    }
   }
 }

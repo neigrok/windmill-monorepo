@@ -32,6 +32,7 @@ enum BoardFixture {
       }
     }
     if await WorkoutFixture.prepare(board, model: model) { return }
+    if await RecoveryFixture.prepare(board, model: model) { return }
     model.keepDismissed = false
     if board.hasPrefix("shell-") {
       if board == "shell-anonymous" { model.welcome = true; return }
@@ -85,7 +86,10 @@ enum BoardFixture {
         // Each saved page is today to its fixture runner; the app's past-day guard stays intact.
         let zone = FixedZone(offsetSeconds: DeviceZone().offsetSeconds(at: Instant(ms: BoardClock().nowMs())) - offset * 86_400)
         let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: zone)
-        guard let saved = try? runner.run(SavePage(day: model.journal.today.adding(days: -offset), document: PageDocument(body: shortProse), retiring: ["placeholder", "scales"])), saved.refusal == nil else {
+        // The history's second page carries both scales, so its scale line has a page to draw on.
+        let scored = board.hasPrefix("journal-history") && offset == 2
+        let document = PageDocument(body: shortProse, mood: scored ? 7 : nil, energy: scored ? 4 : nil)
+        guard let saved = try? runner.run(SavePage(day: model.journal.today.adding(days: -offset), document: document, retiring: ["placeholder", "scales"])), saved.refusal == nil else {
           model.error = "Couldn't prepare the journal board."; return
         }
       }

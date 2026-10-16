@@ -3,7 +3,14 @@ import UIKit
 import PhotosUI
 import GymDomain
 
-private enum CoachDestination: Hashable { case history, notes, connections, settings }
+private enum CoachDestination: Hashable { case history, notes, connections }
+
+// What one answer read, opened from its receipt row into the What Coach read sheet.
+struct CoachSources: Identifiable {
+  let id = UUID()
+  let receipt: CoachReceipt
+  let steps: [CoachStep]
+}
 
 struct CoachTab: View {
   let gym: GymModel
@@ -13,10 +20,10 @@ struct CoachTab: View {
   @State var fixturePrepared = false
   @State private var destination: CoachDestination?
   @State var review: ProposalReviewID?
+  @State var sources: CoachSources?
   @State var photo: PhotosPickerItem?
   @State var preparing = false
   @State var atLatest = true
-  @State var accountHint = false
   @Environment(\.coachOpenAccount) var openAccount
   @Environment(\.scenePhase) var phase
   @FocusState var composing: Bool
@@ -24,107 +31,45 @@ struct CoachTab: View {
     _coach = State(initialValue: coach ?? CoachConversation(gym: gym, rest: rest)); _history = State(initialValue: CoachHistory(gym: gym, rest: rest)) }
 
   var body: some View {
-    VStack(spacing: 0) {
-      NavigationLink { NotesScreen(gym: gym) } label: {
-        HStack {
-          Text("Notes"); Text("what you write for Coach").font(.callout).foregroundStyle(GymPalette.inkDim)
-          Spacer(); Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(GymPalette.inkDim)
-        }.padding(.horizontal, 16).frame(minHeight: 44).background(GymPalette.card)
-      }.buttonStyle(.plain)
-      ScrollViewReader { proxy in
-        ScrollView {
-          LazyVStack(alignment: .leading, spacing: 20) {
-            Text("Coach needs a connection.").font(.callout).foregroundStyle(GymPalette.inkDim)
-            if !coach.allowed { Text(CoachCopy.signedOut).foregroundStyle(GymPalette.inkDim) }
-            else if coach.saved.thread == nil, coach.saved.request == nil {
-              Text("Ask about your training. Coach can create routines and propose changes — you decide on the diff.")
-              Text("Every conversation is kept so you can read it back, and yours to delete.").font(.callout).foregroundStyle(GymPalette.inkDim)
-            }
-            if coach.allowed {
-            if coach.reading { ProgressView("Reading your conversation…") }
-            if coach.saved.thread?.nextCursor != nil { Button("Earlier messages") { Task { await coach.open(coach.saved.threadId, earlier: true) } }.disabled(coach.reading || coach.asking) }
-            ForEach(coach.visibleTurns) { turn in
-              if turn.from == "lifter" { question(turn.text, attachments: turn.attachments) }
-              else {
-                CoachAnswerView(gym: gym, thread: coach.saved.threadId, text: turn.text, receipt: turn.receipt, steps: turn.receipt?.steps ?? [], results: turn.results, review: { review = ProposalReviewID(id: $0) })
-                if turn.status == "failed" || turn.status == "stopped" { Text(turn.status == "failed" ? CoachCopy.interrupted : CoachCopy.stopped).font(.callout).foregroundStyle(GymPalette.inkDim) }
-              }
-            }
-            ForEach(coach.saved.exchanges) { generation in generationView(generation) }
-            if let generation = coach.activeGeneration { generationView(generation) }
-            else if let request = coach.saved.request {
-              question(request.question, attachments: coach.saved.photo.map { [$0] } ?? [])
-              if coach.asking { ProgressView("reading your log…") }
-            }
-            if !coach.draftReadable { Button("Try again") { coach.reloadDraft() } }
-            if !coach.canCompose, coach.allowed {
-              if case .fresh = coach.refusal { Button("Ask something new") { coach.newChat() } }
-              NavigationLink("Connect your own") { ConnectedLogScreen(gym: gym) }
-              NavigationLink("Notes") { NotesScreen(gym: gym) }
-            }
-            }
-            if accountHint { Text("Open You and settings in the top bar.").font(.callout).foregroundStyle(GymPalette.inkDim) }
-            Color.clear.frame(height: 1).id("latest")
-          }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        }.defaultScrollAnchor(.bottom, for: .sizeChanges).scrollDismissesKeyboard(.interactively)
-          .onScrollGeometryChange(for: Bool.self) { geometry in geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 40 } action: { _, latest in atLatest = latest }
-          .overlay(alignment: .bottomTrailing) {
-            if !atLatest { Button("Jump to latest") { withAnimation { proxy.scrollTo("latest", anchor: .bottom) } }.modifier(RoomSecondaryStyle()).padding(16) }
-          }
-          .onChange(of: coach.saved.request?.requestId) { _, request in
-            if request != nil { composing = false }
-            proxy.scrollTo("latest", anchor: .bottom)
-          }
-      }
-    }.modifier(GymPage()).navigationTitle("Coach").accessibilityIdentifier("gym-coach")
+    room.modifier(GymPage()).navigationTitle("Coach").accessibilityIdentifier("gym-coach")
       .toolbar {
-        ToolbarItem(placement: .topBarTrailing) {
-          Menu {
-            if coach.saved.request != nil || coach.saved.thread != nil {
-              Section { Button("New chat") { coach.newChat() }.disabled(coach.asking).accessibilityIdentifier("coach-menu-new-chat") }
-            }
-            Section {
-              Button("History") { destination = .history }.accessibilityIdentifier("coach-menu-history")
-              Button("Notes") { destination = .notes }.accessibilityIdentifier("coach-menu-notes")
-              Button("Connected log") { destination = .connections }.accessibilityIdentifier("coach-menu-connections")
-              Button("Gym settings") { destination = .settings }.accessibilityIdentifier("coach-menu-settings")
-            }
-            Section { Button("Account") { if let openAccount { openAccount() } else { accountHint = true } }.accessibilityIdentifier("coach-menu-account") }
-          } label: { Label("More", systemImage: "ellipsis.circle") }
-            .labelStyle(.iconOnly).accessibilityIdentifier("coach-more")
-        }
+        ToolbarItem(placement: .topBarTrailing) { more }
         if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
         ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
-      }
+      }.roomBar(.gym)
       .navigationDestination(item: $destination) { destination in
         switch destination {
         case .history: CoachHistoryScreen(gym: gym, coach: coach, history: history)
         case .notes: NotesScreen(gym: gym)
         case .connections: ConnectedLogScreen(gym: gym)
-        case .settings: GymSettingsScreen(gym: gym)
         }
       }
       .safeAreaInset(edge: .bottom) {
         VStack(spacing: 0) {
-          let tooLong = coach.saved.text.utf8.count > 1000
-          GymTransient(gym: gym, message: tooLong ? "Keep your question within 1000 bytes." : coach.error ?? (coach.retryable ? CoachCopy.interrupted : nil),
-                       dismiss: tooLong || coach.retryable ? nil : { coach.error = nil },
-                       retryMessage: !tooLong && coach.retryable ? { composing = false; coach.retry() } : nil,
-                       errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
-            .onChange(of: coach.error) { _, error in if let error { UIAccessibility.post(notification: .announcement, argument: error) } }
-          composer
+          band
+          if composing {
+            Button { composing = false } label: { glassSymbol("keyboard.chevron.compact.down") }.buttonStyle(RoomSeatStyle(diameter: 36))
+              .accessibilityLabel("Done").accessibilityIdentifier("coach-keyboard-done")
+              .frame(maxWidth: .infinity, alignment: .trailing).padding(.horizontal, 12)
+          }
+          if coach.allowed, coach.refusal != .absent { composer }
         }
       }
       .sheet(item: $review) { id in
         ProposalReviewSheet(gym: gym, proposalId: id.id) { name in composing = coach.newChat(seed: "Tell me about the proposal for \(name).") }
       }
+      .sheet(item: $sources) { sources in CoachSourcesSheet(gym: gym, sources: sources) }
       .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition):\(handoff?.id.uuidString ?? "")") {
         if !fixturePrepared { fixturePrepared = true; await CoachFixture.prepare(gym) }
         history.resetOwner(); await coach.activate()
         if let handoff, coach.begin(handoff) { self.handoff = nil; composing = !handoff.send }
+        coach.noteOffline()
       }
       .onChange(of: coach.asking) { _, asking in
         if !asking, let handoff, coach.begin(handoff) { self.handoff = nil; composing = !handoff.send }
+      }
+      .onChange(of: coach.offline) { _, offline in
+        if offline { coach.noteOffline() } else if coach.error == CoachCopy.offline, !coach.retryable { coach.error = nil }
       }
       .onChange(of: phase) { _, phase in
         if phase == .background { coach.work?.cancel(); coach.stopWork?.cancel(); history.abandon() }
@@ -146,104 +91,264 @@ struct CoachTab: View {
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "coach"]) }
   }
 
-  @ViewBuilder var composer: some View {
-    if coach.canCompose || coach.asking {
-      VStack(alignment: .leading, spacing: 8) {
-        Text("Ten questions a day, three back to back.").font(.caption.monospaced()).foregroundStyle(GymPalette.inkDim).frame(maxWidth: .infinity)
-        if preparing { ProgressView("Preparing photo…") }
-        if coach.uploading { ProgressView("Photo upload").accessibilityLabel("Photo upload") }
-        if let photo = coach.saved.photo, !coach.asking {
-          HStack {
-            CoachPhotoView(gym: gym, thread: coach.saved.threadId, attachment: photo, local: coach.saved.photoData)
-            Button("Remove photo") { coach.removePhoto() }
-          }
-        }
-        if composing {
-          HStack {
-            Spacer()
-            Button { composing = false } label: { Text("Done").frame(minWidth: 44, minHeight: 44) }
-              .accessibilityIdentifier("coach-keyboard-done")
-          }.frame(minHeight: 44)
-        }
-        HStack(alignment: .bottom, spacing: 10) {
-          PhotosPicker(selection: $photo, matching: .images) { Image(systemName: "photo.badge.plus").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel("Add photo").disabled(coach.asking || preparing)
-          TextField("Ask about your training", text: Binding(get: { coach.saved.text }, set: { coach.edit($0) }), axis: .vertical)
-            .lineLimit(1...5).focused($composing).disabled(coach.asking).accessibilityIdentifier("coach-question")
-            .id(coach.asking)
-          if coach.asking {
-            Button { coach.stopResponse() } label: { Image(systemName: "stop.fill").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel(coach.uploading ? "Cancel upload" : "Stop response").disabled(coach.stopping).accessibilityIdentifier("coach-stop")
-          } else {
-            Button { composing = false; coach.send() } label: { Image(systemName: "arrow.up").frame(minWidth: 44, minHeight: 44) }
-              .modifier(RoomPrimaryStyle(room: .gym)).buttonBorderShape(.circle).accessibilityLabel("Ask Coach").accessibilityIdentifier("coach-send")
-              .disabled(!CoachCopy.sendable(coach.saved.text, photo: coach.saved.photo != nil) || preparing)
-          }
-        }
-      }.padding(12).background(GymPalette.card).tint(GymPalette.accent)
+  @ViewBuilder var room: some View {
+    if !coach.allowed { CoachUnavailable(sentence: CoachCopy.signedOut, signIn: openAccount) }
+    else if coach.refusal == .absent { CoachUnavailable(sentence: CoachCopy.absent) }
+    else { conversation }
+  }
+
+  var more: some View {
+    MoreMenu(identifier: "coach-more") {
+      if coach.saved.request != nil || coach.saved.thread != nil {
+        Section { Button("New chat") { coach.newChat() }.disabled(coach.asking).accessibilityIdentifier("coach-menu-new-chat") }
+      }
+      Section {
+        Button("History") { destination = .history }.accessibilityIdentifier("coach-menu-history")
+        Button("Notes") { destination = .notes }.accessibilityIdentifier("coach-menu-notes")
+        Button("Connected log") { destination = .connections }.accessibilityIdentifier("coach-menu-connections")
+      }
     }
   }
+
+  var conversation: some View {
+    ScrollViewReader { proxy in
+      ScrollView {
+        ZStack(alignment: .bottom) {
+          Color.clear.containerRelativeFrame(.vertical)
+          LazyVStack(alignment: .leading, spacing: 20) {
+            if coach.reading { progress("Reading your conversation…") }
+            if coach.saved.thread?.nextCursor != nil {
+              Button("Earlier messages") { Task { await coach.open(coach.saved.threadId, earlier: true) } }
+                .font(.subheadline).frame(minHeight: RoomSpace.minimumTarget).disabled(coach.reading || coach.asking)
+            }
+            ForEach(coach.visibleTurns) { turn in
+              if turn.from == "lifter" { question(turn.text, attachments: turn.attachments) }
+              else {
+                answer(turn.text, receipt: turn.receipt, steps: turn.receipt?.steps ?? [], results: turn.results)
+                if turn.status == "failed" || turn.status == "stopped" {
+                  Text(turn.status == "failed" ? CoachCopy.interrupted : CoachCopy.stopped).font(.footnote).foregroundStyle(GymPalette.inkDim)
+                }
+              }
+            }
+            ForEach(coach.saved.exchanges) { generation in generationView(generation) }
+            if let generation = coach.activeGeneration { generationView(generation) }
+            else if let request = coach.saved.request {
+              question(request.question, attachments: coach.saved.photo.map { [$0] } ?? [])
+              if coach.asking { progress("reading your log…") }
+            }
+            Color.clear.frame(height: 1).id("latest")
+          }.padding(RoomSpace.inset).frame(maxWidth: .infinity, alignment: .leading)
+        }.contentShape(Rectangle()).onTapGesture { composing = false }
+      }.defaultScrollAnchor(.bottom, for: .sizeChanges).scrollDismissesKeyboard(.interactively)
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+          geometry.visibleRect.maxY - geometry.contentInsets.bottom >= geometry.contentSize.height - 40
+        } action: { _, latest in atLatest = latest }
+        .overlay(alignment: .bottomTrailing) {
+          if !atLatest, !composing {
+            Button { withAnimation { proxy.scrollTo("latest", anchor: .bottom) } } label: { glassSymbol("chevron.down") }
+              .buttonStyle(RoomSeatStyle(diameter: 36)).accessibilityLabel("Jump to latest").accessibilityIdentifier("coach-jump-to-latest").padding(12)
+          }
+        }
+        .onChange(of: coach.saved.request?.requestId) { _, request in
+          if request != nil { composing = false }
+          proxy.scrollTo("latest", anchor: .bottom)
+        }
+    }
+  }
+
+  var band: some View {
+    let tooLong = coach.saved.text.utf8.count > 1000
+    let message = tooLong ? "Keep your question within 1000 bytes." : coach.refusal == .absent ? nil : coach.error ?? (coach.retryable ? CoachCopy.interrupted : nil)
+    let retry: (() -> Void)? = tooLong ? nil : coach.retryable ? { composing = false; coach.retry() } : coach.draftReadable ? nil : { coach.reloadDraft() }
+    return GymTransient(gym: gym, message: message, dismiss: tooLong || retry != nil ? nil : { coach.error = nil }, retryMessage: retry,
+                        errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
+      .onChange(of: coach.error) { _, error in if let error { UIAccessibility.post(notification: .announcement, argument: error) } }
+  }
+
+  // One capsule: Add photo, the question, and Send, which dims and never reshapes when it cannot go (ios-redesign.md §6).
+  var composer: some View {
+    VStack(alignment: .leading, spacing: RoomSpace.related) {
+      if preparing {
+        CoachPhotoView.tile(ProgressView()).accessibilityLabel("Preparing photo").padding(.leading, RoomSpace.minimumTarget).padding(.top, RoomSpace.related)
+      }
+      else if let photo = coach.saved.photo, !coach.asking {
+        CoachPhotoView(gym: gym, thread: coach.saved.threadId, attachment: photo, local: coach.saved.photoData)
+          .overlay(alignment: .topTrailing) {
+            Button { coach.removePhoto() } label: {
+              Image(systemName: "xmark.circle.fill").font(.title3).symbolRenderingMode(.palette).foregroundStyle(GymPalette.card, GymPalette.inkDim)
+                .frame(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget).contentShape(Circle())
+            }.buttonStyle(.plain).offset(x: 18, y: -18).accessibilityLabel("Remove photo")
+          }.padding(.leading, RoomSpace.minimumTarget).padding(.top, RoomSpace.related)
+      }
+      HStack(alignment: .bottom, spacing: 0) {
+        let target = RoomSpace.minimumTarget
+        PhotosPicker(selection: $photo, matching: .images) {
+          Image(systemName: "photo.badge.plus").dynamicTypeSize(...DynamicTypeSize.xxxLarge).frame(width: target, height: target)
+        }.accessibilityLabel("Add photo").disabled(coach.asking || preparing || !coach.draftReadable)
+        TextField("Ask about your training", text: Binding(get: { coach.saved.text }, set: { coach.edit($0) }), axis: .vertical)
+          .lineLimit(1...5).focused($composing).disabled(coach.asking || !coach.draftReadable).accessibilityIdentifier("coach-question")
+          .id(coach.asking).padding(.vertical, 11)
+        send
+      }
+    }.padding(4).background(GymPalette.card, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+      .padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.related)
+  }
+
+  @ViewBuilder var send: some View {
+    if coach.asking {
+      Button { coach.stopResponse() } label: { circle("stop.fill", dimmed: coach.stopping) }.buttonStyle(.plain)
+        .disabled(coach.stopping).accessibilityLabel(coach.uploading ? "Cancel upload" : "Stop response").accessibilityIdentifier("coach-stop")
+    } else {
+      let empty = !CoachCopy.sendable(coach.saved.text, photo: coach.saved.photo != nil) || preparing
+      Button { if coach.blockedReason == nil { composing = false }; coach.send() } label: { circle("arrow.up", dimmed: empty || coach.blockedReason != nil) }
+        .buttonStyle(.plain).disabled(empty)
+        .accessibilityLabel("Ask Coach").accessibilityHint(coach.blockedReason ?? "").accessibilityIdentifier("coach-send")
+    }
+  }
+
+  func circle(_ symbol: String, dimmed: Bool) -> some View {
+    Image(systemName: symbol).font(.body.weight(.semibold)).foregroundStyle(GymPalette.onAccent)
+      .frame(width: 36, height: 36).background(GymPalette.accent, in: Circle()).opacity(dimmed ? 0.4 : 1)
+      .frame(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget).contentShape(Circle())
+  }
+
+  // The symbol of the room's two 36 pt "down" seats: Jump to latest, and the keyboard's Done while typing.
+  func glassSymbol(_ symbol: String) -> some View { Image(systemName: symbol).font(.body.weight(.semibold)).foregroundStyle(GymPalette.ink) }
+
+  func progress(_ label: String) -> some View {
+    HStack(spacing: RoomSpace.related) { ProgressView(); Text(label).font(.footnote).foregroundStyle(GymPalette.inkDim) }
+  }
+
   func question(_ text: String, attachments: [CoachAttachment]) -> some View {
-    HStack {
-      Spacer(minLength: 24)
-      VStack(alignment: .leading, spacing: 8) {
-        if !text.isEmpty { Text(text).textSelection(.enabled).contextMenu { Button("Copy question") { UIPasteboard.general.string = text } } }
-        ForEach(attachments) { attachment in CoachPhotoView(gym: gym, thread: coach.saved.threadId, attachment: attachment, local: nil) }
-      }.padding(12).background(GymPalette.accentSoft, in: RoundedRectangle(cornerRadius: 16))
-    }
+    CoachQuestion(gym: gym, thread: coach.saved.threadId, text: text, attachments: attachments,
+                  draft: coach.saved.photo.flatMap { photo in coach.saved.photoData.map { (photo.id, $0) } }, uploading: coach.uploading)
   }
+
+  func answer(_ text: String, receipt: CoachReceipt?, steps: [CoachStep], results: [CoachResult]) -> some View {
+    CoachAnswerView(gym: gym, text: text, receipt: receipt, steps: steps, results: results,
+                    review: { review = ProposalReviewID(id: $0) }, read: { sources = $0 })
+  }
+
   func generationView(_ generation: CoachGeneration) -> some View {
     VStack(alignment: .leading, spacing: 16) {
       question(generation.question, attachments: generation.attachments)
-      if generation.answer.isEmpty, generation.status == "running" { ProgressView("reading your log…") }
-      CoachAnswerView(gym: gym, thread: coach.saved.threadId, text: generation.answer, receipt: generation.receipt,
-                      steps: generation.steps, results: generation.results, review: { review = ProposalReviewID(id: $0) })
+      if generation.answer.isEmpty, generation.status == "running" { progress("reading your log…") }
+      answer(generation.answer, receipt: generation.receipt, steps: generation.steps, results: generation.results)
     }
   }
 }
 
-struct CoachAnswerView: View {
+// The lifter's turn: a bubble at most 78 % wide, its photos as thumbnails under it, both against the trailing edge.
+struct CoachQuestion: View {
   let gym: GymModel
   let thread: String
+  let text: String
+  let attachments: [CoachAttachment]
+  var draft: (id: String, data: Data)?
+  var uploading = false
+  var body: some View {
+    VStack(alignment: .trailing, spacing: RoomSpace.related) {
+      if !text.isEmpty {
+        Text(text).textSelection(.enabled).padding(.horizontal, 14).padding(.vertical, 10)
+          .background(GymPalette.accentSoft, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+          .contextMenu { Button("Copy question") { UIPasteboard.general.string = text } }
+      }
+      ForEach(attachments) { attachment in
+        let local = draft?.id == attachment.id ? draft?.data : nil
+        CoachPhotoView(gym: gym, thread: thread, attachment: attachment, local: local)
+          .overlay { if uploading, local != nil { ProgressView().accessibilityLabel("Photo upload") } }
+      }
+    }.frame(maxWidth: .infinity, alignment: .trailing)
+      .containerRelativeFrame(.horizontal, alignment: .trailing) { length, _ in length * 0.78 }
+      .frame(maxWidth: .infinity, alignment: .trailing)
+  }
+}
+
+// Coach's turn: prose on the canvas, then one receipt row, any proposal cards and any routine it created.
+struct CoachAnswerView: View {
+  let gym: GymModel
   let text: String
   let receipt: CoachReceipt?
   let steps: [CoachStep]
   let results: [CoachResult]
   let review: (String) -> Void
+  let read: (CoachSources) -> Void
   @Environment(\.coachOpenRoutine) var openRoutine
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
-      CoachMarkdown(text: text).contextMenu { Button("Copy answer") { UIPasteboard.general.string = text } }
+      if !text.isEmpty { CoachMarkdown(text: text).contextMenu { Button("Copy answer") { UIPasteboard.general.string = text } } }
       if let receipt {
-        DisclosureGroup(receipt.read.line) {
-          ForEach(Array(steps.enumerated()), id: \.offset) { _, step in if let phrase = step.phrase { Text(phrase).font(.callout).foregroundStyle(GymPalette.inkDim) } }
-          ForEach(receipt.workouts) { source in
-            DisclosureGroup(source.routine ?? "Workout") {
-              Text(Date(timeIntervalSince1970: Double(source.startedAt) / 1000).formatted(date: .abbreviated, time: .shortened))
-              if let workout = source.workout {
-                Text("\(workout.workingSetCount) working sets · \(workout.tonnageKg.formatted()) kg")
-                if let duration = workout.durationMs { Text("\(duration / 60_000) min") }
-              }
-              CoachSourceWorkout(gym: gym, id: source.sessionId)
-            }.font(.callout)
-          }
-        }.font(.caption.monospaced()).foregroundStyle(GymPalette.inkDim)
-        ForEach(receipt.proposals, id: \.self) { id in
-          VStack(alignment: .leading, spacing: 12) {
-            if let p = gym.proposals.first(where: { $0.id.record.string == id }) {
-              Text("PROPOSAL · " + (p.baseName ?? p.proposedName)).font(.caption.weight(.semibold)).foregroundStyle(GymPalette.accent)
-              Text(p.summary.isEmpty ? "Proposal" : p.summary)
-              Text(p.intent == "remove" ? "a removal" : "\(p.changeCount ?? p.changes.filter { $0.kind != "kept" }.count) changes").font(.caption.monospaced()).foregroundStyle(GymPalette.inkDim)
-              Text(p.state == "pending" ? "still waiting" : p.state == "dismissed" ? "turned down" : p.state).font(.caption.monospaced()).foregroundStyle(GymPalette.inkDim)
-            }
-            Button("Review") { review(id) }.frame(minHeight: 44)
-            if gym.proposals.first(where: { $0.id.record.string == id })?.state == "pending" { Text(CoachCopy.promise).font(.caption).foregroundStyle(GymPalette.inkDim) }
-          }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(GymPalette.card, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(GymPalette.accent))
+        if receipt.workouts.isEmpty, steps.allSatisfy({ $0.phrase == nil }) {
+          Text(receipt.read.line).font(.footnote.monospaced()).foregroundStyle(GymPalette.inkDim)
+        } else {
+          Button { read(CoachSources(receipt: receipt, steps: steps)) } label: {
+            HStack(spacing: RoomSpace.related) {
+              Text(receipt.read.line).multilineTextAlignment(.leading)
+              Spacer(minLength: 0)
+              DoorChevron(room: .gym)
+            }.font(.footnote.monospaced()).foregroundStyle(GymPalette.inkDim).frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
+          }.buttonStyle(.plain).accessibilityLabel(receipt.read.line).accessibilityIdentifier("coach-read-receipt")
         }
       }
+      ForEach(receipt?.proposals ?? [], id: \.self) { id in CoachProposalCard(gym: gym, id: id) { review(id) } }
       ForEach(results.filter { $0.kind == "routine-created" }) { result in
-        Button { openRoutine?(result.routineId) } label: { Label("Open routine · " + result.routineName, systemImage: "list.bullet.rectangle") }
+        Button { openRoutine?(result.routineId) } label: {
+          HStack(spacing: 12) {
+            Image(systemName: "list.bullet.rectangle").foregroundStyle(GymPalette.accent)
+            Text("Open routine · " + result.routineName).foregroundStyle(GymPalette.ink)
+            Spacer(minLength: 0)
+            DoorChevron(room: .gym)
+          }.frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityLabel("Open routine · " + result.routineName)
       }
     }.frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+// What a proposal would change, as up to three fact rows, and its one door: the Review row, carrying the state.
+struct CoachProposalCard: View {
+  let gym: GymModel
+  let id: String
+  let review: () -> Void
+  @Environment(\.dynamicTypeSize) var typeSize
+  var body: some View {
+    let proposal = gym.proposals.first { $0.id.record.string == id }
+    let facts = proposal.map(gym.coachProposalFacts) ?? []
+    let label = proposal.map { $0.intent == "remove" ? "Review removal" : "Review " + GymCount.of(gym.coachChangeCount($0), "change") } ?? "Review proposal"
+    let state = proposal.map { ["pending": "still waiting", "dismissed": "turned down"][$0.state] ?? $0.state }
+    // At accessibility sizes a fact sits under its movement and the state under the door's label.
+    let pair = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: RoomSpace.small))
+      : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 12))
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Proposal" + (proposal.map { " · " + ($0.baseName ?? $0.proposedName) } ?? ""))
+        .font(.caption.weight(.semibold)).textCase(.uppercase).foregroundStyle(GymPalette.accent)
+      if let proposal, !proposal.summary.isEmpty { Text(proposal.summary) }
+      if !facts.isEmpty {
+        VStack(alignment: .leading, spacing: 6) {
+          ForEach(Array(facts.prefix(3).enumerated()), id: \.offset) { _, fact in
+            pair {
+              Text(fact.title).font(.subheadline).foregroundStyle(GymPalette.ink)
+              if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
+              Text(fact.fact).font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim)
+            }
+          }
+          if facts.count > 3 { Text("+ \(facts.count - 3) more").font(.footnote).foregroundStyle(GymPalette.inkFaint) }
+        }
+      }
+      Button(action: review) {
+        HStack(spacing: RoomSpace.related) {
+          pair {
+            Text(label).foregroundStyle(GymPalette.accent)
+            if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
+            if let state { Text(state).font(.footnote).foregroundStyle(GymPalette.inkDim) }
+          }
+          if typeSize.isAccessibilitySize { Spacer(minLength: 0) }
+          DoorChevron(room: .gym)
+        }.frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
+      }.buttonStyle(.plain).accessibilityLabel(label).accessibilityValue(state ?? "").accessibilityIdentifier("coach-review")
+    }.padding(RoomSpace.inset).frame(maxWidth: .infinity, alignment: .leading)
+      .background(GymPalette.card, in: RoundedRectangle(cornerRadius: RoomSpace.cardRadius))
+      .overlay(RoundedRectangle(cornerRadius: RoomSpace.cardRadius).stroke(GymPalette.accent, lineWidth: 1))
   }
 }
 
@@ -260,20 +365,42 @@ struct CoachMarkdown: View {
   }
 }
 
-struct CoachSourceWorkout: View {
+// The sources behind one answer: what Coach read, then each workout as a door to it.
+struct CoachSourcesSheet: View {
   let gym: GymModel
-  let id: String
+  let sources: CoachSources
+  @Environment(\.dismiss) var dismiss
   @Environment(\.coachOpenSession) var openSession
   var body: some View {
-    if let session = gym.sessions.first(where: { $0.id.record.string == id }) {
-      ForEach(gym.sets.filter { $0.sessionId == session.id }, id: \.id) { set in
-        Text("\(gym.catalogue.find(set.exerciseId)?.name ?? "Movement unavailable") · \(Readout.effort(weightKg: set.weightKg, reps: set.reps)) kg").font(.callout.monospaced())
-      }
-      Button("Open workout") { openSession?(id) }
-    } else { Text("This workout is no longer available.") }
+    NavigationStack {
+      List {
+        let phrases = sources.steps.compactMap(\.phrase)
+        if !phrases.isEmpty {
+          Section { ForEach(phrases, id: \.self) { phrase in Text(phrase.prefix(1).uppercased() + phrase.dropFirst()) } }
+            .listRowBackground(GymPalette.card)
+        }
+        if !sources.receipt.workouts.isEmpty {
+          Section("Workouts") { ForEach(sources.receipt.workouts) { source in workout(source) } }
+            .listRowBackground(GymPalette.card)
+        }
+      }.listStyle(.insetGrouped).navigationTitle("What Coach read").modifier(GymPage())
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+    }.presentationDetents([.medium, .large])
+      .accessibilityIdentifier("gym-coach-sources")
+      .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "sources"]) }
+  }
+  func workout(_ source: CoachObservation) -> some View {
+    let available = gym.sessions.contains { $0.id.record.string == source.sessionId }
+    let facts = source.workout.map { [GymCount.of($0.workingSetCount, "working set"), Readout.weight($0.tonnageKg) + " kg"] } ?? []
+    return Button { dismiss(); openSession?(source.sessionId) } label: {
+      GymRow(title: source.routine ?? "Workout",
+             meta: available ? ([CoachCopy.day(source.startedAt)] + facts).joined(separator: " · ") : "no longer available",
+             trailing: available ? .door : nil).contentShape(Rectangle())
+    }.buttonStyle(.plain).disabled(!available).accessibilityIdentifier("coach-source-" + source.sessionId)
   }
 }
 
+// A sent or drafted photo: a 56 pt thumbnail that opens full size.
 struct CoachPhotoView: View {
   let gym: GymModel
   let thread: String
@@ -288,20 +415,33 @@ struct CoachPhotoView: View {
   @State var failed = false
   @State var connectionRequired = false
   @State var enlarged = false
+  var image: UIImage? {
+    guard owner == gym.account, gym.coachAccountAvailable, local != nil || loadedOwner == gym.account else { return nil }
+    return (data ?? local).flatMap(UIImage.init(data:))
+  }
   var body: some View {
     Group {
-      if owner == gym.account, gym.coachAccountAvailable, (local != nil || loadedOwner == gym.account), let data = data ?? local, let image = UIImage(data: data) {
-        Button { enlarged = true } label: { Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: 140, maxHeight: 100).clipShape(RoundedRectangle(cornerRadius: 12)) }.accessibilityLabel("Enlarge photo")
-      } else if failed { Button(connectionRequired ? "Photo needs a connection · Retry" : "Photo unavailable · Retry") { Task { await load() } } }
-      else { ProgressView("Reading photo…") }
+      if let image {
+        Button { enlarged = true } label: {
+          Image(uiImage: image).resizable().scaledToFill().frame(width: 56, height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }.buttonStyle(.plain).accessibilityLabel("Enlarge photo")
+      } else if failed {
+        Button { Task { await load() } } label: { Self.tile(Image(systemName: "arrow.clockwise").foregroundStyle(GymPalette.accent)) }
+          .buttonStyle(.plain).accessibilityLabel(connectionRequired ? "Photo needs a connection. Retry" : "Photo unavailable. Retry")
+      } else { Self.tile(ProgressView()).accessibilityLabel("Reading photo") }
     }.task(id: "\(gym.account ?? ""):\(thread):\(attachment.id)") { data = nil; if local == nil { await load() } }
       .sheet(isPresented: $enlarged) {
         NavigationStack {
-          ZStack { if owner == gym.account, gym.coachAccountAvailable, (local != nil || loadedOwner == gym.account), let data = data ?? local, let image = UIImage(data: data) { Image(uiImage: image).resizable().scaledToFit().padding() } }
+          ZStack { if let image { Image(uiImage: image).resizable().scaledToFit().padding() } }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .modifier(GymPage()).navigationTitle("Photo").toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { enlarged = false } } }
         }.presentationDetents([.large])
       }
+  }
+  // The thumbnail's place while a photo is read, prepared or needs a retry.
+  static func tile(_ content: some View) -> some View {
+    content.frame(width: 56, height: 56).background(GymPalette.line, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
   }
   func load() async {
     let owner = gym.account; failed = false; connectionRequired = false

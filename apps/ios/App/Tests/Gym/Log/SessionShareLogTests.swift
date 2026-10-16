@@ -123,10 +123,10 @@ import SyncModelServer
     for _ in 0..<100 where reply == nil { await Task.yield() }
     let continuation = try #require(reply)
     model.accountChanged()
-    #expect(model.state == .closed(note: "sharing needs your account — sign in first") && model.task == nil)
+    #expect(model.state == .closed() && model.task == nil)
     continuation.resume()
     await pending.value
-    #expect(model.state == .closed(note: "sharing needs your account — sign in first"))
+    #expect(model.state == .closed())
   }
 
   @Test func transportCancellationRestoresTheLiveLinkWithoutAFailureNote() async {
@@ -142,12 +142,16 @@ import SyncModelServer
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     let gym = GymModel(runner: harness.runner), id = gym.runner.mint(Session.self)
     do { _ = try await gym.mintSessionShare(id); Issue.record("Expected account refusal") }
-    catch { #expect((error as? AppFailure)?.message == "sharing needs your account — sign in first") }
+    catch { #expect((error as? AppFailure)?.message == "Sharing needs your account. Sign in first.") }
     do { try await gym.revokeSessionShare(id); Issue.record("Expected account refusal") }
-    catch { #expect((error as? AppFailure)?.message == "sharing needs your account — sign in first") }
-    gym.isAnonymous = false; gym.account = "account"; gym.authPaused = true
+    catch { #expect((error as? AppFailure)?.message == "Sharing needs your account. Sign in first.") }
+    #expect(gym.sharingNeedsSignIn)
+    gym.isAnonymous = false; gym.account = "account"
+    #expect(!gym.sharingNeedsSignIn)
+    gym.authPaused = true
+    #expect(gym.sharingNeedsSignIn, "A paused account is offered the same sign-in door")
     do { _ = try await gym.mintSessionShare(id); Issue.record("Expected paused-account refusal") }
-    catch { #expect((error as? AppFailure)?.message == "sharing needs your account — sign in first") }
+    catch { #expect((error as? AppFailure)?.message == "Sharing needs your account. Sign in first.") }
     #expect(gym.rest.tasks.isEmpty)
     gym.accountChanging = true
     do { try await gym.revokeSessionShare(id); Issue.record("Expected transition refusal") }

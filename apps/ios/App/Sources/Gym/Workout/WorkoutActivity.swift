@@ -31,7 +31,7 @@ nonisolated struct WorkoutActivityRecord: Equatable, Sendable {
     if let value = json["offer"], !value.isNull {
       offer = WorkoutActivityOffer(ownerID: try value.member("ownerID").asString(), sessionID: try value.member("sessionID").asString(),
         movementID: try value.member("movementID").asString(), weightKg: try value.member("weightKg").asDouble(),
-        reps: Int(try value.member("reps").asInteger()), kind: try value.member("kind").asString(), setID: try value.member("setID").asString())
+        reps: Int(try value.member("reps").asInteger()), setID: try value.member("setID").asString())
     }
     baseline = json["baseline"]
     dismissed = try json["dismissed"]?.asBool() ?? false
@@ -46,7 +46,7 @@ nonisolated struct WorkoutActivityRecord: Equatable, Sendable {
 extension WorkoutActivityOffer {
   nonisolated var json: JSON {
     .object(["ownerID": .string(ownerID), "sessionID": .string(sessionID), "movementID": .string(movementID),
-      "weightKg": .of(weightKg), "reps": JSON(reps), "kind": .string(kind), "setID": .string(setID)])
+      "weightKg": .of(weightKg), "reps": JSON(reps), "setID": .string(setID)])
   }
 }
 
@@ -130,10 +130,10 @@ extension WorkoutState {
         return nil
       }
       let candidate = WorkoutActivityOffer(ownerID: record.ownerID, sessionID: session.id.description, movementID: selected.description,
-        weightKg: weightKg, reps: reps, kind: kind.rawValue, setID: record.offer?.setID ?? gym.runner.mint(TrainingSet.self).description)
+        weightKg: weightKg, reps: reps, setID: record.offer?.setID ?? gym.runner.mint(TrainingSet.self).description)
       if record.offer == candidate && record.baseline == activityBaseline { return candidate }
       record.offer = WorkoutActivityOffer(ownerID: candidate.ownerID, sessionID: candidate.sessionID, movementID: candidate.movementID,
-        weightKg: candidate.weightKg, reps: candidate.reps, kind: candidate.kind, setID: gym.runner.mint(TrainingSet.self).description)
+        weightKg: candidate.weightKg, reps: candidate.reps, setID: gym.runner.mint(TrainingSet.self).description)
       record.baseline = activityBaseline
       return keepActivity(record) ? record.offer : nil
     } catch { gym.report("gym_activity_update", error); return nil }
@@ -141,7 +141,7 @@ extension WorkoutState {
   func restoreActivityDraft() {
     guard let record = try? activityRecord(), record.baseline == activityBaseline, let offer = record.offer,
           offer.movementID == selected?.description else { return }
-    restoreRack(weightKg: offer.weightKg, reps: offer.reps, kind: SetKind(rawValue: offer.kind))
+    restoreRack(weightKg: offer.weightKg, reps: offer.reps)
   }
   @discardableResult func logActivityOffer(_ offer: WorkoutActivityOffer) -> Bool {
     gym.refresh()
@@ -149,7 +149,7 @@ extension WorkoutState {
     guard !gym.accountTransition, activityIdentityResolved, !gym.readFailed, let record = try? activityRecord(), record.ownerID == offer.ownerID,
           let session, session.isOpen, session.id.description == offer.sessionID else { return refuseActivityOffer() }
     if let existing = sets.first(where: { $0.id.description == offer.setID }) {
-      guard existing.exerciseId.description == offer.movementID, existing.weightKg == offer.weightKg, existing.reps == offer.reps, existing.kind == offer.kind else { return refuseActivityOffer() }
+      guard existing.exerciseId.description == offer.movementID, existing.weightKg == offer.weightKg, existing.reps == offer.reps, existing.kind == SetKind.working.rawValue else { return refuseActivityOffer() }
       return true
     }
     guard activityOffer() == offer else { return refuseActivityOffer() }
@@ -170,6 +170,8 @@ extension WorkoutState {
   var monitor: Task<Void, Never>?
   var activity: Activity<WorkoutActivityAttributes>?
   var rendered: WorkoutActivityAttributes.ContentState?
+  // The state the last reconcile computed, whether or not an Activity was there to draw it.
+  var reconciled: WorkoutActivityAttributes.ContentState?
   var requestedSession: ID<Session>?
   var owner: String?
   var ownerKnown = false
@@ -225,6 +227,7 @@ extension WorkoutState {
     do { content = try self.content(session: session, offer: offer) }
     catch { gym.report("gym_activity_update", error); return }
     let state = content.state
+    reconciled = state
     guard rendered != state else { return }
     if let activity {
       await activity.update(content)
@@ -253,12 +256,12 @@ extension WorkoutState {
     let last = latest ?? session.startedAt
     let state = WorkoutActivityAttributes.ContentState(title: session.name ?? Readout.noRoutine,
       movement: workout.selected.flatMap { gym.catalogue.find($0)?.name } ?? "Choose a movement",
-      load: Readout.weight(workout.weightKg) + " kg", reps: workout.reps, setKind: workout.kind.rawValue,
+      load: Readout.weight(workout.weightKg) + " kg", reps: workout.reps,
       workingSetOrdinal: workout.currentSets.filter { $0.kind == "working" }.count + 1,
       plannedWorkingSetCount: workout.entry?.sets?.count, startedAt: Date(timeIntervalSince1970: (Double(session.startedAt.ms) - correction) / 1000),
       lastSetAt: latest.map { Date(timeIntervalSince1970: (Double($0.ms) - correction) / 1000) },
       staleAt: Date(timeIntervalSince1970: (Double(last.ms) - correction + Double(SessionRules.staleAfterMs)) / 1000),
-      unsyncedSetCount: gym.workoutDeviceSets(workout.sets).count, offer: offer)
+      unsentSetCount: gym.unsentSets(workout.sets).count, offer: offer)
     return ActivityContent(state: state, staleDate: state.staleAt)
   }
   func observe(_ value: Activity<WorkoutActivityAttributes>) {

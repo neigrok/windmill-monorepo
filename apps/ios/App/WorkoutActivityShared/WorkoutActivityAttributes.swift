@@ -5,13 +5,13 @@ import Foundation
 import UIKit
 #endif
 
+// The one working set the lock screen may log: the rack as the phone last drew it, under the set id it will carry.
 nonisolated struct WorkoutActivityOffer: Codable, Hashable, Sendable {
   let ownerID: String
   let sessionID: String
   let movementID: String
   let weightKg: Double
   let reps: Int
-  let kind: String
   let setID: String
 }
 
@@ -24,14 +24,35 @@ nonisolated struct WorkoutActivityAttributes: ActivityAttributes, Sendable {
     let movement: String
     let load: String
     let reps: Int
-    let setKind: String
     let workingSetOrdinal: Int
     let plannedWorkingSetCount: Int?
     let startedAt: Date
     let lastSetAt: Date?
     let staleAt: Date
-    let unsyncedSetCount: Int
+    let unsentSetCount: Int
     let offer: WorkoutActivityOffer?
+  }
+}
+
+// An Activity the previous build started keeps drawing across an update: its state named this count `unsyncedSetCount`.
+nonisolated extension WorkoutActivityAttributes.ContentState {
+  enum PreviousKeys: CodingKey { case unsyncedSetCount }
+
+  init(from decoder: any Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    title = try values.decode(String.self, forKey: .title)
+    movement = try values.decode(String.self, forKey: .movement)
+    load = try values.decode(String.self, forKey: .load)
+    reps = try values.decode(Int.self, forKey: .reps)
+    workingSetOrdinal = try values.decode(Int.self, forKey: .workingSetOrdinal)
+    plannedWorkingSetCount = try values.decodeIfPresent(Int.self, forKey: .plannedWorkingSetCount)
+    startedAt = try values.decode(Date.self, forKey: .startedAt)
+    lastSetAt = try values.decodeIfPresent(Date.self, forKey: .lastSetAt)
+    staleAt = try values.decode(Date.self, forKey: .staleAt)
+    offer = try values.decodeIfPresent(WorkoutActivityOffer.self, forKey: .offer)
+    let previous = try decoder.container(keyedBy: PreviousKeys.self)
+    unsentSetCount = try values.decodeIfPresent(Int.self, forKey: .unsentSetCount)
+      ?? previous.decodeIfPresent(Int.self, forKey: .unsyncedSetCount) ?? 0
   }
 }
 
@@ -47,7 +68,6 @@ struct WorkoutLogSetIntent: LiveActivityIntent {
   @Parameter(title: "Movement") var movementID: String
   @Parameter(title: "Load") var weightKg: Double
   @Parameter(title: "Repetitions") var reps: Int
-  @Parameter(title: "Set kind") var kind: String
   @Parameter(title: "Set") var setID: String
 
   init() {}
@@ -57,7 +77,6 @@ struct WorkoutLogSetIntent: LiveActivityIntent {
     movementID = offer.movementID
     weightKg = offer.weightKg
     reps = offer.reps
-    kind = offer.kind
     setID = offer.setID
   }
 
@@ -66,7 +85,7 @@ struct WorkoutLogSetIntent: LiveActivityIntent {
     return .result()
     #else
     let offer = WorkoutActivityOffer(ownerID: ownerID, sessionID: sessionID, movementID: movementID,
-                                     weightKg: weightKg, reps: reps, kind: kind, setID: setID)
+                                     weightKg: weightKg, reps: reps, setID: setID)
     if await WorkoutActivityIntentHandler.logSet(offer: offer) { return .result() }
     if #available(iOS 18.2, *) { return .result(opensIntent: WorkoutOpenIntent()) }
     await MainActor.run {

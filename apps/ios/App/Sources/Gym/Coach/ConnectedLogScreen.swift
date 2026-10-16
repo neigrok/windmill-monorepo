@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import DomainKit
 
 nonisolated struct CoachConnection: Identifiable, Equatable {
   let id: String
@@ -8,7 +9,7 @@ nonisolated struct CoachConnection: Identifiable, Equatable {
   let levels: String
   let key: Bool
   var meta: String {
-    let day = Date(timeIntervalSince1970: Double(created) / 1000).formatted(.dateTime.day().month(.abbreviated))
+    let day = Instant(ms: created).date.formatted(.dateTime.day().month(.abbreviated))
     return (key ? "API key · " : "") + levels + " · since " + day
   }
   struct Grant: Decodable { let clientId: String; let name: String?; let grantedMs: Int64; let scope: String? }
@@ -63,6 +64,16 @@ nonisolated struct CoachConnection: Identifiable, Equatable {
       if error is DecodingError { gym.report("gym_read", error) }
     }
   }
+  // The Gym settings row's meta: what reaches the log, never a sentence (19-connected-log.md, "The native settings row").
+  var summary: String {
+    guard gym.coachAccountAvailable else { return "nothing connected yet" }
+    guard owner == gym.account, let rows else { return "your AI tools" }
+    switch rows.count {
+    case 0: return "nothing connected yet"
+    case 1: return rows[0].name + " · " + rows[0].levels
+    default: return GymCount.of(rows.count, "tool")
+    }
+  }
 }
 
 struct ConnectedLogScreen: View {
@@ -70,68 +81,71 @@ struct ConnectedLogScreen: View {
   @State var connections: CoachConnections
   @Environment(\.openURL) var openURL
   @Environment(\.coachOpenAccount) var openAccount
-  @State var accountHint = false
   @State var browserError = false
   init(gym: GymModel) { self.gym = gym; _connections = State(initialValue: CoachConnections(gym: gym)) }
+  var listed: [CoachConnection] { gym.coachAccountAvailable && connections.owner == gym.account ? connections.rows ?? [] : [] }
+  var unknown: Bool { gym.coachAccountAvailable && connections.failed }
+  // Something may reach the log: the list replaces the head line and Manage connections joins the disclosure.
+  var drawsConnections: Bool { unknown || !listed.isEmpty }
   var body: some View {
     List {
       Group {
-        Section {
-          Text("Your log, read by Claude, Cursor or Codex.").font(.title3.weight(.semibold))
-        }.listRowBackground(Color.clear)
-        if gym.coachAccountAvailable {
+        if drawsConnections {
           Section("Connected") {
-            if connections.owner != gym.account || connections.reading { ProgressView("Reading your connections…") }
-            else if connections.failed {
-              Text(connections.connectionRequired ? "Connect to the internet to read your connections." : "Couldn’t read your connections.")
-              Button("Try again") { Task { await connections.load() } }
-            } else if let rows = connections.rows {
-              if rows.isEmpty { Text("nothing connected yet").foregroundStyle(GymPalette.inkDim) }
-              ForEach(rows) { row in
-                VStack(alignment: .leading, spacing: 5) { Text(row.name); Text(row.meta).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
-              }
+            if unknown {
+              Text(connections.connectionRequired ? "Connect to the internet to read your connections." : "Couldn’t read your connections.").foregroundStyle(GymPalette.inkDim)
             }
-          }.listRowBackground(GymPalette.card)
+            ForEach(listed) { row in GymRow(title: row.name, meta: row.meta) }
+          }
         }
         Section {
-          capability("Read", "sets, workouts, routines, records, notes, weigh-ins")
-          capability("Write", "logs sets · saves notes · adds routines · shares workouts · proposes changes")
-          capability("Delete", "discards a workout · ends a share")
+          GymRow(title: "Read", meta: "sets, workouts, routines, records, notes, weigh-ins")
+          GymRow(title: "Write", meta: "logs sets · saves notes · adds routines · shares workouts · proposes changes")
+          GymRow(title: "Delete", meta: "discards a workout · ends a share")
+        } header: {
+          if !drawsConnections { Text("Your log, read by Claude, Cursor or Codex.").font(.subheadline).foregroundStyle(GymPalette.inkDim).textCase(nil) }
         } footer: { Text("A routine change waits for your Apply; the rest lands at once.") }
         Section {
-          Button {
-            if gym.coachAccountAvailable { browse("connect") }
-            else if let openAccount { openAccount() } else { accountHint = true }
-          } label: { Label(gym.coachAccountAvailable ? "Connect a tool" : "Sign in first", systemImage: "arrow.up.forward") }
-            .accessibilityHint("opens in your browser").accessibilityIdentifier("coach-connect-tool")
-          if gym.coachAccountAvailable { Button { browse("settings") } label: { Label("Manage connections", systemImage: "arrow.up.forward") }.accessibilityHint("opens in your browser") }
-          if accountHint { Text("Open You and settings in the top bar.").font(.callout) }
-      }.listRowBackground(GymPalette.card)
-      Section {
-        DisclosureGroup("How this works") {
-          ForEach(["One URL pasted into your tool. Your browser opens once to approve.",
-            "A shared workout is public for 30 days, until you end it.", "No tool can apply a proposal or edit a logged set.",
-            "Delete is approved on its own, and a discard is permanent.", "End a connection under Settings → Connected tools; a key under API keys."], id: \.self) { Text($0).font(.callout) }
+          if drawsConnections {
+            Button { browse("settings", action: "manage") } label: { Label("Manage connections", systemImage: "arrow.up.forward") }
+              .accessibilityHint("opens in your browser")
+          }
+          DisclosureGroup("How this works") {
+            ForEach(["One URL pasted into your tool. Your browser opens once to approve.",
+              "A shared workout is public for 30 days, until you end it.", "No tool can apply a proposal or edit a logged set.",
+              "Delete is approved on its own, and a discard is permanent.", "End a connection under Settings → Connected tools; a key under API keys."], id: \.self) { Text($0).font(.callout) }
+          }
         }
       }.listRowBackground(GymPalette.card)
-      }.listRowBackground(GymPalette.card)
     }.listStyle(.insetGrouped).navigationTitle("Connected log").modifier(GymPage()).accessibilityIdentifier("gym-connected-log")
-      .safeAreaInset(edge: .bottom) {
-        GymTransient(gym: gym, message: browserError ? "The browser couldn’t be opened. Try again." : nil,
-                     dismiss: { browserError = false }, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
+      .reachBand {
+        VStack(spacing: 0) {
+          GymTransient(gym: gym, message: browserError ? "The browser couldn’t be opened. Try again." : nil,
+                       dismiss: { browserError = false }, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
+          connect
+        }
       }
       .toolbar(.hidden, for: .tabBar)
       .refreshable { await connections.load() }
       .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition)") { await connections.load() }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "connected_log"]) }
   }
-  func capability(_ title: String, _ line: String) -> some View {
-    VStack(alignment: .leading, spacing: 5) { Text(title).font(.body.weight(.semibold)); Text(line).font(.callout).foregroundStyle(GymPalette.inkDim) }
+  // The screen's one primary; signed in, its symbol names the browser it leaves for.
+  var connect: some View {
+    ActionBand(title: gym.coachAccountAvailable ? "Connect a tool" : "Sign in first", room: .gym, actionIdentifier: "coach-connect-tool",
+               symbol: gym.coachAccountAvailable ? "arrow.up.forward" : nil) {
+      if gym.coachAccountAvailable { browse("connect", action: "connect") } else { openAccount?() }
+    }.accessibilityHint(gym.coachAccountAvailable ? "opens in your browser" : "")
   }
-  func browse(_ route: String) {
-    guard let base = gym.runtime?.settings.baseURL, let url = URL(string: "/#/" + route, relativeTo: base)?.absoluteURL else { browserError = true; return }
+  // Connect a tool and Manage connections leave for the browser; the event records whether it opened.
+  func browse(_ route: String, action: String) {
+    guard let base = gym.runtime?.settings.baseURL, let url = URL(string: "/#/" + route, relativeTo: base)?.absoluteURL else {
+      browserError = true
+      gym.telemetry.event("gym_connect_tool", properties: ["action": action, "outcome": "failed"]); return
+    }
     openURL(url) { accepted in
       browserError = !accepted
+      gym.telemetry.event("gym_connect_tool", properties: ["action": action, "outcome": accepted ? "ok" : "failed"])
       if !accepted { gym.telemetry.failure("gym_action", kind: "unexpected") }
     }
   }

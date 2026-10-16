@@ -62,12 +62,20 @@ The Gym UI contract is `Sources/Gym/GymModel.swift` plus `GymRoom.swift`. `GymRo
 native TabView (Routines · The log · Coach), independent NavigationStacks and full-screen
 `WorkoutScreen` while logging, finishing or showing its receipt. Hidden workouts restore from Gym settings. Each UI track owns its folder and root view:
 `Routines/RoutinesTab.swift`, `Log/LogTab.swift`, `Coach/CoachTab.swift`, and
-`Workout/WorkoutScreen.swift`. Each root takes `gym: GymModel`; the room supplies account/navigation callbacks and Coach handoffs. Add model extensions
-only in the owning track's folder, never in `GymModel.swift`.
+`Workout/WorkoutScreen.swift`; `Recovery/` holds the signed-out workouts the account has not taken — the log's
+**On this phone** section, Inspect and Fix workout — with their model. Each root takes `gym: GymModel`; the room
+supplies account/navigation callbacks and Coach handoffs. A model extension lives in the folder of the one track that
+reads it; a rule several tracks read, such as what is unsent, is `GymModel.swift`'s own. What more than one track
+draws lives once in `Components/`: the page chrome (page modifier, an editing sheet's commit from its bar, keyboard
+bar, More menu), the transient band, the
+two-line row, the set row and fact tiles, the weight instrument, keypad and Fix set editor, the rename sheet with its
+model extension, and the one count formatter with the Instant–Date bridge.
 
 `GymModel(runner:runtime:telemetry:)` exposes engine-backed log/catalogue/routines/notes/bodyweight/
 preferences/proposals, sessions/sets/openSession, account/isAnonymous/authPaused, notices,
-refusal/error/readFailed and undoOffers. Use `run(_:)` for GymDomain actions, `save(_:)` for drafts,
+refusal/error/readFailed and undoOffers, and the one unsent rule: signed out nothing is unsent; signed in,
+`unsentSets(_:)` and `sessionIsUnsent(_:)` mark what the log has not confirmed while no connection, a paused session
+or a refused push holds it back. Use `run(_:)` for GymDomain actions, `save(_:)` for drafts,
 `undo(_:)` for held gestures, `dismissNotice(_:)`, and `refresh()`; `start()`/`stop()` observe engine
 changes. `flush()` releases holds before account transitions; real backgrounding ends Undo windows.
 An inactive scene persists Journal drafts while Gym live sync, REST work and pending Undo windows continue.
@@ -75,7 +83,47 @@ Gym's `accountTransition` pauses training only while sign-out is open (`accountC
 app) and while the engine changes the replica (`replicaChanging`, set by `GymBinding`). Pending
 sign-in, hello and adoption questions leave training available. `rest` is the authenticated
 client handle for Coach, shares and Connected log; engine-backed training writes use domain actions.
-Gym includes routine planning and movement creation, the live set rack and finish receipt, session history/sharing and strength/bodyweight charts, and account-only Coach, proposal review, Notes and Connected log. Gym follows system light/dark appearance; Journal keeps its night canvas.
+Gym includes routine planning and movement creation, the live set rack and finish receipt, session history/sharing and strength/bodyweight charts, and account-only Coach, proposal review, Notes and Connected log.
+
+`GymRoom` keeps `WorkoutScreen` as its full-screen cover through finish and receipt and, on
+dismissal, consumes the workout's handoff once: a finished workout's detail opens in The log, Keep
+opens the account flow, Share with Coach sends *Check my last session.* in a new conversation, and
+the movement picker's written-program door opens You signed out or paused, Coach otherwise.
+`gym.startWorkout(routineId:)` never joins an open workout (`joinOpenSession: false`); with one
+open, the start is refused and the open workout returns. The device row `rack:<session-id>` holds
+the workout's movement order, selected movement, hidden status and deviation offer — the offered
+entry and the routine's revision, which Save guards; an offer the routine has moved past is rebuilt
+against the current routine. A set logged before the clock passes the latest set completes 1 ms
+after it, so every surface draws sets in logged order. Before the engine changes the replica,
+`GymBinding` ends the Live Activity and snapshots each signed-out workout for recovery; a failed
+snapshot aborts the account change. `WorkoutActivityController` keeps the Live Activity's
+pre-minted offer and its dismissal in the device row `rack:liveactivity`; the widget's
+`WorkoutLogSetIntent` runs in the app and logs through the same runner as the rack only while the
+offer still matches this phone's open workout, its owner and a resolved identity, and otherwise
+opens the workout. Parity with Android is tracked in `PARITY.md`.
+
+Both rooms and the shell follow Appearance in You's Settings (Light · Dark · System, System by default): Gym
+answers with Instrument or Daylight, Journal with Night or Day. The choice is the hosting window's interface style,
+so the status bar, keyboards and sheets follow it too. The window also carries the front room's accent as its tint —
+the shell's brand while You, Keep, sign-in or Where to start? is in front — so selection and the share sheet never
+fall back to system blue. The keyboard takes no tint, so the gym's fields keep the plain return key rather than a blue
+*Done*; a searchable field's *Search* key stays the system's. You is one inset-grouped list: the identity with its Apple and
+email doors (disabled offline, with *Sign-in needs a connection.* as their footer), **On this phone** or **How you
+sign in** and **Your data**, **Settings** (Appearance, Gym settings, About Windmill), and *Sign out* last. A sign-in
+link is offered only on the code step.
+
+When the server needs a newer app — the engine's `status.upgradeRequired`, or a 426 at sign-in — one *Update
+required* alert speaks when the flag flips, and once more per cold launch while it holds; a sign-in refused for it
+asks again as that attempt's answer, and keeps the sign-in pending for the update. You's identity reads *Syncing
+paused · update Windmill* with a *Get the update* row; both open TestFlight, and a destination that cannot open
+leaves the shell's transient *Couldn't open the update. Try again.* The rooms keep working on the phone. The
+`update-required` board signs in against a model server that answers 426 (and keeps answering it across
+`-restore-board`); `update-sign-in` answers 426 only to the sign-in; `keep-gym` opens the gym's Keep sheet.
+
+Debug simulator Coach launches add `-coach-fixture`: a signed-in account with a routine, a workout and a
+proposal, and a scripted Coach service over the real REST boundary. `-coach-removal` makes the proposal
+a removal, `-coach-removal-stall` leaves its Apply unanswered past the review's 15-second wait,
+`-coach-offline` takes Coach and its REST reads offline and `-coach-unavailable` answers as a deployment without Coach.
 
 Debug simulator `OfflineFlowTests` seed an isolated `-scenario` with `-offline-fixture seed-signed-in`
 or `seed-signed-out`, then reopen it with `-restore-board -server https://offline.invalid` and
@@ -130,7 +178,7 @@ Offline boundary observations:
 | Startup hello and pending-session recovery | Local reads and ordinary launch controls do not wait for hello. The engine bounds hello at `REQUEST_TIMEOUT_MS`, skips a known missing path, and ignores late cancellation results. Pending account recovery can be deferred with Done. |
 | Local journal, routines, sets, preferences and movement rename | Read and commit against the local replica. First-pull status describes incomplete history and backup confidence. Workout logging and restoration remain local during pending sign-in, including before Not now. Adoption recounts any new work before completion. |
 | Auth and Gym REST | No wait for connectivity; 8-second idle and 15-second total deadlines. Back, Close and Done cancel active auth work. Late responses cannot navigate or change the active account after cancellation. |
-| Workout Finish | Online, a set the log accepted but has not yet confirmed gets up to 3 seconds for its confirming pull, with Finish, Log set and Hide locked; offline there is no wait. Finish then attempts the durable local action, releases controls and confirms in the background. Cancelling the wait still ends in that decision. Unconfirmed sets on an already-synced workout remain editable and explain the connection requirement. The latest message leads the notice, so at accessibility text sizes the connection requirement shows unscrolled above the rack; the rest wraps and scrolls while Log set and Hide remain reachable. |
+| Workout Finish | Online, a set the log accepted but has not yet confirmed gets up to 3 seconds for its confirming pull, with Finish, Log set and Hide locked; offline there is no wait. Finish then attempts the durable local action, releases controls and confirms in the background. Cancelling the wait still ends in that decision. Unconfirmed sets on an already-synced workout remain editable, and the refusal above the rack names the connection requirement; at accessibility text sizes it wraps in a bounded band while Log set and Hide remain reachable. |
 | Coach streaming | Parsing runs off the main actor; 8-second idle and 120-second total deadlines. Stop releases the composer immediately. Its late reply preserves newer draft text and photos on the phone. |
 | Revocation and telemetry | Run independently of launch, room refresh and local sign-out. Offline events stay queued; repeated connection failures coalesce into one content-free state. |
 
@@ -138,15 +186,20 @@ The network-dependent native features are Coach, journal echoes, account authent
 connected-log management. None blocks the local rooms: echoes show nothing extra offline, and the others
 state their connection requirement.
 
-Journal echoes live in `Sources/Journal/Echoes`. `JournalEchoView.swift` owns their presentation:
-a 44 pt count beside a day, a native quotation sheet, source highlighting and a trail back to
-tonight. The sheet follows the system light/dark appearance on the journal palette roles, while the
-canvas stays night.
+Journal echoes live in `Sources/Journal/Echoes`. `JournalEchoView.swift` owns their presentation, as
+the iOS contract's §8 draws it: a lamp count in a 22 pt capsule at the end of a day's date line, whose
+44 pt target opens that day's ink below its body — up to two older passages beside their mono date
+stamps, *Useful · Not useful*, and *N more* when the reader holds the rest. Useful marks the passages
+the ink shows; Not useful retires the page's echo. One day's ink is open at a time; the count again, a
+tap outside the ink, or the keyboard closes it, and today's count does not draw while writing. The
+reader is a sheet of every passage for the day, grouped by year. A passage, in the ink or the reader,
+flies the canvas to its source with highlighting and a trail back to tonight. The first echo an install
+receives heads its ink with a card, once.
 The model re-locates every full quotation in the phone's current pages before showing its count.
 Shared journal vectors pin NFC-equivalent matching and UTF-16 anchors into the unchanged source;
 equivalent edits retain an echo, while edits that remove its quotation retract it. The model
-follows the server's 20-page floor and waiver, provenance and Useful state. A first-echo
-introduction requires an explicit server flag; the current list route does not supply it.
+follows the server's 20-page floor and waiver, provenance and Useful state. The first-echo
+card requires an explicit server flag; the current list route does not supply it.
 Reads poll every 15 seconds only while the room is active. All reads and verdicts use the existing
 REST echoes routes; writing continues through the sync engine. Offline, empty and failed reads
 show no echo surface. Requests are cancelled and old replies discarded across account or lifecycle
@@ -154,11 +207,11 @@ changes. Verdict failures roll back without a retry queue; opened signals never 
 navigation. HTTP caching is disabled.
 
 `journal-echoes`, `journal-echoes-offline` and `journal-echoes-empty` board fixtures use real
-journal actions with a deterministic echoes service. `journal-echoes-AX3-RM` covers larger type
-and the source-scroll Reduce Motion path, including Back to tonight. `journal-echoes-unicode`
-and `journal-echoes-unicode-decomposed` apply real source edits while the sheet is open: Useful
-on the first quotation changes only its normalization; Useful on the second removes the first
-quotation. The source quote sits after 14 paragraphs; navigation tests use the Debug simulator's
+journal actions with a deterministic echoes service; `journal-echoes-first` carries the first-echo flag.
+`journal-echoes-AX3-RM` covers larger type and the source-scroll Reduce Motion path, including Back to
+tonight. `journal-echoes-unicode` and `journal-echoes-unicode-decomposed` apply real source edits:
+reading the first source changes only its normalization; Useful, reaching the second passage, removes
+the first quotation. The source quote sits after 14 paragraphs; navigation tests use the Debug simulator's
 UIKit quote rectangle to check that the exact passage reaches the visible canvas centre and
 remains read-only. `JournalEchoFlowTests`
 belongs to CI's routines-journal shard; its screenshots are XCTest attachments, or PNGs when
@@ -175,15 +228,18 @@ Fonts are bundled from official OFL sources, with licences alongside each family
 - [Caveat](https://github.com/google/fonts/tree/main/ofl/caveat), regular ink notes.
 
 Inter and Nunito are static instances of the official variable fonts. The room colour roles (one
-asset catalogue, one palette enum per room), the named type roles and the spacing scale live in
+asset catalogue, one palette enum per room), the named type roles, the spacing scale and the room-neutral controls
+(the reach band and its primary, the transient, the bar's tint, the soft top edge, the door chevron) live in
 `Sources/Theme/`, which the Live Activity extension compiles too; their values follow
 [the iOS redesign contract](../../../docs/design/ios/ios-redesign.md). The onboarding glimpses keep
 their illustration colours under `onboarding/` in `Resources/Assets.xcassets`.
 `python3 Tools/check_theme_literals.py` rejects, outside `Sources/Theme/` in the app, widget and
 Activity shared sources, numeric and hex colour construction, system named colours, the asset accent
-colour, UIKit semantic colours, asset colour lookups by string and appearance branches between
-colours. Its short allowlist names each remaining exception and why; an entry that no longer matches
-fails the check. Project generation and both target builds run the check;
+colour, UIKit semantic and label colours, the system's label hierarchy (`.primary` to `.quinary`,
+`.placeholder`, `.separator`), a palette role faded with `opacity` or `withAlphaComponent`, asset colour
+lookups by string and appearance branches between colours. Its allowlist names each remaining exception
+and why, the check prints every allowed line with its reason, and an entry that no longer matches fails
+the check. Project generation and both target builds run the check;
 `python3 -m unittest discover -s Tools/tests -v` includes its rejection cases.
 
 Telemetry uses Sentry Cocoa for failures and first-party `/v1/events` for product events. Debug
@@ -207,8 +263,7 @@ changes to QA tone is playing after playback starts. Audio must continue while S
 The test finishes the workout and verifies that the Activity disappears after logging from the Island.
 
 `DesignCaptureTests` is an opt-in design review suite. It captures onboarding, both rooms, account
-flows, pushed screens and sheets in light and dark; Journal keeps its night canvas in either system
-appearance. XCTest skips it unless the test runner sees `WM_DESIGN_CAPTURE=1`; Xcode forwards
+flows, pushed screens and sheets in light and dark. XCTest skips it unless the test runner sees `WM_DESIGN_CAPTURE=1`; Xcode forwards
 `TEST_RUNNER_`-prefixed variables to the runner without the prefix. The CI shards leave the class out
 and check that its guard remains. From this directory, with one simulator and a fresh result path:
 
@@ -222,13 +277,3 @@ python3 Tools/export_design_captures.py --result "$RESULT" --output "$CAPTURES"
 
 Each PNG names its screen, state and appearance. The exporter suffixes a name that already exists in
 the output folder and writes a `capture-manifest.json` linking each PNG to its test and result bundle.
-
-Coordinator-owned documentation outside this worktree's territory still describes the earlier app:
-`CLAUDE.md:12`, `docs/design/guidelines/onboarding.md:138`/`:141` and `docs/design/consistency.md`
-entry 5m need the two-room availability update.
-Consistency's iOS auth/adoption entries 8a and 8h predate the current Apple ticket flow,
-`AppModel` and per-room Add/Discard counts; `docs/design/guidelines/account-linking.md:90` needs a
-two-room adoption example.
-`docs/foundation/domain-kit.md:970` needs “two writing operations”: read guards may accompany one
-write to a record. Figma `_Room capsule` variant `117:52` retains a stale You-row description;
-set `226:4315` and boards 21a/21b match Journal · Gym only.
