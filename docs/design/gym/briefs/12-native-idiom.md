@@ -86,15 +86,17 @@ navigation stack. The shell must not leave the room while a pushed screen is ope
 
 **Navigation chrome belongs where the platform puts it, and committing actions stay in the
 reach band.** `Log set` and `Just start logging` live in an iOS bottom safe-area inset and in an
-Android scaffold's bottom bar; **Apply** is the review sheet's own band; the keypad's **Set** and
-the fix sheet's **Save the fix** stay in the band below the pad and the fields even now that the
-sheets' titles and dismissals are the bar's. Three exceptions are ruled and are not drift:
-**Finish** is a toolbar action, not a second full-strength commitment beside `Log set`
+Android scaffold's bottom bar; **Apply** is the review sheet's own band; the keypad's **Set** stays
+in the band below the pad, and on Android the fix sheet's **Save fix** stays in the band below its
+fields, while the sheets' titles and dismissals are the bar's. Three exceptions are ruled and are
+not drift: **Finish** is a toolbar action, not a second full-strength commitment beside `Log set`
 (`16-the-workout.md`); the editor's **Cancel and Save** are the navigation bar's, where the platform
 puts a draft's two answers (`15-the-routine.md`); and the one-field rename sheet's **Rename** is its
-bar's `.confirmationAction` (iOS `RenameSheet`) — a sheet holding one text field under a raised
-keyboard has no reach band to put a commit in, and the bar is where the platform puts a single
-field's answer.
+bar's `.confirmationAction` (iOS `RenameMovementSheet`) — a sheet holding one text field under a
+raised keyboard has no reach band to put a commit in, and the bar is where the platform puts a
+single field's answer. On iOS every sheet that edits a record — Fix set, Fix workout, Weigh in,
+Targets, Create movement — commits from its bar's checkmark the same way
+(`../../ios/ios-redesign.md` §5).
 
 **What earns the reach band, when two actions want it.** The Routines screen wants both *"start
 logging"* and *"make a new routine"*, and only one can be the primary. The tie-breaker is not

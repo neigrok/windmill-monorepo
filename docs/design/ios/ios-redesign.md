@@ -619,15 +619,19 @@ with 7.11 and 7.12.
   movement* with real plurals. A movement row opens the Record. The detail sits on `gym/canvas`.
 - Edit routine ends with a section *Delete routine* in `alarm`, confirmed by `.alert` *Delete
   Push A?* · *Your logged sets stay.* · **Delete**.
-- Every movement search — the builder's *Add movement*, the workout's *Next movement*,
-  *Movements* — is `.searchable(placement: .navigationBarDrawer(displayMode: .always))` over the
-  two-line `GymRow`: the name, then *Barbell · 80 × 5 · 3 days ago*, or *Barbell* alone before the
-  first log. A query with no exact match leads the results with a row **Create “<query>”**
-  (`plus.circle.fill`, accent) opening Create movement with the name filled; with an empty query,
-  `plus` in the bar (*New movement*). No floating button in a picker, and no pinned *Create
-  movement* or *Add to routine*. Creating ends the search first (`dismissSearch`), so the pushed
-  Create movement's bar takes its taps. The picker is titled *Add movement* from the builder and
-  *Next movement* from the workout — never a question.
+- Every movement search lists the two-line `GymRow`: the name, then *Barbell · 80 × 5 · 3 days
+  ago*, or *Barbell* alone before the first log. A query with no exact match leads the results with a
+  row **Create “<query>”** (`plus.circle.fill`, accent) opening Create movement with the name
+  filled; with an empty query, `plus` in the bar (*New movement*). No floating button in a picker,
+  and no pinned *Create movement* or *Add to routine*. The picker is titled *Add movement* from the
+  builder and *Next movement* from the workout — never a question.
+- The workout's *Next movement* and *Movements* search with `.searchable(placement:
+  .navigationBarDrawer(displayMode: .always))`. The builder's *Add movement* searches from a field
+  that is the list's first row — `magnifyingglass` in `ink-dim`, the field *Search movements*, a
+  clear `xmark.circle.fill` with a 44 pt target while it holds text — a plain list row, never drawn
+  to look like the system's search bar. Create movement is pushed inside the builder's sheet, and
+  that field keeps its query visible across Create movement's Cancel (`15-the-routine.md`) while the
+  pushed bar's ✓ takes its taps (`consistency.md` 10d).
 - The builder's bar is *Cancel* · title · ✓ (*Save*) and nothing else: *Reorder* (*Done* while
   reordering) is the Movements section's header action. Its name field carries no header
   (`15-the-routine.md`, "Name is the first field"). *History* is drawn only when it has rows; a new
@@ -898,8 +902,14 @@ per refused workout in Settings and a door on every tab; iOS draws one row and o
   room draws; Coach and the room menu draw none.
 - **The reason**, at most twelve words naming the way out, is the row's subtitle, the Inspect
   head's footer and the transient after a refused retry. A saved workout's refusal never reaches the
-  room's band, and the lifter cannot dismiss its notice: only a queued retry answers it, and until
-  then the reason stays. The table holds what iOS receives, by the reason label its events carry:
+  room's band, and the lifter cannot dismiss its notice: a queued retry answers it. A notice also
+  stops standing once the phone's log, complete after its first pull, shows its cause gone: a
+  `session-open` notice stands only while the log draws an open workout of the account's own, and a
+  `session-overlap` notice only while the workout it names still crosses the copy — a named workout
+  the log does not draw stands, since the phone may not have pulled it yet. Before the first pull
+  every notice stands. A notice that no longer stands leaves the copy's own state as its reason,
+  most often waiting on a retry. The table holds what iOS receives, by the reason label its events
+  carry:
 
   | Reason | Line |
   |---|---|
@@ -942,15 +952,19 @@ per refused workout in Settings and a door on every tab; iOS draws one row and o
   (weight, reps, effort, kind, movement, time, note, delete). The sheet has no destructive row:
   Discard lives on Inspect, with its window. Over 200 sets the bar's ✓ disables and the held reason,
   *Over 200 sets · remove 12.*, stands in the band at the sheet's foot; any other refusal the phone
-  predicts — a movement the catalogue lacks, a finish after now, times that cross another workout —
-  disables it with that reason's line in the same place. Edits touch the phone's copy only; the
-  retry sends the corrected import under the same identity.
-- **Keep** and **Retry** act from the band. While a kept or fixed workout is queued, Inspect's
-  transient reads *Adding Push A to your log.* (the workout's name), never that it is on the log,
-  and the row reads *Adding…*; both leave when the log confirms it; on refusal the row's reason
-  updates and the transient says the new one.
+  predicts (below) disables it with that reason's line in the same place. Edits touch the phone's
+  copy only; the retry sends the corrected import under the same identity.
+- **Keep** and **Retry** act from the band. While a kept, fixed or retried workout is on its way,
+  Inspect stays on screen, its transient reads *Adding Push A to your log.* (the workout's name),
+  never that it is on the log, and the row reads *Adding…*; both leave when the workout lands. On
+  refusal the row's reason updates and the transient says the new one.
 - **A retry sends every set or none.** Retrying an open saved workout starts it and sends each of
   its sets in one plan, so a refusal leaves nothing half-sent.
+- **What the phone predicts.** A finished copy's retry is an import, with the import's checks: a
+  movement the catalogue lacks, a finish after now, times that cross another workout. An open
+  copy's retry is the restart the server runs — a start that does not join, its sets appended — so
+  the phone refuses it only while the account has an open workout of its own, for a start after now,
+  or for a set it would refuse, and never for crossing a finished workout.
 - **A stranded set** (`session-finished`) goes back in one plan: the stranded sets inside its
   workout's window are appended while that workout is open, or corrected in once it is finished
   (`CorrectSession(preserveOtherSets: true)`), numbered after the sets it kept and with their times
@@ -1009,14 +1023,17 @@ Recorded in `consistency.md` under *iOS redesign*:
   iteration-1 boards against §5–§7).
 - **The log and progress:** 9b (phones weave, web keeps the strip), 9o (moments are doors on iOS,
   expanders on Android), 9p (a record stated once), 9q (*Weigh in* in the bar), 9y (the progress
-  strings the iOS build draws against `18-progress.md`).
-- **The workout:** 9c (the rack's kind picker), 9k (the untaken workout's row and badge vs Android's
-  card and door), 9l (the Live Activity's unlabelled clocks), 9n (the set-note footer).
+  strings the iOS build draws against `18-progress.md`), 10a (the Undo band's words in the build),
+  10b (the newest weigh-in woven in the build).
+- **The workout and routines:** 9c (the rack's kind picker), 9k (the untaken workout's row and badge
+  vs Android's card and door), 9l (the Live Activity's unlabelled clocks), 9n (the set-note footer),
+  10d (two search shapes in the pickers).
 - **Coach:** 9i (the proposal card), 9j (the Review band's one caption slot), 9s (Notes' lines), 9t
   (Connected log with a connection), 6w (no keyboard toolbar on iOS 26).
 - **Shell and cross-room:** 9r (no Gym settings), 9u (dates in the person's locale), 9v (the
-  signed-out share door), 9w (You's sections vs `superapp-shell.md` §6), 9x (the room menu's You and
-  room item), 9f and 9g under *Onboarding* (the gym glimpse, where each product lives).
+  signed-out share door), 9w (You's sections vs `superapp-shell.md` §6), 10c (*Your data* still in
+  the build's You), 9x (the room menu's You and room item), 9f and 9g under *Onboarding* (the gym
+  glimpse, where each product lives).
 
 Two proposals in `consistency.md` wait on the owner and are not part of this contract: the open
 workout as a tab-bar accessory, and Control Center and App Intent controls.

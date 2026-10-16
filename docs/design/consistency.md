@@ -351,6 +351,28 @@ these are the places it disagrees with a drawing, a brief or the build.
   weeks*, and the spec follows it. The iOS build draws *Last 12 weeks · N sessions* and *All · N
   sessions* (`MovementRecordScreen.swift`, pinned by `GymLogFlowTests.testMovementRecordWindows`)
   and *Trained 4 of 4 weeks* (`LogTab.swift`). Align the build.
+- **10a · The Undo band's words.** The spec (§5 Confirmations, §7.6) has every Undo band name the
+  object and the act: *Workout discarded*, *Weigh-in deleted*, *Set deleted*, *Conversation
+  deleted*. The build names what went only for a hold it keeps outside the engine (a saved workout's
+  discard, a Coach conversation); the engine's Undo offers read *Change deleted* / *N changes
+  deleted* (`GymTransient.swift`, `Message.undo`), as after a workout discarded from session detail.
+  Give each offer its noun.
+- **10b · The newest weigh-in woven.** The spec (§7.6) and `18-progress.md`'s iOS paragraph weave a
+  weigh-in moment only once a newer weigh-in exists, since the newest is the head's *Bodyweight*
+  row. The build weaves every weigh-in up to today, the newest included (`LogPresentation.swift`),
+  so the latest weight reads twice, in the head and in a moment. Align the build.
+- **10c · Your data in You.** The spec (§7.11) draws no **Your data** section and gives the
+  identity row one status line (*Backed up* · *Not backed up yet* · …). The build still draws **Your
+  data** and the line *Signed in with email* (`AccountSheet.swift`, `identityState`). Align the
+  build; 9w holds the shell canon's own **Your data**.
+- **10d · Two search shapes in the pickers.** The iteration-3 ruling (spec §7.5): the builder's *Add
+  movement* searches from a field in the list's first row, a plain native row; *Next movement* and
+  *Movements* use `.searchable`. The builder pushes Create movement inside its own sheet, and the
+  phase-2 consolidation's probe on iOS 26.5 found `.searchable` there either swallows the pushed
+  bar's ✓ or, when the search is ended first, shows only its placeholder after Create movement's
+  Cancel while the query still holds its text — against `15-the-routine.md`, which preserves the
+  query on Cancel. This differs from that brief's "native search on phones" and from one search
+  shape for every picker. Revisit when the system's search keeps its text across a pushed step.
 - **Proposal · the open workout as a tab-bar accessory (owner decision).** While a session is open,
   both phones draw the logger over every other screen (`16-the-workout.md`, `09-coach.md`). On
   iOS 26, `tabViewBottomAccessory` is the native slot for something running (Music's mini player):
