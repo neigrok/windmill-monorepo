@@ -173,15 +173,41 @@ import SyncSchema
     let unnamed = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [], door: "mcp", connection: "My laptop")
     let anonymous = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [], door: "mcp")
     let other = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [], door: "import")
-    #expect(RoutineLines.proposal(coach, createdAt: nil, moment: moment) == "from Coach")
+    #expect(RoutineLines.proposal(coach, createdAt: nil, moment: moment) == "From Coach")
     #expect([agent, unnamed, anonymous, other].map { RoutineLines.proposal($0, createdAt: nil, moment: moment) }
-            == ["from Claude", "from My laptop", "from a connected tool", "from a connected tool"])
-    let earlier = Instant(ms: moment.now.ms - 2 * 86_400_000)
-    let time = Date(timeIntervalSince1970: Double(earlier.ms) / 1000).formatted(.dateTime.hour().minute())
-    #expect(RoutineLines.proposal(coach, createdAt: earlier, moment: moment) == "from Coach · 24 Sep \(time)")
-    let todayTime = Date(timeIntervalSince1970: Double(moment.now.ms) / 1000).formatted(.dateTime.hour().minute())
-    #expect(RoutineLines.proposal(coach, createdAt: moment.now, moment: moment) == "from Coach · today \(todayTime)")
-    #expect(RoutineLines.proposal(coach, createdAt: moment.now, moment: nil) == "from Coach")
+            == ["From Claude", "From My laptop", "From a connected tool", "From a connected tool"])
+    let dates = GymDate(moment)
+    #expect(RoutineLines.proposal(coach, createdAt: Instant(ms: moment.now.ms - 2 * 86_400_000), moment: moment)
+            == "From Coach · \(dates.day(Instant(ms: moment.now.ms - 2 * 86_400_000)))")
+    #expect(RoutineLines.proposal(coach, createdAt: Instant(ms: moment.now.ms - 86_400_000), moment: moment) == "From Coach · Yesterday")
+    #expect(RoutineLines.proposal(coach, createdAt: moment.now, moment: moment) == "From Coach · \(dates.time(moment.now))")
+    #expect(RoutineLines.proposal(coach, createdAt: moment.now, moment: nil) == "From Coach")
+  }
+
+  @Test func aProposalIsNamedByItsRoutineAndWhatItChanges() throws {
+    let (_, gym) = fixture()
+    var routine = draft(gym)
+    #expect(gym.saveRoutine(&routine))
+    let heavier = [RoutineEntry(exerciseId: ID("bench-press"), sets: [SetTarget(reps: 8, weightKg: 62.5)]), RoutineEntry(exerciseId: ID("deadlift"))]
+    #expect(gym.run(ProposeRoutine(id: ID("change"), routineId: routine.id, name: "Push A", entries: heavier, summary: "Heavier"))?.refusal == nil)
+    #expect(gym.run(ProposeRoutine(id: ID("removal"), routineId: routine.id, name: "Push A", entries: [], summary: "Gone", removing: true))?.refusal == nil)
+    let titles = Dictionary(uniqueKeysWithValues: gym.waitingRoutineProposals.map { ($0.id, gym.proposalTitle($0)) })
+    #expect(titles == [ID("change"): "Push A · 2 changes", ID("removal"): "Push A · a removal"])
+  }
+
+  // Delete routine in the editor asks nothing: the routine goes at once behind the room's Undo, which names it.
+  @Test func theEditorDeletesItsRoutineBehindAnUndoAndRefusesAnotherAccount() throws {
+    let (_, gym) = fixture()
+    var routine = draft(gym)
+    #expect(gym.saveRoutine(&routine))
+    let stranger = RoutineEditingSession(gym: gym, routine: gym.routines.first)
+    gym.account = "another-account"
+    #expect(!stranger.delete(gym) && stranger.refusal == "The account changed while editing. Open the routine again.")
+    gym.account = nil
+    let editing = RoutineEditingSession(gym: gym, routine: gym.routines.first)
+    #expect(editing.delete(gym) && gym.routines.isEmpty)
+    let offer = try #require(gym.undoOffers.last)
+    #expect(offer.line == "Routine deleted" && gym.undo(offer.id) && gym.routines.map(\.id) == [routine.id])
   }
 
   @Test func saveFailureRetainsExactDraftAndRetryUsesSameID() {

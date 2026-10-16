@@ -28,14 +28,14 @@ import SyncTesting
   func keypadRejectsInvalidWeights(text: String) {
     var pad = SetKeypad(.weight, value: 20); pad.text = text
     #expect(pad.reading.value == nil)
-    #expect(!pad.reading.message.isEmpty)
+    #expect(pad.reading.refusal?.isEmpty == false)
   }
 
   @Test(arguments: [-500.0, 0, 500, -82.125, 82.125])
   func keypadAcceptsWeightBoundsAndRounds(value: Double) {
     var pad = SetKeypad(.weight, value: 20); pad.text = String(value)
     #expect(pad.reading.value == WeightLadder.round(value))
-    #expect(pad.reading.message == "kg")
+    #expect(pad.reading.refusal == nil)
   }
 
   @Test func keypadBoundsTextAndRepsKeys() {
@@ -62,7 +62,14 @@ import SyncTesting
 
   @Test(arguments: [1, 99]) func keypadAcceptsRepBounds(reps: Int) {
     var pad = SetKeypad(.reps, value: 5); pad.text = String(reps)
-    #expect(pad.reading.value == Double(reps) && pad.reading.message == "whole reps")
+    #expect(pad.reading.value == Double(reps) && pad.reading.refusal == nil)
+  }
+
+  // The keypad names its unit as the rack does, and the reps pad leaves its sign and decimal slots empty rather than explaining them.
+  @Test func eachPadNamesItsUnitAndOffersOnlyTheKeysItsNumberTakes() {
+    #expect([SetKeypad.Field.weight, .reps].map(\.unit) == ["kg", "reps"])
+    #expect(SetKeypad.Field.weight.keys == ["1", "2", "3", "4", "5", "6", "7", "8", "9", "±", "0", "."])
+    #expect(SetKeypad.Field.reps.keys == ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", ""])
   }
 
   @Test func draftAcceptsSignedLoadsClearEffortAndNotesAndRefusesEachBoundInOrder() throws {

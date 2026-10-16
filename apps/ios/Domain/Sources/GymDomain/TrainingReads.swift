@@ -317,7 +317,7 @@ extension TrainingLog {
 }
 
 public enum Readout {
-  public static let noRoutine = "Free session"
+  public static let noRoutine = "Free workout"
   public static let openTarget = "open"
   static let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 

@@ -579,11 +579,39 @@ import SyncTesting
                 value(gym, session: session, weight: 80, at: Instant(ms: start.ms + 30_000)),
                 value(gym, session: session, weight: 85, at: Instant(ms: start.ms + 40_000))]
     let receipt = WorkoutReceiptData(session: session, sets: sets.reversed(), routineId: gym.runner.mint(Routine.self), routinePosition: 0)
-    #expect(receipt.sets == sets && receipt.title == "Ended early." && receipt.subtitle.hasPrefix("Free session · "))
-    let e1rm = try #require(receipt.readout.topE1rm)
-    #expect(receipt.facts.map(\.label) == ["Duration", "Working sets", "Top e1RM"])
-    #expect(receipt.facts.map(\.value) == ["1m", "3", "\(Readout.estimatedWeight(e1rm)) kg"])
+    #expect(receipt.sets == sets && receipt.title == "Ended early.")
+    #expect(receipt.subtitle == "Free workout · \(GymDate().subtitle(session.startedAt))")
+    #expect(FactTiles(receipt.readout).facts == [FactTiles.Fact(value: "1m", label: "Duration"), FactTiles.Fact(value: "3", label: "Working sets"),
+                                                 FactTiles.Fact(value: "1325 kg", label: "Volume")])
     #expect(receipt.performed.map(\.exerciseId) == [second, first] && receipt.performed.map(\.reading) == ["1 × 5 · 100", "2 × 5 · 80–85"])
+  }
+
+  // A row keeps its place as sets are logged: the set takes over the current row, the next planned row becomes current, and
+  // the plan line and This workout's count read the same working sets.
+  @Test func aLoggedSetTakesOverTheCurrentRowAndTheNextPlannedRowMovesUp() throws {
+    let (_, gym) = try fixture(), plan = try routine(gym, scheme: Array(repeating: SetTarget(reps: 5, weightKg: 40), count: 3))
+    let workout = try begin(gym, routine: plan)
+    let before = workout.ledger(first)
+    #expect(before.rows.map(\.id) == [0, 1, 2] && before.rows.map(\.marker) == ["1", "2", "3"])
+    #expect(before.rows.map(\.place) == [.current, .planned, .planned] && before.rows.map(\.reading) == ["40 × 5", "40 × 5", "40 × 5"])
+    #expect(before.planLine == nil && before.tally == "0 of 3 sets" && !before.complete)
+    #expect(workout.logSet())
+    let set = try #require(workout.sets.first), logged = workout.ledger(first)
+    #expect(logged.rows.map(\.id) == [0, 1, 2] && logged.rows.map(\.place) == [.logged(set), .current, .planned])
+    #expect(logged.tally == "1 of 3 sets")
+    let session = try #require(workout.session)
+    #expect(gym.run(AppendSet(value(gym, session: session, weight: 20, kind: "warmup", at: Instant(ms: set.completedAt.ms + 1))))?.refusal == nil)
+    workout.reconcile()
+    let warmed = workout.ledger(first)
+    #expect(warmed.rows.map(\.marker) == ["1", "W", "2", "3"] && warmed.rows.map(\.id) == [0, 1, 2, 3] && warmed.tally == "1 of 3 sets")
+    #expect(workout.logSet() && workout.logSet())
+    let done = workout.ledger(first)
+    #expect(done.rows.map(\.marker) == ["1", "W", "2", "3", "4"] && done.current.reading == Readout.openTarget)
+    #expect(done.tally == "3 of 3 sets" && done.complete)
+    let open = workout.ledger(second)
+    #expect(open.planLine == "plan open" && open.tally == "0 sets" && !open.complete && open.rows.map(\.place) == [.current])
+    let free = MovementLedger(sets: [set], plan: nil)
+    #expect(free.planLine == nil && free.tally == "1 set" && !free.complete)
   }
 
   @Test func deletionAndUndoMoveRestClockToRetainedLatestSet() throws {
@@ -671,7 +699,7 @@ import SyncTesting
     #expect(!workout.canRemove(first) && !workout.canRemove(second) && !workout.canRemove(third))
     let held = workout.walk
     for id in [first, second, third] { workout.remove(id); #expect(workout.walk == held) }
-    #expect(workout.message == "A movement with sets or planned targets stays in this session.")
+    #expect(workout.message == "A movement with sets or planned targets stays in this workout.")
   }
 
   @Test func failedWalkCommitRetainsOrderAndSelection() throws {
@@ -943,12 +971,12 @@ import SyncTesting
     let durable = try #require(gym.notices.last), explanation = try #require(gym.workoutNotice)
     workout.message = "Check the weight and reps before logging."
     let local = GymTransient(gym: gym, message: workout.message, dismiss: { workout.message = nil })
-    local.dismissMessage(try #require(local.shown))
+    local.dismissal(try #require(local.shown))?()
     #expect(workout.message == nil && gym.notices.map(\.id) == [durable.id] && gym.workoutNotice == explanation)
     let reopened = GymModel(runner: runtime.runner, runtime: runtime)
     #expect(reopened.notices.map(\.id) == [durable.id] && reopened.workoutNotice == explanation)
     let notice = GymTransient(gym: reopened, message: nil, dismiss: { Issue.record("A durable refusal must not clear unrelated local input") })
-    notice.dismissMessage(try #require(notice.shown))
+    notice.dismissal(try #require(notice.shown))?()
     #expect(reopened.notices.isEmpty && reopened.workoutNotice == nil)
     #expect(GymModel(runner: runtime.runner, runtime: runtime).notices.isEmpty)
   }
@@ -964,7 +992,7 @@ import SyncTesting
     #expect(try workout.activityRecord()?.offer == offer)
     if !matching { gym.error = "A newer unrelated failure." }
     let notice = GymTransient(gym: gym, message: workout.message, dismiss: { workout.message = nil })
-    notice.dismissMessage(try #require(notice.shown))
+    notice.dismissal(try #require(notice.shown))?()
     #expect(workout.message == nil)
     #expect(gym.error == (matching ? nil : "A newer unrelated failure."))
     #expect(gym.notices.isEmpty && workout.sets.isEmpty)
@@ -1341,11 +1369,14 @@ import SyncTesting
     let object: [String: Any] = ["record": ["kind": kind, "exerciseId": first.record.string ?? "", "value": 100,
       "weightKg": 80, "reps": 8, "previous": 90, "previousAt": start.ms]]
     let review = try JSONDecoder().decode(WorkoutReview.self, from: JSONSerialization.data(withJSONObject: object))
-    let record = try #require(review.record)
-    #expect((record.sentence(gym.catalogue) == nil) == (kind == "unknown"))
+    let record = try #require(review.record), name = gym.catalogue.find(first)?.name ?? "Movement"
+    let dates = GymDate(Moment(now: Instant(ms: start.ms + 86_400_000), zone: FixedZone(offsetSeconds: 0)))
+    let sentences = ["e1rm": "\(name) e1RM 100 kg — past 90 from yesterday.", "heaviest": "\(name) 100 kg × 8 — past 90 from yesterday.",
+                     "reps-at-weight": "\(name) 8 reps at 80 kg — past 90 from yesterday."]
+    #expect(record.sentence(gym.catalogue, dates: dates) == sentences[kind])
     let missing = WorkoutReview.Record(kind: kind, exerciseId: first.record.string ?? "", value: 100, weightKg: 80,
                                         reps: 8, previous: nil, previousAt: nil)
-    #expect(missing.sentence(gym.catalogue) == nil)
+    #expect(missing.sentence(gym.catalogue, dates: dates) == nil)
   }
 
   @Test(arguments: ["now", "before"])

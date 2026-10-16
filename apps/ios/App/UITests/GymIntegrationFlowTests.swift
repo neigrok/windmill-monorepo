@@ -325,7 +325,7 @@ import XCTest
     }
     XCTAssertTrue(review.waitForExistence(timeout: 10)); XCTAssertTrue(review.isHittable)
     XCTAssertTrue(signed.buttons["coach-stop"].waitForNonExistence(timeout: 10))
-    let question = signed.staticTexts["Check my last session."]
+    let question = signed.staticTexts["Check my last workout."]
     for _ in 0..<4 {
       if question.waitForExistence(timeout: 3), question.isHittable { break }
       signed.swipeDown()

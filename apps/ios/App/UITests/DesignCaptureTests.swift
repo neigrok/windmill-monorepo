@@ -471,6 +471,7 @@ import XCTest
     capture("gym-routine-detail-\(appearance)", app)
     app.buttons["edit-routine"].tap()
     XCTAssertTrue(app.navigationBars["Edit routine"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["delete-routine"].waitForExistence(timeout: 5))
     capture("gym-routine-edit-\(appearance)", app)
     app.navigationBars["Edit routine"].buttons["Cancel"].tap()
     back(app)
@@ -764,9 +765,10 @@ import XCTest
     app.buttons["workout-keypad-set"].tap()
     app.buttons["workout-log"].tap()
     app.buttons["workout-next"].tap()
-    XCTAssertTrue(app.buttons["workout-deviation-today"].waitForExistence(timeout: 5))
+    let heavier = app.alerts["Save 105 to Lower A?"]
+    XCTAssertTrue(heavier.waitForExistence(timeout: 5))
     capture("gym-workout-heavier-than-plan-dialog-\(appearance)", app)
-    app.buttons["workout-deviation-today"].firstMatch.tap()
+    heavier.buttons["Today only"].firstMatch.tap()
     XCTAssertTrue(app.buttons["workout-finish"].waitForExistence(timeout: 5)); app.buttons["workout-finish"].tap()
     XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 10))
     capture("gym-workout-finish-receipt-\(appearance)", app)
@@ -775,6 +777,27 @@ import XCTest
   }
   func testWorkoutDeviationAndReceiptLight() { workoutDeviationAndReceipt("light") }
   func testWorkoutDeviationAndReceiptDark() { workoutDeviationAndReceipt("dark") }
+
+  // A workout that set a record: the receipt's Personal record card under the workout's tiles.
+  func workoutRecord(_ appearance: String) {
+    let app = launch("workout-record", appearance: appearance)
+    XCTAssertTrue(app.staticTexts["Personal record"].waitForExistence(timeout: 15))
+    capture("gym-workout-finish-receipt-record-\(appearance)", app)
+  }
+  func testWorkoutRecordLight() { workoutRecord("light") }
+  func testWorkoutRecordDark() { workoutRecord("dark") }
+
+  // Signed in with Coach at hand, an empty Routines offers Ask Coach; the signed-in board's free workout hides to reach it.
+  func routinesSignedInEmpty(_ appearance: String) {
+    let app = launch("workout-notice", appearance: appearance)
+    XCTAssertTrue(app.buttons["workout-assembly"].waitForExistence(timeout: 10)); app.buttons["workout-assembly"].tap()
+    XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
+    XCTAssertTrue(app.buttons["Ask Coach"].waitForExistence(timeout: 10))
+    for _ in 0..<3 where app.buttons["Dismiss message"].exists { app.buttons["Dismiss message"].firstMatch.tap() }
+    capture("gym-routines-empty-signed-in-\(appearance)", app)
+  }
+  func testRoutinesSignedInEmptyLight() { routinesSignedInEmpty("light") }
+  func testRoutinesSignedInEmptyDark() { routinesSignedInEmpty("dark") }
 
   func workoutTransients(_ appearance: String) {
     let app = launch("workout-notice", appearance: appearance)
@@ -810,9 +833,10 @@ import XCTest
     for key in ["1", "0", "5"] { workout.buttons["workout-key-\(key)"].tap() }
     workout.buttons["workout-keypad-set"].tap()
     workout.buttons["workout-log"].tap(); workout.buttons["workout-next"].tap()
-    XCTAssertTrue(workout.buttons["workout-deviation-today"].waitForExistence(timeout: 5))
+    let heavier = workout.alerts["Save 105 to Lower A?"]
+    XCTAssertTrue(heavier.waitForExistence(timeout: 5))
     capture(name("heavier-dialog", workout), workout)
-    workout.buttons["workout-deviation-today"].firstMatch.tap()
+    heavier.buttons["Today only"].firstMatch.tap()
     XCTAssertTrue(workout.buttons["workout-finish"].waitForExistence(timeout: 5)); workout.buttons["workout-finish"].tap()
     XCTAssertTrue(workout.buttons["Done"].waitForExistence(timeout: 10))
     capture(name("receipt", workout), workout)

@@ -47,13 +47,11 @@ enum MovementPickerOptions {
                        log: TrainingLog?, featured: [ID<Exercise>]? = nil, readFailed: Bool = false) -> Result {
     let term = MovementName.trimmed(query).lowercased()
     let featured = term.isEmpty ? featured ?? mostTrained(catalogue: catalogue, log: log) : []
+    // A logged movement adds its last effort and when; before its first log the equipment says enough.
     let makeRow = { (exercise: Exercise, alias: String?) -> Row in
       var meta: String?
-      if let log {
-        let last = log.lastTime(for: exercise.id)
-        if let set = last.sets.last, let session = last.session {
-          meta = "last \(Readout.effort(weightKg: set.weightKg, reps: set.reps)) · \(Readout.ago(session.startedAt, now: log.moment.now, zone: log.moment.zone))"
-        } else if last.isComplete && !readFailed { meta = "never logged" }
+      if let log, case let last = log.lastTime(for: exercise.id), let set = last.sets.last, let session = last.session {
+        meta = "\(Readout.effort(weightKg: set.weightKg, reps: set.reps)) · \(Readout.ago(session.startedAt, now: log.moment.now, zone: log.moment.zone))"
       }
       return Row(exercise: exercise, meta: meta, alias: alias, selected: selected.contains(exercise.id))
     }

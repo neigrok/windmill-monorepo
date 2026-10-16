@@ -9,6 +9,7 @@ struct RoutinesTab: View {
   let gym: GymModel
   var onReviewProposal: ((ID<Proposal>) -> Void)?
   @Environment(\.coachOpenAccount) private var openAccount
+  @Environment(\.coachAsk) private var ask
   @State private var building: RoutineEditingSession?
   @State private var savedID: ID<Routine>?
 
@@ -17,7 +18,14 @@ struct RoutinesTab: View {
     let receipts = gym.coachRemovalReceipts.filter { $0.outcome != .pending }
     Group {
       if gym.routines.isEmpty, waiting.isEmpty, receipts.isEmpty, gym.personalCounts[Routine.type, default: 0] == 0, gym.historyKnown {
-        ContentUnavailableView("No routines yet", systemImage: "list.bullet.rectangle", description: Text("Build one, or just start logging."))
+        ContentUnavailableView {
+          Label("No routines yet", systemImage: "list.bullet.rectangle")
+        } actions: {
+          if gym.workout.coachAvailable {
+            Button("Ask Coach") { ask?(CoachHandoff(question: "Build me a routine.")) }
+              .modifier(RoomSecondaryStyle()).controlSize(.large)
+          }
+        }
       } else {
         List {
           Group {
@@ -29,31 +37,32 @@ struct RoutinesTab: View {
                            meta: receipt.outcome == .applied ? "Removed" : "Nothing was applied", trailing: .door)
                   }.accessibilityIdentifier("routine-removal-receipt")
                 }
-                if let newest = waiting.first {
-                  Button { onReviewProposal?(newest.id) } label: {
-                    GymRow(title: GymCount.of(waiting.count, "proposal"), meta: gym.proposalLine(newest), trailing: .door)
+                ForEach(waiting, id: \.id) { proposal in
+                  Button { onReviewProposal?(proposal.id) } label: {
+                    GymRow(title: gym.proposalTitle(proposal), meta: gym.proposalLine(proposal),
+                           leading: .symbol("bubble.left.and.bubble.right", GymPalette.accent), trailing: .door)
                   }.accessibilityIdentifier("routine-proposal")
                 }
               }
             }
-            Section {
-              ForEach(gym.routinesByLastTraining, id: \.id) { routine in
-                NavigationLink { RoutineDetail(gym: gym, id: routine.id) } label: {
-                  HStack(spacing: RoomSpace.related) {
+            let routines = gym.routinesByLastTraining
+            if !routines.isEmpty {
+              Section {
+                ForEach(routines, id: \.id) { routine in
+                  NavigationLink { RoutineDetail(gym: gym, id: routine.id) } label: {
                     GymRow(title: routine.name, meta: gym.routineLine(routine))
-                    if waiting.dropFirst().contains(where: { $0.routineId == routine.id }) {
-                      Text(GymCount.of(1, "proposal")).font(.footnote).foregroundStyle(GymPalette.accent)
+                  }.accessibilityIdentifier("routine-\(routine.id)")
+                    .swipeActions(edge: .trailing) { Button("Delete", role: .destructive) { gym.run(DeleteRoutine(routine.id)) } }
+                    .contextMenu {
+                      Button("Start workout", systemImage: "play.fill") { gym.startWorkout(routineId: routine.id) }
+                      Button("Delete routine", systemImage: "trash", role: .destructive) { gym.run(DeleteRoutine(routine.id)) }
                     }
-                  }
-                }.accessibilityIdentifier("routine-\(routine.id)")
-                  .swipeActions(edge: .trailing) { Button("Delete", role: .destructive) { gym.run(DeleteRoutine(routine.id)) } }
-                  .contextMenu {
-                    Button("Start workout", systemImage: "play.fill") { gym.startWorkout(routineId: routine.id) }
-                    Button("Delete routine", systemImage: "trash", role: .destructive) { gym.run(DeleteRoutine(routine.id)) }
-                  }
-                  .accessibilityAction(named: "Start workout") { gym.startWorkout(routineId: routine.id) }
-                  .accessibilityAction(named: "Delete routine") { gym.run(DeleteRoutine(routine.id)) }
+                    .accessibilityAction(named: "Start workout") { gym.startWorkout(routineId: routine.id) }
+                    .accessibilityAction(named: "Delete routine") { gym.run(DeleteRoutine(routine.id)) }
+                }
               }
+            }
+            Section {
               NavigationLink { MovementPicker(gym: gym, purpose: .browse) } label: {
                 Label { Text("Movements").foregroundStyle(GymPalette.ink) } icon: { Image(systemName: "list.bullet") }
               }.accessibilityIdentifier("routines-movements")
@@ -101,12 +110,13 @@ struct RoutineDetail: View {
   let gym: GymModel
   let id: ID<Routine>
   @State private var editing: RoutineEditingSession?
+  @Environment(\.dismiss) private var dismiss
   var routine: Routine? { gym.routines.first { $0.id == id } }
 
   var body: some View {
     Group {
       if let routine {
-        let history = Array(gym.routineHistory(id).prefix(20))
+        let history = Array(gym.routineHistory(id).prefix(20)), dates = gym.log.map { GymDate($0.moment) } ?? GymDate()
         List {
           Group {
             Section {
@@ -118,20 +128,14 @@ struct RoutineDetail: View {
                               meta: Readout.target(entry.sets))
                 }.accessibilityIdentifier("routine-detail-movement-\(entry.exerciseId)")
               }
-            } header: { Text("Movements") } footer: {
-              if routine.entries.contains(where: \.isOpen) { Text("Open movements have no target — you decide the numbers at the rack.") }
-            }
-            if !history.isEmpty || gym.readFailed || gym.historyKnown {
-              Section {
+            } header: { Text("Movements") }
+            if !history.isEmpty {
+              Section("History") {
                 ForEach(history, id: \.id) { session in
                   NavigationLink { SessionDetailScreen(gym: gym, sessionID: session.id) } label: {
-                    GymRow(title: RoutineLines.day(session.startedAt, now: gym.log?.moment.now ?? session.startedAt),
-                                meta: RoutineLines.session(SessionReadout(session: session, sets: gym.sets)))
+                    GymRow(title: dates.subtitle(session.startedAt), meta: RoutineLines.session(SessionReadout(session: session, sets: gym.sets)))
                   }.accessibilityIdentifier("routine-history-\(session.id)")
                 }
-              } header: { Text("History") } footer: {
-                if gym.readFailed { Text("The log didn’t answer — this routine’s history is out of reach.") }
-                else if history.isEmpty { Text("No workouts with this routine yet.") }
               }
             }
           }.listRowBackground(GymPalette.card)
@@ -158,7 +162,8 @@ struct RoutineDetail: View {
           }
         }
       }
-      .sheet(item: $editing) { editing in RoutineBuilder(gym: gym, editing: editing) { _ in } }
+      // The editor deletes the routine at once, so the detail it leaves behind has nothing to show and goes too.
+      .sheet(item: $editing, onDismiss: { if routine == nil { dismiss() } }) { editing in RoutineBuilder(gym: gym, editing: editing) { _ in } }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "routine"]) }
   }
 }
@@ -171,6 +176,7 @@ enum RoutineLines {
     return historyKnown ? "\(movements) · never trained" : movements
   }
 
+  // Who proposed it, then when the server stamped it: the time today, the day before that.
   static func proposal(_ proposal: Proposal, createdAt: Instant?, moment: Moment?) -> String {
     let source: String
     switch proposal.provenance {
@@ -178,19 +184,13 @@ enum RoutineLines {
     case .mcp(let connection, let agent): source = agent.isEmpty ? connection.isEmpty ? "a connected tool" : connection : agent
     case .other: source = "a connected tool"
     }
-    guard let createdAt, let moment else { return "from \(source)" }
-    let time = createdAt.date.formatted(.dateTime.hour().minute())
-    return "from \(source) · \(Readout.briefDay(createdAt, now: moment.now, zone: moment.zone)) \(time)"
+    guard let createdAt, let moment else { return "From \(source)" }
+    let dates = GymDate(moment)
+    return "From \(source) · \(LocalDay(createdAt, in: moment.zone) == moment.today ? dates.time(createdAt) : dates.day(createdAt))"
   }
 
   static func session(_ readout: SessionReadout) -> String {
     "\(GymCount.of(readout.workingSetCount, "working set")) · \(GymCount.of(readout.movementCount, "movement"))"
-  }
-
-  static func day(_ instant: Instant, now: Instant) -> String {
-    let date = instant.date, today = now.date
-    let style = Date.FormatStyle.dateTime.weekday(.abbreviated).day().month(.abbreviated)
-    return date.formatted(Calendar.current.isDate(date, equalTo: today, toGranularity: .year) ? style : style.year())
   }
 }
 
@@ -226,6 +226,12 @@ extension GymModel {
 
   func routineLine(_ routine: Routine) -> String {
     RoutineLines.routine(routine, lastTrained: routineHistory(routine.id).first?.startedAt, historyKnown: historyKnown, moment: log?.moment)
+  }
+
+  // A proposal is named by the routine it changes and what it changes: *Push A · 3 changes*, *Push A · a removal*.
+  func proposalTitle(_ proposal: Proposal) -> String {
+    let routine = coachRoutine(proposal)?.name ?? proposal.baseName ?? proposal.proposedName
+    return "\(routine) · \(proposal.intent == "remove" ? "a removal" : GymCount.of(coachChangeCount(proposal), "change"))"
   }
 
   // The server stamps a proposal's creation; a proposal the phone has not yet sent shows no time rather than a guessed one.

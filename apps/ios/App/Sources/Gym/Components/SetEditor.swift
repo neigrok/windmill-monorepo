@@ -4,7 +4,13 @@ import DomainKit
 import GymDomain
 
 struct SetKeypad {
-  enum Field { case weight, reps }
+  enum Field {
+    case weight, reps
+    var title: String { self == .weight ? "Weight" : "Reps" }
+    var unit: String { self == .weight ? "kg" : "reps" }
+    // Reps are whole and positive, so their pad leaves the sign's and the decimal point's slots empty.
+    var keys: [String] { ["1", "2", "3", "4", "5", "6", "7", "8", "9"] + (self == .weight ? ["±", "0", "."] : ["", "0", ""]) }
+  }
   let field: Field
   let keeping: Double
   var text: String
@@ -25,22 +31,23 @@ struct SetKeypad {
     guard held.count < 8 else { return }
     text = held + key; seeded = false
   }
-  var reading: (value: Double?, message: String) {
+  // The number Set would commit, or the refusal that keeps Set disabled.
+  var reading: (value: Double?, refusal: String?) {
     let raw = text.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: ".")
     if raw.isEmpty || raw == "-" { return (nil, "Enter a number, or cancel to keep \(Readout.weight(keeping))") }
     if raw.filter({ $0 == "." }).count > 1 { return (nil, "One decimal point only.") }
     guard let number = Double(raw), number.isFinite else { return (nil, "That is not a number yet.") }
     if field == .weight {
       guard abs(number) <= 500 else { return (nil, "Over 500 kg — check the number.") }
-      return (WeightLadder.round(number), "kg")
+      return (WeightLadder.round(number), nil)
     }
     guard number.rounded() == number && (1...99).contains(number) else { return (nil, "Whole reps, 1 to 99.") }
-    return (number, "whole reps")
+    return (number, nil)
   }
 }
 
 // The keypad's digits are instruments: they stop growing at the first accessibility size, as Phone's do, and the sheet
-// takes the whole height there so every key and Set stay in reach.
+// takes the whole height there so every key and Set stay in reach. A refusal holds its line, so the keys never move.
 struct SetKeypadSheet: View {
   @Environment(\.dismiss) var dismiss
   @Environment(\.dynamicTypeSize) private var typeSize
@@ -53,24 +60,27 @@ struct SetKeypadSheet: View {
     NavigationStack {
       ScrollView {
         VStack(spacing: RoomSpace.small) {
-          Text(pad.text.isEmpty ? "—" : pad.text.replacingOccurrences(of: "-", with: "−"))
-            .modifier(GymKeypadNumeral())
-            .lineLimit(1).minimumScaleFactor(0.5).frame(maxWidth: .infinity)
-            .accessibilityIdentifier("workout-keypad-value")
-          Text(pad.reading.message).font(.subheadline).foregroundStyle(pad.reading.value == nil ? GymPalette.ink : GymPalette.inkDim)
-            .accessibilityIdentifier("workout-keypad-hint")
+          NumeralAndUnit(unit: pad.field.unit, identifier: "workout-keypad-unit") {
+            Text(pad.text.isEmpty ? "—" : pad.text.replacingOccurrences(of: "-", with: "−"))
+              .modifier(GymKeypadNumeral()).lineLimit(1).minimumScaleFactor(0.5)
+              .accessibilityIdentifier("workout-keypad-value")
+          }.frame(maxWidth: .infinity)
+          Text(pad.reading.refusal ?? " ").font(.subheadline).foregroundStyle(GymPalette.ink)
+            .accessibilityHidden(pad.reading.refusal == nil).accessibilityIdentifier("workout-keypad-hint")
           LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: RoomSpace.small) {
-            ForEach(["1", "2", "3", "4", "5", "6", "7", "8", "9", "±", "0", "."], id: \.self) { key in
-              Button { pad.press(key) } label: { Text(key).font(.title2.monospacedDigit()).foregroundStyle(GymPalette.ink).frame(maxWidth: .infinity) }
-                .modifier(RoomSecondaryStyle()).frame(minHeight: RoomSpace.minimumTarget)
-                .disabled(pad.field == .reps && ["±", "."].contains(key))
-                .accessibilityLabel(key == "±" ? "Flip the sign — band-assisted" : key)
-                .accessibilityIdentifier("workout-key-\(key)")
+            ForEach(Array(pad.field.keys.enumerated()), id: \.offset) { _, key in
+              if key.isEmpty { Color.clear.frame(minHeight: RoomSpace.minimumTarget) }
+              else {
+                Button { pad.press(key) } label: { Text(key).font(.title2.monospacedDigit()).foregroundStyle(GymPalette.ink).frame(maxWidth: .infinity) }
+                  .modifier(RoomSecondaryStyle()).frame(minHeight: RoomSpace.minimumTarget)
+                  .accessibilityLabel(key == "±" ? "Flip the sign — band-assisted" : key)
+                  .accessibilityIdentifier("workout-key-\(key)")
+              }
             }
           }.dynamicTypeSize(...DynamicTypeSize.accessibility1)
         }.padding(RoomSpace.inset)
       }.modifier(GymPage())
-      .navigationTitle(pad.field == .weight ? "Weight" : "Reps")
+      .navigationTitle(pad.field.title)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
         ToolbarItem(placement: .topBarTrailing) {
@@ -88,37 +98,57 @@ struct SetKeypadSheet: View {
   }
 }
 
-// The numeral opens the keypad; the ladder steps by the load's own band. At accessibility sizes the unit drops under the numeral.
+// A numeral with its unit at its baseline, the unit dropping under it at accessibility sizes: the rack, Fix set and the
+// keypad read a number the same way.
+struct NumeralAndUnit<Numeral: View>: View {
+  let unit: String
+  let identifier: String
+  let numeral: Numeral
+  @Environment(\.dynamicTypeSize) private var typeSize
+
+  init(unit: String, identifier: String, @ViewBuilder numeral: () -> Numeral) {
+    self.unit = unit; self.identifier = identifier; self.numeral = numeral()
+  }
+
+  var body: some View {
+    let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: RoomSpace.small))
+      : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: RoomSpace.related))
+    layout {
+      numeral
+      Text(unit).font(.title3).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier(identifier)
+    }
+  }
+}
+
+// One instrument wherever it is drawn (docs/design/ios/ios-redesign.md §5): the numeral opens the keypad and rolls to each
+// new load, and the ladder steps by the load's own band with its keys in ink, whatever tint the host carries.
 struct WeightInstrument: View {
   @Binding var weightKg: Double
   let identifier: String
-  var alignment = HorizontalAlignment.leading
   let edit: () -> Void
   @Environment(\.dynamicTypeSize) private var typeSize
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    VStack(alignment: alignment, spacing: RoomSpace.related) {
-      HStack(alignment: .firstTextBaseline, spacing: RoomSpace.related) {
+    VStack(spacing: RoomSpace.related) {
+      NumeralAndUnit(unit: SetKeypad.Field.weight.unit, identifier: "\(identifier)-unit") {
         Button(action: edit) {
           Text(Readout.weight(weightKg)).modifier(GymNumeral()).lineLimit(1).minimumScaleFactor(0.5)
+            .contentTransition(reduceMotion ? .opacity : .numericText(value: weightKg))
         }.buttonStyle(.plain).accessibilityLabel("Weight, \(Readout.weight(weightKg)) kilograms")
           .accessibilityIdentifier(identifier)
-        if !typeSize.isAccessibilitySize { unit }
-      }
-      if typeSize.isAccessibilitySize { unit }
+      }.animation(RoomTransient.motion(reduceMotion: reduceMotion), value: weightKg)
       LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: typeSize.isAccessibilitySize ? 2 : 4), spacing: RoomSpace.related) {
         ForEach(0..<4) { index in
           let label = WeightLadder.labels(weightKg)[index]
-          Button(label) {
-            weightKg = WeightLadder.bump(weightKg, direction: index < 2 ? -1 : 1, big: index == 0 || index == 3)
+          Button { weightKg = WeightLadder.bump(weightKg, direction: index < 2 ? -1 : 1, big: index == 0 || index == 3) } label: {
+            Text(label).foregroundStyle(GymPalette.ink)
           }.modifier(RoomSecondaryStyle()).frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget)
             .accessibilityLabel("\(label) kilograms")
         }
       }.font(.body.monospacedDigit())
-    }.frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
+    }.frame(maxWidth: .infinity)
   }
-
-  var unit: some View { Text("kg").font(.title3).foregroundStyle(GymPalette.inkDim) }
 }
 
 @Observable nonisolated final class SetFixDraft {
@@ -218,7 +248,7 @@ struct SetEditor: View {
       Form {
         Group {
           Section {
-            WeightInstrument(weightKg: $draft.weightKg, identifier: "\(identifier)-weight", alignment: .center) { keypad = .weight }
+            WeightInstrument(weightKg: $draft.weightKg, identifier: "\(identifier)-weight") { keypad = .weight }
             LabeledContent("Reps") {
               Button("\(draft.reps)") { keypad = .reps }.font(.title2.monospacedDigit()).accessibilityIdentifier("\(identifier)-reps")
             }
