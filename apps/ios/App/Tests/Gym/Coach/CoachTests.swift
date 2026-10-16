@@ -657,6 +657,20 @@ import SyncTesting
     let call = try #require(CoachTestProtocol.state.withLock { $0.requests.first })
     #expect(call.path.hasSuffix("/generations/request-123/stop") && call.method == "POST" && call.body == nil)
   }
+  // A swipe on the delete band keeps the delete: its hold ends and the delete leaves at once.
+  @Test func swipingTheDeleteBandAwayKeepsTheDeleteAndSendsItNow() async throws {
+    let (gym, rest, telemetry) = try await authed(.http(200, #"{"threads":[{"id":"thread-123","title":"Private","askedAt":1000}]}"#))
+    let history = CoachHistory(gym: gym, rest: rest); await history.load()
+    let row = try #require(history.rows.first)
+    CoachTestProtocol.state.withLock { $0.replies["/v1/gym/threads/thread-123"] = .http(200, "{}") }
+    history.remove(row); history.keep(row.id)
+    try await settle { CoachTestProtocol.state.withLock { $0.requests.count } == 2 && history.held.isEmpty }
+    #expect(history.rows.isEmpty && history.error == nil)
+    #expect(CoachTestProtocol.state.withLock { $0.requests.map { "\($0.method) \($0.path)" } } == ["GET /v1/gym/threads", "DELETE /v1/gym/threads/thread-123"])
+    try await settle { telemetry.entries.withLock { $0.contains { $0.name == "gym_action" } } }
+    #expect(telemetry.entries.withLock { $0.filter { ["gym_action", "gym_undo"].contains($0.name) }.map { [$0.name: $0.properties] } } ==
+            [["gym_undo": ["screen": "history", "action": "dismiss"]], ["gym_action": ["screen": "history", "outcome": "ok"]]])
+  }
   @Test func historyDeleteUndoAndBackgroundNeverSendWithheldDelete() async throws {
     let (gym, rest, telemetry) = try await authed(.http(200, #"{"threads":[{"id":"thread-123","title":"Private","askedAt":1000}]}"#))
     let history = CoachHistory(gym: gym, rest: rest); await history.load()
@@ -727,10 +741,10 @@ import SyncTesting
     defer { try? FileManager.default.removeItem(at: cache.directory) }
     let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
     let priorThread = coach.saved.threadId
-    #expect(coach.begin(CoachHandoff(question: "Check my last session.", send: true)))
+    #expect(coach.begin(CoachHandoff(question: "Check my last workout.", send: true)))
     await coach.work?.value; #expect(!coach.asking)
     let request = try #require(coach.saved.request)
-    #expect(request.thread != priorThread && request.question == "Check my last session." && request.attachmentIds.isEmpty)
+    #expect(request.thread != priorThread && request.question == "Check my last workout." && request.attachmentIds.isEmpty)
     let call = try #require(CoachTestProtocol.state.withLock { $0.requests.first })
     #expect(call.path == "/v1/gym/ask" && call.method == "POST" && call.authorization?.hasPrefix("Bearer ") == true)
     #expect(try JSONDecoder().decode(CoachSaved.Request.self, from: #require(call.body)) == request)
@@ -742,7 +756,7 @@ import SyncTesting
     defer { try? FileManager.default.removeItem(at: cache.directory) }
     let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate(); coach.edit("Prior draft")
     try FileManager.default.removeItem(at: cache.directory); try Data("blocked".utf8).write(to: cache.directory)
-    #expect(!coach.begin(CoachHandoff(question: "Check my last session.", send: true)))
+    #expect(!coach.begin(CoachHandoff(question: "Check my last workout.", send: true)))
     #expect(coach.saved.text == "Prior draft" && coach.saved.request == nil && !coach.asking)
     #expect(CoachTestProtocol.state.withLock { $0.requests.isEmpty })
   }
@@ -870,14 +884,29 @@ import SyncTesting
     #expect(thread.turns.map(\.position) == [1, 2, 3, 4] && thread.nextCursor == nil)
     #expect(CoachCopy.escaped("older/+") == "older%2F%2B")
   }
-  @Test func receiptOnlyShowsKnownToolsAndValidatedVersionOneSources() throws {
-    let json = #"{"version":1,"read":{"sets":214,"sessions":18,"weeks":6},"steps":[{"tool":"secret_internal_tool"},{"tool":"save_note","failed":true}],"observations":[{"sessionId":"s","startedAt":1000,"tool":"get_session","coverage":"session","setsRead":3,"workout":{"workingSetCount":3,"tonnageKg":400}},{"sessionId":"invalid","startedAt":1000,"tool":"get_session","coverage":"session","setsRead":1,"workout":{"workingSetCount":-1,"tonnageKg":1}}]}"#
+  // The server counts eighteen sessions; the answer's observations name three workouts, and the room states those three.
+  @Test func theReceiptCountsOnlyTheWorkoutsWhatCoachReadLists() throws {
+    let json = #"""
+      {"version":1,"read":{"sets":214,"sessions":18,"weeks":6},"steps":[{"tool":"list_notes"},{"tool":"list_sessions"}],"observations":[\#
+      {"sessionId":"a","startedAt":1790448120000,"tool":"list_sessions","coverage":"summary","setsRead":0,"routine":"Push A","workout":{"workingSetCount":3,"tonnageKg":1200}},\#
+      {"sessionId":"b","startedAt":1790272800000,"tool":"list_sessions","coverage":"summary","setsRead":0,"workout":{"workingSetCount":2,"tonnageKg":800}},\#
+      {"sessionId":"a","startedAt":1790448120000,"tool":"get_session","coverage":"session","setsRead":4,"routine":"Push A","workout":{"workingSetCount":3,"tonnageKg":1200}},\#
+      {"sessionId":"c","startedAt":1789581600000,"tool":"last_time","coverage":"movement","setsRead":2,"exerciseId":"bench-press"},\#
+      {"sessionId":"c","startedAt":1789581600000,"tool":"get_session","coverage":"movement","setsRead":2},\#
+      {"sessionId":"","startedAt":1789581600000,"tool":"list_sessions","coverage":"summary","setsRead":0,"workout":{"workingSetCount":1,"tonnageKg":1}}]}
+      """#
     let receipt = try JSONDecoder().decode(CoachReceipt.self, from: Data(json.utf8))
-    #expect(receipt.read.line == "read 214 sets · 6 weeks · 18 sessions")
-    #expect(receipt.workouts.map(\.id) == ["s"])
-    #expect(receipt.steps.compactMap(\.phrase) == ["could not confirm a note save"])
+    #expect(receipt.workouts.map(\.id) == ["a", "b", "c"])
+    #expect(receipt.workouts.map { $0.whole?.workingSetCount } == [3, 2, nil])
+    let dates = GymDate(Moment(now: Instant(ms: 1_792_152_000_000), zone: FixedZone(offsetSeconds: 0)), locale: Locale(identifier: "en_US"))
+    let reading = CoachReading(receipt, steps: receipt.steps, dates: dates)
+    #expect(reading.workouts.map(\.id) == ["a", "b", "c"] && reading.notes)
+    #expect(reading.line == "Read 3 workouts · 2 weeks")
     let future = try JSONDecoder().decode(CoachReceipt.self, from: Data(json.replacingOccurrences(of: "\"version\":1", with: "\"version\":2").utf8))
-    #expect(future.workouts.isEmpty && CoachRead().line == "read nothing from your log")
+    #expect(future.workouts.isEmpty && CoachReading(future, steps: [], dates: dates).line == nil)
+    let nothing = try JSONDecoder().decode(CoachReceipt.self, from: Data(#"{"version":1,"read":{"sets":0,"sessions":0,"weeks":0},"steps":[{"tool":"list_notes","failed":true}]}"#.utf8))
+    let none = CoachReading(nothing, steps: nothing.steps, dates: dates)
+    #expect(none.line == "Read nothing from your log" && !none.notes)
   }
   @Test func photoPreparationNormalizesSizeAndRejectsUnsupportedData() throws {
     let format = UIGraphicsImageRendererFormat(); format.scale = 1
@@ -919,7 +948,7 @@ import SyncTesting
     h.sync(); gym.refresh()
     let proposal = try #require(gym.proposals.first)
     gym.run(StartSession(id: ID("session-one")))
-    #expect(!gym.coachDecideProposal(proposal, apply: true) && gym.error == "Finish this session")
+    #expect(!gym.coachDecideProposal(proposal, apply: true) && gym.error == "Finish your workout first.")
     h.sync(); gym.refresh()
     gym.run(FinishSession(id: ID("session-one")))
     h.sync(); gym.refresh()
@@ -1168,24 +1197,33 @@ import SyncTesting
     #expect(gym.routines.isEmpty && gym.proposals.isEmpty)
   }
   @Test func connectedCredentialsFilterScopesAndUseCreationDates() throws {
-    let grants = Data(#"{"grants":[{"clientId":"a","name":" Claude ","grantedMs":1000,"scope":"gym:delete gym:read"},{"clientId":"b","name":"Roadmap","grantedMs":2000,"scope":"roadmap:read"},{"clientId":"c","grantedMs":3000,"scope":""}]}"#.utf8)
-    let keys = Data(#"{"keys":[{"id":"k","createdMs":4000,"name":""}]}"#.utf8)
+    let grants = Data(#"{"grants":[{"clientId":"a","name":" Claude ","grantedMs":1790448120000,"scope":"gym:delete gym:read"},{"clientId":"b","name":"Roadmap","grantedMs":1790448120000,"scope":"roadmap:read"},{"clientId":"c","grantedMs":1792152000000,"scope":""}]}"#.utf8)
+    let keys = Data(#"{"keys":[{"id":"k","createdMs":1758888000000,"name":""}]}"#.utf8)
     let rows = try CoachConnection.decode(grants: grants, keys: keys)
+    let dates = GymDate(Moment(now: Instant(ms: 1_792_152_000_000), zone: FixedZone(offsetSeconds: 0)), locale: Locale(identifier: "en_US"))
     #expect(rows.map(\.name) == ["Claude", "A connected tool", "A static key"])
-    #expect(rows.map(\.levels) == ["read · delete", "whole account", "whole account"])
-    #expect(rows.map(\.created) == [1000, 3000, 4000])
-    #expect(rows.last?.meta.hasPrefix("API key · whole account · since ") == true)
+    #expect(rows.map { $0.meta(dates) } == ["read · delete · since Sep 26", "whole account · since today", "API key · whole account · since Sep 26, 2025"])
     #expect(throws: DecodingError.self) { try CoachConnection.decode(grants: grants, keys: Data("{}".utf8)) }
   }
-  @Test func countsAgreeWithTheirNounsInReceiptsAndHistory() throws {
-    #expect([GymCount.of(0, "change"), GymCount.of(1, "working set"), GymCount.of(2, "working set")] == ["0 changes", "1 working set", "2 working sets"])
-    #expect(CoachRead(sets: 1, sessions: 1, weeks: 1).line == "read 1 set · 1 week · 1 session")
-    func line(_ kind: String, _ changes: Int) throws -> String? {
-      try JSONDecoder().decode(CoachThread.Outcome.self, from: Data(#"{"kind":"\#(kind)","changes":\#(changes),"routine":"Push A"}"#.utf8)).line
+  // A History row names the routine and what was proposed for it, the question when nothing was, and a settled state.
+  @Test func historyRowsNameTheRoutineWhatWasProposedAndHowItSettled() throws {
+    func thread(_ outcome: String) throws -> CoachThread {
+      try JSONDecoder().decode(CoachThread.self, from: Data(#"{"id":"t","title":"Is Push A still doing anything?","askedAt":1000\#(outcome)}"#.utf8))
     }
-    #expect(try ["proposed", "applied", "dismissed", "superseded", "created"].map { try line($0, 1) }
-      == ["1 change waiting", "1 change → Push A", "1 change turned down", "1 change superseded", "created Push A"])
-    #expect(try [line("proposed", 3), line("created", 2)] == ["3 changes waiting", "2 routines created"])
+    let rows = try [
+      (thread(#","outcome":{"kind":"proposed","changes":3,"routine":"Push A"}"#), false),
+      (thread(#","outcome":{"kind":"proposed","changes":1,"routine":"Push A"}"#), true),
+      (thread(#","outcome":{"kind":"applied","changes":1,"routine":"Push A"}"#), false),
+      (thread(#","outcome":{"kind":"dismissed","changes":2,"routine":"Push A"}"#), false),
+      (thread(#","outcome":{"kind":"superseded","changes":2,"routine":"Push A"}"#), false),
+      (thread(#","outcome":{"kind":"proposed","changes":4}"#), false),
+      (thread(#","outcome":{"kind":"created","changes":1,"routine":"Push A"}"#), false),
+      (thread(#","outcome":{"kind":"unknown","changes":0}"#), false),
+      (thread(""), false)]
+    #expect(rows.map { [$0.0.headline(removal: $0.1), $0.0.settled ?? "-"].joined(separator: " | ") } == [
+      "Push A · 3 changes | -", "Push A · a removal | -", "Push A · 1 change | Applied", "Push A · 2 changes | Turned down",
+      "Push A · 2 changes | Superseded", "4 changes | -", "Is Push A still doing anything? | -", "Is Push A still doing anything? | -",
+      "Is Push A still doing anything? | -"])
   }
   @Test func offlineSendSaysWhyInTheBandAndKeepsTheDraft() async throws {
     let connectivity = SwitchedConnectivity()
@@ -1219,24 +1257,35 @@ import SyncTesting
     coach.newChat(seed: "Private question")
     #expect(coach.blockedReason == nil && coach.canCompose)
   }
-  @Test func proposalCardDrawsChangedMovementsThenTheNameAndCountsWhatApplyApplies() throws {
+  // The card and the Review draw one set of lines: each movement as the proposal orders it, kept runs folded, then the name.
+  @Test func aProposalsCardAndReviewDrawOneSetOfLines() throws {
     let (h, gym) = fixture()
-    gym.run(CreateExercise(Exercise(id: ID("card-squat"), name: "Squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)))
-    gym.run(CreateExercise(Exercise(id: ID("card-bench"), name: "Bench", pattern: "press", equipment: "barbell", stepKg: 2.5)))
-    var routine = Draft(new: Routine(id: ID("card-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("card-squat"), sets: [SetTarget(reps: 5, weightKg: 80)])]))
+    for (id, name) in [("card-squat", "Squat"), ("card-row", "Row"), ("card-curl", "Curl"), ("card-dips", "Dips"), ("card-bench", "Bench")] {
+      gym.run(CreateExercise(Exercise(id: ID(RecordID(id)), name: name, pattern: "squat", equipment: "barbell", stepKg: 2.5)))
+    }
+    let plan = { (id: String, sets: [SetTarget]?) in RoutineEntry(exerciseId: ID(RecordID(id)), sets: sets) }
+    var routine = Draft(new: Routine(id: ID("card-routine"), name: "Push A", entries: [
+      plan("card-squat", [SetTarget(reps: 5, weightKg: 80)]), plan("card-row", [SetTarget(reps: 8, weightKg: 60), SetTarget(reps: 8, weightKg: 60)]),
+      plan("card-curl", [SetTarget(reps: 10, weightKg: 20), SetTarget(reps: 10, weightKg: 20)]), plan("card-dips", nil)]))
     #expect(saved(gym.save(&routine)))
     h.sync(); gym.refresh()
     _ = try h.runner.run(ProposeRoutine(id: ID("card-proposal"), routineId: routine.id, name: "Push A2", entries: [
-      RoutineEntry(exerciseId: ID("card-squat"), sets: [SetTarget(reps: 3, weightKg: 90)]), RoutineEntry(exerciseId: ID("card-bench"))], summary: "Triples"))
+      plan("card-squat", [SetTarget(reps: 3, weightKg: 90)]), plan("card-row", [SetTarget(reps: 8, weightKg: 60), SetTarget(reps: 6, weightKg: 65)]),
+      plan("card-curl", [SetTarget(reps: 10, weightKg: 20), SetTarget(reps: 10, weightKg: 20)]), plan("card-bench", nil)], summary: "Triples"))
     _ = try h.runner.run(ProposeRoutine(id: ID("card-removal"), routineId: routine.id, name: "", entries: [], summary: "Remove", removing: true))
     h.sync(); gym.refresh()
     let revision = try #require(gym.proposals.first { $0.id == ID("card-proposal") })
-    #expect(gym.coachProposalFacts(revision).map { "\($0.title) | \($0.fact)" } == ["Squat | 1 × 5 · 80 → 1 × 3 · 90", "Bench | added · open", "Name | Push A → Push A2"])
-    #expect(gym.coachChangeCount(revision) == 3)
-    #expect(ProposalReviewSheet(gym: gym, proposalId: revision.id.record.string!).applyLabel == "Apply all 3")
+    #expect(gym.coachChanges(revision).map { [$0.symbol ?? "kept", $0.title, $0.change ?? "-"].joined(separator: " | ") } == [
+      "arrow.right | Squat | 1 × 5 · 80 → 1 × 3 · 90 kg", "arrow.right | Row | 60 × 8 · 60 × 8 → 60 × 8 · 65 × 6 kg", "kept | Curl | 2 × 10 · 20 kg",
+      "plus | Bench | Added · open · after Curl", "minus | Dips | Removed", "pencil | Name | Push A → Push A2"])
+    #expect(gym.coachChangeCount(revision) == 5)
+    let review = ProposalReviewSheet(gym: gym, proposalId: revision.id.record.string!)
+    #expect(review.runs.map { $0.map(\.title) } == [["Squat"], ["Row"], ["Curl"], ["Bench"], ["Dips"], ["Name"]])
+    #expect(review.applyLabel == "Apply" && review.promise == "All or none. Nothing changes until you tap.")
     let removal = try #require(gym.proposals.first { $0.id == ID("card-removal") })
-    #expect(gym.coachProposalFacts(removal).isEmpty)
-    #expect(ProposalReviewSheet(gym: gym, proposalId: removal.id.record.string!).applyLabel == "Remove Push A")
+    #expect(gym.coachChanges(removal) == [CoachChange(removing: "Push A")] && gym.coachChanges(removal).first?.removal == true)
+    let removing = ProposalReviewSheet(gym: gym, proposalId: removal.id.record.string!)
+    #expect(removing.applyLabel == "Remove Push A" && removing.promise == "Your logged sets stay. Nothing is removed until you tap.")
   }
   @Test func settingsRowStatesWhatReachesTheLog() async throws {
     let (gym, rest, _) = try await authed(.http(200, #"{"keys":[]}"#))

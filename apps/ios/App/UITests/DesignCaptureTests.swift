@@ -639,16 +639,10 @@ import XCTest
     more("Connected log", app)
     XCTAssertTrue(app.staticTexts["Claude Desktop"].waitForExistence(timeout: 5))
     capture("gym-coach-connected-log-\(appearance)", app)
-    app.swipeUp()
-    app.buttons["How this works"].tap()
+    app.buttons["coach-connected-how"].tap()
+    XCTAssertTrue(app.navigationBars["How this works"].waitForExistence(timeout: 5))
     capture("gym-coach-connected-log-details-\(appearance)", app)
-    back(app)
-    app.buttons["you"].tap()
-    reach(app.buttons["you-gym-settings"], app).tap()
-    XCTAssertTrue(app.descendants(matching: .any)["gym-settings"].waitForExistence(timeout: 5))
-    capture("gym-settings-\(appearance)", app)
-    back(app)
-    app.tabBars.buttons["Coach"].tap()
+    back(app); back(app)
     XCTAssertTrue(question.waitForExistence(timeout: 5)); question.tap(); question.typeText("Is Push A still doing anything?")
     capture("gym-coach-composing-\(appearance)", app)
     app.buttons["coach-send"].tap()
@@ -660,10 +654,11 @@ import XCTest
     for _ in 0..<4 where !photo.isHittable { app.scrollViews.firstMatch.swipeDown() }
     capture("gym-coach-conversation-top-\(appearance)", app)
     XCTAssertTrue(photo.waitForExistence(timeout: 5)); photo.tap()
-    XCTAssertTrue(app.navigationBars["Photo"].waitForExistence(timeout: 5))
-    capture("gym-coach-photo-sheet-\(appearance)", app)
-    app.buttons["Close"].tap()
-    XCTAssertTrue(app.navigationBars["Photo"].waitForNonExistence(timeout: 5))
+    let cover = app.descendants(matching: .any)["coach-photo-cover"]
+    XCTAssertTrue(cover.waitForExistence(timeout: 5))
+    capture("gym-coach-photo-\(appearance)", app)
+    cover.swipeDown(velocity: .fast)
+    XCTAssertTrue(cover.waitForNonExistence(timeout: 5))
     let sources = app.buttons["coach-read-receipt"]
     XCTAssertTrue(sources.wait(for: \.isHittable, toEqual: true, timeout: 5)); sources.tap()
     XCTAssertTrue(app.navigationBars["What Coach read"].waitForExistence(timeout: 5))
@@ -674,7 +669,7 @@ import XCTest
     app.buttons["coach-review"].tap()
     XCTAssertTrue(app.buttons["coach-apply-proposal"].waitForExistence(timeout: 5))
     capture("gym-coach-review-sheet-\(appearance)", app)
-    app.scrollViews.firstMatch.swipeUp()
+    app.swipeUp()
     capture("gym-coach-review-actions-\(appearance)", app)
     app.buttons["Turn this down"].tap()
     let turnDown = app.alerts["Turn this down?"]
@@ -682,7 +677,13 @@ import XCTest
     capture("gym-coach-turn-down-confirmation-\(appearance)", app)
     turnDown.buttons["Keep it"].tap()
     XCTAssertTrue(turnDown.waitForNonExistence(timeout: 5))
+    let apply = app.buttons["coach-apply-proposal"]
+    XCTAssertTrue(apply.wait(for: \.isEnabled, toEqual: true, timeout: 5)); apply.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["coach-review-receipt"].waitForExistence(timeout: 10))
+    capture("gym-coach-review-applied-\(appearance)", app)
     app.buttons["Close"].tap()
+    XCTAssertTrue(app.buttons["coach-review"].waitForValue("Applied", timeout: 5))
+    capture("gym-coach-conversation-applied-\(appearance)", app)
     XCTAssertTrue(app.buttons["coach-more"].waitForExistence(timeout: 5))
     app.buttons["coach-more"].tap()
     XCTAssertTrue(app.buttons["coach-menu-new-chat"].waitForExistence(timeout: 5))
@@ -691,13 +692,26 @@ import XCTest
     XCTAssertTrue(history.wait(for: \.isHittable, toEqual: true, timeout: 5)); history.tap()
     XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 5))
     capture("gym-coach-history-\(appearance)", app)
-    let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Is Push A still doing anything?")).firstMatch
+    let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Push A · 3 changes")).firstMatch
     XCTAssertTrue(conversation.waitForExistence(timeout: 5)); conversation.swipeLeft()
     XCTAssertTrue(app.buttons["Delete"].waitForExistence(timeout: 5)); app.buttons["Delete"].tap()
     XCTAssertTrue(app.buttons["coach-engine-undo"].waitForExistence(timeout: 5))
     capture("gym-coach-history-deleted-\(appearance)", app)
   }
   func testCoachScreensLight() { coachScreens("light") }
+  func coachCreated(_ appearance: String) {
+    let app = launch("shell-last-room", appearance: appearance, arguments: ["-coach-fixture", "-coach-created"])
+    openGymFromJournal(app)
+    app.tabBars.buttons["Coach"].tap()
+    let question = app.descendants(matching: .any)["coach-question"]
+    XCTAssertTrue(question.waitForExistence(timeout: 15)); question.tap(); question.typeText("Build me a routine.")
+    app.buttons["coach-send"].tap()
+    XCTAssertTrue(app.buttons["Open routine · Push A"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    capture("gym-coach-created-\(appearance)", app)
+  }
+  func testCoachCreatedLight() { coachCreated("light") }
+  func testCoachCreatedDark() { coachCreated("dark") }
   func testCoachScreensDark() { coachScreens("dark") }
 
   func coachSignedOut(_ appearance: String) {
@@ -747,9 +761,9 @@ import XCTest
     XCTAssertTrue(apply.wait(for: \.isEnabled, toEqual: true, timeout: 5))
     capture("gym-coach-removal-review-promise-\(appearance)", app)
     apply.tap()
-    XCTAssertTrue(app.staticTexts["Waiting for the log…"].waitForExistence(timeout: 5))
+    XCTAssertTrue(apply.waitForLabel("Removing…", timeout: 5))
     capture("gym-coach-removal-waiting-\(appearance)", app)
-    XCTAssertTrue(app.staticTexts["Still waiting for the log."].waitForExistence(timeout: 25))
+    XCTAssertTrue(apply.waitForLabel("Retry", timeout: 25))
     capture("gym-coach-removal-still-waiting-\(appearance)", app)
   }
   func testCoachRemovalWaitLight() { coachRemovalWait("light") }

@@ -643,7 +643,7 @@ enum WorkoutHandoff: Equatable {
   case keep
   case coach
   case writtenProgram
-  static let coachQuestion = "Check my last session."
+  static let coachQuestion = "Check my last workout."
 }
 
 extension GymModel {

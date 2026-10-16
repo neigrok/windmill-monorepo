@@ -54,7 +54,7 @@ enum CoachFixture {
       let removing = ProcessInfo.processInfo.arguments.contains("-coach-removal")
       _ = gym.run(ProposeRoutine(id: ID("coach-fixture-proposal"), routineId: routine.id, name: "Push A2",
         entries: [RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 3, weightKg: 90)]), RoutineEntry(exerciseId: ID("bench-press"))],
-        summary: removing ? "Remove this routine." : "Three triples at 90 keeps the weekly tonnage and gives you a top set to push.", removing: removing))
+        summary: removing ? "Push A has stopped moving your squat." : "Three triples at 90 keeps the weekly tonnage and gives you a top set to push.", removing: removing))
       await runtime.engine.flushOnLeave(); gym.refresh()
       // A removal Apply then waits on the log past the review's 15-second wait.
       if ProcessInfo.processInfo.arguments.contains("-coach-removal-stall") {
@@ -111,19 +111,17 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
     }
     let thread = body["thread"] as? String ?? "coach-fixture-thread"
     let requestId = body["requestId"] as? String ?? "coach-fixture-request"
-    let generation: [String: Any] = ["id": "gen-" + requestId, "requestId": requestId,
-      "question": body["question"] as? String ?? "Is Push A still doing anything?", "status": "completed",
-      "answer": "## Your next block\n\nKeep the weekly work steady. **Three triples at 90** gives you a top set to push.",
-      "at": 1_790_424_000_000, "revision": 2, "attachments": [["id": "coach-fixture-photo", "mediaType": "image/jpeg", "width": 80, "height": 80, "bytes": 500]], "steps": [["tool": "list_sessions"], ["tool": "list_notes"]],
-      "results": [["kind": "routine-created", "operationId": "coach-fixture-result", "routineId": "coach-fixture-routine", "routineName": "Push A"]],
-      "receipt": ["version": 1, "read": ["sets": 214, "weeks": 6, "sessions": 18], "steps": [["tool": "list_sessions"]], "proposals": ["coach-fixture-proposal"], "observations": [["sessionId": "coach-fixture-session", "startedAt": 1_790_423_000_000, "tool": "get_session", "coverage": "session", "setsRead": 1, "routine": "Push A workout", "workout": ["workingSetCount": 1, "tonnageKg": 400, "durationMs": 1_000_000]]]]]
-    let row: [String: Any] = ["id": "coach-fixture-thread", "title": "Is Push A still doing anything?", "askedAt": 1_790_424_000_000,
-      "outcome": ["kind": "proposed", "changes": 3, "routine": "Push A"], "generation": generation, "turns": [], "nextCursor": NSNull()]
+    let said = CoachFixtureConversation()
+    let generation: [String: Any] = ["id": "gen-" + requestId, "requestId": requestId, "question": body["question"] as? String ?? said.question,
+      "status": "completed", "answer": said.answer, "at": 1_790_424_000_000, "revision": 2, "attachments": said.attachments,
+      "steps": said.steps, "results": said.results, "receipt": said.receipt]
+    let row: [String: Any] = ["id": "coach-fixture-thread", "title": said.question, "askedAt": 1_790_424_000_000,
+      "outcome": said.outcome, "generation": generation, "turns": [], "nextCursor": NSNull()]
     var response: [String: Any] = [:], type = "application/json", data = Data(), status = 200
     if path == "/v1/gym/ask", ProcessInfo.processInfo.arguments.contains("-coach-unavailable") {
       status = 503; response = ["code": "ask-not-configured", "error": CoachCopy.absent]
     } else if path == "/v1/gym/ask" {
-      var partial = generation; partial["status"] = "running"; partial["answer"] = "Keep the weekly work steady."; partial["revision"] = 1
+      var partial = generation; partial["status"] = "running"; partial["answer"] = said.partial; partial["revision"] = 1
       let first = String(data: try! JSONSerialization.data(withJSONObject: ["thread": thread, "generation": partial]), encoding: .utf8)!
       let last = String(data: try! JSONSerialization.data(withJSONObject: ["thread": thread, "generation": generation]), encoding: .utf8)!
       data = Data("event: snapshot\ndata: \(first)\n\nevent: snapshot\ndata: \(last)\n\n".utf8); type = "text/event-stream"
@@ -131,12 +129,7 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
     else if path == "/v1/oauth/grants" { response = ["grants": [["clientId": "fixture", "name": "Claude Desktop", "grantedMs": 1_790_424_000_000, "scope": "gym:read gym:write"]]] }
     else if path == "/v1/mcp-keys" { response = ["keys": [["id": "fixture-key", "name": "A static key", "createdMs": 1_790_424_000_000]]] }
     else if path.contains("/generations/") { var stopped = generation; stopped["status"] = "stopped"; stopped["revision"] = 3; response = ["thread": thread, "generation": stopped] }
-    else if path.contains("/attachments/"), request.httpMethod == "GET" {
-      let format = UIGraphicsImageRendererFormat(); format.scale = 1
-      data = UIGraphicsImageRenderer(size: CGSize(width: 80, height: 80), format: format).image { context in
-        UIColor(GymPalette.accent).setFill(); context.fill(CGRect(x: 0, y: 0, width: 80, height: 80))
-      }.jpegData(compressionQuality: 0.9)!; type = "image/jpeg"
-    }
+    else if path.contains("/attachments/"), request.httpMethod == "GET" { data = CoachFixtureConversation.photo(); type = "image/jpeg" }
     else if path.contains("/attachments/") { response = ["attachment": ["id": path.components(separatedBy: "/").last!, "mediaType": "image/jpeg", "width": 10, "height": 10, "bytes": request.httpBody?.count ?? 10]] }
     else { response = row }
     if data.isEmpty { data = try! JSONSerialization.data(withJSONObject: response) }
@@ -145,5 +138,63 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
     client?.urlProtocol(self, didLoad: data); client?.urlProtocolDidFinishLoading(self)
   }
   override func stopLoading() {}
+}
+
+// One coherent conversation per fixture state: a change to Push A, its removal (`-coach-removal`), or a new routine (`-coach-created`).
+nonisolated struct CoachFixtureConversation {
+  let question: String
+  let partial: String
+  let answer: String
+  var attachments: [[String: Any]] = []
+  var steps: [[String: Any]]
+  var results: [[String: Any]] = []
+  let receipt: [String: Any]
+  let outcome: [String: Any]
+
+  init(arguments: [String] = ProcessInfo.processInfo.arguments) {
+    let workout: [String: Any] = ["workingSetCount": 1, "tonnageKg": 400, "durationMs": 1_000_000]
+    let read: [String: Any] = ["sets": 1, "sessions": 1, "weeks": 1]
+    let observations: [[String: Any]] = [
+      ["sessionId": "coach-fixture-session", "startedAt": 1_790_423_000_000, "finishedAt": 1_790_424_000_000, "tool": "list_sessions",
+       "coverage": "summary", "setsRead": 0, "routine": "Push A", "workout": workout],
+      ["sessionId": "coach-fixture-session", "startedAt": 1_790_423_000_000, "finishedAt": 1_790_424_000_000, "tool": "get_session",
+       "coverage": "session", "setsRead": 1, "routine": "Push A", "workout": workout]]
+    steps = [["tool": "list_notes"], ["tool": "list_sessions"], ["tool": "get_session"]]
+    if arguments.contains("-coach-created") {
+      question = "Build me a routine."; partial = "Push A is in your routines."
+      answer = "Push A is in your routines: back squat, one set of five at 80."
+      steps = [["tool": "list_notes"], ["tool": "list_exercises"], ["tool": "create_routine"]]
+      results = [["kind": "routine-created", "operationId": "coach-fixture-result", "routineId": "coach-fixture-routine", "routineName": "Push A"]]
+      receipt = ["version": 1, "read": ["sets": 0, "sessions": 0, "weeks": 0], "steps": steps, "proposals": [], "observations": []]
+      outcome = ["kind": "created", "changes": 1, "routineId": "coach-fixture-routine", "routine": "Push A"]
+    } else if arguments.contains("-coach-removal") {
+      question = "Remove Push A."; partial = "Push A has not moved your squat in six weeks."
+      answer = "Push A has not moved your squat in six weeks. Removing it leaves every set you logged where it is."
+      steps.append(["tool": "propose_routine_removal"])
+      receipt = ["version": 1, "read": read, "steps": steps, "proposals": ["coach-fixture-proposal"], "observations": observations]
+      outcome = ["kind": "proposed", "changes": 1, "routineId": "coach-fixture-routine", "routine": "Push A"]
+    } else {
+      question = "Is Push A still doing anything?"; partial = "Keep the weekly work steady."
+      answer = "## Your next block\n\nKeep the weekly work steady. **Three triples at 90** gives you a top set to push."
+      attachments = [["id": "coach-fixture-photo", "mediaType": "image/jpeg", "width": 480, "height": 360, "bytes": 500]]
+      steps.append(["tool": "propose_routine_change"])
+      receipt = ["version": 1, "read": read, "steps": steps, "proposals": ["coach-fixture-proposal"], "observations": observations]
+      outcome = ["kind": "proposed", "changes": 3, "routineId": "coach-fixture-routine", "routine": "Push A"]
+    }
+  }
+
+  // The lifter's photo: a lit frame with the training symbol on it, so a capture shows how a picture sits, not a swatch.
+  static func photo() -> Data {
+    let format = UIGraphicsImageRendererFormat(); format.scale = 1
+    let size = CGSize(width: 480, height: 360)
+    return UIGraphicsImageRenderer(size: size, format: format).image { context in
+      let colours = [UIColor(GymPalette.accent).cgColor, UIColor(GymPalette.done).cgColor, UIColor(GymPalette.record).cgColor]
+      let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colours as CFArray, locations: [0, 0.6, 1])!
+      context.cgContext.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: size.width, y: size.height), options: [])
+      let symbol = UIImage(systemName: "figure.strengthtraining.traditional", withConfiguration: UIImage.SymbolConfiguration(pointSize: 180))!
+        .withTintColor(UIColor(GymPalette.card), renderingMode: .alwaysOriginal)
+      symbol.draw(at: CGPoint(x: (size.width - symbol.size.width) / 2, y: (size.height - symbol.size.height) / 2))
+    }.jpegData(compressionQuality: 0.9)!
+  }
 }
 #endif
