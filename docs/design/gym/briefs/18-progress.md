@@ -33,7 +33,7 @@ Record screen — and a second room onto the same chart is two doors onto one va
 
 > **iOS (`../../ios/ios-redesign.md` §7.6):** a moment is a row of The log's list, and it is a
 > door, never an expander. A best moment — an 8 pt record dot, *Bench Press · new best*, its facts
-> as the subtitle — opens the movement's Record with that session's point selected; a weigh-in
+> as the subtitle — opens the movement's Record with that session's point marked; a weigh-in
 > moment opens Bodyweight, and is woven only once a newer weigh-in exists, since the newest is the
 > log's head; a month moment opens nothing. A record is stated once: by its moment, or, when the
 > one-a-week cap leaves a record session without one, by a record dot after the session's name. A
@@ -200,7 +200,7 @@ announced on each change while scrubbing.
 ## Three surfaces
 
 **iOS.** No strip. Moments are rows of The log's list, each a `NavigationLink`: a best moment opens
-the Record with a zoom from its dot, the chart scrolled to that session and its point selected; a
+the Record with a zoom from its dot, the chart scrolled to that session and its point marked; a
 weigh-in moment opens Bodyweight; a month moment is a plain row with no chevron. No moment expands
 in place (`../../ios/ios-redesign.md` §7.6).
 
