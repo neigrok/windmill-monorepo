@@ -236,14 +236,6 @@ extension GymModel {
 
   // The server stamps a proposal's creation; a proposal the phone has not yet sent shows no time rather than a guessed one.
   func proposalLine(_ proposal: Proposal) -> String {
-    do {
-      let createdAt = try runner.read(Proposal.scope) { read in
-        try read.repository(Proposal.self).record(proposal.id, in: .stored).flatMap { try Fields($0).optionalInstant("createdAt") }
-      }
-      return RoutineLines.proposal(proposal, createdAt: createdAt, moment: log?.moment)
-    } catch {
-      report("gym_read", error)
-      return RoutineLines.proposal(proposal, createdAt: nil, moment: log?.moment)
-    }
+    RoutineLines.proposal(proposal, createdAt: proposalCreatedAt(proposal), moment: log?.moment)
   }
 }

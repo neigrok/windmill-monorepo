@@ -184,6 +184,23 @@ import SyncSchema
     #expect(RoutineLines.proposal(coach, createdAt: moment.now, moment: nil) == "From Coach")
   }
 
+  // The row's time is the log's stamp on the proposal, so a proposal still on the phone says only who proposed it.
+  @Test func aWaitingProposalsRowSaysWhenTheLogTookIt() throws {
+    let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: "routines-owner",
+                          rules: ComposedServerRules.windmill(registry: SyncSchema.registry), commandResultWrites: AppRuntime.commandResultWrites)
+    let gym = GymModel(runner: harness.runner); gym.account = "routines-owner"
+    gym.run(CreateExercise(Exercise(id: ID("timed-bench"), name: "Bench", pattern: "press", equipment: "barbell", stepKg: 2.5)))
+    var routine = Draft(new: Routine(id: ID("timed-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("timed-bench"))]))
+    #expect(gym.saveRoutine(&routine))
+    harness.sync(); gym.refresh()
+    #expect(gym.run(ProposeRoutine(id: ID("timed-proposal"), routineId: routine.id, name: "Push A", entries: [RoutineEntry(exerciseId: ID("timed-bench"), sets: [SetTarget(reps: 8, weightKg: 62.5)])], summary: "Heavier"))?.refusal == nil)
+    let unsent = try #require(gym.waitingRoutineProposals.first)
+    let lines = [gym.proposalLine(unsent)]
+    harness.sync(); gym.refresh()
+    let taken = try #require(gym.waitingRoutineProposals.first)
+    #expect(lines + [gym.proposalLine(taken)] == ["From Coach", "From Coach · \(gym.dates.time(Instant(ms: 1_790_424_000_000)))"])
+  }
+
   @Test func aProposalIsNamedByItsRoutineAndWhatItChanges() throws {
     let (_, gym) = fixture()
     var routine = draft(gym)

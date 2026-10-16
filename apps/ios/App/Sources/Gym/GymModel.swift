@@ -70,6 +70,11 @@ final class GymModel {
   var openSession: Session? { log?.open }
   // Every date the room shows, read at the log's moment, or at the device's before the log is read.
   var dates: GymDate { log.map { GymDate($0.moment) } ?? GymDate() }
+  // When the log took a proposal: its record's server stamp, none while the phone has not yet sent it.
+  func proposalCreatedAt(_ proposal: Proposal) -> Instant? {
+    do { return try runner.read(Gym.scope) { try $0.repository(Proposal.self).record(proposal.id, in: .stored)?.rc }.map { Instant(ms: $0) } }
+    catch { report("gym_read", error); return nil }
+  }
   var accountTransition: Bool { accountChanging || replicaChanging }
   func accountTransitionChanged() {
     existingWorkoutActivity?.schedule()

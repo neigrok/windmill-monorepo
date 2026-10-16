@@ -104,11 +104,8 @@ extension GymModel {
     case .mcp(let connection, let agent): source = "proposed by " + (agent.isEmpty ? connection : agent)
     case .other: source = "proposed by a connected tool"
     }
-    do {
-      let created = try runner.read(Gym.scope) { try $0.repository(Proposal.self).record(proposal.id, in: .stored)?.rc }
-      if let created { return source + " · " + dates.dayAndTime(Instant(ms: created)) }
-    } catch { report("gym_read", error) }
-    return source
+    guard let created = proposalCreatedAt(proposal) else { return source }
+    return source + " · " + dates.dayAndTime(created)
   }
   func coachRoutine(_ proposal: Proposal) -> Routine? { routines.first { $0.id == proposal.routineId } }
   // Out of date, it can no longer be applied: a newer proposal replaced it, or its routine moved while it waited.
