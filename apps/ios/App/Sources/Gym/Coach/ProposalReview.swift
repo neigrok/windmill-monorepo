@@ -15,18 +15,22 @@ nonisolated struct CoachReviewPosition: Equatable { let extent: CoachReviewExten
 nonisolated enum CoachQueuedDecision: String { case apply, dismiss, unreadable }
 
 extension GymModel {
-  nonisolated static func readCoachProposals(_ read: Reader) throws -> (replica: String, receipts: [RoutineRemovalReceipt], proposals: [Proposal]) {
+  // The proposals, their removal receipts and the decisions still queued, in one read, so a decision the queue let go is
+  // judged by the proposal state that came with it.
+  nonisolated static func readCoachProposals(_ read: Reader) throws
+    -> (replica: String, receipts: [RoutineRemovalReceipt], proposals: [Proposal], queued: Set<ID<Proposal>>) {
     let receipts = try RoutineRemovalReceipt.read(read)
     let decisions = try read.commands().filter { [Gym.Commands.applyProposal, Gym.Commands.dismissProposal].contains($0.command.name) }
-    let proposals = try read.repository(Proposal.self).all(in: .drawn).map { proposal in
+    let all = try read.repository(Proposal.self).all(in: .drawn)
+    let queued = Set(all.map(\.id).filter { id in decisions.contains { $0.command.args["proposalId"] == id.json } })
+    let proposals = try all.map { proposal in
       if let receipt = receipts.first(where: { $0.proposal.id == proposal.id }) { return receipt.proposal }
-      guard decisions.contains(where: { $0.command.args["proposalId"] == proposal.id.json }),
-            let confirmed = try read.confirmed(Proposal.self, proposal.id) else { return proposal }
+      guard queued.contains(proposal.id), let confirmed = try read.confirmed(Proposal.self, proposal.id) else { return proposal }
       return try Proposal(Fields(confirmed))
     }
-    return (read.replica, receipts, proposals)
+    return (read.replica, receipts, proposals, queued)
   }
-  func updateCoachProposals(replica: String, receipts: [RoutineRemovalReceipt], proposals: [Proposal]) {
+  func updateCoachProposals(replica: String, receipts: [RoutineRemovalReceipt], proposals: [Proposal], queued: Set<ID<Proposal>>) {
     let changedAccount = proposalReadReplica != replica || isAnonymous
     let previous = changedAccount ? [] : coachRemovalReceipts
     if changedAccount { shownCoachRemovals = [:]; awaitedCoachDecisions = [:] }
@@ -43,7 +47,7 @@ extension GymModel {
       }
     }
     // Any other decision is recorded once the log's answer reaches the phone: the queue lets it go, the proposal says how.
-    for (id, decision) in awaitedCoachDecisions where coachQueuedDecision(id) == nil {
+    for (id, decision) in awaitedCoachDecisions where !queued.contains(id) {
       awaitedCoachDecisions[id] = nil
       let taken = visible.first { $0.id == id }?.state == (decision == .apply ? "applied" : "dismissed")
       telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": decision.rawValue, "outcome": taken ? "decided" : "failed"])

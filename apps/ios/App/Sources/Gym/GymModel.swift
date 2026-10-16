@@ -222,7 +222,7 @@ final class GymModel {
       publish(\.bodyweight, snapshot.bodyweight); publish(\.preferences, snapshot.preferences)
       publish(\.isAnonymous, snapshot.anonymous); publish(\.personalCounts, snapshot.counts); publish(\.workoutHidden, snapshot.hidden)
       if snapshot.planUnreadable { report("gym_read", UnreadablePlan()) }
-      updateCoachProposals(replica: snapshot.coach.replica, receipts: snapshot.coach.receipts, proposals: snapshot.coach.proposals)
+      updateCoachProposals(replica: snapshot.coach.replica, receipts: snapshot.coach.receipts, proposals: snapshot.coach.proposals, queued: snapshot.coach.queued)
       if let runtime {
         let replica = try runtime.storageRead { try $0.device().activeReplica }
         publish(\.account, replica.meta.state == .bound ? replica.meta.account : nil)
