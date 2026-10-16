@@ -176,7 +176,12 @@ nonisolated struct CoachThread: Codable, Equatable, Identifiable, Sendable {
     }
     return CoachCopy.proposalTitle(routine: outcome.routine, changes: outcome.changes, removal: removal)
   }
-  var settled: String? { outcome.flatMap { CoachCopy.settled($0.kind) } }
+  // History's caption, the card's word: the log's outcome, or Out of date while the phone sees every waiting proposal outrun.
+  func settled(removal: Bool, outOfDate: Bool) -> String? {
+    guard let outcome else { return nil }
+    if outcome.kind == "proposed" && outOfDate { return CoachCopy.outOfDate }
+    return CoachCopy.settled(outcome.kind, removal: removal)
+  }
   mutating func prepend(_ page: CoachThread) {
     var positions = Set<Int64>()
     turns = (page.turns + turns).filter { positions.insert($0.position).inserted }.sorted { $0.position < $1.position }
@@ -200,13 +205,26 @@ nonisolated enum CoachCopy {
     return (!text.isEmpty || photo) && text.utf8.count <= 1000
   }
   static func escaped(_ component: String) -> String { component.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "" }
-  // A proposal's one name, on its Routines row, its History row and its Review's receipt: the routine and what is proposed
-  // for it, *Push A · 3 changes* or *Push A · a removal*.
+  // A proposal's one name, on its Routines and History rows: *Push A · 3 changes* or *Push A · a removal*.
   static func proposalTitle(routine: String?, changes: Int, removal: Bool) -> String {
     [routine, removal ? "a removal" : GymCount.of(changes, "change")].compactMap { $0 }.joined(separator: " · ")
   }
-  // How a proposal settled, on its card and its History row; a waiting one says nothing, since its Review row invites.
-  static func settled(_ state: String) -> String? { ["applied": "Applied", "dismissed": "Turned down", "superseded": "Superseded"][state] }
+  static let outOfDate = "Out of date"
+  // How a proposal settled, one word on its card, its History row and its Review's band; a waiting one says nothing.
+  static func settled(_ state: String, removal: Bool) -> String? {
+    switch state {
+    case "applied": removal ? "Removed" : "Applied"
+    case "dismissed": "Turned down"
+    case "superseded": outOfDate
+    default: nil
+    }
+  }
+  // A note Coach saved is never silent: the row under its answer says so, or that the save could not be confirmed.
+  static func noteSave(_ steps: [CoachStep]) -> String? {
+    let saves = steps.filter { $0.tool == "save_note" }
+    if saves.contains(where: { !$0.failed }) { return "Saved a note" }
+    return saves.isEmpty ? nil : "Could not confirm a note save"
+  }
 }
 
 nonisolated enum CoachRefusal: Equatable {

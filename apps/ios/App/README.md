@@ -125,8 +125,9 @@ leaves the shell's transient *Couldn't open the update. Try again.* The rooms ke
 
 Debug simulator Coach launches add `-coach-fixture`: a signed-in account with a routine, a workout and a
 proposal, and a scripted Coach service over the real REST boundary whose answer reads that workout and proposes
-the change. `-coach-removal` makes the proposal a removal and the conversation one that asks for it,
-`-coach-created` makes it a conversation that creates the routine and reads nothing from the log,
+the change. `-coach-removal` makes the proposal a removal and the conversation one that asks for it from your totals,
+`-coach-created` makes it a conversation that creates the routine, saves a note and reads nothing from the log,
+`-coach-out-of-date` has a newer proposal replace it,
 `-coach-removal-stall` leaves its Apply unanswered past the review's 15-second wait,
 `-coach-offline` takes Coach and its REST reads offline and `-coach-unavailable` answers as a deployment without Coach.
 

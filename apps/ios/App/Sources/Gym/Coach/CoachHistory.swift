@@ -148,9 +148,12 @@ struct CoachHistoryScreen: View {
               if coach.saved.threadId == row.id, coach.saved.thread != nil { dismiss() }
             }
           } label: {
-            let removal = gym.proposals.contains { $0.threadId == row.id && $0.intent == "remove" }
+            let proposals = gym.proposals.filter { $0.threadId == row.id }
+            let removal = proposals.contains { $0.intent == "remove" }
+            let waiting = proposals.filter { $0.state == "pending" }
             HStack(spacing: RoomSpace.related) {
-              GymRow(title: row.headline(removal: removal), meta: row.settled,
+              GymRow(title: row.headline(removal: removal),
+                     meta: row.settled(removal: removal, outOfDate: !waiting.isEmpty && waiting.allSatisfy(gym.coachProposalOutOfDate)),
                      trailing: row.askedAt > 0 ? .fact(gym.dates.day(Instant(ms: row.askedAt))) : nil, lineLimit: 2)
               if opening == row.id { ProgressView() } else { DoorChevron(room: .gym) }
             }.contentShape(Rectangle())

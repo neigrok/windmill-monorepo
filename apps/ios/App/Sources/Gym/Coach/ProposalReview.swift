@@ -96,6 +96,7 @@ extension GymModel {
     if ok, let runtime { Task { await runtime.engine.flushOnLeave(); runtime.engine.foreground(); refresh() } }
     return ok
   }
+  // *proposed by Coach · Sep 26 · 6:42 PM*: who proposed it, then when the log took it, its record's creation; none before.
   func coachProposalSource(_ proposal: Proposal) -> String {
     let source: String
     switch proposal.provenance {
@@ -104,20 +105,27 @@ extension GymModel {
     case .other: source = "proposed by a connected tool"
     }
     do {
-      let date = try runner.read(Gym.scope) { read in
-        try read.repository(Proposal.self).record(proposal.id, in: .stored).flatMap { try Fields($0).optionalInstant("createdAt") }
-      }
-      if let date { return source + " · " + dates.dayAndTime(date) }
+      let created = try runner.read(Gym.scope) { try $0.repository(Proposal.self).record(proposal.id, in: .stored)?.rc }
+      if let created { return source + " · " + dates.dayAndTime(Instant(ms: created)) }
     } catch { report("gym_read", error) }
     return source
   }
   func coachRoutine(_ proposal: Proposal) -> Routine? { routines.first { $0.id == proposal.routineId } }
-  func coachReorders(_ proposal: Proposal, _ routine: Routine) -> Bool {
+  // Out of date, it can no longer be applied: a newer proposal replaced it, or its routine moved while it waited.
+  func coachProposalOutOfDate(_ proposal: Proposal) -> Bool {
+    if proposal.state == "superseded" || proposal.supersededBy != nil { return true }
+    guard proposal.state == "pending", let base = proposal.baseRevision, let revision = coachRoutine(proposal)?.revision else { return false }
+    return revision > base
+  }
+  // Whether a proposal moves its movements: against its routine while it waits, by the store's count once it settled.
+  func coachReorders(_ proposal: Proposal, besides lines: [CoachChange]) -> Bool {
+    guard proposal.state == "pending" else { return proposal.changeCount == lines.filter { !$0.kept }.count + 1 }
+    guard let routine = coachRoutine(proposal) else { return false }
     let proposed = proposal.document.map(\.exerciseId), current = routine.entries.map(\.exerciseId)
     return current.filter { proposed.contains($0) } != proposed.filter { current.contains($0) }
   }
-  // What Apply applies, counted as the Review lists it, so a count never disagrees with its rows.
-  func coachChangeCount(_ proposal: Proposal) -> Int { coachChanges(proposal).filter { !$0.kept }.count }
+  // The store's count wherever a proposal's changes are counted; the Review's rows until the store has counted it.
+  func coachChangeCount(_ proposal: Proposal) -> Int { proposal.changeCount ?? coachChanges(proposal).filter { !$0.kept }.count }
   // A proposal's lines for its card and its Review: each movement in the proposal's order, then a new name and a new order.
   func coachChanges(_ proposal: Proposal) -> [CoachChange] {
     let routine = coachRoutine(proposal)
@@ -130,14 +138,15 @@ extension GymModel {
         let at = proposal.document.firstIndex { $0.exerciseId == change.exerciseId } ?? 0
         let place = at == 0 ? "first in the routine" : "after " + name(proposal.document[at - 1].exerciseId)
         return CoachChange(symbol: "plus", title: name(change.exerciseId), change: ["Added", CoachChange.scheme(change.after?.sets), place].joined(separator: " · "))
-      case "removed": return CoachChange(symbol: "minus", title: name(change.exerciseId), change: "Removed")
+      case "removed":
+        return CoachChange(symbol: "minus", title: name(change.exerciseId), change: ["Removed", CoachChange.scheme(change.before?.sets)].joined(separator: " · "))
       default: return CoachChange(symbol: nil, title: name(change.exerciseId), change: CoachChange.scheme(change.after?.sets), kept: true)
       }
     }
     if let base = proposal.baseName ?? routine?.name, base != proposal.proposedName {
       lines.append(CoachChange(symbol: "pencil", title: "Name", change: base + " → " + proposal.proposedName))
     }
-    if proposal.state == "pending", let routine, coachReorders(proposal, routine) {
+    if coachReorders(proposal, besides: lines) {
       lines.append(CoachChange(symbol: "arrow.up.arrow.down", title: "Order", change: proposal.document.map { name($0.exerciseId) }.joined(separator: " · ")))
     }
     return lines
@@ -180,10 +189,10 @@ struct CoachChange: Equatable {
 
   // A scheme on one line: *3 × 5 · 80 kg* when its sets agree, set by set when they differ, *open* with none.
   static func scheme(_ sets: [SetTarget]?) -> String { line([sets]) }
-  // *1 × 5 · 80 → 1 × 3 · 90 kg*, then a changed rest.
+  // *1 × 5 · 80 → 1 × 3 · 90 kg*, then a changed rest as the workout's clock reads it, *rest 1:30 → 2:00*, or *default*.
   static func retarget(_ before: EntryTargets?, _ after: EntryTargets?) -> String {
-    let rest = before?.restSeconds == after?.restSeconds ? nil
-      : "rest \(before?.restSeconds.map(String.init) ?? "—") → \(after?.restSeconds.map(String.init) ?? "—") seconds"
+    let clock = { (seconds: Int?) in seconds.map { WorkoutClocks.reading(Int64($0) * 1_000) } ?? "default" }
+    let rest = before?.restSeconds == after?.restSeconds ? nil : "rest \(clock(before?.restSeconds)) → \(clock(after?.restSeconds))"
     let sets = before?.sets == after?.sets ? nil : line([before?.sets, after?.sets])
     return [sets, rest].compactMap { $0 }.joined(separator: " · ")
   }
@@ -227,16 +236,20 @@ struct ProposalReviewSheet: View {
   var proposal: Proposal? { gym.proposals.first { $0.id.record.string == proposalId } }
   var routine: Routine? { proposal.flatMap(gym.coachRoutine) }
   var routineName: String { routine?.name ?? proposal?.baseName ?? "Routine" }
-  var superseded: Bool {
-    guard let proposal else { return false }
-    if proposal.state == "superseded" || proposal.supersededBy != nil { return true }
-    guard proposal.state == "pending", let base = proposal.baseRevision, let revision = routine?.revision else { return false }
-    return revision > base
+  // Why an out-of-date proposal has no Apply, said once where Apply stood.
+  var outOfDate: String? {
+    guard let proposal, gym.coachProposalOutOfDate(proposal) else { return nil }
+    if proposal.supersededBy != nil { return "A newer proposal replaced this one. Nothing was applied." }
+    if proposal.state == "pending" { return "\(routineName) changed after this was written. Nothing was applied." }
+    return "This proposal is out of date. Nothing was applied."
   }
   // The decision the log has not answered yet, while it waits.
   var waiting: CoachQueuedDecision? { proposal.flatMap { gym.coachQueuedDecision($0.id) } }
   var pending: Bool { waiting != nil }
-  var decidable: Bool { proposal?.state == "pending" && !superseded && !pending && owner == gym.account && gym.coachAccountAvailable && !gym.readFailed }
+  var decidable: Bool {
+    guard let proposal, proposal.state == "pending", !gym.coachProposalOutOfDate(proposal) else { return false }
+    return !pending && owner == gym.account && gym.coachAccountAvailable && !gym.readFailed
+  }
   var changes: [CoachChange] { proposal.map(gym.coachChanges) ?? [] }
   var count: Int { proposal.map(gym.coachChangeCount) ?? 0 }
   // The diff's rows in order, each unchanged run gathered into one row that unfolds in place.
@@ -248,7 +261,16 @@ struct ProposalReviewSheet: View {
     return runs
   }
   var removal: Bool { proposal?.intent == "remove" }
-  var applyLabel: String { removal ? "Remove " + routineName : "Apply" }
+  // The one primary keeps its place through the wait: Apply, the act in flight until the log answers, then Retry.
+  var primaryTitle: String {
+    if stalled { return "Retry" }
+    switch waiting {
+    case nil: return removal ? "Remove " + routineName : "Apply"
+    case .apply: return removal ? "Removing…" : "Applying…"
+    case .dismiss: return "Turning down…"
+    case .unreadable: return "Sending…"
+    }
+  }
   var seenEnd: Bool { seen != nil && seen == extent }
   var promise: String {
     if removal { return "Your logged sets stay. Nothing is removed until you tap." }
@@ -280,10 +302,6 @@ struct ProposalReviewSheet: View {
             }
           } header: { if !removal { Text(GymCount.of(count, "change")) } }
             .listRowBackground(GymPalette.card)
-          if superseded {
-            Text("This routine has changed since the proposal was written, so it can no longer be applied — nothing here was. What the routine now says is what stands.")
-              .font(.callout).foregroundStyle(GymPalette.inkDim).listRowBackground(Color.clear)
-          }
           if let ask {
             Button("Ask Coach") { dismiss(); ask(routineName) }.foregroundStyle(GymPalette.accent).listRowBackground(Color.clear)
           }
@@ -330,12 +348,19 @@ struct ProposalReviewSheet: View {
     }.buttonStyle(.plain).accessibilityValue(open ? "expanded" : "collapsed").accessibilityIdentifier("coach-review-unchanged")
     if open { ForEach(Array(run.enumerated()), id: \.offset) { _, change in change.row } }
   }
-  // Apply, its caption and Turn this down until the log answers; then the receipt stands in their place.
+  // Apply, its caption and Turn this down until the log answers; then the receipt stands in their place, or why it is out of date.
   @ViewBuilder var band: some View {
     VStack(spacing: RoomSpace.related) {
       GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
       if owner != gym.account || !gym.coachAccountAvailable { EmptyView() }
       else if let proposal, !pending, ["applied", "dismissed"].contains(proposal.state) { receipt(proposal) }
+      else if !pending, let outOfDate {
+        Text(outOfDate).font(.subheadline).foregroundStyle(GymPalette.inkDim).multilineTextAlignment(.center)
+          .frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget).padding(.horizontal, RoomSpace.inset)
+          .accessibilityIdentifier("coach-review-out-of-date")
+          .onAppear { acknowledgeReceipt() }
+          .onChange(of: phase) { _, _ in acknowledgeReceipt() }
+      }
       else if decidable || pending {
         if gym.coachRemovalReceipts.contains(where: { $0.proposal.id.description == proposalId && $0.outcome == .refused }) {
           Text("Nothing was applied.").font(.body.weight(.semibold))
@@ -353,25 +378,19 @@ struct ProposalReviewSheet: View {
       }
     }.padding(.bottom, RoomSpace.inset).frame(maxWidth: .infinity).animation(.default, value: proposal?.state)
   }
-  // The one primary keeps its place through the wait: busy while the log has not answered, Retry once that wait has run out.
   var primary: some View {
-    let title: String
-    if stalled { title = "Retry" }
-    else if !pending { title = applyLabel }
-    else { title = removal && waiting == .apply ? "Removing…" : "Waiting for the log…" }
-    return ActionBand(title: title, room: removal ? .gymRemoval : .gym, disabled: !stalled && (pending || !seenEnd || gym.openSession != nil),
-                      busy: pending && !stalled, actionIdentifier: "coach-apply-proposal", role: removal && !stalled ? .destructive : nil) {
+    ActionBand(title: primaryTitle, room: removal ? .gymRemoval : .gym, disabled: !stalled && (pending || !seenEnd || gym.openSession != nil),
+               busy: pending && !stalled, actionIdentifier: "coach-apply-proposal", role: removal && !stalled ? .destructive : nil) {
       guard let proposal else { return }
       if stalled { resent += 1; gym.coachResendDecision(proposal.id) } else { submitted = gym.coachDecideProposal(proposal, apply: true) }
     }.accessibilityHint(caption)
   }
-  // Where Apply stood: *Applied · Push A · 3 changes* with its check bouncing in, or *Turned down*, quiet.
+  // Where Apply stood, the settled word alone: *Applied* or *Removed* with its check bouncing in, or *Turned down*, quiet.
   func receipt(_ proposal: Proposal) -> some View {
-    HStack(spacing: RoomSpace.related) {
-      if proposal.state == "applied" {
-        Image(systemName: "checkmark").foregroundStyle(GymPalette.done).symbolEffect(.bounce, value: landed).accessibilityHidden(true)
-        Text("Applied · " + CoachCopy.proposalTitle(routine: proposal.baseName ?? routineName, changes: count, removal: removal)).foregroundStyle(GymPalette.ink)
-      } else { Text("Turned down").foregroundStyle(GymPalette.inkDim) }
+    let applied = proposal.state == "applied"
+    return HStack(spacing: RoomSpace.related) {
+      if applied { Image(systemName: "checkmark").foregroundStyle(GymPalette.done).symbolEffect(.bounce, value: landed).accessibilityHidden(true) }
+      if let word = CoachCopy.settled(proposal.state, removal: removal) { Text(word).foregroundStyle(applied ? GymPalette.ink : GymPalette.inkDim) }
     }.font(.body.weight(.semibold)).multilineTextAlignment(.center).frame(minHeight: RoomSpace.minimumTarget).padding(RoomSpace.inset)
       .accessibilityElement(children: .combine).accessibilityIdentifier("coach-review-receipt")
       .onAppear { landed = true; acknowledgeReceipt() }
