@@ -64,7 +64,7 @@ import XCTest
     let retained = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-"))
     let landed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in retained.count == 4 }, object: nil)
     XCTAssertEqual(XCTWaiter.wait(for: [landed], timeout: 10), .completed)
-    XCTAssertTrue(app.staticTexts["workout-current-set"].label.contains("4"))
+    XCTAssertEqual(app.descendants(matching: .any)["workout-current-set"].label, "Set 4, current, target 100 × 5")
     app.buttons["workout-finish"].tap()
     XCTAssertTrue(app.staticTexts["Ended early."].waitForExistence(timeout: 5))
     XCUIDevice.shared.press(.home)
