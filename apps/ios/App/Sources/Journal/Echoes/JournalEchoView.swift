@@ -120,8 +120,7 @@ struct JournalEchoRow: View {
     let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
     layout {
       VStack(alignment: .leading, spacing: 1) {
-        Text(JournalEchoStamp.head(match.day))
-        Text(JournalEchoStamp.year(match.day))
+        Text(JournalEchoStamp.date(match.day, today: echoes.access.today))
         Text(JournalEchoStamp.distance(from: match.day, to: trigger))
       }.font(JournalType.date).foregroundStyle(JournalPalette.inkFaint).frame(width: stacked ? nil : stampColumn, alignment: .leading)
         .padding(.top, 3).accessibilityElement(children: .ignore).accessibilityLabel(JournalEchoStamp.long(match.day))
@@ -130,7 +129,7 @@ struct JournalEchoRow: View {
           .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
         if let provenance = match.provenance { Text(provenance).font(.footnote).foregroundStyle(JournalPalette.inkDim) }
       }
-    }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+    }.frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget, alignment: .topLeading).contentShape(Rectangle())
       .accessibilityElement(children: .combine)
       .onScrollVisibilityChange { visible in if visible { echoes.shown(match, on: trigger) } }
   }
@@ -165,13 +164,13 @@ struct JournalEchoReader: View {
         }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
       }.accessibilityIdentifier("echo-sheet")
         .background(JournalPalette.canvas).navigationTitle("From your journal").navigationBarTitleDisplayMode(.inline)
+        .tint(JournalPalette.lamp)
         .toolbar {
           ToolbarItem(placement: .topBarTrailing) {
             Button("Close") { echoes.readerDay = nil; dismiss() }.accessibilityIdentifier("echo-close")
           }
-        }
+        }.roomBar(.journal)
         .toolbarBackground(JournalPalette.canvas, for: .navigationBar).toolbarBackground(.visible, for: .navigationBar)
-        .tint(JournalPalette.lamp)
     }.presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.medium, .large])
       .presentationDragIndicator(.visible)
       .presentationBackground(JournalPalette.canvas)
@@ -199,23 +198,21 @@ struct JournalEchoTrail: View {
   }
 }
 
-// The web ink's stamp grammar (`echoDates.js`): 14 MAR / 2026 / 5 MO, measured from the trigger page.
+// The ink's stamp (ios-redesign §8): 29 MAY over 4 MO this year, 22 AUG 2025 over 1 YR before; months as `echoDates.js` counts.
 enum JournalEchoStamp {
   static let months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
 
-  static func head(_ iso: String) -> String {
+  static func date(_ iso: String, today: String) -> String {
     guard let day = LocalDay(iso) else { return "" }
-    return String(format: "%02d %@", day.day, months[day.month - 1])
+    let head = String(format: "%02d %@", day.day, months[day.month - 1])
+    return day.year == LocalDay(today)?.year ? head : "\(head) \(day.year)"
   }
-
-  static func year(_ iso: String) -> String { LocalDay(iso).map { String($0.year) } ?? "" }
 
   static func distance(from source: String, to trigger: String) -> String {
     guard let older = LocalDay(source), let newer = LocalDay(trigger) else { return "" }
     let months = monthsApart(older, newer)
     if months == 0 { return "\(max(1, Int((Double(older.days(until: newer)) / 7).rounded()))) WK" }
-    if months < 12 { return "\(months) MO" }
-    return months % 12 == 0 ? "\(months / 12) Y" : "\(months / 12) Y \(months % 12)"
+    return months < 12 ? "\(months) MO" : "\(months / 12) YR"
   }
 
   // Months between two days to the nearest month, rounded on the calendar and from zero, so 30 days is one month.

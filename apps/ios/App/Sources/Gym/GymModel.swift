@@ -75,14 +75,14 @@ final class GymModel {
     if accountTransition { rest.cancel() }
   }
   var hasData: Bool { personalCounts.values.contains { $0 > 0 } }
-  var phoneSummary: String {
+  var phoneSummary: String? {
     let kinds = [(Routine.type, "routine"), (Session.type, "workout"), (WeighIn.type, "weigh-in"), (Note.type, "note"),
                  (Exercise.type, "custom movement")]
     let lines = kinds.compactMap { type, noun -> String? in
       let count = personalCounts[type] ?? 0
       return count == 0 ? nil : GymCount.of(count, noun)
     }
-    return lines.isEmpty ? "nothing yet" : lines.joined(separator: " · ")
+    return lines.isEmpty ? nil : lines.joined(separator: " · ")
   }
 
   // The sets the log has not confirmed as this phone holds them: absent there, hidden or changed since.

@@ -216,7 +216,7 @@ import UIKit
     more("New chat", app)
     XCTAssertTrue(app.buttons["coach-review"].waitForNonExistence(timeout: 5))
     app.buttons["you"].tap()
-    XCTAssertTrue(app.buttons["you-gym-settings"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["about-windmill"].waitForExistence(timeout: 5))
     guard let accountImage = app.screenshot().image.cgImage,
           let background = accountImage.cropping(to: CGRect(x: CGFloat(accountImage.width / 2), y: CGFloat(accountImage.height * 9 / 10), width: 1, height: 1)) else {
       XCTFail("Account screenshot has no background sample"); return
@@ -232,12 +232,6 @@ import UIKit
     let brightness = (Double(pixel[0]) + Double(pixel[1]) + Double(pixel[2])) / (3 * 255)
     if appearance == "Light" { XCTAssertGreaterThan(brightness, 0.7, "Gym Account must follow light appearance") }
     else { XCTAssertLessThan(brightness, 0.3, "Gym Account must follow dark appearance") }
-    app.buttons["you-gym-settings"].tap()
-    XCTAssertTrue(app.descendants(matching: .any)["gym-settings"].waitForExistence(timeout: 5))
-    XCTAssertFalse(app.descendants(matching: .any)["gym-units"].exists || app.buttons["Account"].exists)
-    XCTAssertTrue(app.buttons["Notes"].exists)
-    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Connected log")).firstMatch.waitForExistence(timeout: 5))
-    capture("coach-settings-\(suffix)", app)
     app.terminate()
   }
   func testLightScreensAndNativeNavigation() { screens("Light") }

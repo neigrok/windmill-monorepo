@@ -218,11 +218,38 @@ import XCTest
     capture("gym-you-signed-in-\(appearance)", app)
     reach(app.buttons["sign-out"], app).tap()
     XCTAssertTrue(app.alerts["Sign out?"].waitForExistence(timeout: 5))
-    capture("gym-sign-out-sheet-\(appearance)", app)
+    capture("gym-sign-out-alert-\(appearance)", app)
     app.terminate()
   }
   func testGymSignedInLight() { gymSignedIn("light") }
   func testGymSignedInDark() { gymSignedIn("dark") }
+
+  func youSignedOutHolding(_ appearance: String) {
+    let app = launch("shell-anonymous", appearance: appearance, arguments: ["-gym-log-fixture"])
+    XCTAssertTrue(app.buttons["open-gym"].waitForExistence(timeout: 15)); app.buttons["open-gym"].tap()
+    XCTAssertTrue(app.tabBars.buttons["The log"].waitForExistence(timeout: 10)); app.tabBars.buttons["The log"].tap()
+    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-log-session-")).firstMatch.waitForExistence(timeout: 20))
+    app.buttons["you"].tap()
+    XCTAssertTrue(app.staticTexts["On this phone"].waitForExistence(timeout: 5))
+    capture("gym-you-signed-out-holding-\(appearance)", app)
+    app.terminate()
+  }
+  func testYouSignedOutHoldingLight() { youSignedOutHolding("light") }
+  func testYouSignedOutHoldingDark() { youSignedOutHolding("dark") }
+
+  func hiddenWorkout(_ appearance: String) {
+    let app = launch("workout-planned", appearance: appearance)
+    XCTAssertTrue(app.buttons["workout-assembly"].waitForExistence(timeout: 10)); app.buttons["workout-assembly"].tap()
+    XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
+    XCTAssertTrue(app.buttons["gym-hidden-workout"].waitForExistence(timeout: 5))
+    capture("gym-hidden-workout-accessory-\(appearance)", app, settle: 1.5)
+    app.tabBars.buttons["The log"].tap()
+    XCTAssertTrue(app.descendants(matching: .any)["gym-log"].waitForExistence(timeout: 10))
+    capture("gym-hidden-workout-accessory-log-\(appearance)", app, settle: 1.5)
+    app.terminate()
+  }
+  func testHiddenWorkoutLight() { hiddenWorkout("light") }
+  func testHiddenWorkoutDark() { hiddenWorkout("dark") }
 
   func workout(_ appearance: String) {
     let app = launch("workout-planned", appearance: appearance)
@@ -421,7 +448,7 @@ import XCTest
     capture("journal-you-signed-in-\(appearance)", app)
     app.buttons["sign-out"].tap()
     XCTAssertTrue(app.alerts["Sign out?"].waitForExistence(timeout: 5))
-    capture("journal-sign-out-sheet-\(appearance)", app)
+    capture("journal-sign-out-alert-\(appearance)", app)
     app.terminate()
   }
   func testJournalKeepSheetAndSignedInYouLight() { journalKeepSheetAndSignedInYou("light") }
@@ -642,11 +669,6 @@ import XCTest
     app.swipeUp()
     app.buttons["How this works"].tap()
     capture("gym-coach-connected-log-details-\(appearance)", app)
-    back(app)
-    app.buttons["you"].tap()
-    reach(app.buttons["you-gym-settings"], app).tap()
-    XCTAssertTrue(app.descendants(matching: .any)["gym-settings"].waitForExistence(timeout: 5))
-    capture("gym-settings-\(appearance)", app)
     back(app)
     app.tabBars.buttons["Coach"].tap()
     XCTAssertTrue(question.waitForExistence(timeout: 5)); question.tap(); question.typeText("Is Push A still doing anything?")

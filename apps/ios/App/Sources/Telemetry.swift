@@ -39,19 +39,20 @@ nonisolated enum TelemetryPrivacy {
     "onboarding_screen_viewed", "onboarding_skipped", "onboarding_finished", "onboarding_replayed", "room_switched", "room_adoption_answered", "gym_screen_viewed", "gym_action", "gym_undo",
     "gym_activity_set_logged", "gym_activity_offer_refused", "gym_session_started", "gym_session_finished", "gym_set_logged", "gym_routine_saved",
     "gym_ask_started", "gym_ask_outcome", "gym_proposal_outcome", "gym_connect_tool", "gym_import_recovery",
-    "gym_moment_opened", "client_update_required", "appearance_chosen"
+    "gym_moment_opened", "gym_hidden_workout", "client_update_required", "appearance_chosen"
   ]
   static let labels: [String: Set<String>] = [
     "room": ["journal", "gym"],
     "page": ["windmill", "roadmap", "journal", "gym"],
     "presentation": ["first_launch", "replay"],
-    "screen": ["routine", "routine_editor", "movement", "session", "fix_set", "record", "bodyweight", "weigh_in", "session_share", "history", "notes", "note", "settings", "review", "connected_log", "sources", "gym", "routines", "log", "coach", "workout", "welcome", "journal", "ink_notes", "keep", "address", "code", "you", "adoption", "discard_adoption", "sign_out", "23a", "23b", "23c", "24c", "24d", "apple_no_account", "apple_expired", "auth_pending"],
-    "action": ["create", "update", "apply", "dismiss", "open_gym", "open_journal", "dismiss_ink", "write", "done_writing", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "answered", "declined", "use_account", "create_account", "remove_apple", "retry", "inspect", "fix", "open", "connect", "manage"],
+    "screen": ["routine", "routine_editor", "movement", "session", "fix_set", "record", "bodyweight", "weigh_in", "session_share", "history", "notes", "note", "review", "connected_log", "sources", "gym", "routines", "log", "coach", "workout", "welcome", "journal", "ink_notes", "keep", "address", "code", "you", "adoption", "discard_adoption", "23a", "23b", "23c", "24c", "24d", "apple_no_account", "apple_expired", "auth_pending"],
+    "action": ["create", "update", "apply", "dismiss", "open_gym", "open_journal", "dismiss_ink", "write", "done_writing", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "answered", "declined", "use_account", "create_account", "remove_apple", "retry", "inspect", "fix", "open", "connect", "manage", "hide"],
     "outcome": ["answered", "capped", "fresh", "absent", "offline", "stalled", "decided", "refused", "ok", "completed", "failed", "cancelled", "signed_in", "paused", "anonymous", "linked"],
     "reason": ["session-open", "session-overlap", "id-taken", "bad-instant", "too-many-sets", "invalid-set", "unknown-exercise", "session-finished", "unsent", "other"],
     "cap": ["daily", "ceiling"],
     "state": ["shown", "opened"],
     "trigger": ["sync", "sign_in"],
+    "door": ["accessory", "row"],
     "appearance": ["light", "dark", "system"],
     "method": ["GET", "POST", "PUT", "DELETE", "email", "apple"],
     "day_kind": ["today"],

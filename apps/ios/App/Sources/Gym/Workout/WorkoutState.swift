@@ -638,6 +638,8 @@ struct FinishWorkout: Action {
   }
 }
 
+enum HiddenWorkoutDoor: String { case accessory, row }
+
 enum WorkoutHandoff: Equatable {
   case detail(ID<Session>?)
   case keep
@@ -672,7 +674,15 @@ extension GymModel {
   @discardableResult func hideWorkout() -> Bool {
     guard openSession != nil, !workout.finishing, workout.receipt == nil else { return false }
     var next = workout.walk; next.hidden = true
-    return workout.keep(next)
+    guard workout.keep(next) else { return false }
+    telemetry.event("gym_hidden_workout", properties: ["action": "hide"])
+    return true
+  }
+  // The lifter's way back to a hidden workout: the tab bar's accessory on iOS 26, The log's Hidden row on iOS 18.
+  @discardableResult func openHiddenWorkout(from door: HiddenWorkoutDoor) -> Bool {
+    guard restoreWorkout() else { error = "Gym could not restore this workout. Try again."; return false }
+    telemetry.event("gym_hidden_workout", properties: ["action": "open", "door": door.rawValue])
+    return true
   }
   @discardableResult func restoreWorkout() -> Bool {
     guard !accountTransition, openSession != nil else { return false }

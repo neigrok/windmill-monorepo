@@ -93,7 +93,7 @@ import XCTest
     XCTAssertFalse(email.isEnabled, "Offline, the email door waits for a connection")
     if app.buttons["apple-sign-in"].exists { XCTAssertFalse(app.buttons["apple-sign-in"].isEnabled, "Offline, the Apple door waits too") }
     XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "Sign-in needs a connection.")).count, 1)
-    XCTAssertTrue(app.buttons["you-gym-settings"].isEnabled, "Settings stay reachable offline")
+    XCTAssertTrue(app.buttons["about-windmill"].isEnabled, "Settings stay reachable offline")
   }
 
   func launch(mode: String, signedIn: Bool) -> XCUIApplication {
@@ -160,9 +160,8 @@ import XCTest
 
     switchRoom("Gym", in: app)
     if restoringWorkout {
-      openSettings(app, signedIn: signedIn)
-      ready(app.buttons["gym-restore-workout"])
-      app.buttons["gym-restore-workout"].tap()
+      ready(app.buttons["gym-hidden-workout"])
+      app.buttons["gym-hidden-workout"].tap()
     } else {
       ready(app.tabBars.buttons["Routines"])
       app.tabBars.buttons["Routines"].tap()
@@ -174,11 +173,6 @@ import XCTest
     app.buttons["workout-assembly"].tap()
     ready(app.buttons["workout-hide"])
     app.buttons["workout-hide"].tap()
-    if restoringWorkout {
-      let back = app.navigationBars["Gym settings"].buttons.element(boundBy: 0)
-      ready(back)
-      back.tap()
-    }
     ready(app.tabBars.buttons["Coach"])
     app.tabBars.buttons["Coach"].tap()
     if app.launchArguments.contains("no-network") {
@@ -186,14 +180,18 @@ import XCTest
     } else {
       XCTAssertTrue(app.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 3))
     }
-    openSettings(app, signedIn: signedIn)
-    ready(app.buttons["Notes"])
-    app.navigationBars["Gym settings"].buttons.element(boundBy: 0).tap()
+    ready(app.buttons["coach-more"])
+    app.buttons["coach-more"].tap()
+    ready(app.buttons["coach-menu-notes"])
+    app.buttons["coach-menu-notes"].tap()
+    XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
+    app.navigationBars["Notes"].buttons.element(boundBy: 0).tap()
+    openYou(app, signedIn: signedIn)
     switchRoom("Journal", in: app)
     XCTAssertEqual(editor.value as? String, previous + suffix)
   }
 
-  func openSettings(_ app: XCUIApplication, signedIn: Bool) {
+  func openYou(_ app: XCUIApplication, signedIn: Bool) {
     ready(app.buttons["you"])
     app.buttons["you"].tap()
     ready(app.buttons["Done"])
@@ -202,11 +200,7 @@ import XCTest
     } else {
       XCTAssertTrue(app.staticTexts["Not signed in"].exists)
     }
-    let settings = app.buttons["you-gym-settings"]
-    if !settings.isHittable { app.swipeUp() }
-    ready(settings)
-    settings.tap()
-    XCTAssertTrue(app.descendants(matching: .any)["gym-settings"].waitForExistence(timeout: 3))
+    app.buttons["Done"].tap()
   }
 
   func switchRoom(_ room: String, in app: XCUIApplication) {

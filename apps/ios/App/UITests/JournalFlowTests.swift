@@ -449,9 +449,15 @@ import XCTest
     XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 10))
     let backedUp = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "backed up")).firstMatch
     XCTAssertTrue(backedUp.waitForExistence(timeout: 15))
-    app.buttons["you"].tap(); app.buttons["sign-out"].tap()
+    app.buttons["you"].tap()
+    XCTAssertTrue(app.staticTexts["Sam"].waitForExistence(timeout: 5), "You names the account, never You")
+    XCTAssertTrue(app.staticTexts["Backed up"].waitForExistence(timeout: 15))
+    XCTAssertFalse(app.staticTexts["Your data"].exists || app.staticTexts["Signed in with email"].exists, "You states its one status once")
+    app.buttons["sign-out"].tap()
     let signOut = app.alerts["Sign out?"]
     XCTAssertTrue(signOut.waitForExistence(timeout: 10))
+    XCTAssertTrue(signOut.staticTexts["Your pages and log stay in your account and leave this phone."].exists)
+    XCTAssertTrue(app.navigationBars["You"].exists && !app.navigationBars["Sign out"].exists, "Sign out asks once, over You")
     signOut.buttons["Cancel"].tap()
     XCTAssertTrue(app.buttons["sign-out"].waitForExistence(timeout: 5))
     app.buttons["sign-out"].tap()
@@ -493,7 +499,7 @@ import XCTest
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", "paused-backup"]
     app.launch()
-    XCTAssertTrue(app.staticTexts["Backup is paused. Sign in again to resume."].waitForExistence(timeout: 30))
+    XCTAssertTrue(app.staticTexts["Sign in to the same account. Your writing stays on this phone."].waitForExistence(timeout: 30))
     app.buttons["email-sign-in"].tap()
     let email = app.textFields["email-address"]
     XCTAssertTrue(email.waitForExistence(timeout: 5)); email.tap(); email.typeText("apple@example.com")
