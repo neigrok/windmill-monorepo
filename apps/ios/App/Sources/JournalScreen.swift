@@ -28,8 +28,8 @@ struct JournalScreen: View {
   @ScaledMetric(relativeTo: .body) var bodySize = JournalType.bodySize
   @ScaledMetric(relativeTo: .callout) var echoControlWidth = 60.0
   var reduceMotion: Bool { systemReduceMotion || model.runtime?.settings.board?.hasSuffix("-RM") == true }
-  // The write seat and its inset from the edge: what the canvas's end keeps clear.
-  static let seatClearance = RoomSpace.minimumTarget + RoomSpace.inset
+  // What the canvas's end keeps clear: the seat's inset from the edge, the seat, and the same gap above it.
+  static let seatClearance = RoomSpace.minimumTarget + 2 * RoomSpace.inset
   var body: some View {
     NavigationStack {
       journal
@@ -200,11 +200,12 @@ struct JournalScreen: View {
     place(day, at: row.minY, scroll: scroll)
   }
 
-  // An ink that opens under the write seat rises until its end clears the seat, never taking its date row off the top.
+  // An ink that opens under the write seat rises until its end stands an inset above the seat, never taking its date row off the top.
   func clearSeat(_ ink: CGRect, day: String, scroll: ScrollViewProxy) {
-    guard let row = marks.rows[day], ink.maxY > marks.seat.minY, !marks.seat.isEmpty else { return }
+    let clearance = marks.seat.minY - RoomSpace.inset
+    guard let row = marks.rows[day], ink.maxY > clearance, !marks.seat.isEmpty else { return }
     withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) {
-      place(day, at: max(marks.canvas.minY, row.minY - (ink.maxY - marks.seat.minY)), scroll: scroll)
+      place(day, at: max(marks.canvas.minY, row.minY - (ink.maxY - clearance)), scroll: scroll)
     }
   }
 

@@ -17,8 +17,9 @@ struct OnboardingGlimpse: View {
   @State var breathing = false
   @State var travelling = false
   var body: some View {
+    // One picture scaled uniformly into the column between the gutters, centred in it.
     GeometryReader { geometry in
-      let scale = min(geometry.size.width / 354, geometry.size.height / (page == .windmill ? 320 : 340))
+      let scale = min(geometry.size.width / 354, geometry.size.height / page.glimpseHeight)
       Group {
         switch page {
         case .windmill: rooms
@@ -26,9 +27,9 @@ struct OnboardingGlimpse: View {
         case .journal: journal
         case .gym: gym
         }
-      }.frame(width: 354, height: page == .windmill ? 320 : 340)
-        .scaleEffect(scale, anchor: .topLeading)
-        .offset(x: (geometry.size.width - 354 * scale) / 2)
+      }.frame(width: 354, height: page.glimpseHeight)
+        .scaleEffect(scale)
+        .frame(width: 354 * scale, height: page.glimpseHeight * scale)
         .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
         .accessibilityHidden(true)
     }.environment(\.dynamicTypeSize, .large)

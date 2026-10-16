@@ -46,9 +46,19 @@ import SyncCore
     #expect(app.selectedRoom == room)
   }
 
+  // A movement this phone cannot name is left out of the answer, never given a stand-in.
+  @Test func aLoggedSetWhoseMovementHasNoNameIsSaidWithItsNumbersAlone() {
+    let offer = WorkoutActivityOffer(ownerID: "owner", sessionID: "session", movementID: "not-on-this-phone", weightKg: 60, reps: 1, setID: "set")
+    #expect([WorkoutLogAnswer.loggedSet(offer, movement: nil), .loggedSet(offer, movement: "Workout squat")] == [
+      .logged(shown: "Logged 60 kg × 1.", spoken: "Logged 60 kilograms, 1 rep."),
+      .logged(shown: "Logged 60 kg × 1 · Workout squat.", spoken: "Logged 60 kilograms, 1 rep, Workout squat."),
+    ])
+  }
+
   @Test func logSetShortcutWithNoWorkoutOpenAnswersAndOpensNothing() async throws {
     let recorder = TelemetryRecorder(), app = try app(recorder), room = app.selectedRoom, welcome = app.welcome
-    #expect(await handling(app) { await WorkoutActivityIntentHandler.logSet(offer: nil, surface: .shortcut) } == .absent)
+    let answer = await handling(app) { await WorkoutActivityIntentHandler.logSet(offer: nil, surface: .shortcut) }, said = answer.dialog(.shortcut)
+    #expect(answer == .absent && [said.shown, said.spoken] == ["No workout is open.", "No workout is open."])
     #expect(app.selectedRoom == room && app.welcome == welcome && !app.routinesRequested && app.gym.sets.isEmpty)
     #expect(outsideEvents(recorder) == ["gym_activity_offer_refused outcome=absent surface=shortcut"])
   }
@@ -56,7 +66,8 @@ import SyncCore
   @Test func logSetShortcutWithNothingOnOfferBringsTheHiddenWorkoutBack() async throws {
     let recorder = TelemetryRecorder(), app = try app(recorder), workout = try fixtures.begin(app.gym)
     #expect(app.gym.hideWorkout() && !workout.isPresented)
-    #expect(await handling(app) { await WorkoutActivityIntentHandler.logSet(offer: nil, surface: .shortcut) } == .opened)
+    let answer = await handling(app) { await WorkoutActivityIntentHandler.logSet(offer: nil, surface: .shortcut) }, said = answer.dialog(.shortcut)
+    #expect(answer == .opened && [said.shown, said.spoken] == ["Nothing logged. Opening Windmill.", "Nothing logged. Opening Windmill."])
     #expect(app.selectedRoom == .gym && !app.welcome && !app.gym.workoutHidden && workout.isPresented && workout.sets.isEmpty)
     #expect(outsideEvents(recorder) == ["gym_intent_opened intent=open_workout surface=shortcut"])
   }

@@ -380,11 +380,36 @@ import SyncTesting
       "3 changes haven't been confirmed by your account yet. Keep them on this phone until you sign back in, or discard them from this phone. Everything else is in your account and leaves this phone."])
   }
 
-  // You's identity is the account's name, or its email, never "You"; its one line is whether everything is backed up.
+  // An answer the sign-out cannot carry out closes the question, keeps the account and says why under Sign out until it is tapped again.
+  @Test func aRefusedSignOutEndsItsQuestionAndKeepsTheReasonUntilSignOutIsTappedAgain() async throws {
+    let recorder = TelemetryRecorder()
+    let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server, telemetry: recorder)
+    let identity = server.identity(email: "refused@example.com")
+    try await model.signIn(identity)
+    model.journal.type("Counted"); model.journal.save(); model.journal.done()
+    model.sheet = .you
+    await model.beginSignOut()
+    let asked = try #require(model.signOutSession)
+    #expect(try model.runner.run(SavePage(day: model.journal.today, document: PageDocument(body: "Written while asked"))).refusal == nil)
+    recorder.entries.withLock { $0.removeAll() }
+    await model.finishSignOut(.discard)
+    #expect(model.account == identity.account && model.sheet == .you && model.signOutSession == nil && !model.editorReadOnly)
+    #expect(model.signOutRefusal == "Pending writing changed. Review the new count." && model.error == nil)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "auth_signed_out" || $0.name == "first_run_choice" }.map(\.properties) } ==
+            [["screen": "you", "action": "discard"], ["outcome": "refused"]])
+    await model.beginSignOut()
+    let askedAnew = try #require(model.signOutSession)
+    #expect(model.signOutRefusal == nil && askedAnew !== asked, "Sign out asks anew, counting what changed")
+    await model.finishSignOut(.discard)
+    #expect(model.account == nil && model.signOutRefusal == nil)
+  }
+
+  // You's identity is the account's name, or its email, never "You"; its one line is the account's backup, paused or not.
   @Test func youNamesTheAccountAndStatesWhetherItIsBackedUp() async throws {
     let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server)
     #expect(model.identityTitle == "Not signed in" && model.identityStatus == nil)
-    try await model.signIn(server.identity(email: "named@example.com"))
+    let identity = server.identity(email: "named@example.com")
+    try await model.signIn(identity)
     model.journal.type("Waiting to send"); model.journal.save(); model.journal.done()
     for _ in 0..<100 where model.identityStatus != "Not backed up yet" { try await Task.sleep(for: .milliseconds(20)) }
     #expect(model.identityTitle == "Sam" && model.identityStatus == "Not backed up yet")
@@ -392,9 +417,15 @@ import SyncTesting
     for _ in 0..<200 where model.identityStatus != "Backed up" { try await Task.sleep(for: .milliseconds(20)) }
     #expect(model.identityStatus == "Backed up")
     let relaunched = try AppModel(runner: model.runner, preferences: model.preferences, runtime: model.runtime)
-    #expect(relaunched.identityTitle == "Sam")
+    #expect(relaunched.identityTitle == "Sam" && relaunched.emailMethodValue == "named@example.com")
     model.preferences.removeObject(forKey: "accountName:\(try #require(model.account))")
-    #expect(try AppModel(runner: model.runner, preferences: model.preferences, runtime: model.runtime).identityTitle == "named@example.com")
+    let unnamed = try AppModel(runner: model.runner, preferences: model.preferences, runtime: model.runtime)
+    #expect(unnamed.identityTitle == "named@example.com" && unnamed.emailMethodValue == nil, "The address is said once")
+    server.state.withLock { $0.sessions[identity.token.value] = nil }
+    model.journal.type("Waiting on the sign-in"); model.journal.save(); model.journal.done()
+    await model.runtime?.engine.start()
+    for _ in 0..<100 where !model.authPaused { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(model.identityTitle == "Sam" && model.identityStatus == "Syncing paused · sign in again")
   }
 
   // Signed out, You lists only the rooms that keep something on this phone.

@@ -388,7 +388,7 @@ struct AccountSheet: View {
         }
       } else if !model.authPaused {
         Section {
-          factRow("Email", model.accountEmail, symbol: "envelope")
+          factRow("Email", model.emailMethodValue, symbol: "envelope")
           if let apple {
             Button { model.askToRemoveApple() } label: {
               factRow("Apple", apple.relay ? "Hide My Email" : apple.email, symbol: "apple.logo").contentShape(Rectangle())
@@ -423,7 +423,7 @@ struct AccountSheet: View {
             Text("Sign out").foregroundStyle(ShellPalette.danger)
           }.accessibilityIdentifier("sign-out")
         } footer: {
-          if let error = model.error, model.signOutSession != nil { Text(error).foregroundStyle(ShellPalette.danger).accessibilityIdentifier("sign-out-error") }
+          if let refusal = model.signOutRefusal { Text(refusal).foregroundStyle(ShellPalette.danger).accessibilityIdentifier("sign-out-error") }
         }.listRowBackground(card)
       }
     }.listStyle(.insetGrouped).scrollContentBackground(.hidden).listRowSeparatorTint(ShellPalette.line)
@@ -446,22 +446,21 @@ struct AccountSheet: View {
     }.padding(.vertical, 4)
   }
 
-  func factRow(_ name: String, _ value: String, symbol: String) -> some View {
+  func factRow(_ name: String, _ value: String?, symbol: String) -> some View {
     LabeledContent {
-      Text(value).foregroundStyle(dim)
+      if let value { Text(value).foregroundStyle(dim) }
     } label: {
       Label { Text(name).foregroundStyle(ink) } icon: { Image(systemName: symbol).foregroundStyle(dim) }
     }
   }
 
-  // An answer the account could not take asks again over You, its reason in the Sign out footer.
+  // The alert never rises again by itself: an answer the sign-out could not carry out leaves its reason in the Sign out footer.
   func finishSignOut(_ choice: SignOutChoice) {
     guard model.signOutSession != nil, !model.accountTransition, !answeringSignOut else { return }
     answeringSignOut = true
     Task {
       await model.finishSignOut(choice)
       answeringSignOut = false
-      if model.signOutSession != nil { confirmSignOut = true }
     }
   }
 

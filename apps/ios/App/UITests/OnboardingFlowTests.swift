@@ -97,6 +97,29 @@ import XCTest
     }
   }
 
+  // The glimpse is full height only while the page holds it and the whole text block, else 260 pt, scaled uniformly and centred.
+  func testTheGlimpseStandsFullHeightOnlyWhileThePageHoldsTheWholeText() {
+    let app = launch()
+    for page in 0..<4 {
+      assertPage(page, in: app)
+      let picture = app.descendants(matching: .any).matching(identifier: "onboarding-glimpse")
+        .matching(NSPredicate(format: "label == %@", glimpses[page])).firstMatch.frame
+      let scroll = app.scrollViews.containing(NSPredicate(format: "label == %@", titles[page])).firstMatch
+      let top = scroll.staticTexts.matching(identifier: page == 0 ? "onboarding-title" : "onboarding-eyebrow").firstMatch.frame.minY
+      let end = scroll.staticTexts[page == 0 ? bodies[0] : page == 1 ? "On the web" : "In this app"].frame.maxY
+      let full: CGFloat = page == 0 ? 320 : 340, slot = top - 26 - picture.minY, column = scroll.frame.width - 48
+      let holdsFull = end + 16 + full - slot <= scroll.frame.maxY + 0.5
+      let scale = min(column / 354, slot / full), evidence = "Page \(page + 1): \(picture), text \(top)–\(end) in \(scroll.frame)"
+      // Accessibility frames round outward to whole points, so each is checked to within one.
+      XCTAssertEqual(slot, holdsFull ? full : 260, accuracy: 1, evidence)
+      XCTAssertEqual(picture.width, 354 * scale, accuracy: 1, evidence)
+      XCTAssertEqual(picture.height, full * scale, accuracy: 1, evidence)
+      XCTAssertEqual(picture.midX, scroll.frame.midX, accuracy: 1, evidence)
+      app.buttons["onboarding-next"].tap()
+    }
+    assertWhereToStart(in: app)
+  }
+
   func testReplayFromYouCanExitFromEveryPage() {
     let app = launch()
     assertPage(0, in: app)
@@ -183,6 +206,9 @@ import XCTest
       let scroll = app.scrollViews.firstMatch
       XCTAssertTrue(scroll.exists)
       XCTAssertLessThanOrEqual(scroll.frame.maxY, app.pageIndicators["onboarding-page-control"].frame.minY)
+      let glimpse = app.descendants(matching: .any).matching(identifier: "onboarding-glimpse")
+        .matching(NSPredicate(format: "label == %@", glimpses[page])).firstMatch
+      XCTAssertEqual(glimpse.frame.height, 260, accuracy: 1, "The largest text leaves no room for the full-height glimpse")
       if page == 0 {
         let firstPaint = XCTAttachment(screenshot: app.screenshot())
         firstPaint.name = "onboarding-largest-text-first-paint"
