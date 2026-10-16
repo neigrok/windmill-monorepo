@@ -102,7 +102,9 @@ pre-minted offer and its dismissal in the device row `rack:liveactivity`; the wi
 offer still matches this phone's open workout, its owner and a resolved identity, and otherwise
 opens the workout. The App Shortcuts *Log set* and *Start workout* (`WorkoutActivityShared/WorkoutIntents.swift`) run
 in the app too: *Log set* without an offer logs the rack's and answers with it, and *Start workout* opens Routines at its
-root, or the logger while a workout is open. Parity with Android is tracked in `PARITY.md`.
+root, or the logger while a workout is open. The workout control (Control Center, the Lock Screen, the Action button)
+draws only what `WorkoutActivityController` last wrote to the App Group `group.works.windmill.app`: *Log set* with
+the rack's numbers, *Open workout*, or *Start workout*. Parity with Android is tracked in `PARITY.md`.
 
 Both rooms and the shell follow Appearance in You's Settings (Light · Dark · System, System by default): Gym
 answers with Instrument or Daylight, Journal with Night or Day. The choice is the hosting window's interface style,

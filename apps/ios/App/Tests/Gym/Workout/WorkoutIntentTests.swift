@@ -88,4 +88,62 @@ import SyncCore
     #expect(app.selectedRoom == .gym && !app.welcome && app.routinesRequested)
     #expect(outsideEvents(recorder) == ["gym_intent_opened intent=start_workout surface=shortcut"])
   }
+
+  func board() -> WorkoutControlBoard {
+    WorkoutControlBoard(url: FileManager.default.temporaryDirectory.appending(path: "workout-control-\(UUID().uuidString).json"))
+  }
+
+  @Test func theControlFollowsTheWorkoutFromOpenToHiddenToFinished() async throws {
+    let recorder = TelemetryRecorder(), app = try app(recorder), board = board()
+    let controller = WorkoutActivityController(gym: app.gym, board: board)
+    defer { try? FileManager.default.removeItem(at: board.url) }
+    await controller.reconcile()
+    #expect(board.read() == .startWorkout)
+    let workout = try fixtures.begin(app.gym), session = try #require(workout.session)
+    workout.weightKg = 100; workout.reps = 5
+    await controller.reconcile()
+    let offer = try #require(workout.activityOffer()), staleAt = try controller.clocks(session).staleAt
+    #expect(board.read() == .logSet(WorkoutControlOffer(offer: offer, value: "100 × 5"), staleAt: staleAt))
+    #expect(await handling(app) { await WorkoutActivityIntentHandler.logSet(offer: offer, surface: .control) } == .logged(
+      shown: "Logged 100 kg × 5 · Workout squat.", spoken: "Logged 100 kilograms, 5 reps, Workout squat."))
+    await controller.reconcile()
+    let next = try #require(workout.activityOffer()), nextStaleAt = try controller.clocks(session).staleAt
+    #expect(next.setID != offer.setID)
+    #expect(board.read() == .logSet(WorkoutControlOffer(offer: next, value: "100 × 5"), staleAt: nextStaleAt))
+    #expect(app.gym.hideWorkout())
+    await controller.reconcile()
+    #expect(board.read() == .openWorkout(staleAt: nextStaleAt))
+    #expect(app.gym.restoreWorkout())
+    await workout.finish()
+    app.refresh(); await controller.reconcile()
+    #expect(app.gym.openSession == nil && board.read() == .startWorkout)
+    #expect(outsideEvents(recorder) == ["gym_activity_set_logged surface=control"])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "client_error" }.isEmpty })
+  }
+
+  @Test func theControlsOpenAndStartTakeStartWorkoutsDoor() async throws {
+    let recorder = TelemetryRecorder(), app = try app(recorder)
+    await handling(app) { WorkoutActivityIntentHandler.open(.routines, surface: .control) }
+    #expect(app.selectedRoom == .gym && app.routinesRequested)
+    app.routinesRequested = false
+    let workout = try fixtures.begin(app.gym)
+    #expect(app.gym.hideWorkout())
+    await handling(app) { WorkoutActivityIntentHandler.open(.routines, surface: .control) }
+    #expect(!app.routinesRequested && !app.gym.workoutHidden && workout.isPresented)
+    #expect(outsideEvents(recorder) == ["gym_intent_opened intent=start_workout surface=control",
+                                        "gym_intent_opened intent=open_workout surface=control"])
+  }
+
+  @Test func aControlStateTheAppCannotWriteReportsOnceUntilItChanges() async throws {
+    let recorder = TelemetryRecorder(), app = try app(recorder)
+    let unwritable = WorkoutActivityController(gym: app.gym, board: WorkoutControlBoard(url: URL(filePath: "/nonexistent/workout-control.json")))
+    await unwritable.reconcile(); await unwritable.reconcile()
+    let missing = WorkoutActivityController(gym: app.gym, board: nil)
+    await missing.reconcile(); await missing.reconcile()
+    _ = try fixtures.begin(app.gym)
+    await unwritable.reconcile()
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "client_error" }.map(\.properties) } == [
+      ["operation": "gym_control_update", "failure_kind": "storage"], ["operation": "gym_control_update", "failure_kind": "unexpected"],
+      ["operation": "gym_control_update", "failure_kind": "storage"]])
+  }
 }
