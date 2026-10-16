@@ -123,7 +123,7 @@ struct CoachHistoryScreen: View {
         ContentUnavailableView("No conversations", systemImage: "bubble.left.and.bubble.right")
       } else { conversations }
     }.navigationTitle("History").modifier(GymPage()).accessibilityIdentifier("gym-coach-history")
-      .toolbar(.hidden, for: .tabBar)
+      .gymTabBar()
       .task(id: gym.account) { await history.load() }
       .reachBand {
         GymTransient(gym: gym, message: coach.error ?? history.error,

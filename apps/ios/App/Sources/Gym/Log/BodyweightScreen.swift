@@ -151,7 +151,7 @@ struct BodyweightScreen: View {
     .modifier(GymPage())
     .navigationTitle("Bodyweight")
     .navigationBarTitleDisplayMode(.inline)
-    .toolbar(.hidden, for: .tabBar)
+    .gymTabBar()
     .accessibilityIdentifier("gym-bodyweight")
     .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo") }
     .sheet(item: $correcting) { WeighInSheet(gym: gym, entry: $0.entry) }

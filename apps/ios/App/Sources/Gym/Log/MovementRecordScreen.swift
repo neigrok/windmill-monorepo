@@ -76,7 +76,7 @@ struct MovementRecordScreen: View {
       }
     }.listStyle(.insetGrouped).modifier(GymPage())
       .roomTitle(movement?.name ?? "Movement", subtitle: movement?.equipment.capitalized)
-      .toolbar(.hidden, for: .tabBar)
+      .gymTabBar()
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
           MoreMenu(identifier: "gym-record-more") {

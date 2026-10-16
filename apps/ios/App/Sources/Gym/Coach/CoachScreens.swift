@@ -63,7 +63,7 @@ struct NotesScreen: View {
       if gym.coachAccountAvailable { notes }
       else { CoachUnavailable(symbol: "note.text", sentence: "Notes live with your account, so they need you signed in.", signIn: openAccount) }
     }.navigationTitle("Notes").modifier(GymPage()).accessibilityIdentifier("gym-notes")
-      .toolbar(.hidden, for: .tabBar)
+      .gymTabBar()
       .toolbar { if gym.coachAccountAvailable, !gym.notes.isEmpty { EditButton() } }
       .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
       .sheet(item: $editor) { identity in NoteEditor(gym: gym, identity: identity) }

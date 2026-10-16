@@ -49,7 +49,7 @@ struct SessionDetailScreen: View {
       }
     }.listStyle(.insetGrouped).modifier(GymPage())
       .roomTitle(session?.name ?? Readout.noRoutine, subtitle: session.map { gym.dates.span($0.startedAt, $0.finishedAt) })
-      .toolbar(.hidden, for: .tabBar).accessibilityIdentifier("gym-session-detail")
+      .gymTabBar().accessibilityIdentifier("gym-session-detail")
       .toolbar {
         if session != nil {
           ToolbarItem(placement: .topBarTrailing) {

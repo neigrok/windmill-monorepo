@@ -46,7 +46,17 @@ struct SheetCommit: ViewModifier {
   }
 }
 
+// A pushed screen, or Coach while its composer has focus, hides the tab bar, and the tab bar's accessory goes with it
+// (docs/design/ios/ios-redesign.md §7.18): the room reads this from each tab's stack.
+struct TabBarHidden: PreferenceKey {
+  static let defaultValue = false
+  static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
+}
+
 extension View {
+  func gymTabBar(hidden: Bool = true) -> some View {
+    toolbar(hidden ? .hidden : .automatic, for: .tabBar).preference(key: TabBarHidden.self, value: hidden)
+  }
   func sheetCommit(_ title: String, identifier: String, dismissal: String = "Cancel", dismissalIdentifier: String? = nil,
                    disabled: Bool = false, busy: Bool = false, dismiss: @escaping () -> Void, commit: @escaping () -> Void) -> some View {
     modifier(SheetCommit(title: title, identifier: identifier, dismissal: dismissal, dismissalIdentifier: dismissalIdentifier,

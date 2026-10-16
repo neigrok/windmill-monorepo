@@ -50,7 +50,7 @@ struct OnThisPhoneList: View {
       if !needYou.isEmpty { Section("Needs you") { ForEach(needYou) { OnThisPhoneSection.door($0, gym: gym) } }.listRowBackground(GymPalette.card) }
       if !adding.isEmpty { Section("Adding") { ForEach(adding) { OnThisPhoneSection.door($0, gym: gym) } }.listRowBackground(GymPalette.card) }
     }.listStyle(.insetGrouped).modifier(GymPage()).navigationTitle("On this phone").navigationBarTitleDisplayMode(.inline)
-      .toolbar(.hidden, for: .tabBar).accessibilityIdentifier("recovery-list")
+      .gymTabBar().accessibilityIdentifier("recovery-list")
       .reachBand {
         GymTransient(gym: gym, held: gym.discardHold.map { hold in .init(text: hold.line, undo: gym.undoDiscard, keep: gym.endDiscardWindow) },
                      errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo")

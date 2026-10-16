@@ -110,7 +110,7 @@ struct ConnectedLogScreen: View {
           connect
         }
       }
-      .toolbar(.hidden, for: .tabBar)
+      .gymTabBar()
       .refreshable { await connections.load() }
       .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition)") { await connections.load() }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "connected_log"]) }
@@ -164,7 +164,7 @@ struct ConnectedLogGuide: View {
         if capabilities { ConnectedLogCapabilities { EmptyView() } }
       }.listRowBackground(GymPalette.card)
     }.listStyle(.insetGrouped).navigationTitle("How this works").modifier(GymPage()).accessibilityIdentifier("gym-connected-guide")
-      .toolbar(.hidden, for: .tabBar)
+      .gymTabBar()
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "connected_log_guide"]) }
   }
 }

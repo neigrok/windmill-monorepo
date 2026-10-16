@@ -79,7 +79,7 @@ struct CoachTab: View {
         ProposalReviewSheet(gym: gym, proposalId: id.id) { name in composing = coach.newChat(seed: "Tell me about the proposal for \(name).") }
       }
       .sheet(item: $sources) { reading in CoachSourcesSheet(gym: gym, reading: reading) }
-      .toolbar(composing ? .hidden : .automatic, for: .tabBar)
+      .gymTabBar(hidden: composing)
       .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition):\(handoff?.id.uuidString ?? "")") {
         if !fixturePrepared { fixturePrepared = true; await CoachFixture.prepare(gym) }
         history.resetOwner(); await coach.activate()

@@ -145,7 +145,7 @@ struct RoutineDetail: View {
                                description: Text("Everything you logged against it is still in the log."))
       }
     }.modifier(GymPage())
-      .navigationTitle(routine?.name ?? "Routine").accessibilityIdentifier("routine-detail").toolbar(.hidden, for: .tabBar)
+      .navigationTitle(routine?.name ?? "Routine").accessibilityIdentifier("routine-detail").gymTabBar()
       .toolbar {
         if let routine {
           ToolbarItem(placement: .topBarTrailing) {

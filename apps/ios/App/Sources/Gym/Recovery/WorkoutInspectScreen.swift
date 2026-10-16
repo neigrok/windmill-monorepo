@@ -26,7 +26,7 @@ struct WorkoutInspectScreen: View {
       }
     }.listStyle(.insetGrouped).modifier(GymPage()).accessibilityIdentifier("recovery-inspect")
       .roomTitle(workout?.name ?? Readout.noRoutine, subtitle: subtitle(recovery))
-      .toolbar(.hidden, for: .tabBar)
+      .gymTabBar()
       .toolbar {
         if let recovery {
           ToolbarItem(placement: .topBarTrailing) {

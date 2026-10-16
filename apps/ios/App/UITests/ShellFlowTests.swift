@@ -290,6 +290,12 @@ import XCTest
     XCTAssertTrue(accessory.waitForExistence(timeout: 5))
     XCTAssertEqual(accessory.label, "Lower A, in progress")
     XCTAssertEqual(accessory.value as? String, "32:10", "The value is the workout's clock as the logger reads it")
+    // It goes where the tab bar goes: a pushed screen draws neither, and back at the root both return.
+    app.tabBars.buttons["Routines"].tap()
+    XCTAssertTrue(app.buttons["routines-movements"].waitForExistence(timeout: 5)); app.buttons["routines-movements"].tap()
+    XCTAssertTrue(accessory.waitForNonExistence(timeout: 5) && !app.tabBars.buttons["Routines"].isHittable)
+    app.navigationBars.buttons.element(boundBy: 0).tap()
+    XCTAssertTrue(accessory.waitForExistence(timeout: 5))
     accessory.tap()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
     XCTAssertEqual(sets.count, logged, "The workout comes back with its sets")

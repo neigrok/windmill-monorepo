@@ -19,6 +19,7 @@ struct GymRoom: View {
   @State var share: SessionShareID?
   @State var shareAfterSignIn: ID<Session>?
   @State var risingFromAccessory = false
+  @State var hiddenTabBars: Set<Tab> = []
   static let accessoryZoom = "hidden-workout"
   @Namespace var zoom
   @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -28,13 +29,14 @@ struct GymRoom: View {
       SwiftUI.Tab("Routines", systemImage: "list.bullet.rectangle", value: Tab.routines) {
         NavigationStack(path: $routinesPath) {
           root(RoutinesTab(gym: gym, onReviewProposal: { proposal = ProposalReviewID(id: $0.description) }))
-        }.roomBar(.gym)
+        }.roomBar(.gym).onPreferenceChange(TabBarHidden.self) { tabBar(.routines, hidden: $0) }
       }
       SwiftUI.Tab("The log", systemImage: "calendar", value: Tab.log) {
-        NavigationStack(path: $logPath) { root(LogTab(gym: gym)) }.roomBar(.gym)
+        NavigationStack(path: $logPath) { root(LogTab(gym: gym)) }.roomBar(.gym).onPreferenceChange(TabBarHidden.self) { tabBar(.log, hidden: $0) }
       }.badge(gym.isAnonymous ? 0 : gym.workoutsToReview.count)
       SwiftUI.Tab("Coach", systemImage: "bubble.left.and.bubble.right", value: Tab.coach) {
         NavigationStack(path: $coachPath) { root(CoachTab(gym: gym, handoff: $coachHandoff)) }.roomBar(.gym)
+          .onPreferenceChange(TabBarHidden.self) { tabBar(.coach, hidden: $0) }
       }
     }.tint(GymPalette.accent).accessibilityHidden(gym.workout.isPresented)
   }
@@ -47,7 +49,7 @@ struct GymRoom: View {
   var body: some View {
     Group {
       if #available(iOS 26.1, *) {
-        tabs.tabBarMinimizeBehavior(.onScrollDown).tabViewBottomAccessory(isEnabled: hiddenWorkout != nil) { accessory }
+        tabs.tabBarMinimizeBehavior(.onScrollDown).tabViewBottomAccessory(isEnabled: hiddenWorkout != nil && !hiddenTabBars.contains(tab)) { accessory }
       } else if #available(iOS 26, *) {
         if hiddenWorkout != nil { tabs.tabBarMinimizeBehavior(.onScrollDown).tabViewBottomAccessory { accessory } }
         else { tabs.tabBarMinimizeBehavior(.onScrollDown) }
@@ -100,6 +102,9 @@ struct GymRoom: View {
     }
   }
 
+  // A stack whose front screen hides the tab bar takes the accessory away with it.
+  func tabBar(_ stack: Tab, hidden: Bool) { if hidden { hiddenTabBars.insert(stack) } else { hiddenTabBars.remove(stack) } }
+
   // The open workout while the lifter has it hidden; an account changing takes it away.
   var hiddenWorkout: Session? { gym.workoutHidden && !gym.accountTransition ? gym.openSession : nil }
 
@@ -123,7 +128,7 @@ struct GymRoom: View {
       case .routine(let id): RoutineDetail(gym: gym, id: ID(RecordID(id)))
       case .session(let id): SessionDetailScreen(gym: gym, sessionID: ID(RecordID(id)))
       }
-    }.toolbar(.hidden, for: .tabBar)
+    }.gymTabBar()
   }
   func ask(_ question: String, send: Bool = false) {
     coachPath = NavigationPath(); tab = .coach

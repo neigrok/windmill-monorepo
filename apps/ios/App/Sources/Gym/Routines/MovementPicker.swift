@@ -205,7 +205,7 @@ struct MovementPicker: View {
       }
     }
     .navigationDestination(item: $opened) { id in MovementRecordScreen(gym: gym, exerciseID: id) }
-    .toolbar(purpose == .browse ? .hidden : .automatic, for: .tabBar)
+    .gymTabBar(hidden: purpose == .browse)
   }
 
   // Create movement opens with the query as its name: the builder's own step, or this picker's sheet.
