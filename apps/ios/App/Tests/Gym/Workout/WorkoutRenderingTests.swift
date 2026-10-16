@@ -270,7 +270,7 @@ import SyncTesting
     }.value
     XCTAssertFalse(result.0)
     XCTAssertEqual(result.1[0], [0x0b1111, 0x161c1d, 0x5fcdb4, 0x1b1408, 0x9aa859, 0xd9b04c])
-    XCTAssertEqual(result.1[1], [0xebe7e3, 0xf8f6f4, 0x137a6c, 0xffffff, 0x7d8c43, 0x6e5217])
+    XCTAssertEqual(result.1[1], [0xebe7e3, 0xf8f6f4, 0x106b5f, 0xffffff, 0x7d8c43, 0x6e5217])
   }
 
   func testKeepAwakeStopsAtFinishAndRestoresPriorValue() async throws {

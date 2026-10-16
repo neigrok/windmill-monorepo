@@ -81,8 +81,8 @@ the system blue. The keyboard draws its own keys and takes no tint: an emphasize
 | `gym/ink` | `#F1F0EB` | `#1A1918` | primary text, numerals |
 | `gym/ink-dim` | `#B6B5AF` | `#4C4744` | secondary text, facts, every essential label that is not primary |
 | `gym/ink-faint` | `#727771` | `#625C58` | non-essential meta only: axis labels, planned rows, `+ 1 more` |
-| `gym/accent` | `#5FCDB4` | `#137A6C` | tint: links, selection, the primary fill, chart dots, the current-set dot |
-| `gym/accent-soft` | `#5FCDB4` at 16 % | `#137A6C` at 12 % | the lifter's bubble, a selected row's wash |
+| `gym/accent` | `#5FCDB4` | `#106B5F` | tint: links, selection, the primary fill, chart dots, the current-set dot |
+| `gym/accent-soft` | `#5FCDB4` at 16 % | `#106B5F` at 12 % | the lifter's bubble, a selected row's wash |
 | `gym/on-accent` | `#1B1408` | `#FFFFFF` | text and symbols on the accent fill |
 | `gym/done` | `#9AA859` | `#7D8C43` | a logged set's check, a fully logged movement, an applied proposal |
 | `gym/record` | `#D9B04C` | `#6E5217` | a personal record, and nothing else |
@@ -142,7 +142,7 @@ You, Keep and every sign-in step, Where to start?, onboarding and the launch gro
 | `shell/ink` | `#F2F0EB` | `#211B13` |
 | `shell/ink-dim` | `#B4B2AC` | `#6F5F45` |
 | `shell/ink-faint` | `#7E7C77` | `#92805F` |
-| `shell/brand` | `#D08A5E` | `#BC6C42` |
+| `shell/brand` | `#D08A5E` | `#9F5B38` |
 | `shell/on-brand` | `#1B1408` | `#FFFFFF` |
 | `shell/danger` | `#BF6A50` | `#A84E35` |
 

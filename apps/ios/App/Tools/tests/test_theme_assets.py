@@ -9,12 +9,23 @@ REPOSITORY = APP.parents[2]
 THEME = APP / "Sources/Theme/Theme.xcassets"
 
 
+def contract_rows():
+    contract = (REPOSITORY / "docs/design/ios/ios-redesign.md").read_text()
+    return {f"{room}/{role}": (dark, light) for room, role, dark, light in
+            re.findall(r"\| `(gym|journal|shell)/([\w-]+)` \| ([^|]+) \| ([^|]+) \|", contract)
+            if re.search(r"#[0-9A-F]{6}", dark)}
+
+
+def luminance(cell):
+    hex_colour = re.search(r"#([0-9A-F]{6})", cell)[1]
+    channels = [int(hex_colour[index:index + 2], 16) / 255 for index in (0, 2, 4)]
+    linear = [value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4 for value in channels]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
 class ThemeAssetsTests(unittest.TestCase):
     def test_colour_assets_match_the_design_contract_in_both_appearances(self):
-        contract = (REPOSITORY / "docs/design/ios/ios-redesign.md").read_text()
-        rows = {f"{room}/{role}": (dark, light) for room, role, dark, light in
-                re.findall(r"\| `(gym|journal|shell)/([\w-]+)` \| ([^|]+) \| ([^|]+) \|", contract)
-                if re.search(r"#[0-9A-F]{6}", dark)}
+        rows = contract_rows()
         assets = sorted(path.parent.name + "/" + path.name.removesuffix(".colorset") for path in THEME.glob("*/*.colorset")
                         if not path.name.startswith("mood-"))
         self.assertTrue(assets)
@@ -33,6 +44,20 @@ class ThemeAssetsTests(unittest.TestCase):
                     self.assertEqual(actual, re.search(r"#[0-9A-F]{6}", expected)[0])
                     alpha = re.search(r"(\d+) %", expected)
                     self.assertEqual(float(components["alpha"]), int(alpha[1]) / 100 if alpha else 1)
+
+    def test_each_room_accent_reads_at_four_and_a_half_to_one_on_its_grounds_and_under_its_label(self):
+        rows = contract_rows()
+        for accent, grounds in [("gym/accent", ["canvas", "card", "raised", "on-accent"]),
+                                ("shell/brand", ["canvas", "card", "raised", "on-brand"]),
+                                ("journal/lamp", ["canvas", "card"])]:
+            room = accent.split("/")[0]
+            for ground in grounds:
+                for appearance, column in [("dark", 0), ("light", 1)]:
+                    with self.subTest(accent=accent, ground=ground, appearance=appearance):
+                        lighter, darker = sorted([luminance(rows[accent][column]),
+                                                  luminance(rows[f"{room}/{ground}"][column])], reverse=True)
+                        ratio = (lighter + 0.05) / (darker + 0.05)
+                        self.assertGreaterEqual(ratio, 4.5, f"{accent} on {room}/{ground} in {appearance}: {ratio:.2f}:1")
 
     def test_palettes_name_exactly_the_theme_colour_sets(self):
         palettes = (APP / "Sources/Theme/Palettes.swift").read_text()

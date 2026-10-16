@@ -219,20 +219,15 @@ these are the places it disagrees with a drawing, a brief or the build.
   and the spec its darker `#106B5F` (§2, Onboarding 9d). The iOS boards bind a file-local
   `ios/accent`. Repoint `brand/base` or keep both and
   say which surface each serves.
-- **iOS gym and shell day contrast (owner decision).** As text, `gym/accent` Daylight `#137A6C`
-  measures 4.24:1 on `gym/canvas` `#EBE7E3`, 4.84:1 on `gym/card` `#F8F6F4` and 3.76:1 on
-  `gym/raised` `#DFDAD5`, and it is text over the canvas in nearly every Gym screen: *Finish*, *Ask
-  Coach* on the Review canvas, *Clear note*, the selected tab's label, the ladder keys on raised.
-  `shell/brand` light `#BC6C42` measures 3.60:1 on `shell/canvas` `#F9F5EB` and 3.92:1 on
-  `shell/card` `#FFFFFF` (the same 3.92:1 for a white label on it), so it fails even on a card: *Done*
-  on every You and Keep sheet, *Use email instead*, *Change*, *Resend code in 0:28*, *Get the update*
-  and the clay refusal on *Finish signing in*. Recommendation: `gym/accent` `#106B5F` (5.19:1
-  canvas · 5.92:1 card · 4.60:1 raised · white on it 6.38:1), with the light `accent-soft` tracking
-  it, and `shell/brand` `#9F5B38` (4.79:1 canvas · 5.21:1 card · 5.04:1 raised · 4.42:1 sunken, where
-  no text sits). Dark values and both roles' meanings stay; adopting them closes 9a's accessibility
-  half, not its Figma-alias half. The owner rules; the spec and the build keep the current values
-  until then. On adoption the Figma colour collections follow: the Gym file's `ios/accent` and
-  `ios/accent-soft` (`1055:201`–`1055:202`) and the Design System's `shell/brand`.
+- **iOS gym and shell day contrast.** The spec and the iOS build use the light values the owner
+  adopted for text: `gym/accent` `#106B5F` (5.19:1 on `gym/canvas` · 5.92:1 card · 4.60:1 raised ·
+  white on it 6.38:1), with `accent-soft` tracking it, and `shell/brand` `#9F5B38` (4.79:1 on
+  `shell/canvas` · 5.21:1 card · 5.04:1 raised). The other surfaces keep the earlier values:
+  Android's onboarding glimpses draw the gym accent `#137A6C` (`OnboardingGlimpses.kt`,
+  `OnboardingPager.kt`), and the web's clay and roadmap `--color-brand` is `#BC6C42`
+  (`--accent-terracotta-500`). To do: the Figma colour collections take the iOS values — the Gym
+  file's `ios/accent` and `ios/accent-soft` (`1055:201`–`1055:202`) and the Design System's
+  `shell/brand`.
 - **9b · Phones weave.** `gym/briefs/18-progress.md` gives web and iOS the movement strip and
   Android the woven moments; the spec gives both phones the woven timeline and only the web the
   strip. The brief now says so; the Progress section's iOS strip boards (`459:29`, `531:532`)

@@ -14,7 +14,7 @@ class ThemeLiteralTests(unittest.TestCase):
     def test_rejects_numeric_colour_construction_and_aliases(self):
         examples = [
             "let paint = Color(red: 0.3, green: 0.7, blue: 0.6)",
-            "let paint = SwiftUI.Color(\n .sRGB,\n red: 19 / 255,\n green: 122 / 255,\n blue: 108 / 255\n)",
+            "let paint = SwiftUI.Color(\n .sRGB,\n red: 16 / 255,\n green: 107 / 255,\n blue: 95 / 255\n)",
             "let paint = UIColor { _ in UIColor(red: 0, green: 0, blue: 0, alpha: 1) }",
             "let paint: Color = .init(red: 0.2, green: 0.4, blue: 0.6)",
             "let paint: UIColor = .init(white: 0.5, alpha: 1)",
@@ -39,10 +39,10 @@ class ThemeLiteralTests(unittest.TestCase):
             "let paint: Color = .init(hex: value)",
             "let paint = Color(hex: palette[index]).opacity(0.2)",
             "let paint = Color(hex: \"#5FCDB4\")",
-            "let paint = palette.color(0x5fcdb4, 0x137a6c)",
-            "let paint = colour(dark: 0x5fcdb4, light: 0x137a6c)",
+            "let paint = palette.color(0x5fcdb4, 0x106b5f)",
+            "let paint = colour(dark: 0x5fcdb4, light: 0x106b5f)",
             "let moodRamp: [UInt32] = [\n  0x5e4d2e,\n  0x6e5a34\n]",
-            "let colors = [0x5fcdb4, 0x137a6c]",
+            "let colors = [0x5fcdb4, 0x106b5f]",
         ]
         for example in examples:
             with self.subTest(source=example):
