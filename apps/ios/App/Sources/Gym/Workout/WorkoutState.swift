@@ -486,7 +486,6 @@ struct FinishWorkout: Action {
       else { message = gym.error }; return false
     }
     gym.telemetry.event("gym_set_logged", properties: ["screen": "workout", "outcome": "ok"])
-    if offered != nil { gym.telemetry.event("gym_activity_set_logged") }
     drafts[selected] = nil; message = nil; prefill(); activityChanged()
     return true
   }

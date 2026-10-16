@@ -100,7 +100,9 @@ snapshot aborts the account change. `WorkoutActivityController` keeps the Live A
 pre-minted offer and its dismissal in the device row `rack:liveactivity`; the widget's
 `WorkoutLogSetIntent` runs in the app and logs through the same runner as the rack only while the
 offer still matches this phone's open workout, its owner and a resolved identity, and otherwise
-opens the workout. Parity with Android is tracked in `PARITY.md`.
+opens the workout. The App Shortcuts *Log set* and *Start workout* (`WorkoutActivityShared/WorkoutIntents.swift`) run
+in the app too: *Log set* without an offer logs the rack's and answers with it, and *Start workout* opens Routines at its
+root, or the logger while a workout is open. Parity with Android is tracked in `PARITY.md`.
 
 Both rooms and the shell follow Appearance in You's Settings (Light · Dark · System, System by default): Gym
 answers with Instrument or Daylight, Journal with Night or Day. The choice is the hosting window's interface style,

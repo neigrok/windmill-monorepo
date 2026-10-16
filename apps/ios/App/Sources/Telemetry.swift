@@ -39,7 +39,8 @@ nonisolated enum TelemetryPrivacy {
     "onboarding_screen_viewed", "onboarding_skipped", "onboarding_finished", "onboarding_replayed", "room_switched", "room_adoption_answered", "gym_screen_viewed", "gym_action", "gym_undo",
     "gym_activity_set_logged", "gym_activity_offer_refused", "gym_session_started", "gym_session_finished", "gym_set_logged", "gym_routine_saved",
     "gym_ask_started", "gym_ask_outcome", "gym_proposal_outcome", "gym_connect_tool", "gym_import_recovery",
-    "gym_moment_opened", "client_update_required", "appearance_chosen"
+    "gym_moment_opened", "client_update_required", "appearance_chosen",
+    "gym_intent_opened"
   ]
   static let labels: [String: Set<String>] = [
     "room": ["journal", "gym"],
@@ -50,6 +51,8 @@ nonisolated enum TelemetryPrivacy {
     "outcome": ["answered", "capped", "fresh", "absent", "offline", "stalled", "decided", "refused", "ok", "completed", "failed", "cancelled", "signed_in", "paused", "anonymous", "linked"],
     "reason": ["session-open", "session-overlap", "id-taken", "bad-instant", "too-many-sets", "invalid-set", "unknown-exercise", "session-finished", "unsent", "other"],
     "cap": ["daily", "ceiling"],
+    "surface": ["activity", "shortcut"],
+    "intent": ["start_workout", "open_workout"],
     "state": ["shown", "opened"],
     "trigger": ["sync", "sign_in"],
     "appearance": ["light", "dark", "system"],

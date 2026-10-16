@@ -87,6 +87,9 @@ struct GymRoom: View {
     .onChange(of: "\(gym.account ?? ""):\(gym.isAnonymous):\(gym.authPaused):\(gym.accountTransition):\(gym.coachUnavailable)", initial: true) { _, _ in
       gym.workout.coachAvailable = gym.account != nil && !gym.isAnonymous && !gym.authPaused && !gym.accountTransition && !gym.coachUnavailable
     }
+    .onChange(of: app.routinesRequested, initial: true) { _, requested in
+      if requested { app.routinesRequested = false; routinesPath = NavigationPath(); tab = .routines }
+    }
   }
 
   @ToolbarContentBuilder var roomToolbar: some ToolbarContent {
