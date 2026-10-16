@@ -254,7 +254,7 @@ struct SessionShareSheet: View {
               .font(.body).foregroundStyle(GymPalette.alarm).frame(minHeight: RoomSpace.minimumTarget)
               .accessibilityIdentifier("gym-share-revoke")
           }
-        }.padding(.bottom, RoomSpace.inset)
+        }.padding(.bottom, RoomSpace.inset).bandMotion(sharing.state.note)
       }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "session_share"]) }
       .onDisappear { sharing.cancel() }

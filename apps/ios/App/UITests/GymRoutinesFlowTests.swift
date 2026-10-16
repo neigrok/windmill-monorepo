@@ -9,9 +9,9 @@ import UIKit
     continueAfterFailure = false
   }
 
-  func launch(_ appearance: String = "dark", proposal: Bool = false, arguments: [String] = []) -> XCUIApplication {
+  func launch(_ appearance: String = "dark", board: String = "shell-last-room", proposal: Bool = false, arguments: [String] = []) -> XCUIApplication {
     let app = XCUIApplication()
-    app.launchArguments = ["-model-server", "-board", "shell-last-room", "-onboarding-appearance", appearance] + arguments
+    app.launchArguments = ["-model-server", "-board", board, "-onboarding-appearance", appearance] + arguments
     if proposal { app.launchArguments.append("-routines-proposal-fixture") }
     app.launch()
     XCTAssertTrue(app.textViews["journal-editor"].waitForExistence(timeout: 10))
@@ -164,6 +164,8 @@ import UIKit
     for appearance in ["dark", "light"] {
       let app = launch(appearance)
       XCTAssertTrue(app.staticTexts["No routines yet"].waitForExistence(timeout: 5))
+      XCTAssertFalse(app.staticTexts["Build one, or just start logging."].exists, "The empty state reads out the button below it")
+      XCTAssertFalse(app.buttons["Ask Coach"].exists, "Signed out, Coach is not offered")
       XCTAssertFalse(app.buttons["Movements"].exists)
       assertPrimaryLabelContrast(app.buttons["Just start logging"], appearance: appearance)
       capture(app, "empty-" + appearance)
@@ -171,6 +173,7 @@ import UIKit
       XCTAssertFalse(app.buttons["save-routine"].isEnabled)
       XCTAssertFalse(app.staticTexts["History"].exists)
       XCTAssertEqual(app.textFields["routine-name"].placeholderValue, "Name")
+      XCTAssertFalse(app.buttons["delete-routine"].exists, "A new routine has nothing to delete")
       capture(app, "builder-empty-" + appearance)
       replace(app.textFields["routine-name"], with: "Push A")
       app.buttons["add-movement"].tap()
@@ -239,12 +242,16 @@ import UIKit
       capture(app, "builder-" + appearance)
       app.buttons["save-routine"].tap()
       XCTAssertTrue(app.descendants(matching: .any)["routine-detail"].waitForExistence(timeout: 5))
-      XCTAssertTrue(app.staticTexts["No workouts with this routine yet."].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.buttons["routine-detail-movement-bench-press"].waitForExistence(timeout: 5))
+      XCTAssertFalse(app.staticTexts["History"].exists, "A routine never trained draws no History")
+      XCTAssertFalse(app.staticTexts["No workouts with this routine yet."].exists)
       XCTAssertFalse(app.staticTexts["Open movements have no target — you decide the numbers at the rack."].exists)
       assertPrimaryLabelContrast(app.buttons["Start workout"], appearance: appearance)
       capture(app, "detail-" + appearance)
       app.buttons["edit-routine"].tap()
       XCTAssertTrue(app.navigationBars["Edit routine"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.buttons["builder-movement-bench-press"].label.hasPrefix("1. Bench Press"), app.buttons["builder-movement-bench-press"].label)
+      XCTAssertTrue(app.buttons["delete-routine"].exists)
       capture(app, "builder-edit-" + appearance)
       app.navigationBars["Edit routine"].buttons["Cancel"].tap()
       app.navigationBars["Push A"].buttons.element(boundBy: 0).tap()
@@ -355,6 +362,45 @@ import UIKit
     XCTAssertTrue(app.staticTexts["Push A"].waitForExistence(timeout: 5))
   }
 
+  // Delete routine is the editor's last section: it asks nothing, closes the editor and the detail, and Routines holds its Undo.
+  func testEditorDeletesTheRoutineAtOnceBehindItsUndo() {
+    let app = launch()
+    createRoutine(app)
+    app.buttons["edit-routine"].tap()
+    XCTAssertTrue(app.navigationBars["Edit routine"].waitForExistence(timeout: 5))
+    let delete = app.buttons["delete-routine"]
+    for _ in 0..<4 where !(delete.exists && delete.isHittable) { app.swipeUp(velocity: .slow) }
+    delete.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.navigationBars["Edit routine"].waitForNonExistence(timeout: 5))
+    XCTAssertFalse(app.descendants(matching: .any)["routine-detail"].exists)
+    XCTAssertTrue(app.staticTexts["Routine deleted"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.staticTexts["Push A"].exists)
+    app.buttons["gym-routines-undo"].tap()
+    XCTAssertTrue(app.staticTexts["Push A"].waitForExistence(timeout: 5))
+  }
+
+  // Signed in with Coach at hand, an empty Routines offers one way to Coach, which opens with the question in the composer,
+  // unsent. The signed-in board opens on a free workout, which hides to reach Routines.
+  func testSignedInEmptyRoutinesAsksCoachToBuildOne() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "workout-notice", "-onboarding-appearance", "dark"]
+    app.launch()
+    XCTAssertTrue(app.buttons["workout-assembly"].waitForExistence(timeout: 10)); app.buttons["workout-assembly"].tap()
+    XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
+    XCTAssertTrue(app.staticTexts["No routines yet"].waitForExistence(timeout: 10))
+    let ask = app.buttons["Ask Coach"]
+    XCTAssertTrue(ask.waitForExistence(timeout: 5))
+    XCTAssertGreaterThanOrEqual(ask.frame.height, 44, "Ask Coach answers a 44 pt target")
+    capture(app, "empty-signed-in")
+    ask.tap()
+    let question = app.descendants(matching: .any)["coach-question"]
+    XCTAssertTrue(question.waitForExistence(timeout: 10))
+    let seeded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in question.value as? String == "Build me a routine." }, object: question)
+    XCTAssertEqual(XCTWaiter.wait(for: [seeded], timeout: 5), .completed)
+    XCTAssertFalse(app.buttons["coach-stop"].exists, "The question waits in the composer, unsent")
+  }
+
   func testJustStartLoggingOpensWorkout() {
     let app = launch()
     app.buttons["Just start logging"].tap()
@@ -420,9 +466,9 @@ import UIKit
     reorder.tap()
     XCTAssertTrue(reorder.wait(for: \.label, toEqual: "Done", timeout: 5))
     XCTAssertTrue(app.navigationBars.staticTexts["New routine"].exists, "The builder's title left the bar while reordering")
-    let deadliftHandle = app.buttons["Reorder Deadlift"]
+    let deadliftHandle = app.buttons["Reorder 2. Deadlift"]
     XCTAssertTrue(deadliftHandle.wait(for: \.isHittable, toEqual: true, timeout: 5))
-    XCTAssertTrue(app.buttons["Reorder Bench Press"].wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertTrue(app.buttons["Reorder 1. Bench Press"].wait(for: \.isHittable, toEqual: true, timeout: 5))
     reorder.tap()
     XCTAssertTrue(reorder.wait(for: \.label, toEqual: "Reorder", timeout: 5))
     XCTAssertTrue(deadliftHandle.waitForNonExistence(timeout: 5))
@@ -458,7 +504,7 @@ import UIKit
     XCTAssertTrue(app.buttons["routine-detail-movement-deadlift"].waitForExistence(timeout: 5))
     XCTAssertEqual(app.buttons["routine-detail-movement-deadlift"].label, "1. Deadlift, open")
     XCTAssertEqual(app.buttons["routine-detail-movement-bench-press"].label, "2. Bench Press, open")
-    XCTAssertTrue(app.staticTexts["Open movements have no target — you decide the numbers at the rack."].exists)
+    XCTAssertFalse(app.staticTexts["Open movements have no target — you decide the numbers at the rack."].exists, "Open explains itself")
   }
 
   // The builder's search is a field in its list, so the pushed Create movement's bar checkmark takes the tap.
@@ -553,7 +599,7 @@ import UIKit
     for appearance in ["dark", "light"] {
       let app = launch(appearance, proposal: true)
       XCTAssertTrue(app.buttons["routine-proposal"].waitForExistence(timeout: 5))
-      XCTAssertTrue(app.buttons["routine-proposal"].label.hasPrefix("1 proposal, from Coach"), app.buttons["routine-proposal"].label)
+      XCTAssertTrue(app.buttons["routine-proposal"].label.hasPrefix("Push A · 1 change, From Coach"), app.buttons["routine-proposal"].label)
       XCTAssertFalse(app.staticTexts["Review changes"].exists)
       let routine = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "routine-", "Push A")).firstMatch
       XCTAssertTrue(routine.waitForExistence(timeout: 5))

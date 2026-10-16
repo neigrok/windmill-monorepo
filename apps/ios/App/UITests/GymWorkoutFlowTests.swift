@@ -17,6 +17,10 @@ import Vision
     let app = launch()
     app.buttons["workout-weight"].tap()
     XCTAssertTrue(app.buttons["workout-key-1"].waitForExistence(timeout: 5))
+    let value = app.staticTexts["workout-keypad-value"], kilograms = app.staticTexts["workout-keypad-unit"]
+    XCTAssertTrue(kilograms.waitForExistence(timeout: 5)); XCTAssertEqual(kilograms.label, "kg")
+    XCTAssertTrue(kilograms.frame.minX >= value.frame.maxX && kilograms.frame.maxY <= value.frame.maxY,
+                  "The unit \(kilograms.frame) stands at the numeral's baseline \(value.frame), as on the rack")
     app.buttons["workout-key-1"].tap(); app.buttons["workout-key-2"].tap()
     XCTAssertEqual(app.staticTexts["workout-keypad-value"].label, "12")
     app.buttons["Cancel"].tap()
@@ -24,6 +28,15 @@ import Vision
     app.buttons["workout-weight"].tap()
     app.buttons["workout-key-1"].tap(); app.buttons["workout-key-0"].tap(); app.buttons["workout-key-5"].tap()
     app.buttons["workout-keypad-set"].tap()
+    app.buttons["workout-reps"].tap()
+    XCTAssertTrue(app.navigationBars["Reps"].waitForExistence(timeout: 5))
+    let repsValue = app.staticTexts["workout-keypad-value"], reps = app.staticTexts["workout-keypad-unit"]
+    XCTAssertTrue(reps.waitForExistence(timeout: 5)); XCTAssertEqual(reps.label, "reps")
+    XCTAssertTrue(reps.frame.minX >= repsValue.frame.maxX, "The reps pad's unit \(reps.frame) stands beside \(repsValue.frame)")
+    XCTAssertFalse(app.staticTexts["whole reps"].exists)
+    XCTAssertFalse(app.buttons["workout-key-±"].exists || app.buttons["workout-key-."].exists, "The reps pad's sign and decimal slots are empty")
+    app.navigationBars["Reps"].buttons["Cancel"].tap()
+    XCTAssertTrue(app.navigationBars["Reps"].waitForNonExistence(timeout: 5))
     app.buttons["workout-log"].tap()
     let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch
     XCTAssertTrue(set.waitForExistence(timeout: 5)); set.tap()
@@ -136,12 +149,16 @@ import Vision
     for key in ["1", "0", "5"] { app.buttons["workout-key-\(key)"].tap() }
     app.buttons["workout-keypad-set"].tap(); app.buttons["workout-log"].tap()
     app.buttons["workout-next"].tap()
-    XCTAssertTrue(app.buttons["workout-deviation-today"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["Save 105 to Lower A?"].exists)
-    XCTAssertTrue(app.staticTexts["Today’s workout already has it."].exists)
-    XCTAssertEqual(app.buttons["workout-deviation-save"].firstMatch.label, "Save to Lower A")
+    // Leaving the movement raised the question, so nothing on screen anchors it: it is an alert.
+    let heavier = app.alerts["Save 105 to Lower A?"]
+    XCTAssertTrue(heavier.waitForExistence(timeout: 5))
+    XCTAssertTrue(heavier.staticTexts["Today’s workout already has it."].exists)
+    XCTAssertEqual(Set(heavier.buttons.allElementsBoundByIndex.map(\.label)), ["Save to Lower A", "Today only"])
     XCTAssertFalse(app.navigationBars["Heavier than the plan"].exists)
-    app.buttons["workout-deviation-today"].firstMatch.tap()
+    heavier.buttons["Today only"].firstMatch.tap()
+    XCTAssertTrue(heavier.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Romanian Deadlift"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.staticTexts["plan 3 × 6 · 82.5"].exists, "The planned rows already say the plan")
     app.buttons["workout-assembly"].tap()
     XCTAssertTrue(app.buttons["workout-assembly-add"].waitForExistence(timeout: 5))
     app.buttons["workout-assembly-add"].tap()
@@ -180,15 +197,31 @@ import Vision
     }
   }
 
-  func testHiddenWorkoutRestoresFromGymSettingsWithItsSets() {
+  // This workout counts each movement's working sets against its plan, adds a movement from its own list, and hides the
+  // workout without promising a place the phone does not draw.
+  func testThisWorkoutCountsSetsAgainstThePlanAndHidesTheWorkout() {
+    let app = launch(appearance: "light")
+    app.buttons["workout-assembly"].tap()
+    XCTAssertTrue(app.navigationBars["This workout"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Back Squat, 2 of 4 sets"].exists)
+    XCTAssertTrue(app.buttons["Romanian Deadlift, 0 of 3 sets"].exists)
+    XCTAssertTrue(app.buttons["workout-assembly-add"].exists)
+    XCTAssertFalse(app.staticTexts["Your sets stay saved. Restore this workout from Gym settings."].exists)
+    let footer = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26
+      ? "Your sets stay saved. Tap the workout above the tabs to return." : "Your sets stay saved. Find it at the top of The log."
+    XCTAssertTrue(app.staticTexts[footer].exists)
+  }
+
+  // Hidden heads The log, or stands in the tab bar's accessory on iOS 26: either brings the logger back with its sets.
+  func testHiddenWorkoutReturnsFromTheLogWithItsSets() {
     let app = launch()
     app.buttons["workout-log"].tap()
     let retained = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).count
     app.buttons["workout-assembly"].tap()
     XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
-    XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 5)); app.buttons["you"].tap()
-    XCTAssertTrue(app.buttons["you-gym-settings"].waitForExistence(timeout: 5)); app.buttons["you-gym-settings"].tap()
-    XCTAssertTrue(app.buttons["gym-restore-workout"].waitForExistence(timeout: 5)); app.buttons["gym-restore-workout"].tap()
+    XCTAssertTrue(app.tabBars.buttons["The log"].waitForExistence(timeout: 5)); app.tabBars.buttons["The log"].tap()
+    let hidden = app.buttons["gym-hidden-workout"]
+    XCTAssertTrue(hidden.waitForExistence(timeout: 5)); hidden.tap()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
     XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).count, retained)
   }
@@ -248,7 +281,7 @@ import Vision
     }
     XCTAssertTrue(log.isEnabled); XCTAssertTrue(log.isHittable); log.tap()
     app.buttons["workout-assembly"].tap()
-    XCTAssertTrue(app.navigationBars["This session"].waitForExistence(timeout: 3))
+    XCTAssertTrue(app.navigationBars["This workout"].waitForExistence(timeout: 3))
     let hide = app.buttons["workout-hide"]
     for _ in 0..<4 where !hide.exists || !hide.isHittable { app.swipeUp() }
     XCTAssertTrue(hide.exists)

@@ -87,7 +87,7 @@ Gym includes routine planning and movement creation, the live set rack and finis
 
 `GymRoom` keeps `WorkoutScreen` as its full-screen cover through finish and receipt and, on
 dismissal, consumes the workout's handoff once: a finished workout's detail opens in The log, Keep
-opens the account flow, Share with Coach sends *Check my last session.* in a new conversation, and
+opens the account flow, Share with Coach sends *Check my last workout.* in a new conversation, and
 the movement picker's written-program door opens You signed out or paused, Coach otherwise.
 `gym.startWorkout(routineId:)` never joins an open workout (`joinOpenSession: false`); with one
 open, the start is refused and the open workout returns. The device row `rack:<session-id>` holds

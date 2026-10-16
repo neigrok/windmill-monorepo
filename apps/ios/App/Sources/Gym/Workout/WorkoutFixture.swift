@@ -55,6 +55,11 @@ enum WorkoutFixture {
       await runtime.engine.flushOnLeave(); gym.refresh(); gym.workout.reconcile()
       gym.workout.message = "Check the weight and reps before logging."
     }
+    // The receipt of a workout that set a record, holding the review the server would answer for it.
+    if board == "workout-record" {
+      await gym.workout.finish()
+      gym.workout.receipt?.review = try? JSONDecoder().decode(WorkoutReview.self, from: Data(#"{"record":{"kind":"e1rm","exerciseId":"back-squat","value":116.7,"weightKg":100,"reps":5,"previous":110.8,"previousAt":\#(now.ms - 604_800_000)}}"#.utf8))
+    }
     return true
     #else
     return false

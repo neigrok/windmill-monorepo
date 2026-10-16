@@ -56,8 +56,6 @@ struct GymTransient: View {
     }
   }
 
-  func dismissMessage(_ shown: Message) { dismissal(shown)?() }
-
   func actionTitle(_ shown: Message) -> String {
     switch shown {
     case .held, .undo: "Undo"
