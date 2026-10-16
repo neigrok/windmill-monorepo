@@ -531,7 +531,8 @@ import XCTest
     let moment = app.buttons.matching(identifier: "gym-best-moment").firstMatch
     revealInLog(moment, app)
     moment.tap()
-    XCTAssertTrue(app.buttons["Open record"].waitForExistence(timeout: 5))
+    // The expanded moment's rows are built as they scroll into view, so the moment's own value says it opened.
+    XCTAssertTrue(moment.waitForValue("Expanded", timeout: 5))
     revealInLog(app.buttons["Open record"], app)
     capture(name("gym-log-moment-expanded"), app)
     revealInLog(moment, app); moment.tap()
@@ -916,7 +917,11 @@ import XCTest
         app.buttons["recovery-primary"].tap()
         XCTAssertTrue(app.navigationBars["Fix workout"].waitForExistence(timeout: 5))
         capture("gym-recovery-fix-workout-\(suffix)", app)
-        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "recovery-fix-set-")).firstMatch.tap()
+        // A set row reached at the largest text sits under the band at the sheet's foot until it scrolls clear of it.
+        let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "recovery-fix-set-")).firstMatch
+        let held = app.descendants(matching: .any)["recovery-fix-held"]
+        for _ in 0..<8 where !(set.isHittable && (!held.exists || set.frame.maxY < held.frame.minY)) { app.swipeUp(velocity: .slow) }
+        set.tap()
         XCTAssertTrue(app.navigationBars["Fix set"].waitForExistence(timeout: 5))
         capture("gym-recovery-fix-set-\(suffix)", app)
         app.navigationBars["Fix set"].buttons["Cancel"].tap()
