@@ -54,28 +54,6 @@ struct CoachUnavailable: View {
   }
 }
 
-struct GymSettingsScreen: View {
-  let gym: GymModel
-  @State var connections: CoachConnections
-  init(gym: GymModel) { self.gym = gym; _connections = State(initialValue: CoachConnections(gym: gym)) }
-  var body: some View {
-    List {
-      Section {
-        NavigationLink("Notes") { NotesScreen(gym: gym) }
-        NavigationLink { ConnectedLogScreen(gym: gym) } label: { LabeledContent("Connected log", value: connections.summary) }
-        if gym.workoutHidden, gym.openSession != nil {
-          Button("Restore workout") { gym.restoreWorkout() }.accessibilityIdentifier("gym-restore-workout")
-        }
-      }.listRowBackground(GymPalette.card)
-    }.listStyle(.insetGrouped).navigationTitle("Gym settings").modifier(GymPage())
-      .toolbar(.hidden, for: .tabBar)
-      .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
-      .accessibilityIdentifier("gym-settings")
-      .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition)") { await connections.load() }
-      .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "settings"]) }
-  }
-}
-
 struct NotesScreen: View {
   let gym: GymModel
   @State var editor: NoteEditorIdentity?

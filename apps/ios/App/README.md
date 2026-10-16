@@ -60,7 +60,8 @@ its receipt after showing the outcome, while the current model keeps the success
 
 The Gym UI contract is `Sources/Gym/GymModel.swift` plus `GymRoom.swift`. `GymRoom(gym:app:)` owns a
 native TabView (Routines · The log · Coach), independent NavigationStacks and full-screen
-`WorkoutScreen` while logging, finishing or showing its receipt. Hidden workouts restore from Gym settings. Each UI track owns its folder and root view:
+`WorkoutScreen` while logging, finishing or showing its receipt. A hidden workout comes back from the tab bar's accessory
+on iOS 26 and from the Hidden row at the head of The log on iOS 18, both through `GymModel.openHiddenWorkout(from:)`. Each UI track owns its folder and root view:
 `Routines/RoutinesTab.swift`, `Log/LogTab.swift`, `Coach/CoachTab.swift`, and
 `Workout/WorkoutScreen.swift`; `Recovery/` holds the signed-out workouts the account has not taken — the log's
 **On this phone** row and the list it opens, Inspect and Fix workout — with their model. Each root takes `gym: GymModel`; the room
@@ -108,9 +109,9 @@ so the status bar, keyboards and sheets follow it too. The window also carries t
 the shell's brand while You, Keep, sign-in or Where to start? is in front — so selection and the share sheet never
 fall back to system blue. The keyboard takes no tint, so the gym's fields keep the plain return key rather than a blue
 *Done*; a searchable field's *Search* key stays the system's. You is one inset-grouped list: the identity with its Apple and
-email doors (disabled offline, with *Sign-in needs a connection.* as their footer), **On this phone** or **How you
-sign in** and **Your data**, **Settings** (Appearance, Gym settings, About Windmill), and *Sign out* last. A sign-in
-link is offered only on the code step.
+email doors (disabled offline, with *Sign-in needs a connection.* as their footer), **On this phone** (signed out, while
+a room holds something) or **How you sign in**, **Settings** (Appearance, About Windmill), and *Sign out* last, which
+raises its one alert over You. A sign-in link is offered only on the code step.
 
 When the server needs a newer app — the engine's `status.upgradeRequired`, or a 426 at sign-in — one *Update
 required* alert speaks when the flag flips, and once more per cold launch while it holds; a sign-in refused for it

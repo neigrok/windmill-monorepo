@@ -27,10 +27,9 @@ final class AppModel {
   var sheet: Sheet? {
     didSet { if sheet != nil, !welcome, selectedRoom == .journal { journal.liftInk() } }
   }
-  var gymSettingsRequested = false
   var account: String?
   var keptWork = false
-  var accountName = "You"
+  var accountName = ""
   var keepDismissed: Bool
   var keepSheetPresented = false
   var email = ""
@@ -86,13 +85,12 @@ final class AppModel {
     init(preferences: UserDefaults) { self = Appearance(rawValue: preferences.string(forKey: "appearance") ?? "") ?? .system }
   }
   enum Sheet: String, Identifiable {
-    case keep, address, code, you, adoption, discardAdoption, signOut
+    case keep, address, code, you, adoption, discardAdoption
     case appleQuestion = "23a", appleAddress = "23b", appleAdded = "23c", appleNoAccount, appleExpired
     var id: String { rawValue }
     var telemetryName: String {
       switch self {
       case .discardAdoption: "discard_adoption"
-      case .signOut: "sign_out"
       case .appleNoAccount: "apple_no_account"
       case .appleExpired: "apple_expired"
       default: rawValue
@@ -118,10 +116,14 @@ final class AppModel {
     appearance = Appearance(preferences: preferences)
     journal.app = self
     refresh()
-    if let account { accountEmail = preferences.string(forKey: "accountEmail:\(account)") ?? "" }
+    if let account {
+      accountEmail = preferences.string(forKey: "accountEmail:\(account)") ?? ""
+      accountName = preferences.string(forKey: "accountName:\(account)") ?? ""
+    }
     if account != nil || journal.room?.stance == .holding || gym.hasData { welcome = false }
     if let runtime, let pending = try runtime.store.read({ try $0.device().meta.pendingSignIn }), let token = runtime.tokens.token(for: pending) {
-      let identity = AuthIdentity(account: pending, token: token, name: accountName, email: preferences.string(forKey: "accountEmail:\(pending)") ?? "")
+      let identity = AuthIdentity(account: pending, token: token, name: preferences.string(forKey: "accountName:\(pending)") ?? "",
+                                email: preferences.string(forKey: "accountEmail:\(pending)") ?? "")
       pendingSignIn = PendingSignIn(identity: identity, method: preferences.string(forKey: "pendingAuthMethod") ?? "email", linked: preferences.bool(forKey: "pendingAuthLinked"), needsAppleAttachment: false, receiptPending: false)
       restoringSignIn = true; sheet = .you; welcome = false
     }
@@ -199,17 +201,26 @@ final class AppModel {
 
   func dismissUpdateFailure() { updateOpenFailed = false }
 
-  var backup: String { journal.backup }
   var adoptionCount: Int { currentAdoption?.counts["page"] ?? 0 }
   var adoptionIsSingle: Bool { currentAdoption?.counts.filter { $0.key != "journalState" }.values.reduce(0, +) == 1 }
 
   func openJournal() { openRoom(.journal) }
   func openYou() { journal.done(); sheet = .you }
-  // You's door into Gym settings: a room switch, never a first-run choice.
-  func openGymSettings() {
-    cancelAuthentication(); sheet = nil; gymSettingsRequested = true
-    welcome = false; preferences.set(false, forKey: "roomWelcomeRequired")
-    switchRoom(.gym)
+
+  // You's identity: the name, or the email when no name is set, and the account's one status.
+  var identityTitle: String { account == nil ? "Not signed in" : accountName.nilIfEmpty ?? accountEmail }
+  var identityStatus: String? {
+    if updateRequired, account != nil || signInPending { return "Syncing paused · update Windmill" }
+    guard account != nil else { return nil }
+    let unsent = (runtime?.engine.status.ready ?? 0) + (runtime?.engine.status.sent ?? 0)
+    return unsent == 0 ? "Backed up" : "Not backed up yet"
+  }
+
+  // What each room keeps on this phone while signed out, one line for each room that holds something.
+  var phoneHoldings: [(room: Room, summary: String)] {
+    let pages = journal.room?.days.filter { $0.document.isWritten }.count ?? 0
+    let journalSummary = pages == 0 ? nil : "\(pages) \(pages == 1 ? "page" : "pages")"
+    return [(Room.journal, journalSummary), (Room.gym, gym.phoneSummary)].compactMap { room, summary in summary.map { (room, $0) } }
   }
   func openRoom(_ room: Room) {
     guard !editorReadOnly else { return }
@@ -648,6 +659,7 @@ final class AppModel {
     accountName = identity.name
     accountEmail = identity.email.nilIfEmpty ?? email
     preferences.set(accountEmail, forKey: "accountEmail:\(identity.account)")
+    preferences.set(accountName, forKey: "accountName:\(identity.account)")
     signInMethods = []
     methodsGeneration += 1
     do {
@@ -674,7 +686,7 @@ final class AppModel {
     do {
       let session = try await runtime.engine.signOut()
       guard !Task.isCancelled else { await session.cancel(); return }
-      signOutSession = session; sheet = .signOut
+      signOutSession = session
     }
     catch { if !Task.isCancelled { reportBoundary("auth_sign_out", error: error); self.error = error.localizedDescription } }
   }
@@ -692,14 +704,14 @@ final class AppModel {
         if choice == .discard { error = "Pending writing changed. Review the new count."; return }
       }
       revocation = try runtime.prepareRevocation(account: session.account)
-      choose(choice == .keep ? "keep" : "discard", screen: "sign_out")
+      choose(choice == .keep ? "keep" : "discard", screen: "you")
       _ = try await session.finish(choice)
       runtime.updateTelemetryIdentity()
       telemetry.event("auth_signed_out", properties: ["outcome": "ok"])
       signOutSession = nil; signInSession = nil
       journal.liftInk()
       sheet = nil; account = nil; journal.document = PageDocument(); journal.dirty = false; journal.editing = false; error = nil
-      appleTicket = nil; signInMethods = []; accountEmail = ""; appleLinkedReceipt = false
+      appleTicket = nil; signInMethods = []; accountEmail = ""; accountName = ""; appleLinkedReceipt = false
       keepDismissed = false; welcome = true; preferences.set(true, forKey: "roomWelcomeRequired"); preferences.removeObject(forKey: "lastRoom"); clearAdoptionAnswers(); refresh()
       preferences.set(false, forKey: "keepDismissed")
       Task { await runtime.revokeSignedOutSessions(force: true) }
@@ -744,7 +756,15 @@ final class AppModel {
 
   func cancelSignOut() async {
     guard !accountTransition else { return }
-    choose("cancel", screen: "sign_out"); await signOutSession?.cancel(); signOutSession = nil; sheet = .you
+    choose("cancel", screen: "you"); await signOutSession?.cancel(); signOutSession = nil; sheet = .you
+  }
+
+  // superapp-flow.md §7: one question, and when the account has not confirmed some changes it says how many.
+  static func signOutMessage(unsent count: Int) -> String {
+    if count == 0 { return "Your pages and log stay in your account and leave this phone." }
+    let changes = count == 1 ? "1 change hasn't" : "\(count) changes haven't"
+    let them = count == 1 ? "it" : "them"
+    return "\(changes) been confirmed by your account yet. Keep \(them) on this phone until you sign back in, or discard \(them) from this phone. Everything else is in your account and leaves this phone."
   }
 
   struct SavedAdoption: Codable {

@@ -26,8 +26,6 @@ ALLOWED = [
      "Apple's own Continue with Apple control keeps its black and white"),
     ("Sources/AccountSheet.swift", "signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)",
      "Apple's own Continue with Apple control keeps its black and white"),
-    ("Sources/OnboardingGlimpses.swift", ".mask { OnboardingCheck().trim(from: 0, to: check).stroke(.white,",
-     "a mask uses only alpha; white is opaque coverage, not a colour"),
     ("Sources/OnboardingGlimpses.swift", 'Color("onboarding/',
      "the glimpse's specimen roles stay private to it, as asset colours"),
     ("Sources/Gym/Coach/CoachTransport.swift", "if !png { UIColor.white.setFill()",

@@ -231,6 +231,23 @@ import UIKit
     back(app); back(app, expecting: "Coach")
     more("New chat", app)
     XCTAssertTrue(app.buttons["coach-review"].waitForNonExistence(timeout: 5))
+    app.buttons["you"].tap()
+    XCTAssertTrue(app.buttons["about-windmill"].waitForExistence(timeout: 5))
+    guard let accountImage = app.screenshot().image.cgImage,
+          let background = accountImage.cropping(to: CGRect(x: CGFloat(accountImage.width / 2), y: CGFloat(accountImage.height * 9 / 10), width: 1, height: 1)) else {
+      XCTFail("Account screenshot has no background sample"); return
+    }
+    var pixel = [UInt8](repeating: 0, count: 4)
+    pixel.withUnsafeMutableBytes { bytes in
+      guard let context = CGContext(data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+        XCTFail("Account screenshot color could not be read"); return
+      }
+      context.draw(background, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+    }
+    let brightness = (Double(pixel[0]) + Double(pixel[1]) + Double(pixel[2])) / (3 * 255)
+    if appearance == "Light" { XCTAssertGreaterThan(brightness, 0.7, "Gym Account must follow light appearance") }
+    else { XCTAssertLessThan(brightness, 0.3, "Gym Account must follow dark appearance") }
     app.terminate()
   }
   func testLightScreensAndNativeNavigation() { screens("Light") }

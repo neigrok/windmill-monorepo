@@ -361,17 +361,50 @@ import SyncTesting
     #expect(relaunched.pendingSignIn == nil && !relaunched.restoringSignIn && relaunched.sheet == nil)
   }
 
-  // You's door into Gym settings is a room switch, never a first-run welcome choice.
-  @Test func gymSettingsFromYouSwitchesTheRoomWithoutAFirstRunChoice() throws {
+  // Sign out raises one question over You and answers it there; its choices are You's.
+  @Test func signOutAsksOverYouAndCountsWhatTheAccountHasNotConfirmed() async throws {
     let recorder = TelemetryRecorder()
-    let (_, model) = try JournalModelTests().fixture(telemetry: recorder)
-    model.openJournal()
-    recorder.entries.withLock { $0.removeAll() }
+    let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server, telemetry: recorder)
+    try await model.signIn(server.identity(email: "asks-once@example.com"))
     model.sheet = .you
-    model.openGymSettings()
-    #expect(model.selectedRoom == .gym && model.sheet == nil && model.gymSettingsRequested && !model.welcome)
-    #expect(recorder.entries.withLock { $0.filter { $0.name == "room_switched" }.map(\.properties) } == [["room": "gym"]])
-    #expect(recorder.entries.withLock { !$0.contains { $0.name == "first_run_choice" && $0.properties["action"] == "open_gym" } })
+    recorder.entries.withLock { $0.removeAll() }
+    await model.beginSignOut()
+    #expect(model.sheet == .you && model.signOutSession != nil)
+    await model.cancelSignOut()
+    #expect(model.sheet == .you && model.signOutSession == nil && model.account != nil)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "first_run_choice" }.map(\.properties) } ==
+            [["screen": "you", "action": "sign_out"], ["screen": "you", "action": "cancel"]])
+    #expect([0, 1, 3].map(AppModel.signOutMessage(unsent:)) == [
+      "Your pages and log stay in your account and leave this phone.",
+      "1 change hasn't been confirmed by your account yet. Keep it on this phone until you sign back in, or discard it from this phone. Everything else is in your account and leaves this phone.",
+      "3 changes haven't been confirmed by your account yet. Keep them on this phone until you sign back in, or discard them from this phone. Everything else is in your account and leaves this phone."])
+  }
+
+  // You's identity is the account's name, or its email, never "You"; its one line is whether everything is backed up.
+  @Test func youNamesTheAccountAndStatesWhetherItIsBackedUp() async throws {
+    let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server)
+    #expect(model.identityTitle == "Not signed in" && model.identityStatus == nil)
+    try await model.signIn(server.identity(email: "named@example.com"))
+    model.journal.type("Waiting to send"); model.journal.save(); model.journal.done()
+    for _ in 0..<100 where model.identityStatus != "Not backed up yet" { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(model.identityTitle == "Sam" && model.identityStatus == "Not backed up yet")
+    await model.runtime?.engine.start()
+    for _ in 0..<200 where model.identityStatus != "Backed up" { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(model.identityStatus == "Backed up")
+    let relaunched = try AppModel(runner: model.runner, preferences: model.preferences, runtime: model.runtime)
+    #expect(relaunched.identityTitle == "Sam")
+    model.preferences.removeObject(forKey: "accountName:\(try #require(model.account))")
+    #expect(try AppModel(runner: model.runner, preferences: model.preferences, runtime: model.runtime).identityTitle == "named@example.com")
+  }
+
+  // Signed out, You lists only the rooms that keep something on this phone.
+  @Test func onThisPhoneListsOnlyTheRoomsThatHoldSomething() throws {
+    let model = try LineageFlowTests().fixture(JournalModelTransport())
+    #expect(model.phoneHoldings.isEmpty)
+    _ = try routine(model, name: "Push A")
+    #expect(model.phoneHoldings.map { "\($0.room.title) · \($0.summary)" } == ["Gym · 1 routine"])
+    model.journal.type("A page"); model.journal.save(); model.journal.done(); model.refresh()
+    #expect(model.phoneHoldings.map { "\($0.room.title) · \($0.summary)" } == ["Journal · 1 page", "Gym · 1 routine"])
   }
 
   @Test func theEnginesUpdateFlagSpeaksOncePerLaunch() async throws {
