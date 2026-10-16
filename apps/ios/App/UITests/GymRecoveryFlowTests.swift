@@ -18,10 +18,11 @@ import XCTest
     var style = Date.FormatStyle.dateTime.day().month(.abbreviated); style.timeZone = .gmt
     return style.format(Date(timeIntervalSince1970: 1_788_177_600 + Double(day) * 86_400))
   }
-  // Two or more saved workouts are one row at the log's head, which opens the On this phone list.
+  // Two or more saved workouts are one row under the log's On this phone header, which opens the On this phone list.
   func openList(_ title: String, _ needYou: String, _ app: XCUIApplication) {
     let summary = app.buttons["recovery-summary"]
     XCTAssertTrue(summary.waitForExistence(timeout: 30), "The fixture's copies are on the phone")
+    XCTAssertTrue(app.staticTexts["On this phone"].exists)
     XCTAssertEqual(summary.label, "\(title), \(needYou)")
     summary.tap()
     XCTAssertTrue(app.descendants(matching: .any)["recovery-list"].waitForExistence(timeout: 10))
@@ -64,7 +65,7 @@ import XCTest
   func testEveryReasonIsARowAndEachWayOutLeavesTheLog() {
     let app = launch("recovery")
     XCTAssertFalse(row("fixture-unsent", app).exists, "Nine workouts are one row at the head")
-    openList("9 workouts on this phone", "9 need you", app)
+    openList("9 workouts", "9 need you", app)
     XCTAssertTrue(app.staticTexts["Needs you"].exists && !app.staticTexts["Adding"].exists)
     let rows = [
       ("fixture-open-copy", "Pull A · Today · 3 sets", "Your account has an open workout — keep this one as finished."),
@@ -151,7 +152,7 @@ import XCTest
 
   func testAPausedAccountShowsTheWorkoutOnItsWayAndHoldsTheRest() {
     let app = launch("recovery-paused", appearance: "dark")
-    openList("2 workouts on this phone", "1 needs you", app)
+    openList("2 workouts", "1 needs you", app)
     XCTAssertTrue(app.staticTexts["Needs you"].exists && app.staticTexts["Adding"].exists)
     XCTAssertEqual(reach(row("fixture-sending", app), app).label, "Push A · Yesterday · 6 sets, Adding…")
     XCTAssertEqual(row("fixture-unsent", app).label, "Free workout · \(september(24)) · 3 sets, Not on your log yet — retry to add it.")

@@ -28,6 +28,8 @@ nonisolated enum LogPresentation {
     } ?? dates.day(record.point.startedAt)
     return "\(Readout.estimatedWeight(value)) kg est · \(change)"
   }
+  // The weeks trained, the head's of the last four and a month moment's of its own: *Trained 3 of the last 4 weeks*.
+  static func trained(_ weeks: Int, of last: Int) -> String { "Trained \(weeks) of the last \(last) weeks" }
   static func sessionFacts(_ readout: SessionReadout) -> String {
     [GymCount.of(readout.workingSetCount, "working set"), readout.durationMs.map(Readout.duration)].compactMap { $0 }.joined(separator: " · ")
   }
@@ -80,6 +82,12 @@ struct LogMonth: Identifiable {
 extension GymModel {
   var finishedLogSessions: [Session] { sessions.filter { !$0.isOpen && $0.startedAt <= (log?.moment.now ?? Instant(ms: 0)) } }
 
+  // The head's footer, the weeks trained of the last four, read only from a whole log.
+  var logConsistency: String? {
+    guard let log, !readFailed, let weeks = logRecords?.progress.consistency(now: log.moment.now, zone: log.moment.zone) else { return nil }
+    return LogPresentation.trained(weeks, of: 4)
+  }
+
   // The log's records, worked out once per change of the log rather than per row per render.
   var logRecords: ProgressRecords? {
     if logRecordsRead == nil, let log { logRecordsRead = ProgressRecords(log.progress) }
@@ -98,7 +106,7 @@ extension GymModel {
         }
       }
       let trainedDays = progress.sessions.filter { $0.startedAt <= now }.map { LocalDay($0.startedAt, in: zone) }
-      let months = Dictionary(grouping: trainedDays) { String($0.text.prefix(7)) }
+      let months = Dictionary(grouping: trainedDays) { String($0.text.prefix(7)) }, head = logConsistency
       for key in months.keys.sorted() {
         guard let first = LocalDay(key + "-01"), first.year < today.year || (first.year == today.year && first.month < today.month) else { continue }
         var end = first
@@ -107,7 +115,8 @@ extension GymModel {
         var required: Set<LocalDay> = [], monday = firstMonday
         while monday <= lastMonday { required.insert(monday); monday = monday.adding(days: 7) }
         let actual = Set((months[key] ?? []).map { $0.adding(days: 1 - $0.weekday) })
-        if actual == required {
+        // A month the head's footer already words the same way is not woven: The log says each line once.
+        if actual == required && LogPresentation.trained(required.count, of: required.count) != head {
           let at = LogPresentation.instant(end, in: zone)
           moments.append(LogTimelineEntry(id: "month:\(key)", at: at, kind: .month(first, required.count)))
         }

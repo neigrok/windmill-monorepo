@@ -100,7 +100,7 @@ struct BodyweightScreen: View {
           Section {
             ChartWindowPicker(recent: "90 days", identifier: "gym-bodyweight-window", window: $window)
             let chart = weight.chart(window == .recent ? .recent : .all)
-            let caption = "\(window == .recent ? "90 days" : "All") · \(GymCount.of(chart.dots.count, "weigh-in"))"
+            let caption = window.line(recent: "90 days", holding: GymCount.of(chart.dots.count, "weigh-in"))
             if !chart.dots.isEmpty {
               LogDatedChart(points: chart.dots.map { entry in
                 LogPlotPoint(id: entry.day.text, date: LogPresentation.date(entry.day), value: entry.kg,
@@ -129,12 +129,7 @@ struct BodyweightScreen: View {
               Button {
                 correcting = Selection(entry: entry)
               } label: {
-                HStack {
-                  Text(dates.day(entry.day)).foregroundStyle(GymPalette.ink)
-                  Spacer()
-                  Text("\(BodyweightLogInput.kilograms(entry.kg)) kg").monospacedDigit().foregroundStyle(GymPalette.ink)
-                  DoorChevron(room: .gym)
-                }
+                GymRow(title: "\(BodyweightLogInput.kilograms(entry.kg)) kg", trailing: .fact(dates.day(entry.day), door: true))
               }
               .accessibilityLabel("\(BodyweightLogInput.kilograms(entry.kg)) kilograms, \(dates.day(entry.day))")
               .accessibilityHint("Correct this weigh-in")

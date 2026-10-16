@@ -103,6 +103,32 @@ import SyncTesting
     #expect(moments.first.map { LocalDay($0.at, in: gym.log!.moment.zone) } == lastDay)
   }
 
+  // Wednesday Mar 10, 2027: February trained in each of its four weeks, so its moment would read as the head's footer
+  // does once the last four weeks are trained too, and The log says that line once, in the head.
+  @Test func aMonthTheHeadAlreadyWordsTheSameWayIsNotWoven() throws {
+    let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_804_680_000_000), account: nil,
+                          rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
+    let gym = GymModel(runner: harness.runner), zone = try #require(gym.log?.moment.zone)
+    let read = {
+      gym.logTimeline(limit: 30).map { month in
+        "\(month.id): " + month.entries.map { entry -> String in
+          switch entry.kind {
+          case .session(let session, _): LocalDay(session.startedAt, in: zone).text
+          case .month(_, let weeks): LogPresentation.trained(weeks, of: weeks)
+          default: entry.id
+          }
+        }.joined(separator: ", ")
+      }
+    }
+    for daysAgo in [37, 30, 23, 16, 9] { _ = try session(gym, daysAgo: daysAgo, kg: 0, reps: 12) }
+    #expect(gym.logConsistency == "Trained 3 of the last 4 weeks")
+    #expect(read() == ["2027-03: 2027-03-01",
+                       "2027-02: Trained 4 of the last 4 weeks, 2027-02-22, 2027-02-15, 2027-02-08, 2027-02-01"])
+    _ = try session(gym, daysAgo: 1, kg: 0, reps: 12)
+    #expect(gym.logConsistency == "Trained 4 of the last 4 weeks")
+    #expect(read() == ["2027-03: 2027-03-09, 2027-03-01", "2027-02: 2027-02-22, 2027-02-15, 2027-02-08, 2027-02-01"])
+  }
+
   @Test(arguments: [-43200, 0, 7200, 50400]) func momentDaysUseTheInjectedZone(offset: Int) {
     let day = LocalDay("2026-09-28")!, zone = FixedZone(offsetSeconds: offset)
     let instant = LogPresentation.instant(day, in: zone)
@@ -226,6 +252,11 @@ import SyncTesting
     #expect(TelemetryPrivacy.properties(["screen": "log"]) == ["screen": .label("log")])
   }
 
+  @Test func aChartsWindowLineNamesItsSpanThenWhatItHolds() {
+    #expect([ChartWindow.recent.line(recent: "90 days", holding: "6 weigh-ins"), ChartWindow.all.line(recent: "90 days", holding: "14 weigh-ins")]
+            == ["last 90 days · 6 weigh-ins", "the whole series · 14 weigh-ins"])
+  }
+
   @Test func chartAxesSitOnTheSeriesStep() {
     #expect(LogDatedChart.axis([61.88, 109.62], step: 5) == 60...110)
     #expect(LogDatedChart.axis([100, 100], step: 5) == 95...105)
@@ -274,7 +305,7 @@ import SyncTesting
     #expect(whole == (first...last))
     #expect(leading == (first...thirtyDays))
     #expect(trailing == (sixtyDays...last))
-    let empty = LogDatedChart(points: [], from: first, through: first, series: .bodyweight, dates: GymDate(), caption: "90 days · 0 weigh-ins")
+    let empty = LogDatedChart(points: [], from: first, through: first, series: .bodyweight, dates: GymDate(), caption: "last 90 days · 0 weigh-ins")
     let emptyInterval = empty.dateInterval(in: .zero, contentWidth: 0)
     #expect(emptyInterval == (first...first))
   }

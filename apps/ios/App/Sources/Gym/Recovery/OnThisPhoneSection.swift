@@ -2,20 +2,23 @@ import SwiftUI
 import DomainKit
 import GymDomain
 
-// The log's head while signed in and a saved workout waits for the account: always one row. One workout is its own row,
-// a door to Inspect; two or more are one row that opens the On this phone list. The row leaves when nothing waits.
+// The log's head while signed in and a saved workout waits for the account: the On this phone section, always one row.
+// One workout is its own row, a door to Inspect; two or more are one row, *2 workouts* over how many need the lifter,
+// that opens the On this phone list. The section leaves when nothing waits.
 struct OnThisPhoneSection: View {
   let gym: GymModel
 
   var body: some View {
     let rows = gym.isAnonymous ? [] : gym.waitingRows
-    if rows.count == 1, let row = rows.first {
-      Section("On this phone") { OnThisPhoneSection.door(row, gym: gym) }.listRowBackground(GymPalette.card)
-    } else if rows.count > 1 {
-      Section {
-        NavigationLink { OnThisPhoneList(gym: gym) } label: {
-          GymRow(title: "\(GymCount.of(rows.count, "workout")) on this phone", meta: OnThisPhoneSection.summary(rows))
-        }.accessibilityIdentifier("recovery-summary")
+    if !rows.isEmpty {
+      Section("On this phone") {
+        if rows.count == 1, let row = rows.first {
+          OnThisPhoneSection.door(row, gym: gym)
+        } else {
+          NavigationLink { OnThisPhoneList(gym: gym) } label: {
+            GymRow(title: GymCount.of(rows.count, "workout"), meta: OnThisPhoneSection.summary(rows))
+          }.accessibilityIdentifier("recovery-summary")
+        }
       }.listRowBackground(GymPalette.card)
     }
   }

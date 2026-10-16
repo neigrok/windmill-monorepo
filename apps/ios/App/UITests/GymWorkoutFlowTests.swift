@@ -124,19 +124,22 @@ import Vision
     XCTAssertTrue(app.frame.contains(caption.frame), "The caption \(caption.frame) is below the sheet at rest")
   }
 
-  // Session detail numbers a set the way the ledger did: a warmup by its letter, work sets from one.
+  // The receipt opens over session detail at full height only. Done shows the detail, which numbers a set the way the
+  // ledger did: a warmup by its letter and with no caption, work sets from one against the plan.
   func testSessionDetailNumbersSetsAsTheLedgerDid() {
     let app = launch(appearance: "light")
     let ledger = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-"))
     XCTAssertTrue(ledger.firstMatch.waitForExistence(timeout: 5))
     XCTAssertEqual((0..<ledger.count).map { ledger.element(boundBy: $0).label.components(separatedBy: ",").first }, ["Warmup", "Set 1", "Set 2"])
     app.buttons["workout-finish"].tap()
-    XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 10)); app.buttons["Done"].tap()
+    let done = app.buttons["Done"]
+    XCTAssertTrue(done.waitForExistence(timeout: 10))
+    XCTAssertLessThan(done.frame.minY, app.frame.height / 4, "The receipt \(done.frame) opens at .large, never at half height")
+    done.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 10))
     let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-finished-set-"))
     XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5))
-    XCTAssertEqual((0..<rows.count).map { rows.element(boundBy: $0).label.components(separatedBy: ",").first },
-                   ["W · 80 × 3", "1 · 100 × 5", "2 · 100 × 5"])
+    XCTAssertEqual((0..<rows.count).map { rows.element(boundBy: $0).label }, ["W · 80 × 3", "1 · 100 × 5, on plan", "2 · 100 × 5, on plan"])
   }
 
   func testPagerAssemblyAndHeavierBoundary() {
