@@ -182,7 +182,7 @@ struct RoutineBuilder: View {
             }
           }
         }
-        let history = gym.routineHistory(editing.draft.id).prefix(20), dates = gym.log.map { GymDate($0.moment) } ?? GymDate()
+        let history = gym.routineHistory(editing.draft.id).prefix(20), dates = gym.dates
         if !history.isEmpty {
           Section("History") {
             ForEach(history, id: \.id) { session in

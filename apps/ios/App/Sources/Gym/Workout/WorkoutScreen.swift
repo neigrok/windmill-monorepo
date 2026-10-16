@@ -20,7 +20,7 @@ struct WorkoutScreen: View {
 
   init(gym: GymModel) { self.gym = gym; workout = gym.workout }
   var navigation: some View {
-    let dates = gym.log.map { GymDate($0.moment) } ?? GymDate()
+    let dates = gym.dates
     return NavigationStack {
       Group {
         if let session = workout.session {
@@ -218,7 +218,6 @@ struct WorkoutLedgerRow: View {
   @Environment(\.accessibilityReduceMotion) var reduceMotion
 
   var body: some View {
-    let motion = RoomTransient.motion(reduceMotion: reduceMotion)
     let mark: (symbol: String, colour: Color) = switch row.place {
     case .logged: unsent ? ("iphone", GymPalette.inkDim) : ("checkmark", GymPalette.done)
     case .current, .planned: ("circle.fill", GymPalette.accent)
@@ -227,13 +226,13 @@ struct WorkoutLedgerRow: View {
       Text(row.marker).foregroundStyle(row.place == .current ? GymPalette.accent : row.place == .planned ? GymPalette.inkFaint : GymPalette.inkDim)
         .frame(minWidth: 24, alignment: .leading)
       Text(row.reading).foregroundStyle(row.place == .planned ? GymPalette.inkFaint : GymPalette.ink)
-        .contentTransition(reduceMotion ? .opacity : .numericText())
+        .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion))
       Spacer(minLength: RoomSpace.related)
       Image(systemName: mark.symbol).font(row.set == nil ? .system(size: RoomSpace.related) : .body)
         .foregroundStyle(mark.colour).opacity(row.place == .planned ? 0 : 1)
-        .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
+        .contentTransition(RoomMotion.symbol(reduceMotion: reduceMotion))
     }.font(.body.monospacedDigit()).frame(minHeight: RoomSpace.minimumTarget)
-      .animation(motion, value: row).animation(motion, value: unsent)
+      .roomMotion(row).roomMotion(unsent)
       .accessibilityElement(children: row.place == .planned ? .ignore : .combine)
       .accessibilityLabel(spoken)
       .accessibilityIdentifier(row.set.map { "workout-set-\($0.id.record)" } ?? (row.place == .current ? "workout-current-set" : ""))
@@ -304,8 +303,8 @@ struct WorkoutRack: View {
         WorkoutCircle(title: "Fewer reps", symbol: "minus") { workout.reps = max(1, workout.reps - 1) }
         Button { edit(.reps) } label: {
           Text(GymCount.of(workout.reps, "rep")).font(.title3).monospacedDigit()
-            .contentTransition(reduceMotion ? .opacity : .numericText(value: Double(workout.reps)))
-            .animation(RoomTransient.motion(reduceMotion: reduceMotion), value: workout.reps)
+            .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: Double(workout.reps)))
+            .roomMotion(workout.reps)
             .frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget)
         }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).accessibilityIdentifier("workout-reps")
         WorkoutCircle(title: "More reps", symbol: "plus") { workout.reps = min(99, workout.reps + 1) }

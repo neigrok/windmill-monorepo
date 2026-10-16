@@ -183,7 +183,7 @@ struct RootScreen: View {
         if model.updateOpenFailed && model.sheet == nil {
           UpdateFailure(model: model).padding(.bottom, RoomSpace.minimumTarget + 2 * RoomSpace.inset)
         }
-      }.bandMotion(model.updateOpenFailed && model.sheet == nil)
+      }.roomMotion(model.updateOpenFailed && model.sheet == nil)
     }
     .background {
       #if DEBUG && targetEnvironment(simulator)

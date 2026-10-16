@@ -107,7 +107,7 @@ extension GymModel {
       let date = try runner.read(Gym.scope) { read in
         try read.repository(Proposal.self).record(proposal.id, in: .stored).flatMap { try Fields($0).optionalInstant("createdAt") }
       }
-      if let date { return source + " · " + coachDates.dayAndTime(date) }
+      if let date { return source + " · " + dates.dayAndTime(date) }
     } catch { report("gym_read", error) }
     return source
   }
@@ -370,7 +370,7 @@ struct ProposalReviewSheet: View {
     HStack(spacing: RoomSpace.related) {
       if proposal.state == "applied" {
         Image(systemName: "checkmark").foregroundStyle(GymPalette.done).symbolEffect(.bounce, value: landed).accessibilityHidden(true)
-        Text(["Applied", proposal.baseName ?? routineName, CoachCopy.changes(count, removal: removal)].joined(separator: " · ")).foregroundStyle(GymPalette.ink)
+        Text("Applied · " + CoachCopy.proposalTitle(routine: proposal.baseName ?? routineName, changes: count, removal: removal)).foregroundStyle(GymPalette.ink)
       } else { Text("Turned down").foregroundStyle(GymPalette.inkDim) }
     }.font(.body.weight(.semibold)).multilineTextAlignment(.center).frame(minHeight: RoomSpace.minimumTarget).padding(RoomSpace.inset)
       .accessibilityElement(children: .combine).accessibilityIdentifier("coach-review-receipt")

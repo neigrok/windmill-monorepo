@@ -68,6 +68,8 @@ final class GymModel {
   var sessions: [Session] { log?.drawnSessions ?? [] }
   var sets: [TrainingSet] { log?.sets ?? [] }
   var openSession: Session? { log?.open }
+  // Every date the room shows, read at the log's moment, or at the device's before the log is read.
+  var dates: GymDate { log.map { GymDate($0.moment) } ?? GymDate() }
   var accountTransition: Bool { accountChanging || replicaChanging }
   func accountTransitionChanged() {
     existingWorkoutActivity?.schedule()

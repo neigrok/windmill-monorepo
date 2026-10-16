@@ -741,10 +741,10 @@ import SyncTesting
     defer { try? FileManager.default.removeItem(at: cache.directory) }
     let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
     let priorThread = coach.saved.threadId
-    #expect(coach.begin(CoachHandoff(question: "Check my last workout.", send: true)))
+    #expect(coach.begin(CoachHandoff(question: WorkoutHandoff.coachQuestion, send: true)))
     await coach.work?.value; #expect(!coach.asking)
     let request = try #require(coach.saved.request)
-    #expect(request.thread != priorThread && request.question == "Check my last workout." && request.attachmentIds.isEmpty)
+    #expect(request.thread != priorThread && request.question == WorkoutHandoff.coachQuestion && request.attachmentIds.isEmpty)
     let call = try #require(CoachTestProtocol.state.withLock { $0.requests.first })
     #expect(call.path == "/v1/gym/ask" && call.method == "POST" && call.authorization?.hasPrefix("Bearer ") == true)
     #expect(try JSONDecoder().decode(CoachSaved.Request.self, from: #require(call.body)) == request)
@@ -756,7 +756,7 @@ import SyncTesting
     defer { try? FileManager.default.removeItem(at: cache.directory) }
     let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate(); coach.edit("Prior draft")
     try FileManager.default.removeItem(at: cache.directory); try Data("blocked".utf8).write(to: cache.directory)
-    #expect(!coach.begin(CoachHandoff(question: "Check my last workout.", send: true)))
+    #expect(!coach.begin(CoachHandoff(question: WorkoutHandoff.coachQuestion, send: true)))
     #expect(coach.saved.text == "Prior draft" && coach.saved.request == nil && !coach.asking)
     #expect(CoachTestProtocol.state.withLock { $0.requests.isEmpty })
   }
@@ -1286,25 +1286,6 @@ import SyncTesting
     #expect(gym.coachChanges(removal) == [CoachChange(removing: "Push A")] && gym.coachChanges(removal).first?.removal == true)
     let removing = ProposalReviewSheet(gym: gym, proposalId: removal.id.record.string!)
     #expect(removing.applyLabel == "Remove Push A" && removing.promise == "Your logged sets stay. Nothing is removed until you tap.")
-  }
-  @Test func settingsRowStatesWhatReachesTheLog() async throws {
-    let (gym, rest, _) = try await authed(.http(200, #"{"keys":[]}"#))
-    CoachTestProtocol.state.withLock { $0.replies["/v1/oauth/grants"] = .http(200, #"{"grants":[{"clientId":"a","name":"Claude Desktop","grantedMs":1000,"scope":"gym:read gym:write"}]}"#) }
-    let connections = CoachConnections(gym: gym, rest: rest)
-    #expect(connections.summary == "your AI tools")
-    await connections.load()
-    #expect(connections.summary == "Claude Desktop · read · write")
-    CoachTestProtocol.state.withLock { $0.replies["/v1/mcp-keys"] = .http(200, #"{"keys":[{"id":"k","createdMs":4000}]}"#) }
-    await connections.load()
-    #expect(connections.summary == "2 tools")
-    CoachTestProtocol.state.withLock { $0.replies["/v1/oauth/grants"] = .http(200, #"{"grants":[]}"#); $0.replies["/v1/mcp-keys"] = .http(200, #"{"keys":[]}"#) }
-    await connections.load()
-    #expect(connections.summary == "nothing connected yet")
-    CoachTestProtocol.state.withLock { $0.replies["/v1/oauth/grants"] = .failure(.notConnectedToInternet) }
-    await connections.load()
-    #expect(connections.summary == "your AI tools")
-    gym.isAnonymous = true; gym.account = nil
-    #expect(connections.summary == "nothing connected yet")
   }
   @Test func waitingDecisionSaysSoAfterItsWaitAndRetryPushesTheSameCommand() async throws {
     let transport = WorkoutFaultTransport(), telemetry = TelemetryRecorder(), runtime = try WorkoutStateTests.faultRuntime(transport, drivesLoops: true)

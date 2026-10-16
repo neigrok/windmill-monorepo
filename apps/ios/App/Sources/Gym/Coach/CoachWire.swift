@@ -174,7 +174,7 @@ nonisolated struct CoachThread: Codable, Equatable, Identifiable, Sendable {
     guard let outcome, ["proposed", "applied", "dismissed", "superseded"].contains(outcome.kind), outcome.changes > 0 else {
       return title.isEmpty ? "Conversation" : title
     }
-    return [outcome.routine, CoachCopy.changes(outcome.changes, removal: removal)].compactMap { $0 }.joined(separator: " · ")
+    return CoachCopy.proposalTitle(routine: outcome.routine, changes: outcome.changes, removal: removal)
   }
   var settled: String? { outcome.flatMap { CoachCopy.settled($0.kind) } }
   mutating func prepend(_ page: CoachThread) {
@@ -200,8 +200,11 @@ nonisolated enum CoachCopy {
     return (!text.isEmpty || photo) && text.utf8.count <= 1000
   }
   static func escaped(_ component: String) -> String { component.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "" }
-  // What a proposal does to its routine, as History, Review and its receipt name it: *3 changes*, or *a removal*.
-  static func changes(_ count: Int, removal: Bool) -> String { removal ? "a removal" : GymCount.of(count, "change") }
+  // A proposal's one name, on its Routines row, its History row and its Review's receipt: the routine and what is proposed
+  // for it, *Push A · 3 changes* or *Push A · a removal*.
+  static func proposalTitle(routine: String?, changes: Int, removal: Bool) -> String {
+    [routine, removal ? "a removal" : GymCount.of(changes, "change")].compactMap { $0 }.joined(separator: " · ")
+  }
   // How a proposal settled, on its card and its History row; a waiting one says nothing, since its Review row invites.
   static func settled(_ state: String) -> String? { ["applied": "Applied", "dismissed": "Turned down", "superseded": "Superseded"][state] }
 }

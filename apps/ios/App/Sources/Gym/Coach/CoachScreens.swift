@@ -31,7 +31,6 @@ extension EnvironmentValues {
 extension GymModel {
   var coachNoteCount: Int { personalCounts[Note.type] ?? notes.count }
   var coachAccountAvailable: Bool { !isAnonymous && account != nil && !accountTransition }
-  var coachDates: GymDate { log.map { GymDate($0.moment) } ?? GymDate() }
   func coachMoveNote(_ note: Note, to index: Int) -> Bool {
     guard coachAccountAvailable, let current = notes.firstIndex(where: { $0.id == note.id }) else { return false }
     var order = notes; order.remove(at: current); order.insert(note, at: min(max(0, index), order.count))

@@ -29,7 +29,7 @@ struct MovementRecordScreen: View {
                                description: Text("Your full training record needs a connection to finish syncing."))
           .listRowBackground(GymPalette.canvas)
       } else if let progress, let log = gym.log {
-        let dates = GymDate(log.moment)
+        let dates = gym.dates
         if progress.sessions.isEmpty && !gym.sets.contains(where: { $0.exerciseId == exerciseID }) {
           ContentUnavailableView {
             Label("Nothing logged yet", systemImage: "chart.xyaxis.line")

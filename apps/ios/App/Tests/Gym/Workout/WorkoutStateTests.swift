@@ -580,7 +580,7 @@ import SyncTesting
                 value(gym, session: session, weight: 85, at: Instant(ms: start.ms + 40_000))]
     let receipt = WorkoutReceiptData(session: session, sets: sets.reversed(), routineId: gym.runner.mint(Routine.self), routinePosition: 0)
     #expect(receipt.sets == sets && receipt.title == "Ended early.")
-    #expect(receipt.subtitle == "Free workout · \(GymDate().subtitle(session.startedAt))")
+    #expect(receipt.subtitle(GymDate(gym.dates.moment, locale: Locale(identifier: "en_US"))) == "Free workout · Sat, Sep 26")
     #expect(FactTiles(receipt.readout).facts == [FactTiles.Fact(value: "1m", label: "Duration"), FactTiles.Fact(value: "3", label: "Working sets"),
                                                  FactTiles.Fact(value: "1325 kg", label: "Volume")])
     #expect(receipt.performed.map(\.exerciseId) == [second, first] && receipt.performed.map(\.reading) == ["1 × 5 · 100", "2 × 5 · 80–85"])

@@ -310,7 +310,7 @@ struct CoachAnswerView: View {
   }
   // The receipt row, a door to What Coach read while there are workouts to list.
   @ViewBuilder func receiptRow(_ receipt: CoachReceipt) -> some View {
-    let reading = CoachReading(receipt, steps: steps, dates: gym.coachDates)
+    let reading = CoachReading(receipt, steps: steps, dates: gym.dates)
     if let line = reading.line {
       let row = HStack(spacing: RoomSpace.related) {
         Label(line, systemImage: "book.closed")
@@ -407,7 +407,7 @@ struct CoachSourcesSheet: View {
     let available = gym.sessions.contains { $0.id.record.string == source.sessionId }
     let facts = source.whole.map { [GymCount.of($0.workingSetCount, "working set"), Readout.weight($0.tonnageKg) + " kg"] } ?? []
     return Button { dismiss(); openSession?(source.sessionId) } label: {
-      GymRow(title: source.routine ?? Readout.noRoutine, meta: ([gym.coachDates.subtitle(Instant(ms: source.startedAt))] + facts).joined(separator: " · "),
+      GymRow(title: source.routine ?? Readout.noRoutine, meta: ([gym.dates.subtitle(Instant(ms: source.startedAt))] + facts).joined(separator: " · "),
              trailing: available ? .door : nil).contentShape(Rectangle())
     }.buttonStyle(.plain).disabled(!available).accessibilityIdentifier("coach-source-" + source.sessionId)
   }

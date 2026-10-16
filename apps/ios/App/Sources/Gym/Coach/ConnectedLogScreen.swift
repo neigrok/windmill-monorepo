@@ -61,16 +61,6 @@ nonisolated struct CoachConnection: Identifiable, Equatable {
       if error is DecodingError { gym.report("gym_read", error) }
     }
   }
-  // The Gym settings row's meta: what reaches the log, never a sentence (19-connected-log.md, "The native settings row").
-  var summary: String {
-    guard gym.coachAccountAvailable else { return "nothing connected yet" }
-    guard owner == gym.account, let rows else { return "your AI tools" }
-    switch rows.count {
-    case 0: return "nothing connected yet"
-    case 1: return rows[0].name + " · " + rows[0].levels
-    default: return GymCount.of(rows.count, "tool")
-    }
-  }
 }
 
 // What reaches the log from outside tools: the credentials connected, or, with none, what a tool may do above Connect a tool.
@@ -96,7 +86,7 @@ struct ConnectedLogScreen: View {
             ForEach(listed) { row in
               Button { browse("settings", action: "manage") } label: {
                 HStack(spacing: RoomSpace.related) {
-                  GymRow(title: row.name, meta: row.meta(gym.coachDates))
+                  GymRow(title: row.name, meta: row.meta(gym.dates))
                   Image(systemName: "arrow.up.forward").font(.footnote.weight(.semibold)).foregroundStyle(GymPalette.inkFaint).accessibilityHidden(true)
                 }.contentShape(Rectangle())
               }.buttonStyle(.plain).accessibilityHint("opens in your browser").accessibilityIdentifier("coach-connection-" + row.id)

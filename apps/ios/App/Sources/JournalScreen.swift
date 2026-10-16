@@ -127,7 +127,7 @@ struct JournalScreen: View {
             }
           } label: {
             Image(systemName: focused ? "checkmark" : "square.and.pencil")
-              .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
+              .contentTransition(RoomMotion.symbol(reduceMotion: reduceMotion))
               .animation(.easeInOut(duration: 0.3), value: focused)
               .font(.system(size: 18)).foregroundStyle(JournalPalette.ink)
           }.buttonStyle(RoomSeatStyle())

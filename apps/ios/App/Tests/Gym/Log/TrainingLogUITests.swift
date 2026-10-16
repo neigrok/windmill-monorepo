@@ -203,7 +203,8 @@ import SyncTesting
 
   // While the open workout is hidden, iOS 18's head brings it back; iOS 26 leaves that door to the tab bar's accessory.
   @Test func theHiddenRowBringsBackAHiddenWorkoutWhereTheTabBarHasNoAccessory() throws {
-    let (_, gym) = fixture()
+    let (harness, _) = fixture(), recorder = TelemetryRecorder()
+    let gym = GymModel(runner: harness.runner, telemetry: recorder)
     var routine = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "Lower A", entries: [
       RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 5, weightKg: 100)])]))
     guard case .saved = gym.save(&routine) else { Issue.record("The routine was not saved"); return }
@@ -214,7 +215,10 @@ import SyncTesting
     let row = try #require(LogTab(gym: gym, tabBarAccessory: false).hiddenRow)
     #expect(row.title == "Lower A" && row.meta == "Open since \(gym.dates.time(open.startedAt))" && row.trailing == .door)
     #expect(LogTab(gym: gym, tabBarAccessory: true).hiddenRow == nil)
-    #expect(gym.restoreWorkout() && gym.workout.isPresented && LogTab(gym: gym, tabBarAccessory: false).hiddenRow == nil)
+    LogTab(gym: gym, tabBarAccessory: false).openHiddenWorkout()
+    #expect(gym.workout.isPresented && LogTab(gym: gym, tabBarAccessory: false).hiddenRow == nil)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_hidden_workout" }.map(\.properties) } ==
+            [["action": "hide"], ["action": "open", "door": "row"]])
   }
 
   @Test func theMomentEventIsAllowlisted() {

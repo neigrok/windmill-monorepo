@@ -134,10 +134,10 @@ struct WeightInstrument: View {
       NumeralAndUnit(unit: SetKeypad.Field.weight.unit, identifier: "\(identifier)-unit") {
         Button(action: edit) {
           Text(Readout.weight(weightKg)).modifier(GymNumeral()).lineLimit(1).minimumScaleFactor(0.5)
-            .contentTransition(reduceMotion ? .opacity : .numericText(value: weightKg))
+            .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: weightKg))
         }.buttonStyle(.plain).accessibilityLabel("Weight, \(Readout.weight(weightKg)) kilograms")
           .accessibilityIdentifier(identifier)
-      }.animation(RoomTransient.motion(reduceMotion: reduceMotion), value: weightKg)
+      }.roomMotion(weightKg)
       LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: typeSize.isAccessibilitySize ? 2 : 4), spacing: RoomSpace.related) {
         ForEach(0..<4) { index in
           let label = WeightLadder.labels(weightKg)[index]

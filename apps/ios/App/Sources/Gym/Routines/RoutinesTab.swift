@@ -116,7 +116,7 @@ struct RoutineDetail: View {
   var body: some View {
     Group {
       if let routine {
-        let history = Array(gym.routineHistory(id).prefix(20)), dates = gym.log.map { GymDate($0.moment) } ?? GymDate()
+        let history = Array(gym.routineHistory(id).prefix(20)), dates = gym.dates
         List {
           Group {
             Section {
@@ -228,10 +228,10 @@ extension GymModel {
     RoutineLines.routine(routine, lastTrained: routineHistory(routine.id).first?.startedAt, historyKnown: historyKnown, moment: log?.moment)
   }
 
-  // A proposal is named by the routine it changes and what it changes: *Push A · 3 changes*, *Push A · a removal*.
+  // A waiting proposal's Routines row names the routine as it stands now.
   func proposalTitle(_ proposal: Proposal) -> String {
-    let routine = coachRoutine(proposal)?.name ?? proposal.baseName ?? proposal.proposedName
-    return "\(routine) · \(proposal.intent == "remove" ? "a removal" : GymCount.of(coachChangeCount(proposal), "change"))"
+    CoachCopy.proposalTitle(routine: coachRoutine(proposal)?.name ?? proposal.baseName ?? proposal.proposedName,
+                            changes: coachChangeCount(proposal), removal: proposal.intent == "remove")
   }
 
   // The server stamps a proposal's creation; a proposal the phone has not yet sent shows no time rather than a guessed one.

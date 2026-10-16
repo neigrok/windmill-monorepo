@@ -85,6 +85,6 @@ struct GymTransient: View {
                       actionIdentifier: undo ? undoIdentifier : nil, action: action(shown), dismiss: dismissal(shown))
         .accessibilityIdentifier(undo ? undoIdentifier + "-band" : errorIdentifier)
       }
-    }.bandMotion(shown)
+    }.roomMotion(shown)
   }
 }

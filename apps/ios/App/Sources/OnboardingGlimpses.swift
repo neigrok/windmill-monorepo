@@ -1,4 +1,7 @@
 import SwiftUI
+import DomainKit
+import GymDomain
+import SyncCore
 
 struct OnboardingGlimpse: View {
   let page: OnboardingPage
@@ -192,16 +195,20 @@ struct OnboardingGlimpse: View {
 
   // The rack as the workout draws it, from its own ledger rows and numeral; Log set checks the current row and the next one takes its dot.
   var gym: some View {
-    card(GymPalette.canvas, GymPalette.line) {
+    let squat = ID<Exercise>("back-squat"), session = ID<Session>("onboarding-glimpse")
+    let sets = (0..<(logged < 1 ? 1 : 2)).map { index in
+      TrainingSet(id: ID(RecordID("onboarding-glimpse-\(index)")), sessionId: session, exerciseId: squat, weightKg: 100, reps: 5, completedAt: Instant(ms: 0))
+    }
+    let ledger = MovementLedger(sets: sets, plan: RoutineEntry(exerciseId: squat, sets: Array(repeating: SetTarget(reps: 5, weightKg: 100), count: 3)))
+    return card(GymPalette.canvas, GymPalette.line) {
       ZStack(alignment: .topLeading) {
         VStack(spacing: 8) {
           Text("Squat").font(.title2.weight(.bold)).foregroundStyle(GymPalette.ink)
           VStack(spacing: 0) {
-            WorkoutLedgerRow(marker: "1", readout: "100 × 5", state: .sent)
-            Divider().overlay(GymPalette.line)
-            WorkoutLedgerRow(marker: "2", readout: "100 × 5", state: logged < 1 ? .current : .sent)
-            Divider().overlay(GymPalette.line)
-            WorkoutLedgerRow(marker: "3", readout: "100 × 5", state: logged < 1 ? .planned : .current)
+            ForEach(ledger.rows) { row in
+              if row.id > 0 { Divider().overlay(GymPalette.line) }
+              WorkoutLedgerRow(row: row, unsent: false)
+            }
           }.padding(.horizontal, RoomSpace.inset).background(GymPalette.card, in: RoundedRectangle(cornerRadius: RoomSpace.cardRadius))
           HStack(alignment: .firstTextBaseline, spacing: RoomSpace.related) {
             Text("100").modifier(GymNumeral()).foregroundStyle(GymPalette.ink)

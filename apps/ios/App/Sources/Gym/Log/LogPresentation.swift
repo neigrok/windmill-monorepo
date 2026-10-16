@@ -80,9 +80,6 @@ struct LogMonth: Identifiable {
 extension GymModel {
   var finishedLogSessions: [Session] { sessions.filter { !$0.isOpen && $0.startedAt <= (log?.moment.now ?? Instant(ms: 0)) } }
 
-  // The room's dates, read at the log's moment, or at the device's before the log is read.
-  var dates: GymDate { log.map { GymDate($0.moment) } ?? GymDate() }
-
   // The log's records, worked out once per change of the log rather than per row per render.
   var logRecords: ProgressRecords? {
     if logRecordsRead == nil, let log { logRecordsRead = ProgressRecords(log.progress) }

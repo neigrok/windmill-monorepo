@@ -428,7 +428,7 @@ struct AccountSheet: View {
       }
     }.listStyle(.insetGrouped).scrollContentBackground(.hidden).listRowSeparatorTint(ShellPalette.line)
       .safeAreaInset(edge: .bottom) {
-        VStack(spacing: 0) { if model.updateOpenFailed { UpdateFailure(model: model) } }.bandMotion(model.updateOpenFailed)
+        VStack(spacing: 0) { if model.updateOpenFailed { UpdateFailure(model: model) } }.roomMotion(model.updateOpenFailed)
       }
   }
 

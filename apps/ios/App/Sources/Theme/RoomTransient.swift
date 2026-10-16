@@ -1,8 +1,9 @@
 import SwiftUI
 
 // The one band (docs/design/ios/ios-redesign.md §5): a message with at most one control, an accent action or the
-// dismiss xmark. Where its host keys `bandMotion` on what it says, it rises on the system spring and leaves the way it
-// came, a 200 ms fade with Reduce Motion; a band with a way to be dismissed also goes by a swipe down.
+// dismiss xmark. Where its host keys `roomMotion` on what it says, it rises on the system spring and leaves the way it
+// came, a 200 ms fade with Reduce Motion; a band with a way to be dismissed also goes by a swipe down, unless its text
+// scrolls within a bounded band, where a drag reads the text and its control sends it away.
 struct RoomTransient: View {
   let message: String
   let room: RoomColors
@@ -13,14 +14,13 @@ struct RoomTransient: View {
   var dismiss: (() -> Void)?
   @Environment(\.dynamicTypeSize) private var typeSize
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.bandScrolls) private var scrolls
   @GestureState(resetTransaction: Transaction(animation: .spring)) private var pull: CGFloat = 0
-
-  static func motion(reduceMotion: Bool) -> Animation { reduceMotion ? .easeInOut(duration: 0.2) : .spring }
 
   var body: some View {
     let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: RoomSpace.small))
       : AnyLayout(HStackLayout(spacing: RoomSpace.related))
-    let motion = Self.motion(reduceMotion: reduceMotion)
+    let motion = RoomMotion.animation(reduceMotion: reduceMotion)
     layout {
       Text(message).foregroundStyle(room.ink).fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -43,7 +43,7 @@ struct RoomTransient: View {
       .accessibilityElement(children: .contain)
       .padding(.horizontal, RoomSpace.inset).padding(.vertical, RoomSpace.small)
       .offset(y: pull)
-      .gesture(swipe(motion), isEnabled: dismiss != nil)
+      .gesture(swipe(motion), isEnabled: dismiss != nil && !scrolls)
       .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
   }
 
@@ -58,18 +58,6 @@ struct RoomTransient: View {
   }
 }
 
-// A host animates its band's coming and going, keyed on what the band says, with the band's own motion.
-struct BandMotion<Value: Equatable>: ViewModifier {
-  let value: Value
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  func body(content: Content) -> some View { content.animation(RoomTransient.motion(reduceMotion: reduceMotion), value: value) }
-}
-
-extension View {
-  func bandMotion<Value: Equatable>(_ value: Value) -> some View { modifier(BandMotion(value: value)) }
-}
-
 // A band floats over the list it answers, so it stands on glass — the regular material with the system shadow before
 // iOS 26 — never on a row's card.
 struct FloatingSurface: ViewModifier {
@@ -80,15 +68,24 @@ struct FloatingSurface: ViewModifier {
   }
 }
 
-// At accessibility sizes a band scrolls within a bounded height, so the controls beneath stay in reach.
+// At accessibility sizes a band scrolls within a bounded height, so the controls beneath stay in reach; while its text
+// overflows, the band tells it so that a vertical drag scrolls rather than dismisses.
 struct BoundedBand: ViewModifier {
   @Environment(\.dynamicTypeSize) private var typeSize
+  @State private var scrolls = false
 
   func body(content: Content) -> some View {
     if typeSize.isAccessibilitySize {
-      CappedHeight(limit: 180) { ScrollView { content }.scrollBounceBehavior(.basedOnSize) }
+      CappedHeight(limit: 180) {
+        ScrollView { content.environment(\.bandScrolls, scrolls) }.scrollBounceBehavior(.basedOnSize)
+          .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.containerSize.height } action: { scrolls = $1 }
+      }
     } else { content }
   }
+}
+
+extension EnvironmentValues {
+  @Entry var bandScrolls = false
 }
 
 struct CappedHeight: Layout {

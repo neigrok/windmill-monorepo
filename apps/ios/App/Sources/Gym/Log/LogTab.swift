@@ -26,7 +26,7 @@ struct LogTab: View {
     List {
       if let hidden = hiddenRow {
         Section {
-          Button { gym.restoreWorkout() } label: { hidden }
+          Button { openHiddenWorkout() } label: { hidden }
             .disabled(gym.accountTransition).accessibilityIdentifier("gym-hidden-workout")
         }.listRowBackground(GymPalette.card)
       }
@@ -90,6 +90,8 @@ struct LogTab: View {
     let since = LocalDay(start, in: dates.moment.zone) == dates.moment.today ? dates.time(start) : dates.dayAndTime(start, inSentence: true)
     return GymRow(title: open.name ?? Readout.noRoutine, meta: "Open since \(since)", trailing: .door)
   }
+  // The row is iOS 18's door back, the one return iOS 26's accessory makes, recorded as door: row.
+  func openHiddenWorkout() { gym.openHiddenWorkout(from: .row) }
 
   // The head: Bodyweight once a weigh-in exists, with the weeks trained as its footer.
   @ViewBuilder var head: some View {

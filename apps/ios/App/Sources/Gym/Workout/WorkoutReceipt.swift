@@ -32,7 +32,7 @@ import SyncCore
   var readout: SessionReadout { SessionReadout(session: session, sets: sets) }
   var slight: Bool { readout.workingSetCount < 4 }
   var title: String { slight ? "Ended early." : "Well done." }
-  var subtitle: String { "\(session.name ?? Readout.noRoutine) · \(GymDate().subtitle(session.startedAt))" }
+  func subtitle(_ dates: GymDate) -> String { "\(session.name ?? Readout.noRoutine) · \(dates.subtitle(session.startedAt))" }
   // Each movement once, in the order its first set was logged, with its working sets — or every set when none was working.
   var performed: [(exerciseId: ID<Exercise>, reading: String)] {
     SetRow.movements(sets).map { id in
@@ -187,7 +187,7 @@ struct WorkoutReceipt: View {
       List {
         Group {
           Section { FactTiles(receipt.readout).padding(.vertical, RoomSpace.small) }
-          if let sentence = receipt.review?.record?.sentence(gym.catalogue, dates: gym.log.map { GymDate($0.moment) } ?? GymDate()) {
+          if let sentence = receipt.review?.record?.sentence(gym.catalogue, dates: gym.dates) {
             Section("Personal record") { Text(sentence).font(.body.weight(.semibold)).foregroundStyle(GymPalette.record).modifier(RecordArrival()) }
           }
           Section("Performed") {
@@ -218,7 +218,7 @@ struct WorkoutReceipt: View {
             }
           }
         }.listRowBackground(GymPalette.card)
-      }.modifier(GymPage()).roomTitle(receipt.title, subtitle: receipt.subtitle)
+      }.modifier(GymPage()).roomTitle(receipt.title, subtitle: receipt.subtitle(gym.dates))
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.tint(GymPalette.accent) } }.roomBar(.gym)
         .reachBand { band }
     }.modifier(GymPage()).presentationDetents(rows <= 5 && !typeSize.isAccessibilitySize ? [.medium, .large] : [.large])
@@ -243,7 +243,7 @@ struct WorkoutReceipt: View {
           gym.workout.handoff = .coach; dismiss()
         }
       }
-    }.bandMotion(receipt.reviewFailed)
+    }.roomMotion(receipt.reviewFailed)
   }
 }
 
@@ -255,7 +255,7 @@ struct RecordArrival: ViewModifier {
   func body(content: Content) -> some View {
     Group {
       if reduceMotion {
-        content.opacity(arrived ? 1 : 0).animation(RoomTransient.motion(reduceMotion: true), value: arrived)
+        content.opacity(arrived ? 1 : 0).roomMotion(arrived)
       } else {
         content.keyframeAnimator(initialValue: 0.0, trigger: arrived) { line, pulse in
           line.scaleEffect(1 + 0.04 * pulse, anchor: .leading).shadow(color: GymPalette.record, radius: 8 * pulse)
