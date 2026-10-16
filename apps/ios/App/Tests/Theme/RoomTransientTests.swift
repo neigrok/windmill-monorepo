@@ -15,4 +15,9 @@ import Testing
     #expect(bandHeight(Color.clear.frame(height: 400)) == 180)
     #expect(bandHeight(Color.clear.frame(height: 400), typeSize: .large) == 400)
   }
+
+  @Test func theBandMovesOnTheSystemSpringAndFadesIn200MillisecondsUnderReduceMotion() {
+    #expect(RoomTransient.motion(reduceMotion: false) == .spring)
+    #expect(RoomTransient.motion(reduceMotion: true) == .easeInOut(duration: 0.2))
+  }
 }

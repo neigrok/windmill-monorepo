@@ -5,6 +5,7 @@ import GymDomain
 import SyncAPI
 import SyncCore
 import SyncEngine
+import struct SyncReplica.OutboxEntry
 import SyncSchema
 import SyncStore
 
@@ -35,7 +36,9 @@ final class GymModel {
   var refusal: GymRefusal?
   var error: String?
   var readFailed = false
-  var undoOffers: [UndoOffer] = []
+  var undoOffers: [GymUndoOffer] = []
+  // The offers whose band the lifter swiped away: the room offers them no more, and their holds run out as they would.
+  @ObservationIgnored var dismissedUndos: Set<String> = []
   // The room's refusals: undismissed, and none a saved workout owns, since that one is its row's on The log.
   var notices: [DomainNotice<GymRefusal>] = []
   // Every gym notice the replica keeps, dismissed ones too: the saved workouts' review reads their reasons here.
@@ -223,15 +226,9 @@ final class GymModel {
           refusal = latest.refusal; error = message(latest.refusal)
         }
         publish(\.notices, incoming)
-        let outbox = replica.outbox.filter { $0.scope == Gym.scope }
-        var offers: [UndoOffer] = []
-        for entry in outbox where !offers.contains(where: { $0.id == entry.gestureId }) {
-          let gesture = outbox.filter { $0.gestureId == entry.gestureId }
-          if gesture.allSatisfy({ $0.state == .held }) {
-            offers.append(UndoOffer(id: entry.gestureId, scope: entry.scope, releaseAt: entry.releaseAt))
-          }
-        }
-        publish(\.undoOffers, offers)
+        let held = GymUndoOffer.held(in: replica.outbox.filter { $0.scope == Gym.scope })
+        dismissedUndos.formIntersection(held.map(\.id))
+        publish(\.undoOffers, held.filter { !dismissedUndos.contains($0.id) })
       } else {
         let now = (try? runner.moment().now.ms) ?? 0
         publish(\.undoOffers, undoOffers.filter { $0.releaseAt > now })
@@ -255,8 +252,9 @@ final class GymModel {
     do {
       let outcome = try runner.run(action)
       if let refused = outcome.refusal { refusal = refused; error = message(refused) }
-      if let receipt = outcome.receipt, let releaseAt = receipt.releaseAt {
-        undoOffers.append(UndoOffer(id: receipt.gestureId, scope: action.scope, releaseAt: releaseAt))
+      if runtime == nil, let receipt = outcome.receipt,
+         let offer = (try? runner.read(Gym.scope) { try GymUndoOffer(receipt: receipt, in: $0) }) ?? nil {
+        undoOffers.append(offer)
       }
       telemetry.event("gym_action", properties: ["screen": "gym", "outcome": outcome.refusal == nil ? "ok" : "refused"])
       refresh()
@@ -305,6 +303,13 @@ final class GymModel {
       telemetry.event("gym_undo", properties: ["screen": "gym", "outcome": "failed"]); report("gym_undo", error)
       return false
     }
+  }
+
+  // The lifter sent an Undo band away: the act stays, and its hold runs out as it would have.
+  func dismissUndo(_ gestureId: String) {
+    dismissedUndos.insert(gestureId)
+    undoOffers.removeAll { $0.id == gestureId }
+    telemetry.event("gym_undo", properties: ["screen": "gym", "action": "dismiss"])
   }
 
   @discardableResult
@@ -440,6 +445,59 @@ final class GymModel {
     guard let error = error as? URLError else { return false }
     return [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost,
             .cannotFindHost, .dnsLookupFailed, .timedOut].contains(error.code)
+  }
+}
+
+// A held gesture Undo can still remove, and the band's line naming what it holds: the object and the act
+// (docs/design/ios/ios-redesign.md §5). The line is read from the held records, so a relaunch that reads the outbox
+// again names the gesture the same.
+nonisolated struct GymUndoOffer: Equatable, Identifiable {
+  let id: String
+  let releaseAt: Int64
+  let line: String
+
+  // What each held removal is called, in the order a gesture holding more than one kind is named by.
+  static let objects: [(entity: any Removable.Type, noun: String, act: String)] = [
+    (Session.self, "workout", "discarded"), (Routine.self, "routine", "deleted"), (WeighIn.self, "weigh-in", "deleted"),
+    (Note.self, "note", "deleted"), (TrainingSet.self, "set", "deleted"),
+  ]
+
+  init?(id: String, releaseAt: Int64, holding records: [RecordKey]) {
+    guard let object = Self.objects.first(where: { object in records.contains { $0.type == object.entity.type } }) else { return nil }
+    let count = Set(records.filter { $0.type == object.entity.type }).count
+    self.id = id; self.releaseAt = releaseAt
+    line = count == 1 ? "\(object.noun.prefix(1).uppercased())\(object.noun.dropFirst()) \(object.act)"
+      : "\(GymCount.of(count, object.noun)) \(object.act)"
+  }
+
+  // A gesture the outbox still holds whole, named by the records its entries remove.
+  init?(gesture entries: [OutboxEntry]) {
+    guard let first = entries.first, entries.allSatisfy({ $0.state == .held }) else { return nil }
+    self.init(id: first.gestureId, releaseAt: first.releaseAt,
+              holding: entries.flatMap { $0.intent.deltas.filter(\.removes).map(\.key) })
+  }
+
+  // Without the engine's store a run keeps its own offer: the records its receipt names that the drawn view shows held.
+  init?(receipt: CommitReceipt, in read: Reader) throws {
+    guard let releaseAt = receipt.releaseAt else { return nil }
+    var held: [RecordKey] = []
+    for object in Self.objects {
+      for id in receipt.ids.compactMap({ $0 }) {
+        if try Self.holds(object.entity, id, in: read) { held.append(RecordKey(object.entity.type, id)) }
+      }
+    }
+    self.init(id: receipt.gestureId, releaseAt: releaseAt, holding: held)
+  }
+
+  // Every gesture of the outbox still held whole, oldest first.
+  static func held(in outbox: [OutboxEntry]) -> [GymUndoOffer] {
+    var gestures: [String] = []
+    for entry in outbox where !gestures.contains(entry.gestureId) { gestures.append(entry.gestureId) }
+    return gestures.compactMap { id in GymUndoOffer(gesture: outbox.filter { $0.gestureId == id }) }
+  }
+
+  static func holds<E: Entity>(_ entity: E.Type, _ id: RecordID, in read: Reader) throws -> Bool {
+    try read.repository(entity).record(DomainKit.ID(id), in: .drawn)?.isHeld == true
   }
 }
 

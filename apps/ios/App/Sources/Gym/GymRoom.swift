@@ -48,6 +48,7 @@ struct GymRoom: View {
     .environment(\.coachOpenAccount, app.openYou)
     .environment(\.coachOpenRoutine, { id in tab = .routines; routinesPath.append(Destination.routine(id)) })
     .environment(\.coachOpenSession, { id in tab = .log; logPath.append(Destination.session(id)) })
+    .environment(\.coachAsk, { handoff in ask(handoff.question, send: handoff.send) })
     .environment(\.gymShareSession, { id in share = SessionShareID(id: id) })
     .sheet(item: $proposal) { proposal in
       ProposalReviewSheet(gym: gym, proposalId: proposal.id) { name in

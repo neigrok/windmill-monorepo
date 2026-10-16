@@ -69,7 +69,7 @@ reads it; a rule several tracks read, such as what is unsent, is `GymModel.swift
 draws lives once in `Components/`: the page chrome (page modifier, an editing sheet's commit from its bar, keyboard
 bar, More menu), the transient band, the
 two-line row, the set row and fact tiles, the weight instrument, keypad and Fix set editor, the rename sheet with its
-model extension, and the one count formatter with the Instant–Date bridge.
+model extension, the one count formatter, the one date formatter (`GymDate`) and the Instant–Date bridge.
 
 `GymModel(runner:runtime:telemetry:)` exposes engine-backed log/catalogue/routines/notes/bodyweight/
 preferences/proposals, sessions/sets/openSession, account/isAnonymous/authPaused, notices,

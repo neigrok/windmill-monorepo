@@ -1,21 +1,24 @@
 import SwiftUI
 
+// The room's one band: what it says, the one control it offers and what dismissing it does.
 struct GymTransient: View {
   enum Message: Equatable {
-    case local(String), notice(String, String), error(String), held(String), undo(String, count: Int)
+    case local(String), notice(String, String), error(String), held(String), undo(GymUndoOffer)
 
     var text: String {
       switch self {
       case .local(let text), .error(let text), .notice(_, let text), .held(let text): text
-      case .undo(_, let count): count == 1 ? "Change deleted" : GymCount.of(count, "change") + " deleted"
+      case .undo(let offer): offer.line
       }
     }
   }
 
-  // A hold kept outside the engine's undo offers, such as a deleted Coach conversation or a saved workout's discard.
+  // A hold kept outside the engine's undo offers, such as a deleted Coach conversation or a saved workout's discard;
+  // `keep` ends it early with the act kept, which is what a swipe down asks for.
   struct Held {
     let text: String
     let undo: () -> Void
+    var keep: (() -> Void)?
   }
 
   let gym: GymModel
@@ -36,22 +39,24 @@ struct GymTransient: View {
     if let error = gym.error, !noticeMessages.contains(error), error != noticeMessage { return .error(error) }
     if let notice = gym.notices.last { return .notice(notice.id, noticeMessage ?? gym.message(notice.refusal)) }
     if let held { return .held(held.text) }
-    if let offer = gym.undoOffers.last { return .undo(offer.id, count: gym.undoOffers.count) }
+    if let offer = gym.undoOffers.last { return .undo(offer) }
     return nil
   }
 
-  func dismissMessage(_ shown: Message) {
+  // What sends the band away, by its xmark or a swipe down: a refusal or a notice goes, and a band offering Undo leaves
+  // while the act stays. A failed read, or a message its screen gave no way out, cannot be dismissed.
+  func dismissal(_ shown: Message) -> (() -> Void)? {
     switch shown {
-    case .local(let text):
-      dismiss?()
-      if gym.error == text { gym.error = nil; gym.refusal = nil }
-    case .notice(let id, _): gym.dismissNotice(id)
-    case .error(let text):
-      if gym.error == text { gym.error = nil; gym.refusal = nil }
-    case .held: held?.undo()
-    case .undo(let id, _): _ = gym.undo(id)
+    case .local(let text): return dismiss.map { dismiss in { dismiss(); if gym.error == text { gym.error = nil; gym.refusal = nil } } }
+    case .notice(let id, _): return { gym.dismissNotice(id) }
+    case .error where gym.readFailed: return nil
+    case .error(let text): return { if gym.error == text { gym.error = nil; gym.refusal = nil } }
+    case .held: return held?.keep
+    case .undo(let offer): return { gym.dismissUndo(offer.id) }
     }
   }
+
+  func dismissMessage(_ shown: Message) { dismissal(shown)?() }
 
   func actionTitle(_ shown: Message) -> String {
     switch shown {
@@ -65,19 +70,23 @@ struct GymTransient: View {
   func action(_ shown: Message) -> (() -> Void)? {
     switch shown {
     case .error where gym.readFailed: return { if let retry { retry() } else { gym.refresh() } }
-    case .local: return retryMessage ?? dismiss.map { _ in { dismissMessage(shown) } }
-    default: return { dismissMessage(shown) }
+    case .local where retryMessage != nil: return retryMessage
+    case .held: return held?.undo
+    case .undo(let offer): return { _ = gym.undo(offer.id) }
+    default: return dismissal(shown)
     }
   }
 
   var body: some View {
-    if let shown {
-      let title = actionTitle(shown)
-      let undo = title == "Undo"
-      RoomTransient(message: shown.text, room: .gym, actionTitle: title,
-                    actionSymbol: title == "Dismiss message" ? "xmark" : nil,
-                    actionIdentifier: undo ? undoIdentifier : nil, action: action(shown))
-      .accessibilityIdentifier(undo ? undoIdentifier + "-band" : errorIdentifier)
-    }
+    VStack(spacing: 0) {
+      if let shown {
+        let title = actionTitle(shown)
+        let undo = title == "Undo"
+        RoomTransient(message: shown.text, room: .gym, actionTitle: title,
+                      actionSymbol: title == "Dismiss message" ? "xmark" : nil,
+                      actionIdentifier: undo ? undoIdentifier : nil, action: action(shown), dismiss: dismissal(shown))
+        .accessibilityIdentifier(undo ? undoIdentifier + "-band" : errorIdentifier)
+      }
+    }.bandMotion(shown)
   }
 }

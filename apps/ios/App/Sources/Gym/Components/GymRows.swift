@@ -2,30 +2,65 @@ import SwiftUI
 import DomainKit
 import GymDomain
 
-// The room's two-line row, a title over one meta line; the caller wraps it in its Button or NavigationLink and says
-// what stands at its trailing edge: a fact, the selection's check, work on its way, or the chevron of a door a Button
-// opens (a sheet, another tab), which a NavigationLink gets from the system.
+// The room's two-line row, a title over one meta line, wrapped by its caller in a Button or NavigationLink. At its edges: a
+// symbol in its colour or a dot before the title, a dot after it, and trailing a fact (`iphone` before it while unsent,
+// under the meta at accessibility sizes), the selection's check, work on its way, or the DoorChevron of a Button's door.
 struct GymRow: View {
-  enum Trailing: Equatable { case fact(String), check, progress, door }
+  enum Mark: Equatable { case symbol(String, Color), dot(Color) }
+  enum Trailing: Equatable { case fact(String, unsent: Bool = false), check, progress, door }
   let title: String
   var meta: String?
+  var leading: Mark?
+  var titleDot: Color?
+  var titleColor = GymPalette.ink
   var trailing: Trailing?
   var lineLimit: Int?
+  @Environment(\.dynamicTypeSize) private var typeSize
+  @ScaledMetric(relativeTo: .body) private var dot = 8.0
+  @ScaledMetric(relativeTo: .body) private var symbolColumn = 28.0
 
   var body: some View {
+    let stacked = typeSize.isAccessibilitySize
     HStack(spacing: RoomSpace.related) {
-      VStack(alignment: .leading, spacing: RoomSpace.small) {
-        Text(title).font(meta == nil ? .body : .body.weight(.semibold)).foregroundStyle(GymPalette.ink).lineLimit(lineLimit)
-        if let meta { Text(meta).font(.subheadline).monospacedDigit().foregroundStyle(GymPalette.inkDim).lineLimit(lineLimit) }
-      }.frame(maxWidth: .infinity, alignment: .leading)
+      HStack(alignment: .firstTextBaseline, spacing: RoomSpace.related) {
+        if let leading { mark(leading) }
+        VStack(alignment: .leading, spacing: RoomSpace.small) {
+          HStack(alignment: .firstTextBaseline, spacing: RoomSpace.related) {
+            Text(title).font(meta == nil ? .body : .body.weight(.semibold)).foregroundStyle(titleColor).lineLimit(lineLimit)
+            if let titleDot { mark(.dot(titleDot)) }
+          }
+          if let meta { Text(meta).font(.subheadline).monospacedDigit().foregroundStyle(GymPalette.inkDim).lineLimit(lineLimit) }
+          if stacked, case .fact(let text, let unsent) = trailing { fact(text, unsent: unsent) }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+      }
       switch trailing {
-      case .fact(let fact): Text(fact).font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim)
+      case .fact(let text, let unsent): if !stacked { fact(text, unsent: unsent) }
       case .check: Image(systemName: "checkmark").foregroundStyle(.tint).accessibilityHidden(true)
       case .progress: ProgressView()
       case .door: DoorChevron(room: .gym)
       case nil: EmptyView()
       }
     }.frame(minHeight: RoomSpace.minimumTarget)
+  }
+
+  // A dot is 8 pt at the default size, centred on the first line's capitals at every size.
+  @ViewBuilder func mark(_ mark: Mark) -> some View {
+    switch mark {
+    case .symbol(let name, let color):
+      Image(systemName: name).foregroundStyle(color).frame(width: symbolColumn).accessibilityHidden(true)
+    case .dot(let color):
+      let size = dot
+      Circle().fill(color).frame(width: size, height: size)
+        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + size * 0.75 }
+        .accessibilityHidden(true)
+    }
+  }
+
+  func fact(_ text: String, unsent: Bool) -> some View {
+    HStack(spacing: RoomSpace.related) {
+      if unsent { Image(systemName: "iphone").accessibilityLabel("On this phone") }
+      Text(text)
+    }.font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim)
   }
 }
 
@@ -71,8 +106,9 @@ struct SetRow: View {
   }
 }
 
+// Up to three value-over-label tiles, drawing only the facts that are known.
 struct FactTiles: View {
-  struct Fact {
+  struct Fact: Equatable {
     let value: String
     let label: String
     var record = false
@@ -95,5 +131,17 @@ struct FactTiles: View {
           .accessibilityIdentifier(fact.identifier ?? "")
       }
     }
+  }
+}
+
+extension FactTiles {
+  // A session's tiles, read the same wherever a session is told: Duration · Working sets · Volume, the duration only once
+  // the session has finished.
+  init(_ readout: SessionReadout) {
+    self.init(facts: [
+      readout.durationMs.map { Fact(value: Readout.duration($0), label: "Duration") },
+      Fact(value: "\(readout.workingSetCount)", label: GymCount.noun(readout.workingSetCount, "Working set")),
+      Fact(value: "\(Readout.weight(readout.volumeKg)) kg", label: "Volume"),
+    ].compactMap { $0 })
   }
 }
