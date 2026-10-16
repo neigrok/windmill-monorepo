@@ -28,7 +28,7 @@ import SyncTesting
     let pending = try #require(gym.runner.read(Gym.scope) { try $0.repository(TrainingSet.self).record(expected.id, in: .stored) })
     #expect(pending.isPending && pending.isVisible)
     #expect(try gym.runner.read(Gym.scope) { try $0.commands().isEmpty })
-    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_set_logged" }.map(\.properties) } == [[:]])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_set_logged" }.map(\.properties) } == [["surface": "activity"]])
     harness.sync(); gym.refresh(); workout.reconcile()
     let confirmed = TrainingSet(id: expected.id, sessionId: expected.sessionId, exerciseId: expected.exerciseId,
                                 weightKg: expected.weightKg, reps: expected.reps, kind: expected.kind, completedAt: expected.completedAt, setNumber: 1)
@@ -173,7 +173,7 @@ import SyncTesting
     #expect(next.setID != offer.setID)
     #expect(workout.logActivityOffer(offer) && workout.logActivityOffer(offer))
     #expect(workout.sets == retained && retained.map { $0.id.description } == [offer.setID])
-    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_set_logged" }.map(\.properties) } == [[:]])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_set_logged" }.map(\.properties) } == [["surface": "activity"]])
     #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_set_logged" }.map(\.properties) } == [["screen": "workout", "outcome": "ok"]])
     #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.isEmpty })
   }
@@ -188,10 +188,10 @@ import SyncTesting
     let previous = WorkoutActivityIntentHandler.model
     WorkoutActivityIntentHandler.model = app
     defer { WorkoutActivityIntentHandler.model = previous }
-    #expect(await WorkoutActivityIntentHandler.logSet(offer: stale) == false)
+    #expect(await WorkoutActivityIntentHandler.logSet(offer: stale, surface: .activity) == .opened)
     #expect(app.selectedRoom == .gym && !app.welcome && !app.gym.workoutHidden)
     #expect(app.gym.workout.isPresented && app.gym.sets.isEmpty)
-    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.map(\.properties) } == [[:]])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.map(\.properties) } == [["surface": "activity", "outcome": "refused"]])
   }
 
   @Test(arguments: [(false, false), (false, true), (true, false), (true, true)])
@@ -220,7 +220,7 @@ import SyncTesting
       let previous = WorkoutActivityIntentHandler.model
       WorkoutActivityIntentHandler.model = app
       defer { WorkoutActivityIntentHandler.model = previous }
-      #expect(await WorkoutActivityIntentHandler.logSet(offer: stale) == false)
+      #expect(await WorkoutActivityIntentHandler.logSet(offer: stale, surface: .activity) == .opened)
     } else {
       app.openActivityWorkout()
       #expect(!workout.logActivityOffer(stale))
@@ -230,7 +230,7 @@ import SyncTesting
     #expect(workout.weightKg == 62.5 && workout.reps == 9)
     #expect(try workout.activityRecord() == record)
     #expect(!workout.activityIdentityResolved && workout.activityOffer() == nil)
-    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.map(\.properties) } == [[:]])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.map(\.properties) } == [["surface": "activity", "outcome": "refused"]])
     #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_set_logged" }.isEmpty })
   }
 
@@ -263,7 +263,7 @@ import SyncTesting
       setID: field == "set" ? gym.runner.mint(TrainingSet.self).description : current.setID)
     #expect(!workout.logActivityOffer(stale))
     #expect(workout.sets.isEmpty && workout.activityOffer() == current)
-    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.map(\.properties) } == [[:]])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.map(\.properties) } == [["surface": "activity", "outcome": "refused"]])
     #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_set_logged" }.isEmpty })
   }
 
@@ -279,7 +279,7 @@ import SyncTesting
     #expect(!workout.logActivityOffer(stale) && workout.sets.isEmpty)
     let current = try #require(workout.activityOffer())
     #expect(current != stale && current.setID != stale.setID)
-    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.map(\.properties) } == [[:]])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.map(\.properties) } == [["surface": "activity", "outcome": "refused"]])
   }
 
   @Test func offerFromThePreviousSessionCannotLogIntoTheNewWorkout() throws {
@@ -289,7 +289,7 @@ import SyncTesting
     let replacement = try fixtures.begin(gym)
     #expect(replacement.sessionId?.description != stale.sessionID)
     #expect(!replacement.logActivityOffer(stale) && gym.sets.isEmpty)
-    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.map(\.properties) } == [[:]])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.map(\.properties) } == [["surface": "activity", "outcome": "refused"]])
   }
 
   @Test func otherPhoneHasNoLocalOwnerOrOfferedAction() throws {
@@ -451,7 +451,7 @@ import SyncTesting
     #expect(restored.sessionID == old.sessionID && restored.ownerID != old.ownerID && restored.setID != old.setID)
     #expect(!workout.logActivityOffer(old) && workout.sets.isEmpty)
     #expect(workout.activityOffer() == restored)
-    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.map(\.properties) } == [[:], [:], [:]])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.map(\.properties) } == [["surface": "activity", "outcome": "refused"], ["surface": "activity", "outcome": "refused"], ["surface": "activity", "outcome": "refused"]])
     #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_set_logged" }.isEmpty })
   }
 
@@ -679,7 +679,7 @@ import SyncTesting
     harness.advance(ms: 1); gym.refresh(); workout.reconcile()
     #expect(workout.activityOffer() == nil && !workout.logActivityOffer(stale))
     #expect(workout.sets == retained && workout.session?.closedBy == "stale")
-    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.map(\.properties) } == [[:]])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.map(\.properties) } == [["surface": "activity", "outcome": "refused"]])
   }
 
   @Test func finishInFlightHasNoOfferedAction() throws {
@@ -687,7 +687,7 @@ import SyncTesting
     let workout = try fixtures.begin(gym), offer = try #require(workout.activityOffer())
     workout.finishing = true
     #expect(workout.activityOffer() == nil && !workout.logActivityOffer(offer) && workout.sets.isEmpty)
-    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.map(\.properties) } == [[:]])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.map(\.properties) } == [["surface": "activity", "outcome": "refused"]])
   }
 
   @Test func queuedFinishHasNoOfferedAction() throws {
@@ -762,7 +762,7 @@ import SyncTesting
     let secondReopen = GymModel(runner: harness.runner, telemetry: recorder)
     #expect(secondReopen.workout.logActivityOffer(offer) && secondReopen.workout.sets == retained)
     #expect(retained.map { $0.id.description } == [offer.setID])
-    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_set_logged" }.map(\.properties) } == [[:]])
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_set_logged" }.map(\.properties) } == [["surface": "activity"]])
   }
 
   @Test func enteringTheKeypadDurablyRevokesTheOfferBeforeProcessExit() throws {

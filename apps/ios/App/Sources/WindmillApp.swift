@@ -78,6 +78,7 @@ struct WindmillApp: App {
             introduction = try OnboardingLaunch.shouldPresent(model: created, deepLink: launchLink || launchDelegate.deepLink || settings.board == "onboarding-deep-link")
           }
           if workoutLink { created.openActivityWorkout() }
+          WorkoutActivityIntentHandler.present(created)
           model = created
         } catch { failure = "Couldn't open the journal on this phone. \(error.localizedDescription)" }
       }

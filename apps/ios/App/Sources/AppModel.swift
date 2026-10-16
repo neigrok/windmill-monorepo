@@ -54,6 +54,8 @@ final class AppModel {
   var accountTransition = false
   var signingOut = false { didSet { gym.accountChanging = signingOut || signOutSession != nil } }
   var syncStarted = false
+  // Routines at its root, asked for from outside the app; GymRoom answers it.
+  var routinesRequested = false
   var restoringSignIn = false
   var signInDeferred = false
   var resumingBackup = false
