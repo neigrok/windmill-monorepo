@@ -1,6 +1,4 @@
 import Foundation
-import DomainKit
-import GymDomain
 
 nonisolated struct CoachAttachment: Codable, Equatable, Identifiable, Sendable {
   let id: String
@@ -19,17 +17,9 @@ nonisolated struct CoachStep: Codable, Equatable, Sendable {
     let c = try decoder.container(keyedBy: CodingKeys.self)
     tool = try c.decode(String.self, forKey: .tool); failed = try c.decodeIfPresent(Bool.self, forKey: .failed) ?? false
   }
-  var phrase: String? {
-    if tool == "save_note", failed { return "could not confirm a note save" }
-    let phrases = ["list_sessions": "read your recent workouts", "get_session": "read one workout",
-      "last_time": "read the last time you trained a movement", "list_exercises": "read your movement list",
-      "list_routines": "read your program", "get_stats": "read your movement history", "list_notes": "read your notes",
-      "save_note": "saved a note", "list_bodyweight": "read your bodyweight",
-      "propose_routine_change": "wrote a proposal for one of your routines", "propose_routine_removal": "wrote a proposal to remove a routine"]
-    return phrases[tool].map { $0 + (failed ? " (nothing came back)" : "") }
-  }
 }
 
+// The server's tally of what an answer read; the room counts the workouts it lists, and takes from this only that nothing was.
 nonisolated struct CoachRead: Codable, Equatable, Sendable {
   var sets = 0, sessions = 0, weeks = 0
   enum CodingKeys: String, CodingKey { case sets, sessions, weeks }
@@ -40,10 +30,7 @@ nonisolated struct CoachRead: Codable, Equatable, Sendable {
     sessions = try c.decodeIfPresent(Int.self, forKey: .sessions) ?? 0
     weeks = try c.decodeIfPresent(Int.self, forKey: .weeks) ?? 0
   }
-  var line: String {
-    let parts = [(sets, "set"), (weeks, "week"), (sessions, "session")].filter { $0.0 > 0 }.map { GymCount.of($0.0, $0.1) }
-    return parts.isEmpty ? "read nothing from your log" : "read " + parts.joined(separator: " · ")
-  }
+  var nothing: Bool { sets == 0 && sessions == 0 && weeks == 0 }
 }
 
 nonisolated struct CoachObservation: Codable, Equatable, Sendable, Identifiable {
@@ -62,10 +49,16 @@ nonisolated struct CoachObservation: Codable, Equatable, Sendable, Identifiable 
   let exerciseId: String?
   let workout: Workout?
   var id: String { sessionId }
-  var wholeWorkout: Bool {
-    guard let workout else { return false }
-    return coverage == "session" && exerciseId == nil && !sessionId.isEmpty && startedAt > 0 && setsRead >= 0 &&
-      workout.workingSetCount >= 0 && workout.tonnageKg.isFinite && workout.tonnageKg >= 0 && (workout.durationMs ?? 0) >= 0
+  // A read names a workout the room can list: a summary, the whole workout, or one movement's sets in it.
+  var valid: Bool {
+    !sessionId.isEmpty && startedAt > 0 && setsRead >= 0 && ["summary", "session", "movement"].contains(coverage) &&
+      (coverage != "movement" || !(exerciseId ?? "").isEmpty)
+  }
+  // The whole workout's facts, which only a summary or a read of the whole workout knows.
+  var whole: Workout? {
+    guard let workout, coverage != "movement", exerciseId == nil, workout.workingSetCount >= 0, workout.tonnageKg.isFinite,
+          workout.tonnageKg >= 0, (workout.durationMs ?? 0) >= 0 else { return nil }
+    return workout
   }
 }
 
@@ -83,11 +76,13 @@ nonisolated struct CoachReceipt: Codable, Equatable, Sendable {
     proposals = try c.decodeIfPresent([String].self, forKey: .proposals) ?? []
     observations = try c.decodeIfPresent([CoachObservation].self, forKey: .observations) ?? []
   }
+  // Every workout the answer read, once: its latest read that knew the whole workout, else its latest read of a part.
   var workouts: [CoachObservation] {
     guard version == 1 else { return [] }
     var result: [CoachObservation] = []
-    for observation in observations where observation.wholeWorkout {
-      result.removeAll { $0.id == observation.id }; result.append(observation)
+    for observation in observations where observation.valid {
+      guard let at = result.firstIndex(where: { $0.id == observation.id }) else { result.append(observation); continue }
+      if observation.whole != nil || result[at].whole == nil { result[at] = observation }
     }
     return result
   }
@@ -157,16 +152,6 @@ nonisolated struct CoachThread: Codable, Equatable, Identifiable, Sendable {
     let changes: Int
     let routineId: String?
     let routine: String?
-    var line: String? {
-      switch kind {
-      case "created": return changes == 1 ? "created \(routine ?? "1 routine")" : GymCount.of(changes, "routine") + " created"
-      case "applied": return GymCount.of(changes, "change") + " → " + (routine ?? "your routines")
-      case "dismissed": return GymCount.of(changes, "change") + " turned down"
-      case "proposed": return GymCount.of(changes, "change") + " waiting"
-      case "superseded": return GymCount.of(changes, "change") + " superseded"
-      default: return nil
-      }
-    }
   }
   let id: String
   let title: String
@@ -184,6 +169,14 @@ nonisolated struct CoachThread: Codable, Equatable, Identifiable, Sendable {
     outcome = try c.decodeIfPresent(Outcome.self, forKey: .outcome); turns = try c.decodeIfPresent([CoachTurn].self, forKey: .turns) ?? []
     nextCursor = try c.decodeIfPresent(String.self, forKey: .nextCursor); generation = try c.decodeIfPresent(CoachGeneration.self, forKey: .generation)
   }
+  // History's row: the routine and what was proposed for it, or the question when the conversation proposed nothing.
+  func headline(removal: Bool) -> String {
+    guard let outcome, ["proposed", "applied", "dismissed", "superseded"].contains(outcome.kind), outcome.changes > 0 else {
+      return title.isEmpty ? "Conversation" : title
+    }
+    return [outcome.routine, CoachCopy.changes(outcome.changes, removal: removal)].compactMap { $0 }.joined(separator: " · ")
+  }
+  var settled: String? { outcome.flatMap { CoachCopy.settled($0.kind) } }
   mutating func prepend(_ page: CoachThread) {
     var positions = Set<Int64>()
     turns = (page.turns + turns).filter { positions.insert($0.position).inserted }.sorted { $0.position < $1.position }
@@ -207,11 +200,10 @@ nonisolated enum CoachCopy {
     return (!text.isEmpty || photo) && text.utf8.count <= 1000
   }
   static func escaped(_ component: String) -> String { component.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "" }
-  static func day(_ ms: Int64, now: Date = Date()) -> String {
-    let date = Instant(ms: ms).date
-    let sameYear = Calendar.current.isDate(date, equalTo: now, toGranularity: .year)
-    return date.formatted(sameYear ? .dateTime.day().month(.abbreviated) : .dateTime.day().month(.abbreviated).year())
-  }
+  // What a proposal does to its routine, as History, Review and its receipt name it: *3 changes*, or *a removal*.
+  static func changes(_ count: Int, removal: Bool) -> String { removal ? "a removal" : GymCount.of(count, "change") }
+  // How a proposal settled, on its card and its History row; a waiting one says nothing, since its Review row invites.
+  static func settled(_ state: String) -> String? { ["applied": "Applied", "dismissed": "Turned down", "superseded": "Superseded"][state] }
 }
 
 nonisolated enum CoachRefusal: Equatable {
@@ -244,11 +236,5 @@ nonisolated struct CoachSSE {
     if line.hasPrefix("event:") { event = String(line.dropFirst(6)).trimmingCharacters(in: .whitespaces) }
     if line.hasPrefix("data:") { lines.append(String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)) }
     return nil
-  }
-}
-
-@MainActor extension CoachCopy {
-  static func targets(_ sets: [SetTarget]?) -> String {
-    Readout.target(sets) + ((sets?.contains { $0.weightKg != nil } ?? false) ? " kg" : "")
   }
 }

@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import DomainKit
 
 @Observable @MainActor final class CoachHistory {
   struct Held: Identifiable {
@@ -46,37 +47,44 @@ import Observation
       if error is DecodingError { gym.report("gym_read", error) }
     }
   }
+  // A delete is held nine seconds behind its Undo before it leaves for the log.
   func remove(_ row: CoachThread) {
     guard let account = gym.account, gym.coachAccountAvailable, !held.contains(where: { $0.id == row.id }) else { return }
-    let conversation = coach
     rows.removeAll { $0.id == row.id }
     let task = Task { [weak self] in
       do { try await Task.sleep(for: .seconds(9)) } catch { return }
-      guard let self, self.gym.account == account, !self.gym.accountTransition,
-            self.held.contains(where: { $0.id == row.id }) else { return }
-      self.held.removeAll { $0.id == row.id }
-      do {
-        _ = try await self.rest.coachRequest("/v1/gym/threads/\(CoachCopy.escaped(row.id))", method: "DELETE", expectedAccount: account)
-        self.gym.telemetry.event("gym_action", properties: ["screen": "history", "outcome": "ok"])
-        let cleared = conversation?.deletedConversation(row.id, account: account) ?? true
-        if self.gym.account == account, !cleared { self.error = "Your deleted conversation couldn’t be cleared. Try again." }
-      } catch {
-        if (error as? GymRESTFailure)?.status == 404 {
-          self.gym.telemetry.event("gym_action", properties: ["screen": "history", "outcome": "ok"])
-          let cleared = conversation?.deletedConversation(row.id, account: account) ?? true
-          if self.gym.account == account, !cleared { self.error = "Your deleted conversation couldn’t be cleared. Try again." }
-          return
-        }
-        if !(error is CancellationError || (error as? URLError)?.code == .cancelled) {
-          self.gym.telemetry.event("gym_action", properties: ["screen": "history", "outcome": error is AppFailure || error is GymRESTFailure ? "refused" : "failed"])
-        }
-        guard self.gym.account == account else { return }
-        self.rows.removeAll { $0.id == row.id }; self.rows.append(row); self.rows.sort { $0.askedAt > $1.askedAt }
-        self.error = GymRESTClient.needsConnection(error) ? "Deleting a conversation needs a connection."
-          : (error as? GymRESTFailure)?.message ?? "That conversation couldn’t be deleted. Try again."
-      }
+      await self?.release(row.id)
     }
     held.append(Held(row: row, account: account, until: Date().addingTimeInterval(9), task: task))
+  }
+  // A swipe on the band keeps the delete: its hold ends now and the delete leaves.
+  func keep(_ id: String) {
+    guard let offer = held.first(where: { $0.id == id }) else { return }
+    offer.task.cancel()
+    gym.telemetry.event("gym_undo", properties: ["screen": "history", "action": "dismiss"])
+    Task { await release(id) }
+  }
+  // The delete leaves for the log; a conversation the log no longer has is gone all the same.
+  func release(_ id: String) async {
+    guard let offer = held.first(where: { $0.id == id }), gym.account == offer.account, !gym.accountTransition else { return }
+    let row = offer.row, account = offer.account, conversation = coach
+    held.removeAll { $0.id == id }
+    do {
+      _ = try await rest.coachRequest("/v1/gym/threads/\(CoachCopy.escaped(row.id))", method: "DELETE", expectedAccount: account)
+    } catch let gone as GymRESTFailure where gone.status == 404 {
+    } catch {
+      if !(error is CancellationError || (error as? URLError)?.code == .cancelled) {
+        gym.telemetry.event("gym_action", properties: ["screen": "history", "outcome": error is AppFailure || error is GymRESTFailure ? "refused" : "failed"])
+      }
+      guard gym.account == account else { return }
+      rows.removeAll { $0.id == row.id }; rows.append(row); rows.sort { $0.askedAt > $1.askedAt }
+      self.error = GymRESTClient.needsConnection(error) ? "Deleting a conversation needs a connection."
+        : (error as? GymRESTFailure)?.message ?? "That conversation couldn’t be deleted. Try again."
+      return
+    }
+    gym.telemetry.event("gym_action", properties: ["screen": "history", "outcome": "ok"])
+    let cleared = conversation?.deletedConversation(row.id, account: account) ?? true
+    if gym.account == account, !cleared { error = "Your deleted conversation couldn’t be cleared. Try again." }
   }
   func undo(_ id: String) {
     guard let offer = held.first(where: { $0.id == id }), offer.until > Date() else {
@@ -109,11 +117,10 @@ struct CoachHistoryScreen: View {
   }
   var body: some View {
     Group {
-      if !gym.coachAccountAvailable { CoachUnavailable(sentence: CoachCopy.signedOut, signIn: openAccount) }
+      if !gym.coachAccountAvailable { CoachUnavailable(symbol: "bubble.left.and.bubble.right", sentence: CoachCopy.signedOut, signIn: openAccount) }
       else if history.owner != gym.account || (history.reading && !history.loaded) { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
-      else if history.loaded, history.rows.isEmpty, history.held.isEmpty, history.error == nil {
-        ContentUnavailableView("No conversations yet", systemImage: "bubble.left.and.bubble.right",
-                               description: Text("Every conversation you have with Coach is kept until you delete it."))
+      else if history.loaded, history.rows.isEmpty, history.error == nil {
+        ContentUnavailableView("No conversations", systemImage: "bubble.left.and.bubble.right")
       } else { conversations }
     }.navigationTitle("History").modifier(GymPage()).accessibilityIdentifier("gym-coach-history")
       .toolbar(.hidden, for: .tabBar)
@@ -123,7 +130,7 @@ struct CoachHistoryScreen: View {
                      dismiss: coach.error == nil ? nil : { coach.error = nil },
                      retryMessage: coach.error == nil && history.error != nil ? { Task { await history.load() } } : nil,
                      held: history.held.last.map { offer in
-                       .init(text: "Deleting a conversation keeps applied routine changes, created routines and saved notes.") { history.undo(offer.id) }
+                       .init(text: "Conversation deleted. Routines and notes stay.", undo: { history.undo(offer.id) }, keep: { history.keep(offer.id) })
                      },
                      errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
       }
@@ -141,9 +148,12 @@ struct CoachHistoryScreen: View {
               if coach.saved.threadId == row.id, coach.saved.thread != nil { dismiss() }
             }
           } label: {
-            let meta = [row.outcome?.line, row.askedAt > 0 ? CoachCopy.day(row.askedAt) : nil].compactMap { $0 }
-            GymRow(title: row.title.isEmpty ? "Conversation" : row.title, meta: meta.isEmpty ? nil : meta.joined(separator: " · "),
-                   trailing: opening == row.id ? .progress : nil, lineLimit: 2)
+            let removal = gym.proposals.contains { $0.threadId == row.id && $0.intent == "remove" }
+            HStack(spacing: RoomSpace.related) {
+              GymRow(title: row.headline(removal: removal), meta: row.settled,
+                     trailing: row.askedAt > 0 ? .fact(gym.coachDates.day(Instant(ms: row.askedAt))) : nil, lineLimit: 2)
+              if opening == row.id { ProgressView() } else { DoorChevron(room: .gym) }
+            }.contentShape(Rectangle())
           }.disabled(opening != nil || coach.asking)
             .swipeActions { Button("Delete", role: .destructive) { history.remove(row) } }
             .contextMenu { Button("Delete conversation", role: .destructive) { history.remove(row) } }

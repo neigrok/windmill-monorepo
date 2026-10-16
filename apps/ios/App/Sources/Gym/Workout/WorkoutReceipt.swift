@@ -247,7 +247,7 @@ struct WorkoutReceipt: View {
         ActionBand(title: "Keep this log", room: .gym, footer: "This log is only on this phone.") { gym.workout.handoff = .keep; dismiss() }
       } else if gym.workout.coachAvailable && !gym.authPaused {
         ActionBand(title: "Share with Coach", room: .gym, disabled: gym.accountTransition, actionIdentifier: "workout-share-coach",
-                   footer: "Sends Coach one line — “Check my last session.” — and opens the answer.") {
+                   footer: "Sends Coach one line — “Check my last workout.” — and opens the answer.") {
           gym.workout.handoff = .coach; dismiss()
         }
       }

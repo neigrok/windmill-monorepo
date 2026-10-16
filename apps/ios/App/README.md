@@ -121,8 +121,10 @@ leaves the shell's transient *Couldn't open the update. Try again.* The rooms ke
 `-restore-board`); `update-sign-in` answers 426 only to the sign-in; `keep-gym` opens the gym's Keep sheet.
 
 Debug simulator Coach launches add `-coach-fixture`: a signed-in account with a routine, a workout and a
-proposal, and a scripted Coach service over the real REST boundary. `-coach-removal` makes the proposal
-a removal, `-coach-removal-stall` leaves its Apply unanswered past the review's 15-second wait,
+proposal, and a scripted Coach service over the real REST boundary whose answer reads that workout and proposes
+the change. `-coach-removal` makes the proposal a removal and the conversation one that asks for it,
+`-coach-created` makes it a conversation that creates the routine and reads nothing from the log,
+`-coach-removal-stall` leaves its Apply unanswered past the review's 15-second wait,
 `-coach-offline` takes Coach and its REST reads offline and `-coach-unavailable` answers as a deployment without Coach.
 
 Debug simulator `OfflineFlowTests` seed an isolated `-scenario` with `-offline-fixture seed-signed-in`

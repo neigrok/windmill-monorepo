@@ -16,6 +16,10 @@ nonisolated enum GymPalette {
   static let done = Color("gym/done")
   static let record = Color("gym/record")
   static let alarm = Color("gym/alarm")
+  static let alarmFill = Color("gym/alarm-fill")
+  // White on the alarm fill (§2 `on-alarm`), and the black a full-screen photo sits on in both appearances (§7.3).
+  static let onAlarm = Color.white
+  static let photoGround = Color.black
   static let uiAccent = UIColor(named: "gym/accent")!
 }
 

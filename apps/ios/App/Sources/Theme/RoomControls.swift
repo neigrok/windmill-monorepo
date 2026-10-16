@@ -47,13 +47,14 @@ struct ActionBand: View {
   var actionIdentifier: String?
   var footer: String?
   var symbol: String?
+  var role: ButtonRole?
   let action: () -> Void
 
   var body: some View {
     VStack(spacing: RoomSpace.related) {
-      Button(action: action) {
+      Button(role: role, action: action) {
         HStack(spacing: RoomSpace.related) {
-          if busy { ProgressView().tint(room.onAccent) }
+          if busy { ProgressView().controlSize(.regular).tint(room.onAccent) }
           Text(title)
           if let symbol { Image(systemName: symbol).accessibilityHidden(true) }
         }.frame(maxWidth: .infinity)
