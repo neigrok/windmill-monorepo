@@ -4,10 +4,11 @@ import GymDomain
 
 // The room's two-line row, a title over one meta line, wrapped by its caller in a Button or NavigationLink. At its edges: a
 // symbol in its colour or a dot before the title, a dot after it, and trailing a fact (`iphone` before it while unsent,
-// under the meta at accessibility sizes), the selection's check, work on its way, or the DoorChevron of a Button's door.
+// under the meta at accessibility sizes, the DoorChevron after it on a Button's door), the selection's check, work on its
+// way, or the DoorChevron of a Button's door alone. It sets no height: its list row keeps the 44 pt target.
 struct GymRow: View {
   enum Mark: Equatable { case symbol(String, Color), dot(Color) }
-  enum Trailing: Equatable { case fact(String, unsent: Bool = false), check, progress, door }
+  enum Trailing: Equatable { case fact(String, unsent: Bool = false, door: Bool = false), check, progress, door }
   let title: String
   var meta: String?
   var leading: Mark?
@@ -26,21 +27,23 @@ struct GymRow: View {
         if let leading { mark(leading) }
         VStack(alignment: .leading, spacing: RoomSpace.small) {
           HStack(alignment: .firstTextBaseline, spacing: RoomSpace.related) {
-            Text(title).font(meta == nil ? .body : .body.weight(.semibold)).foregroundStyle(titleColor).lineLimit(lineLimit)
+            Text(title).font(meta == nil ? .body : .body.weight(.semibold)).monospacedDigit().foregroundStyle(titleColor).lineLimit(lineLimit)
             if let titleDot { mark(.dot(titleDot)) }
           }
           if let meta { Text(meta).font(.subheadline).monospacedDigit().foregroundStyle(GymPalette.inkDim).lineLimit(lineLimit) }
-          if stacked, case .fact(let text, let unsent) = trailing { fact(text, unsent: unsent) }
+          if stacked, case .fact(let text, let unsent, _) = trailing { fact(text, unsent: unsent) }
         }.frame(maxWidth: .infinity, alignment: .leading)
       }
       switch trailing {
-      case .fact(let text, let unsent): if !stacked { fact(text, unsent: unsent) }
+      case .fact(let text, let unsent, let door):
+        if !stacked { fact(text, unsent: unsent) }
+        if door { DoorChevron(room: .gym) }
       case .check: Image(systemName: "checkmark").foregroundStyle(.tint).accessibilityHidden(true)
       case .progress: ProgressView()
       case .door: DoorChevron(room: .gym)
       case nil: EmptyView()
       }
-    }.frame(minHeight: RoomSpace.minimumTarget)
+    }
   }
 
   // A dot is 8 pt at the default size, centred on the first line's capitals at every size.

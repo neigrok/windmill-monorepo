@@ -107,6 +107,26 @@ import XCTest
     XCTAssertEqual(save.label, "Save")
   }
 
+  // A weigh-in row has a session row's shape, its weight first and its day trailing before the door. It is as tall as its
+  // text, about 51 pt, and the whole row, at least 44 pt, opens the weigh-in.
+  func testAWeighInRowIsItsWeightFirstAndItsWholeRowOpensIt() {
+    let app = launch("light")
+    let door = app.buttons["gym-bodyweight-door"]
+    XCTAssertTrue(door.waitForExistence(timeout: 20)); door.tap()
+    let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-weigh-in-2026-")).firstMatch
+    XCTAssertTrue(row.waitForExistence(timeout: 5))
+    for _ in 0..<4 where !row.isHittable || row.frame.maxY > app.frame.maxY - 60 { app.swipeUp(velocity: .slow) }
+    XCTAssertTrue(row.label.hasPrefix("82.4 kilograms, "), row.label)
+    XCTAssertEqual(row.frame.height, 51, accuracy: 4, "A title-only row \(row.frame) is its text high")
+    XCTAssertGreaterThanOrEqual(row.frame.height, 44)
+    for depth in [2, row.frame.height - 2] {
+      row.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: row.frame.width / 2, dy: depth)).tap()
+      XCTAssertTrue(app.textFields["gym-weigh-in-weight"].waitForExistence(timeout: 5), "A tap \(depth) pt into the row opens it")
+      app.buttons["gym-weigh-in-cancel"].tap()
+      XCTAssertTrue(app.textFields["gym-weigh-in-weight"].waitForNonExistence(timeout: 5))
+    }
+  }
+
   func testLogScreensDark() { inspectScreens("dark") }
   func testLogScreensLight() { inspectScreens("light") }
 
@@ -178,7 +198,7 @@ import XCTest
     let weightsWindow = app.segmentedControls["gym-bodyweight-window"]
     XCTAssertTrue(weightsWindow.waitForExistence(timeout: 5))
     selectAllChartHistory(weightsWindow, app: app)
-    XCTAssertTrue(app.staticTexts["All · 40 weigh-ins"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["the whole series · 40 weigh-ins"].waitForExistence(timeout: 5))
     assertDateAxisFollowsPan(app, chartID: "gym-bodyweight-chart")
   }
 
@@ -361,7 +381,7 @@ import XCTest
     XCTAssertFalse(app.buttons["gym-weigh-in-save"].isEnabled, "A weigh-in left as it was has nothing to save")
     app.buttons["Cancel"].tap()
     app.segmentedControls["gym-bodyweight-window"].buttons["All"].tap()
-    XCTAssertTrue(app.staticTexts["All · 6 weigh-ins"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["the whole series · 6 weigh-ins"].waitForExistence(timeout: 5))
     snapshot("bodyweight-all-\(appearance)", app: app)
     let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-weigh-in-2026-")).firstMatch
     XCTAssertTrue(row.exists); row.tap()

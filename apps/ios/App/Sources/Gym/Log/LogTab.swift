@@ -96,8 +96,8 @@ struct LogTab: View {
   // The head: Bodyweight once a weigh-in exists, with the weeks trained as its footer.
   @ViewBuilder var head: some View {
     let reading = gym.bodyweight?.reading
-    let weeks = gym.log.flatMap { log in gym.readFailed ? nil : gym.logRecords?.progress.consistency(now: log.moment.now, zone: log.moment.zone) }
-    if reading != nil || weeks != nil {
+    let consistency = gym.logConsistency
+    if reading != nil || consistency != nil {
       Section {
         if let reading {
           NavigationLink { BodyweightScreen(gym: gym) } label: {
@@ -105,8 +105,8 @@ struct LogTab: View {
           }.accessibilityIdentifier("gym-bodyweight-door")
         }
       } footer: {
-        if let weeks {
-          Text("Trained \(weeks) of the last 4 weeks").monospacedDigit().foregroundStyle(GymPalette.inkDim)
+        if let consistency {
+          Text(consistency).monospacedDigit().foregroundStyle(GymPalette.inkDim)
             .accessibilityIdentifier("gym-log-consistency")
         }
       }.listRowBackground(GymPalette.card)
@@ -118,7 +118,7 @@ struct LogTab: View {
     case .session(let session, let recordDot): sessionRow(session, recordDot: recordDot, dates: dates)
     case .best(let id, let record): bestMoment(entry, id: id, record: record, dates: dates)
     case .month(_, let weeks):
-      GymRow(title: "Trained \(weeks) of the last \(weeks) weeks").accessibilityIdentifier("gym-month-moment")
+      GymRow(title: LogPresentation.trained(weeks, of: weeks)).accessibilityIdentifier("gym-month-moment")
     case .weight(let weight):
       NavigationLink { BodyweightScreen(gym: gym) } label: {
         GymRow(title: "Weighed in · \(Readout.weight(weight.kg)) kg", trailing: .fact(dates.rowDay(weight.day)))

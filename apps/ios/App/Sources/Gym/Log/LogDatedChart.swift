@@ -188,8 +188,13 @@ struct LogDatedChart: View {
   }
 }
 
-// A chart's span: its recent stretch or everything logged.
-enum ChartWindow: Hashable { case recent, all }
+// A chart's span: its recent stretch or everything logged, named with what it holds by the window line, *last 12 weeks ·
+// 28 workouts* or *the whole series · 14 weigh-ins*.
+enum ChartWindow: Hashable {
+  case recent, all
+
+  func line(recent: String, holding count: String) -> String { "\(self == .recent ? "last \(recent)" : "the whole series") · \(count)" }
+}
 
 struct ChartWindowPicker: UIViewRepresentable {
   let recent: String
