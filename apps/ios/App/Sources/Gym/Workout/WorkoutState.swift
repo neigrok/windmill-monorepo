@@ -718,9 +718,10 @@ extension GymModel {
     telemetry.event("gym_hidden_workout", properties: ["action": "hide"])
     return true
   }
+  static let restoreFailed = "Gym could not restore this workout. Try again."
   // The lifter's way back to a hidden workout: the tab bar's accessory on iOS 26, The log's Hidden row on iOS 18.
   @discardableResult func openHiddenWorkout(from door: HiddenWorkoutDoor) -> Bool {
-    guard restoreWorkout() else { error = "Gym could not restore this workout. Try again."; return false }
+    guard restoreWorkout() else { error = Self.restoreFailed; return false }
     telemetry.event("gym_hidden_workout", properties: ["action": "open", "door": door.rawValue])
     return true
   }

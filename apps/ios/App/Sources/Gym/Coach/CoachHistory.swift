@@ -151,12 +151,10 @@ struct CoachHistoryScreen: View {
             let proposals = gym.proposals.filter { $0.threadId == row.id }
             let removal = proposals.contains { $0.intent == "remove" }
             let waiting = proposals.filter { $0.state == "pending" }
-            HStack(spacing: RoomSpace.related) {
-              GymRow(title: row.headline(removal: removal),
-                     meta: row.settled(removal: removal, outOfDate: !waiting.isEmpty && waiting.allSatisfy(gym.coachProposalOutOfDate)),
-                     trailing: row.askedAt > 0 ? .fact(gym.dates.day(Instant(ms: row.askedAt))) : nil, lineLimit: 2)
-              if opening == row.id { ProgressView() } else { DoorChevron(room: .gym) }
-            }.contentShape(Rectangle())
+            GymRow(title: row.headline(removal: removal),
+                   meta: row.settled(removal: removal, outOfDate: !waiting.isEmpty && waiting.allSatisfy(gym.coachProposalOutOfDate)),
+                   trailing: opening == row.id ? .progress : row.askedAt > 0 ? .fact(gym.dates.day(Instant(ms: row.askedAt)), door: true) : .door,
+                   lineLimit: 2).contentShape(Rectangle())
           }.disabled(opening != nil || coach.asking)
             .swipeActions { Button("Delete", role: .destructive) { history.remove(row) } }
             .contextMenu { Button("Delete conversation", role: .destructive) { history.remove(row) } }

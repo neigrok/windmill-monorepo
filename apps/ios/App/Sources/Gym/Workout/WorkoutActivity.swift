@@ -109,7 +109,7 @@ extension WorkoutState {
       let result = try gym.runner.run(RestoreWorkoutActivity(sessionID: sessionId, replica: replica, anonymous: gym.isAnonymous))
       if let refusal = result.refusal { gym.refusal = refusal; gym.error = gym.message(refusal); return false }
       return true
-    } catch { gym.error = "Gym could not restore this workout. Try again."; gym.report("gym_activity_update", error); return false }
+    } catch { gym.error = GymModel.restoreFailed; gym.report("gym_activity_update", error); return false }
   }
   var activityBaseline: JSON? {
     guard let session else { return nil }
