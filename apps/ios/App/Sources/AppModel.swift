@@ -62,6 +62,8 @@ final class AppModel {
   var authGeneration = 0
   var signInSession: SignInSession?
   var signOutSession: SignOutSession? { didSet { gym.accountChanging = signingOut || signOutSession != nil } }
+  // Why the last answer to Sign out could not be carried out; the next Sign out clears it.
+  var signOutRefusal: String?
   var adoptionAnswers: [String: LineageAnswer] = [:]
   var appearance: Appearance
   var updateRequiredAtSignIn = false
@@ -214,9 +216,12 @@ final class AppModel {
   var identityStatus: String? {
     if updateRequired, account != nil || signInPending { return "Syncing paused · update Windmill" }
     guard account != nil else { return nil }
+    if authPaused { return "Syncing paused · sign in again" }
     let unsent = (runtime?.engine.status.ready ?? 0) + (runtime?.engine.status.sent ?? 0)
     return unsent == 0 ? "Backed up" : "Not backed up yet"
   }
+  // The address is said once: How you sign in's Email row carries it only while the identity shows a name.
+  var emailMethodValue: String? { accountName.isEmpty ? nil : accountEmail }
 
   // What each room keeps on this phone while signed out, one line for each room that holds something.
   var phoneHoldings: [(room: Room, summary: String)] {
@@ -681,6 +686,7 @@ final class AppModel {
     guard !accountTransition, let runtime else { return }
     let generation = authGeneration
     journal.liftInk()
+    signOutRefusal = nil
     accountTransition = true; signingOut = true; journal.editing = false
     defer { if authGeneration == generation { accountTransition = false; signingOut = false } }
     if !flushRooms() { return }
@@ -697,13 +703,14 @@ final class AppModel {
     guard !accountTransition, var session = signOutSession, let runtime else { return }
     accountTransition = true; signingOut = true; journal.editing = false
     defer { accountTransition = false; signingOut = false }
+    let changed = "Pending writing changed. Review the new count."
     var revocation: String?
     do {
       if journal.dirty {
-        guard flushRooms() else { return }
+        guard flushRooms() else { await refuseSignOut(error); return }
         await session.cancel()
+        guard choice == .keep else { await refuseSignOut(changed); return }
         session = try await runtime.engine.signOut(); signOutSession = session
-        if choice == .discard { error = "Pending writing changed. Review the new count."; return }
       }
       revocation = try runtime.prepareRevocation(account: session.account)
       choose(choice == .keep ? "keep" : "discard", screen: "you")
@@ -719,8 +726,17 @@ final class AppModel {
       Task { await runtime.revokeSignedOutSessions(force: true) }
     } catch EngineError.signOutChanged {
       if let revocation { try? runtime.revocations.delete(for: revocation) }
-      await session.cancel(); signOutSession = try? await runtime.engine.signOut(); error = "Pending writing changed. Review the new count."
-    } catch { reportBoundary("auth_sign_out", error: error); if let revocation { try? runtime.revocations.delete(for: revocation) }; self.error = error.localizedDescription }
+      await refuseSignOut(changed)
+    } catch {
+      reportBoundary("auth_sign_out", error: error); if let revocation { try? runtime.revocations.delete(for: revocation) }
+      await refuseSignOut(error.localizedDescription)
+    }
+  }
+
+  // An answer the sign-out could not carry out ends the held sign-out and leaves the account signed in; its reason waits under Sign out.
+  func refuseSignOut(_ reason: String?) async {
+    await signOutSession?.cancel(); signOutSession = nil; signOutRefusal = reason
+    telemetry.event("auth_signed_out", properties: ["outcome": "refused"])
   }
 
   func authenticateApple(_ authorize: @escaping (SessionToken?) async throws -> AppleAuthResponse) async {

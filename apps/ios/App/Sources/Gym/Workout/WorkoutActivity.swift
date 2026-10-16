@@ -297,10 +297,26 @@ extension GymModel {
 }
 
 // What a Log set from outside the app did (docs/design/ios/ios-redesign.md §7.19).
-enum WorkoutLogAnswer: Equatable {
+nonisolated enum WorkoutLogAnswer: Equatable {
   case logged(shown: String, spoken: String)
   case opened
   case absent
+
+  // The set an outside Log set wrote, in Siri's words; a movement this phone cannot name is left out, never given a stand-in.
+  static func loggedSet(_ offer: WorkoutActivityOffer, movement: String?) -> WorkoutLogAnswer {
+    let load = Readout.weight(offer.weightKg), reps = GymCount.of(offer.reps, "rep")
+    guard let movement else { return .logged(shown: "Logged \(load) kg × \(offer.reps).", spoken: "Logged \(load) kilograms, \(reps).") }
+    return .logged(shown: "Logged \(load) kg × \(offer.reps) · \(movement).", spoken: "Logged \(load) kilograms, \(reps), \(movement).")
+  }
+
+  // What Siri shows and says for the answer: the shortcut names what happened; the Live Activity's button logs or opens in silence.
+  func dialog(_ surface: WorkoutSurface) -> (shown: String, spoken: String) {
+    switch self {
+    case .absent: ("No workout is open.", "No workout is open.")
+    case .logged(let shown, let spoken): surface == .shortcut ? (shown, spoken) : ("", "")
+    case .opened: surface == .shortcut ? ("Nothing logged. Opening Windmill.", "Nothing logged. Opening Windmill.") : ("", "")
+    }
+  }
 }
 
 // Where outside the app opens Windmill, named as `gym_intent_opened` reports it.
@@ -346,9 +362,7 @@ enum WorkoutDoor: String { case workout = "open_workout", routines = "start_work
       await gym.existingWorkoutActivity?.reconcile()
       guard logged else { return .opened }
       app.runtime?.engine.foreground(); Task { await app.start() }
-      let load = Readout.weight(offer.weightKg), movement = gym.catalogue.find(ID(RecordID(offer.movementID)))?.name ?? "Movement"
-      return .logged(shown: "Logged \(load) kg × \(offer.reps) · \(movement).",
-                     spoken: "Logged \(load) kilograms, \(GymCount.of(offer.reps, "rep")), \(movement).")
+      return .loggedSet(offer, movement: gym.catalogue.find(ID(RecordID(offer.movementID)))?.name)
     } catch {
       telemetry?.failure("gym_activity_update", kind: "unexpected")
       telemetry?.event("gym_activity_offer_refused", properties: ["surface": surface.rawValue, "outcome": "refused"])

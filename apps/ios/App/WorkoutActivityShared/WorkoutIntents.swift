@@ -15,7 +15,7 @@ struct WorkoutLogSetIntent: LiveActivityIntent {
   static var supportedModes: IntentModes { [.background, .foreground(.dynamic)] }
 
   @Parameter(title: "Owner") var ownerID: String
-  @Parameter(title: "Session") var sessionID: String
+  @Parameter(title: "Workout") var sessionID: String
   @Parameter(title: "Movement") var movementID: String
   @Parameter(title: "Load") var weightKg: Double
   @Parameter(title: "Repetitions") var reps: Int
@@ -41,18 +41,14 @@ struct WorkoutLogSetIntent: LiveActivityIntent {
     #if WORKOUT_ACTIVITY_WIDGET
     return .result(dialog: "")
     #else
-    switch await WorkoutActivityIntentHandler.logSet(offer: offer, surface: surface) {
-    case .logged(let shown, let spoken):
-      return .result(dialog: surface == .shortcut ? IntentDialog(full: "\(spoken)", supporting: "\(shown)") : "")
-    case .absent:
-      return .result(dialog: "No workout is open.")
-    case .opened:
-      if #available(iOS 18.2, *) { return .result(opensIntent: WorkoutOpenIntent(), dialog: "") }
-      await MainActor.run {
-        UIApplication.shared.open(WorkoutActivityAttributes.workoutURL, options: [:], completionHandler: nil)
-      }
-      return .result(dialog: "")
+    let answer = await WorkoutActivityIntentHandler.logSet(offer: offer, surface: surface)
+    let words = answer.dialog(surface), dialog = IntentDialog(full: "\(words.spoken)", supporting: "\(words.shown)")
+    guard answer == .opened else { return .result(dialog: dialog) }
+    if #available(iOS 18.2, *) { return .result(opensIntent: WorkoutOpenIntent(), dialog: dialog) }
+    await MainActor.run {
+      UIApplication.shared.open(WorkoutActivityAttributes.workoutURL, options: [:], completionHandler: nil)
     }
+    return .result(dialog: dialog)
     #endif
   }
 }
@@ -99,6 +95,7 @@ struct WorkoutStartIntent: AppIntent {
 
 #if !WORKOUT_ACTIVITY_WIDGET
 struct WorkoutShortcuts: AppShortcutsProvider {
+  static let shortcutTileColor = ShortcutTileColor.teal
   static var appShortcuts: [AppShortcut] {
     AppShortcut(intent: WorkoutLogRackSetIntent(), phrases: [
       "Log a set in \(.applicationName)", "Log my set in \(.applicationName)", "\(.applicationName) log set",

@@ -85,7 +85,7 @@ action `dismiss_ink` once when writing or a tap lifts it; no ink replay action i
 | Authentication | `auth_restore` | outcome: anonymous, signed_in, paused, failed |
 | Email code | `auth_code_requested`, `auth_code_sent` | method: email; outcome: ok, failed (on `auth_code_sent` only) |
 | Sign-in | `auth_sign_in_started`, `auth_signed_in` | method: email, apple; outcome: ok, linked, failed, cancelled (on `auth_signed_in` only, linked following a code link or signed-in attach) |
-| Sign-out | `auth_signed_out` | outcome: ok |
+| Sign-out | `auth_signed_out` | outcome: ok, refused (an answer the sign-out could not carry out; the account stays signed in) |
 | Introduction | `onboarding_screen_viewed`, `onboarding_skipped`, `onboarding_finished` | page: windmill, roadmap, journal, gym; presentation: first_launch, replay |
 | Introduction replay | `onboarding_replayed` | presentation: replay |
 | First-run screens | `first_run_screen_viewed` | screen: welcome, journal, ink_notes, gym, routines, log, coach, workout, keep, address, code, you, adoption, discard_adoption, 23a, 23b, 23c, 24c, 24d, apple_no_account, apple_expired, auth_pending |

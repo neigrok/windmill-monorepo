@@ -134,14 +134,14 @@ import XCTest
     disclosure.tap()
     let open = app.buttons["echo-open-\(firstSource)"]
     XCTAssertTrue(open.waitForExistence(timeout: 5))
-    // The ink opens below the page; the page above moves only as far as the ink's end needs to clear the write seat.
+    // The ink opens below the page; the page above moves only as far as the ink's end needs to stand 16 pt above the write seat.
     let end = app.buttons["echo-more"], seat = app.buttons["write-today"]
     let cleared = NSPredicate { _, _ in
-      end.frame.maxY <= seat.frame.minY + 1 && dateRow.frame.minY <= closed.minY + 1 &&
-        (abs(dateRow.frame.minY - closed.minY) <= 1 || abs(end.frame.maxY - seat.frame.minY) <= 2)
+      end.frame.maxY <= seat.frame.minY - 16 + 1 && dateRow.frame.minY <= closed.minY + 1 &&
+        (abs(dateRow.frame.minY - closed.minY) <= 1 || abs(end.frame.maxY - (seat.frame.minY - 16)) <= 2)
     }
     XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: cleared, object: nil)], timeout: 5), .completed,
-                   "The ink ends above the seat: \(end.frame) over \(seat.frame); the date row from \(closed.minY) to \(dateRow.frame.minY)")
+                   "The ink ends 16 pt above the seat: \(end.frame) over \(seat.frame); the date row from \(closed.minY) to \(dateRow.frame.minY)")
     reveal(open, in: app)
     XCTAssertTrue(app.buttons["echo-open-\(secondSource)"].exists)
     XCTAssertFalse(app.buttons["echo-open-\(thirdSource)"].exists, "The ink shows two passages; the reader holds the rest")
@@ -216,20 +216,20 @@ import XCTest
     app.terminate()
   }
 
-  // At rest the canvas's end clears the write seat, and today's opened ink scrolls clear of it with no swipe, at every width.
+  // At rest the canvas's end stands 16 pt above the write seat, and today's opened ink scrolls clear of it with no swipe, at every width.
   func testTheCanvasEndAndAnOpenedInkClearTheWriteSeat() throws {
     let app = launch("light", board: "journal-echoes-first")
     let write = app.buttons["write-today"]
     XCTAssertTrue(write.wait(for: \.isHittable, toEqual: true, timeout: 10))
     let energy = app.buttons["Clear energy"]
     XCTAssertTrue(energy.waitForExistence(timeout: 5))
-    XCTAssertLessThanOrEqual(energy.frame.maxY, write.frame.minY, "At rest the last row ends above the seat")
+    XCTAssertLessThanOrEqual(energy.frame.maxY, write.frame.minY - 16 + 0.5, "At rest the last row ends 16 pt above the seat")
     let disclosure = app.buttons["journal-echo-\(today)"]
     XCTAssertTrue(disclosure.wait(for: \.isHittable, toEqual: true, timeout: 10)); disclosure.tap()
     let gotIt = app.buttons["echo-introduction-done"]
     XCTAssertTrue(gotIt.waitForExistence(timeout: 5))
     let passage = app.buttons["echo-open-\(firstSource)"]
-    let cleared = NSPredicate { _, _ in gotIt.isHittable && max(gotIt.frame.maxY, passage.frame.maxY) <= write.frame.minY }
+    let cleared = NSPredicate { _, _ in gotIt.isHittable && max(gotIt.frame.maxY, passage.frame.maxY) <= write.frame.minY - 16 }
     XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: cleared, object: nil)], timeout: 5), .completed,
                    "The card and its first passage stand above the seat: \(gotIt.frame), \(passage.frame) over \(write.frame)")
     try capture("canvas-echo-first-card-clears-seat-\(app.frame.width < 380 ? "375" : "393")", app)

@@ -188,7 +188,8 @@ import SyncTesting
     let previous = WorkoutActivityIntentHandler.model
     WorkoutActivityIntentHandler.model = app
     defer { WorkoutActivityIntentHandler.model = previous }
-    #expect(await WorkoutActivityIntentHandler.logSet(offer: stale, surface: .activity) == .opened)
+    let answer = await WorkoutActivityIntentHandler.logSet(offer: stale, surface: .activity), said = answer.dialog(.activity)
+    #expect(answer == .opened && [said.shown, said.spoken] == ["", ""], "The Live Activity's button opens the workout without a word")
     #expect(app.selectedRoom == .gym && !app.welcome && !app.gym.workoutHidden)
     #expect(app.gym.workout.isPresented && app.gym.sets.isEmpty)
     #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_activity_offer_refused" }.map(\.properties) } == [["surface": "activity", "outcome": "refused"]])

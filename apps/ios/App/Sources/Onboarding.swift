@@ -19,6 +19,19 @@ nonisolated enum OnboardingPage: Int, CaseIterable {
      "Example of a journal page: yesterday above, tonight below, mood and energy unasked",
      "Example of a set being logged: squat, 100 kilograms for 5"][rawValue]
   }
+
+  // A page's column: its top inset, the glimpse, a 26 pt gap, the text block (eyebrow, title, body, tag) and a 16 pt foot.
+  var topInset: CGFloat { self == .windmill ? 16 : 6 }
+  static let gap: CGFloat = 26
+  static let foot: CGFloat = 16
+  var glimpseHeight: CGFloat { self == .windmill ? 320 : 340 }
+
+  // The glimpse stands full height only while the page holds it and the whole text block, otherwise 260 pt; a page that still overflows scrolls.
+  func layout(height: CGFloat, textBlock: CGFloat) -> (glimpse: CGFloat, scrolls: Bool) {
+    let column = { (glimpse: CGFloat) in topInset + glimpse + Self.gap + textBlock + Self.foot }
+    if column(glimpseHeight) <= height { return (glimpseHeight, false) }
+    return (260, column(260) > height)
+  }
 }
 
 // Device history is checked before the model enters the view tree.
@@ -62,8 +75,8 @@ struct OnboardingScreen: View {
   @State var settled: OnboardingPage?
   @State var visit = UUID()
   @State var exited = false
-  @State var overflowingPages: Set<OnboardingPage> = []
-  @Environment(\.dynamicTypeSize) var typeSize
+  @State var pageHeight = CGFloat.infinity
+  @State var textBlocks: [OnboardingPage: CGFloat] = [:]
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   var properties: [String: String] { ["page": page.name, "presentation": replay ? "replay" : "first_launch"] }
 
@@ -89,17 +102,18 @@ struct OnboardingScreen: View {
         VStack(spacing: 0) {
           TabView(selection: $page) {
             ForEach(OnboardingPage.allCases, id: \.self) { item in
+              let layout = item.layout(height: pageHeight, textBlock: textBlocks[item] ?? 0)
               ScrollView {
-                VStack(alignment: .leading, spacing: 26) {
+                VStack(alignment: .leading, spacing: OnboardingPage.gap) {
                   OnboardingGlimpse(page: item, active: settled == item, visit: visit)
-                    .frame(height: typeSize.isAccessibilitySize ? 260 : item == .windmill ? 320 : 340)
+                    .frame(height: layout.glimpse)
                     .accessibilityRepresentation {
                       Text(item.example).accessibilityIdentifier("onboarding-glimpse").accessibilitySortPriority(30)
                     }.accessibilitySortPriority(30)
                   VStack(alignment: .leading, spacing: 10) {
                     if item != .windmill {
                       HStack(spacing: 8) {
-                        Circle().fill(item == .roadmap ? ShellPalette.brand : item == .journal ? JournalPalette.lamp : GymPalette.accent).frame(width: 7, height: 7).accessibilityHidden(true)
+                        Circle().fill(item == .roadmap ? OnboardingSpecimen.clayKind : item == .journal ? JournalPalette.lamp : GymPalette.accent).frame(width: 7, height: 7).accessibilityHidden(true)
                         Text(item.name.uppercased()).font(ShellType.caption).foregroundStyle(ShellPalette.inkDim)
                           .accessibilityIdentifier("onboarding-eyebrow").accessibilitySortPriority(70)
                       }
@@ -115,15 +129,10 @@ struct OnboardingScreen: View {
                         .overlay(Capsule().stroke(item == .journal ? ShellPalette.brand : ShellPalette.lineStrong, lineWidth: 1))
                         .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("onboarding-tag").accessibilitySortPriority(40)
                     }
-                  }
-                }.padding(.horizontal, 24).padding(.top, item == .windmill ? 16 : 6).padding(.bottom, 16)
-              }.scrollDisabled(!overflowingPages.contains(item)).scrollBounceBehavior(.basedOnSize)
-                .onScrollGeometryChange(for: Bool.self) { geometry in
-                  geometry.contentSize.height > geometry.containerSize.height
-                } action: { _, overflows in
-                  if overflows { overflowingPages.insert(item) }
-                  else { overflowingPages.remove(item) }
-                }
+                  }.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { textBlocks[item] = $0 }
+                }.padding(.horizontal, 24).padding(.top, item.topInset).padding(.bottom, OnboardingPage.foot)
+              }.scrollDisabled(!layout.scrolls).scrollBounceBehavior(.basedOnSize)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pageHeight = $0 }
                 .tag(item).accessibilityElement(children: .contain).accessibilitySortPriority(60)
             }
           }.tabViewStyle(.page(indexDisplayMode: .never))

@@ -45,10 +45,11 @@ class ThemeAssetsTests(unittest.TestCase):
                     alpha = re.search(r"(\d+) %", expected)
                     self.assertEqual(float(components["alpha"]), int(alpha[1]) / 100 if alpha else 1)
 
-    def test_each_room_accent_reads_at_four_and_a_half_to_one_on_its_grounds_and_under_its_label(self):
+    def test_each_room_accent_and_the_danger_text_read_at_four_and_a_half_to_one_on_their_grounds(self):
         rows = contract_rows()
         for accent, grounds in [("gym/accent", ["canvas", "card", "raised", "on-accent"]),
                                 ("shell/brand", ["canvas", "card", "raised", "on-brand"]),
+                                ("shell/danger", ["canvas", "card", "raised"]),
                                 ("journal/lamp", ["canvas", "card"])]:
             room = accent.split("/")[0]
             for ground in grounds:
