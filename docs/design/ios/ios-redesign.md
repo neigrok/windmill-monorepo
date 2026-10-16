@@ -90,13 +90,14 @@ the system blue. The keyboard draws its own keys and takes no tint: an emphasize
 | `gym/alarm-fill` | `#A84E35` | `#A84E35` | a destructive swipe action's fill and a removal's primary; `on-alarm` is white |
 
 These are the Gym Figma `Gym · Colour` ramp values (`surface/*`, `text/*`, `border/*`,
-`state/*`) with one ruling: the light accent is verdigris day `#137A6C`, as the owner decided for
-the family on 2026-09-06 and as the decided onboarding boards draw it, not the Figma Daylight
-`brand/base` alias to iris `#4C4374` (`consistency.md` F44). Gold is a *record*, never a warning;
-brick is destructive only.
+`state/*`) with one ruling: the light accent is verdigris `#106B5F`, the family's verdigris day
+darkened so text in it holds 4.5:1 on the gym grounds, not the Figma Daylight `brand/base` alias to
+iris `#4C4374` (`consistency.md` F44, 9a). Gold is a *record*, never a warning; brick is destructive
+only.
 
 The Live Activity uses `gym/accent` and `gym/on-accent` for its one button and `gym/accent` for
-the keyline; the banner ground stays the system's.
+the keyline; the banner ground stays the system's. The workout control (§7.19) tints its symbol
+`gym/accent`.
 
 ### Journal — lamp on ink
 
@@ -145,9 +146,10 @@ You, Keep and every sign-in step, Where to start?, onboarding and the launch gro
 | `shell/on-brand` | `#1B1408` | `#FFFFFF` |
 | `shell/danger` | `#BF6A50` | `#A84E35` |
 
-The light `gym/accent` and `shell/brand` values are below 4.5:1 as text on some grounds; the
-darker candidates and their ratios wait on the owner in `consistency.md` (*iOS gym and shell day
-contrast*). The build uses the values above until the owner rules.
+As text, the light `gym/accent` `#106B5F` measures 5.19:1 on `gym/canvas`, 5.92:1 on `gym/card`
+and 4.60:1 on `gym/raised`, and white on it 6.38:1; the light `shell/brand` `#9F5B38` measures
+4.79:1 on `shell/canvas`, 5.21:1 on `shell/card` and 5.04:1 on `shell/raised`, and white on it
+5.21:1. No clay text sits on `shell/sunken` (4.42:1).
 
 The shell follows the system appearance in both rooms. You is clay whatever room opened it
 (`superapp-shell.md` §6): opened from Gym in light it is clay light, never `systemBackground`
@@ -199,25 +201,65 @@ Monospaced digits on every numeral that changes while shown (clocks, weights). T
 *face* is reserved for the journal date line and the echo stamp. A fact is `.footnote` in the text
 face, left-aligned with the prose above it; nothing is centred under left-aligned text.
 
-**Counts and labels.** Every count passes through one formatter with real plurals — *1 session*,
+**Counts and labels.** Every count passes through one formatter with real plurals — *1 workout*,
 *2 working sets*, *1 movement* — and the formatter (`GymCount`) is the only place a plural is
 spelled. A tile's label is a noun that agrees with its value (*1 · Working set*, *Duration ·
 Working sets · Volume*), never a unit; the unit rides on the value (*1620 kg*). A chart's axis
 labels round to the step the series moves in — plate loads to the nearest 5 (*110 · 60*),
 bodyweight to one decimal — never to two decimals.
 
-**Dates.** Every date in the Gym room and the shell passes through one date formatter, in the
-person's locale through `Date.FormatStyle`, with four forms:
+**Dates.** Every date in the Gym room and the shell passes through one date formatter, `GymDate`,
+with five forms. It formats through `Date.FormatStyle` in the locale the system gives the app: the
+person's region — its order of day and month, its hour cycle, its range format — with English
+names, since English is the app's one language. *Today* and *Yesterday* are English words, like
+every other word on screen.
 
-- **row day** *Wed 23* — only inside a month-sectioned list;
-- **day** *Sep 23* — the year only when it is not the current one; *Today* and *Yesterday* as a
-  trailing value, lowercase inside a sentence;
-- **subtitle** *Wed, Sep 23*;
-- **span** *Wed, Sep 23 · 12:00–12:45 PM*; a span that crosses midnight keeps the first day and
-  both times, *Mon, Oct 12 · 11:43 PM – 12:20 AM*.
+- **row day** *Wed 23* — only inside a month-sectioned list, whose header names the month, and the
+  year when it is not the current one (*September*, *September 2025*). A row day never names the
+  year and never says *Today* or *Yesterday*: it is the row's place in its month, so today's row
+  reads *Fri 16* like the rows under it.
+- **day** *Sep 23* — the year only when it is not the current one (*Sep 23, 2025*); *Today* and
+  *Yesterday* as a trailing value, lowercase inside a sentence.
+- **subtitle** *Wed, Sep 23* — the year only when it is not the current one (*Wed, Sep 23, 2025*).
+- **span** — the subtitle form, then the times in the locale's own range format: *Wed, Sep 23 ·
+  12:00–12:45 PM* (*12:00–12:45* on a 24-hour clock). A span that crosses midnight, or one the
+  clock's offset changes inside (a daylight-saving shift), keeps the first day and joins its two
+  times with a spaced en dash: *Mon, Oct 12 · 11:43 PM – 12:20 AM*. A span with no end yet is its
+  day and its start, *Wed, Sep 23 · 12:00 PM*.
+- **time** *11:27 AM* — the time alone, where the day is already said or is today: the workout's
+  bar subtitle (its start), *Open since 11:27 AM*, Inspect's *Started* and *Finished*, *From Coach
+  · 6:42 PM*.
 
-Date pickers are the system's. No view orders a day and month by hand. The journal's date line and
-echo stamp keep the journal's mono forms (§8).
+Where a moment needs its day and its time, `GymDate` joins the day form and the time form with
+` · `, so no view does: *Sep 26 · 6:42 PM*, *Yesterday · 11:43 PM* — a finish on a later day than
+its start, a hidden workout open since an earlier day (*Open since yesterday · 11:43 PM*), the
+Review sheet's *proposed by Coach · Sep 26 · 6:42 PM*. A run of days joins two day forms with a
+spaced en dash, *Jul 7 – Aug 4*. Date pickers are the system's. No view orders a day and month by
+hand. The journal's date line and echo stamp keep the journal's mono forms (§8).
+
+**Workout, never session.** On every screen the thing a lifter starts, logs into and finishes is a
+*workout*: in a title, a count, a footer, a refusal, a VoiceOver label or hint, a Siri answer and a
+Shortcuts parameter. *Session* is the word in code and on the wire (`Session`, `sessionId`,
+`gym_session_started`, accessibility identifiers) and never on screen. Each string that carries
+the noun reads:
+
+| Where | Drawn | Never |
+|---|---|---|
+| A workout with no routine, wherever its name stands: the logger's title, the Live Activity, the accessory (§7.18), The log, session detail, the receipt's subtitle, **On this phone**, Inspect, *Adding … to your log.* | *Free workout* | *Free session* |
+| The log, empty | *No workouts yet* | *No sessions yet* |
+| The log's last footer | *First workout · Jun 13* | *First session · Jun 13* |
+| The Record's window line | *last 12 weeks · 28 workouts* · *the whole series · 23 workouts* | *Last 12 weeks · 28 sessions* · *All · 23 sessions* |
+| A chart's gap label, and its VoiceOver actions | *no workout · Jul 7 – Aug 4*; *Earlier workout* · *Later workout* | *no session · …*; *earlier session* · *later session* |
+| Coach's read receipt | *Read 18 workouts · 6 weeks* | *read 214 sets · 6 weeks · 18 sessions* |
+| The logger's leading bar button (its label) and the sheet it opens | *This workout* | *This session* |
+| The logger's movement name, its VoiceOver hint | *Open this workout's movements* | *Open this session's movements* |
+| The varied-scheme sheet's footer | *Today's Back Squat ran at 105 against a planned 100. Today's workout already has it. Lower A does not.* | *… Today's session already has it. …* |
+| The logger's band, when the movement order cannot be read | *The workout is saved. Its movement order could not be read. Try again.* | *The session is saved. …* |
+| The logger's band, removing a movement with sets or targets | *A movement with sets or planned targets stays in this workout.* | *… stays in this session.* |
+| The receipt's *Share with Coach*: the line it sends, and the band's footer | *Check my last workout.* · *Sends Coach one line — “Check my last workout.” — and opens the answer.* | *Check my last session.* |
+| Review while a workout is open: the caption slot, and the refusal on Apply or *Turn this down* | *Finish your workout to apply.* · *Finish your workout first.* | *Finish this session to apply.* · *Finish this session* |
+| Shortcuts, the *Log set* intent's workout parameter | *Workout* | *Session* |
+| Sign-in, when the server's answer holds no sign-in | *Sign-in did not finish. Your pages are still on this phone.* | *Sign-in did not return a native session. …* |
 
 The ramp is the public API: named roles in `Sources/Theme/TypeScale.swift` — `ShellType`,
 `JournalType`, `GymNumeral`, `GymKeypadNumeral` — each with one size and one `relativeTo`. A screen
@@ -293,7 +335,7 @@ CTA copy is at most three words: *Just start logging*, *Start workout*, *Log set
 
 **Doors and actions in a list.** A row that navigates is a `NavigationLink`: ink label, optional
 symbol, the system's chevron — *Movements*, *About Windmill*. A row that opens a sheet or a cover
-(the **Hidden** row brings back the logger) is
+(on iOS 18 the **Hidden** row brings back the logger) is
 a `Button` drawing the same chevron (`DoorChevron`, `chevron.forward`, never a hand-set
 `chevron.right`). A row that acts is a `Button` in
 `accent` with no chevron — *Add movement*, *Add a note*. A screen's one primary is never a row; it is
@@ -309,7 +351,9 @@ The system `TabView` with the `Tab` API, `.tabBarMinimizeBehavior(.onScrollDown)
 Routines `list.bullet.rectangle` · The log `calendar` · Coach `bubble.left.and.bubble.right`.
 The `TabView` carries `gym/accent` as its tint, so the selected tab is verdigris; the system draws
 the selection, the room supplies the symbol (`12-native-idiom.md`). Hidden on every pushed screen
-and sheet, and while Coach's composer has focus (`.toolbarVisibility(.hidden, for: .tabBar)`).
+and sheet, and while Coach's composer has focus (`.toolbarVisibility(.hidden, for: .tabBar)`). On
+iOS 26 it carries one bottom accessory, a hidden workout's way back (§7.18), and only while the
+lifter has hidden the workout.
 
 ## 5. Menus, sheets and transients
 
@@ -327,8 +371,10 @@ and sheet, and while Coach's composer has focus (`.toolbarVisibility(.hidden, fo
 
 - A reversible act happens at once and raises the band with *Undo*, naming the object and the act
   (*Workout discarded*, *Set deleted*, *Weigh-in deleted*, *Routine deleted*, *Note deleted*,
-  *Conversation deleted*). The line comes from what the gesture holds, so it reads the same after a
-  relaunch; *Change deleted* is never drawn.
+  *Conversation deleted*). One object is named alone; more than one is counted through `GymCount`
+  (*3 sets deleted*, *3 sets discarded*). The act is the verb of the item that did it: *Delete*
+  deletes, *Discard* discards. The line comes from what the gesture holds, so it reads the same
+  after a relaunch; *Change deleted* is never drawn.
 - An irreversible act asks once. A `.alert` carries the act as its destructive button and Cancel
   (*Turn this down?*, *Sign out?*); a choice asked from a row is a `.confirmationDialog` presented
   from that row, title visible (*Remove Apple?*), which SwiftUI anchors to its source on iOS 26.
@@ -354,7 +400,7 @@ content:
 | Fix set, Note | `.large` | *Cancel* · title · ✓ (*Save*) |
 | Fix workout | `.large` | *Cancel* · title · ✓ (*Save and retry*) |
 | The builder | `.large`; *Add movement*, Create movement and Targets are steps pushed inside it, each with *Cancel* and its own ✓ (*Add* / *Done*) | *Cancel* · title · ✓ (*Save*) |
-| This session | `.large` | *Close* · title · *Edit* |
+| This workout | `.large` | *Close* · title · *Edit* |
 | Review | `.large` | *Close* · title; *Apply* in the band |
 | Finish | `.medium` up to five rows, `.large` past five or at accessibility sizes | *Done* |
 | You, sign-in steps | `.large`; Keep and the Apple questions `.medium` | *Done* / *Close* |
@@ -409,7 +455,7 @@ Every list is `.insetGrouped` with the system's insets, and its sections follow 
   placeholder is the label (*Name*, *kg*).
 - **A section with nothing in it is not drawn** (a routine's History, You's **On this phone**); a
   row that has nothing to say is not drawn either (**Hidden**, The log's **On this phone**,
-  *Bodyweight* before the first weigh-in). The end of a long list is the last section's footer (*First session · Jun
+  *Bodyweight* before the first weigh-in). The end of a long list is the last section's footer (*First workout · Jun
   13*), never a card. A whole empty screen is `ContentUnavailableView`. No third shape.
 - **One caption per section, at most twelve words**, and never a caption that repeats a placeholder,
   a title or the label on the button below it (`guidelines/text-budget.md`).
@@ -434,13 +480,17 @@ are bands, not canvas text.
 The room has one component, `RoomTransient`, for refusals, notices, Undo and copied-link
 confirmations: a `.footnote` message on `.glassEffect(.regular, in: .rect(cornerRadius: 16))` on
 iOS 26 and `.regularMaterial` with the system shadow on iOS 18 — never `card` — so it reads as
-floating over the list it answers. It wraps rather than truncates, with at most one trailing action
-in accent (*Undo* · *Try again*) and a dismiss `xmark` in `ink-dim`, floating in the reach band
-above the primary, honouring the delete window (`gym/briefs/13-gestures.md`). Refusal text is
-`gym/ink`, never red: the band is the signal. A refusal is a sentence, at most twelve words, and
-names the way out (*Overlaps another workout — fix its times.*); the copy is the brief's. The
-signed-out workout a signed-in account has not taken is not a band and not a card on Routines: it
-is the **On this phone** row at the head of The log (§7.16).
+floating over the list it answers. It wraps rather than truncates and carries one control: its
+action in accent when it has one (*Undo* · *Try again*), otherwise the dismiss `xmark` in `ink-dim`,
+never both. A band that can be dismissed also goes by a swipe down: a refusal or a notice leaves,
+and a band offering *Undo* leaves while its act stays, so the swipe is how an Undo band is
+dismissed and it draws no `xmark`. A failed read stays until *Try again* succeeds. The band
+floats in the reach band above the primary, honouring the delete window
+(`gym/briefs/13-gestures.md`). Refusal text is `gym/ink`, never red: the band is the signal. A
+refusal is a sentence, at most twelve words, and names the way out (*Overlaps another workout — fix
+its times.*); the copy is the brief's. The signed-out workout a signed-in account has not taken is
+not a band and not a card on Routines: it is the **On this phone** row at the head of The log
+(§7.16).
 
 ### Motion
 
@@ -455,7 +505,10 @@ Each act the lifter makes answers in place, with the system's springs:
 - **A new record at Finish:** the receipt's *Personal record* line arrives with one `gym/record`
   pulse. Never a confetti burst.
 - **A moment** opens the Record with a zoom from its dot (§7.6).
-- **The band** rises with the system spring and dismisses by a swipe down as well as by `xmark`.
+- **The band** rises with the system spring and leaves the way it came, by a swipe down as well as
+  by its `xmark` when it has one.
+- **A hidden workout coming back** on iOS 26: the logger rises from the tab bar's accessory with a
+  zoom (§7.18).
 
 With Reduce Motion each is a 200 ms fade.
 
@@ -496,7 +549,7 @@ draft thumbnail, not a bubble-wide image. **Coach's turn** is plain prose on the
 16 pt gutter. Markdown headings `.headline`; code `.body.monospaced()`.
 
 **The read receipt** under an answer is one `.footnote` row in the text face, `ink-dim`,
-monospaced digits, a leading `book.closed`: *Read 18 sessions · 6 weeks* ›. It opens *What Coach
+monospaced digits, a leading `book.closed`: *Read 18 workouts · 6 weeks* ›. It opens *What Coach
 read*, whose one section lists every workout read as `GymRow`s (*Push A* · *Sat, Sep 26 · 1
 working set · 400 kg*), each a door to the workout, headed by the receipt's numbers; *Also read
 your notes.* is its footer when true. The sheet's numbers add up to the receipt's: it counts only
@@ -529,8 +582,8 @@ ships, when `09-coach.md` applies.
 the title is `ink` (*Back Squat*, *Bench Press*, *Name*) and the change is the `ink-dim` subtitle
 (*1 × 5 · 80 → 1 × 3 · 90 kg* · *Added · open · after Back Squat* · *Push A → Push A2*). A kept run
 is a row *4 unchanged* that unfolds in place. The Apply gate is scroll-to-the-end. *proposed by
-Coach · Sep 26, 6:42 PM* is the sheet's subtitle; the quote bar is the attribution, with no *Coach
-wrote:* label; the quote is the proposal's summary, since the sheet also opens from Routines, where
+Coach · Sep 26 · 6:42 PM* (§3, a day and a time) is the sheet's subtitle; the quote bar is the
+attribution, with no *Coach wrote:* label; the quote is the proposal's summary, since the sheet also opens from Routines, where
 no answer sits above it. *Ask Coach* is a quiet accent button under the diff. The band holds
 *Apply* — never a count, which the section's header already carries — then one caption slot under
 it, then *Turn this down* as a quiet `ink-dim` button; *Turn this down* raises its `.alert`, which
@@ -561,9 +614,10 @@ down puts the keyboard away. Signed out, Notes is the room's signed-out shape: a
 signed in.* as its description, and *Sign in* as a `.glass` button.
 
 **There is no Gym settings page**: Notes and Connected log are reached from Coach's More, and a
-hidden workout from the **Hidden** row at the head of The log (§7.6). The phone draws kg and offers
-no units control; nothing about the account, the update or the phone's unsent work is in the room's
-menus, which You and The log own (§7.15, §7.16).
+hidden workout from the tab bar's accessory on iOS 26 and the **Hidden** row at the head of The
+log on iOS 18 (§7.18). The phone draws kg and offers no units control; nothing about the account,
+the update or the phone's unsent work is in the room's menus, which You and The log own (§7.15,
+§7.16).
 
 **Connected log** (`19-connected-log.md`) puts its one primary in the reach band: *Connect a tool*
 is the floating `ActionBand` with `arrow.up.forward` trailing (*Sign in first* signed out). With
@@ -625,8 +679,9 @@ with 7.11 and 7.12.
 - A routine row is two lines: the name (`.body.semibold`) and *4 movements · trained 3 days ago*
   (`.subheadline ink-dim`; *never trained*).
 - A waiting proposal is one row in its own section at the top: *Push A · 3 changes* (*Push A · a
-  removal*) over *From Coach · 6:42 PM*, leading `bubble.left.and.bubble.right` in accent, the
-  system chevron. Settled removal receipts are one row each.
+  removal*) over *From Coach · 6:42 PM* — the time form while it came today, the day form after
+  (*From Coach · Yesterday*, *From Coach · Sep 26*) — leading `bubble.left.and.bubble.right` in
+  accent, the system chevron. Settled removal receipts are one row each.
 - *Movements* is the list's last section, one `NavigationLink` row with `list.bullet`.
 - Empty: `ContentUnavailableView("No routines yet", systemImage: "list.bullet.rectangle")` with no
   description; signed in with Coach available it carries one `.glass` action *Ask Coach*, opening a
@@ -676,14 +731,15 @@ with 7.11 and 7.12.
   them (`18-progress.md`; moments `.best`, `.month`, `.weight`). No movement strip and no
   horizontal scroll inside the list; the Record is reachable from every movement row on a session.
 - **The head** is one section: *Bodyweight* · *82.4 kg · 3 days ago* ›, drawn once a weigh-in
-  exists, with *Trained 3 of the last 4 weeks* as its footer when it exists. Above it sit **Hidden**
-  while the open workout is hidden, then, signed in, **On this phone** while a workout waits
-  (§7.16).
-- **Hidden.** While the open workout is hidden, the head's first row is that workout: the routine
-  name (*Free session* when unlinked) over *Open since 11:27 AM*, with `DoorChevron`; it brings the
-  logger back. It sits at the head, not at the end: The log loads older sessions as the last row
-  appears, so its end is no place to find something. At most one workout is open, so it is one row,
-  never a list.
+  exists, with *Trained 3 of the last 4 weeks* as its footer when it exists. Above it sit, on
+  iOS 18, **Hidden** while the open workout is hidden, then, signed in, **On this phone** while a
+  workout waits (§7.16).
+- **Hidden** (iOS 18 only; iOS 26 draws the tab bar's accessory instead, §7.18). While the open
+  workout is hidden, the head's first row is that workout: the routine name (*Free workout* when
+  unlinked) over *Open since 11:27 AM* (the time form; *Open since yesterday · 11:43 PM* when it
+  began on an earlier day), with `DoorChevron`; it brings the logger back. It sits at the head, not
+  at the end: The log loads older workouts as the last row appears, so its end is no place to find
+  something. At most one workout is open, so it is one row, never a list.
 - **A session row** is a `GymRow`: the name, then its facts *18 working sets · 1h 03m*
   (monospaced digits), the day trailing in `ink-dim` (row day form), the system chevron; `iphone`
   before the day while unsent.
@@ -700,16 +756,16 @@ with 7.11 and 7.12.
   plain row that opens nothing and carries no chevron. No `DisclosureGroup` in The log.
 - **Weigh in** is the bar's action (§4), opening the Weigh in sheet. Nothing floats over the list.
 - Older sessions load when the last row appears (a `ProgressView` row); a failed read is the band's,
-  with *Try again*. The end is the last section's footer *First session · Jun 13*.
-- Empty: `ContentUnavailableView("No sessions yet", systemImage: "calendar")`, no description, no
+  with *Try again*. The end is the last section's footer *First workout · Jun 13*.
+- Empty: `ContentUnavailableView("No workouts yet", systemImage: "calendar")`, no description, no
   head row.
 - Discard and delete raise the band naming what went: *Workout discarded* · *Weigh-in deleted* ·
   *Set deleted*, with *Undo*.
 - **The Record** (`MovementRecordScreen.swift`): title the movement, subtitle the equipment,
   `ellipsis.circle` holding *Rename movement*; two `FactTiles` *Best e1RM* and *Heaviest*; the
   chart, whose readout line appears only while scrubbing, in place of the window line *last 12
-  weeks · 28 sessions*; axis labels at the plate step; then *Personal records*. Facts and axis labels
-  keep monospaced digits in the text face.
+  weeks · 28 workouts* (*the whole series · 23 workouts*); axis labels at the plate step; then
+  *Personal records*. Facts and axis labels keep monospaced digits in the text face.
 - **Bodyweight** (`BodyweightScreen.swift`): a weigh-in row is *Sep 26* · *82.4 kg* with `GymRow`'s
   sheet-door chevron, the year only when it is not the current one. The chart follows the Record's
   rule: its readout appears only while scrubbing, in place of the window line *90 days · 6
@@ -742,15 +798,16 @@ with 7.11 and 7.12.
 - **At accessibility sizes the rack never scrolls and never clips**: its labels cap at
   `.accessibility1`, the ladder is 2 × 2, the reps row always shows, and the ledger gives up height
   first, down to the current row alone.
-- The bar: *This session* `list.bullet` leading, *Finish* trailing in accent (a confirmation), title
-  the routine, subtitle the start time.
+- The bar: *This workout* `list.bullet` leading, *Finish* trailing in accent (a confirmation),
+  title the routine (*Free workout* when unlinked), subtitle the start in the time form (§3).
 - A Finish the phone cannot complete says what holds it back, in the refusal band: *Finish needs a
   connection — keep logging, or hide the workout.*, or, while the server needs a newer app (§7.15),
   *Finish needs the update — keep logging, or hide the workout.*
-- *This session* lists each movement with *2 of 4 sets* against plan (*3 sets* without one), the
+- *This workout* lists each movement with *2 of 4 sets* against plan (*3 sets* without one), the
   same at zero (*0 of 3 sets*, *0 sets*); a `gym/done` check only when every planned set is logged;
-  *Add movement* is the section's last row, `plus.circle.fill`. *Hide workout*'s footer: *Your sets
-  stay saved. Find it at the top of The log.*
+  *Add movement* is the section's last row, `plus.circle.fill`. *Hide workout*'s footer names the
+  way back (§7.18): *Your sets stay saved. Tap the workout above the tabs to return.* on iOS 26,
+  *Your sets stay saved. Find it at the top of The log.* on iOS 18.
 - **Heavier than the plan** is an `.alert`: *Save 105 to Lower A?* · *Today's workout already has
   it.* · **Save to Lower A** · *Today only* (the cancel role). Leaving a movement raises it — a swipe
   or Previous/Next, not a control the lifter touched for it — so a dialog would have no source to
@@ -791,10 +848,12 @@ since-last-set clock trailing. Minimal: the room symbol.
 ### 7.9 Finish receipt
 
 - Title *Well done.* / *Ended early.* (`16-the-workout.md`), subtitle *Push A · Tue, Aug 18* or
-  *Free session · Sat, Sep 26*; no title row inside the list (`consistency.md` 6o).
-- Three `FactTiles`: Duration · Working sets · Top e1RM (when any), labelled with nouns and never a
-  unit (§3), then *Personal record* in `gym/record` on its own card, then *Performed* in logged
-  order, then *Against plan* / *Against last Push A* when one exists.
+  *Free workout · Sat, Sep 26*; no title row inside the list (`consistency.md` 6o).
+- The workout's three `FactTiles`, Duration · Working sets · Volume, from the one constructor over
+  its readout (§5), so the receipt tells the workout as session detail and Inspect do. No Top
+  e1RM tile: an estimate belongs to one movement, and the strength news is the *Personal record*
+  card. Then *Personal record* in `gym/record` on its own card, then *Performed* in logged order,
+  then *Against plan* / *Against last Push A* when one exists.
 - The one full-strength button is pinned in the reach band at full width: *Share with Coach* signed
   in, *Keep this log* signed out, with its one-line footer on the band's surface. *Save as routine*
   is a card beneath the tiles: name field, then *Save routine* as a secondary glass button; *Kept as
@@ -929,7 +988,7 @@ not line up, over 200 sets, a missing movement, an identity already spent). Andr
 per refused workout in Settings and a door on every tab; iOS draws one row and one badge:
 
 - **The row.** Signed in, The log's head gains **On this phone** above Bodyweight while a workout
-  waits — always one row. One workout: *Push A · Sep 23 · 12 sets* (*Free session* when unlinked;
+  waits — always one row. One workout: *Push A · Sep 23 · 12 sets* (*Free workout* when unlinked;
   *1 set from Push A · Sep 23* for a stranded set), its subtitle the state (*Adding…* with a
   trailing `ProgressView` in flight, else the reason below), a door to Inspect. Two or more: *3
   workouts on this phone*, subtitle *2 need you* (or *Adding…* when none does), a door to a pushed
@@ -966,9 +1025,10 @@ per refused workout in Settings and a door on every tab; iOS draws one row and o
   `source-auto-closed`, `frozen-plan-changed`/`routine-missing` and `recovery-*` rows have no iOS line.
 - **Inspect** is a pushed screen: title the routine name, subtitle the date (subtitle form);
   `FactTiles` Duration · Working sets · Volume, drawing only the facts that are known, with the
-  reason as that section's footer; *Started* and *Finished* as fact rows holding the time alone (a
-  finish on a later day adds its day); then a section per movement of read-only `SetRow`s (*1 · 100
-  × 5*, *W* for a warmup, effort and note as the second line). A stranded set shows Working sets ·
+  reason as that section's footer; *Started* and *Finished* as fact rows in the time form (*9:00
+  AM*), a finish on a later day than the start as its day and time (*Sep 27 · 12:20 AM*, §3), an
+  open copy's *Finished* reading *Not finished*; then a section per movement of read-only `SetRow`s
+  (*1 · 100 × 5*, *W* for a warmup, effort and note as the second line). A stranded set shows Working sets ·
   Volume and its own rows only. The band holds the reason's one primary, chosen by the reason alone
   and the same for a stranded set: *Keep as finished* (`session-open`), *Retry* (`session-finished`,
   `unsent`), *Fix workout* for every other reason, and none for `id-taken`, whose way out is
@@ -980,7 +1040,8 @@ per refused workout in Settings and a door on every tab; iOS draws one row and o
   `id-taken`) and Fix is not already the primary, and *Discard workout* (destructive, the
   nine-second window). Discard pops to The log, where the band reads *Workout discarded* · *Undo*.
   For a stranded set the item reads *Discard 1 set* / *Discard 3 sets*, and the band *Set
-  discarded* / *Sets discarded* · *Undo*. A workout on its way has no band and no menu.
+  discarded* / *3 sets discarded* · *Undo* (§5 Confirmations). A workout on its way has no band
+  and no menu.
 - **Fix workout** is a `.large` sheet that commits from its bar like every edit sheet: *Cancel* ·
   *Fix workout* · ✓, the checkmark's label *Save and retry* (on iOS 18 the bold words), since the
   commit both saves the copy and sends it. Sections: **Times** — *Started*
@@ -1015,11 +1076,130 @@ per refused workout in Settings and a door on every tab; iOS draws one row and o
   refused · failed}. Save and retry is `fix` with an outcome. Failures `gym_import_fix` ·
   `gym_import_keep` · `gym_import_retry` · `gym_import_discard`.
 
-### 7.17 Dates and counts (§3)
+### 7.17 Dates, counts and words (§3)
 
-Every date on every Gym and shell screen passes through the one date formatter's four forms, and
+Every date on every Gym and shell screen passes through the one date formatter's five forms, and
 every count through `GymCount`. No view builds a date string or a plural of its own. A tile's label
-agrees with its value (*1 · Working set*).
+agrees with its value (*1 · Working set*). Every screen says *workout*, never *session*: the
+strings of §3's table, accessibility labels and hints included, while identifiers, events and the
+wire keep *session*.
+
+### 7.18 A hidden workout
+
+The full-screen logger is the open workout's place. *Hide workout* sets it aside with its sets
+saved, and the room keeps one way back to it: the tab bar's accessory on iOS 26, the **Hidden** row
+at the head of The log on iOS 18 (§7.6). Neither is a minimized logger; both exist only while the
+lifter has hidden the workout.
+
+- **The accessory** (iOS 26) is the Gym `TabView`'s `tabViewBottomAccessory(isEnabled:)`, enabled
+  while the open workout is hidden; iOS 26.0, which has no `isEnabled`, draws its content
+  conditionally. It stands on the system's glass and draws no ground, stroke or shadow of its own.
+  Expanded above the tab bar it reads `dumbbell.fill` in `gym/accent`, then the workout's name — the
+  routine, or *Free workout* — in `.subheadline.weight(.semibold)` `gym/ink`, one line truncating at
+  its tail, then *· 32:10*, the workout clock counting up from the start in `.subheadline`
+  `gym/ink-dim` with monospaced digits: *Lower A · 32:10*. Inline, beside the tab bar once it
+  minimizes on scroll (`tabViewBottomAccessoryPlacement == .inline`), it is the symbol and the clock
+  alone. The whole accessory is one button; it carries no control of its own.
+- **A tap** brings the logger back (`gym.restoreWorkout()`): the cover rises from the accessory with
+  the zoom transition (`matchedTransitionSource` on the accessory, `.navigationTransition(.zoom)` on
+  the cover), as Music's player rises from its mini player. Opened any other way the cover keeps its
+  own transition, and with Reduce Motion the system's. A return that fails raises the band's
+  *Gym could not restore this workout. Try again.*
+- **It appears** the moment the workout is hidden — *Hide workout* in *This workout*, or *Build my
+  routine* on a first workout, which hides it to open Coach — and again after a relaunch while the
+  workout stays hidden. It goes where the tab bar goes: on a pushed screen, and while Coach's
+  composer has focus, it is not drawn.
+- **It leaves** when the logger comes back by any way in (its tap, the control's *Open workout*,
+  starting a workout while this one is open), when the workout stops being open (finished or
+  discarded on another surface, closed after four idle hours), and when the account changes. It
+  belongs to the Gym room; Journal draws nothing.
+- **VoiceOver** reads it as one button: label *Lower A, in progress* (*Free workout, in progress*),
+  value the elapsed time as the clock reads it; activating it brings the logger back.
+- **The Hidden row** (iOS 18) is §7.6's: the workout's name over *Open since 11:27 AM*, with
+  `DoorChevron`, bringing the logger back the same way without the zoom. iOS 26 draws no Hidden row.
+- **Events**, content-free: `gym_hidden_workout` {action: hide} when the lifter hides the workout;
+  {action: open, door: accessory · row} when the lifter brings it back from the accessory or the
+  row. A return through the control or a shortcut is §7.19's `gym_intent_opened`.
+
+### 7.19 Outside the app: the control and App Shortcuts (iOS 18 and later)
+
+Outside the app the workout has one control and two App Shortcuts. The one act among them that
+writes runs the intent the Live Activity's *Log set* runs, `WorkoutLogSetIntent`, under
+`14-live-activity.md`'s rules: one offer bound to one pre-minted set id, the offer checked against
+the rack before it writes, device authentication on a locked phone. Nothing outside the app takes a
+number in — no dictation, no typed load, no Shortcuts parameter.
+
+**The offer** is the set the Live Activity's *Log set* would log. A set is on offer exactly while a
+workout is open on this phone, not hidden and not stale, with a movement chosen, the rack's numbers
+valid and no account change under way — whether or not the Live Activity is on screen. Each time
+the app updates the Live Activity, and when a workout opens, hides, returns or ends, it writes the
+offer (or its absence, and whether a workout is open) to an App Group container shared with the
+`WindmillWorkoutActivity` extension, then reloads the control
+(`ControlCenter.shared.reloadControls(ofKind:)`). The control reads only that; it never works out
+an offer of its own. The App Group is new to both targets' entitlements.
+
+**The control** is one `ControlWidgetButton`, kind `works.windmill.app.workout`, in the
+`WindmillWorkoutActivity` extension beside the Live Activity. The controls gallery names it
+*Workout* and describes it *Start a workout, or log the set on the rack.* It goes in Control
+Center, on the Lock Screen and on the Action button, and has three states:
+
+| State | Symbol | Title | Value | Action hint | A tap |
+|---|---|---|---|---|---|
+| A set on offer | `plus` | *Log set* | *100 × 5* | *Log 100 × 5* | runs `WorkoutLogSetIntent` with that offer |
+| A workout open, no set on offer | `dumbbell.fill` | *Open workout* | none | *Open workout* | runs `WorkoutOpenIntent`: the logger |
+| No workout open | `dumbbell.fill` | *Start workout* | none | *Start workout* | runs `WorkoutStartIntent`: Routines |
+
+- The symbol takes `gym/accent`. It is `plus` only where a tap writes a set, and `dumbbell.fill`,
+  the Live Activity's room symbol, where a tap opens the app.
+- The value is the offer's load and reps without the unit, as the rack draws them (*100 × 5*,
+  *82.5 × 6*), and VoiceOver reads it as the rack's button does: *100 kilograms, 5 reps*. *Log set*
+  never stands without its value: a set the control cannot show, it does not offer. Where only the
+  symbol shows — Control Center's small size, the Lock Screen — the Live Activity holds the number,
+  and the Action button shows it in its hint, which the system reads as *Hold to Log 100 × 5*.
+- **Log set**: on a locked phone the system asks for Face ID or the passcode first. While the offer
+  is still the rack's, the set logs into the same durable queue, and the ledger, the Live Activity
+  and the control step to the next set; the room adds no sound or haptic of its own (§5 Motion).
+  When the rack has moved past it, nothing logs and Windmill opens on the logger, as the Live
+  Activity's refusal does.
+- **Open workout** opens Windmill in the Gym room with the logger in front, bringing a hidden
+  workout back (§7.18).
+- **Start workout** opens Windmill in the Gym room on the Routines tab at its root, whichever room
+  was in front and past Where to start?; a first launch still shows the introduction first, and its
+  end lands there. It starts nothing: a start is a record and the routine is the lifter's choice,
+  and Routines holds every routine and *Just start logging* one tap away. A sheet already open in the
+  room stays open. When a workout has opened since the control last drew, it opens the logger
+  instead.
+
+**App Shortcuts** — an `AppShortcutsProvider` with two shortcuts, so Siri, Spotlight, the Shortcuts
+app and the Action button reach them without setup. Neither has a parameter the person sees or
+sets, and every phrase names the app through `\(.applicationName)`.
+
+| Shortcut | Title · symbol | Phrases |
+|---|---|---|
+| Log set | *Log set* · `plus` | *Log a set in Windmill* · *Log my set in Windmill* · *Windmill log set* |
+| Start workout | *Start workout* · `dumbbell.fill` | *Start a workout in Windmill* · *Start my workout in Windmill* · *Windmill start workout* |
+
+- *Log set* runs `WorkoutLogSetIntent` with no offer of its own: its offer parameters are optional,
+  and absent, it takes the published offer. It answers with what it logged, shown *Logged 100 kg ×
+  5 · Back Squat.* and spoken *Logged 100 kilograms, 5 reps, Back Squat.* With a workout open and
+  no set on offer it opens the logger, as the control's *Open workout* does; with no workout open it
+  answers *No workout is open.* and opens nothing. On a locked phone it asks for authentication
+  first.
+- *Start workout* runs `WorkoutStartIntent`, which is also the control's *Start workout* tap:
+  Routines, or the logger while a workout is open.
+
+**Events**, content-free, each carrying `surface` — *activity* (the Live Activity's button),
+*control*, *shortcut*:
+
+- `gym_activity_set_logged` {surface}: a set an outside surface logged, durable on the phone.
+- `gym_activity_offer_refused` {surface, outcome: refused · absent}: *refused* when the rack had
+  moved past the offer and the logger opened; *absent* when a *Log set* shortcut found no workout
+  open.
+- `gym_intent_opened` {intent: start_workout · open_workout, surface: control · shortcut}: Windmill
+  opened on Routines or on the logger, a *Log set* shortcut with nothing on offer included.
+- Writing the offer to the App Group or reloading the control reports the boundary operation
+  `gym_control_update` (failure kinds `storage` · `unexpected`); a log that throws reports
+  `gym_activity_update`, as the Live Activity's does.
 
 ## 8. Echoes on iOS
 
@@ -1057,14 +1237,15 @@ page ink and reader (Journal Figma boards 40/41 and 59/60) into the room's own c
 Recorded in `consistency.md` under *iOS redesign*:
 
 - **Colour and drawings:** 9a (light gym accent vs Figma Daylight `brand/base`), *iOS gym and shell
-  day contrast* (the darker light values awaiting the owner, and the Figma collections that follow
-  them), 9d (two gym light grounds in the Design System collections), 9e (the first-run boards' W
-  capsule and hand-drawn glass), 9h (warm journal day inks in the Figma collection), 9m (the
-  iteration-1 boards against §5–§7).
+  day contrast* (the light `gym/accent` and `shell/brand` values, and the Figma collections that
+  follow them), 9d (two gym light grounds in the Design System collections), 9e (the first-run
+  boards' W capsule and hand-drawn glass), 9h (warm journal day inks in the Figma collection), 9m
+  (the iteration-1 boards against §5–§7), 9d under *Onboarding* (the onboarding collection's gym day
+  accent).
 - **The log and progress:** 9b (phones weave, web keeps the strip), 9o (moments are doors on iOS,
   expanders on Android), 9p (a record stated once), 9q (*Weigh in* in the bar), 9y (the progress
-  strings the iOS build draws against `18-progress.md`), 10a (the Undo band's words in the build),
-  10b (the newest weigh-in woven in the build).
+  strings the iOS build draws against `18-progress.md`), 10b (the newest weigh-in woven in the
+  build).
 - **The workout and routines:** 9c (the rack's kind picker), 9k (the untaken workout's row and badge
   vs Android's card and door), 9l (the Live Activity's unlabelled clocks), 9n (the set-note footer),
   10d (two search shapes in the pickers).
@@ -1073,10 +1254,12 @@ Recorded in `consistency.md` under *iOS redesign*:
 - **Shell and cross-room:** 9r (no Gym settings), 9u (dates in the person's locale), 9v (the
   signed-out share door), 9w (You's sections vs `superapp-shell.md` §6), 10c (*Your data* still in
   the build's You), 9x (the room menu's You and room item), 10e (the Gym door's line on Where to
-  start?), 9f and 9g under *Onboarding* (the gym glimpse, where each product lives).
+  start?), 9f and 9g under *Onboarding* (the gym glimpse, where each product lives), 9z under *Gym*
+  (*workout* on every iOS screen, the build's *session* strings, web and Android to follow).
 
-Two proposals in `consistency.md` wait on the owner and are not part of this contract: the open
-workout as a tab-bar accessory, and Control Center and App Intent controls.
+One proposal in `consistency.md` waits on the owner and is not part of this contract: one
+suggestion on an empty Coach. Whether Android and the shell canon follow iOS on You and Gym
+settings waits on the owner in 9r and 9w.
 
 ## 10. Drawings
 
@@ -1152,19 +1335,25 @@ Iteration 3's captures show:
 4. **Sheets commit from the bar:** Fix set, Weigh in, Targets, Create movement, Fix workout.
    *Heavier than the plan* as an alert. Search-to-create in a picker with a query. *Sign out* as one
    alert. Share this workout signed out with *Sign in to share*.
-5. **Hidden** as the head's first row while the open workout is hidden. **On this phone** with one
-   waiting workout, and with nine (one row and the pushed list); a
+5. **A hidden workout and the untaken one:** the tab bar's accessory on iOS 26, expanded and
+   inline, in both appearances, and on an iOS 18 simulator the **Hidden** row as the head's first
+   row. **On this phone** with one waiting workout, and with nine (one row and the pushed list); a
    queued workout reading *Adding Push A to your log.*; a stranded set with *Fix workout* for a
    fixable reason, its *Discard 1 set* and *Set discarded*; Discard returning to The log.
 6. **Update and sign-in:** the update alert signed in and signed out; You with *Finish signing in*
    offline and while the update is required; a Finish refused for the update; the room menu and back
    chevrons in ink.
-7. **One date formatter:** a screen of each form — log rows, Record, receipt subtitle, session
-   subtitle (one that crosses midnight among them), Inspect, weigh-in.
+7. **One date formatter and one noun:** a screen of each form — log rows, Record, receipt
+   subtitle, session subtitle (one that crosses midnight among them), Inspect's times, the workout's
+   bar subtitle, weigh-in — and The log empty (*No workouts yet*) and at its end (*First workout*).
 8. **AX3 in both appearances** for: the rack (reps visible), the keypad (*0* reachable), the Coach
    composer, Fix set, the receipt, Inspect, You. **375 × 667** for the same, plus Journal and the
    shell.
 9. **The Live Activity:** banner, expanded, compact and minimal Island, both appearances, with no
    clock labels.
-10. **Five interactions as screen recordings**, since a still cannot show them: Log set, a ladder
-   tap, Apply to receipt, a moment opening the Record, the band rising and dismissing (§5 Motion).
+10. **Six interactions as screen recordings**, since a still cannot show them: Log set, a ladder
+   tap, Apply to receipt, a moment opening the Record, the band rising and dismissing (§5 Motion),
+   and the logger zooming back from the accessory.
+11. **Outside the app:** the control in Control Center at its medium size in each of its three
+   states, both appearances, and on the Lock Screen; the Action button's hint; Siri's answer to *Log
+   a set in Windmill*; the two shortcuts in the Shortcuts app with no parameters.
