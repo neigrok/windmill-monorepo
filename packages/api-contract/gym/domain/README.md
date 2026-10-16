@@ -3,7 +3,8 @@
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
 v6/minimum-4 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json` runs in
-Swift alone, pending in Kotlin and not applying on the web (its row says why). R118 metadata reads remain optional
+Swift alone, pending in Kotlin and not applying on the web (its row says why), and so do the `ProgressRecords` reads
+of `training-reads.json`, pending in Kotlin and on the web (Reads says why). R118 metadata reads remain optional
 for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCreation` decodes separately.
 
 ## Files
@@ -20,7 +21,7 @@ for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCr
 | `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
 | `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery and discard. Runs in Swift `GymDomain`. Kotlin holds it pending until Android's recovery (`WorkoutImports.kt`, in the store today) moves into its domain; the web holds no signed-out workout, so it records the file as not applying |
 | `proposals-actions.json` | Propose, apply/dismiss, ordered diff, change count, provenance and optional R118 metadata reads |
-| `training-reads.json` | Prefill, last time, readouts, the canonical estimate, complete progress projection, movement records, chart windows and shared history documents |
+| `training-reads.json` | Prefill, last time, readouts, the canonical estimate, complete progress projection, movement records, the log's new bests, chart windows and shared history documents |
 | `units.json` | Units, signed weight ladder, formatting, rounding and rep steps |
 | `../rules/bodyweight.json` | Bodyweight stance, readings, chart windows and gaps |
 | `../../gym-ladder.json` | The existing cross-surface ladder, also run directly by both domains |
@@ -113,6 +114,11 @@ within a session, the lowest set identity wins.
 `BodyweightReps` exposes the independent zero-load repetition fact of each session and its best
 in the requested window. Higher assisted repetitions or equally repeated added load never replace
 that fact; the all-load `mostReps` read retains its own ordering. Partial history has facts but no best.
+`ProgressRecords` (`input:{}`) is the log's new bests: per movement, the record steps after its first logged session,
+which is a baseline and never a new best, each with the step it beat (`previous`, null when the movement's earlier
+sessions held no estimate), and the sessions that set one. Partial history has none. It runs in Swift alone: Android
+weaves its log's bests in the app module (`LogTimeline.kt`), counting a first session, and the web's log weaves none,
+so both hold the read pending.
 
 `TrainingHistory` composes the mirror documents through the same entities and reads. Its vectors use
 `input:{method,args}` and preserve catalogue and routine joins, proposal provenance, last-set selection,
@@ -120,7 +126,7 @@ session summaries, reviews, record details and weekly totals. History filters ap
 facet aggregation; only the returned session page uses the cursor and limit. Equal session timestamps
 sort by ascending identity, and the next page excludes identities through `beforeId`. Tonnage sums
 loads in their storage quanta; estimates retain full precision. Record steps include the first baseline.
-The 112 training-read cases include 36 complete mirror documents and 22 adversarial read scenes.
+The 114 training-read cases include 36 complete mirror documents and 22 adversarial read scenes.
 
 The engines accept create/update/write/removal predictions. Omitted sets in completed-session
 replacement and a proposal-removed routine disappear locally while their command is pending;

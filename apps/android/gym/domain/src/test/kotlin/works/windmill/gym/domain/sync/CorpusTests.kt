@@ -17,6 +17,7 @@ class CorpusTests {
         "gym/domain/preferences-actions.json", "gym/domain/proposals-actions.json", "gym/domain/training-actions.json",
         "gym/domain/training-reads.json", "gym/domain/units.json", "gym/rules/bodyweight.json")
     val pending = mapOf("gym/domain/recovery-actions.json" to "Android's saved-workout recovery lives in the store's WorkoutImports.kt, not yet in :gym:domain")
+    val pendingReads = mapOf("ProgressRecords" to "Android weaves its log's new bests in :gym's LogTimeline.kt, not yet in :gym:domain, and counts a first session")
 
     @Test fun everyProductFileIsClaimedAndEveryVectorPasses() {
         assertEquals((paths + pending.keys).sorted(), Contract.files("gym"))
@@ -25,7 +26,9 @@ class CorpusTests {
             failures += "${paths[0]} · ${error.message}"
         }
         var cases = 1
+        var skipped = 0
         for (path in paths.drop(1)) for (vector in Contract.vectors(path)) {
+            if (path == "gym/domain/training-reads.json" && vector.input.member("read").str() in pendingReads) { skipped++; continue }
             try {
                 val actual = run(vector)
                 if (vector.expect.jcs != actual.jcs) failures += "$path · ${vector.name}\n  got    ${actual.jcs}\n  expect ${vector.expect.jcs}"
@@ -34,7 +37,7 @@ class CorpusTests {
         }
         failures.forEach(::println)
         assertTrue("${failures.size} gym corpus failures:\n${failures.joinToString("\n")}", failures.isEmpty())
-        println("Gym corpus: ${paths.size}/${paths.size + pending.size} files, $cases cases, ${pending.size} pending, no unclaimed file")
+        println("Gym corpus: ${paths.size}/${paths.size + pending.size} files, $cases cases, ${pending.size} pending, $skipped pending cases, no unclaimed file")
     }
 
     @Test fun everySharedLocalRuleAndCodeIsCovered() {

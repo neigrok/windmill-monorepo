@@ -45,7 +45,8 @@ struct WorkoutFixSheet: View {
               ForEach(performed, id: \.id) { set in
                 let otherDay = !Calendar.current.isDate(fix.startedAt.date, inSameDayAs: set.completedAt.date)
                 Button { editing = set.id } label: {
-                  SetRow(marker: SetRow.marker(set, in: performed), set: set, time: SignedOutWorkout.time(set.completedAt, day: otherDay))
+                  SetRow(marker: SetRow.marker(set, in: performed), set: set,
+                         time: otherDay ? gym.dates.dayAndTime(set.completedAt) : gym.dates.time(set.completedAt))
                 }.accessibilityIdentifier("recovery-fix-set-\(set.id)")
               }
             }

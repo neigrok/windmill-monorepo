@@ -103,7 +103,7 @@ action `dismiss_ink` once when writing or a tap lifts it; no ink replay action i
 | Connected log | `gym_connect_tool` | action: connect, manage (Connect a tool, Manage connections); outcome: ok, failed (whether the browser opened) |
 | Gym actions | `gym_action` | screen: gym, session_share, history (engine actions and saves, a share link minted, copied or revoked, a Coach conversation deleted); outcome: ok, refused, failed; no action payloads |
 | Undo | `gym_undo` | screen: gym, history (a held engine gesture, a held conversation delete); outcome: ok, refused, failed (failed on gym only); action: dismiss, with no outcome, when the lifter sends a held engine gesture's band away and the act stays (gym only) |
-| Log moments | `gym_moment_opened` | no properties; a new-best moment on the log expanded in place |
+| Log moments | `gym_moment_opened` | no properties; a new-best moment on the log opened its Record |
 | Import recovery | `gym_import_recovery` | Android's vocabulary: action: inspect, fix, keep, retry, discard; state (a screen opening only): opened; outcome (a commit or a close only): completed, cancelled, and the iOS-only refused, failed; reason, iOS-only: session-open, session-overlap, id-taken, bad-instant, too-many-sets, invalid-set, unknown-exercise, session-finished, unsent, other |
 | Optional scales | `scale_invitation_shown`, `scale_invitation_answered` | action: answered, declined (on `scale_invitation_answered` only) |
 | Writing | `journal_line_saved` | day_kind: today; emitted after a changed, nonempty body saves, never for scale-only changes |
