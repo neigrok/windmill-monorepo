@@ -740,6 +740,24 @@ import XCTest
   }
   func testCoachCreatedLight() { coachCreated("light") }
   func testCoachCreatedDark() { coachCreated("dark") }
+  func coachOutOfDate(_ appearance: String) {
+    let app = launch("shell-last-room", appearance: appearance, arguments: ["-coach-fixture", "-coach-out-of-date"])
+    openGymFromJournal(app)
+    app.tabBars.buttons["Coach"].tap()
+    let question = app.descendants(matching: .any)["coach-question"]
+    XCTAssertTrue(question.waitForExistence(timeout: 15)); question.tap(); question.typeText("Is Push A still doing anything?")
+    app.buttons["coach-send"].tap()
+    let review = app.buttons["coach-review"]
+    XCTAssertTrue(review.waitForValue("Out of date", timeout: 10))
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    capture("gym-coach-out-of-date-card-\(appearance)", app)
+    for _ in 0..<4 where !review.isHittable { app.scrollViews.firstMatch.swipeUp() }
+    review.tap()
+    XCTAssertTrue(app.staticTexts["coach-review-out-of-date"].waitForExistence(timeout: 5))
+    capture("gym-coach-review-out-of-date-\(appearance)", app)
+  }
+  func testCoachOutOfDateLight() { coachOutOfDate("light") }
+  func testCoachOutOfDateDark() { coachOutOfDate("dark") }
   func testCoachScreensDark() { coachScreens("dark") }
 
   func coachSignedOut(_ appearance: String) {

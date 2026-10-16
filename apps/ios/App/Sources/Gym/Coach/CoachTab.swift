@@ -13,6 +13,7 @@ struct CoachReading: Identifiable {
   let weeks: Int
   let notes: Bool
   let nothing: Bool
+  let stats: Bool
   init(_ receipt: CoachReceipt, steps: [CoachStep], dates: GymDate) {
     workouts = receipt.workouts.sorted { $0.startedAt > $1.startedAt }
     weeks = Set(workouts.compactMap { workout in
@@ -20,10 +21,15 @@ struct CoachReading: Identifiable {
     }).count
     notes = steps.contains { $0.tool == "list_notes" && !$0.failed }
     nothing = receipt.read.nothing
+    stats = steps.contains { $0.tool == "get_stats" && !$0.failed }
   }
   var count: String { GymCount.of(workouts.count, "workout") + " · " + GymCount.of(weeks, "week") }
-  // The receipt row: what the sheet lists, or that the server read nothing; none when it read what no list can show.
-  var line: String? { !workouts.isEmpty ? "Read " + count : nothing ? "Read nothing from your log" : nil }
+  // The receipt row: what the sheet lists, else what it read in words with no number; none when it read what no line can say.
+  var line: String? {
+    if !workouts.isEmpty { return "Read " + count }
+    if nothing { return "Read nothing from your log" }
+    return stats ? "Read your movement history" : nil
+  }
 }
 
 struct CoachTab: View {
@@ -243,7 +249,7 @@ struct CoachTab: View {
 
   func answer(_ text: String, receipt: CoachReceipt?, steps: [CoachStep], results: [CoachResult]) -> some View {
     CoachAnswerView(gym: gym, text: text, receipt: receipt, steps: steps, results: results,
-                    review: { review = ProposalReviewID(id: $0) }, read: { sources = $0 })
+                    review: { review = ProposalReviewID(id: $0) }, read: { sources = $0 }, notes: { destination = .notes })
   }
 
   func generationView(_ generation: CoachGeneration) -> some View {
@@ -281,7 +287,7 @@ struct CoachQuestion: View {
   }
 }
 
-// Coach's turn: prose on the canvas, then one receipt row, any proposal cards and any routine it created.
+// Coach's turn: prose on the canvas, then one receipt row, any proposal cards, and a door for each thing it wrote.
 struct CoachAnswerView: View {
   let gym: GymModel
   let text: String
@@ -290,6 +296,7 @@ struct CoachAnswerView: View {
   let results: [CoachResult]
   let review: (String) -> Void
   let read: (CoachReading) -> Void
+  let notes: () -> Void
   @Environment(\.coachOpenRoutine) var openRoutine
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -297,16 +304,17 @@ struct CoachAnswerView: View {
       if let receipt { receiptRow(receipt) }
       ForEach(receipt?.proposals ?? [], id: \.self) { id in CoachProposalCard(gym: gym, id: id) { review(id) } }
       ForEach(results.filter { $0.kind == "routine-created" }) { result in
-        Button { openRoutine?(result.routineId) } label: {
-          HStack(spacing: 12) {
-            Image(systemName: "list.bullet.rectangle").foregroundStyle(GymPalette.accent)
-            Text("Open routine · " + result.routineName).foregroundStyle(GymPalette.ink)
-            Spacer(minLength: 0)
-            DoorChevron(room: .gym)
-          }.frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityLabel("Open routine · " + result.routineName)
+        door("list.bullet.rectangle", "Open routine · " + result.routineName) { openRoutine?(result.routineId) }
       }
+      if let saved = CoachCopy.noteSave(steps) { door("note.text", saved, action: notes).accessibilityIdentifier("coach-saved-note") }
     }.frame(maxWidth: .infinity, alignment: .leading)
+  }
+  // What Coach wrote besides answering, one row each: its symbol in accent, what it did, and the door to it.
+  func door(_ symbol: String, _ title: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      GymRow(title: title, leading: .symbol(symbol, GymPalette.accent), trailing: .door)
+        .frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
+    }.buttonStyle(.plain).accessibilityLabel(title)
   }
   // The receipt row, a door to What Coach read while there are workouts to list.
   @ViewBuilder func receiptRow(_ receipt: CoachReceipt) -> some View {
@@ -334,8 +342,10 @@ struct CoachProposalCard: View {
   @Environment(\.dynamicTypeSize) var typeSize
   var body: some View {
     let proposal = gym.proposals.first { $0.id.record.string == id }
+    let removal = proposal?.intent == "remove"
     let changes = proposal.map(gym.coachChanges)?.filter { !$0.kept } ?? []
-    let settled = proposal.flatMap { CoachCopy.settled($0.state) }
+    let settled = proposal.flatMap { gym.coachProposalOutOfDate($0) ? CoachCopy.outOfDate : CoachCopy.settled($0.state, removal: removal) }
+    let label = removal ? "Review removal" : "Review changes"
     // At accessibility sizes the settled state sits under the Review row's label.
     let door = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: RoomSpace.small))
       : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: RoomSpace.related))
@@ -351,7 +361,7 @@ struct CoachProposalCard: View {
       Button(action: review) {
         HStack(spacing: RoomSpace.related) {
           door {
-            Text("Review changes").foregroundStyle(GymPalette.ink)
+            Text(label).foregroundStyle(GymPalette.ink)
             if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
             if let settled {
               HStack(spacing: RoomSpace.small) {
@@ -363,7 +373,7 @@ struct CoachProposalCard: View {
           if typeSize.isAccessibilitySize { Spacer(minLength: 0) }
           DoorChevron(room: .gym)
         }.frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
-      }.buttonStyle(.plain).accessibilityLabel("Review changes").accessibilityValue(settled ?? "").accessibilityIdentifier("coach-review")
+      }.buttonStyle(.plain).accessibilityLabel(label).accessibilityValue(settled ?? "").accessibilityIdentifier("coach-review")
     }.padding(RoomSpace.inset).frame(maxWidth: .infinity, alignment: .leading)
       .background(GymPalette.card, in: RoundedRectangle(cornerRadius: RoomSpace.cardRadius))
       .overlay(RoundedRectangle(cornerRadius: RoomSpace.cardRadius).stroke(GymPalette.accent, lineWidth: 1))
