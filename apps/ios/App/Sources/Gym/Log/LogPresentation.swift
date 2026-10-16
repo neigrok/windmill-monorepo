@@ -20,28 +20,13 @@ nonisolated enum LogPresentation {
   static func day(_ date: Date) -> LocalDay {
     LocalDay(Instant(date), offsetSeconds: TimeZone.current.secondsFromGMT(for: date))
   }
-  static func brief(_ date: Date) -> String { date.formatted(.dateTime.day().month(.abbreviated)) }
-  // A past day names its year only when it is not this one.
-  static func brief(_ day: LocalDay, today: LocalDay) -> String {
-    day.year == today.year ? brief(date(day)) : date(day).formatted(.dateTime.day().month(.abbreviated).year())
-  }
-  static func dayLabel(_ day: LocalDay, today: LocalDay) -> String {
-    if day == today { return "Today" }
-    if day == today.adding(days: -1) { return "Yesterday" }
-    return date(day).formatted(.dateTime.weekday(.abbreviated).day())
-  }
-  // When a new best's previous best was: its day within the same month, its month within the year, else month and year.
-  static func since(_ previous: LocalDay, best: LocalDay) -> String {
-    if previous.year != best.year { return date(previous).formatted(.dateTime.month(.wide).year()) }
-    if previous.month == best.month { return brief(date(previous)) }
-    return date(previous).formatted(.dateTime.month(.wide))
-  }
-  // The session's day and its clock span: Tue 18 Aug · 18:12 – 19:15.
-  static func span(_ session: Session) -> String {
-    let start = session.startedAt.date
-    let day = start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
-    guard let finished = session.finishedAt?.date, finished > start else { return "\(day) · \(start.formatted(date: .omitted, time: .shortened))" }
-    return "\(day) · \((start..<finished).formatted(.interval.hour().minute()))"
+  // A new best's line under its name: the estimate, and what it beat since when, or its day when it beat no estimate.
+  static func newBest(_ record: ProgressRecords.Record, dates: GymDate) -> String {
+    let value = record.point.fact.estimate!.e1rm
+    let change = record.previous.map {
+      "up \(Readout.estimatedWeight(value - $0.fact.estimate!.e1rm)) kg since \(dates.day($0.startedAt, inSentence: true))"
+    } ?? dates.day(record.point.startedAt)
+    return "\(Readout.estimatedWeight(value)) kg est · \(change)"
   }
   static func sessionFacts(_ readout: SessionReadout) -> String {
     [GymCount.of(readout.workingSetCount, "working set"), readout.durationMs.map(Readout.duration)].compactMap { $0 }.joined(separator: " · ")
@@ -50,12 +35,12 @@ nonisolated enum LogPresentation {
   static func planLine(_ exercise: ID<Exercise>, plan: SessionPlan?) -> String? {
     guard let plan else { return nil }
     let entries = plan.entries.filter { $0.exerciseId == exercise }
-    if entries.isEmpty { return "added today" }
+    if entries.isEmpty { return "not in plan" }
     return entries.count == 1 ? "plan \(Readout.target(entries[0].sets))" : nil
   }
+  // A working set against its slot in the plan; any other kind carries none, since its letter is its kind.
   static func comparison(_ set: TrainingSet, preceding: [TrainingSet], plan: SessionPlan?) -> String? {
-    guard set.kind == "working" else { return set.kind }
-    guard let plan else { return nil }
+    guard set.kind == "working", let plan else { return nil }
     let entries = plan.entries.filter { $0.exerciseId == set.exerciseId }
     guard entries.count == 1, let targets = entries[0].sets else { return nil }
     let slot = preceding.filter { $0.kind == "working" }.count
@@ -76,7 +61,8 @@ nonisolated enum LogPresentation {
 }
 
 struct LogTimelineEntry: Identifiable {
-  enum Kind { case session(Session), best(DomainKit.ID<Exercise>, MovementProgress.Point, MovementProgress.Point?), month(LocalDay, Int), weight(Bodyweight.Entry) }
+  // A session row carries the record dot when it set a new best that no woven moment states.
+  enum Kind { case session(Session, recordDot: Bool), best(DomainKit.ID<Exercise>, ProgressRecords.Record), month(LocalDay, Int), weight(Bodyweight.Entry) }
   let id: String
   let at: Instant
   let kind: Kind
@@ -94,6 +80,9 @@ struct LogMonth: Identifiable {
 extension GymModel {
   var finishedLogSessions: [Session] { sessions.filter { !$0.isOpen && $0.startedAt <= (log?.moment.now ?? Instant(ms: 0)) } }
 
+  // The room's dates, read at the log's moment, or at the device's before the log is read.
+  var dates: GymDate { log.map { GymDate($0.moment) } ?? GymDate() }
+
   // The log's records, worked out once per change of the log rather than per row per render.
   var logRecords: ProgressRecords? {
     if logRecordsRead == nil, let log { logRecordsRead = ProgressRecords(log.progress) }
@@ -107,10 +96,8 @@ extension GymModel {
     var moments: [LogTimelineEntry] = []
     if progress.isComplete && !readFailed {
       for id in records.movements.keys.sorted() {
-        let records = (records.movements[id] ?? []).filter { $0.startedAt <= now }
-        for (index, record) in records.enumerated() {
-          moments.append(LogTimelineEntry(id: "best:\(id):\(record.id)", at: record.startedAt,
-            kind: .best(id, record, index == 0 ? nil : records[index - 1])))
+        for record in records.movements[id] ?? [] where record.point.startedAt <= now {
+          moments.append(LogTimelineEntry(id: "best:\(id):\(record.point.id)", at: record.point.startedAt, kind: .best(id, record)))
         }
       }
       let trainedDays = progress.sessions.filter { $0.startedAt <= now }.map { LocalDay($0.startedAt, in: zone) }
@@ -129,7 +116,8 @@ extension GymModel {
         }
       }
     }
-    for entry in bodyweight?.entries ?? [] where entry.day <= today {
+    // The newest weigh-in is the head's Bodyweight row, so a weigh-in is woven only once a newer one exists.
+    for entry in (bodyweight?.entries ?? []).dropLast() where entry.day <= today {
       moments.append(LogTimelineEntry(id: "weight:\(entry.day)", at: LogPresentation.instant(entry.day, in: zone), kind: .weight(entry)))
     }
     let weeks = Dictionary(grouping: moments) { entry in
@@ -140,7 +128,12 @@ extension GymModel {
     let chosen = weeks.values.compactMap { week in
       week.sorted { a, b in a.priority == b.priority ? (a.at == b.at ? a.id < b.id : a.at > b.at) : a.priority < b.priority }.first
     }.filter { entry in oldest.map { LocalDay(entry.at, in: zone) >= $0 } ?? true }
-    let rows = (visible.map { LogTimelineEntry(id: "session:\($0.id)", at: $0.startedAt, kind: .session($0)) } + chosen)
+    let stated = Set(chosen.compactMap { entry -> ID<Session>? in if case .best(_, let record) = entry.kind { record.point.id } else { nil } })
+    let sessionRows = visible.map { session in
+      LogTimelineEntry(id: "session:\(session.id)", at: session.startedAt,
+                       kind: .session(session, recordDot: records.sessions.contains(session.id) && !stated.contains(session.id)))
+    }
+    let rows = (sessionRows + chosen)
       .sorted { a, b in a.at == b.at ? (a.priority == b.priority ? a.id < b.id : a.priority < b.priority) : a.at > b.at }
     var result: [LogMonth] = []
     for row in rows {
@@ -151,11 +144,5 @@ extension GymModel {
       result.append(LogMonth(id: key, title: title, entries: [row]))
     }
     return result
-  }
-
-  // The record a finished session set, as its row's second line: Record · Bench Press 84 × 5.
-  func logRecordFact(_ session: ID<Session>) -> String? {
-    guard let fact = logRecords?.sessions[session], let estimate = fact.estimate else { return nil }
-    return "Record · \(catalogue.find(fact.exerciseId)?.name ?? "Movement") \(Readout.effort(weightKg: estimate.weightKg, reps: estimate.reps))"
   }
 }

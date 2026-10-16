@@ -2,26 +2,66 @@ import SwiftUI
 import DomainKit
 import GymDomain
 
-// The log's head while signed in: a door per saved workout the account has not taken, its subtitle the reason it waits
-// on the lifter or *adding…* while it is on its way. The section leaves when it is empty.
+// The log's head while signed in and a saved workout waits for the account: always one row. One workout is its own row,
+// a door to Inspect; two or more are one row that opens the On this phone list. The row leaves when nothing waits.
 struct OnThisPhoneSection: View {
   let gym: GymModel
 
   var body: some View {
-    let waiting = gym.workoutsToReview
-    let workouts = gym.waitingWorkouts.sorted { $0.session.startedAt > $1.session.startedAt }
-    if !gym.isAnonymous, !workouts.isEmpty, let moment = gym.log?.moment {
-      Section("On this phone") {
-        ForEach(workouts, id: \.session.id) { workout in
-          let recovery = waiting.first { $0.id == workout.session.id }
-          NavigationLink { WorkoutInspectScreen(gym: gym, id: workout.session.id) } label: {
-            GymRow(title: recovery?.title(at: moment) ?? workout.title(at: moment), meta: recovery?.line ?? "adding…",
-                   trailing: recovery == nil ? .progress : nil)
-          }.accessibilityIdentifier("recovery-row-\(workout.session.id)")
-        }
+    let rows = gym.isAnonymous ? [] : gym.waitingRows
+    if rows.count == 1, let row = rows.first {
+      Section("On this phone") { OnThisPhoneSection.door(row, gym: gym) }.listRowBackground(GymPalette.card)
+    } else if rows.count > 1 {
+      Section {
+        NavigationLink { OnThisPhoneList(gym: gym) } label: {
+          GymRow(title: "\(GymCount.of(rows.count, "workout")) on this phone", meta: OnThisPhoneSection.summary(rows))
+        }.accessibilityIdentifier("recovery-summary")
       }.listRowBackground(GymPalette.card)
     }
   }
+
+  // How many need the lifter, or Adding… while every one is on its way.
+  static func summary(_ rows: [WaitingRow]) -> String {
+    let count = rows.filter { $0.reason != nil }.count
+    return count == 0 ? "Adding…" : "\(count) \(GymCount.noun(count, "needs", plural: "need")) you"
+  }
+
+  // A saved workout's door to Inspect: its reason, or Adding… with work on its way.
+  static func door(_ row: WaitingRow, gym: GymModel) -> some View {
+    NavigationLink { WorkoutInspectScreen(gym: gym, id: row.id) } label: {
+      GymRow(title: row.title, meta: row.reason ?? "Adding…", trailing: row.reason == nil ? .progress : nil)
+    }.accessibilityIdentifier("recovery-row-\(row.id)")
+  }
+}
+
+// Every saved workout the account has not taken: the ones that need the lifter, then the ones on their way. Discard
+// from Inspect comes back here with its Undo, and the list leaves once nothing waits.
+struct OnThisPhoneList: View {
+  let gym: GymModel
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    let rows = gym.waitingRows
+    let needYou = rows.filter { $0.reason != nil }, adding = rows.filter { $0.reason == nil }
+    List {
+      if !needYou.isEmpty { Section("Needs you") { ForEach(needYou) { OnThisPhoneSection.door($0, gym: gym) } }.listRowBackground(GymPalette.card) }
+      if !adding.isEmpty { Section("Adding") { ForEach(adding) { OnThisPhoneSection.door($0, gym: gym) } }.listRowBackground(GymPalette.card) }
+    }.listStyle(.insetGrouped).modifier(GymPage()).navigationTitle("On this phone").navigationBarTitleDisplayMode(.inline)
+      .toolbar(.hidden, for: .tabBar).accessibilityIdentifier("recovery-list")
+      .reachBand {
+        GymTransient(gym: gym, held: gym.discardHold.map { hold in .init(text: hold.line, undo: gym.undoDiscard, keep: gym.endDiscardWindow) },
+                     errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo")
+      }
+      .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "on_this_phone"]) }
+      .onChange(of: rows.isEmpty) { _, empty in if empty { dismiss() } }
+  }
+}
+
+// A saved workout as On this phone draws it: its title, and the reason it waits on the lifter, none while it is on its way.
+struct WaitingRow: Identifiable {
+  let id: ID<Session>
+  let title: String
+  let reason: String?
 }
 
 // Recovery's words. The line, at most twelve words naming the way out, is the row's subtitle, Inspect's footer and the
@@ -53,11 +93,14 @@ extension WorkoutRecovery {
 
   // What Discard drops: the whole copy, or the sets of a landed workout it still holds.
   var discardTitle: String { retry == .restoreSets ? "Discard \(GymCount.of(strandedSets.count, "set"))" : "Discard workout" }
-  var discardedLine: String { retry == .restoreSets ? (strandedSets.count == 1 ? "Set discarded" : "Sets discarded") : "Workout discarded" }
+  var discardedLine: String {
+    guard retry == .restoreSets else { return "Workout discarded" }
+    return strandedSets.count == 1 ? "Set discarded" : "\(GymCount.of(strandedSets.count, "set")) discarded"
+  }
 
-  func title(at moment: Moment) -> String {
-    guard retry == .restoreSets else { return workout.title(at: moment) }
-    return "\(GymCount.of(strandedSets.count, "set")) from \(workout.name) · \(workout.day(at: moment))"
+  func title(_ dates: GymDate) -> String {
+    guard retry == .restoreSets else { return workout.title(dates) }
+    return "\(GymCount.of(strandedSets.count, "set")) from \(workout.name) · \(dates.day(workout.session.startedAt))"
   }
 
   // The refusal's own code, beside the date on Inspect, when the line is the catch-all.
@@ -88,6 +131,15 @@ extension WorkoutRecovery.Reason {
 }
 
 extension GymModel {
+  // The saved workouts the account has not taken, newest first.
+  var waitingRows: [WaitingRow] {
+    let review = workoutsToReview, dates = self.dates
+    return waitingWorkouts.sorted { $0.session.startedAt > $1.session.startedAt }.map { workout in
+      let recovery = review.first { $0.id == workout.session.id }
+      return WaitingRow(id: workout.session.id, title: recovery?.title(dates) ?? workout.title(dates), reason: recovery?.line)
+    }
+  }
+
   // Why Keep, Retry and Save and retry wait, as the line under their band.
   var recoveryWait: String? {
     if authPaused { return "Sign in again to add it." }
@@ -98,13 +150,5 @@ extension GymModel {
 extension SignedOutWorkout {
   var name: String { session.name ?? Readout.noRoutine }
 
-  func day(at moment: Moment) -> String { Readout.briefDay(session.startedAt, now: moment.now, zone: moment.zone) }
-
-  func title(at moment: Moment) -> String { "\(name) · \(day(at: moment)) · \(GymCount.of(sets.count, "set"))" }
-
-  // A saved time read back, with its day where the reader needs one.
-  static func time(_ instant: Instant, day: Bool) -> String {
-    day ? instant.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute())
-      : instant.date.formatted(.dateTime.hour().minute())
-  }
+  func title(_ dates: GymDate) -> String { "\(name) · \(dates.day(session.startedAt)) · \(GymCount.of(sets.count, "set"))" }
 }

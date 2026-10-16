@@ -281,12 +281,17 @@ public struct MovementProgress: Equatable, Sendable {
   }
 }
 
-// A log's records, worked out in one pass for a reader that looks them up per row: each movement's run of new bests,
-// and the record a session set — the first of its movements whose best it is.
+// A log's new bests, worked out in one pass for a reader that looks them up per row: each movement's run of records, each
+// with the record it beat, and the sessions that set one. A new best needs an earlier logged session of its movement, so
+// a movement's first session is its baseline, never a record.
 public struct ProgressRecords: Equatable, Sendable {
+  public struct Record: Equatable, Sendable {
+    public let point: MovementProgress.Point
+    public let previous: MovementProgress.Point?
+  }
   public let progress: StatsProgress
-  public let movements: [ID<Exercise>: [MovementProgress.Point]]
-  public let sessions: [ID<Session>: MovementSessionFact]
+  public let movements: [ID<Exercise>: [Record]]
+  public let sessions: Set<ID<Session>>
 
   public init(_ progress: StatsProgress) {
     self.progress = progress
@@ -296,15 +301,16 @@ public struct ProgressRecords: Equatable, Sendable {
         points[fact.exerciseId, default: []].append(MovementProgress.Point(id: session.sessionId, startedAt: session.startedAt, fact: fact))
       }
     }
-    let movements = Dictionary(uniqueKeysWithValues: points.map { id, points in
-      (id, MovementProgress(exerciseId: id, isComplete: progress.isComplete, sessions: points).records)
-    })
-    let bests = movements.mapValues { Set($0.map(\.id)) }
-    var sessions: [ID<Session>: MovementSessionFact] = [:]
-    for session in progress.sessions {
-      sessions[session.sessionId] = session.movements.first { bests[$0.exerciseId]?.contains(session.sessionId) == true }
+    var movements: [ID<Exercise>: [Record]] = [:]
+    for (id, points) in points {
+      let movement = MovementProgress(exerciseId: id, isComplete: progress.isComplete, sessions: points)
+      let steps = movement.records
+      let run = steps.indices.map { Record(point: steps[$0], previous: $0 == 0 ? nil : steps[$0 - 1]) }
+        .filter { $0.point.id != movement.sessions.first?.id }
+      if !run.isEmpty { movements[id] = run }
     }
-    self.movements = movements; self.sessions = sessions
+    self.movements = movements
+    sessions = Set(movements.values.flatMap { $0.map(\.point.id) })
   }
 }
 
@@ -317,7 +323,7 @@ extension TrainingLog {
 }
 
 public enum Readout {
-  public static let noRoutine = "Free session"
+  public static let noRoutine = "Free workout"
   public static let openTarget = "open"
   static let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 

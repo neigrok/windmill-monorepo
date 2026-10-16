@@ -63,7 +63,7 @@ native TabView (Routines · The log · Coach), independent NavigationStacks and 
 `WorkoutScreen` while logging, finishing or showing its receipt. Hidden workouts restore from Gym settings. Each UI track owns its folder and root view:
 `Routines/RoutinesTab.swift`, `Log/LogTab.swift`, `Coach/CoachTab.swift`, and
 `Workout/WorkoutScreen.swift`; `Recovery/` holds the signed-out workouts the account has not taken — the log's
-**On this phone** section, Inspect and Fix workout — with their model. Each root takes `gym: GymModel`; the room
+**On this phone** row and the list it opens, Inspect and Fix workout — with their model. Each root takes `gym: GymModel`; the room
 supplies account/navigation callbacks and Coach handoffs. A model extension lives in the folder of the one track that
 reads it; a rule several tracks read, such as what is unsent, is `GymModel.swift`'s own. What more than one track
 draws lives once in `Components/`: the page chrome (page modifier, an editing sheet's commit from its bar, keyboard

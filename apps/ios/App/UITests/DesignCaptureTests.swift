@@ -530,13 +530,12 @@ import XCTest
     capture(name("gym-log-populated"), app)
     let moment = app.buttons.matching(identifier: "gym-best-moment").firstMatch
     revealInLog(moment, app)
+    capture(name("gym-log-moment"), app)
     moment.tap()
-    // The expanded moment's rows are built as they scroll into view, so the moment's own value says it opened.
-    XCTAssertTrue(moment.waitForValue("Expanded", timeout: 5))
-    revealInLog(app.buttons["Open record"], app)
-    capture(name("gym-log-moment-expanded"), app)
-    revealInLog(moment, app); moment.tap()
-    XCTAssertTrue(app.buttons["Open record"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["gym-chart-reading"].waitForExistence(timeout: 5))
+    capture(name("gym-movement-record-from-moment"), app, settle: 1.5)
+    back(app)
+    XCTAssertTrue(app.descendants(matching: .any)["gym-log"].waitForExistence(timeout: 5))
     let first = app.staticTexts["gym-log-first-session"]
     for _ in 0..<30 where !onScreen(first, app) { app.swipeUp(velocity: .fast) }
     revealInLog(first, app)
@@ -553,7 +552,7 @@ import XCTest
     XCTAssertTrue(app.descendants(matching: .any)["gym-bodyweight"].waitForExistence(timeout: 5))
     capture(name("gym-bodyweight"), app)
     let weighIn = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-weigh-in-2026-")).firstMatch
-    for _ in 0..<4 where !onScreen(weighIn, app) { app.swipeUp(velocity: .slow) }
+    revealInLog(weighIn, app)
     capture(name("gym-bodyweight-rows"), app)
     XCTAssertTrue(weighIn.waitForExistence(timeout: 5)); weighIn.tap()
     XCTAssertTrue(app.textFields["gym-weigh-in-weight"].waitForExistence(timeout: 5))
@@ -594,6 +593,7 @@ import XCTest
   func testLogScreensLight() { logScreens("light") }
   func testLogScreensDark() { logScreens("dark") }
   func testLogScreensAccessibilityLight() { logScreens("light", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"], variant: "-ax3") }
+  func testLogScreensAccessibilityDark() { logScreens("dark", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"], variant: "-ax3") }
 
   // Signed in and offline, the log's sessions wait on the phone: the rows carry the phone symbol and the detail says so once.
   func logUnsent(_ appearance: String) {
@@ -899,14 +899,17 @@ import XCTest
   func testWorkoutTransientsLight() { workoutTransients("light") }
   func testWorkoutTransientsDark() { workoutTransients("dark") }
 
-  // On this phone (§7.16): the log's section and badge, Inspect for each primary, Fix workout and its set, the held
-  // discard back on The log, and a paused account's workout on its way. `size` names a Dynamic Type category for the AX3 pass.
+  // On this phone (§7.16): the log's one row and badge, the list it opens, Inspect for each primary, Fix workout and its
+  // set, the held discard back on the list, and a paused account's workout on its way. `size` names a Dynamic Type category for the AX3 pass.
   func recovery(_ appearance: String, size: String? = nil) {
     let suffix = size == nil ? appearance : "\(appearance)-ax3"
     let app = launch("recovery", appearance: appearance, arguments: size.map { ["-UIPreferredContentSizeCategoryName", $0] } ?? [])
     XCTAssertTrue(app.tabBars.buttons["The log"].waitForExistence(timeout: 30)); app.tabBars.buttons["The log"].tap()
-    XCTAssertTrue(app.buttons["recovery-row-fixture-overlap"].waitForExistence(timeout: 20))
+    XCTAssertTrue(app.buttons["recovery-summary"].waitForExistence(timeout: 20))
     capture("gym-log-on-this-phone-\(suffix)", app, settle: 1.5)
+    app.buttons["recovery-summary"].tap()
+    XCTAssertTrue(app.buttons["recovery-row-fixture-overlap"].waitForExistence(timeout: 10))
+    capture("gym-on-this-phone-list-\(suffix)", app)
     for (id, name) in [("fixture-open-copy", "keep"), ("fixture-overlap", "fix"), ("fixture-landed-push", "retry"), ("fixture-id-taken", "discard-only")] {
       let row = app.buttons["recovery-row-" + id]
       for _ in 0..<8 where !row.isHittable { app.swipeUp(velocity: .slow) }
@@ -947,8 +950,11 @@ import XCTest
     app.terminate()
     let paused = launch("recovery-paused", appearance: appearance, arguments: size.map { ["-UIPreferredContentSizeCategoryName", $0] } ?? [])
     XCTAssertTrue(paused.tabBars.buttons["The log"].waitForExistence(timeout: 30)); paused.tabBars.buttons["The log"].tap()
-    XCTAssertTrue(paused.buttons["recovery-row-fixture-sending"].waitForExistence(timeout: 20))
+    XCTAssertTrue(paused.buttons["recovery-summary"].waitForExistence(timeout: 20))
     capture("gym-log-on-this-phone-paused-\(suffix)", paused, settle: 1.5)
+    paused.buttons["recovery-summary"].tap()
+    XCTAssertTrue(paused.buttons["recovery-row-fixture-sending"].waitForExistence(timeout: 10))
+    capture("gym-on-this-phone-list-paused-\(suffix)", paused)
     paused.buttons["recovery-row-fixture-unsent"].tap()
     XCTAssertTrue(paused.descendants(matching: .any)["recovery-inspect"].waitForExistence(timeout: 10))
     capture("gym-recovery-inspect-blocked-\(suffix)", paused)
@@ -957,4 +963,5 @@ import XCTest
   func testRecoveryLight() { recovery("light") }
   func testRecoveryDark() { recovery("dark") }
   func testRecoveryAccessibilityLight() { recovery("light", size: "UICTContentSizeCategoryAccessibilityXL") }
+  func testRecoveryAccessibilityDark() { recovery("dark", size: "UICTContentSizeCategoryAccessibilityXL") }
 }

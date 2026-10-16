@@ -13,6 +13,19 @@ import XCTest
     return app
   }
   func row(_ id: String, _ app: XCUIApplication) -> XCUIElement { app.buttons["recovery-row-" + id] }
+  // A September day of the fixture's year in the day form, ordered as the phone's region orders it.
+  func september(_ day: Int) -> String {
+    var style = Date.FormatStyle.dateTime.day().month(.abbreviated); style.timeZone = .gmt
+    return style.format(Date(timeIntervalSince1970: 1_788_177_600 + Double(day) * 86_400))
+  }
+  // Two or more saved workouts are one row at the log's head, which opens the On this phone list.
+  func openList(_ title: String, _ needYou: String, _ app: XCUIApplication) {
+    let summary = app.buttons["recovery-summary"]
+    XCTAssertTrue(summary.waitForExistence(timeout: 30), "The fixture's copies are on the phone")
+    XCTAssertEqual(summary.label, "\(title), \(needYou)")
+    summary.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["recovery-list"].waitForExistence(timeout: 10))
+  }
   // Rows below the fold, which a lazy list has not built yet, scroll into reach above the floating band before they are
   // read or tapped.
   func reach(_ element: XCUIElement, _ app: XCUIApplication) -> XCUIElement {
@@ -50,17 +63,19 @@ import XCTest
 
   func testEveryReasonIsARowAndEachWayOutLeavesTheLog() {
     let app = launch("recovery")
-    XCTAssertTrue(row("fixture-unsent", app).waitForExistence(timeout: 30), "The fixture's last copies are on the phone")
+    XCTAssertFalse(row("fixture-unsent", app).exists, "Nine workouts are one row at the head")
+    openList("9 workouts on this phone", "9 need you", app)
+    XCTAssertTrue(app.staticTexts["Needs you"].exists && !app.staticTexts["Adding"].exists)
     let rows = [
-      ("fixture-open-copy", "Pull A · today · 3 sets", "Your account has an open workout — keep this one as finished."),
-      ("fixture-overlap", "Push A · 24 Sep · 12 sets", "Overlaps another workout — fix its times."),
-      ("fixture-landed-push", "1 set from Push A · 23 Sep", "A set missed its workout — retry puts it back."),
-      ("fixture-late-set", "Legs · 22 Sep · 4 sets", "Its times don't line up — fix the times."),
-      ("fixture-missing-movement", "Free session · 21 Sep · 3 sets", "A movement is missing — fix its sets, then retry."),
-      ("fixture-id-taken", "Free session · 20 Sep · 4 sets", "Already added once — discard this copy."),
-      ("fixture-parent-dead", "Free session · 19 Sep · 3 sets", "Refused by the log — fix the workout, then retry."),
-      ("fixture-many-sets", "Free session · 18 Sep · 201 sets", "Over 200 sets — remove some, then retry."),
-      ("fixture-unsent", "Free session · 17 Sep · 3 sets", "Not on your log yet — retry to add it."),
+      ("fixture-open-copy", "Pull A · Today · 3 sets", "Your account has an open workout — keep this one as finished."),
+      ("fixture-overlap", "Push A · \(september(24)) · 12 sets", "Overlaps another workout — fix its times."),
+      ("fixture-landed-push", "1 set from Push A · \(september(23))", "A set missed its workout — retry puts it back."),
+      ("fixture-late-set", "Legs · \(september(22)) · 4 sets", "Its times don't line up — fix the times."),
+      ("fixture-missing-movement", "Free workout · \(september(21)) · 3 sets", "A movement is missing — fix its sets, then retry."),
+      ("fixture-id-taken", "Free workout · \(september(20)) · 4 sets", "Already added once — discard this copy."),
+      ("fixture-parent-dead", "Free workout · \(september(19)) · 3 sets", "Refused by the log — fix the workout, then retry."),
+      ("fixture-many-sets", "Free workout · \(september(18)) · 201 sets", "Over 200 sets — remove some, then retry."),
+      ("fixture-unsent", "Free workout · \(september(17)) · 3 sets", "Not on your log yet — retry to add it."),
     ]
     XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "recovery-row-")).count, rows.count)
     for (id, title, line) in rows { XCTAssertEqual(reach(row(id, app), app).label, "\(title), \(line)", id) }
@@ -68,6 +83,9 @@ import XCTest
 
     inspect("fixture-open-copy", app)
     XCTAssertEqual(app.staticTexts["recovery-reason"].label, "Your account has an open workout — keep this one as finished.")
+    XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "—")).firstMatch.exists,
+                   "Inspect draws only the facts that are known")
+    XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", " at ")).firstMatch.exists, "Started and Finished hold the time")
     XCTAssertEqual(app.buttons["recovery-primary"].label, "Keep as finished")
     app.buttons["recovery-primary"].tap()
     landed("Pull A", "fixture-open-copy", app)
@@ -116,7 +134,7 @@ import XCTest
     inspect("fixture-id-taken", app)
     XCTAssertFalse(app.buttons["recovery-primary"].exists)
     choose("recovery-discard", app)
-    XCTAssertTrue(app.descendants(matching: .any)["recovery-inspect"].waitForNonExistence(timeout: 5), "Discard returns to The log")
+    XCTAssertTrue(app.descendants(matching: .any)["recovery-inspect"].waitForNonExistence(timeout: 5), "Discard returns to the list it came from")
     let band = app.descendants(matching: .any)["gym-log-undo-band"]
     XCTAssertTrue(band.waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["Workout discarded"].exists)
@@ -133,8 +151,11 @@ import XCTest
 
   func testAPausedAccountShowsTheWorkoutOnItsWayAndHoldsTheRest() {
     let app = launch("recovery-paused", appearance: "dark")
-    XCTAssertEqual(reach(row("fixture-sending", app), app).label, "Push A · 25 Sep · 6 sets, adding…")
-    XCTAssertEqual(row("fixture-unsent", app).label, "Free session · 24 Sep · 3 sets, Not on your log yet — retry to add it.")
+    openList("2 workouts on this phone", "1 needs you", app)
+    XCTAssertTrue(app.staticTexts["Needs you"].exists && app.staticTexts["Adding"].exists)
+    XCTAssertEqual(reach(row("fixture-sending", app), app).label, "Push A · Yesterday · 6 sets, Adding…")
+    XCTAssertEqual(row("fixture-unsent", app).label, "Free workout · \(september(24)) · 3 sets, Not on your log yet — retry to add it.")
+    XCTAssertLessThan(row("fixture-unsent", app).frame.minY, row("fixture-sending", app).frame.minY, "Needs you comes first")
     inspect("fixture-sending", app)
     XCTAssertFalse(app.buttons["recovery-primary"].exists || app.buttons["recovery-more"].exists)
     app.navigationBars.buttons.element(boundBy: 0).tap()

@@ -266,6 +266,6 @@ struct SessionShareSheet: View {
 
   var expiry: String {
     guard case .live(let share, _, _) = sharing.state else { return "" }
-    return LogPresentation.brief(Instant(ms: share.expiresAt).date)
+    return gym.dates.day(Instant(ms: share.expiresAt), inSentence: true)
   }
 }
