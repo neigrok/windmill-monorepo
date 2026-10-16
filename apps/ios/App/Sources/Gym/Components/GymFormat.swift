@@ -13,7 +13,7 @@ nonisolated enum GymCount {
   }
 }
 
-// The one date formatter (docs/design/ios/ios-redesign.md §3 "Dates"): four forms in the person's locale and calendar,
+// The one date formatter (docs/design/ios/ios-redesign.md §3 "Dates"): five forms in the person's locale and calendar,
 // each day read in the zone the domain reads it in. No view orders a day and a month of its own.
 nonisolated struct GymDate {
   let moment: Moment
@@ -58,6 +58,11 @@ nonisolated struct GymDate {
   // *11:43 PM*, the time alone, as a span draws it.
   func time(_ instant: Instant) -> String {
     Date.FormatStyle(locale: locale, calendar: locale.calendar, timeZone: timeZone(at: instant)).hour().minute().format(instant.date)
+  }
+
+  // *Sep 26 · 6:42 PM*, *Today · 6:42 PM*: a moment that needs its day and its time, joined here so no view joins them.
+  func dayAndTime(_ instant: Instant, inSentence: Bool = false) -> String {
+    "\(day(instant, inSentence: inSentence)) · \(time(instant))"
   }
 
   func rowDay(_ instant: Instant) -> String { rowDay(LocalDay(instant, in: moment.zone)) }

@@ -31,6 +31,19 @@ import DomainKit
     #expect(dates.time(Instant(ms: 1_791_848_580_000)) == "11:43\u{202F}PM")
   }
 
+  @Test func aMomentJoinsItsDayAndItsTimeWithTheYearOnlyWhenItIsAnotherOne() {
+    let dates = formatter()
+    let today = Instant(ms: 1_792_003_320_000), yesterday = Instant(ms: 1_791_934_980_000)
+    let september = Instant(ms: 1_790_448_120_000), lastYear = Instant(ms: 1_758_912_120_000)
+    #expect([dates.dayAndTime(today), dates.dayAndTime(yesterday), dates.dayAndTime(september), dates.dayAndTime(lastYear)]
+            == ["Today · 6:42\u{202F}PM", "Yesterday · 11:43\u{202F}PM", "Sep 26 · 6:42\u{202F}PM", "Sep 26, 2025 · 6:42\u{202F}PM"])
+    #expect([dates.dayAndTime(today, inSentence: true), dates.dayAndTime(yesterday, inSentence: true),
+             dates.dayAndTime(september, inSentence: true)]
+            == ["today · 6:42\u{202F}PM", "yesterday · 11:43\u{202F}PM", "Sep 26 · 6:42\u{202F}PM"])
+    #expect(formatter(offsetSeconds: 36_000).dayAndTime(yesterday) == "Today · 9:43\u{202F}AM")
+    #expect(formatter(locale: "en_GB").dayAndTime(september) == "26 Sep · 18:42")
+  }
+
   @Test func anInstantIsReadOnTheDayItsZonePutsItIn() {
     let east = formatter(offsetSeconds: 36_000), evening = Instant(ms: 1_790_193_600_000)
     #expect([east.rowDay(evening), east.day(evening), east.subtitle(evening), east.time(evening)]
