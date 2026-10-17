@@ -89,16 +89,25 @@ struct ReachBand<Band: View>: ViewModifier {
   }
 }
 
-// A list that scrolls under a fixed head, not a bar, fades its top over the height of its inset: a row passing under the
-// head softens away instead of being cut. With no bar above it, iOS 26 draws no scroll edge of its own here.
-struct SoftTopEdge: ViewModifier {
-  func body(content: Content) -> some View {
-    content.contentMargins(.top, RoomSpace.inset, for: .scrollContent).mask {
-      VStack(spacing: 0) {
-        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: RoomSpace.inset)
-        Rectangle()
+// A scroll view that passes under a fixed head or foot, not a bar, fades that edge over the height of its inset: a line
+// passing it softens away instead of being cut. With no bar there, iOS 26 draws no scroll edge of its own. Inactive, it
+// leaves the content as it is.
+struct SoftEdge: ViewModifier {
+  let edge: VerticalEdge
+  let active: Bool
+  init(_ edge: VerticalEdge, active: Bool = true) { self.edge = edge; self.active = active }
+
+  @ViewBuilder func body(content: Content) -> some View {
+    if active {
+      content.contentMargins(edge == .top ? .top : .bottom, RoomSpace.inset, for: .scrollContent).mask {
+        VStack(spacing: 0) {
+          if edge == .bottom { Rectangle() }
+          LinearGradient(colors: [.clear, .black], startPoint: edge == .top ? .top : .bottom, endPoint: edge == .top ? .bottom : .top)
+            .frame(height: RoomSpace.inset)
+          if edge == .top { Rectangle() }
+        }
       }
-    }
+    } else { content }
   }
 }
 

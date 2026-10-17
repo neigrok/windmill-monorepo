@@ -5,6 +5,8 @@ import re
 
 
 SOURCE_ROOTS = ("Sources", "WorkoutActivityWidget", "WorkoutActivityShared")
+THEME = "Sources/Theme"
+PALETTES = "Sources/Theme/Palettes.swift"
 COLOUR_TYPES = {"Color", "UIColor", "NSColor", "CGColor", "CIColor"}
 COMPONENTS = {"red", "displayP3Red", "green", "blue", "white", "gray", "hue", "saturation", "brightness", "components"}
 TOKEN = re.compile(r"0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|(?:[0-9][0-9_]*(?:\.[0-9_]+)?|\.[0-9]+)(?:[eE][+-]?[0-9_]+)?|[A-Za-z_][\w]*|\$[0-9]+|\S")
@@ -19,8 +21,15 @@ UIKIT_ROLES = {"label", "secondaryLabel", "tertiaryLabel", "quaternaryLabel", "p
 SHAPE_STYLE_ROLES = {"placeholder", "separator"}
 FADES = {"opacity", "withAlphaComponent"}
 NUMBER = re.compile(r"(0[xX][0-9a-fA-F_]+|[0-9][0-9_]*(\.[0-9_]+)?|\.[0-9]+)$")
+FRACTION = re.compile(r"([0-9][0-9_]*)?\.[0-9_]+$")
+SPECIMENS = "OnboardingSpecimen"
+# A fade is a role (ios-redesign §2): these rules hold in Sources/Theme too, where only Palettes.swift makes fades.
+FADE = "a faded colour belongs in Palettes.swift or OnboardingSpecimen as a named role"
+MIX = "a mixed colour belongs in Palettes.swift as a named role"
+LEVEL = "a hierarchical level of a role or the tint is a fade; name it in Palettes.swift"
+FADE_RULES = {FADE, MIX, LEVEL}
 
-# Each entry is a source path, a line fragment and why that line may keep a colour outside Sources/Theme.
+# Each entry is a source path, a line fragment and why that line may keep a colour, or a fade, where it stands.
 ALLOWED = [
     ("Sources/AccountSheet.swift", "foregroundStyle(colorScheme == .dark ? .black : .white).background(colorScheme == .dark ? .white : .black",
      "Apple's own Continue with Apple control keeps its black and white"),
@@ -32,6 +41,30 @@ ALLOWED = [
      "a JPEG has no alpha, so a photo is flattened onto white before encoding"),
     ("WorkoutActivityWidget/WorkoutActivityWidget.swift", ".foregroundStyle(.secondary)",
      "the same view draws on the Island's black and on the lock screen in either appearance; only the system's hierarchy reads on both"),
+    ("Sources/Theme/RoomControls.swift", "AnyShapeStyle(room.onAccent) : AnyShapeStyle(.secondary)",
+     "a disabled primary takes the system's .secondary label, since on-accent would stand white on the system's disabled fill; WCAG 1.4.3 exempts an inactive control"),
+    ("Sources/Theme/RoomControls.swift", ".foregroundStyle(room.ink.tertiary)",
+     "DoorChevron is the ink's .tertiary, as the system draws a NavigationLink's chevron"),
+    ("Sources/Theme/RoomControls.swift", "Text(subtitle).font(.caption).foregroundStyle(.secondary)",
+     "the iOS 18 bar's subtitle keeps the system's label hierarchy, where the system owns the ground"),
+    ("Sources/Gym/Coach/CoachTab.swift", ".opacity(dimmed ? 0.4 : 1)",
+     "the composer's send circle at 40 % is the one control the room dims while it cannot send; WCAG 1.4.3 exempts an inactive control"),
+    ("Sources/AccountSheet.swift", ".disabled(offline).opacity(offline ? 0.4 : 1)",
+     "Apple's own Continue with Apple control draws no disabled state, so it dims while offline disables it; WCAG 1.4.3 exempts an inactive control"),
+    ("Sources/Design.swift", "color.opacity(value == 10 ? 0.78 : 0.45)",
+     "a scale thumb's glow is the colour the thumb shows, one of the mood ramp's eleven or energy, so no one named role holds it"),
+    ("Sources/OnboardingGlimpses.swift", ".stroke(OnboardingSpecimen.openEdge, lineWidth: 2).opacity(reduceMotion ? 0.5 + travel * 0.5 : 1)",
+     "the glimpse's one beat: the open edges light as the dot travels, and stand at 1 at rest"),
+    ("Sources/OnboardingGlimpses.swift", ".opacity(reduceMotion ? 0.28 : breathing ? 0.18 : 0.28)",
+     "the glimpse's one loop: the completed step's halo breathes between 18 % and 28 %"),
+    ("Sources/OnboardingGlimpses.swift", ".opacity(index == 1 ? 0.5 + ignition * 0.5 : 1)",
+     "the glimpse's one beat: the next step ignites as the dot arrives, and stands at 1 at rest"),
+    ("Sources/OnboardingGlimpses.swift", "static let journalPastLine = JournalPalette.inkDim.opacity(0.45)",
+     "a specimen role, private to the glimpse: the journal card's written lines in the rooms miniature"),
+    ("Sources/OnboardingGlimpses.swift", "static let halo = completed.opacity(0.28)",
+     "a specimen role, private to the glimpse: the completed step's halo"),
+    ("Sources/OnboardingGlimpses.swift", "static let unasked = JournalPalette.inkFaint.opacity(0.55)",
+     "a specimen role, private to the glimpse: the mood and energy scales nobody has answered"),
 ]
 
 
@@ -110,9 +143,19 @@ def expressions(items):
     return groups
 
 
+def opening(items, closing):
+    depth = 0
+    for index in range(closing, -1, -1):
+        depth += (items[index].value == ")") - (items[index].value == "(")
+        if depth == 0:
+            return index
+    return -1
+
+
 def violations(source):
     items = tokens(source)
     colour_types = set(COLOUR_TYPES)
+    aliases = set()
     issues = set()
     for index, item in enumerate(items):
         if item.value == "typealias" and index + 3 < len(items) and items[index + 2].value == "=":
@@ -125,6 +168,9 @@ def violations(source):
         end = index + 2
         while end < len(items) and items[end].line == item.line and items[end].value not in ("=", "{", ";"):
             end += 1
+        # A colour alias: a let or var typed as a colour, or set from a role, a specimen, another alias or a colour's construction.
+        if any(token.value in colour_types for token in items[index + 2:end]):
+            aliases.add(name)
         if end == len(items) or items[end].value != "=":
             continue
         start = end + 1
@@ -139,8 +185,12 @@ def violations(source):
             elif token.value in (")", "]", "}"):
                 depth -= 1
             end += 1
+        value = items[start:end]
+        calls = {token.value for token, following in zip(value, value[1:]) if following.value == "("}
+        if calls & colour_types or any(token.value.endswith("Palette") or token.value in aliases or token.value == SPECIMENS for token in value):
+            aliases.add(name)
         if COLOUR_NAME.search(name):
-            for token in items[start:end]:
+            for token in value:
                 if token.value.lower().startswith("0x"):
                     issues.add((token.line, "hex colour ramp belongs in Sources/Theme"))
 
@@ -157,16 +207,32 @@ def violations(source):
         if SEMANTIC_COLOUR.match(item.value) and (implicit or explicit) and after != "(":
             issues.add((item.line, "UIKit semantic colours belong in Sources/Theme"))
         palette_member = before == "." and index > 3 and items[index - 3].value == "." and items[index - 4].value.endswith("Palette")
-        if item.value in LABEL_STYLES and after != "(" and (implicit or palette_member or (before == "." and owner in STYLE_TYPES)):
+        specimen = before == "." and index > 3 and items[index - 3].value == "." and items[index - 4].value == SPECIMENS
+        colour_value = palette_member or specimen or (before == "." and (owner in aliases or owner in ("tint", "foreground") or bool(COLOUR_NAME.search(owner))))
+        if item.value in LABEL_STYLES and after != "(" and before == "." and owner in STYLE_TYPES:
             issues.add((item.line, "the system's label hierarchy belongs in Sources/Theme"))
+        elif item.value in LABEL_STYLES and after != "(" and (implicit or colour_value):
+            issues.add((item.line, LEVEL))
         if item.value in UIKIT_ROLES and after != "(" and before == "." and owner in ("UIColor", "NSColor"):
             issues.add((item.line, "UIKit semantic colours belong in Sources/Theme"))
         if item.value in UIKIT_ROLES and implicit and index > 2 and items[index - 3].value == "uiColor":
             issues.add((item.line, "UIKit semantic colours belong in Sources/Theme"))
         if item.value in SHAPE_STYLE_ROLES and implicit and after != "(" and not (index > 2 and items[index - 3].value == "reason"):
             issues.add((item.line, "the system's label hierarchy belongs in Sources/Theme"))
-        if item.value in FADES and after == "(" and palette_member:
-            issues.add((item.line, "a faded palette role belongs in Sources/Theme as a named role"))
+        if item.value in FADES and after == "(" and before == ".":
+            depth, end, fractions = 1, index + 2, []
+            while end < len(items) and depth:
+                token = items[end].value
+                depth += (token in ("(", "[", "{")) - (token in (")", "]", "}"))
+                if depth == 1 and FRACTION.match(token):
+                    fractions.append(float(token.replace("_", "")))
+                end += 1
+            call = opening(items, index - 2) if owner == ")" else -1
+            constructed = call > 0 and items[call - 1].value in colour_types
+            if colour_value or constructed or any(0 < value < 1 for value in fractions):
+                issues.add((item.line, FADE))
+        if item.value == "mix" and before == "." and after == "(" and index + 2 < len(items) and items[index + 2].value == "with":
+            issues.add((item.line, MIX))
         if item.value in colour_types and after == "(" and index + 2 < len(items) and items[index + 2].value == '"string"':
             issues.add((item.line, "asset colour lookups belong in Sources/Theme"))
         if item.value in ("UIColor", "NSColor") and after == "(" and index + 2 < len(items) and items[index + 2].value == "named":
@@ -226,12 +292,15 @@ def check(source):
         if not root.is_dir():
             raise ValueError(f"Missing shipped source directory: {root}")
         for path in sorted(root.rglob("*.swift")):
-            if path.is_relative_to(source / "Sources/Theme"):
+            relative = path.relative_to(source).as_posix()
+            if relative == PALETTES:
                 continue
             text = path.read_text()
             lines = text.split("\n")
-            relative = path.relative_to(source).as_posix()
+            theme = path.is_relative_to(source / THEME)
             for line, message in violations(text):
+                if theme and message not in FADE_RULES:
+                    continue
                 allowance = next((entry for entry in ALLOWED if relative == entry[0] and entry[1] in lines[line - 1]), None)
                 if allowance:
                     used.add(allowance)
@@ -256,4 +325,4 @@ if __name__ == "__main__":
         raise SystemExit(str(error))
     for line in allowed:
         print(line)
-    print("Theme colour literal check passed: 0 literals outside Sources/Theme.")
+    print("Theme colour literal check passed: 0 literals outside Sources/Theme, 0 fades outside a named role.")

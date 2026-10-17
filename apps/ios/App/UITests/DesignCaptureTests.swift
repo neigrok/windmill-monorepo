@@ -454,18 +454,21 @@ import XCTest
   func testJournalKeepSheetAndSignedInYouLight() { journalKeepSheetAndSignedInYou("light") }
   func testJournalKeepSheetAndSignedInYouDark() { journalKeepSheetAndSignedInYou("dark") }
 
-  func onboarding(_ appearance: String) {
-    let app = launch("onboarding-fresh", appearance: appearance)
+  // Every page at rest, whole. Run on a 375 pt phone for the -375 set.
+  func onboarding(_ appearance: String, arguments: [String] = [], variant: String = "") {
+    let app = launch("onboarding-fresh", appearance: appearance, arguments: arguments)
     for page in 1...4 {
       XCTAssertTrue(app.staticTexts["onboarding-title"].waitForExistence(timeout: 10))
       XCTAssertEqual(app.pageIndicators["onboarding-page-control"].label, "Page \(page) of 4")
-      capture("shell-onboarding-\(page)-\(appearance)", app, settle: 1.6)
+      capture("shell-onboarding-\(page)\(app.frame.width < 380 ? "-375" : "")\(variant)-\(appearance)", app, settle: 1.6)
       app.buttons["onboarding-next"].tap()
     }
     XCTAssertTrue(app.buttons["open-journal"].waitForExistence(timeout: 10))
   }
   func testOnboardingLight() { onboarding("light") }
   func testOnboardingDark() { onboarding("dark") }
+  func testOnboardingAccessibilityLight() { onboarding("light", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"], variant: "-ax3") }
+  func testOnboardingAccessibilityDark() { onboarding("dark", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"], variant: "-ax3") }
 
   func routines(_ appearance: String) {
     let app = launch("shell-last-room", appearance: appearance)

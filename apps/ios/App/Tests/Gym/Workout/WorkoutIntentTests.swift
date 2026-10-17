@@ -1,8 +1,10 @@
 import Foundation
 import Testing
+import Synchronization
 import DomainKit
 import GymDomain
 import SyncCore
+import SyncStore
 @testable import Windmill
 
 @Suite(.serialized) @MainActor struct WorkoutIntentTests {
@@ -86,6 +88,54 @@ import SyncCore
     await handling(app) { WorkoutActivityIntentHandler.open(.routines, surface: .shortcut) }
     #expect(app.selectedRoom == .gym && !app.routinesRequested && !app.gym.workoutHidden && workout.isPresented)
     #expect(outsideEvents(recorder) == ["gym_intent_opened intent=open_workout surface=shortcut"])
+  }
+
+  // The room a door from outside brings forward is the room the next launch opens, even one already in front.
+  @Test(arguments: [WorkoutDoor.routines, .workout]) func theRoomAnOutsideDoorOpensIsTheNextLaunchsRoom(_ door: WorkoutDoor) async throws {
+    let recorder = TelemetryRecorder(), app = try app(recorder)
+    #expect(app.selectedRoom == .journal && app.preferences.string(forKey: "lastRoom") == nil)
+    await handling(app) { WorkoutActivityIntentHandler.open(door, surface: .shortcut) }
+    #expect(app.preferences.string(forKey: "lastRoom") == "gym")
+    let relaunched = try AppModel(runner: app.runner, preferences: app.preferences, telemetry: recorder)
+    #expect(relaunched.selectedRoom == .gym && !relaunched.welcome)
+    app.preferences.removeObject(forKey: "lastRoom")
+    await handling(app) { WorkoutActivityIntentHandler.open(door, surface: .shortcut) }
+    #expect(app.selectedRoom == .gym && app.preferences.string(forKey: "lastRoom") == "gym")
+  }
+
+  // A Log set the phone could not save logs nothing, opens the logger and is recorded as failed.
+  @Test func anOutsideLogSetThePhoneCannotSaveIsRecordedFailed() async throws {
+    let fault = GymStoreFault(), recorder = TelemetryRecorder()
+    let app = try LineageFlowTests().fixture(JournalModelTransport(), crashPoints: CrashPoints { point in
+      if fault.point.withLock({ $0 == point }) { throw AppFailure(message: "private-fault-marker") }
+    }, telemetry: recorder)
+    #expect(app.gym.run(CreateExercise(Exercise(id: fixtures.first, name: "Workout squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)))?.receipt != nil)
+    let workout = try fixtures.begin(app.gym), offer = try #require(workout.activityOffer())
+    recorder.entries.withLock { $0.removeAll() }
+    fault.point.withLock { $0 = .beforeCommit(.commit) }
+    let shortcut = await handling(app) { await WorkoutActivityIntentHandler.logSet(offer: nil, surface: .shortcut) }
+    let activity = await handling(app) { await WorkoutActivityIntentHandler.logSet(offer: offer, surface: .activity) }
+    fault.point.withLock { $0 = nil }
+    #expect(shortcut == .opened && activity == .opened && workout.sets.isEmpty)
+    #expect(outsideEvents(recorder) == ["gym_activity_offer_refused outcome=failed surface=shortcut", "gym_activity_offer_refused outcome=failed surface=activity"])
+  }
+
+  // A Log set a rule of the log refuses, other than the rack having moved on, logs nothing and is recorded as refused.
+  @Test func anOutsideLogSetARuleRefusesIsRecordedRefused() async throws {
+    let recorder = TelemetryRecorder(), app = try app(recorder), gym = app.gym
+    let earlier = try gym.runner.moment().now.ms - 7_200_000, kept = gym.runner.mint(TrainingSet.self)
+    #expect(gym.run(ImportSession(id: gym.runner.mint(Session.self), startedAt: Instant(ms: earlier), finishedAt: Instant(ms: earlier + 600_000),
+      sets: [ImportedSet(id: kept, exerciseId: fixtures.first, weightKg: 60, reps: 5, completedAt: Instant(ms: earlier + 60_000))]))?.refusal == nil)
+    let workout = try fixtures.begin(gym), offer = try #require(workout.activityOffer())
+    var record = try #require(try workout.activityRecord())
+    let taken = WorkoutActivityOffer(ownerID: offer.ownerID, sessionID: offer.sessionID, movementID: offer.movementID,
+                                     weightKg: offer.weightKg, reps: offer.reps, setID: kept.description)
+    record.offer = taken
+    #expect(workout.keepActivity(record) && workout.activityOffer() == taken)
+    recorder.entries.withLock { $0.removeAll() }
+    #expect(await handling(app) { await WorkoutActivityIntentHandler.logSet(offer: taken, surface: .activity) } == .opened)
+    #expect(gym.refusal == .taken(kept.ref, .predicted) && workout.sets.isEmpty)
+    #expect(outsideEvents(recorder) == ["gym_activity_offer_refused outcome=refused surface=activity"])
   }
 
   @Test func aDoorAskedForBeforeTheFirstScreenWaitsForIt() async throws {

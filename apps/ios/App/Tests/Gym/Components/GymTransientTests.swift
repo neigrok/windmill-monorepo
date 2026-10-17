@@ -96,6 +96,26 @@ import SyncSchema
     #expect(GymTransient(gym: gym, held: .init(text: "Workout discarded") {}).dismissal(.held("Workout discarded")) == nil)
   }
 
+  // One swipe sends away the Undo the band shows and every older one beneath it, so no older gesture's Undo rises in its
+  // place; only a gesture made after the swipe raises the band again.
+  @Test func aSwipeSendsAwayEveryUndoBeneathTheOneShown() throws {
+    let telemetry = TelemetryRecorder(), runtime = try GymModelTests().runtime(telemetry: telemetry)
+    let gym = GymModel(runner: runtime.runner, runtime: runtime, telemetry: telemetry)
+    let notes = ["First", "Second", "Third"].map { title in
+      let note = gym.runner.mint(Note.self); gym.run(SaveNoteCall(Note(id: note, title: title))); return note
+    }
+    let older = try #require(gym.run(DeleteNote(notes[0]))?.receipt), newer = try #require(gym.run(DeleteNote(notes[1]))?.receipt)
+    let band = GymTransient(gym: gym)
+    #expect(gym.undoOffers.map(\.id) == [older.gestureId, newer.gestureId] && band.shown?.text == "Note deleted")
+    let shown = try #require(band.shown), swipe = try #require(band.dismissal(shown))
+    swipe()
+    gym.refresh()
+    #expect(band.shown == nil && gym.undoOffers.isEmpty && gym.notes.map(\.id) == [notes[2]])
+    let later = try #require(gym.run(DeleteNote(notes[2]))?.receipt)
+    #expect(gym.undoOffers.map(\.id) == [later.gestureId] && band.shown?.text == "Note deleted")
+    #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_undo" }.map(\.properties) } == [["screen": "gym", "action": "dismiss"]])
+  }
+
   @Test func durableNoticeOutranksUndoAndReturnsAfterANewerFailure() throws {
     let (_, gym) = GymModelTests().fixture()
     let notice = DomainNotice<GymRefusal>(Notice(id: "notice:refused/0", product: "gym", scope: Gym.scope,

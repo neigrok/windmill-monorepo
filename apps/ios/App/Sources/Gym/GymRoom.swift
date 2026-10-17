@@ -49,9 +49,9 @@ struct GymRoom: View {
   var body: some View {
     Group {
       if #available(iOS 26.1, *) {
-        tabs.tabBarMinimizeBehavior(.onScrollDown).tabViewBottomAccessory(isEnabled: hiddenWorkout != nil && !hiddenTabBars.contains(tab)) { accessory }
+        tabs.tabBarMinimizeBehavior(.onScrollDown).tabViewBottomAccessory(isEnabled: accessoryStands) { accessory }
       } else if #available(iOS 26, *) {
-        if hiddenWorkout != nil { tabs.tabBarMinimizeBehavior(.onScrollDown).tabViewBottomAccessory { accessory } }
+        if accessoryStands { tabs.tabBarMinimizeBehavior(.onScrollDown).tabViewBottomAccessory { accessory } }
         else { tabs.tabBarMinimizeBehavior(.onScrollDown) }
       } else { tabs }
     }
@@ -104,6 +104,11 @@ struct GymRoom: View {
 
   // A stack whose front screen hides the tab bar takes the accessory away with it.
   func tabBar(_ stack: Tab, hidden: Bool) { if hidden { hiddenTabBars.insert(stack) } else { hiddenTabBars.remove(stack) } }
+
+  // The accessory stands while a workout is hidden and the selected tab's front screen keeps the tab bar, by this one rule
+  // on every iOS 26 release, whether the system can switch the accessory off (26.1) or the room must leave it out (26.0).
+  static func accessoryStands(workoutHidden: Bool, tab: Tab, hiddenTabBars: Set<Tab>) -> Bool { workoutHidden && !hiddenTabBars.contains(tab) }
+  var accessoryStands: Bool { Self.accessoryStands(workoutHidden: hiddenWorkout != nil, tab: tab, hiddenTabBars: hiddenTabBars) }
 
   // The open workout while the lifter has it hidden; an account changing takes it away.
   var hiddenWorkout: Session? { gym.workoutHidden && !gym.accountTransition ? gym.openSession : nil }

@@ -197,6 +197,22 @@ import SyncTesting
     }
   }
 
+  // VoiceOver hears each ledger row's place and its numbers in words: a logged set as it was lifted, the current and
+  // planned rows as the plan asks, one number where it asks one, and an open target where it asks none.
+  func testLedgerRowsSpeakTheirPlaceAndNumbersInWords() {
+    let set = { (id: String, kind: String, kg: Double, reps: Int) in
+      TrainingSet(id: ID(RecordID(id)), sessionId: ID("session"), exerciseId: ID("back-squat"), weightKg: kg, reps: reps, kind: kind, completedAt: Instant(ms: 0))
+    }
+    let ledger = MovementLedger(sets: [set("warm", "warmup", 60, 5), set("first", "working", 100, 1)],
+                                plan: RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 1, weightKg: 100), SetTarget(reps: 5, weightKg: 102.5), SetTarget(reps: 5), SetTarget()]))
+    XCTAssertEqual(ledger.rows.map { WorkoutLedgerRow(row: $0, unsent: $0.set?.id == ID("first")).spoken }, [
+      "Warmup, logged, 60 kilograms, 5 reps", "Set 1, logged, 100 kilograms, 1 rep, on this phone",
+      "Set 2, current, target 102.5 kilograms, 5 reps", "Set 3, planned, 5 reps", "Set 4, planned, open target",
+    ])
+    let open = MovementLedger(sets: [], plan: nil)
+    XCTAssertEqual(open.rows.map { WorkoutLedgerRow(row: $0, unsent: false).spoken }, ["Set 1, current, open target"])
+  }
+
   func testLargeNumeralsAtLargeAndLargestText() async throws {
     for (name, type) in [("large", DynamicTypeSize.xxxLarge), ("AX", .accessibility5)] {
       for (skin, appearance) in [("light", UIUserInterfaceStyle.light), ("dark", .dark)] {
