@@ -4,6 +4,9 @@ import GymDomain
 import SyncAPI
 import SyncCore
 import SyncEngine
+#if DEBUG && targetEnvironment(simulator)
+import struct SyncModelServer.ServerCall
+#endif
 
 struct RoutinesTab: View {
   let gym: GymModel
@@ -14,10 +17,10 @@ struct RoutinesTab: View {
   @State private var savedID: ID<Routine>?
 
   var body: some View {
-    let waiting = gym.waitingRoutineProposals
+    let proposals = gym.routineProposals
     let receipts = gym.coachRemovalReceipts.filter { $0.outcome != .pending }
     Group {
-      if gym.routines.isEmpty, waiting.isEmpty, receipts.isEmpty, gym.personalCounts[Routine.type, default: 0] == 0, gym.historyKnown {
+      if gym.routines.isEmpty, proposals.isEmpty, receipts.isEmpty, gym.personalCounts[Routine.type, default: 0] == 0, gym.historyKnown {
         ContentUnavailableView {
           Label("No routines yet", systemImage: "list.bullet.rectangle")
         } actions: {
@@ -29,7 +32,7 @@ struct RoutinesTab: View {
       } else {
         List {
           Group {
-            if !receipts.isEmpty || !waiting.isEmpty {
+            if !receipts.isEmpty || !proposals.isEmpty {
               Section {
                 ForEach(receipts, id: \.proposal.id) { receipt in
                   Button { onReviewProposal?(receipt.proposal.id) } label: {
@@ -37,11 +40,13 @@ struct RoutinesTab: View {
                            meta: receipt.outcome == .applied ? "Removed" : "Nothing was applied", trailing: .door)
                   }.accessibilityIdentifier("routine-removal-receipt")
                 }
-                ForEach(waiting, id: \.id) { proposal in
+                // A waiting proposal carries the accent; one out of date reads its settled word alone, as a receipt does.
+                ForEach(proposals, id: \.id) { proposal in
+                  let outOfDate = gym.coachProposalOutOfDate(proposal)
                   Button { onReviewProposal?(proposal.id) } label: {
                     GymRow(title: gym.proposalTitle(proposal), meta: gym.proposalLine(proposal),
-                           leading: .symbol("bubble.left.and.bubble.right", GymPalette.accent), trailing: .door)
-                  }.accessibilityIdentifier("routine-proposal")
+                           leading: outOfDate ? nil : .symbol("bubble.left.and.bubble.right", GymPalette.accent), trailing: .door)
+                  }.accessibilityIdentifier(outOfDate ? "routine-proposal-out-of-date" : "routine-proposal")
                 }
               }
             }
@@ -96,8 +101,10 @@ struct RoutinesTab: View {
         #if DEBUG && targetEnvironment(simulator)
         if ProcessInfo.processInfo.arguments.contains("-routines-proposal-fixture"), gym.coachAccountAvailable, gym.routines.isEmpty {
           var fixture = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "Push A", entries: [RoutineEntry(exerciseId: ID("bench-press"), sets: [SetTarget(reps: 8, weightKg: 60)])]))
+          let heavier = [RoutineEntry(exerciseId: ID("bench-press"), sets: [SetTarget(reps: 8, weightKg: 62.5)])]
           if gym.saveRoutine(&fixture) {
-            gym.run(ProposeRoutine(id: gym.runner.mint(Proposal.self), routineId: fixture.id, name: "Push A", entries: [RoutineEntry(exerciseId: ID("bench-press"), sets: [SetTarget(reps: 8, weightKg: 62.5)])], summary: "A heavier bench target"))
+            if ProcessInfo.processInfo.arguments.contains("-routines-tool-proposal") { Task { await gym.proposeFromAConnectedToolThenEdit(fixture.current, entries: heavier) } }
+            else { gym.run(ProposeRoutine(id: gym.runner.mint(Proposal.self), routineId: fixture.id, name: "Push A", entries: heavier, summary: "A heavier bench target")) }
           }
         }
         #endif
@@ -202,17 +209,24 @@ extension GymModel {
     }
   }
 
-  var waitingRoutineProposals: [Proposal] {
-    let pending = proposals.filter { $0.state == "pending" && !coachProposalOutOfDate($0) }
+  // The proposals Routines draws, newest first: each one still waiting, and a connected tool's gone out of date while it is
+  // the newest proposal on a routine in sight. A Coach proposal out of date leaves for its card; a tool's has no other door.
+  var routineProposals: [Proposal] {
+    let born: [ID<Proposal>: Stamp]
     do {
-      let born: [ID<Proposal>: Stamp] = try runner.read(Routine.scope) { read in
-        try Dictionary(uniqueKeysWithValues: pending.map { ($0.id, try read.repository(Proposal.self).record($0.id, in: .drawn)?.born ?? .unset) })
+      born = try runner.read(Routine.scope) { read in
+        try Dictionary(uniqueKeysWithValues: proposals.map { ($0.id, try read.repository(Proposal.self).record($0.id, in: .drawn)?.born ?? .unset) })
       }
-      return pending.sorted {
-        let a = born[$0.id] ?? .unset, b = born[$1.id] ?? .unset
-        return a == b ? $0.id < $1.id : a > b
-      }
-    } catch { report("gym_read", error); return pending }
+    } catch { report("gym_read", error); born = [:] }
+    let newest = proposals.sorted {
+      let a = born[$0.id] ?? .unset, b = born[$1.id] ?? .unset
+      return a == b ? $0.id < $1.id : a > b
+    }
+    return newest.filter { proposal in
+      guard coachProposalOutOfDate(proposal) else { return proposal.state == "pending" }
+      if case .ask = proposal.provenance { return false }
+      return coachRoutine(proposal) != nil && newest.first { $0.routineId == proposal.routineId }?.id == proposal.id
+    }
   }
 
   func routineHistory(_ id: ID<Routine>) -> [Session] {
@@ -223,14 +237,42 @@ extension GymModel {
     RoutineLines.routine(routine, lastTrained: routineHistory(routine.id).first?.startedAt, historyKnown: historyKnown, moment: log?.moment)
   }
 
-  // A waiting proposal's Routines row names the routine as it stands now.
+  // A proposal's Routines row names the routine as it stands now.
   func proposalTitle(_ proposal: Proposal) -> String {
     CoachCopy.proposalTitle(routine: coachRoutine(proposal)?.name ?? proposal.baseName ?? proposal.proposedName,
                             changes: coachChangeCount(proposal), removal: proposal.intent == "remove")
   }
 
-  // The server stamps a proposal's creation; a proposal the phone has not yet sent shows no time rather than a guessed one.
+  // Who proposed it and when the server stamped it, no time while the phone has not yet sent it; once it can no longer be
+  // applied, its settled word.
   func proposalLine(_ proposal: Proposal) -> String {
-    RoutineLines.proposal(proposal, createdAt: proposalCreatedAt(proposal), dates: log == nil ? nil : dates)
+    if coachProposalOutOfDate(proposal) { return CoachCopy.outOfDate }
+    return RoutineLines.proposal(proposal, createdAt: proposalCreatedAt(proposal), dates: log == nil ? nil : dates)
   }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+extension GymModel {
+  // The connected-tool fixture: a tool proposes on the log, as an MCP tool does, then this phone edits the routine under it.
+  func proposeFromAConnectedToolThenEdit(_ routine: Routine, entries: [RoutineEntry]) async {
+    guard let runtime, let server = runtime.auth.fake, let account else { return }
+    await runtime.engine.flushOnLeave()
+    do {
+      let proposal = Proposal(id: runner.mint(Proposal.self), routineId: routine.id, intent: "revise", proposedName: routine.name,
+                              summary: "A heavier bench target", changes: try ProposalRules.changesBetween(base: routine.entries, proposed: entries),
+                              door: "mcp", connection: "My laptop", agent: "Claude")
+      let fields = JSON.Object(uniqueKeysWithValues: proposal.fields.map { ($0.key, [$0.value, .null]) })
+      let intent: JSON = ["scope": "self/gym", "d": [["t": .string(Proposal.type), "id": proposal.id.json, "born": .null, "life": ["alive", .null], "f": .object(fields)]]]
+      let call = ServerCall(account: account, requestId: nil, tool: "gym.propose_routine_change", args: [:], intents: [intent])
+      guard server.state.withLock({ $0.server.call(call, at: server.now) })?["s"] == "ok" else { self.error = "The connected tool's proposal was refused."; return }
+      runtime.engine.foreground()
+      for _ in 0..<250 where !proposals.contains(where: { $0.id == proposal.id }) {
+        try await Task.sleep(for: .milliseconds(20)); refresh()
+      }
+      guard var edit = try runner.open(routine.id) else { return }
+      edit.current.entries[0].sets = [SetTarget(reps: 8, weightKg: 65)]
+      saveRoutine(&edit)
+    } catch { self.error = "The connected tool's proposal could not be prepared." }
+  }
+}
+#endif

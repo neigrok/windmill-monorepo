@@ -660,6 +660,29 @@ import UIKit
     }
   }
 
+  // A connected tool's proposal that an edit here put out of date keeps its row, Out of date, and its Review says why
+  // where Apply stood, with no Turn this down.
+  func testAConnectedToolsOutOfDateProposalKeepsItsRowInBothAppearances() {
+    for appearance in ["light", "dark"] {
+      let app = launch(appearance, proposal: true, arguments: ["-routines-tool-proposal"])
+      let row = app.buttons["routine-proposal-out-of-date"]
+      XCTAssertTrue(row.waitForExistence(timeout: 15))
+      XCTAssertEqual(row.label, "Push A · 1 change, Out of date")
+      XCTAssertFalse(app.buttons["routine-proposal"].exists)
+      capture(app, "tool-out-of-date-" + appearance)
+      row.tap()
+      XCTAssertTrue(app.descendants(matching: .any)["gym-proposal-review"].waitForExistence(timeout: 5))
+      let line = app.staticTexts["coach-review-out-of-date"]
+      XCTAssertTrue(line.waitForExistence(timeout: 5))
+      XCTAssertTrue(["The routine changed after this was written. Nothing was applied.", "This proposal is out of date. Nothing was applied."].contains(line.label), line.label)
+      XCTAssertTrue(app.staticTexts["A heavier bench target"].exists)
+      XCTAssertFalse(app.buttons["coach-apply-proposal"].exists)
+      XCTAssertFalse(app.buttons["Turn this down"].exists)
+      capture(app, "tool-out-of-date-review-" + appearance)
+      app.terminate()
+    }
+  }
+
   // A pushed screen hides the tab bar; back at Routines' end, its last row stands where it stood, clear of the band.
   func testRoutinesEndStaysClearOfTheBandAfterAPushedScreenPops() {
     let app = launch("light", proposal: true, arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])

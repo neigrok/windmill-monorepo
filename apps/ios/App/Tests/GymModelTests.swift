@@ -281,7 +281,7 @@ import SyncTesting
     let reports = { telemetry.entries.withLock { $0.filter { $0.name == "client_error" }.map(\.properties) } }
     #expect(reports().isEmpty)
     fault.point.withLock { $0 = .read }
-    for _ in 0..<3 { #expect(gym.waitingRoutineProposals.isEmpty) }
+    for _ in 0..<3 { #expect(gym.routineProposals.isEmpty) }
     #expect(reports() == [["operation": "gym_read", "failure_kind": "unexpected"]])
     for _ in 0..<2 { gym.report("gym_action", AppFailure(message: "private injected storage detail")) }
     #expect(reports() == [["operation": "gym_read", "failure_kind": "unexpected"], ["operation": "gym_action", "failure_kind": "unexpected"],

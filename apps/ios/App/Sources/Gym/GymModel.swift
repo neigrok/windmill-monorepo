@@ -58,6 +58,7 @@ final class GymModel {
   var outOfDateProposals: Set<ID<Proposal>> = []
   @ObservationIgnored var shownCoachRemovals: [String: Proposal] = [:]
   @ObservationIgnored var awaitedCoachDecisions: [ID<Proposal>: CoachQueuedDecision] = [:]
+  @ObservationIgnored var stalledCoachDecisions: Set<ID<Proposal>> = []
   @ObservationIgnored var awaitedRecoveries: [ID<Session>: RecoveryAction] = [:]
 
   init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), locale: Locale = .autoupdatingCurrent) {

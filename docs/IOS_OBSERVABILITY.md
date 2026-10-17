@@ -48,9 +48,10 @@ HTTP failures carry method, coarse route family (`/v1/auth`, `/v1/me`, `/v1/sync
 operation, `failure_kind`, optional numeric status label and `duration_ms`. Duration uses a monotonic
 clock through response consumption and decoding. Sync outcomes also cover application of the reply
 to the local store. Expected statuses 400, 401, 403, 404, 409, 410, 422, 426 and 429 are product/API metrics,
-not Sentry Issues, and so is a sync push's 413, which the engine halves or refuses too-large. Coach HTTP or SSE
-`503 ask-not-configured` is an expected unavailable-deployment refusal: `api_request_failed` carries status `503`,
-`gym_ask_outcome` carries `absent`, and the room states the unavailable stance with no composer and no retry.
+not Sentry Issues, and so is a sync push's 413, which the engine halves or refuses too-large. A deployment without Coach
+does not mount `POST /v1/gym/ask`, so a send meets the server's 404 page: `api_request_failed` carries status `404`,
+`gym_ask_outcome` carries `absent`, and the room states the unavailable stance with no composer and no retry. Coach's
+`503 ask-not-configured`, over HTTP or in the stream, reads the same way with status `503`.
 Offline/DNS/connect failures are metrics, and so is a live socket the server or the network drops with no close
 frame; cancellation is quiet. Timeouts, TLS, unexpected HTTP responses and decoding failures are reportable. Sync
 files each once per outage: a retry that fails as the one before it did is a metric alone until its operation
@@ -94,13 +95,13 @@ action `dismiss_ink` once when writing or a tap lifts it; no ink replay action i
 | Appearance | `appearance_chosen` | appearance: light, dark, system; emitted when You's Settings changes it |
 | Update required | `client_update_required` | Android's vocabulary: state: shown with status: 426 once the alert is on screen; action: update (Get the update, from the alert or You), keep (Keep working on this phone); outcome: failed when the destination could not open. trigger: sync (the engine's flag), sign_in (a 426 at sign-in) on every row. Dismissing the could-not-open transient emits nothing |
 | Adoption | `room_adoption_answered` | room: journal, gym; action: add, discard; no counts or identifiers |
-| Gym screens | `gym_screen_viewed` | screen: routines, routine, routine_editor, movement, log, on_this_phone (the list On this phone opens), session, fix_set, record, bodyweight, weigh_in, session_share, coach, history, notes, note, review, connected_log, connected_log_guide (How this works), sources (What Coach read), workout |
+| Gym screens | `gym_screen_viewed` | screen: routines, routine, routine_editor (once a visit to the editor, however often its steps pop; its Add movement and Create movement steps record it too), routine_targets (a movement's Targets in the editor), movement, log, on_this_phone (the list On this phone opens), session, fix_set, record, bodyweight, weigh_in, session_share, coach, history, notes, note, review, connected_log, connected_log_guide (How this works), sources (What Coach read), workout |
 | Outside the app | `gym_activity_set_logged`, `gym_activity_offer_refused`, `gym_intent_opened` | surface: activity (the Live Activity's *Log set*), shortcut (an App Shortcut) on every row; `gym_activity_set_logged`: a set logged durable on the phone; `gym_activity_offer_refused`: outcome: refused (the rack had moved past the offer, or a rule of the log refused the set, and the logger opened), failed (the phone could not save the set and the logger opened, or Windmill could not start to log it and opened instead), absent (a *Log set* shortcut found no workout open); `gym_intent_opened`: intent: start_workout, open_workout (Windmill opened on Routines or on the logger, a *Log set* shortcut with nothing on offer included) |
 | Training | `gym_session_started`, `gym_set_logged`, `gym_session_finished` | screen: workout; outcome: ok, and refused for a Finish the phone cannot queue |
 | Hidden workout | `gym_hidden_workout` | action: hide when the lifter hides the open workout (*Hide workout*, or *Build my routine* on a first workout); action: open with door: accessory (the tab bar's accessory, iOS 26) or row (The log's Hidden row, iOS 18) when the lifter brings it back. A return the room cannot make records nothing and leaves the band's *Gym could not restore this workout. Try again.* |
 | Routines | `gym_routine_saved` | screen: routine_editor, workout; action: create, update (the editor creates or updates, a workout's kept targets update its routine, the receipt's routine is created) |
 | Coach | `gym_ask_started`, `gym_ask_outcome` | screen: coach; outcome: answered, cancelled, failed, refused, capped, fresh, absent, and offline for a send the phone held back with no network; cap: daily, ceiling; duration_ms |
-| Proposals | `gym_proposal_outcome` | screen: review; action: apply, dismiss, retry; outcome: decided, failed, stalled, ok, offline (a decision is decided when the log took it and failed when the log refused it, stalled when unanswered after 15 seconds with no action when the queue cannot be read, and Retry is ok when the log took it, offline when its push got no answer — no network, a refused connection, a deadline — and failed when the log answered with a failure) |
+| Proposals | `gym_proposal_outcome` | screen: review; action: apply, dismiss, retry; outcome: decided, failed, stalled, ok, offline (a decision is decided when the log took it and failed when the log refused it, stalled once a launch when unanswered after 15 seconds, however many Retries then wait, with no action when the queue cannot be read, and Retry is ok when the log took it, offline when its push got no answer — no network, a refused connection, a deadline — and failed when the log answered with a failure) |
 | Connected log | `gym_connect_tool` | action: connect, manage (Connect a tool, a connected credential's row); outcome: ok, failed (whether the browser opened) |
 | Gym actions | `gym_action` | screen: gym, session_share, history (engine actions and saves, a share link minted, copied or revoked, a Coach conversation deleted); outcome: ok, refused, failed; no action payloads |
 | Undo | `gym_undo` | screen: gym, history (a held engine gesture, a held conversation delete); outcome: ok, refused, failed (failed on gym only); action: dismiss, with no outcome, when the lifter sends a held band away and the acts it holds stay, the one shown and every older one (on gym an engine gesture keeps its window; on history the conversation's delete leaves at once) |
@@ -162,8 +163,9 @@ Removal receipts emit the same bounded proposal outcome once, when their durable
 launch that sent them or after a relaunch: the receipt keeps that its outcome was recorded, and a failure to mark it
 reports through `gym_action`. Any other decision records `decided` or `failed` when the log's answer reaches the phone in
 the launch that sent it; one still waiting when the app quits records none. A decision the log has not answered after
-15 seconds emits its action with outcome `stalled`; a queue that cannot be read reports through `gym_read` and the
-stall carries no action. Retry pushes the queued command again and emits action `retry` with the push's outcome.
+15 seconds emits its action with outcome `stalled`, once a launch for that decision, though a Retry's wait or the Review
+opened again runs out on it after; a queue that cannot be read reports through `gym_read` and the stall carries no
+action. Retry pushes the queued command again and emits action `retry` with the push's outcome.
 Reading their local journal reports through `gym_read`; failure to
 acknowledge a shown receipt reports through `gym_action` and leaves it available for retry.
 
