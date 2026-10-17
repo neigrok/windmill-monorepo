@@ -297,7 +297,7 @@ struct RoutineTargetsSheet: View {
         UIAccessibility.post(notification: .announcement, argument: refusal.message)
       }
     }
-    .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "routine_editor"]) }
+    .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "routine_targets"]) }
   }
   private func headField(_ label: String, field: RoutineTargetDraft.Field, placeholder: String, focus target: Focus) -> some View {
     let refused = draft.headRefusal?.field == field

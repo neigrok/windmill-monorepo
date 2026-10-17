@@ -14,7 +14,7 @@ class ThemeLiteralTests(unittest.TestCase):
     def test_rejects_numeric_colour_construction_and_aliases(self):
         examples = [
             "let paint = Color(red: 0.3, green: 0.7, blue: 0.6)",
-            "let paint = SwiftUI.Color(\n .sRGB,\n red: 19 / 255,\n green: 122 / 255,\n blue: 108 / 255\n)",
+            "let paint = SwiftUI.Color(\n .sRGB,\n red: 16 / 255,\n green: 107 / 255,\n blue: 95 / 255\n)",
             "let paint = UIColor { _ in UIColor(red: 0, green: 0, blue: 0, alpha: 1) }",
             "let paint: Color = .init(red: 0.2, green: 0.4, blue: 0.6)",
             "let paint: UIColor = .init(white: 0.5, alpha: 1)",
@@ -39,10 +39,10 @@ class ThemeLiteralTests(unittest.TestCase):
             "let paint: Color = .init(hex: value)",
             "let paint = Color(hex: palette[index]).opacity(0.2)",
             "let paint = Color(hex: \"#5FCDB4\")",
-            "let paint = palette.color(0x5fcdb4, 0x137a6c)",
-            "let paint = colour(dark: 0x5fcdb4, light: 0x137a6c)",
+            "let paint = palette.color(0x5fcdb4, 0x106b5f)",
+            "let paint = colour(dark: 0x5fcdb4, light: 0x106b5f)",
             "let moodRamp: [UInt32] = [\n  0x5e4d2e,\n  0x6e5a34\n]",
-            "let colors = [0x5fcdb4, 0x137a6c]",
+            "let colors = [0x5fcdb4, 0x106b5f]",
         ]
         for example in examples:
             with self.subTest(source=example):
@@ -100,6 +100,47 @@ class ThemeLiteralTests(unittest.TestCase):
             with self.subTest(source=example):
                 self.assertTrue(check_theme_literals.violations(example))
 
+    def test_flags_the_reviewers_four_fades(self):
+        source = """
+        let dim = ShellPalette.inkDim
+        Capsule().fill(dim.opacity(0.45))
+        VStack { scale }.foregroundStyle(faint).opacity(0.55)
+        Text("x").foregroundStyle(.tint.secondary)
+        let paint = GymPalette.ink.mix(with: GymPalette.canvas, by: 0.3)
+        """
+        self.assertEqual([(3, check_theme_literals.FADE), (4, check_theme_literals.FADE), (5, check_theme_literals.LEVEL),
+                          (6, check_theme_literals.MIX)], check_theme_literals.violations(source))
+
+    def test_rejects_a_colour_faded_mixed_or_stepped_down_however_it_is_reached(self):
+        examples = [
+            "Circle().fill(OnboardingSpecimen.completed.opacity(0.28))",
+            "var color: Color { JournalPalette.energy }\nlet glow = color.opacity(value == 10 ? 0.78 : 0.45)",
+            "let tone = Color(\"onboarding/branch\")\nlet paint = tone.opacity(fade)",
+            'let paint = Color("gym/accent").opacity(fade)',
+            "let paint = JournalPalette.uiLamp.withAlphaComponent(alpha)",
+            "let paint = uiInk.withAlphaComponent(0.3)",
+            "Rectangle().fill(GymPalette.accent).opacity(0.4).frame(width: 16)",
+            "Button(action: send) { icon }.opacity(dimmed ? 0.4 : 1)",
+            "Circle().fill(kind).opacity(.4)",
+            'Image(systemName: "x").foregroundStyle(room.ink.tertiary)',
+            'Text("x").foregroundStyle(.foreground.secondary)',
+            'Text("x").foregroundStyle(accent.quaternary)',
+            'Text("x").foregroundStyle(.tint.mix(with: JournalPalette.canvas, by: 0.5))',
+        ]
+        for example in examples:
+            with self.subTest(source=example):
+                self.assertTrue(check_theme_literals.violations(example))
+
+    def test_allows_opacity_as_motion(self):
+        source = """
+        Rectangle().fill(GymPalette.accent).opacity(shown ? 1 : 0).frame(width: 16)
+        content.opacity(bands[index]).offset(y: 8 * (1 - bands[index]))
+        Text("x").opacity(0).transition(.opacity)
+        Rectangle().opacity(!active || Int(now / 0.6).isMultiple(of: 2) ? 1 : 0)
+        lettering.opacity(visible ? 1 : 0)
+        """
+        self.assertEqual([], check_theme_literals.violations(source))
+
     def test_allows_hierarchical_styles_scheme_choices_and_system_values(self):
         source = """
         Text("x").foregroundStyle(.tint)
@@ -138,7 +179,7 @@ class ThemeLiteralTests(unittest.TestCase):
         let recordID = 0x123456
         let count = 25
         let retries = [1, 2, 4]
-        Rectangle().fill(GymPalette.accent).opacity(0.4).frame(width: 16)
+        let blend = item.mix
         let text = "Color(red: 0, green: 0, blue: 0)"
         let raw = #"Color(hex: 0xffffff)"#
         let multiline = """
@@ -153,16 +194,23 @@ class ThemeLiteralTests(unittest.TestCase):
         source = '/* line 1\n line 2 */\nlet text = "hello"\nlet paint = Color(red: 0, green: 0, blue: 0)\n'
         self.assertEqual([(4, "numeric colour components belong in Sources/Theme")], check_theme_literals.violations(source))
 
-    def test_shipped_sources_and_widget_are_scanned_with_only_theme_exempt(self):
+    def test_shipped_sources_and_widget_are_scanned_and_theme_answers_only_for_its_fades(self):
         with TemporaryDirectory() as temporary:
             source = Path(temporary)
             for root in check_theme_literals.SOURCE_ROOTS:
                 (source / root).mkdir()
             theme = source / "Sources/Theme"
             theme.mkdir()
-            (theme / "Palette.swift").write_text("let paint = Color(red: 0.2, green: 0.3, blue: 0.4)")
+            (theme / "Palettes.swift").write_text('static let canvas = Color("gym/canvas")\nstatic let glow = lamp.opacity(0.09)\nlet ink = GymPalette.ink.tertiary\n')
+            controls = theme / "RoomShapes.swift"
+            controls.write_text("let mask = [Color.clear, .black]\nlet paint = Color(red: 0.2, green: 0.3, blue: 0.4)\n")
             (source / "Sources/View.swift").write_text("let paint = GymPalette.accent")
             check_theme_literals.check(source)
+            controls.write_text("let mask = [Color.clear, .black]\nText(title).foregroundStyle(room.ink.opacity(0.6))\n")
+            with self.assertRaisesRegex(ValueError, re.escape(str(controls)) + ":2: error: " + re.escape(check_theme_literals.FADE)) as failure:
+                check_theme_literals.check(source)
+            self.assertNotIn(":1:", str(failure.exception))
+            controls.unlink()
             for name in ("Sources/New/View.swift", "WorkoutActivityWidget/Activity.swift", "WorkoutActivityShared/Theme.swift", "Sources/ThemeCopy/Palette.swift"):
                 with self.subTest(path=name):
                     path = source / name
@@ -184,7 +232,7 @@ class ThemeLiteralTests(unittest.TestCase):
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(0, result.returncode)
             self.assertEqual("Sources/Gym/Coach/CoachTransport.swift:2: allowed: a JPEG has no alpha, so a photo is flattened onto white before encoding\n"
-                             "Theme colour literal check passed: 0 literals outside Sources/Theme.\n", result.stdout)
+                             "Theme colour literal check passed: 0 literals outside Sources/Theme, 0 fades outside a named role.\n", result.stdout)
 
     def test_missing_source_root_fails_closed(self):
         with TemporaryDirectory() as temporary:
@@ -205,7 +253,7 @@ class ThemeLiteralTests(unittest.TestCase):
             path.unlink()
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(0, result.returncode)
-            self.assertEqual("Theme colour literal check passed: 0 literals outside Sources/Theme.\n", result.stdout)
+            self.assertEqual("Theme colour literal check passed: 0 literals outside Sources/Theme, 0 fades outside a named role.\n", result.stdout)
 
 
 if __name__ == "__main__":

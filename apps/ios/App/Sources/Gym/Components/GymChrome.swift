@@ -46,7 +46,58 @@ struct SheetCommit: ViewModifier {
   }
 }
 
+// A pushed screen, or Coach while its composer has focus, hides the tab bar, and the tab bar's accessory goes with it
+// (docs/design/ios/ios-redesign.md §7.18): the room reads this from each tab's stack.
+struct TabBarHidden: PreferenceKey {
+  static let defaultValue = false
+  static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
+}
+
+// A tab's root holds its list's end clear of the tab bar and its accessory: across a pop, which lays the root out for a moment
+// before the bar returns and would clamp the list under it, and as the finger lets go of a bounce that brought the bar back,
+// since a bar that grows under a finger leaves the list's inset where the touch found it. The inset taking up the hold, or a
+// finger, lets it go.
+struct HeldFoot: ViewModifier {
+  struct Foot {
+    var bar: CGFloat = 0
+    var inset: CGFloat = 0
+  }
+  struct Hold {
+    let margin: CGFloat
+    let until: CGFloat
+  }
+
+  @State var foot = Foot()
+  @State var touched: Foot?
+  @State var hold: Hold?
+
+  func body(content: Content) -> some View {
+    content.contentMargins(.bottom, hold?.margin ?? 0, for: .scrollContent)
+      .onDisappear { hold = Hold(margin: foot.inset, until: foot.inset); touched = nil }
+      .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { foot.bar = $0 }
+      .onScrollGeometryChange(for: CGFloat.self) { $0.contentInsets.bottom } action: { _, inset in
+        foot.inset = inset
+        if let hold, inset >= hold.until { self.hold = nil }
+      }
+      .onScrollPhaseChange { _, phase in
+        switch phase {
+        case .tracking, .interacting:
+          hold = nil
+          touched = touched ?? foot
+        default:
+          guard let touched else { return }
+          let grown = foot.bar - touched.bar
+          if grown > 0 && foot.inset == touched.inset { hold = Hold(margin: grown, until: foot.inset + grown) }
+          if phase == .idle { self.touched = nil }
+        }
+      }
+  }
+}
+
 extension View {
+  func gymTabBar(hidden: Bool = true) -> some View {
+    toolbar(hidden ? .hidden : .automatic, for: .tabBar).preference(key: TabBarHidden.self, value: hidden)
+  }
   func sheetCommit(_ title: String, identifier: String, dismissal: String = "Cancel", dismissalIdentifier: String? = nil,
                    disabled: Bool = false, busy: Bool = false, dismiss: @escaping () -> Void, commit: @escaping () -> Void) -> some View {
     modifier(SheetCommit(title: title, identifier: identifier, dismissal: dismissal, dismissalIdentifier: dismissalIdentifier,

@@ -67,4 +67,18 @@ import SyncSchema
   @Test func locationsAreTheCurrentIPhoneTruthTable() {
     #expect(OnboardingPage.allCases.map(\.location) == [nil, "On the web", "In this app", "In this app"])
   }
+
+  // Nothing cuts a sentence: the glimpse gives up height to the text down to its 220 pt floor, and only a page that still
+  // overflows scrolls; at the accessibility sizes the glimpse stands at 260 pt after the text.
+  @Test func theGlimpseShrinksToItsFloorBeforeAnyTextIsCutAndOnlyAPageThatStillOverflowsScrolls() {
+    let pages: [(OnboardingPage, CGFloat, CGFloat, Bool)] = [
+      (.gym, 546, 158, false), (.gym, 545.5, 158, false), (.gym, 426, 158, false), (.gym, 425, 158, false),
+      (.windmill, 478, 100, false), (.windmill, 477, 100, false), (.windmill, .infinity, 0, false),
+      (.gym, 508, 200, true), (.gym, 507, 200, true),
+    ]
+    #expect(pages.map { page, height, text, accessible in
+      let layout = page.layout(height: height, textBlock: text, accessible: accessible)
+      return "\(layout.glimpse) \(layout.scrolls ? "scrolls" : "holds")"
+    } == ["340.0 holds", "339.5 holds", "220.0 holds", "220.0 scrolls", "320.0 holds", "319.0 holds", "320.0 holds", "260.0 holds", "260.0 scrolls"])
+  }
 }

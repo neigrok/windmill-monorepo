@@ -19,6 +19,11 @@ Bind each displayed logging offer to one pre-minted set ID. Repeated taps replay
 advancing to the next set creates a new ID. Validate owner, session and current offer before every
 write. Show unsynced work honestly.
 
+The same Log set, with the same offer, set ID, validation and authentication, also runs from the
+iOS workout control (Control Center, the Lock Screen, the Action button) and the *Log set* App
+Shortcut; [`ios/ios-redesign.md`](../../ios/ios-redesign.md) §7.19 draws them. None of them takes a
+number the rack did not offer.
+
 The activity stale date follows the workout's four-hour idle limit, and a stale presentation must
 remove the logging action. Verify stale rendering, truncation, the minimal
 presentation and locked-action behavior on the supported device matrix before accepting this

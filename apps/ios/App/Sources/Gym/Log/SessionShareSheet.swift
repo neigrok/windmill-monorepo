@@ -45,6 +45,7 @@ nonisolated enum SessionShareState: Equatable, Sendable {
     case .working, .revoked: nil
     }
   }
+  var isLive: Bool { if case .live = self { true } else { false } }
 
   func body(expiry: String = "") -> String {
     switch self {
@@ -232,7 +233,7 @@ struct SessionShareSheet: View {
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
       }.roomBar(.gym)
-      .reachBand {
+      .reachBand(onSurface: sharing.state.isLive) {
         VStack(spacing: 0) {
           if let note = sharing.state.note {
             RoomTransient(message: note, room: .gym).accessibilityIdentifier("gym-share-error")
@@ -249,12 +250,12 @@ struct SessionShareSheet: View {
               } else { owner = gym.account; sharing.getLink() }
             }
           }
-          if case .live = sharing.state {
+          if sharing.state.isLive {
             Button("Revoke the link", role: .destructive) { sharing.revokeLink() }
               .font(.body).foregroundStyle(GymPalette.alarm).frame(minHeight: RoomSpace.minimumTarget)
               .accessibilityIdentifier("gym-share-revoke")
           }
-        }.padding(.bottom, RoomSpace.inset)
+        }.padding(.bottom, RoomSpace.inset).roomMotion(sharing.state.note)
       }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "session_share"]) }
       .onDisappear { sharing.cancel() }
@@ -266,6 +267,6 @@ struct SessionShareSheet: View {
 
   var expiry: String {
     guard case .live(let share, _, _) = sharing.state else { return "" }
-    return LogPresentation.brief(Instant(ms: share.expiresAt).date)
+    return gym.dates.day(Instant(ms: share.expiresAt), inSentence: true)
   }
 }

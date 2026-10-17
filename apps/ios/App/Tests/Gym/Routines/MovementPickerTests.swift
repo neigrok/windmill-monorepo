@@ -70,17 +70,16 @@ import SyncModelServer
       set("set-three3", session: yesterday, exercise: movement.id, weight: 20, reps: 12, kind: "warmup", offset: 20)
     ])
     let result = MovementPickerOptions.matching(query: "custom", catalogue: [movement], selected: [], log: history)
-    #expect(result.matches.first?.meta == "last −5 × 6 · yesterday")
-    #expect(result.matches.map(\.line) == ["Barbell · last −5 × 6 · yesterday"])
+    #expect(result.matches.first?.meta == "−5 × 6 · yesterday")
+    #expect(result.matches.map(\.line) == ["Barbell · −5 × 6 · yesterday"])
   }
 
-  @Test func neverLoggedRequiresACompleteSuccessfulRead() {
+  @Test func aMovementNeverLoggedReadsItsEquipmentAlone() {
     let movement = exercise("movement1", name: "Custom")
-    #expect(MovementPickerOptions.matching(query: "custom", catalogue: [movement], selected: [], log: nil).matches.first?.meta == nil)
-    #expect(MovementPickerOptions.matching(query: "custom", catalogue: [movement], selected: [], log: log(complete: false)).matches.first?.meta == nil)
-    #expect(MovementPickerOptions.matching(query: "custom", catalogue: [movement], selected: [], log: log(), readFailed: true).matches.first?.meta == nil)
-    let logged = MovementPickerOptions.matching(query: "custom", catalogue: [movement], selected: [], log: log())
-    #expect(logged.matches.map(\.meta) == ["never logged"] && logged.matches.map(\.line) == ["Barbell · never logged"])
+    for history in [nil, log(complete: false), log()] {
+      let result = MovementPickerOptions.matching(query: "custom", catalogue: [movement], selected: [], log: history)
+      #expect(result.matches.map(\.meta) == [nil] && result.matches.map(\.line) == ["Barbell"])
+    }
   }
 
   @Test func rankingCountsEachFinishedSessionOnceOverFiftyAndTopsUpCanonically() {

@@ -154,9 +154,10 @@ Onboarding* (`209:69`): `_Glimpse / Roadmap` `210:2`, `_Glimpse / Journal` `210:
   372 dp column on Android. The three-rooms glimpse is three 354 × 100 bands.
 - **Palette.** Every fill is bound to the hidden collection `Onboarding · Colour` (Dark / Light),
   whose values are the shipped family, roadmap, journal and gym tokens; the roadmap kind colours
-  and locked treatments come from `tokens/colors.css`. Gym day uses verdigris `#137A6C` (owner
-  ruling); Android's Daylight skin still ships iris, ledger F44. The build draws the glimpses from
-  its own tokens — it ships no PNGs.
+  and locked treatments come from `tokens/colors.css`. Gym day on the boards uses verdigris
+  `#137A6C` (owner ruling); the iOS app's light `gym/accent` is the darker `#106B5F`
+  (`../ios/ios-redesign.md` §2, ledger Onboarding 9d), and Android's Daylight skin still ships iris,
+  ledger F44. The build draws the glimpses from its own tokens — it ships no PNGs.
 - **Roadmap.** A root (*Learn to sail*, complete, olive, the crown halo), three children (one
   complete terracotta, two available with sky and gold rings), three locked grandchildren on dormant
   edges, one travel head on the lit edge to *Rig the mast*. Available nodes are card-filled with the

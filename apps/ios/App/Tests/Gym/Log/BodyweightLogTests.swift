@@ -41,6 +41,15 @@ import SyncStore
     #expect(BodyweightLogInput.kilograms(82.405) == "82.41")
   }
 
+  @Test func theSheetsCheckmarkWaitsForAWeightItCouldSave() {
+    let saved = Bodyweight.Entry(day: LocalDay("2026-09-26")!, kg: 82.4)
+    let cases: [(String, String?, Bodyweight.Entry?)] = [
+      ("", nil, nil), ("  ", nil, nil), ("19", nil, nil), ("19", "Between 20 and 400 kg — check the number.", nil), ("82.4", nil, nil),
+      ("82.4", nil, saved), ("82.40", nil, saved), ("82.5", nil, saved), (".", nil, saved),
+    ]
+    #expect(cases.map { BodyweightLogInput.canSave($0.0, refusal: $0.1, entry: $0.2) } == [false, false, true, false, true, false, false, true, true])
+  }
+
   @Test func newAndReplacementKeepOneEntryPerDayAndStampSave() throws {
     let (harness, gym) = fixture(), day = try gym.runner.moment().today
     var draft = try gym.logWeighInDraft(day: day)

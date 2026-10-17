@@ -8,10 +8,7 @@ nonisolated struct CoachConnection: Identifiable, Equatable {
   let created: Int64
   let levels: String
   let key: Bool
-  var meta: String {
-    let day = Instant(ms: created).date.formatted(.dateTime.day().month(.abbreviated))
-    return (key ? "API key · " : "") + levels + " · since " + day
-  }
+  func meta(_ dates: GymDate) -> String { (key ? "API key · " : "") + levels + " · since " + dates.day(Instant(ms: created), inSentence: true) }
   struct Grant: Decodable { let clientId: String; let name: String?; let grantedMs: Int64; let scope: String? }
   struct Key: Decodable { let id: String; let name: String?; let createdMs: Int64 }
   struct Grants: Decodable { let grants: [Grant] }
@@ -64,18 +61,9 @@ nonisolated struct CoachConnection: Identifiable, Equatable {
       if error is DecodingError { gym.report("gym_read", error) }
     }
   }
-  // The Gym settings row's meta: what reaches the log, never a sentence (19-connected-log.md, "The native settings row").
-  var summary: String {
-    guard gym.coachAccountAvailable else { return "nothing connected yet" }
-    guard owner == gym.account, let rows else { return "your AI tools" }
-    switch rows.count {
-    case 0: return "nothing connected yet"
-    case 1: return rows[0].name + " · " + rows[0].levels
-    default: return GymCount.of(rows.count, "tool")
-    }
-  }
 }
 
+// What reaches the log from outside tools: the credentials connected, or, with none, what a tool may do above Connect a tool.
 struct ConnectedLogScreen: View {
   let gym: GymModel
   @State var connections: CoachConnections
@@ -85,7 +73,7 @@ struct ConnectedLogScreen: View {
   init(gym: GymModel) { self.gym = gym; _connections = State(initialValue: CoachConnections(gym: gym)) }
   var listed: [CoachConnection] { gym.coachAccountAvailable && connections.owner == gym.account ? connections.rows ?? [] : [] }
   var unknown: Bool { gym.coachAccountAvailable && connections.failed }
-  // Something may reach the log: the list replaces the head line and Manage connections joins the disclosure.
+  // Something may reach the log: the list leads with it, and what tools may do moves behind How this works.
   var drawsConnections: Bool { unknown || !listed.isEmpty }
   var body: some View {
     List {
@@ -95,26 +83,23 @@ struct ConnectedLogScreen: View {
             if unknown {
               Text(connections.connectionRequired ? "Connect to the internet to read your connections." : "Couldn’t read your connections.").foregroundStyle(GymPalette.inkDim)
             }
-            ForEach(listed) { row in GymRow(title: row.name, meta: row.meta) }
+            ForEach(listed) { row in
+              Button { browse("settings", action: "manage") } label: {
+                HStack(spacing: RoomSpace.related) {
+                  GymRow(title: row.name, meta: row.meta(gym.dates))
+                  Image(systemName: "arrow.up.forward").font(.footnote.weight(.semibold)).foregroundStyle(GymPalette.inkFaint).accessibilityHidden(true)
+                }.contentShape(Rectangle())
+              }.buttonStyle(.plain).accessibilityHint("opens in your browser").accessibilityIdentifier("coach-connection-" + row.id)
+            }
+          }
+        } else {
+          ConnectedLogCapabilities {
+            Text("Your log, read by Claude, Cursor or Codex.").font(.subheadline).foregroundStyle(GymPalette.inkDim).textCase(nil)
           }
         }
         Section {
-          GymRow(title: "Read", meta: "sets, workouts, routines, records, notes, weigh-ins")
-          GymRow(title: "Write", meta: "logs sets · saves notes · adds routines · shares workouts · proposes changes")
-          GymRow(title: "Delete", meta: "discards a workout · ends a share")
-        } header: {
-          if !drawsConnections { Text("Your log, read by Claude, Cursor or Codex.").font(.subheadline).foregroundStyle(GymPalette.inkDim).textCase(nil) }
-        } footer: { Text("A routine change waits for your Apply; the rest lands at once.") }
-        Section {
-          if drawsConnections {
-            Button { browse("settings", action: "manage") } label: { Label("Manage connections", systemImage: "arrow.up.forward") }
-              .accessibilityHint("opens in your browser")
-          }
-          DisclosureGroup("How this works") {
-            ForEach(["One URL pasted into your tool. Your browser opens once to approve.",
-              "A shared workout is public for 30 days, until you end it.", "No tool can apply a proposal or edit a logged set.",
-              "Delete is approved on its own, and a discard is permanent.", "End a connection under Settings → Connected tools; a key under API keys."], id: \.self) { Text($0).font(.callout) }
-          }
+          NavigationLink { ConnectedLogGuide(gym: gym, capabilities: drawsConnections) } label: { Text("How this works").foregroundStyle(GymPalette.ink) }
+            .accessibilityIdentifier("coach-connected-how")
         }
       }.listRowBackground(GymPalette.card)
     }.listStyle(.insetGrouped).navigationTitle("Connected log").modifier(GymPage()).accessibilityIdentifier("gym-connected-log")
@@ -125,7 +110,7 @@ struct ConnectedLogScreen: View {
           connect
         }
       }
-      .toolbar(.hidden, for: .tabBar)
+      .gymTabBar()
       .refreshable { await connections.load() }
       .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition)") { await connections.load() }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "connected_log"]) }
@@ -137,7 +122,7 @@ struct ConnectedLogScreen: View {
       if gym.coachAccountAvailable { browse("connect", action: "connect") } else { openAccount?() }
     }.accessibilityHint(gym.coachAccountAvailable ? "opens in your browser" : "")
   }
-  // Connect a tool and Manage connections leave for the browser; the event records whether it opened.
+  // Connect a tool and a credential's row leave for the browser; the event records whether it opened.
   func browse(_ route: String, action: String) {
     guard let base = gym.runtime?.settings.baseURL, let url = URL(string: "/#/" + route, relativeTo: base)?.absoluteURL else {
       browserError = true
@@ -148,5 +133,38 @@ struct ConnectedLogScreen: View {
       gym.telemetry.event("gym_connect_tool", properties: ["action": action, "outcome": accepted ? "ok" : "failed"])
       if !accepted { gym.telemetry.failure("gym_action", kind: "unexpected") }
     }
+  }
+}
+
+// What a connected tool may do with the log, and the one caption that says what waits for the lifter.
+struct ConnectedLogCapabilities<Header: View>: View {
+  @ViewBuilder let header: () -> Header
+  var body: some View {
+    Section {
+      GymRow(title: "Read", meta: "sets, workouts, routines, records, notes, weigh-ins")
+      GymRow(title: "Write", meta: "logs sets · saves notes · adds routines · shares workouts · proposes changes")
+      GymRow(title: "Delete", meta: "discards a workout · ends a share")
+    } header: { header() } footer: { Text("A routine change waits for your Apply; the rest lands at once.") }
+  }
+}
+
+// How this works: the brief's five lines and, while something is connected, what tools may do.
+struct ConnectedLogGuide: View {
+  let gym: GymModel
+  let capabilities: Bool
+  var body: some View {
+    List {
+      Group {
+        Section {
+          ForEach(["One URL pasted into your tool. Your browser opens once to approve.",
+                   "A shared workout is public for 30 days, until you end it.", "No tool can apply a proposal or edit a logged set.",
+                   "Delete is approved on its own, and a discard is permanent.",
+                   "End a connection under Settings → Connected tools; a key under API keys."], id: \.self) { Text($0) }
+        }
+        if capabilities { ConnectedLogCapabilities { EmptyView() } }
+      }.listRowBackground(GymPalette.card)
+    }.listStyle(.insetGrouped).navigationTitle("How this works").modifier(GymPage()).accessibilityIdentifier("gym-connected-guide")
+      .gymTabBar()
+      .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "connected_log_guide"]) }
   }
 }

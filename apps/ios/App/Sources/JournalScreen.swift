@@ -28,6 +28,8 @@ struct JournalScreen: View {
   @ScaledMetric(relativeTo: .body) var bodySize = JournalType.bodySize
   @ScaledMetric(relativeTo: .callout) var echoControlWidth = 60.0
   var reduceMotion: Bool { systemReduceMotion || model.runtime?.settings.board?.hasSuffix("-RM") == true }
+  // What the canvas's end keeps clear: the seat's inset from the edge, the seat, and the same gap above it.
+  static let seatClearance = RoomSpace.minimumTarget + 2 * RoomSpace.inset
   var body: some View {
     NavigationStack {
       journal
@@ -67,7 +69,7 @@ struct JournalScreen: View {
                 }
                 today(width: geo.size.width - 48, scroll: scroll, echoesVisible: echoesVisible)
                   .padding(.horizontal, 24)
-                  .padding(.bottom, focused ? 18 : (model.compactAccountSheet ? 18 : (geo.size.height < 700 ? 12 : 92)) + geo.safeAreaInsets.bottom)
+                  .padding(.bottom, focused ? 18 : ((model.compactAccountSheet ? 18 : Self.seatClearance) + geo.safeAreaInsets.bottom))
                   .contentShape(Rectangle())
                   .gesture(TapGesture().onEnded {
                     if !model.editorReadOnly && model.sheet == nil && model.echoes.readerDay == nil { appendRequest += 1 }
@@ -86,7 +88,7 @@ struct JournalScreen: View {
                 editedBodyAtEnd = nil
               }
               .ignoresSafeArea(.container, edges: focused ? [] : .bottom)
-              .padding(.bottom, focused ? RoomSpace.minimumTarget + RoomSpace.inset : 0)
+              .padding(.bottom, focused ? Self.seatClearance : 0)
           }
           inkNotes(origin: geo.frame(in: .global).origin)
         }
@@ -125,7 +127,7 @@ struct JournalScreen: View {
             }
           } label: {
             Image(systemName: focused ? "checkmark" : "square.and.pencil")
-              .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
+              .contentTransition(RoomMotion.symbol(reduceMotion: reduceMotion))
               .animation(.easeInOut(duration: 0.3), value: focused)
               .font(.system(size: 18)).foregroundStyle(JournalPalette.ink)
           }.buttonStyle(RoomSeatStyle())
@@ -133,6 +135,7 @@ struct JournalScreen: View {
             .accessibilityHint(focused ? "" : "Opens the keyboard on today's page")
             .accessibilityIdentifier(focused ? "done-writing" : "write-today")
             .inkAnchor("write", enabled: inkMounted, frames: $inkFrames)
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { marks.seat = $0 }
             .padding(.trailing, RoomSpace.inset).padding(.bottom, RoomSpace.inset)
         }
       }.simultaneousGesture(SpatialTapGesture(coordinateSpace: .global).onEnded { tap in
@@ -191,11 +194,29 @@ struct JournalScreen: View {
   // The canvas anchors to the page's end; while the ink changes a day's height, its date row is scrolled back in place.
   func changeInk(holding day: String, scroll: ScrollViewProxy, _ change: () -> Void) {
     let row = marks.rows[day]
+    if model.echoes.inkDay != day { marks.opening = day }
     change()
     guard let row else { return }
+    place(day, at: row.minY, scroll: scroll)
+  }
+
+  // An ink that opens under the write seat rises until its end stands an inset above the seat, never past its own start.
+  func clearSeat(_ ink: CGRect, day: String, scroll: ScrollViewProxy) {
+    let clearance = marks.seat.minY - RoomSpace.inset
+    guard let row = marks.rows[day], ink.maxY > clearance, !marks.seat.isEmpty else { return }
+    let rise = min(ink.maxY - clearance, ink.minY - marks.canvas.minY - RoomSpace.inset)
+    guard rise > 0 else { return }
+    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) {
+      place(day, at: row.minY - rise, scroll: scroll)
+    }
+  }
+
+  // Scrolls a day's date row so its top stands at a point on the screen.
+  func place(_ day: String, at top: CGFloat, scroll: ScrollViewProxy) {
+    guard let row = marks.rows[day] else { return }
     let room = marks.canvas.height - row.height
     guard room > 0 else { return }
-    scroll.scrollTo("journal-date-" + day, anchor: UnitPoint(x: 0.5, y: (row.minY - marks.canvas.minY) / room))
+    scroll.scrollTo("journal-date-" + day, anchor: UnitPoint(x: 0.5, y: (top - marks.canvas.minY) / room))
   }
 
   func echoButton(_ day: String, scroll: ScrollViewProxy, visible: Bool) -> some View {
@@ -210,10 +231,19 @@ struct JournalScreen: View {
     }.accessibilityHidden(!visible || model.echoes.pages[day] == nil)
   }
 
-  @ViewBuilder func echoInk(_ day: String, visible: Bool) -> some View {
+  @ViewBuilder func echoInk(_ day: String, visible: Bool, scroll: ScrollViewProxy) -> some View {
     if visible && model.echoes.inkDay == day {
       JournalEchoInk(echoes: model.echoes, day: day) { match in model.echoes.walk(from: day, to: match) }
-        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { marks.ink = $0 }
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { ink in
+          marks.ink = ink
+          guard marks.opening == day else { return }
+          marks.opening = nil
+          // An opening ink reports frames from before its date row is held, so the seat is checked once they settle.
+          Task {
+            try? await Task.sleep(for: .milliseconds(80))
+            if model.echoes.inkDay == day, let ink = marks.ink { clearSeat(ink, day: day, scroll: scroll) }
+          }
+        }
         .onDisappear { marks.ink = nil }
     }
   }
@@ -228,7 +258,7 @@ struct JournalScreen: View {
         echoButton(day.day.text, scroll: scroll, visible: echoesVisible)
       }.frame(minHeight: 44).modifier(DateRowMark(day: day.day.text, marks: marks))
       pastBody(day.document.body, day: day.day.text, width: width, echoesVisible: echoesVisible)
-      echoInk(day.day.text, visible: echoesVisible)
+      echoInk(day.day.text, visible: echoesVisible, scroll: scroll)
       if !scales.isEmpty {
         Text(scales.joined(separator: " · ")).font(ShellType.meta).monospacedDigit().foregroundStyle(JournalPalette.inkDim)
       }
@@ -299,7 +329,7 @@ struct JournalScreen: View {
               HStack(alignment: .top, spacing: 3) {
                 Rectangle().fill(JournalPalette.lamp).frame(width: 1.5, height: bodySize * 1.4)
                 if model.showPlaceholder {
-                  Text(placeholder).font(JournalType.body).lineSpacing(JournalType.lineSpacing).foregroundStyle(JournalPalette.inkFaint)
+                  Text("Start anywhere.").font(JournalType.body).lineSpacing(JournalType.lineSpacing).foregroundStyle(JournalPalette.inkFaint)
                 }
               }.accessibilityHidden(true)
               if model.showPrivacy {
@@ -319,7 +349,7 @@ struct JournalScreen: View {
           if !model.editorReadOnly && model.sheet == nil && model.echoes.readerDay == nil && !focused { focused = true }
         }, including: focused ? .subviews : .all)
       if !focused {
-        echoInk(model.editorDay.text, visible: echoesVisible).padding(.bottom, 8)
+        echoInk(model.editorDay.text, visible: echoesVisible, scroll: scroll).padding(.bottom, 8)
         if model.scalesDue {
           HStack {
             Text("How did today feel?").font(ShellType.secondaryAction); Spacer()
@@ -347,11 +377,8 @@ struct JournalScreen: View {
     }.foregroundStyle(JournalPalette.ink)
   }
 
-  // While the ink notes say Just start typing, the placeholder only says where to begin.
-  var placeholder: String { model.inkVisible ? "Start anywhere." : "Start anywhere. Nothing here is graded." }
-
   func editorHeight(width: CGFloat) -> CGFloat {
-    let text = model.document.body.isEmpty ? "Start anywhere. Nothing here is graded." : model.document.body + " "
+    let text = model.document.body.isEmpty ? "Start anywhere." : model.document.body + " "
     let font = JournalType.bodyFont(size: bodySize)
     return max((font.lineHeight + JournalType.lineSpacing) * 3, JournalBodyText.height(for: text, width: width, fontSize: bodySize))
   }
@@ -365,9 +392,11 @@ struct JournalScreen: View {
 // Screen positions kept outside SwiftUI's state, so scrolling never redraws the room.
 final class CanvasMarks {
   var canvas = CGRect.zero
+  var seat = CGRect.zero
   var rows: [String: CGRect] = [:]
   var tabs: [String: CGRect] = [:]
   var ink: CGRect?
+  var opening: String?
   func inEcho(_ point: CGPoint) -> Bool { ink?.contains(point) == true || tabs.values.contains { $0.contains(point) } }
 }
 

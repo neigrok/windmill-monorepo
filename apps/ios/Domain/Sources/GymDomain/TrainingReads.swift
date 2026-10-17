@@ -13,6 +13,8 @@ public enum GymEstimate {
     guard value(weightKg: weightKg, reps: reps, kind: kind, rpe: rpe) != nil else { return nil }
     return Quantum(1)!.rounded(weightKg * 100) * Double(reps == 1 ? 30 : 30 + reps)
   }
+
+  public static func stated(_ e1rm: Double) -> Double { Quantum(0.1)!.rounded(e1rm) }
 }
 
 public struct SessionReadout: Equatable, Sendable {
@@ -281,30 +283,42 @@ public struct MovementProgress: Equatable, Sendable {
   }
 }
 
-// A log's records, worked out in one pass for a reader that looks them up per row: each movement's run of new bests,
-// and the record a session set — the first of its movements whose best it is.
+// The log's new bests: a movement's first estimate is its baseline; a new best beats the best before it as stated.
 public struct ProgressRecords: Equatable, Sendable {
+  public struct Record: Equatable, Sendable {
+    public let point: MovementProgress.Point
+    public let previous: MovementProgress.Point
+    public let estimate: Double
+    public let gain: Double
+  }
   public let progress: StatsProgress
-  public let movements: [ID<Exercise>: [MovementProgress.Point]]
-  public let sessions: [ID<Session>: MovementSessionFact]
+  public let movements: [ID<Exercise>: [Record]]
+  public let sessions: Set<ID<Session>>
 
   public init(_ progress: StatsProgress) {
     self.progress = progress
-    var points: [ID<Exercise>: [MovementProgress.Point]] = [:]
-    for session in progress.sessions {
+    var series: [ID<Exercise>: [(point: MovementProgress.Point, estimate: Double)]] = [:]
+    for session in progress.sessions where progress.isComplete {
       for fact in session.movements {
-        points[fact.exerciseId, default: []].append(MovementProgress.Point(id: session.sessionId, startedAt: session.startedAt, fact: fact))
+        guard let estimate = fact.estimate else { continue }
+        let point = MovementProgress.Point(id: session.sessionId, startedAt: session.startedAt, fact: fact)
+        series[fact.exerciseId, default: []].append((point, GymEstimate.stated(estimate.e1rm)))
       }
     }
-    let movements = Dictionary(uniqueKeysWithValues: points.map { id, points in
-      (id, MovementProgress(exerciseId: id, isComplete: progress.isComplete, sessions: points).records)
-    })
-    let bests = movements.mapValues { Set($0.map(\.id)) }
-    var sessions: [ID<Session>: MovementSessionFact] = [:]
-    for session in progress.sessions {
-      sessions[session.sessionId] = session.movements.first { bests[$0.exerciseId]?.contains(session.sessionId) == true }
+    var movements: [ID<Exercise>: [Record]] = [:]
+    for (id, estimates) in series {
+      guard var best = estimates.first else { continue }
+      var run: [Record] = []
+      for next in estimates.dropFirst() {
+        let gain = GymEstimate.stated(next.estimate - best.estimate)
+        guard gain > 0 else { continue }
+        run.append(Record(point: next.point, previous: best.point, estimate: next.estimate, gain: gain))
+        best = next
+      }
+      if !run.isEmpty { movements[id] = run }
     }
-    self.movements = movements; self.sessions = sessions
+    self.movements = movements
+    sessions = Set(movements.values.flatMap { $0.map(\.point.id) })
   }
 }
 
@@ -317,7 +331,7 @@ extension TrainingLog {
 }
 
 public enum Readout {
-  public static let noRoutine = "Free session"
+  public static let noRoutine = "Free workout"
   public static let openTarget = "open"
   static let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
@@ -333,8 +347,7 @@ public enum Readout {
 
   public static func effort(weightKg: Double, reps: Int, units: GymUnits = .kg) -> String { "\(weight(weightKg, units: units)) × \(reps)" }
   public static func estimatedWeight(_ e1rm: Double, units: GymUnits = .kg) -> String {
-    let displayed = units == .lb ? e1rm / GymUnits.kilogramsPerPound : e1rm
-    return weight(Quantum(0.1)!.rounded(displayed))
+    weight(GymEstimate.stated(units == .lb ? e1rm / GymUnits.kilogramsPerPound : e1rm))
   }
   public static func estimate(_ e1rm: Double, units: GymUnits = .kg) -> String { "e1RM \(estimatedWeight(e1rm, units: units))" }
   public static func repTarget(_ reps: Int?) -> String { reps.map(String.init) ?? "max" }

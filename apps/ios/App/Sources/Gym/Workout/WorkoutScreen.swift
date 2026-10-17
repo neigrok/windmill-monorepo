@@ -20,7 +20,8 @@ struct WorkoutScreen: View {
 
   init(gym: GymModel) { self.gym = gym; workout = gym.workout }
   var navigation: some View {
-    NavigationStack {
+    let dates = gym.dates
+    return NavigationStack {
       Group {
         if let session = workout.session {
           if session.isOpen { live(session) }
@@ -37,12 +38,12 @@ struct WorkoutScreen: View {
         old == nil && new != nil
       }
       .roomTitle(workout.session?.name ?? Readout.noRoutine,
-                 subtitle: workout.session.flatMap { $0.isOpen ? $0.startedAt.date.formatted(date: .omitted, time: .shortened) : nil })
+                 subtitle: workout.session.flatMap { session in session.isOpen ? dates.time(session.startedAt) : nil })
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         if workout.session?.isOpen == true {
           ToolbarItem(placement: .topBarLeading) {
-            Button("This session", systemImage: "list.bullet") { assembly = true }.labelStyle(.iconOnly)
+            Button("This workout", systemImage: "list.bullet") { assembly = true }.labelStyle(.iconOnly)
               .accessibilityIdentifier("workout-assembly")
           }
           ToolbarItem(placement: .confirmationAction) {
@@ -149,13 +150,13 @@ struct WorkoutScreen: View {
           Text(gym.catalogue.find(workout.selected ?? ID("missing"))?.name ?? "Movement")
             .font(typeSize.isAccessibilitySize ? .caption.weight(.bold) : .title2.weight(.bold))
             .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity)
-        }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).accessibilityHint("Open this session’s movements")
+        }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).accessibilityHint("Open this workout’s movements")
         if let position {
           WorkoutCircle(title: "Next movement", symbol: "chevron.right") { workout.select(order[position.index + 1]) }
             .disabled(position.index + 1 >= position.count || workout.paging).accessibilityIdentifier("workout-next")
         }
       }
-      if !typeSize.isAccessibilitySize { WorkoutFacts(workout: workout, plan: workout.entry?.sets) }
+      if !typeSize.isAccessibilitySize { WorkoutFacts(workout: workout, planLine: workout.selected.flatMap { workout.ledger($0).planLine }) }
     }.padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.inset)
   }
   func updateAwake() {
@@ -168,82 +169,101 @@ struct WorkoutScreen: View {
   }
 }
 
-// One movement's sets in the order they were logged, then the current set and the plan still ahead.
+// One movement's sets in the order they were logged, then the current set and the plan still ahead. Logging a set turns the
+// current row into it and scrolls the next row into the current slot (docs/design/ios/ios-redesign.md §5 Motion).
 struct WorkoutLedger: View {
   let gym: GymModel
   let workout: WorkoutState
   let exerciseId: ID<Exercise>
   let fix: (TrainingSet) -> Void
   @Environment(\.dynamicTypeSize) var typeSize
+  @Environment(\.accessibilityReduceMotion) var reduceMotion
   var body: some View {
-    let sets = workout.sets.filter { $0.exerciseId == exerciseId }
-    let working = sets.filter { $0.kind == "working" }.count
-    let targets = workout.session?.plan?.entries.first { $0.exerciseId == exerciseId }?.sets ?? []
-    let current = working < targets.count ? Readout.setTarget(targets[working]) : Readout.openTarget
+    let ledger = workout.ledger(exerciseId)
     let unsent = gym.unsentSets(workout.sets)
+    let fixable = !(workout.paging || workout.finishing || workout.finishQueued || gym.accountTransition)
     ScrollViewReader { scroll in
     List {
       if typeSize.isAccessibilitySize {
         Section {
-          WorkoutFacts(workout: workout, plan: targets, position: workout.walk.position(of: exerciseId)).frame(maxWidth: .infinity)
+          WorkoutFacts(workout: workout, planLine: ledger.planLine, position: workout.walk.position(of: exerciseId)).frame(maxWidth: .infinity)
         }.listRowBackground(GymPalette.canvas)
       }
+      // Every row is the same view whatever its place, so the row a set is logged into keeps its identity and its mark: its
+      // modifiers stay put, and only a logged set is a button that opens Fix set.
       Section {
-        ForEach(Array(sets.enumerated()), id: \.element.id) { index, set in
-          let ordinal = sets.prefix(index + 1).filter { $0.kind == "working" }.count
-          let name = set.kind == "working" ? "Set \(ordinal)" : set.kind.capitalized
-          Button { fix(set) } label: {
-            WorkoutLedgerRow(marker: SetRow.marker(set, in: sets),
-                             readout: Readout.effort(weightKg: set.weightKg, reps: set.reps),
-                             state: unsent.contains(set.id) ? .unsent : .sent)
-          }.disabled(workout.paging || workout.finishing || workout.finishQueued || gym.accountTransition)
-            .accessibilityLabel("\(name), logged, \(Readout.weight(set.weightKg)) kg, \(set.reps) reps\(unsent.contains(set.id) ? ", on this phone" : "")")
-            .accessibilityHint("Correct this set").accessibilityIdentifier("workout-set-\(set.id.record)")
-        }
-        WorkoutLedgerRow(marker: "\(working + 1)", readout: current, state: .current)
-          .accessibilityElement(children: .combine).accessibilityLabel("Set \(working + 1), current, target \(current)")
-          .accessibilityIdentifier("workout-current-set").id("current")
-        if working + 1 < targets.count {
-          ForEach((working + 1)..<targets.count, id: \.self) { index in
-            WorkoutLedgerRow(marker: "\(index + 1)", readout: Readout.setTarget(targets[index]), state: .planned)
-              .accessibilityElement(children: .ignore).accessibilityLabel("Set \(index + 1), planned, \(Readout.setTarget(targets[index]))")
-          }
+        ForEach(ledger.rows) { row in
+          WorkoutLedgerRow(row: row, unsent: row.set.map { unsent.contains($0.id) } ?? false)
+            .contentShape(Rectangle())
+            .onTapGesture { if let set = row.set, fixable { fix(set) } }
+            .accessibilityRemoveTraits(row.set == nil ? [.isButton, .isSelected] : .isSelected)
+            .accessibilityAddTraits(row.set == nil ? .isStaticText : .isButton)
+            .accessibilityRespondsToUserInteraction(row.set != nil)
+            .accessibilityHint(row.set == nil ? "" : "Opens Fix set.")
+            .accessibilityAction { if let set = row.set, fixable { fix(set) } }
         }
       }.listRowBackground(GymPalette.card)
     }.listStyle(.insetGrouped).listSectionSpacing(.compact)
-      .contentMargins(.bottom, RoomSpace.minimumTarget, for: .scrollContent).modifier(GymPage()).modifier(SoftTopEdge())
-      .onAppear { scroll.scrollTo("current", anchor: .bottom) }
-      .onChange(of: sets.count) { _, _ in scroll.scrollTo("current", anchor: .bottom) }
+      .contentMargins(.bottom, RoomSpace.minimumTarget, for: .scrollContent).modifier(GymPage()).modifier(SoftEdge(.top))
+      .onAppear { scroll.scrollTo(ledger.current.id, anchor: .bottom) }
+      .onChange(of: ledger.sets.count) { _, _ in
+        withAnimation(reduceMotion ? nil : .spring) { scroll.scrollTo(ledger.current.id, anchor: .bottom) }
+      }
     }
   }
 }
 
-// One line of the ledger: the set's place, its numbers, and its state at the trailing edge.
+// One line of the ledger, read aloud as one element: the set's place, its numbers and its mark at the trailing edge. The
+// current row's dot turns into the logged set's check on the system spring; under Reduce Motion each change is a 200 ms fade.
 struct WorkoutLedgerRow: View {
-  enum State { case sent, unsent, current, planned }
-  let marker: String
-  let readout: String
-  let state: State
+  let row: MovementLedger.Row
+  let unsent: Bool
+  @Environment(\.accessibilityReduceMotion) var reduceMotion
+
   var body: some View {
+    let mark: (symbol: String, colour: Color) = switch row.place {
+    case .logged: unsent ? ("iphone", GymPalette.inkDim) : ("checkmark", GymPalette.done)
+    case .current, .planned: ("circle.fill", GymPalette.accent)
+    }
     HStack(spacing: RoomSpace.inset) {
-      Text(marker).foregroundStyle(state == .current ? GymPalette.accent : state == .planned ? GymPalette.inkFaint : GymPalette.inkDim)
+      Text(row.marker).foregroundStyle(row.place == .current ? GymPalette.accent : row.place == .planned ? GymPalette.inkFaint : GymPalette.inkDim)
         .frame(minWidth: 24, alignment: .leading)
-      Text(readout).foregroundStyle(state == .planned ? GymPalette.inkFaint : GymPalette.ink)
+      Text(row.reading).foregroundStyle(row.place == .planned ? GymPalette.inkFaint : GymPalette.ink)
+        .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion))
       Spacer(minLength: RoomSpace.related)
-      switch state {
-      case .sent: Image(systemName: "checkmark").foregroundStyle(GymPalette.done)
-      case .unsent: Image(systemName: "iphone").foregroundStyle(GymPalette.inkDim)
-      case .current: Circle().fill(GymPalette.accent).frame(width: RoomSpace.related, height: RoomSpace.related)
-      case .planned: EmptyView()
-      }
-    }.font(.body.monospacedDigit()).frame(minHeight: RoomSpace.minimumTarget)
+      Image(systemName: mark.symbol).font(row.set == nil ? .system(size: RoomSpace.related) : .body)
+        .foregroundStyle(mark.colour).opacity(row.place == .planned ? 0 : 1)
+        .contentTransition(RoomMotion.symbol(reduceMotion: reduceMotion))
+        .accessibilityHidden(true).accessibilityRemoveTraits(.isSelected)
+    }.font(.body.monospacedDigit())
+      .roomMotion(row).roomMotion(unsent)
+      .accessibilityElement(children: row.place == .planned ? .ignore : .combine)
+      .accessibilityLabel(spoken)
+      .accessibilityIdentifier(row.set.map { "workout-set-\($0.id.record)" } ?? (row.place == .current ? "workout-current-set" : ""))
+  }
+
+  var spoken: String {
+    switch row.place {
+    case .logged(let set):
+      let name = set.kind == SetKind.working.rawValue ? "Set \(row.marker)" : set.kind.capitalized
+      return "\(name), logged, \(Readout.weight(set.weightKg)) kilograms, \(GymCount.of(set.reps, "rep"))\(unsent ? ", on this phone" : "")"
+    case .current: return "Set \(row.marker), current, \(asked.map { "target " + $0 } ?? "open target")"
+    case .planned: return "Set \(row.marker), planned, \(asked ?? "open target")"
+    }
+  }
+
+  // The numbers the plan asks for, in words: the load, the reps, or both; nil when it asks for neither.
+  var asked: String? {
+    let numbers = [row.target?.weightKg.map { "\(Readout.weight($0)) kilograms" }, row.target?.reps.map { GymCount.of($0, "rep") }].compactMap { $0 }
+    return numbers.isEmpty ? nil : numbers.joined(separator: ", ")
   }
 }
 
-// The movement's plan and the one clock line under its name, led by its place in the walk where the head has no room for it.
+// The movement's plan line, where it says what the ledger does not, and the one clock line under its name, led by its place
+// in the walk where the head has no room for it.
 struct WorkoutFacts: View {
   let workout: WorkoutState
-  let plan: [SetTarget]?
+  let planLine: String?
   var position: (index: Int, count: Int)?
   static func eyebrow(_ position: (index: Int, count: Int)) -> some View {
     Text("Movement \(position.index + 1) of \(position.count)").font(.caption).textCase(.uppercase).foregroundStyle(GymPalette.inkFaint)
@@ -251,9 +271,7 @@ struct WorkoutFacts: View {
   var body: some View {
     VStack(spacing: RoomSpace.small) {
       if let position { Self.eyebrow(position) }
-      if let plan, !plan.isEmpty {
-        Text("plan \(Readout.target(plan))").font(.subheadline).monospacedDigit().foregroundStyle(GymPalette.inkDim)
-      }
+      if let planLine { Text(planLine).font(.subheadline).monospacedDigit().foregroundStyle(GymPalette.inkDim) }
       TimelineView(.periodic(from: .now, by: 1)) { _ in
         if let clocks = workout.clocks {
           HStack(spacing: 0) {
@@ -287,13 +305,16 @@ struct WorkoutCircle: View {
 struct WorkoutRack: View {
   @Bindable var workout: WorkoutState
   let edit: (SetKeypad.Field) -> Void
+  @Environment(\.accessibilityReduceMotion) var reduceMotion
   var body: some View {
     VStack(spacing: RoomSpace.related) {
-      WeightInstrument(weightKg: $workout.weightKg, identifier: "workout-weight", alignment: .center) { edit(.weight) }
+      WeightInstrument(weightKg: $workout.weightKg, identifier: "workout-weight") { edit(.weight) }
       HStack(spacing: RoomSpace.related) {
         WorkoutCircle(title: "Fewer reps", symbol: "minus") { workout.reps = max(1, workout.reps - 1) }
         Button { edit(.reps) } label: {
           Text(GymCount.of(workout.reps, "rep")).font(.title3).monospacedDigit()
+            .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: Double(workout.reps)))
+            .roomMotion(workout.reps)
             .frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget)
         }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).accessibilityIdentifier("workout-reps")
         WorkoutCircle(title: "More reps", symbol: "plus") { workout.reps = min(99, workout.reps + 1) }

@@ -5,6 +5,7 @@ import GymDomain
 import SyncAPI
 import SyncCore
 import SyncEngine
+import struct SyncReplica.OutboxEntry
 import SyncSchema
 import SyncStore
 
@@ -15,6 +16,7 @@ final class GymModel {
   let runtime: AppRuntime?
   let telemetry: any Telemetry
   let rest: GymRESTClient
+  let locale: Locale
   var log: TrainingLog? { didSet { logRecordsRead = nil } }
   // The log's records, worked out on the first read after the log changes (Log/LogPresentation.swift).
   @ObservationIgnored var logRecordsRead: ProgressRecords?
@@ -35,7 +37,9 @@ final class GymModel {
   var refusal: GymRefusal?
   var error: String?
   var readFailed = false
-  var undoOffers: [UndoOffer] = []
+  var undoOffers: [GymUndoOffer] = []
+  // The offers whose band the lifter swiped away: the room offers them no more, and their holds run out as they would.
+  @ObservationIgnored var dismissedUndos: Set<String> = []
   // The room's refusals: undismissed, and none a saved workout owns, since that one is its row's on The log.
   var notices: [DomainNotice<GymRefusal>] = []
   // Every gym notice the replica keeps, dismissed ones too: the saved workouts' review reads their reasons here.
@@ -51,12 +55,14 @@ final class GymModel {
   @ObservationIgnored var adoptionReadThrough: UInt64?
   @ObservationIgnored var proposalReadReplica: String?
   var coachRemovalReceipts: [RoutineRemovalReceipt] = []
+  var outOfDateProposals: Set<ID<Proposal>> = []
   @ObservationIgnored var shownCoachRemovals: [String: Proposal] = [:]
   @ObservationIgnored var awaitedCoachDecisions: [ID<Proposal>: CoachQueuedDecision] = [:]
+  @ObservationIgnored var stalledCoachDecisions: Set<ID<Proposal>> = []
   @ObservationIgnored var awaitedRecoveries: [ID<Session>: RecoveryAction] = [:]
 
-  init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry()) {
-    self.runner = runner; self.runtime = runtime; self.telemetry = telemetry
+  init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), locale: Locale = .autoupdatingCurrent) {
+    self.runner = runner; self.runtime = runtime; self.telemetry = telemetry; self.locale = locale
     rest = GymRESTClient(runtime: runtime, telemetry: telemetry)
     runtime?.gymBinding.gym = self
     refresh()
@@ -65,6 +71,13 @@ final class GymModel {
   var sessions: [Session] { log?.drawnSessions ?? [] }
   var sets: [TrainingSet] { log?.sets ?? [] }
   var openSession: Session? { log?.open }
+  // Every date the room shows, in its locale, read at the log's moment, or at the device's before the log is read.
+  var dates: GymDate { log.map { GymDate($0.moment, locale: locale) } ?? GymDate(locale: locale) }
+  // When the log took a proposal: its record's server stamp, none while the phone has not yet sent it.
+  func proposalCreatedAt(_ proposal: Proposal) -> Instant? {
+    do { return try runner.read(Gym.scope) { try $0.repository(Proposal.self).record(proposal.id, in: .stored)?.rc }.map { Instant(ms: $0) } }
+    catch { report("gym_read", error); return nil }
+  }
   var accountTransition: Bool { accountChanging || replicaChanging }
   func accountTransitionChanged() {
     existingWorkoutActivity?.schedule()
@@ -72,14 +85,14 @@ final class GymModel {
     if accountTransition { rest.cancel() }
   }
   var hasData: Bool { personalCounts.values.contains { $0 > 0 } }
-  var phoneSummary: String {
+  var phoneSummary: String? {
     let kinds = [(Routine.type, "routine"), (Session.type, "workout"), (WeighIn.type, "weigh-in"), (Note.type, "note"),
                  (Exercise.type, "custom movement")]
     let lines = kinds.compactMap { type, noun -> String? in
       let count = personalCounts[type] ?? 0
       return count == 0 ? nil : GymCount.of(count, noun)
     }
-    return lines.isEmpty ? "nothing yet" : lines.joined(separator: " · ")
+    return lines.isEmpty ? nil : lines.joined(separator: " · ")
   }
 
   // The sets the log has not confirmed as this phone holds them: absent there, hidden or changed since.
@@ -212,7 +225,7 @@ final class GymModel {
       publish(\.bodyweight, snapshot.bodyweight); publish(\.preferences, snapshot.preferences)
       publish(\.isAnonymous, snapshot.anonymous); publish(\.personalCounts, snapshot.counts); publish(\.workoutHidden, snapshot.hidden)
       if snapshot.planUnreadable { report("gym_read", UnreadablePlan()) }
-      updateCoachProposals(replica: snapshot.coach.replica, receipts: snapshot.coach.receipts, proposals: snapshot.coach.proposals)
+      updateCoachProposals(snapshot.coach)
       if let runtime {
         let replica = try runtime.storageRead { try $0.device().activeReplica }
         publish(\.account, replica.meta.state == .bound ? replica.meta.account : nil)
@@ -223,15 +236,9 @@ final class GymModel {
           refusal = latest.refusal; error = message(latest.refusal)
         }
         publish(\.notices, incoming)
-        let outbox = replica.outbox.filter { $0.scope == Gym.scope }
-        var offers: [UndoOffer] = []
-        for entry in outbox where !offers.contains(where: { $0.id == entry.gestureId }) {
-          let gesture = outbox.filter { $0.gestureId == entry.gestureId }
-          if gesture.allSatisfy({ $0.state == .held }) {
-            offers.append(UndoOffer(id: entry.gestureId, scope: entry.scope, releaseAt: entry.releaseAt))
-          }
-        }
-        publish(\.undoOffers, offers)
+        let held = GymUndoOffer.held(in: replica.outbox.filter { $0.scope == Gym.scope })
+        dismissedUndos.formIntersection(held.map(\.id))
+        publish(\.undoOffers, held.filter { !dismissedUndos.contains($0.id) })
       } else {
         let now = (try? runner.moment().now.ms) ?? 0
         publish(\.undoOffers, undoOffers.filter { $0.releaseAt > now })
@@ -255,8 +262,9 @@ final class GymModel {
     do {
       let outcome = try runner.run(action)
       if let refused = outcome.refusal { refusal = refused; error = message(refused) }
-      if let receipt = outcome.receipt, let releaseAt = receipt.releaseAt {
-        undoOffers.append(UndoOffer(id: receipt.gestureId, scope: action.scope, releaseAt: releaseAt))
+      if runtime == nil, let receipt = outcome.receipt,
+         let offer = (try? runner.read(Gym.scope) { try GymUndoOffer(receipt: receipt, in: $0) }) ?? nil {
+        undoOffers.append(offer)
       }
       telemetry.event("gym_action", properties: ["screen": "gym", "outcome": outcome.refusal == nil ? "ok" : "refused"])
       refresh()
@@ -305,6 +313,15 @@ final class GymModel {
       telemetry.event("gym_undo", properties: ["screen": "gym", "outcome": "failed"]); report("gym_undo", error)
       return false
     }
+  }
+
+  // The lifter sent an Undo band away: the act it shows and every older one beneath it stay, and their holds run out as
+  // they would have, so only a gesture made after the swipe raises the band again.
+  func dismissUndo(_ gestureId: String) {
+    guard let shown = undoOffers.firstIndex(where: { $0.id == gestureId }) else { return }
+    dismissedUndos.formUnion(undoOffers[...shown].map(\.id))
+    undoOffers.removeFirst(shown + 1)
+    telemetry.event("gym_undo", properties: ["screen": "gym", "action": "dismiss"])
   }
 
   @discardableResult
@@ -440,6 +457,59 @@ final class GymModel {
     guard let error = error as? URLError else { return false }
     return [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost,
             .cannotFindHost, .dnsLookupFailed, .timedOut].contains(error.code)
+  }
+}
+
+// A held gesture Undo can still remove, and the band's line naming what it holds: the object and the act
+// (docs/design/ios/ios-redesign.md §5). The line is read from the held records, so a relaunch that reads the outbox
+// again names the gesture the same.
+nonisolated struct GymUndoOffer: Equatable, Identifiable {
+  let id: String
+  let releaseAt: Int64
+  let line: String
+
+  // What each held removal is called, in the order a gesture holding more than one kind is named by.
+  static let objects: [(entity: any Removable.Type, noun: String, act: String)] = [
+    (Session.self, "workout", "discarded"), (Routine.self, "routine", "deleted"), (WeighIn.self, "weigh-in", "deleted"),
+    (Note.self, "note", "deleted"), (TrainingSet.self, "set", "deleted"),
+  ]
+
+  init?(id: String, releaseAt: Int64, holding records: [RecordKey]) {
+    guard let object = Self.objects.first(where: { object in records.contains { $0.type == object.entity.type } }) else { return nil }
+    let count = Set(records.filter { $0.type == object.entity.type }).count
+    self.id = id; self.releaseAt = releaseAt
+    line = count == 1 ? "\(object.noun.prefix(1).uppercased())\(object.noun.dropFirst()) \(object.act)"
+      : "\(GymCount.of(count, object.noun)) \(object.act)"
+  }
+
+  // A gesture the outbox still holds whole, named by the records its entries remove.
+  init?(gesture entries: [OutboxEntry]) {
+    guard let first = entries.first, entries.allSatisfy({ $0.state == .held }) else { return nil }
+    self.init(id: first.gestureId, releaseAt: first.releaseAt,
+              holding: entries.flatMap { $0.intent.deltas.filter(\.removes).map(\.key) })
+  }
+
+  // Without the engine's store a run keeps its own offer: the records its receipt names that the drawn view shows held.
+  init?(receipt: CommitReceipt, in read: Reader) throws {
+    guard let releaseAt = receipt.releaseAt else { return nil }
+    var held: [RecordKey] = []
+    for object in Self.objects {
+      for id in receipt.ids.compactMap({ $0 }) {
+        if try Self.holds(object.entity, id, in: read) { held.append(RecordKey(object.entity.type, id)) }
+      }
+    }
+    self.init(id: receipt.gestureId, releaseAt: releaseAt, holding: held)
+  }
+
+  // Every gesture of the outbox still held whole, oldest first.
+  static func held(in outbox: [OutboxEntry]) -> [GymUndoOffer] {
+    var gestures: [String] = []
+    for entry in outbox where !gestures.contains(entry.gestureId) { gestures.append(entry.gestureId) }
+    return gestures.compactMap { id in GymUndoOffer(gesture: outbox.filter { $0.gestureId == id }) }
+  }
+
+  static func holds<E: Entity>(_ entity: E.Type, _ id: RecordID, in read: Reader) throws -> Bool {
+    try read.repository(entity).record(DomainKit.ID(id), in: .drawn)?.isHeld == true
   }
 }
 

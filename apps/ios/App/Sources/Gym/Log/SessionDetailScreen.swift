@@ -17,11 +17,7 @@ struct SessionDetailScreen: View {
       if let session {
         let readout = SessionReadout(session: session, sets: sets)
         Section {
-          FactTiles(facts: [
-            .init(value: readout.durationMs.map(Readout.duration) ?? "—", label: "Duration"),
-            .init(value: "\(readout.workingSetCount)", label: "Working sets"),
-            .init(value: "\(Readout.weight(readout.volumeKg)) kg", label: "Volume"),
-          ])
+          FactTiles(readout)
         } footer: {
           let lines = [session.closedBy == "stale" ? "Closed after four hours without a set" : nil,
                        gym.sessionIsUnsent(sessionID) ? "On this phone, not yet on your account." : nil,
@@ -52,8 +48,8 @@ struct SessionDetailScreen: View {
         ContentUnavailableView("This workout is no longer here", systemImage: "clock").listRowBackground(GymPalette.canvas)
       }
     }.listStyle(.insetGrouped).modifier(GymPage())
-      .roomTitle(session?.name ?? Readout.noRoutine, subtitle: session.map(LogPresentation.span))
-      .toolbar(.hidden, for: .tabBar).accessibilityIdentifier("gym-session-detail")
+      .roomTitle(session?.name ?? Readout.noRoutine, subtitle: session.map { gym.dates.span($0.startedAt, $0.finishedAt) })
+      .gymTabBar().accessibilityIdentifier("gym-session-detail")
       .toolbar {
         if session != nil {
           ToolbarItem(placement: .topBarTrailing) {
@@ -62,7 +58,7 @@ struct SessionDetailScreen: View {
           }
           ToolbarItem(placement: .topBarTrailing) {
             MoreMenu(identifier: "gym-session-more") {
-              Button("Discard workout", role: .destructive) {
+              Button("Discard workout", systemImage: "trash", role: .destructive) {
                 if let outcome = gym.run(DiscardSession(sessionID)), outcome.refusal == nil { dismiss() }
               }.accessibilityIdentifier("gym-session-discard")
             }.disabled(gym.accountTransition)

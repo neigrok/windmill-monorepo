@@ -76,6 +76,11 @@ struct TrainingReadsTests {
                 "mostReps": series.mostReps?.id.json ?? .null, "records": .array(series.records.map { $0.id.json }),
                 "hasChart": .bool(series.hasChart(in: read.moment.zone)),
                 "gaps": .array(series.gaps(in: read.moment.zone).map { ["before": $0.before.id.json, "after": $0.after.id.json] })]
+      case "ProgressRecords":
+        let records = ProgressRecords(log.progress)
+        return ["movements": .object(JSON.Object(uniqueKeysWithValues: records.movements.map { id, run in
+          (id.description, JSON.array(run.map { ["session": $0.point.id.json, "previous": $0.previous.id.json, "estimate": .of($0.estimate), "gain": .of($0.gain)] }))
+        })), "sessions": .array(records.sessions.sorted().map(\.json))]
       case "Readout":
         switch try fields.string("operation") {
         case "estimate": return .string(Readout.estimate(try fields.double("value")))
@@ -91,30 +96,5 @@ struct TrainingReadsTests {
       }
     }
     #expect(result == vector.expect, "\(vector)\n  got    \(result.jcsText)\n  expect \(vector.expect.jcsText)")
-  }
-
-  @Test func progressRecordsLookUpWhatSearchingTheHistoryFinds() {
-    let bench = ID<Exercise>(RecordID("bench-press")), squat = ID<Exercise>(RecordID("back-squat"))
-    let loads: [(ID<Exercise>, [Double])] = [(bench, [60, 62.5, 60, 65, 65]), (squat, [100, 95, 105, 105, 110])]
-    var sessions: [Session] = [], sets: [TrainingSet] = []
-    for day in 0..<5 {
-      let at = Int64(1_700_000_000_000) + Int64(day) * 86_400_000, id = ID<Session>(RecordID("session-\(day)"))
-      sessions.append(Session(id: id, startedAt: Instant(ms: at), finishedAt: Instant(ms: at + 3_600_000)))
-      for (index, (movement, kg)) in loads.enumerated() where !(day == 1 && movement == squat) {
-        sets.append(TrainingSet(id: ID(RecordID("set-\(day)-\(index)")), sessionId: id, exerciseId: movement, weightKg: kg[day], reps: 5,
-                                completedAt: Instant(ms: at + Int64(index + 1) * 60_000)))
-      }
-    }
-    let progress = TrainingLog(sessions: sessions, sets: sets, moment: Moment(now: Instant(ms: 1_701_000_000_000), zone: FixedZone(offsetSeconds: 0))).progress
-    let records = ProgressRecords(progress)
-    #expect(records.progress == progress)
-    #expect(records.movements.mapValues { $0.map(\.id.description) } == [
-      squat: ["session-0", "session-2", "session-4"], bench: ["session-0", "session-1", "session-3"]])
-    #expect(records.sessions.mapValues(\.exerciseId) == [
-      ID("session-0"): squat, ID("session-1"): bench, ID("session-2"): squat, ID("session-3"): bench, ID("session-4"): squat])
-    for session in progress.sessions {
-      let searched = session.movements.first { fact in progress.movement(fact.exerciseId).records.contains { $0.id == session.sessionId } }
-      #expect(records.sessions[session.sessionId] == searched)
-    }
   }
 }

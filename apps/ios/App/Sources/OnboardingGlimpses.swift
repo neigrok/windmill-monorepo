@@ -1,4 +1,7 @@
 import SwiftUI
+import DomainKit
+import GymDomain
+import SyncCore
 
 struct OnboardingGlimpse: View {
   let page: OnboardingPage
@@ -10,13 +13,13 @@ struct OnboardingGlimpse: View {
   @State var ignition = 1.0
   @State var glow = 1.0
   @State var press = 1.0
-  @State var check = 1.0
   @State var logged = 1.0
   @State var breathing = false
   @State var travelling = false
   var body: some View {
+    // One picture scaled uniformly into the column between the gutters, centred in it.
     GeometryReader { geometry in
-      let scale = min(geometry.size.width / 354, geometry.size.height / (page == .windmill ? 320 : 340))
+      let scale = min(geometry.size.width / 354, geometry.size.height / page.glimpseHeight)
       Group {
         switch page {
         case .windmill: rooms
@@ -24,9 +27,9 @@ struct OnboardingGlimpse: View {
         case .journal: journal
         case .gym: gym
         }
-      }.frame(width: 354, height: page == .windmill ? 320 : 340)
-        .scaleEffect(scale, anchor: .topLeading)
-        .offset(x: (geometry.size.width - 354 * scale) / 2)
+      }.frame(width: 354, height: page.glimpseHeight)
+        .scaleEffect(scale)
+        .frame(width: 354 * scale, height: page.glimpseHeight * scale)
         .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
         .accessibilityHidden(true)
     }.environment(\.dynamicTypeSize, .large)
@@ -55,23 +58,21 @@ struct OnboardingGlimpse: View {
             try await Task.sleep(for: .milliseconds(16))
             withAnimation(.timingCurve(0.22, 0.61, 0.36, 1, duration: reduceMotion ? 0.15 : 0.48)) { glow = 1 }
           case .gym:
-            check = 0; logged = 0
+            logged = 0
             try await Task.sleep(for: .milliseconds(16))
             if !reduceMotion {
               withAnimation(.easeInOut(duration: 0.15)) { press = 0.97 }
               try await Task.sleep(for: .milliseconds(150))
               withAnimation(.easeInOut(duration: 0.15)) { press = 1 }
             }
-            withAnimation(.easeInOut(duration: reduceMotion ? 0.15 : 0.32)) { check = 1 }
-            try await Task.sleep(for: .milliseconds(120))
-            withAnimation(.easeInOut(duration: 0.15)) { logged = 1 }
+            withAnimation(.easeInOut(duration: reduceMotion ? 0.15 : 0.32)) { logged = 1 }
           }
         } catch { rest() }
       }
   }
 
   func rest() {
-    withAnimation(.easeOut(duration: 0.15)) { bands = [1, 1, 1]; travel = 1; ignition = 1; glow = 1; press = 1; check = 1; logged = 1; breathing = false; travelling = false }
+    withAnimation(.easeOut(duration: 0.15)) { bands = [1, 1, 1]; travel = 1; ignition = 1; glow = 1; press = 1; logged = 1; breathing = false; travelling = false }
   }
 
   func card<Content: View>(_ ground: Color, _ line: Color, radius: CGFloat = 24, @ViewBuilder content: () -> Content) -> some View {
@@ -96,20 +97,20 @@ struct OnboardingGlimpse: View {
         let dim = index == 0 ? ShellPalette.inkDim : index == 1 ? JournalPalette.inkDim : GymPalette.inkDim
         card(ground, line, radius: 20) {
           ZStack(alignment: .topLeading) {
-            Circle().fill(index == 0 ? ShellPalette.brand : index == 1 ? JournalPalette.lamp : GymPalette.accent).frame(width: 7, height: 7).offset(x: 20, y: 29)
+            Circle().fill(index == 0 ? OnboardingSpecimen.clayKind : index == 1 ? JournalPalette.lamp : GymPalette.accent).frame(width: 7, height: 7).offset(x: 20, y: 29)
             text(["Roadmap", "Journal", "Gym"][index], OnboardingSpecimenType.roomTitle, ink, x: 36, y: 22, width: 210)
             text(["Map what you're learning", "Notice what happened", "Keep a training log"][index], OnboardingSpecimenType.roomLine, dim, x: 36, y: 50, width: 218)
             if index == 0 { miniatureTree }
             if index == 1 {
               RadialGradient(colors: [JournalPalette.glimpseGlow, .clear], center: .bottomTrailing, startRadius: 0, endRadius: 140)
               ForEach(0..<3, id: \.self) { row in
-                Capsule().fill(row == 2 ? ink : dim.opacity(0.45)).frame(width: [72.0, 46, 60][row], height: 3).offset(x: 254, y: [30.0, 40, 61][row])
+                Capsule().fill(row == 2 ? ink : OnboardingSpecimen.journalPastLine).frame(width: [72.0, 46, 60][row], height: 3).offset(x: 254, y: [30.0, 40, 61][row])
               }
               Rectangle().fill(JournalPalette.lamp).frame(width: 2, height: 14).offset(x: 320, y: 56)
             }
             if index == 2 {
               text("100", OnboardingSpecimenType.miniWeight, ink, x: 239, y: 24, width: 65)
-              text("kg × 5", OnboardingSpecimenType.caption, dim, x: 240, y: 65, width: 65)
+              text("kg × 5", OnboardingSpecimenType.miniUnit, dim, x: 240, y: 65, width: 65)
               Circle().fill(GymPalette.accent).frame(width: 22, height: 22).overlay(Text("✓").font(OnboardingSpecimenType.miniCheck).foregroundStyle(GymPalette.onAccent)).offset(x: 316, y: 39)
             }
           }
@@ -124,10 +125,10 @@ struct OnboardingGlimpse: View {
         path.move(to: CGPoint(x: 258, y: 50)); path.addQuadCurve(to: CGPoint(x: 302, y: 32), control: CGPoint(x: 280, y: 39)); path.addLine(to: CGPoint(x: 332, y: 20))
         path.move(to: CGPoint(x: 258, y: 50)); path.addQuadCurve(to: CGPoint(x: 302, y: 68), control: CGPoint(x: 280, y: 66)); path.addLine(to: CGPoint(x: 332, y: 80))
       }.stroke(OnboardingSpecimen.branch, lineWidth: 1.5)
-      Circle().fill(OnboardingSpecimen.completed.opacity(0.28)).frame(width: 30, height: 30).offset(x: 243, y: 35)
+      Circle().fill(OnboardingSpecimen.halo).frame(width: 30, height: 30).offset(x: 243, y: 35)
       Circle().fill(OnboardingSpecimen.completed).overlay(Circle().stroke(OnboardingSpecimen.completedOutline, lineWidth: 2)).frame(width: 18, height: 18).offset(x: 249, y: 41)
       Circle().fill(ShellPalette.canvas).overlay(Circle().stroke(OnboardingSpecimen.skyKind, lineWidth: 2)).frame(width: 12, height: 12).offset(x: 296, y: 26)
-      Circle().fill(ShellPalette.brand).overlay(Circle().stroke(OnboardingSpecimen.clayOpenOutline, lineWidth: 1.5)).frame(width: 12, height: 12).offset(x: 296, y: 62)
+      Circle().fill(OnboardingSpecimen.clayKind).overlay(Circle().stroke(OnboardingSpecimen.clayOpenOutline, lineWidth: 1.5)).frame(width: 12, height: 12).offset(x: 296, y: 62)
       Circle().fill(OnboardingSpecimen.skyLockedFill).overlay(Circle().stroke(OnboardingSpecimen.skyLockedOutline)).frame(width: 11, height: 11).offset(x: 326, y: 14)
       Circle().fill(OnboardingSpecimen.goldLockedFill).overlay(Circle().stroke(OnboardingSpecimen.goldLockedOutline)).frame(width: 11, height: 11).offset(x: 326, y: 74)
     }
@@ -151,7 +152,7 @@ struct OnboardingGlimpse: View {
         if !reduceMotion && travelling { Circle().fill(ShellPalette.ink).frame(width: 7, height: 7).offset(x: 67.5 + 104 * travel, y: 167.5) }
         Text("Learn to sail").font(OnboardingSpecimenType.treeTitle).foregroundStyle(ShellPalette.ink).frame(width: 100).offset(x: 21, y: 192)
         ForEach(0..<3, id: \.self) { index in
-          let kind = index == 0 ? ShellPalette.brand : index == 1 ? OnboardingSpecimen.skyKind : OnboardingSpecimen.goldKind
+          let kind = index == 0 ? OnboardingSpecimen.clayKind : index == 1 ? OnboardingSpecimen.skyKind : OnboardingSpecimen.goldKind
           Circle().fill(index == 0 ? kind : ShellPalette.canvas).overlay(Circle().stroke(index == 0 ? OnboardingSpecimen.clayOpenOutline : kind, lineWidth: 2)).frame(width: 26, height: 26).opacity(index == 1 ? 0.5 + ignition * 0.5 : 1).offset(x: 162, y: 74 + CGFloat(index) * 84)
           Text(["Knots & lines", "Rig the mast", "Points of sail"][index]).font(OnboardingSpecimenType.treeNode).foregroundStyle(ShellPalette.ink).frame(width: 100).offset(x: 125, y: 106 + CGFloat(index) * 84)
           Circle().fill(index == 0 ? OnboardingSpecimen.clayLockedFill : index == 1 ? OnboardingSpecimen.skyLockedFill : OnboardingSpecimen.goldLockedFill)
@@ -183,55 +184,42 @@ struct OnboardingGlimpse: View {
           ForEach(0..<2, id: \.self) { row in
             HStack(spacing: 8) {
               Text(row == 0 ? "Mood" : "Energy").font(OnboardingSpecimenType.scaleLabel).frame(width: 48, alignment: .leading)
-              ForEach(0..<(row == 0 ? 7 : 5), id: \.self) { _ in Circle().stroke(faint, lineWidth: 1).frame(width: 10, height: 10) }
+              ForEach(0..<(row == 0 ? 7 : 5), id: \.self) { _ in Circle().stroke(OnboardingSpecimen.unasked, lineWidth: 1).frame(width: 10, height: 10) }
             }
           }
-        }.foregroundStyle(faint).opacity(0.55).offset(x: 24, y: 236)
+        }.foregroundStyle(OnboardingSpecimen.unasked).offset(x: 24, y: 236)
         text("saved", OnboardingSpecimenType.caption, faint, x: 278, y: 310, width: 60).tracking(0.6)
         caption(faint)
       }
     }
   }
 
+  // The rack as the workout draws it, from its own ledger rows and numeral; Log set checks the current row and the next one takes its dot.
   var gym: some View {
-    let ink = GymPalette.ink
-    let dim = GymPalette.inkDim
-    let faint = GymPalette.inkFaint
-    let onAccent = GymPalette.onAccent
+    let squat = ID<Exercise>("back-squat"), session = ID<Session>("onboarding-glimpse")
+    let sets = (0..<(logged < 1 ? 1 : 2)).map { index in
+      TrainingSet(id: ID(RecordID("onboarding-glimpse-\(index)")), sessionId: session, exerciseId: squat, weightKg: 100, reps: 5, completedAt: Instant(ms: 0))
+    }
+    let ledger = MovementLedger(sets: sets, plan: RoutineEntry(exerciseId: squat, sets: Array(repeating: SetTarget(reps: 5, weightKg: 100), count: 3)))
     return card(GymPalette.canvas, GymPalette.line) {
       ZStack(alignment: .topLeading) {
-        text("Squat", OnboardingSpecimenType.movementTitle, ink, x: 20, y: 18)
-        text("set 3 of 5", OnboardingSpecimenType.setMeta, dim, x: 20, y: 48).tracking(0.4)
-        text("1   ✓   100 kg × 5", OnboardingSpecimenType.setRow, dim, x: 28, y: 78)
-        text("2   ✓   100 kg × 5", OnboardingSpecimenType.setRow, dim, x: 28, y: 100)
-        RoundedRectangle(cornerRadius: 8).fill(GymPalette.accentSoft).frame(width: 314, height: 26).offset(x: 20, y: 120)
-        RoundedRectangle(cornerRadius: 2).fill(GymPalette.accent).frame(width: 3, height: 26).offset(x: 20, y: 120)
-        text("Set 3 · target 100 × 5", OnboardingSpecimenType.setRow, ink, x: 32, y: 125)
-        text("100", OnboardingSpecimenType.weight, ink, x: 18, y: 162, width: 160).tracking(-2)
-        text("kg × 5", OnboardingSpecimenType.weightUnit, dim, x: 154, y: 208, width: 140)
-        text("Last time · 97.5 kg × 5", OnboardingSpecimenType.setMeta, faint, x: 20, y: 252).tracking(0.3)
-        Text("Log set").font(OnboardingSpecimenType.logAction).foregroundStyle(onAccent).padding(.horizontal, 22).frame(height: 44).background(GymPalette.accent, in: Capsule()).scaleEffect(press).offset(x: 237, y: 276)
-        Circle().fill(OnboardingSpecimen.completed).frame(width: 22, height: 22)
-          .overlay {
-            if reduceMotion { Image(systemName: "checkmark").font(OnboardingSpecimenType.checkSymbol).foregroundStyle(onAccent).opacity(check) }
-            else {
-              Image(systemName: "checkmark").font(OnboardingSpecimenType.checkSymbol).foregroundStyle(onAccent)
-                .mask { OnboardingCheck().trim(from: 0, to: check).stroke(.white, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round)) }
+        VStack(spacing: 8) {
+          Text("Squat").font(.title2.weight(.bold)).foregroundStyle(GymPalette.ink)
+          VStack(spacing: 0) {
+            ForEach(ledger.rows) { row in
+              if row.id > 0 { Divider().overlay(GymPalette.line) }
+              WorkoutLedgerRow(row: row, unsent: false)
             }
-          }.offset(x: 20, y: 288)
-        text("Set 3 logged", OnboardingSpecimenType.setMeta, dim, x: 50, y: 291, width: 170).opacity(logged)
-        caption(faint)
+          }.padding(.horizontal, RoomSpace.inset).background(GymPalette.card, in: RoundedRectangle(cornerRadius: RoomSpace.cardRadius))
+          HStack(alignment: .firstTextBaseline, spacing: RoomSpace.related) {
+            Text("100").modifier(GymNumeral()).foregroundStyle(GymPalette.ink)
+            Text("kg").font(.title3).foregroundStyle(GymPalette.inkDim)
+          }
+          Text("Log set").font(.body).foregroundStyle(GymPalette.onAccent)
+            .frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget).background(GymPalette.accent, in: Capsule()).scaleEffect(press)
+        }.padding(.horizontal, 20).padding(.vertical, 12)
+        caption(GymPalette.inkFaint)
       }
-    }
-  }
-}
-
-struct OnboardingCheck: Shape {
-  func path(in rect: CGRect) -> Path {
-    Path { path in
-      path.move(to: CGPoint(x: rect.minX, y: rect.midY))
-      path.addLine(to: CGPoint(x: rect.width * 0.38, y: rect.height * 0.85))
-      path.addLine(to: CGPoint(x: rect.maxX, y: rect.height * 0.15))
     }
   }
 }
@@ -240,6 +228,7 @@ struct OnboardingCheck: Shape {
 enum OnboardingSpecimen {
   static let completed = Color("onboarding/completed")
   static let completedOutline = Color("onboarding/completed-outline")
+  static let clayKind = Color("onboarding/clay-kind")
   static let skyKind = Color("onboarding/sky-kind")
   static let skyLockedFill = Color("onboarding/sky-locked-fill")
   static let skyLockedOutline = Color("onboarding/sky-locked-outline")
@@ -252,13 +241,18 @@ enum OnboardingSpecimen {
   static let openEdge = Color("onboarding/open-edge")
   static let lockedEdge = Color("onboarding/locked-edge")
   static let branch = Color("onboarding/branch")
+  // Faded specimens: the journal card's written lines, the completed step's halo, the scales nobody has answered.
+  static let journalPastLine = JournalPalette.inkDim.opacity(0.45)
+  static let halo = completed.opacity(0.28)
+  static let unasked = JournalPalette.inkFaint.opacity(0.55)
 }
 
 enum OnboardingSpecimenType {
   static let wordmark = Font.custom("Baloo2-Bold", fixedSize: 30)
   static let roomTitle = Font.custom("Nunito-ExtraBold", fixedSize: 18)
   static let roomLine = Font.custom("Inter-Regular", fixedSize: 13)
-  static let miniWeight = Font.custom("JetBrainsMono-Regular", fixedSize: 30)
+  static let miniWeight = Font.system(size: 30, weight: .bold, design: .rounded).monospacedDigit()
+  static let miniUnit = Font.system(size: 13)
   static let miniCheck = Font.custom("Inter-SemiBold", fixedSize: 13)
   static let caption = Font.custom("JetBrainsMono-Regular", fixedSize: 10)
   static let treeTitle = Font.custom("Inter-SemiBold", fixedSize: 12)
@@ -267,11 +261,4 @@ enum OnboardingSpecimenType {
   static let journalTitle = Font.custom("Nunito-ExtraBold", fixedSize: 14)
   static let journalBody = Font.custom("Inter-Regular", fixedSize: 17)
   static let scaleLabel = Font.custom("Inter-Regular", fixedSize: 11)
-  static let movementTitle = Font.custom("Nunito-ExtraBold", fixedSize: 22)
-  static let setMeta = Font.custom("JetBrainsMono-Regular", fixedSize: 11)
-  static let setRow = Font.custom("JetBrainsMono-Regular", fixedSize: 12)
-  static let weight = Font.custom("JetBrainsMono-Regular", fixedSize: 72)
-  static let weightUnit = Font.custom("JetBrainsMono-Regular", fixedSize: 18)
-  static let logAction = Font.custom("Nunito-ExtraBold", fixedSize: 15)
-  static let checkSymbol = Font.system(size: 11, weight: .semibold)
 }

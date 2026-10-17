@@ -281,11 +281,25 @@ import SyncTesting
     let reports = { telemetry.entries.withLock { $0.filter { $0.name == "client_error" }.map(\.properties) } }
     #expect(reports().isEmpty)
     fault.point.withLock { $0 = .read }
-    for _ in 0..<3 { #expect(gym.waitingRoutineProposals.isEmpty) }
+    for _ in 0..<3 { #expect(gym.routineProposals.isEmpty) }
     #expect(reports() == [["operation": "gym_read", "failure_kind": "unexpected"]])
     for _ in 0..<2 { gym.report("gym_action", AppFailure(message: "private injected storage detail")) }
     #expect(reports() == [["operation": "gym_read", "failure_kind": "unexpected"], ["operation": "gym_action", "failure_kind": "unexpected"],
                           ["operation": "gym_action", "failure_kind": "unexpected"]])
+  }
+
+  // Hiding the workout and each way back record one content-free event; a return the room cannot make says so and records nothing.
+  @Test func aHiddenWorkoutRecordsItsHideAndTheDoorItCameBackThrough() throws {
+    let recorder = TelemetryRecorder(), workouts = WorkoutStateTests()
+    let (harness, gym) = try workouts.fixture(telemetry: recorder)
+    _ = try workouts.begin(gym)
+    #expect(gym.hideWorkout() && gym.openHiddenWorkout(from: .accessory) && gym.workout.isPresented)
+    #expect(gym.hideWorkout())
+    harness.failNextCommit()
+    #expect(!gym.openHiddenWorkout(from: .row) && gym.workoutHidden && gym.error == "Gym could not restore this workout. Try again.")
+    #expect(gym.openHiddenWorkout(from: .row) && !gym.workoutHidden)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_hidden_workout" }.map(\.properties) } ==
+            [["action": "hide"], ["action": "open", "door": "accessory"], ["action": "hide"], ["action": "open", "door": "row"]])
   }
 
   @Test func lateSuccessIsRejectedAfterRequestGenerationChanges() async throws {

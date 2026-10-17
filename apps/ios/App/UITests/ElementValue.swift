@@ -6,4 +6,9 @@ extension XCUIElement {
     let shown = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", expected), object: self)
     return XCTWaiter.wait(for: [shown], timeout: timeout) == .completed
   }
+
+  func waitForLabel(_ expected: String, timeout: TimeInterval = 10) -> Bool {
+    let shown = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", expected), object: self)
+    return XCTWaiter.wait(for: [shown], timeout: timeout) == .completed
+  }
 }

@@ -175,6 +175,8 @@ jobs:
               -only-testing:WindmillUITests/JournalFlowTests
               -only-testing:WindmillUITests/JournalEchoFlowTests
               -only-testing:WindmillUITests/WorkoutActivityFlowTests
+              -only-testing:WindmillUITests/RoomTransientFlowTests
+              -only-testing:WindmillUITests/WorkoutOutsideFlowTests
           - shard: coach-shell
             timeout: 95
             tests: >-

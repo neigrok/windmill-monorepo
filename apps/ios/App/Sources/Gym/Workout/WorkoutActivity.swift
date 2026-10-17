@@ -109,7 +109,7 @@ extension WorkoutState {
       let result = try gym.runner.run(RestoreWorkoutActivity(sessionID: sessionId, replica: replica, anonymous: gym.isAnonymous))
       if let refusal = result.refusal { gym.refusal = refusal; gym.error = gym.message(refusal); return false }
       return true
-    } catch { gym.error = "Gym could not restore this workout. Try again."; gym.report("gym_activity_update", error); return false }
+    } catch { gym.error = GymModel.restoreFailed; gym.report("gym_activity_update", error); return false }
   }
   var activityBaseline: JSON? {
     guard let session else { return nil }
@@ -143,22 +143,25 @@ extension WorkoutState {
           offer.movementID == selected?.description else { return }
     restoreRack(weightKg: offer.weightKg, reps: offer.reps)
   }
-  @discardableResult func logActivityOffer(_ offer: WorkoutActivityOffer) -> Bool {
+  // Every outside Log set that logs nothing says why: refused when the rack has moved past it or a rule of the log refuses
+  // the set, failed when the phone cannot read or save it.
+  @discardableResult func logActivityOffer(_ offer: WorkoutActivityOffer, surface: WorkoutSurface = .activity) -> Bool {
     gym.refresh()
     if gym.openSession != nil { reconcile() }
-    guard !gym.accountTransition, activityIdentityResolved, !gym.readFailed, let record = try? activityRecord(), record.ownerID == offer.ownerID,
-          let session, session.isOpen, session.id.description == offer.sessionID else { return refuseActivityOffer() }
+    guard !gym.readFailed else { return refuseActivityOffer(surface, outcome: "failed") }
+    guard !gym.accountTransition, activityIdentityResolved, let record = try? activityRecord(), record.ownerID == offer.ownerID,
+          let session, session.isOpen, session.id.description == offer.sessionID else { return refuseActivityOffer(surface, outcome: "refused") }
     if let existing = sets.first(where: { $0.id.description == offer.setID }) {
-      guard existing.exerciseId.description == offer.movementID, existing.weightKg == offer.weightKg, existing.reps == offer.reps, existing.kind == SetKind.working.rawValue else { return refuseActivityOffer() }
+      guard existing.exerciseId.description == offer.movementID, existing.weightKg == offer.weightKg, existing.reps == offer.reps, existing.kind == SetKind.working.rawValue else { return refuseActivityOffer(surface, outcome: "refused") }
       return true
     }
-    guard activityOffer() == offer else { return refuseActivityOffer() }
-    let logged = logSet(offered: offer)
-    if !logged, case .stale = gym.refusal { return refuseActivityOffer() }
-    return logged
+    guard activityOffer() == offer else { return refuseActivityOffer(surface, outcome: "refused") }
+    guard logSet(offered: offer) else { return refuseActivityOffer(surface, outcome: gym.refusal == nil ? "failed" : "refused") }
+    gym.telemetry.event("gym_activity_set_logged", properties: ["surface": surface.rawValue])
+    return true
   }
-  func refuseActivityOffer() -> Bool {
-    gym.telemetry.event("gym_activity_offer_refused")
+  func refuseActivityOffer(_ surface: WorkoutSurface, outcome: String) -> Bool {
+    gym.telemetry.event("gym_activity_offer_refused", properties: ["surface": surface.rawValue, "outcome": outcome])
     return false
   }
   func activityChanged() { gym.existingWorkoutActivity?.schedule() }
@@ -295,41 +298,95 @@ extension GymModel {
   }
 }
 
-@MainActor enum WorkoutActivityIntentHandler {
-  static var model: AppModel?
-  static var telemetry: AppTelemetry?
-  static func logSet(offer: WorkoutActivityOffer) async -> Bool {
-    do {
-      let app: AppModel
-      if let model { app = model }
-      else {
-        let settings = AppSettings()
-        #if DEBUG
-        let debug = true
-        #else
-        let debug = false
-        #endif
-        let telemetry = Self.telemetry ?? AppTelemetry(info: settings.telemetryInfo, baseURL: settings.baseURL,
-          directory: URL.applicationSupportDirectory.appending(path: "WindmillTelemetry"), debug: debug)
-        Self.telemetry = telemetry
-        let runtime = try AppRuntime(settings: settings, telemetry: telemetry)
-        app = try AppModel(runner: runtime.runner, preferences: .standard, runtime: runtime, telemetry: runtime.telemetry)
-        model = app; app.gym.startWorkoutActivity()
-      }
-      app.refresh(); app.runtime?.updateTelemetryIdentity()
-      let logged = app.gym.workout.logActivityOffer(offer)
-      if !logged { app.openActivityWorkout() }
-      await app.gym.existingWorkoutActivity?.reconcile()
-      if logged { app.runtime?.engine.foreground(); Task { await app.start() } }
-      return logged
-    } catch {
-      telemetry?.failure("gym_activity_update", kind: "unexpected")
-      telemetry?.event("gym_activity_offer_refused")
-      return false
+// What a Log set from outside the app did (docs/design/ios/ios-redesign.md §7.19).
+nonisolated enum WorkoutLogAnswer: Equatable {
+  case logged(shown: String, spoken: String)
+  case opened
+  case absent
+
+  // The set an outside Log set wrote, in Siri's words; a movement this phone cannot name is left out, never given a stand-in.
+  static func loggedSet(_ offer: WorkoutActivityOffer, movement: String?) -> WorkoutLogAnswer {
+    let load = Readout.weight(offer.weightKg), reps = GymCount.of(offer.reps, "rep")
+    guard let movement else { return .logged(shown: "Logged \(load) kg × \(offer.reps).", spoken: "Logged \(load) kilograms, \(reps).") }
+    return .logged(shown: "Logged \(load) kg × \(offer.reps) · \(movement).", spoken: "Logged \(load) kilograms, \(reps), \(movement).")
+  }
+
+  // What Siri shows and says for the answer: the shortcut names what happened; the Live Activity's button logs or opens in silence.
+  func dialog(_ surface: WorkoutSurface) -> (shown: String, spoken: String) {
+    switch self {
+    case .absent: ("No workout is open.", "No workout is open.")
+    case .logged(let shown, let spoken): surface == .shortcut ? (shown, spoken) : ("", "")
+    case .opened: surface == .shortcut ? ("Nothing logged. Opening Windmill.", "Nothing logged. Opening Windmill.") : ("", "")
     }
   }
 }
 
+// Where outside the app opens Windmill, named as `gym_intent_opened` reports it.
+enum WorkoutDoor: String { case workout = "open_workout", routines = "start_workout" }
+
+@MainActor enum WorkoutActivityIntentHandler {
+  static var model: AppModel?
+  static var telemetry: AppTelemetry?
+  // A door asked for before the app draws its first screen waits for it, so a first launch still opens on the introduction.
+  static var presented = false
+  static var waiting: (door: WorkoutDoor, surface: WorkoutSurface)?
+
+  // The model the app draws, or one made in the background for an act the app was woken for.
+  static func appModel() throws -> AppModel {
+    if let model { return model }
+    let settings = AppSettings()
+    #if DEBUG
+    let debug = true
+    #else
+    let debug = false
+    #endif
+    let telemetry = Self.telemetry ?? AppTelemetry(info: settings.telemetryInfo, baseURL: settings.baseURL,
+      directory: URL.applicationSupportDirectory.appending(path: "WindmillTelemetry"), debug: debug)
+    Self.telemetry = telemetry
+    let runtime = try AppRuntime(settings: settings, telemetry: telemetry)
+    let app = try AppModel(runner: runtime.runner, preferences: .standard, runtime: runtime, telemetry: runtime.telemetry)
+    model = app; app.gym.startWorkoutActivity()
+    return app
+  }
+
+  static func logSet(offer: WorkoutActivityOffer?, surface: WorkoutSurface) async -> WorkoutLogAnswer {
+    do {
+      let app = try appModel(), gym = app.gym, workout = gym.workout
+      app.refresh(); app.runtime?.updateTelemetryIdentity()
+      if gym.openSession != nil { workout.reconcile() }
+      guard offer != nil || gym.openSession != nil else {
+        app.telemetry.event("gym_activity_offer_refused", properties: ["surface": surface.rawValue, "outcome": "absent"])
+        return .absent
+      }
+      guard let offer = offer ?? workout.activityOffer() else { open(.workout, surface: surface); return .opened }
+      let logged = workout.logActivityOffer(offer, surface: surface)
+      if !logged { app.openActivityWorkout() }
+      await gym.existingWorkoutActivity?.reconcile()
+      guard logged else { return .opened }
+      app.runtime?.engine.foreground(); Task { await app.start() }
+      return .loggedSet(offer, movement: gym.catalogue.find(ID(RecordID(offer.movementID)))?.name)
+    } catch {
+      telemetry?.failure("gym_activity_update", kind: "unexpected")
+      telemetry?.event("gym_activity_offer_refused", properties: ["surface": surface.rawValue, "outcome": "failed"])
+      return .opened
+    }
+  }
+
+  static func open(_ door: WorkoutDoor, surface: WorkoutSurface) {
+    guard presented, let model else { waiting = (door, surface); return }
+    let opened = door == .routines && model.gym.openSession == nil ? WorkoutDoor.routines : .workout
+    if opened == .routines { model.openRoutines() } else { model.openActivityWorkout() }
+    model.telemetry.event("gym_intent_opened", properties: ["intent": opened.rawValue, "surface": surface.rawValue])
+  }
+
+  // The app has drawn its first screen, its introduction decided: a door that waited for it opens now.
+  static func present(_ app: AppModel) {
+    model = app; presented = true
+    guard let waiting else { return }
+    self.waiting = nil
+    open(waiting.door, surface: waiting.surface)
+  }
+}
 
 extension AppModel {
   func openActivityWorkout() {
@@ -339,5 +396,9 @@ extension AppModel {
     if gym.workoutHidden {
       var walk = gym.workout.walk; walk.hidden = false; _ = gym.workout.keep(walk)
     }
+  }
+  // Routines at its root, past Where to start?; a sheet already open in the room stays open.
+  func openRoutines() {
+    selectedRoom = .gym; welcome = false; routinesRequested = true
   }
 }

@@ -1511,7 +1511,9 @@ server-requested wait: a 503's or a retry's retryAfterMs, from the response's re
 `upgradeRequired` and `failedPushes`, the records of the unsent entries of each scope whose last push
 failed with anything but a `400`, `409` or `413`, until a push of that scope is answered `200` or one
 of those three (a `400` or `413` changes the next push, a `409` re-identifies). A product shows an
-unconfirmed record as unsent while any of the four holds it back.
+unconfirmed record as unsent while any of the four holds it back. `unansweredPushes` names the scopes
+of `failedPushes` whose last push got no answer at all — no network, a refused connection, the request
+deadline — so a product can tell a server it never reached from one that answered with a failure.
 
 The principal check precedes epoch handling. A `409` used for recovery MUST carry a nonempty string
 `epoch`, a nonnegative safe-integer `serverTime`, and one of the three conflict codes above;

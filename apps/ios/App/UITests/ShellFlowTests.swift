@@ -71,6 +71,7 @@ import XCTest
     let app = launch("shell-anonymous")
     XCTAssertTrue(app.staticTexts["Where to start?"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons["open-journal"].exists)
+    XCTAssertTrue(app.staticTexts["Log today’s sets"].exists, "The Gym door promises only what the rack draws")
     app.buttons["open-gym"].tap()
     assertGym(app)
     let screenshot = XCTAttachment(screenshot: app.screenshot())
@@ -127,22 +128,32 @@ import XCTest
     return (0.2126 * Double(pixel[0]) + 0.7152 * Double(pixel[1]) + 0.0722 * Double(pixel[2])) / 255
   }
 
+  // Appearance is a menu row: it reads the current choice, and a choice from its menu answers at once.
+  func choose(appearance choice: String, from current: String, in app: XCUIApplication) {
+    let row = app.buttons["appearance"]
+    XCTAssertTrue(row.waitForExistence(timeout: 5))
+    XCTAssertTrue(row.label.contains(current) || (row.value as? String) == current, "Appearance reads \(current): \(row.label)")
+    row.tap()
+    let item = app.buttons[choice]
+    XCTAssertTrue(item.waitForExistence(timeout: 5)); item.tap()
+    XCTAssertTrue(app.buttons[choice].waitForNonExistence(timeout: 5) || row.label.contains(choice))
+  }
+
   func testYouIsOneListWithSettingsAndAppearanceAnswersInEveryRoom() {
     let app = launch("shell-anonymous")
     app.buttons["open-gym"].tap()
     assertGym(app)
     app.buttons["you"].tap()
     XCTAssertTrue(app.staticTexts["Not signed in"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["nothing yet"].exists)
+    XCTAssertFalse(app.staticTexts["Everything lives on this phone"].exists, "Signed out, the identity is the symbol and Not signed in alone")
+    XCTAssertFalse(app.staticTexts["On this phone"].exists || app.staticTexts["nothing yet"].exists, "A phone that holds nothing draws no On this phone")
     XCTAssertFalse(app.staticTexts["One Windmill account keeps your journal and training together."].exists)
     XCTAssertFalse(app.buttons["link-sign-in"].exists)
     XCTAssertFalse(app.staticTexts["Sign-in needs a connection."].exists)
     XCTAssertTrue(app.buttons["email-sign-in"].isEnabled)
-    XCTAssertTrue(app.buttons["you-gym-settings"].exists && app.buttons["about-windmill"].exists)
-    let appearance = app.segmentedControls["appearance"]
-    XCTAssertTrue(appearance.buttons["System"].isSelected)
-    appearance.buttons["Dark"].tap()
-    XCTAssertTrue(appearance.buttons["Dark"].wait(for: \.isSelected, toEqual: true, timeout: 5))
+    XCTAssertTrue(app.buttons["about-windmill"].exists)
+    XCTAssertFalse(app.buttons["you-gym-settings"].exists, "Gym has no settings page; Coach's More holds its doors")
+    choose(appearance: "Dark", from: "System", in: app)
     app.navigationBars["You"].buttons["Done"].tap()
     XCTAssertTrue(app.navigationBars["You"].waitForNonExistence(timeout: 5))
     XCTAssertLessThan(groundLuminance(app), 0.2, "Dark answers with the gym's Instrument ground")
@@ -150,9 +161,7 @@ import XCTest
     XCTAssertTrue(app.textViews["journal-editor"].waitForExistence(timeout: 10))
     XCTAssertLessThan(groundLuminance(app), 0.2, "Dark answers with the journal's Night")
     app.buttons["you"].tap()
-    XCTAssertTrue(appearance.waitForExistence(timeout: 5))
-    appearance.buttons["Light"].tap()
-    XCTAssertTrue(appearance.buttons["Light"].wait(for: \.isSelected, toEqual: true, timeout: 5))
+    choose(appearance: "Light", from: "Dark", in: app)
     app.navigationBars["You"].buttons["Done"].tap()
     XCTAssertTrue(app.navigationBars["You"].waitForNonExistence(timeout: 5))
     XCTAssertGreaterThan(groundLuminance(app), 0.85, "Light answers with the journal's Day")
@@ -162,7 +171,9 @@ import XCTest
     XCTAssertTrue(app.textViews["journal-editor"].waitForExistence(timeout: 10))
     XCTAssertGreaterThan(groundLuminance(app), 0.85, "The choice persists across launches")
     app.buttons["you"].tap()
-    XCTAssertTrue(app.segmentedControls["appearance"].buttons["Light"].wait(for: \.isSelected, toEqual: true, timeout: 5))
+    let row = app.buttons["appearance"]
+    XCTAssertTrue(row.waitForExistence(timeout: 5))
+    XCTAssertTrue(row.label.contains("Light") || (row.value as? String) == "Light")
   }
 
   func testGymKeepDoorOpensKeepInTheRoomsWords() {
@@ -189,14 +200,26 @@ import XCTest
     XCTAssertTrue(app.staticTexts["Syncing paused · update Windmill"].waitForExistence(timeout: 5))
     let update = app.buttons["get-update"]
     XCTAssertTrue(update.exists); update.tap()
-    // The simulator has no TestFlight, so the destination cannot open and the transient says so.
-    XCTAssertTrue(app.staticTexts["Couldn't open the update. Try again."].waitForExistence(timeout: 5))
+    // The simulator has no TestFlight, so the destination cannot open and the transient says so; a swipe down or its xmark ends it.
+    let failure = app.staticTexts["Couldn't open the update. Try again."]
+    let band = app.descendants(matching: .any)["update-failure"]
+    XCTAssertTrue(band.waitForExistence(timeout: 5))
+    band.swipeDown()
+    XCTAssertTrue(failure.waitForNonExistence(timeout: 5), "In You, a swipe down sends the band away and leaves You open")
+    XCTAssertTrue(app.navigationBars["You"].exists)
+    update.tap()
+    XCTAssertTrue(failure.waitForExistence(timeout: 5))
     app.buttons["update-failure-dismiss"].tap()
-    XCTAssertTrue(app.staticTexts["Couldn't open the update. Try again."].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(failure.waitForNonExistence(timeout: 5))
     app.terminate()
     app.launchArguments.append("-restore-board")
     app.launch()
-    XCTAssertTrue(app.alerts["Update required"].waitForExistence(timeout: 20), "A cold launch while the flag holds speaks once more")
+    let relaunched = app.alerts["Update required"]
+    XCTAssertTrue(relaunched.waitForExistence(timeout: 20), "A cold launch while the flag holds speaks once more")
+    relaunched.buttons["Get the update"].tap()
+    XCTAssertTrue(band.waitForExistence(timeout: 5))
+    band.swipeDown()
+    XCTAssertTrue(failure.waitForNonExistence(timeout: 5), "Over a room, a swipe down sends the band away")
   }
 
   func testUpdateRequiredAtSignInRaisesTheAlertNeverTheErrorText() {
@@ -240,16 +263,49 @@ import XCTest
     XCTAssertTrue(app.staticTexts["Finish signing in"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["Syncing paused · update Windmill"].exists)
     XCTAssertTrue(app.buttons["get-update"].exists)
-    XCTAssertTrue(app.descendants(matching: .any)["appearance"].exists, "You's Settings stay reachable")
-    XCTAssertTrue(app.buttons["you-gym-settings"].exists, "Gym settings stay reachable")
+    XCTAssertTrue(app.descendants(matching: .any)["appearance"].exists && app.buttons["about-windmill"].exists, "You's Settings stay reachable")
     XCTAssertFalse(app.buttons["email-sign-in"].exists, "No second sign-in starts over a pending one")
     app.buttons["auth-cancel"].tap()
     XCTAssertTrue(app.staticTexts["Finish signing in"].waitForNonExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["Everything lives on this phone"].exists)
+    XCTAssertTrue(app.staticTexts["Not signed in"].exists)
+    XCTAssertFalse(app.staticTexts["Syncing paused · update Windmill"].exists, "Signed out with nothing finishing, the identity has no status")
     XCTAssertTrue(app.buttons["email-sign-in"].exists)
     app.navigationBars.buttons["Done"].tap()
     app.terminate(); app.launchArguments.append("-restore-board"); app.launch()
     XCTAssertTrue(app.buttons["write-today"].waitForExistence(timeout: 20))
     XCTAssertFalse(app.navigationBars["You"].exists, "Nothing resumes at the next launch")
+  }
+
+  // iOS 26 keeps a hidden workout in the tab bar's accessory, one tap from the logger, until the workout is finished.
+  func testHiddenWorkoutWaitsInTheTabBarAccessory() throws {
+    guard #available(iOS 26, *) else { throw XCTSkip("iOS 18 draws the Hidden row in The log instead") }
+    let app = launch("workout-planned")
+    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10)); app.buttons["workout-log"].tap()
+    let sets = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-"))
+    XCTAssertTrue(sets.firstMatch.waitForExistence(timeout: 5))
+    let logged = sets.count
+    app.buttons["workout-assembly"].tap()
+    XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
+    let accessory = app.buttons["gym-hidden-workout"]
+    XCTAssertTrue(accessory.waitForExistence(timeout: 5))
+    XCTAssertEqual(accessory.label, "Lower A, in progress")
+    XCTAssertEqual(accessory.value as? String, "32:10", "The value is the workout's clock as the logger reads it")
+    // It goes where the tab bar goes: a pushed screen draws neither, and back at the root both return.
+    app.tabBars.buttons["Routines"].tap()
+    XCTAssertTrue(app.buttons["routines-movements"].waitForExistence(timeout: 5)); app.buttons["routines-movements"].tap()
+    XCTAssertTrue(accessory.waitForNonExistence(timeout: 5) && !app.tabBars.buttons["Routines"].isHittable)
+    app.navigationBars.buttons.element(boundBy: 0).tap()
+    XCTAssertTrue(accessory.waitForExistence(timeout: 5))
+    accessory.tap()
+    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
+    XCTAssertEqual(sets.count, logged, "The workout comes back with its sets")
+    app.buttons["workout-finish"].tap()
+    let receiptDone = app.navigationBars.buttons["Done"]
+    XCTAssertTrue(receiptDone.waitForExistence(timeout: 5)); receiptDone.tap()
+    // The receipt hands the finished workout to The log; back at its root the tab bar carries no accessory.
+    let back = app.navigationBars.buttons.element(boundBy: 0)
+    XCTAssertTrue(back.waitForExistence(timeout: 10)); back.tap()
+    XCTAssertTrue(app.tabBars.buttons["The log"].waitForExistence(timeout: 10))
+    XCTAssertFalse(accessory.exists, "A finished workout leaves the tab bar")
   }
 }

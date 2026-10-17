@@ -21,16 +21,16 @@ final class AppModel {
   let authRetryNow: () -> Date
   let journal: JournalModel
   let gym: GymModel
-  var selectedRoom: Room
+  // The room in front is the room the next launch opens, whichever door brought it forward.
+  var selectedRoom: Room { didSet { preferences.set(selectedRoom.rawValue, forKey: "lastRoom") } }
   var welcome: Bool
   var error: String?
   var sheet: Sheet? {
     didSet { if sheet != nil, !welcome, selectedRoom == .journal { journal.liftInk() } }
   }
-  var gymSettingsRequested = false
   var account: String?
   var keptWork = false
-  var accountName = "You"
+  var accountName = ""
   var keepDismissed: Bool
   var keepSheetPresented = false
   var email = ""
@@ -55,12 +55,16 @@ final class AppModel {
   var accountTransition = false
   var signingOut = false { didSet { gym.accountChanging = signingOut || signOutSession != nil } }
   var syncStarted = false
+  // Routines at its root, asked for from outside the app; GymRoom answers it.
+  var routinesRequested = false
   var restoringSignIn = false
   var signInDeferred = false
   var resumingBackup = false
   var authGeneration = 0
   var signInSession: SignInSession?
   var signOutSession: SignOutSession? { didSet { gym.accountChanging = signingOut || signOutSession != nil } }
+  // Why the last Sign out could not begin or be carried out; the next Sign out clears it.
+  var signOutRefusal: String?
   var adoptionAnswers: [String: LineageAnswer] = [:]
   var appearance: Appearance
   var updateRequiredAtSignIn = false
@@ -86,13 +90,12 @@ final class AppModel {
     init(preferences: UserDefaults) { self = Appearance(rawValue: preferences.string(forKey: "appearance") ?? "") ?? .system }
   }
   enum Sheet: String, Identifiable {
-    case keep, address, code, you, adoption, discardAdoption, signOut
+    case keep, address, code, you, adoption, discardAdoption
     case appleQuestion = "23a", appleAddress = "23b", appleAdded = "23c", appleNoAccount, appleExpired
     var id: String { rawValue }
     var telemetryName: String {
       switch self {
       case .discardAdoption: "discard_adoption"
-      case .signOut: "sign_out"
       case .appleNoAccount: "apple_no_account"
       case .appleExpired: "apple_expired"
       default: rawValue
@@ -118,10 +121,14 @@ final class AppModel {
     appearance = Appearance(preferences: preferences)
     journal.app = self
     refresh()
-    if let account { accountEmail = preferences.string(forKey: "accountEmail:\(account)") ?? "" }
+    if let account {
+      accountEmail = preferences.string(forKey: "accountEmail:\(account)") ?? ""
+      accountName = preferences.string(forKey: "accountName:\(account)") ?? ""
+    }
     if account != nil || journal.room?.stance == .holding || gym.hasData { welcome = false }
     if let runtime, let pending = try runtime.store.read({ try $0.device().meta.pendingSignIn }), let token = runtime.tokens.token(for: pending) {
-      let identity = AuthIdentity(account: pending, token: token, name: accountName, email: preferences.string(forKey: "accountEmail:\(pending)") ?? "")
+      let identity = AuthIdentity(account: pending, token: token, name: preferences.string(forKey: "accountName:\(pending)") ?? "",
+                                email: preferences.string(forKey: "accountEmail:\(pending)") ?? "")
       pendingSignIn = PendingSignIn(identity: identity, method: preferences.string(forKey: "pendingAuthMethod") ?? "email", linked: preferences.bool(forKey: "pendingAuthLinked"), needsAppleAttachment: false, receiptPending: false)
       restoringSignIn = true; sheet = .you; welcome = false
     }
@@ -199,24 +206,35 @@ final class AppModel {
 
   func dismissUpdateFailure() { updateOpenFailed = false }
 
-  var backup: String { journal.backup }
   var adoptionCount: Int { currentAdoption?.counts["page"] ?? 0 }
   var adoptionIsSingle: Bool { currentAdoption?.counts.filter { $0.key != "journalState" }.values.reduce(0, +) == 1 }
 
   func openJournal() { openRoom(.journal) }
   func openYou() { journal.done(); sheet = .you }
-  // You's door into Gym settings: a room switch, never a first-run choice.
-  func openGymSettings() {
-    cancelAuthentication(); sheet = nil; gymSettingsRequested = true
-    welcome = false; preferences.set(false, forKey: "roomWelcomeRequired")
-    switchRoom(.gym)
+
+  // You's identity: the name, or the email when no name is set, and the account's one status.
+  var identityTitle: String { account == nil ? "Not signed in" : accountName.nilIfEmpty ?? accountEmail }
+  var identityStatus: String? {
+    if updateRequired, account != nil || signInPending { return "Syncing paused · update Windmill" }
+    guard account != nil else { return nil }
+    if authPaused { return "Syncing paused · sign in again" }
+    let unsent = (runtime?.engine.status.ready ?? 0) + (runtime?.engine.status.sent ?? 0)
+    return unsent == 0 ? "Backed up" : "Not backed up yet"
+  }
+  // The address is said once: How you sign in's Email row carries it only while the identity shows a name.
+  var emailMethodValue: String? { accountName.isEmpty ? nil : accountEmail }
+
+  // What each room keeps on this phone while signed out, one line for each room that holds something.
+  var phoneHoldings: [(room: Room, summary: String)] {
+    let pages = journal.room?.days.filter { $0.document.isWritten }.count ?? 0
+    let journalSummary = pages == 0 ? nil : "\(pages) \(pages == 1 ? "page" : "pages")"
+    return [(Room.journal, journalSummary), (Room.gym, gym.phoneSummary)].compactMap { room, summary in summary.map { (room, $0) } }
   }
   func openRoom(_ room: Room) {
     guard !editorReadOnly else { return }
     if !welcome, selectedRoom == .journal { journal.liftInk() }
     journal.done()
     selectedRoom = room; welcome = false; preferences.set(false, forKey: "roomWelcomeRequired")
-    preferences.set(room.rawValue, forKey: "lastRoom")
     choose(room == .journal ? "open_journal" : "open_gym", screen: "welcome")
     if room == .journal { journal.openJournal() }
     refresh()
@@ -227,7 +245,7 @@ final class AppModel {
     if selectedRoom == .journal { journal.liftInk() }
     guard room != selectedRoom else { return }
     journal.done()
-    selectedRoom = room; preferences.set(room.rawValue, forKey: "lastRoom")
+    selectedRoom = room
     telemetry.event("room_switched", properties: ["room": room.rawValue])
     refresh()
     if room == .journal {
@@ -648,6 +666,7 @@ final class AppModel {
     accountName = identity.name
     accountEmail = identity.email.nilIfEmpty ?? email
     preferences.set(accountEmail, forKey: "accountEmail:\(identity.account)")
+    preferences.set(accountName, forKey: "accountName:\(identity.account)")
     signInMethods = []
     methodsGeneration += 1
     do {
@@ -667,46 +686,63 @@ final class AppModel {
     guard !accountTransition, let runtime else { return }
     let generation = authGeneration
     journal.liftInk()
+    signOutRefusal = nil
     accountTransition = true; signingOut = true; journal.editing = false
     defer { if authGeneration == generation { accountTransition = false; signingOut = false } }
-    if !flushRooms() { return }
     choose("sign_out", screen: "you")
+    guard flushRooms() else { await refuseSignOut(error ?? Self.signOutFailed); return }
     do {
       let session = try await runtime.engine.signOut()
       guard !Task.isCancelled else { await session.cancel(); return }
-      signOutSession = session; sheet = .signOut
+      signOutSession = session
+    } catch {
+      guard !Task.isCancelled else { return }
+      reportBoundary("auth_sign_out", error: error)
+      await refuseSignOut(Self.signOutFailed)
     }
-    catch { if !Task.isCancelled { reportBoundary("auth_sign_out", error: error); self.error = error.localizedDescription } }
   }
 
   func finishSignOut(_ choice: SignOutChoice) async {
     guard !accountTransition, var session = signOutSession, let runtime else { return }
     accountTransition = true; signingOut = true; journal.editing = false
     defer { accountTransition = false; signingOut = false }
+    let changed = "Something changed while you chose. Sign out again."
     var revocation: String?
     do {
       if journal.dirty {
-        guard flushRooms() else { return }
+        guard flushRooms() else { await refuseSignOut(error ?? Self.signOutFailed); return }
         await session.cancel()
+        guard choice == .keep else { await refuseSignOut(changed); return }
         session = try await runtime.engine.signOut(); signOutSession = session
-        if choice == .discard { error = "Pending writing changed. Review the new count."; return }
       }
       revocation = try runtime.prepareRevocation(account: session.account)
-      choose(choice == .keep ? "keep" : "discard", screen: "sign_out")
+      choose(choice == .keep ? "keep" : "discard", screen: "you")
       _ = try await session.finish(choice)
       runtime.updateTelemetryIdentity()
       telemetry.event("auth_signed_out", properties: ["outcome": "ok"])
       signOutSession = nil; signInSession = nil
+      preferences.removeObject(forKey: "accountName:\(session.account)"); preferences.removeObject(forKey: "accountEmail:\(session.account)")
       journal.liftInk()
       sheet = nil; account = nil; journal.document = PageDocument(); journal.dirty = false; journal.editing = false; error = nil
-      appleTicket = nil; signInMethods = []; accountEmail = ""; appleLinkedReceipt = false
+      appleTicket = nil; signInMethods = []; accountEmail = ""; accountName = ""; appleLinkedReceipt = false
+      email = ""; code = ""; codeSentAt = nil; appleReceiptEmail = ""
       keepDismissed = false; welcome = true; preferences.set(true, forKey: "roomWelcomeRequired"); preferences.removeObject(forKey: "lastRoom"); clearAdoptionAnswers(); refresh()
       preferences.set(false, forKey: "keepDismissed")
       Task { await runtime.revokeSignedOutSessions(force: true) }
     } catch EngineError.signOutChanged {
       if let revocation { try? runtime.revocations.delete(for: revocation) }
-      await session.cancel(); signOutSession = try? await runtime.engine.signOut(); error = "Pending writing changed. Review the new count."
-    } catch { reportBoundary("auth_sign_out", error: error); if let revocation { try? runtime.revocations.delete(for: revocation) }; self.error = error.localizedDescription }
+      await refuseSignOut(changed)
+    } catch {
+      reportBoundary("auth_sign_out", error: error); if let revocation { try? runtime.revocations.delete(for: revocation) }
+      await refuseSignOut(Self.signOutFailed)
+    }
+  }
+
+  // A sign-out that could not begin, or an answer it could not carry out, ends the held sign-out and leaves the account
+  // signed in; its reason waits under Sign out, never in the sign-in steps' error.
+  func refuseSignOut(_ reason: String) async {
+    await signOutSession?.cancel(); signOutSession = nil; signOutRefusal = reason; error = nil
+    telemetry.event("auth_signed_out", properties: ["outcome": "refused"])
   }
 
   func authenticateApple(_ authorize: @escaping (SessionToken?) async throws -> AppleAuthResponse) async {
@@ -744,7 +780,18 @@ final class AppModel {
 
   func cancelSignOut() async {
     guard !accountTransition else { return }
-    choose("cancel", screen: "sign_out"); await signOutSession?.cancel(); signOutSession = nil; sheet = .you
+    choose("cancel", screen: "you"); await signOutSession?.cancel(); signOutSession = nil; sheet = .you
+  }
+
+  // Why Sign out did nothing when the phone itself failed it; a room that cannot save says so in its own words instead.
+  static let signOutFailed = "Couldn't sign out. Try again."
+
+  // superapp-flow.md §7: one question, and when the account has not confirmed some changes it says how many.
+  static func signOutMessage(unsent count: Int) -> String {
+    if count == 0 { return "Your pages and log stay in your account and leave this phone." }
+    let changes = count == 1 ? "1 change hasn't" : "\(count) changes haven't"
+    let them = count == 1 ? "it" : "them"
+    return "\(changes) been confirmed by your account yet. Keep \(them) on this phone until you sign back in, or discard \(them) from this phone. Everything else is in your account and leaves this phone."
   }
 
   struct SavedAdoption: Codable {

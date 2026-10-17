@@ -6,7 +6,7 @@ import SyncCore
 
 struct GymRoom: View {
   enum Tab: Hashable { case routines, log, coach }
-  enum Destination: Hashable { case routine(String), session(String), settings }
+  enum Destination: Hashable { case routine(String), session(String) }
   @Bindable var gym: GymModel
   @Bindable var app: AppModel
   @State var tab = Tab.routines
@@ -18,36 +18,48 @@ struct GymRoom: View {
   @State var finishedHandoff: WorkoutHandoff?
   @State var share: SessionShareID?
   @State var shareAfterSignIn: ID<Session>?
+  @State var risingFromAccessory = false
+  @State var hiddenTabBars: Set<Tab> = []
+  static let accessoryZoom = "hidden-workout"
+  @Namespace var zoom
+  @Environment(\.accessibilityReduceMotion) var reduceMotion
 
   var tabs: some View {
     TabView(selection: $tab) {
       SwiftUI.Tab("Routines", systemImage: "list.bullet.rectangle", value: Tab.routines) {
         NavigationStack(path: $routinesPath) {
           root(RoutinesTab(gym: gym, onReviewProposal: { proposal = ProposalReviewID(id: $0.description) }))
-        }.roomBar(.gym)
+        }.roomBar(.gym).onPreferenceChange(TabBarHidden.self) { tabBar(.routines, hidden: $0) }
       }
       SwiftUI.Tab("The log", systemImage: "calendar", value: Tab.log) {
-        NavigationStack(path: $logPath) { root(LogTab(gym: gym)) }.roomBar(.gym)
+        NavigationStack(path: $logPath) { root(LogTab(gym: gym)) }.roomBar(.gym).onPreferenceChange(TabBarHidden.self) { tabBar(.log, hidden: $0) }
       }.badge(gym.isAnonymous ? 0 : gym.workoutsToReview.count)
       SwiftUI.Tab("Coach", systemImage: "bubble.left.and.bubble.right", value: Tab.coach) {
         NavigationStack(path: $coachPath) { root(CoachTab(gym: gym, handoff: $coachHandoff)) }.roomBar(.gym)
+          .onPreferenceChange(TabBarHidden.self) { tabBar(.coach, hidden: $0) }
       }
     }.tint(GymPalette.accent).accessibilityHidden(gym.workout.isPresented)
   }
 
-  // The stacks' back chevrons and the room menu take the label colour; each screen's page keeps the accent.
+  // The stacks' back chevrons and the room menu take the label colour; each screen's page keeps the accent. Each root holds
+  // its list's end clear of the tab bar across a pop and a bounce that brings the bar back.
   func root(_ screen: some View) -> some View {
-    screen.toolbar { roomToolbar }.roomBar(.gym).navigationDestination(for: Destination.self, destination: destination)
+    screen.modifier(HeldFoot()).toolbar { roomToolbar }.roomBar(.gym).navigationDestination(for: Destination.self, destination: destination)
   }
 
   var body: some View {
     Group {
-      if #available(iOS 26, *) { tabs.tabBarMinimizeBehavior(.onScrollDown) }
-      else { tabs }
+      if #available(iOS 26.1, *) {
+        tabs.tabBarMinimizeBehavior(.onScrollDown).tabViewBottomAccessory(isEnabled: accessoryStands) { accessory }
+      } else if #available(iOS 26, *) {
+        if accessoryStands { tabs.tabBarMinimizeBehavior(.onScrollDown).tabViewBottomAccessory { accessory } }
+        else { tabs.tabBarMinimizeBehavior(.onScrollDown) }
+      } else { tabs }
     }
     .environment(\.coachOpenAccount, app.openYou)
     .environment(\.coachOpenRoutine, { id in tab = .routines; routinesPath.append(Destination.routine(id)) })
     .environment(\.coachOpenSession, { id in tab = .log; logPath.append(Destination.session(id)) })
+    .environment(\.coachAsk, { handoff in ask(handoff.question, send: handoff.send) })
     .environment(\.gymShareSession, { id in share = SessionShareID(id: id) })
     .sheet(item: $proposal) { proposal in
       ProposalReviewSheet(gym: gym, proposalId: proposal.id) { name in
@@ -65,8 +77,11 @@ struct GymRoom: View {
       shareAfterSignIn = nil
       if !gym.sharingNeedsSignIn { share = SessionShareID(id: pending) }
     }
-    .fullScreenCover(isPresented: Binding(get: { gym.workout.isPresented }, set: { if !$0 { gym.hideWorkout() } }), onDismiss: receiveWorkout) {
-      WorkoutScreen(gym: gym).interactiveDismissDisabled()
+    // Only a cover closed under a workout still on screen hides it; a close the workout already made records nothing.
+    .fullScreenCover(isPresented: Binding(get: { gym.workout.isPresented }, set: { if !$0, gym.workout.isPresented { gym.hideWorkout() } }), onDismiss: receiveWorkout) {
+      if risingFromAccessory {
+        WorkoutScreen(gym: gym).interactiveDismissDisabled().navigationTransition(.zoom(sourceID: GymRoom.accessoryZoom, in: zoom))
+      } else { WorkoutScreen(gym: gym).interactiveDismissDisabled() }
     }
     .onChange(of: gym.workout.handoff) { _, handoff in
       guard let handoff else { return }
@@ -75,9 +90,6 @@ struct GymRoom: View {
     .onChange(of: gym.openSession?.id) { _, id in
       if id != nil { routinesPath = NavigationPath(); logPath = NavigationPath(); coachPath = NavigationPath() }
     }
-    .onChange(of: app.gymSettingsRequested, initial: true) { _, requested in
-      if requested { app.gymSettingsRequested = false; routinesPath.append(Destination.settings); tab = .routines }
-    }
     .onChange(of: gym.error) { _, error in
       if let error, !gym.workout.isPresented, app.sheet == nil {
         UIAccessibility.post(notification: .announcement, argument: error)
@@ -85,6 +97,31 @@ struct GymRoom: View {
     }
     .onChange(of: "\(gym.account ?? ""):\(gym.isAnonymous):\(gym.authPaused):\(gym.accountTransition):\(gym.coachUnavailable)", initial: true) { _, _ in
       gym.workout.coachAvailable = gym.account != nil && !gym.isAnonymous && !gym.authPaused && !gym.accountTransition && !gym.coachUnavailable
+    }
+    .onChange(of: app.routinesRequested, initial: true) { _, requested in
+      if requested { app.routinesRequested = false; routinesPath = NavigationPath(); tab = .routines }
+    }
+  }
+
+  // A stack whose front screen hides the tab bar takes the accessory away with it.
+  func tabBar(_ stack: Tab, hidden: Bool) { if hidden { hiddenTabBars.insert(stack) } else { hiddenTabBars.remove(stack) } }
+
+  // The accessory stands while a workout is hidden and the selected tab's front screen keeps the tab bar, by this one rule
+  // on every iOS 26 release, whether the system can switch the accessory off (26.1) or the room must leave it out (26.0).
+  static func accessoryStands(workoutHidden: Bool, tab: Tab, hiddenTabBars: Set<Tab>) -> Bool { workoutHidden && !hiddenTabBars.contains(tab) }
+  var accessoryStands: Bool { Self.accessoryStands(workoutHidden: hiddenWorkout != nil, tab: tab, hiddenTabBars: hiddenTabBars) }
+
+  // The open workout while the lifter has it hidden; an account changing takes it away.
+  var hiddenWorkout: Session? { gym.workoutHidden && !gym.accountTransition ? gym.openSession : nil }
+
+  // The logger rises from the accessory, with the cover's own transition under Reduce Motion.
+  @available(iOS 26, *)
+  @ViewBuilder var accessory: some View {
+    if let hiddenWorkout {
+      HiddenWorkoutAccessory(gym: gym, session: hiddenWorkout) {
+        risingFromAccessory = !reduceMotion
+        if !gym.openHiddenWorkout(from: .accessory) { risingFromAccessory = false }
+      }.matchedTransitionSource(id: GymRoom.accessoryZoom, in: zoom)
     }
   }
 
@@ -96,15 +133,15 @@ struct GymRoom: View {
       switch destination {
       case .routine(let id): RoutineDetail(gym: gym, id: ID(RecordID(id)))
       case .session(let id): SessionDetailScreen(gym: gym, sessionID: ID(RecordID(id)))
-      case .settings: GymSettingsScreen(gym: gym)
       }
-    }.toolbar(.hidden, for: .tabBar)
+    }.gymTabBar()
   }
   func ask(_ question: String, send: Bool = false) {
     coachPath = NavigationPath(); tab = .coach
     coachHandoff = CoachHandoff(question: question, send: send)
   }
   func receiveWorkout() {
+    risingFromAccessory = false
     guard let handoff = gym.workout.handoff ?? finishedHandoff else { return }
     finishedHandoff = nil; gym.workout.handoff = nil
     switch handoff {
@@ -112,6 +149,39 @@ struct GymRoom: View {
     case .keep: app.keep()
     case .coach: ask(WorkoutHandoff.coachQuestion, send: true)
     case .writtenProgram: if gym.isAnonymous || gym.authPaused { app.openYou() } else { ask("Help me turn my written program into a routine.") }
+    }
+  }
+}
+
+// A hidden workout in the tab bar's accessory (ios-redesign §7.18): its name and clock, the clock alone beside a minimized bar.
+@available(iOS 26, *)
+struct HiddenWorkoutAccessory: View {
+  let gym: GymModel
+  let session: Session
+  let open: () -> Void
+  @Environment(\.tabViewBottomAccessoryPlacement) var placement
+
+  var body: some View {
+    TimelineView(.periodic(from: .now, by: 1)) { _ in
+      let now = (try? gym.runner.moment().now) ?? Instant(Date.now)
+      let clock = WorkoutClocks.reading(WorkoutClocks(session: session, sets: gym.sets, now: now).workoutMs)
+      let name = session.name ?? Readout.noRoutine
+      Button(action: open) {
+        HStack(spacing: RoomSpace.related) {
+          Image(systemName: "dumbbell.fill").foregroundStyle(GymPalette.accent)
+          if placement == .inline {
+            Text(clock).monospacedDigit().foregroundStyle(GymPalette.inkDim)
+          } else {
+            HStack(spacing: 0) {
+              Text(name).fontWeight(.semibold).foregroundStyle(GymPalette.ink).lineLimit(1).truncationMode(.tail)
+              Text(" · \(clock)").monospacedDigit().foregroundStyle(GymPalette.inkDim).fixedSize()
+            }
+          }
+        }.font(.subheadline).padding(.horizontal, RoomSpace.inset).frame(maxWidth: .infinity, alignment: .leading)
+          .contentShape(Rectangle())
+      }.buttonStyle(.plain)
+        .accessibilityLabel("\(name), in progress").accessibilityValue(clock)
+        .accessibilityIdentifier("gym-hidden-workout")
     }
   }
 }

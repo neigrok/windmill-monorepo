@@ -95,6 +95,16 @@ final class RoutineEditingSession: Identifiable {
     refusal = gym.error ?? "This routine could not be saved. Try again."
     return false
   }
+  // A routine's delete keeps the room's nine-second Undo, so it asks nothing and happens at once.
+  @discardableResult func delete(_ gym: GymModel) -> Bool {
+    guard account == gym.account, anonymous == gym.isAnonymous else {
+      refusal = "The account changed while editing. Open the routine again."; return false
+    }
+    guard let outcome = gym.run(DeleteRoutine(id)), outcome.refusal == nil else {
+      refusal = gym.error ?? "This routine could not be deleted. Try again."; return false
+    }
+    return true
+  }
 }
 
 struct RoutineBuilder: View {
@@ -103,6 +113,7 @@ struct RoutineBuilder: View {
   let onSave: (ID<Routine>) -> Void
   @FocusState private var nameFocused: Bool
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.dynamicTypeSize) private var typeSize
 
   var body: some View {
     NavigationStack(path: Binding(get: { editing.path }, set: { editing.follow($0) })) {
@@ -117,8 +128,10 @@ struct RoutineBuilder: View {
                        errorIdentifier: "routine-refusal", undoIdentifier: "builder-undo")
         }
         .navigationDestination(for: RoutineEditingSession.Step.self, destination: destination)
+        // The plan appears again each time a step pops off it, so its first appearance is the visit.
         .onAppear {
-          if !editing.appeared { nameFocused = editing.draft.isNew; editing.appeared = true }
+          guard !editing.appeared else { return }
+          editing.appeared = true; nameFocused = editing.draft.isNew
           gym.telemetry.event("gym_screen_viewed", properties: ["screen": "routine_editor"])
         }
         .onChange(of: editing.path) { _, _ in nameFocused = false }
@@ -146,7 +159,7 @@ struct RoutineBuilder: View {
           ForEach(Array(editing.draft.current.entries.enumerated()), id: \.element.exerciseId) { index, entry in
             let exercise = gym.catalogue.find(entry.exerciseId)
             NavigationLink(value: exercise.map { RoutineEditingSession.Step.targets($0.id) }) {
-              GymRow(title: exercise?.name ?? "Movement unavailable", meta: Readout.target(entry.sets))
+              GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")", meta: Readout.target(entry.sets))
             }.accessibilityIdentifier("builder-movement-\(entry.exerciseId)")
               .swipeActions { Button("Remove", role: .destructive) { editing.remove(index) } }
               .contextMenu {
@@ -161,22 +174,28 @@ struct RoutineBuilder: View {
           Button("Add movement", systemImage: "plus.circle.fill") { nameFocused = false; editing.pickMovement() }
             .accessibilityIdentifier("add-movement").disabled(editing.draft.current.entries.count >= 50)
         } header: {
-          HStack {
-            Text("Movements")
-            Spacer()
+          // At accessibility sizes Reorder stands under the header, so the header's one word never breaks.
+          let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: RoomSpace.small)) : AnyLayout(HStackLayout())
+          layout {
+            Text("Movements").frame(maxWidth: .infinity, alignment: .leading)
             if editing.draft.current.entries.count > 1 {
               Button(editing.editMode.isEditing ? "Done" : "Reorder") { editing.editMode = editing.editMode.isEditing ? .inactive : .active }
                 .font(.subheadline).textCase(nil).accessibilityIdentifier("reorder-movements")
             }
           }
         }
-        let history = gym.routineHistory(editing.draft.id).prefix(20)
+        let history = gym.routineHistory(editing.draft.id).prefix(20), dates = gym.dates
         if !history.isEmpty {
           Section("History") {
             ForEach(history, id: \.id) { session in
-              GymRow(title: RoutineLines.day(session.startedAt, now: gym.log?.moment.now ?? session.startedAt),
-                          meta: RoutineLines.session(SessionReadout(session: session, sets: gym.sets)))
+              GymRow(title: dates.subtitle(session.startedAt), meta: RoutineLines.session(SessionReadout(session: session, sets: gym.sets)))
             }
+          }
+        }
+        if !editing.draft.isNew {
+          Section {
+            Button("Delete routine", systemImage: "trash", role: .destructive) { delete() }
+              .foregroundStyle(GymPalette.alarm).disabled(gym.accountTransition).accessibilityIdentifier("delete-routine")
           }
         }
       }.listRowBackground(GymPalette.card)
@@ -208,6 +227,11 @@ struct RoutineBuilder: View {
   private func save() {
     nameFocused = false
     if editing.save(gym) { onSave(editing.id); dismiss() }
+  }
+
+  private func delete() {
+    nameFocused = false
+    if editing.delete(gym) { dismiss() }
   }
 }
 

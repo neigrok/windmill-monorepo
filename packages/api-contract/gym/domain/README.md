@@ -3,7 +3,10 @@
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
 v6/minimum-4 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json` runs in
-Swift alone, pending in Kotlin and not applying on the web (its row says why). R118 metadata reads remain optional
+Swift alone, pending in Kotlin and not applying on the web (its row says why), and so do the `ProgressRecords` reads
+of `training-reads.json`, pending in Kotlin and on the web (Reads says why), and the proposal state's cases over a
+routine the log has not confirmed or out of sight, with its `OutOfDate` read, pending in Kotlin and on the web
+(Proposal state says why). R118 metadata reads remain optional
 for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCreation` decodes separately.
 
 ## Files
@@ -19,8 +22,8 @@ for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCr
 | `preferences-actions.json` | Draft preference saves and rest defaults |
 | `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
 | `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery and discard. Runs in Swift `GymDomain`. Kotlin holds it pending until Android's recovery (`WorkoutImports.kt`, in the store today) moves into its domain; the web holds no signed-out workout, so it records the file as not applying |
-| `proposals-actions.json` | Propose, apply/dismiss, ordered diff, change count, provenance and optional R118 metadata reads |
-| `training-reads.json` | Prefill, last time, readouts, the canonical estimate, complete progress projection, movement records, chart windows and shared history documents |
+| `proposals-actions.json` | Propose, apply/dismiss, the proposal state's refusals and out of date, ordered diff, change count, provenance and optional R118 metadata reads |
+| `training-reads.json` | Prefill, last time, readouts, the canonical estimate, complete progress projection, movement records, the log's new bests, chart windows and shared history documents |
 | `units.json` | Units, signed weight ladder, formatting, rounding and rep steps |
 | `../rules/bodyweight.json` | Bodyweight stance, readings, chart windows and gaps |
 | `../../gym-ladder.json` | The existing cross-surface ladder, also run directly by both domains |
@@ -88,6 +91,18 @@ A decision is `{decision:{write:{gesture,result}}}`, `{decision:{unchanged:{resu
 `sessionFinished/sessionOpen/sessionOverlap/payloadConflict/unknownExercise/badInstant/proposalSettled/proposalSuperseded/other`
 holding the complete `{code,subject,detail,path}`. Predicted and notice paths retain their meaning.
 
+## Proposal state
+
+`StateRefusal` (`{proposal, routine?, confirmedRoutine?, routineVisible?, applying}` → `{refusal}`) and `OutOfDate`
+(the same input without `applying` → `{outOfDate}`) read a proposal with its routine as the phone stores it, as the log
+last confirmed it (`confirmedRoutine`, the stored routine when absent) and whether it is in sight (`routineVisible`,
+true when absent). Applying a pending proposal is refused `proposalSuperseded` with reason `routine-changed` when the
+routine's revision moved or its name or movements differ from the confirmed copy, an edit the log will count before it
+reads the decision; a reorder alone does not refuse. It is refused `gone` when the routine is absent or out of sight.
+Turning down ignores both. A proposal is out of date when it is superseded, replaced, or pending with its Apply refused.
+Kotlin and the web hold these cases pending: their `ProposalState` reads no confirmed routine and leaves a routine out
+of sight to `ApplyProposal`'s decide, and neither has an `OutOfDate` read.
+
 ## Reads
 
 `WorkoutRecovery` (read scene with `input.notices` in the kit's notice form, `dismissed?` added) lists a row per
@@ -113,6 +128,12 @@ within a session, the lowest set identity wins.
 `BodyweightReps` exposes the independent zero-load repetition fact of each session and its best
 in the requested window. Higher assisted repetitions or equally repeated added load never replace
 that fact; the all-load `mostReps` read retains its own ordering. Partial history has facts but no best.
+`ProgressRecords` (`input:{}`) is the log's new bests. A movement's first estimate is its baseline, never a new best;
+a later estimate is a new best when, stated to a tenth of a kilogram, it beats the best before it as stated. Each names
+its session, the best it beat (`previous`), its stated `estimate` and its `gain` over that best to a tenth; the read
+also lists the sessions that set one. Partial history has none. It runs in Swift alone: Android weaves its log's bests
+in the app module (`LogTimeline.kt`), counting a movement's first estimate and every exact record step, and the web's
+log weaves none, so both hold the read pending.
 
 `TrainingHistory` composes the mirror documents through the same entities and reads. Its vectors use
 `input:{method,args}` and preserve catalogue and routine joins, proposal provenance, last-set selection,
@@ -120,7 +141,7 @@ session summaries, reviews, record details and weekly totals. History filters ap
 facet aggregation; only the returned session page uses the cursor and limit. Equal session timestamps
 sort by ascending identity, and the next page excludes identities through `beforeId`. Tonnage sums
 loads in their storage quanta; estimates retain full precision. Record steps include the first baseline.
-The 112 training-read cases include 36 complete mirror documents and 22 adversarial read scenes.
+The 116 training-read cases include 36 complete mirror documents and 22 adversarial read scenes.
 
 The engines accept create/update/write/removal predictions. Omitted sets in completed-session
 replacement and a proposal-removed routine disappear locally while their command is pending;

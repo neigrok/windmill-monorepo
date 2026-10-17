@@ -3,6 +3,8 @@ import DomainKit
 import GymDomain
 import SyncCore
 
+// This workout: each movement's working sets against its plan, a gym/done check once every planned set is logged, Add movement
+// as the list's last row, and Hide workout.
 struct WorkoutAssembly: View {
   @Bindable var workout: WorkoutState
   let add: () -> Void
@@ -17,10 +19,9 @@ struct WorkoutAssembly: View {
                 workout.select(id)
                 if workout.selected == id { dismiss() }
               } label: {
-                let sets = workout.sets.filter { $0.exerciseId == id }
-                GymRow(title: workout.gym.catalogue.find(id)?.name ?? "Movement",
-                            meta: sets.isEmpty ? "Nothing logged yet" : GymCount.of(sets.count, "set") + " logged",
-                            trailing: workout.selected == id ? .check : nil)
+                let ledger = workout.ledger(id)
+                GymRow(title: workout.gym.catalogue.find(id)?.name ?? "Movement", meta: ledger.tally,
+                       trailing: ledger.complete ? .check : nil).tint(GymPalette.done)
               }
               .accessibilityAddTraits(workout.selected == id ? .isSelected : [])
               .deleteDisabled(!workout.canRemove(id)).moveDisabled(workout.finishing)
@@ -34,14 +35,18 @@ struct WorkoutAssembly: View {
                 if let index = workout.walk.order.firstIndex(of: id), index + 1 < workout.walk.order.count { workout.move(from: IndexSet(integer: index), to: index + 2) }
               }
             }.onMove { workout.move(from: $0, to: $1) }
+            Button("Add movement", systemImage: "plus.circle.fill", action: add).accessibilityIdentifier("workout-assembly-add")
           }
-          Section { Button("Add movement", systemImage: "plus", action: add).accessibilityIdentifier("workout-assembly-add") }
+          // The footer names the one way back: the tab bar's accessory on iOS 26, The log's Hidden row before it.
           Section {
             Button("Hide workout") { if workout.gym.hideWorkout() { dismiss() } }
               .disabled(workout.finishing || workout.gym.accountTransition).accessibilityIdentifier("workout-hide")
-          } footer: { Text("Your sets stay saved. Restore this workout from Gym settings.") }
+          } footer: {
+            if #available(iOS 26, *) { Text("Your sets stay saved. Tap the workout above the tabs to return.") }
+            else { Text("Your sets stay saved. Find it at the top of The log.") }
+          }
         }.listRowBackground(GymPalette.card)
-      }.modifier(GymPage()).navigationTitle("This session").navigationBarTitleDisplayMode(.inline)
+      }.modifier(GymPage()).navigationTitle("This workout").navigationBarTitleDisplayMode(.inline)
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
           ToolbarItem(placement: .topBarTrailing) { EditButton() }
@@ -68,8 +73,9 @@ struct WorkoutMovementPicker: View {
   }
 }
 
-// Heavier than the plan: one target asks once, in a dialog; a varied scheme opens its before and after rows in a sheet.
-// Only the dialog's answers and the sheet's two bar actions resolve the offer.
+// Heavier than the plan: leaving a movement raises it, so no control the lifter touched can anchor it, and one target asks
+// once in an alert; a varied scheme opens its before and after rows in a sheet. Only the alert's answers and the sheet's two
+// bar actions resolve the offer.
 struct WorkoutDeviationOffer: ViewModifier {
   @Bindable var workout: WorkoutState
   let held: Bool
@@ -77,17 +83,10 @@ struct WorkoutDeviationOffer: ViewModifier {
   func body(content: Content) -> some View {
     let offer = held ? nil : workout.deviation
     content
-      .confirmationDialog(offer.map { $0.saveLabel + "?" } ?? "", isPresented: .constant(offer.map { !$0.varied } ?? false),
-                          titleVisibility: .visible, presenting: offer) { offer in
+      .alert(offer.map { $0.saveLabel + "?" } ?? "", isPresented: .constant(offer.map { !$0.varied } ?? false), presenting: offer) { offer in
         Button("Save to \(offer.routine)") { workout.resolveDeviation(save: true) }
           .disabled(workout.gym.accountTransition).accessibilityIdentifier("workout-deviation-save")
-        // iOS 26 hides a dialog's cancel and runs it on a tap outside, so Today only is drawn as an answer and kept as the cancel.
-        if #available(iOS 26.0, *) {
-          Button("Today only") { workout.resolveDeviation(save: false) }.accessibilityIdentifier("workout-deviation-today")
-          Button("Today only", role: .cancel) { workout.resolveDeviation(save: false) }
-        } else {
-          Button("Today only", role: .cancel) { workout.resolveDeviation(save: false) }.accessibilityIdentifier("workout-deviation-today")
-        }
+        Button("Today only", role: .cancel) { workout.resolveDeviation(save: false) }.accessibilityIdentifier("workout-deviation-today")
       } message: { _ in Text("Today’s workout already has it.") }
       .sheet(isPresented: Binding(get: { offer?.varied == true }, set: { if !$0 { workout.resolveDeviation(save: false) } })) {
         if let offer { WorkoutDeviationSheet(workout: workout, offer: offer) }

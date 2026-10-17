@@ -4,24 +4,35 @@ import GymDomain
 import SyncAPI
 import SyncCore
 import SyncEngine
+#if DEBUG && targetEnvironment(simulator)
+import struct SyncModelServer.ServerCall
+#endif
 
 struct RoutinesTab: View {
   let gym: GymModel
   var onReviewProposal: ((ID<Proposal>) -> Void)?
   @Environment(\.coachOpenAccount) private var openAccount
+  @Environment(\.coachAsk) private var ask
   @State private var building: RoutineEditingSession?
   @State private var savedID: ID<Routine>?
 
   var body: some View {
-    let waiting = gym.waitingRoutineProposals
+    let proposals = gym.routineProposals
     let receipts = gym.coachRemovalReceipts.filter { $0.outcome != .pending }
     Group {
-      if gym.routines.isEmpty, waiting.isEmpty, receipts.isEmpty, gym.personalCounts[Routine.type, default: 0] == 0, gym.historyKnown {
-        ContentUnavailableView("No routines yet", systemImage: "list.bullet.rectangle", description: Text("Build one, or just start logging."))
+      if gym.routines.isEmpty, proposals.isEmpty, receipts.isEmpty, gym.personalCounts[Routine.type, default: 0] == 0, gym.historyKnown {
+        ContentUnavailableView {
+          Label("No routines yet", systemImage: "list.bullet.rectangle")
+        } actions: {
+          if gym.workout.coachAvailable {
+            Button("Ask Coach") { ask?(CoachHandoff(question: "Build me a routine.")) }
+              .modifier(RoomSecondaryStyle()).controlSize(.large)
+          }
+        }
       } else {
         List {
           Group {
-            if !receipts.isEmpty || !waiting.isEmpty {
+            if !receipts.isEmpty || !proposals.isEmpty {
               Section {
                 ForEach(receipts, id: \.proposal.id) { receipt in
                   Button { onReviewProposal?(receipt.proposal.id) } label: {
@@ -29,31 +40,34 @@ struct RoutinesTab: View {
                            meta: receipt.outcome == .applied ? "Removed" : "Nothing was applied", trailing: .door)
                   }.accessibilityIdentifier("routine-removal-receipt")
                 }
-                if let newest = waiting.first {
-                  Button { onReviewProposal?(newest.id) } label: {
-                    GymRow(title: GymCount.of(waiting.count, "proposal"), meta: gym.proposalLine(newest), trailing: .door)
-                  }.accessibilityIdentifier("routine-proposal")
+                // A waiting proposal carries the accent; one out of date reads its settled word alone, as a receipt does.
+                ForEach(proposals, id: \.id) { proposal in
+                  let outOfDate = gym.coachProposalOutOfDate(proposal)
+                  Button { onReviewProposal?(proposal.id) } label: {
+                    GymRow(title: gym.proposalTitle(proposal), meta: gym.proposalLine(proposal),
+                           leading: outOfDate ? nil : .symbol("bubble.left.and.bubble.right", GymPalette.accent), trailing: .door)
+                  }.accessibilityIdentifier(outOfDate ? "routine-proposal-out-of-date" : "routine-proposal")
+                }
+              }
+            }
+            let routines = gym.routinesByLastTraining
+            if !routines.isEmpty {
+              Section {
+                ForEach(routines, id: \.id) { routine in
+                  NavigationLink { RoutineDetail(gym: gym, id: routine.id) } label: {
+                    GymRow(title: routine.name, meta: gym.routineLine(routine))
+                  }.accessibilityIdentifier("routine-\(routine.id)")
+                    .swipeActions(edge: .trailing) { Button("Delete", role: .destructive) { gym.run(DeleteRoutine(routine.id)) } }
+                    .contextMenu {
+                      Button("Start workout", systemImage: "play.fill") { gym.startWorkout(routineId: routine.id) }
+                      Button("Delete routine", systemImage: "trash", role: .destructive) { gym.run(DeleteRoutine(routine.id)) }
+                    }
+                    .accessibilityAction(named: "Start workout") { gym.startWorkout(routineId: routine.id) }
+                    .accessibilityAction(named: "Delete routine") { gym.run(DeleteRoutine(routine.id)) }
                 }
               }
             }
             Section {
-              ForEach(gym.routinesByLastTraining, id: \.id) { routine in
-                NavigationLink { RoutineDetail(gym: gym, id: routine.id) } label: {
-                  HStack(spacing: RoomSpace.related) {
-                    GymRow(title: routine.name, meta: gym.routineLine(routine))
-                    if waiting.dropFirst().contains(where: { $0.routineId == routine.id }) {
-                      Text(GymCount.of(1, "proposal")).font(.footnote).foregroundStyle(GymPalette.accent)
-                    }
-                  }
-                }.accessibilityIdentifier("routine-\(routine.id)")
-                  .swipeActions(edge: .trailing) { Button("Delete", role: .destructive) { gym.run(DeleteRoutine(routine.id)) } }
-                  .contextMenu {
-                    Button("Start workout", systemImage: "play.fill") { gym.startWorkout(routineId: routine.id) }
-                    Button("Delete routine", systemImage: "trash", role: .destructive) { gym.run(DeleteRoutine(routine.id)) }
-                  }
-                  .accessibilityAction(named: "Start workout") { gym.startWorkout(routineId: routine.id) }
-                  .accessibilityAction(named: "Delete routine") { gym.run(DeleteRoutine(routine.id)) }
-              }
               NavigationLink { MovementPicker(gym: gym, purpose: .browse) } label: {
                 Label { Text("Movements").foregroundStyle(GymPalette.ink) } icon: { Image(systemName: "list.bullet") }
               }.accessibilityIdentifier("routines-movements")
@@ -87,8 +101,10 @@ struct RoutinesTab: View {
         #if DEBUG && targetEnvironment(simulator)
         if ProcessInfo.processInfo.arguments.contains("-routines-proposal-fixture"), gym.coachAccountAvailable, gym.routines.isEmpty {
           var fixture = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "Push A", entries: [RoutineEntry(exerciseId: ID("bench-press"), sets: [SetTarget(reps: 8, weightKg: 60)])]))
+          let heavier = [RoutineEntry(exerciseId: ID("bench-press"), sets: [SetTarget(reps: 8, weightKg: 62.5)])]
           if gym.saveRoutine(&fixture) {
-            gym.run(ProposeRoutine(id: gym.runner.mint(Proposal.self), routineId: fixture.id, name: "Push A", entries: [RoutineEntry(exerciseId: ID("bench-press"), sets: [SetTarget(reps: 8, weightKg: 62.5)])], summary: "A heavier bench target"))
+            if ProcessInfo.processInfo.arguments.contains("-routines-tool-proposal") { Task { await gym.proposeFromAConnectedToolThenEdit(fixture.current, entries: heavier) } }
+            else { gym.run(ProposeRoutine(id: gym.runner.mint(Proposal.self), routineId: fixture.id, name: "Push A", entries: heavier, summary: "A heavier bench target")) }
           }
         }
         #endif
@@ -101,12 +117,13 @@ struct RoutineDetail: View {
   let gym: GymModel
   let id: ID<Routine>
   @State private var editing: RoutineEditingSession?
+  @Environment(\.dismiss) private var dismiss
   var routine: Routine? { gym.routines.first { $0.id == id } }
 
   var body: some View {
     Group {
       if let routine {
-        let history = Array(gym.routineHistory(id).prefix(20))
+        let history = Array(gym.routineHistory(id).prefix(20)), dates = gym.dates
         List {
           Group {
             Section {
@@ -118,20 +135,14 @@ struct RoutineDetail: View {
                               meta: Readout.target(entry.sets))
                 }.accessibilityIdentifier("routine-detail-movement-\(entry.exerciseId)")
               }
-            } header: { Text("Movements") } footer: {
-              if routine.entries.contains(where: \.isOpen) { Text("Open movements have no target — you decide the numbers at the rack.") }
-            }
-            if !history.isEmpty || gym.readFailed || gym.historyKnown {
-              Section {
+            } header: { Text("Movements") }
+            if !history.isEmpty {
+              Section("History") {
                 ForEach(history, id: \.id) { session in
                   NavigationLink { SessionDetailScreen(gym: gym, sessionID: session.id) } label: {
-                    GymRow(title: RoutineLines.day(session.startedAt, now: gym.log?.moment.now ?? session.startedAt),
-                                meta: RoutineLines.session(SessionReadout(session: session, sets: gym.sets)))
+                    GymRow(title: dates.subtitle(session.startedAt), meta: RoutineLines.session(SessionReadout(session: session, sets: gym.sets)))
                   }.accessibilityIdentifier("routine-history-\(session.id)")
                 }
-              } header: { Text("History") } footer: {
-                if gym.readFailed { Text("The log didn’t answer — this routine’s history is out of reach.") }
-                else if history.isEmpty { Text("No workouts with this routine yet.") }
               }
             }
           }.listRowBackground(GymPalette.card)
@@ -141,7 +152,7 @@ struct RoutineDetail: View {
                                description: Text("Everything you logged against it is still in the log."))
       }
     }.modifier(GymPage())
-      .navigationTitle(routine?.name ?? "Routine").accessibilityIdentifier("routine-detail").toolbar(.hidden, for: .tabBar)
+      .navigationTitle(routine?.name ?? "Routine").accessibilityIdentifier("routine-detail").gymTabBar()
       .toolbar {
         if let routine {
           ToolbarItem(placement: .topBarTrailing) {
@@ -158,7 +169,8 @@ struct RoutineDetail: View {
           }
         }
       }
-      .sheet(item: $editing) { editing in RoutineBuilder(gym: gym, editing: editing) { _ in } }
+      // The editor deletes the routine at once, so the detail it leaves behind has nothing to show and goes too.
+      .sheet(item: $editing, onDismiss: { if routine == nil { dismiss() } }) { editing in RoutineBuilder(gym: gym, editing: editing) { _ in } }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "routine"]) }
   }
 }
@@ -171,26 +183,16 @@ enum RoutineLines {
     return historyKnown ? "\(movements) · never trained" : movements
   }
 
-  static func proposal(_ proposal: Proposal, createdAt: Instant?, moment: Moment?) -> String {
-    let source: String
-    switch proposal.provenance {
-    case .ask: source = "Coach"
-    case .mcp(let connection, let agent): source = agent.isEmpty ? connection.isEmpty ? "a connected tool" : connection : agent
-    case .other: source = "a connected tool"
-    }
-    guard let createdAt, let moment else { return "from \(source)" }
-    let time = createdAt.date.formatted(.dateTime.hour().minute())
-    return "from \(source) · \(Readout.briefDay(createdAt, now: moment.now, zone: moment.zone)) \(time)"
+  // Who proposed it, then when the server stamped it: the time today, the day before that.
+  static func proposal(_ proposal: Proposal, createdAt: Instant?, dates: GymDate?) -> String {
+    let source = proposal.sourceName
+    guard let createdAt, let dates else { return "From \(source)" }
+    let moment = dates.moment
+    return "From \(source) · \(LocalDay(createdAt, in: moment.zone) == moment.today ? dates.time(createdAt) : dates.day(createdAt))"
   }
 
   static func session(_ readout: SessionReadout) -> String {
     "\(GymCount.of(readout.workingSetCount, "working set")) · \(GymCount.of(readout.movementCount, "movement"))"
-  }
-
-  static func day(_ instant: Instant, now: Instant) -> String {
-    let date = instant.date, today = now.date
-    let style = Date.FormatStyle.dateTime.weekday(.abbreviated).day().month(.abbreviated)
-    return date.formatted(Calendar.current.isDate(date, equalTo: today, toGranularity: .year) ? style : style.year())
   }
 }
 
@@ -207,17 +209,24 @@ extension GymModel {
     }
   }
 
-  var waitingRoutineProposals: [Proposal] {
-    let pending = proposals.filter { $0.state == "pending" && $0.supersededBy == nil }
+  // The proposals Routines draws, newest first: each one still waiting, and a connected tool's gone out of date while it is
+  // the newest proposal on a routine in sight. A Coach proposal out of date leaves for its card; a tool's has no other door.
+  var routineProposals: [Proposal] {
+    let born: [ID<Proposal>: Stamp]
     do {
-      let born: [ID<Proposal>: Stamp] = try runner.read(Routine.scope) { read in
-        try Dictionary(uniqueKeysWithValues: pending.map { ($0.id, try read.repository(Proposal.self).record($0.id, in: .drawn)?.born ?? .unset) })
+      born = try runner.read(Routine.scope) { read in
+        try Dictionary(uniqueKeysWithValues: proposals.map { ($0.id, try read.repository(Proposal.self).record($0.id, in: .drawn)?.born ?? .unset) })
       }
-      return pending.sorted {
-        let a = born[$0.id] ?? .unset, b = born[$1.id] ?? .unset
-        return a == b ? $0.id < $1.id : a > b
-      }
-    } catch { report("gym_read", error); return pending }
+    } catch { report("gym_read", error); born = [:] }
+    let newest = proposals.sorted {
+      let a = born[$0.id] ?? .unset, b = born[$1.id] ?? .unset
+      return a == b ? $0.id < $1.id : a > b
+    }
+    return newest.filter { proposal in
+      guard coachProposalOutOfDate(proposal) else { return proposal.state == "pending" }
+      if case .ask = proposal.provenance { return false }
+      return coachRoutine(proposal) != nil && newest.first { $0.routineId == proposal.routineId }?.id == proposal.id
+    }
   }
 
   func routineHistory(_ id: ID<Routine>) -> [Session] {
@@ -228,16 +237,42 @@ extension GymModel {
     RoutineLines.routine(routine, lastTrained: routineHistory(routine.id).first?.startedAt, historyKnown: historyKnown, moment: log?.moment)
   }
 
-  // The server stamps a proposal's creation; a proposal the phone has not yet sent shows no time rather than a guessed one.
+  // A proposal's Routines row names the routine as it stands now.
+  func proposalTitle(_ proposal: Proposal) -> String {
+    CoachCopy.proposalTitle(routine: coachRoutine(proposal)?.name ?? proposal.baseName ?? proposal.proposedName,
+                            changes: coachChangeCount(proposal), removal: proposal.intent == "remove")
+  }
+
+  // Who proposed it and when the server stamped it, no time while the phone has not yet sent it; once it can no longer be
+  // applied, its settled word.
   func proposalLine(_ proposal: Proposal) -> String {
-    do {
-      let createdAt = try runner.read(Proposal.scope) { read in
-        try read.repository(Proposal.self).record(proposal.id, in: .stored).flatMap { try Fields($0).optionalInstant("createdAt") }
-      }
-      return RoutineLines.proposal(proposal, createdAt: createdAt, moment: log?.moment)
-    } catch {
-      report("gym_read", error)
-      return RoutineLines.proposal(proposal, createdAt: nil, moment: log?.moment)
-    }
+    if coachProposalOutOfDate(proposal) { return CoachCopy.outOfDate }
+    return RoutineLines.proposal(proposal, createdAt: proposalCreatedAt(proposal), dates: log == nil ? nil : dates)
   }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+extension GymModel {
+  // The connected-tool fixture: a tool proposes on the log, as an MCP tool does, then this phone edits the routine under it.
+  func proposeFromAConnectedToolThenEdit(_ routine: Routine, entries: [RoutineEntry]) async {
+    guard let runtime, let server = runtime.auth.fake, let account else { return }
+    await runtime.engine.flushOnLeave()
+    do {
+      let proposal = Proposal(id: runner.mint(Proposal.self), routineId: routine.id, intent: "revise", proposedName: routine.name,
+                              summary: "A heavier bench target", changes: try ProposalRules.changesBetween(base: routine.entries, proposed: entries),
+                              door: "mcp", connection: "My laptop", agent: "Claude")
+      let fields = JSON.Object(uniqueKeysWithValues: proposal.fields.map { ($0.key, [$0.value, .null]) })
+      let intent: JSON = ["scope": "self/gym", "d": [["t": .string(Proposal.type), "id": proposal.id.json, "born": .null, "life": ["alive", .null], "f": .object(fields)]]]
+      let call = ServerCall(account: account, requestId: nil, tool: "gym.propose_routine_change", args: [:], intents: [intent])
+      guard server.state.withLock({ $0.server.call(call, at: server.now) })?["s"] == "ok" else { self.error = "The connected tool's proposal was refused."; return }
+      runtime.engine.foreground()
+      for _ in 0..<250 where !proposals.contains(where: { $0.id == proposal.id }) {
+        try await Task.sleep(for: .milliseconds(20)); refresh()
+      }
+      guard var edit = try runner.open(routine.id) else { return }
+      edit.current.entries[0].sets = [SetTarget(reps: 8, weightKg: 65)]
+      saveRoutine(&edit)
+    } catch { self.error = "The connected tool's proposal could not be prepared." }
+  }
+}
+#endif

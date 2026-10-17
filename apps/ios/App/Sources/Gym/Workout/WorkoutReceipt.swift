@@ -32,15 +32,7 @@ import SyncCore
   var readout: SessionReadout { SessionReadout(session: session, sets: sets) }
   var slight: Bool { readout.workingSetCount < 4 }
   var title: String { slight ? "Ended early." : "Well done." }
-  var subtitle: String { "\(session.name ?? Readout.noRoutine) · \(session.startedAt.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))" }
-  var facts: [FactTiles.Fact] {
-    let readout = readout
-    var facts: [FactTiles.Fact] = []
-    if let duration = readout.durationMs { facts.append(.init(value: Readout.duration(duration), label: "Duration")) }
-    facts.append(.init(value: "\(readout.workingSetCount)", label: "Working sets"))
-    if let e1rm = readout.topE1rm { facts.append(.init(value: "\(Readout.estimatedWeight(e1rm)) kg", label: "Top e1RM")) }
-    return facts
-  }
+  func subtitle(_ dates: GymDate) -> String { "\(session.name ?? Readout.noRoutine) · \(dates.subtitle(session.startedAt))" }
   // Each movement once, in the order its first set was logged, with its working sets — or every set when none was working.
   var performed: [(exerciseId: ID<Exercise>, reading: String)] {
     SetRow.movements(sets).map { id in
@@ -95,10 +87,10 @@ nonisolated struct WorkoutReview: Decodable, Sendable {
     let reps: Int
     let previous: Double?
     let previousAt: Int64?
-    func sentence(_ catalogue: Catalogue) -> String? {
+    func sentence(_ catalogue: Catalogue, dates: GymDate) -> String? {
       guard let previous, let previousAt, value.isFinite, previous.isFinite, weightKg.isFinite else { return nil }
       let name = catalogue.find(ID(RecordID(exerciseId)))?.name ?? "Movement"
-      let past = "past \(Readout.weight(previous)) from \(Instant(ms: previousAt).date.formatted(date: .abbreviated, time: .omitted))"
+      let past = "past \(Readout.weight(previous)) from \(dates.day(Instant(ms: previousAt), inSentence: true))"
       switch kind {
       case "e1rm": return "\(name) e1RM \(Readout.weight(value)) kg — \(past)."
       case "heaviest": return "\(name) \(Readout.weight(value)) kg × \(reps) — \(past)."
@@ -184,19 +176,14 @@ struct WorkoutReceipt: View {
   let gym: GymModel
   @Bindable var receipt: WorkoutReceiptData
   @Environment(\.dismiss) var dismiss
-  @Environment(\.dynamicTypeSize) var typeSize
-  // The tiles, the record, the movements and the comparison; the sheet opens at half height while they fit in five rows.
-  var rows: Int {
-    1 + (receipt.review?.record == nil ? 0 : 1) + receipt.performed.count + (receipt.review?.against?.movements.count ?? 0)
-      + (receipt.offersRoutine ? 1 : 0)
-  }
+  // The receipt opens over the workout's detail at full height only, so the detail's tiles never show beside its own.
   var body: some View {
     NavigationStack {
       List {
         Group {
-          Section { FactTiles(facts: receipt.facts).padding(.vertical, RoomSpace.small) }
-          if let sentence = receipt.review?.record?.sentence(gym.catalogue) {
-            Section("Personal record") { Text(sentence).font(.body.weight(.semibold)).foregroundStyle(GymPalette.record) }
+          Section { FactTiles(receipt.readout).padding(.vertical, RoomSpace.small) }
+          if let sentence = receipt.review?.record?.sentence(gym.catalogue, dates: gym.dates) {
+            Section("Personal record") { Text(sentence).font(.body.weight(.semibold)).foregroundStyle(GymPalette.record).modifier(RecordArrival()) }
           }
           Section("Performed") {
             ForEach(receipt.performed, id: \.exerciseId) { movement in
@@ -226,10 +213,10 @@ struct WorkoutReceipt: View {
             }
           }
         }.listRowBackground(GymPalette.card)
-      }.modifier(GymPage()).roomTitle(receipt.title, subtitle: receipt.subtitle)
+      }.modifier(GymPage()).roomTitle(receipt.title, subtitle: receipt.subtitle(gym.dates))
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.tint(GymPalette.accent) } }.roomBar(.gym)
-        .reachBand { band }
-    }.modifier(GymPage()).presentationDetents(rows <= 5 && !typeSize.isAccessibilitySize ? [.medium, .large] : [.large])
+        .reachBand(onSurface: true) { band }
+    }.modifier(GymPage()).presentationDetents([.large])
       .sensoryFeedback(.success, trigger: receipt.keptName) { old, new in old == nil && new != nil }
       .task { await receipt.loadReview(gym) }
       .onAppear { receipt.reconcile(gym) }
@@ -247,10 +234,31 @@ struct WorkoutReceipt: View {
         ActionBand(title: "Keep this log", room: .gym, footer: "This log is only on this phone.") { gym.workout.handoff = .keep; dismiss() }
       } else if gym.workout.coachAvailable && !gym.authPaused {
         ActionBand(title: "Share with Coach", room: .gym, disabled: gym.accountTransition, actionIdentifier: "workout-share-coach",
-                   footer: "Sends Coach one line — “Check my last session.” — and opens the answer.") {
+                   footer: "Sends Coach one line — “\(WorkoutHandoff.coachQuestion)” — and opens the answer.") {
           gym.workout.handoff = .coach; dismiss()
         }
       }
-    }
+    }.roomMotion(receipt.reviewFailed)
+  }
+}
+
+// A new record arrives with one gym/record pulse, never a burst; under Reduce Motion it fades in over 200 ms.
+struct RecordArrival: ViewModifier {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var arrived = false
+
+  func body(content: Content) -> some View {
+    Group {
+      if reduceMotion {
+        content.opacity(arrived ? 1 : 0).roomMotion(arrived)
+      } else {
+        content.keyframeAnimator(initialValue: 0.0, trigger: arrived) { line, pulse in
+          line.scaleEffect(1 + 0.04 * pulse, anchor: .leading).shadow(color: GymPalette.record, radius: 8 * pulse)
+        } keyframes: { _ in
+          SpringKeyframe(1, duration: 0.25)
+          SpringKeyframe(0, duration: 0.45)
+        }
+      }
+    }.onAppear { arrived = true }
   }
 }

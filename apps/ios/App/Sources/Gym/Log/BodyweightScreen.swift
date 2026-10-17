@@ -31,6 +31,13 @@ enum BodyweightLogInput {
     return .weight(NSDecimalNumber(decimal: rounded).doubleValue)
   }
 
+  // The sheet's checkmark waits for a weight it could save: not while nothing is typed, a refusal stands, or a weigh-in
+  // reads as it was.
+  static func canSave(_ typed: String, refusal: String?, entry: Bodyweight.Entry?) -> Bool {
+    !typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && refusal == nil
+      && entry.map { parse(typed) == .weight($0.kg) } != true
+  }
+
   static func kilograms(_ kg: Double) -> String {
     var value = Decimal(kg), rounded = Decimal()
     NSDecimalRound(&rounded, &value, 2, .plain)
@@ -79,6 +86,7 @@ struct BodyweightScreen: View {
   @State private var correcting: Selection?
 
   var body: some View {
+    let dates = gym.dates
     List {
       if !gym.readFailed && (gym.bodyweight == nil || gym.bodyweight?.stance == .unknown) {
         ProgressView().frame(maxWidth: .infinity).listRowBackground(GymPalette.canvas)
@@ -92,23 +100,25 @@ struct BodyweightScreen: View {
           Section {
             ChartWindowPicker(recent: "90 days", identifier: "gym-bodyweight-window", window: $window)
             let chart = weight.chart(window == .recent ? .recent : .all)
+            let caption = window.line(recent: "90 days", holding: GymCount.of(chart.dots.count, "weigh-in"))
             if !chart.dots.isEmpty {
               LogDatedChart(points: chart.dots.map { entry in
                 LogPlotPoint(id: entry.day.text, date: LogPresentation.date(entry.day), value: entry.kg,
-                             label: "\(BodyweightLogInput.kilograms(entry.kg)) kg · \(LogPresentation.brief(LogPresentation.date(entry.day)))")
+                             label: "\(BodyweightLogInput.kilograms(entry.kg)) kg · \(dates.day(entry.day))")
               }, from: LogPresentation.date(window == .recent ? weight.today.adding(days: -89) : chart.dots[0].day),
-              through: LogPresentation.date(weight.today), series: .bodyweight, select: { id in
+              through: LogPresentation.date(weight.today), series: .bodyweight, dates: dates, caption: caption, select: { id in
                 guard let entry = weight.entries.first(where: { $0.day.text == id }) else { return }
                 correcting = Selection(entry: entry)
               })
               .accessibilityIdentifier("gym-bodyweight-chart")
-            } else if window == .recent && !gym.readFailed && gym.personalCounts[WeighIn.type, default: 0] == weight.entries.count {
-              Text("no weigh-in in the last 90 days")
-                .foregroundStyle(GymPalette.inkDim)
-                .accessibilityIdentifier("gym-bodyweight-window-empty")
+            } else {
+              if window == .recent && !gym.readFailed && gym.personalCounts[WeighIn.type, default: 0] == weight.entries.count {
+                Text("no weigh-in in the last 90 days")
+                  .foregroundStyle(GymPalette.inkDim)
+                  .accessibilityIdentifier("gym-bodyweight-window-empty")
+              }
+              Text(caption).font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim)
             }
-            Text("\(window == .recent ? "90 days" : "All") · \(GymCount.of(chart.dots.count, "weigh-in"))")
-              .font(.footnote).monospacedDigit().foregroundStyle(GymPalette.inkDim)
           } footer: {
             Text("Every point is a number you typed. Nothing here is estimated.")
               .foregroundStyle(GymPalette.inkDim)
@@ -119,13 +129,9 @@ struct BodyweightScreen: View {
               Button {
                 correcting = Selection(entry: entry)
               } label: {
-                HStack {
-                  Text(LogPresentation.brief(entry.day, today: weight.today)).foregroundStyle(GymPalette.ink)
-                  Spacer()
-                  Text("\(BodyweightLogInput.kilograms(entry.kg)) kg").monospacedDigit().foregroundStyle(GymPalette.ink)
-                }
+                GymRow(title: "\(BodyweightLogInput.kilograms(entry.kg)) kg", trailing: .fact(dates.day(entry.day), door: true))
               }
-              .accessibilityLabel("\(BodyweightLogInput.kilograms(entry.kg)) kilograms, \(entry.day.text)")
+              .accessibilityLabel("\(BodyweightLogInput.kilograms(entry.kg)) kilograms, \(dates.day(entry.day))")
               .accessibilityHint("Correct this weigh-in")
               .accessibilityIdentifier("gym-weigh-in-\(entry.day.text)")
               .swipeActions {
@@ -145,7 +151,7 @@ struct BodyweightScreen: View {
     .modifier(GymPage())
     .navigationTitle("Bodyweight")
     .navigationBarTitleDisplayMode(.inline)
-    .toolbar(.hidden, for: .tabBar)
+    .gymTabBar()
     .accessibilityIdentifier("gym-bodyweight")
     .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo") }
     .sheet(item: $correcting) { WeighInSheet(gym: gym, entry: $0.entry) }
@@ -166,6 +172,7 @@ struct WeighInSheet: View {
   @State private var saved = false
   @State private var refusal: String?
   private var today: LocalDay { gym.bodyweight?.today ?? LogPresentation.day(Date()) }
+  private var cannotSave: Bool { !BodyweightLogInput.canSave(typed, refusal: refusal, entry: entry) }
 
   init(gym: GymModel, entry: Bodyweight.Entry? = nil) {
     self.gym = gym; self.entry = entry
@@ -193,10 +200,7 @@ struct WeighInSheet: View {
         }.listRowBackground(GymPalette.card)
         Section {
           if let entry {
-            LabeledContent("Date") {
-              Text(LogPresentation.date(entry.day), format: .dateTime.day().month(.wide).year())
-                .foregroundStyle(GymPalette.ink)
-            }.accessibilityIdentifier("gym-weigh-in-fixed-date")
+            LabeledContent("Date", value: gym.dates.subtitle(entry.day)).accessibilityIdentifier("gym-weigh-in-fixed-date")
           } else {
             DatePicker("Date", selection: $date, in: ...LogPresentation.date(today), displayedComponents: .date)
               .accessibilityIdentifier("gym-weigh-in-date")
@@ -215,7 +219,7 @@ struct WeighInSheet: View {
       .modifier(GymPage())
       .navigationTitle("Weigh in")
       .navigationBarTitleDisplayMode(.inline)
-      .sheetCommit("Save", identifier: "gym-weigh-in-save", dismissalIdentifier: "gym-weigh-in-cancel", busy: saving,
+      .sheetCommit("Save", identifier: "gym-weigh-in-save", dismissalIdentifier: "gym-weigh-in-cancel", disabled: cannotSave, busy: saving,
                    dismiss: { dismiss() }, commit: save)
       .interactiveDismissDisabled(saving)
       .sensoryFeedback(.success, trigger: saved)
@@ -234,7 +238,7 @@ struct WeighInSheet: View {
   }
 
   private func save() {
-    guard !saving else { return }
+    guard !saving, !cannotSave else { return }
     let kg: Double
     switch BodyweightLogInput.parse(typed) {
     case .weight(let value): kg = value

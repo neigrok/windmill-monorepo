@@ -165,7 +165,9 @@ import Synchronization
     let identity = try auth.identity(["user": ["id": "a", "name": "Person"], "session": "body-token"])
     #expect(identity.account == "a" && identity.token.value == "body-token")
     #expect(try auth.identity(["user": ["id": "a", "name": "", "email": "person@example.com"], "session": "body-token"]).name == "person@example.com")
-    #expect(throws: AppFailure.self) { try auth.identity(["user": ["id": "a"]]) }
+    #expect(try auth.identity(["user": ["id": "a"], "session": "body-token"]).name.isEmpty, "An account with no name or email is never called You")
+    let unfinished = #expect(throws: AppFailure.self) { try auth.identity(["user": ["id": "a"]]) }
+    #expect(unfinished?.message == "Sign-in did not finish. Your pages are still on this phone.")
   }
   @Test func adoptionFlushesDirtyBufferBeforeAdd() async throws {
     let transport = JournalModelTransport(), existing = try fixture(transport)

@@ -24,6 +24,44 @@ struct WorkoutClocks: Equatable {
   }
 }
 
+// One movement in this workout: its sets in the order they were logged, then the current set and the plan still ahead.
+// A row keeps its place as sets are logged, so the set a lifter logs takes over the current row and the next one moves up.
+nonisolated struct MovementLedger: Equatable {
+  enum Place: Equatable { case logged(TrainingSet), current, planned }
+  struct Row: Identifiable, Equatable {
+    let id: Int
+    let marker: String
+    let reading: String
+    // What the plan asks of a current or planned row; nil where it asks nothing, and on a logged row.
+    let target: SetTarget?
+    let place: Place
+    var set: TrainingSet? { if case .logged(let set) = place { set } else { nil } }
+  }
+  let sets: [TrainingSet]
+  let plan: RoutineEntry?
+
+  var targets: [SetTarget] { plan?.sets ?? [] }
+  var working: Int { sets.filter { $0.kind == SetKind.working.rawValue }.count }
+  var current: Row {
+    let target = working < targets.count ? targets[working] : nil
+    return Row(id: sets.count, marker: "\(working + 1)", reading: target.map(Readout.setTarget) ?? Readout.openTarget, target: target, place: .current)
+  }
+  var rows: [Row] {
+    let logged = sets.enumerated().map { index, set in
+      Row(id: index, marker: SetRow.marker(set, in: sets), reading: Readout.effort(weightKg: set.weightKg, reps: set.reps), target: nil, place: .logged(set))
+    }
+    let ahead = targets.indices.dropFirst(working + 1).map { index in
+      Row(id: sets.count + index - working, marker: "\(index + 1)", reading: Readout.setTarget(targets[index]), target: targets[index], place: .planned)
+    }
+    return logged + [current] + ahead
+  }
+  // Planned rows state the plan, so the line under the name speaks only for a planned movement that holds no targets.
+  var planLine: String? { plan != nil && targets.isEmpty ? "plan \(Readout.openTarget)" : nil }
+  // This workout's count: the working sets against the plan's, or alone where the movement has no targets.
+  var tally: String { targets.isEmpty ? GymCount.of(working, "set") : "\(working) of \(GymCount.of(targets.count, "set"))" }
+  var complete: Bool { !targets.isEmpty && working >= targets.count }
+}
+
 nonisolated struct WorkoutDeviation: Equatable, Identifiable, Sendable {
   let exerciseId: ID<Exercise>
   let routineId: ID<Routine>
@@ -40,7 +78,7 @@ nonisolated struct WorkoutDeviation: Equatable, Identifiable, Sendable {
   var proposed: [SetTarget] { varied ? lifted : scheme.map { SetTarget(reps: $0.reps, weightKg: liftedKg) } }
   var saveLabel: String { varied ? "Save today’s sets" : "Save \(Readout.weight(liftedKg)) to \(routine)" }
   func sentence(_ movement: String) -> String {
-    "Today’s \(movement) ran at \(Readout.weight(liftedKg)) against a planned \(Readout.weight(plannedKg)). Today’s session already has it. \(routine) does not."
+    "Today’s \(movement) ran at \(Readout.weight(liftedKg)) against a planned \(Readout.weight(plannedKg)). Today’s workout already has it. \(routine) does not."
   }
   static func leaving(_ id: ID<Exercise>, session: Session, sets: [TrainingSet], asked: [ID<Exercise>],
                       routine: Routine? = nil, againstCurrent: Bool = false) -> Self? {
@@ -336,6 +374,9 @@ struct FinishWorkout: Action {
   var selected: ID<Exercise>? { walk.selected }
   var currentSets: [TrainingSet] { sets.filter { $0.exerciseId == selected } }
   var entry: RoutineEntry? { session?.plan?.entries.first { $0.exerciseId == selected } }
+  func ledger(_ id: ID<Exercise>) -> MovementLedger {
+    MovementLedger(sets: sets.filter { $0.exerciseId == id }, plan: session?.plan?.entries.first { $0.exerciseId == id })
+  }
   var deviation: WorkoutDeviation? {
     guard let id = walk.pending, let session else { return nil }
     if let offer = walk.offer, offer.exerciseId == id { return offer }
@@ -363,12 +404,12 @@ struct FinishWorkout: Action {
     }
     catch {
       finishQueued = true; gym.readFailed = true
-      message = "The session is saved. Its movement order could not be read. Try again."
+      message = Self.orderUnread
       gym.error = "Gym could not be read from this phone. Try again."; gym.report("gym_read", error); return
     }
     if sessionId != open.id { drafts = [:]; receipt = nil; receiptOwed = false; handoff = nil }
     sessionId = open.id; (walk, finishQueued) = restored
-    if message == "The session is saved. Its movement order could not be read. Try again." { message = nil }
+    if message == Self.orderUnread { message = nil }
     walk.merge(session: open, sets: sets)
     if walk.pending != nil, walk.offer == nil, let offer = deviation {
       var next = walk; next.offer = offer; _ = keep(next)
@@ -389,7 +430,7 @@ struct FinishWorkout: Action {
       gym.report("gym_read", error); finishQueued = true; gym.readFailed = true
       gym.error = "Gym could not be read from this phone. Try again."; return
     }
-    if message == "The session is saved. Its movement order could not be read. Try again." { message = nil }
+    if message == Self.orderUnread { message = nil }
     walk.merge(session: session, sets: sets)
     if walk.pending == nil, let offer = walk.offer {
       let stale = gym.notices.contains { notice in
@@ -465,7 +506,7 @@ struct FinishWorkout: Action {
     !sets.contains { $0.exerciseId == id } && session?.plan?.entries.contains { $0.exerciseId == id } != true
   }
   func remove(_ id: ID<Exercise>) {
-    guard canRemove(id) else { message = "A movement with sets or planned targets stays in this session."; return }
+    guard canRemove(id) else { message = "A movement with sets or planned targets stays in this workout."; return }
     var next = walk; next.order.removeAll { $0 == id }
     if selected == id { next.selected = next.order.first }
     if keep(next) { prefill() }
@@ -486,7 +527,6 @@ struct FinishWorkout: Action {
       else { message = gym.error }; return false
     }
     gym.telemetry.event("gym_set_logged", properties: ["screen": "workout", "outcome": "ok"])
-    if offered != nil { gym.telemetry.event("gym_activity_set_logged") }
     drafts[selected] = nil; message = nil; prefill(); activityChanged()
     return true
   }
@@ -526,6 +566,8 @@ struct FinishWorkout: Action {
         : "The routine changed. Today’s sets are saved; review the new offer before changing its targets."
     }
   }
+
+  static let orderUnread = "The workout is saved. Its movement order could not be read. Try again."
 
   // A set the log accepted a moment ago is confirmed by the next pull. Online, Finish gives that pull this long; a
   // server that answers nothing in time leaves the decision to what this phone holds.
@@ -638,12 +680,14 @@ struct FinishWorkout: Action {
   }
 }
 
+enum HiddenWorkoutDoor: String { case accessory, row }
+
 enum WorkoutHandoff: Equatable {
   case detail(ID<Session>?)
   case keep
   case coach
   case writtenProgram
-  static let coachQuestion = "Check my last session."
+  static let coachQuestion = "Check my last workout."
 }
 
 extension GymModel {
@@ -672,7 +716,16 @@ extension GymModel {
   @discardableResult func hideWorkout() -> Bool {
     guard openSession != nil, !workout.finishing, workout.receipt == nil else { return false }
     var next = workout.walk; next.hidden = true
-    return workout.keep(next)
+    guard workout.keep(next) else { return false }
+    telemetry.event("gym_hidden_workout", properties: ["action": "hide"])
+    return true
+  }
+  static let restoreFailed = "Gym could not restore this workout. Try again."
+  // The lifter's way back to a hidden workout: the tab bar's accessory on iOS 26, The log's Hidden row on iOS 18.
+  @discardableResult func openHiddenWorkout(from door: HiddenWorkoutDoor) -> Bool {
+    guard restoreWorkout() else { error = Self.restoreFailed; return false }
+    telemetry.event("gym_hidden_workout", properties: ["action": "open", "door": door.rawValue])
+    return true
   }
   @discardableResult func restoreWorkout() -> Bool {
     guard !accountTransition, openSession != nil else { return false }

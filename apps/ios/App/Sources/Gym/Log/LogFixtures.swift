@@ -15,10 +15,12 @@ extension LogTab {
     var refused = 0
     var routineDraft = Draft(new: routine)
     if case .saved = gym.runner.save(&routineDraft, SaveDraft<Routine, GymRefusal>.self) {} else { refused += 1 }
+    // Bench climbs 2.5 kg in two sessions of every three, so most weeks hold two new bests: the later one is woven as the
+    // week's moment and the earlier one keeps its row's dot.
     for index in 0..<35 {
       let start = Instant(ms: moment.now.ms - Int64(35 - index) * 3 * 86_400_000)
       let id = gym.runner.mint(Session.self)
-      let sets = [ImportedSet(id: gym.runner.mint(TrainingSet.self), exerciseId: bench.id, weightKg: Double(50 + index), reps: 5, completedAt: Instant(ms: start.ms + 600_000), rpe: 8, note: index == 34 ? "Smooth last set." : ""),
+      let sets = [ImportedSet(id: gym.runner.mint(TrainingSet.self), exerciseId: bench.id, weightKg: 50 + Double(index - index / 3) * 2.5, reps: 5, completedAt: Instant(ms: start.ms + 600_000), rpe: 8, note: index == 34 ? "Smooth last set." : ""),
                   ImportedSet(id: gym.runner.mint(TrainingSet.self), exerciseId: squat.id, weightKg: 100, reps: 12, completedAt: Instant(ms: start.ms + 1_200_000))]
       let imported = try? gym.runner.run(ImportSession(id: id, startedAt: start, finishedAt: Instant(ms: start.ms + 2_700_000), sets: sets, routineId: routine.id))
       if imported == nil || imported?.refusal != nil { refused += 1 }

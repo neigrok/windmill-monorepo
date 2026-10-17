@@ -16,6 +16,10 @@ nonisolated enum GymPalette {
   static let done = Color("gym/done")
   static let record = Color("gym/record")
   static let alarm = Color("gym/alarm")
+  static let alarmFill = Color("gym/alarm-fill")
+  // White on the alarm fill (§2 `on-alarm`), and the black a full-screen photo sits on in both appearances (§7.3).
+  static let onAlarm = Color.white
+  static let photoGround = Color.black
   static let uiAccent = UIColor(named: "gym/accent")!
 }
 
@@ -34,13 +38,15 @@ nonisolated enum JournalPalette {
   static let uiInk = UIColor(named: "journal/ink")!
   static let uiLamp = UIColor(named: "journal/lamp")!
   // Faded roles: the lamp's glow at the canvas's foot and in the onboarding glimpse, a kindled echo count, a passage's
-  // highlight under its ink, full energy's sheen, a set scale thumb's ring.
+  // highlight under its ink, full energy's sheen, a set scale thumb's ring and its glow.
   static let glow = lamp.opacity(0.09)
   static let glimpseGlow = lamp.opacity(0.18)
   static let kindled = lamp.opacity(0.4)
   static var uiHighlight: UIColor { uiLamp.withAlphaComponent(0.24) }
   static let sheen = ink.opacity(0.28)
   static let ring = ink.opacity(0.78)
+  static func moodGlow(_ value: Int) -> Color { mood(value).opacity(value == 10 ? 0.78 : 0.45) }
+  static func energyGlow(_ value: Int) -> Color { energy.opacity(value == 10 ? 0.78 : 0.45) }
 }
 
 nonisolated enum ShellPalette {

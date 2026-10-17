@@ -60,7 +60,9 @@ struct JournalEchoInk: View {
     VStack(alignment: .leading, spacing: 18) {
       if echoes.introducing == day { introduction }
       ForEach(shown, id: \.day) { match in
-        Button { read(match) } label: { JournalEchoRow(echoes: echoes, match: match, trigger: day) }.buttonStyle(.plain)
+        Button { read(match) } label: {
+          JournalEchoRow(echoes: echoes, match: match, trigger: day, namedYear: LocalDay(echoes.access.today)?.year)
+        }.buttonStyle(.plain)
           .accessibilityHint("Opens this page in the canvas")
           .accessibilityIdentifier("echo-open-\(match.day)")
       }
@@ -112,6 +114,8 @@ struct JournalEchoRow: View {
   let echoes: JournalEchoes
   let match: JournalEchoMatch
   let trigger: String
+  // The year the row's surroundings already name, left out of its stamp: this year in the ink, the header's in the reader.
+  let namedYear: Int?
   @Environment(\.dynamicTypeSize) var typeSize
   @ScaledMetric(relativeTo: .body) var stampColumn = 48.0
 
@@ -120,8 +124,7 @@ struct JournalEchoRow: View {
     let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
     layout {
       VStack(alignment: .leading, spacing: 1) {
-        Text(JournalEchoStamp.head(match.day))
-        Text(JournalEchoStamp.year(match.day))
+        Text(JournalEchoStamp.date(match.day, namedYear: namedYear))
         Text(JournalEchoStamp.distance(from: match.day, to: trigger))
       }.font(JournalType.date).foregroundStyle(JournalPalette.inkFaint).frame(width: stacked ? nil : stampColumn, alignment: .leading)
         .padding(.top, 3).accessibilityElement(children: .ignore).accessibilityLabel(JournalEchoStamp.long(match.day))
@@ -130,7 +133,7 @@ struct JournalEchoRow: View {
           .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
         if let provenance = match.provenance { Text(provenance).font(.footnote).foregroundStyle(JournalPalette.inkDim) }
       }
-    }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+    }.frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget, alignment: .topLeading).contentShape(Rectangle())
       .accessibilityElement(children: .combine)
       .onScrollVisibilityChange { visible in if visible { echoes.shown(match, on: trigger) } }
   }
@@ -157,7 +160,7 @@ struct JournalEchoReader: View {
                 let previous = echoes.destination
                 echoes.walk(from: day, to: match)
                 if let destination = echoes.destination, destination != previous { read(destination) }
-              } label: { JournalEchoRow(echoes: echoes, match: match, trigger: day) }.buttonStyle(.plain)
+              } label: { JournalEchoRow(echoes: echoes, match: match, trigger: day, namedYear: Int(year)) }.buttonStyle(.plain)
                 .accessibilityHint("Opens this page in the canvas")
                 .accessibilityIdentifier("echo-read-\(match.day)")
             }
@@ -165,13 +168,13 @@ struct JournalEchoReader: View {
         }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
       }.accessibilityIdentifier("echo-sheet")
         .background(JournalPalette.canvas).navigationTitle("From your journal").navigationBarTitleDisplayMode(.inline)
+        .tint(JournalPalette.lamp)
         .toolbar {
           ToolbarItem(placement: .topBarTrailing) {
             Button("Close") { echoes.readerDay = nil; dismiss() }.accessibilityIdentifier("echo-close")
           }
-        }
+        }.roomBar(.journal)
         .toolbarBackground(JournalPalette.canvas, for: .navigationBar).toolbarBackground(.visible, for: .navigationBar)
-        .tint(JournalPalette.lamp)
     }.presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.medium, .large])
       .presentationDragIndicator(.visible)
       .presentationBackground(JournalPalette.canvas)
@@ -199,23 +202,21 @@ struct JournalEchoTrail: View {
   }
 }
 
-// The web ink's stamp grammar (`echoDates.js`): 14 MAR / 2026 / 5 MO, measured from the trigger page.
+// The echo stamp (ios-redesign §8): 29 MAY over 4 MO, naming the year only when nothing around it does; months as `echoDates.js` counts.
 enum JournalEchoStamp {
   static let months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
 
-  static func head(_ iso: String) -> String {
+  static func date(_ iso: String, namedYear: Int?) -> String {
     guard let day = LocalDay(iso) else { return "" }
-    return String(format: "%02d %@", day.day, months[day.month - 1])
+    let head = String(format: "%02d %@", day.day, months[day.month - 1])
+    return day.year == namedYear ? head : "\(head) \(day.year)"
   }
-
-  static func year(_ iso: String) -> String { LocalDay(iso).map { String($0.year) } ?? "" }
 
   static func distance(from source: String, to trigger: String) -> String {
     guard let older = LocalDay(source), let newer = LocalDay(trigger) else { return "" }
     let months = monthsApart(older, newer)
     if months == 0 { return "\(max(1, Int((Double(older.days(until: newer)) / 7).rounded()))) WK" }
-    if months < 12 { return "\(months) MO" }
-    return months % 12 == 0 ? "\(months / 12) Y" : "\(months / 12) Y \(months % 12)"
+    return months < 12 ? "\(months) MO" : "\(months / 12) YR"
   }
 
   // Months between two days to the nearest month, rounded on the calendar and from zero, so 30 days is one month.

@@ -522,14 +522,14 @@ import SyncTesting
     #expect(fixture.model.inkDay == nil)
   }
 
-  @Test func echoStampsFollowTheWebGrammar() {
-    #expect(JournalEchoStamp.head("2026-03-14") == "14 MAR" && JournalEchoStamp.year("2026-03-14") == "2026")
-    #expect(JournalEchoStamp.distance(from: "2026-03-14", to: "2026-08-21") == "5 MO")
-    #expect(JournalEchoStamp.distance(from: "2026-02-22", to: "2026-08-21") == "6 MO")
-    #expect(JournalEchoStamp.distance(from: "2026-08-11", to: "2026-08-21") == "1 WK")
-    #expect(JournalEchoStamp.distance(from: "2026-07-22", to: "2026-08-21") == "1 MO")
-    #expect(JournalEchoStamp.distance(from: "2025-08-21", to: "2026-08-21") == "1 Y")
-    #expect(JournalEchoStamp.distance(from: "2024-06-01", to: "2026-08-21") == "2 Y 3")
+  // The ink names a year other than this one; under the reader's year header, no stamp names its year.
+  @Test func echoStampsNameTheYearOnlyWhereNothingAroundThemDoesAndCountWholeYears() {
+    let stamps = [("2026-05-29", "2026-09-26"), ("2026-01-29", "2026-09-26"), ("2025-08-22", "2026-09-26"), ("2025-12-20", "2026-01-12"),
+                  ("2026-09-15", "2026-09-26"), ("2024-06-01", "2026-09-26")]
+      .map { "\(JournalEchoStamp.date($0.0, namedYear: 2026)) / \(JournalEchoStamp.distance(from: $0.0, to: $0.1))" }
+    #expect(stamps == ["29 MAY / 4 MO", "29 JAN / 8 MO", "22 AUG 2025 / 1 YR", "20 DEC 2025 / 1 MO", "15 SEP / 2 WK", "01 JUN 2024 / 2 YR"])
+    let underHeaders = [("2025-08-22", 2025), ("2024-06-01", 2024), ("2026-05-29", 2026)].map { JournalEchoStamp.date($0.0, namedYear: $0.1) }
+    #expect(underHeaders == ["22 AUG", "01 JUN", "29 MAY"])
   }
 
   @Test func firstEchoOnAnOlderTriggerCannotConsumeTodaysIntroduction() async {

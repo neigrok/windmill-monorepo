@@ -57,7 +57,7 @@ import SyncTesting
     for day in 1...35 { _ = try session(gym, daysAgo: day, kg: 60) }
     let open = gym.runner.mint(Session.self); gym.run(StartSession(id: open))
     let months = gym.logTimeline(limit: 30)
-    let visible = months.flatMap(\.entries).compactMap { row -> Session? in if case .session(let value) = row.kind { value } else { nil } }
+    let visible = months.flatMap(\.entries).compactMap { row -> Session? in if case .session(let value, _) = row.kind { value } else { nil } }
     #expect(visible.count == 30 && visible.allSatisfy { !$0.isOpen })
     let allRows = gym.logTimeline(limit: 60).flatMap(\.entries)
     let allSessions = allRows.filter { $0.priority == -1 }
@@ -70,21 +70,24 @@ import SyncTesting
     let (_, gym) = fixture()
     _ = try session(gym, daysAgo: 2, kg: 60)
     let last = try session(gym, daysAgo: 1, kg: 70)
-    var draft = Draft(new: WeighIn(day: gym.log!.moment.today, kg: 82)); gym.save(&draft)
+    for (days, kg) in [(1, 82.0), (0, 82.2)] { var draft = Draft(new: WeighIn(day: gym.log!.moment.today.adding(days: -days), kg: kg)); gym.save(&draft) }
     let rows = gym.logTimeline(limit: 30).flatMap(\.entries).filter { $0.priority >= 0 }
     let monday = gym.log!.moment.today.adding(days: 1 - gym.log!.moment.today.weekday)
     let thisWeek = rows.filter { LocalDay($0.at, in: gym.log!.moment.zone) >= monday }
     #expect(thisWeek.count == 1)
-    if let row = thisWeek.first, case .best(_, let point, _) = row.kind { #expect(point.id == last.id) }
+    if let row = thisWeek.first, case .best(_, let record) = row.kind { #expect(record.point.id == last.id) }
     else { Issue.record("Strength moment should win this week") }
   }
 
-  @Test func weighInCreatesAMomentWithoutInventingASession() {
-    let (_, gym) = fixture()
-    var draft = Draft(new: WeighIn(day: gym.log!.moment.today, kg: 82.4)); gym.save(&draft)
-    let rows = gym.logTimeline(limit: 30).flatMap(\.entries)
-    #expect(gym.finishedLogSessions.isEmpty && rows.count == 1)
-    #expect(rows.first?.priority == 2)
+  @Test func theNewestWeighInIsTheHeadsAndOnlyAnOlderOneIsWoven() {
+    let (_, gym) = fixture(), today = gym.log!.moment.today
+    var newest = Draft(new: WeighIn(day: today, kg: 82.4)); gym.save(&newest)
+    #expect(gym.finishedLogSessions.isEmpty && gym.logTimeline(limit: 30).isEmpty)
+    var older = Draft(new: WeighIn(day: today.adding(days: -8), kg: 83.1)); gym.save(&older)
+    let rows = gym.logTimeline(limit: 30).flatMap(\.entries).map { row -> String in
+      if case .weight(let entry) = row.kind { "\(entry.day) · \(entry.kg)" } else { row.id }
+    }
+    #expect(rows == ["\(today.adding(days: -8)) · 83.1"])
   }
 
   @Test func completedMonthRequiresWorkingSetsInEveryCalendarWeek() throws {
@@ -98,6 +101,32 @@ import SyncTesting
     let moments = gym.logTimeline(limit: 60).flatMap(\.entries).filter { $0.priority == 1 }
     #expect(moments.count == 1)
     #expect(moments.first.map { LocalDay($0.at, in: gym.log!.moment.zone) } == lastDay)
+  }
+
+  // Wednesday Mar 10, 2027: February trained in each of its four weeks names its month, whatever the head says of the last four.
+  @Test func aMonthMomentNamesItsMonthWhateverTheHeadSays() throws {
+    let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_804_680_000_000), account: nil,
+                          rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
+    let gym = GymModel(runner: harness.runner), zone = try #require(gym.log?.moment.zone)
+    let read = {
+      gym.logTimeline(limit: 30).map { month in
+        "\(month.id): " + month.entries.map { entry -> String in
+          switch entry.kind {
+          case .session(let session, _): LocalDay(session.startedAt, in: zone).text
+          case .month(let first): LogPresentation.trainedEvery(first, dates: gym.dates)
+          default: entry.id
+          }
+        }.joined(separator: ", ")
+      }
+    }
+    for daysAgo in [37, 30, 23, 16, 9] { _ = try session(gym, daysAgo: daysAgo, kg: 0, reps: 12) }
+    #expect(gym.logConsistency == "Trained 3 of the last 4 weeks")
+    #expect(read() == ["2027-03: 2027-03-01",
+                       "2027-02: Trained every week of February, 2027-02-22, 2027-02-15, 2027-02-08, 2027-02-01"])
+    _ = try session(gym, daysAgo: 1, kg: 0, reps: 12)
+    #expect(gym.logConsistency == "Trained 4 of the last 4 weeks")
+    #expect(read() == ["2027-03: 2027-03-09, 2027-03-01",
+                       "2027-02: Trained every week of February, 2027-02-22, 2027-02-15, 2027-02-08, 2027-02-01"])
   }
 
   @Test(arguments: [-43200, 0, 7200, 50400]) func momentDaysUseTheInjectedZone(offset: Int) {
@@ -158,7 +187,7 @@ import SyncTesting
     set.weightKg = 80
     #expect(LogPresentation.comparison(set, preceding: [set], plan: plan) == "on plan")
     set.kind = "warmup"
-    #expect(LogPresentation.comparison(set, preceding: [], plan: plan) == "warmup")
+    #expect(LogPresentation.comparison(set, preceding: [], plan: plan) == nil)
     set.kind = "working"
     #expect(LogPresentation.comparison(set, preceding: [], plan: SessionPlan(routine: "Frozen", entries: [])) == nil)
   }
@@ -167,20 +196,67 @@ import SyncTesting
     let bench = ID<Exercise>(RecordID("bench-press")), squat = ID<Exercise>(RecordID("back-squat"))
     let plan = SessionPlan(routine: "Push A", entries: [RoutineEntry(exerciseId: bench, sets: [SetTarget(reps: 5, weightKg: 60)])])
     #expect(LogPresentation.planLine(bench, plan: plan) == "plan 1 × 5 · 60")
-    #expect(LogPresentation.planLine(squat, plan: plan) == "added today")
+    #expect(LogPresentation.planLine(squat, plan: plan) == "not in plan")
     #expect(LogPresentation.planLine(bench, plan: nil) == nil)
     let twice = SessionPlan(routine: "Push A", entries: plan.entries + plan.entries)
     #expect(LogPresentation.planLine(bench, plan: twice) == nil)
   }
 
-  @Test func aSessionRowReadsItsWorkingSetsAndDurationAndItsRecord() throws {
+  @Test func aSessionRowReadsItsWorkingSetsAndDuration() throws {
     let (_, gym) = fixture(), value = try session(gym, daysAgo: 1)
     let readout = try #require(gym.log?.readout(session: value.id))
     #expect(LogPresentation.sessionFacts(readout) == "1 working set · 33m")
-    #expect(gym.logRecordFact(value.id) == "Record · \(SeedExercises.all.first!.name) 60 × 5")
-    let second = try session(gym, daysAgo: 0, kg: 50)
-    #expect(gym.logRecordFact(second.id) == nil)
     #expect(!gym.sessionIsUnsent(value.id))
+  }
+
+  // Saturday Sep 26: a Monday baseline, a Tuesday and a Wednesday best in one week, an equal Wednesday the next week.
+  @Test func aRecordIsStatedOnceAndAFirstSessionSetsNone() throws {
+    let (_, gym) = fixture()
+    let baseline = try session(gym, daysAgo: 12, kg: 60), tuesday = try session(gym, daysAgo: 11, kg: 65)
+    let wednesday = try session(gym, daysAgo: 10, kg: 70), equal = try session(gym, daysAgo: 3, kg: 70)
+    let names = [baseline.id: "baseline", tuesday.id: "tuesday", wednesday.id: "wednesday", equal.id: "equal"]
+    let rows = gym.logTimeline(limit: 30).flatMap(\.entries).map { row -> String in
+      switch row.kind {
+      case .session(let value, let recordDot): "\(names[value.id]!)\(recordDot ? " ●" : "")"
+      case .best(_, let record): "best \(names[record.point.id]!) over \(names[record.previous.id]!)"
+      default: row.id
+      }
+    }
+    #expect(rows == ["equal", "wednesday", "best wednesday over tuesday", "tuesday ●", "baseline"])
+    let dates = gym.dates, record = try #require(gym.logRecords?.movements.values.first?.last)
+    #expect(LogPresentation.newBest(record, dates: dates) == "81.7 kg est · up 5.9 kg since \(dates.day(tuesday.startedAt, inSentence: true))")
+  }
+
+  // The log's end is its total from two finished workouts, and an empty log with a workout open says none is finished yet.
+  @Test func theEndCountsTheWorkoutsAndAnEmptyLogNamesTheOpenOne() throws {
+    let (_, gym) = fixture()
+    #expect([LogTab(gym: gym).emptyTitle, LogTab(gym: gym).total] == ["No workouts yet", nil])
+    _ = try #require(gym.startWorkout())
+    #expect([LogTab(gym: gym).emptyTitle, LogTab(gym: gym).total] == ["No finished workouts yet", nil])
+    _ = try session(gym, daysAgo: 3)
+    #expect(LogTab(gym: gym).total == nil)
+    _ = try session(gym, daysAgo: 2)
+    #expect(LogTab(gym: gym).total == "2 workouts")
+  }
+
+  // While the open workout is hidden, iOS 18's head brings it back; iOS 26 leaves that door to the tab bar's accessory.
+  @Test func theHiddenRowBringsBackAHiddenWorkoutWhereTheTabBarHasNoAccessory() throws {
+    let (harness, _) = fixture(), recorder = TelemetryRecorder()
+    let gym = GymModel(runner: harness.runner, telemetry: recorder)
+    var routine = Draft(new: Routine(id: gym.runner.mint(Routine.self), name: "Lower A", entries: [
+      RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 5, weightKg: 100)])]))
+    guard case .saved = gym.save(&routine) else { Issue.record("The routine was not saved"); return }
+    _ = try #require(gym.startWorkout(routineId: routine.current.id))
+    #expect(LogTab(gym: gym, tabBarAccessory: false).hiddenRow == nil)
+    #expect(gym.hideWorkout() && !gym.workout.isPresented)
+    let open = try #require(gym.openSession)
+    let row = try #require(LogTab(gym: gym, tabBarAccessory: false).hiddenRow)
+    #expect(row.title == "Lower A" && row.meta == "Open since \(gym.dates.time(open.startedAt))" && row.trailing == .door)
+    #expect(LogTab(gym: gym, tabBarAccessory: true).hiddenRow == nil)
+    LogTab(gym: gym, tabBarAccessory: false).openHiddenWorkout()
+    #expect(gym.workout.isPresented && LogTab(gym: gym, tabBarAccessory: false).hiddenRow == nil)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_hidden_workout" }.map(\.properties) } ==
+            [["action": "hide"], ["action": "open", "door": "row"]])
   }
 
   @Test func theMomentEventIsAllowlisted() {
@@ -188,16 +264,9 @@ import SyncTesting
     #expect(TelemetryPrivacy.properties(["screen": "log"]) == ["screen": .label("log")])
   }
 
-  @Test func aDayNamesItsYearOnlyWhenItIsNotThisOne() {
-    let today = LocalDay("2026-09-28")!
-    #expect(LogPresentation.brief(LocalDay("2026-09-26")!, today: today) == LogPresentation.brief(LogPresentation.date(LocalDay("2026-09-26")!)))
-    #expect(LogPresentation.brief(LocalDay("2025-12-30")!, today: today).contains("2025"))
-    #expect(!LogPresentation.brief(LocalDay("2026-01-02")!, today: today).contains("2026"))
-    #expect([0, 1, 3].map(Readout.ago(days:)) == ["today", "yesterday", "3 days ago"])
-    let best = LocalDay("2026-09-23")!
-    #expect(LogPresentation.since(LocalDay("2026-09-20")!, best: best) == LogPresentation.brief(LogPresentation.date(LocalDay("2026-09-20")!)))
-    #expect(LogPresentation.since(LocalDay("2026-08-30")!, best: best) == LogPresentation.date(LocalDay("2026-08-30")!).formatted(.dateTime.month(.wide)))
-    #expect(LogPresentation.since(LocalDay("2025-12-30")!, best: best).contains("2025"))
+  @Test func aChartsWindowLineNamesItsSpanThenWhatItHolds() {
+    #expect([ChartWindow.recent.line(recent: "90 days", holding: "6 weigh-ins"), ChartWindow.all.line(recent: "90 days", holding: "14 weigh-ins")]
+            == ["last 90 days · 6 weigh-ins", "the whole series · 14 weigh-ins"])
   }
 
   @Test func chartAxesSitOnTheSeriesStep() {
@@ -221,7 +290,7 @@ import SyncTesting
     #expect(progress.hasChart(in: gym.log!.moment.zone))
     #expect(progress.gaps(in: gym.log!.moment.zone).count == 3)
     #expect(progress.window(now: gym.log!.moment.now, zone: gym.log!.moment.zone).estimates.count == 3)
-    #expect(progress.logPlotPoints.count == 4)
+    #expect(progress.logPlotPoints(gym.dates).count == 4)
   }
 
   @Test func bodyweightProgressRemainsVisibleBesideLoadedSets() throws {
@@ -239,7 +308,7 @@ import SyncTesting
     let thirtyDays = first.addingTimeInterval(2_592_000)
     let sixtyDays = first.addingTimeInterval(5_184_000)
     let last = first.addingTimeInterval(7_776_000)
-    let chart = LogDatedChart(points: [], from: first, through: last, series: .strength)
+    let chart = LogDatedChart(points: [], from: first, through: last, series: .strength, dates: GymDate(), caption: "last 12 weeks · 0 workouts")
     let middle = chart.dateInterval(in: CGRect(x: 306, y: 0, width: 300, height: 220), contentWidth: 912)
     let whole = chart.dateInterval(in: CGRect(x: 0, y: 0, width: 912, height: 220), contentWidth: 912)
     let leading = chart.dateInterval(in: CGRect(x: -30, y: 0, width: 336, height: 220), contentWidth: 912)
@@ -248,7 +317,7 @@ import SyncTesting
     #expect(whole == (first...last))
     #expect(leading == (first...thirtyDays))
     #expect(trailing == (sixtyDays...last))
-    let empty = LogDatedChart(points: [], from: first, through: first, series: .bodyweight)
+    let empty = LogDatedChart(points: [], from: first, through: first, series: .bodyweight, dates: GymDate(), caption: "last 90 days · 0 weigh-ins")
     let emptyInterval = empty.dateInterval(in: .zero, contentWidth: 0)
     #expect(emptyInterval == (first...first))
   }

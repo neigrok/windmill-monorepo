@@ -171,8 +171,9 @@ is the only sign-out confirmation.
   same account signs in, and never to another account.
 - **Discard** signs out and deletes them from this phone. A change the account already received
   stays there; Discard cannot recall it.
-- The count is singular when it is one: *1 change hasn't been confirmed by your account yet. Keep it
-  on this phone until you sign back in, or discard it from this phone.*
+- The count is singular when it is one, and the message keeps its last sentence: *1 change hasn't
+  been confirmed by your account yet. Keep it on this phone until you sign back in, or discard it
+  from this phone. Everything else is in your account and leaves this phone.*
 
 ## 8. Each room's first run
 

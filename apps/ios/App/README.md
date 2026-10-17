@@ -60,16 +60,17 @@ its receipt after showing the outcome, while the current model keeps the success
 
 The Gym UI contract is `Sources/Gym/GymModel.swift` plus `GymRoom.swift`. `GymRoom(gym:app:)` owns a
 native TabView (Routines · The log · Coach), independent NavigationStacks and full-screen
-`WorkoutScreen` while logging, finishing or showing its receipt. Hidden workouts restore from Gym settings. Each UI track owns its folder and root view:
+`WorkoutScreen` while logging, finishing or showing its receipt. A hidden workout comes back from the tab bar's accessory
+on iOS 26 and from the Hidden row at the head of The log on iOS 18, both through `GymModel.openHiddenWorkout(from:)`. Each UI track owns its folder and root view:
 `Routines/RoutinesTab.swift`, `Log/LogTab.swift`, `Coach/CoachTab.swift`, and
 `Workout/WorkoutScreen.swift`; `Recovery/` holds the signed-out workouts the account has not taken — the log's
-**On this phone** section, Inspect and Fix workout — with their model. Each root takes `gym: GymModel`; the room
+**On this phone** row and the list it opens, Inspect and Fix workout — with their model. Each root takes `gym: GymModel`; the room
 supplies account/navigation callbacks and Coach handoffs. A model extension lives in the folder of the one track that
 reads it; a rule several tracks read, such as what is unsent, is `GymModel.swift`'s own. What more than one track
 draws lives once in `Components/`: the page chrome (page modifier, an editing sheet's commit from its bar, keyboard
 bar, More menu), the transient band, the
 two-line row, the set row and fact tiles, the weight instrument, keypad and Fix set editor, the rename sheet with its
-model extension, and the one count formatter with the Instant–Date bridge.
+model extension, the one count formatter, the one date formatter (`GymDate`) and the Instant–Date bridge.
 
 `GymModel(runner:runtime:telemetry:)` exposes engine-backed log/catalogue/routines/notes/bodyweight/
 preferences/proposals, sessions/sets/openSession, account/isAnonymous/authPaused, notices,
@@ -87,7 +88,7 @@ Gym includes routine planning and movement creation, the live set rack and finis
 
 `GymRoom` keeps `WorkoutScreen` as its full-screen cover through finish and receipt and, on
 dismissal, consumes the workout's handoff once: a finished workout's detail opens in The log, Keep
-opens the account flow, Share with Coach sends *Check my last session.* in a new conversation, and
+opens the account flow, Share with Coach sends *Check my last workout.* in a new conversation, and
 the movement picker's written-program door opens You signed out or paused, Coach otherwise.
 `gym.startWorkout(routineId:)` never joins an open workout (`joinOpenSession: false`); with one
 open, the start is refused and the open workout returns. The device row `rack:<session-id>` holds
@@ -100,7 +101,9 @@ snapshot aborts the account change. `WorkoutActivityController` keeps the Live A
 pre-minted offer and its dismissal in the device row `rack:liveactivity`; the widget's
 `WorkoutLogSetIntent` runs in the app and logs through the same runner as the rack only while the
 offer still matches this phone's open workout, its owner and a resolved identity, and otherwise
-opens the workout. Parity with Android is tracked in `PARITY.md`.
+opens the workout. The App Shortcuts *Log set* and *Start workout* (`WorkoutActivityShared/WorkoutIntents.swift`) run
+in the app too: *Log set* without an offer logs the rack's and answers with it, and *Start workout* opens Routines at its
+root, or the logger while a workout is open. Parity with Android is tracked in `PARITY.md`.
 
 Both rooms and the shell follow Appearance in You's Settings (Light · Dark · System, System by default): Gym
 answers with Instrument or Daylight, Journal with Night or Day. The choice is the hosting window's interface style,
@@ -108,9 +111,9 @@ so the status bar, keyboards and sheets follow it too. The window also carries t
 the shell's brand while You, Keep, sign-in or Where to start? is in front — so selection and the share sheet never
 fall back to system blue. The keyboard takes no tint, so the gym's fields keep the plain return key rather than a blue
 *Done*; a searchable field's *Search* key stays the system's. You is one inset-grouped list: the identity with its Apple and
-email doors (disabled offline, with *Sign-in needs a connection.* as their footer), **On this phone** or **How you
-sign in** and **Your data**, **Settings** (Appearance, Gym settings, About Windmill), and *Sign out* last. A sign-in
-link is offered only on the code step.
+email doors (disabled offline, with *Sign-in needs a connection.* as their footer), **On this phone** (signed out, while
+a room holds something) or **How you sign in**, **Settings** (Appearance, About Windmill), and *Sign out* last, which
+raises its one alert over You. A sign-in link is offered only on the code step.
 
 When the server needs a newer app — the engine's `status.upgradeRequired`, or a 426 at sign-in — one *Update
 required* alert speaks when the flag flips, and once more per cold launch while it holds; a sign-in refused for it
@@ -121,8 +124,11 @@ leaves the shell's transient *Couldn't open the update. Try again.* The rooms ke
 `-restore-board`); `update-sign-in` answers 426 only to the sign-in; `keep-gym` opens the gym's Keep sheet.
 
 Debug simulator Coach launches add `-coach-fixture`: a signed-in account with a routine, a workout and a
-proposal, and a scripted Coach service over the real REST boundary. `-coach-removal` makes the proposal
-a removal, `-coach-removal-stall` leaves its Apply unanswered past the review's 15-second wait,
+proposal, and a scripted Coach service over the real REST boundary whose answer reads that workout and proposes
+the change. `-coach-removal` makes the proposal a removal and the conversation one that asks for it from your totals,
+`-coach-created` makes it a conversation that creates the routine, saves a note and reads nothing from the log,
+`-coach-out-of-date` has a newer proposal replace it,
+`-coach-removal-stall` leaves its Apply unanswered past the review's 15-second wait,
 `-coach-offline` takes Coach and its REST reads offline and `-coach-unavailable` answers as a deployment without Coach.
 
 Debug simulator `OfflineFlowTests` seed an isolated `-scenario` with `-offline-fixture seed-signed-in`
@@ -229,15 +235,18 @@ Fonts are bundled from official OFL sources, with licences alongside each family
 
 Inter and Nunito are static instances of the official variable fonts. The room colour roles (one
 asset catalogue, one palette enum per room), the named type roles, the spacing scale and the room-neutral controls
-(the reach band and its primary, the transient, the bar's tint, the soft top edge, the door chevron) live in
+(the reach band and its primary, the transient, the bar's tint, the soft edge, the door chevron) live in
 `Sources/Theme/`, which the Live Activity extension compiles too; their values follow
 [the iOS redesign contract](../../../docs/design/ios/ios-redesign.md). The onboarding glimpses keep
 their illustration colours under `onboarding/` in `Resources/Assets.xcassets`.
 `python3 Tools/check_theme_literals.py` rejects, outside `Sources/Theme/` in the app, widget and
 Activity shared sources, numeric and hex colour construction, system named colours, the asset accent
 colour, UIKit semantic and label colours, the system's label hierarchy (`.primary` to `.quinary`,
-`.placeholder`, `.separator`), a palette role faded with `opacity` or `withAlphaComponent`, asset colour
-lookups by string and appearance branches between colours. Its allowlist names each remaining exception
+`.placeholder`, `.separator`), asset colour lookups by string and appearance branches between colours.
+A fade is a role, so everywhere but `Sources/Theme/Palettes.swift`, `Sources/Theme/` included, it also
+rejects `opacity` or `withAlphaComponent` on a palette role, an `OnboardingSpecimen`, a `Color(…)` or a
+local colour alias, `.mix(with:by:)`, a hierarchical level, bare or after `.tint`, `.foreground`, a role or
+an alias, and a view `opacity` with a constant other than 0 or 1. Its allowlist names each remaining exception
 and why, the check prints every allowed line with its reason, and an entry that no longer matches fails
 the check. Project generation and both target builds run the check;
 `python3 -m unittest discover -s Tools/tests -v` includes its rejection cases.

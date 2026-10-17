@@ -78,6 +78,7 @@ struct WindmillApp: App {
             introduction = try OnboardingLaunch.shouldPresent(model: created, deepLink: launchLink || launchDelegate.deepLink || settings.board == "onboarding-deep-link")
           }
           if workoutLink { created.openActivityWorkout() }
+          WorkoutActivityIntentHandler.present(created)
           model = created
         } catch { failure = "Couldn't open the journal on this phone. \(error.localizedDescription)" }
       }
@@ -178,9 +179,11 @@ struct RootScreen: View {
     }
     .onChange(of: model.updateAlert, initial: true) { _, show in if show { UpdateRequiredAlert.present(for: model) } }
     .overlay(alignment: .bottom) {
-      if model.updateOpenFailed && model.sheet == nil {
-        UpdateFailure(model: model).padding(.bottom, RoomSpace.minimumTarget + 2 * RoomSpace.inset)
-      }
+      VStack(spacing: 0) {
+        if model.updateOpenFailed && model.sheet == nil {
+          UpdateFailure(model: model).padding(.bottom, RoomSpace.minimumTarget + 2 * RoomSpace.inset)
+        }
+      }.roomMotion(model.updateOpenFailed && model.sheet == nil)
     }
     .background {
       #if DEBUG && targetEnvironment(simulator)
@@ -205,7 +208,7 @@ struct RootScreen: View {
             Text("Your journal and training, no account needed.").font(ShellType.body).foregroundStyle(ShellPalette.inkDim).padding(.bottom, 24)
             VStack(spacing: 12) {
               RoomDoor(room: .journal, line: "Write tonight’s page") { model.openJournal() }
-              RoomDoor(room: .gym, line: "Log sets · see last time") { model.openRoom(.gym) }
+              RoomDoor(room: .gym, line: "Log today’s sets") { model.openRoom(.gym) }
             }.padding(.horizontal, -8)
             if model.canSignIn { Button("Sign in") { model.choose("keep", screen: "welcome"); model.sheet = .keep }.font(ShellType.action).foregroundStyle(ShellPalette.inkDim).frame(maxWidth: .infinity, minHeight: 52).padding(.top, 10) }
             if model.keptWork {
@@ -249,7 +252,8 @@ struct UpdateFailure: View {
   let model: AppModel
   var body: some View {
     RoomTransient(message: "Couldn't open the update. Try again.", room: .shell, actionTitle: "Dismiss", actionSymbol: "xmark",
-                  actionIdentifier: "update-failure-dismiss", action: model.dismissUpdateFailure)
+                  actionIdentifier: "update-failure-dismiss", action: model.dismissUpdateFailure, dismiss: model.dismissUpdateFailure)
+      .accessibilityIdentifier("update-failure")
   }
 }
 
@@ -267,7 +271,7 @@ struct RoomMenu: View {
       Divider()
       Button("You", systemImage: "person.crop.circle") { app.openYou() }
       if app.selectedRoom == .journal {
-        Button("Show ink notes") {
+        Button("Show ink notes", systemImage: "scribble.variable") {
           app.journal.done()
           app.journal.inkVisible = true
           app.journal.screenViewed("ink_notes")

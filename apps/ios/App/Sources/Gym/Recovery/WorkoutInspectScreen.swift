@@ -26,7 +26,7 @@ struct WorkoutInspectScreen: View {
       }
     }.listStyle(.insetGrouped).modifier(GymPage()).accessibilityIdentifier("recovery-inspect")
       .roomTitle(workout?.name ?? Readout.noRoutine, subtitle: subtitle(recovery))
-      .toolbar(.hidden, for: .tabBar)
+      .gymTabBar()
       .toolbar {
         if let recovery {
           ToolbarItem(placement: .topBarTrailing) {
@@ -47,24 +47,25 @@ struct WorkoutInspectScreen: View {
       .onChange(of: recovery?.noticeIds.last) { _, latest in if latest != nil, let recovery { message = recovery.line } }
   }
 
-  // Tiles, then the times, then a section per movement; a stranded set has only its own tiles and rows.
+  // Tiles, then the times, then a section per movement; a stranded set has only its own tiles and rows. The subtitle
+  // carries the day, so the times hold the time alone, and a finish on a later day adds its day.
   @ViewBuilder func content(_ workout: SignedOutWorkout, _ recovery: WorkoutRecovery?) -> some View {
     let stranded = recovery?.retry == .restoreSets
     let sets = stranded ? recovery?.strandedSets ?? [] : workout.sets
-    let readout = SessionReadout(session: workout.session, sets: sets)
-    let duration = FactTiles.Fact(value: readout.durationMs.map(Readout.duration) ?? "—", label: "Duration")
+    let start = workout.session.startedAt, dates = gym.dates
+    // A stranded set has no span of its own, so its tiles read without the workout's finish.
+    let span = stranded ? Session(id: workout.session.id, startedAt: start) : workout.session
     Section {
-      FactTiles(facts: (stranded ? [] : [duration]) + [
-        .init(value: "\(readout.workingSetCount)", label: "Working sets"),
-        .init(value: "\(Readout.weight(readout.volumeKg)) kg", label: "Volume"),
-      ])
+      FactTiles(SessionReadout(session: span, sets: sets))
     } footer: {
       if let recovery { Text(recovery.line).accessibilityIdentifier("recovery-reason") }
     }
     if !stranded {
       Section {
-        LabeledContent("Started", value: SignedOutWorkout.time(workout.session.startedAt, day: true))
-        LabeledContent("Finished", value: workout.session.finishedAt.map { SignedOutWorkout.time($0, day: true) } ?? "Not finished")
+        LabeledContent("Started", value: dates.time(start))
+        LabeledContent("Finished", value: workout.session.finishedAt.map { end in
+          LocalDay(end, in: dates.moment.zone) == LocalDay(start, in: dates.moment.zone) ? dates.time(end) : dates.dayAndTime(end)
+        } ?? "Not finished")
       }.monospacedDigit()
     }
     ForEach(SetRow.movements(sets), id: \.self) { exercise in
@@ -92,7 +93,7 @@ struct WorkoutInspectScreen: View {
   // The date, and the refusal's own code when the line is the catch-all.
   func subtitle(_ recovery: WorkoutRecovery?) -> String? {
     guard let workout else { return nil }
-    let day = workout.session.startedAt.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+    let day = gym.dates.subtitle(workout.session.startedAt)
     return recovery?.code.map { "\(day) · \($0)" } ?? day
   }
 

@@ -361,17 +361,142 @@ import SyncTesting
     #expect(relaunched.pendingSignIn == nil && !relaunched.restoringSignIn && relaunched.sheet == nil)
   }
 
-  // You's door into Gym settings is a room switch, never a first-run welcome choice.
-  @Test func gymSettingsFromYouSwitchesTheRoomWithoutAFirstRunChoice() throws {
+  // Sign out raises one question over You and answers it there; its choices are You's.
+  @Test func signOutAsksOverYouAndCountsWhatTheAccountHasNotConfirmed() async throws {
     let recorder = TelemetryRecorder()
-    let (_, model) = try JournalModelTests().fixture(telemetry: recorder)
-    model.openJournal()
-    recorder.entries.withLock { $0.removeAll() }
+    let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server, telemetry: recorder)
+    try await model.signIn(server.identity(email: "asks-once@example.com"))
     model.sheet = .you
-    model.openGymSettings()
-    #expect(model.selectedRoom == .gym && model.sheet == nil && model.gymSettingsRequested && !model.welcome)
-    #expect(recorder.entries.withLock { $0.filter { $0.name == "room_switched" }.map(\.properties) } == [["room": "gym"]])
-    #expect(recorder.entries.withLock { !$0.contains { $0.name == "first_run_choice" && $0.properties["action"] == "open_gym" } })
+    recorder.entries.withLock { $0.removeAll() }
+    await model.beginSignOut()
+    #expect(model.sheet == .you && model.signOutSession != nil)
+    await model.cancelSignOut()
+    #expect(model.sheet == .you && model.signOutSession == nil && model.account != nil)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "first_run_choice" }.map(\.properties) } ==
+            [["screen": "you", "action": "sign_out"], ["screen": "you", "action": "cancel"]])
+    #expect([0, 1, 3].map(AppModel.signOutMessage(unsent:)) == [
+      "Your pages and log stay in your account and leave this phone.",
+      "1 change hasn't been confirmed by your account yet. Keep it on this phone until you sign back in, or discard it from this phone. Everything else is in your account and leaves this phone.",
+      "3 changes haven't been confirmed by your account yet. Keep them on this phone until you sign back in, or discard them from this phone. Everything else is in your account and leaves this phone."])
+  }
+
+  // An answer the sign-out cannot carry out closes the question, keeps the account and says why under Sign out until it is tapped again.
+  @Test func aRefusedSignOutEndsItsQuestionAndKeepsTheReasonUntilSignOutIsTappedAgain() async throws {
+    let recorder = TelemetryRecorder()
+    let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server, telemetry: recorder)
+    let identity = server.identity(email: "refused@example.com")
+    try await model.signIn(identity)
+    model.journal.type("Counted"); model.journal.save(); model.journal.done()
+    model.sheet = .you
+    await model.beginSignOut()
+    let asked = try #require(model.signOutSession)
+    #expect(try model.runner.run(SavePage(day: model.journal.today, document: PageDocument(body: "Written while asked"))).refusal == nil)
+    recorder.entries.withLock { $0.removeAll() }
+    await model.finishSignOut(.discard)
+    #expect(model.account == identity.account && model.sheet == .you && model.signOutSession == nil && !model.editorReadOnly)
+    #expect(model.signOutRefusal == "Something changed while you chose. Sign out again." && model.error == nil)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "auth_signed_out" || $0.name == "first_run_choice" }.map(\.properties) } ==
+            [["screen": "you", "action": "discard"], ["outcome": "refused"]])
+    await model.beginSignOut()
+    let askedAnew = try #require(model.signOutSession)
+    #expect(model.signOutRefusal == nil && askedAnew !== asked, "Sign out asks anew, counting what changed")
+    await model.finishSignOut(.discard)
+    #expect(model.account == nil && model.signOutRefusal == nil)
+  }
+
+  // A sign-out that cannot begin says why under Sign out and records the refusal after the tap: a room that cannot save
+  // says so in its own words, and any other failure is one written sentence. Nothing waits in the sign-in steps' error.
+  @Test(arguments: [(TxName.commit, "Couldn't save on this phone. Your writing stays in the editor. Try again."),
+                    (TxName.signOutRelease, "Couldn't sign out. Try again.")])
+  func aSignOutThatCannotBeginSaysWhyUnderSignOut(_ failing: TxName, _ reason: String) async throws {
+    let fault = GymStoreFault(), recorder = TelemetryRecorder(), server = JournalModelTransport()
+    let model = try LineageFlowTests().fixture(server, crashPoints: CrashPoints { point in
+      if fault.point.withLock({ $0 == point }) { throw AppFailure(message: "private-fault-marker") }
+    }, telemetry: recorder)
+    let identity = server.identity(email: "cannot-begin@example.com")
+    try await model.signIn(identity)
+    model.journal.type("Not saved yet")
+    model.sheet = .you
+    recorder.entries.withLock { $0.removeAll() }
+    fault.point.withLock { $0 = .beforeCommit(failing) }
+    await model.beginSignOut()
+    fault.point.withLock { $0 = nil }
+    #expect(model.account == identity.account && model.sheet == .you && model.signOutSession == nil && !model.editorReadOnly)
+    #expect(model.signOutRefusal == reason && model.error == nil)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "auth_signed_out" || $0.name == "first_run_choice" }.map(\.properties) } ==
+            [["screen": "you", "action": "sign_out"], ["outcome": "refused"]])
+    await model.beginSignOut()
+    #expect(model.signOutSession != nil && model.signOutRefusal == nil, "Sign out asks anew once the phone can begin it")
+  }
+
+  // An answer that fails for a reason of the phone's own is one written sentence under Sign out, never the error's own text.
+  @Test func aSignOutAnswerThatFailsSaysOneWrittenSentence() async throws {
+    let fault = GymStoreFault(), recorder = TelemetryRecorder(), server = JournalModelTransport()
+    let model = try LineageFlowTests().fixture(server, crashPoints: CrashPoints { point in
+      if fault.point.withLock({ $0 == point }) { throw AppFailure(message: "private-fault-marker") }
+    }, telemetry: recorder)
+    let identity = server.identity(email: "answer-fails@example.com")
+    try await model.signIn(identity)
+    model.sheet = .you
+    await model.beginSignOut()
+    _ = try #require(model.signOutSession)
+    recorder.entries.withLock { $0.removeAll() }
+    fault.point.withLock { $0 = .beforeCommit(.signOutFinish) }
+    await model.finishSignOut(.keep)
+    fault.point.withLock { $0 = nil }
+    #expect(model.account == identity.account && model.signOutSession == nil && !model.editorReadOnly)
+    #expect(model.signOutRefusal == "Couldn't sign out. Try again." && model.error == nil)
+    #expect(recorder.entries.withLock { $0.filter { ["auth_signed_out", "first_run_choice", "client_error"].contains($0.name) }.map(\.properties) } == [
+      ["screen": "you", "action": "keep"], ["operation": "auth_sign_out", "failure_kind": "unexpected"], ["outcome": "refused"]])
+  }
+
+  // A finished sign-out takes the account's name and address off this phone, whichever way it ends, and the sign-in steps
+  // open blank for whoever signs in next.
+  @Test(arguments: [SignOutChoice.keep, .discard]) func aFinishedSignOutLeavesNoNameOrAddressOnThePhone(_ choice: SignOutChoice) async throws {
+    let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server)
+    let identity = server.identity(email: "residue@example.com")
+    let residue = { ["accountName:", "accountEmail:"].map { model.preferences.string(forKey: $0 + identity.account) } }
+    let steps = { [model.email, model.code, model.appleReceiptEmail, model.codeSentAt == nil ? "-" : "sent"] }
+    model.email = "residue@example.com"; model.code = "482913"; model.codeSentAt = Date(); model.appleReceiptEmail = "residue@example.com"
+    try await model.signIn(identity)
+    #expect(residue() == ["Sam", "residue@example.com"])
+    await model.beginSignOut(); await model.finishSignOut(choice)
+    #expect(model.account == nil && residue() == [nil, nil])
+    #expect(steps() == ["", "", "", "-"])
+  }
+
+  // You's identity is the account's name, or its email, never "You"; its one line is the account's backup, paused or not.
+  @Test func youNamesTheAccountAndStatesWhetherItIsBackedUp() async throws {
+    let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server)
+    #expect(model.identityTitle == "Not signed in" && model.identityStatus == nil)
+    let identity = server.identity(email: "named@example.com")
+    try await model.signIn(identity)
+    model.journal.type("Waiting to send"); model.journal.save(); model.journal.done()
+    for _ in 0..<100 where model.identityStatus != "Not backed up yet" { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(model.identityTitle == "Sam" && model.identityStatus == "Not backed up yet")
+    await model.runtime?.engine.start()
+    for _ in 0..<200 where model.identityStatus != "Backed up" { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(model.identityStatus == "Backed up")
+    let relaunched = try AppModel(runner: model.runner, preferences: model.preferences, runtime: model.runtime)
+    #expect(relaunched.identityTitle == "Sam" && relaunched.emailMethodValue == "named@example.com")
+    model.preferences.removeObject(forKey: "accountName:\(try #require(model.account))")
+    let unnamed = try AppModel(runner: model.runner, preferences: model.preferences, runtime: model.runtime)
+    #expect(unnamed.identityTitle == "named@example.com" && unnamed.emailMethodValue == nil, "The address is said once")
+    server.state.withLock { $0.sessions[identity.token.value] = nil }
+    model.journal.type("Waiting on the sign-in"); model.journal.save(); model.journal.done()
+    await model.runtime?.engine.start()
+    for _ in 0..<100 where !model.authPaused { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(model.identityTitle == "Sam" && model.identityStatus == "Syncing paused · sign in again")
+  }
+
+  // Signed out, You lists only the rooms that keep something on this phone.
+  @Test func onThisPhoneListsOnlyTheRoomsThatHoldSomething() throws {
+    let model = try LineageFlowTests().fixture(JournalModelTransport())
+    #expect(model.phoneHoldings.isEmpty)
+    _ = try routine(model, name: "Push A")
+    #expect(model.phoneHoldings.map { "\($0.room.title) · \($0.summary)" } == ["Gym · 1 routine"])
+    model.journal.type("A page"); model.journal.save(); model.journal.done(); model.refresh()
+    #expect(model.phoneHoldings.map { "\($0.room.title) · \($0.summary)" } == ["Journal · 1 page", "Gym · 1 routine"])
   }
 
   @Test func theEnginesUpdateFlagSpeaksOncePerLaunch() async throws {

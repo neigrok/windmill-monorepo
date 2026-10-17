@@ -1,9 +1,5 @@
 import ActivityKit
-import AppIntents
 import Foundation
-#if !WORKOUT_ACTIVITY_WIDGET
-import UIKit
-#endif
 
 // The one working set the lock screen may log: the rack as the phone last drew it, under the set id it will carry.
 nonisolated struct WorkoutActivityOffer: Codable, Hashable, Sendable {
@@ -54,55 +50,4 @@ nonisolated extension WorkoutActivityAttributes.ContentState {
     unsentSetCount = try values.decodeIfPresent(Int.self, forKey: .unsentSetCount)
       ?? previous.decodeIfPresent(Int.self, forKey: .unsyncedSetCount) ?? 0
   }
-}
-
-struct WorkoutLogSetIntent: LiveActivityIntent {
-  static let title: LocalizedStringResource = "Log set"
-  static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
-  static let isDiscoverable = false
-  @available(iOS 26.0, *)
-  static var supportedModes: IntentModes { [.background, .foreground(.dynamic)] }
-
-  @Parameter(title: "Owner") var ownerID: String
-  @Parameter(title: "Session") var sessionID: String
-  @Parameter(title: "Movement") var movementID: String
-  @Parameter(title: "Load") var weightKg: Double
-  @Parameter(title: "Repetitions") var reps: Int
-  @Parameter(title: "Set") var setID: String
-
-  init() {}
-  init(offer: WorkoutActivityOffer) {
-    ownerID = offer.ownerID
-    sessionID = offer.sessionID
-    movementID = offer.movementID
-    weightKg = offer.weightKg
-    reps = offer.reps
-    setID = offer.setID
-  }
-
-  func perform() async throws -> some IntentResult & OpensIntent {
-    #if WORKOUT_ACTIVITY_WIDGET
-    return .result()
-    #else
-    let offer = WorkoutActivityOffer(ownerID: ownerID, sessionID: sessionID, movementID: movementID,
-                                     weightKg: weightKg, reps: reps, setID: setID)
-    if await WorkoutActivityIntentHandler.logSet(offer: offer) { return .result() }
-    if #available(iOS 18.2, *) { return .result(opensIntent: WorkoutOpenIntent()) }
-    await MainActor.run {
-      UIApplication.shared.open(WorkoutActivityAttributes.workoutURL, options: [:], completionHandler: nil)
-    }
-    return .result()
-    #endif
-  }
-}
-
-struct WorkoutOpenIntent: AppIntent {
-  static let title: LocalizedStringResource = "Open workout"
-  static let isDiscoverable = false
-  @available(iOS, introduced: 18.0, deprecated: 26.0)
-  static var openAppWhenRun: Bool { true }
-  @available(iOS 26.0, *)
-  static var supportedModes: IntentModes { .foreground(.immediate) }
-
-  func perform() async throws -> some IntentResult { .result() }
 }

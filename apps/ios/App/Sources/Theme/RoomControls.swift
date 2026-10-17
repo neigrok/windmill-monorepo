@@ -47,13 +47,14 @@ struct ActionBand: View {
   var actionIdentifier: String?
   var footer: String?
   var symbol: String?
+  var role: ButtonRole?
   let action: () -> Void
 
   var body: some View {
     VStack(spacing: RoomSpace.related) {
-      Button(action: action) {
+      Button(role: role, action: action) {
         HStack(spacing: RoomSpace.related) {
-          if busy { ProgressView().tint(room.onAccent) }
+          if busy { ProgressView().controlSize(.regular).tint(room.onAccent) }
           Text(title)
           if let symbol { Image(systemName: symbol).accessibilityHidden(true) }
         }.frame(maxWidth: .infinity)
@@ -70,14 +71,22 @@ struct ActionBand: View {
 
 // What stands at the foot of a screen — its one primary, its transient — sits in a bar, so the list's last row clears it
 // at rest and what scrolls beneath it softens under the scroll edge: iOS 26's own edge effect, the bar material on
-// iOS 18 while content is beneath.
+// iOS 18 while content is beneath. A band on a surface carries text outside a button: on both systems it takes the bar
+// material while content is beneath, on iOS 26 over the hard edge, so no row reads through its words.
 struct ReachBand<Band: View>: ViewModifier {
   let spacing: CGFloat?
+  var onSurface = false
   let band: Band
   @State private var beneath = false
 
   @ViewBuilder func body(content: Content) -> some View {
-    if #available(iOS 26.0, *) { content.safeAreaBar(edge: .bottom, spacing: spacing) { band } }
+    if #available(iOS 26.0, *) {
+      content.scrollEdgeEffectStyle(onSurface ? .hard : .automatic, for: .bottom)
+        .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.visibleRect.maxY - $0.contentInsets.bottom + 1 } action: { beneath = $1 }
+        .safeAreaBar(edge: .bottom, spacing: spacing) {
+          band.background { if onSurface && beneath { Rectangle().fill(.bar).ignoresSafeArea(edges: .bottom) } }
+        }
+    }
     else {
       content
         .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.visibleRect.maxY - $0.contentInsets.bottom + 1 } action: { beneath = $1 }
@@ -88,16 +97,25 @@ struct ReachBand<Band: View>: ViewModifier {
   }
 }
 
-// A list that scrolls under a fixed head, not a bar, fades its top over the height of its inset: a row passing under the
-// head softens away instead of being cut. With no bar above it, iOS 26 draws no scroll edge of its own here.
-struct SoftTopEdge: ViewModifier {
-  func body(content: Content) -> some View {
-    content.contentMargins(.top, RoomSpace.inset, for: .scrollContent).mask {
-      VStack(spacing: 0) {
-        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: RoomSpace.inset)
-        Rectangle()
+// A scroll view that passes under a fixed head or foot, not a bar, fades that edge over the height of its inset: a line
+// passing it softens away instead of being cut. With no bar there, iOS 26 draws no scroll edge of its own. Inactive, it
+// leaves the content as it is.
+struct SoftEdge: ViewModifier {
+  let edge: VerticalEdge
+  let active: Bool
+  init(_ edge: VerticalEdge, active: Bool = true) { self.edge = edge; self.active = active }
+
+  @ViewBuilder func body(content: Content) -> some View {
+    if active {
+      content.contentMargins(edge == .top ? .top : .bottom, RoomSpace.inset, for: .scrollContent).mask {
+        VStack(spacing: 0) {
+          if edge == .bottom { Rectangle() }
+          LinearGradient(colors: [.clear, .black], startPoint: edge == .top ? .top : .bottom, endPoint: edge == .top ? .bottom : .top)
+            .frame(height: RoomSpace.inset)
+          if edge == .top { Rectangle() }
+        }
       }
-    }
+    } else { content }
   }
 }
 
@@ -133,8 +151,8 @@ struct RoomTitle: ViewModifier {
 
 extension View {
   func roomTitle(_ title: String, subtitle: String?) -> some View { modifier(RoomTitle(title: title, subtitle: subtitle)) }
-  func reachBand(spacing: CGFloat? = nil, @ViewBuilder _ band: () -> some View) -> some View {
-    modifier(ReachBand(spacing: spacing, band: band()))
+  func reachBand(spacing: CGFloat? = nil, onSurface: Bool = false, @ViewBuilder _ band: () -> some View) -> some View {
+    modifier(ReachBand(spacing: spacing, onSurface: onSurface, band: band()))
   }
   // A bar's items take the room's label colour; the accent stays with the page under the bar and with a confirmation.
   // The tint reaches the items declared before it, so it follows a screen's toolbar.

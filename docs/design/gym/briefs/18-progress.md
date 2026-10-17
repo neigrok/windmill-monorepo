@@ -33,11 +33,10 @@ Record screen — and a second room onto the same chart is two doors onto one va
 
 > **iOS (`../../ios/ios-redesign.md` §7.6):** a moment is a row of The log's list, and it is a
 > door, never an expander. A best moment — an 8 pt record dot, *Bench Press · new best*, its facts
-> as the subtitle — opens the movement's Record with that session's point selected; a weigh-in
+> as the subtitle — opens the movement's Record with that session's point marked; a weigh-in
 > moment opens Bodyweight, and is woven only once a newer weigh-in exists, since the newest is the
 > log's head; a month moment opens nothing. A record is stated once: by its moment, or, when the
-> one-a-week cap leaves a record session without one, by a record dot after the session's name. A
-> movement's first logged session sets no record.
+> one-a-week cap leaves a record session without one, by a record dot after the session's name.
 
 The head scrolls away, and that is right: a chart is read sitting down, and the reach band keeps
 exactly one control, the weigh-in chip, at every scroll position. On iOS *Weigh in* is The log's
@@ -73,6 +72,13 @@ Sets outside the estimate's qualification still count for records, tonnage and t
 RPE is a filter, never a multiplier. Retain the full-precision estimate and format only the
 displayed value. Rank by the exact integer score: load in cents times 30 for one rep, or times
 `30 + reps` otherwise. Equivalent Epley estimates tie. A one-rep estimate is exactly the logged load.
+
+> **A new best.** A movement's first estimate is its baseline, never a new best, whatever sessions
+> without an estimate came before it. A later estimate is a new best when, stated to 0.1 kg as every
+> e1RM is shown, it beats the best before it as stated; the moment's gain is the difference of the
+> two stated values, so a log never says *up 0 kg*. A partial history claims none. The vectors are
+> `packages/api-contract/gym/domain/training-reads.json` (`ProgressRecords`). Android's log still
+> counts its first estimate and every exact step (`consistency.md` 9p).
 
 ## The chart is the room's one primitive, and bars have left
 
@@ -200,7 +206,7 @@ announced on each change while scrubbing.
 ## Three surfaces
 
 **iOS.** No strip. Moments are rows of The log's list, each a `NavigationLink`: a best moment opens
-the Record with a zoom from its dot, the chart scrolled to that session and its point selected; a
+the Record with a zoom from its row, the chart scrolled to that session and its point marked; a
 weigh-in moment opens Bodyweight; a month moment is a plain row with no chevron. No moment expands
 in place (`../../ios/ios-redesign.md` §7.6).
 

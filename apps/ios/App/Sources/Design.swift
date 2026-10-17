@@ -30,6 +30,7 @@ struct ScaleRow: View {
   @ScaledMetric(relativeTo: .caption) var labelWidth = 50.0
   @State var trackWidth: CGFloat = 0
   var color: Color { name == "Mood" ? JournalPalette.mood(value ?? 7) : JournalPalette.energy }
+  var glow: Color { name == "Mood" ? JournalPalette.moodGlow(value ?? 7) : JournalPalette.energyGlow(value ?? 0) }
   var body: some View {
     let travel = max(1, trackWidth - 18)
     let offset = CGFloat(value ?? 0) / 10 * travel
@@ -49,12 +50,12 @@ struct ScaleRow: View {
           Circle().fill(value == nil ? JournalPalette.canvas : color)
             .overlay(Circle().stroke(value == nil ? JournalPalette.inkFaint : JournalPalette.ring, lineWidth: 1.3))
             .frame(width: value == nil ? 12 : 16, height: value == nil ? 12 : 16)
-            .shadow(color: value == nil ? .clear : color.opacity(value == 10 ? 0.78 : 0.45), radius: value == 10 ? 6 : 4).offset(x: offset)
+            .shadow(color: value == nil ? .clear : glow, radius: value == 10 ? 6 : 4).offset(x: offset)
         } else {
           Capsule().fill(value == nil ? JournalPalette.canvas : color)
             .overlay(Capsule().stroke(value == nil ? JournalPalette.inkFaint : JournalPalette.ring, lineWidth: 1.3))
             .frame(width: value == nil ? 5 : 8, height: value == nil ? 13 : 18)
-            .shadow(color: value == nil ? .clear : color.opacity(value == 10 ? 0.78 : 0.45), radius: value == 10 ? 6 : 4).offset(x: offset + 5)
+            .shadow(color: value == nil ? .clear : glow, radius: value == 10 ? 6 : 4).offset(x: offset + 5)
         }
         if value == 0 && name == "Mood" { Circle().stroke(JournalPalette.ring, lineWidth: 1).frame(width: 28, height: 28).offset(x: offset - 6) }
       }.frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44, alignment: .leading).contentShape(Rectangle())

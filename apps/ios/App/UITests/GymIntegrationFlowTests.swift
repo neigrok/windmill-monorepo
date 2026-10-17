@@ -78,15 +78,15 @@ import XCTest
       XCTAssertTrue(routine.waitForExistence(timeout: 5)); routine.tap()
     }
     XCTAssertTrue(app.buttons["edit-routine"].waitForExistence(timeout: 5)); app.buttons["edit-routine"].tap(); replace(app.textFields["routine-name"], "Integration B"); app.buttons["save-routine"].tap(); back(app)
-    app.buttons["you"].tap()
-    XCTAssertTrue(app.buttons["you-gym-settings"].waitForExistence(timeout: 5)); app.buttons["you-gym-settings"].tap()
-    XCTAssertTrue(app.descendants(matching: .any)["gym-settings"].waitForExistence(timeout: 5)); app.buttons["Notes"].tap()
+    app.tabBars.buttons["Coach"].tap()
+    XCTAssertTrue(app.buttons["coach-more"].waitForExistence(timeout: 5)); app.buttons["coach-more"].tap()
+    XCTAssertTrue(app.buttons["coach-menu-notes"].waitForExistence(timeout: 5)); app.buttons["coach-menu-notes"].tap()
     app.buttons["coach-add-note"].tap(); replace(app.textFields["coach-note-title"], "Training focus")
     let body = app.textFields["coach-note-body"].exists ? app.textFields["coach-note-body"] : app.textViews["coach-note-body"]
     replace(body, "Keep the bench controlled."); app.buttons["coach-note-save"].tap()
     XCTAssertTrue(app.staticTexts["Training focus"].waitForExistence(timeout: 5)); capture(app, "e2e-notes")
     if server != nil {
-      back(app); back(app); app.tabBars.buttons["Coach"].tap()
+      back(app)
       let question = app.descendants(matching: .any)["coach-question"]
       XCTAssertTrue(question.waitForExistence(timeout: 10)); question.tap(); question.typeText("How is my training?")
       app.buttons["coach-send"].tap()
@@ -325,7 +325,7 @@ import XCTest
     }
     XCTAssertTrue(review.waitForExistence(timeout: 10)); XCTAssertTrue(review.isHittable)
     XCTAssertTrue(signed.buttons["coach-stop"].waitForNonExistence(timeout: 10))
-    let question = signed.staticTexts["Check my last session."]
+    let question = signed.staticTexts["Check my last workout."]
     for _ in 0..<4 {
       if question.waitForExistence(timeout: 3), question.isHittable { break }
       signed.swipeDown()

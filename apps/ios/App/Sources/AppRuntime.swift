@@ -455,9 +455,9 @@ final class NativeAuth {
   func identity(_ body: [String: Any]) throws -> AuthIdentity {
     guard let user = body["user"] as? [String: Any], let id = user["id"] as? String,
           let token = body["session"] as? String, !token.isEmpty else {
-      throw AppFailure(message: "Sign-in did not return a native session. Your pages are still on this phone.")
+      throw AppFailure(message: "Sign-in did not finish. Your pages are still on this phone.")
     }
-    return AuthIdentity(account: id, token: SessionToken(token), name: (user["name"] as? String)?.nilIfEmpty ?? (user["email"] as? String)?.nilIfEmpty ?? "You", email: user["email"] as? String ?? "", appleAttached: body["appleAttached"] as? Bool ?? false)
+    return AuthIdentity(account: id, token: SessionToken(token), name: (user["name"] as? String)?.nilIfEmpty ?? (user["email"] as? String)?.nilIfEmpty ?? "", email: user["email"] as? String ?? "", appleAttached: body["appleAttached"] as? Bool ?? false)
   }
 
   func exchange<T>(_ path: String, operation: String, body: [String: String]?, token: SessionToken? = nil,
