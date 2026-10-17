@@ -53,20 +53,44 @@ struct TabBarHidden: PreferenceKey {
   static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
 }
 
-// A tab's root keeps its foot while a pushed screen covers it: the pop lays the root out for a moment before the tab bar
-// returns, which would clamp a list at its end under the bar. The bar's return, or a finger, lets the foot go.
+// A tab's root holds its list's end clear of the tab bar and its accessory: across a pop, which lays the root out for a moment
+// before the bar returns and would clamp the list under it, and as the finger lets go of a bounce that brought the bar back,
+// since a bar that grows under a finger leaves the list's inset where the touch found it. The inset taking up the hold, or a
+// finger, lets it go.
 struct HeldFoot: ViewModifier {
-  @State var foot: CGFloat = 0
-  @State var held: CGFloat = 0
+  struct Foot {
+    var bar: CGFloat = 0
+    var inset: CGFloat = 0
+  }
+  struct Hold {
+    let margin: CGFloat
+    let until: CGFloat
+  }
+
+  @State var foot = Foot()
+  @State var touched: Foot?
+  @State var hold: Hold?
 
   func body(content: Content) -> some View {
-    content.contentMargins(.bottom, held, for: .scrollContent)
-      .onDisappear { held = foot }
-      .onScrollGeometryChange(for: CGFloat.self) { $0.contentInsets.bottom } action: { was, inset in
-        if inset > was && inset >= held { held = 0 }
-        foot = inset
+    content.contentMargins(.bottom, hold?.margin ?? 0, for: .scrollContent)
+      .onDisappear { hold = Hold(margin: foot.inset, until: foot.inset); touched = nil }
+      .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { foot.bar = $0 }
+      .onScrollGeometryChange(for: CGFloat.self) { $0.contentInsets.bottom } action: { _, inset in
+        foot.inset = inset
+        if let hold, inset >= hold.until { self.hold = nil }
       }
-      .onScrollPhaseChange { _, phase in if phase == .interacting { held = 0 } }
+      .onScrollPhaseChange { _, phase in
+        switch phase {
+        case .tracking, .interacting:
+          hold = nil
+          touched = touched ?? foot
+        default:
+          guard let touched else { return }
+          let grown = foot.bar - touched.bar
+          if grown > 0 && foot.inset == touched.inset { hold = Hold(margin: grown, until: foot.inset + grown) }
+          if phase == .idle { self.touched = nil }
+        }
+      }
   }
 }
 

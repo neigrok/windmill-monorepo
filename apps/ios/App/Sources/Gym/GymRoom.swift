@@ -42,7 +42,7 @@ struct GymRoom: View {
   }
 
   // The stacks' back chevrons and the room menu take the label colour; each screen's page keeps the accent. Each root holds
-  // its foot across a pop.
+  // its list's end clear of the tab bar across a pop and a bounce that brings the bar back.
   func root(_ screen: some View) -> some View {
     screen.modifier(HeldFoot()).toolbar { roomToolbar }.roomBar(.gym).navigationDestination(for: Destination.self, destination: destination)
   }
