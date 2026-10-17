@@ -12,12 +12,16 @@ import works.windmill.sync.engine.SessionTokens
 internal class EngineStorage(context: Context, private val vault: SecretVault) : SessionTokens, ForkGuardStore {
     private val preferences: SharedPreferences = context.getSharedPreferences("works.windmill.engine", Context.MODE_PRIVATE)
     override fun token(account: String): String? = preferences.getString("token.$account", null)?.let(vault::open)
-    override fun save(account: String, token: String) {
+    @Synchronized override fun save(account: String, token: String) {
         val sealed = vault.seal(token) ?: throw IOException("The sync credential could not be sealed.")
-        if (!preferences.edit().putString("token.$account", sealed).commit()) throw IOException("The sync credential could not be saved.")
+        val replaced = preferences.getString("token.$account", null)
+        try { if (!preferences.edit().putString("token.$account", sealed).commit()) throw IOException("The sync credential could not be saved.") }
+        finally { replaced?.let(vault::forget) }
     }
-    override fun delete(account: String) {
-        if (!preferences.edit().remove("token.$account").commit()) throw IOException("The sync credential could not be removed.")
+    @Synchronized override fun delete(account: String) {
+        val removed = preferences.getString("token.$account", null)
+        try { if (!preferences.edit().remove("token.$account").commit()) throw IOException("The sync credential could not be removed.") }
+        finally { removed?.let(vault::forget) }
     }
     override fun accounts(): Set<String> = preferences.all.keys.filter { it.startsWith("token.") }.map { it.removePrefix("token.") }.toSet()
     override fun load(): String? = preferences.getString("fork_guard", null)

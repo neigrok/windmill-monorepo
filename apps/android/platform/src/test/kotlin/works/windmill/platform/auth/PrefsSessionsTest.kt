@@ -8,6 +8,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import works.windmill.platform.User
+import works.windmill.platform.telemetry.Telemetry
 
 class PrefsSessionsTest {
     private class FakeValues(vararg seeded: Pair<String, String>) : KeptValues {
@@ -208,6 +209,76 @@ class PrefsSessionsTest {
         assertEquals(proposed, restarted.proposed)
         restarted.publishProposed(proposed)
         assertEquals(LocalSession.Owned(proposed.user), restarted.localSession)
+    }
+
+    @Test fun theSavedAccountReachesTheKeystoreOnceHoweverOftenItIsRead() {
+        val values = FakeValues()
+        val keystore = KeystoreKey()
+        PrefsSessions(values, SecretVault { keystore }).commit(secret, sam)
+        var loads = 0
+        val relaunched = PrefsSessions(values, SecretVault { loads += 1; keystore })
+        assertEquals(LocalSession.Owned(sam), relaunched.localSession)
+
+        keystore.answers = false
+
+        assertEquals(List(20) { Triple(LocalSession.Owned(sam), secret, sam) },
+            List(20) { Triple(relaunched.localSession, relaunched.read(), relaunched.user()) })
+        assertEquals(1, loads)
+    }
+
+    @Test fun signingOutLeavesNothingReadableFromMemory() {
+        val values = FakeValues()
+        val keystore = KeystoreKey()
+        val vault = SecretVault { keystore }
+        val sessions = PrefsSessions(values, vault)
+        sessions.commit(secret, sam)
+        sessions.stage(ProposedSignIn("secret-B", User("B", "b@example.com")))
+        assertEquals(secret, sessions.read())
+        val sealedBefore = values.held.values.toList()
+
+        sessions.beginSignOut()
+        sessions.clear()
+        keystore.answers = false
+
+        assertEquals(emptyMap<String, String>(), values.held)
+        assertEquals(listOf(null, null), sealedBefore.map(vault::open))
+        assertEquals(LocalSession.Absent, sessions.localSession)
+        assertNull(sessions.read())
+        assertNull(sessions.proposed)
+    }
+
+    @Test fun aReplacedAccountLeavesMemoryAndItsReplacementIsReadWithoutTheKeystore() {
+        val values = FakeValues()
+        val keystore = KeystoreKey()
+        val vault = SecretVault { keystore }
+        val sessions = PrefsSessions(values, vault)
+        val ana = User("A", "a@example.com")
+        val proposed = ProposedSignIn("secret-B", User("B", "b@example.com"))
+        sessions.commit(secret, sam)
+        val first = values.held.getValue("wm_identity.sealed")
+        sessions.commit("secret-A", ana)
+        val second = values.held.getValue("wm_identity.sealed")
+        sessions.stage(proposed)
+
+        keystore.answers = false
+        sessions.publishProposed(proposed)
+
+        assertEquals(listOf(null, null), listOf(first, second).map(vault::open))
+        assertEquals(LocalSession.Owned(proposed.user), sessions.localSession)
+        assertEquals(proposed.secret, sessions.read())
+        assertEquals(proposed.user, sessions.user())
+    }
+
+    @Test fun aSavedAccountThatOpensButCannotBeReadIsReportedOnEveryRead() {
+        val reports = mutableListOf<String>()
+        val sessions = PrefsSessions(FakeValues("wm_identity.sealed" to vault.seal("not an account")!!), vault, object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) {}
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { reports += operation }
+        })
+
+        assertEquals(LocalSession.Unresolved(), sessions.localSession)
+        assertNull(sessions.read())
+        assertEquals(listOf("session_decode", "session_decode"), reports)
     }
 
     private companion object {
