@@ -270,6 +270,10 @@ import XCTest
   }
   func testTheLogsEndStaysClearOfTheAccessoryAfterAPushedScreenPops() {
     let app = launch("light")
+    assertTheEndHoldsAcrossAPush(above: hideAWorkout(app), app)
+  }
+  // A free workout, started from Routines and hidden, leaves the accessory standing over The log.
+  func hideAWorkout(_ app: XCUIApplication) -> XCUIElement {
     XCTAssertTrue(sessionRow(app).waitForExistence(timeout: 20))
     app.tabBars.buttons["Routines"].tap()
     let start = app.buttons["Just start logging"]
@@ -279,7 +283,30 @@ import XCTest
     let accessory = app.buttons["gym-hidden-workout"]
     XCTAssertTrue(accessory.waitForExistence(timeout: 5))
     app.tabBars.buttons["The log"].tap()
-    assertTheEndHoldsAcrossAPush(above: accessory, app)
+    return accessory
+  }
+  // Each bounce at the log's end flips the bar between minimized, the accessory inline beside it, and back, the accessory
+  // above it; the end settles clear of whichever stands, and back beside the minimized bar it stands where it stood.
+  func testTheLogsEndStaysClearOfTheAccessoryAsABounceBringsTheBarBack() {
+    let app = launch("light")
+    let accessory = hideAWorkout(app), expanded = app.tabBars.buttons["Routines"], footer = app.staticTexts["gym-log-end"]
+    XCTAssertTrue(sessionRow(app).waitForExistence(timeout: 20))
+    for _ in 0..<40 where !(footer.exists && footer.isHittable) { app.swipeUp(velocity: .fast) }
+    app.swipeUp(velocity: .fast)
+    for _ in 0..<3 where expanded.isHittable { app.swipeUp(velocity: .fast) }
+    XCTAssertTrue(expanded.wait(for: \.isHittable, toEqual: false, timeout: 5), "Flung to its end, the log minimizes the bar")
+    let minimized = settledFrame(footer)
+    snapshot("log-end-bar-minimized", app: app)
+    XCTAssertLessThanOrEqual(minimized.maxY, accessory.frame.minY + 1, "Beside the minimized bar the footer \(minimized) clears \(accessory.frame)")
+    app.swipeUp(velocity: .fast)
+    XCTAssertTrue(expanded.wait(for: \.isHittable, toEqual: true, timeout: 5), "A bounce at the end brings the bar back")
+    let grown = settledFrame(footer)
+    snapshot("log-end-bar-back", app: app)
+    XCTAssertLessThanOrEqual(grown.maxY, accessory.frame.minY + 1, "Under the bar's return the footer \(grown) clears \(accessory.frame)")
+    app.swipeUp(velocity: .fast)
+    XCTAssertTrue(expanded.wait(for: \.isHittable, toEqual: false, timeout: 5), "The next bounce minimizes the bar again")
+    let again = settledFrame(footer)
+    XCTAssertEqual(again.minY, minimized.minY, accuracy: 1, "Beside the minimized bar again the footer \(again) stands where it stood \(minimized)")
   }
   func assertTheEndHoldsAcrossAPush(above foot: XCUIElement, _ app: XCUIApplication) {
     XCTAssertTrue(sessionRow(app).waitForExistence(timeout: 20))
