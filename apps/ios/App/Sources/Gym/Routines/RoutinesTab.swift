@@ -177,15 +177,10 @@ enum RoutineLines {
   }
 
   // Who proposed it, then when the server stamped it: the time today, the day before that.
-  static func proposal(_ proposal: Proposal, createdAt: Instant?, moment: Moment?) -> String {
-    let source: String
-    switch proposal.provenance {
-    case .ask: source = "Coach"
-    case .mcp(let connection, let agent): source = agent.isEmpty ? connection.isEmpty ? "a connected tool" : connection : agent
-    case .other: source = "a connected tool"
-    }
-    guard let createdAt, let moment else { return "From \(source)" }
-    let dates = GymDate(moment)
+  static func proposal(_ proposal: Proposal, createdAt: Instant?, dates: GymDate?) -> String {
+    let source = proposal.sourceName
+    guard let createdAt, let dates else { return "From \(source)" }
+    let moment = dates.moment
     return "From \(source) · \(LocalDay(createdAt, in: moment.zone) == moment.today ? dates.time(createdAt) : dates.day(createdAt))"
   }
 
@@ -236,6 +231,6 @@ extension GymModel {
 
   // The server stamps a proposal's creation; a proposal the phone has not yet sent shows no time rather than a guessed one.
   func proposalLine(_ proposal: Proposal) -> String {
-    RoutineLines.proposal(proposal, createdAt: proposalCreatedAt(proposal), moment: log?.moment)
+    RoutineLines.proposal(proposal, createdAt: proposalCreatedAt(proposal), dates: log == nil ? nil : dates)
   }
 }

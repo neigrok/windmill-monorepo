@@ -418,5 +418,38 @@ import UIKit
       app.terminate()
     }
   }
-}
 
+  // A pushed screen hides the tab bar; back at the conversation's end, or back from another tab, its last card stands where it
+  // stood, over the composer.
+  func testTheConversationsEndStaysClearOfTheComposerAfterAPushedScreenPopsAndATabSwitch() {
+    let app = launch("light", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
+    ask("Is Push A still doing anything?", app)
+    let review = app.buttons["coach-review"], composer = app.descendants(matching: .any)["coach-question"]
+    for _ in 0..<4 { app.scrollViews.firstMatch.swipeUp(velocity: .fast) }
+    XCTAssertFalse(app.buttons["coach-read-receipt"].isHittable, "At this size the conversation scrolls past its receipt")
+    let atEnd = settledFrame(review)
+    XCTAssertLessThanOrEqual(atEnd.maxY, composer.frame.minY + 1, "At rest the last card \(atEnd) clears \(composer.frame)")
+    more("History", app)
+    XCTAssertFalse(app.tabBars.firstMatch.isHittable, "A pushed screen hides the tab bar")
+    back(app, expecting: "Coach")
+    let returned = settledFrame(review)
+    capture("coach-end-after-pop", app)
+    XCTAssertEqual(returned.minY, atEnd.minY, accuracy: 1, "The last card \(returned) stands where it stood \(atEnd)")
+    XCTAssertLessThanOrEqual(returned.maxY, composer.frame.minY + 1, "The last card \(returned) clears \(composer.frame)")
+    openTab("Routines", app)
+    XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 10))
+    openTab("Coach", app)
+    let switched = settledFrame(review)
+    capture("coach-end-after-tab-switch", app)
+    XCTAssertEqual(switched.minY, atEnd.minY, accuracy: 1, "Back from another tab the last card \(switched) stands where it stood \(atEnd)")
+  }
+  func settledFrame(_ element: XCUIElement) -> CGRect {
+    var frame = element.frame
+    for _ in 0..<20 {
+      RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+      if element.frame == frame { break }
+      frame = element.frame
+    }
+    return frame
+  }
+}

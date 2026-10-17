@@ -1470,7 +1470,7 @@ import SyncTesting
   @Test func aReviewSaysWhoProposedItAndWhenTheLogTookIt() throws {
     let h = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_448_120_000), account: "coach-owner",
                     rules: ComposedServerRules.windmill(registry: SyncSchema.registry), commandResultWrites: AppRuntime.commandResultWrites)
-    let gym = GymModel(runner: h.runner); gym.account = "coach-owner"
+    let gym = GymModel(runner: h.runner, locale: Locale(identifier: "en_US")); gym.account = "coach-owner"
     gym.run(CreateExercise(Exercise(id: ID("source-squat"), name: "Squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)))
     var routine = Draft(new: Routine(id: ID("source-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("source-squat"))]))
     #expect(saved(gym.save(&routine)))
@@ -1487,7 +1487,7 @@ import SyncTesting
                changes: taken.changes, door: "mcp", connection: connection, agent: agent)
     }
     #expect([unnamed("", ""), unnamed("Desk", ""), unnamed("Desk", "Claude")].map(gym.coachProposalSource) ==
-      ["Sep 26 · 6:42\u{202F}PM", "proposed by Desk · Sep 26 · 6:42\u{202F}PM", "proposed by Claude · Sep 26 · 6:42\u{202F}PM"])
+      ["proposed by a connected tool · Sep 26 · 6:42\u{202F}PM", "proposed by Desk · Sep 26 · 6:42\u{202F}PM", "proposed by Claude · Sep 26 · 6:42\u{202F}PM"])
   }
   @Test func waitingDecisionSaysSoAfterItsWaitAndRetryPushesTheSameCommand() async throws {
     let transport = WorkoutFaultTransport(), telemetry = TelemetryRecorder(), runtime = try WorkoutStateTests.faultRuntime(transport, drivesLoops: true)

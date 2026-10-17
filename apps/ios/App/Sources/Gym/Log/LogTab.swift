@@ -13,8 +13,6 @@ struct LogTab: View {
   @State var limit = 30
   @State var weighing = false
   @State var historyNoticeDismissed = false
-  @State var foot: CGFloat = 0
-  @State var heldFoot: CGFloat = 0
 
   static var hasTabBarAccessory: Bool {
     if #available(iOS 26, *) { return true }
@@ -57,14 +55,6 @@ struct LogTab: View {
         }.listRowBackground(GymPalette.card)
       }
     }.listStyle(.insetGrouped).modifier(GymPage(titleDisplayMode: .large))
-      // Covered, the list keeps its foot, so the pop's moment without the tab bar cannot pull its end under the bar.
-      .contentMargins(.bottom, heldFoot, for: .scrollContent)
-      .onDisappear { heldFoot = foot }
-      .onScrollGeometryChange(for: CGFloat.self) { $0.contentInsets.bottom } action: { was, inset in
-        if inset > was && inset >= heldFoot { heldFoot = 0 }
-        foot = inset
-      }
-      .onScrollPhaseChange { _, phase in if phase == .interacting { heldFoot = 0 } }
       .navigationTitle("The log").accessibilityIdentifier("gym-log")
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {

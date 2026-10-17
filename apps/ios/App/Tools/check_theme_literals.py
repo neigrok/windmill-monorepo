@@ -51,8 +51,6 @@ ALLOWED = [
      "the composer's send circle at 40 % is the one control the room dims while it cannot send; WCAG 1.4.3 exempts an inactive control"),
     ("Sources/AccountSheet.swift", ".disabled(offline).opacity(offline ? 0.4 : 1)",
      "Apple's own Continue with Apple control draws no disabled state, so it dims while offline disables it; WCAG 1.4.3 exempts an inactive control"),
-    ("Sources/Design.swift", "color.opacity(value == 10 ? 0.78 : 0.45)",
-     "a scale thumb's glow is the colour the thumb shows, one of the mood ramp's eleven or energy, so no one named role holds it"),
     ("Sources/OnboardingGlimpses.swift", ".stroke(OnboardingSpecimen.openEdge, lineWidth: 2).opacity(reduceMotion ? 0.5 + travel * 0.5 : 1)",
      "the glimpse's one beat: the open edges light as the dot travels, and stand at 1 at rest"),
     ("Sources/OnboardingGlimpses.swift", ".opacity(reduceMotion ? 0.28 : breathing ? 0.18 : 0.28)",

@@ -706,7 +706,7 @@ final class AppModel {
     guard !accountTransition, var session = signOutSession, let runtime else { return }
     accountTransition = true; signingOut = true; journal.editing = false
     defer { accountTransition = false; signingOut = false }
-    let changed = "Pending writing changed. Review the new count."
+    let changed = "Something changed while you chose. Sign out again."
     var revocation: String?
     do {
       if journal.dirty {

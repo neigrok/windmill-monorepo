@@ -16,6 +16,7 @@ final class GymModel {
   let runtime: AppRuntime?
   let telemetry: any Telemetry
   let rest: GymRESTClient
+  let locale: Locale
   var log: TrainingLog? { didSet { logRecordsRead = nil } }
   // The log's records, worked out on the first read after the log changes (Log/LogPresentation.swift).
   @ObservationIgnored var logRecordsRead: ProgressRecords?
@@ -59,8 +60,8 @@ final class GymModel {
   @ObservationIgnored var awaitedCoachDecisions: [ID<Proposal>: CoachQueuedDecision] = [:]
   @ObservationIgnored var awaitedRecoveries: [ID<Session>: RecoveryAction] = [:]
 
-  init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry()) {
-    self.runner = runner; self.runtime = runtime; self.telemetry = telemetry
+  init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), locale: Locale = .autoupdatingCurrent) {
+    self.runner = runner; self.runtime = runtime; self.telemetry = telemetry; self.locale = locale
     rest = GymRESTClient(runtime: runtime, telemetry: telemetry)
     runtime?.gymBinding.gym = self
     refresh()
@@ -69,8 +70,8 @@ final class GymModel {
   var sessions: [Session] { log?.drawnSessions ?? [] }
   var sets: [TrainingSet] { log?.sets ?? [] }
   var openSession: Session? { log?.open }
-  // Every date the room shows, read at the log's moment, or at the device's before the log is read.
-  var dates: GymDate { log.map { GymDate($0.moment) } ?? GymDate() }
+  // Every date the room shows, in its locale, read at the log's moment, or at the device's before the log is read.
+  var dates: GymDate { log.map { GymDate($0.moment, locale: locale) } ?? GymDate(locale: locale) }
   // When the log took a proposal: its record's server stamp, none while the phone has not yet sent it.
   func proposalCreatedAt(_ proposal: Proposal) -> Instant? {
     do { return try runner.read(Gym.scope) { try $0.repository(Proposal.self).record(proposal.id, in: .stored)?.rc }.map { Instant(ms: $0) } }

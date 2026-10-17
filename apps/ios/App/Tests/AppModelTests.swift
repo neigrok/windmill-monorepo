@@ -394,7 +394,7 @@ import SyncTesting
     recorder.entries.withLock { $0.removeAll() }
     await model.finishSignOut(.discard)
     #expect(model.account == identity.account && model.sheet == .you && model.signOutSession == nil && !model.editorReadOnly)
-    #expect(model.signOutRefusal == "Pending writing changed. Review the new count." && model.error == nil)
+    #expect(model.signOutRefusal == "Something changed while you chose. Sign out again." && model.error == nil)
     #expect(recorder.entries.withLock { $0.filter { $0.name == "auth_signed_out" || $0.name == "first_run_choice" }.map(\.properties) } ==
             [["screen": "you", "action": "discard"], ["outcome": "refused"]])
     await model.beginSignOut()

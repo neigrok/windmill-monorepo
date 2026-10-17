@@ -53,6 +53,23 @@ struct TabBarHidden: PreferenceKey {
   static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
 }
 
+// A tab's root keeps its foot while a pushed screen covers it: the pop lays the root out for a moment before the tab bar
+// returns, which would clamp a list at its end under the bar. The bar's return, or a finger, lets the foot go.
+struct HeldFoot: ViewModifier {
+  @State var foot: CGFloat = 0
+  @State var held: CGFloat = 0
+
+  func body(content: Content) -> some View {
+    content.contentMargins(.bottom, held, for: .scrollContent)
+      .onDisappear { held = foot }
+      .onScrollGeometryChange(for: CGFloat.self) { $0.contentInsets.bottom } action: { was, inset in
+        if inset > was && inset >= held { held = 0 }
+        foot = inset
+      }
+      .onScrollPhaseChange { _, phase in if phase == .interacting { held = 0 } }
+  }
+}
+
 extension View {
   func gymTabBar(hidden: Bool = true) -> some View {
     toolbar(hidden ? .hidden : .automatic, for: .tabBar).preference(key: TabBarHidden.self, value: hidden)

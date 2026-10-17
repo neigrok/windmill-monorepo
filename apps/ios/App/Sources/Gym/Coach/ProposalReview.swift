@@ -22,6 +22,18 @@ nonisolated struct CoachProposalsRead {
   let outOfDate: Set<ID<Proposal>>
 }
 
+extension Proposal {
+  // Who proposed it, said the same on the Review's subtitle and the Routines row: Coach, the name the tool gave — its
+  // agent, else its connection — or *a connected tool* when it gave none.
+  nonisolated var sourceName: String {
+    switch provenance {
+    case .ask: "Coach"
+    case .mcp(let connection, let agent): !agent.isEmpty ? agent : !connection.isEmpty ? connection : "a connected tool"
+    case .other: "a connected tool"
+    }
+  }
+}
+
 extension GymModel {
   // One read, so a decision the queue let go is judged by the proposal state that came with it, and a proposal is out of
   // date by the domain's own Apply rule over the routine as this phone stores it and as the log confirmed it.
@@ -113,16 +125,10 @@ extension GymModel {
     return ok
   }
   // *proposed by Coach · Sep 26 · 6:42 PM*: who proposed it, then when the log took it, its record's creation; none before.
-  // A connection that gave no name is not named at all, so the line is the day and the time alone.
-  func coachProposalSource(_ proposal: Proposal) -> String? {
-    let source: String?
-    switch proposal.provenance {
-    case .ask: source = "proposed by Coach"
-    case .mcp(let connection, let agent): source = (agent.nilIfEmpty ?? connection.nilIfEmpty).map { "proposed by " + $0 }
-    case .other: source = "proposed by a connected tool"
-    }
-    let parts = [source, proposalCreatedAt(proposal).map { dates.dayAndTime($0) }].compactMap { $0 }
-    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+  func coachProposalSource(_ proposal: Proposal) -> String {
+    let source = "proposed by " + proposal.sourceName
+    guard let created = proposalCreatedAt(proposal) else { return source }
+    return source + " · " + dates.dayAndTime(created)
   }
   func coachRoutine(_ proposal: Proposal) -> Routine? { routines.first { $0.id == proposal.routineId } }
   // Out of date, it can no longer be applied: the domain's own Apply rule says so (readCoachProposals).
@@ -327,8 +333,8 @@ struct ProposalReviewSheet: View {
           extent = position.extent
           if position.atEnd, position.extent.viewport > 0, position.extent.content > 0 { seen = position.extent }
         }
-        .roomTitle(routine?.name ?? proposal?.baseName ?? "Proposal", subtitle: proposal.flatMap(gym.coachProposalSource)).modifier(GymPage())
-        .reachBand(backless: true) { band }
+        .roomTitle(routine?.name ?? proposal?.baseName ?? "Proposal", subtitle: proposal.map(gym.coachProposalSource)).modifier(GymPage())
+        .reachBand(onSurface: true) { band }
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
         .alert("Turn this down?", isPresented: $turningDown) {
           Button("Turn down", role: .destructive) { if let proposal { submitted = gym.coachDecideProposal(proposal, apply: false) } }

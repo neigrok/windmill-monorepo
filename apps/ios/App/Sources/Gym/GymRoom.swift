@@ -41,9 +41,10 @@ struct GymRoom: View {
     }.tint(GymPalette.accent).accessibilityHidden(gym.workout.isPresented)
   }
 
-  // The stacks' back chevrons and the room menu take the label colour; each screen's page keeps the accent.
+  // The stacks' back chevrons and the room menu take the label colour; each screen's page keeps the accent. Each root holds
+  // its foot across a pop.
   func root(_ screen: some View) -> some View {
-    screen.toolbar { roomToolbar }.roomBar(.gym).navigationDestination(for: Destination.self, destination: destination)
+    screen.modifier(HeldFoot()).toolbar { roomToolbar }.roomBar(.gym).navigationDestination(for: Destination.self, destination: destination)
   }
 
   var body: some View {

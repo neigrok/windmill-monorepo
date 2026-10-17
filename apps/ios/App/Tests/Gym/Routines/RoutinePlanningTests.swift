@@ -168,27 +168,25 @@ import SyncSchema
 
   @Test func aProposalSaysWhoProposedItAndOnlyAServerStampedTime() {
     let moment = Moment(now: Instant(ms: 1_790_424_000_000), zone: FixedZone(offsetSeconds: 0))
+    let dates = GymDate(moment, locale: Locale(identifier: "en_US"))
     let coach = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [])
     let agent = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [], door: "mcp", connection: "My laptop", agent: "Claude")
     let unnamed = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [], door: "mcp", connection: "My laptop")
     let anonymous = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [], door: "mcp")
     let other = Proposal(id: ID("p"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [], door: "import")
-    #expect(RoutineLines.proposal(coach, createdAt: nil, moment: moment) == "From Coach")
-    #expect([agent, unnamed, anonymous, other].map { RoutineLines.proposal($0, createdAt: nil, moment: moment) }
+    #expect(RoutineLines.proposal(coach, createdAt: nil, dates: dates) == "From Coach")
+    #expect([agent, unnamed, anonymous, other].map { RoutineLines.proposal($0, createdAt: nil, dates: dates) }
             == ["From Claude", "From My laptop", "From a connected tool", "From a connected tool"])
-    let dates = GymDate(moment)
-    #expect(RoutineLines.proposal(coach, createdAt: Instant(ms: moment.now.ms - 2 * 86_400_000), moment: moment)
-            == "From Coach · \(dates.day(Instant(ms: moment.now.ms - 2 * 86_400_000)))")
-    #expect(RoutineLines.proposal(coach, createdAt: Instant(ms: moment.now.ms - 86_400_000), moment: moment) == "From Coach · Yesterday")
-    #expect(RoutineLines.proposal(coach, createdAt: moment.now, moment: moment) == "From Coach · \(dates.time(moment.now))")
-    #expect(RoutineLines.proposal(coach, createdAt: moment.now, moment: nil) == "From Coach")
+    #expect([Int64(2), 1, 0].map { RoutineLines.proposal(coach, createdAt: Instant(ms: moment.now.ms - $0 * 86_400_000), dates: dates) }
+            == ["From Coach · Sep 24", "From Coach · Yesterday", "From Coach · 12:00\u{202F}PM"])
+    #expect(RoutineLines.proposal(coach, createdAt: moment.now, dates: nil) == "From Coach")
   }
 
   // The row's time is the log's stamp on the proposal, so a proposal still on the phone says only who proposed it.
   @Test func aWaitingProposalsRowSaysWhenTheLogTookIt() throws {
     let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: "routines-owner",
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry), commandResultWrites: AppRuntime.commandResultWrites)
-    let gym = GymModel(runner: harness.runner); gym.account = "routines-owner"
+    let gym = GymModel(runner: harness.runner, locale: Locale(identifier: "en_US")); gym.account = "routines-owner"
     gym.run(CreateExercise(Exercise(id: ID("timed-bench"), name: "Bench", pattern: "press", equipment: "barbell", stepKg: 2.5)))
     var routine = Draft(new: Routine(id: ID("timed-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("timed-bench"))]))
     #expect(gym.saveRoutine(&routine))
@@ -198,7 +196,7 @@ import SyncSchema
     let lines = [gym.proposalLine(unsent)]
     harness.sync(); gym.refresh()
     let taken = try #require(gym.waitingRoutineProposals.first)
-    #expect(lines + [gym.proposalLine(taken)] == ["From Coach", "From Coach · \(gym.dates.time(Instant(ms: 1_790_424_000_000)))"])
+    #expect(lines + [gym.proposalLine(taken)] == ["From Coach", "From Coach · 12:00\u{202F}PM"])
   }
 
   @Test func aProposalIsNamedByItsRoutineAndWhatItChanges() throws {

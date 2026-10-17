@@ -71,17 +71,21 @@ struct ActionBand: View {
 
 // What stands at the foot of a screen — its one primary, its transient — sits in a bar, so the list's last row clears it
 // at rest and what scrolls beneath it softens under the scroll edge: iOS 26's own edge effect, the bar material on
-// iOS 18 while content is beneath. A backless band carries text outside a button, so on iOS 26 its edge is the hard one
-// and no row reads through its words.
+// iOS 18 while content is beneath. A band on a surface carries text outside a button: on both systems it takes the bar
+// material while content is beneath, on iOS 26 over the hard edge, so no row reads through its words.
 struct ReachBand<Band: View>: ViewModifier {
   let spacing: CGFloat?
-  var backless = false
+  var onSurface = false
   let band: Band
   @State private var beneath = false
 
   @ViewBuilder func body(content: Content) -> some View {
     if #available(iOS 26.0, *) {
-      content.scrollEdgeEffectStyle(backless ? .hard : .automatic, for: .bottom).safeAreaBar(edge: .bottom, spacing: spacing) { band }
+      content.scrollEdgeEffectStyle(onSurface ? .hard : .automatic, for: .bottom)
+        .onScrollGeometryChange(for: Bool.self) { $0.contentSize.height > $0.visibleRect.maxY - $0.contentInsets.bottom + 1 } action: { beneath = $1 }
+        .safeAreaBar(edge: .bottom, spacing: spacing) {
+          band.background { if onSurface && beneath { Rectangle().fill(.bar).ignoresSafeArea(edges: .bottom) } }
+        }
     }
     else {
       content
@@ -147,8 +151,8 @@ struct RoomTitle: ViewModifier {
 
 extension View {
   func roomTitle(_ title: String, subtitle: String?) -> some View { modifier(RoomTitle(title: title, subtitle: subtitle)) }
-  func reachBand(spacing: CGFloat? = nil, backless: Bool = false, @ViewBuilder _ band: () -> some View) -> some View {
-    modifier(ReachBand(spacing: spacing, backless: backless, band: band()))
+  func reachBand(spacing: CGFloat? = nil, onSurface: Bool = false, @ViewBuilder _ band: () -> some View) -> some View {
+    modifier(ReachBand(spacing: spacing, onSurface: onSurface, band: band()))
   }
   // A bar's items take the room's label colour; the accent stays with the page under the bar and with a confirmation.
   // The tint reaches the items declared before it, so it follows a screen's toolbar.

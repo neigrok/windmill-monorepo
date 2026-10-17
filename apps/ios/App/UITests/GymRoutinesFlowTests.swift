@@ -659,4 +659,35 @@ import UIKit
       app.terminate()
     }
   }
+
+  // A pushed screen hides the tab bar; back at Routines' end, its last row stands where it stood, clear of the band.
+  func testRoutinesEndStaysClearOfTheBandAfterAPushedScreenPops() {
+    let app = launch("light", proposal: true, arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+    XCTAssertTrue(app.buttons["routine-proposal"].waitForExistence(timeout: 15))
+    let movements = app.buttons["routines-movements"], band = app.buttons["Just start logging"]
+    XCTAssertTrue(band.waitForExistence(timeout: 5))
+    for _ in 0..<6 { app.swipeUp(velocity: .fast) }
+    let atEnd = settledFrame(movements), first = app.buttons["routine-proposal"].frame
+    capture(app, "end-before-push")
+    XCTAssertLessThan(first.minY, app.navigationBars.firstMatch.frame.maxY, "At this size Routines scrolls its first row \(first) under the bar")
+    XCTAssertLessThanOrEqual(atEnd.maxY, band.frame.minY + 1, "At rest the last row \(atEnd) clears \(band.frame)")
+    movements.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["gym-movement-picker"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.tabBars.firstMatch.isHittable, "A pushed screen hides the tab bar")
+    app.navigationBars.buttons.element(boundBy: 0).tap()
+    XCTAssertTrue(band.waitForExistence(timeout: 10))
+    let returned = settledFrame(movements)
+    capture(app, "end-after-pop")
+    XCTAssertEqual(returned.minY, atEnd.minY, accuracy: 1, "The last row \(returned) stands where it stood \(atEnd)")
+    XCTAssertLessThanOrEqual(returned.maxY, band.frame.minY + 1, "The last row \(returned) clears \(band.frame)")
+  }
+  func settledFrame(_ element: XCUIElement) -> CGRect {
+    var frame = element.frame
+    for _ in 0..<20 {
+      RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+      if element.frame == frame { break }
+      frame = element.frame
+    }
+    return frame
+  }
 }

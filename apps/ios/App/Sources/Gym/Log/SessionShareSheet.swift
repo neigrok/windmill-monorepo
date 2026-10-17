@@ -45,6 +45,7 @@ nonisolated enum SessionShareState: Equatable, Sendable {
     case .working, .revoked: nil
     }
   }
+  var isLive: Bool { if case .live = self { true } else { false } }
 
   func body(expiry: String = "") -> String {
     switch self {
@@ -232,7 +233,7 @@ struct SessionShareSheet: View {
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
       }.roomBar(.gym)
-      .reachBand {
+      .reachBand(onSurface: sharing.state.isLive) {
         VStack(spacing: 0) {
           if let note = sharing.state.note {
             RoomTransient(message: note, room: .gym).accessibilityIdentifier("gym-share-error")
@@ -249,7 +250,7 @@ struct SessionShareSheet: View {
               } else { owner = gym.account; sharing.getLink() }
             }
           }
-          if case .live = sharing.state {
+          if sharing.state.isLive {
             Button("Revoke the link", role: .destructive) { sharing.revokeLink() }
               .font(.body).foregroundStyle(GymPalette.alarm).frame(minHeight: RoomSpace.minimumTarget)
               .accessibilityIdentifier("gym-share-revoke")
