@@ -200,12 +200,14 @@ struct JournalScreen: View {
     place(day, at: row.minY, scroll: scroll)
   }
 
-  // An ink that opens under the write seat rises until its end stands an inset above the seat, never taking its date row off the top.
+  // An ink that opens under the write seat rises until its end stands an inset above the seat, never past its own start.
   func clearSeat(_ ink: CGRect, day: String, scroll: ScrollViewProxy) {
     let clearance = marks.seat.minY - RoomSpace.inset
     guard let row = marks.rows[day], ink.maxY > clearance, !marks.seat.isEmpty else { return }
+    let rise = min(ink.maxY - clearance, ink.minY - marks.canvas.minY - RoomSpace.inset)
+    guard rise > 0 else { return }
     withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) {
-      place(day, at: max(marks.canvas.minY, row.minY - (ink.maxY - clearance)), scroll: scroll)
+      place(day, at: row.minY - rise, scroll: scroll)
     }
   }
 

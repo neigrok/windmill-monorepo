@@ -404,6 +404,63 @@ import SyncTesting
     #expect(model.account == nil && model.signOutRefusal == nil)
   }
 
+  // A sign-out that cannot begin says why under Sign out and records the refusal after the tap: a room that cannot save
+  // says so in its own words, and any other failure is one written sentence. Nothing waits in the sign-in steps' error.
+  @Test(arguments: [(TxName.commit, "Couldn't save on this phone. Your writing stays in the editor. Try again."),
+                    (TxName.signOutRelease, "Couldn't sign out. Try again.")])
+  func aSignOutThatCannotBeginSaysWhyUnderSignOut(_ failing: TxName, _ reason: String) async throws {
+    let fault = GymStoreFault(), recorder = TelemetryRecorder(), server = JournalModelTransport()
+    let model = try LineageFlowTests().fixture(server, crashPoints: CrashPoints { point in
+      if fault.point.withLock({ $0 == point }) { throw AppFailure(message: "private-fault-marker") }
+    }, telemetry: recorder)
+    let identity = server.identity(email: "cannot-begin@example.com")
+    try await model.signIn(identity)
+    model.journal.type("Not saved yet")
+    model.sheet = .you
+    recorder.entries.withLock { $0.removeAll() }
+    fault.point.withLock { $0 = .beforeCommit(failing) }
+    await model.beginSignOut()
+    fault.point.withLock { $0 = nil }
+    #expect(model.account == identity.account && model.sheet == .you && model.signOutSession == nil && !model.editorReadOnly)
+    #expect(model.signOutRefusal == reason && model.error == nil)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "auth_signed_out" || $0.name == "first_run_choice" }.map(\.properties) } ==
+            [["screen": "you", "action": "sign_out"], ["outcome": "refused"]])
+    await model.beginSignOut()
+    #expect(model.signOutSession != nil && model.signOutRefusal == nil, "Sign out asks anew once the phone can begin it")
+  }
+
+  // An answer that fails for a reason of the phone's own is one written sentence under Sign out, never the error's own text.
+  @Test func aSignOutAnswerThatFailsSaysOneWrittenSentence() async throws {
+    let fault = GymStoreFault(), recorder = TelemetryRecorder(), server = JournalModelTransport()
+    let model = try LineageFlowTests().fixture(server, crashPoints: CrashPoints { point in
+      if fault.point.withLock({ $0 == point }) { throw AppFailure(message: "private-fault-marker") }
+    }, telemetry: recorder)
+    let identity = server.identity(email: "answer-fails@example.com")
+    try await model.signIn(identity)
+    model.sheet = .you
+    await model.beginSignOut()
+    _ = try #require(model.signOutSession)
+    recorder.entries.withLock { $0.removeAll() }
+    fault.point.withLock { $0 = .beforeCommit(.signOutFinish) }
+    await model.finishSignOut(.keep)
+    fault.point.withLock { $0 = nil }
+    #expect(model.account == identity.account && model.signOutSession == nil && !model.editorReadOnly)
+    #expect(model.signOutRefusal == "Couldn't sign out. Try again." && model.error == nil)
+    #expect(recorder.entries.withLock { $0.filter { ["auth_signed_out", "first_run_choice", "client_error"].contains($0.name) }.map(\.properties) } == [
+      ["screen": "you", "action": "keep"], ["operation": "auth_sign_out", "failure_kind": "unexpected"], ["outcome": "refused"]])
+  }
+
+  // A finished sign-out takes the account's name and address off this phone, whichever way it ends.
+  @Test(arguments: [SignOutChoice.keep, .discard]) func aFinishedSignOutLeavesNoNameOrAddressOnThePhone(_ choice: SignOutChoice) async throws {
+    let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server)
+    let identity = server.identity(email: "residue@example.com")
+    let residue = { ["accountName:", "accountEmail:"].map { model.preferences.string(forKey: $0 + identity.account) } }
+    try await model.signIn(identity)
+    #expect(residue() == ["Sam", "residue@example.com"])
+    await model.beginSignOut(); await model.finishSignOut(choice)
+    #expect(model.account == nil && residue() == [nil, nil])
+  }
+
   // You's identity is the account's name, or its email, never "You"; its one line is the account's backup, paused or not.
   @Test func youNamesTheAccountAndStatesWhetherItIsBackedUp() async throws {
     let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server)

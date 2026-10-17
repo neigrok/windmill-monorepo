@@ -189,19 +189,22 @@ struct WorkoutLedger: View {
           WorkoutFacts(workout: workout, planLine: ledger.planLine, position: workout.walk.position(of: exerciseId)).frame(maxWidth: .infinity)
         }.listRowBackground(GymPalette.canvas)
       }
-      // Every row is the same view whatever its place, so the row a set is logged into keeps its identity and its mark.
+      // Every row is the same view whatever its place, so the row a set is logged into keeps its identity and its mark: its
+      // modifiers stay put, and only a logged set is a button that opens Fix set.
       Section {
         ForEach(ledger.rows) { row in
           WorkoutLedgerRow(row: row, unsent: row.set.map { unsent.contains($0.id) } ?? false)
             .contentShape(Rectangle())
             .onTapGesture { if let set = row.set, fixable { fix(set) } }
-            .accessibilityAddTraits(row.set == nil ? [] : .isButton)
-            .accessibilityHint(row.set == nil ? "" : "Correct this set")
+            .accessibilityRemoveTraits(row.set == nil ? [.isButton, .isSelected] : .isSelected)
+            .accessibilityAddTraits(row.set == nil ? .isStaticText : .isButton)
+            .accessibilityRespondsToUserInteraction(row.set != nil)
+            .accessibilityHint(row.set == nil ? "" : "Opens Fix set.")
             .accessibilityAction { if let set = row.set, fixable { fix(set) } }
         }
       }.listRowBackground(GymPalette.card)
     }.listStyle(.insetGrouped).listSectionSpacing(.compact)
-      .contentMargins(.bottom, RoomSpace.minimumTarget, for: .scrollContent).modifier(GymPage()).modifier(SoftTopEdge())
+      .contentMargins(.bottom, RoomSpace.minimumTarget, for: .scrollContent).modifier(GymPage()).modifier(SoftEdge(.top))
       .onAppear { scroll.scrollTo(ledger.current.id, anchor: .bottom) }
       .onChange(of: ledger.sets.count) { _, _ in
         withAnimation(reduceMotion ? nil : .spring) { scroll.scrollTo(ledger.current.id, anchor: .bottom) }
@@ -231,7 +234,8 @@ struct WorkoutLedgerRow: View {
       Image(systemName: mark.symbol).font(row.set == nil ? .system(size: RoomSpace.related) : .body)
         .foregroundStyle(mark.colour).opacity(row.place == .planned ? 0 : 1)
         .contentTransition(RoomMotion.symbol(reduceMotion: reduceMotion))
-    }.font(.body.monospacedDigit()).frame(minHeight: RoomSpace.minimumTarget)
+        .accessibilityHidden(true).accessibilityRemoveTraits(.isSelected)
+    }.font(.body.monospacedDigit())
       .roomMotion(row).roomMotion(unsent)
       .accessibilityElement(children: row.place == .planned ? .ignore : .combine)
       .accessibilityLabel(spoken)
@@ -242,10 +246,16 @@ struct WorkoutLedgerRow: View {
     switch row.place {
     case .logged(let set):
       let name = set.kind == SetKind.working.rawValue ? "Set \(row.marker)" : set.kind.capitalized
-      return "\(name), logged, \(Readout.weight(set.weightKg)) kg, \(set.reps) reps\(unsent ? ", on this phone" : "")"
-    case .current: return "Set \(row.marker), current, target \(row.reading)"
-    case .planned: return "Set \(row.marker), planned, \(row.reading)"
+      return "\(name), logged, \(Readout.weight(set.weightKg)) kilograms, \(GymCount.of(set.reps, "rep"))\(unsent ? ", on this phone" : "")"
+    case .current: return "Set \(row.marker), current, \(asked.map { "target " + $0 } ?? "open target")"
+    case .planned: return "Set \(row.marker), planned, \(asked ?? "open target")"
     }
+  }
+
+  // The numbers the plan asks for, in words: the load, the reps, or both; nil when it asks for neither.
+  var asked: String? {
+    let numbers = [row.target?.weightKg.map { "\(Readout.weight($0)) kilograms" }, row.target?.reps.map { GymCount.of($0, "rep") }].compactMap { $0 }
+    return numbers.isEmpty ? nil : numbers.joined(separator: ", ")
   }
 }
 

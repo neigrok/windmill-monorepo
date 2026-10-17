@@ -21,7 +21,8 @@ final class AppModel {
   let authRetryNow: () -> Date
   let journal: JournalModel
   let gym: GymModel
-  var selectedRoom: Room
+  // The room in front is the room the next launch opens, whichever door brought it forward.
+  var selectedRoom: Room { didSet { preferences.set(selectedRoom.rawValue, forKey: "lastRoom") } }
   var welcome: Bool
   var error: String?
   var sheet: Sheet? {
@@ -62,7 +63,7 @@ final class AppModel {
   var authGeneration = 0
   var signInSession: SignInSession?
   var signOutSession: SignOutSession? { didSet { gym.accountChanging = signingOut || signOutSession != nil } }
-  // Why the last answer to Sign out could not be carried out; the next Sign out clears it.
+  // Why the last Sign out could not begin or be carried out; the next Sign out clears it.
   var signOutRefusal: String?
   var adoptionAnswers: [String: LineageAnswer] = [:]
   var appearance: Appearance
@@ -234,7 +235,6 @@ final class AppModel {
     if !welcome, selectedRoom == .journal { journal.liftInk() }
     journal.done()
     selectedRoom = room; welcome = false; preferences.set(false, forKey: "roomWelcomeRequired")
-    preferences.set(room.rawValue, forKey: "lastRoom")
     choose(room == .journal ? "open_journal" : "open_gym", screen: "welcome")
     if room == .journal { journal.openJournal() }
     refresh()
@@ -245,7 +245,7 @@ final class AppModel {
     if selectedRoom == .journal { journal.liftInk() }
     guard room != selectedRoom else { return }
     journal.done()
-    selectedRoom = room; preferences.set(room.rawValue, forKey: "lastRoom")
+    selectedRoom = room
     telemetry.event("room_switched", properties: ["room": room.rawValue])
     refresh()
     if room == .journal {
@@ -689,14 +689,17 @@ final class AppModel {
     signOutRefusal = nil
     accountTransition = true; signingOut = true; journal.editing = false
     defer { if authGeneration == generation { accountTransition = false; signingOut = false } }
-    if !flushRooms() { return }
     choose("sign_out", screen: "you")
+    guard flushRooms() else { await refuseSignOut(error ?? Self.signOutFailed); return }
     do {
       let session = try await runtime.engine.signOut()
       guard !Task.isCancelled else { await session.cancel(); return }
       signOutSession = session
+    } catch {
+      guard !Task.isCancelled else { return }
+      reportBoundary("auth_sign_out", error: error)
+      await refuseSignOut(Self.signOutFailed)
     }
-    catch { if !Task.isCancelled { reportBoundary("auth_sign_out", error: error); self.error = error.localizedDescription } }
   }
 
   func finishSignOut(_ choice: SignOutChoice) async {
@@ -707,7 +710,7 @@ final class AppModel {
     var revocation: String?
     do {
       if journal.dirty {
-        guard flushRooms() else { await refuseSignOut(error); return }
+        guard flushRooms() else { await refuseSignOut(error ?? Self.signOutFailed); return }
         await session.cancel()
         guard choice == .keep else { await refuseSignOut(changed); return }
         session = try await runtime.engine.signOut(); signOutSession = session
@@ -718,6 +721,7 @@ final class AppModel {
       runtime.updateTelemetryIdentity()
       telemetry.event("auth_signed_out", properties: ["outcome": "ok"])
       signOutSession = nil; signInSession = nil
+      preferences.removeObject(forKey: "accountName:\(session.account)"); preferences.removeObject(forKey: "accountEmail:\(session.account)")
       journal.liftInk()
       sheet = nil; account = nil; journal.document = PageDocument(); journal.dirty = false; journal.editing = false; error = nil
       appleTicket = nil; signInMethods = []; accountEmail = ""; accountName = ""; appleLinkedReceipt = false
@@ -729,13 +733,14 @@ final class AppModel {
       await refuseSignOut(changed)
     } catch {
       reportBoundary("auth_sign_out", error: error); if let revocation { try? runtime.revocations.delete(for: revocation) }
-      await refuseSignOut(error.localizedDescription)
+      await refuseSignOut(Self.signOutFailed)
     }
   }
 
-  // An answer the sign-out could not carry out ends the held sign-out and leaves the account signed in; its reason waits under Sign out.
-  func refuseSignOut(_ reason: String?) async {
-    await signOutSession?.cancel(); signOutSession = nil; signOutRefusal = reason
+  // A sign-out that could not begin, or an answer it could not carry out, ends the held sign-out and leaves the account
+  // signed in; its reason waits under Sign out, never in the sign-in steps' error.
+  func refuseSignOut(_ reason: String) async {
+    await signOutSession?.cancel(); signOutSession = nil; signOutRefusal = reason; error = nil
     telemetry.event("auth_signed_out", properties: ["outcome": "refused"])
   }
 
@@ -776,6 +781,9 @@ final class AppModel {
     guard !accountTransition else { return }
     choose("cancel", screen: "you"); await signOutSession?.cancel(); signOutSession = nil; sheet = .you
   }
+
+  // Why Sign out did nothing when the phone itself failed it; a room that cannot save says so in its own words instead.
+  static let signOutFailed = "Couldn't sign out. Try again."
 
   // superapp-flow.md §7: one question, and when the account has not confirmed some changes it says how many.
   static func signOutMessage(unsent count: Int) -> String {

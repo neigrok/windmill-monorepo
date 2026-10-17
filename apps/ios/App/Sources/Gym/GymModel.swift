@@ -313,10 +313,12 @@ final class GymModel {
     }
   }
 
-  // The lifter sent an Undo band away: the act stays, and its hold runs out as it would have.
+  // The lifter sent an Undo band away: the act it shows and every older one beneath it stay, and their holds run out as
+  // they would have, so only a gesture made after the swipe raises the band again.
   func dismissUndo(_ gestureId: String) {
-    dismissedUndos.insert(gestureId)
-    undoOffers.removeAll { $0.id == gestureId }
+    guard let shown = undoOffers.firstIndex(where: { $0.id == gestureId }) else { return }
+    dismissedUndos.formUnion(undoOffers[...shown].map(\.id))
+    undoOffers.removeFirst(shown + 1)
     telemetry.event("gym_undo", properties: ["screen": "gym", "action": "dismiss"])
   }
 

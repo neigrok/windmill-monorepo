@@ -124,6 +124,21 @@ import Vision
     XCTAssertTrue(app.frame.contains(caption.frame), "The caption \(caption.frame) is below the sheet at rest")
   }
 
+  // VoiceOver hears the ledger as it is: a logged set is a button that opens Fix set and is never read as selected, while
+  // the current and planned rows are read, not pressed. Every row stands at the system's one-line height.
+  func testLedgerRowsAreReadAsWhatTheyAreAtTheSystemsRowHeight() {
+    let app = launch(appearance: "light")
+    let ledger = app.descendants(matching: .any).matching(NSPredicate(format: "label MATCHES %@", "(Warmup|Set [0-9]+), (logged|current|planned), .*"))
+    XCTAssertTrue(ledger.firstMatch.waitForExistence(timeout: 5))
+    let rows = (0..<ledger.count).map { ledger.element(boundBy: $0) }
+    let kind = { (row: XCUIElement) in row.elementType == .button ? "button" : row.elementType == .staticText ? "text" : "type \(row.elementType.rawValue)" }
+    XCTAssertEqual(rows.map { "\(kind($0))\($0.isSelected ? " selected" : ""): \($0.label)" }, [
+      "button: Warmup, logged, 80 kilograms, 3 reps", "button: Set 1, logged, 100 kilograms, 5 reps", "button: Set 2, logged, 100 kilograms, 5 reps",
+      "text: Set 3, current, target 100 kilograms, 5 reps", "text: Set 4, planned, 100 kilograms, 5 reps",
+    ])
+    XCTAssertEqual(rows.map(\.frame.height), Array(repeating: 52, count: rows.count), "Each row is the system's one-line row")
+  }
+
   // The receipt opens over session detail at full height only. Done shows the detail, which numbers a set the way the
   // ledger did: a warmup by its letter and with no caption, work sets from one against the plan.
   func testSessionDetailNumbersSetsAsTheLedgerDid() {
@@ -175,7 +190,7 @@ import Vision
     app.buttons["workout-log"].tap()
     let chosenSet = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch
     XCTAssertTrue(chosenSet.waitForExistence(timeout: 5))
-    XCTAssertTrue(chosenSet.label.contains("20 kg, 5 reps"))
+    XCTAssertEqual(chosenSet.label, "Set 1, logged, 20 kilograms, 5 reps")
     app.buttons["workout-previous"].tap()
     XCTAssertTrue(app.buttons["Romanian Deadlift"].waitForExistence(timeout: 5))
     XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).count, 0)

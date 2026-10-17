@@ -143,23 +143,25 @@ extension WorkoutState {
           offer.movementID == selected?.description else { return }
     restoreRack(weightKg: offer.weightKg, reps: offer.reps)
   }
+  // Every outside Log set that logs nothing says why: refused when the rack has moved past it or a rule of the log refuses
+  // the set, failed when the phone cannot read or save it.
   @discardableResult func logActivityOffer(_ offer: WorkoutActivityOffer, surface: WorkoutSurface = .activity) -> Bool {
     gym.refresh()
     if gym.openSession != nil { reconcile() }
-    guard !gym.accountTransition, activityIdentityResolved, !gym.readFailed, let record = try? activityRecord(), record.ownerID == offer.ownerID,
-          let session, session.isOpen, session.id.description == offer.sessionID else { return refuseActivityOffer(surface) }
+    guard !gym.readFailed else { return refuseActivityOffer(surface, outcome: "failed") }
+    guard !gym.accountTransition, activityIdentityResolved, let record = try? activityRecord(), record.ownerID == offer.ownerID,
+          let session, session.isOpen, session.id.description == offer.sessionID else { return refuseActivityOffer(surface, outcome: "refused") }
     if let existing = sets.first(where: { $0.id.description == offer.setID }) {
-      guard existing.exerciseId.description == offer.movementID, existing.weightKg == offer.weightKg, existing.reps == offer.reps, existing.kind == SetKind.working.rawValue else { return refuseActivityOffer(surface) }
+      guard existing.exerciseId.description == offer.movementID, existing.weightKg == offer.weightKg, existing.reps == offer.reps, existing.kind == SetKind.working.rawValue else { return refuseActivityOffer(surface, outcome: "refused") }
       return true
     }
-    guard activityOffer() == offer else { return refuseActivityOffer(surface) }
-    let logged = logSet(offered: offer)
-    if !logged, case .stale = gym.refusal { return refuseActivityOffer(surface) }
-    if logged { gym.telemetry.event("gym_activity_set_logged", properties: ["surface": surface.rawValue]) }
-    return logged
+    guard activityOffer() == offer else { return refuseActivityOffer(surface, outcome: "refused") }
+    guard logSet(offered: offer) else { return refuseActivityOffer(surface, outcome: gym.refusal == nil ? "failed" : "refused") }
+    gym.telemetry.event("gym_activity_set_logged", properties: ["surface": surface.rawValue])
+    return true
   }
-  func refuseActivityOffer(_ surface: WorkoutSurface) -> Bool {
-    gym.telemetry.event("gym_activity_offer_refused", properties: ["surface": surface.rawValue, "outcome": "refused"])
+  func refuseActivityOffer(_ surface: WorkoutSurface, outcome: String) -> Bool {
+    gym.telemetry.event("gym_activity_offer_refused", properties: ["surface": surface.rawValue, "outcome": outcome])
     return false
   }
   func activityChanged() { gym.existingWorkoutActivity?.schedule() }
@@ -365,7 +367,7 @@ enum WorkoutDoor: String { case workout = "open_workout", routines = "start_work
       return .loggedSet(offer, movement: gym.catalogue.find(ID(RecordID(offer.movementID)))?.name)
     } catch {
       telemetry?.failure("gym_activity_update", kind: "unexpected")
-      telemetry?.event("gym_activity_offer_refused", properties: ["surface": surface.rawValue, "outcome": "refused"])
+      telemetry?.event("gym_activity_offer_refused", properties: ["surface": surface.rawValue, "outcome": "failed"])
       return .opened
     }
   }

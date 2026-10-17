@@ -84,10 +84,12 @@ import XCTest
       XCTAssertEqual(title.frame.minX, frame.minX, accuracy: 0.5)
       XCTAssertEqual(title.frame.size.width, frame.size.width, accuracy: 0.5)
       XCTAssertEqual(title.frame.size.height, frame.size.height, accuracy: 0.5)
-      if overflow <= 0.5 { XCTAssertEqual(title.frame.minY, frame.minY, accuracy: 0.5) }
+      // Accessibility frames round outward to whole points, so a page that fills its height exactly reads up to a point over.
+      if overflow <= 1 { XCTAssertEqual(title.frame.minY, frame.minY, accuracy: 0.5) }
       else {
+        // A page that scrolls also scrolls past the 16 pt soft edge at its foot.
         XCTAssertLessThan(title.frame.minY, frame.minY)
-        XCTAssertGreaterThanOrEqual(title.frame.minY, frame.minY - overflow - 0.5)
+        XCTAssertGreaterThanOrEqual(title.frame.minY, frame.minY - overflow - 16 - 0.5)
       }
       XCTAssertEqual(primary.frame, primaryFrame)
       XCTAssertEqual(control.frame, controlFrame)
@@ -97,8 +99,9 @@ import XCTest
     }
   }
 
-  // The glimpse is full height only while the page holds it and the whole text block, else 260 pt, scaled uniformly and centred.
-  func testTheGlimpseStandsFullHeightOnlyWhileThePageHoldsTheWholeText() {
+  // The glimpse takes the height the whole text block leaves it, from full down to its 220 pt floor, scaled uniformly and
+  // centred: a page a few points too tall shrinks its picture, never its words.
+  func testTheGlimpseTakesTheHeightTheTextLeavesDownToItsFloor() {
     let app = launch()
     for page in 0..<4 {
       assertPage(page, in: app)
@@ -108,13 +111,33 @@ import XCTest
       let top = scroll.staticTexts.matching(identifier: page == 0 ? "onboarding-title" : "onboarding-eyebrow").firstMatch.frame.minY
       let end = scroll.staticTexts[page == 0 ? bodies[0] : page == 1 ? "On the web" : "In this app"].frame.maxY
       let full: CGFloat = page == 0 ? 320 : 340, slot = top - 26 - picture.minY, column = scroll.frame.width - 48
-      let holdsFull = end + 16 + full - slot <= scroll.frame.maxY + 0.5
+      let room = slot + scroll.frame.maxY - (end + 16)
       let scale = min(column / 354, slot / full), evidence = "Page \(page + 1): \(picture), text \(top)–\(end) in \(scroll.frame)"
       // Accessibility frames round outward to whole points, so each is checked to within one.
-      XCTAssertEqual(slot, holdsFull ? full : 260, accuracy: 1, evidence)
+      XCTAssertEqual(slot, min(full, max(220, room)), accuracy: 1, evidence)
       XCTAssertEqual(picture.width, 354 * scale, accuracy: 1, evidence)
       XCTAssertEqual(picture.height, full * scale, accuracy: 1, evidence)
       XCTAssertEqual(picture.midX, scroll.frame.midX, accuracy: 1, evidence)
+      app.buttons["onboarding-next"].tap()
+    }
+    assertWhereToStart(in: app)
+  }
+
+  // At the accessibility sizes the text leads: each page opens on its title and body with the glimpse after them, and at
+  // AX3 page 1's honesty sentence stands whole in the first screen, above the fade a scrolling page draws at its foot.
+  func testTheTextLeadsAtAccessibilitySizesAndPageOneSaysItWhole() {
+    let app = launch(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
+    for page in 0..<4 {
+      assertPage(page, in: app)
+      let scroll = app.scrollViews.containing(NSPredicate(format: "label == %@", titles[page])).firstMatch
+      let title = app.staticTexts.matching(identifier: "onboarding-title").matching(NSPredicate(format: "label == %@", titles[page])).firstMatch
+      let body = app.staticTexts[bodies[page]], picture = app.descendants(matching: .any).matching(identifier: "onboarding-glimpse")
+        .matching(NSPredicate(format: "label == %@", glimpses[page])).firstMatch
+      let evidence = "Page \(page + 1): title \(title.frame), body \(body.frame), glimpse \(picture.frame) in \(scroll.frame)"
+      XCTAssertTrue(title.frame.maxY <= body.frame.minY && body.frame.maxY < picture.frame.minY, evidence)
+      XCTAssertGreaterThanOrEqual(title.frame.minY, scroll.frame.minY, evidence)
+      XCTAssertEqual(picture.frame.height, 260, accuracy: 1, evidence)
+      if page == 0 { XCTAssertLessThanOrEqual(body.frame.maxY, scroll.frame.maxY - 16, evidence) }
       app.buttons["onboarding-next"].tap()
     }
     assertWhereToStart(in: app)

@@ -236,6 +236,30 @@ import XCTest
     app.terminate()
   }
 
+  // At AX3 what opened rises by the least that clears the seat, and never so far that its start passes 16 pt under the
+  // bar: where both cannot hold, its start wins and the reader scrolls for the rest. Run at 393 and 375 points.
+  func testAnOpenedInkAtTheLargestTextShowsItsStartBeforeItClearsTheSeat() throws {
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "journal-echoes-first", "-onboarding-appearance", "light",
+                           "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"]
+    app.launch()
+    let write = app.buttons["write-today"], bar = app.navigationBars.firstMatch
+    XCTAssertTrue(write.wait(for: \.isHittable, toEqual: true, timeout: 15))
+    let disclosure = app.buttons["journal-echo-\(today)"]
+    reveal(disclosure, in: app, towardTop: true); disclosure.tap()
+    let ink = app.descendants(matching: .any)["echo-ink-\(today)"]
+    XCTAssertTrue(ink.waitForExistence(timeout: 5))
+    let settled = NSPredicate { _, _ in
+      let start = ink.frame.minY - bar.frame.maxY
+      return start >= 16 - 1 && (ink.frame.maxY <= write.frame.minY - 16 + 1 || start <= 16 + 1)
+    }
+    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: settled, object: nil)], timeout: 5), .completed,
+                   "The ink \(ink.frame) ends 16 pt above the seat \(write.frame) or starts 16 pt under the bar \(bar.frame)")
+    try capture("canvas-echo-first-card-ax3-\(app.frame.width < 380 ? "375" : "393")", app)
+    app.terminate()
+  }
+
   func testEquivalentSourceEditKeepsReadNavigationAndRealEditRetractsEcho() throws {
     for appearance in ["light", "dark"] {
       let decomposed = appearance == "dark"

@@ -32,6 +32,8 @@ nonisolated struct MovementLedger: Equatable {
     let id: Int
     let marker: String
     let reading: String
+    // What the plan asks of a current or planned row; nil where it asks nothing, and on a logged row.
+    let target: SetTarget?
     let place: Place
     var set: TrainingSet? { if case .logged(let set) = place { set } else { nil } }
   }
@@ -41,15 +43,15 @@ nonisolated struct MovementLedger: Equatable {
   var targets: [SetTarget] { plan?.sets ?? [] }
   var working: Int { sets.filter { $0.kind == SetKind.working.rawValue }.count }
   var current: Row {
-    Row(id: sets.count, marker: "\(working + 1)",
-        reading: working < targets.count ? Readout.setTarget(targets[working]) : Readout.openTarget, place: .current)
+    let target = working < targets.count ? targets[working] : nil
+    return Row(id: sets.count, marker: "\(working + 1)", reading: target.map(Readout.setTarget) ?? Readout.openTarget, target: target, place: .current)
   }
   var rows: [Row] {
     let logged = sets.enumerated().map { index, set in
-      Row(id: index, marker: SetRow.marker(set, in: sets), reading: Readout.effort(weightKg: set.weightKg, reps: set.reps), place: .logged(set))
+      Row(id: index, marker: SetRow.marker(set, in: sets), reading: Readout.effort(weightKg: set.weightKg, reps: set.reps), target: nil, place: .logged(set))
     }
     let ahead = targets.indices.dropFirst(working + 1).map { index in
-      Row(id: sets.count + index - working, marker: "\(index + 1)", reading: Readout.setTarget(targets[index]), place: .planned)
+      Row(id: sets.count + index - working, marker: "\(index + 1)", reading: Readout.setTarget(targets[index]), target: targets[index], place: .planned)
     }
     return logged + [current] + ahead
   }

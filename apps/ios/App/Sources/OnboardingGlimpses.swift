@@ -104,7 +104,7 @@ struct OnboardingGlimpse: View {
             if index == 1 {
               RadialGradient(colors: [JournalPalette.glimpseGlow, .clear], center: .bottomTrailing, startRadius: 0, endRadius: 140)
               ForEach(0..<3, id: \.self) { row in
-                Capsule().fill(row == 2 ? ink : dim.opacity(0.45)).frame(width: [72.0, 46, 60][row], height: 3).offset(x: 254, y: [30.0, 40, 61][row])
+                Capsule().fill(row == 2 ? ink : OnboardingSpecimen.journalPastLine).frame(width: [72.0, 46, 60][row], height: 3).offset(x: 254, y: [30.0, 40, 61][row])
               }
               Rectangle().fill(JournalPalette.lamp).frame(width: 2, height: 14).offset(x: 320, y: 56)
             }
@@ -125,7 +125,7 @@ struct OnboardingGlimpse: View {
         path.move(to: CGPoint(x: 258, y: 50)); path.addQuadCurve(to: CGPoint(x: 302, y: 32), control: CGPoint(x: 280, y: 39)); path.addLine(to: CGPoint(x: 332, y: 20))
         path.move(to: CGPoint(x: 258, y: 50)); path.addQuadCurve(to: CGPoint(x: 302, y: 68), control: CGPoint(x: 280, y: 66)); path.addLine(to: CGPoint(x: 332, y: 80))
       }.stroke(OnboardingSpecimen.branch, lineWidth: 1.5)
-      Circle().fill(OnboardingSpecimen.completed.opacity(0.28)).frame(width: 30, height: 30).offset(x: 243, y: 35)
+      Circle().fill(OnboardingSpecimen.halo).frame(width: 30, height: 30).offset(x: 243, y: 35)
       Circle().fill(OnboardingSpecimen.completed).overlay(Circle().stroke(OnboardingSpecimen.completedOutline, lineWidth: 2)).frame(width: 18, height: 18).offset(x: 249, y: 41)
       Circle().fill(ShellPalette.canvas).overlay(Circle().stroke(OnboardingSpecimen.skyKind, lineWidth: 2)).frame(width: 12, height: 12).offset(x: 296, y: 26)
       Circle().fill(OnboardingSpecimen.clayKind).overlay(Circle().stroke(OnboardingSpecimen.clayOpenOutline, lineWidth: 1.5)).frame(width: 12, height: 12).offset(x: 296, y: 62)
@@ -184,10 +184,10 @@ struct OnboardingGlimpse: View {
           ForEach(0..<2, id: \.self) { row in
             HStack(spacing: 8) {
               Text(row == 0 ? "Mood" : "Energy").font(OnboardingSpecimenType.scaleLabel).frame(width: 48, alignment: .leading)
-              ForEach(0..<(row == 0 ? 7 : 5), id: \.self) { _ in Circle().stroke(faint, lineWidth: 1).frame(width: 10, height: 10) }
+              ForEach(0..<(row == 0 ? 7 : 5), id: \.self) { _ in Circle().stroke(OnboardingSpecimen.unasked, lineWidth: 1).frame(width: 10, height: 10) }
             }
           }
-        }.foregroundStyle(faint).opacity(0.55).offset(x: 24, y: 236)
+        }.foregroundStyle(OnboardingSpecimen.unasked).offset(x: 24, y: 236)
         text("saved", OnboardingSpecimenType.caption, faint, x: 278, y: 310, width: 60).tracking(0.6)
         caption(faint)
       }
@@ -241,6 +241,10 @@ enum OnboardingSpecimen {
   static let openEdge = Color("onboarding/open-edge")
   static let lockedEdge = Color("onboarding/locked-edge")
   static let branch = Color("onboarding/branch")
+  // Faded specimens: the journal card's written lines, the completed step's halo, the scales nobody has answered.
+  static let journalPastLine = JournalPalette.inkDim.opacity(0.45)
+  static let halo = completed.opacity(0.28)
+  static let unasked = JournalPalette.inkFaint.opacity(0.55)
 }
 
 enum OnboardingSpecimenType {

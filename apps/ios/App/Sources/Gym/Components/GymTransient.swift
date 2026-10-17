@@ -44,7 +44,8 @@ struct GymTransient: View {
   }
 
   // What sends the band away, by its xmark or a swipe down: a refusal or a notice goes, and a band offering Undo leaves
-  // while the act stays. A failed read, or a message its screen gave no way out, cannot be dismissed.
+  // with every older Undo beneath it while their acts stay. A failed read, or a message its screen gave no way out, cannot
+  // be dismissed.
   func dismissal(_ shown: Message) -> (() -> Void)? {
     switch shown {
     case .local(let text): return dismiss.map { dismiss in { dismiss(); if gym.error == text { gym.error = nil; gym.refusal = nil } } }

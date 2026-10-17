@@ -24,13 +24,15 @@ nonisolated enum OnboardingPage: Int, CaseIterable {
   var topInset: CGFloat { self == .windmill ? 16 : 6 }
   static let gap: CGFloat = 26
   static let foot: CGFloat = 16
+  static let floor: CGFloat = 220
   var glimpseHeight: CGFloat { self == .windmill ? 320 : 340 }
 
-  // The glimpse stands full height only while the page holds it and the whole text block, otherwise 260 pt; a page that still overflows scrolls.
-  func layout(height: CGFloat, textBlock: CGFloat) -> (glimpse: CGFloat, scrolls: Bool) {
-    let column = { (glimpse: CGFloat) in topInset + glimpse + Self.gap + textBlock + Self.foot }
-    if column(glimpseHeight) <= height { return (glimpseHeight, false) }
-    return (260, column(260) > height)
+  // Nothing cuts a sentence: the glimpse takes the height the text block leaves it, from full down to a 220 pt floor, and
+  // at the accessibility sizes stands at 260 pt after the text; a page that still does not fit scrolls.
+  func layout(height: CGFloat, textBlock: CGFloat, accessible: Bool) -> (glimpse: CGFloat, scrolls: Bool) {
+    let room = height - topInset - Self.gap - textBlock - Self.foot
+    if accessible { return (260, room < 260) }
+    return (min(glimpseHeight, max(Self.floor, room)), room < Self.floor)
   }
 }
 
@@ -78,6 +80,7 @@ struct OnboardingScreen: View {
   @State var pageHeight = CGFloat.infinity
   @State var textBlocks: [OnboardingPage: CGFloat] = [:]
   @Environment(\.accessibilityReduceMotion) var reduceMotion
+  @Environment(\.dynamicTypeSize) var typeSize
   var properties: [String: String] { ["page": page.name, "presentation": replay ? "replay" : "first_launch"] }
 
   var body: some View {
@@ -102,14 +105,10 @@ struct OnboardingScreen: View {
         VStack(spacing: 0) {
           TabView(selection: $page) {
             ForEach(OnboardingPage.allCases, id: \.self) { item in
-              let layout = item.layout(height: pageHeight, textBlock: textBlocks[item] ?? 0)
+              let layout = item.layout(height: pageHeight, textBlock: textBlocks[item] ?? 0, accessible: typeSize.isAccessibilitySize)
               ScrollView {
                 VStack(alignment: .leading, spacing: OnboardingPage.gap) {
-                  OnboardingGlimpse(page: item, active: settled == item, visit: visit)
-                    .frame(height: layout.glimpse)
-                    .accessibilityRepresentation {
-                      Text(item.example).accessibilityIdentifier("onboarding-glimpse").accessibilitySortPriority(30)
-                    }.accessibilitySortPriority(30)
+                  if !typeSize.isAccessibilitySize { glimpse(item, height: layout.glimpse) }
                   VStack(alignment: .leading, spacing: 10) {
                     if item != .windmill {
                       HStack(spacing: 8) {
@@ -130,8 +129,9 @@ struct OnboardingScreen: View {
                         .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("onboarding-tag").accessibilitySortPriority(40)
                     }
                   }.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { textBlocks[item] = $0 }
+                  if typeSize.isAccessibilitySize { glimpse(item, height: layout.glimpse) }
                 }.padding(.horizontal, 24).padding(.top, item.topInset).padding(.bottom, OnboardingPage.foot)
-              }.scrollDisabled(!layout.scrolls).scrollBounceBehavior(.basedOnSize)
+              }.scrollDisabled(!layout.scrolls).scrollBounceBehavior(.basedOnSize).modifier(SoftEdge(.bottom, active: layout.scrolls))
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pageHeight = $0 }
                 .tag(item).accessibilityElement(children: .contain).accessibilitySortPriority(60)
             }
@@ -161,6 +161,15 @@ struct OnboardingScreen: View {
       }
       .sensoryFeedback(.selection, trigger: visit)
       .onDisappear { if replay && !exited { telemetry.event("onboarding_finished", properties: properties) } }
+  }
+
+  // At the standard sizes the glimpse leads the page; at the accessibility sizes it follows the text, which opens each page.
+  func glimpse(_ item: OnboardingPage, height: CGFloat) -> some View {
+    OnboardingGlimpse(page: item, active: settled == item, visit: visit)
+      .frame(height: height)
+      .accessibilityRepresentation {
+        Text(item.example).accessibilityIdentifier("onboarding-glimpse").accessibilitySortPriority(30)
+      }.accessibilitySortPriority(30)
   }
 
   func exit(skipped: Bool) {

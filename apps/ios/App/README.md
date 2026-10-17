@@ -235,15 +235,18 @@ Fonts are bundled from official OFL sources, with licences alongside each family
 
 Inter and Nunito are static instances of the official variable fonts. The room colour roles (one
 asset catalogue, one palette enum per room), the named type roles, the spacing scale and the room-neutral controls
-(the reach band and its primary, the transient, the bar's tint, the soft top edge, the door chevron) live in
+(the reach band and its primary, the transient, the bar's tint, the soft edge, the door chevron) live in
 `Sources/Theme/`, which the Live Activity extension compiles too; their values follow
 [the iOS redesign contract](../../../docs/design/ios/ios-redesign.md). The onboarding glimpses keep
 their illustration colours under `onboarding/` in `Resources/Assets.xcassets`.
 `python3 Tools/check_theme_literals.py` rejects, outside `Sources/Theme/` in the app, widget and
 Activity shared sources, numeric and hex colour construction, system named colours, the asset accent
 colour, UIKit semantic and label colours, the system's label hierarchy (`.primary` to `.quinary`,
-`.placeholder`, `.separator`), a palette role faded with `opacity` or `withAlphaComponent`, asset colour
-lookups by string and appearance branches between colours. Its allowlist names each remaining exception
+`.placeholder`, `.separator`), asset colour lookups by string and appearance branches between colours.
+A fade is a role, so everywhere but `Sources/Theme/Palettes.swift`, `Sources/Theme/` included, it also
+rejects `opacity` or `withAlphaComponent` on a palette role, an `OnboardingSpecimen`, a `Color(…)` or a
+local colour alias, `.mix(with:by:)`, a hierarchical level, bare or after `.tint`, `.foreground`, a role or
+an alias, and a view `opacity` with a constant other than 0 or 1. Its allowlist names each remaining exception
 and why, the check prints every allowed line with its reason, and an entry that no longer matches fails
 the check. Project generation and both target builds run the check;
 `python3 -m unittest discover -s Tools/tests -v` includes its rejection cases.
