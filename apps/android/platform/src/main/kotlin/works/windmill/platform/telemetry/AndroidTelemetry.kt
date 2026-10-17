@@ -69,10 +69,8 @@ class AndroidTelemetry(
 
     override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
         if (!TelemetryPolicy.report(error)) return
-        val safe = TelemetryPolicy.properties(properties) + mapOf(
-            "operation" to TelemetryPolicy.operation(operation),
-            "failure_kind" to TelemetryPolicy.failureKind(error),
-        )
+        val safe = mapOf("failure_kind" to TelemetryPolicy.failureKind(error)) + TelemetryPolicy.properties(properties) +
+            mapOf("operation" to TelemetryPolicy.operation(operation))
         event("client_error", safe)
         capture(operation, error, safe)
     }
@@ -125,9 +123,9 @@ object SentryErrors : Telemetry {
         runCatching {
             val event = SentryEvent(error)
             val safeOperation = TelemetryPolicy.operation(operation)
+            event.setTag("failure_kind", TelemetryPolicy.failureKind(error))
             for ((key, value) in TelemetryPolicy.properties(properties)) event.setTag(key, value)
             event.setTag("operation", safeOperation)
-            event.setTag("failure_kind", TelemetryPolicy.failureKind(error))
             event.fingerprints = listOf("{{ default }}", safeOperation)
             Sentry.captureEvent(event)
         }.onFailure { Log.e("WindmillTelemetry", "Error delivery unavailable") }

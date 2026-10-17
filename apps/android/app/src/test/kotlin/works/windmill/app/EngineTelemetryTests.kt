@@ -24,35 +24,38 @@ class EngineTelemetryTests {
         }
     }
 
-    @Test fun lostNetworkAndRepeatsStayProductEventsWhileEachFaultFilesUnderItsOwnOperation() = runBlocking {
+    @Test fun lostNetworkAndRepeatsStayProductEventsWhileEachFaultFilesUnderItsOperationWithItsReason() = runBlocking {
         val telemetry = Recorded()
         val adapter = engineTelemetry(telemetry)
         for (event in listOf(
             EngineEvent(EngineOperation.push, EngineOutcome.failure, "unreachable"),
             EngineEvent(EngineOperation.live, EngineOutcome.timeout, "unreachable"),
-            EngineEvent(EngineOperation.pull, EngineOutcome.failure),
-            EngineEvent(EngineOperation.pull, EngineOutcome.failure, repeated = true),
-            EngineEvent(EngineOperation.push, EngineOutcome.failure),
-            EngineEvent(EngineOperation.live, EngineOutcome.timeout),
-            EngineEvent(EngineOperation.hello, EngineOutcome.refused),
+            EngineEvent(EngineOperation.pull, EngineOutcome.failure, "http", 502),
+            EngineEvent(EngineOperation.pull, EngineOutcome.failure, "http", 502, repeated = true),
+            EngineEvent(EngineOperation.push, EngineOutcome.failure, "tls"),
+            EngineEvent(EngineOperation.live, EngineOutcome.failure, "malformed"),
+            EngineEvent(EngineOperation.hello, EngineOutcome.refused, status = 401),
             EngineEvent(EngineOperation.storage, EngineOutcome.failure, "store-failure"),
+            EngineEvent(EngineOperation.sync, EngineOutcome.failure),
             EngineEvent(EngineOperation.commit, EngineOutcome.success),
         )) adapter.record(event)
         assertEquals(listOf(
             "sync_engine" to mapOf("operation" to "push", "outcome" to "failure", "failure_kind" to "unreachable"),
             "sync_engine" to mapOf("operation" to "live", "outcome" to "timeout", "failure_kind" to "unreachable"),
-            "sync_engine" to mapOf("operation" to "pull", "outcome" to "failure"),
-            "sync_engine" to mapOf("operation" to "pull", "outcome" to "failure"),
-            "sync_engine" to mapOf("operation" to "push", "outcome" to "failure"),
-            "sync_engine" to mapOf("operation" to "live", "outcome" to "timeout"),
-            "sync_engine" to mapOf("operation" to "hello", "outcome" to "refused"),
+            "sync_engine" to mapOf("operation" to "pull", "outcome" to "failure", "failure_kind" to "http", "status" to "502"),
+            "sync_engine" to mapOf("operation" to "pull", "outcome" to "failure", "failure_kind" to "http", "status" to "502"),
+            "sync_engine" to mapOf("operation" to "push", "outcome" to "failure", "failure_kind" to "tls"),
+            "sync_engine" to mapOf("operation" to "live", "outcome" to "failure", "failure_kind" to "malformed"),
+            "sync_engine" to mapOf("operation" to "hello", "outcome" to "refused", "status" to "401"),
             "sync_engine" to mapOf("operation" to "storage", "outcome" to "failure", "failure_kind" to "store-failure"),
+            "sync_engine" to mapOf("operation" to "sync", "outcome" to "failure"),
         ), telemetry.events)
         assertEquals(listOf(
-            Triple("sync_pull", "SyncEngineFailure", mapOf("operation" to "pull", "outcome" to "failure")),
-            Triple("sync_push", "SyncEngineFailure", mapOf("operation" to "push", "outcome" to "failure")),
-            Triple("sync_live", "SyncEngineFailure", mapOf("operation" to "live", "outcome" to "timeout")),
+            Triple("sync_pull", "SyncEngineFailure", mapOf("operation" to "pull", "outcome" to "failure", "failure_kind" to "http", "status" to "502")),
+            Triple("sync_push", "SyncEngineFailure", mapOf("operation" to "push", "outcome" to "failure", "failure_kind" to "tls")),
+            Triple("sync_live", "SyncEngineFailure", mapOf("operation" to "live", "outcome" to "failure", "failure_kind" to "malformed")),
             Triple("sync_storage", "SyncEngineFailure", mapOf("operation" to "storage", "outcome" to "failure", "failure_kind" to "store-failure")),
+            Triple("sync_sync", "SyncEngineFailure", mapOf("operation" to "sync", "outcome" to "failure")),
         ), telemetry.failures)
     }
 
@@ -80,17 +83,18 @@ class EngineTelemetryTests {
                 withTimeout(2_000) { while (telemetry.events.size < 6) delay(5) }
             }
         }
+        val serverFault = { operation: String -> mapOf("operation" to operation, "outcome" to "failure", "failure_kind" to "http", "status" to "500") }
         assertEquals(listOf(
             "sync_engine" to mapOf("operation" to "push", "outcome" to "failure", "failure_kind" to "unreachable"),
-            "sync_engine" to mapOf("operation" to "pull", "outcome" to "failure"),
-            "sync_engine" to mapOf("operation" to "pull", "outcome" to "failure"),
-            "sync_engine" to mapOf("operation" to "push", "outcome" to "failure"),
+            "sync_engine" to serverFault("pull"),
+            "sync_engine" to serverFault("pull"),
+            "sync_engine" to serverFault("push"),
             "sync_engine" to mapOf("operation" to "live", "outcome" to "failure", "failure_kind" to "unreachable"),
             "sync_engine" to mapOf("operation" to "hello", "outcome" to "failure", "failure_kind" to "unreachable"),
         ), telemetry.events)
         assertEquals(listOf(
-            Triple("sync_pull", "SyncEngineFailure", mapOf("operation" to "pull", "outcome" to "failure")),
-            Triple("sync_push", "SyncEngineFailure", mapOf("operation" to "push", "outcome" to "failure")),
+            Triple("sync_pull", "SyncEngineFailure", serverFault("pull")),
+            Triple("sync_push", "SyncEngineFailure", serverFault("push")),
         ), telemetry.failures)
     }
 }

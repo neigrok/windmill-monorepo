@@ -1,9 +1,17 @@
 package works.windmill.platform.telemetry
 
 import androidx.compose.runtime.staticCompositionLocalOf
+import java.io.EOFException
+import java.io.InterruptedIOException
+import java.net.ProtocolException
+import java.net.SocketException
+import java.net.UnknownHostException
 import java.security.cert.CertificateException
 import javax.net.ssl.SSLPeerUnverifiedException
 import kotlinx.coroutines.CancellationException
+import okhttp3.internal.http2.ConnectionShutdownException
+import okhttp3.internal.http2.ErrorCode
+import okhttp3.internal.http2.StreamResetException
 import works.windmill.platform.net.NetworkPhase
 import works.windmill.platform.net.WindmillApiException
 
@@ -84,11 +92,16 @@ object TelemetryPolicy {
         else -> true
     }
 
-    // No address, no connection, a timeout or a cut exchange; a certificate the phone refuses is not lost network.
-    fun networkLoss(error: Throwable): Boolean = when (error) {
-        is WindmillApiException.Offline, is WindmillApiException.Timeout -> true
-        is WindmillApiException.Transport -> generateSequence(error.cause) { it.cause }.take(8)
-            .none { it is CertificateException || it is SSLPeerUnverifiedException }
-        else -> false
+    // Lost network, as the sync engine's `failureKind` decides `unreachable` (copied; both modules' tests run sync-engine's failure-kinds.tsv).
+    fun networkLoss(error: Throwable): Boolean {
+        if (error is WindmillApiException.Offline) return true
+        val failure = if (error is WindmillApiException) error.cause ?: return false else error
+        val causes = generateSequence(failure) { it.cause }.take(8).toList()
+        if (causes.any { it is CertificateException || it is SSLPeerUnverifiedException }) return false
+        return causes.any {
+            it is UnknownHostException || it is SocketException || it is InterruptedIOException || it is EOFException ||
+                it is ProtocolException && it.message == "unexpected end of stream" || it is ConnectionShutdownException ||
+                it is StreamResetException && it.errorCode in setOf(ErrorCode.CANCEL, ErrorCode.REFUSED_STREAM)
+        }
     }
 }
