@@ -18,6 +18,7 @@ import DomainKit
              dates.day(LocalDay("2026-09-23")!, inSentence: true)] == ["today", "yesterday", "Sep 23"])
     #expect([dates.rowDay(LocalDay("2026-10-14")!), dates.rowDay(LocalDay("2026-09-23")!)] == ["Wed 14", "Wed 23"])
     #expect([dates.subtitle(LocalDay("2026-09-23")!), dates.subtitle(LocalDay("2025-09-23")!)] == ["Wed, Sep 23", "Tue, Sep 23, 2025"])
+    #expect([dates.month(LocalDay("2026-09-23")!), dates.month(LocalDay("2025-09-23")!)] == ["September", "September 2025"])
     let newYear = formatter(today: "2026-01-01")
     #expect([newYear.day(LocalDay("2025-12-31")!), newYear.day(LocalDay("2025-12-30")!), newYear.subtitle(LocalDay("2025-12-30")!)]
             == ["Yesterday", "Dec 30, 2025", "Tue, Dec 30, 2025"])

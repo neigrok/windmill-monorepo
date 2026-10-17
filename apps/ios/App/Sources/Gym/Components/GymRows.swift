@@ -7,12 +7,12 @@ import GymDomain
 // under the meta at accessibility sizes, the DoorChevron after it on a Button's door), the selection's check, work on its
 // way, or the DoorChevron of a Button's door alone. It sets no height: its list row keeps the 44 pt target.
 struct GymRow: View {
-  enum Mark: Equatable { case symbol(String, Color), dot(Color) }
+  enum Mark: Equatable { case symbol(String, Color), dot(Color, label: String? = nil) }
   enum Trailing: Equatable { case fact(String, unsent: Bool = false, door: Bool = false), check, progress, door }
   let title: String
   var meta: String?
   var leading: Mark?
-  var titleDot: Color?
+  var titleDot: Mark?
   var titleColor = GymPalette.ink
   var trailing: Trailing?
   var lineLimit: Int?
@@ -28,7 +28,7 @@ struct GymRow: View {
         VStack(alignment: .leading, spacing: RoomSpace.small) {
           HStack(alignment: .firstTextBaseline, spacing: RoomSpace.related) {
             Text(title).font(meta == nil ? .body : .body.weight(.semibold)).monospacedDigit().foregroundStyle(titleColor).lineLimit(lineLimit)
-            if let titleDot { mark(.dot(titleDot)) }
+            if let titleDot { mark(titleDot) }
           }
           if let meta { Text(meta).font(.subheadline).monospacedDigit().foregroundStyle(GymPalette.inkDim).lineLimit(lineLimit) }
           if stacked, case .fact(let text, let unsent, _) = trailing { fact(text, unsent: unsent) }
@@ -51,11 +51,11 @@ struct GymRow: View {
     switch mark {
     case .symbol(let name, let color):
       Image(systemName: name).foregroundStyle(color).frame(width: symbolColumn).accessibilityHidden(true)
-    case .dot(let color):
+    case .dot(let color, let label):
       let size = dot
-      Circle().fill(color).frame(width: size, height: size)
+      let circle = Circle().fill(color).frame(width: size, height: size)
         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + size * 0.75 }
-        .accessibilityHidden(true)
+      if let label { circle.accessibilityElement().accessibilityLabel(label) } else { circle.accessibilityHidden(true) }
     }
   }
 

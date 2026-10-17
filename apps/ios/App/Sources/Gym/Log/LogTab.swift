@@ -13,6 +13,8 @@ struct LogTab: View {
   @State var limit = 30
   @State var weighing = false
   @State var historyNoticeDismissed = false
+  @State var foot: CGFloat = 0
+  @State var heldFoot: CGFloat = 0
 
   static var hasTabBarAccessory: Bool {
     if #available(iOS 26, *) { return true }
@@ -37,7 +39,7 @@ struct LogTab: View {
       } else if months.isEmpty && !gym.readFailed && (gym.isAnonymous || gym.log?.firstPullComplete == true) {
         // `calendar` drawn resizable, since the view's own sizing of that symbol draws nothing on iOS 26.
         ContentUnavailableView {
-          Label { Text("No workouts yet") } icon: { Image(systemName: "calendar").resizable().scaledToFit().frame(width: 52) }
+          Label { Text(emptyTitle) } icon: { Image(systemName: "calendar").resizable().scaledToFit().frame(width: 52) }
         }.listRowBackground(GymPalette.canvas)
       }
       ForEach(months) { month in
@@ -49,13 +51,20 @@ struct LogTab: View {
               .accessibilityIdentifier("gym-log-older").onAppear { limit += 30 }
           }
         } header: { Text(month.title) } footer: {
-          if last && !older, let first = gym.finishedLogSessions.last {
-            Text("First workout · \(dates.day(first.startedAt))")
-              .monospacedDigit().foregroundStyle(GymPalette.inkFaint).accessibilityIdentifier("gym-log-first-session")
+          if last && !older, let total {
+            Text(total).monospacedDigit().foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("gym-log-end")
           }
         }.listRowBackground(GymPalette.card)
       }
     }.listStyle(.insetGrouped).modifier(GymPage(titleDisplayMode: .large))
+      // Covered, the list keeps its foot, so the pop's moment without the tab bar cannot pull its end under the bar.
+      .contentMargins(.bottom, heldFoot, for: .scrollContent)
+      .onDisappear { heldFoot = foot }
+      .onScrollGeometryChange(for: CGFloat.self) { $0.contentInsets.bottom } action: { was, inset in
+        if inset > was && inset >= heldFoot { heldFoot = 0 }
+        foot = inset
+      }
+      .onScrollPhaseChange { _, phase in if phase == .interacting { heldFoot = 0 } }
       .navigationTitle("The log").accessibilityIdentifier("gym-log")
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
@@ -73,6 +82,15 @@ struct LogTab: View {
       .sheet(isPresented: $weighing) { WeighInSheet(gym: gym) }
       .onAppear { prepareLogFixture(); gym.telemetry.event("gym_screen_viewed", properties: ["screen": "log"]) }
       .onChange(of: gym.account) { _, _ in limit = 30; historyNoticeDismissed = false }
+  }
+
+  // An empty log never says there are no workouts while one is open.
+  var emptyTitle: String { gym.openSession == nil ? "No workouts yet" : "No finished workouts yet" }
+
+  // The log's end, its total, once the whole log is loaded and holds more than the one row.
+  var total: String? {
+    guard gym.isAnonymous || gym.log?.firstPullComplete == true, gym.finishedLogSessions.count > 1 else { return nil }
+    return GymCount.of(gym.finishedLogSessions.count, "workout")
   }
 
   // Signed in before the first pull lands, the band says the history is still arriving; it never covers a refusal or an Undo.
@@ -117,8 +135,8 @@ struct LogTab: View {
     switch entry.kind {
     case .session(let session, let recordDot): sessionRow(session, recordDot: recordDot, dates: dates)
     case .best(let id, let record): bestMoment(entry, id: id, record: record, dates: dates)
-    case .month(_, let weeks):
-      GymRow(title: LogPresentation.trained(weeks, of: weeks)).accessibilityIdentifier("gym-month-moment")
+    case .month(let first):
+      GymRow(title: LogPresentation.trainedEvery(first, dates: dates)).accessibilityIdentifier("gym-month-moment")
     case .weight(let weight):
       NavigationLink { BodyweightScreen(gym: gym) } label: {
         GymRow(title: "Weighed in · \(Readout.weight(weight.kg)) kg", trailing: .fact(dates.rowDay(weight.day)))
@@ -130,7 +148,7 @@ struct LogTab: View {
   func sessionRow(_ session: Session, recordDot: Bool, dates: GymDate) -> some View {
     NavigationLink { SessionDetailScreen(gym: gym, sessionID: session.id) } label: {
       GymRow(title: session.name ?? Readout.noRoutine, meta: gym.log?.readout(session: session.id).map(LogPresentation.sessionFacts),
-             titleDot: recordDot ? GymPalette.record : nil,
+             titleDot: recordDot ? .dot(GymPalette.record, label: "new best") : nil,
              trailing: .fact(dates.rowDay(session.startedAt), unsent: gym.sessionIsUnsent(session.id)))
     }.accessibilityIdentifier("gym-log-session-\(session.id)")
       .contextMenu {

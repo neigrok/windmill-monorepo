@@ -43,6 +43,9 @@ nonisolated struct GymDate {
     draw(day, dated(day, .dateTime.weekday(.abbreviated).day().month(.abbreviated)))
   }
 
+  // *September*, the year only when it is not this one: a month section's header, and the month a month moment names.
+  func month(_ day: LocalDay) -> String { draw(day, dated(day, .dateTime.month(.wide))) }
+
   // *Wed, Sep 23 · 12:00–12:45 PM*. A span that crosses midnight keeps its first day and both times,
   // *Mon, Oct 12 · 11:43 PM – 12:20 AM*; one with no end yet is its day and its start.
   func span(_ start: Instant, _ end: Instant?) -> String {

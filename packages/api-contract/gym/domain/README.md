@@ -114,11 +114,12 @@ within a session, the lowest set identity wins.
 `BodyweightReps` exposes the independent zero-load repetition fact of each session and its best
 in the requested window. Higher assisted repetitions or equally repeated added load never replace
 that fact; the all-load `mostReps` read retains its own ordering. Partial history has facts but no best.
-`ProgressRecords` (`input:{}`) is the log's new bests: per movement, the record steps after its first logged session,
-which is a baseline and never a new best, each with the step it beat (`previous`, null when the movement's earlier
-sessions held no estimate), and the sessions that set one. Partial history has none. It runs in Swift alone: Android
-weaves its log's bests in the app module (`LogTimeline.kt`), counting a first session, and the web's log weaves none,
-so both hold the read pending.
+`ProgressRecords` (`input:{}`) is the log's new bests. A movement's first estimate is its baseline, never a new best;
+a later estimate is a new best when, stated to a tenth of a kilogram, it beats the best before it as stated. Each names
+its session, the best it beat (`previous`), its stated `estimate` and its `gain` over that best to a tenth; the read
+also lists the sessions that set one. Partial history has none. It runs in Swift alone: Android weaves its log's bests
+in the app module (`LogTimeline.kt`), counting a movement's first estimate and every exact record step, and the web's
+log weaves none, so both hold the read pending.
 
 `TrainingHistory` composes the mirror documents through the same entities and reads. Its vectors use
 `input:{method,args}` and preserve catalogue and routine joins, proposal provenance, last-set selection,
@@ -126,7 +127,7 @@ session summaries, reviews, record details and weekly totals. History filters ap
 facet aggregation; only the returned session page uses the cursor and limit. Equal session timestamps
 sort by ascending identity, and the next page excludes identities through `beforeId`. Tonnage sums
 loads in their storage quanta; estimates retain full precision. Record steps include the first baseline.
-The 114 training-read cases include 36 complete mirror documents and 22 adversarial read scenes.
+The 116 training-read cases include 36 complete mirror documents and 22 adversarial read scenes.
 
 The engines accept create/update/write/removal predictions. Omitted sets in completed-session
 replacement and a proposal-removed routine disappear locally while their command is pending;

@@ -6,7 +6,7 @@ import SyncAPI
 struct MovementRecordScreen: View {
   let gym: GymModel
   let exerciseID: ID<Exercise>
-  // The session a moment opened this Record at: the chart's window holds it and its point is selected.
+  // The session a moment opened this Record at: the chart's window holds it and its point is marked.
   let selected: ID<Session>?
   @State private var window: ChartWindow
   @State var renaming = false
@@ -49,13 +49,13 @@ struct MovementRecordScreen: View {
         }
         if !progress.estimates.isEmpty { strength(progress, log: log, dates: dates) }
         if progress.records.count > 1 {
-          Section("Personal records") {
-            ForEach(progress.records.reversed(), id: \.id) { record in
+          Section("Earlier records") {
+            ForEach(progress.records.reversed().filter { $0.id != progress.best?.id }, id: \.id) { record in
               if let fact = record.fact.estimate {
                 VStack(alignment: .leading, spacing: RoomSpace.small) {
                   Text("\(Readout.effort(weightKg: fact.weightKg, reps: fact.reps)) · \(Readout.estimate(fact.e1rm))").monospacedDigit()
                   Text(dates.day(record.startedAt)).font(.footnote).foregroundStyle(GymPalette.inkDim)
-                }.foregroundStyle(record.id == progress.best?.id ? GymPalette.record : GymPalette.ink)
+                }.foregroundStyle(GymPalette.ink)
               }
             }
           }.listRowBackground(GymPalette.card)

@@ -36,14 +36,15 @@ struct LogDatedChart: View {
   @State var clearing: Task<Void, Never>?
   @State var viewportGeometry: ScrollGeometry?
 
-  // `selected` opens the chart at that point with its reading shown.
+  // `selected` opens the chart at that point, ringed, with the window line under it.
   init(points: [LogPlotPoint], from: Date, through: Date, series: Series, dates: GymDate, caption: String,
        bestID: String? = nil, selected: String? = nil, select: ((String) -> Void)? = nil) {
     self.points = points; self.from = from; self.through = through; self.series = series
     self.dates = dates; self.caption = caption; self.bestID = bestID; self.selected = selected; self.select = select
-    _inspected = State(initialValue: selected)
   }
   var ordered: [LogPlotPoint] { points.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date } }
+  // The ringed point: the one a finger inspects, else the one the chart opened at.
+  var marked: String? { inspected ?? selected }
   var axis: ClosedRange<Double> { Self.axis(points.map(\.value), step: series.axisStep) }
   var low: Double { axis.lowerBound }
   var high: Double { axis.upperBound }
@@ -67,7 +68,7 @@ struct LogDatedChart: View {
           Text(Readout.weight(high)); Spacer(); Text(Readout.weight(low))
         }.font(.caption2.monospacedDigit()).foregroundStyle(GymPalette.inkFaint).frame(height: 220).accessibilityHidden(true)
         GeometryReader { geometry in
-          let width = max(geometry.size.width, CGFloat(Set(points.map(\.date)).count) * 24)
+          let width = max(geometry.size.width, CGFloat(Set(points.map(\.date)).count) * 24), marked = marked
           ScrollViewReader { proxy in
           ScrollView(.horizontal) {
             Canvas { context, size in
@@ -81,10 +82,10 @@ struct LogDatedChart: View {
                 context.stroke(path, with: .color(GymPalette.accent), lineWidth: 1.5)
               }
               for point in ordered {
-                let center = position(point, size: size), radius: CGFloat = point.id == inspected ? 6 : 3.5
+                let center = position(point, size: size), radius: CGFloat = point.id == marked ? 6 : 3.5
                 let dot = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
                 context.fill(Path(ellipseIn: dot), with: .color(point.id == bestID ? GymPalette.record : GymPalette.accent))
-                if point.id == inspected { context.stroke(Path(ellipseIn: dot.insetBy(dx: -3, dy: -3)), with: .color(GymPalette.ink), lineWidth: 1) }
+                if point.id == marked { context.stroke(Path(ellipseIn: dot.insetBy(dx: -3, dy: -3)), with: .color(GymPalette.ink), lineWidth: 1) }
               }
             }.frame(width: width, height: 220).contentShape(Rectangle())
             .overlay {
@@ -149,7 +150,7 @@ struct LogDatedChart: View {
       }
     }.contentShape(Rectangle()).clipped().accessibilityElement(children: .contain)
       .accessibilityLabel(series.title)
-      .accessibilityValue((ordered.first { $0.id == inspected } ?? ordered.last)?.label ?? "No points")
+      .accessibilityValue((ordered.first { $0.id == marked } ?? ordered.last)?.label ?? "No points")
       .accessibilityAction(named: "Earlier \(series.point)") { step(-1) }
       .accessibilityAction(named: "Later \(series.point)") { step(1) }
       .sensoryFeedback(.selection, trigger: inspected)
@@ -182,7 +183,7 @@ struct LogDatedChart: View {
   }
   func step(_ direction: Int) {
     guard !ordered.isEmpty else { return }
-    let index = ordered.firstIndex { $0.id == inspected } ?? ordered.count - 1
+    let index = ordered.firstIndex { $0.id == marked } ?? ordered.count - 1
     let next = ordered[min(ordered.count - 1, max(0, index + direction))]
     inspected = next.id; revealID = next.id
   }

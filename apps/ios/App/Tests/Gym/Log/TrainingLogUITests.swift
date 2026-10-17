@@ -103,9 +103,8 @@ import SyncTesting
     #expect(moments.first.map { LocalDay($0.at, in: gym.log!.moment.zone) } == lastDay)
   }
 
-  // Wednesday Mar 10, 2027: February trained in each of its four weeks, so its moment would read as the head's footer
-  // does once the last four weeks are trained too, and The log says that line once, in the head.
-  @Test func aMonthTheHeadAlreadyWordsTheSameWayIsNotWoven() throws {
+  // Wednesday Mar 10, 2027: February trained in each of its four weeks names its month, whatever the head says of the last four.
+  @Test func aMonthMomentNamesItsMonthWhateverTheHeadSays() throws {
     let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_804_680_000_000), account: nil,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     let gym = GymModel(runner: harness.runner), zone = try #require(gym.log?.moment.zone)
@@ -114,7 +113,7 @@ import SyncTesting
         "\(month.id): " + month.entries.map { entry -> String in
           switch entry.kind {
           case .session(let session, _): LocalDay(session.startedAt, in: zone).text
-          case .month(_, let weeks): LogPresentation.trained(weeks, of: weeks)
+          case .month(let first): LogPresentation.trainedEvery(first, dates: gym.dates)
           default: entry.id
           }
         }.joined(separator: ", ")
@@ -123,10 +122,11 @@ import SyncTesting
     for daysAgo in [37, 30, 23, 16, 9] { _ = try session(gym, daysAgo: daysAgo, kg: 0, reps: 12) }
     #expect(gym.logConsistency == "Trained 3 of the last 4 weeks")
     #expect(read() == ["2027-03: 2027-03-01",
-                       "2027-02: Trained 4 of the last 4 weeks, 2027-02-22, 2027-02-15, 2027-02-08, 2027-02-01"])
+                       "2027-02: Trained every week of February, 2027-02-22, 2027-02-15, 2027-02-08, 2027-02-01"])
     _ = try session(gym, daysAgo: 1, kg: 0, reps: 12)
     #expect(gym.logConsistency == "Trained 4 of the last 4 weeks")
-    #expect(read() == ["2027-03: 2027-03-09, 2027-03-01", "2027-02: 2027-02-22, 2027-02-15, 2027-02-08, 2027-02-01"])
+    #expect(read() == ["2027-03: 2027-03-09, 2027-03-01",
+                       "2027-02: Trained every week of February, 2027-02-22, 2027-02-15, 2027-02-08, 2027-02-01"])
   }
 
   @Test(arguments: [-43200, 0, 7200, 50400]) func momentDaysUseTheInjectedZone(offset: Int) {
@@ -218,13 +218,25 @@ import SyncTesting
     let rows = gym.logTimeline(limit: 30).flatMap(\.entries).map { row -> String in
       switch row.kind {
       case .session(let value, let recordDot): "\(names[value.id]!)\(recordDot ? " ●" : "")"
-      case .best(_, let record): "best \(names[record.point.id]!) over \(record.previous.map { names[$0.id]! } ?? "none")"
+      case .best(_, let record): "best \(names[record.point.id]!) over \(names[record.previous.id]!)"
       default: row.id
       }
     }
     #expect(rows == ["equal", "wednesday", "best wednesday over tuesday", "tuesday ●", "baseline"])
     let dates = gym.dates, record = try #require(gym.logRecords?.movements.values.first?.last)
-    #expect(LogPresentation.newBest(record, dates: dates) == "81.7 kg est · up 5.8 kg since \(dates.day(tuesday.startedAt, inSentence: true))")
+    #expect(LogPresentation.newBest(record, dates: dates) == "81.7 kg est · up 5.9 kg since \(dates.day(tuesday.startedAt, inSentence: true))")
+  }
+
+  // The log's end is its total from two finished workouts, and an empty log with a workout open says none is finished yet.
+  @Test func theEndCountsTheWorkoutsAndAnEmptyLogNamesTheOpenOne() throws {
+    let (_, gym) = fixture()
+    #expect([LogTab(gym: gym).emptyTitle, LogTab(gym: gym).total] == ["No workouts yet", nil])
+    _ = try #require(gym.startWorkout())
+    #expect([LogTab(gym: gym).emptyTitle, LogTab(gym: gym).total] == ["No finished workouts yet", nil])
+    _ = try session(gym, daysAgo: 3)
+    #expect(LogTab(gym: gym).total == nil)
+    _ = try session(gym, daysAgo: 2)
+    #expect(LogTab(gym: gym).total == "2 workouts")
   }
 
   // While the open workout is hidden, iOS 18's head brings it back; iOS 26 leaves that door to the tab bar's accessory.
