@@ -579,7 +579,7 @@ import SyncTesting
                 value(gym, session: session, weight: 80, at: Instant(ms: start.ms + 30_000)),
                 value(gym, session: session, weight: 85, at: Instant(ms: start.ms + 40_000))]
     let receipt = WorkoutReceiptData(session: session, sets: sets.reversed(), routineId: gym.runner.mint(Routine.self), routinePosition: 0)
-    #expect(receipt.sets == sets && receipt.title == "Well done.")
+    #expect(receipt.sets == sets && receipt.title == "Ended early.")
     #expect(receipt.subtitle(GymDate(gym.dates.moment, locale: Locale(identifier: "en_US"))) == "Free workout · Sat, Sep 26")
     #expect(FactTiles(receipt.readout).facts == [FactTiles.Fact(value: "1m", label: "Duration"), FactTiles.Fact(value: "3", label: "Working sets"),
                                                  FactTiles.Fact(value: "1325 kg", label: "Volume")])
@@ -1251,9 +1251,8 @@ import SyncTesting
     #expect(try harness.notices(GymRefusal.self).count == 1)
   }
 
-  // The receipt says Ended early only where the plan proves it: fewer working sets than the plan the workout started from
-  // held. A free workout, or a plan of open targets, claims nothing.
-  @Test func receiptSaysEndedEarlyOnlyBelowThePlanItStartedFrom() throws {
+  // Canon's heading: fewer than four working sets read Ended early., planned or free; the plan does not decide it.
+  @Test func receiptSaysEndedEarlyBelowFourWorkingSetsPlannedOrFree() throws {
     let (_, gym) = try fixture()
     let title = { (session: Session, working: Int) in
       WorkoutReceiptData(session: session, sets: (0..<working).map { _ in value(gym, session: session) } + [value(gym, session: session, kind: "warmup")],
@@ -1262,8 +1261,8 @@ import SyncTesting
     let single = finished(gym, routine: try routine(gym, scheme: [SetTarget(reps: 12)]))
     let three = finished(gym, routine: try routine(gym, scheme: Array(repeating: SetTarget(reps: 5, weightKg: 80), count: 3)))
     let open = finished(gym, routine: Routine(id: gym.runner.mint(Routine.self), name: "Open", entries: [RoutineEntry(exerciseId: first)]))
-    #expect([title(single, 1), title(three, 2), title(three, 3), title(finished(gym), 1), title(open, 1)]
-            == ["Well done.", "Ended early.", "Well done.", "Well done.", "Well done."])
+    #expect([title(single, 1), title(three, 3), title(three, 4), title(finished(gym), 3), title(finished(gym), 4), title(open, 3), title(open, 4)]
+            == ["Ended early.", "Ended early.", "Well done.", "Ended early.", "Well done.", "Ended early.", "Well done."])
   }
 
   @Test func receiptOffersRoutineOnlyForFourUnplannedWorkingSets() throws {
@@ -1271,9 +1270,9 @@ import SyncTesting
     let working = (0..<4).map { value(gym, session: session, at: Instant(ms: start.ms + Int64($0))) }
     let warmup = value(gym, session: session, kind: "warmup")
     let three = WorkoutReceiptData(session: session, sets: Array(working.prefix(3)) + [warmup], routineId: gym.runner.mint(Routine.self), routinePosition: 0)
-    #expect(!three.offersRoutine && three.readout.workingSetCount == 3)
+    #expect(three.slight && !three.offersRoutine && three.readout.workingSetCount == 3)
     let four = WorkoutReceiptData(session: session, sets: working + [warmup], routineId: gym.runner.mint(Routine.self), routinePosition: 0)
-    #expect(four.offersRoutine && four.readout.workingSetCount == 4 && four.readout.volumeKg == 1_600)
+    #expect(!four.slight && four.offersRoutine && four.readout.workingSetCount == 4 && four.readout.volumeKg == 1_600)
     let plan = try routine(gym, scheme: [SetTarget(reps: 5, weightKg: 80)]), planned = finished(gym, routine: plan)
     let plannedSets = (0..<4).map { _ in value(gym, session: planned) }
     #expect(!WorkoutReceiptData(session: planned, sets: plannedSets, routineId: gym.runner.mint(Routine.self), routinePosition: 0).offersRoutine)

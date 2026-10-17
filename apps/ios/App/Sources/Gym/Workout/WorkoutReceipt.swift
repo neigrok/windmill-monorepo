@@ -30,12 +30,8 @@ import SyncCore
     routine = Draft(new: Routine(id: routineId, name: name, position: routinePosition, entries: entries))
   }
   var readout: SessionReadout { SessionReadout(session: session, sets: sets) }
-  // Ended early only where the plan proves it: fewer working sets than the plan the workout started from held. A free
-  // workout, or a plan of open targets, claims nothing.
-  var title: String {
-    let planned = session.plan?.entries.reduce(0) { $0 + ($1.sets?.count ?? 0) } ?? 0
-    return readout.workingSetCount < planned ? "Ended early." : "Well done."
-  }
+  var slight: Bool { readout.workingSetCount < 4 }
+  var title: String { slight ? "Ended early." : "Well done." }
   func subtitle(_ dates: GymDate) -> String { "\(session.name ?? Readout.noRoutine) · \(dates.subtitle(session.startedAt))" }
   // Each movement once, in the order its first set was logged, with its working sets — or every set when none was working.
   var performed: [(exerciseId: ID<Exercise>, reading: String)] {
@@ -44,7 +40,7 @@ import SyncCore
       return (id, Readout.target((working.isEmpty ? all : working).map { SetTarget(reps: $0.reps, weightKg: $0.weightKg) }))
     }
   }
-  var offersRoutine: Bool { session.routineId == nil && readout.workingSetCount >= 4 }
+  var offersRoutine: Bool { session.routineId == nil && !slight }
   var nameRefusal: String? {
     if routine.current.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Name it to save it." }
     if routine.current.name.precomposedStringWithCanonicalMapping.unicodeScalars.count > 60 { return "Use 60 characters or fewer." }

@@ -52,7 +52,7 @@ import XCTest
     app.buttons["workout-keypad-set"].tap()
     app.buttons["workout-fix-save"].tap()
     XCTAssertTrue(app.buttons["workout-finish"].waitForExistence(timeout: 5)); app.buttons["workout-finish"].tap()
-    XCTAssertTrue(app.staticTexts["Well done."].waitForExistence(timeout: 20)); capture(app, "e2e-receipt")
+    XCTAssertTrue(app.staticTexts[count < 4 ? "Ended early." : "Well done."].waitForExistence(timeout: 20)); capture(app, "e2e-receipt")
     if !close { return }
     app.buttons["Done"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 10))
