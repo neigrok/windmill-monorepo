@@ -128,7 +128,7 @@ struct MovementPicker: View {
       case .browse: "Movements"
       }
     }
-    var screen: String { self == .routine ? "routine_editor" : "movement" }
+    var screen: String { self == .routine ? "routine_movement" : "movement" }
   }
 
   let gym: GymModel

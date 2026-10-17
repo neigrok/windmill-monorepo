@@ -77,7 +77,7 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
 
   @Test func gymEventsRetainBoundedLabelsAndRejectTrainingContent() {
     #expect(TelemetryPrivacy.events.isSuperset(of: ["gym_activity_set_logged", "gym_activity_offer_refused", "gym_session_started", "gym_session_finished", "gym_set_logged", "gym_routine_saved", "gym_ask_started", "gym_ask_outcome", "gym_proposal_outcome"]))
-    for screen in ["routine", "routine_editor", "routine_targets", "movement", "session", "fix_set", "record", "bodyweight", "weigh_in", "session_share", "history", "notes", "note", "review", "connected_log", "connected_log_guide", "on_this_phone"] {
+    for screen in ["routine", "routine_editor", "routine_targets", "routine_movement", "movement", "session", "fix_set", "record", "bodyweight", "weigh_in", "session_share", "history", "notes", "note", "review", "connected_log", "connected_log_guide", "on_this_phone"] {
       #expect(TelemetryPrivacy.properties(["screen": screen, "name": "private-marker", "load": "100", "note": "private-marker", "question": "private-marker"]) == ["screen": .label(screen)])
     }
     #expect(TelemetryPrivacy.properties(["action": "apply", "outcome": "decided", "method": "PUT", "cap": "daily", "storage": "device"]) ==

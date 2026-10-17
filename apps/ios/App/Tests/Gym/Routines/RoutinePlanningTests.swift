@@ -343,8 +343,8 @@ import UIKit
       ["This proposal is out of date. Nothing was applied.", "false", "false"], ["-", "true", "false"]])
   }
 
-  // One visit to the editor is one screen event, however often its steps push over it and pop; each Targets step is its own.
-  @Test func anEditorVisitRecordsOneScreenEventAndEachTargetsStepItsOwn() async throws {
+  // One visit to the editor is one screen event, however often its steps push over it and pop; each step records its own.
+  @Test func anEditorVisitRecordsOneScreenEventAndEachStepItsOwn() async throws {
     let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     let telemetry = TelemetryRecorder(), gym = GymModel(runner: harness.runner, telemetry: telemetry)
@@ -367,7 +367,10 @@ import UIKit
       editing.follow([.targets(ID("bench-press"))]); try await settle(1 + visit)
       editing.cancelTargets(); try await settle(1 + visit)
     }
-    #expect(screens() == ["routine_editor", "routine_targets", "routine_targets"])
+    editing.pickMovement(); try await settle(4)
+    editing.createMovement(gym); try await settle(5)
+    editing.follow([]); try await settle(5)
+    #expect(screens() == ["routine_editor", "routine_targets", "routine_targets", "routine_movement", "routine_movement"])
   }
 
   @Test func newestProposalUsesCreationStampInsteadOfRecordID() {
