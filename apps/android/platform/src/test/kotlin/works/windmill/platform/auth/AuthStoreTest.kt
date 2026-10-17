@@ -709,7 +709,7 @@ class AuthStoreTest {
         auth.accountApi(User("B", "b@example.com")).get<Unit>("/new-retry")
         assertEquals(listOf("Bearer secret-A", "Bearer secret-A", null, null),
             List(4) { server.takeRequest().getHeader("Authorization") })
-        val recovered = PrefsSessions(values, vault)
+        val recovered = PrefsSessions(values, SecretVault { key })
         assertEquals(LocalSession.Owned(User("B", "b@example.com")), recovered.localSession)
         assertEquals("secret-B", recovered.read())
     }
@@ -738,7 +738,7 @@ class AuthStoreTest {
         auth.restore()
         assertEquals(AuthStatus.SignedIn(ana), auth.status)
         assertEquals(setOf("wm_identity.sealed"), held.keys)
-        val cold = store(PrefsSessions(values, vault))
+        val cold = store(PrefsSessions(values, SecretVault { key }))
         assertEquals(LocalSession.Owned(ana), cold.localSession)
         server.enqueue(MockResponse().setResponseCode(503).setBody("{}"))
         cold.restore()

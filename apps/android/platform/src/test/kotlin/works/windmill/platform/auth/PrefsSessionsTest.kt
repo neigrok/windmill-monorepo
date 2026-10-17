@@ -23,7 +23,8 @@ class PrefsSessionsTest {
         }
     }
 
-    private val vault = SecretVault(keyOnce)
+    private val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+    private val vault = SecretVault { key }
 
     private val secret = "wm_sess_3f9c1d7b2a8e4f60b5c7d9e1a2b3c4d5"
     private val sam = User(id = "u_1", email = "sam@example.com", name = "Sam")
@@ -41,7 +42,8 @@ class PrefsSessionsTest {
         assertFalse("nor is the address", values.held.values.any { it.contains("sam@example.com") })
         assertEquals(secret, sessions.read())
         assertEquals(sam, sessions.user())
-        assertEquals("and a relaunch reads the same file", secret, PrefsSessions(values, vault).read())
+        val relaunched = PrefsSessions(values, SecretVault { key })
+        assertEquals("and a relaunch reads the same file", secret to sam, relaunched.read() to relaunched.user())
     }
 
     @Test
@@ -60,7 +62,7 @@ class PrefsSessionsTest {
         assertFalse("with nothing readable left behind",
             values.held.values.any { it.contains(secret) || it.contains("sam@example.com") })
         assertEquals("read back through the seal from then on", secret,
-            PrefsSessions(values, vault).read())
+            PrefsSessions(values, SecretVault { key }).read())
     }
 
     @Test
@@ -98,11 +100,12 @@ class PrefsSessionsTest {
             FakeValues("wm_identity.sealed" to "unreadable"), FakeValues("wm_proposed.sealed" to "unreadable"))) {
             assertTrue(PrefsSessions(values, vault).localSession is LocalSession.Unresolved)
         }
-        val legacy = PrefsSessions(FakeValues("wm_session" to secret,
-            "wm_user" to """{"id":"u_1","email":"sam@example.com","name":"Sam"}"""), vault)
+        val legacyValues = FakeValues("wm_session" to secret, "wm_user" to """{"id":"u_1","email":"sam@example.com","name":"Sam"}""")
+        val legacy = PrefsSessions(legacyValues, vault)
         assertEquals(LocalSession.Unresolved(sam), legacy.localSession)
         legacy.remember(sam)
         assertEquals(LocalSession.Owned(sam), legacy.localSession)
+        assertEquals(LocalSession.Owned(sam), PrefsSessions(legacyValues, SecretVault { key }).localSession)
     }
 
     @Test
@@ -126,7 +129,7 @@ class PrefsSessionsTest {
         fail = true
         assertThrows(java.io.IOException::class.java) { sessions.commit("other-secret", User("B", "b@example.com")) }
         assertEquals(before, values.held)
-        val reopened = PrefsSessions(values, vault)
+        val reopened = PrefsSessions(values, SecretVault { key })
         assertEquals(LocalSession.Owned(sam), reopened.localSession)
         assertEquals(secret, reopened.read())
         assertEquals(sam, reopened.user())
@@ -138,7 +141,7 @@ class PrefsSessionsTest {
         val sessions = PrefsSessions(values, vault)
         sessions.commit(secret, sam)
         sessions.beginSignOut()
-        val restarted = PrefsSessions(values, vault)
+        val restarted = PrefsSessions(values, SecretVault { key })
         assertTrue(restarted.signOutPending)
         assertEquals(LocalSession.Absent, restarted.localSession)
         assertEquals(secret, restarted.read())
@@ -156,7 +159,7 @@ class PrefsSessionsTest {
         val proposed = ProposedSignIn("secret-B", User("B", "b@example.com"))
         sessions.stage(proposed)
         assertFalse(values.held.values.any { it.contains("secret-B") || it.contains("b@example.com") })
-        val restarted = PrefsSessions(values, vault)
+        val restarted = PrefsSessions(values, SecretVault { key })
         assertEquals(LocalSession.Owned(sam), restarted.localSession)
         assertEquals(secret, restarted.read())
         assertEquals(proposed, restarted.proposed)
@@ -204,7 +207,7 @@ class PrefsSessionsTest {
         sessions.stage(proposed)
         fail = true
         assertThrows(java.io.IOException::class.java) { sessions.publishProposed(proposed) }
-        val restarted = PrefsSessions(values, vault)
+        val restarted = PrefsSessions(values, SecretVault { key })
         assertEquals(LocalSession.Owned(sam), restarted.localSession)
         assertEquals(proposed, restarted.proposed)
         restarted.publishProposed(proposed)
@@ -269,6 +272,70 @@ class PrefsSessionsTest {
         assertEquals(proposed.user, sessions.user())
     }
 
+    @Test fun restoringTheUnchangedAccountSealsAndWritesNothing() {
+        val values = FakeValues()
+        var writes = 0
+        val counted = object : KeptValues {
+            override fun read(key: String) = values.read(key)
+            override fun write(next: Map<String, String?>) { writes += 1; values.write(next) }
+        }
+        val keystore = KeystoreKey()
+        val sessions = PrefsSessions(counted, SecretVault { keystore })
+        sessions.commit(secret, sam)
+        val saved = values.held.toMap()
+
+        keystore.answers = false
+        sessions.remember(sam)
+        val unchanged = Triple(writes, values.held.toMap(), sessions.localSession)
+        keystore.answers = true
+        sessions.remember(sam.copy(name = "Samuel"))
+
+        assertEquals(Triple(1, saved, LocalSession.Owned(sam)), unchanged)
+        assertEquals(2 to LocalSession.Owned(sam.copy(name = "Samuel")), writes to sessions.localSession)
+    }
+
+    @Test fun aReadRacingSignOutDoesNotKeepTheSignedOutAccount() {
+        val values = FakeValues()
+        val keystore = KeystoreKey()
+        PrefsSessions(values, SecretVault { keystore }).commit(secret, sam)
+        val sealed = values.held.getValue("wm_identity.sealed")
+        lateinit var sessions: PrefsSessions
+        var bundleReads = 0
+        val signsOutMidRead = object : KeptValues {
+            override fun read(key: String): String? = values.read(key).also { if (key == "wm_identity.sealed" && ++bundleReads == 2) sessions.clear() }
+            override fun write(next: Map<String, String?>) = values.write(next)
+        }
+        val vault = SecretVault { keystore }
+        sessions = PrefsSessions(signsOutMidRead, vault)
+
+        val inFlight = sessions.read()
+        keystore.answers = false
+
+        assertEquals("the read in flight still answers", secret, inFlight)
+        assertEquals(emptyMap<String, String>(), values.held)
+        assertNull("but the signed-out account is not kept", vault.open(sealed))
+    }
+
+    @Test fun anAccountThatCouldNotBeWrittenIsNotKept() {
+        val values = FakeValues()
+        val keystore = KeystoreKey()
+        val vault = SecretVault { keystore }
+        var refused: String? = null
+        val failing = object : KeptValues {
+            override fun read(key: String) = values.read(key)
+            override fun write(next: Map<String, String?>) {
+                refused = next["wm_identity.sealed"]
+                throw java.io.IOException("disk full")
+            }
+        }
+
+        assertThrows(java.io.IOException::class.java) { PrefsSessions(failing, vault).commit(secret, sam) }
+        keystore.answers = false
+
+        assertEquals(emptyMap<String, String>(), values.held)
+        assertNull(vault.open(refused!!))
+    }
+
     @Test fun aSavedAccountThatOpensButCannotBeReadIsReportedOnEveryRead() {
         val reports = mutableListOf<String>()
         val sessions = PrefsSessions(FakeValues("wm_identity.sealed" to vault.seal("not an account")!!), vault, object : Telemetry {
@@ -279,9 +346,5 @@ class PrefsSessionsTest {
         assertEquals(LocalSession.Unresolved(), sessions.localSession)
         assertNull(sessions.read())
         assertEquals(listOf("session_decode", "session_decode"), reports)
-    }
-
-    private companion object {
-        val keyOnce = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey().let { { it } }
     }
 }

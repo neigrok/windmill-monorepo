@@ -317,11 +317,10 @@ interface SessionStore {
 // A secret that cannot be sealed is not written at all — never fall back to plaintext.
 class PrefsSessions(
     private val prefs: KeptValues,
-    private val vault: SecretVault = SecretVault.onThisDevice(),
+    private val vault: SecretVault,
     private val telemetry: Telemetry = Telemetry.None,
 ) : SessionStore {
-    constructor(context: Context, vault: SecretVault? = null, telemetry: Telemetry = Telemetry.None) :
-        this(SharedPrefsValues(context), vault ?: SecretVault.onThisDevice(telemetry), telemetry)
+    constructor(context: Context, vault: SecretVault, telemetry: Telemetry) : this(SharedPrefsValues(context), vault, telemetry)
 
     private var unavailable = false
     override val signOutPending: Boolean get() = prefs.read(signOutKey) != null
@@ -338,13 +337,14 @@ class PrefsSessions(
         return if (present) LocalSession.Unresolved(known) else LocalSession.Absent
     }
 
-    // Whatever a write removes or replaces leaves the vault's memory with it, atomically for other writers.
+    // Each sealed value storage does not hold after this write, failed or not, leaves the vault's memory, atomically for other writers.
     private fun persist(values: Map<String, String?>) = synchronized(this) {
         check(!unavailable) { "Restart the app to recover the saved account." }
-        val replaced = values.keys.mapNotNull(prefs::read).filter { it !in values.values }
+        val sealedKeys = values.keys.filter { it.endsWith(sealed) }
+        val touched = sealedKeys.mapNotNull(prefs::read) + sealedKeys.mapNotNull(values::get)
         try { prefs.write(values) }
         catch (failure: Exception) { unavailable = true; throw failure }
-        finally { replaced.forEach(vault::forget) }
+        finally { (touched - sealedKeys.mapNotNull(prefs::read).toSet()).forEach(vault::forget) }
     }
 
     private fun saved(): SavedSession? = prefs.read(bundleKey)?.let { encoded ->
@@ -393,8 +393,8 @@ class PrefsSessions(
 
     override fun remember(user: User) {
         val secret = read()
-        if (secret != null) { commit(secret, user); return }
-        seal(userKey, WindmillJson.encodeToString(User.serializer(), user))
+        if (secret == null) { seal(userKey, WindmillJson.encodeToString(User.serializer(), user)); return }
+        if (saved() != SavedSession(secret, user)) commit(secret, user)
     }
 
     override fun clear() {
