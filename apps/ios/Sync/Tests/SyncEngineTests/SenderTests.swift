@@ -61,6 +61,39 @@ struct SenderTests {
     #expect(await MainActor.run { !rig.engine.status.upgradeRequired })
   }
 
+  // A push that got no answer — a deadline, a dropped connection — never reached the server, which a failure the server
+  // answered did: the status tells the two apart, and the next push's end, answered or not, replaces what it said.
+  @Test(.timeLimit(.minutes(1))) func aPushTheServerNeverAnsweredIsUnanswered() async throws {
+    let rig = try Rig(account: "A")
+    rig.random.queue(raw: .max, count: 1)
+    try rig.commit(Self.card1)
+    let unanswered = { await MainActor.run { rig.engine.status.unansweredPushes } }
+    rig.transport.willNotAnswerPush()
+    async let stepping = rig.engine.sender.step()
+    await rig.clock.asleep(until: Constants.requestTimeoutMs)
+    rig.clock.advance(ms: Constants.requestTimeoutMs)
+    _ = await stepping
+    await rig.engine.settle()
+    #expect(await unanswered() == [Rig.scope])
+    rig.clock.advance(ms: 1_000)
+    rig.transport.willAnswerPush(503)
+    await rig.engine.flushOnLeave()
+    await rig.engine.settle()
+    #expect(await unanswered().isEmpty)
+    #expect(await MainActor.run { rig.engine.status.failedPushes } == [Rig.scope: [RecordKey("card", RecordID("card0001"))]])
+    rig.clock.advance(ms: 1_000)
+    rig.transport.willDropPush()
+    await rig.engine.flushOnLeave()
+    await rig.engine.settle()
+    #expect(await unanswered() == [Rig.scope])
+    rig.clock.advance(ms: 1_000)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]))
+    await rig.engine.flushOnLeave()
+    await rig.engine.settle()
+    #expect(await unanswered().isEmpty)
+    #expect(await MainActor.run { rig.engine.status.failedPushes.isEmpty })
+  }
+
   @Test func cancelledPushDoesNotInventAFailedPushStatus() async throws {
     let rig = try Rig(account: "A")
     try rig.commit(Self.card1)

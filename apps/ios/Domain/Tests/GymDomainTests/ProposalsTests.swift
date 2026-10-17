@@ -62,6 +62,28 @@ struct ProposalsTests {
     #expect(try h.runner.read(Gym.scope) { try RoutineRemovalReceipt.read($0).isEmpty })
   }
 
+  // A settled removal is recorded once: the write that marks it returns it, later runs return nothing, and a new Apply after
+  // a refusal writes a new receipt to record again.
+  @Test(arguments: [false, true])
+  func aSettledRemovalIsRecordedOnce(refused: Bool) throws {
+    let h = try Self.phone(); try Self.propose(h, removing: true)
+    let replica = try h.runner.read(Gym.scope) { $0.replica }
+    let record = { try h.runner.run(RecordRoutineRemovalOutcomes(replica: replica)) }
+    #expect(try h.runner.run(ApplyProposalKeepingReceipt(Self.proposalId)).receipt != nil)
+    #expect(try unchanged(record()) == [])
+    if refused { h.server.refuse(code: .invalid) }
+    h.sync()
+    #expect(try unchanged(h.runner.run(RecordRoutineRemovalOutcomes(replica: "another-replica"))) == [])
+    #expect(try committed(record())?.map { "\($0.proposal.id) \($0.outcome)" } == ["proposal1 \(refused ? "refused" : "applied")"])
+    #expect(try h.runner.read(Gym.scope) { try RoutineRemovalReceipt.read($0).map(\.recorded) } == [true])
+    #expect(try unchanged(record()) == [])
+    guard refused else { return }
+    #expect(try h.runner.run(ApplyProposalKeepingReceipt(Self.proposalId)).receipt != nil)
+    #expect(try h.runner.read(Gym.scope) { try RoutineRemovalReceipt.read($0).map(\.recorded) } == [false])
+    h.sync()
+    #expect(try committed(record())?.map { "\($0.proposal.id) \($0.outcome)" } == ["proposal1 applied"])
+  }
+
   @Test func proposalGuardsAdmitItsDiffAndApplyPredictsBothRecordsWhilePending() throws {
     let a = try Self.phone()
     try Self.propose(a)
@@ -104,6 +126,22 @@ struct ProposalsTests {
     #expect(try a.runner.run(ApplyProposal(Self.proposalId)).receipt != nil)
     a.sync()
     #expect(try a.stored(Routine.self).map(\.name) == ["Stronger"])
+  }
+
+  // An edit the log has not confirmed moves the routine under the proposal: Apply is refused before anything is sent, as
+  // the log refuses it once the edit lands, and turning it down stays open.
+  @Test func anEditTheLogHasNotConfirmedRefusesApplyBeforeItIsSent() throws {
+    let a = try Self.phone(); try Self.propose(a)
+    var routine = try #require(try a.runner.open(Self.routineId))
+    routine.current.name = "Strength B"
+    #expect(saved(a.runner.save(&routine, SaveRoutine.self)))
+    let changed = GymRefusal(Refused(Gym.Codes.proposalSuperseded, subject: Self.proposalId.ref, detail: ["reason": "routine-changed"], path: .predicted))
+    #expect(try a.runner.read(Gym.scope) { try ProposalState($0, id: Self.proposalId).outOfDate })
+    #expect(try a.runner.run(ApplyProposal(Self.proposalId)).refusal == changed)
+    #expect(try a.runner.read(Gym.scope) { try $0.commands().isEmpty })
+    a.sync()
+    #expect(try a.runner.run(ApplyProposal(Self.proposalId)).refusal != nil)
+    #expect(try a.drawn(Routine.self).map(\.name) == ["Strength B"])
   }
 
   @Test func aConcurrentRoutineEditRefusesProposalCreationAsAStaleNotice() throws {
@@ -246,11 +284,14 @@ struct ProposalsTests {
       }
       result = ["baseRevision": .of(p.baseRevision), "baseName": .of(p.baseName), "changeCount": .of(p.changeCount), "state": .string(p.state), "provenance": provenance]
     case "RoutineCreation": result = ["snapshot": try RoutineCreation(form: input).snapshot ?? .null]
-    case "StateRefusal":
+    case "StateRefusal", "OutOfDate":
       let proposal = try input["proposal"].flatMap { $0.isNull ? nil : try Proposal(form: $0) }
       let routine = try input["routine"].flatMap { $0.isNull ? nil : try Routine(form: $0) }
+      let confirmed = try input["confirmedRoutine"].map { try Routine(form: $0) } ?? routine
       let moment = Moment(now: Instant(ms: try vector.input.member("now").asInteger()), zone: FixedZone(offsetSeconds: 0))
-      let state = ProposalState(proposal: proposal, routine: routine, moment: moment)
+      let state = ProposalState(proposal: proposal, routine: routine, moment: moment, routineVisible: try input["routineVisible"]?.asBool() ?? true,
+                                confirmedRoutine: confirmed)
+      if try vector.input.member("action").asString() == "OutOfDate" { result = ["outOfDate": .bool(state.outOfDate)]; break }
       result = ["refusal": state.refusal(for: ID("proposal1"), applying: try input.member("applying").asBool())?.form ?? .null]
     case "ValidateProposal":
       let moment = Moment(now: Instant(ms: try vector.input.member("now").asInteger()), zone: FixedZone(offsetSeconds: 0))

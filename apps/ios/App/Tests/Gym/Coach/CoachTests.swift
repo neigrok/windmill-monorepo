@@ -958,7 +958,8 @@ import SyncTesting
     h.sync(); gym.refresh()
     #expect(gym.openSession == nil)
     #expect(gym.coachDecideProposal(proposal, apply: true))
-    #expect(ProposalReviewSheet(gym: gym, proposalId: proposal.id.record.string!).primaryTitle == "Applying…")
+    let waiting = ProposalReviewSheet(gym: gym, proposalId: proposal.id.record.string!)
+    #expect(waiting.primaryTitle == "Applying…" && waiting.caption == "")
     h.sync(); gym.refresh()
     #expect(gym.proposals.first?.state == "applied" && gym.routines.first?.name == "After")
     #expect(gym.proposals.first.map(gym.coachProposalOutOfDate) == false)
@@ -1015,7 +1016,7 @@ import SyncTesting
     try await settle { gym.refresh(); return gym.proposals.first?.baseRevision != nil }
     let proposal = try #require(gym.proposals.first), logged = gym.sets
     let review = ProposalReviewSheet(gym: gym, proposalId: proposal.id.description)
-    #expect(review.primaryTitle == "Remove Push A" && proposal.state == "pending" && proposal.settledAt == nil)
+    #expect(review.primaryTitle == "Remove routine" && proposal.state == "pending" && proposal.settledAt == nil)
     await transport.delivery.hold()
     defer { Task { await transport.delivery.release() } }
     if refused { transport.model.state.withLock { $0.server.refuse(code: .invalid) } }
@@ -1235,22 +1236,141 @@ import SyncTesting
       "Push A · a removal | Removed", "Push A · 1 change | Applied", "Push A · 2 changes | Turned down", "Push A · 2 changes | Out of date",
       "4 changes | -", "Is Push A still doing anything? | -", "Is Push A still doing anything? | -", "Is Push A still doing anything? | -"])
   }
-  // An out-of-date proposal has no Apply and no Turn this down: the band says once why nothing was applied.
-  @Test func anOutOfDateProposalSaysWhyWhereApplyStood() {
-    let (_, gym) = fixture()
-    gym.isAnonymous = false
-    gym.routines = [Routine(id: ID("stale-routine"), name: "Push B", revision: 3)]
-    let proposal = { (id: String, state: String, supersededBy: ID<Proposal>?, base: Int?) in
-      Proposal(id: ID(RecordID(id)), routineId: ID("stale-routine"), intent: "revise", proposedName: "Push A2", summary: "", changes: [],
-               state: state, supersededBy: supersededBy, baseRevision: base, baseName: "Push A")
+  // An out-of-date proposal has no Apply and no Turn this down: the band says once why nothing was applied — a newer one
+  // took its place, the log set it aside when its routine changed there, or its routine moved here and the log has not
+  // confirmed it yet. Each routine is its own case, in one store.
+  @Test func anOutOfDateProposalSaysWhyWhereApplyStood() throws {
+    let (h, gym) = fixture()
+    for (id, name) in [("stale-bench", "Bench"), ("stale-squat", "Squat")] {
+      gym.run(CreateExercise(Exercise(id: ID(RecordID(id)), name: name, pattern: "press", equipment: "barbell", stepKg: 2.5)))
     }
-    gym.proposals = [proposal("current", "pending", nil, 3), proposal("moved", "pending", nil, 2), proposal("replaced", "superseded", ID("current"), 3),
-                     proposal("outrun", "superseded", nil, 3), proposal("applied", "applied", nil, 2), proposal("dismissed", "dismissed", nil, 2)]
-    let reviews = gym.proposals.map { ProposalReviewSheet(gym: gym, proposalId: $0.id.description) }
-    #expect(gym.proposals.map(gym.coachProposalOutOfDate) == [false, true, true, true, false, false])
-    #expect(reviews.map { $0.outOfDate ?? "-" } == ["-", "Push B changed after this was written. Nothing was applied.",
-      "A newer proposal replaced this one. Nothing was applied.", "This proposal is out of date. Nothing was applied.", "-", "-"])
+    let routines = ["current", "replaced", "outrun", "unsent", "applied", "dismissed"].map { name in
+      Routine(id: ID(RecordID("stale-" + name)), name: "Push " + name, entries: [RoutineEntry(exerciseId: ID("stale-bench"))])
+    }
+    for routine in routines { var draft = Draft(new: routine); #expect(saved(gym.save(&draft))) }
+    h.sync(); gym.refresh()
+    let proposed = zip(routines + [routines[1]], ["current", "replaced", "outrun", "unsent", "applied", "dismissed", "replacement"]).map { routine, id in
+      gym.run(ProposeRoutine(id: ID(RecordID("proposal-" + id)), routineId: routine.id, name: routine.name + " 2", entries: routine.entries, summary: "Rename"))?.receipt != nil
+    }
+    #expect(proposed == Array(repeating: true, count: 7))
+    h.sync(); gym.refresh()
+    var outrun = try #require(try h.runner.open(routines[2].id)); outrun.current.name = "Push outrun B"
+    #expect(saved(gym.save(&outrun)))
+    #expect(gym.coachDecideProposal(try #require(gym.proposals.first { $0.id == ID("proposal-applied") }), apply: true))
+    #expect(gym.coachDecideProposal(try #require(gym.proposals.first { $0.id == ID("proposal-dismissed") }), apply: false))
+    h.sync(); gym.refresh()
+    var unsent = try #require(try h.runner.open(routines[3].id)); unsent.current.entries.append(RoutineEntry(exerciseId: ID("stale-squat")))
+    #expect(saved(gym.save(&unsent)))
+    gym.refresh()
+    let ids = ["current", "replaced", "outrun", "unsent", "applied", "dismissed"]
+    let proposals = try ids.map { id in try #require(gym.proposals.first { $0.id == ID(RecordID("proposal-" + id)) }) }
+    let reviews = ids.map { ProposalReviewSheet(gym: gym, proposalId: "proposal-" + $0) }
+    #expect(proposals.map(\.state) == ["pending", "superseded", "superseded", "pending", "applied", "dismissed"])
+    #expect(proposals.map(gym.coachProposalOutOfDate) == [false, true, true, true, false, false])
+    #expect(reviews.map { $0.outOfDate ?? "-" } == ["-", "A newer proposal replaced this one. Nothing was applied.",
+      "This proposal is out of date. Nothing was applied.", "The routine changed after this was written. Nothing was applied.", "-", "-"])
     #expect(reviews.map(\.decidable) == [true, false, false, false, false, false])
+    #expect(Set(gym.waitingRoutineProposals.map(\.id)) == [ID("proposal-current"), ID("proposal-replacement")])
+  }
+  // A proposal for a routine deleted here is out of date at once, inside the delete's Undo window: Routines drops its
+  // row and Review offers no Apply; Undo brings the routine and the proposal back.
+  @Test func aProposalForARoutineDeletedHereIsOutOfDateUntilUndo() throws {
+    let (h, gym) = fixture()
+    for (id, name) in [("deleted-bench", "Bench"), ("deleted-squat", "Squat"), ("deleted-deadlift", "Deadlift")] {
+      gym.run(CreateExercise(Exercise(id: ID(RecordID(id)), name: name, pattern: "press", equipment: "barbell", stepKg: 2.5)))
+    }
+    var routine = Draft(new: Routine(id: ID("deleted-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("deleted-bench"))]))
+    #expect(saved(gym.save(&routine)))
+    h.sync(); gym.refresh()
+    #expect(try h.runner.run(ProposeRoutine(id: ID("deleted-proposal"), routineId: routine.id, name: "Push B", entries: [RoutineEntry(exerciseId: ID("deleted-squat"))], summary: "Change")).receipt != nil)
+    h.sync(); gym.refresh()
+    let proposal = try #require(gym.proposals.first)
+    let review = ProposalReviewSheet(gym: gym, proposalId: proposal.id.description)
+    #expect(gym.waitingRoutineProposals.map(\.id) == [proposal.id] && review.decidable)
+    let deleted = try #require(gym.run(DeleteRoutine(routine.id))?.receipt)
+    gym.refresh()
+    #expect(gym.routines.isEmpty && gym.waitingRoutineProposals.isEmpty && gym.coachProposalOutOfDate(proposal))
+    #expect(!review.decidable && review.outOfDate == "The routine changed after this was written. Nothing was applied.")
+    #expect(!gym.coachDecideProposal(proposal, apply: true) && gym.proposals.first?.state == "pending")
+    #expect(gym.undo(deleted.gestureId))
+    gym.refresh()
+    #expect(gym.waitingRoutineProposals.map(\.id) == [proposal.id] && review.decidable && review.outOfDate == nil)
+  }
+  // An edit the log has not confirmed moves the routine under a waiting proposal: it is out of date at once, Apply is not
+  // offered, and the lifter's edit stands after the log answers.
+  @Test func aProposalOverAnEditTheLogHasNotConfirmedIsOutOfDate() throws {
+    let (h, gym) = fixture()
+    for (id, name) in [("edited-bench", "Bench"), ("edited-squat", "Squat"), ("edited-deadlift", "Deadlift")] {
+      gym.run(CreateExercise(Exercise(id: ID(RecordID(id)), name: name, pattern: "press", equipment: "barbell", stepKg: 2.5)))
+    }
+    var routine = Draft(new: Routine(id: ID("edited-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("edited-bench"))]))
+    #expect(saved(gym.save(&routine)))
+    h.sync(); gym.refresh()
+    #expect(try h.runner.run(ProposeRoutine(id: ID("edited-proposal"), routineId: routine.id, name: "Push B", entries: [RoutineEntry(exerciseId: ID("edited-squat"))], summary: "Change")).receipt != nil)
+    h.sync(); gym.refresh()
+    let proposal = try #require(gym.proposals.first)
+    var edit = try #require(try h.runner.open(routine.id)); edit.current.entries.append(RoutineEntry(exerciseId: ID("edited-deadlift")))
+    #expect(saved(gym.save(&edit)))
+    gym.refresh()
+    let review = ProposalReviewSheet(gym: gym, proposalId: proposal.id.description)
+    #expect(gym.routines.first?.revision == proposal.baseRevision && gym.coachProposalOutOfDate(proposal))
+    #expect(gym.waitingRoutineProposals.isEmpty && !review.decidable)
+    #expect(review.outOfDate == "The routine changed after this was written. Nothing was applied.")
+    #expect(!gym.coachDecideProposal(proposal, apply: true))
+    h.sync(); gym.refresh()
+    #expect(gym.routines.first?.entries.map(\.exerciseId) == [ID("edited-bench"), ID("edited-deadlift")] && gym.notices.isEmpty)
+    #expect(gym.proposals.first?.state == "superseded" && gym.coachProposalOutOfDate(proposal))
+  }
+  // A removal's answer is recorded once: a launch after it lands, before the lifter opens its Review, records nothing more.
+  @Test(arguments: [false, true])
+  func aSettledRemovalIsRecordedOnceAcrossLaunches(refused: Bool) throws {
+    let (h, _) = fixture(), first = TelemetryRecorder()
+    let gym = GymModel(runner: h.runner, telemetry: first); gym.account = "coach-owner"
+    gym.run(CreateExercise(Exercise(id: ID("recorded-bench"), name: "Bench", pattern: "press", equipment: "barbell", stepKg: 2.5)))
+    var routine = Draft(new: Routine(id: ID("recorded-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("recorded-bench"))]))
+    #expect(saved(gym.save(&routine)))
+    h.sync(); gym.refresh()
+    #expect(try h.runner.run(ProposeRoutine(id: ID("recorded-removal"), routineId: routine.id, name: "", entries: [], summary: "Remove", removing: true)).receipt != nil)
+    h.sync(); gym.refresh()
+    #expect(gym.coachDecideProposal(try #require(gym.proposals.first), apply: true))
+    if refused { h.server.refuse(code: .invalid) }
+    h.sync(); gym.refresh(); gym.refresh()
+    let outcomes = { (recorder: TelemetryRecorder) in
+      recorder.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map { $0.properties["outcome"] ?? "-" } }
+    }
+    #expect(gym.coachRemovalReceipts.map(\.outcome) == [refused ? .refused : .applied])
+    #expect(outcomes(first) == [refused ? "failed" : "decided"])
+    for _ in 0..<2 {
+      let relaunch = TelemetryRecorder(), cold = GymModel(runner: h.runner, telemetry: relaunch)
+      cold.refresh()
+      #expect(cold.coachRemovalReceipts.count == 1 && outcomes(relaunch).isEmpty)
+    }
+  }
+  // Retry records what its push met, not the phone's network: no answer at all is offline, a failure the log answered is
+  // failed.
+  @Test(arguments: [(0, "offline"), (503, "failed")])
+  func aRetryRecordsWhatItsPushMet(status: Int, outcome: String) async throws {
+    let transport = WorkoutFaultTransport(), telemetry = TelemetryRecorder(), runtime = try WorkoutStateTests.faultRuntime(transport, drivesLoops: true)
+    let owner = transport.model.identity(email: "retry-owner@example.com")
+    #expect(try await runtime.engine.signIn(account: owner.account, token: owner.token).isComplete)
+    await runtime.engine.start()
+    let gym = GymModel(runner: runtime.runner, runtime: runtime, telemetry: telemetry)
+    defer { gym.stop() }
+    var routine = Draft(new: Routine(id: ID("retry-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("bench-press"))]))
+    #expect(saved(gym.save(&routine)))
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.routines.first?.revision != nil }
+    #expect(gym.run(ProposeRoutine(id: ID("retry-change"), routineId: routine.id, name: "Push B", entries: [RoutineEntry(exerciseId: ID("bench-press"))], summary: "Rename it."))?.receipt != nil)
+    await runtime.engine.flushOnLeave(); runtime.engine.foreground()
+    try await settle { gym.refresh(); return gym.proposals.first?.baseRevision != nil }
+    transport.failure.withLock { $0 = status }
+    #expect(gym.coachDecideProposal(try #require(gym.proposals.first), apply: true))
+    try await settle { runtime.engine.status.failedPushes[Gym.scope]?.isEmpty == false }
+    #expect(runtime.engine.status.online)
+    let retries = { telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" && $0.properties["action"] == "retry" }.map(\.properties) } }
+    gym.coachResendDecision(try #require(gym.proposals.first).id)
+    try await settle { !retries().isEmpty }
+    #expect(retries() == [["screen": "review", "action": "retry", "outcome": outcome]])
   }
   // A proposal that reordered its routine keeps its Order row once applied, since the store counted that change.
   @Test func anAppliedReorderKeepsItsOrderRow() throws {
@@ -1342,9 +1462,9 @@ import SyncTesting
     #expect(review.runs.map { $0.map(\.title) } == [["Squat"], ["Row"], ["Curl"], ["Bench"], ["Dips"], ["Name"]])
     #expect(review.primaryTitle == "Apply" && review.promise == "All or none. Nothing changes until you tap.")
     let removal = try #require(gym.proposals.first { $0.id == ID("card-removal") })
-    #expect(gym.coachChanges(removal) == [CoachChange(removing: "Push A")] && gym.coachChanges(removal).first?.removal == true)
+    #expect(gym.coachChanges(removal).map { [$0.symbol ?? "-", $0.title, $0.change ?? "-", "\($0.removal)"].joined(separator: " | ") } == ["minus | Routine | Removed | true"])
     let removing = ProposalReviewSheet(gym: gym, proposalId: removal.id.record.string!)
-    #expect(removing.primaryTitle == "Remove Push A" && removing.promise == "Your logged sets stay. Nothing is removed until you tap.")
+    #expect(removing.primaryTitle == "Remove routine" && removing.promise == "Your logged sets stay. Nothing is removed until you tap.")
   }
   // Review's subtitle says who proposed it and when the log took it: the record's creation, a day and a time, none before.
   @Test func aReviewSaysWhoProposedItAndWhenTheLogTookIt() throws {
@@ -1362,6 +1482,12 @@ import SyncTesting
     let taken = try #require(gym.proposals.first)
     h.advance(ms: 2 * 86_400_000); gym.refresh()
     #expect(sources + [gym.coachProposalSource(taken)] == ["proposed by Coach", "proposed by Coach · Sep 26 · 6:42\u{202F}PM"])
+    let unnamed = { (connection: String, agent: String) in
+      Proposal(id: taken.id, routineId: taken.routineId, intent: taken.intent, proposedName: taken.proposedName, summary: taken.summary,
+               changes: taken.changes, door: "mcp", connection: connection, agent: agent)
+    }
+    #expect([unnamed("", ""), unnamed("Desk", ""), unnamed("Desk", "Claude")].map(gym.coachProposalSource) ==
+      ["Sep 26 · 6:42\u{202F}PM", "proposed by Desk · Sep 26 · 6:42\u{202F}PM", "proposed by Claude · Sep 26 · 6:42\u{202F}PM"])
   }
   @Test func waitingDecisionSaysSoAfterItsWaitAndRetryPushesTheSameCommand() async throws {
     let transport = WorkoutFaultTransport(), telemetry = TelemetryRecorder(), runtime = try WorkoutStateTests.faultRuntime(transport, drivesLoops: true)

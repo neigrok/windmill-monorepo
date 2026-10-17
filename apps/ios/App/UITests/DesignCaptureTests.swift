@@ -756,6 +756,26 @@ import XCTest
     XCTAssertTrue(app.staticTexts["coach-review-out-of-date"].waitForExistence(timeout: 5))
     capture("gym-coach-review-out-of-date-\(appearance)", app)
   }
+  // Review at AX3 scrolled to its middle: the caption and *Turn this down* stand on the hard scroll edge, no row through them.
+  func coachReviewAccessibility(_ appearance: String) {
+    let app = launch("shell-last-room", appearance: appearance,
+                     arguments: ["-coach-fixture", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
+    openGymFromJournal(app)
+    app.tabBars.buttons["Coach"].tap()
+    let question = app.descendants(matching: .any)["coach-question"]
+    XCTAssertTrue(question.waitForExistence(timeout: 15)); question.tap(); question.typeText("Is Push A still doing anything?")
+    app.buttons["coach-send"].tap()
+    let review = app.buttons["coach-review"]
+    XCTAssertTrue(review.waitForExistence(timeout: 10))
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    for _ in 0..<4 where !review.isHittable { app.scrollViews.firstMatch.swipeUp() }
+    review.tap()
+    XCTAssertTrue(app.buttons["coach-apply-proposal"].waitForExistence(timeout: 5))
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)))
+    capture("gym-coach-review-mid-ax3-\(appearance)", app)
+  }
+  func testCoachReviewAccessibilityLight() { coachReviewAccessibility("light") }
+  func testCoachReviewAccessibilityDark() { coachReviewAccessibility("dark") }
   func testCoachOutOfDateLight() { coachOutOfDate("light") }
   func testCoachOutOfDateDark() { coachOutOfDate("dark") }
   func testCoachScreensDark() { coachScreens("dark") }

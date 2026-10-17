@@ -131,14 +131,16 @@ package actor Sender {
       // A 400 or 413 was halved or refused, so the next push differs, and a conflict re-identifies; every other failure
       // holds the entries it named back.
       switch reply {
-      case .answered(.ok): core.recordPushFailure(request, failed: false)
-      case .answered(.failed(let failure)): core.recordPushFailure(request, failed: ![400, 409, 413].contains(failure.status))
-      default: if !Task.isCancelled { core.recordPushFailure(request, failed: true) }
+      case .answered(.ok): core.recordPushFailure(request, nil)
+      case .answered(.failed(let failure)): core.recordPushFailure(request, [400, 409, 413].contains(failure.status) ? nil : .answered)
+      default:
+        guard !Task.isCancelled else { break }
+        if case .answered = exchange.reply { core.recordPushFailure(request, .answered) } else { core.recordPushFailure(request, .unanswered) }
       }
       core.outcome("sync_push_outcome", reply: reply, since: send.mono, failureKind: failureKind)
       return next
     } catch {
-      if let pushing, !Task.isCancelled { core.recordPushFailure(pushing, failed: true) }
+      if let pushing, !Task.isCancelled { core.recordPushFailure(pushing, .answered) }
       if let requestStart { core.failedOutcome("sync_push_outcome", error: error, since: requestStart) }
       return .backoff(ms: nextBackoff(floorMs: 0))
     }

@@ -315,7 +315,7 @@ import SyncSchema
     let waiting = Proposal(id: ID("pending"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [])
     let settled = Proposal(id: ID("settled"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Done", changes: [], state: "applied")
     let replaced = Proposal(id: ID("old"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Old", changes: [], supersededBy: waiting.id)
-    gym.proposals = [waiting, settled, replaced]
+    gym.proposals = [waiting, settled, replaced]; gym.outOfDateProposals = [replaced.id]
     #expect(gym.waitingRoutineProposals.map(\.id) == [waiting.id])
   }
 
