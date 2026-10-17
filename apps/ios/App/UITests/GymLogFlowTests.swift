@@ -153,7 +153,7 @@ import XCTest
     XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "last 12 weeks ·")).firstMatch.waitForExistence(timeout: 5))
   }
 
-  // A new best is a door: it opens its Record at the session that set it, its reading in the window line's place.
+  // A new best is a door: it opens its Record at its session, that point marked under the window line, never read out.
   func testAMomentOpensItsRecordAtItsSession() {
     let app = launch("light")
     XCTAssertTrue(sessionRow(app).waitForExistence(timeout: 20))
@@ -165,13 +165,20 @@ import XCTest
     let line = moment.label
     XCTAssertTrue(line.contains(" · new best") && line.contains(" kg est · up "), line)
     XCTAssertEqual(moment.value as? String ?? "", "", "A moment is a door, never an expander")
+    let estimate = line.components(separatedBy: ", ").last?.components(separatedBy: " · ").first ?? line
     moment.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
-    let reading = app.staticTexts["gym-chart-reading"]
-    XCTAssertTrue(reading.waitForExistence(timeout: 5))
-    XCTAssertTrue(reading.label.contains(" kg est · "), reading.label)
-    XCTAssertFalse(app.staticTexts["gym-chart-caption"].exists)
+    XCTAssertTrue(app.staticTexts["gym-chart-caption"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.staticTexts["gym-chart-reading"].exists, "The chart marks the moment's point without reading it out")
+    let marked = app.descendants(matching: .any)["gym-record-chart"].value as? String ?? ""
+    XCTAssertTrue(marked.hasPrefix("\(estimate) · "), "The chart is at the moment's point \(estimate), not \(marked)")
     snapshot("moment-record", app: app)
+    let best = app.descendants(matching: .any)["gym-record-best"].label.components(separatedBy: " kg").first ?? ""
+    let earlier = app.staticTexts["Earlier records"]
+    for _ in 0..<6 where !(earlier.exists && earlier.isHittable) { app.swipeUp(velocity: .slow) }
+    XCTAssertTrue(earlier.isHittable, "Earlier records follow the chart")
+    XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label ENDSWITH %@", "e1RM \(best)")).firstMatch.exists,
+                   "The standing best \(best) is the tile's and never a row")
   }
 
   func testBothChartDateAxesFollowOverflowingHistoryPans() {
@@ -244,16 +251,75 @@ import XCTest
     XCTAssertNotEqual(dates.value as? String, earlier)
   }
 
-  func testOlderSessionsLoadAtTheEndAndTheLastSectionNamesTheFirstSession() {
+  func testOlderSessionsLoadAtTheEndAndTheLastSectionCountsTheWorkouts() {
     let app = launch("dark")
     XCTAssertTrue(sessionRow(app).waitForExistence(timeout: 20))
     let older = app.descendants(matching: .any)["gym-log-older"]
-    let first = app.staticTexts["gym-log-first-session"]
-    for _ in 0..<30 where !(first.exists && !first.frame.isEmpty && first.isHittable) { app.swipeUp(velocity: .fast) }
+    let end = app.staticTexts["gym-log-end"]
+    for _ in 0..<30 where !(end.exists && !end.frame.isEmpty && end.isHittable) { app.swipeUp(velocity: .fast) }
     snapshot("log-end", app: app)
-    XCTAssertTrue(first.isHittable)
-    XCTAssertTrue(first.label.hasPrefix("First workout · "))
+    XCTAssertTrue(end.isHittable)
+    XCTAssertEqual(end.label, "35 workouts")
     XCTAssertFalse(older.exists)
+  }
+
+  // A pushed screen hides the tab bar and the accessory; back at the log's end, its last row and total stand where they stood.
+  func testTheLogsEndStaysClearOfTheTabBarAfterAPushedScreenPops() {
+    let app = launch("light")
+    assertTheEndHoldsAcrossAPush(above: app.tabBars.firstMatch, app)
+  }
+  func testTheLogsEndStaysClearOfTheAccessoryAfterAPushedScreenPops() {
+    let app = launch("light")
+    XCTAssertTrue(sessionRow(app).waitForExistence(timeout: 20))
+    app.tabBars.buttons["Routines"].tap()
+    let start = app.buttons["Just start logging"]
+    XCTAssertTrue(start.waitForExistence(timeout: 10)); start.tap()
+    XCTAssertTrue(app.buttons["workout-assembly"].waitForExistence(timeout: 10)); app.buttons["workout-assembly"].tap()
+    XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
+    let accessory = app.buttons["gym-hidden-workout"]
+    XCTAssertTrue(accessory.waitForExistence(timeout: 5))
+    app.tabBars.buttons["The log"].tap()
+    assertTheEndHoldsAcrossAPush(above: accessory, app)
+  }
+  func assertTheEndHoldsAcrossAPush(above foot: XCUIElement, _ app: XCUIApplication) {
+    XCTAssertTrue(sessionRow(app).waitForExistence(timeout: 20))
+    let footer = app.staticTexts["gym-log-end"]
+    for _ in 0..<40 where !(footer.exists && footer.isHittable) { app.swipeUp(velocity: .fast) }
+    for _ in 0..<2 { app.swipeUp(velocity: .fast) }
+    let sessions = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-log-session-"))
+    let last = app.buttons[sessions.allElementsBoundByIndex.last { $0.isHittable }?.identifier ?? "none"]
+    let atEnd = (row: settledFrame(last), footer: settledFrame(footer))
+    XCTAssertLessThanOrEqual(atEnd.footer.maxY, foot.frame.minY + 1, "At rest the footer \(atEnd.footer) clears \(foot.frame)")
+    last.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.tabBars.firstMatch.isHittable, "A pushed screen hides the tab bar")
+    XCTAssertFalse(foot.isHittable, "A pushed screen hides the bar's foot")
+    back(app)
+    XCTAssertTrue(app.buttons["gym-weigh-in"].waitForExistence(timeout: 10))
+    let back = (row: settledFrame(last), footer: settledFrame(footer))
+    snapshot("log-end-after-pop", app: app)
+    XCTAssertEqual(back.row.minY, atEnd.row.minY, accuracy: 1, "The last row \(back.row) stands where it stood \(atEnd.row)")
+    XCTAssertEqual(back.footer.minY, atEnd.footer.minY, accuracy: 1, "The footer \(back.footer) stands where it stood \(atEnd.footer)")
+    XCTAssertLessThanOrEqual(back.footer.maxY, foot.frame.minY + 1, "The footer \(back.footer) clears \(foot.frame)")
+  }
+  func settledFrame(_ element: XCUIElement) -> CGRect {
+    var frame = element.frame
+    for _ in 0..<20 {
+      RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+      if element.frame == frame { break }
+      frame = element.frame
+    }
+    return frame
+  }
+
+  // A record the week's moment leaves unstated is its row's dot, which VoiceOver reads as a new best.
+  func testARecordDotReadsAsANewBest() {
+    let app = launch("light")
+    XCTAssertTrue(sessionRow(app).waitForExistence(timeout: 20))
+    let dotted = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "gym-log-session-", "best")).firstMatch
+    for _ in 0..<6 where !dotted.exists { app.swipeUp(velocity: .slow) }
+    XCTAssertTrue(dotted.exists, "A session that set a new best its moment does not state says so")
+    XCTAssertNotNil(dotted.label.wholeMatch(of: /Push A, new best, 2 working sets · 45m, [A-Z][a-z]{2} \d{1,2}/), dotted.label)
   }
 
   func testSessionDetailDiscardsFromItsMenuWithUndo() {

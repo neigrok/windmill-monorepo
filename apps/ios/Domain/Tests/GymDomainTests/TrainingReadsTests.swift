@@ -79,7 +79,7 @@ struct TrainingReadsTests {
       case "ProgressRecords":
         let records = ProgressRecords(log.progress)
         return ["movements": .object(JSON.Object(uniqueKeysWithValues: records.movements.map { id, run in
-          (id.description, JSON.array(run.map { ["session": $0.point.id.json, "previous": $0.previous?.id.json ?? .null] }))
+          (id.description, JSON.array(run.map { ["session": $0.point.id.json, "previous": $0.previous.id.json, "estimate": .of($0.estimate), "gain": .of($0.gain)] }))
         })), "sessions": .array(records.sessions.sorted().map(\.json))]
       case "Readout":
         switch try fields.string("operation") {

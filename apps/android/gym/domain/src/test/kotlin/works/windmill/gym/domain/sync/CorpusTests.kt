@@ -17,7 +17,7 @@ class CorpusTests {
         "gym/domain/preferences-actions.json", "gym/domain/proposals-actions.json", "gym/domain/training-actions.json",
         "gym/domain/training-reads.json", "gym/domain/units.json", "gym/rules/bodyweight.json")
     val pending = mapOf("gym/domain/recovery-actions.json" to "Android's saved-workout recovery lives in the store's WorkoutImports.kt, not yet in :gym:domain")
-    val pendingReads = mapOf("ProgressRecords" to "Android weaves its log's new bests in :gym's LogTimeline.kt, not yet in :gym:domain, and counts a first session")
+    val pendingReads = mapOf("ProgressRecords" to "Android weaves its log's new bests in :gym's LogTimeline.kt, not yet in :gym:domain, and counts every exact record step from a first estimate")
 
     @Test fun everyProductFileIsClaimedAndEveryVectorPasses() {
         assertEquals((paths + pending.keys).sorted(), Contract.files("gym"))

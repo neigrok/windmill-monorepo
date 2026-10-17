@@ -20,16 +20,14 @@ nonisolated enum LogPresentation {
   static func day(_ date: Date) -> LocalDay {
     LocalDay(Instant(date), offsetSeconds: TimeZone.current.secondsFromGMT(for: date))
   }
-  // A new best's line under its name: the estimate, and what it beat since when, or its day when it beat no estimate.
+  // A new best's line under its name: the estimate, and what it gained since the day of the best it beat.
   static func newBest(_ record: ProgressRecords.Record, dates: GymDate) -> String {
-    let value = record.point.fact.estimate!.e1rm
-    let change = record.previous.map {
-      "up \(Readout.estimatedWeight(value - $0.fact.estimate!.e1rm)) kg since \(dates.day($0.startedAt, inSentence: true))"
-    } ?? dates.day(record.point.startedAt)
-    return "\(Readout.estimatedWeight(value)) kg est · \(change)"
+    "\(Readout.estimatedWeight(record.estimate)) kg est · up \(Readout.estimatedWeight(record.gain)) kg since \(dates.day(record.previous.startedAt, inSentence: true))"
   }
-  // The weeks trained, the head's of the last four and a month moment's of its own: *Trained 3 of the last 4 weeks*.
+  // The head's footer, the weeks trained of the last four: *Trained 3 of the last 4 weeks*.
   static func trained(_ weeks: Int, of last: Int) -> String { "Trained \(weeks) of the last \(last) weeks" }
+  // A month moment's line, its own month: *Trained every week of February*.
+  static func trainedEvery(_ month: LocalDay, dates: GymDate) -> String { "Trained every week of \(dates.month(month))" }
   static func sessionFacts(_ readout: SessionReadout) -> String {
     [GymCount.of(readout.workingSetCount, "working set"), readout.durationMs.map(Readout.duration)].compactMap { $0 }.joined(separator: " · ")
   }
@@ -64,7 +62,7 @@ nonisolated enum LogPresentation {
 
 struct LogTimelineEntry: Identifiable {
   // A session row carries the record dot when it set a new best that no woven moment states.
-  enum Kind { case session(Session, recordDot: Bool), best(DomainKit.ID<Exercise>, ProgressRecords.Record), month(LocalDay, Int), weight(Bodyweight.Entry) }
+  enum Kind { case session(Session, recordDot: Bool), best(DomainKit.ID<Exercise>, ProgressRecords.Record), month(LocalDay), weight(Bodyweight.Entry) }
   let id: String
   let at: Instant
   let kind: Kind
@@ -106,7 +104,7 @@ extension GymModel {
         }
       }
       let trainedDays = progress.sessions.filter { $0.startedAt <= now }.map { LocalDay($0.startedAt, in: zone) }
-      let months = Dictionary(grouping: trainedDays) { String($0.text.prefix(7)) }, head = logConsistency
+      let months = Dictionary(grouping: trainedDays) { String($0.text.prefix(7)) }
       for key in months.keys.sorted() {
         guard let first = LocalDay(key + "-01"), first.year < today.year || (first.year == today.year && first.month < today.month) else { continue }
         var end = first
@@ -115,10 +113,8 @@ extension GymModel {
         var required: Set<LocalDay> = [], monday = firstMonday
         while monday <= lastMonday { required.insert(monday); monday = monday.adding(days: 7) }
         let actual = Set((months[key] ?? []).map { $0.adding(days: 1 - $0.weekday) })
-        // A month the head's footer already words the same way is not woven: The log says each line once.
-        if actual == required && LogPresentation.trained(required.count, of: required.count) != head {
-          let at = LogPresentation.instant(end, in: zone)
-          moments.append(LogTimelineEntry(id: "month:\(key)", at: at, kind: .month(first, required.count)))
+        if actual == required {
+          moments.append(LogTimelineEntry(id: "month:\(key)", at: LogPresentation.instant(end, in: zone), kind: .month(first)))
         }
       }
     }
@@ -145,9 +141,7 @@ extension GymModel {
     for row in rows {
       let day = LocalDay(row.at, in: zone), key = String(day.text.prefix(7))
       if result.last?.id == key { result[result.count - 1].entries.append(row); continue }
-      let date = LogPresentation.date(day)
-      let title = day.year == today.year ? date.formatted(.dateTime.month(.wide)) : date.formatted(.dateTime.month(.wide).year())
-      result.append(LogMonth(id: key, title: title, entries: [row]))
+      result.append(LogMonth(id: key, title: dates.month(day), entries: [row]))
     }
     return result
   }

@@ -560,13 +560,13 @@ import XCTest
     revealInLog(moment, app)
     capture(name("gym-log-moment"), app)
     moment.tap()
-    XCTAssertTrue(app.staticTexts["gym-chart-reading"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["gym-chart-caption"].waitForExistence(timeout: 5))
     capture(name("gym-movement-record-from-moment"), app, settle: 1.5)
     back(app)
     XCTAssertTrue(app.descendants(matching: .any)["gym-log"].waitForExistence(timeout: 5))
-    let first = app.staticTexts["gym-log-first-session"]
-    for _ in 0..<30 where !onScreen(first, app) { app.swipeUp(velocity: .fast) }
-    revealInLog(first, app)
+    let end = app.staticTexts["gym-log-end"]
+    for _ in 0..<30 where !onScreen(end, app) { app.swipeUp(velocity: .fast) }
+    revealInLog(end, app)
     capture(name("gym-log-end"), app)
     for _ in 0..<30 where !onScreen(app.buttons["gym-bodyweight-door"], app) { app.swipeDown(velocity: .fast) }
     RunLoop.current.run(until: Date().addingTimeInterval(0.6))
