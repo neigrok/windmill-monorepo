@@ -72,8 +72,8 @@ import Vision
     XCTAssertTrue(app.buttons["workout-weight"].wait(for: \.label, toEqual: "Weight, 60 kilograms", timeout: 5))
   }
 
-  // The receipt's primary and its footer stand in one reach band: at the largest text the rows that scroll beneath soften
-  // under the band's edge, so no row's text reads crisply against the footer's line.
+  // The receipt's primary and its footer stand in one reach band on a surface: at the largest text the rows that scroll
+  // beneath soften under its bar, so no row's text reads crisply inside the band, 16 pt above Keep.
   func testReceiptRowsSoftenUnderItsBandAtAccessibilityText() throws {
     let app = launch(appearance: "light", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
     app.buttons["workout-finish"].tap()
@@ -86,7 +86,7 @@ import Vision
     attachment.name = "receipt-band-ax3"; attachment.lifetime = .keepAlways; add(attachment)
     let image = try XCTUnwrap(screenshot.image.cgImage)
     let scale = CGFloat(image.width) / app.frame.width
-    let strip = CGRect(x: 16, y: keep.frame.minY - 16, width: app.frame.width - 32, height: 14)
+    let strip = CGRect(x: 16, y: keep.frame.minY - 15, width: app.frame.width - 32, height: 13)
     let width = image.width, height = image.height
     var pixels = [UInt8](repeating: 0, count: width * height * 4)
     pixels.withUnsafeMutableBytes { bytes in
