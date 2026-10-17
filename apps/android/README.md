@@ -184,36 +184,29 @@ verified commit/ref/version/workflow/run identities, receives the password throu
 the input, signs and checks the certificate and unchanged application contents. Its APK, digest
 and provenance remain unpublished until native acceptance and a same-key update check pass.
 
-The published [0.12.0/code168 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.12.0)
-uses tag `android-v0.12.0` at `f161d2ff565243ad4079cdfea44281f355665ef4`,
-[Actions run 37644817218](https://github.com/neigrok/windmill-monorepo/actions/runs/37644817218),
+The published [0.12.1/code184 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.12.1)
+uses tag `android-v0.12.1` at `ddb82fb86d9307ac59e7082ce21c4deecf39ed29`,
+[Actions run 39076676004](https://github.com/neigrok/windmill-monorepo/actions/runs/39076676004),
 attempt 1, from a tag push. Both jobs passed. Local finalization verified the retained certificate,
 non-debuggable package, unchanged application contents and linked provenance. All three anonymously
 downloaded assets are byte-identical to the accepted files. The APK SHA-256 is
-`b5a813873246e5770cd8d1d9ba490e0bf7244d065732b6e2b999428e79242ea1`.
+`89c12c59745d9ef941136ce8ec37a21fcbd1e17c4350cbb60a1d4cd1e294f2f2`.
 The release workflow supplies `-Pwindmill.updateUrl=https://github.com/neigrok/windmill-monorepo/releases/latest`;
 the APK contains that destination, which resolves to this release.
 
-Android 14 acceptance used a clean emulator cold-booted with `-no-snapshot-load`, signed out against
-the production configuration, without TLS interception, a proxy or an added CA. The public
-0.11.0/code160 APK's routine, two finished workouts, live two-set workout and 72.4 kg weigh-in
-survived `adb install -r` with their IDs, values, logged timestamps and frozen plans intact.
-The live workout accepted a third 20 kg × 5 set, then a fourth 25 kg × 5 set in airplane mode;
-all four survived force-stop/restart offline. Queued sets showed the device marker without a
-failure message. Correcting the weigh-in to 72.1 kg persisted. Finishing retained 425 kg volume
-alongside the original 100 kg and 200 kg workouts. The routine and frozen plans opened correctly.
-An independent clean install opened the empty Routines screen. The emulator was stopped.
+Android 14 acceptance ran on the `Pixel_API34_Root` emulator against the production configuration,
+signed out, without TLS interception, a proxy or an added CA, after earlier builds were uninstalled.
+The public 0.12.0/code168 APK's finished two-set workout and live one-set workout survived
+`adb install -r`. The live workout accepted a second 25 kg × 5 set, then a third 30 kg × 5 set in
+airplane mode; all three survived force-stop/restart offline and finished at 375 kg beside the
+original workout in the Log. An independent clean install opened the empty Routines screen.
 
-Account checks reuse [main's completed live-wire run](https://github.com/neigrok/windmill-monorepo/commit/35b176b06b70b2f09007ab21a607d65c14999c1c):
-17 cases passed in each Debug and Release variant against a local backend, including sign-in
-imports, Finish ordering and restart recovery, weigh-in correction, and note creation/reordering
-reaching another phone. The [shared notes vectors](https://github.com/neigrok/windmill-monorepo/blob/f161d2ff565243ad4079cdfea44281f355665ef4/packages/api-contract/gym/domain/notes-actions.json)
-pin single-note moves and held notes' positions. Signed-in source/debug-key upgrade,
-Add/Discard/Keep and offline server delivery reuse
-[completed A2 acceptance](https://github.com/neigrok/windmill-monorepo/commit/10680fd17f521fc4e9dd957b3f9459028565e254).
-[In-flight delivery coverage](https://github.com/neigrok/windmill-monorepo/blob/f161d2ff565243ad4079cdfea44281f355665ef4/apps/android/gym/src/test/kotlin/works/windmill/gym/ui/LoggerScreenTests.kt#L262)
-passed in Android CI. Signed-in acceptance was not repeated on the published-key APK. Native notes
-and a native network-in-flight send were not exercised; signed-out sets do not send.
+Account and telemetry checks used debug-key builds against a local backend. A signed-in upgrade from
+0.12.0's source kept the account and the live workout; restore, sync, Finish and sign-out passed, and
+sign-out left no stored account or sync credential. Against a local Sentry collector, a server
+outage in the foreground and lost network in the background filed no error and arrived as
+`sync_engine` events with `failure_kind=unreachable`; two outages of failing pulls filed one error
+each, tagged `http` and `500`. Signed-in acceptance was not repeated on the published-key APK.
 
 Distribution is by sideload. Published APKs through 0.7.1 use different debug certificates and
 cannot update in place with the retained release key. This build reads no device records written
