@@ -208,7 +208,7 @@ extension GymModel {
   }
 
   var waitingRoutineProposals: [Proposal] {
-    let pending = proposals.filter { $0.state == "pending" && $0.supersededBy == nil }
+    let pending = proposals.filter { $0.state == "pending" && !coachProposalOutOfDate($0) }
     do {
       let born: [ID<Proposal>: Stamp] = try runner.read(Routine.scope) { read in
         try Dictionary(uniqueKeysWithValues: pending.map { ($0.id, try read.repository(Proposal.self).record($0.id, in: .drawn)?.born ?? .unset) })

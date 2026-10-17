@@ -286,37 +286,64 @@ public struct ProposeRoutine: Action {
   }
 }
 
+// A proposal with its routine three ways: as this phone stores it, whether it is in sight, and as the log last confirmed it.
 public struct ProposalState {
   public let proposal: Proposal?
   public let routine: Routine?
   public let routineVisible: Bool
+  public let confirmedRoutine: Routine?
   public let moment: Moment
 
-  public init(proposal: Proposal?, routine: Routine?, moment: Moment, routineVisible: Bool = true) {
+  public init(proposal: Proposal?, routine: Routine?, moment: Moment, routineVisible: Bool = true, confirmedRoutine: Routine? = nil) {
     self.proposal = proposal; self.routine = routine; self.moment = moment; self.routineVisible = routineVisible
+    self.confirmedRoutine = confirmedRoutine
   }
 
   public init(_ read: Reader, id: ID<Proposal>) throws {
     let proposal = try read.repository(Proposal.self).find(id, in: .stored)
-    self.init(proposal: proposal, routine: try proposal.flatMap { try read.repository(Routine.self).find($0.routineId, in: .stored) }, moment: read.moment,
-              routineVisible: try proposal.flatMap { try read.repository(Routine.self).find($0.routineId, in: .drawn) } != nil)
+    let routines = read.repository(Routine.self)
+    self.init(proposal: proposal, routine: try proposal.flatMap { try routines.find($0.routineId, in: .stored) }, moment: read.moment,
+              routineVisible: try proposal.flatMap { try routines.find($0.routineId, in: .drawn) } != nil,
+              confirmedRoutine: try proposal.flatMap { try read.confirmed(Routine.self, $0.routineId) }.map { try Routine(Fields($0)) })
   }
 
+  // What the log would answer the decision, said before it is sent. Applying asks more than turning down: the routine must
+  // stand as the proposal found it, on the log and on this phone, and in sight.
   public func refusal(for id: ID<Proposal>, applying: Bool) -> GymRefusal? {
     guard let proposal else { return GymRefusal(Refused(.unknownRecord, subject: id.ref, path: .predicted)) }
-    let reason: String?
-    if proposal.supersededBy != nil { reason = "replaced" }
-    else if let revision = routine?.revision, let base = proposal.baseRevision, revision != base { reason = "routine-changed" }
-    else if proposal.state == "superseded", routine?.revision != nil && proposal.baseRevision != nil { reason = "superseded" }
-    else { reason = nil }
-    if proposal.state == "superseded" || (applying && proposal.state == "pending" && reason == "routine-changed") {
-      guard let reason else { return nil }
-      return GymRefusal(Refused(Gym.Codes.proposalSuperseded, subject: id.ref, detail: ["reason": .string(reason)], path: .predicted))
+    if proposal.state == "superseded" {
+      if proposal.supersededBy != nil { return superseded(id, reason: "replaced") }
+      guard let revision = routine?.revision, let base = proposal.baseRevision else { return nil }
+      return superseded(id, reason: revision == base ? "superseded" : "routine-changed")
     }
-    if proposal.state != "pending" && proposal.state != (applying ? "applied" : "dismissed") {
-      return GymRefusal(Refused(Gym.Codes.proposalSettled, subject: id.ref, detail: ["state": .string(proposal.state)], path: .predicted))
+    if proposal.state == "pending" {
+      guard applying else { return nil }
+      if routineMoved(under: proposal) { return superseded(id, reason: "routine-changed") }
+      guard routine != nil, routineVisible else { return GymRefusal(Refused(.unknownRecord, subject: proposal.routineId.ref, path: .predicted)) }
+      return nil
     }
-    return nil
+    if proposal.state == (applying ? "applied" : "dismissed") { return nil }
+    return GymRefusal(Refused(Gym.Codes.proposalSettled, subject: id.ref, detail: ["state": .string(proposal.state)], path: .predicted))
+  }
+
+  // Out of date, a proposal can no longer be applied: a newer one replaced it, the log set it aside, or its routine moved
+  // while it waited — on the log, in an edit the log has not confirmed, or out of sight.
+  public var outOfDate: Bool {
+    guard let proposal else { return false }
+    if proposal.state == "superseded" || proposal.supersededBy != nil { return true }
+    return proposal.state == "pending" && refusal(for: proposal.id, applying: true) != nil
+  }
+
+  // The routine moved under a pending proposal: the log counted a new revision, or this phone holds a new name or new
+  // movements the log has not confirmed yet, which the log will count before it reads the decision.
+  func routineMoved(under proposal: Proposal) -> Bool {
+    if let revision = routine?.revision, let base = proposal.baseRevision, revision != base { return true }
+    guard let routine, let confirmedRoutine else { return false }
+    return !routine.name.utf8.elementsEqual(confirmedRoutine.name.utf8) || routine.entries != confirmedRoutine.entries
+  }
+
+  func superseded(_ id: ID<Proposal>, reason: String) -> GymRefusal {
+    GymRefusal(Refused(Gym.Codes.proposalSuperseded, subject: id.ref, detail: ["reason": .string(reason)], path: .predicted))
   }
 }
 
@@ -338,12 +365,11 @@ public struct ApplyProposal: Action {
     guard let proposal = loaded.proposal else { return .refuse(GymRefusal(Refused(.unknownRecord, subject: id.ref, path: .predicted))) }
     if proposal.state == "applied" { return .unchanged(()) }
     if proposal.state == "superseded" { return .write(try Plan(running: Command(proposalId: id))) }
-    guard let routine = loaded.routine, loaded.routineVisible else { return .refuse(GymRefusal(Refused(.unknownRecord, subject: proposal.routineId.ref, path: .predicted))) }
     var predictions: [Prediction] = [.update(Proposal.self, id, ["state": "applied", "settledAt": JSON(loaded.moment.now.ms)])]
     if proposal.intent == "remove" {
-      predictions.append(.remove(Routine.self, routine.id))
+      predictions.append(.remove(Routine.self, proposal.routineId))
     } else {
-      predictions.append(.update(Routine.self, routine.id, ["name": .string(proposal.proposedName), "entries": .array(proposal.document.map(\.json))]))
+      predictions.append(.update(Routine.self, proposal.routineId, ["name": .string(proposal.proposedName), "entries": .array(proposal.document.map(\.json))]))
     }
     return .write(try Plan(running: Command(proposalId: id), predicting: predictions))
   }
@@ -377,10 +403,12 @@ public struct RoutineRemovalReceipt: Equatable, Sendable {
   public static let key = "rack:removalReceipts"
   public let proposal: Proposal
   public let outcome: Outcome
+  // Whether the phone has recorded the log's answer, so a relaunch before the lifter sees it records it no more.
+  public let recorded: Bool
   let json: JSON
 
   init(_ proposal: Proposal) {
-    self.proposal = proposal; outcome = .pending
+    self.proposal = proposal; outcome = .pending; recorded = false
     var snapshot = proposal.fields
     snapshot["state"] = .string(proposal.state)
     snapshot["supersededBy"] = proposal.supersededBy?.json
@@ -398,6 +426,7 @@ public struct RoutineRemovalReceipt: Equatable, Sendable {
     var values = try json.member("snapshot").asObject()
     if outcome == .applied { values["state"] = "applied" }
     proposal = try Proposal(Fields(type: Proposal.type, id: RecordID(id), values: Dictionary(uniqueKeysWithValues: values.members)))
+    recorded = json["recorded"] == .bool(true)
     self.json = json
   }
 
@@ -437,6 +466,28 @@ public struct ApplyProposalKeepingReceipt: Action {
     var receipts = loaded.1; receipts[id.description] = RoutineRemovalReceipt(proposal).json
     plan.device(RoutineRemovalReceipt.key, .object(receipts))
     return .write(plan)
+  }
+}
+
+// The settled removals the phone has not recorded yet, each marked recorded in one write: the result is what to record now.
+public struct RecordRoutineRemovalOutcomes: Action {
+  public let replica: String
+  public var scope: ScopeRef { Gym.scope }
+  public init(replica: String) { self.replica = replica }
+  public func load(_ read: Reader) throws -> (String, JSON.Object, [RoutineRemovalReceipt]) {
+    (read.replica, try read.device(RoutineRemovalReceipt.key)?.asObject() ?? [:], try RoutineRemovalReceipt.read(read))
+  }
+  public func decide(_ loaded: (String, JSON.Object, [RoutineRemovalReceipt]), ids: IDSource) -> Decision<[RoutineRemovalReceipt], GymRefusal> {
+    let unrecorded = loaded.2.filter { $0.outcome != .pending && !$0.recorded }
+    guard loaded.0 == replica, !unrecorded.isEmpty else { return .unchanged([]) }
+    var receipts = loaded.1
+    for receipt in unrecorded {
+      guard var row = try? receipts[receipt.proposal.id.description]?.asObject() else { continue }
+      row["recorded"] = true
+      receipts[receipt.proposal.id.description] = .object(row)
+    }
+    var plan = Plan(); plan.device(RoutineRemovalReceipt.key, .object(receipts))
+    return .write(plan, unrecorded)
   }
 }
 

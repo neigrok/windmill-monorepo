@@ -215,7 +215,7 @@ struct WorkoutReceipt: View {
         }.listRowBackground(GymPalette.card)
       }.modifier(GymPage()).roomTitle(receipt.title, subtitle: receipt.subtitle(gym.dates))
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.tint(GymPalette.accent) } }.roomBar(.gym)
-        .reachBand { band }
+        .reachBand(backless: true) { band }
     }.modifier(GymPage()).presentationDetents([.large])
       .sensoryFeedback(.success, trigger: receipt.keptName) { old, new in old == nil && new != nil }
       .task { await receipt.loadReview(gym) }

@@ -76,7 +76,7 @@ struct NotesScreen: View {
         Group {
           ForEach(gym.notes, id: \.id) { note in
             Button { editor = NoteEditorIdentity(note: note) } label: {
-              GymRow(title: note.title, meta: note.body.split(whereSeparator: \.isNewline).first.map(String.init), lineLimit: 2)
+              GymRow(title: note.title, meta: note.body.split(whereSeparator: \.isNewline).first.map(String.init), trailing: .door, lineLimit: 2)
             }
               .swipeActions { Button("Delete", role: .destructive) { _ = gym.run(DeleteNote(note.id)) } }
               .contextMenu {

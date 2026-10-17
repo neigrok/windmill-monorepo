@@ -54,6 +54,7 @@ final class GymModel {
   @ObservationIgnored var adoptionReadThrough: UInt64?
   @ObservationIgnored var proposalReadReplica: String?
   var coachRemovalReceipts: [RoutineRemovalReceipt] = []
+  var outOfDateProposals: Set<ID<Proposal>> = []
   @ObservationIgnored var shownCoachRemovals: [String: Proposal] = [:]
   @ObservationIgnored var awaitedCoachDecisions: [ID<Proposal>: CoachQueuedDecision] = [:]
   @ObservationIgnored var awaitedRecoveries: [ID<Session>: RecoveryAction] = [:]
@@ -222,7 +223,7 @@ final class GymModel {
       publish(\.bodyweight, snapshot.bodyweight); publish(\.preferences, snapshot.preferences)
       publish(\.isAnonymous, snapshot.anonymous); publish(\.personalCounts, snapshot.counts); publish(\.workoutHidden, snapshot.hidden)
       if snapshot.planUnreadable { report("gym_read", UnreadablePlan()) }
-      updateCoachProposals(replica: snapshot.coach.replica, receipts: snapshot.coach.receipts, proposals: snapshot.coach.proposals, queued: snapshot.coach.queued)
+      updateCoachProposals(snapshot.coach)
       if let runtime {
         let replica = try runtime.storageRead { try $0.device().activeReplica }
         publish(\.account, replica.meta.state == .bound ? replica.meta.account : nil)

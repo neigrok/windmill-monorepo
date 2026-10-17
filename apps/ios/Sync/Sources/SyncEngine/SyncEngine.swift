@@ -305,6 +305,10 @@ public final class SyncEngine: Replica {
 
 // MARK: - The core
 
+// How a scope's last failed push ended: answered with a failure, or with no answer at all — no network, a refused
+// connection, a deadline — so its entries never reached the server.
+enum PushFailure: Sendable { case answered, unanswered }
+
 // What every part of the engine shares: the store, the session tokens, this instance's actor (D-2), the clocks, ids and
 // randomness, connectivity, the app's foreground, the scopes opened by hand and those wanted pulled, the product
 // bindings, every loop's wake-up, and the pipe to the views. Every write runs as this instance and is published in
@@ -334,7 +338,7 @@ final class EngineCore: Sendable {
   let foreground = Atomic(true)
   let opened = Mutex<[ScopeRef]>([])
   let doubts = Mutex(Doubts())
-  let failedPushScopes = Mutex<[[UInt8]: Set<ScopeRef>]>([:])
+  let failedPushScopes = Mutex<[[UInt8]: [ScopeRef: PushFailure]]>([:])
   let writers = WriterLine()
   let slices: Mutex<WriterSlices>
   // The thread inside a write, 0 when none: a write nested in one on the same thread (an engine call from a commit's
@@ -598,11 +602,13 @@ final class EngineCore: Sendable {
     publisher.publish(change, [])
   }
 
-  func recordPushFailure(_ request: PushRequest, failed: Bool) {
+  // How a push of the request's scopes ended, for the status: nil when it was taken, or changed so the next push differs.
+  func recordPushFailure(_ request: PushRequest, _ failure: PushFailure?) {
     let scopes = Set(request.intents.map(\.scope))
     let changed = failedPushScopes.withLock { failures in
-      let id = Array(request.replica.utf8), before = failures[id] ?? []
-      let next = failed ? before.union(scopes) : before.subtracting(scopes)
+      let id = Array(request.replica.utf8), before = failures[id] ?? [:]
+      var next = before
+      for scope in scopes { next[scope] = failure }
       guard next != before else { return false }
       failures[id] = next.isEmpty ? nil : next
       return true

@@ -13,12 +13,19 @@ nonisolated struct CoachReviewExtent: Equatable {
 nonisolated struct CoachReviewPosition: Equatable { let extent: CoachReviewExtent; let atEnd: Bool }
 // The decision a proposal waits on the log for; an unreadable queue may hold one, and cannot say which.
 nonisolated enum CoachQueuedDecision: String { case apply, dismiss, unreadable }
+// The proposals, their removal receipts, the decisions still queued and the proposals out of date, as one read saw them.
+nonisolated struct CoachProposalsRead {
+  let replica: String
+  let receipts: [RoutineRemovalReceipt]
+  let proposals: [Proposal]
+  let queued: Set<ID<Proposal>>
+  let outOfDate: Set<ID<Proposal>>
+}
 
 extension GymModel {
-  // The proposals, their removal receipts and the decisions still queued, in one read, so a decision the queue let go is
-  // judged by the proposal state that came with it.
-  nonisolated static func readCoachProposals(_ read: Reader) throws
-    -> (replica: String, receipts: [RoutineRemovalReceipt], proposals: [Proposal], queued: Set<ID<Proposal>>) {
+  // One read, so a decision the queue let go is judged by the proposal state that came with it, and a proposal is out of
+  // date by the domain's own Apply rule over the routine as this phone stores it and as the log confirmed it.
+  nonisolated static func readCoachProposals(_ read: Reader) throws -> CoachProposalsRead {
     let receipts = try RoutineRemovalReceipt.read(read)
     let decisions = try read.commands().filter { [Gym.Commands.applyProposal, Gym.Commands.dismissProposal].contains($0.command.name) }
     let all = try read.repository(Proposal.self).all(in: .drawn)
@@ -28,26 +35,31 @@ extension GymModel {
       guard queued.contains(proposal.id), let confirmed = try read.confirmed(Proposal.self, proposal.id) else { return proposal }
       return try Proposal(Fields(confirmed))
     }
-    return (read.replica, receipts, proposals, queued)
+    let outOfDate = try Set(proposals.map(\.id).filter { try ProposalState(read, id: $0).outOfDate })
+    return CoachProposalsRead(replica: read.replica, receipts: receipts, proposals: proposals, queued: queued, outOfDate: outOfDate)
   }
-  func updateCoachProposals(replica: String, receipts: [RoutineRemovalReceipt], proposals: [Proposal], queued: Set<ID<Proposal>>) {
-    let changedAccount = proposalReadReplica != replica || isAnonymous
-    let previous = changedAccount ? [] : coachRemovalReceipts
-    if changedAccount { shownCoachRemovals = [:]; awaitedCoachDecisions = [:] }
-    proposalReadReplica = replica
-    publish(\.coachRemovalReceipts, receipts)
-    var visible = proposals
+  func updateCoachProposals(_ read: CoachProposalsRead) {
+    if proposalReadReplica != read.replica || isAnonymous { shownCoachRemovals = [:]; awaitedCoachDecisions = [:] }
+    proposalReadReplica = read.replica
+    publish(\.coachRemovalReceipts, read.receipts)
+    var visible = read.proposals
     for proposal in coachRemovalReceipts.map(\.proposal) + Array(shownCoachRemovals.values) where !visible.contains(where: { $0.id == proposal.id }) {
       visible.append(proposal)
     }
     publish(\.proposals, visible)
-    for receipt in coachRemovalReceipts where receipt.outcome != .pending {
-      if previous.first(where: { $0.proposal.id == receipt.proposal.id })?.outcome != receipt.outcome {
-        telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": "apply", "outcome": receipt.outcome == .applied ? "decided" : "failed"])
-      }
+    publish(\.outOfDateProposals, read.outOfDate)
+    // A removal's answer is its receipt, recorded once: the receipt keeps that it was, across launches, until it is seen.
+    if coachRemovalReceipts.contains(where: { $0.outcome != .pending && !$0.recorded }) {
+      do {
+        if case .committed(let settled, _) = try runner.run(RecordRoutineRemovalOutcomes(replica: read.replica)) {
+          for receipt in settled {
+            telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": "apply", "outcome": receipt.outcome == .applied ? "decided" : "failed"])
+          }
+        }
+      } catch { report("gym_action", error) }
     }
     // Any other decision is recorded once the log's answer reaches the phone: the queue lets it go, the proposal says how.
-    for (id, decision) in awaitedCoachDecisions where !queued.contains(id) {
+    for (id, decision) in awaitedCoachDecisions where !read.queued.contains(id) {
       awaitedCoachDecisions[id] = nil
       let taken = visible.first { $0.id == id }?.state == (decision == .apply ? "applied" : "dismissed")
       telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": decision.rawValue, "outcome": taken ? "decided" : "failed"])
@@ -101,23 +113,20 @@ extension GymModel {
     return ok
   }
   // *proposed by Coach · Sep 26 · 6:42 PM*: who proposed it, then when the log took it, its record's creation; none before.
-  func coachProposalSource(_ proposal: Proposal) -> String {
-    let source: String
+  // A connection that gave no name is not named at all, so the line is the day and the time alone.
+  func coachProposalSource(_ proposal: Proposal) -> String? {
+    let source: String?
     switch proposal.provenance {
     case .ask: source = "proposed by Coach"
-    case .mcp(let connection, let agent): source = "proposed by " + (agent.isEmpty ? connection : agent)
+    case .mcp(let connection, let agent): source = (agent.nilIfEmpty ?? connection.nilIfEmpty).map { "proposed by " + $0 }
     case .other: source = "proposed by a connected tool"
     }
-    guard let created = proposalCreatedAt(proposal) else { return source }
-    return source + " · " + dates.dayAndTime(created)
+    let parts = [source, proposalCreatedAt(proposal).map { dates.dayAndTime($0) }].compactMap { $0 }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
   func coachRoutine(_ proposal: Proposal) -> Routine? { routines.first { $0.id == proposal.routineId } }
-  // Out of date, it can no longer be applied: a newer proposal replaced it, or its routine moved while it waited.
-  func coachProposalOutOfDate(_ proposal: Proposal) -> Bool {
-    if proposal.state == "superseded" || proposal.supersededBy != nil { return true }
-    guard proposal.state == "pending", let base = proposal.baseRevision, let revision = coachRoutine(proposal)?.revision else { return false }
-    return revision > base
-  }
+  // Out of date, it can no longer be applied: the domain's own Apply rule says so (readCoachProposals).
+  func coachProposalOutOfDate(_ proposal: Proposal) -> Bool { outOfDateProposals.contains(proposal.id) }
   // Whether a proposal moves its movements: against its routine while it waits, by the store's count once it settled.
   func coachReorders(_ proposal: Proposal, besides lines: [CoachChange]) -> Bool {
     guard proposal.state == "pending" else { return proposal.changeCount == lines.filter { !$0.kept }.count + 1 }
@@ -129,8 +138,8 @@ extension GymModel {
   func coachChangeCount(_ proposal: Proposal) -> Int { proposal.changeCount ?? coachChanges(proposal).filter { !$0.kept }.count }
   // A proposal's lines for its card and its Review: each movement in the proposal's order, then a new name and a new order.
   func coachChanges(_ proposal: Proposal) -> [CoachChange] {
+    guard proposal.intent != "remove" else { return [.routineRemoved] }
     let routine = coachRoutine(proposal)
-    guard proposal.intent != "remove" else { return [CoachChange(removing: routine?.name ?? proposal.baseName ?? "Routine")] }
     let name = { (id: ID<Exercise>) in self.catalogue.find(id)?.name ?? "Movement unavailable" }
     var lines = proposal.changes.map { change -> CoachChange in
       switch change.kind {
@@ -163,14 +172,16 @@ extension GymModel {
       let taken: Bool
       do { taken = try runner.read(Gym.scope) { try Self.queuedDecision(id, in: $0)?.isAdmitted ?? true } }
       catch { report("gym_read", error); taken = false }
-      let outcome = taken ? "ok" : runtime.engine.status.online ? "failed" : "offline"
+      // Offline when nothing reached the log, no network or no answer; failed when the log answered with a failure.
+      let status = runtime.engine.status
+      let outcome = taken ? "ok" : !status.online || status.unansweredPushes.contains(Gym.scope) ? "offline" : "failed"
       telemetry.event("gym_proposal_outcome", properties: ["screen": "review", "action": "retry", "outcome": outcome])
       runtime.engine.foreground(); refresh()
     }
   }
 }
 
-// One line of a proposal, the same on its card and in its Review: the symbol is its one accent; a removal is alarm.
+// One line of a proposal, the same on its card and in its Review: the symbol is its one accent, alarm on a removal.
 struct CoachChange: Equatable {
   let symbol: String?
   let title: String
@@ -181,11 +192,11 @@ struct CoachChange: Equatable {
   init(symbol: String?, title: String, change: String?, kept: Bool = false) {
     self.symbol = symbol; self.title = title; self.change = change; self.kept = kept
   }
-  init(removing routine: String) { symbol = "minus"; title = routine; removal = true }
+  // A removal's one row: the sheet's title and the card's eyebrow already name the routine, so the row says what goes.
+  static let routineRemoved: CoachChange = { var line = CoachChange(symbol: "minus", title: "Routine", change: "Removed"); line.removal = true; return line }()
 
   var row: GymRow {
-    GymRow(title: title, meta: change, leading: symbol.map { .symbol($0, removal ? GymPalette.alarm : GymPalette.accent) },
-           titleColor: removal ? GymPalette.alarm : GymPalette.ink)
+    GymRow(title: title, meta: change, leading: symbol.map { .symbol($0, removal ? GymPalette.alarm : GymPalette.accent) })
   }
 
   // A scheme on one line: *3 × 5 · 80 kg* when its sets agree, set by set when they differ, *open* with none.
@@ -241,7 +252,7 @@ struct ProposalReviewSheet: View {
   var outOfDate: String? {
     guard let proposal, gym.coachProposalOutOfDate(proposal) else { return nil }
     if proposal.supersededBy != nil { return "A newer proposal replaced this one. Nothing was applied." }
-    if proposal.state == "pending" { return "\(routineName) changed after this was written. Nothing was applied." }
+    if proposal.state == "pending" { return "The routine changed after this was written. Nothing was applied." }
     return "This proposal is out of date. Nothing was applied."
   }
   // The decision the log has not answered yet, while it waits.
@@ -266,7 +277,7 @@ struct ProposalReviewSheet: View {
   var primaryTitle: String {
     if stalled { return "Retry" }
     switch waiting {
-    case nil: return removal ? "Remove " + routineName : "Apply"
+    case nil: return removal ? "Remove routine" : "Apply"
     case .apply: return removal ? "Removing…" : "Applying…"
     case .dismiss: return "Turning down…"
     case .unreadable: return "Sending…"
@@ -277,11 +288,12 @@ struct ProposalReviewSheet: View {
     if removal { return "Your logged sets stay. Nothing is removed until you tap." }
     return count > 1 ? "All or none. Nothing changes until you tap." : "Nothing changes until you tap."
   }
-  // The band's one caption slot: it never empties and always holds the tallest line it can show, so Apply never moves.
+  // The band's one caption slot keeps the height of its tallest line, so Apply never moves; it is blank while the decision
+  // waits, since the primary names the act in flight.
   var captions: [String] { ["Scroll to the end to apply.", promise, "Finish your workout to apply.", "Not confirmed yet."] }
   var caption: String {
     if stalled { return captions[3] }
-    if pending { return promise }
+    if pending { return "" }
     if gym.openSession != nil { return captions[2] }
     return seenEnd ? promise : captions[0]
   }
@@ -315,8 +327,8 @@ struct ProposalReviewSheet: View {
           extent = position.extent
           if position.atEnd, position.extent.viewport > 0, position.extent.content > 0 { seen = position.extent }
         }
-        .roomTitle(routine?.name ?? proposal?.baseName ?? "Proposal", subtitle: proposal.map(gym.coachProposalSource)).modifier(GymPage())
-        .reachBand { band }
+        .roomTitle(routine?.name ?? proposal?.baseName ?? "Proposal", subtitle: proposal.flatMap(gym.coachProposalSource)).modifier(GymPage())
+        .reachBand(backless: true) { band }
         .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
         .alert("Turn this down?", isPresented: $turningDown) {
           Button("Turn down", role: .destructive) { if let proposal { submitted = gym.coachDecideProposal(proposal, apply: false) } }

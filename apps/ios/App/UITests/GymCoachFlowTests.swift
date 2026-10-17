@@ -12,9 +12,12 @@ import UIKit
     }
   }
 
+  // The board's clock stands at noon UTC on Sep 26; the app reads it in UTC and en_US, so every time it draws is fixed.
   func launch(_ appearance: String, fixture: Bool = true, arguments: [String] = []) -> XCUIApplication {
     let app = XCUIApplication()
-    app.launchArguments = ["-model-server", "-board", "shell-last-room", "-onboarding-appearance", appearance.lowercased()] + arguments
+    app.launchEnvironment["TZ"] = "UTC"
+    app.launchArguments = ["-model-server", "-board", "shell-last-room", "-onboarding-appearance", appearance.lowercased(),
+                           "-AppleLocale", "en_US", "-AppleLanguages", "(en)"] + arguments
     if fixture { app.launchArguments.append("-coach-fixture") }
     app.launch()
     XCTAssertTrue(app.textViews["journal-editor"].waitForExistence(timeout: 10))
@@ -276,14 +279,15 @@ import UIKit
     ask("Remove Push A.", app)
     let review = app.buttons["coach-review"]
     XCTAssertEqual(review.label, "Review removal")
-    XCTAssertTrue(app.staticTexts["Push A"].exists)
+    XCTAssertTrue(app.staticTexts["Routine"].exists && app.staticTexts["Removed"].exists, "The removal's row says what goes")
     XCTAssertEqual(app.descendants(matching: .any)["coach-read-receipt"].label, "Read your movement history")
     XCTAssertFalse(app.buttons["coach-read-receipt"].exists, "A read with no workout to list is not a door")
     XCTAssertFalse(app.staticTexts["Push A has stopped moving your squat."].exists, "The card has no body")
     app.scrollViews.firstMatch.swipeUp(); review.tap()
     let apply = app.buttons["coach-apply-proposal"]
     XCTAssertTrue(apply.waitForExistence(timeout: 5))
-    XCTAssertEqual(apply.label, "Remove Push A")
+    XCTAssertEqual(apply.label, "Remove routine")
+    XCTAssertTrue(app.staticTexts["Routine"].exists && app.staticTexts["Removed"].exists)
     XCTAssertFalse(app.staticTexts["The whole routine is removed from your program. Every set you logged against it stays in the log."].exists)
     app.swipeUp()
     XCTAssertTrue(apply.wait(for: \.isEnabled, toEqual: true, timeout: 5)); apply.tap()
