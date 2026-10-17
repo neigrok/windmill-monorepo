@@ -450,15 +450,19 @@ import SyncTesting
       ["screen": "you", "action": "keep"], ["operation": "auth_sign_out", "failure_kind": "unexpected"], ["outcome": "refused"]])
   }
 
-  // A finished sign-out takes the account's name and address off this phone, whichever way it ends.
+  // A finished sign-out takes the account's name and address off this phone, whichever way it ends, and the sign-in steps
+  // open blank for whoever signs in next.
   @Test(arguments: [SignOutChoice.keep, .discard]) func aFinishedSignOutLeavesNoNameOrAddressOnThePhone(_ choice: SignOutChoice) async throws {
     let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server)
     let identity = server.identity(email: "residue@example.com")
     let residue = { ["accountName:", "accountEmail:"].map { model.preferences.string(forKey: $0 + identity.account) } }
+    let steps = { [model.email, model.code, model.appleReceiptEmail, model.codeSentAt == nil ? "-" : "sent"] }
+    model.email = "residue@example.com"; model.code = "482913"; model.codeSentAt = Date(); model.appleReceiptEmail = "residue@example.com"
     try await model.signIn(identity)
     #expect(residue() == ["Sam", "residue@example.com"])
     await model.beginSignOut(); await model.finishSignOut(choice)
     #expect(model.account == nil && residue() == [nil, nil])
+    #expect(steps() == ["", "", "", "-"])
   }
 
   // You's identity is the account's name, or its email, never "You"; its one line is the account's backup, paused or not.

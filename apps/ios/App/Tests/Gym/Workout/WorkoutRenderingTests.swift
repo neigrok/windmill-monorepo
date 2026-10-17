@@ -115,9 +115,9 @@ import SyncTesting
       receipt.failure = nil
       XCTAssertTrue(receipt.saveRoutine(free))
       try await capture(WorkoutReceipt(gym: free, receipt: receipt), name: "routine-kept-" + name, appearance: appearance, bottom: true)
-      let (_, slight) = try fixture(planned: false, count: 1)
-      await slight.workout.finish()
-      try await capture(WorkoutReceipt(gym: slight, receipt: try XCTUnwrap(slight.workout.receipt)), name: "early-receipt-" + name, appearance: appearance)
+      let (_, early) = try fixture()
+      await early.workout.finish()
+      try await capture(WorkoutReceipt(gym: early, receipt: try XCTUnwrap(early.workout.receipt)), name: "early-receipt-" + name, appearance: appearance)
       let (_, empty) = try fixture(planned: false, count: 0)
       empty.workout.remove(ID("back-squat"))
       try await capture(WorkoutScreen(gym: empty), name: "empty-" + name, appearance: appearance)

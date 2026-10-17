@@ -128,8 +128,10 @@ struct RoutineBuilder: View {
                        errorIdentifier: "routine-refusal", undoIdentifier: "builder-undo")
         }
         .navigationDestination(for: RoutineEditingSession.Step.self, destination: destination)
+        // The plan appears again each time a step pops off it, so its first appearance is the visit.
         .onAppear {
-          if !editing.appeared { nameFocused = editing.draft.isNew; editing.appeared = true }
+          guard !editing.appeared else { return }
+          editing.appeared = true; nameFocused = editing.draft.isNew
           gym.telemetry.event("gym_screen_viewed", properties: ["screen": "routine_editor"])
         }
         .onChange(of: editing.path) { _, _ in nameFocused = false }

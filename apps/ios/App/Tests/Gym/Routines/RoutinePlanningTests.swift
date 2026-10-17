@@ -8,6 +8,8 @@ import SyncCore
 import SyncEngine
 import SyncModelServer
 import SyncSchema
+import SwiftUI
+import UIKit
 @testable import Windmill
 
 @MainActor struct RoutinePlanningTests {
@@ -192,10 +194,10 @@ import SyncSchema
     #expect(gym.saveRoutine(&routine))
     harness.sync(); gym.refresh()
     #expect(gym.run(ProposeRoutine(id: ID("timed-proposal"), routineId: routine.id, name: "Push A", entries: [RoutineEntry(exerciseId: ID("timed-bench"), sets: [SetTarget(reps: 8, weightKg: 62.5)])], summary: "Heavier"))?.refusal == nil)
-    let unsent = try #require(gym.waitingRoutineProposals.first)
+    let unsent = try #require(gym.routineProposals.first)
     let lines = [gym.proposalLine(unsent)]
     harness.sync(); gym.refresh()
-    let taken = try #require(gym.waitingRoutineProposals.first)
+    let taken = try #require(gym.routineProposals.first)
     #expect(lines + [gym.proposalLine(taken)] == ["From Coach", "From Coach · 12:00\u{202F}PM"])
   }
 
@@ -206,7 +208,7 @@ import SyncSchema
     let heavier = [RoutineEntry(exerciseId: ID("bench-press"), sets: [SetTarget(reps: 8, weightKg: 62.5)]), RoutineEntry(exerciseId: ID("deadlift"))]
     #expect(gym.run(ProposeRoutine(id: ID("change"), routineId: routine.id, name: "Push A", entries: heavier, summary: "Heavier"))?.refusal == nil)
     #expect(gym.run(ProposeRoutine(id: ID("removal"), routineId: routine.id, name: "Push A", entries: [], summary: "Gone", removing: true))?.refusal == nil)
-    let titles = Dictionary(uniqueKeysWithValues: gym.waitingRoutineProposals.map { ($0.id, gym.proposalTitle($0)) })
+    let titles = Dictionary(uniqueKeysWithValues: gym.routineProposals.map { ($0.id, gym.proposalTitle($0)) })
     #expect(titles == [ID("change"): "Push A · 2 changes", ID("removal"): "Push A · a removal"])
   }
 
@@ -308,13 +310,64 @@ import SyncSchema
     #expect(gym.routineHistory(b.id).map(\.id) == [ID("s")])
   }
 
-  @Test func onlyWaitingProposalsAppear() {
+  @Test func aCoachProposalAppearsOnlyWhileItWaits() {
     let (_, gym) = fixture()
     let waiting = Proposal(id: ID("pending"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Change", changes: [])
     let settled = Proposal(id: ID("settled"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Done", changes: [], state: "applied")
     let replaced = Proposal(id: ID("old"), routineId: ID("r"), intent: "update", proposedName: "A", summary: "Old", changes: [], supersededBy: waiting.id)
     gym.proposals = [waiting, settled, replaced]; gym.outOfDateProposals = [replaced.id]
-    #expect(gym.waitingRoutineProposals.map(\.id) == [waiting.id])
+    #expect(gym.routineProposals.map(\.id) == [waiting.id])
+  }
+
+  // A connected tool's proposal gone out of date keeps its row, Out of date, the door to a Review without Apply or Turn this
+  // down; a Coach proposal leaves for its card, and a newer proposal or a routine out of sight takes the row away.
+  @Test func aConnectedToolsOutOfDateProposalKeepsItsRowAsTheDoorToItsReview() {
+    let (_, gym) = fixture()
+    gym.isAnonymous = false; gym.account = "routines-owner"
+    gym.routines = ["push", "legs", "pull", "arms", "core"].map { Routine(id: ID(RecordID($0)), name: $0.capitalized, entries: [RoutineEntry(exerciseId: ID("bench-press"))]) }
+    let proposal = { (id: String, routine: String, door: String, state: String) in
+      Proposal(id: ID(RecordID(id)), routineId: ID(RecordID(routine)), intent: "revise", proposedName: routine.capitalized, summary: "Heavier",
+               changes: [], door: door, agent: door == "mcp" ? "Claude" : "", state: state, changeCount: 1)
+    }
+    gym.proposals = [proposal("a-tool-edited", "push", "mcp", "pending"), proposal("b-tool-set-aside", "legs", "mcp", "superseded"),
+                     proposal("c-coach-set-aside", "pull", "ask", "superseded"), proposal("d-coach-newer", "arms", "ask", "pending"),
+                     proposal("e-tool-older", "arms", "mcp", "superseded"), proposal("f-tool-gone", "gone", "mcp", "pending"),
+                     proposal("g-tool-waiting", "core", "mcp", "pending"), proposal("h-tool-applied", "core", "mcp", "applied")]
+    gym.outOfDateProposals = [ID("a-tool-edited"), ID("b-tool-set-aside"), ID("c-coach-set-aside"), ID("e-tool-older"), ID("f-tool-gone")]
+    #expect(gym.routineProposals.map { [$0.id.description, gym.proposalTitle($0), gym.proposalLine($0)] } == [
+      ["a-tool-edited", "Push · 1 change", "Out of date"], ["b-tool-set-aside", "Legs · 1 change", "Out of date"],
+      ["d-coach-newer", "Arms · 1 change", "From Coach"], ["g-tool-waiting", "Core · 1 change", "From Claude"]])
+    let reviews = ["a-tool-edited", "b-tool-set-aside", "g-tool-waiting"].map { ProposalReviewSheet(gym: gym, proposalId: $0) }
+    #expect(reviews.map { [$0.outOfDate ?? "-", "\($0.decidable)", "\($0.pending)"] } == [
+      ["The routine changed after this was written. Nothing was applied.", "false", "false"],
+      ["This proposal is out of date. Nothing was applied.", "false", "false"], ["-", "true", "false"]])
+  }
+
+  // One visit to the editor is one screen event, however often its steps push over it and pop; each Targets step is its own.
+  @Test func anEditorVisitRecordsOneScreenEventAndEachTargetsStepItsOwn() async throws {
+    let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
+                          rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
+    let telemetry = TelemetryRecorder(), gym = GymModel(runner: harness.runner, telemetry: telemetry)
+    var routine = draft(gym)
+    #expect(gym.saveRoutine(&routine))
+    let editing = RoutineEditingSession(gym: gym, routine: routine.current)
+    let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+    let previousKeyWindow = scene.windows.first(where: \.isKeyWindow)
+    let window = UIWindow(windowScene: scene)
+    window.rootViewController = UIHostingController(rootView: RoutineBuilder(gym: gym, editing: editing) { _ in })
+    window.makeKeyAndVisible()
+    defer { window.isHidden = true; window.rootViewController = nil; previousKeyWindow?.makeKeyAndVisible() }
+    let screens = { telemetry.entries.withLock { $0.filter { $0.name == "gym_screen_viewed" }.compactMap { $0.properties["screen"] } } }
+    func settle(_ count: Int) async throws {
+      for _ in 0..<100 where screens().count < count { try await Task.sleep(for: .milliseconds(20)) }
+      try await Task.sleep(for: .milliseconds(700))
+    }
+    try await settle(1)
+    for visit in 1...2 {
+      editing.follow([.targets(ID("bench-press"))]); try await settle(1 + visit)
+      editing.cancelTargets(); try await settle(1 + visit)
+    }
+    #expect(screens() == ["routine_editor", "routine_targets", "routine_targets"])
   }
 
   @Test func newestProposalUsesCreationStampInsteadOfRecordID() {
@@ -325,6 +378,6 @@ import SyncSchema
     gym.run(ProposeRoutine(id: older, routineId: routine.id, name: "Push B", entries: routine.current.entries, summary: "First"))
     harness.advance(ms: 100)
     gym.run(ProposeRoutine(id: newer, routineId: routine.id, name: "Push C", entries: routine.current.entries, summary: "Second"))
-    #expect(gym.waitingRoutineProposals.first?.id == newer)
+    #expect(gym.routineProposals.first?.id == newer)
   }
 }

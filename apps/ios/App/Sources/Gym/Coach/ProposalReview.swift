@@ -51,7 +51,7 @@ extension GymModel {
     return CoachProposalsRead(replica: read.replica, receipts: receipts, proposals: proposals, queued: queued, outOfDate: outOfDate)
   }
   func updateCoachProposals(_ read: CoachProposalsRead) {
-    if proposalReadReplica != read.replica || isAnonymous { shownCoachRemovals = [:]; awaitedCoachDecisions = [:] }
+    if proposalReadReplica != read.replica || isAnonymous { shownCoachRemovals = [:]; awaitedCoachDecisions = [:]; stalledCoachDecisions = [] }
     proposalReadReplica = read.replica
     publish(\.coachRemovalReceipts, read.receipts)
     var visible = read.proposals
@@ -91,9 +91,11 @@ extension GymModel {
     } catch { report("gym_read", error); return .unreadable }
   }
   func coachProposalAwaitingReceipt(_ id: ID<Proposal>) -> Bool { coachQueuedDecision(id) != nil }
-  // After the review's wait, a decision still queued has stalled; the event names it unless the queue cannot be read.
+  // After the review's wait, a decision still queued has stalled. Its event names it unless the queue cannot be read, and is
+  // recorded once for the decision, however many waits run out on it after: a Retry's, or a Review opened on it again.
   func coachDecisionStalled(_ id: ID<Proposal>) -> Bool {
     guard let decision = coachQueuedDecision(id) else { return false }
+    guard stalledCoachDecisions.insert(id).inserted else { return true }
     var properties = ["screen": "review", "outcome": "stalled"]
     if decision != .unreadable { properties["action"] = decision.rawValue }
     telemetry.event("gym_proposal_outcome", properties: properties)
@@ -112,6 +114,7 @@ extension GymModel {
     guard coachAccountAvailable, !authPaused else { error = "Sign in to review this proposal."; return false }
     guard openSession == nil else { error = "Finish your workout first."; return false }
     start()
+    stalledCoachDecisions.remove(proposal.id)
     let decision: CoachQueuedDecision = apply ? .apply : .dismiss
     let outcome = apply ? run(ApplyProposalKeepingReceipt(proposal.id)) : run(DismissProposal(proposal.id))
     let ok = outcome != nil && outcome?.refusal == nil

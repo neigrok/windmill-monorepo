@@ -725,6 +725,7 @@ final class AppModel {
       journal.liftInk()
       sheet = nil; account = nil; journal.document = PageDocument(); journal.dirty = false; journal.editing = false; error = nil
       appleTicket = nil; signInMethods = []; accountEmail = ""; accountName = ""; appleLinkedReceipt = false
+      email = ""; code = ""; codeSentAt = nil; appleReceiptEmail = ""
       keepDismissed = false; welcome = true; preferences.set(true, forKey: "roomWelcomeRequired"); preferences.removeObject(forKey: "lastRoom"); clearAdoptionAnswers(); refresh()
       preferences.set(false, forKey: "keepDismissed")
       Task { await runtime.revokeSignedOutSessions(force: true) }

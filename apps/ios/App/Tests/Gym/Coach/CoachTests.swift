@@ -761,17 +761,25 @@ import SyncTesting
     #expect(CoachTestProtocol.state.withLock { $0.requests.isEmpty })
   }
 
-  @Test(arguments: [false, true])
-  func unavailableDeploymentHidesComposerAndPreservesAccountDraft(sse: Bool) async throws {
+  // A deployment without Coach mounts no Ask route, so a send meets the server's own 404 page; a deployment whose model
+  // is not configured says ask-not-configured, over HTTP or in the stream. Each reads the same unavailable stance.
+  @Test(arguments: ["unmounted", "http", "stream"])
+  func unavailableDeploymentHidesComposerAndPreservesAccountDraft(deployment: String) async throws {
     let body = #"{"status":503,"code":"ask-not-configured","error":"Ask is not configured"}"#
-    let reply = sse ? CoachTestProtocol.Reply.http(200, "event: error\ndata: " + body + "\n\n", "text/event-stream") : .http(503, body)
+    let reply: CoachTestProtocol.Reply = switch deployment {
+    case "unmounted": .http(404, "<html><head><title>404 Not Found</title></head><body><h1>404 Not Found</h1></body></html>", "text/html")
+    case "http": .http(503, body)
+    default: .http(200, "event: error\ndata: " + body + "\n\n", "text/event-stream")
+    }
     let (gym, rest, telemetry) = try await authed(reply), cache = store()
     defer { try? FileManager.default.removeItem(at: cache.directory) }
     let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
     coach.edit("Training question"); coach.send(); await coach.work?.value; #expect(!coach.asking)
     #expect(coach.refusal == .absent && coach.error == CoachCopy.absent && !coach.canCompose)
     #expect(gym.coachUnavailable && !coach.retryable)
-    #expect(telemetry.entries.withLock { $0.filter { $0.name == "client_error" }.isEmpty })
+    #expect(telemetry.entries.withLock { $0.filter { ["api_request_failed", "client_error", "gym_ask_outcome"].contains($0.name) }.map { [$0.name: $0.properties] } } == [
+      ["api_request_failed": ["operation": "gym_rest", "route": "/v1/gym", "method": "POST", "failure_kind": "http", "status": deployment == "unmounted" ? "404" : "503"]],
+      ["gym_ask_outcome": ["screen": "coach", "outcome": "absent"]]])
     #expect(coach.saved.text == "Training question" && coach.saved.request != nil)
     #expect(coach.available && gym.coachAccountAvailable)
     let reopened = CoachConversation(gym: gym, rest: rest, store: cache); await reopened.activate()
@@ -1044,7 +1052,7 @@ import SyncTesting
     } else {
       #expect(answer.state == "applied" && answer.intent == "remove" && answer.settledAt == nil)
       #expect(answer.summary == proposal.summary && answer.changes == proposal.changes && answer.baseName == routine.name)
-      #expect(gym.routines.isEmpty && gym.waitingRoutineProposals.isEmpty && !review.decidable)
+      #expect(gym.routines.isEmpty && gym.routineProposals.isEmpty && !review.decidable)
       #expect(try runtime.runner.read(Gym.scope) { try $0.confirmed(Proposal.self, proposal.id) } == nil)
       gym.refresh()
       try expectProposal(gym.proposals.first, equals: answer)
@@ -1270,7 +1278,7 @@ import SyncTesting
     #expect(reviews.map { $0.outOfDate ?? "-" } == ["-", "A newer proposal replaced this one. Nothing was applied.",
       "This proposal is out of date. Nothing was applied.", "The routine changed after this was written. Nothing was applied.", "-", "-"])
     #expect(reviews.map(\.decidable) == [true, false, false, false, false, false])
-    #expect(Set(gym.waitingRoutineProposals.map(\.id)) == [ID("proposal-current"), ID("proposal-replacement")])
+    #expect(Set(gym.routineProposals.map(\.id)) == [ID("proposal-current"), ID("proposal-replacement")])
   }
   // A proposal for a routine deleted here is out of date at once, inside the delete's Undo window: Routines drops its
   // row and Review offers no Apply; Undo brings the routine and the proposal back.
@@ -1286,15 +1294,15 @@ import SyncTesting
     h.sync(); gym.refresh()
     let proposal = try #require(gym.proposals.first)
     let review = ProposalReviewSheet(gym: gym, proposalId: proposal.id.description)
-    #expect(gym.waitingRoutineProposals.map(\.id) == [proposal.id] && review.decidable)
+    #expect(gym.routineProposals.map(\.id) == [proposal.id] && review.decidable)
     let deleted = try #require(gym.run(DeleteRoutine(routine.id))?.receipt)
     gym.refresh()
-    #expect(gym.routines.isEmpty && gym.waitingRoutineProposals.isEmpty && gym.coachProposalOutOfDate(proposal))
+    #expect(gym.routines.isEmpty && gym.routineProposals.isEmpty && gym.coachProposalOutOfDate(proposal))
     #expect(!review.decidable && review.outOfDate == "The routine changed after this was written. Nothing was applied.")
     #expect(!gym.coachDecideProposal(proposal, apply: true) && gym.proposals.first?.state == "pending")
     #expect(gym.undo(deleted.gestureId))
     gym.refresh()
-    #expect(gym.waitingRoutineProposals.map(\.id) == [proposal.id] && review.decidable && review.outOfDate == nil)
+    #expect(gym.routineProposals.map(\.id) == [proposal.id] && review.decidable && review.outOfDate == nil)
   }
   // An edit the log has not confirmed moves the routine under a waiting proposal: it is out of date at once, Apply is not
   // offered, and the lifter's edit stands after the log answers.
@@ -1314,7 +1322,7 @@ import SyncTesting
     gym.refresh()
     let review = ProposalReviewSheet(gym: gym, proposalId: proposal.id.description)
     #expect(gym.routines.first?.revision == proposal.baseRevision && gym.coachProposalOutOfDate(proposal))
-    #expect(gym.waitingRoutineProposals.isEmpty && !review.decidable)
+    #expect(gym.routineProposals.isEmpty && !review.decidable)
     #expect(review.outOfDate == "The routine changed after this was written. Nothing was applied.")
     #expect(!gym.coachDecideProposal(proposal, apply: true))
     h.sync(); gym.refresh()
@@ -1488,6 +1496,30 @@ import SyncTesting
     }
     #expect([unnamed("", ""), unnamed("Desk", ""), unnamed("Desk", "Claude")].map(gym.coachProposalSource) ==
       ["proposed by a connected tool · Sep 26 · 6:42\u{202F}PM", "proposed by Desk · Sep 26 · 6:42\u{202F}PM", "proposed by Claude · Sep 26 · 6:42\u{202F}PM"])
+  }
+  // A decision's stall is recorded once, however many waits run out on it — a Retry's own, or the Review opened again; a
+  // decision made again after the log refused the first stalls afresh.
+  @Test func aDecisionRecordsItsStallOnceHoweverManyWaitsRunOut() throws {
+    let (h, _) = fixture(), telemetry = TelemetryRecorder()
+    let gym = GymModel(runner: h.runner, telemetry: telemetry); gym.account = "coach-owner"
+    gym.run(CreateExercise(Exercise(id: ID("stall-bench"), name: "Bench", pattern: "press", equipment: "barbell", stepKg: 2.5)))
+    var routine = Draft(new: Routine(id: ID("stall-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("stall-bench"))]))
+    #expect(saved(gym.save(&routine)))
+    h.sync(); gym.refresh()
+    #expect(gym.run(ProposeRoutine(id: ID("stall-proposal"), routineId: routine.id, name: "Push B", entries: routine.current.entries, summary: "Rename"))?.receipt != nil)
+    h.sync(); gym.refresh()
+    let proposal = try #require(gym.proposals.first)
+    h.server.refuse(code: Gym.Codes.proposalSuperseded, detail: ["reason": "routine-changed"])
+    #expect(gym.coachDecideProposal(proposal, apply: true))
+    #expect((0..<3).map { _ in gym.coachDecisionStalled(proposal.id) } == [true, true, true])
+    h.sync(); gym.refresh()
+    #expect(gym.proposals.first?.state == "pending" && !gym.coachDecisionStalled(proposal.id))
+    #expect(gym.coachDecideProposal(try #require(gym.proposals.first), apply: true))
+    #expect((0..<2).map { _ in gym.coachDecisionStalled(proposal.id) } == [true, true])
+    h.sync(); gym.refresh()
+    #expect(gym.proposals.first?.state == "applied")
+    #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" }.map(\.properties) }
+            == ["stalled", "failed", "stalled", "decided"].map { ["screen": "review", "action": "apply", "outcome": $0] })
   }
   @Test func waitingDecisionSaysSoAfterItsWaitAndRetryPushesTheSameCommand() async throws {
     let transport = WorkoutFaultTransport(), telemetry = TelemetryRecorder(), runtime = try WorkoutStateTests.faultRuntime(transport, drivesLoops: true)
