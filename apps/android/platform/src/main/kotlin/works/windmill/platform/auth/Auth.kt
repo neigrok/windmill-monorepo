@@ -338,10 +338,13 @@ class PrefsSessions(
         return if (present) LocalSession.Unresolved(known) else LocalSession.Absent
     }
 
-    private fun persist(values: Map<String, String?>) {
+    // Whatever a write removes or replaces leaves the vault's memory with it, atomically for other writers.
+    private fun persist(values: Map<String, String?>) = synchronized(this) {
         check(!unavailable) { "Restart the app to recover the saved account." }
+        val replaced = values.keys.mapNotNull(prefs::read).filter { it !in values.values }
         try { prefs.write(values) }
         catch (failure: Exception) { unavailable = true; throw failure }
+        finally { replaced.forEach(vault::forget) }
     }
 
     private fun saved(): SavedSession? = prefs.read(bundleKey)?.let { encoded ->
