@@ -38,17 +38,18 @@ class SecretVaultTest {
         assertFalse("nor is it in there anywhere", sealed.contains(secret))
         assertFalse("nor with the encoding taken off",
             String(Base64.getDecoder().decode(sealed), Charsets.ISO_8859_1).contains(secret))
-        assertEquals(secret, vault.open(sealed))
+        assertEquals("a relaunch opens it with the same key", secret, SecretVault { key }.open(sealed))
     }
 
     @Test
     fun testTheSameSecretSealsDifferentlyEveryTime() {
         val once = vault.seal(secret)!!
         val again = vault.seal(secret)!!
+        val relaunched = SecretVault { key }
 
         assertNotEquals(once, again)
-        assertEquals(secret, vault.open(once))
-        assertEquals(secret, vault.open(again))
+        assertEquals(secret, relaunched.open(once))
+        assertEquals(secret, relaunched.open(again))
     }
 
     @Test
@@ -160,6 +161,40 @@ class SecretVaultTest {
 
         assertNull(unanswered)
         assertEquals(secret, vault.open(sealed))
+    }
+
+    @Test
+    fun testAForgottenSecretIsNeverKeptAgain() {
+        val keystore = KeystoreKey()
+        val sealed = SecretVault { keystore }.seal(secret)!!
+        val vault = SecretVault { keystore }
+        assertEquals(secret, vault.open(sealed))
+
+        vault.forget(sealed)
+        val reopened = vault.open(sealed)
+        keystore.answers = false
+
+        assertEquals("a reader still holding it can open it", secret, reopened)
+        assertNull("but nothing keeps it", vault.open(sealed))
+    }
+
+    @Test
+    fun testAFailedCipherCallDropsTheKeySoTheNextLoadsItByAliasAgain() {
+        val broken = KeystoreKey().apply { answers = false }
+        val handles = mutableListOf<SecretKey>(broken, key)
+        val reports = mutableListOf<String>()
+        val vault = SecretVault(object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) {}
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { reports += operation }
+        }) { handles.removeAt(0) }
+        val sealed = SecretVault { key }.seal(secret)!!
+
+        val unanswered = vault.open(sealed)
+        val reloaded = vault.open(sealed)
+
+        assertEquals(listOf(null, secret), listOf(unanswered, reloaded))
+        assertEquals(listOf("session_open"), reports)
+        assertEquals("both handles were loaded", emptyList<SecretKey>(), handles)
     }
 
     @Test

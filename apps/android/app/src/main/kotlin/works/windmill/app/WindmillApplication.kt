@@ -75,7 +75,9 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
         val environment = if (BuildConfig.DEBUG) "development" else "production"
         val telemetryEnabled = !BuildConfig.DEBUG || BuildConfig.WM_DEBUG_TELEMETRY
         if (telemetryEnabled) AndroidTelemetry.startSentry(this, BuildConfig.WM_SENTRY_DSN, release, environment, BuildConfig.VERSION_CODE.toString())
-        val sessions = PrefsSessions(this, telemetry = if (telemetryEnabled) SentryErrors else Telemetry.None)
+        val bootstrap = if (telemetryEnabled) SentryErrors else Telemetry.None
+        val vault = SecretVault.onThisDevice(bootstrap)
+        val sessions = PrefsSessions(this, vault, bootstrap)
         val local = sessions.localSession
         val owner = (local as? LocalSession.Owned)?.user?.id
         val baseUrl = WindmillApi.resolvedBaseUrl(BuildConfig.WM_API_BASE_URL)
@@ -92,7 +94,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
             rewriteDeviceValue = WorkoutImports.rewriteDeviceValue,
             intentResultWrites = EngineTraining.intentResultWrites,
             pendingDeviceWork = WorkoutImports.pendingDeviceWork)
-        val engineStorage = EngineStorage(this, SecretVault.onThisDevice(telemetry))
+        val engineStorage = EngineStorage(this, vault)
         if (owner != null) sessions.read()?.let { engineStorage.save(owner, it) }
         val transport = HTTPTransport(baseUrl.toString(), SyncSchema.version.toInt(), engineTelemetry)
         var delivery: suspend (String, Reply<SyncResponse>) -> Unit = { _, _ -> }

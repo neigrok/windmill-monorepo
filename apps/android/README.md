@@ -60,10 +60,13 @@ Sign-in uses an emailed six-digit code (`door:"app"`, `POST /v1/auth/verify-code
 accepts a pasted magic link or token. There are no app links.
 
 `SessionStore` seals the credential and verified user together through `SecretVault` (AES-GCM,
-Android Keystore). Engine credentials use the same vault. The vault reaches the Keystore once per
-process for its key and once per secret: it keeps what it opened or sealed in memory, retries a
-failure, and drops a sealed value from memory when storage removes or replaces it. Backup is
-disabled by both manifest and extraction rules; a Keystore failure has no plaintext fallback.
+Android Keystore). The application builds one vault, and engine credentials use it too. The vault
+loads its Keystore key once, and again after a failed seal or open. It keeps the last eight secrets
+it opened or sealed in memory, never a failure. A sealed value that a write removes, replaces or
+fails to store leaves that memory; the vault lists the last 32 such values and never keeps them
+again, not even for a read already in flight. Restoring an unchanged account, or saving the engine
+credential already stored, seals and writes nothing. Backup is disabled by both manifest and
+extraction rules; a Keystore failure has no plaintext fallback.
 Offline restore retains a previously bound account as unverified. Only a confirmed 401 expires
 identity. A durable sign-out fence prevents a restart between Keep and credential removal from
 signing the account back in.

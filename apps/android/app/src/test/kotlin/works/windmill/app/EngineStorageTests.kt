@@ -36,7 +36,7 @@ class EngineStorageTests {
         storage.save("A", "secret-A")
         storage.save("B", "secret-B")
         assertFalse(preferences().all.values.any { it.toString().contains("secret-") })
-        val restarted = EngineStorage(context, vault)
+        val restarted = EngineStorage(context, SecretVault { key })
         assertEquals(setOf("A", "B"), restarted.accounts())
         assertEquals("secret-A", restarted.token("A"))
         assertEquals("secret-B", restarted.token("B"))
@@ -71,6 +71,20 @@ class EngineStorageTests {
         keystore.answers = false
         assertEquals(List(20) { "secret-A" }, List(20) { restarted.token("A") })
         assertEquals(1, loads)
+    }
+
+    @Test fun savingTheStoredCredentialAgainWritesNothing() {
+        preferences().edit().clear().commit()
+        val keystore = KeystoreKey()
+        EngineStorage(context, SecretVault { keystore }).save("A", "secret-A")
+        val sealed = preferences().getString("token.A", null)
+        val restarted = EngineStorage(context, SecretVault { keystore })
+        assertEquals("secret-A", restarted.token("A"))
+        keystore.answers = false
+        restarted.save("A", "secret-A")
+        assertEquals(mapOf("token.A" to sealed), preferences().all)
+        assertThrows(IOException::class.java) { restarted.save("A", "secret-B") }
+        assertEquals(mapOf("token.A" to sealed), preferences().all)
     }
 
     @Test fun replacedAndDeletedCredentialsLeaveMemory() {
