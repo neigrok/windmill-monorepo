@@ -9,6 +9,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import org.junit.Assert.*
 import org.junit.Test
 import works.windmill.sync.api.*
@@ -83,6 +89,7 @@ class SyncRuntimeTests {
         var holdsRecords = false
         var schema = 2L
         var helloAnswer: CompletableDeferred<Reply<SyncResponse>>? = null
+        @Volatile var refuseReopen = false
         val socket = Socket()
         override suspend fun hello(token: String?): Reply<SyncResponse> {
             hellos.send(token)
@@ -113,7 +120,9 @@ class SyncRuntimeTests {
                 "as" to (token?.removePrefix("token:")?.let(Json::of) ?: Json.Null), "pages" to Json.array())))
         }
         override suspend fun openLive(token: String): Reply<LiveConnection> {
-            opening.incrementAndGet(); opened.complete(socket); return Reply.Answer(socket)
+            opening.incrementAndGet()
+            if (refuseReopen && opened.isCompleted) return Reply.Unreachable
+            opened.complete(socket); return Reply.Answer(socket)
         }
     }
     private inner class Fixture(bound: Boolean = true, snapshot: Json? = null,
@@ -547,8 +556,12 @@ class SyncRuntimeTests {
         }
     }
 
-    @Test fun trafficWithoutPongCannotExtendTheOutstandingPingDeadline() = runBlocking {
-        Fixture().use { fixture ->
+    @Test fun trafficWithoutPongCannotExtendTheOutstandingPingDeadlineAndTheLateSocketIsOneUnreachableTimeout() = runBlocking {
+        val paused = CompletableDeferred<Unit>()
+        Fixture(sleeper = object : EngineSleeper {
+            override suspend fun sleep(ms: Long) { if (ms == 1L) paused.complete(Unit); awaitCancellation() }
+        }).use { fixture ->
+            fixture.transport.refuseReopen = true
             fixture.runtime.enter()
             val socket = withTimeout(2_000) { fixture.transport.opened.await() }
             until { socket.sends.any { it["op"] == Json.of("sub") } }
@@ -560,6 +573,55 @@ class SyncRuntimeTests {
             fixture.clock.wall += Constants.LIVE_PONG_MS
             socket.frames.trySend(Json.objectOf("op" to Json.of("unknown")))
             withTimeout(2_000) { socket.closed.await() }
+            withTimeout(2_000) { paused.await() }
+            fixture.engine.report(EngineOperation.shutdown, EngineOutcome.success)
+            until { fixture.events.any { it.operation == EngineOperation.shutdown } }
+            assertEquals(listOf(EngineEvent(EngineOperation.live, EngineOutcome.timeout, "unreachable")),
+                fixture.events.filter { it.operation == EngineOperation.live })
+        }
+    }
+
+    @Test fun aLiveSocketTheNetworkDropsIsReportedOnceByItsTransportAsUnreachable() = runBlocking {
+        val events = CopyOnWriteArrayList<EngineEvent>()
+        val paused = CompletableDeferred<Unit>()
+        val sleeper = object : EngineSleeper {
+            override suspend fun sleep(ms: Long) { if (ms == 1L) paused.complete(Unit); awaitCancellation() }
+        }
+        // The phone's own sockets die, as when the system cuts a background app's network; the server stays up, so a reconnect opens quietly.
+        val sockets = CopyOnWriteArrayList<java.net.Socket>()
+        val client = okhttp3.OkHttpClient.Builder().socketFactory(object : javax.net.SocketFactory() {
+            override fun createSocket() = java.net.Socket().also(sockets::add)
+            override fun createSocket(host: String, port: Int): java.net.Socket = error("unconnected sockets only")
+            override fun createSocket(host: String, port: Int, local: java.net.InetAddress, localPort: Int): java.net.Socket = error("unconnected sockets only")
+            override fun createSocket(host: java.net.InetAddress, port: Int): java.net.Socket = error("unconnected sockets only")
+            override fun createSocket(host: java.net.InetAddress, port: Int, local: java.net.InetAddress, localPort: Int): java.net.Socket = error("unconnected sockets only")
+        }).build()
+        MockWebServer().use { server ->
+            val subscribed = CompletableDeferred<Unit>()
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest) =
+                    if (request.path?.startsWith("/v1/sync/live") != true) MockResponse().setResponseCode(503)
+                    else MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                        override fun onMessage(webSocket: WebSocket, text: String) {
+                            if (Json.parse(text)["op"] == Json.of("sub")) subscribed.complete(Unit)
+                        }
+                    })
+            }
+            Engine.memory(registry, null, Clock(), Identities(), "r_aaaaaaaaaaaa", telemetry = EngineTelemetry { events.add(it) }).use { engine ->
+                engine.signIn("A", mapOf("probe" to false))
+                HTTPTransport("http://127.0.0.1:${server.port}/", registry.version.toInt(), EngineTelemetry { events.add(it) }, client).use { transport ->
+                    SyncRuntime(engine, transport, Tokens().also { it.save("A", "token:A") }, "1", sleeper, listOf("probe")).use { runtime ->
+                        runtime.enter()
+                        withTimeout(5_000) { subscribed.await() }
+                        sockets.forEach { it.close() }
+                        withTimeout(5_000) { paused.await() }
+                        engine.report(EngineOperation.shutdown, EngineOutcome.success)
+                        until { events.any { it.operation == EngineOperation.shutdown } && events.any { it.operation == EngineOperation.live } }
+                        assertEquals(listOf(EngineEvent(EngineOperation.live, EngineOutcome.failure, "unreachable")),
+                            events.filter { it.operation == EngineOperation.live })
+                    }
+                }
+            }
         }
     }
 

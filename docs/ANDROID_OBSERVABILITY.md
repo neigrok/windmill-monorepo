@@ -61,7 +61,9 @@ flag persistence skips automatic onboarding rather than treating an unknown phon
 Session decoding and Keystore failures use a bootstrap Sentry sink, available before account storage
 is read. HTTP failures are owned by the shared transport, so workout stores do not report them twice.
 SDK exception deduplication is disabled because the transport's malformed exception is a singleton;
-separate failed requests must still produce separate events.
+separate failed requests must still produce separate events. Sentry groups each handled failure by
+its default grouping plus its static operation, so one exception type reported under two operations
+forms two issues.
 
 Sentry sends stack traces and exception types. Its final send hook removes exception messages,
 request details, extras, breadcrumbs and user identity. Screenshots, view hierarchies, replay, NDK
@@ -70,12 +72,19 @@ addresses, tokens, authorization headers and response bodies are excluded. Crash
 stack/type, release and operation tags; cross-event navigation history is in behavioral metrics.
 
 The application adapts `EngineTelemetry` to the existing `Telemetry` interface. The engine's
-bounded queue carries static operation/outcome enums and allowlisted refusal codes. Unexpected
-storage, read, writer, transport and lifecycle failures report under `sync_<operation>`; expected
-HTTP refusals, including update-required responses, emit metrics without Sentry issues. The engine
-owns hello, push, pull, live, retries, deadlines and cancellation. Engine network failures use
-bounded operation/outcome labels; intentional request/socket close and coroutine cancellation do
-not report issues. Unchanged engine transactions enqueue no success telemetry.
+bounded queue carries static operation/outcome enums and allowlisted codes. Unexpected storage,
+read, writer, transport and lifecycle failures report under `sync_<operation>` as a
+`SyncEngineFailure`, one Sentry issue per operation; expected HTTP refusals (400, 401, 403, 404, 409,
+410, 422, 426 and 429, and 413 on a push), including update-required responses, emit metrics without
+Sentry issues. The engine owns hello, push, pull, live, retries, deadlines and cancellation. A
+request or live socket that loses the network emits `sync_engine` with `failure_kind=unreachable`
+and no Sentry issue: no DNS answer, a refused, reset or cut connection, a timeout before a whole
+reply, a socket dropped without an HTTP response, or a heartbeat with no pong. A certificate the
+phone refuses, a malformed or oversized reply, a malformed frame and an unexpected status still
+report. A transport failure like the last one of its operation, the same status or the same error,
+is a metric alone until that operation is answered, so an outage files one issue per operation.
+Each live socket reports only its first end. Intentional request/socket close and coroutine
+cancellation do not report. Unchanged engine transactions enqueue no success telemetry.
 Runtime-owned workers contain unexpected exceptions at their coroutine boundary and report only
 the static operation/outcome. Engine closure cancels the runtime without reporting a failure;
 coroutine cancellation is rethrown. Synchronous work already running during closure cannot leak
@@ -153,6 +162,9 @@ The event queue persists before sending, sends batches of at most 50 and retries
 30 seconds while the process runs. It retains at most 500 events across accounts. A full queue
 rejects new events and reports `telemetry_overflow` once until delivery frees capacity. Storage and
 unexpected delivery failures are reported to Sentry without recursively emitting another event.
+A delivery that loses the network (offline, a timeout or an interrupted connection) retries without
+a report; a certificate the phone refuses, an unreadable acknowledgement or an unexpected status
+reports.
 Analytics batches share one OkHttp client and connection pool. Each batch captures its own bearer
 before delivery; reusing a connection does not reuse another account's credentials. A reportable
 delivery failure carries `operation=telemetry_delivery`, `method=POST`, `route=/v1/events`, elapsed
@@ -178,12 +190,13 @@ If both telemetry destinations are unreachable, local persistence cannot itself 
 ```sh
 cd apps/android
 python3 -m unittest discover -s tools/tests -v
-./gradlew :platform:testDebugUnitTest
+./gradlew :platform:testDebugUnitTest :sync-engine:testDebugUnitTest :app:testDebugUnitTest
 ```
 
 `AndroidTelemetryTest` exercises the real Sentry SDK and first-party HTTP transport against local
-collectors. `EventQueueTest` covers retry identity, restart recovery, account isolation, offline
-suppression, one delivery report per failure streak and exact onboarding names/finite properties.
+collectors, including per-operation grouping. `EventQueueTest` covers retry identity, restart
+recovery, account isolation, silent retries on lost network, one delivery report per failure streak
+and exact onboarding names/finite properties.
 HTTP tests cover concurrent diagnostics,
 listener composition, timeouts and response decoding. Release-tool tests cover signing custody,
 provenance and telemetry configuration.
@@ -191,8 +204,11 @@ provenance and telemetry configuration.
 `EngineIdleTests` drives an online and an offline hour using the shipping engine, runtime,
 HTTP transport, telemetry adapter and durable event queue with a stepped clock and real local
 HTTP/WebSocket collectors. It checks zero idle HTTP requests and queued events, then verifies
-recovery after a closed live connection. `EngineNotesScreenTests` checks unread versus empty
-notebooks, first-pull refresh and server-refused saves through the gym engine.
+recovery after a closed live connection. `TransportTests` and `SyncRuntimeTests` drop requests and
+live sockets on real local sockets and check one `unreachable` event per drop and one issue per
+outage; `EngineTelemetryTests` carries the same drops through the application adapter.
+`EngineNotesScreenTests` checks unread versus empty notebooks, first-pull refresh and
+server-refused saves through the gym engine.
 
 Native crash delivery and vendor receipt require a separate installed-app check. Local collectors
 and a successful build do not establish either.
