@@ -211,4 +211,58 @@ class AndroidTelemetryTest {
             events.shutdown()
         }
     }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun failuresOfOneExceptionTypeAndStackGroupByTheirOperation() = runTest {
+        val errors = MockWebServer()
+        val events = MockWebServer()
+        errors.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest) = MockResponse().setBody("{}")
+        }
+        events.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest) = MockResponse().setResponseCode(202).setBody("{\"accepted\":1}")
+        }
+        errors.start()
+        events.start()
+        try {
+            val context = RuntimeEnvironment.getApplication()
+            context.getSharedPreferences("works.windmill.telemetry", 0).edit().clear().commit()
+            AndroidTelemetry.startSentry(context, "http://public@localhost:${errors.port}/1",
+                "android-test", "verification", "123")
+            val telemetry = AndroidTelemetry(context, events.url("/"), "android-test", "verification",
+                "test", "123", null, { null }, backgroundScope)
+            for (operation in listOf("sync_push", "sync_pull")) {
+                telemetry.failure(operation, IllegalStateException("private detail"), mapOf("outcome" to "failure"))
+            }
+            runCurrent()
+            Sentry.flush(10_000)
+            val captured = withContext(Dispatchers.IO) {
+                val found = mutableListOf<kotlinx.serialization.json.JsonObject>()
+                while (found.size < 2) {
+                    val request = errors.takeRequest(10, TimeUnit.SECONDS)
+                    assertNotNull("Sentry SDK delivered an envelope", request)
+                    val bytes = request!!.body.readByteArray()
+                    val envelope = if (request.getHeader("Content-Encoding") == "gzip")
+                        GZIPInputStream(ByteArrayInputStream(bytes)).bufferedReader().readText()
+                    else bytes.toString(Charsets.UTF_8)
+                    val lines = envelope.lines()
+                    val item = lines.indexOfFirst { it.contains("\"type\":\"event\"") }
+                    if (item >= 0) found += WindmillJson.parseToJsonElement(lines[item + 1]) as kotlinx.serialization.json.JsonObject
+                }
+                found
+            }
+            val fingerprints = captured.map { event ->
+                (event["fingerprint"] as kotlinx.serialization.json.JsonArray).map { (it as kotlinx.serialization.json.JsonPrimitive).content }
+            }
+            assertEquals(setOf(listOf("{{ default }}", "sync_push"), listOf("{{ default }}", "sync_pull")), fingerprints.toSet())
+            val exceptions = captured.map { event -> (event["exception"] as kotlinx.serialization.json.JsonObject)["values"].toString() }
+            assertEquals(1, exceptions.distinct().size)
+            assertFalse(captured.toString().contains("private"))
+        } finally {
+            Sentry.close()
+            errors.shutdown()
+            events.shutdown()
+        }
+    }
 }

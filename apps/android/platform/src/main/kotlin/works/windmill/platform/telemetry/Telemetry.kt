@@ -1,6 +1,8 @@
 package works.windmill.platform.telemetry
 
 import androidx.compose.runtime.staticCompositionLocalOf
+import java.security.cert.CertificateException
+import javax.net.ssl.SSLPeerUnverifiedException
 import kotlinx.coroutines.CancellationException
 import works.windmill.platform.net.NetworkPhase
 import works.windmill.platform.net.WindmillApiException
@@ -80,5 +82,13 @@ object TelemetryPolicy {
         is CancellationException, is WindmillApiException.Offline -> false
         is WindmillApiException.Refused -> error.status !in setOf(400, 401, 403, 404, 409, 410, 422, 426, 429)
         else -> true
+    }
+
+    // No address, no connection, a timeout or a cut exchange; a certificate the phone refuses is not lost network.
+    fun networkLoss(error: Throwable): Boolean = when (error) {
+        is WindmillApiException.Offline, is WindmillApiException.Timeout -> true
+        is WindmillApiException.Transport -> generateSequence(error.cause) { it.cause }.take(8)
+            .none { it is CertificateException || it is SSLPeerUnverifiedException }
+        else -> false
     }
 }

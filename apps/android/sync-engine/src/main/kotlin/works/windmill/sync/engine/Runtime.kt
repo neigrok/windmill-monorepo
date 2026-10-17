@@ -6,7 +6,10 @@ import kotlinx.coroutines.channels.BufferOverflow
 
 enum class EngineOperation { commit, read, undo, release, dismiss, storage, writer, shutdown, sync, hello, push, pull, live, lifecycle, subscription }
 enum class EngineOutcome { success, refused, failure, timeout }
-data class EngineEvent(val operation: EngineOperation, val outcome: EngineOutcome, val code: String? = null)
+// A failure is a fault unless the network went away (`unreachable`) or an outage of its operation already filed one.
+data class EngineEvent(val operation: EngineOperation, val outcome: EngineOutcome, val code: String? = null, val repeated: Boolean = false) {
+    val fault: Boolean get() = outcome in setOf(EngineOutcome.failure, EngineOutcome.timeout) && code != "unreachable" && !repeated
+}
 fun interface EngineTelemetry { suspend fun record(event: EngineEvent) }
 object NoEngineTelemetry : EngineTelemetry { override suspend fun record(event: EngineEvent) = Unit }
 
@@ -20,10 +23,10 @@ internal class TelemetryQueue(private val sink: EngineTelemetry) {
             catch (_: Exception) { /* A reporting failure cannot fail or retry a committed write. */ }
         }
     }
-    fun offer(operation: EngineOperation, outcome: EngineOutcome, code: String? = null) {
+    fun offer(operation: EngineOperation, outcome: EngineOutcome, code: String? = null, repeated: Boolean = false) {
         if (worker == null) return
-        val safe = code?.takeIf { it in setOf("malformed", "not-writable", "store-failure", "cap", "too-large", "scope-dead", "sync-digest-mismatch", "sync-push-malformed") } ?: code?.let { "unknown" }
-        events.trySend(EngineEvent(operation, outcome, safe))
+        val safe = code?.takeIf { it in setOf("malformed", "not-writable", "store-failure", "cap", "too-large", "scope-dead", "sync-digest-mismatch", "sync-push-malformed", "unreachable") } ?: code?.let { "unknown" }
+        events.trySend(EngineEvent(operation, outcome, safe, repeated))
     }
     fun close() { events.close(); scope.cancel() }
 }

@@ -80,7 +80,7 @@ class EventQueue(
                     } catch (error: Exception) {
                         val delivery = error as? EventDeliveryFailure
                         val cause = delivery?.error ?: error
-                        if (!deliveryReported && TelemetryPolicy.report(cause)) {
+                        if (!deliveryReported && TelemetryPolicy.report(cause) && !TelemetryPolicy.networkLoss(cause)) {
                             failure("telemetry_delivery", cause, delivery?.properties.orEmpty())
                             deliveryReported = true
                         }

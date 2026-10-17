@@ -1,14 +1,26 @@
 package works.windmill.sync.engine
 
+import java.io.EOFException
 import java.io.IOException
+import java.io.InterruptedIOException
+import java.net.ProtocolException
+import java.net.SocketException
+import java.net.UnknownHostException
+import java.security.cert.CertificateException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import javax.net.ssl.SSLPeerUnverifiedException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.internal.http2.ConnectionShutdownException
+import okhttp3.internal.http2.ErrorCode
+import okhttp3.internal.http2.StreamResetException
 import okio.ByteString
 import works.windmill.sync.core.*
 
@@ -27,6 +39,8 @@ interface LiveConnection : AutoCloseable {
     suspend fun send(request: Json)
     suspend fun receive(): Json?
 }
+// A live connection fails its reads and sends with this once it has ended; the end was reported where it happened, or was deliberate.
+class LiveEnded internal constructor(reason: String) : IOException(reason)
 
 internal fun validateResponse(kind: String, json: Json) {
     json.member("serverTime").long(0)
@@ -53,6 +67,21 @@ internal fun validateFrame(frame: Json) {
     }
     frame["as"]?.orNull()?.str()
 }
+// The statuses the server answers on purpose: a refusal each, never a fault. A push also expects 413, which §7.4 halves or refuses too-large.
+internal object ExpectedStatuses {
+    val all = setOf(400, 401, 403, 404, 409, 410, 422, 426, 429)
+    val push = all + 413
+}
+// The network went away or stopped answering before a whole reply: no address, no connection, a reset or cut exchange, a timeout.
+internal fun unreachable(failure: Throwable): Boolean {
+    val causes = generateSequence(failure) { it.cause }.take(8).toList()
+    if (causes.any { it is CertificateException || it is SSLPeerUnverifiedException }) return false
+    return causes.any {
+        it is UnknownHostException || it is SocketException || it is InterruptedIOException || it is EOFException ||
+            it is ProtocolException && it.message == "unexpected end of stream" ||
+            it is ConnectionShutdownException || it is StreamResetException && it.errorCode == ErrorCode.CANCEL
+    }
+}
 class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineTelemetry = NoEngineTelemetry,
     client: OkHttpClient = OkHttpClient(), private val requestTimeoutMs: Long = Constants.REQUEST_TIMEOUT_MS.toLong(),
     webSocketFactory: WebSocket.Factory? = null) : SyncTransport, AutoCloseable {
@@ -62,18 +91,28 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
         .writeTimeout(30, TimeUnit.SECONDS).callTimeout(requestTimeoutMs, TimeUnit.MILLISECONDS).build()
     private val liveClient = webSocketFactory ?: this.client.newBuilder().callTimeout(0, TimeUnit.MILLISECONDS).build()
     private val telemetry = TelemetryQueue(telemetry)
-    private val calls = java.util.concurrent.ConcurrentHashMap.newKeySet<Call>()
-    private val sockets = java.util.concurrent.ConcurrentHashMap.newKeySet<LiveConnection>()
+    private val outages = ConcurrentHashMap<EngineOperation, String>()
+    private val calls = ConcurrentHashMap.newKeySet<Call>()
+    private val sockets = ConcurrentHashMap.newKeySet<LiveConnection>()
     private val closed = AtomicBoolean(false)
     override suspend fun hello(token: String?) = exchange("hello", null, token)
     override suspend fun push(request: Json, token: String) = exchange("push", request, token)
     override suspend fun pull(request: Json, token: String?) = exchange("pull", request, token)
+    // Every failure is a metric; a fault like its operation's last failure (same status, same error) repeats it until the operation is answered.
+    private fun failed(operation: EngineOperation, outcome: EngineOutcome, code: String?, like: String) {
+        val repeated = outages.put(operation, like) == like
+        telemetry.offer(operation, outcome, code, repeated && EngineEvent(operation, outcome, code).fault)
+    }
+    private fun failed(operation: EngineOperation, failure: Throwable) =
+        failed(operation, EngineOutcome.failure, "unreachable".takeIf { unreachable(failure) }, failure.javaClass.name)
     private fun request(kind: String, body: Json?, token: String?): Request = Request.Builder()
         .url(base.newBuilder().addPathSegments("v1/sync/$kind").build()).header("Sync-Schema", schema.toString())
         .apply { if (token != null) header("Authorization", "Bearer $token") }
         .apply { if (body == null) get() else post(body.jcs.toRequestBody("application/json".toMediaType())) }.build()
     private suspend fun exchange(kind: String, body: Json?, token: String?): Reply<SyncResponse> {
         if (closed.get()) return Reply.Unreachable
+        val operation = when (kind) { "hello" -> EngineOperation.hello; "push" -> EngineOperation.push; else -> EngineOperation.pull }
+        val expected = if (kind == "push") ExpectedStatuses.push else ExpectedStatuses.all
         val call = client.newCall(request(kind, body, token)); calls.add(call)
         if (closed.get()) { call.cancel(); calls.remove(call); return Reply.Unreachable }
         try {
@@ -83,7 +122,7 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
                 call.enqueue(object : Callback {
                     override fun onFailure(call: Call, failure: IOException) {
                         if (continuation.isActive) {
-                            if (current()) telemetry.offer(operation(kind), EngineOutcome.failure)
+                            if (current()) failed(operation, failure)
                             continuation.resume(Reply.Unreachable) { _, _, _ -> }
                         }
                     }
@@ -97,19 +136,23 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
                             try {
                                 val source = it.body?.source()
                                 val max = if (kind == "pull") Constants.PULL_MAX_SCOPES.toLong() * Constants.PULL_PAGE_BYTES + 65_536 else 4L * 1024 * 1024
-                                if (source == null || source.request(max + 1) && source.buffer.size > max) throw IOException("response-limit")
+                                if (source == null || source.request(max + 1) && source.buffer.size > max) error("response-limit")
                                 val json = try { Json.parse(source.readByteArray()) } catch (_: IllegalArgumentException) { null }
                                 if (it.code == 200) {
                                     if (json == null) throw JsonError("response")
                                     validateResponse(kind, json)
+                                    outages.remove(operation)
                                 } else {
                                     if (kind == "push" && it.code == 409 && body?.get("account") != null &&
                                         json?.get("as") == body["account"] && json?.get("error") != Json.of("account-mismatch"))
                                         validateResponse("push-conflict", json!!)
-                                    if (current()) telemetry.offer(operation(kind), if (it.code in setOf(400, 401, 403, 404, 409, 410, 422, 426, 429)) EngineOutcome.refused else EngineOutcome.failure)
+                                    if (current()) failed(operation, if (it.code in expected) EngineOutcome.refused else EngineOutcome.failure, null, "${it.code}")
                                 }
                                 Reply.Answer(SyncResponse(it.code, json))
-                            } catch (_: Exception) { if (current()) telemetry.offer(operation(kind), EngineOutcome.failure); Reply.Unreachable }
+                            } catch (failure: Exception) {
+                                if (current()) failed(operation, failure)
+                                Reply.Unreachable
+                            }
                         }
                         if (continuation.isActive) continuation.resume(answer) { _, _, _ -> }
                     }
@@ -117,67 +160,82 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
             }
         } finally { calls.remove(call) }
     }
-    private fun operation(kind: String) = when (kind) { "hello" -> EngineOperation.hello; "push" -> EngineOperation.push; else -> EngineOperation.pull }
     override suspend fun openLive(token: String): Reply<LiveConnection> {
         if (closed.get()) return Reply.Unreachable
-        val messages = Channel<Json>(32)
-        val socketRef = java.util.concurrent.atomic.AtomicReference<WebSocket?>()
-        val opening = CompletableDeferred<Reply<LiveConnection>>()
-        val connectionClosed = AtomicBoolean(false)
-        val connection = object : LiveConnection {
-            private val receiving = AtomicBoolean(false)
-            override suspend fun send(request: Json) {
-                val text = request.jcs
-                if (connectionClosed.get() || text.encodeToByteArray().size > Constants.LIVE_FRAME_BYTES || socketRef.get()?.let { it.queueSize() + text.encodeToByteArray().size <= Constants.LIVE_FRAME_BYTES && it.send(text) } != true) throw IOException("live-send")
-            }
-            override suspend fun receive(): Json? {
-                check(receiving.compareAndSet(false, true)) { "one-live-reader" }
-                try { return messages.receiveCatching().let { it.exceptionOrNull()?.let { failure -> throw failure }; it.getOrNull() } }
-                finally { receiving.set(false) }
-            }
-            override fun close() {
-                connectionClosed.set(true); opening.complete(Reply.Unreachable)
-                // Cancellation can invoke onFailure before cancel returns.
-                messages.close(); socketRef.get()?.cancel(); sockets.remove(this)
-            }
-        }
-        sockets.add(connection)
-        if (closed.get()) { connection.close(); return Reply.Unreachable }
+        val live = Live()
+        sockets.add(live)
+        if (closed.get()) { live.close(); return Reply.Unreachable }
         val request = Request.Builder().url(base.newBuilder().addPathSegments("v1/sync/live").addQueryParameter("schema", schema.toString()).build())
             .header("Authorization", "Bearer $token").build()
-        val listener = object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) { socketRef.set(webSocket); if (closed.get() || !opening.complete(Reply.Answer(connection))) connection.close() }
-            private fun message(webSocket: WebSocket, bytes: ByteArray) {
-                if (connectionClosed.get() || closed.get()) return
-                try {
-                    if (bytes.size > Constants.LIVE_FRAME_BYTES) throw IOException("frame-limit")
-                    val frame = Json.parse(bytes); validateFrame(frame)
-                    if (!messages.trySend(frame).isSuccess) throw IOException("live-backpressure")
-                } catch (_: Exception) {
-                    if (!connectionClosed.get() && !closed.get()) telemetry.offer(EngineOperation.live, EngineOutcome.failure)
-                    messages.close(IOException("live-frame")); webSocket.cancel()
-                }
+        live.socket.compareAndSet(null, liveClient.newWebSocket(request, live))
+        if (closed.get()) live.close()
+        try { return withTimeout(requestTimeoutMs) { live.opening.await() } }
+        catch (cancelled: CancellationException) {
+            if (cancelled !is TimeoutCancellationException) { live.close(); throw cancelled }
+            live.fail { failed(EngineOperation.live, EngineOutcome.timeout, "unreachable", "timeout") }
+            return Reply.Unreachable
+        }
+    }
+    // One live socket, as OkHttp calls it and as the runtime reads it. Only its first end reports.
+    private inner class Live : WebSocketListener(), LiveConnection {
+        val socket = AtomicReference<WebSocket?>()
+        val opening = CompletableDeferred<Reply<LiveConnection>>()
+        private val messages = Channel<Json>(32)
+        private val ended = AtomicBoolean(false)
+        private val receiving = AtomicBoolean(false)
+        override suspend fun send(request: Json) {
+            val text = request.jcs
+            val size = text.encodeToByteArray().size
+            val open = socket.get()?.takeUnless { ended.get() } ?: throw LiveEnded("live-send")
+            if (size > Constants.LIVE_FRAME_BYTES || open.queueSize() + size > Constants.LIVE_FRAME_BYTES) {
+                fail { failed(EngineOperation.live, EngineOutcome.failure, null, "live-send") }
+                throw LiveEnded("live-send")
             }
-            override fun onMessage(webSocket: WebSocket, text: String) = message(webSocket, text.encodeToByteArray())
-            override fun onMessage(webSocket: WebSocket, bytes: ByteString) = message(webSocket, bytes.toByteArray())
-            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, null) }
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { messages.close(); sockets.remove(connection) }
-            override fun onFailure(webSocket: WebSocket, failure: Throwable, response: Response?) {
-                val status = response?.code
-                response?.close()
-                if (connectionClosed.get() || closed.get()) {
-                    opening.complete(Reply.Unreachable); messages.close(); sockets.remove(connection)
-                    return
-                }
-                telemetry.offer(EngineOperation.live,
-                    if (status in setOf(400, 401, 403, 404, 409, 410, 422, 426, 429)) EngineOutcome.refused else EngineOutcome.failure)
-                opening.complete(if (status != null) Reply.Failed(SyncResponse(status)) else Reply.Unreachable); messages.close(IOException("live-failed")); sockets.remove(connection)
+            if (!open.send(text)) throw LiveEnded("live-send")
+        }
+        override suspend fun receive(): Json? {
+            check(receiving.compareAndSet(false, true)) { "one-live-reader" }
+            try { return messages.receiveCatching().let { it.exceptionOrNull()?.let { failure -> throw failure }; it.getOrNull() } }
+            finally { receiving.set(false) }
+        }
+        override fun close() = end(null)
+        // A failure reports on the connection's first end only; its reader then fails rather than reading null.
+        fun fail(opened: Reply<LiveConnection> = Reply.Unreachable, report: () -> Unit) {
+            if (closed.get()) return close()
+            if (ended.compareAndSet(false, true)) report()
+            end(LiveEnded("live-failed"), opened)
+        }
+        private fun end(failure: LiveEnded?, opened: Reply<LiveConnection> = Reply.Unreachable) {
+            ended.set(true)
+            opening.complete(opened); messages.close(failure)
+            socket.get()?.cancel(); sockets.remove(this)
+        }
+        override fun onOpen(webSocket: WebSocket, response: Response) {
+            socket.set(webSocket)
+            if (closed.get() || !opening.complete(Reply.Answer(this))) close() else outages.remove(EngineOperation.live)
+        }
+        private fun message(bytes: ByteArray) {
+            if (ended.get() || closed.get()) return
+            try {
+                if (bytes.size > Constants.LIVE_FRAME_BYTES) error("frame-limit")
+                val frame = Json.parse(bytes); validateFrame(frame)
+                if (!messages.trySend(frame).isSuccess) error("live-backpressure")
+            } catch (fault: Exception) { fail { failed(EngineOperation.live, fault) } }
+        }
+        override fun onMessage(webSocket: WebSocket, text: String) = message(text.encodeToByteArray())
+        override fun onMessage(webSocket: WebSocket, bytes: ByteString) = message(bytes.toByteArray())
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, null) }
+        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = end(null)
+        override fun onFailure(webSocket: WebSocket, failure: Throwable, response: Response?) {
+            val status = response?.code
+            response?.close()
+            // Cancelling an ended socket calls back here, sometimes before cancel returns.
+            if (ended.get()) return
+            if (status == null) fail { failed(EngineOperation.live, failure) }
+            else fail(Reply.Failed(SyncResponse(status))) {
+                failed(EngineOperation.live, if (status in ExpectedStatuses.all) EngineOutcome.refused else EngineOutcome.failure, null, "$status")
             }
         }
-        val socket = liveClient.newWebSocket(request, listener); socketRef.compareAndSet(null, socket)
-        if (closed.get()) connection.close()
-        try { return withTimeout(requestTimeoutMs) { opening.await() } }
-        catch (cancelled: CancellationException) { connection.close(); if (cancelled is TimeoutCancellationException) { telemetry.offer(EngineOperation.live, EngineOutcome.timeout); return Reply.Unreachable }; throw cancelled }
     }
     override fun close() {
         if (closed.compareAndSet(false, true)) { calls.forEach(Call::cancel); sockets.forEach(LiveConnection::close); telemetry.close() }

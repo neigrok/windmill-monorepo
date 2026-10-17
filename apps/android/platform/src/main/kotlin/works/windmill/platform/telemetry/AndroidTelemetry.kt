@@ -124,9 +124,11 @@ object SentryErrors : Telemetry {
     override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
         runCatching {
             val event = SentryEvent(error)
+            val safeOperation = TelemetryPolicy.operation(operation)
             for ((key, value) in TelemetryPolicy.properties(properties)) event.setTag(key, value)
-            event.setTag("operation", TelemetryPolicy.operation(operation))
+            event.setTag("operation", safeOperation)
             event.setTag("failure_kind", TelemetryPolicy.failureKind(error))
+            event.fingerprints = listOf("{{ default }}", safeOperation)
             Sentry.captureEvent(event)
         }.onFailure { Log.e("WindmillTelemetry", "Error delivery unavailable") }
     }

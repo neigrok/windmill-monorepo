@@ -171,10 +171,10 @@ class EventQueueTest {
     fun deliveryDiagnosticsReportOncePerFailureStreakAndResetAfterSuccess() = runTest {
         var online = false
         var attempts = 0
-        val failure = WindmillApiException.Timeout(java.io.InterruptedIOException("private transport detail"))
+        val failure = WindmillApiException.Unexpected(IllegalStateException("private transport detail"))
         val diagnostics = mapOf(
-            "method" to "POST", "route" to "/v1/events", "network_phase" to "response_body",
-            "duration_ms" to "40", "operation" to "http_request", "failure_kind" to "timeout",
+            "method" to "POST", "route" to "/v1/events", "network_phase" to "decode",
+            "duration_ms" to "40", "operation" to "http_request", "failure_kind" to "unexpected",
         )
         val reports = mutableListOf<Pair<String, Map<String, String>>>()
         val queue = EventQueue(null, null, { null }, { true }, { batch, _ ->
@@ -201,5 +201,37 @@ class EventQueueTest {
         runCurrent()
         assertEquals(5, attempts)
         assertEquals(List(2) { "telemetry_delivery" to diagnostics }, reports)
+    }
+
+    @Test
+    fun lostNetworkRetriesSilentlyWhileARefusedCertificateOrABrokenReplyReportsOncePerStreak() = runTest {
+        val refusedCertificate = WindmillApiException.Transport(javax.net.ssl.SSLHandshakeException("chain validation failed")
+            .apply { initCause(java.security.cert.CertificateException("untrusted")) })
+        val outcomes = listOf<Exception?>(
+            WindmillApiException.Offline,
+            WindmillApiException.Timeout(java.net.SocketTimeoutException("timeout")),
+            WindmillApiException.Transport(java.net.SocketException("Connection reset")),
+            WindmillApiException.Transport(java.io.IOException("unexpected end of stream", java.io.EOFException())),
+            refusedCertificate,
+            WindmillApiException.Unexpected(IllegalStateException("private")),
+            null,
+            WindmillApiException.Malformed,
+        )
+        var attempts = 0
+        val reports = mutableListOf<Pair<String, Throwable>>()
+        val queue = EventQueue(null, null, { null }, { true }, { batch, _ ->
+            outcomes.getOrNull(attempts++)?.let { throw EventDeliveryFailure(it, emptyMap()) }
+            batch.events.size
+        }, { operation, error, _ -> reports += operation to error }, backgroundScope, retryMs = 100)
+        queue.add("app_started", emptyMap())
+        runCurrent()
+        repeat(6) { advanceTimeBy(100); runCurrent() }
+        assertEquals(7, attempts)
+        assertEquals(listOf<Pair<String, Throwable>>("telemetry_delivery" to refusedCertificate), reports)
+        queue.add("app_foregrounded", emptyMap())
+        runCurrent()
+        advanceTimeBy(100); runCurrent()
+        assertEquals(9, attempts)
+        assertEquals(listOf("telemetry_delivery" to refusedCertificate, "telemetry_delivery" to WindmillApiException.Malformed), reports)
     }
 }

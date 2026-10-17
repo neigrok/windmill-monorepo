@@ -154,6 +154,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 val start = mono()
                 try { liveStep(); if (mono() - start >= 30_000) k = 0 }
                 catch (_: CancellationException) { if (!isActive) break }
+                catch (_: LiveEnded) { /* Its end is already reported. */ }
                 catch (_: Exception) { engine.report(EngineOperation.live, EngineOutcome.failure) }
                 if (foreground && online && seat() != null) {
                     engine.subscriptions(products).forEach(pullWanted::add); pullerWake.trySend(Unit)
@@ -495,7 +496,9 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 for (scope in following - scopes) { connection.send(Json.objectOf("op" to Json.of("unsub"), "scope" to scope.json)); engine.lock.withLock { engine.doubts.unfollowed(scope, mono()) } }
                 for (scope in scopes - following) { connection.send(Json.objectOf("op" to Json.of("sub"), "scope" to scope.json)); engine.lock.withLock { engine.doubts.followed(scope, mono()) } }
                 following.clear(); following.addAll(scopes)
-                if (pongDue?.let { mono() >= it } == true) throw IllegalStateException("live-pong-timeout")
+                if (pongDue?.let { mono() >= it } == true) {
+                    engine.report(EngineOperation.live, EngineOutcome.timeout, "unreachable"); throw LiveEnded("live-pong-timeout")
+                }
                 if (pongDue == null && mono() - heard >= Constants.LIVE_PING_MS) { connection.send(Json.objectOf("op" to Json.of("ping"))); pongDue = mono() + Constants.LIVE_PONG_MS }
                 val item = withTimeoutOrNull(1_000) { incoming.receiveCatching() }
                 if (item == null) continue
