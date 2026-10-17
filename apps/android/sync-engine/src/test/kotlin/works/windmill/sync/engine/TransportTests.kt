@@ -1,11 +1,19 @@
 package works.windmill.sync.engine
 
+import java.io.File
 import java.io.IOException
+import java.net.ServerSocket
+import java.security.KeyStore
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.KeyManagerFactory
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.runTest
 import okhttp3.*
+import okhttp3.internal.http2.ErrorCode
+import okhttp3.internal.http2.StreamResetException
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.SocketPolicy
@@ -107,18 +115,18 @@ class TransportTests {
                     valid.with("serverTime" to Json.Num(0.5)), valid.with("error" to Json.of("unknown"))).withIndex()) {
                     server.enqueue(MockResponse().setResponseCode(409).setBody(malformed.jcs))
                     assertSame(Reply.Unreachable, transport.push(request, "token"))
-                    assertEquals(EngineEvent(EngineOperation.push, EngineOutcome.failure, repeated = index > 0), withTimeout(2_000) { events.receive() })
+                    assertEquals(EngineEvent(EngineOperation.push, EngineOutcome.failure, "malformed", repeated = index > 0), withTimeout(2_000) { events.receive() })
                 }
                 for (code in listOf("gap", "replica-forked", "replica-foreign")) {
                     val response = valid.with("error" to Json.of(code))
                     server.enqueue(MockResponse().setResponseCode(409).setBody(response.jcs))
                     assertEquals(SyncResponse(409, response), answer(transport.push(request, "token")))
-                    assertEquals(EngineEvent(EngineOperation.push, EngineOutcome.refused), withTimeout(2_000) { events.receive() })
+                    assertEquals(EngineEvent(EngineOperation.push, EngineOutcome.refused, status = 409), withTimeout(2_000) { events.receive() })
                 }
                 val foreign = valid.with("as" to Json.of("B"), "epoch" to null)
                 server.enqueue(MockResponse().setResponseCode(409).setBody(foreign.jcs))
                 assertEquals(SyncResponse(409, foreign), answer(transport.push(request, "token")))
-                assertEquals(EngineEvent(EngineOperation.push, EngineOutcome.refused), withTimeout(2_000) { events.receive() })
+                assertEquals(EngineEvent(EngineOperation.push, EngineOutcome.refused, status = 409), withTimeout(2_000) { events.receive() })
             }
         }
         events.close()
@@ -132,12 +140,12 @@ class TransportTests {
                 for (status in listOf(401, 410, 426, 503)) {
                     server.enqueue(MockResponse().setResponseCode(status))
                     assertEquals(SyncResponse(status, null), answer(transport.hello("token")))
-                    assertEquals(EngineEvent(EngineOperation.hello, if (status == 503) EngineOutcome.failure else EngineOutcome.refused),
-                        withTimeout(2_000) { events.receive() })
+                    assertEquals(if (status == 503) EngineEvent(EngineOperation.hello, EngineOutcome.failure, "http", 503)
+                        else EngineEvent(EngineOperation.hello, EngineOutcome.refused, status = status), withTimeout(2_000) { events.receive() })
                 }
                 server.enqueue(MockResponse().setResponseCode(426))
                 assertEquals(Reply.Failed(SyncResponse(426)), transport.openLive("token"))
-                assertEquals(EngineEvent(EngineOperation.live, EngineOutcome.refused), withTimeout(2_000) { events.receive() })
+                assertEquals(EngineEvent(EngineOperation.live, EngineOutcome.refused, status = 426), withTimeout(2_000) { events.receive() })
             }
         }
         events.close()
@@ -182,7 +190,7 @@ class TransportTests {
                 assertTrue(withTimeout(2_000) { failed.await() }.isCanceled())
                 connected(transport.openLive("token")).use {
                     socket.fail()
-                    assertEquals(EngineEvent(EngineOperation.live, EngineOutcome.failure), withTimeout(2_000) { events.receive() })
+                    assertEquals(EngineEvent(EngineOperation.live, EngineOutcome.failure, "transport"), withTimeout(2_000) { events.receive() })
                     assertTrue(events.tryReceive().isFailure)
                 }
             }
@@ -385,12 +393,12 @@ class TransportTests {
                 // A real failure through the same telemetry queue fences all preceding close callbacks.
                 server.enqueue(MockResponse().setResponseCode(503))
                 assertEquals(503, answer(transport.hello(null)).status)
-                assertEquals(EngineEvent(EngineOperation.hello, EngineOutcome.failure), withTimeout(2_000) { events.receive() })
+                assertEquals(EngineEvent(EngineOperation.hello, EngineOutcome.failure, "http", 503), withTimeout(2_000) { events.receive() })
                 assertTrue(events.tryReceive().isFailure)
                 val next = connected(transport.openLive("token"))
                 socket.fail()
                 assertTrue(runCatching { next.receive() }.exceptionOrNull() is IOException)
-                assertEquals(EngineEvent(EngineOperation.live, EngineOutcome.failure), withTimeout(2_000) { events.receive() })
+                assertEquals(EngineEvent(EngineOperation.live, EngineOutcome.failure, "transport"), withTimeout(2_000) { events.receive() })
                 next.close()
             }
         }
@@ -447,7 +455,7 @@ class TransportTests {
                 List(2) { withTimeout(5_000) { events.receive() } }
             }
         }
-        val fence = EngineEvent(EngineOperation.hello, EngineOutcome.failure)
+        val fence = EngineEvent(EngineOperation.hello, EngineOutcome.failure, "http", 503)
         assertEquals(listOf(unreachable(EngineOperation.push), fence),
             dropped(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START)) { it.push(Json.objectOf(), "token") })
         assertEquals(listOf(unreachable(EngineOperation.hello), fence),
@@ -484,10 +492,9 @@ class TransportTests {
         assertTrue(events.tryReceive().isFailure)
     }
 
-    @Test fun faultsFileOncePerOutageUntilTheirOperationIsAnsweredAndOnlyAPushExpects413() = runBlocking {
+    @Test fun aFaultFilesOnceUntilItsOperationIsAnsweredAndLostNetworkOrARefusalEndsTheRun() = runBlocking {
         val events = kotlinx.coroutines.channels.Channel<EngineEvent>(32)
-        val failure = { operation: EngineOperation -> EngineEvent(operation, EngineOutcome.failure) }
-        val repeat = { operation: EngineOperation -> EngineEvent(operation, EngineOutcome.failure, repeated = true) }
+        val http = { operation: EngineOperation, status: Int -> EngineEvent(operation, EngineOutcome.failure, "http", status) }
         MockWebServer().use { server ->
             HTTPTransport(server.url("/").toString(), 4, telemetry = EngineTelemetry { events.send(it) }).use { transport ->
                 for (response in listOf(MockResponse().setResponseCode(500), MockResponse().setResponseCode(500), MockResponse().setResponseCode(502),
@@ -495,50 +502,117 @@ class TransportTests {
                     MockResponse().setResponseCode(500))) {
                     server.enqueue(response); transport.pull(Json.objectOf(), "token")
                 }
-                for (response in listOf(MockResponse().setResponseCode(413), MockResponse().setResponseCode(500),
+                for (response in listOf(MockResponse().setResponseCode(500), MockResponse().setResponseCode(413), MockResponse().setResponseCode(500),
                     MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST), MockResponse().setResponseCode(500))) {
                     server.enqueue(response); transport.push(Json.objectOf(), "token")
                 }
                 repeat(2) { server.enqueue(MockResponse().setBody("x".repeat(4 * 1024 * 1024 + 1))); assertSame(Reply.Unreachable, transport.hello(null)) }
                 repeat(2) { server.enqueue(MockResponse().setResponseCode(503)); assertEquals(Reply.Failed(SyncResponse(503)), transport.openLive("token")) }
-                val serverSocket = CompletableDeferred<WebSocket>(); server.enqueue(socketResponse(serverSocket))
+                server.enqueue(socketResponse(CompletableDeferred()))
                 connected(transport.openLive("token")).close()
                 server.enqueue(MockResponse().setResponseCode(503)); assertEquals(Reply.Failed(SyncResponse(503)), transport.openLive("token"))
+                server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                    override fun onOpen(webSocket: WebSocket, response: Response) { webSocket.send(frame) }
+                }))
+                connected(transport.openLive("token")).use { assertEquals(json(frame), withTimeout(2_000) { it.receive() }) }
+                server.enqueue(MockResponse().setResponseCode(503)); assertEquals(Reply.Failed(SyncResponse(503)), transport.openLive("token"))
                 assertEquals(listOf(
-                    failure(EngineOperation.pull), repeat(EngineOperation.pull), failure(EngineOperation.pull), failure(EngineOperation.pull),
-                    repeat(EngineOperation.pull), failure(EngineOperation.pull), failure(EngineOperation.pull),
-                    EngineEvent(EngineOperation.push, EngineOutcome.refused), failure(EngineOperation.push),
-                    EngineEvent(EngineOperation.push, EngineOutcome.failure, "unreachable"), failure(EngineOperation.push),
-                    failure(EngineOperation.hello), repeat(EngineOperation.hello),
-                    failure(EngineOperation.live), repeat(EngineOperation.live), failure(EngineOperation.live),
-                ), List(16) { withTimeout(2_000) { events.receive() } })
+                    http(EngineOperation.pull, 500), http(EngineOperation.pull, 500).copy(repeated = true), http(EngineOperation.pull, 502),
+                    EngineEvent(EngineOperation.pull, EngineOutcome.failure, "malformed"), EngineEvent(EngineOperation.pull, EngineOutcome.failure, "malformed", repeated = true),
+                    http(EngineOperation.pull, 413), http(EngineOperation.pull, 500),
+                    http(EngineOperation.push, 500), EngineEvent(EngineOperation.push, EngineOutcome.refused, status = 413), http(EngineOperation.push, 500),
+                    EngineEvent(EngineOperation.push, EngineOutcome.failure, "unreachable"), http(EngineOperation.push, 500),
+                    EngineEvent(EngineOperation.hello, EngineOutcome.failure, "limit"), EngineEvent(EngineOperation.hello, EngineOutcome.failure, "limit", repeated = true),
+                    http(EngineOperation.live, 503), http(EngineOperation.live, 503).copy(repeated = true), http(EngineOperation.live, 503).copy(repeated = true),
+                    http(EngineOperation.live, 503),
+                ), List(18) { withTimeout(2_000) { events.receive() } })
                 assertTrue(events.tryReceive().isFailure)
             }
         }
     }
 
-    @Test fun onlyLostNetworkIsUnreachable() {
-        val cases = listOf<Pair<Throwable, Boolean>>(
-            java.net.UnknownHostException("sync.invalid") to true,
-            java.net.ConnectException("Connection refused") to true,
-            java.net.NoRouteToHostException("No route to host") to true,
-            java.net.SocketException("Software caused connection abort") to true,
-            java.net.SocketTimeoutException("Read timed out") to true,
-            java.io.InterruptedIOException("timeout") to true,
-            IOException("unexpected end of stream on https://windmill.works/...", java.io.EOFException("\\n not found")) to true,
-            java.net.ProtocolException("unexpected end of stream") to true,
-            javax.net.ssl.SSLException("Read error", java.net.SocketException("Connection reset by peer")) to true,
-            okhttp3.internal.http2.StreamResetException(okhttp3.internal.http2.ErrorCode.CANCEL) to true,
-            okhttp3.internal.http2.ConnectionShutdownException() to true,
-            javax.net.ssl.SSLHandshakeException("Chain validation failed").apply { initCause(java.security.cert.CertificateException("untrusted", java.net.SocketException("reset"))) } to false,
-            javax.net.ssl.SSLPeerUnverifiedException("Hostname windmill.works not verified") to false,
-            javax.net.ssl.SSLException("Unrecognized SSL message") to false,
-            okhttp3.internal.http2.StreamResetException(okhttp3.internal.http2.ErrorCode.PROTOCOL_ERROR) to false,
-            java.net.ProtocolException("Unexpected status line: garbage") to false,
-            IOException("disconnected") to false,
-            IllegalStateException("response-limit") to false,
-            JsonError("response") to false,
-        )
-        assertEquals(cases.map { (failure, expected) -> "$failure" to expected }, cases.map { (failure, _) -> "$failure" to unreachable(failure) })
+    @Test fun aRefusedCertificateFilesAfterTheNetworkCutAHandshake() = runBlocking {
+        val events = kotlinx.coroutines.channels.Channel<EngineEvent>(8)
+        val store = File.createTempFile("untrusted", ".p12").apply { delete(); deleteOnExit() }
+        val keytool = ProcessBuilder(File(System.getProperty("java.home"), "bin/keytool").path, "-genkeypair", "-alias", "sync", "-keyalg", "EC",
+            "-dname", "CN=localhost", "-validity", "1", "-storetype", "PKCS12", "-keystore", store.path, "-storepass", "untrusted").redirectErrorStream(true).start()
+        assertEquals(0, keytool.waitFor())
+        val keys = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply {
+            init(KeyStore.getInstance("PKCS12").apply { store.inputStream().use { load(it, "untrusted".toCharArray()) } }, "untrusted".toCharArray())
+        }
+        val tls = SSLContext.getInstance("TLS").apply { init(keys.keyManagers, null, null) }
+        ServerSocket(0).use { server ->
+            Thread {
+                runCatching { server.accept().use { cut -> cut.soTimeout = 300; runCatching { while (cut.getInputStream().read(ByteArray(4_096)) >= 0) Unit }; cut.shutdownOutput(); Thread.sleep(200) } }
+                repeat(2) { runCatching { server.accept().use { raw ->
+                    runCatching { (tls.socketFactory.createSocket(raw, null, raw.port, true) as SSLSocket).apply { useClientMode = false; startHandshake() } }
+                } } }
+            }.apply { isDaemon = true; start() }
+            HTTPTransport("https://127.0.0.1:${server.localPort}/", 4, telemetry = EngineTelemetry { events.send(it) }).use { transport ->
+                repeat(3) { assertSame(Reply.Unreachable, withTimeout(10_000) { transport.pull(Json.objectOf(), "token") }) }
+                assertEquals(listOf(EngineEvent(EngineOperation.pull, EngineOutcome.failure, "unreachable"), EngineEvent(EngineOperation.pull, EngineOutcome.failure, "tls"),
+                    EngineEvent(EngineOperation.pull, EngineOutcome.failure, "tls", repeated = true)), List(3) { withTimeout(2_000) { events.receive() } })
+                assertTrue(events.tryReceive().isFailure)
+            }
+        }
+    }
+
+    @Test fun protocolFaultsFileAfterTheNetworkCutAReplyAndRefusedStreamsAreLostNetwork() = runBlocking {
+        val events = kotlinx.coroutines.channels.Channel<EngineEvent>(8)
+        suspend fun pulls(h2: Boolean, vararg responses: MockResponse): List<EngineEvent> = MockWebServer().use { server ->
+            if (h2) server.protocols = listOf(Protocol.H2_PRIOR_KNOWLEDGE)
+            val client = OkHttpClient.Builder().apply { if (h2) protocols(listOf(Protocol.H2_PRIOR_KNOWLEDGE)) }.build()
+            HTTPTransport("http://127.0.0.1:${server.port}/", 4, telemetry = EngineTelemetry { events.send(it) }, client = client).use { transport ->
+                for (response in responses) { server.enqueue(response); assertSame(Reply.Unreachable, withTimeout(5_000) { transport.pull(Json.objectOf(), "token") }) }
+                List(responses.size) { withTimeout(2_000) { events.receive() } }.also { assertTrue(events.tryReceive().isFailure) }
+            }
+        }
+        fun reset(code: ErrorCode) = MockResponse().setSocketPolicy(SocketPolicy.RESET_STREAM_AT_START).apply { http2ErrorCode = code.httpCode }
+        val lost = EngineEvent(EngineOperation.pull, EngineOutcome.failure, "unreachable")
+        val protocol = EngineEvent(EngineOperation.pull, EngineOutcome.failure, "protocol")
+        assertEquals(listOf(lost, protocol, protocol.copy(repeated = true)), pulls(false,
+            MockResponse().setBody(pull + " ".repeat(200_000)).setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY),
+            MockResponse().setStatus("garbage"), MockResponse().setStatus("garbage")))
+        assertEquals(listOf(lost, protocol, protocol.copy(repeated = true)), pulls(true,
+            MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST), reset(ErrorCode.INTERNAL_ERROR), reset(ErrorCode.INTERNAL_ERROR)))
+        assertEquals(listOf(lost, lost), pulls(true, reset(ErrorCode.REFUSED_STREAM), reset(ErrorCode.REFUSED_STREAM)))
+    }
+
+    @Test fun aBadLiveFrameFilesOnceAcrossReconnectsUntilAValidFrameProvesTheSocketHealthy() = runBlocking {
+        val events = kotlinx.coroutines.channels.Channel<EngineEvent>(8)
+        fun sending(text: String) = MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) { webSocket.send(text) }
+        })
+        MockWebServer().use { server ->
+            HTTPTransport(server.url("/").toString(), 4, telemetry = EngineTelemetry { events.send(it) }).use { transport ->
+                for (text in listOf("not json", "not json", "not json", frame, "not json")) {
+                    server.enqueue(sending(text))
+                    connected(withTimeout(2_000) { transport.openLive("token") }).use { connection ->
+                        val received = runCatching { withTimeout(2_000) { connection.receive() } }
+                        if (text == frame) assertEquals(json(frame), received.getOrThrow()) else assertTrue(received.exceptionOrNull() is LiveEnded)
+                    }
+                }
+                val malformed = EngineEvent(EngineOperation.live, EngineOutcome.failure, "malformed")
+                assertEquals(listOf(malformed, malformed.copy(repeated = true), malformed.copy(repeated = true), malformed),
+                    List(4) { withTimeout(2_000) { events.receive() } })
+                assertTrue(events.tryReceive().isFailure)
+            }
+        }
+    }
+
+    @Test fun failureKindsFollowTheTablePlatformAlsoRuns() {
+        val rows = TransportTests::class.java.getResource("/failure-kinds.tsv")!!.readText().lines().filter { it.isNotBlank() && !it.startsWith("#") }
+        val table = rows.map { row -> row.substringAfter('\t') to row.substringBefore('\t').takeUnless { it == "-" } }
+        fun failure(chain: String): Throwable = chain.split(" <- ").map { link ->
+            val type = Class.forName(link.substringBefore('('))
+            val argument = link.substringAfter('(', "").removeSuffix(")")
+            when {
+                type == StreamResetException::class.java -> StreamResetException(ErrorCode.valueOf(argument))
+                argument.isEmpty() -> type.getConstructor().newInstance() as Throwable
+                else -> type.getConstructor(String::class.java).newInstance(argument) as Throwable
+            }
+        }.reduceRight { failure, cause -> failure.initCause(cause) }
+        assertEquals(table, table.map { (chain, _) -> chain to failureKind(failure(chain)) })
+        assertEquals(setOf("unreachable", "tls", "protocol", "malformed", "transport", null), table.map { it.second }.toSet())
     }
 }

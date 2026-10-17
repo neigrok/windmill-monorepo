@@ -583,9 +583,10 @@ class SyncRuntimeTests {
 
     @Test fun aLiveSocketTheNetworkDropsIsReportedOnceByItsTransportAsUnreachable() = runBlocking {
         val events = CopyOnWriteArrayList<EngineEvent>()
-        val paused = CompletableDeferred<Unit>()
+        // The runtime is done with the dropped socket once it pauses to reconnect, or reconnects at once on a wake left from before the drop.
+        val handled = CompletableDeferred<Unit>()
         val sleeper = object : EngineSleeper {
-            override suspend fun sleep(ms: Long) { if (ms == 1L) paused.complete(Unit); awaitCancellation() }
+            override suspend fun sleep(ms: Long) { if (ms == 1L) handled.complete(Unit); awaitCancellation() }
         }
         // The phone's own sockets die, as when the system cuts a background app's network; the server stays up, so a reconnect opens quietly.
         val sockets = CopyOnWriteArrayList<java.net.Socket>()
@@ -598,14 +599,17 @@ class SyncRuntimeTests {
         }).build()
         MockWebServer().use { server ->
             val subscribed = CompletableDeferred<Unit>()
+            val upgrades = AtomicInteger()
             server.dispatcher = object : Dispatcher() {
-                override fun dispatch(request: RecordedRequest) =
-                    if (request.path?.startsWith("/v1/sync/live") != true) MockResponse().setResponseCode(503)
-                    else MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    if (request.path?.startsWith("/v1/sync/live") != true) return MockResponse().setResponseCode(503)
+                    if (upgrades.incrementAndGet() > 1) handled.complete(Unit)
+                    return MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
                         override fun onMessage(webSocket: WebSocket, text: String) {
                             if (Json.parse(text)["op"] == Json.of("sub")) subscribed.complete(Unit)
                         }
                     })
+                }
             }
             Engine.memory(registry, null, Clock(), Identities(), "r_aaaaaaaaaaaa", telemetry = EngineTelemetry { events.add(it) }).use { engine ->
                 engine.signIn("A", mapOf("probe" to false))
@@ -614,7 +618,7 @@ class SyncRuntimeTests {
                         runtime.enter()
                         withTimeout(5_000) { subscribed.await() }
                         sockets.forEach { it.close() }
-                        withTimeout(5_000) { paused.await() }
+                        withTimeout(5_000) { handled.await() }
                         engine.report(EngineOperation.shutdown, EngineOutcome.success)
                         until { events.any { it.operation == EngineOperation.shutdown } && events.any { it.operation == EngineOperation.live } }
                         assertEquals(listOf(EngineEvent(EngineOperation.live, EngineOutcome.failure, "unreachable")),

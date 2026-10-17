@@ -1,12 +1,29 @@
 package works.windmill.platform.telemetry
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonPrimitive
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.internal.http2.ErrorCode
+import okhttp3.internal.http2.StreamResetException
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Assert.*
 import org.junit.Test
+import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.WindmillJson
 
@@ -233,5 +250,66 @@ class EventQueueTest {
         advanceTimeBy(100); runCurrent()
         assertEquals(9, attempts)
         assertEquals(listOf("telemetry_delivery" to refusedCertificate, "telemetry_delivery" to WindmillApiException.Malformed), reports)
+    }
+
+    @Test
+    fun deliveryCountsLostNetworkAsTheSyncEngineDoes() {
+        val rows = java.io.File(System.getProperty("windmill.failureKinds")).readLines().filter { it.isNotBlank() && !it.startsWith("#") }
+        val table = rows.map { row -> row.substringAfter('\t') to (row.substringBefore('\t') == "unreachable") }
+        fun failure(chain: String): Throwable = chain.split(" <- ").map { link ->
+            val type = Class.forName(link.substringBefore('('))
+            val argument = link.substringAfter('(', "").removeSuffix(")")
+            when {
+                type == StreamResetException::class.java -> StreamResetException(ErrorCode.valueOf(argument))
+                argument.isEmpty() -> type.getConstructor().newInstance() as Throwable
+                else -> type.getConstructor(String::class.java).newInstance(argument) as Throwable
+            }
+        }.reduceRight { failure, cause -> failure.initCause(cause) }
+        assertEquals(table, table.map { (chain, _) -> chain to TelemetryPolicy.networkLoss(failure(chain)) })
+        val transported = table.filter { (chain, _) -> failure(chain) is java.io.IOException }
+        assertEquals(transported, transported.map { (chain, _) -> chain to TelemetryPolicy.networkLoss(WindmillApiException.Transport(failure(chain) as java.io.IOException)) })
+        assertEquals(setOf(true, false), table.map { it.second }.toSet())
+        assertEquals(listOf(true, true, false, false, false), listOf(WindmillApiException.Offline,
+            WindmillApiException.Timeout(java.net.SocketTimeoutException("timeout")), WindmillApiException.Malformed,
+            WindmillApiException.Refused(503, works.windmill.platform.net.Refusal()), WindmillApiException.Unexpected(IllegalStateException("bug")),
+        ).map(TelemetryPolicy::networkLoss))
+    }
+
+    @Test
+    fun deliveryReportsTransportFaultsAndRetriesLostNetworkSilentlyOverRealSockets() = runBlocking {
+        suspend fun reported(vararg responses: MockResponse, h2: Boolean = false, plaintextTls: Boolean = false): List<String> = MockWebServer().use { server ->
+            java.net.ServerSocket(0).use { plaintext ->
+                if (h2) server.protocols = listOf(Protocol.H2_PRIOR_KNOWLEDGE)
+                responses.forEach(server::enqueue)
+                Thread { runCatching { plaintext.accept().use { it.getOutputStream().write("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n".toByteArray()); Thread.sleep(500) } } }
+                    .apply { isDaemon = true; start() }
+                val base = if (plaintextTls) "https://127.0.0.1:${plaintext.localPort}/".toHttpUrl() else "http://127.0.0.1:${server.port}/".toHttpUrl()
+                val client = OkHttpClient.Builder().apply { if (h2) protocols(listOf(Protocol.H2_PRIOR_KNOWLEDGE)) }.build()
+                val reports = java.util.concurrent.CopyOnWriteArrayList<String>()
+                val retried = CompletableDeferred<Unit>()
+                val attempts = java.util.concurrent.atomic.AtomicInteger()
+                val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+                try {
+                    EventQueue(null, null, { null }, { true }, { batch, bearer ->
+                        if (attempts.incrementAndGet() > 1) { retried.complete(Unit); awaitCancellation() }
+                        WindmillApi(base, { bearer }, client).send<EventBatchOut>("POST", "/v1/events", batch, operation = "telemetry_delivery").accepted
+                    }, { operation, error, _ -> reports += "$operation ${TelemetryPolicy.failureKind(error)}" }, scope, retryMs = 1).add("app_started", emptyMap())
+                    withTimeout(10_000) { retried.await() }
+                    reports.toList()
+                } finally { scope.cancel() }
+            }
+        }
+        fun reset(code: ErrorCode) = MockResponse().setSocketPolicy(SocketPolicy.RESET_STREAM_AT_START).apply { http2ErrorCode = code.httpCode }
+        assertEquals(listOf(
+            listOf("telemetry_delivery transport"), listOf("telemetry_delivery transport"), listOf("telemetry_delivery transport"),
+            listOf("telemetry_delivery http"), emptyList(), emptyList(),
+        ), listOf(
+            reported(MockResponse().setStatus("garbage")),
+            reported(reset(ErrorCode.INTERNAL_ERROR), h2 = true),
+            reported(plaintextTls = true),
+            reported(MockResponse().setResponseCode(500)),
+            reported(reset(ErrorCode.REFUSED_STREAM), reset(ErrorCode.REFUSED_STREAM), h2 = true),
+            reported(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)),
+        ))
     }
 }

@@ -9,7 +9,7 @@ private class SyncEngineFailure : Exception()
 internal fun engineTelemetry(telemetry: Telemetry) = EngineTelemetry { event ->
     if (event.outcome == EngineOutcome.success) return@EngineTelemetry
     val labels = mapOf("operation" to event.operation.name, "outcome" to event.outcome.name) +
-        (event.code?.let { mapOf("failure_kind" to it) } ?: emptyMap())
+        listOfNotNull(event.code?.let { "failure_kind" to it }, event.status?.let { "status" to "$it" })
     telemetry.event("sync_engine", labels)
     if (event.fault) telemetry.failure("sync_${event.operation.name}", SyncEngineFailure(), labels)
 }

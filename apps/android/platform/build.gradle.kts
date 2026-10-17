@@ -54,3 +54,10 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
 }
+
+// Lost network is the sync engine's rule, copied into TelemetryPolicy; this module's tests run the engine's table too.
+tasks.withType<Test>().configureEach {
+    val failureKinds = rootProject.file("sync-engine/src/test/resources/failure-kinds.tsv")
+    systemProperty("windmill.failureKinds", failureKinds.absolutePath)
+    inputs.file(failureKinds)
+}

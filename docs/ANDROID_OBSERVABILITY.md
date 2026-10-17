@@ -72,17 +72,25 @@ addresses, tokens, authorization headers and response bodies are excluded. Crash
 stack/type, release and operation tags; cross-event navigation history is in behavioral metrics.
 
 The application adapts `EngineTelemetry` to the existing `Telemetry` interface. The engine's
-bounded queue carries static operation/outcome enums and allowlisted codes. Unexpected storage,
-read, writer, transport and lifecycle failures report under `sync_<operation>` as a
-`SyncEngineFailure`, one Sentry issue per operation; expected HTTP refusals (400, 401, 403, 404, 409,
-410, 422, 426 and 429, and 413 on a push), including update-required responses, emit metrics without
-Sentry issues. The engine owns hello, push, pull, live, retries, deadlines and cancellation. A
-request or live socket that loses the network emits `sync_engine` with `failure_kind=unreachable`
-and no Sentry issue: no DNS answer, a refused, reset or cut connection, a timeout before a whole
-reply, a socket dropped without an HTTP response, or a heartbeat with no pong. A certificate the
-phone refuses, a malformed or oversized reply, a malformed frame and an unexpected status still
-report. A transport failure like the last one of its operation, the same status or the same error,
-is a metric alone until that operation is answered, so an outage files one issue per operation.
+bounded queue carries static operation/outcome enums, allowlisted codes and an HTTP answer's
+status. Unexpected storage, read, writer, transport and lifecycle failures report under
+`sync_<operation>` as a `SyncEngineFailure`, one Sentry issue per operation; expected HTTP refusals
+(400, 401, 403, 404, 409, 410, 422, 426 and 429, and 413 on a push), including update-required
+responses, emit metrics with their `status` and no Sentry issue. The engine owns hello, push, pull,
+live, retries, deadlines and cancellation. A request or live socket that loses the network emits
+`sync_engine` with `failure_kind=unreachable` and no Sentry issue: no DNS answer, a refused, reset or
+cut connection or handshake, an HTTP/2 connection that shut down or a stream it cancelled or
+refused, a timeout before a whole reply, a socket dropped without an HTTP response, or a heartbeat
+with no pong. Every other transport failure is a fault, and its `failure_kind` says why: `http` with
+the `status` of an unexpected answer, `tls` for a refused certificate or TLS exchange, `protocol` for
+a broken status line or HTTP/2 stream reset, `malformed` for a reply or frame the engine cannot
+read, `limit` for an oversized reply or frame or a full live queue, and `transport` for any other I/O
+failure. Both labels reach the `sync_engine` event and, for a fault, the issue's tags and its
+`client_error` event; a supplied `failure_kind` is kept, not replaced by the exception's class. A
+fault that repeats the fault its operation last filed, the same kind with the same status or
+exception, is a metric alone until that operation is answered by a valid HTTP 200 or live frame.
+Lost network or a refusal ends the run, so the next fault files. A steady fault therefore files once
+per outage of its operation.
 Each live socket reports only its first end. Intentional request/socket close and coroutine
 cancellation do not report. Unchanged engine transactions enqueue no success telemetry.
 Runtime-owned workers contain unexpected exceptions at their coroutine boundary and report only
@@ -131,12 +139,12 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged` | common metadata only |
 | Bodyweight/notes | `gym_bodyweight_saved`, `gym_note_moved` | common metadata only; successful local commits, no event for an unchanged drop |
 | Routines/proposals | `gym_routine_saved`, `gym_proposal_outcome`, `gym_proposal_receipt_shown` | action, outcome |
-| Engine refusals/failures | `sync_engine` | operation, outcome, failure_kind |
+| Engine refusals/failures | `sync_engine` | operation, outcome, failure_kind, status |
 | Workout imports | `gym_import_recovery` | action, state, outcome |
 | Account decisions | `gym_sign_in_decision`, `gym_sign_out` | state, action, outcome |
 | Connectivity | `sync_connectivity` | state |
 | Update | `client_update_required` | state, action, status, outcome |
-| Reliability | `api_request_failed`, `client_error` | operation, method, route, status, failure_kind, duration_ms, network_phase |
+| Reliability | `api_request_failed`, `client_error` | operation, outcome, method, route, status, failure_kind, duration_ms, network_phase |
 
 `gym_proposal_receipt_shown` carries `outcome=applied` after a visible removal receipt's durable
 acknowledgment succeeds. A failed acknowledgment reports under `gym.proposal_receipt_shown` and
@@ -162,9 +170,9 @@ The event queue persists before sending, sends batches of at most 50 and retries
 30 seconds while the process runs. It retains at most 500 events across accounts. A full queue
 rejects new events and reports `telemetry_overflow` once until delivery frees capacity. Storage and
 unexpected delivery failures are reported to Sentry without recursively emitting another event.
-A delivery that loses the network (offline, a timeout or an interrupted connection) retries without
-a report; a certificate the phone refuses, an unreadable acknowledgement or an unexpected status
-reports.
+A delivery that loses the network retries without a report, by the sync engine's `unreachable` rule;
+a refused certificate or TLS exchange, a broken status line or stream reset, an unreadable
+acknowledgement or an unexpected status reports.
 Analytics batches share one OkHttp client and connection pool. Each batch captures its own bearer
 before delivery; reusing a connection does not reuse another account's credentials. A reportable
 delivery failure carries `operation=telemetry_delivery`, `method=POST`, `route=/v1/events`, elapsed
@@ -194,9 +202,12 @@ python3 -m unittest discover -s tools/tests -v
 ```
 
 `AndroidTelemetryTest` exercises the real Sentry SDK and first-party HTTP transport against local
-collectors, including per-operation grouping. `EventQueueTest` covers retry identity, restart
-recovery, account isolation, silent retries on lost network, one delivery report per failure streak
-and exact onboarding names/finite properties.
+collectors, including per-operation grouping and a supplied failure kind and status. `EventQueueTest`
+covers retry identity, restart recovery, account isolation, silent retries on lost network, reports
+for transport faults over real sockets, one delivery report per failure streak and exact onboarding
+names/finite properties. The engine's `failure-kinds.tsv` (sync-engine test resources) is run by both
+`TransportTests` and `EventQueueTest`, so the engine and analytics delivery classify lost network
+alike.
 HTTP tests cover concurrent diagnostics,
 listener composition, timeouts and response decoding. Release-tool tests cover signing custody,
 provenance and telemetry configuration.
@@ -205,8 +216,10 @@ provenance and telemetry configuration.
 HTTP transport, telemetry adapter and durable event queue with a stepped clock and real local
 HTTP/WebSocket collectors. It checks zero idle HTTP requests and queued events, then verifies
 recovery after a closed live connection. `TransportTests` and `SyncRuntimeTests` drop requests and
-live sockets on real local sockets and check one `unreachable` event per drop and one issue per
-outage; `EngineTelemetryTests` carries the same drops through the application adapter.
+live sockets on real local sockets and check one `unreachable` event per drop, each fault's kind and
+status, and one issue per outage, including a refused certificate, a broken status line and a stream
+reset after lost network and a bad live frame across reconnects; `EngineTelemetryTests` carries the
+same drops through the application adapter.
 `EngineNotesScreenTests` checks unread versus empty notebooks, first-pull refresh and
 server-refused saves through the gym engine.
 

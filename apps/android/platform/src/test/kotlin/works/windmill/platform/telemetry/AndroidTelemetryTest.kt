@@ -10,7 +10,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -259,6 +261,73 @@ class AndroidTelemetryTest {
             val exceptions = captured.map { event -> (event["exception"] as kotlinx.serialization.json.JsonObject)["values"].toString() }
             assertEquals(1, exceptions.distinct().size)
             assertFalse(captured.toString().contains("private"))
+        } finally {
+            Sentry.close()
+            errors.shutdown()
+            events.shutdown()
+        }
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun aSuppliedFailureKindAndStatusReachTheSentryTagsAndTheClientErrorEvent() = runTest {
+        val errors = MockWebServer()
+        val events = MockWebServer()
+        val batches = java.util.concurrent.CopyOnWriteArrayList<EventBatchIn>()
+        errors.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest) = MockResponse().setBody("{}")
+        }
+        events.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val batch = WindmillJson.decodeFromString<EventBatchIn>(request.body.readUtf8()).also(batches::add)
+                return MockResponse().setResponseCode(202).setBody("{\"accepted\":${batch.events.size}}")
+            }
+        }
+        errors.start()
+        events.start()
+        try {
+            val context = RuntimeEnvironment.getApplication()
+            context.getSharedPreferences("works.windmill.telemetry", 0).edit().clear().commit()
+            AndroidTelemetry.startSentry(context, "http://public@localhost:${errors.port}/1",
+                "android-test", "verification", "123")
+            val telemetry = AndroidTelemetry(context, events.url("/"), "android-test", "verification",
+                "test", "123", null, { null }, backgroundScope)
+            telemetry.failure("sync_pull", IllegalStateException("private detail"),
+                mapOf("operation" to "pull", "outcome" to "failure", "failure_kind" to "http", "status" to "502"))
+            telemetry.failure("sync_storage", IllegalStateException("private detail"), mapOf("operation" to "storage", "outcome" to "failure"))
+            runCurrent()
+            Sentry.flush(10_000)
+            val tags = withContext(Dispatchers.IO) {
+                val found = mutableListOf<Map<String, String>>()
+                while (found.size < 2) {
+                    val request = errors.takeRequest(10, TimeUnit.SECONDS)
+                    assertNotNull("Sentry SDK delivered an envelope", request)
+                    val bytes = request!!.body.readByteArray()
+                    val envelope = if (request.getHeader("Content-Encoding") == "gzip")
+                        GZIPInputStream(ByteArrayInputStream(bytes)).bufferedReader().readText()
+                    else bytes.toString(Charsets.UTF_8)
+                    val lines = envelope.lines()
+                    val item = lines.indexOfFirst { it.contains("\"type\":\"event\"") }
+                    if (item < 0) continue
+                    val event = WindmillJson.parseToJsonElement(lines[item + 1]) as kotlinx.serialization.json.JsonObject
+                    found += (event["tags"] as kotlinx.serialization.json.JsonObject)
+                        .mapValues { (_, value) -> (value as kotlinx.serialization.json.JsonPrimitive).content }
+                        .filterKeys { it in setOf("operation", "outcome", "failure_kind", "status") }
+                }
+                found
+            }
+            assertEquals(setOf(
+                mapOf("operation" to "sync_pull", "outcome" to "failure", "failure_kind" to "http", "status" to "502"),
+                mapOf("operation" to "sync_storage", "outcome" to "failure", "failure_kind" to "IllegalStateException"),
+            ), tags.toSet())
+            withContext(Dispatchers.IO) { withTimeout(10_000) { while (batches.sumOf { it.events.size } < 2) delay(20) } }
+            assertEquals(listOf(
+                mapOf("operation" to "sync_pull", "outcome" to "failure", "failure_kind" to "http", "status" to "502"),
+                mapOf("operation" to "sync_storage", "outcome" to "failure", "failure_kind" to "IllegalStateException"),
+            ), batches.flatMap { it.events }.map { event ->
+                assertEquals("client_error", event.name)
+                event.props.mapValues { it.value.content }.filterKeys { it in setOf("operation", "outcome", "failure_kind", "status") }
+            })
         } finally {
             Sentry.close()
             errors.shutdown()
