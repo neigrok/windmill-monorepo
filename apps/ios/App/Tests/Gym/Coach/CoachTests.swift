@@ -714,14 +714,26 @@ import SyncTesting
     #expect(connections.rows == nil)
   }
 
-  @Test func connectedLogRejectsPartialReadAndKeepsBothAuthenticatedDoors() async throws {
+  // The failed read cancels the other, so whether the keys request goes out at all is the scheduler's call.
+  @Test func connectedLogFailsWhenOnlyOneOfItsTwoReadsAnswers() async throws {
     let (gym, rest, _) = try await authed(.http(200, #"{"keys":[]}"#))
     CoachTestProtocol.state.withLock { $0.replies["/v1/oauth/grants"] = .http(503, #"{"error":"Read unavailable"}"#) }
     let connections = CoachConnections(gym: gym, rest: rest); await connections.load()
-    #expect(connections.failed && connections.rows == nil && !connections.reading)
-    let calls = CoachTestProtocol.state.withLock { $0.requests }
-    #expect(Set(calls.map(\.path)) == ["/v1/oauth/grants", "/v1/mcp-keys"])
-    #expect(calls.allSatisfy { $0.method == "GET" && $0.authorization?.hasPrefix("Bearer ") == true && $0.body == nil })
+    #expect(connections.failed && connections.rows == nil && !connections.reading && !connections.connectionRequired)
+  }
+
+  @Test func connectedLogReadsGrantsAndKeysAsAuthenticatedGetsAndListsBoth() async throws {
+    let (gym, rest, _) = try await authed(.http(200, #"{"keys":[{"id":"k","createdMs":1758888000000,"name":"Laptop"}]}"#))
+    CoachTestProtocol.state.withLock { $0.replies["/v1/oauth/grants"] = .http(200, #"{"grants":[{"clientId":"a","name":"Claude","grantedMs":1790448120000,"scope":"gym:read"}]}"#) }
+    let runtime = try #require(rest.runtime), owner = try #require(try runtime.account()), token = try #require(runtime.tokens.token(for: owner))
+    let connections = CoachConnections(gym: gym, rest: rest); await connections.load()
+    #expect(!connections.failed && !connections.reading && connections.owner == owner)
+    #expect(connections.rows == [CoachConnection(id: "grant:a", name: "Claude", created: 1_790_448_120_000, levels: "read", key: false),
+                                 CoachConnection(id: "key:k", name: "Laptop", created: 1_758_888_000_000, levels: "whole account", key: true)])
+    let bearer = "Bearer " + token.value
+    #expect(CoachTestProtocol.state.withLock { $0.requests }.sorted { $0.path < $1.path } == [
+      .init(path: "/v1/mcp-keys", method: "GET", authorization: bearer, mediaType: nil, body: nil),
+      .init(path: "/v1/oauth/grants", method: "GET", authorization: bearer, mediaType: nil, body: nil)])
   }
 
   @Test func writtenProgramHandoffKeepsFreshDurableDraftWithoutSending() async throws {
@@ -1638,7 +1650,7 @@ nonisolated final class CoachCountingTokenStore: TokenStore {
 
 nonisolated final class CoachTestProtocol: URLProtocol, @unchecked Sendable {
   enum Reply: Sendable { case http(Int, String, String = "application/json"), partial(String), failure(URLError.Code), stalled }
-  struct Request: Sendable { let path: String; let method: String; let authorization: String?; let mediaType: String?; let body: Data? }
+  struct Request: Sendable, Equatable { let path: String; let method: String; let authorization: String?; let mediaType: String?; let body: Data? }
   struct State: Sendable { var reply: Reply; var replies: [String: Reply] = [:]; var requests: [Request] = []; var active: CoachTestProtocol?; var activeByPath: [String: CoachTestProtocol] = [:] }
   static let state = Mutex(State(reply: .stalled))
   override class func canInit(with request: URLRequest) -> Bool { true }
