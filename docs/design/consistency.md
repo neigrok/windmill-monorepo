@@ -288,12 +288,20 @@ these are the places it disagrees with a drawing, a brief or the build.
   best moment opens the Record with its session's point marked, a weigh-in moment opens
   Bodyweight, a month moment opens nothing — so no expander shares a list with navigation chevrons.
   The brief states both. Decide whether Android follows.
-- **9p · A record stated once.** The spec (§7.6) states a record by its moment, or by a
-  `gym/record` dot after a session's name when the one-a-week cap leaves it without one; a session
-  row's second line is always its facts, and a movement's first logged session sets no record.
-  Android states a record twice — the row's second line *Record · Bench Press 84 × 5*
-  (`LogReadout.kt`) and the woven *new best* moment. Decide whether Android follows, and rule the
-  first-session case for every surface.
+- **9p · A record stated once, and what counts as one.** The spec (§7.6) states a record by its
+  moment, or by a `gym/record` dot after a session's name when the one-a-week cap leaves it without
+  one; a session row's second line is always its facts. Android states a record twice — the row's
+  second line *Record · Bench Press 84 × 5* (`LogReadout.kt`) and the woven *new best* moment.
+  Decide whether Android follows. What counts as a new best is ruled for every surface by the shared
+  vectors (`packages/api-contract/gym/domain/training-reads.json`, `ProgressRecords`;
+  `18-progress.md`, "A new best"): a movement's first estimate is its baseline, and a new best beats
+  the best before it as the log states both, to 0.1 kg. Android drifts: `LogTimeline.kt` weaves a
+  moment for every exact record step, the first estimate's included, and `CorpusTests.kt` holds
+  `ProgressRecords` pending. Two iOS reads still compare exact estimates: the Record's **Earlier
+  records** and *Best e1RM* walk `MovementProgress.records`, so a step the log does not call a new
+  best can stand there at the same stated value as the best before it; and the receipt's *Personal
+  record* is the server's (`Review.cpp` `recordFor`), which needs a prior estimate but compares
+  exactly. Rule whether both follow the stated rule.
 - **9q · Weigh in is a bar action on iOS.** `18-progress.md` keeps one control in Android's reach
   band, the weigh-in chip; the spec (§4, §7.6) and the iOS build put *Weigh in* in The log's bar
   (`scalemass`, before the account button) and float nothing over the list, since a floating control
