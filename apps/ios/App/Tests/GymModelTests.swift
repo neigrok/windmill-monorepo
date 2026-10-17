@@ -198,6 +198,23 @@ import SyncTesting
     gym.stop(); #expect(gym.observationTask == nil)
   }
 
+  // Fix set closes as its save returns, so the session behind it shows the fix from the save alone: no tick, event or sync runs between.
+  @Test func aFixedSetIsOnTheLogTheMomentItSaves() throws {
+    let runtime = try runtime(), gym = GymModel(runner: runtime.runner, runtime: runtime)
+    gym.start(); defer { gym.stop() }
+    let now = try runtime.runner.moment().now.ms, session = gym.runner.mint(Session.self)
+    let set = ImportedSet(id: gym.runner.mint(TrainingSet.self), exerciseId: SeedExercises.all.first!.id, weightKg: 107.5, reps: 5,
+                          completedAt: Instant(ms: now - 86_400_000))
+    let imported = try #require(gym.run(ImportSession(id: session, startedAt: Instant(ms: now - 87_000_000),
+                                                      finishedAt: Instant(ms: now - 86_000_000), sets: [set])))
+    #expect(imported.refusal == nil)
+    let original = try #require(gym.log?.sets(session: session).first), draft = SetFixDraft(original, account: gym.account)
+    draft.weightKg = 90
+    #expect(draft.save(gym))
+    var fixed = original; fixed.weightKg = 90
+    #expect(gym.log?.sets(session: session) == [fixed])
+  }
+
   @Test func restRejectsAnonymousRequestsWithoutNetwork() async throws {
     let runtime = try runtime(), rest = GymRESTClient(runtime: runtime, telemetry: NoopTelemetry())
     await #expect(throws: AppFailure.self) { try await rest.request("/v1/gym/coach/threads") }
