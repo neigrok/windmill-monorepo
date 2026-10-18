@@ -88,6 +88,19 @@ client handle for Coach, shares and Connected log; engine-backed training writes
 Gym includes routine planning and movement creation, the live set rack and finish receipt, session history/sharing and strength/bodyweight charts, and account-only Coach, proposal review, Notes and Connected log.
 Tapping a routine opens a native summary sheet with Edit and Start. Movements are reached through a
 routine or its editor. Coach has a direct History button; Notes and Connected log live in You’s Settings.
+On a resolved signed-in account whose first Gym pull has completed with no personal data, the room
+opens Coach’s routine setup once. Existing drafts/conversations, account adoption, workout and navigation
+state take precedence. Screenshot, program and goal starters prepare the existing composer; Send remains
+explicit. Manual logging or building retires the automatic entry, and empty Routines retains Set up routines.
+Setup choices, purpose, editable drafts, photos, typed clarification selections and frozen request identities
+live in the existing account-scoped Coach draft store. Clarification choices fill the draft without sending;
+editing that text clears the selected-chip markers. Each confirmed routine creation has its own receipt
+and opens the existing routine sheet and Start action. A receipt whose routine has not reached the replica
+checks the existing routine endpoint; a confirmed removal shows the normal unavailable routine state,
+while an unreachable log keeps a refresh action.
+USD allowance refusals preserve drafts and partial creation receipts, and never automatically retry on
+relaunch. An unchanged deliberate Send reuses the original request identity. Existing routine changes
+continue through Review and Apply. Anonymous Coach remains unavailable.
 The finished-workout receipt offers Discard, 👑 Share with Coach and the primary Done action.
 
 `GymRoom` keeps `WorkoutScreen` as its full-screen cover through finish and receipt and, on

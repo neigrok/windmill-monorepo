@@ -27,8 +27,33 @@ struct CoachResult {
   std::string operationId;
   std::string routineId;
   std::string routineName;
+  std::optional<unsigned> movementCount;
   bool operator==(const CoachResult&) const = default;
 };
+
+struct CoachChoice {
+  std::string id;
+  std::string label;
+  bool operator==(const CoachChoice&) const = default;
+};
+
+struct CoachChoiceGroup {
+  std::string id;
+  std::string label;
+  bool multiple = false;
+  std::vector<CoachChoice> options;
+  bool operator==(const CoachChoiceGroup&) const = default;
+};
+
+struct CoachClarification {
+  std::string id;
+  std::string question;
+  std::vector<CoachChoiceGroup> groups;
+  bool operator==(const CoachClarification&) const = default;
+};
+
+bool validClarification(const CoachClarification& clarification);
+constexpr std::size_t kMaxCoachRoutineCreations = 6;
 
 // One turn, stored as sent, byte for byte.
 struct ThreadTurn {
@@ -43,6 +68,9 @@ struct ThreadTurn {
   std::string requestId;
   std::string status = "completed";
   std::vector<CoachAttachment> attachments;
+  std::string purpose = "conversation";
+  std::optional<CoachClarification> clarification;
+  std::optional<AiBudgetView> allowanceRefusal;
 
   bool operator==(const ThreadTurn&) const = default;
 };
@@ -73,6 +101,8 @@ struct AskGeneration {
   bool stopRequested = false;
   std::vector<CoachAttachment> attachments;
   std::optional<AiBudgetView> allowanceRefusal;
+  std::string purpose = "conversation";
+  std::optional<CoachClarification> clarification;
   bool operator==(const AskGeneration&) const = default;
 };
 

@@ -55,9 +55,9 @@ final class GymModel {
   @ObservationIgnored var stalledCoachDecisions: Set<ID<Proposal>> = []
   @ObservationIgnored var awaitedRecoveries: [ID<Session>: RecoveryAction] = [:]
 
-  init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), locale: Locale = .autoupdatingCurrent) {
+  init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), locale: Locale = .autoupdatingCurrent, rest: GymRESTClient? = nil) {
     self.runner = runner; self.runtime = runtime; self.telemetry = telemetry; self.locale = locale
-    rest = GymRESTClient(runtime: runtime, telemetry: telemetry)
+    self.rest = rest ?? GymRESTClient(runtime: runtime, telemetry: telemetry)
     runtime?.gymBinding.gym = self
     refresh()
   }
@@ -384,7 +384,8 @@ final class GymModel {
       guard (200..<300).contains(response.statusCode) else {
         kind = "http"
         let refusal = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        expectedRefusal = ExpectedStatuses.contains(response.statusCode) || refusal["code"] as? String == "ask-busy"
+        expectedRefusal = ExpectedStatuses.contains(response.statusCode) || refusal["code"] as? String == "ask-busy" ||
+          (response.statusCode == 503 && CoachAllowance.refusalCodes.contains(refusal["code"] as? String ?? ""))
         let message = refusal["error"] as? String ?? "Gym could not complete this request. Try again."
         let detail = refusal["detail"] as? String ?? ""
         throw GymRESTFailure(status: response.statusCode, body: data, message: message + (detail.isEmpty ? "" : ". " + detail))

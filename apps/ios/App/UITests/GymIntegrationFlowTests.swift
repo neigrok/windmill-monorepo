@@ -20,6 +20,7 @@ import XCTest
       if !anonymous { app.launchArguments += ["-code-file", ProcessInfo.processInfo.environment["WM_GYM_E2E_SESSION"]!] }
     } else { app.launchArguments += ["-model-server", "-server", "http://127.0.0.1:1"] }
     app.launch()
+    XCTAssertTrue(app.tabBars.buttons["Routines"].waitForExistence(timeout: 20)); app.tabBars.buttons["Routines"].tap()
     XCTAssertTrue(app.buttons["new-routine"].waitForExistence(timeout: 20))
     let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.buttons["new-routine"])
     XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed)
@@ -319,6 +320,7 @@ import XCTest
     let signed = XCUIApplication()
     signed.launchArguments = ["-model-server", "-server", "http://127.0.0.1:1", "-scenario", "gym-e2e", "-coach-fixture"]
     signed.launch()
+    XCTAssertTrue(signed.tabBars.buttons["Routines"].waitForExistence(timeout: 15)); signed.tabBars.buttons["Routines"].tap()
     XCTAssertTrue(signed.buttons["new-routine"].waitForExistence(timeout: 15)); signed.buttons["new-routine"].tap()
     replace(signed.textFields["routine-name"], "Training day\n")
     signed.buttons["add-movement"].tap(); pickBench(signed, routineEditor: true)

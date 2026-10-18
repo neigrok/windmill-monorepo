@@ -11,6 +11,7 @@ import struct SyncModelServer.ServerCall
 struct RoutinesTab: View {
   let gym: GymModel
   var onReviewProposal: ((ID<Proposal>) -> Void)?
+  var onSetup: (() -> Void)?
   @Environment(\.coachOpenAccount) private var openAccount
   @Environment(\.coachAsk) private var ask
   @State private var building: RoutineEditingSession?
@@ -26,7 +27,8 @@ struct RoutinesTab: View {
           Label("No routines yet", systemImage: "list.bullet.rectangle")
         } actions: {
           if gym.workout.coachAvailable {
-            Button("Ask Coach") { ask?(CoachHandoff(question: "Build me a routine.")) }
+            Button("Set up routines") { if let onSetup { onSetup() } else { ask?(CoachHandoff(question: "", purpose: .routineSetup)) } }
+              .accessibilityIdentifier("routines-setup")
               .modifier(RoomSecondaryStyle()).controlSize(.large)
           }
         }
@@ -72,7 +74,7 @@ struct RoutinesTab: View {
         }.listStyle(.insetGrouped)
       }
     }.modifier(GymPage(titleDisplayMode: .large))
-      .navigationTitle("Routines").accessibilityIdentifier("gym-routines")
+      .navigationTitle("Routines").accessibilityElement(children: .contain).accessibilityIdentifier("gym-routines")
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
           Button("New routine", systemImage: "plus") { building = RoutineEditingSession(gym: gym, routine: nil) }
@@ -109,9 +111,12 @@ struct RoutineDetail: View {
   let gym: GymModel
   let id: ID<Routine>
   var start: (() -> Void)?
+  var awaitSync = false
   @State private var editing: RoutineEditingSession?
+  @State private var confirmedAbsent = false
   @Environment(\.dismiss) private var dismiss
   var routine: Routine? { gym.routines.first { $0.id == id } }
+  var waitsForSync: Bool { awaitSync && routine == nil && !confirmedAbsent }
 
   var body: some View {
     Group {
@@ -129,6 +134,14 @@ struct RoutineDetail: View {
             } header: { Text(gym.routineLine(routine)) }
           }.listRowBackground(GymPalette.card)
         }.listStyle(.insetGrouped)
+      } else if waitsForSync {
+        ContentUnavailableView {
+          Label("Routine not on this phone yet", systemImage: "arrow.triangle.2.circlepath")
+        } description: { Text("Your log may still be syncing, or this routine may have been removed. Refresh to check.") }
+        actions: {
+          Button("Refresh") { Task { await refreshReceipt() } }
+            .disabled(gym.runtime?.engine.status.online == false)
+        }
       } else {
         ContentUnavailableView("That routine is no longer in your program.", systemImage: "list.bullet.rectangle",
                                description: Text("Everything you logged against it is still in the log."))
@@ -157,19 +170,29 @@ struct RoutineDetail: View {
       // The editor deletes the routine at once, so the detail it leaves behind has nothing to show and goes too.
       .sheet(item: $editing, onDismiss: { if routine == nil { dismiss() } }) { editing in RoutineBuilder(gym: gym, editing: editing) { _ in } }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "routine"]) }
+      .task(id: id) { if awaitSync, routine == nil { await refreshReceipt() } }
+  }
+  func refreshReceipt() async {
+    let owner = gym.account
+    let exists = await gym.routineExists(id)
+    guard owner == gym.account, !Task.isCancelled else { return }
+    confirmedAbsent = exists == false
+    gym.runtime?.engine.foreground(); gym.refresh()
   }
 }
 
 struct RoutineSummarySheet: View {
   let gym: GymModel
   let id: ID<Routine>
+  var awaitSync = false
   let start: () -> Void
   @Environment(\.dynamicTypeSize) var typeSize
 
   var body: some View {
-    NavigationStack { RoutineDetail(gym: gym, id: id, start: start) }
+    NavigationStack { RoutineDetail(gym: gym, id: id, start: start, awaitSync: awaitSync) }
       .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.medium, .large])
       .presentationDragIndicator(.visible)
+      .onAppear { if awaitSync { gym.runtime?.engine.foreground(); gym.refresh() } }
   }
 }
 
@@ -195,6 +218,16 @@ enum RoutineLines {
 }
 
 extension GymModel {
+  func routineExists(_ id: ID<Routine>) async -> Bool? {
+    do {
+      _ = try await rest.request("/v1/gym/routines/" + CoachCopy.escaped(id.description))
+      return true
+    } catch {
+      if (error as? GymRESTFailure)?.status == 404 { return false }
+      return nil
+    }
+  }
+
   var historyKnown: Bool { !readFailed && (isAnonymous || log?.firstPullComplete == true) }
 
   var routinesByLastTraining: [Routine] {
