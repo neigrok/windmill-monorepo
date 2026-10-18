@@ -153,12 +153,15 @@ export function admissionVectors() {
       "blank persisted resource remains in feed but invisible",
       save({ body: "" }),
     ),
+    admission("ratings without writing stay invisible", save({ body: "", mood: 0, energy: 10 })),
+    admission("Unicode whitespace with ratings stays invisible", save({ body: " \t\n\u00a0\u1680\u2000\u2028\ufeff", mood: 4, energy: 8 })),
     admission(
       "scale-only save archives duplicate body",
       save({ body: "Account words.", mood: 0, energy: 10 }),
       old,
     ),
     admission("clearing archives nonempty body", save({ body: "" }), old),
+    admission("blank legacy claim keeps account writing and ratings", claim({ body: " \n\ufeff", mood: 0, energy: 10, source: "spoken" }), old),
     admission(
       "empty outgoing head is not archived",
       save(),
@@ -585,6 +588,13 @@ export function clientVectors() {
     },
   };
   return [
+    ...["", " \t\n\u00a0\u1680\u2000\u2028\ufeff"].map((body) => [
+      `legacy unwritten anonymous page ${JSON.stringify(body)} has no visible written page`, false, true,
+      [{ ...first, opts: { cmd: { name: "journal.claimPage", args: claimArgs({ body, mood: 0, energy: 10 }) },
+        predict: [{ op: "put", t: "page", id: DAY, f: { mood: 0, energy: 10, source: "typed" }, x: { body } }] } },
+      { op: "signIn", account: "A", holdsRecords: { journal: true } },
+      { op: "view", scope: "self/journal", withHeld: true }],
+    ]),
     [
       "latest snapshot state preserved, binds empty account",
       false,

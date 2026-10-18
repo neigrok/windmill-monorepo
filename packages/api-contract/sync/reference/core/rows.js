@@ -27,6 +27,7 @@ export function isVisible(type, record) {
   if (!type.visibleWhen) return Object.keys(record.f ?? {}).length + Object.keys(record.x ?? {}).length > 0;
   return type.visibleWhen.some((name) => {
     const value = valueOf(name);
+    if (record.x?.[name] !== undefined) return typeof value === 'string' && value.trim() !== '';
     return value !== undefined && value !== null && value !== '';
   });
 }

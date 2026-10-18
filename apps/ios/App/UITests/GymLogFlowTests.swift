@@ -272,12 +272,17 @@ import XCTest
     let app = launch("light")
     assertTheEndHoldsAcrossAPush(above: hideAWorkout(app), app)
   }
-  // A free workout, started from Routines and hidden, leaves the accessory standing over The log.
+  // A routine workout leaves its return control above The log while hidden.
   func hideAWorkout(_ app: XCUIApplication) -> XCUIElement {
     XCTAssertTrue(sessionRow(app).waitForExistence(timeout: 20))
     app.tabBars.buttons["Routines"].tap()
-    let start = app.buttons["Just start logging"]
-    XCTAssertTrue(start.waitForExistence(timeout: 10)); start.tap()
+    app.buttons["new-routine"].tap()
+    let name = app.textFields["routine-name"]
+    XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("Log coverage\n")
+    app.buttons["add-movement"].tap()
+    XCTAssertTrue(app.buttons["gym-movement-bench-press"].waitForExistence(timeout: 5)); app.buttons["gym-movement-bench-press"].tap()
+    app.buttons["save-routine"].tap()
+    XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5)); app.buttons["routine-start"].tap()
     XCTAssertTrue(app.buttons["workout-assembly"].waitForExistence(timeout: 10)); app.buttons["workout-assembly"].tap()
     XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
     let accessory = app.buttons["gym-hidden-workout"]
@@ -349,16 +354,20 @@ import XCTest
     XCTAssertNotNil(dotted.label.wholeMatch(of: /Push A, new best, 2 working sets · 45m, [A-Z][a-z]{2} \d{1,2}/), dotted.label)
   }
 
-  func testSessionDetailDiscardsFromItsMenuWithUndo() {
+  func testSessionDetailConfirmsDiscardAndRemovesWorkout() {
     let app = launch("light")
     let row = visibleSessionRow(app), id = row.identifier
     openFirstSession(app)
     choose("gym-session-discard", from: "gym-session-more", app)
+    XCTAssertTrue(app.buttons["Discard workout"].waitForExistence(timeout: 5))
+    app.cancelConfirmation()
+    XCTAssertTrue(app.buttons["Discard workout"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].exists)
+    choose("gym-session-discard", from: "gym-session-more", app)
+    XCTAssertTrue(app.buttons["Discard workout"].waitForExistence(timeout: 5)); app.buttons["Discard workout"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-log"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons[id].waitForNonExistence(timeout: 5))
-    let undo = app.buttons["gym-log-undo"]
-    XCTAssertTrue(undo.waitForExistence(timeout: 5)); undo.tap()
-    XCTAssertTrue(app.buttons[id].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["gym-log-undo"].exists)
   }
 
   // The row's context menu opens the same sheet as the session's bar, signed out too, and Sign in to share comes back to
@@ -480,23 +489,23 @@ import XCTest
     XCTAssertTrue(app.textFields["gym-weigh-in-weight"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.descendants(matching: .any)["gym-weigh-in-fixed-date"].exists)
     snapshot("weigh-in-\(appearance)", app: app)
+    let deletedDay = row.identifier
     app.buttons["gym-weigh-in-delete"].tap()
-    XCTAssertTrue(app.buttons["gym-log-undo"].waitForExistence(timeout: 5))
-    app.buttons["gym-log-undo"].firstMatch.tap()
-    XCTAssertTrue(row.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons[deletedDay].waitForNonExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["gym-log-undo"].exists)
     app.buttons["gym-chart-point-2026-09-26"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-weigh-in-fixed-date"].waitForExistence(timeout: 5))
     app.buttons["Cancel"].tap()
     back(app)
     let session = visibleSessionRow(app), id = session.identifier
     session.swipeLeft()
-    let discard = app.buttons["Discard"]
+    let discard = app.buttons["Delete"]
     XCTAssertTrue(discard.wait(for: \.isHittable, toEqual: true, timeout: 5))
     snapshot("log-actions-\(appearance)", app: app)
     discard.tap()
+    XCTAssertTrue(app.buttons["Discard workout"].waitForExistence(timeout: 5))
+    app.buttons["Discard workout"].tap()
     XCTAssertTrue(app.buttons[id].waitForNonExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["gym-log-undo"].waitForExistence(timeout: 5))
-    app.buttons["gym-log-undo"].firstMatch.tap()
-    XCTAssertTrue(app.buttons[id].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["gym-log-undo"].exists)
   }
 }

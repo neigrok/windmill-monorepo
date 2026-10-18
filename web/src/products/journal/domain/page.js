@@ -24,7 +24,8 @@ export class PageDocument {
     Object.freeze(this);
   }
 
-  get isWritten() { return this.body !== '' || this.mood !== null || this.energy !== null; }
+  get hasText() { return this.body.trim() !== ''; }
+  get isWritten() { return this.hasText; }
 
   /** @returns {DocumentFields} */
   fields() { return { body: this.body, mood: this.mood, energy: this.energy, source: this.source }; }
@@ -100,7 +101,7 @@ export class JournalRoom {
     const complete = read.firstPullComplete();
     this.isAnonymous = read.isAnonymous;
     this.firstRunKnown = this.isAnonymous || complete;
-    this.stance = read.repository(Page).all('stored').length ? 'holding' : this.firstRunKnown ? 'empty' : 'unknown';
+    this.stance = read.repository(Page).all('stored').some((page) => page.document.isWritten) ? 'holding' : this.firstRunKnown ? 'empty' : 'unknown';
     const state = (read.repository(JournalState).find(new Id('journalState', JournalState), 'drawn') ?? new JournalStateValue()).fields();
     /** @type {Map<string, JournalDay>} */
     const byDay = new Map();
@@ -137,6 +138,6 @@ export class JournalRoom {
     Object.freeze(this);
   }
 
-  get scaleInvitationDue() { return this.firstRunKnown && this.state.scaleInvitationDue; }
-  get keepDue() { return this.isAnonymous && this.firstRunKnown && this.state.keepDue; }
+  get scaleInvitationDue() { return this.firstRunKnown && this.days.length > 0 && this.state.scaleInvitationDue; }
+  get keepDue() { return this.isAnonymous && this.firstRunKnown && this.days.length > 0 && this.state.keepDue; }
 }

@@ -66,6 +66,7 @@ final class AppModel {
   // Why the last Sign out could not begin or be carried out; the next Sign out clears it.
   var signOutRefusal: String?
   var adoptionAnswers: [String: LineageAnswer] = [:]
+  var journalAdoptionPages: Int?
   var appearance: Appearance
   var updateRequiredAtSignIn = false
   var updateAlert = false
@@ -206,8 +207,8 @@ final class AppModel {
 
   func dismissUpdateFailure() { updateOpenFailed = false }
 
-  var adoptionCount: Int { currentAdoption?.counts["page"] ?? 0 }
-  var adoptionIsSingle: Bool { currentAdoption?.counts.filter { $0.key != "journalState" }.values.reduce(0, +) == 1 }
+  var adoptionCount: Int { adoptionCounts["page"] ?? 0 }
+  var adoptionIsSingle: Bool { adoptionCounts.filter { $0.key != "journalState" }.values.reduce(0, +) == 1 }
 
   func openJournal() { openRoom(.journal) }
   func openYou() { journal.done(); sheet = .you }
@@ -671,6 +672,7 @@ final class AppModel {
     methodsGeneration += 1
     do {
       setSignInSession(try await runtime.engine.signIn(account: identity.account, token: identity.token))
+      if let session = signInSession, !session.isComplete, currentAdoption == nil { try await completeAdoption(session) }
     }
     catch { reportBoundary("auth_sign_in", error: error); throw error }
     runtime.updateTelemetryIdentity()
@@ -807,8 +809,14 @@ final class AppModel {
   }
 
   var adoptionSummary: String {
-    guard let decision = currentAdoption else { return "" }
-    return Self.summary(decision.counts)
+    Self.summary(adoptionCounts)
+  }
+
+  var adoptionCounts: [String: Int] {
+    guard let decision = currentAdoption else { return [:] }
+    var counts = decision.counts
+    if decision.product == "journal", let journalAdoptionPages { counts["page"] = journalAdoptionPages }
+    return counts
   }
 
   static func summary(_ counts: [String: Int]) -> String {
@@ -835,20 +843,36 @@ final class AppModel {
 
   func setSignInSession(_ session: SignInSession?) {
     signInSession = session
-    adoptionAnswers = [:]
+    adoptionAnswers = [:]; journalAdoptionPages = nil
     guard let session, !session.isComplete else { clearAdoptionAnswers(); return }
-    guard let data = preferences.data(forKey: "roomAdoption"),
-      let saved = try? JSONDecoder().decode(SavedAdoption.self, from: data), saved.account == session.account else { return }
-    for decision in session.decisions {
-      if saved.counted[decision.product] == decision.counted && saved.counts[decision.product] == decision.counts,
-        let value = saved.answers[decision.product], let answer = LineageAnswer(rawValue: value) {
-        adoptionAnswers[decision.product] = answer
+    if let data = preferences.data(forKey: "roomAdoption"),
+      let saved = try? JSONDecoder().decode(SavedAdoption.self, from: data), saved.account == session.account {
+      for decision in session.decisions {
+        if saved.counted[decision.product] == decision.counted && saved.counts[decision.product] == decision.counts,
+          let value = saved.answers[decision.product], let answer = LineageAnswer(rawValue: value) {
+          adoptionAnswers[decision.product] = answer
+        }
       }
+    }
+    if session.decisions.contains(where: { $0.product == "journal" }), adoptionAnswers["journal"] == nil {
+      do {
+        var days = try runner.read(Journal.scope) { read in
+          var days = Set(try JournalRoom(read).days.map(\.day))
+          if let raw = try read.device(EditorDraft.key) {
+            let draft = try EditorDraft(json: raw)
+            if draft.document.isWritten { days.insert(draft.day) }
+          }
+          return days
+        }
+        if journal.document.isWritten { days.insert(journal.editorDay) }
+        journalAdoptionPages = days.count
+        if days.isEmpty { adoptionAnswers["journal"] = .add }
+      } catch { reportBoundary("auth_adopt", error: error) }
     }
   }
 
   func clearAdoptionAnswers() {
-    adoptionAnswers = [:]; preferences.removeObject(forKey: "roomAdoption")
+    adoptionAnswers = [:]; journalAdoptionPages = nil; preferences.removeObject(forKey: "roomAdoption")
   }
 
   func saveAdoptionAnswers(_ answers: [String: LineageAnswer], session: SignInSession) throws {
@@ -889,6 +913,7 @@ final class AppModel {
           try Task.checkCancellation()
           session = recounted; setSignInSession(recounted)
         }
+        if !session.isComplete, currentAdoption == nil { try await completeAdoption(session); return }
         if answer == .discard { sheet = .adoption; error = "The work changed. Choose again for the current counts."; return }
       }
       guard currentAdoption == decision else { sheet = .adoption; error = "The work changed. Choose again for the current counts."; return }
@@ -909,6 +934,7 @@ final class AppModel {
       let resumed = try await runtime?.engine.resumeSignIn()
       try Task.checkCancellation()
       if let resumed { setSignInSession(resumed) }
+      if let resumed, !resumed.isComplete, currentAdoption == nil { try await completeAdoption(resumed); return }
       sheet = .adoption; error = "The work changed. Choose again for the current counts."
     } catch {
       guard !Task.isCancelled else { return }

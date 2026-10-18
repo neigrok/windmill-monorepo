@@ -28,7 +28,8 @@ public struct PageDocument: Equatable, Sendable {
     self.body = body; self.mood = mood; self.energy = energy; self.source = source
   }
 
-  public var isWritten: Bool { !body.isEmpty || mood != nil || energy != nil }
+  public var hasText: Bool { !TextWhitespace.isBlank(body) }
+  public var isWritten: Bool { hasText }
   public var fields: [String: JSON] { ["body": .string(body), "mood": mood.map(JSON.init) ?? .null, "energy": energy.map(JSON.init) ?? .null, "source": .string(source)] }
 
   public init(json: JSON) throws {

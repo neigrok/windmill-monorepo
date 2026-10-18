@@ -5,6 +5,8 @@ import CryptoKit
 import SyncReplica
 
 struct AccountSheet: View {
+  enum SettingsDestination: Hashable { case notes, connectedLog }
+  @State var settingsPath: [SettingsDestination] = []
   @Bindable var model: AppModel
   @FocusState var focusedInput: AppModel.Sheet?
   @State var appleNonce = ""
@@ -29,14 +31,22 @@ struct AccountSheet: View {
   var brand: Color { ShellPalette.brand }
   var offline: Bool { model.runtime?.engine.status.online == false }
   var body: some View {
-    NavigationStack {
+    NavigationStack(path: $settingsPath) {
       Group {
         if model.sheet == .you { you } else { steps }
       }.tint(brand).background(shell)
         .navigationTitle(sheetTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(shell, for: .navigationBar)
-        .toolbar { accountToolbar }.roomBar(.shell)
+        .toolbar { if settingsPath.isEmpty { accountToolbar } }.roomBar(.shell)
+        .navigationDestination(for: SettingsDestination.self) { destination in
+          Group {
+            switch destination {
+            case .notes: NotesScreen(gym: model.gym)
+            case .connectedLog: ConnectedLogScreen(gym: model.gym)
+            }
+          }.environment(\.coachOpenAccount, { settingsPath = []; model.openYou() })
+        }
     }
       .tint(brand)
       .presentationDragIndicator(.hidden)
@@ -407,6 +417,10 @@ struct AccountSheet: View {
         }.listRowBackground(card)
       }
       Section("Settings") {
+        NavigationLink(value: SettingsDestination.notes) { Text("Notes").foregroundStyle(ink) }
+          .accessibilityIdentifier("settings-notes")
+        NavigationLink(value: SettingsDestination.connectedLog) { Text("Connected log").foregroundStyle(ink) }
+          .accessibilityIdentifier("settings-connected-log")
         Picker(selection: Binding(get: { model.appearance }, set: { model.chooseAppearance($0) })) {
           ForEach(AppModel.Appearance.allCases, id: \.self) { Text($0.title).tag($0) }
         } label: { Text("Appearance").foregroundStyle(ink) }.pickerStyle(.menu).accessibilityIdentifier("appearance")

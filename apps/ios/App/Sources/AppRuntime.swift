@@ -151,7 +151,7 @@ final class AppRuntime {
     engine = try SyncEngine(config: EngineConfig(appVersion: "0.2.0", surface: .ios), bindings: [gymBinding], store: store, transport: syncTransport ?? transport,
                             tokens: tokens,
                             forkGuard: storage.forkGuard, clock: EngineClock(wall: boardClock ? BoardClock() : SystemClock(), sleeper: ContinuousClock()), random: SystemRandom(), connectivity: connectivity, telemetry: telemetry)
-    runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: DeviceZone())
+    runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: DeviceZone(), holdRemovals: false)
     lifecycle = AppLifecycle(engine: engine, signals: .application, time: ApplicationBackgroundTime())
     updateTelemetryIdentity()
   }

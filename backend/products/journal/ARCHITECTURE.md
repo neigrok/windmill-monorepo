@@ -96,8 +96,10 @@ including a save with identical words or only changed scores. The row keeps the 
 document stamp, and `superseded_at` is the admission's server time. An empty outgoing body, an
 ignored stale save and a tie add no revision. The same transaction prunes to 10 revisions per day,
 500 rows and 8 MiB per user, 90 days; pruning runs when that admission archives a revision. Account
-deletion also removes these rows. No command deletes a page; saving an empty body keeps the day's
-row, with the scores and source that save carries.
+deletion also removes these rows. A day exists for the writer only when its body contains writing: the
+ECMAScript whitespace set is blank, and scores alone never make a page. Clearing a saved page keeps
+an invisible sync ordering marker with an empty body, null scores and typed source, so older offline
+saves cannot resurrect it. Ordinary reads and exports omit these markers; sync and delta feeds retain them.
 
 ### The engine binding
 
@@ -114,13 +116,15 @@ even the unset stamp. A stale or equal stamp writes nothing and succeeds. A grea
 page fields together at the server's envelope stamp. The command writes `body` as an internal text
 replacement that archives a non-empty outgoing head, even when its text is identical, and advances
 its text revision. It replaces the writer's words without merging a competing page, and the stored
-body is never marked as a conflict merge.
+body is never marked as a conflict merge. A blank winning body is stored as an empty body with null
+scores and typed source. Clients normalize blank drafts before validation and do not queue new blank
+pages; clearing a pending anonymous page cancels its claim and retains invitation state.
 
 `journal.claimPage(day, body, mood, energy, source, claimId)` moves a page written signed-out into
 the account at sign-in, keeping A.3's account-first concatenation: the account's text, a blank line,
 then the signed-out text. When either is blank the other stands, and when the signed-out text already
-contains the account's trimmed text it stands alone. An unanswered score falls back to the account's,
-and the page is stamped from the account's content clock with actor `srv`. The `claimId` (1–128
+contains the account's trimmed text it stands alone. An unanswered score falls back to the account's.
+A blank legacy contribution retains the account's scores and source as well as its writing. The page is stamped from the account's content clock with actor `srv`. The `claimId` (1–128
 bytes) receipt makes retries idempotent; a changed raw payload under that claim id is
 `claim-conflict`. A joined body over the cap is `too-large`. Both commands refuse a day that is not a
 calendar day `invalid`.
@@ -138,11 +142,13 @@ adoption has all four `journalState` fields retired and sees no re-onboarding. M
 visible on first open, unasked. The privacy fact is "Only you. No prompts, no fields, nothing to
 fill in — write a line or a page." The quiet Keep invitation appears only after the scale
 invitation is answered or dismissed, one invitation at a time; signed-in pages never show Keep.
+Both invitations require a written day; erased writing leaves its retirement state without an offer to keep empty data.
 Native first run writes today's page only; past days remain read-only, as on web.
 
 Sign-in with signed-out pages asks **Add/Discard** when the account already holds pages, on web
 and native, by the engine's sign-in lineage rule (engine §7.10); an empty account takes them
-silently.
+silently. Journal work with no writing also adopts silently, preserving invitation state. The displayed
+page count includes only written days; the engine's pinned decision tokens remain unchanged.
 
 | Feature | Engine ownership for the iOS first run |
 |---|---|
@@ -246,13 +252,13 @@ Error bodies are exactly `{"error":"<sentence>"}`, with no machine `code`.
 
 | Request | Response |
 |---|---|
-| `GET /v1/journal/page/{date}` | Owner-scoped read; 200 with `{day,body,mood,energy,source,stamp,updatedAt}`. Null scores stay null and zero stays zero. Missing day: 404 `nothing written`. A stored empty page still answers 200. |
+| `GET /v1/journal/page/{date}` | Owner-scoped read; 200 with `{day,body,mood,energy,source,stamp,updatedAt}`. Null scores stay null and zero stays zero. Missing day: 404 `nothing written`. A stored blank or scales-only day also answers 404. |
 | Invalid page address | Calendar validation, including leap days and years 0001…9999: 400 `bad date`. |
 | Page GET, list or export without a caller | 401 `sign in to open your journal`, before date or cursor validation. |
-| `GET /v1/journal/pages?since=<hlc>&limit=<n>` | This branch takes precedence over `from`/`to` when `since` is nonempty. 200 `{pages:[…]}`, the pages whose full document stamp is strictly greater than the cursor, ordered by `(stamp_ms,stamp_counter,stamp_actor)` and then `day`, so a same-stamp cohort pages the same way on every read. The cursor remains the HLC, so advancing it past a limited same-stamp cohort still excludes every page with that stamp. Default limit 500; a fully parsed positive integer caps at 1000; other limits use 500. Bad HLC: 400 `bad cursor`. This is not an engine seq cursor. |
-| `GET /v1/journal/pages?from=<day>&to=<day>` | Selected only when both values are nonempty and there is no nonempty `since`. 200 `{pages:[…]}`, inclusive endpoints, ascending day. Invalid endpoint: 400 `bad date`; a reversed valid range is empty. |
-| `GET /v1/journal/pages` or only one range endpoint | 200 `{pages:[…]}` containing all stored days, ascending day. A lone endpoint and a limit without `since` are ignored. |
-| `GET /v1/journal/export` | 200 `{pages:[…]}`, all stored days ascending day, with the same page wire shape; revisions remain invisible. |
+| `GET /v1/journal/pages?since=<hlc>&limit=<n>` | This branch takes precedence over `from`/`to` when `since` is nonempty. 200 `{pages:[…]}`, the pages whose full document stamp is strictly greater than the cursor, ordered by `(stamp_ms,stamp_counter,stamp_actor)` and then `day`, so a same-stamp cohort pages the same way on every read. The cursor remains the HLC, so advancing it past a limited same-stamp cohort still excludes every page with that stamp. Default limit 500; a fully parsed positive integer caps at 1000; other limits use 500. Bad HLC: 400 `bad cursor`. Blank ordering markers remain in this feed so erasure reaches its readers. This is not an engine seq cursor. |
+| `GET /v1/journal/pages?from=<day>&to=<day>` | Selected only when both values are nonempty and there is no nonempty `since`. 200 `{pages:[…]}`, written pages within inclusive endpoints, ascending day. Invalid endpoint: 400 `bad date`; a reversed valid range is empty. |
+| `GET /v1/journal/pages` or only one range endpoint | 200 `{pages:[…]}` containing all written days, ascending day. A lone endpoint and a limit without `since` are ignored. |
+| `GET /v1/journal/export` | 200 `{pages:[…]}`, all written days ascending day, with the same page wire shape; revisions remain invisible. |
 | `GET /v1/journal/echoes?from=&to=` | Reads the echo tables and `journal_page`. 200 `{pages,pagesWritten,floorWaived}`; empty endpoints default to 0001-01-01 / 9999-12-31. Invalid dates: 400 `bad date`; missing caller: 401 `sign in to read your echoes`. |
 | Echo pair/page dismiss, offer dismiss, useful, opened | Owner and date validation, then 204 on first call or retry, including a missing pairing. Missing caller: 401 `sign in to dismiss an echo`, `sign in to retire an offer`, `sign in to mark an echo useful`, or `sign in`, respectively. Invalid date: 400 `bad date`. |
 | `GET/PATCH /v1/journal/nudge` | Read and write the nudge tables; 200 `{enabled,channel,adaptive,nextDueAt?,armed,suppressed}`. GET without a row defaults off. Missing caller: 401 `sign in to read your nudge` / `sign in to change your nudge`; PATCH parse/type/arming refusals are the 400/403 sentences below. |
@@ -263,9 +269,9 @@ Error bodies are exactly `{"error":"<sentence>"}`, with no machine `code`.
 The echo response's pages are newest trigger day first, matches newest match day first. Each page
 has `{day,entitled:true,offerRetired,matches}`; each match has
 `{day,isSelf,source,useful,text,withheldWords:0,occurrenceHint?}`. `pagesWritten` counts bodies whose
-trimmed space/tab/CR/LF content is nonempty; it does not count an empty page or one carrying only
-scores. `floorWaived` is the account owner's entitlement predicate. Nudge `wroteToday` instead
-tests row existence, including a blank page.
+content is nonblank under the ECMAScript whitespace set; it does not count an empty page or one
+carrying only scores. `floorWaived` is the account owner's entitlement predicate. Nudge `wroteToday`
+uses the same written-body rule.
 
 Nudge PATCH rejects a non-object document with 400 `send the nudge fields to change`. Present
 fields require their existing types: 400 `enabled must be true or false`, `channel must be a

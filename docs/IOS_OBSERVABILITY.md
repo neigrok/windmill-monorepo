@@ -32,7 +32,7 @@ first-party intake proves storage, not asynchronous Amplitude receipt.
 Sentry starts before session or SQLite storage reads. The SDK captures native crashes and App Hangs: a main thread
 unresponsive for 2 seconds or more (`appHangTimeoutInterval`), fully or partly blocked, as an error event with its stack
 traces and no other content. Handled
-reports cover HTTP/transport and successful-body decoding, journal and gym storage and drafts, Journal Echoes REST, held Gym deletes and Undo, Gym REST, SQLite
+reports cover HTTP/transport and successful-body decoding, journal and gym storage and drafts, Journal Echoes REST, Gym deletes, Gym REST, SQLite
 reads/writes, protected-storage preparation, fork-guard I/O, Keychain reads/writes/deletions and
 enumeration, session restoration, code authentication, Apple ticket creation/linking, sign-in-method
 reads, Apple removal, adoption and sign-out. The sync engine
@@ -77,7 +77,7 @@ The allowlist below covers the app's screens and actions. Property labels accept
 status and duration use the bounded numeric rules above. Every row also carries the common
 platform/version/build/release/environment properties. Scale answers record only that the invitation
 was answered or declined; neither the scale name nor its value is recorded. Journal ink emits
-`first_run_screen_viewed` with screen `ink_notes` for each automatic or requested presentation and `first_run_choice` with
+`first_run_screen_viewed` with screen `ink_notes` for its automatic first-open presentation and `first_run_choice` with
 action `dismiss_ink` once when writing or a tap lifts it; no ink replay action is allowlisted.
 
 | Area | Events | Properties, as each emitter sends them |
@@ -103,12 +103,11 @@ action `dismiss_ink` once when writing or a tap lifts it; no ink replay action i
 | Coach | `gym_ask_started`, `gym_ask_outcome` | screen: coach; outcome: answered, cancelled, failed, refused, capped, fresh, absent, and offline for a send the phone held back with no network; cap: daily, ceiling; duration_ms |
 | Proposals | `gym_proposal_outcome` | screen: review; action: apply, dismiss, retry; outcome: decided, failed, stalled, ok, offline (a decision is decided when the log took it and failed when the log refused it, stalled once a launch when unanswered after 15 seconds, however many Retries then wait, with no action when the queue cannot be read, and Retry is ok when the log took it, offline when its push got no answer — no network, a refused connection, a deadline — and failed when the log answered with a failure) |
 | Connected log | `gym_connect_tool` | action: connect, manage (Connect a tool, a connected credential's row); outcome: ok, failed (whether the browser opened) |
-| Gym actions | `gym_action` | screen: gym, session_share, history (engine actions and saves, a share link minted, copied or revoked, a Coach conversation deleted); outcome: ok, refused, failed; no action payloads |
-| Undo | `gym_undo` | screen: gym, history (a held engine gesture, a held conversation delete); outcome: ok, refused, failed (failed on gym only); action: dismiss, with no outcome, when the lifter sends a held band away and the acts it holds stay, the one shown and every older one (on gym an engine gesture keeps its window; on history the conversation's delete leaves at once) |
+| Gym actions | `gym_action` | screen: gym, session_share, history, workout, log, session, on_this_phone; outcome: ok, refused, failed, cancelled. Receipt Share uses action share. Destructive confirmations use action discard + state shown, then action cancel + outcome cancelled on dismissal; committed removals use their existing outcome. No action payloads |
 | Log moments | `gym_moment_opened` | no properties; a new-best moment on the log opened its Record |
 | Import recovery | `gym_import_recovery` | Android's vocabulary: action: inspect, fix, keep, retry, discard; state (a screen opening only): opened; outcome (a commit or a close only): completed, cancelled, and the iOS-only refused, failed; reason, iOS-only: session-open, session-overlap, id-taken, bad-instant, too-many-sets, invalid-set, unknown-exercise, session-finished, unsent, other |
 | Optional scales | `scale_invitation_shown`, `scale_invitation_answered` | action: answered, declined (on `scale_invitation_answered` only) |
-| Writing | `journal_line_saved` | day_kind: today; emitted after a changed, nonempty body saves, never for scale-only changes |
+| Writing | `journal_line_saved` | day_kind: today; emitted after a changed body with non-whitespace text saves, never for scale-only changes |
 | Echo ink | `journal_echo_ink` | action: open, close |
 | Echoes | `journal_echo_shown`, `journal_echo_reader_opened`, `journal_echo_intro_dismissed`, `journal_echo_opened`, `journal_echo_useful`, `journal_echo_dismissed` | no properties |
 | Synchronization | `sync_pull_outcome`, `sync_push_outcome` | outcome: ok, failed; failure_kind, status, duration_ms |
@@ -132,12 +131,17 @@ opened signal is best effort. *Useful* records one `journal_echo_useful` per tap
 one REST signal each; *Not useful* records one `journal_echo_dismissed` and retires the page's echo. Both are optimistic
 and roll back if a request fails. Closing the reader dismisses no echo and records nothing.
 
+The finished-workout receipt’s Done emits `first_run_choice` with screen `workout` and action `close`.
+Its Share tap and destructive confirmation steps emit bounded `gym_action` labels. Confirmed Discard
+emits the existing write outcome. Share with Coach retains its intent through sign-in and enters the
+existing Coach flow; events contain no workout names, set values or Coach question.
+
 Every door to Share this workout opens one sheet, which records `gym_screen_viewed` with screen `session_share` each
 time it is presented. Signed out or paused, its *Sign in to share* opens You (`first_run_screen_viewed` with screen
 `you`); when You closes signed in, the sheet is presented again and records its view again, and a sign-in left
 unfinished shares nothing and records nothing more.
 
-Gym boundary operation labels are `gym_read`, `gym_action`, `gym_undo`, `gym_flush`, `gym_rest`,
+Gym boundary operation labels are `gym_read`, `gym_action`, `gym_flush`, `gym_rest`,
 `gym_activity_request`, `gym_activity_update`, `gym_control_update`, and `gym_import_fix`, `gym_import_keep`, `gym_import_retry`
 and `gym_import_discard` for the commits that recover a saved workout. The gym model reports each distinct `gym_read`
 failure once per launch, a session whose saved plan this build cannot read included, so a record a view reads on every
@@ -153,7 +157,7 @@ offline requests and failed sync outcomes are suppressed until a successful sync
 The first-party event stays queued for later delivery. Unexpected responses, TLS and other
 transport failures still report as failures. Known missing paths report even when hello is skipped. REST requests retain their captured account and bearer and cancel
 on real backgrounding or an account transition; an inactive scene persists drafts while live sync,
-REST work and Undo windows continue. Late conversation reads and Stop results are accepted only for
+REST work continue. Late conversation reads and Stop results are accepted only for
 the work they captured. A late Stop reply preserves newer composer text and photos, including their
 durable draft. Send reuses the retained request ID after a lost response when question and
 attachments are unchanged. These local identifiers remain outside event properties.
@@ -185,9 +189,8 @@ emit one `gym_import_recovery` with the action and the reason as bounded labels,
 Android's event uses. Opening Inspect or Fix workout is `state=opened`. A queued commit is
 `outcome=completed`; when the log refuses it, the action is recorded again with `outcome=refused` and the row's new
 reason once that answer reaches the row (kept in memory, so an answer that arrives after the app quits records nothing).
-Closing Fix workout without saving is `fix` with `cancelled`. Discard returns to The log,
-which holds it for the room's window: Undo there is `discard` with `cancelled`, and the window's end, or the app
-leaving the foreground, is `discard` with its commit's outcome. A retry that lands dismisses the notices it answered. A
+Closing Fix workout without saving is `fix` with `cancelled`. Confirmed Discard returns to The log
+and emits `discard` with its commit’s outcome. Cancelling the confirmation keeps the workout. A retry that lands dismisses the notices it answered. A
 restart queues the start and every saved set in one plan, or refuses whole; sets a landed workout
 refused go back into it in one plan, appended while it is open or through an additive correction,
 and the ones outside its window become a saved copy of their own whose import is queued. An

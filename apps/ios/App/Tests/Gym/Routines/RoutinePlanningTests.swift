@@ -14,7 +14,7 @@ import UIKit
 
 @MainActor struct RoutinePlanningTests {
   func fixture() -> (Harness, GymModel) {
-    let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
+    let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     return (harness, GymModel(runner: harness.runner))
   }
@@ -90,7 +90,7 @@ import UIKit
     #expect(gym.routines == [pending])
   }
 
-  @Test func editorMovesRemovesAndRestoresMovementsInPlace() {
+  @Test func editorMovesRemovesAndReselectsMovements() {
     let (_, gym) = fixture()
     let editing = RoutineEditingSession(gym: gym, routine: nil)
     let (bench, deadlift, chinUp) = (RoutineEntry(exerciseId: ID("bench-press")), RoutineEntry(exerciseId: ID("deadlift")), RoutineEntry(exerciseId: ID("chin-up")))
@@ -100,11 +100,11 @@ import UIKit
     editing.move(0, by: -1); editing.move(2, by: 1)
     #expect(editing.draft.current.entries == [bench, chinUp, deadlift])
     editing.remove(1)
-    #expect(editing.draft.current.entries == [bench, deadlift] && editing.removed?.index == 1 && editing.removed?.entry == chinUp)
-    editing.undoRemoval()
-    #expect(editing.draft.current.entries == [bench, chinUp, deadlift] && editing.removed == nil)
+    #expect(editing.draft.current.entries == [bench, deadlift])
+    editing.select(chinUp)
+    #expect(editing.draft.current.entries == [bench, deadlift, chinUp])
     editing.remove(0); editing.select(bench)
-    #expect(editing.draft.current.entries == [chinUp, deadlift, bench] && editing.removed == nil)
+    #expect(editing.draft.current.entries == [deadlift, chinUp, bench])
   }
 
   @Test func targetsOpenOnTheSchemeTheirMovementHoldsAndCommitIntoIt() throws {
@@ -140,10 +140,10 @@ import UIKit
     editing.select(RoutineEntry(exerciseId: ID("bench-press")))
     #expect(editing.refusal == nil)
     editing.remove(0)
-    #expect(editing.refusal == nil && editing.removals == 1)
+    #expect(editing.refusal == nil && editing.draft.current.entries.isEmpty)
     editing.refusal = "This routine could not be saved. Try again."
     #expect(editing.refusal == "This routine could not be saved. Try again.")
-    editing.undoRemoval()
+    editing.select(RoutineEntry(exerciseId: ID("bench-press")))
     #expect(editing.refusal == nil && editing.draft.current.entries == [RoutineEntry(exerciseId: ID("bench-press"))])
     editing.draft.current.name = " "
     #expect(editing.refusal == nil)
@@ -186,7 +186,7 @@ import UIKit
 
   // The row's time is the log's stamp on the proposal, so a proposal still on the phone says only who proposed it.
   @Test func aWaitingProposalsRowSaysWhenTheLogTookIt() throws {
-    let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: "routines-owner",
+    let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: "routines-owner",
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry), commandResultWrites: AppRuntime.commandResultWrites)
     let gym = GymModel(runner: harness.runner, locale: Locale(identifier: "en_US")); gym.account = "routines-owner"
     gym.run(CreateExercise(Exercise(id: ID("timed-bench"), name: "Bench", pattern: "press", equipment: "barbell", stepKg: 2.5)))
@@ -212,8 +212,7 @@ import UIKit
     #expect(titles == [ID("change"): "Push A · 2 changes", ID("removal"): "Push A · a removal"])
   }
 
-  // Delete routine in the editor asks nothing: the routine goes at once behind the room's Undo, which names it.
-  @Test func theEditorDeletesItsRoutineBehindAnUndoAndRefusesAnotherAccount() throws {
+  @Test func theEditorDeletesItsRoutineImmediatelyAndRefusesAnotherAccount() throws {
     let (_, gym) = fixture()
     var routine = draft(gym)
     #expect(gym.saveRoutine(&routine))
@@ -223,8 +222,7 @@ import UIKit
     gym.account = nil
     let editing = RoutineEditingSession(gym: gym, routine: gym.routines.first)
     #expect(editing.delete(gym) && gym.routines.isEmpty)
-    let offer = try #require(gym.undoOffers.last)
-    #expect(offer.line == "Routine deleted" && gym.undo(offer.id) && gym.routines.map(\.id) == [routine.id])
+    #expect(GymModel(runner: gym.runner).routines.isEmpty)
   }
 
   @Test func saveFailureRetainsExactDraftAndRetryUsesSameID() {
@@ -239,7 +237,7 @@ import UIKit
     #expect(gym.routines == [before])
   }
 
-  @Test func deletionCanBeUndoneAndLeavesSessionHistory() throws {
+  @Test func deletionPersistsAndLeavesSessionHistory() throws {
     let (_, gym) = fixture()
     var draft = draft(gym)
     #expect(gym.saveRoutine(&draft))
@@ -249,23 +247,18 @@ import UIKit
     let receipt = try #require(gym.run(DeleteRoutine(draft.id))?.receipt)
     #expect(gym.routines.isEmpty)
     #expect(gym.routineHistory(draft.id).map(\.id) == [session.id])
-    #expect(gym.undo(receipt.gestureId))
-    #expect(gym.routines.map(\.id) == [draft.id])
+    #expect(receipt.releaseAt == nil && GymModel(runner: gym.runner).routines.isEmpty)
   }
 
-  @Test func multipleRoutineDeletesKeepIndependentNineSecondUndoOffers() throws {
+  @Test func multipleRoutineDeletesPersistImmediately() throws {
     let (harness, gym) = fixture()
     var first = draft(gym, name: "First"), second = draft(gym, name: "Second")
     #expect(gym.saveRoutine(&first) && gym.saveRoutine(&second))
     let firstDelete = try #require(gym.run(DeleteRoutine(first.id))?.receipt)
-    harness.advance(ms: 1_000)
     let secondDelete = try #require(gym.run(DeleteRoutine(second.id))?.receipt)
-    #expect(gym.undoOffers.reversed().map(\.id) == [secondDelete.gestureId, firstDelete.gestureId])
-    #expect(firstDelete.releaseAt == 1_790_424_009_000 && secondDelete.releaseAt == 1_790_424_010_000)
-    #expect(gym.undo(secondDelete.gestureId) && gym.routines.map(\.id) == [second.id])
-    harness.advance(ms: 8_001); gym.refresh()
-    #expect(gym.undoOffers.isEmpty && !gym.undo(firstDelete.gestureId))
-    #expect(gym.error == "That change has already been kept." && gym.routines.map(\.id) == [second.id])
+    #expect(firstDelete.releaseAt == nil && secondDelete.releaseAt == nil)
+    #expect(try harness.stored(Routine.self).isEmpty)
+    #expect(GymModel(runner: harness.runner).routines.isEmpty)
   }
 
   @Test func routineStartFreezesPlanAndFreeStartKeepsNoRoutine() throws {
@@ -345,7 +338,7 @@ import UIKit
 
   // One visit to the editor is one screen event, however often its steps push over it and pop; each step records its own.
   @Test func anEditorVisitRecordsOneScreenEventAndEachStepItsOwn() async throws {
-    let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
+    let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     let telemetry = TelemetryRecorder(), gym = GymModel(runner: harness.runner, telemetry: telemetry)
     var routine = draft(gym)

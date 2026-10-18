@@ -167,7 +167,8 @@ import UIKit
       XCTAssertFalse(app.staticTexts["Build one, or just start logging."].exists, "The empty state reads out the button below it")
       XCTAssertFalse(app.buttons["Ask Coach"].exists, "Signed out, Coach is not offered")
       XCTAssertFalse(app.buttons["Movements"].exists)
-      assertPrimaryLabelContrast(app.buttons["Just start logging"], appearance: appearance)
+      XCTAssertFalse(app.buttons["Just start logging"].exists)
+      XCTAssertTrue(app.buttons["new-routine"].isHittable)
       capture(app, "empty-" + appearance)
       app.buttons["new-routine"].tap()
       XCTAssertFalse(app.buttons["save-routine"].isEnabled)
@@ -242,11 +243,11 @@ import UIKit
       capture(app, "builder-" + appearance)
       app.buttons["save-routine"].tap()
       XCTAssertTrue(app.descendants(matching: .any)["routine-detail"].waitForExistence(timeout: 5))
-      XCTAssertTrue(app.buttons["routine-detail-movement-bench-press"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.descendants(matching: .any)["routine-detail-movement-bench-press"].waitForExistence(timeout: 5))
       XCTAssertFalse(app.staticTexts["History"].exists, "A routine never trained draws no History")
       XCTAssertFalse(app.staticTexts["No workouts with this routine yet."].exists)
       XCTAssertFalse(app.staticTexts["Open movements have no target — you decide the numbers at the rack."].exists)
-      assertPrimaryLabelContrast(app.buttons["Start workout"], appearance: appearance)
+      assertPrimaryLabelContrast(app.buttons["routine-start"], appearance: appearance)
       capture(app, "detail-" + appearance)
       app.buttons["edit-routine"].tap()
       XCTAssertTrue(app.navigationBars["Edit routine"].waitForExistence(timeout: 5))
@@ -254,23 +255,16 @@ import UIKit
       XCTAssertTrue(app.buttons["delete-routine"].exists)
       capture(app, "builder-edit-" + appearance)
       app.navigationBars["Edit routine"].buttons["Cancel"].tap()
-      app.navigationBars["Push A"].buttons.element(boundBy: 0).tap()
+      app.buttons["routine-close"].tap()
       let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "routine-")).firstMatch
       XCTAssertTrue(row.waitForExistence(timeout: 5))
       XCTAssertEqual(row.label, "Push A, 1 movement · never trained")
-      XCTAssertTrue(app.buttons["Movements"].exists)
+      XCTAssertFalse(app.buttons["Movements"].exists)
       XCTAssertFalse(app.buttons["routines-sign-in"].exists)
       capture(app, "list-" + appearance)
       row.tap()
-      app.buttons["routine-detail-movement-bench-press"].tap()
-      capture(app, "record-" + appearance)
-      openRename(app)
-      XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-      capture(app, "rename-" + appearance)
-      retype(app.textFields["gym-rename-movement-name"], with: "Bench today")
-      app.buttons["gym-rename-movement-commit"].tap()
-      XCTAssertTrue(app.staticTexts["gym-rename-movement-refusal"].waitForExistence(timeout: 5))
-      XCTAssertEqual(app.textFields["gym-rename-movement-name"].value as? String, "Bench today")
+      XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5))
+      XCTAssertFalse(app.buttons["routine-detail-movement-bench-press"].exists)
       app.terminate()
     }
   }
@@ -313,11 +307,10 @@ import UIKit
     for appearance in ["dark", "light"] {
       let app = launch(appearance)
       createRoutine(app)
-      app.navigationBars["Push A"].buttons.element(boundBy: 0).tap()
-      app.buttons["Movements"].tap()
-      XCTAssertTrue(app.navigationBars["Movements"].waitForExistence(timeout: 5))
-      XCTAssertFalse(app.navigationBars["Movements"].buttons["Cancel"].exists)
-      capture(app, "movements-" + appearance)
+      app.buttons["edit-routine"].tap()
+      app.buttons["add-movement"].tap()
+      XCTAssertTrue(app.navigationBars["Add movement"].waitForExistence(timeout: 5))
+      capture(app, "picker-custom-" + appearance)
       app.buttons["gym-new-movement"].tap()
       let commit = app.buttons["gym-movement-create-commit"]
       XCTAssertTrue(commit.waitForExistence(timeout: 5))
@@ -328,7 +321,7 @@ import UIKit
       XCTAssertEqual(app.textFields["gym-movement-name"].placeholderValue, "Name")
       capture(app, "creation-empty-" + appearance)
       app.navigationBars["Create movement"].buttons["Cancel"].tap()
-      replace(app.searchFields.firstMatch, with: "Cable curl")
+      replace(app.textFields["gym-movement-search"], with: "Cable curl")
       let offer = app.buttons["gym-create-movement"]
       XCTAssertTrue(offer.waitForExistence(timeout: 5))
       XCTAssertEqual(offer.label, "Create “Cable curl”")
@@ -338,7 +331,18 @@ import UIKit
       assertPrimaryLabelContrast(commit, appearance: appearance, minimumWidth: 24)
       capture(app, "creation-" + appearance)
       commit.tap()
-      XCTAssertTrue(app.navigationBars["Cable curl"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.buttons["save-routine"].waitForExistence(timeout: 10))
+      app.buttons["save-routine"].tap()
+      let custom = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "routine-detail-movement-", "Cable curl")).firstMatch
+      XCTAssertTrue(custom.waitForExistence(timeout: 5))
+      app.buttons["routine-start"].tap()
+      XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10))
+      app.descendants(matching: .any)["workout-current-set"].swipeLeft()
+      XCTAssertTrue(app.buttons["Cable curl"].waitForExistence(timeout: 5))
+      app.buttons["workout-log"].tap(); app.buttons["workout-finish"].tap()
+      XCTAssertTrue(app.buttons["workout-done"].waitForExistence(timeout: 10)); app.buttons["workout-done"].tap()
+      let record = app.buttons["gym-session-movement"].firstMatch
+      XCTAssertTrue(record.waitForExistence(timeout: 5)); record.tap()
       openRename(app)
       retype(app.textFields["gym-rename-movement-name"], with: "My curl")
       app.buttons["gym-rename-movement-commit"].tap()
@@ -347,23 +351,23 @@ import UIKit
     }
   }
 
-  func testCancelDraftReopenDeleteAndUndo() {
+  func testCancelDraftReopenAndDeleteWithoutUndo() {
     let app = launch()
     createRoutine(app)
     app.buttons["edit-routine"].tap()
     replace(app.textFields["routine-name"], with: "Cancelled name")
     app.buttons["Cancel"].tap()
     XCTAssertTrue(app.navigationBars["Push A"].waitForExistence(timeout: 5))
-    app.navigationBars.buttons["Routines"].tap()
-    let row = app.cells.containing(.staticText, identifier: "Push A").firstMatch
+    app.buttons["routine-close"].tap()
+    let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "routine-", "Push A,")).firstMatch
     XCTAssertTrue(row.waitForExistence(timeout: 5)); row.swipeLeft()
     app.buttons["Delete"].tap()
-    XCTAssertTrue(app.buttons["Undo"].waitForExistence(timeout: 5)); app.buttons["Undo"].tap()
-    XCTAssertTrue(app.staticTexts["Push A"].waitForExistence(timeout: 5))
+    XCTAssertTrue(row.waitForNonExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["gym-routines-undo"].exists)
+    XCTAssertTrue(app.staticTexts["No routines yet"].exists)
   }
 
-  // Delete routine is the editor's last section: it asks nothing, closes the editor and the detail, and Routines holds its Undo.
-  func testEditorDeletesTheRoutineAtOnceBehindItsUndo() {
+  func testEditorDeletesTheRoutineAndClosesItsSummary() {
     let app = launch()
     createRoutine(app)
     app.buttons["edit-routine"].tap()
@@ -374,10 +378,8 @@ import UIKit
     XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.navigationBars["Edit routine"].waitForNonExistence(timeout: 5))
     XCTAssertFalse(app.descendants(matching: .any)["routine-detail"].exists)
-    XCTAssertTrue(app.staticTexts["Routine deleted"].waitForExistence(timeout: 5))
     XCTAssertFalse(app.staticTexts["Push A"].exists)
-    app.buttons["gym-routines-undo"].tap()
-    XCTAssertTrue(app.staticTexts["Push A"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["gym-routines-undo"].exists)
   }
 
   // Signed in with Coach at hand, an empty Routines offers one way to Coach, which opens with the question in the composer,
@@ -401,27 +403,38 @@ import UIKit
     XCTAssertFalse(app.buttons["coach-stop"].exists, "The question waits in the composer, unsent")
   }
 
-  func testJustStartLoggingOpensWorkout() {
+  func testRoutineSummaryClosesReopensAndStartsWorkout() {
     let app = launch()
-    app.buttons["Just start logging"].tap()
-    XCTAssertTrue(app.descendants(matching: .any)["gym-workout"].waitForExistence(timeout: 10))
-  }
-
-  func testSignedOutRoutinesOfferNoBannerAndTheFirstWorkoutOffersTheWrittenProgram() {
-    let app = launch()
-    XCTAssertTrue(app.staticTexts["No routines yet"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["Just start logging"].exists)
+    XCTAssertFalse(app.buttons["routines-movements"].exists)
     XCTAssertFalse(app.buttons["routines-sign-in"].exists)
     XCTAssertFalse(app.staticTexts["Your log is saved on this device."].exists)
-    app.buttons["Just start logging"].tap()
-    XCTAssertTrue(app.buttons["workout-add"].waitForExistence(timeout: 10)); app.buttons["workout-add"].tap()
+    createRoutine(app)
+    XCTAssertEqual(app.buttons["routine-start"].label, "Start")
+    XCTAssertTrue(app.buttons["edit-routine"].isHittable)
+    app.buttons["routine-close"].tap()
+    XCTAssertTrue(app.descendants(matching: .any)["routine-detail"].waitForNonExistence(timeout: 5))
+    let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "routine-", "Push A,")).firstMatch
+    XCTAssertTrue(row.waitForExistence(timeout: 5)); row.tap()
+    XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5))
+    app.buttons["routine-start"].tap()
+    XCTAssertTrue(app.descendants(matching: .any)["gym-workout"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["Bench Press"].exists)
+    XCTAssertFalse(app.descendants(matching: .any)["routine-detail"].exists)
+  }
+
+  func testUnplannedWorkoutOffersTheWrittenProgram() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "workout-free-empty"]
+    app.launch()
+    viewport = app.frame
+    XCTAssertTrue(app.buttons["workout-assembly"].waitForExistence(timeout: 10)); app.buttons["workout-assembly"].tap()
+    XCTAssertTrue(app.buttons["workout-assembly-add"].waitForExistence(timeout: 5)); app.buttons["workout-assembly-add"].tap()
     XCTAssertTrue(app.navigationBars["Next movement"].waitForExistence(timeout: 5))
     let door = app.buttons["gym-build-written-program"]
     for _ in 0..<16 {
-      if door.exists {
-        let frame = door.frame
-        if frame.width > 0 && frame.height > 0 && app.frame.contains(frame)
-            && frame.maxY < viewport.maxY - 16 && door.isHittable { break }
-      }
+      if door.exists, !door.frame.isEmpty, app.frame.contains(door.frame),
+         door.frame.maxY < viewport.maxY - 16, door.isHittable { break }
       app.collectionViews["gym-movement-picker"].swipeUp(velocity: .fast)
     }
     XCTAssertLessThan(door.frame.maxY, viewport.maxY - 16)
@@ -430,31 +443,39 @@ import UIKit
     XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 5))
   }
 
-  func testFirstWorkoutKeepsItsWelcomeAfterLoggingASet() {
+  func testRoutineWorkoutCanAddAnotherMovementAfterLoggingASet() {
     let app = launch()
-    app.buttons["Just start logging"].tap()
-    XCTAssertTrue(app.buttons["workout-add"].waitForExistence(timeout: 5)); app.buttons["workout-add"].tap()
-    XCTAssertTrue(app.navigationBars["Next movement"].waitForExistence(timeout: 5))
-    app.buttons["gym-movement-back-squat"].tap()
+    createRoutine(app)
+    app.buttons["routine-start"].tap()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5)); app.buttons["workout-log"].tap()
     let sets = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-"))
     XCTAssertTrue(sets.firstMatch.waitForExistence(timeout: 5)); XCTAssertEqual(sets.count, 1)
     app.buttons["workout-assembly"].tap()
     XCTAssertTrue(app.buttons["workout-assembly-add"].waitForExistence(timeout: 5)); app.buttons["workout-assembly-add"].tap()
     XCTAssertTrue(app.navigationBars["Next movement"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["gym-movement-bench-press"].exists)
+    XCTAssertTrue(app.buttons["gym-movement-back-squat"].exists)
     app.terminate()
   }
 
-  func testRoutineMovementOpensTheCommonRecord() {
+  func testFinishedRoutineMovementOpensTheCommonRecord() {
     let app = launch()
     createRoutine(app)
-    app.buttons["routine-detail-movement-bench-press"].tap()
+    app.buttons["routine-start"].tap()
+    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10))
+    app.buttons["workout-log"].tap(); app.buttons["workout-finish"].tap()
+    XCTAssertTrue(app.buttons["workout-done"].waitForExistence(timeout: 10)); app.buttons["workout-done"].tap()
+    let movement = app.buttons["gym-session-movement"].firstMatch
+    XCTAssertTrue(movement.waitForExistence(timeout: 5)); movement.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["gym-record-empty"].exists)
+    XCTAssertFalse(app.staticTexts["gym-record-empty"].exists)
+    openRename(app)
+    retype(app.textFields["gym-rename-movement-name"], with: "Bench today")
+    app.buttons["gym-rename-movement-commit"].tap()
+    XCTAssertTrue(app.staticTexts["gym-rename-movement-refusal"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.textFields["gym-rename-movement-name"].value as? String, "Bench today")
   }
 
-  func testBuilderReorderRemoveUndoAndSelectedMovement() {
+  func testBuilderReorderRemoveAndAddMovementAgain() {
     let app = launch()
     app.buttons["new-routine"].tap()
     replace(app.textFields["routine-name"], with: "Training day")
@@ -494,16 +515,16 @@ import UIKit
       withVelocity: .slow, thenHoldForDuration: 0.1)
     let remove = app.buttons["Remove"]
     XCTAssertTrue(remove.wait(for: \.isHittable, toEqual: true, timeout: 5)); remove.tap()
-    let undo = app.buttons["builder-undo"]
-    XCTAssertTrue(undo.waitForExistence(timeout: 5)); undo.tap()
-    XCTAssertTrue(undo.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(deadlift.waitForNonExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["builder-undo"].exists)
     app.buttons["add-movement"].tap()
     XCTAssertFalse(app.buttons["gym-movement-bench-press"].isEnabled)
-    app.navigationBars["Add movement"].buttons["Cancel"].tap()
+    XCTAssertTrue(app.buttons["gym-movement-deadlift"].isEnabled)
+    app.buttons["gym-movement-deadlift"].tap()
     app.buttons["save-routine"].tap()
-    XCTAssertTrue(app.buttons["routine-detail-movement-deadlift"].waitForExistence(timeout: 5))
-    XCTAssertEqual(app.buttons["routine-detail-movement-deadlift"].label, "1. Deadlift, open")
-    XCTAssertEqual(app.buttons["routine-detail-movement-bench-press"].label, "2. Bench Press, open")
+    XCTAssertTrue(app.descendants(matching: .any)["routine-detail-movement-deadlift"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.descendants(matching: .any)["routine-detail-movement-deadlift"].label, "2. Deadlift, open")
+    XCTAssertEqual(app.descendants(matching: .any)["routine-detail-movement-bench-press"].label, "1. Bench Press, open")
     XCTAssertFalse(app.staticTexts["Open movements have no target — you decide the numbers at the rack."].exists, "Open explains itself")
   }
 
@@ -683,34 +704,21 @@ import UIKit
     }
   }
 
-  // A pushed screen hides the tab bar; back at Routines' end, its last row stands where it stood, clear of the band.
-  func testRoutinesEndStaysClearOfTheBandAfterAPushedScreenPops() {
+  func testRoutinesSummaryStaysReachableAtLargestText() {
     let app = launch("light", proposal: true, arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
-    XCTAssertTrue(app.buttons["routine-proposal"].waitForExistence(timeout: 15))
-    let movements = app.buttons["routines-movements"], band = app.buttons["Just start logging"]
-    XCTAssertTrue(band.waitForExistence(timeout: 5))
-    for _ in 0..<6 { app.swipeUp(velocity: .fast) }
-    let atEnd = settledFrame(movements), first = app.buttons["routine-proposal"].frame
-    capture(app, "end-before-push")
-    XCTAssertLessThan(first.minY, app.navigationBars.firstMatch.frame.maxY, "At this size Routines scrolls its first row \(first) under the bar")
-    XCTAssertLessThanOrEqual(atEnd.maxY, band.frame.minY + 1, "At rest the last row \(atEnd) clears \(band.frame)")
-    movements.tap()
-    XCTAssertTrue(app.descendants(matching: .any)["gym-movement-picker"].waitForExistence(timeout: 10))
-    XCTAssertFalse(app.tabBars.firstMatch.isHittable, "A pushed screen hides the tab bar")
-    app.navigationBars.buttons.element(boundBy: 0).tap()
-    XCTAssertTrue(band.waitForExistence(timeout: 10))
-    let returned = settledFrame(movements)
-    capture(app, "end-after-pop")
-    XCTAssertEqual(returned.minY, atEnd.minY, accuracy: 1, "The last row \(returned) stands where it stood \(atEnd)")
-    XCTAssertLessThanOrEqual(returned.maxY, band.frame.minY + 1, "The last row \(returned) clears \(band.frame)")
-  }
-  func settledFrame(_ element: XCUIElement) -> CGRect {
-    var frame = element.frame
-    for _ in 0..<20 {
-      RunLoop.current.run(until: Date().addingTimeInterval(0.25))
-      if element.frame == frame { break }
-      frame = element.frame
-    }
-    return frame
+    let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier != %@", "routine-", "routine-proposal")).firstMatch
+    XCTAssertTrue(row.waitForExistence(timeout: 15))
+    for _ in 0..<8 where !row.isHittable { app.swipeUp(velocity: .slow) }
+    row.tap()
+    let start = app.buttons["routine-start"]
+    XCTAssertTrue(start.waitForExistence(timeout: 5))
+    XCTAssertTrue(start.isHittable)
+    XCTAssertTrue(app.frame.contains(start.frame))
+    XCTAssertTrue(app.buttons["routine-close"].isHittable)
+    capture(app, "summary-accessibility")
+    app.buttons["routine-close"].tap()
+    XCTAssertTrue(app.tabBars.buttons["Routines"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["routines-movements"].exists)
+    XCTAssertFalse(app.buttons["Just start logging"].exists)
   }
 }

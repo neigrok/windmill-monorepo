@@ -7,7 +7,7 @@ object TextMerge {
     enum class Edit { keep, delete, insert }
     data class Result(val text: String, val conflict: Boolean)
     data class Merged(val text: String, val conflict: Boolean, val merged: Boolean, val baseText: String)
-    fun isWhitespace(c: Int) = c in 9..13 || c in listOf(32, 0xA0, 0x1680, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF) || c in 0x2000..0x200A
+    fun isWhitespace(c: Int) = TextWhitespace.contains(c)
     fun isBlank(text: String) = text.codePoints().allMatch(::isWhitespace)
     fun tokens(text: String): List<String> {
         val tokens = mutableListOf<String>(); var start = 0; var previous: Boolean? = null

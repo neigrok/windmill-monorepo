@@ -268,15 +268,6 @@ struct RoomMenu: View {
           Label(room.title, systemImage: room.symbol).tag(room).accessibilityIdentifier("room-" + room.rawValue)
         }
       }.pickerStyle(.inline)
-      Divider()
-      Button("You", systemImage: "person.crop.circle") { app.openYou() }
-      if app.selectedRoom == .journal {
-        Button("Show ink notes", systemImage: "scribble.variable") {
-          app.journal.done()
-          app.journal.inkVisible = true
-          app.journal.screenViewed("ink_notes")
-        }
-      }
     } label: {
       HStack(spacing: 6) {
         Text(app.selectedRoom.title).font(.body.weight(.semibold))

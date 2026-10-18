@@ -113,6 +113,7 @@ public enum Visibility {
     guard let fields = def.visibleWhen else { return anySet() }
     return fields.contains { name in
       guard let value = value(name) else { return false }
+      if case .text? = def.field(name)?.kind, case .string(let text) = value { return !TextWhitespace.isBlank(text) }
       return !value.isNull && value != ""
     }
   }

@@ -17,7 +17,7 @@ import SyncTesting
 
 @Suite(.serialized) @MainActor struct GymModelTests {
   func fixture() -> (Harness, GymModel) {
-    let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
+    let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     return (harness, GymModel(runner: harness.runner))
   }
@@ -31,7 +31,7 @@ import SyncTesting
     let engine = try SyncEngine(config: EngineConfig(appVersion: "test", surface: .ios, drivesLoops: drivesLoops), store: store,
                                 transport: transport, tokens: tokens, forkGuard: InMemoryForkGuardStore(),
                                 clock: .system, random: SeededRandomSource(seed: 17), connectivity: connectivity, telemetry: telemetry)
-    let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
+    let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0), holdRemovals: false)
     return AppRuntime(settings: AppSettings(arguments: ["app", "-server", "https://gym.invalid"]), store: store, engine: engine,
                       auth: NativeAuth(baseURL: URL(string: "https://gym.invalid")), runner: runner,
                       tokens: tokens, revocations: InMemoryTokenStore(), telemetry: telemetry)
@@ -79,39 +79,31 @@ import SyncTesting
     #expect(gym.run(action)?.receipt != nil && gym.notes.map(\.title) == ["Still mine"] && gym.error == nil)
   }
 
-  @Test func heldDeleteUndoRestoresTheEngineState() throws {
+  @Test func deletionPersistsImmediatelyAcrossRelaunch() throws {
     let (harness, gym) = fixture(), id = gym.runner.mint(Note.self)
     gym.run(SaveNoteCall(Note(id: id, title: "Kept")))
     let receipt = try #require(gym.run(DeleteNote(id))?.receipt)
-    #expect(gym.notes.isEmpty && gym.undoOffers.map(\.id) == [receipt.gestureId])
-    #expect(try harness.stored(Note.self).map(\.id) == [id])
-    #expect(gym.undo(receipt.gestureId))
-    #expect(gym.notes.map(\.id) == [id] && gym.undoOffers.isEmpty)
+    #expect(receipt.releaseAt == nil && gym.notes.isEmpty)
+    #expect(try harness.stored(Note.self).isEmpty)
+    #expect(GymModel(runner: harness.runner).notes.isEmpty)
+    #expect(try !gym.runner.undo(receipt.gestureId))
   }
 
-  @Test func expiredDeleteCannotBeUndone() throws {
-    let (harness, gym) = fixture(), id = gym.runner.mint(Note.self)
-    gym.run(SaveNoteCall(Note(id: id, title: "Gone")))
-    let receipt = try #require(gym.run(DeleteNote(id))?.receipt)
-    harness.advance(ms: Constants.holdMs + 1); gym.refresh()
-    #expect(gym.undoOffers.isEmpty && !gym.undo(receipt.gestureId) && gym.notes.isEmpty)
-  }
-
-  @Test func accountTransitionBlocksActionsSavesAndUndo() throws {
+  @Test func accountTransitionBlocksActionsAndSaves() throws {
     let (_, gym) = fixture()
     var draft = Draft(new: Note(id: gym.runner.mint(Note.self), title: "Pending"))
     gym.accountChanging = true
     #expect(gym.rest.blocked)
     #expect(gym.run(SaveNoteCall(draft.current)) == nil)
     guard case .failed = gym.save(&draft) else { Issue.record("Expected account transition to block draft save"); return }
-    #expect(draft.isNew && gym.notes.isEmpty && !gym.undo("unknown"))
+    #expect(draft.isNew && gym.notes.isEmpty)
     gym.accountChanging = false
     #expect(!gym.rest.blocked)
     guard case .saved = gym.save(&draft) else { Issue.record("Expected draft save after transition"); return }
     #expect(!draft.isNew && gym.notes.map(\.title) == ["Pending"])
   }
 
-  @Test func inactiveThenActivePreservesLiveConnectionUndoAndPersistsDraft() async throws {
+  @Test func inactiveThenActivePreservesLiveConnectionAndPersistsDraft() async throws {
     let transport = GymLifecycleTransport(), runtime = try runtime(transport: transport, drivesLoops: true)
     let identity = transport.base.identity(email: "gym-inactive@example.com")
     #expect(try await runtime.engine.signIn(account: identity.account, token: identity.token).isComplete)
@@ -123,11 +115,11 @@ import SyncTesting
     await runtime.engine.start()
     for _ in 0..<100 where transport.socket.sent.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
     #expect(!transport.socket.sent.isEmpty && !transport.socket.isClosed)
-    gym.run(SaveNoteCall(Note(id: id, title: "Keep undo")))
+    gym.run(SaveNoteCall(Note(id: id, title: "Deleted note")))
     let receipt = try #require(gym.run(DeleteNote(id))?.receipt)
     model.journal.type("Saved during the interruption")
     model.journal.saveTask?.cancel()
-    #expect(model.journal.dirty && gym.undoOffers.map(\.id) == [receipt.gestureId])
+    #expect(model.journal.dirty && receipt.releaseAt == nil)
     let restGeneration = gym.rest.generation
     let journalCommands = try runtime.runner.read(Journal.scope) { Set(try $0.commands().map(\.gestureId)) }
     model.scenePhaseChanged(.inactive)
@@ -142,38 +134,38 @@ import SyncTesting
     #expect(model.journal.dirty)
     #expect(!transport.socket.isClosed && transport.opens.withLock { $0 } == 1)
     #expect(gym.rest.generation == restGeneration)
-    #expect(gym.undoOffers.map(\.id) == [receipt.gestureId])
-    #expect(try runtime.store.read { try $0.device().activeReplica.outbox.filter { $0.gestureId == receipt.gestureId }.allSatisfy { $0.state == .held } })
+    #expect(gym.notes.isEmpty)
+    #expect(try runtime.store.read { try $0.device().activeReplica.outbox.filter { $0.gestureId == receipt.gestureId }.allSatisfy { $0.state != .held } })
     model.scenePhaseChanged(.active)
     #expect(!transport.socket.isClosed && transport.opens.withLock { $0 } == 1)
-    #expect(gym.undo(receipt.gestureId) && gym.notes.map(\.id) == [id])
+    #expect(gym.notes.isEmpty)
     model.scenePhaseChanged(.background)
     await runtime.engine.flushOnLeave()
     #expect(transport.socket.isClosed)
     gym.stop()
   }
 
-  @Test func backgroundReleasesHeldDeletesDurably() throws {
+  @Test func backgroundKeepsImmediateDeletesDurable() throws {
     let runtime = try runtime(), gym = GymModel(runner: runtime.runner, runtime: runtime)
     let id = gym.runner.mint(Note.self)
     gym.run(SaveNoteCall(Note(id: id, title: "Gone")))
     let receipt = try #require(gym.run(DeleteNote(id))?.receipt)
     gym.background()
-    #expect(gym.undoOffers.isEmpty && !gym.undo(receipt.gestureId))
+    #expect(receipt.releaseAt == nil && gym.notes.isEmpty)
     #expect(try runtime.store.read { try $0.device().activeReplica.outbox.allSatisfy { $0.state != .held } })
     #expect(GymModel(runner: runtime.runner, runtime: runtime).notes.isEmpty)
   }
 
-  @Test func failedReleaseRetainsUndoAndCanRetry() throws {
+  @Test func failedFlushReportsFailureAndCanRetry() throws {
     let fault = GymStoreFault(), runtime = try runtime(failing: fault)
     let gym = GymModel(runner: runtime.runner, runtime: runtime), id = gym.runner.mint(Note.self)
     gym.run(SaveNoteCall(Note(id: id, title: "Pending delete")))
     let receipt = try #require(gym.run(DeleteNote(id))?.receipt)
     fault.point.withLock { $0 = .beforeCommit(.release) }
-    #expect(!gym.flush() && gym.undoOffers.map(\.id) == [receipt.gestureId])
+    #expect(!gym.flush() && receipt.releaseAt == nil && gym.notes.isEmpty)
     #expect(gym.error == "Gym could not keep pending changes. Try again.")
     fault.point.withLock { $0 = nil }
-    #expect(gym.flush() && gym.undoOffers.isEmpty && !gym.undo(receipt.gestureId))
+    #expect(gym.flush() && gym.notes.isEmpty)
   }
 
   @Test func failedReadPreservesLastStateAndReportsOnlyBoundedFailure() throws {

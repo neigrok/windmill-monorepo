@@ -1,6 +1,7 @@
 #include "platform/domain/sync/Record.h"
 
 #include "platform/domain/sync/Jcs.h"
+#include "platform/domain/sync/TextMerge.h"
 
 #include <algorithm>
 #include <utility>
@@ -15,7 +16,7 @@ std::uint64_t unsignedOf(const Json::Value& wire, const char* part) {
 }
 
 bool holdsValue(const Row& row, const std::string& field) {
-  if (const auto text = row.x.find(field); text != row.x.end()) return !text->second.text.empty();
+  if (const auto text = row.x.find(field); text != row.x.end()) return !isBlank(text->second.text);
   const auto reg = row.lattice.f.find(field);
   if (reg == row.lattice.f.end()) return false;
   const Json::Value& value = reg->second.value;

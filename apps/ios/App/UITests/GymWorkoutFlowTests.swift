@@ -72,42 +72,40 @@ import Vision
     XCTAssertTrue(app.buttons["workout-weight"].wait(for: \.label, toEqual: "Weight, 60 kilograms", timeout: 5))
   }
 
-  // The receipt's primary and its footer stand in one reach band on a surface: at the largest text the rows that scroll
-  // beneath soften under its bar, so no row's text reads crisply inside the band, 16 pt above Keep.
-  func testReceiptRowsSoftenUnderItsBandAtAccessibilityText() throws {
+  func testReceiptActionsRemainReachableAtAccessibilityText() {
     let app = launch(appearance: "light", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
     app.buttons["workout-finish"].tap()
-    let keep = app.buttons["Keep this log"]
-    XCTAssertTrue(keep.waitForExistence(timeout: 10))
-    XCTAssertTrue(app.staticTexts["This log is only on this phone."].exists)
-    RunLoop.current.run(until: Date().addingTimeInterval(1))
-    let screenshot = app.screenshot()
-    let attachment = XCTAttachment(screenshot: screenshot)
-    attachment.name = "receipt-band-ax3"; attachment.lifetime = .keepAlways; add(attachment)
-    let image = try XCTUnwrap(screenshot.image.cgImage)
-    let scale = CGFloat(image.width) / app.frame.width
-    let strip = CGRect(x: 16, y: keep.frame.minY - 15, width: app.frame.width - 32, height: 13)
-    let width = image.width, height = image.height
-    var pixels = [UInt8](repeating: 0, count: width * height * 4)
-    pixels.withUnsafeMutableBytes { bytes in
-      let context = CGContext(data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
-                              space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue)
-      context?.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+    let done = app.buttons["workout-done"], share = app.buttons["workout-share-coach"], discard = app.buttons["workout-discard-receipt"]
+    XCTAssertTrue(done.waitForExistence(timeout: 10))
+    XCTAssertEqual([discard.label, share.label, done.label], ["Discard", "👑 Share with Coach", "Done"])
+    for button in [discard, share, done] {
+      XCTAssertTrue(button.isHittable)
+      XCTAssertTrue(app.frame.contains(button.frame))
+      XCTAssertGreaterThanOrEqual(button.frame.height, 44)
     }
-    var darkest = 1.0, lightest = 0.0
-    for y in Int(strip.minY * scale)..<Int(strip.maxY * scale) {
-      for x in Int(strip.minX * scale)..<Int(strip.maxX * scale) {
-        let offset = (y * width + x) * 4
-        let linear = (0..<3).map { channel -> Double in
-          let value = Double(pixels[offset + channel]) / 255
-          return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
-        }
-        let luminance = linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722
-        darkest = min(darkest, luminance); lightest = max(lightest, luminance)
-      }
-    }
-    XCTAssertLessThan((lightest + 0.05) / (darkest + 0.05), 4.5, "A row reads crisply under the band at \(strip)")
+    XCTAssertLessThanOrEqual(discard.frame.maxY, share.frame.minY)
+    XCTAssertLessThanOrEqual(share.frame.maxY, done.frame.minY)
+    XCTAssertFalse(app.staticTexts["Sends Coach one line — Check my last workout."].exists)
+    let attachment = XCTAttachment(screenshot: app.screenshot())
+    attachment.name = "receipt-actions-ax3"; attachment.lifetime = .keepAlways; add(attachment)
+  }
+
+  func testReceiptDiscardCanCancelThenRemoveWorkout() {
+    let app = launch()
+    app.buttons["workout-finish"].tap()
+    let discard = app.buttons["workout-discard-receipt"]
+    XCTAssertTrue(discard.waitForExistence(timeout: 10)); discard.tap()
+    let confirmation = app.buttons["Discard workout"]
+    XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+    app.cancelConfirmation()
+    XCTAssertTrue(confirmation.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(discard.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["workout-done"].exists)
+    discard.tap()
+    XCTAssertTrue(confirmation.waitForExistence(timeout: 5)); confirmation.tap()
+    XCTAssertTrue(app.descendants(matching: .any)["gym-log"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.descendants(matching: .any)["gym-session-detail"].exists)
+    XCTAssertFalse(app.buttons["gym-log-undo"].exists)
   }
 
   // Fix set commits from its bar, so the destructive row and its caption stand clear at rest.
@@ -124,9 +122,7 @@ import Vision
     XCTAssertTrue(app.frame.contains(caption.frame), "The caption \(caption.frame) is below the sheet at rest")
   }
 
-  // VoiceOver hears the ledger as it is: a logged set is a button that opens Fix set and is never read as selected, while
-  // the current and planned rows are read, not pressed. Every row stands at the system's one-line height.
-  func testLedgerRowsAreReadAsWhatTheyAreAtTheSystemsRowHeight() {
+  func testCompactSetsExposeLoggedCurrentAndPlannedValues() {
     let app = launch(appearance: "light")
     let ledger = app.descendants(matching: .any).matching(NSPredicate(format: "label MATCHES %@", "(Warmup|Set [0-9]+), (logged|current|planned), .*"))
     XCTAssertTrue(ledger.firstMatch.waitForExistence(timeout: 5))
@@ -136,7 +132,8 @@ import Vision
       "button: Warmup, logged, 80 kilograms, 3 reps", "button: Set 1, logged, 100 kilograms, 5 reps", "button: Set 2, logged, 100 kilograms, 5 reps",
       "text: Set 3, current, target 100 kilograms, 5 reps", "text: Set 4, planned, 100 kilograms, 5 reps",
     ])
-    XCTAssertEqual(rows.map(\.frame.height), Array(repeating: 52, count: rows.count), "Each row is the system's one-line row")
+    for row in rows.filter({ $0.elementType == .button }) { XCTAssertGreaterThanOrEqual(row.frame.height, 44) }
+    XCTAssertTrue(app.descendants(matching: .any)["workout-set-progress"].exists)
   }
 
   // The receipt opens over session detail at full height only. Done shows the detail, which numbers a set the way the
@@ -147,9 +144,9 @@ import Vision
     XCTAssertTrue(ledger.firstMatch.waitForExistence(timeout: 5))
     XCTAssertEqual((0..<ledger.count).map { ledger.element(boundBy: $0).label.components(separatedBy: ",").first }, ["Warmup", "Set 1", "Set 2"])
     app.buttons["workout-finish"].tap()
-    let done = app.buttons["Done"]
+    let done = app.buttons["workout-done"]
     XCTAssertTrue(done.waitForExistence(timeout: 10))
-    XCTAssertLessThan(done.frame.minY, app.frame.height / 4, "The receipt \(done.frame) opens at .large, never at half height")
+    XCTAssertLessThan(app.navigationBars.firstMatch.frame.minY, app.frame.height / 4)
     done.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 10))
     let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-finished-set-"))
@@ -159,6 +156,17 @@ import Vision
 
   func testPagerAssemblyAndHeavierBoundary() {
     let app = launch()
+    XCTAssertTrue(app.descendants(matching: .any)["workout-pages"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["workout-next"].exists)
+    XCTAssertFalse(app.buttons["workout-previous"].exists)
+    XCTAssertFalse(app.staticTexts["Movement 1 of 2"].exists)
+    for control in [app.buttons["Fewer reps"], app.buttons["More reps"], app.buttons["−2.5 kilograms"], app.buttons["+2.5 kilograms"]] {
+      XCTAssertGreaterThanOrEqual(control.frame.width, 44)
+      XCTAssertGreaterThanOrEqual(control.frame.height, 44)
+    }
+    XCTAssertLessThanOrEqual(app.buttons["workout-log"].frame.height, 64)
+    XCTAssertTrue(app.descendants(matching: .any)["Workout time"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["Since last set"].exists)
     let weight = app.buttons["workout-weight"]
     let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in weight.exists && weight.isEnabled && weight.isHittable }, object: weight)
     XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
@@ -166,7 +174,7 @@ import Vision
     XCTAssertTrue(app.buttons["workout-key-1"].waitForExistence(timeout: 5))
     for key in ["1", "0", "5"] { app.buttons["workout-key-\(key)"].tap() }
     app.buttons["workout-keypad-set"].tap(); app.buttons["workout-log"].tap()
-    app.buttons["workout-next"].tap()
+    app.descendants(matching: .any)["workout-current-set"].swipeLeft()
     // Leaving the movement raised the question, so nothing on screen anchors it: it is an alert.
     let heavier = app.alerts["Save 105 to Lower A?"]
     XCTAssertTrue(heavier.waitForExistence(timeout: 5))
@@ -191,7 +199,7 @@ import Vision
     let chosenSet = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch
     XCTAssertTrue(chosenSet.waitForExistence(timeout: 5))
     XCTAssertEqual(chosenSet.label, "Set 1, logged, 20 kilograms, 5 reps")
-    app.buttons["workout-previous"].tap()
+    app.descendants(matching: .any)["workout-current-set"].swipeRight()
     XCTAssertTrue(app.buttons["Romanian Deadlift"].waitForExistence(timeout: 5))
     XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).count, 0)
   }

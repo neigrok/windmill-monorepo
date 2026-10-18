@@ -32,7 +32,7 @@ import SyncTesting
   }
 
   func fixture() -> (Harness, GymModel) {
-    let h = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: "coach-owner",
+    let h = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: "coach-owner",
                     rules: ComposedServerRules.windmill(registry: SyncSchema.registry), commandResultWrites: AppRuntime.commandResultWrites)
     let gym = GymModel(runner: h.runner); gym.account = "coach-owner"
     return (h, gym)
@@ -522,10 +522,8 @@ import SyncTesting
     let history = CoachHistory(gym: gym, rest: rest)
     _ = CoachHistoryScreen(gym: gym, coach: coach, history: history)
     let row = try #require(saved.thread)
-    history.rows = [row]; history.remove(row)
-    let deleting = try #require(history.held.first?.task)
-    await deleting.value
-    #expect(history.held.isEmpty && rest.tasks.isEmpty)
+    history.rows = [row]; await history.remove(row)
+    #expect(history.deletes.isEmpty && rest.tasks.isEmpty)
     #expect(history.rows.isEmpty && history.error == nil)
     #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_action" }.map(\.properties) } == [["screen": "history", "outcome": "ok"]])
     #expect(coach.saved.threadId != row.id && coach.saved.thread == nil && coach.saved.request == nil && coach.saved.generation == nil && coach.saved.exchanges.isEmpty)
@@ -551,9 +549,8 @@ import SyncTesting
     #expect(coach.keep(original, failure: "failure"))
     let history = CoachHistory(gym: gym, rest: rest)
     _ = CoachHistoryScreen(gym: gym, coach: coach, history: history)
-    history.rows = [row]; history.remove(row)
-    let deleting = try #require(history.held.first?.task)
-    try await Task.sleep(for: .seconds(9.1))
+    history.rows = [row]
+    let deleting = Task { await history.remove(row) }
     let path = "/v1/gym/threads/thread-123"
     try await settle { CoachTestProtocol.state.withLock { $0.activeByPath[path] != nil } }
     let call = try #require(CoachTestProtocol.state.withLock { $0.activeByPath[path] })
@@ -657,42 +654,51 @@ import SyncTesting
     let call = try #require(CoachTestProtocol.state.withLock { $0.requests.first })
     #expect(call.path.hasSuffix("/generations/request-123/stop") && call.method == "POST" && call.body == nil)
   }
-  // A swipe on the delete band keeps the delete: its hold ends and the delete leaves at once.
-  @Test func swipingTheDeleteBandAwayKeepsTheDeleteAndSendsItNow() async throws {
+  @Test func historyDeleteSendsImmediatelyAndRecordsItsOutcome() async throws {
     let (gym, rest, telemetry) = try await authed(.http(200, #"{"threads":[{"id":"thread-123","title":"Private","askedAt":1000}]}"#))
     let history = CoachHistory(gym: gym, rest: rest); await history.load()
     let row = try #require(history.rows.first)
     CoachTestProtocol.state.withLock { $0.replies["/v1/gym/threads/thread-123"] = .http(200, "{}") }
-    history.remove(row); history.keep(row.id)
-    try await settle { CoachTestProtocol.state.withLock { $0.requests.count } == 2 && history.held.isEmpty }
-    #expect(history.rows.isEmpty && history.error == nil)
+    await history.remove(row)
+    #expect(history.rows.isEmpty && history.error == nil && history.deletes.isEmpty)
     #expect(CoachTestProtocol.state.withLock { $0.requests.map { "\($0.method) \($0.path)" } } == ["GET /v1/gym/threads", "DELETE /v1/gym/threads/thread-123"])
-    try await settle { telemetry.entries.withLock { $0.contains { $0.name == "gym_action" } } }
-    #expect(telemetry.entries.withLock { $0.filter { ["gym_action", "gym_undo"].contains($0.name) }.map { [$0.name: $0.properties] } } ==
-            [["gym_undo": ["screen": "history", "action": "dismiss"]], ["gym_action": ["screen": "history", "outcome": "ok"]]])
+    #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_action" }.map { [$0.name: $0.properties] } } ==
+            [["gym_action": ["screen": "history", "outcome": "ok"]]])
   }
-  @Test func historyDeleteUndoAndBackgroundNeverSendWithheldDelete() async throws {
-    let (gym, rest, telemetry) = try await authed(.http(200, #"{"threads":[{"id":"thread-123","title":"Private","askedAt":1000}]}"#))
-    let history = CoachHistory(gym: gym, rest: rest); await history.load()
-    let row = try #require(history.rows.first)
-    history.remove(row); #expect(history.rows.isEmpty && history.held.count == 1)
-    history.undo(row.id); #expect(history.rows.map(\.id) == [row.id] && history.held.isEmpty)
-    history.remove(row); history.abandon()
-    #expect(history.rows.map(\.id) == [row.id] && history.held.isEmpty)
-    history.undo(row.id); #expect(history.error == "That change has already been kept.")
-    #expect(CoachTestProtocol.state.withLock { $0.requests.map(\.method) } == ["GET"])
-    #expect(telemetry.entries.withLock { $0.filter { ["gym_action", "gym_undo"].contains($0.name) }.map { [$0.name: $0.properties] } } ==
-            [["gym_undo": ["screen": "history", "outcome": "ok"]], ["gym_undo": ["screen": "history", "outcome": "refused"]]])
+  @Test(arguments: [false, true]) func historyReadCannotRestoreAConversationAfterDeletion(loadDuringDelete: Bool) async throws {
+    let (gym, rest, _) = try await authed(.stalled)
+    let history = CoachHistory(gym: gym, rest: rest)
+    history.resetOwner(); history.loaded = true
+    let row = try JSONDecoder().decode(CoachThread.self, from: Data(#"{"id":"thread-123","title":"Private","askedAt":1000}"#.utf8))
+    history.rows = [row]
+    var read: Task<Void, Never>?
+    if !loadDuringDelete {
+      read = Task { await history.load() }
+      try await settle { CoachTestProtocol.state.withLock { $0.activeByPath["/v1/gym/threads"] != nil } }
+    }
+    let deletion = Task { await history.remove(row) }
+    try await settle { CoachTestProtocol.state.withLock { $0.activeByPath["/v1/gym/threads/thread-123"] != nil } }
+    if loadDuringDelete {
+      read = Task { await history.load() }
+      try await settle { CoachTestProtocol.state.withLock { $0.activeByPath["/v1/gym/threads"] != nil } }
+    }
+    let deleteRequest = try #require(CoachTestProtocol.state.withLock { $0.activeByPath["/v1/gym/threads/thread-123"] })
+    deleteRequest.respond(200, "{}")
+    await deletion.value
+    #expect(history.rows.isEmpty && history.deletes.isEmpty)
+    let listRequest = try #require(CoachTestProtocol.state.withLock { $0.activeByPath["/v1/gym/threads"] })
+    listRequest.respond(200, #"{"threads":[{"id":"thread-123","title":"Private","askedAt":1000}]}"#)
+    await read?.value
+    #expect(history.rows.isEmpty && history.error == nil && !history.reading)
   }
+
   @Test func failedHistoryDeleteRestoresRowAndPreservesServerRefusal() async throws {
     let (gym, rest, telemetry) = try await authed(.http(409, #"{"error":"Another generation is still running"}"#))
     let history = CoachHistory(gym: gym, rest: rest)
     let row = try JSONDecoder().decode(CoachThread.self, from: Data(#"{"id":"thread-123","title":"Private","askedAt":1000}"#.utf8))
-    history.rows = [row]; history.remove(row)
-    let deleting = try #require(history.held.first?.task)
-    await deleting.value
+    history.rows = [row]; await history.remove(row)
     #expect(history.error == "Another generation is still running" && history.rows.map(\.id) == [row.id])
-    #expect(history.held.isEmpty)
+    #expect(history.deletes.isEmpty)
     #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_action" }.map(\.properties) } == [["screen": "history", "outcome": "refused"]])
   }
   @Test func capsAndAbsentDeploymentSurviveNewChatButFreshRefusalDoesNot() async throws {
@@ -942,7 +948,7 @@ import SyncTesting
     #expect(bytes.count == attachment.bytes && bytes.count <= 5 * 1024 * 1024 && UIImage(data: bytes) != nil)
     #expect(throws: AppFailure.self) { try CoachPhotoPreparation.prepare(Data("not an image".utf8)) }
   }
-  @Test func notesCreateEditReorderCeilingDeleteAndUndoUseEngine() throws {
+  @Test func notesCreateEditReorderCeilingAndDeleteUseEngine() throws {
     let (_, gym) = fixture()
     var first = Draft(new: Note(id: ID("first"), title: "First", body: "Original"), placed: .bottom)
     var second = Draft(new: Note(id: ID("second"), title: "Second"), placed: .bottom)
@@ -954,9 +960,9 @@ import SyncTesting
     for n in 2..<10 { gym.run(SaveNoteCall(Note(id: gym.runner.mint(Note.self), title: "Note \(n)"))) }
     #expect(gym.notes.count == 10)
     #expect(gym.run(SaveNoteCall(Note(id: ID("overflow"), title: "Overflow")))?.refusal != nil)
-    let gesture = try #require(gym.run(DeleteNote(first.id))?.receipt?.gestureId)
+    let receipt = try #require(gym.run(DeleteNote(first.id))?.receipt)
     #expect(!gym.notes.contains { $0.id == first.id })
-    #expect(gym.undo(gesture) && gym.notes.count == 10)
+    #expect(receipt.releaseAt == nil && gym.notes.count == 9)
     first.current.title = String(repeating: "x", count: 61); #expect({ if case .refused = gym.save(&first) { return true }; return false }())
     first.current.title = "First"; first.current.body = String(repeating: "é", count: 251)
     #expect({ if case .refused = gym.save(&first) { return true }; return false }())
@@ -1292,9 +1298,7 @@ import SyncTesting
     #expect(reviews.map(\.decidable) == [true, false, false, false, false, false])
     #expect(Set(gym.routineProposals.map(\.id)) == [ID("proposal-current"), ID("proposal-replacement")])
   }
-  // A proposal for a routine deleted here is out of date at once, inside the delete's Undo window: Routines drops its
-  // row and Review offers no Apply; Undo brings the routine and the proposal back.
-  @Test func aProposalForARoutineDeletedHereIsOutOfDateUntilUndo() throws {
+  @Test func aProposalBecomesUnavailableWhenItsRoutineDeletionIsConfirmed() throws {
     let (h, gym) = fixture()
     for (id, name) in [("deleted-bench", "Bench"), ("deleted-squat", "Squat"), ("deleted-deadlift", "Deadlift")] {
       gym.run(CreateExercise(Exercise(id: ID(RecordID(id)), name: name, pattern: "press", equipment: "barbell", stepKg: 2.5)))
@@ -1310,11 +1314,16 @@ import SyncTesting
     let deleted = try #require(gym.run(DeleteRoutine(routine.id))?.receipt)
     gym.refresh()
     #expect(gym.routines.isEmpty && gym.routineProposals.isEmpty && gym.coachProposalOutOfDate(proposal))
-    #expect(!review.decidable && review.outOfDate == "The routine changed after this was written. Nothing was applied.")
+    #expect(!review.decidable)
+    #expect(review.outOfDate == "The routine changed after this was written. Nothing was applied.")
     #expect(!gym.coachDecideProposal(proposal, apply: true) && gym.proposals.first?.state == "pending")
-    #expect(gym.undo(deleted.gestureId))
-    gym.refresh()
-    #expect(gym.routineProposals.map(\.id) == [proposal.id] && review.decidable && review.outOfDate == nil)
+    #expect(deleted.releaseAt == nil)
+    h.sync(); gym.refresh()
+    #expect(gym.routineProposals.isEmpty)
+    #expect(gym.proposals.isEmpty)
+    #expect(review.proposal == nil)
+    #expect(review.outOfDate == nil)
+    #expect(!review.decidable)
   }
   // An edit the log has not confirmed moves the routine under a waiting proposal: it is out of date at once, Apply is not
   // offered, and the lifter's edit stands after the log answers.
@@ -1488,7 +1497,7 @@ import SyncTesting
   }
   // Review's subtitle says who proposed it and when the log took it: the record's creation, a day and a time, none before.
   @Test func aReviewSaysWhoProposedItAndWhenTheLogTookIt() throws {
-    let h = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_448_120_000), account: "coach-owner",
+    let h = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_790_448_120_000), account: "coach-owner",
                     rules: ComposedServerRules.windmill(registry: SyncSchema.registry), commandResultWrites: AppRuntime.commandResultWrites)
     let gym = GymModel(runner: h.runner, locale: Locale(identifier: "en_US")); gym.account = "coach-owner"
     gym.run(CreateExercise(Exercise(id: ID("source-squat"), name: "Squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)))
@@ -1611,9 +1620,11 @@ import SyncTesting
     #expect(gym.coachDecideProposal(proposal, apply: true))
     try await settle { runtime.engine.status.failedPushes[Gym.scope]?.isEmpty == false }
     if offline {
-      transport.failure.withLock { $0 = nil }; connectivity.set(online: false)
+      transport.failure.withLock { $0 = 0 }
+      connectivity.set(online: false)
       try await settle { runtime.engine.status.online == false }
     }
+    #expect(try runtime.runner.read(Gym.scope) { try GymModel.queuedDecision(proposal.id, in: $0)?.isAdmitted } == false)
     let retries = { telemetry.entries.withLock { $0.filter { $0.name == "gym_proposal_outcome" && $0.properties["action"] == "retry" }.map(\.properties) } }
     gym.coachResendDecision(proposal.id)
     try await settle { !retries().isEmpty }

@@ -14,7 +14,8 @@ struct RoutinesTab: View {
   @Environment(\.coachOpenAccount) private var openAccount
   @Environment(\.coachAsk) private var ask
   @State private var building: RoutineEditingSession?
-  @State private var savedID: ID<Routine>?
+  @State private var selectedID: ID<Routine>?
+  @State private var startID: ID<Routine>?
 
   var body: some View {
     let proposals = gym.routineProposals
@@ -54,10 +55,10 @@ struct RoutinesTab: View {
             if !routines.isEmpty {
               Section {
                 ForEach(routines, id: \.id) { routine in
-                  NavigationLink { RoutineDetail(gym: gym, id: routine.id) } label: {
+                  Button { selectedID = routine.id } label: {
                     GymRow(title: routine.name, meta: gym.routineLine(routine))
                   }.accessibilityIdentifier("routine-\(routine.id)")
-                    .swipeActions(edge: .trailing) { Button("Delete", role: .destructive) { gym.run(DeleteRoutine(routine.id)) } }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) { Button("Delete", role: .destructive) { gym.run(DeleteRoutine(routine.id)) } }
                     .contextMenu {
                       Button("Start workout", systemImage: "play.fill") { gym.startWorkout(routineId: routine.id) }
                       Button("Delete routine", systemImage: "trash", role: .destructive) { gym.run(DeleteRoutine(routine.id)) }
@@ -66,11 +67,6 @@ struct RoutinesTab: View {
                     .accessibilityAction(named: "Delete routine") { gym.run(DeleteRoutine(routine.id)) }
                 }
               }
-            }
-            Section {
-              NavigationLink { MovementPicker(gym: gym, purpose: .browse) } label: {
-                Label { Text("Movements").foregroundStyle(GymPalette.ink) } icon: { Image(systemName: "list.bullet") }
-              }.accessibilityIdentifier("routines-movements")
             }
           }.listRowBackground(GymPalette.card)
         }.listStyle(.insetGrouped)
@@ -85,16 +81,12 @@ struct RoutinesTab: View {
         if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
         ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
       }.roomBar(.gym)
-      .reachBand {
-        VStack(spacing: 0) {
-          GymTransient(gym: gym)
-          ActionBand(title: "Just start logging", room: .gym,
-                     disabled: gym.accountTransition || gym.readFailed) { gym.startWorkout() }
-        }
-      }
-      .sheet(item: $building) { editing in RoutineBuilder(gym: gym, editing: editing) { savedID = $0 } }
-      .navigationDestination(isPresented: Binding(get: { savedID != nil && building == nil }, set: { if !$0 { savedID = nil } })) {
-        if let savedID { RoutineDetail(gym: gym, id: savedID) }
+      .reachBand { GymTransient(gym: gym) }
+      .sheet(item: $building) { editing in RoutineBuilder(gym: gym, editing: editing) { selectedID = $0 } }
+      .sheet(isPresented: Binding(get: { selectedID != nil && building == nil }, set: { if !$0 { selectedID = nil } }), onDismiss: {
+        if let id = startID { startID = nil; gym.startWorkout(routineId: id) }
+      }) {
+        if let selectedID { RoutineSummarySheet(gym: gym, id: selectedID) { startID = selectedID; self.selectedID = nil } }
       }
       .preferredColorScheme(OnboardingFixture.appearance)
       .onAppear {
@@ -116,6 +108,7 @@ struct RoutinesTab: View {
 struct RoutineDetail: View {
   let gym: GymModel
   let id: ID<Routine>
+  var start: (() -> Void)?
   @State private var editing: RoutineEditingSession?
   @Environment(\.dismiss) private var dismiss
   var routine: Routine? { gym.routines.first { $0.id == id } }
@@ -123,28 +116,17 @@ struct RoutineDetail: View {
   var body: some View {
     Group {
       if let routine {
-        let history = Array(gym.routineHistory(id).prefix(20)), dates = gym.dates
         List {
           Group {
             Section {
               ForEach(Array(routine.entries.enumerated()), id: \.offset) { index, entry in
-                NavigationLink { MovementRecordScreen(gym: gym, exerciseID: entry.exerciseId) } label: {
-                  let exercise = gym.catalogue.find(entry.exerciseId)
-                  let custom = exercise != nil && !SeedExercises.all.contains { $0.id == entry.exerciseId }
-                  GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")\(custom ? " · yours" : "")",
-                              meta: Readout.target(entry.sets))
-                }.accessibilityIdentifier("routine-detail-movement-\(entry.exerciseId)")
+                let exercise = gym.catalogue.find(entry.exerciseId)
+                let custom = exercise != nil && !SeedExercises.all.contains { $0.id == entry.exerciseId }
+                GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")\(custom ? " · yours" : "")",
+                       meta: Readout.target(entry.sets))
+                  .accessibilityIdentifier("routine-detail-movement-\(entry.exerciseId)")
               }
-            } header: { Text("Movements") }
-            if !history.isEmpty {
-              Section("History") {
-                ForEach(history, id: \.id) { session in
-                  NavigationLink { SessionDetailScreen(gym: gym, sessionID: session.id) } label: {
-                    GymRow(title: dates.subtitle(session.startedAt), meta: RoutineLines.session(SessionReadout(session: session, sets: gym.sets)))
-                  }.accessibilityIdentifier("routine-history-\(session.id)")
-                }
-              }
-            }
+            } header: { Text(gym.routineLine(routine)) }
           }.listRowBackground(GymPalette.card)
         }.listStyle(.insetGrouped)
       } else {
@@ -152,8 +134,9 @@ struct RoutineDetail: View {
                                description: Text("Everything you logged against it is still in the log."))
       }
     }.modifier(GymPage())
-      .navigationTitle(routine?.name ?? "Routine").accessibilityIdentifier("routine-detail").gymTabBar()
+      .navigationTitle(routine?.name ?? "Routine").navigationBarTitleDisplayMode(.inline).accessibilityIdentifier("routine-detail")
       .toolbar {
+        ToolbarItem(placement: .cancellationAction) { Button("Close", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly).accessibilityIdentifier("routine-close") }
         if let routine {
           ToolbarItem(placement: .topBarTrailing) {
             Button("Edit") { editing = RoutineEditingSession(gym: gym, routine: routine) }.accessibilityIdentifier("edit-routine")
@@ -164,14 +147,29 @@ struct RoutineDetail: View {
         VStack(spacing: 0) {
           GymTransient(gym: gym)
           if let routine {
-            ActionBand(title: "Start workout", room: .gym,
-                       disabled: gym.accountTransition || gym.readFailed) { gym.startWorkout(routineId: routine.id) }
+            ActionBand(title: "Start", room: .gym,
+                       disabled: gym.accountTransition || gym.readFailed, actionIdentifier: "routine-start") {
+              if let start { start() } else { gym.startWorkout(routineId: routine.id) }
+            }
           }
         }
       }
       // The editor deletes the routine at once, so the detail it leaves behind has nothing to show and goes too.
       .sheet(item: $editing, onDismiss: { if routine == nil { dismiss() } }) { editing in RoutineBuilder(gym: gym, editing: editing) { _ in } }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "routine"]) }
+  }
+}
+
+struct RoutineSummarySheet: View {
+  let gym: GymModel
+  let id: ID<Routine>
+  let start: () -> Void
+  @Environment(\.dynamicTypeSize) var typeSize
+
+  var body: some View {
+    NavigationStack { RoutineDetail(gym: gym, id: id, start: start) }
+      .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.medium, .large])
+      .presentationDragIndicator(.visible)
   }
 }
 

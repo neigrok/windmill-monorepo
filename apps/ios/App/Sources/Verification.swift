@@ -85,7 +85,7 @@ enum BoardFixture {
       for offset in 1...count {
         // Each saved page is today to its fixture runner; the app's past-day guard stays intact.
         let zone = FixedZone(offsetSeconds: DeviceZone().offsetSeconds(at: Instant(ms: BoardClock().nowMs())) - offset * 86_400)
-        let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: zone)
+        let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: zone, holdRemovals: false)
         // The history's second page carries both scales, so its scale line has a page to draw on.
         let scored = board.hasPrefix("journal-history") && offset == 2
         let document = PageDocument(body: shortProse, mood: scored ? 7 : nil, energy: scored ? 4 : nil)
@@ -155,7 +155,10 @@ enum AppScenario {
     #if DEBUG && targetEnvironment(simulator)
     if model.runtime?.settings.scenario?.hasPrefix("gym-e2e") == true {
       model.openRoom(.gym)
-      if model.runtime?.settings.restoreBoard == true { return }
+      if model.runtime?.settings.restoreBoard == true {
+        if ProcessInfo.processInfo.arguments.contains("-sign-in-link-fixture") { model.sheet = .code }
+        return
+      }
       guard let runtime = model.runtime, runtime.settings.scenario != "gym-e2e-anonymous" else { return }
       do {
         if runtime.settings.scenario == "gym-e2e-conflict" {

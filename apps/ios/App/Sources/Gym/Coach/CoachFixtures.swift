@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import GymDomain
 import DomainKit
 import SyncCore
@@ -98,6 +99,7 @@ enum CoachFixture {
 
 #if DEBUG && targetEnvironment(simulator)
 nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
+  static let deletedThreads = Mutex<Set<String>>([])
   override class func canInit(with request: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
   override func startLoading() {
@@ -127,11 +129,18 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
     if path == "/v1/gym/ask", ProcessInfo.processInfo.arguments.contains("-coach-unavailable") {
       status = 503; response = ["code": "ask-not-configured", "error": CoachCopy.absent]
     } else if path == "/v1/gym/ask" {
+      _ = Self.deletedThreads.withLock { $0.remove("coach-fixture-thread") }
       var partial = generation; partial["status"] = "running"; partial["answer"] = said.partial; partial["revision"] = 1
       let first = String(data: try! JSONSerialization.data(withJSONObject: ["thread": thread, "generation": partial]), encoding: .utf8)!
       let last = String(data: try! JSONSerialization.data(withJSONObject: ["thread": thread, "generation": generation]), encoding: .utf8)!
       data = Data("event: snapshot\ndata: \(first)\n\nevent: snapshot\ndata: \(last)\n\n".utf8); type = "text/event-stream"
-    } else if path == "/v1/gym/threads" { response = ["threads": [row], "nextCursor": NSNull()] }
+    } else if path == "/v1/gym/threads" {
+      response = ["threads": Self.deletedThreads.withLock { $0.contains("coach-fixture-thread") } ? [] : [row], "nextCursor": NSNull()]
+    } else if path.hasPrefix("/v1/gym/threads/"), request.httpMethod == "DELETE" {
+      _ = Self.deletedThreads.withLock { $0.insert(request.url!.lastPathComponent) }
+    } else if path.hasPrefix("/v1/gym/threads/"), Self.deletedThreads.withLock({ $0.contains(request.url!.lastPathComponent) }) {
+      status = 404; response = ["code": "not-found"]
+    }
     else if path == "/v1/oauth/grants" { response = ["grants": [["clientId": "fixture", "name": "Claude Desktop", "grantedMs": 1_790_424_000_000, "scope": "gym:read gym:write"]]] }
     else if path == "/v1/mcp-keys" { response = ["keys": [["id": "fixture-key", "name": "A static key", "createdMs": 1_790_424_000_000]]] }
     else if path.contains("/generations/") { var stopped = generation; stopped["status"] = "stopped"; stopped["revision"] = 3; response = ["thread": thread, "generation": stopped] }

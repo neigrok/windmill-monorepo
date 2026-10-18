@@ -122,6 +122,8 @@ it for good. Nothing counts declines.
 **One invitation at a time.** Signed out, the quiet Keep row appears only after the mood and energy
 invitation is answered or dismissed. Signed-in pages never show Keep
 (`../guidelines/superapp-flow.md` §6).
+Both invitations require at least one written day. Erasing the last page hides the invitations;
+their answered state stays retired. A day with only whitespace or mood and energy is absent.
 
 **Never during the first run:** Echoes (needs a corpus), sign-in (the shell's Keep offer comes
 only after the first kept page and the scale invitation is answered or dismissed —

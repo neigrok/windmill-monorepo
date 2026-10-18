@@ -94,7 +94,7 @@ struct ConnectedLogScreen: View {
           }
         } else {
           ConnectedLogCapabilities {
-            Text("Your log, read by Claude, Cursor or Codex.").font(.subheadline).foregroundStyle(GymPalette.inkDim).textCase(nil)
+            Text("Your log, read by ChatGPT or Claude.").font(.subheadline).foregroundStyle(GymPalette.inkDim).textCase(nil)
           }
         }
         Section {
@@ -106,7 +106,7 @@ struct ConnectedLogScreen: View {
       .reachBand {
         VStack(spacing: 0) {
           GymTransient(gym: gym, message: browserError ? "The browser couldn’t be opened. Try again." : nil,
-                       dismiss: { browserError = false }, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
+                       dismiss: { browserError = false }, errorIdentifier: "gym-coach-error")
           connect
         }
       }

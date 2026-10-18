@@ -54,6 +54,6 @@ internal class Feed(val registry: Registry, val limits: ServerLimits) {
     private fun visible(row: Row, type: TypeDef): Boolean = when {
         type.identity == "singleton" -> true; type.life -> row.isAlive
         type.json["visibleWhen"] == null -> row.lattice.fields.isNotEmpty() || row.texts.isNotEmpty()
-        else -> type.json.member("visibleWhen").arr().any { name -> row.texts[name.str()]?.text?.isNotEmpty() ?: (row.lattice.fields[name.str()]?.value?.let { it !== Json.Null && it != Json.of("") } ?: false) }
+        else -> type.json.member("visibleWhen").arr().any { name -> row.texts[name.str()]?.text?.let { !TextWhitespace.isBlank(it) } ?: (row.lattice.fields[name.str()]?.value?.let { it !== Json.Null && it != Json.of("") } ?: false) }
     }
 }

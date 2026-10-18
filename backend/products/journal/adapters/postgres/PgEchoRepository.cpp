@@ -657,8 +657,8 @@ int PgEchoRepository::pagesWritten(const UserId& user) {
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT count(*)::int AS pages FROM journal_page "
-      "WHERE user_id = $1::uuid AND btrim(body, E' \\t\\r\\n') <> ''",
-      user.str());
+      "WHERE user_id = $1::uuid AND btrim(body, $2) <> ''",
+      user.str(), std::string(Page::whitespace));
   return rows.empty() ? 0 : rows[0]["pages"].as<int>();
 }
 

@@ -74,17 +74,21 @@ model extension, the one count formatter, the one date formatter (`GymDate`) and
 
 `GymModel(runner:runtime:telemetry:)` exposes engine-backed log/catalogue/routines/notes/bodyweight/
 preferences/proposals, sessions/sets/openSession, account/isAnonymous/authPaused, notices,
-refusal/error/readFailed and undoOffers, and the one unsent rule: signed out nothing is unsent; signed in,
+refusal/error/readFailed, and the one unsent rule: signed out nothing is unsent; signed in,
 `unsentSets(_:)` and `sessionIsUnsent(_:)` mark what the log has not confirmed while no connection, a paused session
 or a refused push holds it back. Use `run(_:)` for GymDomain actions, `save(_:)` for drafts,
-`undo(_:)` for held gestures, `dismissNotice(_:)`, and `refresh()`; `start()`/`stop()` observe engine
-changes. `flush()` releases holds before account transitions; real backgrounding ends Undo windows.
-An inactive scene persists Journal drafts while Gym live sync, REST work and pending Undo windows continue.
+`dismissNotice(_:)`, and `refresh()`; `start()`/`stop()` observe engine changes. The app constructs its
+ActionRunner with immediate removals. Whole-workout and conversation deletes ask for confirmation;
+there is no Undo band or deletion delay. `flush()` keeps pending work before account transitions.
+An inactive scene persists Journal drafts while Gym live sync and REST work continue.
 Gym's `accountTransition` pauses training only while sign-out is open (`accountChanging`, set by the
 app) and while the engine changes the replica (`replicaChanging`, set by `GymBinding`). Pending
 sign-in, hello and adoption questions leave training available. `rest` is the authenticated
 client handle for Coach, shares and Connected log; engine-backed training writes use domain actions.
 Gym includes routine planning and movement creation, the live set rack and finish receipt, session history/sharing and strength/bodyweight charts, and account-only Coach, proposal review, Notes and Connected log.
+Tapping a routine opens a native summary sheet with Edit and Start. Movements are reached through a
+routine or its editor. Coach has a direct History button; Notes and Connected log live in You’s Settings.
+The finished-workout receipt offers Discard, 👑 Share with Coach and the primary Done action.
 
 `GymRoom` keeps `WorkoutScreen` as its full-screen cover through finish and receipt and, on
 dismissal, consumes the workout's handoff once: a finished workout's detail opens in The log, Keep
@@ -148,6 +152,9 @@ protected Application Support directory. `JournalDomain` owns writing and first-
 The writing tests use `-journal-layout-test` on Debug simulators to read selection, focus and text,
 ink visibility, and UIKit's caret and last-line rectangles in window coordinates, through the editor's accessibility value.
 
+A journal day exists only while its body contains writing. Whitespace and ratings alone do not count;
+clearing the body removes the day from journal reads and exports. Synchronization retains empty
+version markers to keep older offline writing from returning.
 Native editing writes today's page only; past days are read-only. Tapping today's page from its date
 through the space above the mood rows opens the keyboard with the caret at the end. The body reserves
 at least three lines at the current text size. An empty, unfocused page shows a still lamp caret.
@@ -158,8 +165,8 @@ button opens You. The last room persists across launches. A fresh phone gets bot
 introduction on Where to start?.
 Hand-drawn Caveat ink notes appear automatically only on a true first Journal open. Previous Journal
 visits, retained history, drafts and unreadable state suppress automatic presentation; restored sign-in
-stays quiet. Writing or a tap lifts them while the editor keeps the tap. The Journal room menu's
-*Show ink notes* item replays them on request.
+stays quiet. Writing or a tap lifts them while the editor keeps the tap. The room menu contains only the room switcher;
+ink notes belong to the first Journal open.
 `journal-empty-later`, `journal-one-line` and `journal-history` board fixtures seed past pages through
 the journal actions. A `-RM` suffix exercises the journal's Reduce Motion scroll and glyph swap.
 Focus and dismissal emit the bounded `first_run_choice` actions `write` and `done_writing` on the

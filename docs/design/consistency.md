@@ -33,7 +33,7 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
 
 - **7a · Leaving the app.** Canon (`gym/briefs/13-gestures.md` "Leaving the app"; owner ruling
   2026-09-26): a held delete is stored on the device. Leaving the app — Android to the background,
-  the last iOS scene to the background, on the web no Windmill tab visible past a short debounce or
+  on the web no Windmill tab visible past a short debounce or
   the last tab closing — lets it go into the queue, which sends it when it can, and Undo is not
   offered on return. A screen recreated in place keeps the Undo with its remaining time; sign-in lets
   holds go before its question, and a discarded room's go with it unsent; a hold cut off by the
@@ -41,8 +41,7 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
   stores and releases them, and the gym room draws their Undo from the engine's offers
   (`useTrainingLog.js`). These holds still go the other way, putting the row back and sending
   nothing: the web's Coach conversation delete, a REST call held in the gym room's memory, when the
-  document hides or the room unmounts; iOS's withheld Coach deletes when the scene goes to the
-  background (`CoachHistory.swift`); and Android's holds, which are in memory, on `ON_STOP` and on
+  document hides or the room unmounts; Android's holds, which are in memory, on `ON_STOP` and on
   disposal (`GymRoom.kt`, `abandonWithheld`).
 - **7c · Sign-out.** Canon (`guidelines/superapp-flow.md` §3 and §7, `roadmap/guidelines/auth.md`
   §4, `roadmap/guidelines/front-door.md` §2; owner ruling 2026-09-26): signing out takes the
@@ -345,13 +344,14 @@ these are the places it disagrees with a drawing, a brief or the build.
   · …), draws no **Your data** and no room settings, and has neither **Erase data** nor **Delete
   account**, which no iOS build draws. Decide whether the shell canon follows the spec; if the owner
   wants *Erase data* and *Delete account* on iOS, they are build work for the dogfood tree.
-- **9x · The room menu.** `guidelines/superapp-shell.md` §3 rules that the room menu carries rooms
-  only — *You is never a row*, no item of a room's own — and describes iOS as one room, Journal
-  alone. The spec (§4) and the build draw the rooms, then **You** after a divider, then Journal's
-  **Show ink notes**. The Design System's `_Room capsule` disagrees with itself: the set's
-  description (`226:4315`) says rooms only and *iOS today: Journal alone*; the `Menu=On` and
-  `Menu=Off` descriptions (`117:52`, `226:4310`) say *Journal · Gym · You*. Rule one menu, then
-  align the shell canon and the component descriptions, and check boards 21a/21b.
+- **9x · Shared room-menu drawings.** The iOS contract uses Journal and Gym only in the room
+  menu, with account/settings reached once through the account button. Ink notes are onboarding
+  only. Update the Design System's `_Room capsule` variant descriptions (`117:52`, `226:4310`)
+  and boards 21a/21b to this contract; its set description (`226:4315`) must name both iOS rooms.
+- **iOS native specimens.** The current Gym refinement boards (`1063:477`) use editable Inter
+  specimens because Figma's SF Pro export returns zero-width glyphs, and local icon vectors
+  because importing the subscribed Apple iOS 26 library is denied. Native implementation uses
+  system text and controls. Replace these specimen assets when the native library can be imported.
 - **9y · The month moment.** `18-progress.md` words a month trained in full *Trained 4 of the last
   4 weeks*, the head's own sentence, so a past month's moment and the head's *Trained 3 of the last
   4 weeks* answer one question twice on one screen and disagree. The spec (§7.6) words the moment by

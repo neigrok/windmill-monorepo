@@ -6,7 +6,7 @@ import SyncCore
 
 struct GymRoom: View {
   enum Tab: Hashable { case routines, log, coach }
-  enum Destination: Hashable { case routine(String), session(String) }
+  enum Destination: Hashable { case session(String) }
   @Bindable var gym: GymModel
   @Bindable var app: AppModel
   @State var tab = Tab.routines
@@ -18,6 +18,9 @@ struct GymRoom: View {
   @State var finishedHandoff: WorkoutHandoff?
   @State var share: SessionShareID?
   @State var shareAfterSignIn: ID<Session>?
+  @State var coachAfterSignIn = false
+  @State var routine: ID<Routine>?
+  @State var startRoutine: ID<Routine>?
   @State var risingFromAccessory = false
   @State var hiddenTabBars: Set<Tab> = []
   static let accessoryZoom = "hidden-workout"
@@ -57,10 +60,15 @@ struct GymRoom: View {
       } else { tabs }
     }
     .environment(\.coachOpenAccount, app.openYou)
-    .environment(\.coachOpenRoutine, { id in tab = .routines; routinesPath.append(Destination.routine(id)) })
+    .environment(\.coachOpenRoutine, { id in tab = .routines; routine = ID(RecordID(id)) })
     .environment(\.coachOpenSession, { id in tab = .log; logPath.append(Destination.session(id)) })
     .environment(\.coachAsk, { handoff in ask(handoff.question, send: handoff.send) })
     .environment(\.gymShareSession, { id in share = SessionShareID(id: id) })
+    .sheet(isPresented: Binding(get: { routine != nil }, set: { if !$0 { routine = nil } }), onDismiss: {
+      if let id = startRoutine { startRoutine = nil; gym.startWorkout(routineId: id) }
+    }) {
+      if let routine { RoutineSummarySheet(gym: gym, id: routine) { startRoutine = routine; self.routine = nil } }
+    }
     .sheet(item: $proposal) { proposal in
       ProposalReviewSheet(gym: gym, proposalId: proposal.id) { name in
         self.proposal = nil
@@ -73,9 +81,15 @@ struct GymRoom: View {
       SessionShareSheet(gym: gym, sessionID: request.id) { shareAfterSignIn = request.id }
     }
     .onChange(of: app.sheet) { closed, sheet in
-      guard sheet == nil, closed != nil, let pending = shareAfterSignIn else { return }
-      shareAfterSignIn = nil
-      if !gym.sharingNeedsSignIn { share = SessionShareID(id: pending) }
+      guard sheet == nil, closed != nil else { return }
+      if let pending = shareAfterSignIn {
+        shareAfterSignIn = nil
+        if !gym.sharingNeedsSignIn { share = SessionShareID(id: pending) }
+      }
+      if coachAfterSignIn {
+        coachAfterSignIn = false
+        if !gym.sharingNeedsSignIn { ask(WorkoutHandoff.coachQuestion, send: true) }
+      }
     }
     // Only a cover closed under a workout still on screen hides it; a close the workout already made records nothing.
     .fullScreenCover(isPresented: Binding(get: { gym.workout.isPresented }, set: { if !$0, gym.workout.isPresented { gym.hideWorkout() } }), onDismiss: receiveWorkout) {
@@ -131,7 +145,6 @@ struct GymRoom: View {
   func destination(_ destination: Destination) -> some View {
     Group {
       switch destination {
-      case .routine(let id): RoutineDetail(gym: gym, id: ID(RecordID(id)))
       case .session(let id): SessionDetailScreen(gym: gym, sessionID: ID(RecordID(id)))
       }
     }.gymTabBar()
@@ -145,9 +158,10 @@ struct GymRoom: View {
     guard let handoff = gym.workout.handoff ?? finishedHandoff else { return }
     finishedHandoff = nil; gym.workout.handoff = nil
     switch handoff {
-    case .detail(let id): if let id { tab = .log; logPath.append(Destination.session(id.description)) }
-    case .keep: app.keep()
-    case .coach: ask(WorkoutHandoff.coachQuestion, send: true)
+    case .detail(let id): tab = .log; if let id { logPath.append(Destination.session(id.description)) }
+    case .coach:
+      if gym.sharingNeedsSignIn { coachAfterSignIn = true; app.keep() }
+      else { ask(WorkoutHandoff.coachQuestion, send: true) }
     case .writtenProgram: if gym.isAnonymous || gym.authPaused { app.openYou() } else { ask("Help me turn my written program into a routine.") }
     }
   }

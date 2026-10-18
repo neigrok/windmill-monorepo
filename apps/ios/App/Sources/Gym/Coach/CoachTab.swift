@@ -4,7 +4,7 @@ import PhotosUI
 import DomainKit
 import GymDomain
 
-private enum CoachDestination: Hashable { case history, notes, connections }
+private enum CoachDestination: Hashable { case history, notes }
 
 // What one answer read, as its receipt row and What Coach read say it. It counts only the workouts it lists, so the two add up.
 struct CoachReading: Identifiable {
@@ -53,7 +53,10 @@ struct CoachTab: View {
   var body: some View {
     room.modifier(GymPage()).navigationTitle("Coach").accessibilityIdentifier("gym-coach")
       .toolbar {
-        ToolbarItem(placement: .topBarTrailing) { more }
+        ToolbarItem(placement: .topBarTrailing) {
+          Button("History", systemImage: "clock") { destination = .history }
+            .accessibilityIdentifier("coach-history")
+        }
         if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
         ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
       }.roomBar(.gym)
@@ -61,7 +64,6 @@ struct CoachTab: View {
         switch destination {
         case .history: CoachHistoryScreen(gym: gym, coach: coach, history: history)
         case .notes: NotesScreen(gym: gym)
-        case .connections: ConnectedLogScreen(gym: gym)
         }
       }
       .safeAreaInset(edge: .bottom) {
@@ -93,7 +95,7 @@ struct CoachTab: View {
         if offline { coach.noteOffline() } else if coach.error == CoachCopy.offline, !coach.retryable { coach.error = nil }
       }
       .onChange(of: phase) { _, phase in
-        if phase == .background { coach.work?.cancel(); coach.stopWork?.cancel(); history.abandon() }
+        if phase == .background { coach.work?.cancel(); coach.stopWork?.cancel() }
         if phase == .active { Task { await coach.activate() } }
       }
       .onChange(of: photo) { _, value in
@@ -116,21 +118,6 @@ struct CoachTab: View {
     if !coach.allowed { CoachUnavailable(symbol: "bubble.left.and.bubble.right", sentence: CoachCopy.signedOut, signIn: openAccount) }
     else if coach.refusal == .absent { CoachUnavailable(symbol: "bubble.left.and.bubble.right", sentence: CoachCopy.absent) }
     else { conversation }
-  }
-
-  var more: some View {
-    MoreMenu(identifier: "coach-more") {
-      if coach.saved.request != nil || coach.saved.thread != nil {
-        Section {
-          Button("New chat", systemImage: "square.and.pencil") { coach.newChat() }.disabled(coach.asking).accessibilityIdentifier("coach-menu-new-chat")
-        }
-      }
-      Section {
-        Button("History", systemImage: "clock") { destination = .history }.accessibilityIdentifier("coach-menu-history")
-        Button("Notes", systemImage: "note.text") { destination = .notes }.accessibilityIdentifier("coach-menu-notes")
-        Button("Connected log", systemImage: "link") { destination = .connections }.accessibilityIdentifier("coach-menu-connections")
-      }
-    }
   }
 
   var conversation: some View {
@@ -184,7 +171,7 @@ struct CoachTab: View {
     let message = tooLong ? "Keep your question within 1000 bytes." : coach.refusal == .absent ? nil : coach.error ?? (coach.retryable ? CoachCopy.interrupted : nil)
     let retry: (() -> Void)? = tooLong ? nil : coach.retryable ? { composing = false; coach.retry() } : coach.draftReadable ? nil : { coach.reloadDraft() }
     return GymTransient(gym: gym, message: message, dismiss: tooLong || retry != nil ? nil : { coach.error = nil }, retryMessage: retry,
-                        errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
+                        errorIdentifier: "gym-coach-error")
       .onChange(of: coach.error) { _, error in if let error { UIAccessibility.post(notification: .announcement, argument: error) } }
   }
 

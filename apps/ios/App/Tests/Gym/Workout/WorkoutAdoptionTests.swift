@@ -64,23 +64,15 @@ struct SaveSignedOutWorkouts: Action {
     #expect(gym.keepAdoptedWorkout(second.session.id) && OnThisPhoneSection.summary(gym.waitingRows) == "Adding…")
   }
 
-  @Test func aDiscardLeavesTheLogAtOnceAndItsWindowEndsInOneDiscard() throws {
+  @Test func aDiscardRemovesItsLocalCopyDurablyAndRecordsOneOutcome() throws {
     let recorder = TelemetryRecorder(), fixture = WorkoutStateTests(), (_, gym) = try fixture.fixture(anonymous: false, telemetry: recorder)
     let now = fixture.start.ms
-    let copy = finished("held-copy", exercise: fixture.first, from: now - 60_000, to: now - 50_000, sets: [1_000])
+    let copy = finished("local-copy", exercise: fixture.first, from: now - 60_000, to: now - 50_000, sets: [1_000])
     #expect(gym.run(SaveSignedOutWorkouts(workouts: [copy]))?.receipt != nil)
-    gym.holdDiscard(copy.session.id)
-    #expect(gym.discardHold?.line == "Workout discarded" && gym.waitingWorkouts.isEmpty && gym.workoutsToReview.isEmpty)
-    #expect(gym.adoptionWorkouts == [copy])
-    gym.undoDiscard()
-    #expect(gym.discardHold == nil && gym.workoutsToReview.map(\.id) == [copy.session.id])
-    gym.holdDiscard(copy.session.id)
-    gym.background()
-    #expect(gym.discardHold == nil && gym.adoptionWorkouts.isEmpty && gym.workoutsToReview.isEmpty)
-    #expect(recovered(recorder) == [
-      ["action": "discard", "reason": "unsent", "outcome": "cancelled"],
-      ["action": "discard", "reason": "unsent", "outcome": "completed"],
-    ])
+    #expect(gym.discardWorkout(copy.session.id))
+    #expect(gym.waitingWorkouts.isEmpty && gym.workoutsToReview.isEmpty && gym.adoptionWorkouts.isEmpty)
+    #expect(GymModel(runner: gym.runner).adoptionWorkouts.isEmpty)
+    #expect(recovered(recorder) == [["action": "discard", "reason": "unsent", "outcome": "completed"]])
   }
 
   @Test func reviewStepsOverAHarnessRecordBoundedLabelsAndMoveEveryRefusedWorkout() throws {
@@ -401,7 +393,7 @@ struct SaveSignedOutWorkouts: Action {
     #expect(gym.run(SaveSignedOutWorkouts(workouts: [SignedOutWorkout(session: Session(id: id, startedAt: Instant(ms: now - 15_000)), sets: [a, b])]))?.receipt != nil)
     let row = try #require(gym.workoutsToReview.first)
     #expect(row.reason == .unsent && row.retry == .restoreSets && row.strandedSets.map(\.id) == [a.id, b.id] && row.canFix)
-    #expect(row.line == "Not on your log yet — retry to add it." && row.discardTitle == "Discard 2 sets" && row.discardedLine == "2 sets discarded")
+    #expect(row.line == "Not on your log yet — retry to add it." && row.discardTitle == "Discard 2 sets")
     #expect(gym.retryWorkout(id) && gym.error == nil)
     #expect(gym.sets.filter { $0.sessionId == id }.map(\.id) == [a.id, b.id] && gym.workoutsToReview.isEmpty)
     #expect(try harness.runner.read(Gym.scope) { try $0.commands().filter { $0.command.name != Gym.Commands.start }.isEmpty })

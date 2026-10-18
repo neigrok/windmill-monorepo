@@ -47,12 +47,6 @@ import XCTest
     let button = app.navigationBars.firstMatch.buttons.element(boundBy: 0)
     XCTAssertTrue(button.wait(for: \.isHittable, toEqual: true, timeout: 5)); button.tap()
   }
-  func more(_ name: String, _ app: XCUIApplication) {
-    app.buttons["coach-more"].tap()
-    let ids = ["History": "history", "Notes": "notes", "Connected log": "connections"]
-    let item = app.buttons["coach-menu-" + ids[name]!]
-    XCTAssertTrue(item.wait(for: \.isHittable, toEqual: true, timeout: 5)); item.tap()
-  }
   // A row below the fold, at 375 points or the largest text, scrolls into reach before it is tapped.
   func reach(_ element: XCUIElement, _ app: XCUIApplication) -> XCUIElement {
     _ = element.waitForExistence(timeout: 5)
@@ -206,9 +200,9 @@ import XCTest
     XCTAssertTrue(app.buttons["routine-proposal"].waitForExistence(timeout: 10))
     capture("gym-routines-populated-signed-in-\(appearance)", app, settle: 1.5)
     app.buttons["routine-coach-fixture-routine"].tap()
-    XCTAssertTrue(app.buttons["routine-history-coach-fixture-session"].waitForExistence(timeout: 10))
-    capture("gym-routine-detail-history-\(appearance)", app)
-    back(app)
+    XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 10))
+    capture("gym-routine-summary-trained-\(appearance)", app)
+    app.buttons["routine-close"].tap()
     app.tabBars.buttons["The log"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-log"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons["gym-log-session-coach-fixture-session"].waitForExistence(timeout: 10))
@@ -282,7 +276,7 @@ import XCTest
     capture("gym-workout-fix-set-sheet-\(appearance)", app)
     app.navigationBars["Fix set"].buttons["Cancel"].tap()
     XCTAssertTrue(app.buttons["workout-fix-save"].waitForNonExistence(timeout: 5))
-    app.buttons["workout-next"].tap()
+    app.descendants(matching: .any)["workout-current-set"].swipeLeft()
     capture("gym-workout-rack-second-movement-\(appearance)", app)
     app.terminate()
   }
@@ -504,13 +498,17 @@ import XCTest
     XCTAssertTrue(app.buttons["delete-routine"].waitForExistence(timeout: 5))
     capture("gym-routine-edit-\(appearance)", app)
     app.navigationBars["Edit routine"].buttons["Cancel"].tap()
-    back(app)
-    XCTAssertTrue(app.buttons["Movements"].waitForExistence(timeout: 5))
+    app.buttons["routine-close"].tap()
+    let routine = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "routine-", "Push A,")).firstMatch
+    XCTAssertTrue(routine.waitForExistence(timeout: 5))
     capture("gym-routines-one-routine-\(appearance)", app)
-    app.buttons["Movements"].tap()
-    XCTAssertTrue(app.navigationBars["Movements"].waitForExistence(timeout: 5))
-    capture("gym-movements-\(appearance)", app)
-    app.buttons["gym-movement-bench-press"].tap()
+    routine.tap()
+    XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5)); app.buttons["routine-start"].tap()
+    XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10)); app.buttons["workout-log"].tap()
+    app.buttons["workout-finish"].tap()
+    XCTAssertTrue(app.buttons["workout-done"].waitForExistence(timeout: 10)); app.buttons["workout-done"].tap()
+    let record = app.buttons["gym-session-movement"].firstMatch
+    XCTAssertTrue(record.waitForExistence(timeout: 5)); record.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
     if app.buttons["Rename"].waitForExistence(timeout: 2) { app.buttons["Rename"].tap() }
     else { app.navigationBars.buttons["More"].tap(); app.buttons["Rename movement"].tap() }
@@ -595,11 +593,10 @@ import XCTest
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
     capture(name("gym-session-detail"), app)
     choose("gym-session-discard", from: "gym-session-more", app, capturing: name("gym-session-detail-menu"))
-    XCTAssertTrue(app.buttons["gym-log-undo"].waitForExistence(timeout: 5))
-    capture(name("gym-log-discard-undo"), app)
-    app.buttons["gym-log-undo"].tap()
-    revealInLog(session, app)
-    session.tap()
+    XCTAssertTrue(app.buttons["Discard workout"].waitForExistence(timeout: 5))
+    capture(name("gym-log-discard-confirmation"), app)
+    app.cancelConfirmation()
+    XCTAssertTrue(app.buttons["Discard workout"].waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
     let set = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-finished-set-")).firstMatch
     XCTAssertTrue(set.waitForExistence(timeout: 5)); set.tap()
@@ -658,7 +655,8 @@ import XCTest
     let question = app.descendants(matching: .any)["coach-question"]
     XCTAssertTrue(question.waitForExistence(timeout: 15))
     capture("gym-coach-empty-\(appearance)", app)
-    more("Notes", app)
+    app.buttons["you"].tap()
+    reach(app.buttons["settings-notes"], app).tap()
     XCTAssertTrue(app.buttons["coach-add-note"].waitForExistence(timeout: 5))
     capture("gym-coach-notes-\(appearance)", app)
     app.buttons["coach-add-note"].tap()
@@ -667,13 +665,13 @@ import XCTest
     capture("gym-coach-note-editor-\(appearance)", app)
     app.navigationBars["Note"].buttons["Cancel"].tap()
     XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 5)); back(app)
-    more("Connected log", app)
+    reach(app.buttons["settings-connected-log"], app).tap()
     XCTAssertTrue(app.staticTexts["Claude Desktop"].waitForExistence(timeout: 5))
     capture("gym-coach-connected-log-\(appearance)", app)
     app.buttons["coach-connected-how"].tap()
     XCTAssertTrue(app.navigationBars["How this works"].waitForExistence(timeout: 5))
     capture("gym-coach-connected-log-details-\(appearance)", app)
-    back(app); back(app)
+    back(app); back(app); closeSheet(app)
     XCTAssertTrue(question.waitForExistence(timeout: 5)); question.tap(); question.typeText("Is Push A still doing anything?")
     capture("gym-coach-composing-\(appearance)", app)
     app.buttons["coach-send"].tap()
@@ -715,18 +713,18 @@ import XCTest
     app.buttons["Close"].tap()
     XCTAssertTrue(app.buttons["coach-review"].waitForValue("Applied", timeout: 5))
     capture("gym-coach-conversation-applied-\(appearance)", app)
-    XCTAssertTrue(app.buttons["coach-more"].waitForExistence(timeout: 5))
-    app.buttons["coach-more"].tap()
-    XCTAssertTrue(app.buttons["coach-menu-new-chat"].waitForExistence(timeout: 5))
-    capture("gym-coach-more-menu-\(appearance)", app)
-    let history = app.buttons["coach-menu-history"]
+    let history = app.buttons["coach-history"]
     XCTAssertTrue(history.wait(for: \.isHittable, toEqual: true, timeout: 5)); history.tap()
     XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 5))
     capture("gym-coach-history-\(appearance)", app)
     let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Push A · 3 changes")).firstMatch
     XCTAssertTrue(conversation.waitForExistence(timeout: 5)); conversation.swipeLeft()
     XCTAssertTrue(app.buttons["Delete"].waitForExistence(timeout: 5)); app.buttons["Delete"].tap()
-    XCTAssertTrue(app.buttons["coach-engine-undo"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Delete conversation"].waitForExistence(timeout: 5))
+    capture("gym-coach-history-delete-confirmation-\(appearance)", app)
+    app.buttons["Delete conversation"].tap()
+    XCTAssertTrue(conversation.waitForNonExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["coach-engine-undo"].exists)
     capture("gym-coach-history-deleted-\(appearance)", app)
   }
   func testCoachScreensLight() { coachScreens("light") }
@@ -789,11 +787,12 @@ import XCTest
     app.tabBars.buttons["Coach"].tap()
     XCTAssertTrue(app.staticTexts["Coach reads your log, so it needs you signed in."].waitForExistence(timeout: 5))
     capture("gym-coach-signed-out-\(appearance)", app)
-    more("Notes", app)
+    app.buttons["you"].tap()
+    reach(app.buttons["settings-notes"], app).tap()
     XCTAssertTrue(app.staticTexts["Notes live with your account, so they need you signed in."].waitForExistence(timeout: 5))
     capture("gym-coach-notes-signed-out-\(appearance)", app)
     back(app)
-    more("Connected log", app)
+    reach(app.buttons["settings-connected-log"], app).tap()
     XCTAssertTrue(app.buttons["coach-connect-tool"].waitForExistence(timeout: 5))
     capture("gym-coach-connected-log-signed-out-\(appearance)", app)
   }
@@ -846,7 +845,7 @@ import XCTest
     for key in ["1", "0", "5"] { app.buttons["workout-key-\(key)"].tap() }
     app.buttons["workout-keypad-set"].tap()
     app.buttons["workout-log"].tap()
-    app.buttons["workout-next"].tap()
+    app.descendants(matching: .any)["workout-current-set"].swipeLeft()
     let heavier = app.alerts["Save 105 to Lower A?"]
     XCTAssertTrue(heavier.waitForExistence(timeout: 5))
     capture("gym-workout-heavier-than-plan-dialog-\(appearance)", app)
@@ -914,7 +913,7 @@ import XCTest
     workout.buttons["workout-weight"].tap()
     for key in ["1", "0", "5"] { workout.buttons["workout-key-\(key)"].tap() }
     workout.buttons["workout-keypad-set"].tap()
-    workout.buttons["workout-log"].tap(); workout.buttons["workout-next"].tap()
+    workout.buttons["workout-log"].tap(); workout.descendants(matching: .any)["workout-current-set"].swipeLeft()
     let heavier = workout.alerts["Save 105 to Lower A?"]
     XCTAssertTrue(heavier.waitForExistence(timeout: 5))
     capture(name("heavier-dialog", workout), workout)
@@ -981,10 +980,12 @@ import XCTest
     XCTAssertTrue(log.textFields["gym-weigh-in-weight"].waitForNonExistence(timeout: 5))
     revealInLog(session, log)
     session.swipeLeft()
-    let discard = log.buttons["Discard"]
+    let discard = log.buttons["Delete"]
     XCTAssertTrue(discard.wait(for: \.isHittable, toEqual: true, timeout: 5)); discard.tap()
-    XCTAssertTrue(log.buttons["gym-log-undo"].waitForExistence(timeout: 5))
-    capture(name("log-undo-band", log), log)
+    XCTAssertTrue(log.buttons["Discard workout"].waitForExistence(timeout: 5))
+    capture(name("log-discard-confirmation", log), log)
+    log.cancelConfirmation()
+    XCTAssertTrue(log.buttons["Discard workout"].waitForNonExistence(timeout: 5))
     log.terminate()
 
     let coach = launch("shell-last-room", appearance: appearance, arguments: ["-coach-fixture"] + size)
@@ -1044,10 +1045,11 @@ import XCTest
         }
         capture("gym-recovery-more-menu-\(suffix)", app, settle: 0.6)
         app.buttons["recovery-discard"].tap()
+        XCTAssertTrue(app.buttons["Discard workout"].waitForExistence(timeout: 5))
+        capture("gym-recovery-discard-confirmation-\(suffix)", app)
+        app.buttons["Discard workout"].tap()
         XCTAssertTrue(app.descendants(matching: .any)["recovery-inspect"].waitForNonExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Workout discarded"].waitForExistence(timeout: 5))
-        capture("gym-recovery-discard-held-\(suffix)", app)
-        app.buttons["gym-log-undo"].tap()
+        XCTAssertFalse(app.buttons["gym-log-undo"].exists)
         continue
       }
       back(app)
