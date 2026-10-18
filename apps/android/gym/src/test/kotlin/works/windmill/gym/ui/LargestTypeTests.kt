@@ -208,7 +208,7 @@ class LargestTypeTests {
                 CompositionLocalProvider(LocalDensity provides Density(density = 2f, fontScale = 2f)) {
                     Box(Modifier.fillMaxWidth().height(700.dp)) {
                         ReviewSheet(
-                            proposalId = "proposal1", routineId = routine.id, store = room.store,
+                            proposalId = "proposal1", store = room.store,
                             onAsk = null, onDecided = {},
                         )
                     }

@@ -89,7 +89,7 @@ class TrainingStore(
     localCoach: LocalCoach? = null,
 ) {
     val coach = CoachStore(
-        accountOwner = { owner }, withheldIds = { withheldIds }, onProgramChanged = { routines = training.program() },
+        accountOwner = { owner }, withheldIds = { withheldIds }, onProgramChanged = { readProgram() },
         rest = rest, localCoach = localCoach, telemetry = telemetry, elapsedNanos = elapsedNanos,
     )
 
@@ -135,7 +135,7 @@ class TrainingStore(
             projectEngineReplica()
             preferences = training.settings()
             catalog = training.catalogue()
-            routines = training.program()
+            readProgram()
             series = training.weighins()
             workoutReady = true
             reconcileWorkoutTime()
@@ -362,6 +362,14 @@ class TrainingStore(
         // of it.
         get() = program.filterNot { it.id in withheldIds }
         private set(value) { program = value }
+    // The proposals the log would refuse to apply: the domain's rule over the routine as the engine holds and
+    // confirms it, read with the program so the two never disagree.
+    var outOfDateProposals: Set<String> by mutableStateOf(emptySet())
+        private set
+    private fun readProgram() {
+        routines = training.program()
+        outOfDateProposals = training.outOfDateProposals()
+    }
     var logged: List<SessionSummary> by mutableStateOf(emptyList())      // the account's pages, newest first
         private set
     private var logReadRevision = 0L
@@ -534,7 +542,7 @@ class TrainingStore(
         }
         preferences = training.settings()
         catalog = training.catalogue()
-        routines = training.program()
+        readProgram()
         series = training.weighins()
         bodyweightRead = false
         progressRevision += 1
@@ -632,7 +640,7 @@ class TrainingStore(
             }) changeHeldSet(detail.session.id, set.id, set)
         }
         catalog = training.catalogue()
-        routines = training.program()
+        readProgram()
         removalProposals = training.removalProposals()
         settledProposals = settledProposals + unseenRemovalReceipts
         preferences = training.settings()
@@ -1017,7 +1025,7 @@ class TrainingStore(
     private fun refused(error: Throwable): ProposalOutcome {
         val refusal = error as? TrainingRefused
         if (refusal == null || refusal.code == "sign-in") return ProposalOutcome.Failed(WriteFailure(error))
-        routines = training.program()
+        readProgram()
         return when (refusal.code) {
             Gym.Codes.proposalSuperseded -> ProposalOutcome.Moved(refusal.line)
             "unknown-record" -> ProposalOutcome.Gone("that proposal is no longer on the log")

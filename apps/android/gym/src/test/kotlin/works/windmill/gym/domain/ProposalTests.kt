@@ -64,7 +64,6 @@ class ProposalTests {
         assertEquals("Review", waiting.reviewLabel)
         assertEquals("Heavier triples.", waiting.summaryLine("Push A"))
         assertNull("a head carries no base either", waiting.baseRevision)
-        assertFalse("so it is never read as superseded", waiting.supersededBy(routine))
     }
 
     @Test
@@ -244,17 +243,6 @@ class ProposalTests {
         assertEquals("bench-press", whole.landsAfter(incline))
         assertNull("the first line of the day follows nothing", whole.landsAfter(bench))
         assertNull("what is taken away is not part of the run", whole.landsAfter(orphan))
-    }
-
-    @Test
-    fun testARoutineThatMovedPastTheBaseHasSupersededTheDiff() {
-        val written = proposal(baseRevision = 2)
-        val routine = Routine(id = "rt_1", name = "Push A")
-
-        assertFalse("the base it was written on", written.supersededBy(routine.copy(revision = 2)))
-        assertTrue("the lifter's own save moved it", written.supersededBy(routine.copy(revision = 3)))
-        assertFalse("stale here, not moved there", written.supersededBy(routine.copy(revision = 1)))
-        assertFalse("nothing to compare against", written.supersededBy(null))
     }
 
     @Test

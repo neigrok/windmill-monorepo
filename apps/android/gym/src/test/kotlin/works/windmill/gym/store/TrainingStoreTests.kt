@@ -1503,16 +1503,21 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testASupersededDiffIsReadableOffTheRoutineTheRoomHolds() = runTest {
+    fun testTheStoreNamesTheProposalsTheLogWouldRefuseToApply() = runTest {
         val server = EngineRoomFixture.server()
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
             val pushA = pushAWaitingOnADiff(room, server)
+            assertEquals(1, room.store.pendingProposals.single().baseRevision)
+            assertEquals(emptySet<String>(), room.store.outOfDateProposals)
 
-            val waiting = room.store.pendingProposals.single()
-            val held = room.store.routine(pushA.id)!!
-            assertEquals(1, waiting.baseRevision)
-            assertFalse(waiting.supersededBy(held))
-            assertTrue(waiting.supersededBy(held.copy(revision = 2)))
+            assertNull(room.store.save(List(5) { SetTarget(5, 87.5) }, toRoutine = pushA.id, atPosition = 1,
+                forExercise = "bench-press"))
+            room.store.refreshEngine()
+            assertEquals("an edit the log has not confirmed already dates the diff", setOf("proposal1"), room.store.outOfDateProposals)
+
+            room.sync(server); room.store.refreshEngine()
+            assertEquals(2, room.store.routine(pushA.id)?.revision)
+            assertEquals("and so does the revision the log counted", setOf("proposal1"), room.store.outOfDateProposals)
             runCurrent()
         }
     }

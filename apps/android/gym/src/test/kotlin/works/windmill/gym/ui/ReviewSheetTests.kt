@@ -196,12 +196,11 @@ class ReviewSheetTests {
         sentence in said
     }
 
-    private fun sheet(store: TrainingStore, routine: Routine, decided: MutableList<Proposal>, heightDp: Int = 900) {
+    private fun sheet(store: TrainingStore, decided: MutableList<Proposal>, heightDp: Int = 900) {
         compose.setContent {
             Box(Modifier.height(heightDp.dp)) {
                 ReviewSheet(
                     proposalId = "proposal1",
-                    routineId = routine.id,
                     store = store,
                     onAsk = null,
                     onDecided = { decided += it },
@@ -219,7 +218,7 @@ class ReviewSheetTests {
         val routine = routineFor(room, server, "Push Day", changes)
         propose(room, server, routine, changes)
         val decided = mutableListOf<Proposal>()
-        sheet(room.store, routine, decided)
+        sheet(room.store, decided)
 
         compose.onNodeWithText("Turn this down?").assertDoesNotExist()
         compose.onNodeWithText("Turn this down").performClick()
@@ -256,7 +255,7 @@ class ReviewSheetTests {
         val routine = routineFor(room, server, "Push Day", changes)
         propose(room, server, routine, changes)
         val decided = mutableListOf<Proposal>()
-        sheet(room.store, routine, decided, heightDp = 360)
+        sheet(room.store, decided, heightDp = 360)
 
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertIsDisplayed()
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertIsNotEnabled()
@@ -283,7 +282,7 @@ class ReviewSheetTests {
         val routine = routineFor(room, server, "Push Day", changes)
         // No model prose, so no kicker: the diff is one counted row and fits the window whole.
         propose(room, server, routine, changes, summary = "")
-        sheet(room.store, routine, mutableListOf())
+        sheet(room.store, mutableListOf())
 
         compose.onNodeWithText("Coach wrote:").assertDoesNotExist()
         compose.onNodeWithText("1 change to Push Day.").assertIsDisplayed()
@@ -307,7 +306,7 @@ class ReviewSheetTests {
         val decided = mutableListOf<Proposal>()
         compose.setContent {
             Box(Modifier.height(540.dp)) {
-                ReviewSheet(opened.value, routine.id, room.store, null, { decided += it })
+                ReviewSheet(opened.value, room.store, null, { decided += it })
             }
         }
         compose.onNodeWithText("Apply").assertIsEnabled()
@@ -340,7 +339,7 @@ class ReviewSheetTests {
         val pending = propose(room, server, routine, changes, summary = "")!!
         val store = room.store
         val decided = mutableListOf<Proposal>()
-        sheet(store, routine, decided)
+        sheet(store, decided)
         compose.onNodeWithText("Apply").assertIsEnabled()
         val live = compose.runOnIdle { runBlocking { (store.start(routine.id) as GymResult.Ok).value } }
         compose.onNodeWithText("Finish this session").assertIsDisplayed()
@@ -373,7 +372,7 @@ class ReviewSheetTests {
         )
         val routine = routineFor(room, server, "Push Day", changes)
         propose(room, server, routine, changes)
-        sheet(room.store, routine, mutableListOf())
+        sheet(room.store, mutableListOf())
 
         compose.onNodeWithText("Coach wrote:").assertIsDisplayed()
         compose.onNodeWithText("Heavier triples.").assertIsDisplayed()
@@ -399,7 +398,7 @@ class ReviewSheetTests {
         val changes = listOf(retarget("bench-press", 1))
         val routine = routineFor(room, server, "Push Day", changes)
         propose(room, server, routine, changes, door = "mcp", agent = "Claude Desktop")
-        sheet(room.store, routine, mutableListOf())
+        sheet(room.store, mutableListOf())
 
         compose.onNodeWithText("Claude Desktop wrote:").assertIsDisplayed()
         compose.onNodeWithText("from Claude Desktop · ", substring = true).assertDoesNotExist()
@@ -422,7 +421,7 @@ class ReviewSheetTests {
             movements.drop(10).mapIndexed { at, id -> kept(id, at + 11) }
         val routine = routineFor(room, server, "Push Day", changes)
         propose(room, server, routine, changes)
-        sheet(room.store, routine, mutableListOf(), heightDp = 360)
+        sheet(room.store, mutableListOf(), heightDp = 360)
 
         val shut = compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).getUnclippedBoundsInRoot()
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assert(hasStateDescription(Proposal.applyHint))
@@ -454,7 +453,7 @@ class ReviewSheetTests {
         val changes = movements.take(10).mapIndexed { at, id -> retarget(id, at + 1) }
         val routine = routineFor(room, server, "Push Day", changes)
         propose(room, server, routine, changes)
-        sheet(room.store, routine, mutableListOf(), heightDp = 360)
+        sheet(room.store, mutableListOf(), heightDp = 360)
 
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertIsNotEnabled()
         val saying = compose.onAllNodes(saying(Proposal.applyHint)).fetchSemanticsNodes()
@@ -482,7 +481,7 @@ class ReviewSheetTests {
         val routine = routineFor(room, server, "Push Day", changes)
         propose(room, server, routine, changes)
         val decided = mutableListOf<Proposal>()
-        sheet(room.store, routine, decided, heightDp = 360)
+        sheet(room.store, decided, heightDp = 360)
 
         compose.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertIsEnabled()
@@ -505,7 +504,7 @@ class ReviewSheetTests {
         val changes = listOf(retarget("bench-press", 1), retarget("chin-up", 2))
         val routine = routineFor(room, server, "Push Day", changes)
         propose(room, server, routine, changes)
-        sheet(room.store, routine, mutableListOf())
+        sheet(room.store, mutableListOf())
 
         val promise = "All two or none. Nothing is applied until you tap."
         compose.onNodeWithText(promise).assertIsDisplayed()
@@ -527,7 +526,7 @@ class ReviewSheetTests {
             movements.drop(10).mapIndexed { at, id -> kept(id, at + 11) }
         val routine = routineFor(room, server, "Push Day", changes)
         propose(room, server, routine, changes)
-        sheet(room.store, routine, mutableListOf(), heightDp = 360)
+        sheet(room.store, mutableListOf(), heightDp = 360)
 
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertIsNotEnabled()
         compose.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }
@@ -550,7 +549,7 @@ class ReviewSheetTests {
         val changes = listOf(setFourMoved())
         val lowerA = routineFor(room, server, "Lower A", changes)
         propose(room, server, lowerA, changes, summary = "")
-        sheet(room.store, lowerA, mutableListOf())
+        sheet(room.store, mutableListOf())
 
         compose.onNodeWithText("1 change to Lower A.").assertIsDisplayed()
         compose.onNodeWithText("Back Squat").assertIsDisplayed()
@@ -572,7 +571,7 @@ class ReviewSheetTests {
         val changes = listOf(reshaped())
         val lowerA = routineFor(room, server, "Lower A", changes)
         propose(room, server, lowerA, changes, summary = "")
-        sheet(room.store, lowerA, mutableListOf())
+        sheet(room.store, mutableListOf())
 
         assertEquals(listOf("5 × 5 · 80kg → 5 × 1–5 · 60–100kg"), rowSaying("5 × 5 · 80kg →"))
         compose.onNode(hasStateDescription("collapsed") or hasStateDescription("expanded")).assert(hasStateDescription("collapsed"))
@@ -603,7 +602,7 @@ class ReviewSheetTests {
             after = ProposalTargets(ramp))
         val lowerA = routineFor(room, server, "Lower A", listOf(grown))
         propose(room, server, lowerA, listOf(grown), summary = "")
-        sheet(room.store, lowerA, mutableListOf())
+        sheet(room.store, mutableListOf())
 
         compose.onNode((hasStateDescription("collapsed") or hasStateDescription("expanded")) and hasClickAction()).performClick()
         assertEquals(listOf("set 3 · 80 × 5 → 90 × 3"), rowSaying("set 3"))
@@ -671,7 +670,7 @@ class ReviewSheetTests {
         compose.setContent {
             key(visit.value) {
                 Box(Modifier.height(900.dp)) {
-                    ReviewSheet("proposal1", routine.id, room.store, null, { decided += it })
+                    ReviewSheet("proposal1", room.store, null, { decided += it })
                 }
             }
         }
@@ -721,7 +720,7 @@ class ReviewSheetTests {
         compose.setContent {
             key(displayed.value) {
                 Box(Modifier.height(900.dp)) {
-                    ReviewSheet(pending.id, routine.id, displayed.value, null, { decided += it })
+                    ReviewSheet(pending.id, displayed.value, null, { decided += it })
                 }
             }
         }
@@ -783,7 +782,7 @@ class ReviewSheetTests {
         compose.setContent {
             CompositionLocalProvider(LocalLifecycleOwner provides owner) {
                 Box(Modifier.height(900.dp).offset(y = if (offscreen.value) 2000.dp else 0.dp)) {
-                    ReviewSheet(pending.id, routine.id, room.store, null, {}, onBusy = { busy = it })
+                    ReviewSheet(pending.id, room.store, null, {}, onBusy = { busy = it })
                 }
             }
         }
@@ -827,7 +826,7 @@ class ReviewSheetTests {
         val routine = routineFor(room, server, "Push Day", changes)
         propose(room, server, routine, changes, summary = "")
         val decided = mutableListOf<Proposal>()
-        sheet(room.store, routine, decided)
+        sheet(room.store, decided)
         EngineRoomFixture(tmp.newFolder(), scope).use { other ->
             runBlocking {
                 other.select("u1"); other.pull(server)
@@ -859,7 +858,7 @@ class ReviewSheetTests {
         val changes = listOf(retarget("bench-press", 1))
         val routine = routineFor(room, server, "Push Day", changes)
         propose(room, server, routine, changes)
-        sheet(store, routine, mutableListOf())
+        sheet(store, mutableListOf())
         compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertIsEnabled()
         val edited = runBlocking {
             (store.saveRoutine(RoutineDraft.of(routine).named("Push Day B")) as GymResult.Ok).value.also {
@@ -887,6 +886,31 @@ class ReviewSheetTests {
         scope.cancel()
     }
 
+    // The domain's Apply rule, not a revision count: a name saved here that the log has not confirmed yet moves the
+    // routine under the proposal, and the log will count it before it reads the decision, so Apply is withdrawn now.
+    @Test
+    fun aProposalOverAnEditTheLogHasNotConfirmedIsOutOfDate() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        val room = signedIn(scope)
+        val store = room.store
+        val changes = listOf(retarget("bench-press", 1))
+        val routine = routineFor(room, server, "Push Day", changes)
+        propose(room, server, routine, changes)
+        sheet(store, mutableListOf())
+        compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertIsEnabled()
+
+        runBlocking {
+            assertTrue(store.saveRoutine(RoutineDraft.of(routine).named("Push Day B")) is GymResult.Ok)
+            store.refreshEngine()
+        }
+        assertEquals("the log has not counted the edit", routine.revision, store.allRoutines.single().revision)
+
+        compose.onNode(hasScrollAction()).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100_000f) }
+        compose.onNodeWithText(supersededSentence).assertIsDisplayed()
+        compose.onNode(hasText("Apply") or hasText("Apply all", substring = true)).assertDoesNotExist()
+        scope.cancel()
+    }
 }
 
 private const val supersededSentence =

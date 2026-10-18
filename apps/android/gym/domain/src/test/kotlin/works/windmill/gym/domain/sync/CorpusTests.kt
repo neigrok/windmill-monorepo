@@ -17,14 +17,6 @@ class CorpusTests {
         "gym/domain/preferences-actions.json", "gym/domain/proposals-actions.json", "gym/domain/training-actions.json",
         "gym/domain/training-reads.json", "gym/domain/units.json", "gym/rules/bodyweight.json")
     val pending = mapOf("gym/domain/recovery-actions.json" to "Android's saved-workout recovery lives in the store's WorkoutImports.kt, not yet in :gym:domain")
-    val pendingReads = mapOf("ProgressRecords" to "Android weaves its log's new bests in :gym's LogTimeline.kt, not yet in :gym:domain, and counts every exact record step from a first estimate")
-    val unconfirmedRoutine = "Android's ProposalState reads no confirmed routine and leaves a routine out of sight to ApplyProposal's decide"
-    val pendingProposals = mapOf(
-        "OutOfDate" to "Android's ReviewSheet.kt decides a proposal out of date in :gym, so :gym:domain has no OutOfDate read",
-        "pending apply over movements the log has not confirmed refuses as a routine change" to unconfirmedRoutine,
-        "pending apply over a name the log has not confirmed refuses as a routine change" to unconfirmedRoutine,
-        "pending apply with its routine out of sight is gone" to unconfirmedRoutine,
-        "pending apply with no routine is gone" to unconfirmedRoutine)
 
     @Test fun everyProductFileIsClaimedAndEveryVectorPasses() {
         assertEquals((paths + pending.keys).sorted(), Contract.files("gym"))
@@ -33,10 +25,7 @@ class CorpusTests {
             failures += "${paths[0]} · ${error.message}"
         }
         var cases = 1
-        var skipped = 0
         for (path in paths.drop(1)) for (vector in Contract.vectors(path)) {
-            if (path == "gym/domain/training-reads.json" && vector.input.member("read").str() in pendingReads) { skipped++; continue }
-            if (path == "gym/domain/proposals-actions.json" && (vector.input.member("action").str() in pendingProposals || vector.name in pendingProposals)) { skipped++; continue }
             try {
                 val actual = run(vector)
                 if (vector.expect.jcs != actual.jcs) failures += "$path · ${vector.name}\n  got    ${actual.jcs}\n  expect ${vector.expect.jcs}"
@@ -45,7 +34,7 @@ class CorpusTests {
         }
         failures.forEach(::println)
         assertTrue("${failures.size} gym corpus failures:\n${failures.joinToString("\n")}", failures.isEmpty())
-        println("Gym corpus: ${paths.size}/${paths.size + pending.size} files, $cases cases, ${pending.size} pending, $skipped pending cases, no unclaimed file")
+        println("Gym corpus: ${paths.size}/${paths.size + pending.size} files, $cases cases, ${pending.size} pending file, no unclaimed file")
     }
 
     @Test fun everySharedLocalRuleAndCodeIsCovered() {
@@ -174,10 +163,12 @@ class CorpusTests {
                     "state" to Json.of(p.state), "provenance" to provenance)
             }
             "RoutineCreation" -> Json.objectOf("snapshot" to (RoutineCreation.fromForm(input).snapshot ?: Json.Null))
-            "StateRefusal" -> {
+            "StateRefusal", "OutOfDate" -> {
                 val p = input["proposal"]?.orNull()?.let { Proposal.fromForm(it) }
                 val r = input["routine"]?.orNull()?.let { Routine.fromForm(it) }
-                Json.objectOf("refusal" to (ProposalState(p, r, moment(vector.input)).refusal(Id("proposal1", Proposal), f.bool("applying"))?.let(::refusalForm) ?: Json.Null))
+                val state = ProposalState(p, r, moment(vector.input), f.bool("routineVisible", true), input["confirmedRoutine"]?.let { Routine.fromForm(it) } ?: r)
+                if (vector.input.member("action").str() == "OutOfDate") Json.objectOf("outOfDate" to Json.of(state.outOfDate))
+                else Json.objectOf("refusal" to (state.refusal(Id("proposal1", Proposal), f.bool("applying"))?.let(::refusalForm) ?: Json.Null))
             }
             "ValidateProposal" -> try { Json.objectOf("fields" to Json.Obj(Valid(Proposal.fromForm(input), Proposal, at = moment(vector.input)).value.fields().toList())) }
                 catch (violation: Violation) { Json.objectOf("violation" to violation.json) }

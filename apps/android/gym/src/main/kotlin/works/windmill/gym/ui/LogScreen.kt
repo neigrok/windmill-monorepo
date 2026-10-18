@@ -129,13 +129,13 @@ fun LogScreen(
                                     SessionRow(row, { onOpenSession(row.summary) }, { onShareSession(row.summary.id) }, { onDiscardSession(row.summary.id) })
                                 }
                                 is LogEntry.Moment -> {
-                                    val movement = (entry as? LogEntry.Moment.Best)?.let { progress?.movement(it.exerciseId)?.window(entry.atMs, zone) }
+                                    val movement = (entry as? LogEntry.Moment.Best)?.let { progress?.movement(it.best.exerciseId)?.window(entry.atMs, zone) }
                                     MomentRow(entry, LogReadout.moment(entry, store.catalog, store.bodyweight, nowMs, zone),
                                         movement, openMoment == entry.key, nowMs, zone,
                                         onToggle = {
                                             if (entry is LogEntry.Moment.Weight) onOpenBodyweight()
                                             else openMoment = entry.key.takeUnless { openMoment == it }
-                                        }, onOpenRecord = { if (entry is LogEntry.Moment.Best) onOpenMovement(entry.exerciseId) })
+                                        }, onOpenRecord = { if (entry is LogEntry.Moment.Best) onOpenMovement(entry.best.exerciseId) })
                                 }
                             }
                         }

@@ -29,6 +29,7 @@ import works.windmill.gym.domain.sync.TrainingSet as EngineSet
 import works.windmill.gym.domain.sync.Note as EngineNote
 import works.windmill.gym.domain.sync.WeighIn as EngineWeighIn
 import works.windmill.gym.domain.sync.Proposal as EngineProposal
+import works.windmill.gym.domain.sync.ProposalState as EngineProposalState
 import works.windmill.gym.domain.sync.RoutineEntry as EngineEntry
 import works.windmill.gym.domain.sync.SetTarget as EngineTarget
 import works.windmill.gym.domain.Exercise
@@ -330,6 +331,10 @@ class EngineTraining(val engine: Engine) {
         if (queued) reader.confirmed(EngineProposal, identity)?.takeIf { it.isVisible }?.let { EngineProposal.decode(Fields(it)).ui(reader) }
         else reader.repository(EngineProposal).find(identity, ViewMode.drawn)?.ui(reader)
     } ?: removalReceipts.proposals()[id]?.takeIf { it.isPending }
+    // The proposals the log would refuse to apply, decided against the routine as the engine holds and confirms it.
+    fun outOfDateProposals(): Set<String> = read { reader ->
+        reader.repository(EngineProposal).all(ViewMode.drawn).filter { EngineProposalState(reader, it.id).outOfDate }.mapTo(mutableSetOf()) { it.id.text }
+    }
     suspend fun applyProposal(id: String) = decideProposal(id, applying = true)
     suspend fun dismissProposal(id: String) = decideProposal(id, applying = false)
     private suspend fun decideProposal(id: String, applying: Boolean): ProposalDecision {
@@ -378,7 +383,7 @@ class EngineTraining(val engine: Engine) {
             @Suppress("UNREACHABLE_CODE") error("The receipt loop returns or is cancelled.")
         } ?: throw TrainingUnanswered
     }
-    fun progress(): StatsProgress = StatsProgress.of(details(), engine.physNow())
+    fun progress(): StatsProgress = StatsProgress.of(details(), engine.physNow(), complete = anonymous || firstPullComplete)
     fun record(exerciseId: String): MovementRecord? = catalogue().firstOrNull { it.id == exerciseId }
         ?.let { MovementRecord.of(it, details()) }
     fun settings(): GymPreferences = read { reader ->

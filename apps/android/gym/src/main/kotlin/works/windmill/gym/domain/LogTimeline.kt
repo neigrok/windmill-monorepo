@@ -19,13 +19,9 @@ sealed interface LogEntry {
     sealed interface Moment : LogEntry {
         val priority: Int
 
-        data class Best(
-            val exerciseId: String,
-            val session: MovementProgress.Session,
-            val previous: MovementProgress.Session?,
-        ) : Moment {
-            override val atMs: Long get() = session.startedAt
-            override val key: String get() = "best:$exerciseId:${session.id}"
+        data class Best(val best: NewBest) : Moment {
+            override val atMs: Long get() = best.startedAt
+            override val key: String get() = "best:${best.exerciseId}:${best.sessionId}"
             override val priority: Int get() = 0
         }
 
@@ -53,13 +49,7 @@ fun logTimeline(
     val monday = TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)
     val facts = progress?.copy(sessions = progress.sessions.filter { it.startedAt <= nowMs }) ?: StatsProgress(nowMs, emptyList())
     val moments = mutableListOf<LogEntry.Moment>()
-
-    facts.sessions.flatMap { it.movements }.map { it.exerciseId }.distinct().sorted().forEach { id ->
-        val records = facts.movement(id).records
-        records.forEachIndexed { index, record ->
-            moments += LogEntry.Moment.Best(id, record, records.getOrNull(index - 1))
-        }
-    }
+    moments += facts.newBests.map { LogEntry.Moment.Best(it) }
 
     val trainedDays = facts.sessions.filter { it.movements.any { fact -> fact.workingSetCount > 0 } }
         .map { Instant.ofEpochMilli(it.startedAt).atZone(zone).toLocalDate() }

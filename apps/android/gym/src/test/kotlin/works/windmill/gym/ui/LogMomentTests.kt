@@ -59,8 +59,9 @@ class LogMomentTests {
             val latest = runBlocking {
                 room.select(null)
                 listOf("2026-08-24", "2026-08-31", "2026-09-07", "2026-09-14", "2026-09-24").mapIndexed { index, day ->
+                    // Each movement's first estimate is its baseline; the row's best lands on the fourth workout, bench's on the last.
                     val lifts = listOf("bench-press" to if (index == 4) 90.0 else 80.0) +
-                        if (index == 3) listOf("barbell-row" to 60.0) else emptyList()
+                        when (index) { 2 -> listOf("barbell-row" to 55.0); 3 -> listOf("barbell-row" to 60.0); else -> emptyList() }
                     room.trained("Workout $index", at(day), lifts)
                 }.last()
             }
@@ -122,12 +123,13 @@ class LogMomentTests {
         val now = LocalDate.of(2026, 9, 24).atTime(18, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val server = EngineRoomFixture.server()
         try { EngineRoomFixture(tmp.newFolder(), scope, undoWindowMs = 60_000).use { room ->
-            // Fifty empty workouts a minute apart this evening, and under them a workout of bench from
-            // ninety days ago, all logged on another phone.
+            // Fifty empty workouts a minute apart this evening, and under them a bench best from ninety
+            // days ago over its baseline the week before, all logged on another phone.
             val phoneScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
             val recent = try { EngineRoomFixture(tmp.newFolder(), phoneScope).use { phone -> runBlocking {
                 phone.select("a")
                 phone.pull(server)
+                phone.trained("Oldest workout", now - 97L * 86_400_000, listOf("bench-press" to 75.0))
                 phone.trained("Older workout", now - 90L * 86_400_000, listOf("bench-press" to 80.0))
                 val recent = (49 downTo 0).map { index ->
                     phone.now = now - index * 60_000 - 1_000
