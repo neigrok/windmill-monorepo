@@ -44,6 +44,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     @Volatile private var closed = false
     @Volatile var upgradeRequired = false; private set
     @Volatile private var socket: LiveConnection? = null
+    private var socketOpenedAt: Long? = null
     @Volatile private var signOutHold: String? = null
     @Volatile private var activePush: Job? = null
     private var launched = false
@@ -151,11 +152,13 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         launchWorker(EngineOperation.live) { var k = 0
             while (isActive && !closed) {
                 if (!foreground || !online || seat() == null) { socket?.close(); socket = null; wait(liveWake, 30_000); continue }
-                val start = mono()
-                try { liveStep(); if (mono() - start >= 30_000) k = 0 }
+                try { liveStep() }
                 catch (_: CancellationException) { if (!isActive) break }
                 catch (_: LiveEnded) { /* Its end is already reported. */ }
                 catch (_: Exception) { engine.report(EngineOperation.live, EngineOutcome.failure) }
+                // §7.5: a socket that stayed open 30 s resets the reopen backoff, however it ended.
+                if (socketOpenedAt?.let { mono() - it >= 30_000 } == true) k = 0
+                socketOpenedAt = null
                 if (foreground && online && seat() != null) {
                     engine.subscriptions(products).forEach(pullWanted::add); pullerWake.trySend(Unit)
                     val pause = engine.draw(minOf(30_000L, 1_000L shl minOf(k++, 5)).toInt()).toLong()
@@ -167,6 +170,8 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     }
     private fun <T> storageIO(body: () -> T): T = try { body() }
         catch (failure: Exception) { engine.report(EngineOperation.lifecycle, EngineOutcome.failure); throw failure }
+    // §9.6 426 upgrade-required: nothing more is sent or pulled until the app is upgraded; the status says so.
+    private fun requireUpgrade() { upgradeRequired = true; engine.networkStatus(upgradeRequired = true) }
     @Synchronized fun launch(forkGuard: ForkGuardStore) {
         if (launched) return
         val copy = storageIO { forkGuard.load() }
@@ -205,7 +210,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     suspend fun hello(token: String?): Reply<SyncResponse> {
         val sentFor = engine.lock.withLock { engine.device.current().let { it.id to it.account } }
         val send = engine.clock.reading(); val reply = deadline(Constants.REQUEST_TIMEOUT_MS.toLong()) { transport.hello(token) } ?: Reply.Unreachable; val recv = engine.clock.reading()
-        val response = when (reply) { is Reply.Answer -> reply.value; is Reply.Failed -> reply.response; else -> null }
+        val response = reply.answer
         if (response != null) {
             val sameReplica = engine.lock.withLock { engine.device.current().let { it.id == sentFor.first && it.account == sentFor.second } }
             val sameToken = sentFor.second == null || storageIO { tokens.token(sentFor.second!!) } == token
@@ -214,14 +219,14 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 if (active.id == sentFor.first && active.account == sentFor.second) {
                     engine.onHello(response, RequestTiming(send, recv))
                     engine.write(EngineOperation.hello) { replica ->
-                        if (replica.unauthenticated(response)) replica.meta = replica.meta.with("serverSchema" to null)
+                        if (response.unauthenticated(replica.account)) replica.meta = replica.meta.with("serverSchema" to null)
                         else if (response.status == 200 && replica.account != null && response.body?.get("as") == Json.of(replica.account!!))
                             response.body["schema"]?.let { replica.meta = replica.meta.with("serverSchema" to it) }
                     }
                 }
             }
             else response.body?.get("serverTime")?.let { time -> engine.write(EngineOperation.hello) { engine.offset(it, time.long(), RequestTiming(send, recv)) } }
-            if (response.status == 426 || response.body?.get("minSchema")?.long()?.let { it > engine.registry.version } == true) { upgradeRequired = true; engine.networkStatus(upgradeRequired = true) }
+            if (response.requiresUpgrade || response.body?.get("minSchema")?.long()?.let { it > engine.registry.version } == true) requireUpgrade()
         }
         return reply
     }
@@ -256,8 +261,8 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     private suspend fun continueSignIn(account: String, token: String): SignInSession {
         val reply = hello(token)
         if (storageIO { tokens.token(account) } != token) throw EngineError(EngineError.Code.signInEnded)
-        val response = when (reply) { is Reply.Answer -> reply.value; is Reply.Failed -> reply.response; else -> throw EngineError(EngineError.Code.unreachable) }
-        if (upgradeRequired || response.status == 426) throw EngineError(EngineError.Code.upgradeRequired)
+        val response = reply.answer ?: throw EngineError(EngineError.Code.unreachable)
+        if (upgradeRequired) throw EngineError(EngineError.Code.upgradeRequired)
         if (response.status == 401) throw EngineError(EngineError.Code.unauthenticated)
         if (response.status != 200) throw EngineError(EngineError.Code.unreachable)
         if (response.body?.get("as") != Json.of(account) || response.body["holdsRecords"] == null) throw EngineError(EngineError.Code.unauthenticated)
@@ -364,49 +369,51 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             if (!engine.lock.withLock {
                 if (signOutHold == seat.account) false else { activePush = job; true }
             }) return@withLock false
-            val reply = try { deadline(Constants.REQUEST_TIMEOUT_MS.toLong()) { transport.push(request, seat.token!!) } ?: Reply.Unreachable }
-                finally { activePush = null }
-            val recv = engine.clock.reading()
-            val answered = when (reply) { is Reply.Answer -> reply.value; is Reply.Failed -> reply.response; else -> null }
-            if (answered?.status == 426) { upgradeRequired = true; engine.networkStatus(upgradeRequired = true); return@withLock false }
-            val stillCurrent = current(seat)
-            val suppliedTokenChanged = seat.account?.let { storageIO { tokens.token(it) } }?.let { it != seat.token } == true
-            val authFailure = answered?.let { response -> response.status == 401 || response.status == 409 && response.body?.get("error") == Json.of("account-mismatch") || response.status in setOf(200, 409) && response.body?.get("as") != seat.account?.let(Json::of) } == true
-            if (suppliedTokenChanged && authFailure) {
-                answered?.body?.get("serverTime")?.let { time -> engine.write(EngineOperation.push) { engine.device.replicas.firstOrNull { it.id == seat.replica }?.let { original -> engine.offset(original, time.long(), RequestTiming(send, recv)) } } }
-                return@withLock false
+            // §7.4 What holds work back: every push's end records its scopes' failure, or clears it; a cancelled push records nothing.
+            try {
+                val reply = try { deadline(Constants.REQUEST_TIMEOUT_MS.toLong()) { transport.push(request, seat.token!!) } ?: Reply.Unreachable }
+                    finally { activePush = null }
+                takeReply(request, seat, reply, RequestTiming(send, engine.clock.reading()), draining)
+                    .also { engine.recordPushFailure(request, reply.pushFailure(seat.account)) }
+            } catch (failure: Exception) {
+                if (failure !is CancellationException) engine.recordPushFailure(request, PushFailure.answered)
+                throw failure
             }
-            if (!stillCurrent) {
-                if (answered != null) engine.onPushResponse(request, answered, RequestTiming(send, recv))
-                return@withLock false
-            }
-            var again = false
-            val hint = try { liveHint() } catch (_: Exception) { engine.report(EngineOperation.push, EngineOutcome.failure); false }
-            when {
-                answered != null -> {
-                    val response = answered
-                    if (response.status == 426) { upgradeRequired = true; engine.networkStatus(upgradeRequired = true); return@withLock false }
-                    val next = engine.onPushResponse(request, response, RequestTiming(send, recv))
-                    pushLimit = next?.get("limit")?.long()?.toInt() ?: Constants.PUSH_MAX_INTENTS
-                    val body = response.body
-                    conflicts = if (response.status == 409) conflicts + 1 else 0
-                    when {
-                        response.status in setOf(400, 413) || response.status == 409 && conflicts == 1 -> again = true
-                        response.status == 503 -> wait.unavailable(mono(), body?.get("retryAfterMs")?.long() ?: 0, engine::draw, hint)
-                        response.status != 200 -> wait.backoff(mono(), engine::draw, hint)
-                        else -> {
-                            body?.get("retry")?.let { wait.retry(mono(), it.member("retryAfterMs").long()) }
-                            val codes = body?.items("results")?.filter { result -> request.member("intents").arr().any { it.member("n") == result.member("n") } }?.map { it["code"]?.str() ?: "ok" }.orEmpty()
-                            wait.results(codes, mono(), engine::draw, hint)
-                            if (codes.isEmpty() && body?.get("retry") == null) wait.backoff(mono(), engine::draw, hint)
-                            again = codes.isNotEmpty() && "clock-skew" !in codes && body?.get("retry") == null
-                        }
-                    }
-                }
-                else -> { conflicts = 0; wait.backoff(mono(), engine::draw, hint) }
-            }
-            if (draining) again else true
         } finally { if (earlier != null) wait.restoreBackoff(earlier) }
+    }
+    // §7.4 a push's reply: the server's upgrade stops sending; one the account's newer token did not make applies only its offset; one for a replica no longer active only records its results; otherwise the answer applies and sets the wait before the next push.
+    private suspend fun takeReply(request: Json, seat: Seat, reply: Reply<SyncResponse>, timing: RequestTiming, draining: Boolean): Boolean {
+        val response = reply.answer?.takeUnless { it.malformedConflict(seat.account) }
+        if (response?.requiresUpgrade == true) { requireUpgrade(); return false }
+        val stillCurrent = current(seat)
+        val suppliedTokenChanged = seat.account?.let { storageIO { tokens.token(it) } }?.let { it != seat.token } == true
+        if (suppliedTokenChanged && response?.unauthenticated(seat.account) == true) {
+            response.body?.get("serverTime")?.let { time -> engine.write(EngineOperation.push) { engine.device.replicas.firstOrNull { it.id == seat.replica }?.let { original -> engine.offset(original, time.long(), timing) } } }
+            return false
+        }
+        if (!stillCurrent) {
+            if (response != null) engine.onPushResponse(request, response, timing)
+            return false
+        }
+        val hint = try { liveHint() } catch (_: Exception) { engine.report(EngineOperation.push, EngineOutcome.failure); false }
+        if (response == null) { conflicts = 0; wait.backoff(mono(), engine::draw, hint); return !draining }
+        val next = engine.onPushResponse(request, response, timing)
+        pushLimit = next?.get("limit")?.long()?.toInt() ?: Constants.PUSH_MAX_INTENTS
+        val body = response.body
+        conflicts = if (response.status == 409) conflicts + 1 else 0
+        val again = when {
+            response.status in setOf(400, 413) || response.status == 409 && conflicts == 1 -> true
+            response.status == 503 -> { wait.unavailable(mono(), body?.get("retryAfterMs")?.long() ?: 0, engine::draw, hint); false }
+            response.status != 200 -> { wait.backoff(mono(), engine::draw, hint); false }
+            else -> {
+                body?.get("retry")?.let { wait.retry(mono(), it.member("retryAfterMs").long()) }
+                val codes = body?.items("results")?.filter { result -> request.member("intents").arr().any { it.member("n") == result.member("n") } }?.map { it["code"]?.str() ?: "ok" }.orEmpty()
+                wait.results(codes, mono(), engine::draw, hint)
+                if (codes.isEmpty() && body?.get("retry") == null) wait.backoff(mono(), engine::draw, hint)
+                codes.isNotEmpty() && "clock-skew" !in codes && body?.get("retry") == null
+            }
+        }
+        return if (draining) again else true
     }
     suspend fun pullerStep(): Boolean = pullerTurn.withLock {
         if (closed || !foreground || !online || upgradeRequired || mono() < pullFloor) return@withLock false
@@ -441,12 +448,10 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             val send = engine.clock.reading()
             val reply = deadline(Constants.REQUEST_TIMEOUT_MS.toLong()) { transport.pull(request, seat.token) } ?: Reply.Unreachable
             val recv = engine.clock.reading()
-            val answered = when (reply) { is Reply.Answer -> reply.value; is Reply.Failed -> reply.response; else -> null }
-            if (answered?.status == 426) { upgradeRequired = true; engine.networkStatus(upgradeRequired = true); break }
+            val response = reply.answer
+            if (response?.requiresUpgrade == true) { requireUpgrade(); break }
             if (!current(seat)) break
-            if (answered != null) {
-                val response = answered
-                if (response.status == 426) { upgradeRequired = true; engine.networkStatus(upgradeRequired = true); break }
+            if (response != null) {
                 val outcomes = engine.onPullResponse(request, response, RequestTiming(send, recv), appVersion = appVersion, replicaID = seat.replica)
                 for (result in outcomes) {
                     val target = ScopeRef(result.member("scope"))
@@ -463,9 +468,9 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 } else {
                     if (response.status == 503) pullFloor = mono() + (response.body?.get("retryAfterMs")?.long() ?: 0)
                     for (target in pulled) {
-                    pullWanted.add(target)
-                    if (response.status == 503) pullWaits.getValue(target).unavailable(mono(), response.body?.get("retryAfterMs")?.long() ?: 0, engine::draw, socket != null)
-                    else pullWaits.getValue(target).backoff(mono(), engine::draw, socket != null)
+                        pullWanted.add(target)
+                        if (response.status == 503) pullWaits.getValue(target).unavailable(mono(), response.body?.get("retryAfterMs")?.long() ?: 0, engine::draw, socket != null)
+                        else pullWaits.getValue(target).backoff(mono(), engine::draw, socket != null)
                     }
                     if (response.status == 503) break
                 }
@@ -477,15 +482,14 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     private suspend fun liveStep() = liveTurn.withLock {
         val seat = seat() ?: return@withLock
         val reply = deadline(Constants.REQUEST_TIMEOUT_MS.toLong()) { transport.openLive(seat.token!!) } ?: Reply.Unreachable
-        if (reply is Reply.Failed && reply.response.status == 426) { upgradeRequired = true; engine.networkStatus(upgradeRequired = true) }
         if (!current(seat) || !foreground || !online || closed) { (reply as? Reply.Answer)?.value?.close(); return@withLock }
+        // §7.5: a handshake's refusal carries no body, so its 426 proves nothing; the pull the failed open runs hears the server's own verdict.
         if (reply is Reply.Failed) {
             if (reply.response.status == 401) engine.write(EngineOperation.live) { it.meta = it.meta.with("authPaused" to Json.of(true)) }
-            if (reply.response.status == 426) { upgradeRequired = true; engine.networkStatus(upgradeRequired = true) }
             return@withLock
         }
         val connection = (reply as? Reply.Answer)?.value ?: return@withLock
-        socket = connection
+        socket = connection; socketOpenedAt = mono()
         try { coroutineScope {
             val following = mutableSetOf<ScopeRef>()
             var heard = mono(); var pongDue: Long? = null
