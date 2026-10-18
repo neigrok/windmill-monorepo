@@ -96,7 +96,7 @@ action `dismiss_ink` once when writing or a tap lifts it; no ink replay action i
 | Update required | `client_update_required` | Android's vocabulary: state: shown with status: 426 once the alert is on screen; action: update (Get the update, from the alert or You), keep (Keep working on this phone); outcome: failed when the destination could not open. trigger: sync (the engine's flag), sign_in (a 426 at sign-in) on every row. Dismissing the could-not-open transient emits nothing |
 | Adoption | `room_adoption_answered` | room: journal, gym; action: add, discard; no counts or identifiers |
 | Gym screens | `gym_screen_viewed` | screen: routines, routine, routine_editor (once a visit to the editor, however often its steps pop), routine_targets (a movement's Targets in the editor), routine_movement (the editor's Add movement and Create movement steps), movement, log, on_this_phone (the list On this phone opens), session, fix_set, record, bodyweight, weigh_in, session_share, coach, history, notes, note, review, connected_log, connected_log_guide (How this works), sources (What Coach read), workout |
-| Outside the app | `gym_activity_set_logged`, `gym_activity_offer_refused`, `gym_intent_opened` | surface: activity (the Live Activity's *Log set*), shortcut (an App Shortcut) on every row; `gym_activity_set_logged`: a set logged durable on the phone; `gym_activity_offer_refused`: outcome: refused (the rack had moved past the offer, or a rule of the log refused the set, and the logger opened), failed (the phone could not save the set and the logger opened, or Windmill could not start to log it and opened instead), absent (a *Log set* shortcut found no workout open); `gym_intent_opened`: intent: start_workout, open_workout (Windmill opened on Routines or on the logger, a *Log set* shortcut with nothing on offer included) |
+| Outside the app | `gym_activity_set_logged`, `gym_activity_offer_refused`, `gym_intent_opened` | surface: activity (the Live Activity's *Log set*), control (the workout control in Control Center), shortcut (an App Shortcut) on every row; `gym_activity_set_logged`: a set logged durable on the phone; `gym_activity_offer_refused`: outcome: refused (the rack had moved past the offer, or a rule of the log refused the set, and the logger opened), failed (the phone could not save the set and the logger opened, or Windmill could not start to log it and opened instead), absent (a *Log set* shortcut found no workout open); `gym_intent_opened`: intent: start_workout, open_workout (Windmill opened on Routines or on the logger, a *Log set* shortcut with nothing on offer included) |
 | Training | `gym_session_started`, `gym_set_logged`, `gym_session_finished` | screen: workout; outcome: ok, and refused for a Finish the phone cannot queue |
 | Hidden workout | `gym_hidden_workout` | action: hide when the lifter hides the open workout (*Hide workout*, or *Build my routine* on a first workout); action: open with door: accessory (the tab bar's accessory, iOS 26) or row (The log's Hidden row, iOS 18) when the lifter brings it back. A return the room cannot make records nothing and leaves the band's *Gym could not restore this workout. Try again.* |
 | Routines | `gym_routine_saved` | screen: routine_editor, workout; action: create, update (the editor creates or updates, a workout's kept targets update its routine, the receipt's routine is created) |
@@ -138,7 +138,7 @@ time it is presented. Signed out or paused, its *Sign in to share* opens You (`f
 unfinished shares nothing and records nothing more.
 
 Gym boundary operation labels are `gym_read`, `gym_action`, `gym_undo`, `gym_flush`, `gym_rest`,
-`gym_activity_request`, `gym_activity_update`, and `gym_import_fix`, `gym_import_keep`, `gym_import_retry`
+`gym_activity_request`, `gym_activity_update`, `gym_control_update`, and `gym_import_fix`, `gym_import_keep`, `gym_import_retry`
 and `gym_import_discard` for the commits that recover a saved workout. The gym model reports each distinct `gym_read`
 failure once per launch, a session whose saved plan this build cannot read included, so a record a view reads on every
 render files one report; every failed write reports. A queued Finish whose background confirmation
@@ -269,13 +269,19 @@ Rack edits synchronously replace or revoke the durable offer before accepting ne
 write rejects the edit visibly and makes one separate synchronous revocation attempt; continuing
 storage failure blocks logging. Activity dates subtract the current engine server offset so its
 workout/set clocks and four-hour expiry use device wall time. An unreadable offset prevents publication.
-The app embeds the `WindmillWorkoutActivity` widget extension. Release generation selects automatic
+Every reconcile also writes the workout control's state (the offer, or whether a workout is open, and its stale point)
+to the App Group file the extension's control reads, then reloads the control; a failed write reports
+`gym_control_update` with failure kind storage, a missing App Group container unexpected, each once until the state
+changes; an unreadable clock offset publishes nothing and reports `gym_control_update` storage or unexpected, unless
+storage already reported the read. The app embeds the `WindmillWorkoutActivity` widget extension. Release generation selects automatic
 signing and sets its team and build number to the app’s values.
 
 ## Release readiness
 
 `WM_APPLE_SIGN_IN_ENABLED=NO` is the default: `Tools/Windmill-NO.entitlements` declares no Sign in
-with Apple capability. `YES` selects the entitlement and UI only for a configured server/team.
+with Apple capability. Both app entitlement files and `Tools/WorkoutActivity.entitlements` declare the App Group
+`group.works.windmill.app`, registered in the developer portal and assigned to `works.windmill.app` and
+`works.windmill.app.workout-activity`. `YES` selects the entitlement and UI only for a configured server/team.
 Apple sign-in remains postponed pending developer-portal setup and a real-device check.
 `CFBundleVersion` follows `CURRENT_PROJECT_VERSION`. The app's `PrivacyInfo.xcprivacy` declares
 UserDefaults for local app state and monotonic time for elapsed durations, with no tracking. Its

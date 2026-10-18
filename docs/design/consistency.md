@@ -391,15 +391,6 @@ these are the places it disagrees with a drawing, a brief or the build.
   lists and never prints `read.weeks`, so a totals-only answer reads *Read your movement history*
   with no number (spec §6); web and Android print the server's weeks (`coach.js` `readLine`,
   `Ask.kt`). The fix belongs to the backend: dogfood node `coach-receipt-weeks-provable`.
-- **10h · The workout control waits on its App Group.** The spec (§7.19) draws the workout control —
-  one `ControlWidgetButton` in Control Center, on the Lock Screen and the Action button, reading the
-  offer the app writes to the App Group `group.works.windmill.app` — and its events (`surface:
-  control`, `gym_control_update`). The iOS build has the App Shortcuts and no control: the control,
-  the App Group entitlements and those events live on branch `ios-i3-controls-app-group`
-  (`1da2dabd`), which merges once the owner registers the group, adds it to the app id
-  `works.windmill.app` and the extension `works.windmill.app.workout-activity`, and confirms the App
-  Store Connect key is Admin. The spec keeps the designed control; §11's control captures wait on
-  the merge. Owner: the portal steps, then the release.
 - **Proposal · one suggestion on an empty Coach (owner decision).** The spec (§6) and
   `gym/feedback-contract.md` draw an empty Coach as the bar, the canvas and the composer only. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen

@@ -1,6 +1,7 @@
 @preconcurrency import ActivityKit
 import Foundation
 import UIKit
+import WidgetKit
 import DomainKit
 import GymDomain
 import SyncCore
@@ -181,7 +182,10 @@ extension WorkoutState {
   var reconciling = false
   var seatChanging = false
   var pending = false
-  init(gym: GymModel) { self.gym = gym }
+  // The control's state as last published to the App Group (docs/design/ios/ios-redesign.md §7.19).
+  let board: WorkoutControlBoard?
+  var published: WorkoutControlState?
+  init(gym: GymModel, board: WorkoutControlBoard? = WorkoutControlBoard()) { self.gym = gym; self.board = board }
   func schedule() {
     guard task == nil else { return }
     task = Task { [weak self] in
@@ -213,6 +217,7 @@ extension WorkoutState {
     let currentOwner = (try? gym.runtime?.engine.activeReplica()).map { $0 + ":" + (gym.account ?? (gym.isAnonymous ? "anon" : "unresolved")) }
     if ownerKnown && owner != currentOwner { await end(); requestedSession = nil }
     owner = currentOwner; ownerKnown = true
+    if !gym.readFailed { publish(session: gym.openSession, offer: gym.openSession == nil || gym.workoutHidden ? nil : workout.activityOffer()) }
     guard !gym.readFailed, !gym.workoutHidden, let session = gym.openSession,
           session.id == workout.sessionId, var record = try? workout.activityRecord() else { await end(); return }
     let candidates = Activity<WorkoutActivityAttributes>.activities
@@ -253,19 +258,41 @@ extension WorkoutState {
   }
   func content(session: Session, offer: WorkoutActivityOffer?) throws -> ActivityContent<WorkoutActivityAttributes.ContentState> {
     guard let gym else { throw AppFailure(message: "Workout is unavailable.") }
-    let workout = gym.workout
-    let correction = Double(try gym.runtime?.storageRead { try $0.device().activeReplica.meta.serverOffsetMs } ?? 0)
-    let latest = workout.sets.map(\.completedAt).max()
-    let last = latest ?? session.startedAt
+    let workout = gym.workout, clocks = try self.clocks(session)
     let state = WorkoutActivityAttributes.ContentState(title: session.name ?? Readout.noRoutine,
       movement: workout.selected.flatMap { gym.catalogue.find($0)?.name } ?? "Choose a movement",
       load: Readout.weight(workout.weightKg) + " kg", reps: workout.reps,
       workingSetOrdinal: workout.currentSets.filter { $0.kind == "working" }.count + 1,
-      plannedWorkingSetCount: workout.entry?.sets?.count, startedAt: Date(timeIntervalSince1970: (Double(session.startedAt.ms) - correction) / 1000),
-      lastSetAt: latest.map { Date(timeIntervalSince1970: (Double($0.ms) - correction) / 1000) },
-      staleAt: Date(timeIntervalSince1970: (Double(last.ms) - correction + Double(SessionRules.staleAfterMs)) / 1000),
-      unsentSetCount: gym.unsentSets(workout.sets).count, offer: offer)
+      plannedWorkingSetCount: workout.entry?.sets?.count, startedAt: clocks.startedAt, lastSetAt: clocks.lastSetAt,
+      staleAt: clocks.staleAt, unsentSetCount: gym.unsentSets(workout.sets).count, offer: offer)
     return ActivityContent(state: state, staleDate: state.staleAt)
+  }
+  // The workout's start, last set and four-hour stale point on this phone's wall clock, the server offset subtracted.
+  func clocks(_ session: Session) throws -> (startedAt: Date, lastSetAt: Date?, staleAt: Date) {
+    guard let gym else { throw AppFailure(message: "Workout is unavailable.") }
+    let correction = Double(try gym.runtime?.storageRead { try $0.device().activeReplica.meta.serverOffsetMs } ?? 0)
+    let date = { (ms: Int64) in Date(timeIntervalSince1970: (Double(ms) - correction) / 1000) }
+    let latest = gym.workout.sets.map(\.completedAt).max()
+    return (date(session.startedAt.ms), latest.map { date($0.ms) }, date((latest ?? session.startedAt).ms + SessionRules.staleAfterMs))
+  }
+  // Writes what the control draws to the App Group and reloads it. A failed write reports once; the next change writes again.
+  func publish(session: Session?, offer: WorkoutActivityOffer?) {
+    guard let gym else { return }
+    let state: WorkoutControlState
+    do { state = try controlState(session: session, offer: offer) }
+    catch { gym.report("gym_control_update", error); return }
+    guard state != published else { return }
+    published = state
+    guard let board else { gym.telemetry.failure("gym_control_update", kind: "unexpected"); return }
+    do { try board.write(state) }
+    catch { gym.telemetry.failure("gym_control_update", kind: "storage"); return }
+    ControlCenter.shared.reloadControls(ofKind: WorkoutControlState.kind)
+  }
+  func controlState(session: Session?, offer: WorkoutActivityOffer?) throws -> WorkoutControlState {
+    guard let session else { return .startWorkout }
+    let staleAt = try clocks(session).staleAt
+    guard let offer else { return .openWorkout(staleAt: staleAt) }
+    return .logSet(WorkoutControlOffer(offer: offer, value: Readout.effort(weightKg: offer.weightKg, reps: offer.reps)), staleAt: staleAt)
   }
   func observe(_ value: Activity<WorkoutActivityAttributes>) {
     monitor?.cancel()
@@ -311,7 +338,7 @@ nonisolated enum WorkoutLogAnswer: Equatable {
     return .logged(shown: "Logged \(load) kg × \(offer.reps) · \(movement).", spoken: "Logged \(load) kilograms, \(reps), \(movement).")
   }
 
-  // What Siri shows and says for the answer: the shortcut names what happened; the Live Activity's button logs or opens in silence.
+  // What Siri shows and says for the answer: the shortcut names what happened; the Live Activity's button and the control log or open in silence.
   func dialog(_ surface: WorkoutSurface) -> (shown: String, spoken: String) {
     switch self {
     case .absent: ("No workout is open.", "No workout is open.")

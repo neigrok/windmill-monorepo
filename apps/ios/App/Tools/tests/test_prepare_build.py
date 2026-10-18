@@ -32,6 +32,8 @@ class BuildConfigurationTests(unittest.TestCase):
             "WM_SOURCE_REVISION": "abc123",
         }
 
+    group = {"com.apple.security.application-groups": ["group.works.windmill.app"]}
+
     def read(self, name="Windmill.Info.plist"):
         if name == "Windmill.entitlements":
             enabled = self.settings.get("WM_APPLE_SIGN_IN_ENABLED", "NO")
@@ -43,7 +45,7 @@ class BuildConfigurationTests(unittest.TestCase):
 
     def test_default_has_no_apple_entitlement_and_debug_telemetry_is_off(self):
         prepare_build.prepare(self.settings)
-        self.assertEqual({}, self.read("Windmill.entitlements"))
+        self.assertEqual(self.group, self.read("Windmill.entitlements"))
         self.assertEqual({**self.template, "WMSentryDSN": "", "WMSourceRevision": "abc123",
                           "WMTelemetryEnvironment": "development", "WMDebugTelemetry": "NO",
                           "WMAppleSignInEnabled": "NO"}, self.read())
@@ -51,10 +53,14 @@ class BuildConfigurationTests(unittest.TestCase):
     def test_apple_entitlement_requires_explicit_yes_and_can_be_disabled_again(self):
         self.settings["WM_APPLE_SIGN_IN_ENABLED"] = "YES"
         prepare_build.prepare(self.settings)
-        self.assertEqual({"com.apple.developer.applesignin": ["Default"]}, self.read("Windmill.entitlements"))
+        self.assertEqual({"com.apple.developer.applesignin": ["Default"], **self.group}, self.read("Windmill.entitlements"))
         self.settings["WM_APPLE_SIGN_IN_ENABLED"] = "NO"
         prepare_build.prepare(self.settings)
-        self.assertEqual({}, self.read("Windmill.entitlements"))
+        self.assertEqual(self.group, self.read("Windmill.entitlements"))
+
+    def test_the_widget_extension_shares_the_app_group(self):
+        with (Path(__file__).parents[1] / "WorkoutActivity.entitlements").open("rb") as handle:
+            self.assertEqual(self.group, plistlib.load(handle))
 
     def test_release_requires_https_public_key_and_project_without_request_details(self):
         self.settings["CONFIGURATION"] = "Release"
