@@ -356,7 +356,7 @@ listed separately because their only server writes are authentication refresh or
 | `Collab::onMessage` rate gate | `roadmap.ws.frame` | completion; `rate_limited` | log only |
 | `GET /v1/journal/export`, `GET /v1/gym/history`, session/share/download reads | `auth.session.refresh` or `gym.server_call` | authentication refresh; actual lazy settlement where applicable; no export body | unexpected write failure |
 | `PgAiUsageRepository::record` (noexcept ledger persistence, including transcription callback) | `ai.usage.record` | completion; `ok` or `failed`; no spend fields | unexpected compiled storage exception |
-| `AiBudgetService` reservation lifecycle | `ai.budget.reserve`, `ai.budget.dispatch`, `ai.budget.uncertain`, `ai.budget.settle`, `ai.budget.release`, `ai.budget.reconcile_overrun` | one completion per transition; bounded outcome and duration; no subject, USD amount or content | unexpected storage failure; known overrun anomaly |
+| `AiBudgetService` reservation lifecycle | `ai.budget.reserve`, `ai.budget.dispatch`, `ai.budget.uncertain`, `ai.budget.settle`, `ai.budget.release`, `ai.budget.reconcile_overrun` | one completion per transition; bounded outcome and duration; no subject, USD amount or content | unexpected storage failure; unfunded overrun under `ai.budget.settle` |
 | `AiBudgetService` funding and device binding | `ai.budget.fund`, `ai.budget.bind_device` | funded/idempotent/conflict outcomes; no payment/account/device identifiers | unexpected storage failure |
 | `AiBudgetService::view` | `ai.budget.view` | completion when trusted owner access creates a grant; successful pure reads omit write logs | unexpected read or grant failure |
 | Durable alert worker | `ai.budget.alert.claim`, `ai.budget.alert.delivered`, `ai.budget.alert.retry`, `ai.budget.alert_send` | claim/delivery/retry outcome; no recipient, identifiers or amounts in telemetry | unexpected outbox or delivery failure |
@@ -375,3 +375,10 @@ atomically to the durable outbox. Alert email contains scope, funding source and
 but no account/device identifiers or user content; the configured owner email is never telemetry.
 The `ai_usage` Amplitude mirror remains separate from durable admission.
 [AI_ALLOWANCES.md](AI_ALLOWANCES.md) lists provider coverage and rollout requirements.
+
+Per-request token estimates can differ from actual usage. Settlement records full actual cost and
+absorbs a positive variance without an Issue when every original funding budget can cover it,
+including other unresolved holds and bound-device account attribution, with no existing debt.
+An unfunded variance retains overrun debt and produces a static `ai.budget.settle` Issue;
+settlement replay does not
+repeat the report. Neither path logs request content, token-estimator inputs or raw provider data.

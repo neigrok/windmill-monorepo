@@ -268,8 +268,9 @@ The full quiet-room, copying, image attachment and streaming contract is [feedba
 
 **Signed-out Coach uses $0.05 for the lifetime of a verified device.** This is the approved
 allowance policy, not released anonymous access: device attestation and the anonymous Coach
-route remain unbuilt, and current provider reservation bounds exceed the free allowance. The
-USD backend is off by default. See [the mobile specification](../../../foundation/mobile/gym_coach.md).
+route remain unbuilt. Model/output settings must fit this allowance: an Opus 5 8,000-token output
+cap alone reserves $0.20. Input tokens are estimated for each actual request and settled to actual
+usage. The USD backend is off by default. See [the mobile specification](../../../foundation/mobile/gym_coach.md).
 Once those prerequisites are met, show the server's lifetime grant once under the first-open
 starters, without promising a number of questions:
 

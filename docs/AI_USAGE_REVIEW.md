@@ -1,9 +1,10 @@
 # AI usage and billing
 
 [USD AI allowances](../backend/AI_ALLOWANCES.md) is the durable accounting contract, including
-policy, funding validation, provider bounds and rollout blockers. `AI_ALLOWANCES_ENABLED` defaults
-to false; the enabled backend is not ready for free customer rollout because its safe provider
-reservations exceed the free individual allowances.
+policy, funding validation, approximate per-request reservations and rollout requirements.
+`AI_ALLOWANCES_ENABLED` defaults to false. Anonymous access still needs attestation and suitable
+model/output settings; an Opus 5 output cap of 8,000 tokens alone reserves $0.20, exceeding its
+$0.05 lifetime allowance. Audio accounting and customer USD screens also remain rollout work.
 
 ## Metered work
 
@@ -19,6 +20,14 @@ Adapters record supported token counts, product, operation, run/iteration, model
 calls can carry billed usage. Incomplete usage retains a durable hold. Ordinary MCP operations
 performed by an external assistant do not incur Windmill's hosted-model cost. Browser search and
 the self-hosted Echoes embedder do not incur hosted-model token charges.
+
+Each vendor round locally estimates tokens for the actual system prompt, messages/history, tools,
+results and images, then reserves estimated input cost plus the configured output cap. This does
+not guarantee a hard spending ceiling. Actual usage settles the call: unused reservation is
+released and underestimates are charged in full. A variance that fits every original funding
+budget, including other unresolved holds and bound-device attribution, with no existing debt,
+is absorbed without debt or an Issue. Unfunded variance retains overrun debt; ambiguous usage stays
+held. New periods do not fund old calls.
 
 ## Allowances and funding
 

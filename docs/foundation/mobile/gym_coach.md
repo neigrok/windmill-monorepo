@@ -381,7 +381,7 @@ again answers `204`. Any other body is refused `coach-turn-order`.
 | `free_month_exhausted` | Shared free capacity is unavailable for this UTC month. |
 | `concurrency_exhausted` | The principal already has its permitted number of unresolved calls. |
 | `funding_required` | One access has no active funded allowance period. |
-| `debt_outstanding` | An unresolved accounting overrun blocks further admission. |
+| `debt_outstanding` | An unresolved unfunded accounting overrun blocks further admission. |
 | `coach-replica-syncing` | Local only: the replica's history is still arriving. |
 | `coach-busy` | The process is at capacity or its cost fuse is open. |
 | `coach-vendor-error` | The vendor failed. |
@@ -413,8 +413,14 @@ and funding source. A current subscription takes priority over the owner grant; 
 combined, and an expired subscription does not prevent owner calendar funding.
 Unused paid capacity can cross a calendar boundary, but expires at its funded period end.
 
-Every vendor round MUST reserve its individual and applicable shared capacity atomically before
-dispatch. Complete usage settles once; ambiguous sends and incomplete usage remain held. Retrying
+Every vendor round MUST estimate tokens for its actual system prompt, messages/history, tools,
+results and images, then atomically reserve estimated input cost plus its configured output cap
+against individual and applicable shared capacity before dispatch. The estimate is not a hard
+spending ceiling. Complete usage settles once at actual cost; unused reservation is released and
+underestimates are charged in full. Settlement atomically absorbs variance when every original
+funding budget can cover it with other unresolved holds and bound-device account usage included,
+and no existing debt. Covered variance creates no debt or Issue. Unfunded variance creates debt;
+a new period cannot fund an old call. Ambiguous sends and incomplete usage remain held. Retrying
 an already dispatched reservation MUST NOT send it again. Unresolved principal calls and overrun
 debt remain effective after a period ends.
 
@@ -433,17 +439,21 @@ nor telemetry contain prompts, images, account/device identifiers or raw vendor 
 which defaults off. Authenticated Claude paths use it; device attestation/grant endpoints and this
 phone-hosted Coach protocol remain unimplemented. The deployed Coach operation is `ask`.
 
-Current safe Claude reservations use a full input-context bound and cannot fit either free
-individual allowance. Free customer rollout needs a tighter proven bound that includes images and
-tool schemas. Voice also needs verified audio bounds and complete audio/text pricing. This spec
-does not promise that either unsupported edge is available.
+Claude reservations use local per-request approximate token counts and the configured output cap.
+An Opus 5 8,000-token output cap alone reserves $0.20, exceeding the anonymous $0.05 lifetime
+allowance. Anonymous rollout needs suitable model/output settings as well as device attestation;
+approximation does not guarantee that a request fits. Full actual cost is recorded; an overrun
+creates debt only when original funding cannot cover it. Voice also needs supported audio
+accounting and complete audio/text pricing. This spec does not promise that either unsupported
+edge is available.
 
 ### §7.3 Shared capacity and owner alerts
 
 Anonymous and free accounts share $100 per UTC calendar month and $5 per UTC day. Paid calls use
 only their funded grants and cannot consume either free pool. There is no additional generic
-service-wide monthly ceiling: admitted exposure is bounded by the free pool plus funded grants.
-The process fuse is an additional safeguard.
+service-wide monthly ceiling. Admission checks estimated reservations against the free pools or
+funded grant; actual cost can exceed an estimate and is recorded in full. The process fuse is an
+additional safeguard.
 
 A principal may have one unresolved free call or two unresolved paid calls. Reservations,
 dispatched calls and uncertain calls all occupy slots. The backend enforces this across processes,
@@ -644,8 +654,10 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
   elsewhere needs a review drawn in canon.
 - **B-2 The model per seat.** Whether `anon` turns use the same model and `max_tokens` as `bound`
   turns.
-- **B-3 Provider reservation bounds.** Replace the full-context bound with a proven input bound
-  before free rollout. The free monthly/daily pools and principal concurrency policy are set.
+- **B-3 Reservation estimates.** Evaluate per-request estimates against actual usage across text,
+  tools and images. Do not describe approximate admission as a hard spending ceiling. Original
+  funding absorbs covered variance; unfunded overrun debt and ambiguous holds remain accounted
+  for. The free pools and concurrency policy are set.
 - **B-4 Android attestation.** Play Integrity verdicts pass only for installs from Google Play, and
   device recall is a beta granted on application. Decide the channel that carries signed-out
   Coach, and apply for device recall.

@@ -1,9 +1,9 @@
 # USD AI allowances
 
 `AI_ALLOWANCES_ENABLED=false` is the default. The enabled backend has durable USD admission,
-funding, device binding and operational alerts. Customer rollout remains blocked by conservative
-provider reservations, missing device attestation and missing audio accounting. Internal money is
-integer nano-USD; HTTP amounts are exact decimal USD strings.
+funding, device binding and operational alerts. Customer rollout still needs device attestation,
+appropriate model/output settings and audio accounting. Internal money is integer nano-USD; HTTP
+amounts are exact decimal USD strings.
 
 ## Policy
 
@@ -15,9 +15,10 @@ integer nano-USD; HTTP amounts are exact decimal USD strings.
 
 Every hosted AI call debits the individual allowance, including background Journal processing.
 Account balances are shared across devices and products. Paid calls draw only from a funded grant;
-they cannot drain either free pool. There is no further generic service-wide monthly cap. Aggregate
-admitted exposure is bounded by the free pool plus the sum of funded grants. The process-hour fuse
-and product burst limits are additional safeguards.
+they cannot drain either free pool. There is no further generic service-wide monthly cap. Admission
+checks estimated reservations against the free pools or funded grant; estimates are not hard
+spending ceilings, and actual cost can exceed them. The process-hour fuse and product burst limits
+are additional safeguards.
 
 A verified device can be permanently bound to one account through an internal service operation.
 The device cannot receive further anonymous admission after binding. Its anonymous settled cost
@@ -64,17 +65,29 @@ individual, free-month and free-day capacity. A paid reservation requires a live
 capacity. In-flight reservations, dispatched calls and uncertain calls occupy the principal's
 concurrency slots across tier changes and device binding.
 
-Every vendor round has a server-minted reservation id. Only the first successful durable dispatch
-claim authorizes sending it. Replaying admission returns its original subject, period and grant;
-replaying dispatch cannot authorize another send. All provider spending, including background
-calls, uses this admission path.
+Every vendor round estimates input tokens from its actual request and reserves the estimated input
+cost plus the configured maximum output cost. Every round has a server-minted reservation id.
+Only the first successful durable dispatch claim authorizes sending it. Replaying admission
+returns its original subject, period and grant; replaying dispatch cannot authorize another send.
+All provider spending, including background calls, uses this admission path.
 
-Complete supported usage settles once. An ambiguous send, partial stream, missing usage or
-accounting failure retains its reservation. A restart never releases such a call automatically.
-Only an undispatched reservation may be released. Known actual cost above its reservation is
-recorded in full and creates persistent debt. An internal reconciliation operation clears that
-overrun liability while retaining actual spend. Historical principal debt and in-flight calls
-continue to affect admission after a new funded period begins.
+Complete supported usage settles once at actual cost. A lower actual cost releases the unused
+reservation. For a higher actual cost, the settlement transaction checks whether the extra cost
+fits every original funding budget, with other unresolved holds retained and no existing debt.
+Free calls check their original individual, monthly and daily budgets; a bound anonymous call also
+checks the account's attributed usage. Paid calls check their pinned grant. A covered underestimate
+records full actual spend and releases the hold without debt or a Sentry Issue.
+
+If any applicable budget cannot cover the variance, full actual spend is still recorded and the
+entire actual-minus-reservation amount becomes persistent overrun debt, with a static settlement
+failure report. It is not automatically forgiven. An explicit internal reconciliation operation
+can clear that liability while retaining actual spend. Periods and grants remain pinned: a new
+month or grant does not fund an old call. Historical debt and in-flight calls continue to affect
+admission after a new funded period begins. Replaying settlement changes and reports nothing.
+
+An ambiguous send, partial stream, missing usage or accounting failure retains its reservation.
+A restart never releases such a call automatically. Only an undispatched reservation may be
+released without known usage.
 
 Budget occupancy includes settled cost plus held reservations. Crossings of 50%, 80% and 95% are
 written to a durable outbox in the same transaction as their budget change. Each scope, budget
@@ -96,15 +109,35 @@ grant endpoint. Journal voice returns `unsupported_ai_pricing`: compressed uploa
 verified audio duration/token bound, and audio/text prices need separate accounting.
 
 The supported Claude model allowlist matches `AiUsage.cpp`. Unknown models, unsupported pricing
-options, server tools and one-hour cache writes refuse admission. Reservation currently charges a
-full one-million-token input bound at the five-minute cache-write rate, plus the request's
-`max_tokens` output cap. This covers image and tool overhead without estimating tokens from image
-bytes. A 16,000-output-token call reserves $6.65 for Opus 5 or $2.66 for Sonnet 5.
+options, server tools and one-hour cache writes refuse admission. Each vendor round locally
+estimates the tokens in its actual system prompt, messages, history, tools, results and images.
+The estimate is:
 
-**Those reservations cannot fit either free individual allowance.** The enabled implementation is
-therefore not ready for free customer rollout. A tighter proven provider input bound, including
-images and tool schemas, is required; a token-count estimate alone is not treated as a hard bound.
-A positive remaining balance does not promise that a particular request can fit.
+`ceil(counted UTF-8 text and JSON structure bytes / 3) + 32 + 8 × message count + tool overhead + image tokens`
+
+Tool overhead is 350 tokens when custom tools are present. The counter includes every request
+field: system and message text, history, tool definitions/input schemas/results, model,
+`max_tokens`, thinking settings and `output_config`, including its format schema. JSON structure
+is approximated rather than measured as exact serialized wire bytes. Only image `source.data`
+base64 is excluded from the byte count. Each supported JPEG/PNG base64 image adds a fixed visual
+estimate: 1,568 tokens for Opus 4.6, Sonnet 4.6 and Haiku 4.5, and 4,784 for other supported models.
+There is no image-dimension parser. These are local heuristics, not an official or exact token count.
+
+A supported five-minute ephemeral cache marker prices all estimated input at the cache-write
+rate; without one, the ordinary input rate applies. The request's configured `max_tokens` output
+cap is added unchanged. Malformed request/message/tool/image/cache shapes and estimates above
+one million input tokens refuse admission. The counter also bounds text/structure bytes, traversal
+depth and node count. Image URLs, file references, documents and malformed base64 are unsupported.
+There is no universal full-context reservation.
+
+This is approximate admission, not a hard spending ceiling. Actual usage replaces the estimate at
+settlement. Available original funding absorbs a covered underestimate; an unfunded overrun
+creates debt that blocks further admission until reconciled. Missing or ambiguous usage retains
+the hold. A positive remaining balance still does not promise that a particular request can fit.
+For example, an Opus 5 request with an 8,000-token output cap reserves $0.20 for output alone,
+exceeding the $0.05 anonymous lifetime allowance.
+Anonymous rollout therefore needs suitable model/output configuration as well as device
+attestation; the anonymous edge remains closed. Audio requires its own supported accounting.
 
 ## Read and refusal contracts
 
@@ -140,8 +173,10 @@ request quotas. Enabling the durable ledger does not invent reservations for ear
 
 - Keep the unverified device edge closed. Attestation must establish a durable lifetime identity,
   preserve it across supported reinstalls and securely bind it to the verified account.
-- Replace the provider full-context bound before free rollout; do not weaken the ledger to hide
-  requests that cannot fit. Audio needs its own verified bound and complete pricing.
+- Keep per-round token estimation separate from exact USD settlement. Check estimates against
+  actual usage; let original funding absorb covered variance while retaining unfunded overrun
+  debt and ambiguous holds. Do not promise a hard cost ceiling. Choose model/output settings that
+  can fit the intended tier. Audio needs supported accounting.
 - The account, Coach and tending clients need exact USD, held amounts, distinct allowance periods
   and bounded refusal recovery. Figma still contains question and credit figures.
 - Subscription and owner grants share one ledger. Nonoverlap is enforced within each source, and

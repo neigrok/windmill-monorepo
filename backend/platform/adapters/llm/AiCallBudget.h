@@ -10,6 +10,7 @@
 
 namespace wm {
 
+// Per-request approximate input cost plus the configured output ceiling, settled against actual usage.
 std::optional<long long> anthropicReservationNanos(const Json::Value& request);
 std::optional<long long> anthropicActualNanos(const std::string& model, const Json::Value& usage);
 

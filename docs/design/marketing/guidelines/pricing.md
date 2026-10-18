@@ -28,6 +28,10 @@ Show **USD**, with exact amounts from the server and enough precision to make sm
 Raw tokens and credits are not the customer unit. A fixed dollar balance does not promise a
 number of messages, requests, words or minutes.
 
+Each request reserves estimated input cost plus its configured output cap. This is a pending
+amount, not a final price or guaranteed spending ceiling. Actual usage settles the amount;
+unused capacity returns, while an overrun remains fully accounted for.
+
 | Tier | Individual allowance | Period |
 | --- | --- | --- |
 | Anonymous | $0.05 per verified device | Lifetime; no reset |

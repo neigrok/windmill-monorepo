@@ -188,8 +188,9 @@ rendering contract is [`ios/ios-redesign.md`](ios/ios-redesign.md).
   implements anonymous $0.05 lifetime, verified free $0.25 per UTC month including associated
   anonymous spend, and One $7 per funded period. Owner grants use calendar months. Free access
   shares $100/month and $5/day; paid funding is isolated. Device binding is internal only: native
-  attestation, external device grants and the phone tool host remain required. Current safe
-  provider reservations exceed free allowances and block free rollout. See
+  attestation, external device grants and the phone tool host remain required. Anonymous
+  model/output settings need to fit the $0.05 grant; an Opus 5 8,000-token output cap
+  alone costs $0.20. Per-request input estimates are approximate and settle to actual usage. See
   [the mobile specification](../foundation/mobile/gym_coach.md) and
   [backend contract](../../backend/AI_ALLOWANCES.md).
 - **6u · USD allowance drawings.** Coach first-open (`141:1290`), Account · Usage · Proposal and

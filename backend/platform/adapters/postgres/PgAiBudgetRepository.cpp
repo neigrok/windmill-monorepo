@@ -218,17 +218,21 @@ void queueAlerts(pqxx::work& txn, const Budget& budget, long long atMs) {
   }
 }
 
-void queueBoundAccountAlerts(pqxx::work& txn, const AiBudgetReservation& reservation) {
-  if (reservation.subject.kind != AiBudgetSubjectKind::Device) return;
+std::optional<Budget> boundAccountBudget(pqxx::work& txn, const AiBudgetReservation& reservation) {
+  if (reservation.subject.kind != AiBudgetSubjectKind::Device) return std::nullopt;
+  const pqxx::result binding = txn.exec(
+      "SELECT account_id, bound_at_ms FROM ai_budget_device_accounts WHERE device_id = $1",
+      pqxx::params{reservation.subject.id});
+  if (binding.empty()) return std::nullopt;
+  const auto account = binding[0][0].as<std::string>();
   const auto period = *AiBudgetPeriod::at(reservation.admittedAtMs);
+  const auto bindingPeriod = *AiBudgetPeriod::at(binding[0][1].as<long long>());
   const pqxx::result rows = txn.exec(
-      "SELECT d.account_id, b.limit_nanos FROM ai_budget_device_accounts d "
-      "JOIN ai_budget_balances b ON b.scope = 'account_month' AND b.subject_key = d.account_id "
-      "AND b.period_start_ms = $2 WHERE d.device_id = $1",
-      pqxx::params{reservation.subject.id, period.startMs});
-  if (rows.empty()) return;
-  queueAlerts(txn, {AiBudgetScope::AccountMonth, rows[0][0].as<std::string>(), period,
-                   rows[0][1].as<long long>()}, reservation.admittedAtMs);
+      "SELECT limit_nanos FROM ai_budget_balances WHERE scope = 'account_month' AND subject_key = $1 "
+      "AND period_start_ms IN ($2, $3) ORDER BY (period_start_ms = $2) DESC LIMIT 1",
+      pqxx::params{account, period.startMs, bindingPeriod.startMs});
+  if (rows.empty()) throw std::runtime_error("Missing bound account AI budget");
+  return Budget{AiBudgetScope::AccountMonth, account, period, rows[0][0].as<long long>()};
 }
 
 }
@@ -310,6 +314,30 @@ AiBudgetResult PgAiBudgetRepository::transition(const std::string& id, AiBudgetS
   if (!reservation) return {AiBudgetCode::NotFound};
   const auto code = transitionAiBudget(*reservation, target, actualNanos);
   if (code != AiBudgetCode::Ok) return {code, std::move(reservation)};
+  const long long spent = actualNanos.value_or(0);
+  const long long variance = spent > reservation->amountNanos ? spent - reservation->amountNanos : 0;
+  auto budgets = reservationBudgets(*reservation);
+  const auto boundAccount = boundAccountBudget(txn, *reservation);
+  if (variance > 0) {
+    auto coverageBudgets = budgets;
+    for (auto& budget : coverageBudgets) {
+      const pqxx::result rows = txn.exec(
+          "SELECT limit_nanos FROM ai_budget_balances WHERE scope = $1 AND subject_key = $2 AND period_start_ms = $3",
+          pqxx::params{std::string(aiBudgetScopeName(budget.scope)), budget.key, budget.period.startMs});
+      if (rows.size() != 1) throw std::runtime_error("Missing AI budget counter");
+      budget.limit = rows[0][0].as<long long>();
+    }
+    if (boundAccount) coverageBudgets.push_back(*boundAccount);
+    const bool principalHasDebt = reservation->grantId &&
+        accountTotals(txn, reservation->subject.id, reservation->period).free.debtNanos > 0;
+    const bool covered = !principalHasDebt && std::all_of(coverageBudgets.begin(), coverageBudgets.end(), [&](const auto& budget) {
+      const auto balance = budget.scope == AiBudgetScope::AccountMonth
+          ? accountTotals(txn, budget.key, budget.period).free : readBalance(txn, budget);
+      return balance.debtNanos == 0 && balance.remainingNanos(budget.limit) >= variance;
+    });
+    if (covered) reconcileAiBudgetOverrun(*reservation);
+  }
+  const long long debt = reservation->overrunReconciled ? 0 : variance;
   const auto state = [target]() -> std::string {
     switch (target) {
       case AiBudgetState::Dispatched: return "dispatched";
@@ -323,16 +351,14 @@ AiBudgetResult PgAiBudgetRepository::transition(const std::string& id, AiBudgetS
   pqxx::params params{id, state};
   if (actualNanos) params.append(*actualNanos);
   else params.append();
-  txn.exec("UPDATE ai_budget_reservations SET state = $2, actual_nanos = $3 WHERE id = $1", params);
-  long long debt = 0;
+  params.append(reservation->overrunReconciled);
+  txn.exec("UPDATE ai_budget_reservations SET state = $2, actual_nanos = $3, overrun_reconciled = $4 WHERE id = $1", params);
   if (target == AiBudgetState::Settled || target == AiBudgetState::Released) {
-    const long long spent = actualNanos.value_or(0);
-    if (spent > reservation->amountNanos) debt = spent - reservation->amountNanos;
-    for (auto budget : reservationBudgets(*reservation)) {
+    for (auto& budget : budgets) {
       changeBudget(txn, budget, spent, -reservation->amountNanos, debt);
       queueAlerts(txn, budget, reservation->admittedAtMs);
     }
-    queueBoundAccountAlerts(txn, *reservation);
+    if (boundAccount) queueAlerts(txn, *boundAccount, reservation->admittedAtMs);
   }
   txn.commit();
   markCurrentWrite();

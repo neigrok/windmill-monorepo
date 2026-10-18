@@ -20,7 +20,9 @@ Windmill · Design System.
 
 USD means model-cost allowance, not prepaid cash, a subscription invoice or a number of questions.
 Amounts come from the server; small charges may use fractional cents. Held reservations reduce
-available capacity and require a pending state.
+available capacity and require a pending state. A reservation estimates the current request's
+input cost and includes its output cap; actual usage can be lower or higher. It is not a promised
+final price or hard spending ceiling.
 
 | Tier | Allowance | Display period |
 | --- | --- | --- |
@@ -56,7 +58,9 @@ is not a promise of a future paid grant. Uncertain calls can retain capacity aft
 
 A positive remaining balance can still be too small for a request's reservation. Draw this as a
 request-capacity refusal rather than zero balance. Do not claim a shorter prompt will necessarily
-fit: the current safe provider bounds exceed the free allowances and block customer rollout.
+fit: the model, history, tools, images and configured output cap also affect the reservation.
+Anonymous access needs attestation and model/output settings that fit its lifetime allowance;
+an Opus 5 8,000-token output cap alone reserves $0.20 against a $0.05 allowance.
 Loading and failed reads show an unavailable state; they never flash Free, zero or empty history.
 
 Checkout is closed. The page offers no purchase, top-up, overage, fabricated renewal or
@@ -78,7 +82,8 @@ These mobile-web drawings do not claim native iOS or Android components.
 ## Implementation dependencies
 
 Clients need the USD and refusal contract; device attestation and sign-in binding need secure
-external endpoints; provider reservations need a tighter proven input bound; voice needs supported
-audio accounting. The 50/80/95% owner-email alerts are operational controls, not customer sales
+external endpoints; anonymous model/output settings need to fit the intended allowance; voice
+needs supported audio accounting. Estimated reservations must be distinguished from actual use
+and unresolved holds. The 50/80/95% owner-email alerts are operational controls, not customer sales
 notifications. Design drift is tracked in [consistency](consistency.md), and account work remains
 linked to the dogfood account-usage-contract and subscription-allowance-design nodes.

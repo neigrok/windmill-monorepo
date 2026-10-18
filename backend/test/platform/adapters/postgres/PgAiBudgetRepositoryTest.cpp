@@ -1,7 +1,10 @@
 #include "platform/adapters/postgres/PgAiBudgetRepository.h"
+#include "platform/adapters/llm/AiCallBudget.h"
+#include "platform/adapters/llm/AnthropicClient.h"
 #include "platform/application/AiBudgetService.h"
 #include "platform/application/WriteObservation.h"
 #include "test/PgTestPool.h"
+#include "test/platform/Fakes.h"
 #include "test/testing.h"
 
 #include <algorithm>
@@ -587,6 +590,371 @@ TEST(pg_ai_budget_paid_overruns_preserve_exact_cost_isolate_other_principals_and
   CHECK_EQ(repository.reserve({"renewed", owner, 1, nextMonth}, limits).code, AiBudgetCode::Ok);
   CHECK_EQ(repository.snapshot(owner, at, limits).subject.spentNanos, std::numeric_limits<long long>::max());
   CHECK_EQ(repository.snapshot(owner, nextMonth, limits).subject.spentNanos, 0);
+}
+
+TEST(pg_ai_budget_estimated_provider_calls_settle_actuals_without_freezing_funded_free_accounts) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("needs WM_PG_TEST");
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("DELETE FROM ai_budget_alerts; DELETE FROM ai_budget_reservations; DELETE FROM ai_budget_balances; "
+             "DELETE FROM ai_budget_grants; DELETE FROM ai_budget_device_accounts");
+    txn.commit();
+  }
+  struct Reporter final : FailureReporter {
+    std::vector<std::string> issues;
+    void report(const std::string& kind, const std::string& operation, const std::string& detail) override {
+      issues.push_back(kind + ":" + operation + ":" + detail);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Reporter> reporter = std::make_shared<Reporter>();
+    ReporterScope() { installWriteReporter(reporter); }
+    ~ReporterScope() { installWriteReporter({}); }
+  } observation;
+  const AiBudgetLimits limits;
+  const long long at = 1'767'225'600'000;
+  PgAiBudgetRepository repository{pgTestPool()};
+  auto service = std::make_shared<AiBudgetService>(repository, [limits] { return limits; }, [at] { return at; });
+  wm::fake::FakeAuthRepository accounts;
+  const auto account = accounts.createUser(Email{"free@example.com"}, "Free");
+  wm::fake::FakeSubscriptionRepository subscriptions;
+  wm::fake::FakeAiUsageRepository usage;
+  Entitlements entitlements{subscriptions, usage, {}, {}, service};
+  auto budget = std::make_shared<AiCallBudget>(service, entitlements, accounts, *observation.reporter);
+  const auto principal = entitlements.aiPrincipalFor(account.id, account.email.value);
+  AiSpend spend;
+  spend.user = account.id;
+  spend.product = "gym";
+  spend.operation = "ask";
+  spend.model = "claude-sonnet-5";
+  Json::Value request;
+  request["model"] = spend.model;
+  request["max_tokens"] = 100;
+  request["messages"][0]["role"] = "user";
+  request["messages"][0]["content"] = "A short training question";
+  const auto shortEstimate = anthropicReservationNanos(request);
+  REQUIRE(shortEstimate);
+  CHECK(*shortEstimate < limits.loggedInMonthlyNanos);
+  Json::Value reply;
+  reply["stop_reason"] = "end_turn";
+  reply["usage"]["input_tokens"] = 5000;
+  reply["usage"]["output_tokens"] = 100;
+  reply["usage"]["cache_read_input_tokens"] = 0;
+  reply["usage"]["cache_creation_input_tokens"] = 0;
+  const auto actual = anthropicActualNanos(spend.model, reply["usage"]);
+  REQUIRE(actual);
+  CHECK(*actual > *shortEstimate);
+  std::vector<long long> heldAtProvider;
+  auto call = metered([&](const Json::Value& body) -> std::optional<Json::Value> {
+    const auto estimate = anthropicReservationNanos(body);
+    CHECK(estimate);
+    if (!estimate) return std::nullopt;
+    const auto snapshot = repository.snapshot(principal, at, limits);
+    CHECK_EQ(snapshot.concurrentCalls, 1);
+    CHECK_EQ(snapshot.subject.heldNanos, *estimate);
+    heldAtProvider.push_back(snapshot.subject.heldNanos);
+    return reply;
+  }, spend, {}, {}, {}, {}, budget);
+  CHECK(call(request).has_value());
+  auto history = request;
+  history["messages"][0]["content"] = std::string(12'000, 'x');
+  const auto historyEstimate = anthropicReservationNanos(history);
+  REQUIRE(historyEstimate);
+  CHECK(*historyEstimate > *shortEstimate);
+  CHECK(call(history).has_value());
+  CHECK_EQ(heldAtProvider, (std::vector<long long>{*shortEstimate, *historyEstimate}));
+  const auto settled = repository.snapshot(principal, at, limits);
+  CHECK_EQ(settled.subject.spentNanos, 2 * *actual);
+  CHECK_EQ(settled.subject.heldNanos, 0);
+  CHECK_EQ(settled.subject.debtNanos, 0);
+  CHECK_EQ(settled.freeMonth.spentNanos, 2 * *actual);
+  CHECK_EQ(settled.freeMonth.debtNanos, 0);
+  CHECK_EQ(settled.freeDay.debtNanos, 0);
+  const AiBudgetPrincipal other{{AiBudgetSubjectKind::Account, "other"}, AiBudgetTier::LoggedIn};
+  CHECK_EQ(repository.reserve({"other-call", other, 1, at}, limits).code, AiBudgetCode::Ok);
+  CHECK(observation.reporter->issues.empty());
+  PgLease conn{*pgTestPool()};
+  pqxx::work txn{*conn};
+  const auto rows = txn.exec("SELECT id, actual_nanos, overrun_reconciled FROM ai_budget_reservations "
+                             "WHERE state = 'settled' ORDER BY id");
+  REQUIRE_EQ(rows.size(), 2u);
+  std::vector<std::string> ids;
+  for (std::size_t index = 0; index < rows.size(); ++index) {
+    CHECK_EQ(rows[index][1].as<long long>(), *actual);
+    CHECK(rows[index][2].as<bool>());
+    ids.push_back(rows[index][0].as<std::string>());
+  }
+  txn.commit();
+  for (const auto& id : ids) {
+    CHECK_EQ(service->settle(id, *actual).code, AiBudgetCode::Replay);
+    CHECK_EQ(service->reconcileOverrun(id).code, AiBudgetCode::Replay);
+  }
+  CHECK(observation.reporter->issues.empty());
+}
+
+TEST(pg_ai_budget_concurrent_variances_cannot_spend_the_same_free_pool_remainder) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("needs WM_PG_TEST");
+  const long long at = 1'767'225'600'000;
+  for (const bool daily : {false, true}) {
+    {
+      PgLease conn{*pgTestPool()};
+      pqxx::work txn{*conn};
+      txn.exec("DELETE FROM ai_budget_alerts; DELETE FROM ai_budget_reservations; DELETE FROM ai_budget_balances; "
+               "DELETE FROM ai_budget_grants; DELETE FROM ai_budget_device_accounts");
+      txn.commit();
+    }
+    AiBudgetLimits limits;
+    limits.freeMonthlyNanos = daily ? 1000 : 100;
+    limits.freeDailyNanos = daily ? 100 : 1000;
+    limits.loggedInMonthlyNanos = 1000;
+    PgAiBudgetRepository repository{pgTestPool()};
+    for (const auto* id : {"first", "second"}) {
+      const AiBudgetPrincipal principal{{AiBudgetSubjectKind::Account, id}, AiBudgetTier::LoggedIn};
+      CHECK_EQ(repository.reserve({id, principal, 10, at}, limits).code, AiBudgetCode::Ok);
+      CHECK_EQ(repository.markDispatched(id).code, AiBudgetCode::Ok);
+    }
+    std::array<AiBudgetResult, 2> results;
+    std::array<std::exception_ptr, 2> failures;
+    std::barrier start{2};
+    std::vector<std::thread> calls;
+    for (int index = 0; index < 2; ++index) calls.emplace_back([&, index] {
+      PgAiBudgetRepository process{pgTestPool()};
+      start.arrive_and_wait();
+      try { results[index] = process.settle(index ? "second" : "first", 60); }
+      catch (...) { failures[index] = std::current_exception(); }
+    });
+    for (auto& call : calls) call.join();
+    int covered = 0;
+    for (int index = 0; index < 2; ++index) {
+      CHECK_FALSE(failures[index]);
+      CHECK_EQ(results[index].code, AiBudgetCode::Ok);
+      REQUIRE(results[index].reservation);
+      if (results[index].reservation->overrunReconciled) ++covered;
+    }
+    CHECK_EQ(covered, 1);
+    const AiBudgetPrincipal other{{AiBudgetSubjectKind::Account, "other"}, AiBudgetTier::LoggedIn};
+    const auto snapshot = repository.snapshot(other, at, limits);
+    CHECK_EQ(snapshot.freeMonth.spentNanos, 120);
+    CHECK_EQ(snapshot.freeDay.spentNanos, 120);
+    CHECK_EQ(snapshot.freeMonth.heldNanos, 0);
+    CHECK_EQ(snapshot.freeDay.heldNanos, 0);
+    CHECK_EQ(snapshot.freeMonth.debtNanos, 50);
+    CHECK_EQ(snapshot.freeDay.debtNanos, 50);
+    CHECK_EQ(repository.reserve({"blocked", other, 1, at}, limits).code, AiBudgetCode::DebtOutstanding);
+  }
+}
+
+TEST(pg_ai_budget_paid_variance_uses_only_the_original_grant_and_preserves_other_holds) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("needs WM_PG_TEST");
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("DELETE FROM ai_budget_alerts; DELETE FROM ai_budget_reservations; DELETE FROM ai_budget_balances; "
+             "DELETE FROM ai_budget_grants; DELETE FROM ai_budget_device_accounts");
+    txn.commit();
+  }
+  struct Reporter final : FailureReporter {
+    std::vector<std::string> operations;
+    void report(const std::string&, const std::string& operation, const std::string&) override {
+      operations.push_back(operation);
+    }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Reporter> reporter = std::make_shared<Reporter>();
+    ReporterScope() { installWriteReporter(reporter); }
+    ~ReporterScope() { installWriteReporter({}); }
+  } observation;
+  AiBudgetLimits limits;
+  limits.paidPeriodNanos = 100;
+  const long long january = 1'767'225'600'000;
+  const long long february = AiBudgetPeriod::at(january)->endMs;
+  const AiBudgetPrincipal account{{AiBudgetSubjectKind::Account, "paid"}, AiBudgetTier::WindmillOne};
+  PgAiBudgetRepository repository{pgTestPool()};
+  const AiBudgetGrant first{"first-grant", "paid", AiBudgetFundingSource::Subscription,
+      {january, february + 86'400'000}, 100, "first-invoice"};
+  const AiBudgetGrant second{"second-grant", "paid", AiBudgetFundingSource::Subscription,
+      {first.period.endMs, AiBudgetPeriod::at(february)->endMs}, 100, "second-invoice"};
+  CHECK_EQ(repository.fund(first, limits).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.fund(second, limits).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.reserve({"covered", account, 25, january}, limits).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.markDispatched("covered").code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.reserve({"held", account, 70, february}, limits).code, AiBudgetCode::Ok);
+  AiBudgetService service{repository, [limits] { return limits; }, [february] { return february; }};
+  const auto covered = service.settle("covered", 30);
+  REQUIRE(covered.reservation);
+  CHECK(covered.reservation->overrunReconciled);
+  CHECK_EQ(covered.reservation->grantId, std::optional<std::string>{first.id});
+  const auto exact = repository.snapshot(account, february, limits);
+  CHECK_EQ(exact.subject.spentNanos, 30);
+  CHECK_EQ(exact.subject.heldNanos, 70);
+  CHECK_EQ(exact.subject.debtNanos, 0);
+  CHECK(observation.reporter->operations.empty());
+  CHECK_EQ(repository.release("held").code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.reserve({"unfunded", account, 10, february}, limits).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.markDispatched("unfunded").code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.reserve({"new-period-hold", account, 90, second.period.startMs}, limits).code, AiBudgetCode::Ok);
+  const auto unfunded = service.settle("unfunded", 80);
+  REQUIRE(unfunded.reservation);
+  CHECK_FALSE(unfunded.reservation->overrunReconciled);
+  CHECK_EQ(service.settle("unfunded", 80).code, AiBudgetCode::Replay);
+  CHECK_EQ(observation.reporter->operations, (std::vector<std::string>{"ai.budget.settle"}));
+  const auto original = repository.snapshot(account, february, limits);
+  CHECK_EQ(original.subject.spentNanos, 110);
+  CHECK_EQ(original.subject.heldNanos, 0);
+  CHECK_EQ(original.subject.debtNanos, 70);
+  const auto renewed = repository.snapshot(account, second.period.startMs, limits);
+  CHECK_EQ(renewed.subject.spentNanos, 0);
+  CHECK_EQ(renewed.subject.heldNanos, 90);
+  CHECK_EQ(renewed.subject.debtNanos, 70);
+  CHECK_EQ(repository.reserve({"blocked", account, 1, second.period.startMs}, limits).code, AiBudgetCode::DebtOutstanding);
+  const AiBudgetPrincipal free{{AiBudgetSubjectKind::Account, "free"}, AiBudgetTier::LoggedIn};
+  CHECK_EQ(repository.reserve({"free-call", free, 1, second.period.startMs}, limits).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.snapshot(free, second.period.startMs, limits).freeMonth.debtNanos, 0);
+  CHECK_EQ(repository.markDispatched("new-period-hold").code, AiBudgetCode::Ok);
+  const auto priorDebt = service.settle("new-period-hold", 91);
+  REQUIRE(priorDebt.reservation);
+  CHECK_FALSE(priorDebt.reservation->overrunReconciled);
+  CHECK_EQ(repository.snapshot(account, second.period.startMs, limits).subject.debtNanos, 71);
+  CHECK_EQ(observation.reporter->operations, (std::vector<std::string>{"ai.budget.settle", "ai.budget.settle"}));
+}
+
+TEST(pg_ai_budget_free_variance_keeps_original_day_and_month_funding_after_rollover) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("needs WM_PG_TEST");
+  const long long january = 1'767'225'600'000;
+  const long long february = AiBudgetPeriod::at(january)->endMs;
+  for (const long long originalSpend : {60, 80}) {
+    {
+      PgLease conn{*pgTestPool()};
+      pqxx::work txn{*conn};
+      txn.exec("DELETE FROM ai_budget_alerts; DELETE FROM ai_budget_reservations; DELETE FROM ai_budget_balances; "
+               "DELETE FROM ai_budget_grants; DELETE FROM ai_budget_device_accounts");
+      txn.commit();
+    }
+    AiBudgetLimits limits;
+    limits.freeMonthlyNanos = 100;
+    limits.freeDailyNanos = 100;
+    limits.loggedInMonthlyNanos = 1000;
+    PgAiBudgetRepository repository{pgTestPool()};
+    const AiBudgetPrincipal account{{AiBudgetSubjectKind::Account, "account"}, AiBudgetTier::LoggedIn};
+    const AiBudgetPrincipal pending{{AiBudgetSubjectKind::Account, "pending"}, AiBudgetTier::LoggedIn};
+    CHECK_EQ(repository.reserve({"january-spend", account, originalSpend, january}, limits).code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.markDispatched("january-spend").code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.settle("january-spend", originalSpend).code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.reserve({"pending", pending, 10, january}, limits).code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.markDispatched("pending").code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.markUncertain("pending").code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.reserve({"february-spend", account, 80, february}, limits).code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.markDispatched("february-spend").code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.settle("february-spend", 80).code, AiBudgetCode::Ok);
+    const auto result = repository.settle("pending", 30);
+    REQUIRE(result.reservation);
+    CHECK_EQ(result.reservation->overrunReconciled, originalSpend == 60);
+    const auto original = repository.snapshot(pending, january, limits);
+    CHECK_EQ(original.subject.spentNanos, 30);
+    CHECK_EQ(original.freeMonth.spentNanos, originalSpend + 30);
+    CHECK_EQ(original.freeDay.spentNanos, originalSpend + 30);
+    const auto current = repository.snapshot(pending, february, limits);
+    CHECK_EQ(current.subject.spentNanos, 0);
+    CHECK_EQ(current.subject.heldNanos, 0);
+    CHECK_EQ(current.freeMonth.spentNanos, 80);
+    CHECK_EQ(current.freeDay.spentNanos, 80);
+    CHECK_EQ(current.freeMonth.debtNanos, originalSpend == 60 ? 0 : 20);
+    CHECK_EQ(current.freeDay.debtNanos, originalSpend == 60 ? 0 : 20);
+  }
+}
+
+TEST(pg_ai_budget_variance_checks_account_spend_and_all_bound_device_holds) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("needs WM_PG_TEST");
+  const long long at = 1'767'225'600'000;
+  for (const bool settleDevice : {false, true}) for (const bool covered : {false, true}) {
+    {
+      PgLease conn{*pgTestPool()};
+      pqxx::work txn{*conn};
+      txn.exec("DELETE FROM ai_budget_alerts; DELETE FROM ai_budget_reservations; DELETE FROM ai_budget_balances; "
+               "DELETE FROM ai_budget_grants; DELETE FROM ai_budget_device_accounts");
+      txn.commit();
+    }
+    AiBudgetLimits limits;
+    limits.anonymousLifetimeNanos = 100;
+    limits.loggedInMonthlyNanos = 100;
+    const AiBudgetPrincipal account{{AiBudgetSubjectKind::Account, "account"}, AiBudgetTier::LoggedIn};
+    const AiBudgetPrincipal device{{AiBudgetSubjectKind::Device, "device"}, AiBudgetTier::Anonymous};
+    const AiBudgetPrincipal otherDevice{{AiBudgetSubjectKind::Device, "other-device"}, AiBudgetTier::Anonymous};
+    PgAiBudgetRepository repository{pgTestPool()};
+    CHECK_EQ(repository.reserve({"device-spend", device, 20, at}, limits).code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.markDispatched("device-spend").code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.settle("device-spend", 20).code, AiBudgetCode::Ok);
+    if (settleDevice) {
+      const long long prior = covered ? 55 : 60;
+      CHECK_EQ(repository.reserve({"account-spend", account, prior, at}, limits).code, AiBudgetCode::Ok);
+      CHECK_EQ(repository.markDispatched("account-spend").code, AiBudgetCode::Ok);
+      CHECK_EQ(repository.settle("account-spend", prior).code, AiBudgetCode::Ok);
+    }
+    CHECK_EQ(repository.reserve({"pending", settleDevice ? device : account, 5, at}, limits).code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.markDispatched("pending").code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.reserve({"other-hold", otherDevice, 10, at}, limits).code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.bindDevice("device", "account", at, limits), AiBudgetCode::Ok);
+    CHECK_EQ(repository.bindDevice("other-device", "account", at, limits), AiBudgetCode::Ok);
+    const long long actual = settleDevice ? 15 : covered ? 70 : 75;
+    const auto result = repository.settle("pending", actual);
+    REQUIRE(result.reservation);
+    CHECK_EQ(result.reservation->overrunReconciled, covered);
+    const auto snapshot = repository.snapshot(account, at, limits);
+    CHECK_EQ(snapshot.subject.spentNanos, covered ? 90 : 95);
+    CHECK_EQ(snapshot.subject.heldNanos, 10);
+    CHECK_EQ(snapshot.subject.debtNanos, covered ? 0 : actual - 5);
+    CHECK_EQ(snapshot.freeMonth.spentNanos, snapshot.subject.spentNanos);
+    CHECK_EQ(snapshot.freeMonth.heldNanos, 10);
+    CHECK_EQ(snapshot.freeMonth.debtNanos, snapshot.subject.debtNanos);
+    CHECK_EQ(repository.snapshot(otherDevice, at, limits).subject.heldNanos, 10);
+    CHECK_EQ(repository.release("other-hold").code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.reserve({"next", account, 1, at}, limits).code,
+             covered ? AiBudgetCode::Ok : AiBudgetCode::DebtOutstanding);
+  }
+}
+
+TEST(pg_ai_budget_late_bound_anonymous_variance_uses_binding_cap_without_charging_new_month) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("needs WM_PG_TEST");
+  const long long january = 1'767'225'600'000;
+  const long long february = AiBudgetPeriod::at(january)->endMs;
+  for (const bool covered : {false, true}) {
+    {
+      PgLease conn{*pgTestPool()};
+      pqxx::work txn{*conn};
+      txn.exec("DELETE FROM ai_budget_alerts; DELETE FROM ai_budget_reservations; DELETE FROM ai_budget_balances; "
+               "DELETE FROM ai_budget_grants; DELETE FROM ai_budget_device_accounts");
+      txn.commit();
+    }
+    AiBudgetLimits limits;
+    limits.anonymousLifetimeNanos = 100;
+    limits.loggedInMonthlyNanos = covered ? 40 : 30;
+    PgAiBudgetRepository repository{pgTestPool()};
+    const AiBudgetPrincipal device{{AiBudgetSubjectKind::Device, "device"}, AiBudgetTier::Anonymous};
+    const AiBudgetPrincipal account{{AiBudgetSubjectKind::Account, "account"}, AiBudgetTier::LoggedIn};
+    CHECK_EQ(repository.reserve({"old-spend", device, 20, january}, limits).code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.markDispatched("old-spend").code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.settle("old-spend", 20).code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.reserve({"pending", device, 5, january}, limits).code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.markDispatched("pending").code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.reserve({"new-spend", account, 25, february}, limits).code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.markDispatched("new-spend").code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.settle("new-spend", 25).code, AiBudgetCode::Ok);
+    CHECK_EQ(repository.bindDevice("device", "account", february, limits), AiBudgetCode::Ok);
+    const auto result = repository.settle("pending", 15);
+    REQUIRE(result.reservation);
+    CHECK_EQ(result.reservation->overrunReconciled, covered);
+    const auto original = repository.snapshot(account, january, limits);
+    CHECK_EQ(original.subject.spentNanos, 35);
+    CHECK_EQ(original.subject.heldNanos, 0);
+    CHECK_EQ(original.freeMonth.spentNanos, 35);
+    const auto current = repository.snapshot(account, february, limits);
+    CHECK_EQ(current.subject.spentNanos, 25);
+    CHECK_EQ(current.subject.heldNanos, 0);
+    CHECK_EQ(current.subject.debtNanos, covered ? 0 : 10);
+    CHECK_EQ(current.freeMonth.spentNanos, 25);
+    CHECK_EQ(current.freeMonth.debtNanos, covered ? 0 : 10);
+  }
 }
 
 TEST(pg_ai_budget_partial_database_failure_rolls_back_all_counters_and_reports_one_private_issue) {

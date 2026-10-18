@@ -50,7 +50,7 @@ The composer is fixed above the navigation/keyboard inset while the conversation
 | Allowance used (signed out, once available) | “You’ve used this device’s AI allowance.” once, then Continue with Apple · Use email instead; draft and conversation kept. Positive remaining capacity that cannot fit a request is a separate refusal |
 | Routine created | Factual “Routine created” receipt with the actual routine name and Open routine |
 
-The signed-out allowance is $0.05 for a verified device's lifetime; no question count is promised. Anonymous Coach still requires attestation and safe provider bounds; the USD backend is off by default. Shared free daily/monthly pools, individual allowance and concurrent-call limits retain distinct refusal and recovery metadata. Sign-in preserves usage attribution and does not guarantee capacity. See [the Coach brief](briefs/09-coach.md).
+The signed-out allowance is $0.05 for a verified device's lifetime; no question count is promised. Anonymous Coach still requires attestation and model/output settings that fit that allowance; the USD backend is off by default. Input tokens are estimated for each request, and actual use can exceed a reservation. Shared free daily/monthly pools, individual allowance and concurrent-call limits retain distinct refusal and recovery metadata. Sign-in preserves usage attribution and does not guarantee capacity. See [the Coach brief](briefs/09-coach.md).
 
 Copy returns only the message's visible textual content, preserving line breaks. It excludes timestamps, hidden metadata, receipt controls and image filenames. Do not offer an empty text Copy for an attachment-only message. Partial text remains copyable. Proposal actions stay separate from message context menus.
 

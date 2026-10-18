@@ -69,7 +69,7 @@ to this phone.*, with the same door as Keep (§6) → **Bringing it back**.
   holds).
 - **Signed-out Coach policy is $0.05 per verified device for its lifetime**, without a promised
   question count (`gym/briefs/09-coach.md`). Anonymous Coach is not yet available: attestation and
-  safe provider bounds are prerequisites, and the USD backend is off by default.
+  suitable model/output settings are prerequisites, and the USD backend is off by default.
 - **Windmill One is never shown signed out.**
 - **The only unprompted mentions of signing in** are Where to start?'s quiet Sign in, the Keep
   offer after the first real thing, and You. An account verb the person starts — connecting a
