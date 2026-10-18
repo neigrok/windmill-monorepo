@@ -145,6 +145,10 @@ export const TURN_DOWN_CONFIRM = {
 
 export const TURN_DOWN_VERB = 'Turn this down';
 
+// A pending proposal the domain reads as out of date (`ProposalState.outOfDate`: its routine moved on the log, in an
+// edit the log has not confirmed, or out of sight) has no Apply and no Turn this down; this line stands where they stood.
+export const OUT_OF_DATE_LINE = 'The routine changed after this was written. Nothing was applied.';
+
 // Closing the review decides nothing; the card keeps saying so.
 export const STILL_WAITING = 'still waiting';
 

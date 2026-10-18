@@ -19,7 +19,7 @@ import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises
 import { Session, SessionRules, SetRules, TrainingSet } from '../../../../src/products/gym/domain/training.js';
 import { AppendSet, CorrectedSet, CorrectSession, CorrectSet, DeleteSet, DiscardSession, FinishSession, ImportedSet, ImportSession, StartSession } from '../../../../src/products/gym/domain/trainingActions.js';
 import { TrainingHistory } from '../../../../src/products/gym/domain/trainingHistory.js';
-import { GymEstimate, Prefill, Readout, TrainingLog } from '../../../../src/products/gym/domain/trainingReads.js';
+import { GymEstimate, Prefill, ProgressRecords, Readout, TrainingLog } from '../../../../src/products/gym/domain/trainingReads.js';
 import { GymUnits, WeightLadder } from '../../../../src/products/gym/domain/units.js';
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { RegistryCheck, RuleBookCheck, RuleBookParity } from '../../../platform/domain-kit/checks.js';
@@ -37,17 +37,6 @@ const ladderFile = 'gym-ladder.json';
 const pending = [];
 /** @type {Record<string, string>} */
 const notApplicable = { 'gym/domain/recovery-actions.json': 'the web holds no signed-out workout: its gym opens behind the account gate' };
-/** @type {Record<string, string>} */
-const pendingReads = { ProgressRecords: 'the web log weaves no new bests yet, so its domain has no ProgressRecords read' };
-const unconfirmedRoutine = "the web's ProposalState reads no confirmed routine and leaves a routine out of sight to ApplyProposal's decide";
-/** @type {Record<string, string>} */
-const pendingProposals = {
-  OutOfDate: 'the web reads a proposal out of date from its state alone, so its domain has no OutOfDate read',
-  'pending apply over movements the log has not confirmed refuses as a routine change': unconfirmedRoutine,
-  'pending apply over a name the log has not confirmed refuses as a routine change': unconfirmedRoutine,
-  'pending apply with its routine out of sight is gone': unconfirmedRoutine,
-  'pending apply with no routine is gone': unconfirmedRoutine,
-};
 
 /** @param {{ day: LocalDay, kg: number }} value */
 const entryForm = (value) => ({ day: value.day.text, kg: value.kg });
@@ -124,6 +113,12 @@ function trainingReadsForm(vector, read) {
       return { sessions: series.sessions.map((point) => ({ sessionId: point.id.json, mostReps: point.fact.mostReps.json,
         bodyweightReps: point.fact.bodyweightReps?.json ?? null })),
       best: best === null ? null : { sessionId: best.id.json, fact: best.fact.bodyweightReps?.json ?? null } };
+    }
+    case 'ProgressRecords': {
+      const records = new ProgressRecords(log.progress);
+      return { movements: Object.fromEntries(records.exercises.map((id) => [String(id.record), records.movement(id).map((record) =>
+        ({ session: record.point.id.json, previous: record.previous.id.json, estimate: record.estimate, gain: record.gain }))])),
+      sessions: records.sessions.map((id) => id.json) };
     }
     case 'Readout': {
       switch (f.string('operation')) {
@@ -317,16 +312,15 @@ const handlers = {
           state: value.state, provenance: value.provenance };
       }
       case 'RoutineCreation': return { snapshot: RoutineCreation.decode(Fields.values('routineCreation', input.id, input.fields)).snapshot };
-      case 'StateRefusal': {
-        const drawn = ['proposal', 'routine'].flatMap((type) => {
-          const value = input[type];
-          if (value === null || value === undefined) return [];
-          return [{ t: type, id: value.id, life: ['alive', '1000:0:r_aaaaaaaaaaaa'], born: '1000:0:r_aaaaaaaaaaaa',
-            f: Object.fromEntries(Object.entries(value.fields).map(([name, field]) => [name, [field, '1000:0:r_aaaaaaaaaaaa']])) }];
-        });
-        const read = corpus.reader({ ...vector, input: { ...vector.input, records: { drawn } } }, Proposal.scope);
-        const id = new Id('proposal1', Proposal);
-        const refused = new ProposalState(read, id).refusal(id, fields.bool('applying'));
+      case 'StateRefusal':
+      case 'OutOfDate': {
+        const routine = input.routine ? Routine.decode(Fields.values('routine', input.routine.id, input.routine.fields)) : null;
+        const state = new ProposalState({
+          proposal: input.proposal ? Proposal.decode(Fields.values('proposal', input.proposal.id, input.proposal.fields)) : null,
+          routine, routineVisible: fields.bool('routineVisible', true), moment: momentOf(vector.input),
+          confirmedRoutine: input.confirmedRoutine ? Routine.decode(Fields.values('routine', input.confirmedRoutine.id, input.confirmedRoutine.fields)) : routine });
+        if (vector.input.action === 'OutOfDate') return { outOfDate: state.outOfDate };
+        const refused = state.refusal(new Id('proposal1', Proposal), fields.bool('applying'));
         return { refusal: refused === null ? null : refusalForm(refused) };
       }
       case 'ValidateProposal': {
@@ -412,9 +406,7 @@ test('every book entity agrees with the registry and every writable sample round
 });
 
 for (const [file, run] of Object.entries(handlers)) for (const vector of Contract.vectors(file)) {
-  const skip = file === 'gym/domain/training-reads.json' ? pendingReads[vector.input.read]
-    : file === 'gym/domain/proposals-actions.json' ? pendingProposals[vector.input.action] ?? pendingProposals[vector.name] : undefined;
-  test(`${file} · ${vector.name}`, { skip }, () => {
+  test(`${file} · ${vector.name}`, () => {
     assert.equal(jcs(run(vector)), jcs(vector.expect));
     assert.equal(jcs(run({ ...vector, input: withRecordsReversed(vector.input) })), jcs(vector.expect), 'reversed records');
   });
