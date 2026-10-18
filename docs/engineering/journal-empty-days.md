@@ -18,6 +18,8 @@ existing Add/Discard decision when the account already has pages.
 The Swift prediction builder shares the ordinary text-delta builder. Both omit unchanged text and
 retain actual erasure deltas, matching the reference and Kotlin engines. Whitespace predicates live
 in SyncCore on native surfaces so visibility, claims and journal documents share one rule.
+Kotlin checks characters directly without a Java stream dependency. Every accepted whitespace
+character is in the BMP; supplementary characters remain writing.
 
 Regression coverage spans new blank drafts, ratings-only legacy rows, Unicode whitespace,
 oversized whitespace with invalid scale metadata, write/erase/rewrite across sync and restart,
@@ -26,3 +28,11 @@ run includes all 1,601 corpus vectors. The domain and web journal suites pass. R
 verification passes all ten scenarios, including erasure across clients and reload, ordinary REST
 visibility, state-only adoption, sign-out and account isolation. Native UI checks confirm blank
 ratings-only days and erased writing remain absent after relaunch.
+
+The replay-fuzz oracle independently canonicalizes blank saves and preserves account fields for
+blank claims. It retains exact body, mood, energy, source and stamp assertions, checks visibility,
+and requires coverage of blank saves, blank claims and blank claims over existing writing. Its
+inputs include Unicode whitespace. All 246 reference tests, the 500-run × 300-step journal replay
+fuzz tier from seed 1, and the generation check pass. Android
+passes compiled-owner layering, 792 client corpus vectors and 809 model-server cases plus seven
+protocol transcripts.
