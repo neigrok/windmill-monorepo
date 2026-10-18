@@ -265,8 +265,7 @@ telemetry is off unless `WM_DEBUG_TELEMETRY=YES` is supplied; simulator verifica
 `-telemetry -sentry-dsn http://ios@127.0.0.1:8091/42`. Release builds require `IOS_SENTRY_DSN`.
 See [iOS observability](../../../docs/IOS_OBSERVABILITY.md) for the complete event allowlist,
 privacy rules, queue behavior and release verification. CI uses `python3 Tools/generate_project.py`
-with a nonproduction DSN. The manual release workflow uses `--release` with the signing secrets,
-builds with Xcode 26.3 and uploads to TestFlight; it does not run on push.
+with a nonproduction DSN. [TestFlight releases](#testflight-releases) use the manual GitHub Actions pipeline.
 
 The UI test bundle presses Home and activates SpringBoard, waiting for its event loop and animations
 to become idle. It requires the foreground Home screen and a hittable Safari icon before any test
@@ -295,3 +294,40 @@ python3 Tools/export_design_captures.py --result "$RESULT" --output "$CAPTURES"
 
 Each PNG names its screen, state and appearance. The exporter suffixes a name that already exists in
 the output folder and writes a `capture-manifest.json` linking each PNG to its test and result bundle.
+
+## TestFlight releases
+
+TestFlight releases run through [`.github/workflows/ios-release.yml`](../../../.github/workflows/ios-release.yml).
+The workflow uses the repository's signing credentials, builds with Xcode 26.3 and uploads to
+App Store Connect. Normal uploads do not require an interactive App Store Connect login. Separate
+Apple processing or distribution troubleshooting may require App Store Connect access.
+
+Check recent release runs for an existing upload and verify the intended commit is on remote `main`
+before dispatching. The workflow is manual and does not run on push:
+
+```sh
+gh run list --workflow ios-release.yml --limit 5
+gh api repos/neigrok/windmill-monorepo/git/ref/heads/main --jq '.object.sha'
+gh workflow run ios-release.yml --ref main
+```
+
+Find the newly created run explicitly:
+
+```sh
+gh run list --workflow ios-release.yml --branch main --event workflow_dispatch --limit 5 \
+  --json databaseId,headSha,number,url,status
+```
+
+Record its `url` and use its `databaseId` as `RUN_ID` in
+`gh api repos/neigrok/windmill-monorepo/actions/runs/RUN_ID` to inspect `head_sha` and `run_number`.
+The marketing version comes from `project.yml`; `Tools/generate_project.py --release`
+sets both app and widget build numbers to `GITHUB_RUN_NUMBER`. Verify the selected SHA matches the
+intended release and avoid dispatching a duplicate run while it is queued or building.
+
+Monitor the run with `gh run watch RUN_ID --exit-status`, then inspect its job steps and upload log.
+Archive, stored-certificate verification, release-symbol retention, and export/upload must pass.
+The workflow retains `ios-dsyms-RUN_NUMBER` for 30 days. *Upload succeeded* and *EXPORT SUCCEEDED*
+confirm Apple's acceptance of the upload; *Uploaded package is processing* does not confirm that
+processing is complete or that testers can install it. This pipeline does not check tester
+availability or change tester groups. Record the verified version, build, source SHA, run URL,
+upload result and any processing or symbol limitations in `WORK_LOG.md`.

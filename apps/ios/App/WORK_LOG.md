@@ -39,3 +39,12 @@ Journal erasure after relaunch, routine sheets, workout paging, receipt actions,
 Coach history deletion and authentication handoffs. Local first-party events and Sentry envelopes
 contain only bounded technical labels; the known content and credential scan finds no matches.
 External Amplitude forwarding and production Sentry delivery are not exercised by this local run.
+
+Release **0.2.0 (18)**, source `a4bdb146c74189ffeca4516012bc3243aec5e2db`, is uploaded to
+App Store Connect by [iOS release run 18](https://github.com/neigrok/windmill-monorepo/actions/runs/39152817121).
+The 2026-10-18 run passed archive, stored-certificate verification and export; Apple confirmed
+*Uploaded package is processing* and *Upload succeeded* at 18:17 UTC. The retained `ios-dsyms-18`
+artifact contains the app and workout widget dSYMs. Export reported the nonblocking warning
+*Upload Symbols Failed. The archive did not include a dSYM for the Sentry.framework*.
+Production Sentry symbolication is not verified. Apple's completed processing and tester
+availability are not exposed by this workflow and have not been directly verified.
