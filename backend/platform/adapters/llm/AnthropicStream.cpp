@@ -87,6 +87,7 @@ bool AnthropicMessageStream::event(const std::string& data) {
     if (!event["delta"].isObject()) return false;
     if (event["delta"]["stop_reason"].isString()) message_["stop_reason"] = event["delta"]["stop_reason"];
     if (!event["usage"].isNull() && !event["usage"].isObject()) return false;
+    if (event["usage"]["output_tokens"].isInt64()) finalUsage_ = true;
     for (const auto& key : event["usage"].getMemberNames()) message_["usage"][key] = event["usage"][key];
     return true;
   }
@@ -143,6 +144,7 @@ bool AnthropicMessageStream::event(const std::string& data) {
 std::optional<Json::Value> AnthropicMessageStream::finish(const std::string& interruption) {
   if (!message_.isObject()) return std::nullopt;
   if (!complete_ || invalid_) message_["stop_reason"] = interruption;
+  if (!finalUsage_ && message_["usage"].isObject()) message_["usage"].removeMember("output_tokens");
   return message_;
 }
 

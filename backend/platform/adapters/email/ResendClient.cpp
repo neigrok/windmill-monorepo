@@ -50,13 +50,25 @@ ResendClient::ResendClient(std::string apiKey, std::string from)
 void ResendClient::send(const Email& to, const std::string& templateId,
                         const Json::Value& variables, const Json::Value& headers,
                         std::function<void(bool)> done) {
+  sendBody(resendEmailBody(from_, to.value, templateId, variables, headers), "", std::move(done));
+}
+
+void ResendClient::sendText(const Email& to, const std::string& subject, const std::string& text,
+                            const std::string& idempotencyKey, std::function<void(bool)> done) {
+  Json::Value body(Json::objectValue);
+  body["from"] = from_;
+  body["to"] = to.value;
+  body["subject"] = subject;
+  body["text"] = text;
+  sendBody(body, idempotencyKey, std::move(done));
+}
+
+void ResendClient::sendBody(const Json::Value& body, const std::string& idempotencyKey,
+                            std::function<void(bool)> done) {
   if (apiKey_.empty()) {
     done(false);
     return;
   }
-
-  const Json::Value body = resendEmailBody(from_, to.value, templateId, variables, headers);
-
   Json::StreamWriterBuilder builder;
   builder["indentation"] = "";
   const std::string payload = Json::writeString(builder, body);
@@ -67,6 +79,7 @@ void ResendClient::send(const Email& to, const std::string& templateId,
   req->setMethod(drogon::Post);
   req->setPath("/emails");
   req->addHeader("authorization", "Bearer " + apiKey_);
+  if (!idempotencyKey.empty()) req->addHeader("Idempotency-Key", idempotencyKey);
   req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   req->setBody(payload);
 

@@ -2,6 +2,7 @@
 
 #include "products/gym/domain/Proposal.h"
 #include "products/gym/domain/ReadReceipt.h"
+#include "platform/domain/AiBudget.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -71,6 +72,7 @@ struct AskGeneration {
   std::uint64_t revision = 0;
   bool stopRequested = false;
   std::vector<CoachAttachment> attachments;
+  std::optional<AiBudgetView> allowanceRefusal;
   bool operator==(const AskGeneration&) const = default;
 };
 

@@ -96,6 +96,7 @@ std::string statusText(CurationStatus status) {
     case CurationStatus::emptyOk: return "empty_ok";
     case CurationStatus::transport: return "transport";
     case CurationStatus::rateLimited: return "rate_limited";
+    case CurationStatus::budgetLimited: return "budget_limited";
     case CurationStatus::truncated: return "truncated";
     case CurationStatus::schemaInvalid: return "schema_invalid";
     case CurationStatus::refused: return "refused";
@@ -194,6 +195,7 @@ std::vector<DuePage> PgEchoRepository::duePages(const UserId& user, std::uint64_
       "     OR c.segment_version IS DISTINCT FROM $3 "
       "     OR c.embed_version IS DISTINCT FROM $4 "
       "     OR c.judge_version IS DISTINCT FROM $5 "
+      "     OR c.status = 'budget_limited' "
       "     OR (c.status NOT IN ('ok', 'empty_ok', 'refused') AND coalesce(c.attempts, 0) < " +
           std::to_string(kCurationRetries) + ")) "
       "ORDER BY p.day",
@@ -229,6 +231,7 @@ std::optional<DuePage> PgEchoRepository::duePage(const UserId& user, const Local
       "     OR c.segment_version IS DISTINCT FROM $4 "
       "     OR c.embed_version IS DISTINCT FROM $5 "
       "     OR c.judge_version IS DISTINCT FROM $6 "
+      "     OR c.status = 'budget_limited' "
       "     OR (c.status NOT IN ('ok', 'empty_ok', 'refused') AND coalesce(c.attempts, 0) < " +
           std::to_string(kCurationRetries) + "))",
       user.str(), day.iso(), static_cast<long long>(corpusStamp), versions.segment,
@@ -537,9 +540,9 @@ void PgEchoRepository::recordCuration(const UserId& user, const LocalDate& day,
     txn.exec_params(
         "INSERT INTO journal_page_curation "
         "(user_id, day, status, attempts, last_error, segment_version, embed_version, updated_at) "
-        "VALUES ($1::uuid, $2::date, $3, 1, $4, $5, $6, now()) "
+        "VALUES ($1::uuid, $2::date, $3, $7, $4, $5, $6, now()) "
         "ON CONFLICT (user_id, day) DO UPDATE "
-        "SET status = EXCLUDED.status, attempts = journal_page_curation.attempts + 1, "
+        "SET status = EXCLUDED.status, attempts = journal_page_curation.attempts + EXCLUDED.attempts, "
         "last_error = EXCLUDED.last_error, "
         "segment_version = coalesce(nullif(EXCLUDED.segment_version, ''), "
         "                           journal_page_curation.segment_version), "
@@ -547,7 +550,7 @@ void PgEchoRepository::recordCuration(const UserId& user, const LocalDate& day,
         "                         journal_page_curation.embed_version), "
         "updated_at = now()",
         user.str(), day.iso(), statusText(outcome.status), outcome.error, outcome.versions.segment,
-        outcome.versions.embed);
+        outcome.versions.embed, outcome.status == CurationStatus::budgetLimited ? 0 : 1);
     txn.commit();
     markCurrentWrite();
     return;

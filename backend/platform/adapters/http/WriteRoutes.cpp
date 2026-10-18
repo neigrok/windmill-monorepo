@@ -36,17 +36,26 @@ struct HttpWriteFailure : std::runtime_error {
 };
 
 const std::set<std::string> refusalCodes{
-    "access_denied", "account-mismatch", "account-not-empty", "ask-attachment-invalid", "ask-busy",
+    "access_denied", "account-mismatch", "account-not-empty", "ai_allowance_disabled", "ask-attachment-invalid", "ask-busy",
     "ask-daily-limit", "ask-generation-active", "ask-image-busy", "ask-image-limit",
     "ask-not-configured", "ask-out-of-budget", "ask-request-conflict", "ask-request-malformed",
     "ask-session-open", "ask-thread-taken", "bad-id", "bad_request", "client-update-required",
-    "clock-ahead", "expired", "gym-engine-busy", "gym-engine-unavailable", "id-retired", "id-taken",
+    "checkout_closed", "clock-ahead", "compose-unavailable", "concurrency_exhausted", "debt_outstanding",
+    "device_bound", "device_verification_required", "expired", "free_day_exhausted", "free_month_exhausted",
+    "funding_account_mismatch", "funding_binding_pending", "funding_conflict", "funding_required", "funding_unconfigured",
+    "gym-engine-busy", "gym-engine-unavailable", "id-retired", "id-taken",
     "identity-taken", "invalid_client", "invalid_client_metadata", "invalid_email", "invalid_grant",
-    "invalid_redirect_uri", "invalid_request", "login_required", "malformed", "rate_limited",
+    "invalid_payment_identity", "invalid_redirect_uri", "invalid_request", "login_required", "malformed", "rate_limited",
     "replica-foreign", "request-too-large", "session-deleted", "session-id-taken",
-    "session-overlap", "set-id-taken", "share-id-taken", "temporarily_unavailable",
-    "unauthenticated", "unavailable", "unknown-exercise", "unreachable", "unsupported_grant_type",
-    "unsupported_response_type", "upgrade-required"
+    "session-overlap", "set-id-taken", "share-id-taken", "subject_exhausted", "temporarily_unavailable",
+    "unauthenticated", "unavailable", "unconfigured", "unknown-exercise", "unreachable", "unsupported_ai_pricing",
+    "unsupported_grant_type", "unsupported_response_type", "upgrade-required", "voice_busy", "voice_unavailable"
+};
+
+const std::set<std::string> aiAllowanceRefusalCodes{
+    "concurrency_exhausted", "debt_outstanding", "device_bound", "device_verification_required",
+    "free_day_exhausted", "free_month_exhausted", "funding_required", "subject_exhausted",
+    "unconfigured", "unsupported_ai_pricing"
 };
 
 std::string redirectCode(const std::string& location) {
@@ -154,11 +163,19 @@ std::string writeHttpOutcome(const drogon::HttpResponsePtr& response, const std:
   }
   const std::string code = responseCode(response);
   if (status < 500) return code.empty() ? "http_" + std::to_string(status) : code;
-  if (status == 503 && (code == "unavailable" || code == "temporarily_unavailable" || code.rfind("gym-", 0) == 0 ||
-                        code.rfind("journal-", 0) == 0 || code == "ask-busy" ||
-                        code == "ask-not-configured")) return code;
-  if (status == 503 && (operation == "platform.POST.v1.billing.checkout" ||
-                       operation == "journal.POST.v1.journal.transcribe")) return "unavailable";
+  if (status != 503) return "failed";
+  if (code == "unavailable" || code == "temporarily_unavailable" || code.rfind("gym-", 0) == 0 ||
+      code.rfind("journal-", 0) == 0 || code == "ask-busy" || code == "ask-not-configured") return code;
+  const bool aiRequest = operation == "gym.POST.v1.gym.ask" || operation == "roadmap.POST.v1.trees.id.tend" ||
+      operation == "roadmap.POST.v1.compose" || operation == "journal.POST.v1.journal.transcribe";
+  if (aiRequest && aiAllowanceRefusalCodes.count(code)) return code;
+  if (operation == "roadmap.POST.v1.compose" && code == "compose-unavailable") return code;
+  if (operation == "journal.POST.v1.journal.transcribe" &&
+      (code == "voice_busy" || code == "voice_unavailable")) return code;
+  if (operation == "platform.POST.v1.billing.checkout" && code == "checkout_closed") return code;
+  if (operation == "platform.POST.v1.paddle.webhook" &&
+      (code == "funding_binding_pending" || code == "funding_unconfigured")) return code;
+  if (operation == "platform.GET.v1.ai.allowance" && code == "ai_allowance_disabled") return code;
   return "failed";
 }
 

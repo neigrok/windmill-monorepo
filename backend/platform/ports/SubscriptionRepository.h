@@ -16,6 +16,9 @@ struct SubscriptionRepository {
   virtual void upsertCustomer(const PaddleCustomer& customer) = 0;
   virtual void upsertSubscription(const PaddleSubscription& subscription) = 0;
 
+  virtual std::optional<PaddleCustomer> findCustomer(const std::string&) { return std::nullopt; }
+  virtual std::optional<PaddleSubscription> findSubscription(const std::string&) { return std::nullopt; }
+
   // Found by either binding: the user id the checkout stamped, or the Paddle customer's email.
   // Prefers ANY access-granting row over the newest one, so a dead row planted through `custom_data`
   // cannot shadow a real subscription. Falls back to the newest row for display when none grants

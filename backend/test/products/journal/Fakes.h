@@ -642,7 +642,7 @@ public:
     row.status = outcome.status;
     row.lastError = outcome.error;
     if (!isSettled(outcome.status)) {
-      ++row.attempts;
+      if (outcome.status != CurationStatus::budgetLimited) ++row.attempts;
       if (!outcome.versions.segment.empty()) row.versions.segment = outcome.versions.segment;
       if (!outcome.versions.embed.empty()) row.versions.embed = outcome.versions.embed;
       return;

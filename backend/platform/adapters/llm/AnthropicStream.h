@@ -30,6 +30,7 @@ private:
   const char* providerError_ = "none";
   std::size_t bytes_ = 0;
   bool complete_ = false;
+  bool finalUsage_ = false;
   bool invalid_ = false;
 };
 

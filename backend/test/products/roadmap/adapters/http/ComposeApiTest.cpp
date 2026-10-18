@@ -1,6 +1,9 @@
 #include "products/roadmap/adapters/http/ComposeApi.h"
 
 #include "products/roadmap/adapters/json/TreeJson.h"
+#include "products/roadmap/adapters/llm/AnthropicComposer.h"
+#include "platform/adapters/llm/AiCallBudget.h"
+#include "test/platform/Fakes.h"
 #include "test/testing.h"
 
 #include <trantor/net/AsyncStream.h>
@@ -172,6 +175,24 @@ TEST(compose_without_an_api_key_is_503_unavailable_and_never_calls_upstream) {
   CHECK_EQ(response->getStatusCode(), drogon::k503ServiceUnavailable);
   CHECK_EQ(bodyOf(response), std::string(R"({"code":"compose-unavailable"})"));
   CHECK_EQ(h.composer->composed.size(), 0u);
+}
+
+TEST(compose_with_monthly_budgets_is_unavailable_before_buffered_or_streaming_dispatch) {
+  struct Failures : FailureReporter {
+    void report(const std::string&, const std::string&, const std::string&) override {}
+  } failures;
+  fake::FakeSubscriptionRepository subscriptions;
+  fake::FakeAiUsageRepository usage;
+  fake::FakeAuthRepository accounts;
+  Entitlements entitlements{subscriptions, usage};
+  auto budget = std::make_shared<AiCallBudget>(nullptr, entitlements, accounts, failures);
+  auto composer = std::make_shared<AnthropicComposer>("test-key", nullptr, nullptr, nullptr, budget);
+  ComposeApi api{composer};
+  for (const auto& request : {postText("learn to sail"), postStreamText("learn to sail")}) {
+    const auto response = send(api, request);
+    CHECK_EQ(response->getStatusCode(), drogon::k503ServiceUnavailable);
+    CHECK_EQ(bodyOf(response), std::string(R"({"code":"compose-unavailable"})"));
+  }
 }
 
 TEST(compose_upstream_failure_is_502_compose_failed) {

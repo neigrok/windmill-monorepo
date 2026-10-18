@@ -1,4 +1,5 @@
 #include "products/gym/adapters/llm/AnthropicAsk.h"
+#include "platform/adapters/llm/AiCallBudget.h"
 
 #include "platform/adapters/llm/AnthropicStream.h"
 #include "platform/application/WriteObservation.h"
@@ -194,11 +195,11 @@ AskAnswer driveAsk(const std::vector<AskTurn>& turns, const ToolCaller& caller, 
 }
 
 AnthropicAsk::AnthropicAsk(std::string apiKey, std::shared_ptr<FailureReporter> failures,
-                           std::shared_ptr<AiFuse> fuse, std::shared_ptr<UsageSink> usage, std::string baseUrl)
+                           std::shared_ptr<AiFuse> fuse, std::shared_ptr<UsageSink> usage, std::string baseUrl, std::shared_ptr<AiCallBudget> budget)
     : apiKey_(std::move(apiKey)),
       failures_(std::move(failures)),
       fuse_(std::move(fuse)),
-      usage_(std::move(usage)), baseUrl_(std::move(baseUrl)) {}
+      usage_(std::move(usage)), budget_(std::move(budget)), baseUrl_(std::move(baseUrl)) {}
 
 bool AnthropicAsk::configured() const { return !apiKey_.empty(); }
 
@@ -253,7 +254,8 @@ AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCall
   frame.runId = newRunId("ask");
 
   auto answer = driveAsk(turns, caller, tools,
-                         metered(call, frame, fuse_, usage_, report, [&] { refusal = "ai-fuse"; }),
+                         metered(call, frame, fuse_, usage_, report, [&] { refusal = "ai-fuse"; },
+                                 budget_, [&](const std::string& code) { refusal = code; }),
                          report, control);
   answer.outcomeCode = refusal;
   return answer;

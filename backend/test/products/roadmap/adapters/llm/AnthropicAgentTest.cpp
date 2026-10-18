@@ -493,8 +493,8 @@ TEST(metered_charges_the_fuse_what_each_turn_cost) {
              metered(model.asCall(), tendFrame(), fuse, nullptr, rec.report()), rec.onStep(),
              rec.report());
 
-  // Sonnet: 3000 nanos in, 15000 out, cache reads a tenth of input.
-  CHECK_EQ(fuse->trailingNanos(nowMs()), 1000 * 3'000 + 100 * 15'000 + 2000 * 300);
+  // Sonnet 5: 2000 nanos in, 10000 out, cache reads a tenth of input.
+  CHECK_EQ(fuse->trailingNanos(nowMs()), 1000 * 2'000 + 100 * 10'000 + 2000 * 200);
 }
 
 TEST(metered_denial_signal_names_each_invocation_and_clears_on_recovery) {

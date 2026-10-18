@@ -82,10 +82,11 @@ room's appearance stays inside the room.
   the web), Settings, **About Windmill**, **Sign out** (`superapp-flow.md` §7) and **Delete
   account**.
 
-**Windmill One** is one shared plan for actively requested AI assistance; credits do not pay for
-passive Echoes or ordinary product use. Purchasing is closed and allowance quantities remain a
-proposal (`marketing/guidelines/pricing.md`). **It never appears while signed out**, and signed in
-it appears nowhere but You. You is always clay, whatever room opened it.
+**Windmill One** is one shared plan with a funded USD allowance. All hosted AI work, including
+background Echoes, uses individual allowance; ordinary manual use and reading existing work
+remain available. Purchasing is closed and the USD backend is off by default, with customer
+rollout blockers (`marketing/guidelines/pricing.md`). **One never appears while signed out**, and
+signed in it appears nowhere but You. You is always clay, whatever room opened it.
 
 On the web, the settings home is `roadmap/guidelines/auth.md` §5, with one difference of place:
 Appearance is not on the settings page. On `/app` it is in the account seat's pop-up — a
@@ -156,13 +157,14 @@ These rules hold on every surface.
 
 - **Everything a person does by hand works signed out** — writing, logging sets, building
   routines, planting steps, editing and every read.
-- **Account-metered AI assistance needs an account, with one exception:** on iOS, Coach answers
-  5 questions per phone without one, once, never refilling (`gym/briefs/09-coach.md`). When an
-  action needs an account — an account verb, or a Coach question past the allowance — the door
-  opens at that moment and the action resumes afterwards.
-- Public text import on the web is anonymous; it cannot debit an account until attribution is
-  defined.
-- Passive Echoes use no AI credits.
+- **Anonymous AI policy is $0.05 for the lifetime of a verified device**, with no promised
+  question count (`gym/briefs/09-coach.md`). Device attestation and the signed-out Coach route
+  are not yet built; the allowance line must not advertise unavailable access. An action that
+  needs an account opens the sign-in door at that moment and preserves the draft. Admission is
+  checked again after sign-in; signing in does not promise immediate AI capacity.
+- Public text import needs a verified device identity in enabled USD mode and is refused before
+  dispatch while that attribution is unavailable.
+- Hosted background Echoes use individual USD allowance; existing Echoes remain readable.
 - Every first run still reaches a real thing with zero agent calls: Journal's cursor, Gym's
   **Just log** and **Build it myself**, the roadmap's starter quests and blank tree.
 
@@ -181,7 +183,8 @@ YOU         signed out: the door, On this phone, About Windmill, Erase data · n
             always clay · About Windmill replays the introduction as a sheet
 APP OWNS    its bar after the room menu, tabs, gestures · its palette · its settings
             its menu line · its skin reported outward once
-AI REQUESTS account-metered · iOS Coach: 5 questions per phone, once, without an account
+AI POLICY   verified device: $0.05 lifetime · account: $0.25 UTC month · funded One: $7 per period
+            all hosted work uses allowance · anonymous access and USD customer rollout pending
 ```
 
 ## Web safe areas

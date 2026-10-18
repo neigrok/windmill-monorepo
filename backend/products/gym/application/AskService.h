@@ -73,6 +73,8 @@ enum class AskRefusal {
   sessionOpen,      // a workout is running: Ask is never offered mid-session, and the server says so
   dailyLimit,       // the day's questions are used — the cap that keeps Ask open to everybody
   outOfBudget,      // this account is over OUR AI ceiling for the window — a fuse, not a sales door
+  aiBudget,
+  aiAccountingUnavailable,
 };
 
 // `read` and `proposals` are the server's own observations, never the model's.
@@ -83,6 +85,7 @@ struct AskReply {
   std::vector<std::string> proposals;   // ids minted during the exchange, in mint order
   std::optional<AnswerReceipt> receipt;
   std::optional<AskGeneration> generation;
+  std::optional<AiBudgetView> allowance;
 };
 
 // The byte limit for a user question; stored history has no turn ceiling.

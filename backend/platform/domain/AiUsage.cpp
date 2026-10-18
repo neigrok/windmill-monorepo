@@ -20,7 +20,7 @@ constexpr std::array<ModelRate, 10> kRates{{
     {"claude-opus-4-6", 5'000, 25'000},
     {"claude-fable-5", 10'000, 50'000},
     {"claude-mythos-5", 10'000, 50'000},
-    {"claude-sonnet-5", 3'000, 15'000},
+    {"claude-sonnet-5", 2'000, 10'000},
     {"claude-sonnet-4-6", 3'000, 15'000},
     {"claude-haiku-4-5", 1'000, 5'000},
     {"claude-haiku-4-5-20251001", 1'000, 5'000},

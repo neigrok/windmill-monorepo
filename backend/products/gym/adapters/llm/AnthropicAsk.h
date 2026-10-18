@@ -35,7 +35,8 @@ public:
   // Reporter, fuse and sink are all optional; null reports nowhere.
   explicit AnthropicAsk(std::string apiKey, std::shared_ptr<FailureReporter> failures = nullptr,
                         std::shared_ptr<AiFuse> fuse = nullptr,
-                        std::shared_ptr<UsageSink> usage = nullptr, std::string baseUrl = kAnthropicBaseUrl);
+                        std::shared_ptr<UsageSink> usage = nullptr, std::string baseUrl = kAnthropicBaseUrl,
+                        std::shared_ptr<AiCallBudget> budget = nullptr);
 
   bool configured() const override;
   AskAnswer answer(const std::vector<AskTurn>& turns, const ToolCaller& caller,
@@ -48,6 +49,7 @@ private:
   std::shared_ptr<FailureReporter> failures_;
   std::shared_ptr<AiFuse> fuse_;
   std::shared_ptr<UsageSink> usage_;
+  std::shared_ptr<AiCallBudget> budget_;
   std::string baseUrl_;
 };
 

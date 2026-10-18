@@ -12,9 +12,11 @@
 
 namespace wm {
 
+class AiCallBudget;
+
 // OpenAI gpt-4o-transcribe on a private event loop: the calling thread returns and `done` fires on
 // this loop, so no drogon handler thread is parked. The audio is used for one request and dropped;
-// neither it nor the transcript is logged. configured() is true exactly when a key is present.
+// neither it nor the transcript is logged. configured() requires a key and supported accounting.
 // The fuse and the sink default to null, the no-op.
 class OpenAiTranscriber : public Transcriber {
  public:
@@ -30,7 +32,8 @@ class OpenAiTranscriber : public Transcriber {
 
   explicit OpenAiTranscriber(std::string apiKey, std::string model = "gpt-4o-transcribe",
                              std::shared_ptr<AiFuse> fuse = nullptr,
-                             std::shared_ptr<UsageSink> usage = nullptr);
+                             std::shared_ptr<UsageSink> usage = nullptr,
+                             std::shared_ptr<AiCallBudget> budget = nullptr);
 
   bool configured() const override;
   void transcribe(const UserId& user, const std::string& audio, const std::string& mimeType,
@@ -41,6 +44,7 @@ class OpenAiTranscriber : public Transcriber {
   std::string model_;
   std::shared_ptr<AiFuse> fuse_;
   std::shared_ptr<UsageSink> usage_;
+  std::shared_ptr<AiCallBudget> budget_;
   std::once_flag stopped_;
   trantor::EventLoopThread loop_;
 };
