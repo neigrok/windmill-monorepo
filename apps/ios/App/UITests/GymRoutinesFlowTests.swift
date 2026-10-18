@@ -522,9 +522,10 @@ import UIKit
     XCTAssertTrue(app.buttons["gym-movement-deadlift"].isEnabled)
     app.buttons["gym-movement-deadlift"].tap()
     app.buttons["save-routine"].tap()
-    XCTAssertTrue(app.descendants(matching: .any)["routine-detail-movement-deadlift"].waitForExistence(timeout: 5))
-    XCTAssertEqual(app.descendants(matching: .any)["routine-detail-movement-deadlift"].label, "2. Deadlift, open")
-    XCTAssertEqual(app.descendants(matching: .any)["routine-detail-movement-bench-press"].label, "1. Bench Press, open")
+    let deadliftSummary = app.staticTexts.matching(identifier: "routine-detail-movement-deadlift")
+    XCTAssertTrue(deadliftSummary.firstMatch.waitForExistence(timeout: 5))
+    XCTAssertEqual(deadliftSummary.allElementsBoundByIndex.map(\.label), ["2. Deadlift", "open"])
+    XCTAssertEqual(app.staticTexts.matching(identifier: "routine-detail-movement-bench-press").allElementsBoundByIndex.map(\.label), ["1. Bench Press", "open"])
     XCTAssertFalse(app.staticTexts["Open movements have no target — you decide the numbers at the rack."].exists, "Open explains itself")
   }
 
@@ -613,7 +614,9 @@ import UIKit
     XCTAssertEqual(app.textFields["routine-name"].value as? String, "Custom day")
     app.buttons["save-routine"].tap()
     XCTAssertTrue(app.navigationBars["Custom day"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["1. Custom press kept · yours, 1 × max"].waitForExistence(timeout: 5))
+    let title = app.staticTexts["1. Custom press kept · yours"]
+    XCTAssertTrue(title.waitForExistence(timeout: 5))
+    XCTAssertEqual(app.staticTexts.matching(identifier: title.identifier).allElementsBoundByIndex.map(\.label), ["1. Custom press kept · yours", "1 × max"])
   }
 
   func testProposalScreensInBothAppearances() {

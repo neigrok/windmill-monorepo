@@ -58,6 +58,9 @@ composer preserves the full draft while showing at most two lines. Send and jump
 controls. The final multiline choice screenshot and targeted UI test pass: an 18 pt corner radius
 keeps wrapped text inside the outline while preserving the default 36 pt pill shape.
 
+Ten focused Gym UI regression cases pass locally, covering account adoption, light/dark log charts,
+routine building, workout ledger details, offline restoration, Live Activity and Control Center.
+
 Conversation and provider responses use controlled fixtures. Real photo selection, upload retry,
 authenticated image reads and live-model behavior require separate evidence.
 
@@ -67,6 +70,9 @@ Keep setup beside the Coach conversation instead of introducing a separate onboa
 Keep presentation-only prompt choices in the Coach contract, not the routine or sync domain. Reuse
 one receipt row shape for one or several creations. Keep entry preference account-scoped and
 separate from content so deleting a routine cannot silently reset the person's navigation choice.
+
+UI tests use surviving chart points and target semantic row elements. The shared workout-ledger
+helper traverses virtualized lists while asserting exact saved-set identifiers, values and counts.
 
 Existing native composer and toolbar differences from the first-run drawings remain recorded in
 the [consistency ledger](design/consistency.md); this phase does not redefine room chrome.

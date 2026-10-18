@@ -143,8 +143,18 @@ import XCTest
     let start = app.buttons["routine-start"]
     XCTAssertTrue(start.waitForExistence(timeout: 5)); XCTAssertTrue(start.wait(for: \.isEnabled, toEqual: true, timeout: 10)); start.tap()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
-    app.buttons["workout-log"].tap(); app.buttons["workout-log"].tap()
-    XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).count, 2)
+    let progress = app.descendants(matching: .any)["workout-set-progress"]
+    app.buttons["workout-log"].tap()
+    XCTAssertTrue(progress.waitForValue("1 set"))
+    let firstSet = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
+    XCTAssertEqual(firstSet.count, 1)
+    app.buttons["workout-log"].tap()
+    XCTAssertTrue(progress.waitForValue("2 sets"))
+    let retainedSets = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
+    XCTAssertEqual(retainedSets.count, 2)
+    XCTAssertEqual(Set(retainedSets.map(\.identifier)).count, 2)
+    XCTAssertEqual(retainedSets.prefix(1).map(\.identifier), firstSet.map(\.identifier))
+    XCTAssertEqual(retainedSets.prefix(1).map(\.label), firstSet.map(\.label))
     app.buttons["workout-assembly"].tap()
     XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
     XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 5)); app.buttons["you"].tap()
