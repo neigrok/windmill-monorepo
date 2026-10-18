@@ -38,16 +38,19 @@ object Contract {
     }
 }
 
-// Confirmed records listed by each view; the engine ER-17 factory performs visibility and text decoding.
-data class VectorRecords(val drawn: List<works.windmill.sync.api.Record>, val stored: List<works.windmill.sync.api.Record>) {
-    constructor(drawn: Json?, stored: Json?, registry: Registry) : this(records(drawn, registry), records(stored, registry))
+// Confirmed records listed by each view, and the device keys the scene lists with their values; the engine ER-17
+// factory performs visibility and text decoding.
+data class VectorRecords(val drawn: List<works.windmill.sync.api.Record>, val stored: List<works.windmill.sync.api.Record>,
+    val device: Map<String, Json> = emptyMap()) {
+    constructor(drawn: Json?, stored: Json?, registry: Registry, device: Json? = null) : this(records(drawn, registry), records(stored, registry), device?.obj() ?: emptyMap())
     companion object {
         fun records(rows: Json?, registry: Registry): List<works.windmill.sync.api.Record> =
             (rows?.arr() ?: emptyList()).map { Record(confirmed = Row(it), registry = registry) }
     }
 }
 
-// A deterministic scope reader and finite ID source; it never modifies the vector's records.
+// A deterministic scope reader and finite ID source, minting the ids the vector lists in order, opaque ones included;
+// it never modifies the vector's records.
 class VectorReader(val records: VectorRecords, override val now: Long, ids: List<RecordID> = emptyList(),
     val pulled: Boolean = true, val scope: ScopeRef? = null, val registry: Registry? = null) : CommitContext {
     override val replica = "rp_00000000000000000000000000000001"
@@ -73,12 +76,15 @@ class VectorReader(val records: VectorRecords, override val now: Long, ids: List
     override fun drawn(type: String, field: String, id: RecordID) = drawn(type).filter { it.values[field] == id.json }
     override fun stored(type: String, field: String, id: RecordID) = stored(type).filter { it.values[field] == id.json }
     override fun confirmed(type: String, id: RecordID) = stored(type, id)
-    override fun device(key: String): Json? = null
+    override fun device(key: String): Json? = records.device[key]
     override fun firstPullComplete() = pulled
     override fun checkpoint() = ScopeCheckpoint()
-    override fun devices(prefix: String) = emptyMap<String, Json>()
+    override fun devices(prefix: String): Map<String, Json> = records.device.filterKeys { it.startsWith(prefix) }
     override fun commands() = emptyList<QueuedCommand>()
-    override fun opaqueID(): String = throw CommitFailure.malformed("the vector lists no opaque identity")
+    override fun opaqueID(): String {
+        if (ids.isEmpty()) throw CommitFailure.malformed("the vector lists no id left to mint an opaque identity")
+        return ids.removeAt(0).string ?: throw CommitFailure.malformed("an opaque identity is a string")
+    }
     override fun mintID(type: String): RecordID {
         if (ids.isEmpty()) throw CommitFailure.malformed("the vector lists no id left to mint a $type")
         return ids.removeAt(0)

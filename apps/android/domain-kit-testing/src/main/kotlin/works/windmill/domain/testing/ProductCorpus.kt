@@ -58,7 +58,7 @@ class ProductCorpus(val book: RuleBook) {
     private fun scene(vector: Vector, scope: ScopeRef): VectorReader {
         val input = vector.input
         val rows = input.member("records")
-        return VectorReader(VectorRecords(rows["drawn"], rows["stored"] ?: rows["drawn"], book.registry), moment(input).now.ms,
+        return VectorReader(VectorRecords(rows["drawn"], rows["stored"] ?: rows["drawn"], book.registry, rows["device"]), moment(input).now.ms,
             input["ids"]?.arr()?.map(::RecordID) ?: emptyList(), input["firstPullComplete"]?.bool() ?: true, scope, book.registry)
     }
 }
