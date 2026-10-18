@@ -76,7 +76,7 @@ TEST(ai_usage_an_unreadable_usage_object_counts_zero_and_never_throws) {
   CHECK_EQ(partial.cacheWrite, 0);
 }
 
-// Each family, priced from fresh input and output alone: $5/$25, $10/$50, $3/$15, $1/$5 per MTok — 5000/25000, 10000/50000, 3000/15000 and 1000/5000 nanos a token.
+// Model prices use nano-USD per token.
 TEST(ai_usage_each_model_family_prices_from_its_own_rate) {
   const TokenUse tokens{1000, 1000, 0, 0};
 
@@ -86,7 +86,7 @@ TEST(ai_usage_each_model_family_prices_from_its_own_rate) {
   CHECK_EQ(costNanos("claude-opus-4-6", tokens), std::optional<long long>(30'000'000));
   CHECK_EQ(costNanos("claude-fable-5", tokens), std::optional<long long>(60'000'000));
   CHECK_EQ(costNanos("claude-mythos-5", tokens), std::optional<long long>(60'000'000));
-  CHECK_EQ(costNanos("claude-sonnet-5", tokens), std::optional<long long>(18'000'000));
+  CHECK_EQ(costNanos("claude-sonnet-5", tokens), std::optional<long long>(12'000'000));
   CHECK_EQ(costNanos("claude-sonnet-4-6", tokens), std::optional<long long>(18'000'000));
   CHECK_EQ(costNanos("claude-haiku-4-5", tokens), std::optional<long long>(6'000'000));
   CHECK_EQ(costNanos("claude-haiku-4-5-20251001", tokens), std::optional<long long>(6'000'000));
@@ -94,14 +94,14 @@ TEST(ai_usage_each_model_family_prices_from_its_own_rate) {
 
 // The modifiers ride on the model's INPUT rate: a read is a tenth of it, a 5m ephemeral write a quarter more. Integer maths — a double here would be a rounding error in money.
 TEST(ai_usage_cache_reads_and_writes_price_off_the_input_rate) {
-  // sonnet input is 3000 nanos a token, so a read is 300 and a write 3750.
+  // Sonnet 5 input is 2000 nanos a token, so a read is 200 and a write 2500.
   CHECK_EQ(costNanos("claude-sonnet-5", TokenUse{0, 0, 10'000, 0}),
-           std::optional<long long>(3'000'000));
+           std::optional<long long>(2'000'000));
   CHECK_EQ(costNanos("claude-sonnet-5", TokenUse{0, 0, 0, 10'000}),
-           std::optional<long long>(37'500'000));
+           std::optional<long long>(25'000'000));
 
   CHECK_EQ(costNanos("claude-sonnet-5", TokenUse{400, 1000, 8000, 2000}),
-           std::optional<long long>(400 * 3000 + 1000 * 15000 + 8000 * 300 + 2000 * 3750));
+           std::optional<long long>(400 * 2000 + 1000 * 10000 + 8000 * 200 + 2000 * 2500));
 
   // opus input is 5000, so a read is 500 and a write 6250 — the ×1.25 is exact, not truncated.
   CHECK_EQ(costNanos("claude-opus-5", TokenUse{0, 0, 0, 4}), std::optional<long long>(25'000));
@@ -109,7 +109,7 @@ TEST(ai_usage_cache_reads_and_writes_price_off_the_input_rate) {
 
 TEST(ai_usage_a_dated_snapshot_resolves_to_the_alias_it_pins) {
   const TokenUse tokens{1000, 1000, 0, 0};
-  CHECK_EQ(costNanos("claude-sonnet-5-20260114", tokens), std::optional<long long>(18'000'000));
+  CHECK_EQ(costNanos("claude-sonnet-5-20260114", tokens), std::optional<long long>(12'000'000));
   CHECK_EQ(costNanos("claude-opus-5-20260301", tokens), std::optional<long long>(30'000'000));
   CHECK_EQ(costNanos("claude-haiku-4-5-20251001", tokens), std::optional<long long>(6'000'000));
 }
@@ -245,7 +245,7 @@ TEST(ai_usage_a_model_we_cannot_price_is_charged_the_dearest_rate_rather_than_no
 TEST(ai_usage_a_prefix_match_takes_a_dated_snapshot_and_refuses_anything_else) {
   const TokenUse tokens{1'000'000, 0, 0, 0};
 
-  CHECK_EQ(costNanos("claude-sonnet-5-20260114", tokens).value_or(-1), 3'000'000'000LL);
+  CHECK_EQ(costNanos("claude-sonnet-5-20260114", tokens).value_or(-1), 2'000'000'000LL);
   CHECK_FALSE(costNanos("claude-opus-5-mini", tokens).has_value());
   CHECK_FALSE(costNanos("claude-opus-5-nano-20260601", tokens).has_value());
 }

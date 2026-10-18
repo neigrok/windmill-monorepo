@@ -87,6 +87,23 @@ void PgSubscriptionRepository::upsertSubscription(const PaddleSubscription& subs
   txn.commit();
 }
 
+std::optional<PaddleCustomer> PgSubscriptionRepository::findCustomer(const std::string& customerId) {
+  PgLease conn{*pool_};
+  pqxx::read_transaction txn{*conn};
+  const auto rows = txn.exec_params("SELECT customer_id,email FROM paddle_customers WHERE customer_id=$1", customerId);
+  if (rows.empty()) return std::nullopt;
+  return PaddleCustomer{rows[0]["customer_id"].as<std::string>(), rows[0]["email"].as<std::string>()};
+}
+
+std::optional<PaddleSubscription> PgSubscriptionRepository::findSubscription(const std::string& subscriptionId) {
+  PgLease conn{*pool_};
+  pqxx::read_transaction txn{*conn};
+  const auto rows = txn.exec_params("SELECT " + std::string(kSubscriptionColumns) +
+      " FROM paddle_subscriptions s WHERE s.subscription_id=$1", subscriptionId);
+  if (rows.empty()) return std::nullopt;
+  return subscriptionFrom(rows[0]);
+}
+
 std::optional<PaddleSubscription> PgSubscriptionRepository::findFor(const UserId& user,
                                                                     const std::string& email) {
   // Either binding may match, and an access-granting row wins over a merely newer one.

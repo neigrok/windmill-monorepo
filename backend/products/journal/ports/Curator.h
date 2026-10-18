@@ -23,7 +23,7 @@ struct Verdict {
 // `ok` false means the call failed, not that nothing was found: retry the page.
 struct Curation {
   bool ok = false;
-  std::string failure;         // transport | rate_limited | truncated | schema_invalid | refused
+  std::string failure;         // Provider outcome or bounded AI budget refusal.
   std::vector<Verdict> verdicts;
 };
 

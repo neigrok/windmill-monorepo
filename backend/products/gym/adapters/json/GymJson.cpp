@@ -1,3 +1,4 @@
+#include "platform/adapters/json/AiBudgetJson.h"
 #include "products/gym/adapters/json/GymJson.h"
 
 #include <string>
@@ -455,6 +456,8 @@ std::vector<CoachResult> coachResultsFrom(const Json::Value& results) {
   return out;
 }
 
+Json::Value toJson(const AiBudgetView& allowance) { return aiAllowanceJson(allowance); }
+
 Json::Value toJson(const AskGeneration& generation) {
   Json::Value body(Json::objectValue);
   body["id"] = generation.id;
@@ -472,6 +475,7 @@ Json::Value toJson(const AskGeneration& generation) {
     for (const auto& attachment : generation.attachments) body["attachments"].append(toJson(attachment));
   }
   if (generation.receipt) body["receipt"] = toJson(*generation.receipt);
+  if (generation.allowanceRefusal) body["allowanceRefusal"] = toJson(*generation.allowanceRefusal);
   return body;
 }
 
@@ -490,6 +494,7 @@ AskGeneration generationFrom(const Json::Value& body) {
   generation.attachments = coachAttachmentsFrom(body["attachments"]);
   generation.revision = body.get("revision", Json::UInt64(0)).asUInt64();
   generation.stopRequested = body.get("stopRequested", false).asBool();
+  generation.allowanceRefusal = aiAllowanceFromJson(body["allowanceRefusal"]);
   return generation;
 }
 

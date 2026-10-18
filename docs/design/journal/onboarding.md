@@ -180,9 +180,11 @@ feature does not rely on a settings page to be honest.
 Neither is onboarding; both are what onboarding is *for*.
 
 - **Search is free, semantic and on-device** (`journal.md` §5).
-- **Echoes are included and use no AI credits** (`journal.md` §6). Today's page, answered with your own
-  older line and a visible count — no interpretation, no advice. Beside the page, never above
-  the cursor, always carrying "Not useful".
+- **Existing Echoes are complete and readable; new hosted processing uses USD allowance**
+  (`journal.md` §6). Today's page, answered with your own older line and a visible count — no
+  interpretation, no advice. Beside the page, never above the cursor, always carrying "Not useful".
+  Writing remains available when processing waits for capacity. This allowance policy does not
+  claim the off-by-default USD backend is ready for customer rollout.
 - **First-run rule:** an echo does not appear during onboarding.
 
 ## 8. Open

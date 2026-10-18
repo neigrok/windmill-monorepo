@@ -13,14 +13,15 @@ identifiers, not product copy.
 
 ## 2. Charging
 
-Only assistance the user actively requests spends AI credits. Passive background work does
-not debit that allowance. Credits represent a fixed amount of cost-weighted work across plans,
-with fractional use; no request-count equivalence is promised. Plan quantities are undecided.
-The [pricing contract](../../marketing/guidelines/pricing.md) owns these rules.
+All hosted AI work spends the individual's USD allowance, including automatic background work.
+The allowance is shared across products; no message or request-count equivalence is promised.
+The [pricing contract](../../marketing/guidelines/pricing.md) owns the three tiers, their distinct
+periods and the shared free pools.
 
-The current backend has a separate calendar-month request counter and a rolling cost guardrail.
-Those constraints are implementation facts, not the redesigned product unit. The new surface
-must not promise a balance, availability date or credit debit without a supporting API.
+The USD backend is off by default and is not ready for customer rollout. Disabled mode retains
+the request counter and rolling cost guardrail. The new surface must use the enabled allowance
+API for balances, reservation amounts and reset metadata; it must not relabel legacy data as USD
+allowance data. See [AI usage review](../../../AI_USAGE_REVIEW.md).
 
 ## 3. Input and working state
 
@@ -49,11 +50,14 @@ data, not instructions. Use the ordinary authorization boundary for every operat
 
 Differentiate unavailable configuration, temporary service limits, exhausted allowance and a
 request that failed after work began. Missing usage data is not zero usage. Refused requests
-that never start cost no credits; started requests can use credits even if they fail.
+that never start incur no AI cost; started requests can use allowance even if they fail.
 
-Explain allowance restoration only from supported data. A rolling 30-day balance restores
-progressively, independently of a subscription's billing date. Keep existing trees and hand
-editing available. Do not show an upgrade action while purchasing is closed.
+Explain recovery from the refused budget's metadata: anonymous allowance has no reset, verified
+free allowance uses a UTC calendar month, subscription funding uses its billing period, and owner
+funding uses a UTC calendar month. A shared free daily-pool refusal names its UTC day boundary,
+not the individual's monthly reset. A request too large for the remaining balance is distinct
+from a spent balance. Keep existing trees and hand editing available. Do not show an upgrade
+action while purchasing is closed.
 
 ## 7. Desktop and phone
 

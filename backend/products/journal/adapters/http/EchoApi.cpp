@@ -31,6 +31,7 @@ Json::Value toJson(const EchoSweepReport& report) {
   body["passagesEmbedded"] = report.passagesEmbedded;
   body["echoesWritten"] = report.echoesWritten;
   body["pagesFailed"] = report.pagesFailed;
+  body["pagesDeferred"] = report.pagesDeferred;
   body["inboundEnqueued"] = report.inboundEnqueued;
   body["pagesOverBudget"] = report.pagesOverBudget;
   body["pagesRefused"] = report.pagesRefused;

@@ -59,6 +59,13 @@ services:
       # Paste-import LLM escalation (/v1/compose). Empty → the route answers 503 compose-unavailable
       # and the client hides the handle.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_ALLOWANCES_ENABLED: ${AI_ALLOWANCES_ENABLED:-false}
+      AI_ANONYMOUS_LIFETIME_USD: ${AI_ANONYMOUS_LIFETIME_USD:-0.05}
+      AI_LOGGED_IN_MONTHLY_USD: ${AI_LOGGED_IN_MONTHLY_USD:-0.25}
+      AI_ONE_PERIOD_USD: ${AI_ONE_PERIOD_USD:-7}
+      AI_FREE_MONTHLY_USD: ${AI_FREE_MONTHLY_USD:-100}
+      AI_FREE_DAILY_USD: ${AI_FREE_DAILY_USD:-5}
+      AI_ALLOWANCE_ALERT_EMAIL: ${AI_ALLOWANCE_ALERT_EMAIL:-}
       # Journal voice (Talk), bought from OpenAI gpt-4o-transcribe. Empty → the transcribe route
       # answers 503 and the client hides Talk. Set it to arm voice for Windmill One subscribers.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

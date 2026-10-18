@@ -184,11 +184,23 @@ rendering contract is [`ios/ios-redesign.md`](ios/ios-redesign.md).
   and routine detail), `17-set-targets.md`, `19-connected-log.md` (`ConnectInvite`),
   `12-native-idiom.md` and `guidelines/superapp-shell.md` §8 (F4, 4j), and
   `gym/feedback-contract.md` (iOS acceptance).
-- **6k · Backend: signed-out Coach.** Coach is account-only: `AskRation` keys an in-memory token
-  bucket by account (`kAskPerDay` 10, `kAskBackToBack` 3; a deploy refills it) under the account's
-  30-day AI ceiling. Signed-out Coach needs a device-scoped identity, a durable 5-per-phone count
-  that never refills, its own refusal reason, and a decision on what Coach reads for a phone whose
-  log is not on the server. [Gym Coach on the client](../foundation/mobile/gym_coach.md) specifies all four.
+- **6k · Backend: signed-out Coach.** Coach is account-only. The off-by-default USD backend
+  implements anonymous $0.05 lifetime, verified free $0.25 per UTC month including associated
+  anonymous spend, and One $7 per funded period. Owner grants use calendar months. Free access
+  shares $100/month and $5/day; paid funding is isolated. Device binding is internal only: native
+  attestation, external device grants and the phone tool host remain required. Current safe
+  provider reservations exceed free allowances and block free rollout. See
+  [the mobile specification](../foundation/mobile/gym_coach.md) and
+  [backend contract](../../backend/AI_ALLOWANCES.md).
+- **6u · USD allowance drawings.** Coach first-open (`141:1290`), Account · Usage · Proposal and
+  Roadmap · AI requests · Proposal need the current lifetime/free/funded policy. The written
+  pricing, shell, Coach, roadmap and Journal contracts use USD. Replace drawing question/credit
+  figures with server-backed USD and period labels. Show
+  held/uncertain usage, free daily-pool pauses, individual exhaustion, request-capacity refusals
+  and concurrency. Anonymous lifetime allowance has no reset; One billing periods can cross a
+  calendar boundary. All hosted AI, including background Echoes, consumes the individual budget.
+  Signing in binds the device and includes its current-month anonymous spend in free usage.
+  Native device grants and customer USD screens are not built.
 - **6l · Backend: signed-out routines.** Coach creates routines on the server for an account.
   Signed out they must land on the phone with a stable, retry-safe identity and be adopted once on
   sign-in under the sign-in rule (7d), without duplicates.
@@ -483,9 +495,14 @@ exception to `guidelines/superapp-flow.md` §3 and §8. Both phones draw it (`On
 - **F28 · Echo layout drawings.** Above the margin breakpoint, the echo form is margin-only.
   Boards showing an in-page desktop form must state a width where that form can appear.
 - **Echo drawings · included passages.** [Caption 33:426](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=33-426)
-  still describes a cut passage, withheld words and a free path. `journal.md` §6 requires full
-  passages for everyone, without AI credits or a paywall; notes `34:294` and `43:360` agree.
+  still describes a cut passage, withheld words and a free path. `journal.md` §6 requires complete
+  existing passages for everyone, with no new AI cost to read them or subscription paywall.
   Reconcile the caption and the free-path labels on the phone echo boards `31:211` and `33:327`.
+- **Echo allowance drawings.** Journal and account drawing specimens must distinguish complete
+  readable Echo passages from the cost of creating new ones, as the written Journal and pricing
+  contracts require. All hosted background AI debits the individual USD allowance; new work waits
+  when its applicable capacity is unavailable. Remove drawing claims that automatic Echoes never
+  consume allowance. Existing passages are not cropped or withheld to pressure an upgrade.
 - **iOS Journal daylight.** The journal room answers light with the spec's Day column
   (`ios/ios-redesign.md` §2): the canvas, source pages, the echo ink and the reader. Its lamp is
   `#90651C` (4.82:1 on `#F7F7F5`); the web's day lamp `#986B1E` (`palettes.css`) measures 4.39:1 on
@@ -542,8 +559,8 @@ it in these places.
 
 - **6p · Android signed-out Coach.** The brief keeps Android Coach account-only and lists Android's
   signed-out Coach as open. The owner decided on 2026-09-26 that Android carries it. Draw Android's
-  signed-out room and allowance line. Until Play Integrity device recall is enabled, the Android
-  allowance is per install, so Android copy cannot say *per phone*.
+  signed-out room and lifetime USD allowance line. The backend must establish a verified device
+  subject before any anonymous grant; no per-install fallback is authorized.
 - **6q · One agent rule per ability.** The brief never lets Coach log, fix or delete a set, finish
   or discard a workout, or write a bodyweight. MCP runs `start_session`, `log_set`, `log_sets`,
   `finish_session`, `discard_session` and `import_session`. The spec gives each ability one agent
@@ -555,7 +572,7 @@ it in these places.
   1,000-byte question limit. The spec sets 8,000 bytes. Confirm the limit and its refusal sentence.
 - **6t · States the room does not draw.** The spec adds a `declined` answer (the model refused), a
   truncated completed answer, a phone whose attestation fails (`coach-device-unverified`), and an
-  iPhone whose allowance was spent on an earlier install (`coach-device-spent`). The brief draws
+  phone whose lifetime USD allowance was spent on an earlier install (`subject_exhausted`). The brief draws
   none of them.
 
 ### Native and web differences

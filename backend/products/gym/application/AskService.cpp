@@ -57,6 +57,8 @@ const char* askOutcome(AskRefusal refusal) {
     case AskRefusal::sessionOpen: return "ask-session-open";
     case AskRefusal::dailyLimit: return "ask-daily-limit";
     case AskRefusal::outOfBudget: return "ask-out-of-budget";
+    case AskRefusal::aiBudget: return "ai-budget-unavailable";
+    case AskRefusal::aiAccountingUnavailable: return "ai_accounting_unavailable";
   }
   return "refused";
 }
@@ -362,7 +364,9 @@ void AskService::ask(const UserId& caller, const std::string& email, const Threa
   auto observation = std::make_shared<WriteObservation>("ask.run", "gym", "Coach", "", failures_.get());
   WriteContext context{*observation};
   done = [done = std::move(done), observation](AskReply reply) {
-    observation->finish(reply.refusal != AskRefusal::none ? askOutcome(reply.refusal) :
+    observation->finish(reply.refusal == AskRefusal::aiBudget && reply.allowance
+                        ? std::string(aiBudgetCodeName(reply.allowance->code)) :
+                        reply.refusal != AskRefusal::none ? askOutcome(reply.refusal) :
                         !reply.answer.outcomeCode.empty() ? reply.answer.outcomeCode : reply.answer.ok || (reply.generation && reply.generation->status == "running") ? "ok" : "failed");
     done(std::move(reply));
   };
@@ -449,7 +453,17 @@ void AskService::admit(const std::shared_ptr<Job>& job) {
     }
     if (!agent_.configured()) { reply.refusal = AskRefusal::notConfigured; finish(job); return; }
     if (training_.openSession(caller)) { reply.refusal = AskRefusal::sessionOpen; finish(job); return; }
-    if (!entitlements_.aiAllowanceFor(caller, email).allows()) {
+    if (entitlements_.aiAllowancesEnabled()) {
+      reply.allowance = entitlements_.aiAllowanceView(caller, email);
+      if (reply.allowance->code != AiBudgetCode::Ok) {
+        if (generation) {
+          generation->status = "failed";
+          generation->allowanceRefusal = reply.allowance;
+          repository.saveGeneration(caller, thread, *generation);
+        }
+        reply.refusal = AskRefusal::aiBudget; finish(job); return;
+      }
+    } else if (!entitlements_.aiAllowanceFor(caller, email).allows()) {
       reply.refusal = AskRefusal::outOfBudget; finish(job); return;
     }
 
@@ -476,6 +490,7 @@ void AskService::admit(const std::shared_ptr<Job>& job) {
       for (const auto& image : images) generation->attachments.push_back(image.attachment);
     }
     generation->status = "running";
+    generation->allowanceRefusal.reset();
     repository.saveGeneration(caller, thread, *generation);
 
     workers_.getLoop(*job->worker)->queueInLoop([this, job] { run(job); });
@@ -567,10 +582,32 @@ void AskService::run(const std::shared_ptr<Job>& job) {
       job->observation->reportUnknownFailure();
     }
     if (reply.answer.modelTurns == 0) { perAccount_.giveBack(caller.str()); charged = false; }
+    if (entitlements_.aiAllowancesEnabled()) {
+      if (reply.answer.outcomeCode == "ai_accounting_unavailable")
+        reply.refusal = AskRefusal::aiAccountingUnavailable;
+      for (const auto code : {AiBudgetCode::FreeMonthExhausted, AiBudgetCode::FreeDayExhausted,
+                              AiBudgetCode::ConcurrencyExhausted, AiBudgetCode::FundingRequired, AiBudgetCode::DeviceBound,
+                              AiBudgetCode::SubjectExhausted, AiBudgetCode::DebtOutstanding,
+                              AiBudgetCode::Unconfigured}) {
+        if (reply.answer.outcomeCode != aiBudgetCodeName(code)) continue;
+        reply.allowance = entitlements_.aiAllowanceView(caller, job->email);
+        reply.allowance->code = code;
+        reply.allowance->budgetResetsAtMs.reset();
+        if (code == AiBudgetCode::FreeDayExhausted)
+          reply.allowance->budgetResetsAtMs = AiBudgetPeriod::dayAt(clock_.nowMs())->endMs;
+        if (code == AiBudgetCode::FreeMonthExhausted)
+          reply.allowance->budgetResetsAtMs = AiBudgetPeriod::at(clock_.nowMs())->endMs;
+        if (code == AiBudgetCode::SubjectExhausted)
+          reply.allowance->budgetResetsAtMs = reply.allowance->resetsAtMs;
+        reply.refusal = AskRefusal::aiBudget;
+        break;
+      }
+    }
     const auto last = repository.generation(caller, thread, requestId);
     stopped = stopped || (last && last->stopRequested);
     generation->stopRequested = stopped;
     generation->status = stopped ? "stopped" : reply.answer.ok ? "completed" : "failed";
+    if (reply.refusal == AskRefusal::aiBudget) generation->allowanceRefusal = reply.allowance;
     if (reply.answer.ok || !reply.answer.answer.empty()) generation->answer = reply.answer.answer;
     if (stopped) reply.answer.ok = true;
     generation->steps = reply.answer.steps;

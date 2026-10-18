@@ -17,6 +17,8 @@
 
 namespace wm::gym {
 
+Json::Value toJson(const AiBudgetView& allowance);
+
 // REST/MCP arguments, read replies and stored JSON; sync records follow gym.registry.json.
 
 SessionStart parseSessionStart(const Json::Value& body);   // throws InvalidTraining

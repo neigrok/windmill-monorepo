@@ -1,7 +1,8 @@
 #pragma once
 
-#include "platform/adapters/paddle/PaddleApiClient.h"
 #include "platform/application/AuthService.h"
+#include "platform/application/AiBudgetService.h"
+#include "platform/ports/AuthRepository.h"
 #include "platform/ports/Clock.h"
 #include "platform/ports/SubscriptionRepository.h"
 
@@ -22,8 +23,8 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 class BillingApi {
 public:
   BillingApi(SubscriptionRepository& subscriptions, std::shared_ptr<AuthService> auth, Clock& clock,
-             std::string webhookSecret, std::shared_ptr<PaddleApiClient> paddle = nullptr,
-             std::string priceId = "");
+             std::string webhookSecret, std::string priceId = "", std::shared_ptr<AiBudgetService> budgets = nullptr,
+             AuthRepository* accounts = nullptr, long long fundedPeriodNanos = 7'000'000'000);
 
   void webhook(const drogon::HttpRequestPtr& req, HttpCallback&& callback);         // POST /v1/paddle/webhook
   void mySubscription(const drogon::HttpRequestPtr& req, HttpCallback&& callback);  // GET  /v1/subscription
@@ -34,8 +35,10 @@ private:
   std::shared_ptr<AuthService> auth_;
   Clock& clock_;
   std::string webhookSecret_;
-  std::shared_ptr<PaddleApiClient> paddle_;  // null when billing writes are unconfigured
   std::string priceId_;
+  std::shared_ptr<AiBudgetService> budgets_;
+  AuthRepository* accounts_;
+  long long fundedPeriodNanos_;
 };
 
 }

@@ -18,6 +18,8 @@
 
 namespace wm {
 
+class AiCallBudget;
+
 constexpr const char* kAnthropicBaseUrl = "https://api.anthropic.com";
 constexpr const char* kAnthropicHost = "api.anthropic.com";
 constexpr const char* kAnthropicApiVersion = "2023-06-01";
@@ -56,6 +58,8 @@ struct MessagesReply {
   Json::Value output;
   TokenUse tokens;
   std::string outcome;
+  Json::Value usage;
+  bool usageComplete = false;
 };
 
 struct MessagesApi {
@@ -64,6 +68,7 @@ struct MessagesApi {
   virtual MessagesReply send(const MessagesRequest& request) = 0;
 };
 
+Json::Value messagesBody(const MessagesRequest& request);
 std::string messagesPayload(const MessagesRequest& request);
 
 MessagesReply readMessagesReply(int status, const std::string& body);
@@ -107,6 +112,8 @@ using ModelCall = std::function<std::optional<Json::Value>(const Json::Value& re
 ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
                   std::shared_ptr<UsageSink> usage,
                   std::function<void(const std::string& where, const std::string& detail)> report,
-                  std::function<void()> onDenied = {});
+                  std::function<void()> onDenied = {},
+                  std::shared_ptr<AiCallBudget> budget = nullptr,
+                  std::function<void(const std::string&)> onBudgetDenied = {});
 
 }

@@ -59,7 +59,8 @@ void VoiceApi::transcribe(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
     return;
   }
   if (!transcriber_->configured()) {
-    cb(error(drogon::k503ServiceUnavailable, "voice is not available right now"));
+    cb(error(drogon::k503ServiceUnavailable, "voice is not available right now",
+             entitlements_->aiAllowancesEnabled() ? "unsupported_ai_pricing" : "voice_unavailable"));
     return;
   }
 
@@ -72,15 +73,14 @@ void VoiceApi::transcribe(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
     cb(error(drogon::k413RequestEntityTooLarge, "that take is too long to transcribe"));
     return;
   }
-  // An entitled account whose trailing-30-day AI spend is used up is refused rather than sent to the
-  // vendor. The dollar figure is never shown to anybody.
+  // Check the account allowance before sending audio to the vendor.
   if (!entitlements_->aiAllowanceFor(caller->id, caller->email.value).allows()) {
     cb(error(drogon::k429TooManyRequests, "talk has had its turn for now"));
     return;
   }
   const VoiceTake taken = ration_.take(caller->id.str(), audio.size());
   if (taken == VoiceTake::busy) {
-    cb(error(drogon::k503ServiceUnavailable, "voice is busy right now"));
+    cb(error(drogon::k503ServiceUnavailable, "voice is busy right now", "voice_busy"));
     return;
   }
   if (taken == VoiceTake::spent) {

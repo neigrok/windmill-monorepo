@@ -29,7 +29,8 @@ list:
   in the composer as the attachment draft (`../feedback-contract.md`).
 - **Describe your program** takes pasted or typed program text.
 - **Share your goal** takes a goal. Coach asks only the materially missing questions, each
-  answered with chips that fill one draft — one question spent, not one per chip.
+  answered with chips that fill one draft. Selecting chips invokes no AI work; submitting the
+  draft can use USD allowance.
 
 Two quiet escapes sit under the starters: **Just log** opens the logger, **Build it myself** opens
 the routine editor. Signed out, one quiet line states the allowance (*Signed out, and not carried*, below). The starters
@@ -257,7 +258,7 @@ nothing says so in words — *read nothing from your log* — never *read 0 sets
 
 ## The limits, said on screen
 
-Limits are contextual. Signed in, the empty room leads directly to its composer with no allowance line; signed out on iOS, the one quiet allowance line is the only standing mention of a limit. When a limit prevents a question, show the server’s accurate reason and available recovery once; preserve the draft and conversation. The signed-out phone allowance, the account's daily allowance, its burst limit and its AI ceiling are four distinct states. New chat does not reset any of them and must not be presented as a way around one.
+Limits are contextual. Signed in, the empty room leads directly to its composer with no allowance line; the proposed signed-out room has one quiet allowance line once verified device access exists. When a limit prevents a question, show the server’s accurate reason and available recovery once; preserve the draft and conversation. Individual lifetime/monthly/funded allowance, a request too large for its remaining balance, shared free daily/monthly pools, concurrent calls and burst limits are distinct states. New chat resets none of them. Use the refused budget's reset metadata; a shared daily-pool pause is not the account's monthly reset.
 
 A conversation has no question cap of its own: History reopens the same editable conversation however many questions it holds. Backend model-context bounds are independent of visible retained history. Generating, stopped and interrupted answers keep their truthful partial state and completed action receipts.
 
@@ -265,18 +266,26 @@ The full quiet-room, copying, image attachment and streaming contract is [feedba
 
 ## Signed out, and not carried
 
-**Signed out on iOS — five questions per phone.** Coach answers 5 questions on a phone without an
-account, once; the allowance never refills. It is stated once, as a quiet line under the first-open
-starters:
+**Signed-out Coach uses $0.05 for the lifetime of a verified device.** This is the approved
+allowance policy, not released anonymous access: device attestation and the anonymous Coach
+route remain unbuilt, and current provider reservation bounds exceed the free allowance. The
+USD backend is off by default. See [the mobile specification](../../../foundation/mobile/gym_coach.md).
+Once those prerequisites are met, show the server's lifetime grant once under the first-open
+starters, without promising a number of questions:
 
-> 5 questions without an account.
+> $0.05 of AI use without an account. Does not renew.
 
 No countdown, no urgency colour, no *only 1 left*. When the allowance is spent, the next send is
 refused once, in place of an answer:
 
-> **You’ve used the 5 questions Coach answers without an account.**
-> Sign in and this chat carries on, with your routines. If your account already has training,
-> you’ll be asked first.
+> **You’ve used this device’s AI allowance.**
+> Sign in to keep this chat and your routines. If your account already has training, you’ll be
+> asked first.
+
+Use that refusal only for a spent balance. A request that cannot fit positive remaining capacity
+needs its own explanation. Sign-in binds the verified device permanently and includes its current
+month's anonymous spend in the account's $0.25 monthly free usage; it does not reset usage or
+promise capacity. Unresolved calls remain accounted for across sign-in and period boundaries.
 
 **Continue with Apple** leads and **Use email instead** follows, as on the Keep sheet. The draft
 stays in the composer and the conversation stays on screen. After sign-in the conversation and the

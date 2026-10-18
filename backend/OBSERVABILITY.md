@@ -22,6 +22,8 @@ HTTP response codes, engine codes and tool outcomes are read without modifying w
 Refusals without a machine code use `http_NNN` or `refused`. Expected refusals — unavailable
 configuration, a busy gym engine, rate limits, invalid tool arguments and every 4xx, a retired path's
 410 included — never create Issues.
+AI allowance, funding, pricing and closed-checkout 503 refusals keep their bounded codes on the
+matching HTTP routes. Accounting failures and unknown 503 responses remain Issues.
 Unexpected exceptions and unclassified 5xx create Issues grouped by static operation and compiled
 exception type; the Issue's `tags.request_id` matches its completion. Nested boundaries share the
 request state and report its first unexpected failure once. Admission, command and postcommit
@@ -354,7 +356,22 @@ listed separately because their only server writes are authentication refresh or
 | `Collab::onMessage` rate gate | `roadmap.ws.frame` | completion; `rate_limited` | log only |
 | `GET /v1/journal/export`, `GET /v1/gym/history`, session/share/download reads | `auth.session.refresh` or `gym.server_call` | authentication refresh; actual lazy settlement where applicable; no export body | unexpected write failure |
 | `PgAiUsageRepository::record` (noexcept ledger persistence, including transcription callback) | `ai.usage.record` | completion; `ok` or `failed`; no spend fields | unexpected compiled storage exception |
+| `AiBudgetService` reservation lifecycle | `ai.budget.reserve`, `ai.budget.dispatch`, `ai.budget.uncertain`, `ai.budget.settle`, `ai.budget.release`, `ai.budget.reconcile_overrun` | one completion per transition; bounded outcome and duration; no subject, USD amount or content | unexpected storage failure; known overrun anomaly |
+| `AiBudgetService` funding and device binding | `ai.budget.fund`, `ai.budget.bind_device` | funded/idempotent/conflict outcomes; no payment/account/device identifiers | unexpected storage failure |
+| `AiBudgetService::view` | `ai.budget.view` | completion when trusted owner access creates a grant; successful pure reads omit write logs | unexpected read or grant failure |
+| Durable alert worker | `ai.budget.alert.claim`, `ai.budget.alert.delivered`, `ai.budget.alert.retry`, `ai.budget.alert_send` | claim/delivery/retry outcome; no recipient, identifiers or amounts in telemetry | unexpected outbox or delivery failure |
+| `AiCallBudget` | `ai.call.admit`, `ai.call.account` | admission refusal or settlement/uncertainty; no prompt, image, account or provider body | unexpected boundary failure, shared request deduplication |
+| `GET /v1/ai/allowance` | `ai.allowance.read` | HTTP status via access log; no balance in telemetry | static failure detail on unavailable accounting |
+| Coach JSON/SSE allowance refusal | `ask.run` | bounded `subject_exhausted`, `free_day_exhausted`, `free_month_exhausted`, `concurrency_exhausted`, `funding_required` or `debt_outstanding` | expected refusals create no Issue |
 
 Standalone MCP accepts unprefixed tool aliases; completions use canonical operations
 (for example `mcp.roadmap_create_tree`). Process construction/teardown exceptions use `server.lifecycle`,
 `mcp.stdio.lifecycle`, `mcp.http.lifecycle` or `process.shutdown` with the same privacy rules.
+
+USD allowance mode adds backend admission, funding, permanent device binding and owner-email alert
+steps. Existing user-visible Coach/tending events continue through `/v1/events`; customer USD
+screens are not implemented. Every budget queues 50/80/95% settled-plus-held threshold crossings
+atomically to the durable outbox. Alert email contains scope, funding source and numeric totals,
+but no account/device identifiers or user content; the configured owner email is never telemetry.
+The `ai_usage` Amplitude mirror remains separate from durable admission.
+[AI_ALLOWANCES.md](AI_ALLOWANCES.md) lists provider coverage and rollout requirements.

@@ -846,3 +846,53 @@ TEST(a_rejudge_re_cuts_only_the_page_whose_stored_cut_is_of_other_bytes) {
   CHECK(echoes.cutFromTheseBytes(uid("u1"), ld(kNewDay), moved));
   CHECK(echoes.cutFromTheseBytes(uid("u1"), ld(kOldDay), settled));
 }
+
+TEST(ai_cost_refusals_defer_echoes_without_issues_and_resume_when_capacity_returns) {
+  struct Failures : FailureReporter {
+    int issues = 0;
+    void report(const std::string&, const std::string&, const std::string&) override { ++issues; }
+  };
+  struct ReporterScope {
+    std::shared_ptr<Failures> failures = std::make_shared<Failures>();
+    ReporterScope() { installWriteReporter(failures); }
+    ~ReporterScope() { installWriteReporter(nullptr); }
+  } reporter;
+  for (const bool segmentRefused : {false, true}) {
+    FakeEchoRepository echoes;
+    FakeSegmenter segmenter;
+    FakeEmbedder embedder;
+    FakeCurator curator;
+    FakeClock clock;
+    const auto user = UserId{"budget-account"};
+    const auto oldDay = LocalDate{"2026-01-01"};
+    const auto newDay = LocalDate{"2026-05-01"};
+    const std::string oldText = "i want to learn kotlin properly this time, not just skimming it.";
+    const std::string newText = "i like kotlin now and the work is finally fun to sit down with.";
+    echoes.addUser(user);
+    echoes.plantSpan(user, oldDay, 11, oldText, embedder.embed({oldText})[0]);
+    echoes.addDuePage(user, newDay, newText);
+    FakeSubscriptionRepository subscriptions;
+    FakeAiUsageRepository usage;
+    Entitlements entitlements{subscriptions, usage};
+    EchoSweep sweep{echoes, segmenter, embedder, curator, clock, entitlements, {}, {}};
+    segmenter.callSucceeds = !segmentRefused;
+    segmenter.failure = "subject_exhausted";
+    curator.callSucceeds = segmentRefused;
+    curator.failure = "free_month_exhausted";
+    const auto report = sweep.derivePage(user, newDay);
+    CHECK_EQ(report.pagesDeferred, 1);
+    CHECK_EQ(report.pagesFailed, 0);
+    CHECK_EQ(report.pagesDerived, 0);
+    CHECK_EQ(report.pagesRefused, 0);
+    REQUIRE_EQ(echoes.outcomes.size(), 1u);
+    CHECK(echoes.outcomes[0].status == CurationStatus::budgetLimited);
+    CHECK_FALSE(isSettled(echoes.outcomes[0].status));
+    CHECK_EQ(reporter.failures->issues, 0);
+    segmenter.callSucceeds = true;
+    curator.callSucceeds = true;
+    const auto resumed = sweep.derivePage(user, newDay);
+    CHECK_EQ(resumed.pagesDerived, 1);
+    CHECK_EQ(resumed.pagesDeferred, 0);
+    CHECK_EQ(reporter.failures->issues, 0);
+  }
+}
