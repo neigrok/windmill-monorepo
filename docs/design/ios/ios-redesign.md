@@ -1455,8 +1455,7 @@ Recorded in `consistency.md` under *iOS redesign*:
   bar), 9y (the month moment named by its month).
 - **The workout and routines:** 9c (the rack's kind picker), 9k (the untaken workout's row and badge
   vs Android's card and door), 9l (the Live Activity's unlabelled clocks), 9n (the set-note footer),
-  10d (two search shapes in the pickers), 10h (the workout control, not in the build until its App
-  Group lands).
+  10d (two search shapes in the pickers).
 - **Coach:** 9i (the proposal card), 9j (the Review band's one caption slot), 9s (Notes' lines), 9t
   (Connected log with a connection), 6w (no keyboard toolbar on iOS 26), 10f (what Coach did in
   iOS's words: no step list, the saved-note row, the settled words), 10g (the server's read-receipt

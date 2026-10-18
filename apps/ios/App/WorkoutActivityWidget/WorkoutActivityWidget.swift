@@ -4,7 +4,29 @@ import WidgetKit
 
 @main
 struct WorkoutActivityBundle: WidgetBundle {
-  var body: some Widget { WorkoutActivityWidget() }
+  var body: some Widget {
+    WorkoutActivityWidget()
+    WorkoutControl()
+  }
+}
+
+// The workout's one control (docs/design/ios/ios-redesign.md §7.19): it draws what the app last published.
+struct WorkoutControl: ControlWidget {
+  var body: some ControlWidgetConfiguration {
+    StaticControlConfiguration(kind: WorkoutControlState.kind, provider: Board()) { state in
+      ControlWidgetButton(action: WorkoutControlIntent(state)) {
+        Label(state.title, systemImage: state.symbol).controlWidgetActionHint(state.actionHint)
+        if let offer = state.offer { Text(offer.value) }
+      }.tint(GymPalette.accent)
+    }
+    .displayName("Workout")
+    .description("Start a workout, or log the set on the rack.")
+  }
+
+  struct Board: ControlValueProvider {
+    var previewValue: WorkoutControlState { .startWorkout }
+    func currentValue() async throws -> WorkoutControlState { (WorkoutControlBoard()?.read() ?? .startWorkout).drawn(at: .now) }
+  }
 }
 
 struct WorkoutActivityWidget: Widget {

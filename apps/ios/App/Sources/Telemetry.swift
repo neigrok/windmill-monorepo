@@ -51,7 +51,7 @@ nonisolated enum TelemetryPrivacy {
     "outcome": ["answered", "capped", "fresh", "absent", "offline", "stalled", "decided", "refused", "ok", "completed", "failed", "cancelled", "signed_in", "paused", "anonymous", "linked"],
     "reason": ["session-open", "session-overlap", "id-taken", "bad-instant", "too-many-sets", "invalid-set", "unknown-exercise", "session-finished", "unsent", "other"],
     "cap": ["daily", "ceiling"],
-    "surface": ["activity", "shortcut"],
+    "surface": ["activity", "control", "shortcut"],
     "intent": ["start_workout", "open_workout"],
     "state": ["shown", "opened"],
     "trigger": ["sync", "sign_in"],
@@ -62,7 +62,7 @@ nonisolated enum TelemetryPrivacy {
     "scope_kind": ["product", "tree", "overlay", "unknown"],
     "route": ["/v1/auth", "/v1/me", "/v1/sync", "/v1/events", "/v1/gym", "/v1/journal"],
     "failure_kind": ["offline", "timeout", "transport", "http", "decode", "encode", "storage", "keychain", "unexpected", "admission", "digest_reset", "doubt_exhausted", "overflow", "rejected", "tls", "sqlite", "digest_mismatch", "malformed", "unexpected_admission", "backoff_exhausted"],
-    "operation": ["gym_activity_request", "gym_activity_update", "gym_read", "gym_action", "gym_undo", "gym_flush", "gym_rest", "gym_import_fix", "gym_import_keep", "gym_import_retry", "gym_import_discard", "auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "journal_echoes", "auth_sign_in", "auth_sign_out", "auth_adopt", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts"]
+    "operation": ["gym_activity_request", "gym_activity_update", "gym_control_update", "gym_read", "gym_action", "gym_undo", "gym_flush", "gym_rest", "gym_import_fix", "gym_import_keep", "gym_import_retry", "gym_import_discard", "auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "journal_echoes", "auth_sign_in", "auth_sign_out", "auth_adopt", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts"]
   ]
 
   static func properties(_ input: [String: String], durationMs: Int64? = nil) -> [String: EventValue] {

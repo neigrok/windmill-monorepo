@@ -139,6 +139,7 @@ targets:
         APPLICATION_EXTENSION_API_ONLY: "YES"
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: "YES"
+        CODE_SIGN_ENTITLEMENTS: Tools/WorkoutActivity.entitlements
       configs:
         Debug:
           CODE_SIGN_IDENTITY: "-"
