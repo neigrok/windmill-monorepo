@@ -147,6 +147,24 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
 
+      - name: Read TestFlight processing and beta availability
+        timeout-minutes: 12
+        run: |
+          swiftc -parse-as-library Tools/AppStoreBuildStatus.swift -o "$RUNNER_TEMP/app-store-build-status"
+          app_plists=("$RUNNER_TEMP"/Windmill.xcarchive/Products/Applications/*.app/Info.plist)
+          test ${#app_plists[@]} -eq 1 || { echo 'The archive should hold exactly one app plist.'; exit 1; }
+          ASC_KEY_PATH="$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/app-store-build-status" \
+            "${app_plists[0]}" "$RUNNER_TEMP/testflight-status.json"
+
+      - name: Retain the TestFlight status
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testflight-status-${{ github.run_number }}
+          path: ${{ runner.temp }}/testflight-status.json
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Remove the signing keychain
         if: always()
         run: |
