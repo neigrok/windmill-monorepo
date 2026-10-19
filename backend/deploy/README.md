@@ -110,6 +110,12 @@ must be public.
   `CF_IPS` is configured nowhere: the job fetches Cloudflare's live edge list, falls back to the
   committed default in `deploy/docker-compose.yml`, and refuses on the same guard if both come back
   empty — an empty allow-list would make Caddy 403 the whole site.
+  Success also requires the running server's image reference and content ID to match the pulled
+  image, a ready sync schema 6 endpoint, and the PID 1 allowance mode and Coach output cap to match
+  resolved Compose configuration. Readiness is retried up to 30 times; each probe has a timeout.
+  The runtime receipt prints only the verified process environment mode and cap. Credentials and
+  failed command output are never dumped. This proves configuration reached PID 1 and the selected
+  image serves HTTP; output-cap enforcement requires a binary that supports that setting.
 - **Logs**: `cd ~/windmill && docker compose logs -f server` (or `caddy`, `db`, `embedder`).
 - **Status**: `docker compose ps`.
 - **Rollback**: dispatch the deploy workflow with `image_tag` set to the chosen commit SHA. Both
