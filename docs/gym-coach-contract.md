@@ -36,6 +36,8 @@ Add `attachmentIds:[attachmentId]` to the ask body (maximum one). The question m
 
 Coach uses incremental Anthropic Messages responses for both streaming and buffered clients. The server-owned `COACH_ANTHROPIC_BASE_URL` defaults to `https://api.anthropic.com`; tests may set a loopback HTTP endpoint implementing the same protocol. It never selects a canned Coach response path. Visible text from tool rounds remains in the ordered answer; thinking and signatures stay internal.
 
+Each Opus 5 round uses the configured `COACH_MAX_OUTPUT_TOKENS` ceiling, default 2,000. The USD reservation includes that entire ceiling plus estimated input. Valid configuration is 1,024–8,000 tokens. Reaching the ceiling is a failed generation, with charged usage and completed routine receipts preserved.
+
 The usage ledger preserves every input, cache and output token count reported by the vendor. Interrupted streams may end before the final cumulative output count arrives, so those observed counts can be incomplete; they are not represented as exact final billing. A stream that reached `message_start` counts as a model turn and does not refund the daily question ration.
 
 ## Coach Notes saves

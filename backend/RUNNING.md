@@ -171,6 +171,26 @@ curl -b wm_session=localdev localhost:8088/v1/trees/$TREE  # -> { "seq", "data",
 A new tree is `private`, so the same reads without the cookie answer `404 no such tree` — byte-
 identical to a tree that does not exist, deliberately.
 
+### Manual live Coach verification
+
+The Backend CI/CD dispatch input `verify_live_coach=true` runs the checked-out commit against
+disposable Postgres accounts with the GitHub `ANTHROPIC_API_KEY` secret. It does not publish images
+or deploy. The manually gated job sends at most three Coach generations: a free account's setup
+question and routine creation, followed by an owner's synthetic program photo. It verifies image
+contents against the saved routines, exact USD settlement, replay, owner isolation and first-party
+telemetry. The output cap is 2,000 and individual/free-pool limits keep their normal defaults.
+
+```sh
+gh workflow run backend.yml --ref <reviewed-branch> -f verify_live_coach=true
+```
+
+This is paid provider verification, not part of ordinary CI. The driver targets less than $1 in
+actual provider cost, checks cost between generations and requests Stop at $0.90 while waiting;
+an in-flight round can still finish, so this is not a hard cost ceiling. It never retries a failed
+generation. Email and telemetry go to isolated TLS collectors; no production account or mailbox
+is used. The retained `coach-live-results` artifact contains only bounded checks and token/cost
+totals. Credentials, raw responses and private collector records are removed with the runner.
+
 ## 6. Point the frontend at it
 
 Nothing to swap. `HttpTreeRepository` takes its base URL from `web/src/shell/apiBase.js`, which
