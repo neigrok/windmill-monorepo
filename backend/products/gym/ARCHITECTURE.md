@@ -1118,9 +1118,11 @@ streaming, pictures, Stop and durable note saves. The design canon is
 ### 12.1 The narrowing
 
 `GymTools` does not gate — over MCP the grant is settled above it by `CompositeToolHost` — so a chat
-wired straight to it would be a door with no lock. **`AskTools` is that lock.** It offers every
-`Access::read` declaration, `mintsProposal(name)`, `create_routine` and `save_note` when durable generation storage
-is present, plus `ask_setup_details` only for `routine_setup` generations. The declaration's product and access still gate every call. Coach can read the log,
+wired straight to it would be a door with no lock. **`AskTools` is that lock.** Ordinary conversations
+offer every `Access::read` declaration and `mintsProposal(name)`, plus `create_routine` and `save_note`
+when durable generation storage is present. Routine setup offers `list_sessions`, `get_sessions`,
+`list_notes`, `save_note`, `list_exercises`, `list_routines`, `create_routine` and `ask_setup_details`;
+dispatch refuses tools outside that catalog. The declaration's product and access still gate every call. Coach can read the log,
 propose an existing-routine change, create a new routine and append one useful user-provided insight. It cannot log a set, finish a workout,
 mint a share, create a movement or discard anything. Creation requires successful Notes and movement
 catalog reads. The server persists the operation and chosen routine ID before the write, and its

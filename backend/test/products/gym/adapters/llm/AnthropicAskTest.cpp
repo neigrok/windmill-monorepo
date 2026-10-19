@@ -1,4 +1,5 @@
 #include "products/gym/adapters/llm/AnthropicAsk.h"
+#include "platform/adapters/llm/AiCallBudget.h"
 
 #include "test/testing.h"
 
@@ -115,6 +116,41 @@ std::vector<AskTurn> question(const char* text) { return {AskTurn{true, text}}; 
 
 }  // namespace
 
+TEST(ask_output_configuration_rejects_malformed_and_unsafe_caps) {
+  CHECK_EQ(coachMaxOutputTokens(nullptr), 2000);
+  CHECK_EQ(coachMaxOutputTokens(""), 2000);
+  CHECK_EQ(coachMaxOutputTokens("1024"), 1024);
+  CHECK_EQ(coachMaxOutputTokens("8000"), 8000);
+  for (const char* value : {"0", "1023", "8001", "-2000", "+2000", "2000x", " 2000", "2000 ", "2e3", "999999999999999999"}) {
+    bool refused = false;
+    try { static_cast<void>(coachMaxOutputTokens(value)); }
+    catch (const std::invalid_argument&) { refused = true; }
+    CHECK(refused);
+  }
+}
+
+TEST(ask_reserves_the_same_configured_output_cap_it_sends_on_every_round) {
+  FakeToolHost host;
+  host.catalog.push_back(declared("list_exercises", "Read the movement catalog."));
+  FakeModel model;
+  model.replies = {toolUseReply("list_exercises", "catalog"), textReply("end_turn", "Your routine is ready.")};
+  Recorder recorder;
+  const auto answer = driveAsk(question("Create a routine."), asked(), host, model.asCall(),
+                               recorder.report(), {}, coachMaxOutputTokens("1536"));
+  REQUIRE(answer.ok);
+  REQUIRE_EQ(model.requests.size(), 2u);
+  for (const auto& request : model.requests) {
+    CHECK_EQ(request["max_tokens"].asInt(), 1536);
+    const auto configured = anthropicReservationNanos(request);
+    REQUIRE(configured);
+    auto larger = request;
+    larger["max_tokens"] = 2536;
+    const auto expanded = anthropicReservationNanos(larger);
+    REQUIRE(expanded);
+    CHECK_EQ(*expanded - *configured, 25'000'000);
+  }
+}
+
 TEST(ask_reads_the_log_first_and_answers_on_end_turn) {
   FakeToolHost host;
   host.catalog.push_back(declared("list_sessions", "Your training log."));
@@ -158,7 +194,7 @@ TEST(ask_reads_the_log_first_and_answers_on_end_turn) {
 
   REQUIRE_EQ(model.requests.size(), 2u);
   CHECK_EQ(model.requests[0]["model"].asString(), std::string("claude-opus-5"));
-  CHECK_EQ(model.requests[0]["max_tokens"].asInt(), 8000);
+  CHECK_EQ(model.requests[0]["max_tokens"].asInt(), 2000);
   CHECK_EQ(model.requests[0]["output_config"]["effort"].asString(), std::string("medium"));
   CHECK_EQ(model.requests[0]["tools"], agentToolCatalog(host.listTools(asked())));
   CHECK_EQ(model.requests[0]["system"][0]["cache_control"]["type"].asString(),

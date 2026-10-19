@@ -20,6 +20,8 @@ Refusals after reading a known generation retain `generation` and `results`, inc
 
 Only `routine_setup` exposes `ask_setup_details`. It persists a typed question in the existing generation payload, with no additional workflow table. The optional `clarification` is `{id, question, groups:[{id,label,multiple,options:[{id,label}]}]}` and is also present on successful buffered replies. The server assigns `clarify_<generation-id>`; repeated calls must keep the same question and choices. Assistant history reads the same payload through an owner/thread/generation-scoped join.
 
+Routine setup uses a focused tool catalog: `list_sessions`, `get_sessions`, `list_notes`, `save_note`, `list_exercises`, `list_routines`, `create_routine` and `ask_setup_details`. These retain owned training history, standing constraints, movement metadata and existing plans while creating new routines. Other tools, including existing-routine change/removal proposals, are refused at dispatch during setup. Ordinary conversations retain the full Coach catalog. Both purposes use the same prompt, model loop, authorization and durable action receipts.
+
 Questions have 1–500 UTF-8 bytes, labels 1–80 bytes, and blank or unstorable text is refused. There are one or two distinct groups, named `days` or `equipment`, each with one to six options. `days` is single-select. Option IDs are unique within a group, 1–32 lowercase ASCII letters, digits, underscores or hyphens. Unknown properties and arbitrary UI actions are refused. Choices fill an editable draft and cause no network work until explicit Send. The model includes its question in prose for older clients. It uses supplied facts, asks only for materially missing days/equipment and offers mutually compatible multi-select equipment items.
 
 ## Streaming and pictures
@@ -35,6 +37,8 @@ Add `attachmentIds:[attachmentId]` to the ask body (maximum one). The question m
 ## Provider transport and usage
 
 Coach uses incremental Anthropic Messages responses for both streaming and buffered clients. The server-owned `COACH_ANTHROPIC_BASE_URL` defaults to `https://api.anthropic.com`; tests may set a loopback HTTP endpoint implementing the same protocol. It never selects a canned Coach response path. Visible text from tool rounds remains in the ordered answer; thinking and signatures stay internal.
+
+Each Opus 5 round uses the configured `COACH_MAX_OUTPUT_TOKENS` ceiling, default 2,000. The USD reservation includes that entire ceiling plus estimated input. Valid configuration is 1,024–8,000 tokens. Reaching the ceiling is a failed generation, with charged usage and completed routine receipts preserved.
 
 The usage ledger preserves every input, cache and output token count reported by the vendor. Interrupted streams may end before the final cumulative output count arrives, so those observed counts can be incomplete; they are not represented as exact final billing. A stream that reached `message_start` counts as a model turn and does not refund the daily question ration.
 

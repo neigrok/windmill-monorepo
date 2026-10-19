@@ -5,6 +5,8 @@
 #include "platform/application/WriteObservation.h"
 
 #include <stdexcept>
+#include <charconv>
+#include <string_view>
 #include <drogon/utils/Utilities.h>
 #include "platform/adapters/llm/AnthropicClient.h"
 
@@ -75,9 +77,6 @@ The app displays the server's factual read receipt; do not invent a read count. 
 constexpr const char* kModel = "claude-opus-5";
 constexpr const char* kEffort = "medium";
 
-// max_tokens covers thinking and the answer on this model.
-constexpr int kMaxTokens = 8000;
-
 // Hitting the cap is a failure.
 constexpr int kMaxIterations = 8;
 
@@ -101,6 +100,16 @@ void appendToolRoundText(std::string& transcript, const Json::Value& message) {
 }
 
 }  // namespace
+
+int coachMaxOutputTokens(const char* configured) {
+  if (!configured || !*configured) return kCoachMaxOutputTokens;
+  const std::string_view value{configured};
+  int tokens = 0;
+  const auto parsed = std::from_chars(value.data(), value.data() + value.size(), tokens);
+  if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || tokens < 1024 || tokens > 8000)
+    throw std::invalid_argument("COACH_MAX_OUTPUT_TOKENS must be an integer from 1024 to 8000");
+  return tokens;
+}
 
 Json::Value askOpeningMessages(const std::vector<AskTurn>& turns, const std::string& notesDocument,
                                const std::string& logDocument) {
@@ -143,7 +152,8 @@ Json::Value askOpeningMessages(const std::vector<AskTurn>& turns, const std::str
 }
 
 AskAnswer driveAsk(const std::vector<AskTurn>& turns, const ToolCaller& caller, ToolHost& tools,
-                   const AskCall& call, const AgentReport& report, const AskControl& control) {
+                   const AskCall& call, const AgentReport& report, const AskControl& control,
+                   int maxOutputTokens) {
   AskAnswer outcome;
   if (turns.empty()) {
     outcome.error = "Coach was given no question to answer";
@@ -172,7 +182,7 @@ AskAnswer driveAsk(const std::vector<AskTurn>& turns, const ToolCaller& caller, 
   AgentLoopSpec spec;
   spec.model = kModel;
   spec.effort = kEffort;
-  spec.maxTokens = kMaxTokens;
+  spec.maxTokens = maxOutputTokens;
   spec.maxIterations = kMaxIterations;
   spec.system = kSystemPrompt;
   spec.messages = askOpeningMessages(turns, agentToolText(notes), agentToolText(opening));
@@ -196,11 +206,16 @@ AskAnswer driveAsk(const std::vector<AskTurn>& turns, const ToolCaller& caller, 
 }
 
 AnthropicAsk::AnthropicAsk(std::string apiKey, std::shared_ptr<FailureReporter> failures,
-                           std::shared_ptr<AiFuse> fuse, std::shared_ptr<UsageSink> usage, std::string baseUrl, std::shared_ptr<AiCallBudget> budget)
+                           std::shared_ptr<AiFuse> fuse, std::shared_ptr<UsageSink> usage, std::string baseUrl,
+                           std::shared_ptr<AiCallBudget> budget, int maxOutputTokens)
     : apiKey_(std::move(apiKey)),
       failures_(std::move(failures)),
       fuse_(std::move(fuse)),
-      usage_(std::move(usage)), budget_(std::move(budget)), baseUrl_(std::move(baseUrl)) {}
+      usage_(std::move(usage)), budget_(std::move(budget)), baseUrl_(std::move(baseUrl)),
+      maxOutputTokens_(maxOutputTokens) {
+  if (maxOutputTokens_ < 1024 || maxOutputTokens_ > 8000)
+    throw std::invalid_argument("Coach output tokens must be from 1024 to 8000");
+}
 
 bool AnthropicAsk::configured() const { return !apiKey_.empty(); }
 
@@ -257,7 +272,7 @@ AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCall
   auto answer = driveAsk(turns, caller, tools,
                          metered(call, frame, fuse_, usage_, report, [&] { refusal = "ai-fuse"; },
                                  budget_, [&](const std::string& code) { refusal = code; }),
-                         report, control);
+                         report, control, maxOutputTokens_);
   answer.outcomeCode = refusal;
   return answer;
 }

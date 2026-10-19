@@ -340,7 +340,10 @@ intended release and avoid dispatching a duplicate run while it is queued or bui
 Monitor the run with `gh run watch RUN_ID --exit-status`, then inspect its job steps and upload log.
 Archive, stored-certificate verification, release-symbol retention, and export/upload must pass.
 The workflow retains `ios-dsyms-RUN_NUMBER` for 30 days. *Upload succeeded* and *EXPORT SUCCEEDED*
-confirm Apple's acceptance of the upload; *Uploaded package is processing* does not confirm that
-processing is complete or that testers can install it. This pipeline does not check tester
-availability or change tester groups. Record the verified version, build, source SHA, run URL,
+confirm Apple's acceptance of the upload. The read-only status step then checks that archive's exact
+version and build through App Store Connect for up to ten minutes. `testflight-status-RUN_NUMBER`
+records `processingState`, `internalBuildState` and `externalBuildState`; a pending state remains
+pending, and beta readiness does not prove a particular tester can install. No tester groups change.
+If the status step fails after upload, do not rerun the release workflow: the upload already exists.
+Record the verified version, build, source SHA, run URL,
 upload result and any processing or symbol limitations in `WORK_LOG.md`.

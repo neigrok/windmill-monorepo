@@ -309,6 +309,14 @@ a new one from Keychain and set both secrets again. Build number is the workflow
 forces a distribution identity onto SPM targets. dSYMs are retained as CI artifacts; uploading them to Sentry requires
 authentication beyond the DSN and is not configured with the existing secrets.
 
+After upload, `Tools/AppStoreBuildStatus.swift` reads the archive's bundle identifier, version and
+build, then polls Apple's [build status endpoint](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-builds)
+for up to ten minutes. The existing runner-only key signs short-lived, GET-scoped JWTs. CI records
+only processing and internal/external beta states in structured status lines and a versioned JSON
+artifact. Static `app_store_status` error codes identify failed lookup, invalid responses and HTTP
+status without response bodies, tokens or private keys. Pending or inaccessible status never means
+tester access is confirmed; a status failure after successful upload must not trigger another upload.
+
 ## Local checks
 
 Always use `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` locally.

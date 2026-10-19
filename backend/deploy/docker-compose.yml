@@ -59,6 +59,7 @@ services:
       # Paste-import LLM escalation (/v1/compose). Empty → the route answers 503 compose-unavailable
       # and the client hides the handle.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      COACH_MAX_OUTPUT_TOKENS: ${COACH_MAX_OUTPUT_TOKENS:-2000}
       AI_ALLOWANCES_ENABLED: ${AI_ALLOWANCES_ENABLED:-false}
       AI_ANONYMOUS_LIFETIME_USD: ${AI_ANONYMOUS_LIFETIME_USD:-0.05}
       AI_LOGGED_IN_MONTHLY_USD: ${AI_LOGGED_IN_MONTHLY_USD:-0.25}

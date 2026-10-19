@@ -2,7 +2,7 @@
 
 `AI_ALLOWANCES_ENABLED=false` is the default. The enabled backend has durable USD admission,
 funding, device binding and operational alerts. Customer rollout still needs device attestation,
-appropriate model/output settings and audio accounting. Internal money is integer nano-USD; HTTP
+audio accounting and client allowance surfaces. Internal money is integer nano-USD; HTTP
 amounts are exact decimal USD strings.
 
 ## Policy
@@ -36,11 +36,22 @@ allowance or move costs into a paid grant. An attempted rebind to another accoun
 | `AI_ONE_PERIOD_USD` | `7` |
 | `AI_FREE_MONTHLY_USD` | `100` |
 | `AI_FREE_DAILY_USD` | `5` |
+| `COACH_MAX_OUTPUT_TOKENS` | `2000` |
 
 Amounts are parsed at startup without floating-point conversion. Negative, malformed or
 out-of-range amounts are invalid. A zero free budget closes that budget. Funded grant amounts must
 be positive. Enabled mode requires `RESEND_API_KEY` and `AI_ALLOWANCE_ALERT_EMAIL`; the latter must
 name one address in `WINDMILL_OWNER_EMAILS`.
+
+Coach sends at most `COACH_MAX_OUTPUT_TOKENS` per model round, default 2,000, and reserves that
+same complete output ceiling alongside its input estimate. Configuration accepts only decimal
+integers from 1,024 through 8,000; invalid values refuse startup. The model remains Opus 5. A
+larger cap or conversation can exceed a free account's remaining capacity. A provider response
+that reaches the output cap is a failed generation with its incurred usage reconciled and any
+durable routine receipts retained.
+Routine setup offers only its eight relevant history, notes, catalog, routine and clarification
+tools. This reduces repeated input while preserving the conservative request estimate; ordinary
+Coach conversations retain the full tool catalog.
 
 Subscription funding is accepted only through a verified, successfully completed payment event
 for the configured `PADDLE_PRICE_ID`. The supported event describes one positive, fully paid,

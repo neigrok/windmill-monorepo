@@ -387,4 +387,6 @@ repeat the report. Neither path logs request content, token-estimator inputs or 
 
 Coach's `ask.run` observation covers setup admission, model turns and terminal persistence. `gym.ask_setup_details` logs the typed question write with `ok` or `refused`; unexpected storage failures report under that static operation. Its text, choices and IDs never enter logs. Every routine addition retains its own `gym.create_routine` and GymDoor write observations, including replay and expected immutable-slot/cap refusals. Stop and later allowance failures retain the existing static operations and factual creation receipts.
 
+Routine setup refuses writes outside its focused tool catalog before any action is persisted. Those attempts retain the tool's static `gym.<tool>` completion with `refused` and create no Issue.
+
 Native setup emits `gym_setup_step` through `/v1/events`, with `screen:coach` and the bounded action labels `shown`, `screenshot`, `describe`, `goal`, `just_log`, `build_manually`, `clarify`, `open_routine`. Client validation excludes questions, option values, routine names and allowance amounts. The product-neutral intake stores and forwards the accepted event using its existing batch observation.
