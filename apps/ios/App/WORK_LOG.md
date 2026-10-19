@@ -51,6 +51,28 @@ input and its enforced output ceiling. Coach offers up to 2,000 output tokens; i
 can select a smaller ceiling, at least 1,024, that fits every applicable balance. The provider receives
 that exact reserved ceiling. The cost offer is durable so retries preserve the original reservation.
 
+Actual-provider verification on `ff00193b` passes all 77 checks across four generations and 13
+healthy model rounds. Typed goal setup and creation cost $0.141863500, a fresh free-account photo
+import costs $0.100769750, and the One photo import costs $0.084043000. Both photo flows reproduce
+the image's exact exercise grouping and targets without invented weights. Reservations settle at
+actual cost with no debt or uncertain holds; replay creates no provider cost. The observed output
+ceilings remain 2,000 throughout this run, so reduced-ceiling behavior is established by local
+boundary tests. First-party events and local Amplitude/Sentry collectors verify bounded labels and
+absence of private canaries; production telemetry delivery is not established by this run.
+
+Schema verification compares complete data and catalog snapshots, including constraint identity.
+The output-offer migration adds its constraint only when absent, retaining historical reservations
+and avoiding constraint replacement on each deployment. Upgrading from the production schema, repeated
+application and all 1,275 Postgres adapter cases pass locally.
+
+Production runs `bfede62ac3009a32cf6a9c0b3b4f2f2c92769bd3` with USD enforcement enabled.
+[Activation deployment](https://github.com/neigrok/windmill-monorepo/actions/runs/39306863773)
+verifies the intended image, process settings and schema 6 readiness; independent public health
+returns HTTP 200. Configured limits are $0.25 per month for verified free accounts and $7 per funded
+One period, with free spending capped at $5 per day and $100 per month. Alerts target the configured
+owner address. Anonymous composition remains closed pending device attestation, and Journal voice
+remains unavailable pending supported audio accounting.
+
 UI checks query the exact current accessibility value after returning from a Live Activity. A
 retained element can carry an older snapshot even when the same attachment's fresh query shows
 the completed write; the ledger assertions still verify every saved set and its identity.
@@ -58,11 +80,14 @@ Log navigation permits one recorded re-tap inside its existing deadline only whi
 Routines tab remains selected and no alert or sheet is present. The target and content assertions
 remain exact; this recovers a lost synthesized tap without claiming first-tap delivery is reliable.
 
-Release **0.2.0 (18)**, source `a4bdb146c74189ffeca4516012bc3243aec5e2db`, is uploaded to
-App Store Connect by [iOS release run 18](https://github.com/neigrok/windmill-monorepo/actions/runs/39152817121).
-The 2026-10-18 run passed archive, stored-certificate verification and export; Apple confirmed
-*Uploaded package is processing* and *Upload succeeded* at 18:17 UTC. The retained `ios-dsyms-18`
-artifact contains the app and workout widget dSYMs. Export reported the nonblocking warning
-*Upload Symbols Failed. The archive did not include a dSYM for the Sentry.framework*.
-Production Sentry symbolication is not verified. Apple's completed processing and tester
-availability for this build have not been directly verified.
+Release **0.2.0 (19)**, source `bfede62ac3009a32cf6a9c0b3b4f2f2c92769bd3`, is uploaded to
+App Store Connect by [iOS release run 19](https://github.com/neigrok/windmill-monorepo/actions/runs/39307121727).
+The 2026-10-19 run passed archive, stored-certificate verification and export; Apple confirmed
+*Upload succeeded* at 19:06:59 UTC. The archive-derived status artifact confirms version `0.2.0`,
+build `19`, bundle `works.windmill.app`, processing `VALID`, internal state `IN_BETA_TESTING` and
+external state `READY_FOR_BETA_SUBMISSION`. External beta review has not been submitted by this
+release. The read-only check does not inspect individual tester membership or device installation.
+
+The retained `ios-dsyms-19` artifact contains the app and workout widget dSYMs. Export reported the
+nonblocking warning *Upload Symbols Failed. The archive did not include a dSYM for the
+Sentry.framework*. Production Sentry symbolication is not verified.

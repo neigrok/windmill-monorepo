@@ -112,8 +112,11 @@ contents. Native acceptance and a same-key update check precede publication. See
   (`apps/android/sync-*`) clients;
   [the domain kit](docs/foundation/domain-kit.md), the pure-logic layer every Swift and Kotlin feature
   domain is declared on, built in Swift (`apps/ios/Domain`) and Kotlin (`apps/android/domain-kit`); and
-  [gym Coach on the client](docs/foundation/mobile/gym_coach.md) for both phones, specified and not
-  yet built.
+  [phone-hosted Coach abilities](docs/foundation/mobile/gym_coach.md), specified for both phones
+  and not yet implemented.
+- [The running Coach conversation contract](docs/gym-coach-contract.md) covers the server-hosted
+  model loop used by web, iOS and Android. [The iOS app](apps/ios/App/README.md) also documents
+  signed-in routine onboarding.
 - [Web rules](web/CLAUDE.md), [iOS](apps/ios/README.md) and [Android](apps/android/README.md).
 - [Product direction](docs/PRODUCT_LOG.md) and [design consistency gaps](docs/design/consistency.md).
   `docs/design/` holds written canon; Figma holds the drawings.
