@@ -76,5 +76,48 @@ import sys
 if json.load(open(sys.argv[1])) != json.load(open(sys.argv[2])):
     raise SystemExit("FAIL running Caddy configuration differs from Caddyfile")
 PY
+python3 - <<'PY'
+import json
+import re
+import subprocess
+import time
+
+def capture(arguments):
+    result = subprocess.run(arguments, capture_output=True, text=True, timeout=5)
+    if result.returncode:
+        raise RuntimeError("runtime command failed")
+    return result.stdout.strip()
+
+try:
+    server = json.loads(capture(["docker", "compose", "config", "--format", "json"]))["services"]["server"]
+    mode = server["environment"]["AI_ALLOWANCES_ENABLED"]
+    cap = server["environment"]["COACH_MAX_OUTPUT_TOKENS"]
+    if mode not in ("true", "1", "false", "0") or not re.fullmatch(r"[0-9]+", cap) or not 1024 <= int(cap) <= 8000:
+        raise SystemExit("FAIL invalid intended server AI configuration")
+    container = capture(["docker", "compose", "ps", "-q", "server"])
+    actual = json.loads(capture(["docker", "inspect", "--format",
+        '{"image":{{json .Config.Image}},"id":{{json .Image}}}', container]))
+    intended_id = capture(["docker", "image", "inspect", "--format", "{{.Id}}", server["image"]])
+    if actual != {"image": server["image"], "id": intended_id}:
+        raise SystemExit("FAIL running server image differs from intended image")
+    for attempt in range(30):
+        ready = subprocess.run(["docker", "compose", "exec", "-T", "server", "curl", "--fail", "--silent",
+            "--max-time", "2", "--output", "/dev/null", "--write-out", "%{http_code}", "-H", "Sync-Schema: 6",
+            "http://127.0.0.1:8080/v1/sync/hello"], capture_output=True, timeout=5)
+        if ready.returncode == 0 and ready.stdout == b"200":
+            break
+        time.sleep(1)
+    else:
+        raise SystemExit("FAIL running server did not become ready for sync schema 6")
+    for key, expected in (("AI_ALLOWANCES_ENABLED", mode), ("COACH_MAX_OUTPUT_TOKENS", cap)):
+        check = subprocess.run(["docker", "compose", "exec", "-T", "server", "sh", "-eu", "-c",
+            'grep -Fzxq -- "$1=$2" /proc/1/environ', "sh", key, expected], capture_output=True, timeout=5)
+        if check.returncode:
+            raise SystemExit("FAIL running server " + key + " differs from intended configuration")
+except Exception:
+    raise SystemExit("FAIL server runtime verification could not complete")
+print("PASS server runtime: image and process environment verified, AI_ALLOWANCES_ENABLED=" + mode +
+      ", COACH_MAX_OUTPUT_TOKENS=" + cap + ", sync schema=6")
+PY
 rm -f .env.bak rendered.env
 printf 'PASS deployed: environment rendered, DB password preserved, stack running\n'

@@ -14,6 +14,14 @@ import unittest
 SCRIPT = Path(__file__).resolve().parents[2] / "deploy/deploy-production.sh"
 
 
+def server_config():
+    env = dict(line.split("=", 1) for line in Path(".env").read_text().splitlines() if "=" in line)
+    return {"image": "ghcr.io/neigrok/windmill-monorepo:" + env["IMAGE_TAG"], "environment": {
+        "AI_ALLOWANCES_ENABLED": env.get("AI_ALLOWANCES_ENABLED", "false"),
+        "COACH_MAX_OUTPUT_TOKENS": env.get("COACH_MAX_OUTPUT_TOKENS", "2000"),
+        "POSTGRES_PASSWORD": env["POSTGRES_PASSWORD"]}}
+
+
 def compose(state, arguments):
     command = arguments[1:]
     while command[0] in ("--env-file", "-f"):
@@ -22,6 +30,10 @@ def compose(state, arguments):
         return 1 if state.get("composeUnavailable") else 0, ""
     if command in (["config", "-q"], ["pull"]):
         return 1 if state.get("failAt") == command[0] else 0, ""
+    if command == ["config", "--format", "json"]:
+        return 0, json.dumps({"services": {"server": server_config()}})
+    if command == ["ps", "-q", "server"]:
+        return 0, "server-container"
     if command[0] == "up":
         if "--force-recreate" in command:
             if not state.get("staleMount"):
@@ -40,6 +52,18 @@ def compose(state, arguments):
         return 0, json.dumps({"file": state["caddyMount"]})
     if caddy == ["wget", "-qO-", "http://127.0.0.1:2019/config/"]:
         return 0, json.dumps(state["caddyActive"])
+    server = command[3:] if command[:3] == ["exec", "-T", "server"] else None
+    if server and server[0] == "curl":
+        if state.get("healthFailures", 0):
+            state["healthFailures"] -= 1
+            return 1, "PRIVATE_DEPLOY_SECRET"
+        if state.get("healthResponses"):
+            return 0, state["healthResponses"].pop(0)
+        return (1, "PRIVATE_DEPLOY_SECRET") if state.get("unhealthy") else (0, "200")
+    if server and server[:3] == ["sh", "-eu", "-c"]:
+        key, expected = server[-2:]
+        actual = state.get("serverEnvironment", {}).get(key, server_config()["environment"][key])
+        return (0, "") if actual == expected else (1, "PRIVATE_DEPLOY_SECRET")
     raise AssertionError("unmodeled docker command: " + repr(arguments))
 
 
@@ -51,7 +75,13 @@ def docker_shim(arguments):
         path.write_text(json.dumps(state))
         os.kill(os.getppid(), signal.SIGKILL)
         return 0
-    status, output = compose(state, arguments)
+    if arguments[:3] == ["inspect", "--format", '{"image":{{json .Config.Image}},"id":{{json .Image}}}']:
+        status, output = 0, json.dumps({"image": state.get("serverImage", server_config()["image"]),
+                                      "id": state.get("serverImageId", "sha256:new")})
+    elif arguments[:4] == ["image", "inspect", "--format", "{{.Id}}"]:
+        status, output = 0, "sha256:new"
+    else:
+        status, output = compose(state, arguments)
     path.write_text(json.dumps(state))
     sys.stdout.write(output)
     return status
@@ -104,7 +134,8 @@ class DeployProductionTest(unittest.TestCase):
     def test_promotes_the_candidate_keeps_the_database_password_and_recreates_a_changed_caddy(self):
         result = self.deploy()
         self.assertEqual((result.returncode, result.stdout, result.stderr),
-                         (0, "PASS deployed: environment rendered, DB password preserved, stack running\n", ""))
+                         (0, "PASS server runtime: image and process environment verified, AI_ALLOWANCES_ENABLED=false, COACH_MAX_OUTPUT_TOKENS=2000, sync schema=6\n"
+                          "PASS deployed: environment rendered, DB password preserved, stack running\n", ""))
         self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\nPOSTGRES_PASSWORD=live-secret\n",
                                         "docker-compose.yml": "# candidate compose\n",
                                         "Caddyfile": "# candidate Caddyfile\n"})
@@ -121,7 +152,17 @@ class DeployProductionTest(unittest.TestCase):
                 ["compose", "exec", "-T", "caddy", "cat", "/etc/caddy/Caddyfile"],
                 ["compose", "exec", "-T", "caddy", "caddy", "adapt", "--config", "/etc/caddy/Caddyfile",
                  "--adapter", "caddyfile"],
-                ["compose", "exec", "-T", "caddy", "wget", "-qO-", "http://127.0.0.1:2019/config/"]],
+                ["compose", "exec", "-T", "caddy", "wget", "-qO-", "http://127.0.0.1:2019/config/"],
+                ["compose", "config", "--format", "json"],
+                ["compose", "ps", "-q", "server"],
+                ["inspect", "--format", '{"image":{{json .Config.Image}},"id":{{json .Image}}}', "server-container"],
+                ["image", "inspect", "--format", "{{.Id}}", "ghcr.io/neigrok/windmill-monorepo:new"],
+                ["compose", "exec", "-T", "server", "curl", "--fail", "--silent", "--max-time", "2", "--output", "/dev/null",
+                 "--write-out", "%{http_code}", "-H", "Sync-Schema: 6", "http://127.0.0.1:8080/v1/sync/hello"],
+                ["compose", "exec", "-T", "server", "sh", "-eu", "-c", 'grep -Fzxq -- "$1=$2" /proc/1/environ',
+                 "sh", "AI_ALLOWANCES_ENABLED", "false"],
+                ["compose", "exec", "-T", "server", "sh", "-eu", "-c", 'grep -Fzxq -- "$1=$2" /proc/1/environ',
+                 "sh", "COACH_MAX_OUTPUT_TOKENS", "2000"]],
             "caddyMount": "# candidate Caddyfile\n",
             "caddyActive": {"file": "# candidate Caddyfile\n"}})
         self.assertEqual(list(self.temporary.iterdir()), [])
@@ -213,6 +254,36 @@ class DeployProductionTest(unittest.TestCase):
         self.state(composeUnavailable=True)
         self.assert_refused_before_any_change(None, "FAIL required host command unavailable: docker compose\n",
                                               [["compose", "version"]])
+
+    def test_enabled_allowances_and_custom_cap_match_the_running_process_after_readiness(self):
+        with (self.work / "rendered.env").open("a") as out:
+            out.write("AI_ALLOWANCES_ENABLED=true\nCOACH_MAX_OUTPUT_TOKENS=1536\n")
+        self.state(healthFailures=1, healthResponses=["302"])
+        result = self.deploy()
+        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                         (0, "PASS server runtime: image and process environment verified, AI_ALLOWANCES_ENABLED=true, COACH_MAX_OUTPUT_TOKENS=1536, sync schema=6\n"
+                          "PASS deployed: environment rendered, DB password preserved, stack running\n", ""))
+        self.assertEqual(sum(command[1:6] == ["exec", "-T", "server", "curl", "--fail"]
+                             for command in self.state()["commands"]), 3)
+        self.assertEqual(list(self.temporary.iterdir()), [])
+
+    def test_runtime_mismatches_fail_without_exposing_configuration_or_command_output(self):
+        for state, failure in [
+            ({"serverImage": "PRIVATE_DEPLOY_SECRET"}, "running server image differs from intended image"),
+            ({"serverImageId": "sha256:old"}, "running server image differs from intended image"),
+            ({"serverEnvironment": {"AI_ALLOWANCES_ENABLED": "true"}}, "running server AI_ALLOWANCES_ENABLED differs from intended configuration"),
+            ({"serverEnvironment": {"COACH_MAX_OUTPUT_TOKENS": "8000"}}, "running server COACH_MAX_OUTPUT_TOKENS differs from intended configuration"),
+            ({"unhealthy": True}, "running server did not become ready for sync schema 6")]:
+            with self.subTest(state=state):
+                self.upload_candidate()
+                self.state(serverImage="ghcr.io/neigrok/windmill-monorepo:new",
+                           serverImageId="sha256:new", serverEnvironment={}, unhealthy=False)
+                self.state(**state)
+                result = self.deploy()
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (1, "", "FAIL " + failure + "\n"))
+                for secret in ("PRIVATE_DEPLOY_SECRET", "live-secret", "rendered-secret"):
+                    self.assertNotIn(secret, result.stdout + result.stderr)
+                self.assertEqual(list(self.temporary.iterdir()), [])
 
 
 if __name__ == "__main__":

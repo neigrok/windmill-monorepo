@@ -4,6 +4,7 @@ import http.client
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import ssl
 import subprocess
@@ -59,8 +60,9 @@ class LiveCoachProof:
     def collect_diagnostics(self):
         self.results["actualCost"] = self.usage()
         self.results["rounds"] = json.loads(self.sql("SELECT coalesce(json_agg(json_build_object('model',model,'input',input_tokens,'output',output_tokens,'cacheRead',cache_read_tokens,'cacheWrite',cache_write_tokens,'costNanos',cost_nanos) ORDER BY id),'[]') FROM ai_usage"))
-        self.results["reservations"] = json.loads(self.sql("SELECT coalesce(json_agg(json_build_object('tier',tier,'reservedNanos',amount_nanos,'actualNanos',actual_nanos,'state',state) ORDER BY admitted_at_ms),'[]') FROM ai_budget_reservations"))
+        self.results["reservations"] = json.loads(self.sql("SELECT coalesce(json_agg(json_build_object('tier',tier,'reservedNanos',amount_nanos,'actualNanos',actual_nanos,'state',state,'inputNanos',input_cost_nanos,'outputTokenNanos',output_token_cost_nanos,'minOutputTokens',min_output_tokens,'maxOutputTokens',max_output_tokens,'selectedOutputTokens',(amount_nanos-input_cost_nanos)/output_token_cost_nanos) ORDER BY admitted_at_ms),'[]') FROM ai_budget_reservations"))
         diagnostics = []
+        admissions = []
         source = self.evidence / "observer.jsonl"
         for record in source.read_text().splitlines() if source.exists() else []:
             envelope = json.loads(record)
@@ -72,12 +74,17 @@ class LiveCoachProof:
                 except json.JSONDecodeError:
                     continue
                 for item in payload.get("items", []) if isinstance(payload, dict) else []:
+                    admission = re.search(r"ai_output_admission input_nanos=(\d+) output_token_nanos=(\d+) min_tokens=(\d+) max_tokens=(\d+) selected_tokens=(\d+) code=([a-z_]{1,40})", item.get("body", ""))
+                    if admission:
+                        values = admission.groups()
+                        admissions.append(dict(zip(["inputNanos", "outputTokenNanos", "minTokens", "maxTokens", "selectedTokens"], map(int, values[:5])), code=values[5]))
                     _, marker, data = item.get("body", "").partition("anthropic_stream_diagnostic=")
                     if marker:
                         diagnostic, _ = json.JSONDecoder().raw_decode(data)
                         diagnostics.append({name: value for name, value in diagnostic.items()
                             if name in {"httpStatus", "curlCode", "providerError", "parserFailure", "messageStarted", "messageComplete", "cancelled", "callbackFailed"}})
         self.results["providerDiagnostics"] = diagnostics
+        self.results["admissionDiagnostics"] = admissions
 
     def ask(self, role, label, thread, question, attachments=None):
         self.stage = label
@@ -182,7 +189,11 @@ class LiveCoachProof:
             self.results[role + "Allowance"] = allowance
         self.check("no_uncertain_or_debt", self.sql("SELECT (SELECT count(*) FROM ai_budget_reservations WHERE state <> 'settled') + (SELECT count(*) FROM ai_budget_balances WHERE debt_nanos <> 0)") == "0")
         self.collect_diagnostics()
-        self.check("actual_output_cap", all(row["output"] <= 2000 for row in self.results["rounds"]))
+        self.check("actual_output_cap", len(self.results["rounds"]) == len(self.results["reservations"]) and
+                   all(1024 <= reservation["selectedOutputTokens"] <= reservation["maxOutputTokens"] == 2000 and
+                       reservation["minOutputTokens"] == 1024 and row["output"] <= reservation["selectedOutputTokens"] and
+                       reservation["reservedNanos"] == reservation["inputNanos"] + reservation["selectedOutputTokens"] * reservation["outputTokenNanos"]
+                       for row, reservation in zip(self.results["rounds"], self.results["reservations"])))
         free_spend = int(self.sql("SELECT coalesce(sum(actual_nanos),0) FROM ai_budget_reservations WHERE tier='logged_in'"))
         pools = json.loads(self.sql("SELECT coalesce(json_object_agg(scope, spent_nanos),'{}') FROM ai_budget_balances WHERE scope IN ('free_day','free_month')"))
         self.check("paid_free_pool_separation", pools == {"free_day": free_spend, "free_month": free_spend})
@@ -192,7 +203,9 @@ class LiveCoachProof:
         self.check("first_party_events", status == 202 and accepted["accepted"] == 5)
         for _ in range(30):
             records = (self.evidence / "observer.jsonl").read_text() if (self.evidence / "observer.jsonl").exists() else ""
-            if "gym_setup_step" in records and "ai.call.account" in records and "ask.run" in records:
+            self.collect_diagnostics()
+            if ("gym_setup_step" in records and "ai.call.account" in records and "ask.run" in records and
+                    len(self.results["admissionDiagnostics"]) == len(self.results["rounds"])):
                 break
             time.sleep(1)
         self.check("amplitude_delivery", "gym_setup_step" in records)
@@ -212,6 +225,9 @@ class LiveCoachProof:
                     issue_count += 1
         self.check("no_sentry_issues", issue_count == 0)
         self.collect_diagnostics()
+        self.check("admission_diagnostics", len(self.results["admissionDiagnostics"]) == len(self.results["rounds"]) and
+                   all(row["code"] == "ok" and 1024 <= row["selectedTokens"] <= row["maxTokens"] == 2000
+                       for row in self.results["admissionDiagnostics"]))
         self.results["completed"] = True
         self.save()
         print(json.dumps({"completed": True, "generations": 4, "actualCost": self.results["actualCost"]}))

@@ -70,9 +70,9 @@ AiBudgetView AiBudgetService::view(const AiBudgetPrincipal& principal) const {
 }
 
 AiBudgetResult AiBudgetService::reserve(const std::string& id, const AiBudgetPrincipal& principal,
-                                      long long amountNanos) {
+                                      long long amountNanos, std::optional<AiOutputBudget> outputBudget) {
   return observeAiBudgetWrite("ai.budget.reserve", [&] {
-    const AiBudgetRequest request{id, principal, amountNanos, clock_()};
+    const AiBudgetRequest request{id, principal, amountNanos, clock_(), outputBudget};
     if (!request.valid()) return AiBudgetResult{AiBudgetCode::Invalid};
     return repository_.reserve(request, limits_());
   });

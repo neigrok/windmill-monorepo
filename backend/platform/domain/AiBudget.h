@@ -91,11 +91,23 @@ struct AiBudgetSnapshot {
   bool deviceBound = false;
 };
 
+struct AiOutputBudget {
+  long long inputNanos = 0;
+  long long outputTokenNanos = 0;
+  int minTokens = 0;
+  int maxTokens = 0;
+  bool valid() const;
+  long long costNanos(int tokens) const;
+  std::optional<int> tokensFor(long long amountNanos) const;
+  bool operator==(const AiOutputBudget&) const = default;
+};
+
 struct AiBudgetRequest {
   std::string id;
   AiBudgetPrincipal principal;
   long long amountNanos = 0;
   long long atMs = 0;
+  std::optional<AiOutputBudget> outputBudget;
   bool valid() const;
 };
 
@@ -110,6 +122,7 @@ struct AiBudgetReservation {
   bool overrunReconciled = false;
   long long admittedAtMs = 0;
   std::optional<std::string> grantId;
+  std::optional<AiOutputBudget> outputBudget;
 
   bool valid() const;
   bool sameRequest(const AiBudgetRequest& other) const;
@@ -156,6 +169,8 @@ bool validAiBudgetId(std::string_view id);
 bool validAiBudgetSubject(const AiBudgetSubject& subject, AiBudgetTier tier);
 AiBudgetCode admitAiBudget(const AiBudgetRequest& request, const AiBudgetLimits& limits,
                           const AiBudgetSnapshot& snapshot);
+AiBudgetResult planAiBudget(const AiBudgetRequest& request, const AiBudgetLimits& limits,
+                            const AiBudgetSnapshot& snapshot);
 AiBudgetView aiBudgetView(const AiBudgetPrincipal& principal, long long atMs,
                          const AiBudgetLimits& limits, const AiBudgetSnapshot& snapshot);
 std::vector<int> crossedAiBudgetThresholds(const AiBudgetBalance& before, const AiBudgetBalance& after,

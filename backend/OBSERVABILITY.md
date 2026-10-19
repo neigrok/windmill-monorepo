@@ -360,7 +360,7 @@ listed separately because their only server writes are authentication refresh or
 | `AiBudgetService` funding and device binding | `ai.budget.fund`, `ai.budget.bind_device` | funded/idempotent/conflict outcomes; no payment/account/device identifiers | unexpected storage failure |
 | `AiBudgetService::view` | `ai.budget.view` | completion when trusted owner access creates a grant; successful pure reads omit write logs | unexpected read or grant failure |
 | Durable alert worker | `ai.budget.alert.claim`, `ai.budget.alert.delivered`, `ai.budget.alert.retry`, `ai.budget.alert_send` | claim/delivery/retry outcome; no recipient, identifiers or amounts in telemetry | unexpected outbox or delivery failure |
-| `AiCallBudget` | `ai.call.admit`, `ai.call.account` | admission refusal or settlement/uncertainty; no prompt, image, account or provider body | unexpected boundary failure, shared request deduplication |
+| `AiCallBudget` | `ai.call.admit`, `ai.call.account`; `ai_output_admission` diagnostic | admission refusal or settlement/uncertainty; diagnostic carries only input nanos, output-token nanos, minimum/maximum/selected tokens and static code; no prompt, image, account or provider body | unexpected boundary failure, shared request deduplication |
 | `GET /v1/ai/allowance` | `ai.allowance.read` | HTTP status via access log; no balance in telemetry | static failure detail on unavailable accounting |
 | Coach JSON/SSE allowance refusal | `ask.run` | bounded `subject_exhausted`, `free_day_exhausted`, `free_month_exhausted`, `concurrency_exhausted`, `funding_required` or `debt_outstanding` | expected refusals create no Issue |
 

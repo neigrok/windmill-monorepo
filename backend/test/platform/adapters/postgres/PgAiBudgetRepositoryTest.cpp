@@ -20,6 +20,116 @@
 
 using namespace wm;
 
+TEST(pg_ai_output_budget_selects_caps_atomically_across_shared_pool_races) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("needs WM_PG_TEST");
+  const long long at = 1'767'225'600'000;
+  const AiOutputBudget offer{10, 2, 10, 20};
+  for (const bool daily : {false, true}) {
+    {
+      PgLease conn{*pgTestPool()};
+      pqxx::work txn{*conn};
+      txn.exec("DELETE FROM ai_budget_alerts; DELETE FROM ai_budget_reservations; DELETE FROM ai_budget_balances; "
+               "DELETE FROM ai_budget_grants; DELETE FROM ai_budget_device_accounts");
+      txn.commit();
+    }
+    AiBudgetLimits limits;
+    limits.freeMonthlyNanos = daily ? 1'000 : 80;
+    limits.freeDailyNanos = daily ? 80 : 1'000;
+    std::array<AiBudgetResult, 12> results;
+    std::array<std::exception_ptr, 12> failures;
+    std::barrier start{12};
+    std::vector<std::thread> calls;
+    for (int index = 0; index < 12; ++index) calls.emplace_back([&, index] {
+      PgAiBudgetRepository repository{pgTestPool()};
+      const AiBudgetPrincipal principal{{AiBudgetSubjectKind::Account, "adaptive-" + std::to_string(index)},
+          AiBudgetTier::LoggedIn};
+      start.arrive_and_wait();
+      try { results[index] = repository.reserve({"call-" + std::to_string(index), principal, 50, at, offer}, limits); }
+      catch (...) { failures[index] = std::current_exception(); }
+    });
+    for (auto& call : calls) call.join();
+    std::vector<int> caps;
+    int refused = 0;
+    for (int index = 0; index < 12; ++index) {
+      CHECK_FALSE(failures[index]);
+      if (failures[index]) continue;
+      const auto& result = results[index];
+      if (!result.reservation) {
+        CHECK_EQ(result.code, daily ? AiBudgetCode::FreeDayExhausted : AiBudgetCode::FreeMonthExhausted);
+        ++refused;
+        continue;
+      }
+      CHECK_EQ(result.code, AiBudgetCode::Ok);
+      CHECK_EQ(result.reservation->outputBudget, std::optional<AiOutputBudget>{offer});
+      caps.push_back(*offer.tokensFor(result.reservation->amountNanos));
+    }
+    std::sort(caps.begin(), caps.end());
+    CHECK_EQ(caps, (std::vector<int>{10, 20}));
+    CHECK_EQ(refused, 10);
+    PgAiBudgetRepository repository{pgTestPool()};
+    const auto snapshot = repository.snapshot({{AiBudgetSubjectKind::Account, "observer"}, AiBudgetTier::LoggedIn}, at, limits);
+    CHECK_EQ(snapshot.freeDay.heldNanos, 80);
+    CHECK_EQ(snapshot.freeMonth.heldNanos, 80);
+  }
+}
+
+TEST(pg_ai_output_budget_replay_retains_offer_and_old_uncertain_holds_limit_new_periods) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("needs WM_PG_TEST");
+  {
+    PgLease conn{*pgTestPool()};
+    pqxx::work txn{*conn};
+    txn.exec("DELETE FROM ai_budget_alerts; DELETE FROM ai_budget_reservations; DELETE FROM ai_budget_balances; "
+             "DELETE FROM ai_budget_grants; DELETE FROM ai_budget_device_accounts");
+    txn.commit();
+  }
+  const long long at = 1'767'225'600'000;
+  AiBudgetLimits limits;
+  limits.loggedInMonthlyNanos = 90;
+  const AiBudgetPrincipal principal{{AiBudgetSubjectKind::Account, "adaptive"}, AiBudgetTier::LoggedIn};
+  const AiOutputBudget offer{10, 2, 10, 20};
+  PgAiBudgetRepository repository{pgTestPool()};
+  const AiBudgetRequest first{"first", principal, 50, at, offer};
+  REQUIRE(repository.reserve(first, limits).reservation);
+  CHECK_EQ(repository.markDispatched(first.id).code, AiBudgetCode::Ok);
+  CHECK_EQ(repository.markUncertain(first.id).code, AiBudgetCode::Ok);
+  const auto nextMonth = AiBudgetPeriod::at(at)->endMs;
+  const AiBudgetRequest second{"second", principal, 50, nextMonth, offer};
+  const auto denied = repository.reserve(second, limits);
+  CHECK_EQ(denied.code, AiBudgetCode::ConcurrencyExhausted);
+  limits.freeConcurrency = 2;
+  const auto selected = repository.reserve(second, limits);
+  REQUIRE(selected.reservation);
+  CHECK_EQ(selected.reservation->amountNanos, 40);
+  CHECK_EQ(offer.tokensFor(selected.reservation->amountNanos), std::optional<int>{15});
+  PgAiBudgetRepository restarted{pgTestPool()};
+  const auto replay = restarted.reserve(second, limits);
+  REQUIRE(replay.reservation);
+  CHECK_EQ(replay.code, AiBudgetCode::Replay);
+  CHECK_EQ(replay.reservation->amountNanos, 40);
+  CHECK_EQ(replay.reservation->outputBudget, std::optional<AiOutputBudget>{offer});
+  for (int field = 0; field < 4; ++field) {
+    auto changed = second;
+    if (field == 0) ++changed.outputBudget->inputNanos;
+    if (field == 1) ++changed.outputBudget->outputTokenNanos;
+    if (field == 2) ++changed.outputBudget->minTokens;
+    if (field == 3) ++changed.outputBudget->maxTokens;
+    changed.amountNanos = changed.outputBudget->costNanos(changed.outputBudget->maxTokens);
+    CHECK_EQ(restarted.reserve(changed, limits).code, AiBudgetCode::Conflict);
+  }
+  auto fixed = second;
+  fixed.outputBudget.reset();
+  fixed.amountNanos = 40;
+  CHECK_EQ(restarted.reserve(fixed, limits).code, AiBudgetCode::Conflict);
+  CHECK_EQ(restarted.markDispatched(second.id).code, AiBudgetCode::Ok);
+  CHECK_EQ(restarted.markDispatched(second.id).code, AiBudgetCode::AlreadyDispatched);
+  CHECK_EQ(restarted.settle(second.id, 25).code, AiBudgetCode::Ok);
+  const auto snapshot = restarted.snapshot(principal, nextMonth, limits);
+  CHECK_EQ(snapshot.subject.heldNanos, 50);
+  CHECK_EQ(snapshot.subject.spentNanos, 25);
+  CHECK_EQ(snapshot.freeDay.heldNanos, 50);
+  CHECK_EQ(snapshot.freeMonth.heldNanos, 50);
+}
+
 TEST(pg_ai_budget_principal_concurrency_is_one_free_or_two_paid_across_repositories) {
   if (!std::getenv("WM_PG_TEST")) SKIP("needs WM_PG_TEST");
   const long long at = 1'767'225'600'000;

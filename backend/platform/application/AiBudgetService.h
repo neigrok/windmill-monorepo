@@ -12,7 +12,8 @@ public:
                   std::function<long long()> clock);
 
   AiBudgetView view(const AiBudgetPrincipal& principal) const;
-  AiBudgetResult reserve(const std::string& id, const AiBudgetPrincipal& principal, long long amountNanos);
+  AiBudgetResult reserve(const std::string& id, const AiBudgetPrincipal& principal, long long amountNanos,
+                         std::optional<AiOutputBudget> outputBudget = std::nullopt);
   AiBudgetResult markDispatched(const std::string& id);
   AiBudgetResult markUncertain(const std::string& id);
   AiBudgetResult settle(const std::string& id, long long actualNanos);

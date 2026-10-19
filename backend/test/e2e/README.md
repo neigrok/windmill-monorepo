@@ -8,9 +8,14 @@
 | `deploy_auth_env_test.py` | that `deploy.yml` forwards the native-auth settings |
 | `sync_probe.sh` | the sync engine against `windmill_server_probe` |
 | `sync_epoch_restore.mjs` | real dump/restore and epoch rotation in both reconnect orders; production-server replicas replay independent/dependent work and retain wrong-incarnation notices; the test-clock composition also covers two starts that joined one session, their shared delete, and applied removals with and without an older acknowledgement |
+| `coach_live.py` | opt-in real-provider text setup and independent free/One photo flows on disposable accounts, including USD settlement, ownership, replay and telemetry; `backend/RUNNING.md` names the paid-run controls |
 | `journal_echo.sh`, `journal_nudge.sh` | journal echoes and nudges against the local stack |
 
 Each shell and Node script's header names its prerequisites and how to run it.
+
+The restore harness writes its test clock to a sibling file and renames it atomically. Concurrent
+server requests must always read a complete timestamp; truncating the live file can fail a request
+and its clock-dependent error response before the next timestamp is written.
 
 ## Authentication differential
 

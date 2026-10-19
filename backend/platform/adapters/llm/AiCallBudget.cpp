@@ -3,6 +3,7 @@
 #include "platform/application/WriteObservation.h"
 
 #include <drogon/utils/Utilities.h>
+#include <trantor/utils/Logger.h>
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
@@ -157,11 +158,24 @@ std::optional<long long> anthropicActualNanos(const std::string& model, const Js
   return costNanos(model, tokens);
 }
 
+std::optional<AiOutputBudget> anthropicOutputBudget(const Json::Value& request, int minOutputTokens) {
+  const auto amount = anthropicReservationNanos(request);
+  if (!amount || minOutputTokens <= 0) return std::nullopt;
+  if (request.isMember("thinking") && (!request["thinking"].isObject() ||
+      (request["thinking"]["type"] != "adaptive" && request["thinking"]["type"] != "disabled"))) return std::nullopt;
+  const auto unit = costNanos(request["model"].asString(), TokenUse{0, 1, 0, 0});
+  if (!unit) return std::nullopt;
+  const auto maxTokens = request["max_tokens"].asInt();
+  const AiOutputBudget offer{*amount - maxTokens * *unit, *unit, minOutputTokens, maxTokens};
+  if (!offer.valid()) return std::nullopt;
+  return offer;
+}
+
 AiCallBudget::AiCallBudget(std::shared_ptr<AiBudgetService> budgets, Entitlements& entitlements,
                            AuthRepository& accounts, FailureReporter& failures)
     : budgets_(std::move(budgets)), entitlements_(entitlements), accounts_(accounts), failures_(failures) {}
 
-AiCallAdmission AiCallBudget::begin(const AiSpend& spend, const Json::Value& request) {
+AiCallAdmission AiCallBudget::begin(const AiSpend& spend, const Json::Value& request, int minOutputTokens) {
   WriteObservation observation{"ai.call.admit", "platform", "vendor", "", &failures_};
   WriteContext context{observation};
   try {
@@ -174,13 +188,21 @@ AiCallAdmission AiCallBudget::begin(const AiSpend& spend, const Json::Value& req
       observation.finish("unauthenticated");
       return {{}, "unauthenticated"};
     }
-    const auto amount = request["model"] == spend.model ? anthropicReservationNanos(request) : std::nullopt;
-    if (!amount) {
+    const auto offer = minOutputTokens > 0 ? anthropicOutputBudget(request, minOutputTokens) : std::nullopt;
+    const auto amount = offer ? std::optional<long long>{offer->costNanos(offer->maxTokens)} : anthropicReservationNanos(request);
+    if (request["model"] != spend.model || !amount || minOutputTokens < 0 || (minOutputTokens > 0 && !offer)) {
       observation.finish("unsupported_ai_pricing");
       return {{}, "unsupported_ai_pricing"};
     }
     const auto principal = entitlements_.aiPrincipalFor(account->id, account->email.value);
-    const auto reservation = budgets_->reserve(drogon::utils::getUuid(), principal, *amount);
+    const auto reservation = budgets_->reserve(drogon::utils::getUuid(), principal, *amount, offer);
+    if (offer) {
+      LOG_INFO << "ai_output_admission input_nanos=" << offer->inputNanos
+               << " output_token_nanos=" << offer->outputTokenNanos << " min_tokens=" << offer->minTokens
+               << " max_tokens=" << offer->maxTokens << " selected_tokens="
+               << (reservation.reservation ? offer->tokensFor(reservation.reservation->amountNanos).value_or(0) : 0)
+               << " code=" << std::string(aiBudgetCodeName(reservation.code));
+    }
     if (reservation.code != AiBudgetCode::Ok || !reservation.reservation) {
       const std::string code(aiBudgetCodeName(reservation.code));
       observation.finish(code);

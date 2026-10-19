@@ -165,12 +165,32 @@ bool AiBudgetGrant::valid() const {
   return source == AiBudgetFundingSource::Owner && AiBudgetPeriod::at(period.startMs) == period;
 }
 
+bool AiOutputBudget::valid() const {
+  return inputNanos >= 0 && outputTokenNanos > 0 && minTokens > 0 && maxTokens >= minTokens &&
+      outputTokenNanos <= (std::numeric_limits<long long>::max() - inputNanos) / maxTokens;
+}
+
+long long AiOutputBudget::costNanos(int tokens) const {
+  if (!valid() || tokens < minTokens || tokens > maxTokens) return 0;
+  return inputNanos + tokens * outputTokenNanos;
+}
+
+std::optional<int> AiOutputBudget::tokensFor(long long amountNanos) const {
+  if (!valid() || amountNanos < inputNanos) return std::nullopt;
+  const auto outputNanos = amountNanos - inputNanos;
+  const auto tokens = outputNanos / outputTokenNanos;
+  if (outputNanos % outputTokenNanos || tokens < minTokens || tokens > maxTokens) return std::nullopt;
+  return static_cast<int>(tokens);
+}
+
 bool AiBudgetRequest::valid() const {
-  return validAiBudgetId(id) && principal.valid() && amountNanos > 0 && AiBudgetPeriod::at(atMs).has_value();
+  return validAiBudgetId(id) && principal.valid() && amountNanos > 0 && AiBudgetPeriod::at(atMs).has_value() &&
+      (!outputBudget || (outputBudget->valid() && amountNanos == outputBudget->costNanos(outputBudget->maxTokens)));
 }
 
 bool AiBudgetReservation::valid() const {
   if (!validAiBudgetId(id) || !validAiBudgetSubject(subject, tier) || amountNanos <= 0) return false;
+  if (outputBudget && !outputBudget->tokensFor(amountNanos)) return false;
   if (!period.contains(admittedAtMs)) return false;
   if (tier == AiBudgetTier::Anonymous && (period != AiBudgetPeriod::lifetime() || grantId)) return false;
   if (tier == AiBudgetTier::LoggedIn && (AiBudgetPeriod::at(admittedAtMs) != period || grantId)) return false;
@@ -188,7 +208,9 @@ bool AiBudgetReservation::valid() const {
 }
 
 bool AiBudgetReservation::sameRequest(const AiBudgetRequest& other) const {
-  return id == other.id && subject == other.principal.subject && amountNanos == other.amountNanos;
+  return id == other.id && subject == other.principal.subject && outputBudget == other.outputBudget &&
+      (outputBudget ? other.amountNanos == outputBudget->costNanos(outputBudget->maxTokens)
+                    : amountNanos == other.amountNanos);
 }
 
 AiBudgetCode admitAiBudget(const AiBudgetRequest& request, const AiBudgetLimits& limits,
@@ -223,6 +245,32 @@ AiBudgetCode admitAiBudget(const AiBudgetRequest& request, const AiBudgetLimits&
   if (request.amountNanos > snapshot.freeMonth.remainingNanos(limits.freeMonthlyNanos)) return AiBudgetCode::FreeMonthExhausted;
   if (request.amountNanos > snapshot.freeDay.remainingNanos(limits.freeDailyNanos)) return AiBudgetCode::FreeDayExhausted;
   return AiBudgetCode::Ok;
+}
+
+AiBudgetResult planAiBudget(const AiBudgetRequest& request, const AiBudgetLimits& limits,
+                            const AiBudgetSnapshot& snapshot) {
+  if (!request.valid()) return {AiBudgetCode::Invalid};
+  auto admission = request;
+  admission.outputBudget.reset();
+  if (request.outputBudget) admission.amountNanos = request.outputBudget->costNanos(request.outputBudget->minTokens);
+  const auto code = admitAiBudget(admission, limits, snapshot);
+  if (code != AiBudgetCode::Ok) return {code};
+  if (request.outputBudget) {
+    const auto& offer = *request.outputBudget;
+    const auto tier = request.principal.tier;
+    const auto allowance = tier == AiBudgetTier::WindmillOne ? snapshot.grant->amountNanos :
+        tier == AiBudgetTier::Anonymous ? limits.anonymousLifetimeNanos : limits.loggedInMonthlyNanos;
+    auto available = snapshot.subject.remainingNanos(allowance);
+    if (tier != AiBudgetTier::WindmillOne)
+      available = std::min({available, snapshot.freeMonth.remainingNanos(limits.freeMonthlyNanos),
+                            snapshot.freeDay.remainingNanos(limits.freeDailyNanos)});
+    const auto tokens = std::min<long long>(offer.maxTokens, (available - offer.inputNanos) / offer.outputTokenNanos);
+    admission.amountNanos = offer.costNanos(static_cast<int>(tokens));
+  }
+  AiBudgetReservation reservation{request.id, request.principal.subject, request.principal.tier,
+      snapshot.period, admission.amountNanos, AiBudgetState::Reserved, {}, false, request.atMs,
+      snapshot.grant ? std::optional<std::string>{snapshot.grant->id} : std::nullopt, request.outputBudget};
+  return {AiBudgetCode::Ok, std::move(reservation)};
 }
 
 AiBudgetView aiBudgetView(const AiBudgetPrincipal& principal, long long atMs,
