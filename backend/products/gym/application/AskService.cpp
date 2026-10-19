@@ -159,11 +159,19 @@ void AskTools::recover(const ToolCaller& caller, bool allowWrite) {
 
 std::vector<ToolDeclaration> AskTools::declareTools() const {
   std::vector<ToolDeclaration> offered;
-  for (ToolDeclaration& declaration : inner_.declareTools())
+  const bool setup = repository_ && generation_->purpose == "routine_setup";
+  for (ToolDeclaration& declaration : inner_.declareTools()) {
+    if (setup) {
+      const auto name = declaration.name();
+      if (name != "list_sessions" && name != "get_sessions" && name != "list_notes" &&
+          name != "list_exercises" && name != "list_routines" && name != "save_note" &&
+          name != "create_routine") continue;
+    }
     if (declaration.access == Access::read || mintsProposal(declaration.name()) ||
         (repository_ && (declaration.name() == "create_routine" || declaration.name() == "save_note")))
       offered.push_back(std::move(declaration));
-  if (repository_ && generation_->purpose == "routine_setup") {
+  }
+  if (setup) {
     offered.push_back({parse(R"({
       "name":"ask_setup_details",
       "description":"Ask only for materially missing training days or equipment before routine setup. Use information already provided. Keep labels brief. For multiple equipment choices offer compatible items; ask about no equipment in plain text instead of mixing a none option with selectable equipment. Choices fill the lifter's editable draft and never perform an action. Ask once per answer, explain the question in prose, then wait for the lifter.",
@@ -243,6 +251,11 @@ ToolResult AskTools::dispatch(const std::string& name, const Json::Value& argume
     if (std::optional<ToolRetirement> retired = inner_.retirement(name))
       return ToolResult::failure(name + ": " + retired->sentence);
     return ToolResult::failure(name + ": no such tool — call tools/list for what Coach may do.");
+  }
+  if (repository_ && generation_->purpose == "routine_setup") {
+    const auto offered = declareTools();
+    if (std::none_of(offered.begin(), offered.end(), [&](const auto& tool) { return tool.name() == name; }))
+      return ToolResult::failure(name + ": not available during routine setup — use the declared setup tools.");
   }
   if (declared->access != Access::read && name != "ask_setup_details" && !mintsProposal(name) &&
       !(repository_ && (name == "create_routine" || name == "save_note")))

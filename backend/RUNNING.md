@@ -175,8 +175,9 @@ identical to a tree that does not exist, deliberately.
 
 The Backend CI/CD dispatch input `verify_live_coach=true` runs the checked-out commit against
 disposable Postgres accounts with the GitHub `ANTHROPIC_API_KEY` secret. It does not publish images
-or deploy. The manually gated job sends at most three Coach generations: a free account's setup
-question and routine creation, followed by an owner's synthetic program photo. It verifies image
+or deploy. The manually gated job sends at most four Coach generations: a free account's setup
+question and routine creation, plus synthetic program photos for a separate fresh free account
+and an owner. It verifies image
 contents against the saved routines, exact USD settlement, replay, owner isolation and first-party
 telemetry. The output cap is 2,000 and individual/free-pool limits keep their normal defaults.
 
@@ -188,8 +189,9 @@ This is paid provider verification, not part of ordinary CI. The driver targets 
 actual provider cost, checks cost between generations and requests Stop at $0.90 while waiting;
 an in-flight round can still finish, so this is not a hard cost ceiling. It never retries a failed
 generation. Email and telemetry go to isolated TLS collectors; no production account or mailbox
-is used. The retained `coach-live-results` artifact contains only bounded checks and token/cost
-totals. Credentials, raw responses and private collector records are removed with the runner.
+is used. The retained `coach-live-results` artifact contains bounded checks, per-round token/cost
+counts, reservation/settlement amounts and sanitized provider diagnostics, including on failure.
+Credentials, raw responses and private collector records are removed with the runner.
 
 ## 6. Point the frontend at it
 

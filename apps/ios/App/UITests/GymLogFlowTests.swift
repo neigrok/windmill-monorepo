@@ -10,8 +10,17 @@ import XCTest
     XCTAssertTrue(app.buttons["open-gym"].waitForExistence(timeout: 15))
     app.buttons["open-gym"].tap()
     XCTAssertTrue(app.tabBars.buttons["The log"].waitForExistence(timeout: 10))
+    let deadline = Date().addingTimeInterval(20)
     app.tabBars.buttons["The log"].tap()
-    XCTAssertTrue(app.descendants(matching: .any)["gym-log"].waitForExistence(timeout: 20))
+    let opened = app.descendants(matching: .any)["gym-log"].waitForExistence(timeout: min(10, max(0, deadline.timeIntervalSinceNow)))
+    if !opened, app.tabBars.buttons["Routines"].isSelected,
+       app.navigationBars["Routines"].exists, app.descendants(matching: .any)["gym-routines"].exists,
+       app.alerts.count == 0, app.sheets.count == 0, Date() < deadline {
+      XCTContext.runActivity(named: "Retry the log tab delivery while Routines remains selected") { _ in
+        app.tabBars.buttons["The log"].tap()
+      }
+    }
+    XCTAssertTrue(app.descendants(matching: .any)["gym-log"].waitForExistence(timeout: max(0, deadline.timeIntervalSinceNow)))
     return app
   }
   func snapshot(_ name: String, app: XCUIApplication) {

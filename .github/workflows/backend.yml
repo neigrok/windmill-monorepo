@@ -32,7 +32,7 @@ on:
   workflow_dispatch:
     inputs:
       verify_live_coach:
-        description: Run three paid-provider Coach checks on disposable data; do not publish images
+        description: Run four paid-provider Coach checks on disposable data; do not publish images
         type: boolean
         default: false
 

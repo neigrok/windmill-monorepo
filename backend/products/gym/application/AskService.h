@@ -26,7 +26,7 @@
 
 namespace wm::gym {
 
-// Coach exposes reads, bounded routine additions, one proposal and one insight per generation.
+// Coach exposes reads and bounded actions; routine setup omits analysis and existing-routine proposals.
 class AskTools : public ToolHost {
 public:
   // The thread is carried, not looked up: every proposal this run mints is stamped with the

@@ -49,6 +49,9 @@ integers from 1,024 through 8,000; invalid values refuse startup. The model rema
 larger cap or conversation can exceed a free account's remaining capacity. A provider response
 that reaches the output cap is a failed generation with its incurred usage reconciled and any
 durable routine receipts retained.
+Routine setup offers only its eight relevant history, notes, catalog, routine and clarification
+tools. This reduces repeated input while preserving the conservative request estimate; ordinary
+Coach conversations retain the full tool catalog.
 
 Subscription funding is accepted only through a verified, successfully completed payment event
 for the configured `PADDLE_PRICE_ID`. The supported event describes one positive, fully paid,

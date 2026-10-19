@@ -1,6 +1,7 @@
 #include "products/gym/application/AskService.h"
 #include "products/gym/application/ThreadService.h"
 #include "platform/application/WriteObservation.h"
+#include "platform/adapters/llm/AiCallBudget.h"
 
 #include "products/gym/adapters/json/GymJson.h"
 #include "products/gym/adapters/llm/AnthropicAsk.h"
@@ -1612,6 +1613,57 @@ TEST(coach_setup_clarification_is_typed_immutable_and_persists_in_history) {
   CHECK_EQ(history->turns.front().purpose, std::string("routine_setup"));
   CHECK_EQ(history->turns.back().purpose, std::string("routine_setup"));
   CHECK_EQ(h.question(thread, "Help me make a program", h.user, "req_setupdetails").generation, reply.generation);
+  CHECK(h.reports->events.empty());
+}
+
+TEST(coach_setup_scopes_catalog_and_dispatch_while_preserving_training_context) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  Coach h;
+  AskGeneration generation{"gen_setup_scope", "req_setup_scope", "Create a program"};
+  generation.purpose = "routine_setup";
+  AskTools setup{h.tools, ThreadId{"thr_setup_scope"}, &h.repo.threads, &generation};
+  const ToolCaller caller{h.user, ToolScope::everything()};
+  std::vector<std::string> names;
+  for (const auto& tool : setup.declareTools()) names.push_back(tool.name());
+  std::sort(names.begin(), names.end());
+  CHECK_EQ(names, (std::vector<std::string>{"ask_setup_details", "create_routine", "get_sessions",
+      "list_exercises", "list_notes", "list_routines", "list_sessions", "save_note"}));
+  const auto history = setup.callTool("get_sessions", parse(R"({"sessionIds":["ses_11111111"]})"), caller);
+  REQUIRE(!history.isError);
+  REQUIRE_EQ(history.payload["sessions"].size(), 1u);
+  CHECK_EQ(history.payload["sessions"][0]["session"]["id"].asString(), h.session.str());
+  CHECK_EQ(history.payload["sessions"][0]["sets"][0]["reps"].asInt(), 5);
+  CHECK_EQ(setup.read().tally().sessions, 1);
+  for (const auto* name : {"get_stats", "list_bodyweight", "last_time", "get_last_times", "get_session",
+                           "propose_routine_change", "propose_routine_removal", "log_set", "start_session"}) {
+    const auto refused = setup.callTool(name, Json::Value(Json::objectValue), caller);
+    CHECK(refused.isError);
+    CHECK_EQ(agentToolText(refused), std::string(name) + ": not available during routine setup — use the declared setup tools.");
+  }
+  const auto denied = setup.callTool("create_routine", Json::Value(Json::objectValue),
+                                   ToolCaller{h.user, ToolScope({{"gym", Access::read}})});
+  CHECK(denied.isError);
+  CHECK_EQ(agentToolText(denied), std::string("create_routine: this connection was not granted gym:write, so it cannot run this tool."));
+
+  std::vector<Json::Value> requests;
+  const AskCall capture = [&](const Json::Value& request) -> std::optional<Json::Value> {
+    requests.push_back(request);
+    return parse(R"({"stop_reason":"end_turn","content":[{"type":"text","text":"Your plan."}]})");
+  };
+  const AgentReport report = [](const auto&, const auto&) { CHECK(false); };
+  REQUIRE(driveAsk({AskTurn{true, "Create a program"}}, caller, setup, capture, report).ok);
+  generation.purpose = "conversation";
+  REQUIRE(driveAsk({AskTurn{true, "Create a program"}}, caller, setup, capture, report).ok);
+  REQUIRE_EQ(requests.size(), 2u);
+  CHECK_EQ(requests[0]["messages"], requests[1]["messages"]);
+  CHECK_EQ(requests[0]["system"], requests[1]["system"]);
+  CHECK_EQ(requests[0]["max_tokens"], requests[1]["max_tokens"]);
+  const auto focused = anthropicReservationNanos(requests[0]);
+  const auto ordinary = anthropicReservationNanos(requests[1]);
+  REQUIRE(focused && ordinary);
+  CHECK(*focused + 15'000'000 < *ordinary);
+  CHECK(holds(setup.declareTools(), "propose_routine_change"));
+  CHECK_FALSE(setup.callTool("get_stats", Json::Value(Json::objectValue), caller).isError);
   CHECK(h.reports->events.empty());
 }
 

@@ -65,7 +65,9 @@ import XCTest
     expanded.name = "dynamic-island-expanded"; expanded.lifetime = .keepAlways; add(expanded)
     log.tap()
     app.activate()
-    XCTAssertTrue(progress.waitForValue("3 of 4 sets"))
+    let loggedProgress = app.descendants(matching: .any).matching(NSPredicate(format:
+      "identifier == %@ AND value == %@", "workout-set-progress", "3 of 4 sets")).firstMatch
+    XCTAssertTrue(loggedProgress.waitForExistence(timeout: 10))
     let after = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
     XCTAssertEqual(after.map(\.label), before.map(\.label) + ["Set 3, logged, 100 kilograms, 5 reps"])
     XCTAssertEqual(after.prefix(before.count).map(\.identifier), before.map(\.identifier))

@@ -57,6 +57,9 @@ class LiveCoachProof:
         (self.evidence / "results.json").write_text(json.dumps(self.results, indent=2))
 
     def collect_diagnostics(self):
+        self.results["actualCost"] = self.usage()
+        self.results["rounds"] = json.loads(self.sql("SELECT coalesce(json_agg(json_build_object('model',model,'input',input_tokens,'output',output_tokens,'cacheRead',cache_read_tokens,'cacheWrite',cache_write_tokens,'costNanos',cost_nanos) ORDER BY id),'[]') FROM ai_usage"))
+        self.results["reservations"] = json.loads(self.sql("SELECT coalesce(json_agg(json_build_object('tier',tier,'reservedNanos',amount_nanos,'actualNanos',actual_nanos,'state',state) ORDER BY admitted_at_ms),'[]') FROM ai_budget_reservations"))
         diagnostics = []
         source = self.evidence / "observer.jsonl"
         for record in source.read_text().splitlines() if source.exists() else []:
@@ -78,7 +81,7 @@ class LiveCoachProof:
 
     def ask(self, role, label, thread, question, attachments=None):
         self.stage = label
-        self.check("generation_bound_" + label, len(self.results["generations"]) < 3)
+        self.check("generation_bound_" + label, len(self.results["generations"]) < 4)
         self.check("cost_before_" + label, self.usage()["costNanos"] < 750_000_000)
         payload = {"thread": thread, "requestId": "req_" + uuid.uuid4().hex, "purpose": "routine_setup", "question": question}
         if attachments:
@@ -103,14 +106,48 @@ class LiveCoachProof:
         status, reply, _ = answer[0]
         self.results["generations"].append({"case": label, "status": status,
             "outcome": reply.get("generation", {}).get("status"), "code": reply.get("code"),
-            "routineCount": len(reply.get("results", [])), "usageAfter": self.usage()})
+            "routineCount": len(reply.get("results", [])), "usageAfter": self.usage(),
+            "allowance": {key: value for key, value in reply.get("allowance", {}).items()
+                          if key in {"tier", "limit", "used", "reserved", "remaining", "code"}}})
         self.check("completed_" + label, status == 200 and reply.get("generation", {}).get("status") == "completed")
         self.check("cost_after_" + label, self.usage()["costNanos"] < 1_000_000_000)
         self.check("no_failed_provider_round_" + label, self.usage()["failed"] == 0 and self.usage()["unpriced"] == 0)
         return payload, reply
 
+    def verify_photo(self, role):
+        photo = (Path(__file__).parent / "fixtures" / "coach_program.png").read_bytes()
+        photo_thread, attachment = "thr_" + uuid.uuid4().hex, "img_" + uuid.uuid4().hex
+        photo_path = f"/v1/gym/threads/{photo_thread}/attachments/{attachment}"
+        status, upload, _ = self.request("PUT", photo_path, photo, role, "image/png")
+        self.check(role + "_photo_upload", status == 200 and upload["attachment"]["bytes"] == len(photo))
+        status, replay, _ = self.request("PUT", photo_path, photo, role, "image/png")
+        self.check(role + "_photo_upload_replay", status == 200 and replay == upload)
+        status, downloaded, headers = self.request("GET", photo_path, role=role)
+        self.check(role + "_photo_private_roundtrip", status == 200 and downloaded == photo and headers.get("cache-control") == "private, no-store")
+        for foreign, expected in [("free", 404), (None, 401)]:
+            status, _, _ = self.request("GET", photo_path, role=foreign)
+            self.check(role + ("_photo_foreign" if foreign else "_photo_anonymous"), status == expected)
+        _, vision = self.ask(role, role + "_photo", photo_thread,
+            "Turn the program in this picture into the two routines it specifies. Preserve exactly its movements, working-set counts and rep targets, with no prescribed weights. The picture contains my weekly availability and equipment.", [attachment])
+        observed = []
+        self.check(role + "_two_photo_receipts", len(vision.get("results", [])) == 2)
+        for receipt in vision["results"]:
+            status, routine, _ = self.request("GET", "/v1/gym/routines/" + receipt["routineId"], role=role)
+            self.check(role + "_photo_routine_" + str(len(observed)), status == 200 and receipt["movementCount"] == 3)
+            day = []
+            for entry in routine["entries"]:
+                day.append((entry["exerciseId"], [item.get("reps") for item in entry["sets"]]))
+                self.check(role + "_photo_no_invented_weight_" + entry["exerciseId"], all("weightKg" not in item for item in entry["sets"]))
+            observed.append(day)
+        self.check(role + "_actual_vision_exact_program", sorted(observed) == sorted([
+            [("back-squat", [5, 5, 5]), ("bench-press", [8, 8, 8]), ("barbell-row", [8, 8, 8])],
+            [("deadlift", [5, 5]), ("overhead-press", [8, 8, 8]), ("lat-pulldown", [10, 10, 10])]]))
+        status, history, _ = self.request("GET", "/v1/gym/threads/" + photo_thread, role=role)
+        self.check(role + "_photo_history_receipts", status == 200 and history["turns"][-1]["results"] == vision["results"] and
+                   history["turns"][-2]["attachments"] == [upload["attachment"]])
+
     def run(self):
-        for role, tier, limit in [("free", "logged_in", "0.250000000"), ("owner", "windmill_one", "7.000000000")]:
+        for role, tier, limit in [("free", "logged_in", "0.250000000"), ("free_photo", "logged_in", "0.250000000"), ("owner", "windmill_one", "7.000000000")]:
             status, allowance, headers = self.request("GET", "/v1/ai/allowance", role=role)
             self.check("fresh_allowance_" + role, status == 200 and allowance["tier"] == tier and
                        allowance["limit"] == limit and allowance["used"] == "0.000000000" and headers["cache-control"] == "no-store")
@@ -132,38 +169,10 @@ class LiveCoachProof:
         status, _, _ = self.request("GET", "/v1/gym/threads/" + goal_thread, role="owner")
         self.check("foreign_history_refused", status == 404)
 
-        photo = (Path(__file__).parent / "fixtures" / "coach_program.png").read_bytes()
-        photo_thread, attachment = "thr_" + uuid.uuid4().hex, "img_" + uuid.uuid4().hex
-        photo_path = f"/v1/gym/threads/{photo_thread}/attachments/{attachment}"
-        status, upload, _ = self.request("PUT", photo_path, photo, "owner", "image/png")
-        self.check("photo_upload", status == 200 and upload["attachment"]["bytes"] == len(photo))
-        status, replay, _ = self.request("PUT", photo_path, photo, "owner", "image/png")
-        self.check("photo_upload_replay", status == 200 and replay == upload)
-        status, downloaded, headers = self.request("GET", photo_path, role="owner")
-        self.check("photo_private_roundtrip", status == 200 and downloaded == photo and headers.get("cache-control") == "private, no-store")
-        for role, expected in [("free", 404), (None, 401)]:
-            status, _, _ = self.request("GET", photo_path, role=role)
-            self.check("photo_foreign" if role else "photo_anonymous", status == expected)
-        _, vision = self.ask("owner", "owner_photo", photo_thread,
-            "Turn the program in this picture into the two routines it specifies. Preserve exactly its movements, working-set counts and rep targets, with no prescribed weights. The picture contains my weekly availability and equipment.", [attachment])
-        observed = []
-        self.check("two_photo_receipts", len(vision.get("results", [])) == 2)
-        for receipt in vision["results"]:
-            status, routine, _ = self.request("GET", "/v1/gym/routines/" + receipt["routineId"], role="owner")
-            self.check("photo_routine_" + str(len(observed)), status == 200 and receipt["movementCount"] == 3)
-            day = []
-            for entry in routine["entries"]:
-                day.append((entry["exerciseId"], [item.get("reps") for item in entry["sets"]]))
-                self.check("photo_no_invented_weight_" + entry["exerciseId"], all("weightKg" not in item for item in entry["sets"]))
-            observed.append(day)
-        self.check("actual_vision_exact_program", sorted(observed) == sorted([
-            [("back-squat", [5, 5, 5]), ("bench-press", [8, 8, 8]), ("barbell-row", [8, 8, 8])],
-            [("deadlift", [5, 5]), ("overhead-press", [8, 8, 8]), ("lat-pulldown", [10, 10, 10])]]))
-        status, history, _ = self.request("GET", "/v1/gym/threads/" + photo_thread, role="owner")
-        self.check("photo_history_receipts", status == 200 and history["turns"][-1]["results"] == vision["results"] and
-                   history["turns"][-2]["attachments"] == [upload["attachment"]])
+        self.verify_photo("free_photo")
+        self.verify_photo("owner")
 
-        for role in ["free", "owner"]:
+        for role in ["free", "free_photo", "owner"]:
             account = self.accounts[role]["account"]
             actual = int(self.sql(f"SELECT coalesce(sum(actual_nanos),0) FROM ai_budget_reservations WHERE subject_id='{account}'"))
             ledger = int(self.sql(f"SELECT coalesce(sum(cost_nanos),0) FROM ai_usage WHERE user_id='{account}'"))
@@ -172,13 +181,11 @@ class LiveCoachProof:
                        allowance["used"] == f"{actual // 1000000000}.{actual % 1000000000:09}" and allowance["reserved"] == "0.000000000")
             self.results[role + "Allowance"] = allowance
         self.check("no_uncertain_or_debt", self.sql("SELECT (SELECT count(*) FROM ai_budget_reservations WHERE state <> 'settled') + (SELECT count(*) FROM ai_budget_balances WHERE debt_nanos <> 0)") == "0")
-        self.results["rounds"] = json.loads(self.sql("SELECT coalesce(json_agg(json_build_object('model',model,'input',input_tokens,'output',output_tokens,'cacheRead',cache_read_tokens,'cacheWrite',cache_write_tokens,'costNanos',cost_nanos) ORDER BY id),'[]') FROM ai_usage"))
+        self.collect_diagnostics()
         self.check("actual_output_cap", all(row["output"] <= 2000 for row in self.results["rounds"]))
-        free_account = self.accounts["free"]["account"]
-        free_spend = int(self.sql(f"SELECT coalesce(sum(actual_nanos),0) FROM ai_budget_reservations WHERE subject_id='{free_account}'"))
+        free_spend = int(self.sql("SELECT coalesce(sum(actual_nanos),0) FROM ai_budget_reservations WHERE tier='logged_in'"))
         pools = json.loads(self.sql("SELECT coalesce(json_object_agg(scope, spent_nanos),'{}') FROM ai_budget_balances WHERE scope IN ('free_day','free_month')"))
         self.check("paid_free_pool_separation", pools == {"free_day": free_spend, "free_month": free_spend})
-        self.results["actualCost"] = self.usage()
         events = [{"id": "evt_" + uuid.uuid4().hex, "name": "gym_setup_step", "clientMs": int(time.time() * 1000),
                    "props": {"screen": "coach", "action": action}} for action in ["shown", "goal", "clarify", "screenshot", "open_routine"]]
         status, accepted, _ = self.request("POST", "/v1/events", {"sessionKey": "coach-live-verification", "platform": "ios", "events": events})
@@ -207,14 +214,14 @@ class LiveCoachProof:
         self.collect_diagnostics()
         self.results["completed"] = True
         self.save()
-        print(json.dumps({"completed": True, "generations": 3, "actualCost": self.results["actualCost"]}))
+        print(json.dumps({"completed": True, "generations": 4, "actualCost": self.results["actualCost"]}))
 
 
 def prepare(evidence, database):
     evidence.mkdir(parents=True, exist_ok=True)
     evidence.chmod(0o700)
     accounts = {}
-    for role in ["free", "owner"]:
+    for role in ["free", "free_photo", "owner"]:
         token, account = secrets.token_hex(32), str(uuid.uuid4())
         email = "coach-live-" + role + "@example.com"
         accounts[role] = {"account": account, "token": token, "email": email}
@@ -276,10 +283,13 @@ def main():
             proof.run()
         except Exception as error:
             time.sleep(6)
-            proof.collect_diagnostics()
             proof.results["completed"] = False
             proof.results["failureType"] = type(error).__name__
             proof.results["failureStage"] = proof.stage
+            try:
+                proof.collect_diagnostics()
+            except Exception as diagnostic_error:
+                proof.results["diagnosticFailureType"] = type(diagnostic_error).__name__
             proof.save()
             print("Live Coach verification failed; inspect the bounded results artifact.")
             raise SystemExit(1)

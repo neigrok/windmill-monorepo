@@ -40,6 +40,22 @@ Coach history deletion and authentication handoffs. Local first-party events and
 contain only bounded technical labels; the known content and credential scan finds no matches.
 External Amplitude forwarding and production Sentry delivery are not exercised by this local run.
 
+Signed-in Coach setup uses the existing conversation, attachment transport and Gym sync door.
+Native verification covers selecting a photo, restoring its unsent draft after relaunch, uploading
+its bytes, receiving two durable routine receipts, reopening the remote photo and starting a
+created routine. The native run uses the real client and local C++ backend with a fixture provider;
+the separate opt-in backend workflow exercises the actual provider with isolated free and One
+accounts. Setup exposes only its eight supported tools, reducing request context while preserving
+owned training history, movement IDs and durable writes. Reservations use each request's estimated
+input and its enforced 2,000-token output ceiling.
+
+UI checks query the exact current accessibility value after returning from a Live Activity. A
+retained element can carry an older snapshot even when the same attachment's fresh query shows
+the completed write; the ledger assertions still verify every saved set and its identity.
+Log navigation permits one recorded re-tap inside its existing deadline only while the original
+Routines tab remains selected and no alert or sheet is present. The target and content assertions
+remain exact; this recovers a lost synthesized tap without claiming first-tap delivery is reliable.
+
 Release **0.2.0 (18)**, source `a4bdb146c74189ffeca4516012bc3243aec5e2db`, is uploaded to
 App Store Connect by [iOS release run 18](https://github.com/neigrok/windmill-monorepo/actions/runs/39152817121).
 The 2026-10-18 run passed archive, stored-certificate verification and export; Apple confirmed
