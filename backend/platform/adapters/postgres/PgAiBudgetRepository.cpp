@@ -67,7 +67,8 @@ void insertGrant(pqxx::work& txn, const AiBudgetGrant& grant) {
 std::optional<AiBudgetReservation> readReservation(pqxx::work& txn, const std::string& id) {
   const pqxx::result rows = txn.exec(
       "SELECT subject_kind, subject_id, tier, period_start_ms, period_end_ms, amount_nanos, "
-      "state, actual_nanos, overrun_reconciled, admitted_at_ms, grant_id "
+      "state, actual_nanos, overrun_reconciled, admitted_at_ms, grant_id, "
+      "input_cost_nanos, output_token_cost_nanos, min_output_tokens, max_output_tokens "
       "FROM ai_budget_reservations WHERE id = $1", pqxx::params{id});
   if (rows.empty()) return std::nullopt;
   AiBudgetReservation reservation;
@@ -90,6 +91,8 @@ std::optional<AiBudgetReservation> readReservation(pqxx::work& txn, const std::s
   reservation.overrunReconciled = rows[0][8].as<bool>();
   reservation.admittedAtMs = rows[0][9].as<long long>();
   if (!rows[0][10].is_null()) reservation.grantId = rows[0][10].as<std::string>();
+  if (!rows[0][11].is_null()) reservation.outputBudget = AiOutputBudget{
+      rows[0][11].as<long long>(), rows[0][12].as<long long>(), rows[0][13].as<int>(), rows[0][14].as<int>()};
   if (!reservation.valid()) throw std::runtime_error("Invalid stored AI budget reservation");
   return reservation;
 }
@@ -265,28 +268,31 @@ AiBudgetResult PgAiBudgetRepository::reserve(const AiBudgetRequest& request, con
   if (!limits.valid()) return {AiBudgetCode::Invalid};
   bool wrote = false;
   const auto snapshot = readSnapshot(txn, request.principal, request.atMs, limits, wrote);
-  const auto code = admitAiBudget(request, limits, snapshot);
-  if (code != AiBudgetCode::Ok) {
+  auto plan = planAiBudget(request, limits, snapshot);
+  if (plan.code != AiBudgetCode::Ok) {
     txn.commit();
     if (wrote) markCurrentWrite();
-    return {code};
+    return plan;
   }
-  AiBudgetReservation reservation;
-  reservation.id = request.id;
-  reservation.subject = request.principal.subject;
-  reservation.tier = request.principal.tier;
-  reservation.period = snapshot.period;
-  reservation.amountNanos = request.amountNanos;
-  reservation.admittedAtMs = request.atMs;
-  if (snapshot.grant) reservation.grantId = snapshot.grant->id;
+  const auto& reservation = *plan.reservation;
   pqxx::params params{reservation.id, subjectKind(reservation.subject.kind), reservation.subject.id,
                        std::string(aiBudgetTierName(reservation.tier)), reservation.period.startMs,
                        reservation.period.endMs, reservation.amountNanos, reservation.admittedAtMs};
   if (reservation.grantId) params.append(*reservation.grantId);
   else params.append();
+  if (reservation.outputBudget) {
+    const auto& offer = *reservation.outputBudget;
+    params.append(offer.inputNanos);
+    params.append(offer.outputTokenNanos);
+    params.append(offer.minTokens);
+    params.append(offer.maxTokens);
+  } else {
+    for (int field = 0; field < 4; ++field) params.append();
+  }
   txn.exec("INSERT INTO ai_budget_reservations (id, subject_kind, subject_id, tier, period_start_ms, "
-           "period_end_ms, amount_nanos, admitted_at_ms, grant_id, state) "
-           "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'reserved')", params);
+           "period_end_ms, amount_nanos, admitted_at_ms, grant_id, input_cost_nanos, output_token_cost_nanos, "
+           "min_output_tokens, max_output_tokens, state) "
+           "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'reserved')", params);
   for (auto budget : reservationBudgets(reservation)) {
     switch (budget.scope) {
       case AiBudgetScope::FreeMonth: budget.limit = limits.freeMonthlyNanos; break;
@@ -301,7 +307,7 @@ AiBudgetResult PgAiBudgetRepository::reserve(const AiBudgetRequest& request, con
   }
   txn.commit();
   markCurrentWrite();
-  return {AiBudgetCode::Ok, std::move(reservation)};
+  return plan;
 }
 
 AiBudgetResult PgAiBudgetRepository::transition(const std::string& id, AiBudgetState target,

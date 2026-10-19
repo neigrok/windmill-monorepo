@@ -43,10 +43,12 @@ out-of-range amounts are invalid. A zero free budget closes that budget. Funded 
 be positive. Enabled mode requires `RESEND_API_KEY` and `AI_ALLOWANCE_ALERT_EMAIL`; the latter must
 name one address in `WINDMILL_OWNER_EMAILS`.
 
-Coach sends at most `COACH_MAX_OUTPUT_TOKENS` per model round, default 2,000, and reserves that
-same complete output ceiling alongside its input estimate. Configuration accepts only decimal
-integers from 1,024 through 8,000; invalid values refuse startup. The model remains Opus 5. A
-larger cap or conversation can exceed a free account's remaining capacity. A provider response
+Coach sends at most `COACH_MAX_OUTPUT_TOKENS` per model round, default 2,000. In enabled mode,
+the locked budget transaction chooses the largest affordable output cap between 1,024 and that
+configured maximum, reserving the full selected output cost plus the conservative input estimate.
+The 1,024-token floor is Coach policy, not a provider API minimum. Insufficient capacity for that
+floor refuses dispatch. Configuration accepts only decimal integers from 1,024 through 8,000;
+invalid values refuse startup. The model remains Opus 5. A provider response
 that reaches the output cap is a failed generation with its incurred usage reconciled and any
 durable routine receipts retained.
 Routine setup offers only its eight relevant history, notes, catalog, routine and clarification
@@ -77,9 +79,15 @@ capacity. In-flight reservations, dispatched calls and uncertain calls occupy th
 concurrency slots across tier changes and device binding.
 
 Every vendor round estimates input tokens from its actual request and reserves the estimated input
-cost plus the configured maximum output cost. Every round has a server-minted reservation id.
+cost plus the full output cap sent to the provider. Coach alone opts into an adaptive cap: its
+provider-neutral input cost, output-token price, minimum and maximum travel into the same locked
+admission transaction. The domain selects capacity from all applicable balances after checking
+funding, debt, device binding and concurrency; no refusal/retry or balance preflight authorizes a
+call. Other products retain their configured maximum. Every round has a server-minted reservation id.
 Only the first successful durable dispatch claim authorizes sending it. Replaying admission
-returns its original subject, period and grant; replaying dispatch cannot authorize another send.
+returns its original subject, period, grant and selected cap. The original cost offer is persisted;
+a different offer conflicts even when it could produce the same amount. Replaying dispatch cannot
+authorize another send.
 All provider spending, including background calls, uses this admission path.
 
 Complete supported usage settles once at actual cost. A lower actual cost releases the unused
@@ -135,8 +143,10 @@ estimate: 1,568 tokens for Opus 4.6, Sonnet 4.6 and Haiku 4.5, and 4,784 for oth
 There is no image-dimension parser. These are local heuristics, not an official or exact token count.
 
 A supported five-minute ephemeral cache marker prices all estimated input at the cache-write
-rate; without one, the ordinary input rate applies. The request's configured `max_tokens` output
-cap is added unchanged. Malformed request/message/tool/image/cache shapes and estimates above
+rate; without one, the ordinary input rate applies. The input estimate retains the complete
+original request, including its maximum-token digit width, when Coach reduces `max_tokens`.
+The selected output cap is reserved in full and copied into the dispatched body. Manual thinking
+budgets do not support this adaptation. Malformed request/message/tool/image/cache shapes and estimates above
 one million input tokens refuse admission. The counter also bounds text/structure bytes, traversal
 depth and node count. Image URLs, file references, documents and malformed base64 are unsupported.
 There is no universal full-context reservation.

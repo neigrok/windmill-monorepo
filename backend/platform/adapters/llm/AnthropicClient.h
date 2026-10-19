@@ -114,6 +114,7 @@ ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
                   std::function<void(const std::string& where, const std::string& detail)> report,
                   std::function<void()> onDenied = {},
                   std::shared_ptr<AiCallBudget> budget = nullptr,
-                  std::function<void(const std::string&)> onBudgetDenied = {});
+                  std::function<void(const std::string&)> onBudgetDenied = {},
+                  int minOutputTokens = 0);
 
 }

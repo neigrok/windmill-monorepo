@@ -22,7 +22,7 @@ performed by an external assistant do not incur Windmill's hosted-model cost. Br
 the self-hosted Echoes embedder do not incur hosted-model token charges.
 
 Each vendor round locally estimates tokens for the actual system prompt, messages/history, tools,
-results and images, then reserves estimated input cost plus the configured output cap. This does
+results and images, then reserves estimated input cost plus the full output cap sent to the provider. This does
 not guarantee a hard spending ceiling. Actual usage settles the call: unused reservation is
 released and underestimates are charged in full. A variance that fits every original funding
 budget, including other unresolved holds and bound-device attribution, with no existing debt,

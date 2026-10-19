@@ -414,8 +414,10 @@ combined, and an expired subscription does not prevent owner calendar funding.
 Unused paid capacity can cross a calendar boundary, but expires at its funded period end.
 
 Every vendor round MUST estimate tokens for its actual system prompt, messages/history, tools,
-results and images, then atomically reserve estimated input cost plus its configured output cap
-against individual and applicable shared capacity before dispatch. The estimate is not a hard
+results and images, then atomically reserve estimated input cost plus its full output cap sent to the provider
+against individual and applicable shared capacity before dispatch. Coach can reduce that cap to
+fit the locked balances, down to its 1,024-token policy floor; the input estimate remains complete.
+The estimate is not a hard
 spending ceiling. Complete usage settles once at actual cost; unused reservation is released and
 underestimates are charged in full. Settlement atomically absorbs variance when every original
 funding budget can cover it with other unresolved holds and bound-device account usage included,
@@ -439,7 +441,7 @@ nor telemetry contain prompts, images, account/device identifiers or raw vendor 
 which defaults off. Authenticated Claude paths use it; device attestation/grant endpoints and this
 phone-hosted Coach protocol remain unimplemented. The deployed Coach operation is `ask`.
 
-Claude reservations use local per-request approximate token counts and the configured output cap.
+Claude reservations use local per-request approximate token counts and the full output cap sent to the provider.
 An Opus 5 8,000-token output cap alone reserves $0.20, exceeding the anonymous $0.05 lifetime
 allowance. Anonymous rollout needs suitable model/output settings as well as device attestation;
 approximation does not guarantee that a request fits. Full actual cost is recorded; an overrun

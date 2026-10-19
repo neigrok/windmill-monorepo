@@ -271,7 +271,7 @@ AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCall
 
   auto answer = driveAsk(turns, caller, tools,
                          metered(call, frame, fuse_, usage_, report, [&] { refusal = "ai-fuse"; },
-                                 budget_, [&](const std::string& code) { refusal = code; }),
+                                 budget_, [&](const std::string& code) { refusal = code; }, 1'024),
                          report, control, maxOutputTokens_);
   answer.outcomeCode = refusal;
   return answer;

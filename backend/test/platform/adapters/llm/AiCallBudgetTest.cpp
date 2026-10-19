@@ -1,11 +1,13 @@
 #include "platform/adapters/llm/AiCallBudget.h"
 #include "platform/adapters/llm/AnthropicClient.h"
+#include "platform/adapters/llm/AgentLoop.h"
 #include "platform/adapters/json/JsonText.h"
 #include "platform/application/WriteObservation.h"
 #include "test/platform/Fakes.h"
 #include "test/platform/FakeAiBudgetRepository.h"
 #include "test/testing.h"
 
+#include <algorithm>
 #include <map>
 #include <stdexcept>
 
@@ -19,6 +21,167 @@ struct Failures : FailureReporter {
     reports.push_back(kind + ":" + where + ":" + detail);
   }
 };
+}
+
+TEST(ai_call_output_offer_preserves_full_input_image_cache_and_framing_estimate) {
+  auto request = parse(R"({"model":"claude-opus-5","max_tokens":2000,"system":[
+      {"type":"text","text":"Coach","cache_control":{"type":"ephemeral"}}],"messages":[
+      {"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AAAA"}}]}]})");
+  const auto full = anthropicReservationNanos(request);
+  const auto offer = anthropicOutputBudget(request, 1'024);
+  REQUIRE(full);
+  REQUIRE(offer);
+  CHECK_EQ(offer->inputNanos, *full - 50'000'000);
+  CHECK_EQ(offer->outputTokenNanos, 25'000);
+  CHECK_EQ(offer->minTokens, 1'024);
+  CHECK_EQ(offer->maxTokens, 2'000);
+  request["max_tokens"] = 1'024;
+  CHECK_EQ(anthropicReservationNanos(request), std::optional<long long>{offer->costNanos(1'024)});
+  request["max_tokens"] = 10'000;
+  const auto wider = anthropicOutputBudget(request, 1'024);
+  REQUIRE(wider);
+  request["max_tokens"] = 1'024;
+  CHECK(*anthropicReservationNanos(request) <= wider->costNanos(1'024));
+  for (const int floor : {-1, 0, 1'025}) CHECK_FALSE(anthropicOutputBudget(request, floor));
+  request["thinking"] = parse(R"({"type":"enabled","budget_tokens":1024})");
+  CHECK_FALSE(anthropicOutputBudget(request, 1'024));
+  request["thinking"] = parse(R"({"type":"adaptive"})");
+  CHECK(anthropicOutputBudget(request, 1'024));
+}
+
+TEST(ai_call_output_cap_matches_reservation_and_changes_with_next_round_context_and_spend) {
+  FakeAiBudgetRepository repository;
+  const AiBudgetLimits limits;
+  auto service = std::make_shared<AiBudgetService>(repository, [=] { return limits; }, [] { return 1'792'000'000'000LL; });
+  FakeAuthRepository accounts;
+  const auto account = accounts.createUser(Email{"free@example.com"}, "Free");
+  FakeSubscriptionRepository subscriptions;
+  FakeAiUsageRepository ledger;
+  Entitlements entitlements{subscriptions, ledger, {}, {}, service};
+  Failures failures;
+  auto budget = std::make_shared<AiCallBudget>(service, entitlements, accounts, failures);
+  AiSpend spend;
+  spend.user = account.id;
+  spend.model = "claude-opus-5";
+  auto request = parse(R"({"model":"claude-opus-5","max_tokens":2000,"system":[
+      {"type":"text","text":"Coach","cache_control":{"type":"ephemeral"}}],
+      "messages":[{"role":"user","content":"Create routines"}]})");
+  const auto original = request;
+  const auto firstOffer = anthropicOutputBudget(request, 1'024);
+  REQUIRE(firstOffer);
+  repository.totals.subject.spentNanos = limits.loggedInMonthlyNanos - firstOffer->costNanos(1'700);
+  std::vector<int> caps;
+  std::string refusal;
+  const auto reply = parse(R"({"stop_reason":"end_turn","content":[{"type":"text","text":"Ready"}],
+      "usage":{"input_tokens":100,"output_tokens":100,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}})");
+  auto call = metered([&](const Json::Value& outbound) -> std::optional<Json::Value> {
+    const auto cap = outbound["max_tokens"].asInt();
+    caps.push_back(cap);
+    auto expected = request;
+    expected["max_tokens"] = cap;
+    CHECK_EQ(outbound, expected);
+    const auto active = std::find_if(repository.reservations.begin(), repository.reservations.end(),
+        [](const auto& row) { return row.second.state == AiBudgetState::Dispatched; });
+    CHECK(active != repository.reservations.end());
+    if (active == repository.reservations.end()) return std::nullopt;
+    CHECK_EQ(active->second.outputBudget->tokensFor(active->second.amountNanos), std::optional<int>{cap});
+    CHECK_EQ(active->second.amountNanos, *anthropicReservationNanos(outbound));
+    return reply;
+  }, spend, {}, {}, {}, {}, budget, [&](const std::string& code) { refusal = code; }, 1'024);
+  REQUIRE(call(request));
+  CHECK_EQ(request, original);
+  CHECK_EQ(caps, (std::vector<int>{1'700}));
+  repository.totals.subject.spentNanos += *anthropicActualNanos(spend.model, reply["usage"]);
+  request["messages"].append(parse(R"({"role":"assistant","content":"Read the catalog"})"));
+  request["messages"].append(parse(R"({"role":"user","content":""})"));
+  request["messages"][2]["content"] = std::string(3'000, 'a');
+  const auto nextOffer = anthropicOutputBudget(request, 1'024);
+  REQUIRE(nextOffer);
+  const auto expected = static_cast<int>((limits.loggedInMonthlyNanos - repository.totals.subject.spentNanos -
+      nextOffer->inputNanos) / nextOffer->outputTokenNanos);
+  REQUIRE(call(request));
+  CHECK_EQ(caps, (std::vector<int>{1'700, expected}));
+  CHECK(expected >= 1'024 && expected < 1'700);
+  for (const auto& [id, reservation] : repository.reservations) {
+    CHECK_EQ(reservation.state, AiBudgetState::Settled);
+    CHECK_EQ(reservation.actualNanos, anthropicActualNanos(spend.model, reply["usage"]));
+  }
+  repository.totals.subject.spentNanos = limits.loggedInMonthlyNanos - nextOffer->costNanos(1'024) + 1;
+  CHECK_FALSE(call(request));
+  CHECK_EQ(refusal, "subject_exhausted");
+  CHECK_EQ(caps.size(), 2u);
+  CHECK_EQ(repository.reservations.size(), 2u);
+  repository.totals.concurrentCalls = 1;
+  CHECK_FALSE(call(request));
+  CHECK_EQ(refusal, "concurrency_exhausted");
+  CHECK_EQ(caps.size(), 2u);
+  CHECK(failures.reports.empty());
+  auto disabled = metered([&](const Json::Value& outbound) -> std::optional<Json::Value> {
+    CHECK_EQ(outbound, request);
+    return reply;
+  }, spend, {}, {}, {}, {}, {}, {}, 1'024);
+  REQUIRE(disabled(request));
+}
+
+TEST(ai_call_adaptive_truncation_settles_without_tools_and_transport_retains_hold) {
+  for (const std::string failure : {"max_tokens", "transport", "dispatch"}) {
+    struct Repository : FakeAiBudgetRepository {
+      bool refuseDispatch = false;
+      AiBudgetResult markDispatched(const std::string& id) override {
+        if (refuseDispatch) return {AiBudgetCode::InvalidState};
+        return FakeAiBudgetRepository::markDispatched(id);
+      }
+    } repository;
+    auto service = std::make_shared<AiBudgetService>(repository, [] { return AiBudgetLimits{}; }, [] { return 1'792'000'000'000LL; });
+    FakeAuthRepository accounts;
+    const auto account = accounts.createUser(Email{"free@example.com"}, "Free");
+    FakeSubscriptionRepository subscriptions;
+    FakeAiUsageRepository ledger;
+    Entitlements entitlements{subscriptions, ledger, {}, {}, service};
+    Failures failures;
+    auto budget = std::make_shared<AiCallBudget>(service, entitlements, accounts, failures);
+    AiSpend spend;
+    spend.user = account.id;
+    spend.model = "claude-opus-5";
+    repository.refuseDispatch = failure == "dispatch";
+    struct Tools : ToolHost {
+      int writes = 0;
+      std::vector<ToolDeclaration> declareTools() const override { return {}; }
+      ToolResult callTool(const std::string&, const Json::Value&, const ToolCaller&) override {
+        ++writes;
+        return ToolResult::text("written");
+      }
+    } tools;
+    int sends = 0;
+    auto call = metered([&](const Json::Value& outbound) -> std::optional<Json::Value> {
+      ++sends;
+      if (failure == "transport") return std::nullopt;
+      auto reply = parse(R"({"stop_reason":"max_tokens","content":[{"type":"tool_use","id":"tool", "name":"create_routine","input":{}}],
+          "usage":{"input_tokens":100,"output_tokens":2000,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}})");
+      reply["usage"]["output_tokens"] = outbound["max_tokens"];
+      return reply;
+    }, spend, {}, {}, {}, {}, budget, {}, 1'024);
+    AgentLoopSpec spec;
+    spec.model = spend.model;
+    spec.maxTokens = 2'000;
+    spec.messages = parse(R"([{"role":"user","content":"Create a routine"}])");
+    std::vector<std::string> reports;
+    const auto outcome = driveAgentLoop(spec, tools, {}, call,
+        [&](const std::string& where, const std::string& detail) { reports.push_back(where + ":" + detail); });
+    CHECK_FALSE(outcome.ok);
+    CHECK_EQ(reports, (std::vector<std::string>{failure == "max_tokens"
+        ? "agent.run:the model stopped early (stop_reason: max_tokens)"
+        : "agent.run:the model call failed or returned an unreadable reply"}));
+    CHECK_EQ(tools.writes, 0);
+    CHECK_EQ(sends, failure == "dispatch" ? 0 : 1);
+    REQUIRE_EQ(repository.reservations.size(), 1u);
+    const auto& reservation = repository.reservations.begin()->second;
+    CHECK(reservation.outputBudget);
+    CHECK_EQ(reservation.state, failure == "max_tokens" ? AiBudgetState::Settled :
+        failure == "transport" ? AiBudgetState::Uncertain : AiBudgetState::Reserved);
+    if (failure == "max_tokens") CHECK_EQ(reservation.actualNanos, std::optional<long long>{50'500'000});
+    else CHECK_FALSE(reservation.actualNanos);
+  }
 }
 
 TEST(ai_call_budget_estimates_actual_text_history_tools_results_and_output_schema) {

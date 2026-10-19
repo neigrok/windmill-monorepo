@@ -47,7 +47,9 @@ created routine. The native run uses the real client and local C++ backend with 
 the separate opt-in backend workflow exercises the actual provider with isolated free and One
 accounts. Setup exposes only its eight supported tools, reducing request context while preserving
 owned training history, movement IDs and durable writes. Reservations use each request's estimated
-input and its enforced 2,000-token output ceiling.
+input and its enforced output ceiling. Coach offers up to 2,000 output tokens; its budget transaction
+can select a smaller ceiling, at least 1,024, that fits every applicable balance. The provider receives
+that exact reserved ceiling. The cost offer is durable so retries preserve the original reservation.
 
 UI checks query the exact current accessibility value after returning from a Live Activity. A
 retained element can carry an older snapshot even when the same attachment's fresh query shows
@@ -63,4 +65,4 @@ The 2026-10-18 run passed archive, stored-certificate verification and export; A
 artifact contains the app and workout widget dSYMs. Export reported the nonblocking warning
 *Upload Symbols Failed. The archive did not include a dSYM for the Sentry.framework*.
 Production Sentry symbolication is not verified. Apple's completed processing and tester
-availability are not exposed by this workflow and have not been directly verified.
+availability for this build have not been directly verified.

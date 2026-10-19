@@ -8,6 +8,98 @@
 
 using namespace wm;
 
+TEST(ai_output_budget_validates_exact_integer_costs_and_overflow) {
+  const AiOutputBudget offer{60'000'000, 25'000, 1'024, 2'000};
+  CHECK(offer.valid());
+  CHECK_EQ(offer.costNanos(1'024), 85'600'000);
+  CHECK_EQ(offer.costNanos(2'000), 110'000'000);
+  CHECK_EQ(offer.tokensFor(90'000'000), std::optional<int>{1'200});
+  for (const auto amount : {85'599'999LL, 90'000'001LL, 110'000'001LL, -1LL}) CHECK_FALSE(offer.tokensFor(amount));
+  for (const auto invalid : {AiOutputBudget{-1, 1, 1, 2}, AiOutputBudget{0, 0, 1, 2},
+      AiOutputBudget{0, -1, 1, 2}, AiOutputBudget{0, 1, 0, 2}, AiOutputBudget{0, 1, 2, 1},
+      AiOutputBudget{1, std::numeric_limits<long long>::max(), 1, 1},
+      AiOutputBudget{0, std::numeric_limits<long long>::max() / 2 + 1, 1, 2}}) {
+    CHECK_FALSE(invalid.valid());
+    CHECK_EQ(invalid.costNanos(invalid.maxTokens), 0);
+    CHECK_FALSE(invalid.tokensFor(0));
+  }
+  CHECK((AiOutputBudget{0, std::numeric_limits<long long>::max(), 1, 1}.valid()));
+}
+
+TEST(ai_output_budget_selects_largest_cap_from_each_limiting_free_balance) {
+  const AiBudgetPrincipal principal{{AiBudgetSubjectKind::Account, "account"}, AiBudgetTier::LoggedIn};
+  const AiOutputBudget offer{60'000'000, 25'000, 1'024, 2'000};
+  const AiBudgetRequest request{"adaptive", principal, offer.costNanos(offer.maxTokens), 0, offer};
+  const AiBudgetLimits limits;
+  for (const int pool : {0, 1, 2}) {
+    for (const long long available : {110'000'000LL, 100'024'999LL, 85'600'000LL, 85'599'999LL, 0LL}) {
+      AiBudgetSnapshot snapshot;
+      snapshot.period = *AiBudgetPeriod::at(0);
+      if (pool == 0) snapshot.subject = {limits.loggedInMonthlyNanos - available - 1'000, 1'000};
+      if (pool == 1) snapshot.freeMonth = {limits.freeMonthlyNanos - available - 1'000, 1'000};
+      if (pool == 2) snapshot.freeDay = {limits.freeDailyNanos - available - 1'000, 1'000};
+      const auto plan = planAiBudget(request, limits, snapshot);
+      if (available < offer.costNanos(offer.minTokens)) {
+        CHECK_EQ(plan.code, pool == 0 ? AiBudgetCode::SubjectExhausted :
+            pool == 1 ? AiBudgetCode::FreeMonthExhausted : AiBudgetCode::FreeDayExhausted);
+        CHECK_FALSE(plan.reservation);
+        continue;
+      }
+      REQUIRE(plan.reservation);
+      CHECK(plan.reservation->valid());
+      CHECK_EQ(plan.code, AiBudgetCode::Ok);
+      const int expected = static_cast<int>(std::min(2'000LL, (available - offer.inputNanos) / offer.outputTokenNanos));
+      CHECK_EQ(plan.reservation->amountNanos, offer.costNanos(expected));
+      CHECK_EQ(plan.reservation->outputBudget->tokensFor(plan.reservation->amountNanos), std::optional<int>{expected});
+      CHECK_EQ(plan.reservation->outputBudget, std::optional<AiOutputBudget>{offer});
+      CHECK(plan.reservation->sameRequest(request));
+      auto changed = request;
+      ++changed.outputBudget->minTokens;
+      CHECK_FALSE(plan.reservation->sameRequest(changed));
+      changed = request;
+      changed.outputBudget.reset();
+      changed.amountNanos = plan.reservation->amountNanos;
+      CHECK_FALSE(plan.reservation->sameRequest(changed));
+    }
+  }
+}
+
+TEST(ai_output_budget_keeps_admission_guards_and_paid_funding_separate) {
+  const AiBudgetLimits limits;
+  const AiOutputBudget offer{60'000'000, 25'000, 1'024, 2'000};
+  AiBudgetRequest request{"adaptive", {{AiBudgetSubjectKind::Account, "account"}, AiBudgetTier::LoggedIn},
+      offer.costNanos(offer.maxTokens), 0, offer};
+  AiBudgetSnapshot snapshot;
+  snapshot.period = *AiBudgetPeriod::at(0);
+  snapshot.subject.debtNanos = 1;
+  CHECK_EQ(planAiBudget(request, limits, snapshot).code, AiBudgetCode::DebtOutstanding);
+  snapshot.subject.debtNanos = 0;
+  snapshot.freeDay.debtNanos = 1;
+  CHECK_EQ(planAiBudget(request, limits, snapshot).code, AiBudgetCode::DebtOutstanding);
+  snapshot.freeDay.debtNanos = 0;
+  snapshot.concurrentCalls = limits.freeConcurrency;
+  CHECK_EQ(planAiBudget(request, limits, snapshot).code, AiBudgetCode::ConcurrencyExhausted);
+  request.principal.tier = AiBudgetTier::WindmillOne;
+  CHECK_EQ(planAiBudget(request, limits, snapshot).code, AiBudgetCode::FundingRequired);
+  snapshot.grant = AiBudgetGrant{"grant", "account", AiBudgetFundingSource::Owner, snapshot.period,
+      90'000'000, "owner-period"};
+  snapshot.freeDay = {limits.freeDailyNanos, 1, 1};
+  snapshot.freeMonth = {limits.freeMonthlyNanos, 1, 1};
+  const auto paid = planAiBudget(request, limits, snapshot);
+  REQUIRE(paid.reservation);
+  CHECK_EQ(paid.reservation->amountNanos, 90'000'000);
+  CHECK_EQ(paid.reservation->outputBudget->tokensFor(paid.reservation->amountNanos), std::optional<int>{1'200});
+  snapshot.concurrentCalls = limits.paidConcurrency;
+  CHECK_EQ(planAiBudget(request, limits, snapshot).code, AiBudgetCode::ConcurrencyExhausted);
+  request.principal = {{AiBudgetSubjectKind::Device, "device"}, AiBudgetTier::Anonymous};
+  snapshot = {};
+  snapshot.window = AiBudgetWindow::Lifetime;
+  snapshot.deviceBound = true;
+  CHECK_EQ(planAiBudget(request, limits, snapshot).code, AiBudgetCode::DeviceBound);
+  request.outputBudget->inputNanos = std::numeric_limits<long long>::max();
+  CHECK_EQ(planAiBudget(request, limits, snapshot).code, AiBudgetCode::Invalid);
+}
+
 TEST(ai_budget_usd_round_trips_without_losing_subcent_costs) {
   CHECK_EQ(parseAiUsd("10"), std::optional<long long>{10'000'000'000});
   CHECK_EQ(parseAiUsd("0.000000001"), std::optional<long long>{1});

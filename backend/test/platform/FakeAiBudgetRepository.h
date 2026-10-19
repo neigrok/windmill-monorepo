@@ -45,14 +45,14 @@ struct FakeAiBudgetRepository : AiBudgetRepository {
   }
   AiBudgetResult reserve(const AiBudgetRequest& request, const AiBudgetLimits& limits) override {
     if (failReserve) throw std::runtime_error("private database detail");
+    if (!request.valid()) return {AiBudgetCode::Invalid};
+    if (const auto prior = reservations.find(request.id); prior != reservations.end())
+      return prior->second.sameRequest(request) ? AiBudgetResult{AiBudgetCode::Replay, prior->second}
+                                               : AiBudgetResult{AiBudgetCode::Conflict};
     const auto current = snapshot(request.principal, request.atMs, limits);
-    const auto code = admitAiBudget(request, limits, current);
-    if (code != AiBudgetCode::Ok) return {code, {}};
-    AiBudgetReservation reservation{request.id, request.principal.subject, request.principal.tier,
-        current.period, request.amountNanos, AiBudgetState::Reserved, {}, false, request.atMs,
-        current.grant ? std::optional<std::string>{current.grant->id} : std::nullopt};
-    reservations.emplace(request.id, reservation);
-    return {AiBudgetCode::Ok, reservation};
+    auto plan = planAiBudget(request, limits, current);
+    if (plan.reservation) reservations.emplace(request.id, *plan.reservation);
+    return plan;
   }
   AiBudgetResult change(const std::string& id, AiBudgetState state, std::optional<long long> actual = {}) {
     auto& reservation = reservations.at(id);
