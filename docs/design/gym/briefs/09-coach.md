@@ -21,9 +21,14 @@ nothing, because it is a record.
 
 ## First open — set up your routines
 
-On iOS, Gym's first open with no routines lands in Coach, signed in or out. The empty room is
-headed **Set up your routines** · *Built from what you bring.* and offers three starters as one
-list:
+Signed-in iOS Gym offers setup automatically after account data has loaded, when the account has
+no Gym data and no active workout, account transition or adoption decision. A saved conversation or
+draft takes precedence. A person who deliberately chose a manual route is not redirected on each
+visit; empty Routines retains a quiet **Set up routines** action. Anonymous Coach remains unavailable until the
+device and execution boundary below is built.
+
+The empty setup room is headed **Set up your routines** · *Built from what you bring.* and offers
+three starters as one list:
 
 - **Add a screenshot** opens the system photo picker, which needs no permission; the photo waits
   in the composer as the attachment draft (`../feedback-contract.md`).
@@ -33,14 +38,23 @@ list:
   draft can use USD allowance.
 
 Two quiet escapes sit under the starters: **Just log** opens the logger, **Build it myself** opens
-the routine editor. Signed out, one quiet line states the allowance (*Signed out, and not carried*, below). The starters
-leave after the first send. The heading and starters are the room's, not a message: Coach still
-does not speak first.
+the routine editor. Both preserve the choice for that account. Text starters prepare an editable
+draft and focus the composer; they never send automatically. The starters leave after the first
+send. The heading and starters are the room's, not a message: Coach still does not speak first.
 
-Each starter ends in routines Coach creates: one creation receipt per routine, *<name>* ·
-*Routine created · N movements*, each with **Open routine** — a three-day split is three receipts.
-Open routine shows the routine with **Start workout**. Signed out, the receipts are followed by the
-Keep row (`../../guidelines/superapp-flow.md` §6). With routines, Gym opens on Routines.
+Program and question text share an 8,000-byte UTF-8 limit. A refusal retains the entire draft and
+asks the person to shorten it; it never truncates text silently. Clarification choices arrive as
+bounded, typed days/equipment groups. The client does not derive buttons from Coach's prose. A
+selection updates the editable draft, and the person still taps Send.
+
+When Coach creates requested routines, show one creation receipt per saved routine, *<name>* ·
+*Routine created · N movements*, each with **Open routine** — three saved routines yield three receipts.
+One turn can create at most six routines. Each creation has its own stable operation identity;
+replaying the same request recovers the same saved routine and receipt. An interrupted answer keeps
+its completed creation rows even if the next provider call is refused by an allowance.
+Open routine shows the routine with **Start workout**. The anonymous design adds the Keep row
+(`../../guidelines/superapp-flow.md` §6); signed-in setup has no phone-only or Keep claim. With
+routines, Gym opens on Routines.
 
 ## The loop — four beats
 
@@ -328,10 +342,6 @@ still says it came from Coach.
 
 ## Open
 
-- **The starters on a later empty Coach**: whether they return, or appear only on the first Gym
-  open.
-- **A pasted program over the 1,000-byte question limit**: raise the limit for the first-open
-  starters, or refuse with the byte-limit sentence.
 - **Android's signed-out Coach**: whether the phone allowance reaches Android.
 - **The mid-workout refusal.** The reason is sound, but a lifter at the rack with a question has
   nowhere to put it. Worth deciding whether the refusal should offer to hold the question for after

@@ -42,10 +42,11 @@ import XCTest
     ready(app.buttons["gym-movement-bench-press"]); app.buttons["gym-movement-bench-press"].tap()
     app.buttons["save-routine"].tap()
     ready(app.buttons["routine-start"]); app.buttons["routine-start"].tap()
-    let sets = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-"))
+    let progress = app.descendants(matching: .any)["workout-set-progress"]
     ready(app.buttons["workout-log"]); app.buttons["workout-log"].tap()
-    XCTAssertEqual(sets.count, 1, "Pending sign-in must not prevent a local set from being saved.")
-    let firstSet = sets.firstMatch.identifier
+    XCTAssertTrue(progress.waitForValue("1 set"))
+    var saved = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
+    XCTAssertEqual(saved.count, 1, "Pending sign-in must not prevent a local set from being saved.")
 
     for cold in [false, true] {
       ready(app.buttons["workout-assembly"]); app.buttons["workout-assembly"].tap()
@@ -56,10 +57,18 @@ import XCTest
       }
       ready(app.buttons["gym-hidden-workout"]); app.buttons["gym-hidden-workout"].tap()
       ready(app.buttons["workout-log"])
-      XCTAssertTrue(sets.matching(identifier: firstSet).firstMatch.exists)
-      XCTAssertEqual(sets.count, cold ? 2 : 1)
+      XCTAssertTrue(progress.waitForValue(cold ? "2 sets" : "1 set"))
+      let restored = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
+      XCTAssertEqual(restored.map(\.identifier), saved.map(\.identifier))
+      XCTAssertEqual(restored.map(\.label), saved.map(\.label))
       app.buttons["workout-log"].tap()
-      XCTAssertEqual(sets.count, cold ? 3 : 2)
+      XCTAssertTrue(progress.waitForValue(cold ? "3 sets" : "2 sets"))
+      let after = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
+      XCTAssertEqual(after.count, cold ? 3 : 2)
+      XCTAssertEqual(Set(after.map(\.identifier)).count, after.count)
+      XCTAssertEqual(after.prefix(saved.count).map(\.identifier), saved.map(\.identifier))
+      XCTAssertEqual(after.prefix(saved.count).map(\.label), saved.map(\.label))
+      saved = after
     }
   }
 

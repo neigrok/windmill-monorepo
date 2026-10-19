@@ -26,6 +26,7 @@ import UIKit
     menu.tap()
     let gym = app.buttons["room-gym"]
     XCTAssertTrue(gym.waitForExistence(timeout: 5)); gym.tap()
+    XCTAssertTrue(app.tabBars.buttons["Routines"].waitForExistence(timeout: 10)); app.tabBars.buttons["Routines"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 10))
     return app
   }
@@ -382,8 +383,7 @@ import UIKit
     XCTAssertFalse(app.buttons["gym-routines-undo"].exists)
   }
 
-  // Signed in with Coach at hand, an empty Routines offers one way to Coach, which opens with the question in the composer,
-  // unsent. The signed-in board opens on a free workout, which hides to reach Routines.
+  // Empty Routines offers setup even with an existing workout; choosing a starter keeps the draft unsent.
   func testSignedInEmptyRoutinesAsksCoachToBuildOne() {
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", "workout-notice", "-onboarding-appearance", "dark"]
@@ -391,15 +391,15 @@ import UIKit
     XCTAssertTrue(app.buttons["workout-assembly"].waitForExistence(timeout: 10)); app.buttons["workout-assembly"].tap()
     XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
     XCTAssertTrue(app.staticTexts["No routines yet"].waitForExistence(timeout: 10))
-    let ask = app.buttons["Ask Coach"]
+    let ask = app.buttons["routines-setup"]
     XCTAssertTrue(ask.waitForExistence(timeout: 5))
-    XCTAssertGreaterThanOrEqual(ask.frame.height, 44, "Ask Coach answers a 44 pt target")
+    XCTAssertGreaterThanOrEqual(ask.frame.height, 44, "Set up routines answers a 44 pt target")
     capture(app, "empty-signed-in")
     ask.tap()
     let question = app.descendants(matching: .any)["coach-question"]
     XCTAssertTrue(question.waitForExistence(timeout: 10))
-    let seeded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in question.value as? String == "Build me a routine." }, object: question)
-    XCTAssertEqual(XCTWaiter.wait(for: [seeded], timeout: 5), .completed)
+    XCTAssertTrue(app.buttons["coach-setup-describe"].waitForExistence(timeout: 5)); app.buttons["coach-setup-describe"].tap()
+    XCTAssertEqual(question.value as? String, "My program: ")
     XCTAssertFalse(app.buttons["coach-stop"].exists, "The question waits in the composer, unsent")
   }
 
@@ -522,9 +522,10 @@ import UIKit
     XCTAssertTrue(app.buttons["gym-movement-deadlift"].isEnabled)
     app.buttons["gym-movement-deadlift"].tap()
     app.buttons["save-routine"].tap()
-    XCTAssertTrue(app.descendants(matching: .any)["routine-detail-movement-deadlift"].waitForExistence(timeout: 5))
-    XCTAssertEqual(app.descendants(matching: .any)["routine-detail-movement-deadlift"].label, "2. Deadlift, open")
-    XCTAssertEqual(app.descendants(matching: .any)["routine-detail-movement-bench-press"].label, "1. Bench Press, open")
+    let deadliftSummary = app.staticTexts.matching(identifier: "routine-detail-movement-deadlift")
+    XCTAssertTrue(deadliftSummary.firstMatch.waitForExistence(timeout: 5))
+    XCTAssertEqual(deadliftSummary.allElementsBoundByIndex.map(\.label), ["2. Deadlift", "open"])
+    XCTAssertEqual(app.staticTexts.matching(identifier: "routine-detail-movement-bench-press").allElementsBoundByIndex.map(\.label), ["1. Bench Press", "open"])
     XCTAssertFalse(app.staticTexts["Open movements have no target — you decide the numbers at the rack."].exists, "Open explains itself")
   }
 
@@ -613,7 +614,9 @@ import UIKit
     XCTAssertEqual(app.textFields["routine-name"].value as? String, "Custom day")
     app.buttons["save-routine"].tap()
     XCTAssertTrue(app.navigationBars["Custom day"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["1. Custom press kept · yours, 1 × max"].waitForExistence(timeout: 5))
+    let title = app.staticTexts["1. Custom press kept · yours"]
+    XCTAssertTrue(title.waitForExistence(timeout: 5))
+    XCTAssertEqual(app.staticTexts.matching(identifier: title.identifier).allElementsBoundByIndex.map(\.label), ["1. Custom press kept · yours", "1 × max"])
   }
 
   func testProposalScreensInBothAppearances() {

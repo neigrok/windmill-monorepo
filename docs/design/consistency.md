@@ -404,8 +404,8 @@ these are the places it disagrees with a drawing, a brief or the build.
   lists and never prints `read.weeks`, so a totals-only answer reads *Read your movement history*
   with no number (spec §6); web and Android print the server's weeks (`coach.js` `readLine`,
   `Ask.kt`). The fix belongs to the backend: dogfood node `coach-receipt-weeks-provable`.
-- **Proposal · one suggestion on an empty Coach (owner decision).** The spec (§6) and
-  `gym/feedback-contract.md` draw an empty Coach as the bar, the canvas and the composer only. The
+- **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, the
+  spec (§6) and `gym/feedback-contract.md` draw an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen
   from the lifter's state and never from capability copy — *Build me a routine* with no routines,
   *How did today go?* after a workout today. A tap fills the composer without sending, and the
@@ -569,8 +569,10 @@ it in these places.
 - **6r · Where a signed-out photo goes.** The brief says a signed-out photo is *stored only on the
   phone; the server keeps no copy*. A copy goes to the model vendor to read, under the vendor's
   retention terms. The copy must say so, with the terms verified at release.
-- **6s · Pasted programs.** The brief leaves open whether a pasted program may exceed the
-  1,000-byte question limit. The spec sets 8,000 bytes. Confirm the limit and its refusal sentence.
+- **6s · Pasted programs.** The Coach contract and signed-in iOS setup accept 8,000 UTF-8 bytes.
+  Android's `Ask.maxTurnBytes` and web's `QUESTION_BYTES` remain at 1,000; the web textarea also
+  limits character count to 1,000. Align those clients when delivering their setup flow, preserving
+  the complete draft and a specific length refusal rather than silently truncating a pasted program.
 - **6t · States the room does not draw.** The spec adds a `declined` answer (the model refused), a
   truncated completed answer, a phone whose attestation fails (`coach-device-unverified`), and an
   phone whose lifetime USD allowance was spent on an earlier install (`subject_exhausted`). The brief draws
@@ -578,6 +580,11 @@ it in these places.
 
 ### Native and web differences
 
+- **Web Coach capability line.** The Coach header says “Reads your log · proposes only”, while
+  requested routine creation saves routines directly and returns creation receipts. Existing
+  routine changes still require Review/Apply. Replace the inaccurate header with wording that
+  distinguishes creation from proposed changes; the signed-in iOS setup phase does not change web
+  chrome.
 - **Coach Markdown.** Android renders answer Markdown blocks and paces streamed text; web
   `CoachRoom.jsx` renders plain text. Decide the shared block typography and pacing, then align the
   other clients and Figma specimens. Tracking: `gym-android-coach-stream-markdown`.
@@ -642,6 +649,21 @@ it in these places.
 
 ### Figma reconciliation
 
+- **Coach setup chrome.** The signed-in first-open frame
+  [143:1390](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=143-1390) draws a
+  separate photo seat and input capsule, `photo.on.rectangle`, a More menu and
+  `list.bullet.clipboard` for Routines. The current iOS room keeps one composer surface,
+  `photo.badge.plus`, its Account toolbar action and `list.bullet.rectangle`. Its History action
+  uses `clock`; the goal/result drawings use `clock.arrow.circlepath`. The signed-in setup phase
+  preserves existing native chrome. Reconcile these shared controls in the iOS room contract and
+  drawings rather than giving onboarding a second composer or toolbar. Short conversations retain
+  the app's bottom alignment; the goal specimen places its first turn near the top. The anonymous program
+  frame's “Only on this phone” / “Keep it” row does not appear in signed-in setup.
+- **Coach creation-row typography.** The signed-in setup uses the shared iOS `GymRow`: semibold
+  body routine name and subheadline metadata. Result frame
+  [146:1937](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=146-1937) draws a regular
+  body name and 13 pt metadata. The row structure, creation facts and exact symbols agree. Reconcile
+  the type treatment with the room's reusable row convention; do not claim pixel parity for it.
 - **F53 · Retired boards.** Archive or remove Today/Ask generations on the Gym `Boards` page
   (`6:3`, `9:42`, `25:23`) so they cannot be mistaken for current delivery.
 - **5x · Logger masters.** Promote the quiet-ledger shape to canonical Android logger frames

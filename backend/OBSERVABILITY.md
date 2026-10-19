@@ -122,8 +122,8 @@ Amplitude key intentionally disables forwarding.
 The inventory has 89 HTTP write registrations: REST platform 27, roadmap 13, gym 29 (20 of them
 retired paths), journal 11, probe 2; sync 3; MCP transport 4. Excluding the two dev routes and two
 standalone transport duplicates leaves 85 production HTTP operations. MCP has 36 write declarations
-(roadmap 23, gym 13); compatibility aliases share their canonical operation. Coach has 27 operations
-(ask 2, gym abilities 4, scoped roadmap abilities 21). The catalogs have nine production commands
+(roadmap 23, gym 13); compatibility aliases share their canonical operation. Coach has 28 operations
+(ask 2, gym abilities 5, scoped roadmap abilities 21). The catalogs have nine production commands
 (gym 7, journal 2), plus four probe commands. Background coverage includes 21 scheduled/stage
 operations plus sync publication, Amplitude forwarding and the AI usage ledger (24 background
 operations). Server-origin entry points include the gym door, ServerCall metadata, session refresh
@@ -382,3 +382,9 @@ including other unresolved holds and bound-device account attribution, with no e
 An unfunded variance retains overrun debt and produces a static `ai.budget.settle` Issue;
 settlement replay does not
 repeat the report. Neither path logs request content, token-estimator inputs or raw provider data.
+
+## Signed-in Gym routine setup
+
+Coach's `ask.run` observation covers setup admission, model turns and terminal persistence. `gym.ask_setup_details` logs the typed question write with `ok` or `refused`; unexpected storage failures report under that static operation. Its text, choices and IDs never enter logs. Every routine addition retains its own `gym.create_routine` and GymDoor write observations, including replay and expected immutable-slot/cap refusals. Stop and later allowance failures retain the existing static operations and factual creation receipts.
+
+Native setup emits `gym_setup_step` through `/v1/events`, with `screen:coach` and the bounded action labels `shown`, `screenshot`, `describe`, `goal`, `just_log`, `build_manually`, `clarify`, `open_routine`. Client validation excludes questions, option values, routine names and allowance amounts. The product-neutral intake stores and forwards the accepted event using its existing batch observation.

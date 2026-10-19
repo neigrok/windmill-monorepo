@@ -198,6 +198,11 @@ void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
     cb(error(drogon::k400BadRequest, "expected a request id"));
     return;
   }
+  if (json->isMember("purpose") && (!(*json)["purpose"].isString() ||
+      ((*json)["purpose"].asString() != "conversation" && (*json)["purpose"].asString() != "routine_setup"))) {
+    cb(error(drogon::k400BadRequest, "expected conversation or routine_setup purpose")); return;
+  }
+  const std::string purpose = json->get("purpose", "").asString();
   const std::string requestId = json->get("requestId", "").asString();
   std::vector<std::string> attachments;
   if (json->isMember("attachmentIds")) {
@@ -223,10 +228,10 @@ void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
   if (streamRequested && !bufferedStream) {
     const ThreadId thread{(*json)["thread"].asString()};
     auto response = drogon::HttpResponse::newAsyncStreamResponse(
-        [ask = ask_, caller = *caller, thread, question, requestId, attachments](drogon::ResponseStreamPtr stream) {
+        [ask = ask_, caller = *caller, thread, question, requestId, attachments, purpose](drogon::ResponseStreamPtr stream) {
           auto reply = std::make_shared<CoachStream>(std::move(stream), ask, caller.id, thread, requestId);
           ask->ask(caller.id, caller.email.value, thread, question,
-                   [reply](AskReply answer) { reply->finish(answer); }, requestId, attachments);
+                   [reply](AskReply answer) { reply->finish(answer); }, requestId, attachments, purpose);
           reply->poll();
         }, true);
     response->setContentTypeString("text/event-stream");
@@ -241,7 +246,7 @@ void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
     const ThreadId thread{(*json)["thread"].asString()};
     auto reply = std::make_shared<CoachStream>(std::move(cb), ask_, caller->id, thread, requestId);
     ask_->ask(caller->id, caller->email.value, thread, question,
-              [reply](AskReply answer) { reply->finish(answer); }, requestId, attachments);
+              [reply](AskReply answer) { reply->finish(answer); }, requestId, attachments, purpose);
     reply->poll();
     return;
   }
@@ -301,9 +306,10 @@ void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
       body["generation"] = toJson(*reply.generation);
       body["results"] = body["generation"]["results"];
     }
+    if (reply.generation && reply.generation->clarification) body["clarification"] = toJson(*reply.generation->clarification);
     if (reply.receipt) body["receipt"] = toJson(*reply.receipt);
     cb(jsonResponse(body));
-  }, requestId, attachments);
+  }, requestId, attachments, purpose);
 } catch (const GymUnavailable& unavailable) {
   cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }

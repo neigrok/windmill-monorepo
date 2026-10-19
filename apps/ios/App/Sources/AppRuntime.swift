@@ -120,7 +120,8 @@ final class AppRuntime {
     let boardClock = settings.board != nil && settings.board?.hasPrefix("workout-live-activity") != true
     #if DEBUG
     if settings.modelServer {
-      let snapshotURL = settings.scenario == "gym-e2e-conflict" ? storageDirectory.appending(path: "model-server.json") : nil
+      let persistsModel = settings.scenario == "gym-e2e-conflict" || ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture")
+      let snapshotURL = persistsModel ? storageDirectory.appending(path: "model-server.json") : nil
       let model = JournalModelTransport(boardClock: boardClock, snapshotURL: snapshotURL)
       if snapshotURL != nil, settings.restoreBoard { try model.restore() }
       model.state.withLock { state in

@@ -493,8 +493,12 @@ import XCTest
     app.buttons["gym-weigh-in-delete"].tap()
     XCTAssertTrue(app.buttons[deletedDay].waitForNonExistence(timeout: 5))
     XCTAssertFalse(app.buttons["gym-log-undo"].exists)
-    app.buttons["gym-chart-point-2026-09-26"].tap()
+    XCTAssertFalse(app.buttons[deletedDay.replacingOccurrences(of: "gym-weigh-in-", with: "gym-chart-point-")].exists)
+    let retainedPoint = app.buttons["gym-chart-point-2026-09-23"]
+    XCTAssertTrue(retainedPoint.waitForExistence(timeout: 5))
+    XCTAssertEqual(retainedPoint.label, "82.5 kg · Sep 23"); retainedPoint.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-weigh-in-fixed-date"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.textFields["gym-weigh-in-weight"].value as? String, "82.5")
     app.buttons["Cancel"].tap()
     back(app)
     let session = visibleSessionRow(app), id = session.identifier

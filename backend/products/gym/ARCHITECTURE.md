@@ -334,7 +334,7 @@ routine is deleted.
 `gym_ask_threads` stores an owner, immutable first-message title and activity timestamps.
 `gym_ask_turns` stores ordered message pairs with immutable factual receipts, generation/request
 identities, status and routine-creation results. `gym_ask_generations` stores the request identity,
-question, answer, generation state and its durable tool operations. Terminal failures retain their
+question, setup purpose, typed clarification, allowance refusal, answer, generation state and its durable tool operations. History reads derive setup metadata from the owner-scoped generation payload. Routine additions occupy at most six immutable action slots; recovery replays each slot before accepting another addition. Terminal failures retain their
 question, partial answer and completed actions; retry updates the same pair. All three tables cascade
 with the account, and generations and messages also cascade with their conversation.
 
@@ -1120,7 +1120,7 @@ streaming, pictures, Stop and durable note saves. The design canon is
 `GymTools` does not gate — over MCP the grant is settled above it by `CompositeToolHost` — so a chat
 wired straight to it would be a door with no lock. **`AskTools` is that lock.** It offers every
 `Access::read` declaration, `mintsProposal(name)`, `create_routine` and `save_note` when durable generation storage
-is present. The declaration's product and access still gate every call. Coach can read the log,
+is present, plus `ask_setup_details` only for `routine_setup` generations. The declaration's product and access still gate every call. Coach can read the log,
 propose an existing-routine change, create a new routine and append one useful user-provided insight. It cannot log a set, finish a workout,
 mint a share, create a movement or discard anything. Creation requires successful Notes and movement
 catalog reads. The server persists the operation and chosen routine ID before the write, and its
@@ -1137,9 +1137,7 @@ set**, so Coach's most important refusal is not a sentence in its prompt.
 composite: without it a misspelled argument is dropped and the tool answers a wider question than the
 model asked. The check is written twice, once per door.
 
-**One routine action and one note save per generation.** Each occupies an independent durable
-operation; a stored record holding a single operation reads as a list of one. Repeated calls replay successful results; a confirmed validation failure may correct
-arguments under the same identity. Existing-routine edits and removal still require human Apply.
+**Up to six routine additions, one proposal and one note save per generation.** Each occupies an independent durable operation; a stored record holding a single operation reads as a list of one. Input validation precedes reservation. Saved documents are immutable, and replay resolves both original model IDs and returned server IDs. Recovery replays ordered creation slots before accepting another addition. Existing-routine edits and removal still require human Apply.
 
 ### 12.2 Bounds
 
@@ -1149,12 +1147,12 @@ arguments under the same identity. Existing-routine edits and removal still requ
 | Reach | the whole log | Coach is a tab and is reached from a proposal card, not from one workout |
 | Never mid-session | `409 ask-session-open`, checked on the server | three clients each remembering it is three chances to forget |
 | Iterations | 8, and hitting it is a **failure** | an unfinished answer is worse than "Coach didn’t answer" |
-| Actions per generation | one routine creation/proposal plus one note save | stable identity across model retries and process restarts |
+| Actions per generation | up to six routine additions, one existing-routine proposal and one note save | stable identity across model retries and process restarts |
 | Model context | `kMaxContextTurns` (24) and `kMaxContextBytes` (24,000) | latest completed exchanges; full stored history remains available through pagination |
-| Question | `kMaxAskTurnBytes` (1000) | bounds each submitted text |
+| Question | `kMaxAskTurnBytes` (8000 UTF-8 bytes) | bounds each submitted text |
 | Entitlement | all signed-in accounts | allowance is resolved through `Entitlements::aiAllowanceFor` |
 | Request ration | per-account token bucket: capacity 3, refilling at 10/day (`AskRation`) | In memory; a deploy refills it. Taken after admission checks and refunded only when `AskAnswer::modelTurns` is zero |
-| Dollar ceiling | the platform's `AiFuse` hourly + `aiAllowanceFor` over 30 days | never shown as money to anybody |
+| Dollar ceiling | durable USD allowances when enabled; legacy `AiFuse` and rolling allowance otherwise | per-request token estimate reserves provider cost before dispatch; actual usage reconciles it |
 | Vendor | absent when unkeyed | no `ANTHROPIC_API_KEY` ⇒ `registerRoutes` omits new asks; durable Stop/recovery and history remain available |
 
 ### 12.3 The read receipt

@@ -868,12 +868,12 @@ import XCTest
   func testWorkoutRecordLight() { workoutRecord("light") }
   func testWorkoutRecordDark() { workoutRecord("dark") }
 
-  // Signed in with Coach at hand, an empty Routines offers Ask Coach; the signed-in board's free workout hides to reach it.
+  // Signed in with Coach at hand, an empty Routines offers Set up routines; the signed-in board's free workout hides to reach it.
   func routinesSignedInEmpty(_ appearance: String) {
     let app = launch("workout-notice", appearance: appearance)
     XCTAssertTrue(app.buttons["workout-assembly"].waitForExistence(timeout: 10)); app.buttons["workout-assembly"].tap()
     XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
-    XCTAssertTrue(app.buttons["Ask Coach"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["routines-setup"].waitForExistence(timeout: 10))
     for _ in 0..<3 where app.buttons["Dismiss message"].exists { app.buttons["Dismiss message"].firstMatch.tap() }
     capture("gym-routines-empty-signed-in-\(appearance)", app)
   }

@@ -444,6 +444,7 @@ Json::Value toJson(const std::vector<CoachResult>& results) {
     item["operationId"] = result.operationId;
     item["routineId"] = result.routineId;
     item["routineName"] = result.routineName;
+    if (result.movementCount) item["movementCount"] = *result.movementCount;
     body.append(item);
   }
   return body;
@@ -451,18 +452,62 @@ Json::Value toJson(const std::vector<CoachResult>& results) {
 
 std::vector<CoachResult> coachResultsFrom(const Json::Value& results) {
   std::vector<CoachResult> out;
-  for (const auto& result : results)
+  for (const auto& result : results) {
     out.push_back({result["operationId"].asString(), result["routineId"].asString(), result["routineName"].asString()});
+    if (result["movementCount"].isUInt()) out.back().movementCount = result["movementCount"].asUInt();
+  }
   return out;
 }
 
 Json::Value toJson(const AiBudgetView& allowance) { return aiAllowanceJson(allowance); }
+
+Json::Value toJson(const CoachClarification& clarification) {
+  Json::Value body(Json::objectValue);
+  body["id"] = clarification.id;
+  body["question"] = clarification.question;
+  body["groups"] = Json::Value(Json::arrayValue);
+  for (const auto& group : clarification.groups) {
+    Json::Value item(Json::objectValue);
+    item["id"] = group.id;
+    item["label"] = group.label;
+    item["multiple"] = group.multiple;
+    item["options"] = Json::Value(Json::arrayValue);
+    for (const auto& option : group.options) {
+      Json::Value choice(Json::objectValue);
+      choice["id"] = option.id;
+      choice["label"] = option.label;
+      item["options"].append(choice);
+    }
+    body["groups"].append(item);
+  }
+  return body;
+}
+
+std::optional<CoachClarification> clarificationFrom(const Json::Value& body) {
+  if (!body.isObject() || body.size() != 3 || !body["id"].isString() || !body["question"].isString() ||
+      !body["groups"].isArray() || body["groups"].size() > 2) return std::nullopt;
+  CoachClarification clarification{body["id"].asString(), body["question"].asString()};
+  for (const auto& item : body["groups"]) {
+    if (!item.isObject() || item.size() != 4 || !item["id"].isString() || !item["label"].isString() ||
+        !item["multiple"].isBool() || !item["options"].isArray() || item["options"].size() > 6) return std::nullopt;
+    CoachChoiceGroup group{item["id"].asString(), item["label"].asString(), item["multiple"].asBool()};
+    for (const auto& option : item["options"]) {
+      if (!option.isObject() || option.size() != 2 || !option["id"].isString() || !option["label"].isString()) return std::nullopt;
+      group.options.push_back({option["id"].asString(), option["label"].asString()});
+    }
+    clarification.groups.push_back(std::move(group));
+  }
+  if (!validClarification(clarification)) return std::nullopt;
+  return clarification;
+}
 
 Json::Value toJson(const AskGeneration& generation) {
   Json::Value body(Json::objectValue);
   body["id"] = generation.id;
   body["requestId"] = generation.requestId;
   body["question"] = generation.question;
+  if (generation.purpose != "conversation") body["purpose"] = generation.purpose;
+  if (generation.clarification) body["clarification"] = toJson(*generation.clarification);
   body["status"] = generation.status;
   body["answer"] = generation.answer;
   body["at"] = Json::UInt64(generation.atMs);
@@ -484,6 +529,8 @@ AskGeneration generationFrom(const Json::Value& body) {
   generation.id = body["id"].asString();
   generation.requestId = body["requestId"].asString();
   generation.question = body["question"].asString();
+  generation.purpose = body.get("purpose", "conversation").asString();
+  generation.clarification = clarificationFrom(body["clarification"]);
   generation.status = body["status"].asString();
   generation.answer = body.get("answer", "").asString();
   generation.atMs = body.get("at", Json::UInt64(0)).asUInt64();
@@ -532,6 +579,9 @@ Json::Value toJson(const AskThread& thread) {
         turn["requestId"] = said.requestId;
         turn["status"] = said.status;
       }
+      if (said.purpose != "conversation") turn["purpose"] = said.purpose;
+      if (said.clarification) turn["clarification"] = toJson(*said.clarification);
+      if (said.allowanceRefusal) turn["allowanceRefusal"] = toJson(*said.allowanceRefusal);
       if (!said.results.empty()) turn["results"] = toJson(said.results);
       if (!said.attachments.empty()) {
         turn["attachments"] = Json::Value(Json::arrayValue);

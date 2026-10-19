@@ -20,6 +20,7 @@ import XCTest
       if !anonymous { app.launchArguments += ["-code-file", ProcessInfo.processInfo.environment["WM_GYM_E2E_SESSION"]!] }
     } else { app.launchArguments += ["-model-server", "-server", "http://127.0.0.1:1"] }
     app.launch()
+    XCTAssertTrue(app.tabBars.buttons["Routines"].waitForExistence(timeout: 20)); app.tabBars.buttons["Routines"].tap()
     XCTAssertTrue(app.buttons["new-routine"].waitForExistence(timeout: 20))
     let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.buttons["new-routine"])
     XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed)
@@ -142,8 +143,18 @@ import XCTest
     let start = app.buttons["routine-start"]
     XCTAssertTrue(start.waitForExistence(timeout: 5)); XCTAssertTrue(start.wait(for: \.isEnabled, toEqual: true, timeout: 10)); start.tap()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
-    app.buttons["workout-log"].tap(); app.buttons["workout-log"].tap()
-    XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).count, 2)
+    let progress = app.descendants(matching: .any)["workout-set-progress"]
+    app.buttons["workout-log"].tap()
+    XCTAssertTrue(progress.waitForValue("1 set"))
+    let firstSet = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
+    XCTAssertEqual(firstSet.count, 1)
+    app.buttons["workout-log"].tap()
+    XCTAssertTrue(progress.waitForValue("2 sets"))
+    let retainedSets = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
+    XCTAssertEqual(retainedSets.count, 2)
+    XCTAssertEqual(Set(retainedSets.map(\.identifier)).count, 2)
+    XCTAssertEqual(retainedSets.prefix(1).map(\.identifier), firstSet.map(\.identifier))
+    XCTAssertEqual(retainedSets.prefix(1).map(\.label), firstSet.map(\.label))
     app.buttons["workout-assembly"].tap()
     XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
     XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 5)); app.buttons["you"].tap()
@@ -319,6 +330,7 @@ import XCTest
     let signed = XCUIApplication()
     signed.launchArguments = ["-model-server", "-server", "http://127.0.0.1:1", "-scenario", "gym-e2e", "-coach-fixture"]
     signed.launch()
+    XCTAssertTrue(signed.tabBars.buttons["Routines"].waitForExistence(timeout: 15)); signed.tabBars.buttons["Routines"].tap()
     XCTAssertTrue(signed.buttons["new-routine"].waitForExistence(timeout: 15)); signed.buttons["new-routine"].tap()
     replace(signed.textFields["routine-name"], "Training day\n")
     signed.buttons["add-movement"].tap(); pickBench(signed, routineEditor: true)

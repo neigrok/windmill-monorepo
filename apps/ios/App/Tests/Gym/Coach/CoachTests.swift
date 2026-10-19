@@ -818,8 +818,8 @@ import SyncTesting
   @Test func textAndPhotoAdmissionUsesUTF8Bound() {
     #expect(!CoachCopy.sendable("  ", photo: false))
     #expect(CoachCopy.sendable("", photo: true))
-    #expect(CoachCopy.sendable(String(repeating: "é", count: 500), photo: false))
-    #expect(!CoachCopy.sendable(String(repeating: "é", count: 501), photo: true))
+    #expect(CoachCopy.sendable(String(repeating: "é", count: 4000), photo: false))
+    #expect(!CoachCopy.sendable(String(repeating: "é", count: 4001), photo: true))
   }
   @Test func accountOnlyNeverSendsAndAccountChangeHidesContent() async throws {
     let (_, gym) = fixture(), cache = store(), coach = CoachConversation(gym: gym, store: cache)

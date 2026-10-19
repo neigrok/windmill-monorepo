@@ -109,7 +109,7 @@ extension GymRESTClient {
       if let status { properties["status"] = String(status) }
       telemetry.event("api_request_failed", properties: properties)
       let body = (error as? GymRESTFailure).flatMap { (try? JSONSerialization.jsonObject(with: $0.body)) as? [String: Any] }
-      let unavailable = status == 503 && body?["code"] as? String == "ask-not-configured"
+      let unavailable = status == 503 && (body?["code"] as? String == "ask-not-configured" || CoachAllowance.refusalCodes.contains(body?["code"] as? String ?? ""))
       if !offline, !unavailable, !ExpectedStatuses.contains(status) {
         telemetry.failure("gym_rest", kind: kind, properties: properties)
       }

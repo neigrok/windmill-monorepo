@@ -13,6 +13,13 @@ import struct SyncModelServer.ModelServer
 
 // Simulator fixtures use the real engine actions and the authenticated REST boundary.
 enum CoachFixture {
+  nonisolated static var setup: Bool {
+    #if DEBUG && targetEnvironment(simulator)
+    ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture")
+    #else
+    false
+    #endif
+  }
   nonisolated static var offline: Bool {
     #if DEBUG && targetEnvironment(simulator)
     ProcessInfo.processInfo.arguments.contains("-coach-offline")
@@ -45,6 +52,7 @@ enum CoachFixture {
       if !ProcessInfo.processInfo.arguments.contains("-restore-board") {
         try? FileManager.default.removeItem(at: CoachDraftStore().file(owner))
       }
+      if ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") { return }
       _ = gym.run(SaveNoteCall(Note(id: ID("coach-fixture-note"), title: "How I want to be talked to", body: "Don’t cheerlead. Say the number and stop.")))
       _ = gym.run(SaveNoteCall(Note(id: ID("coach-fixture-goal"), title: "What I am training for", body: "A stronger squat.")))
       var routine = Draft(new: Routine(id: ID("coach-fixture-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 5, weightKg: 80)])]))
@@ -71,6 +79,21 @@ enum CoachFixture {
       let reason = failureReason(error)
       NSLog("Gym Coach fixture failed: %@", reason)
       gym.error = "Coach fixture could not be prepared (\(reason))."
+    }
+    #endif
+  }
+
+  static func applySetupResults(_ results: [CoachResult], gym: GymModel) {
+    #if DEBUG && targetEnvironment(simulator)
+    guard ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") else { return }
+    for result in results where result.kind == "routine-created" {
+      let id = ID<Routine>(RecordID(result.routineId))
+      guard !gym.routines.contains(where: { $0.id == id }) else { continue }
+      var routine = Draft(new: Routine(id: id, name: result.routineName, entries: [
+        RoutineEntry(exerciseId: ID("back-squat"), sets: Array(repeating: SetTarget(reps: 5), count: 3)),
+        RoutineEntry(exerciseId: ID("bench-press"), sets: Array(repeating: SetTarget(reps: 5), count: 3)),
+        RoutineEntry(exerciseId: ID("barbell-row"), sets: Array(repeating: SetTarget(reps: 5), count: 3))]))
+      _ = gym.save(&routine)
     }
     #endif
   }
@@ -120,9 +143,30 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
     let thread = body["thread"] as? String ?? "coach-fixture-thread"
     let requestId = body["requestId"] as? String ?? "coach-fixture-request"
     let said = CoachFixtureConversation()
-    let generation: [String: Any] = ["id": "gen-" + requestId, "requestId": requestId, "question": body["question"] as? String ?? said.question,
+    var generation: [String: Any] = ["id": "gen-" + requestId, "requestId": requestId, "question": body["question"] as? String ?? said.question,
       "status": "completed", "answer": said.answer, "at": 1_790_424_000_000, "revision": 2, "attachments": said.attachments,
       "steps": said.steps, "results": said.results, "receipt": said.receipt]
+    if ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture"), body["purpose"] as? String == "routine_setup" {
+      generation["purpose"] = "routine_setup"; generation["steps"] = []; generation["results"] = []
+      if (body["attachmentIds"] as? [String])?.isEmpty != false { generation["attachments"] = [] }
+      generation["receipt"] = ["version": 1, "read": ["sets": 0, "sessions": 0, "weeks": 0], "steps": [], "proposals": [], "observations": []]
+      if (body["question"] as? String ?? "").hasPrefix("My goal:") {
+        let lastOption = ProcessInfo.processInfo.arguments.contains("-coach-long-choices") ? "Adjustable dumbbells and a bench" : "Nothing yet"
+        generation["answer"] = ""
+        generation["clarification"] = ["id": "setup-choices", "question": "Two things, so it fits your week.", "groups": [
+          ["id": "days", "label": "How many days a week?", "multiple": false, "options": [
+            ["id": "two", "label": "2 days"], ["id": "three", "label": "3 days"], ["id": "four", "label": "4 days"]]],
+          ["id": "equipment", "label": "What’s at home?", "multiple": true, "options": [
+            ["id": "dumbbells", "label": "Dumbbells"], ["id": "bands", "label": "Bands"], ["id": "pullup", "label": "Pull-up bar"], ["id": "none", "label": lastOption]]]
+        ]]
+      } else {
+        generation["answer"] = "I made three routines. Open one to check the movements and start your workout."
+        generation["results"] = ["A", "B", "C"].map { suffix in
+          ["kind": "routine-created", "operationId": "setup-operation-" + suffix, "routineId": "setup-routine-" + suffix,
+           "routineName": "Full body " + suffix, "movementCount": 3] as [String: Any]
+        }
+      }
+    }
     let row: [String: Any] = ["id": "coach-fixture-thread", "title": said.question, "askedAt": 1_790_424_000_000,
       "outcome": said.outcome, "generation": generation, "turns": [], "nextCursor": NSNull()]
     var response: [String: Any] = [:], type = "application/json", data = Data(), status = 200
@@ -130,7 +174,7 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
       status = 503; response = ["code": "ask-not-configured", "error": CoachCopy.absent]
     } else if path == "/v1/gym/ask" {
       _ = Self.deletedThreads.withLock { $0.remove("coach-fixture-thread") }
-      var partial = generation; partial["status"] = "running"; partial["answer"] = said.partial; partial["revision"] = 1
+      var partial = generation; partial["status"] = "running"; partial["answer"] = ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") ? "" : said.partial; partial["revision"] = 1
       let first = String(data: try! JSONSerialization.data(withJSONObject: ["thread": thread, "generation": partial]), encoding: .utf8)!
       let last = String(data: try! JSONSerialization.data(withJSONObject: ["thread": thread, "generation": generation]), encoding: .utf8)!
       data = Data("event: snapshot\ndata: \(first)\n\nevent: snapshot\ndata: \(last)\n\n".utf8); type = "text/event-stream"

@@ -365,3 +365,26 @@ TEST(events_a_session_past_its_daily_ceiling_is_refused_and_writes_nothing) {
   CHECK_EQ(other->getStatusCode(), drogon::k202Accepted);
   CHECK_EQ(h.repo->appended.size(), 1u);
 }
+
+TEST(events_gym_setup_preserves_the_native_step_labels_and_platform) {
+  Harness h;
+  Json::Value events(Json::arrayValue);
+  for (const auto* action : {"shown", "screenshot", "describe", "goal", "just_log", "build_manually", "clarify", "open_routine"}) {
+    auto event = entry("gym_setup_step", 1000);
+    event["props"] = Json::Value(Json::objectValue);
+    event["props"]["screen"] = "coach";
+    event["props"]["action"] = action;
+    events.append(event);
+  }
+  auto body = batch("setup-session", events);
+  body["platform"] = "ios";
+  const auto response = send(h.api, post(body));
+  CHECK_EQ(dump(bodyOf(response)), std::string(R"({"accepted":8})"));
+  REQUIRE_EQ(h.repo->appended.size(), 1u);
+  REQUIRE_EQ(h.repo->appended.front().events.size(), 8u);
+  for (std::size_t index = 0; index < 8; ++index) {
+    auto expected = events[static_cast<Json::ArrayIndex>(index)]["props"];
+    expected["platform"] = "ios";
+    CHECK_EQ(h.repo->appended.front().events[index].props, dump(expected));
+  }
+}
