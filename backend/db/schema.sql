@@ -451,17 +451,21 @@ alter table ai_budget_reservations add column if not exists input_cost_nanos big
 alter table ai_budget_reservations add column if not exists output_token_cost_nanos bigint;
 alter table ai_budget_reservations add column if not exists min_output_tokens integer;
 alter table ai_budget_reservations add column if not exists max_output_tokens integer;
-alter table ai_budget_reservations drop constraint if exists ai_budget_output_offer;
-alter table ai_budget_reservations add constraint ai_budget_output_offer check (
-  (input_cost_nanos is null and output_token_cost_nanos is null and min_output_tokens is null and max_output_tokens is null)
-  or (input_cost_nanos is not null and output_token_cost_nanos is not null and min_output_tokens is not null
-      and max_output_tokens is not null and input_cost_nanos >= 0 and output_token_cost_nanos > 0
-      and min_output_tokens > 0 and max_output_tokens >= min_output_tokens
-      and input_cost_nanos::numeric + max_output_tokens::numeric * output_token_cost_nanos <= 9223372036854775807
-      and amount_nanos >= input_cost_nanos::numeric + min_output_tokens::numeric * output_token_cost_nanos
-      and amount_nanos <= input_cost_nanos::numeric + max_output_tokens::numeric * output_token_cost_nanos
-      and mod(amount_nanos::numeric - input_cost_nanos, nullif(output_token_cost_nanos, 0)) = 0)
-);
+do $$ begin
+  if not exists (select 1 from pg_constraint
+      where conrelid = 'ai_budget_reservations'::regclass and conname = 'ai_budget_output_offer') then
+    alter table ai_budget_reservations add constraint ai_budget_output_offer check (
+      (input_cost_nanos is null and output_token_cost_nanos is null and min_output_tokens is null and max_output_tokens is null)
+      or (input_cost_nanos is not null and output_token_cost_nanos is not null and min_output_tokens is not null
+          and max_output_tokens is not null and input_cost_nanos >= 0 and output_token_cost_nanos > 0
+          and min_output_tokens > 0 and max_output_tokens >= min_output_tokens
+          and input_cost_nanos::numeric + max_output_tokens::numeric * output_token_cost_nanos <= 9223372036854775807
+          and amount_nanos >= input_cost_nanos::numeric + min_output_tokens::numeric * output_token_cost_nanos
+          and amount_nanos <= input_cost_nanos::numeric + max_output_tokens::numeric * output_token_cost_nanos
+          and mod(amount_nanos::numeric - input_cost_nanos, nullif(output_token_cost_nanos, 0)) = 0)
+    );
+  end if;
+end $$;
 
 create table if not exists ai_budget_alerts (
   id                 text primary key default gen_random_uuid()::text,
