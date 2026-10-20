@@ -159,7 +159,7 @@ enum AppScenario {
         if ProcessInfo.processInfo.arguments.contains("-sign-in-link-fixture") { model.sheet = .code }
         return
       }
-      guard let runtime = model.runtime, runtime.settings.scenario != "gym-e2e-anonymous" else { return }
+      guard let runtime = model.runtime, runtime.settings.scenario?.hasPrefix("gym-e2e-anonymous") != true else { return }
       do {
         if runtime.settings.scenario == "gym-e2e-conflict" {
           try await GymConflictFixture.prepare(model: model)

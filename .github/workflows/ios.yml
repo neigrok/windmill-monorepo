@@ -181,6 +181,7 @@ jobs:
             timeout: 95
             tests: >-
               -only-testing:WindmillUITests/GymCoachFlowTests
+              -only-testing:WindmillUITests/GymAnonymousCoachFlowTests
               -only-testing:WindmillUITests/GymIntegrationFlowTests
               -only-testing:WindmillUITests/OnboardingFlowTests
               -only-testing:WindmillUITests/ShellFlowTests

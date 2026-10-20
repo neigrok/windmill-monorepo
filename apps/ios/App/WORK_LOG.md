@@ -70,7 +70,7 @@ Production runs `bfede62ac3009a32cf6a9c0b3b4f2f2c92769bd3` with USD enforcement 
 verifies the intended image, process settings and schema 6 readiness; independent public health
 returns HTTP 200. Configured limits are $0.25 per month for verified free accounts and $7 per funded
 One period, with free spending capped at $5 per day and $100 per month. Alerts target the configured
-owner address. Anonymous composition remains closed pending device attestation, and Journal voice
+owner address. Anonymous composition is disabled in that deployed build, and Journal voice
 remains unavailable pending supported audio accounting.
 
 UI checks query the exact current accessibility value after returning from a Live Activity. A
@@ -91,3 +91,21 @@ release. The read-only check does not inspect individual tester membership or de
 The retained `ios-dsyms-19` artifact contains the app and workout widget dSYMs. Export reported the
 nonblocking warning *Upload Symbols Failed. The archive did not include a dSYM for the
 Sentry.framework*. Production Sentry symbolication is not verified.
+
+Anonymous Coach uses one installation boundary, one durable request record and one domain import
+Action. The import validates every routine before one engine Plan commits routines and replay metadata.
+Installation issuance is coalesced across account transitions; its Keychain record is separate from
+account credentials. Local draft adoption writes the target archive and source marker atomically before
+removing the source, so retry preserves pending responses, photos, goal choices and unsent drafts.
+Stop waiting preserves the original request and cannot promise cancellation of provider spending.
+Static refusal copy is shared by current errors and retained records. Model-server UI fixtures exercise
+the same transport decoding and domain import as the opt-in HTTP verification.
+
+Anonymous onboarding verification passes the three atomic-import domain cases, 89 native Coach
+cases, nine real-tree architecture checks and 42 app-tool checks. The final Coach run includes the
+replay case where newer goal choices remain in the composer. Light, dark and Accessibility XXXL UI
+flows verify creation receipts, Keep, opening a routine and starting an anonymous workout. Real HTTP
+verification against the isolated C++ backend and fixture provider covers goal and normalized-photo
+generation, atomic import, workout start, installation binding, account adoption and local archive
+retention. The native UI's bounded setup events reach the first-party intake and local observer.
+These native checks use a deterministic provider; they do not establish actual-provider quality.

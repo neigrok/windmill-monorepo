@@ -37,7 +37,7 @@ Json::Value messagesBody(const MessagesRequest& request) {
 
   Json::Value message(Json::objectValue);
   message["role"] = "user";
-  message["content"] = request.user;
+  message["content"] = request.content.isArray() ? request.content : Json::Value(request.user);
 
   Json::Value format(Json::objectValue);
   format["type"] = "json_schema";
@@ -136,7 +136,8 @@ MessagesReply readMessagesReply(int status, const std::string& body) {
   return good;
 }
 
-AnthropicClient::AnthropicClient(std::string apiKey) : apiKey_(std::move(apiKey)) { loop_.run(); }
+AnthropicClient::AnthropicClient(std::string apiKey, std::string baseUrl)
+    : apiKey_(std::move(apiKey)), baseUrl_(std::move(baseUrl)) { loop_.run(); }
 
 AnthropicClient::~AnthropicClient() { stop(); }
 
@@ -149,7 +150,7 @@ void AnthropicClient::stop() {
 MessagesReply AnthropicClient::send(const MessagesRequest& request) {
   if (apiKey_.empty() || stopped_) return {false, MessagesFailure::transport, {}};
 
-  auto client = drogon::HttpClient::newHttpClient(kAnthropicBaseUrl, loop_.getLoop());
+  auto client = drogon::HttpClient::newHttpClient(baseUrl_, loop_.getLoop());
   auto req = drogon::HttpRequest::newHttpRequest();
   req->setMethod(drogon::Post);
   req->setPath("/v1/messages");

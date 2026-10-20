@@ -1,4 +1,5 @@
 #include "platform/adapters/llm/AiCallBudget.h"
+#include "platform/ai_installations/AiInstallations.h"
 
 #include "platform/application/WriteObservation.h"
 
@@ -188,13 +189,36 @@ AiCallAdmission AiCallBudget::begin(const AiSpend& spend, const Json::Value& req
       observation.finish("unauthenticated");
       return {{}, "unauthenticated"};
     }
+    const auto principal = entitlements_.aiPrincipalFor(account->id, account->email.value);
+    observation.skip();
+    return admit(principal, spend, request, minOutputTokens);
+  } catch (...) {
+    observation.failUnknown();
+    return {{}, "ai_accounting_unavailable"};
+  }
+}
+
+AiCallAdmission AiCallBudget::beginInstallation(const AiInstallationPrincipal& installation, const AiSpend& spend,
+                                                const Json::Value& request, int minOutputTokens) {
+  if (spend.user) {
+    WriteObservation observation{"ai.call.admit", "platform", "vendor", "", &failures_};
+    observation.finish("invalid_installation_principal");
+    return {{}, "invalid_installation_principal"};
+  }
+  return admit({{AiBudgetSubjectKind::Device, installation.id()}, AiBudgetTier::Anonymous}, spend, request, minOutputTokens);
+}
+
+AiCallAdmission AiCallBudget::admit(const AiBudgetPrincipal& principal, const AiSpend& spend,
+                                    const Json::Value& request, int minOutputTokens) {
+  WriteObservation observation{"ai.call.admit", "platform", "vendor", "", &failures_};
+  WriteContext context{observation};
+  try {
     const auto offer = minOutputTokens > 0 ? anthropicOutputBudget(request, minOutputTokens) : std::nullopt;
     const auto amount = offer ? std::optional<long long>{offer->costNanos(offer->maxTokens)} : anthropicReservationNanos(request);
     if (request["model"] != spend.model || !amount || minOutputTokens < 0 || (minOutputTokens > 0 && !offer)) {
       observation.finish("unsupported_ai_pricing");
       return {{}, "unsupported_ai_pricing"};
     }
-    const auto principal = entitlements_.aiPrincipalFor(account->id, account->email.value);
     const auto reservation = budgets_->reserve(drogon::utils::getUuid(), principal, *amount, offer);
     if (offer) {
       LOG_INFO << "ai_output_admission input_nanos=" << offer->inputNanos

@@ -24,8 +24,8 @@ nothing, because it is a record.
 Signed-in iOS Gym offers setup automatically after account data has loaded, when the account has
 no Gym data and no active workout, account transition or adoption decision. A saved conversation or
 draft takes precedence. A person who deliberately chose a manual route is not redirected on each
-visit; empty Routines retains a quiet **Set up routines** action. Anonymous Coach remains unavailable until the
-device and execution boundary below is built.
+visit; empty Routines retains a quiet **Set up routines** action. Signed-out setup uses the
+installation and local persistence boundary below.
 
 The empty setup room is headed **Set up your routines** · *Built from what you bring.* and offers
 three starters as one list:
@@ -42,7 +42,7 @@ the routine editor. Both preserve the choice for that account. Text starters pre
 draft and focus the composer; they never send automatically. The starters leave after the first
 send. The heading and starters are the room's, not a message: Coach still does not speak first.
 
-Program and question text share an 8,000-byte UTF-8 limit. A refusal retains the entire draft and
+Signed-in program and question text share an 8,000-byte UTF-8 limit. A refusal retains the entire draft and
 asks the person to shorten it; it never truncates text silently. Clarification choices arrive as
 bounded, typed days/equipment groups. The client does not derive buttons from Coach's prose. A
 selection updates the editable draft, and the person still taps Send.
@@ -52,7 +52,7 @@ When Coach creates requested routines, show one creation receipt per saved routi
 One turn can create at most six routines. Each creation has its own stable operation identity;
 replaying the same request recovers the same saved routine and receipt. An interrupted answer keeps
 its completed creation rows even if the next provider call is refused by an allowance.
-Open routine shows the routine with **Start workout**. The anonymous design adds the Keep row
+Open routine shows the routine with **Start workout**. Signed-out setup adds the Keep row
 (`../../guidelines/superapp-flow.md` §6); signed-in setup has no phone-only or Keep claim. With
 routines, Gym opens on Routines.
 
@@ -272,7 +272,7 @@ nothing says so in words — *read nothing from your log* — never *read 0 sets
 
 ## The limits, said on screen
 
-Limits are contextual. Signed in, the empty room leads directly to its composer with no allowance line; the proposed signed-out room has one quiet allowance line once verified device access exists. When a limit prevents a question, show the server’s accurate reason and available recovery once; preserve the draft and conversation. Individual lifetime/monthly/funded allowance, a request too large for its remaining balance, shared free daily/monthly pools, concurrent calls and burst limits are distinct states. New chat resets none of them. Use the refused budget's reset metadata; a shared daily-pool pause is not the account's monthly reset.
+Limits are contextual. Signed in, the empty room leads directly to its composer with no allowance line; the signed-out room has one quiet allowance line once installation access exists. When a limit prevents a question, show the server’s accurate reason and available recovery once; preserve the draft and conversation. Individual lifetime/monthly/funded allowance, a request too large for its remaining balance, shared free daily/monthly pools, concurrent calls and burst limits are distinct states. New chat resets none of them. Use the refused budget's reset metadata; a shared daily-pool pause is not the account's monthly reset.
 
 A conversation has no question cap of its own: History reopens the same editable conversation however many questions it holds. Backend model-context bounds are independent of visible retained history. Generating, stopped and interrupted answers keep their truthful partial state and completed action receipts.
 
@@ -280,25 +280,24 @@ The full quiet-room, copying, image attachment and streaming contract is [feedba
 
 ## Signed out, and not carried
 
-**Signed-out Coach uses $0.05 for the lifetime of a verified device.** This is the approved
-allowance policy, not released anonymous access: device attestation and the anonymous Coach
-route remain unbuilt. Model/output settings must fit this allowance: an Opus 5 8,000-token output
-cap alone reserves $0.20. Input tokens are estimated for each actual request and settled to actual
-usage. The USD backend is off by default. See [the mobile specification](../../../foundation/mobile/gym_coach.md).
-Once those prerequisites are met, show the server's lifetime grant once under the first-open
-starters, without promising a number of questions:
+**Signed-out Coach uses $0.05 for the lifetime of an installation credential.** The server issues
+the credential; the phone keeps it separately from account credentials and retains it on sign-out.
+IP issuance and generation limits and the shared free daily/monthly pools bound exposure.
+Installation resets are not guaranteed to preserve identity. Input tokens are estimated for each
+actual request and settled to actual provider cost. Show the server's lifetime grant once under
+the first-open starters, without promising a number of questions:
 
 > $0.05 of AI use without an account. Does not renew.
 
 No countdown, no urgency colour, no *only 1 left*. When the allowance is spent, the next send is
 refused once, in place of an answer:
 
-> **You’ve used this device’s AI allowance.**
-> Sign in to keep this chat and your routines. If your account already has training, you’ll be
+> **You’ve used this phone’s AI allowance.**
+> Sign in to keep your routines. If your account already has training, you’ll be
 > asked first.
 
 Use that refusal only for a spent balance. A request that cannot fit positive remaining capacity
-needs its own explanation. Sign-in binds the verified device permanently and includes its current
+needs its own explanation. Sign-in binds the installation permanently and includes its current
 month's anonymous spend in the account's $0.25 monthly free usage; it does not reset usage or
 promise capacity. Unresolved calls remain accounted for across sign-in and period boundaries.
 
@@ -308,8 +307,25 @@ phone's routines join the account by the sign-in rule (`../../guidelines/superap
 same conversation continues under the account, receipts included, unless the person discards the
 phone's gym work when asked, which discards the conversation with it.
 
-**A signed-out photo is sent to Coach to read and stored only on the phone**; the server keeps no
-copy. Signed in, a sent photo is kept privately with the account's conversation.
+Signed-out setup makes one bounded provider request. A goal accepts up to 1,000 UTF-8 bytes and
+requires local Days (1–6) and Equipment (Full gym, Dumbbells, Barbell, Bodyweight) choices before
+Send. A supplied program accepts up to 4,000 bytes without mandatory goal choices. A photo accepts
+JPEG or PNG up to 1 MiB with an optional 1,000-byte note. Limits preserve the full editable draft.
+The result contains at most three reusable routines, six movements per routine and eight target
+sets per movement; it does not promise a weekly calendar. Unknown movements or insufficient
+source details are refused rather than invented.
+
+The phone validates and saves the entire result and its replay receipt atomically before showing
+**Routine created**. Opening a routine and starting a workout need no account. **Stop waiting**
+stops waiting and local saving, not provider spending; **Check response** recovers the same request.
+Local save retry uses the saved result without another provider request.
+
+**A signed-out photo is sent to the AI provider when the person sends. Windmill keeps the photo
+only on the phone.** The application server does not persist the image or input text. The provider
+processes it under its own retention terms. A validated routine result is retained briefly for
+request recovery. Signing in keeps routines through the ordinary Add/Discard rule; local Coach
+history and photos must follow that same ownership decision without implying cloud chat backup.
+Signed in, a newly sent photo is kept privately with the account's conversation.
 
 **Android and web keep Coach account-only**, with one stance:
 

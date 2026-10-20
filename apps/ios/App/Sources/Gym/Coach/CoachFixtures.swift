@@ -170,7 +170,22 @@ nonisolated final class CoachFixtureProtocol: URLProtocol, @unchecked Sendable {
     let row: [String: Any] = ["id": "coach-fixture-thread", "title": said.question, "askedAt": 1_790_424_000_000,
       "outcome": said.outcome, "generation": generation, "turns": [], "nextCursor": NSNull()]
     var response: [String: Any] = [:], type = "application/json", data = Data(), status = 200
-    if path == "/v1/gym/ask", ProcessInfo.processInfo.arguments.contains("-coach-unavailable") {
+    if path.hasPrefix("/v1/ai/installations") || path == "/v1/gym/coach/onboarding" {
+      let allowance: [String: Any] = ["code": "ok", "currency": "USD", "period": "lifetime", "tier": "anonymous", "configured": true,
+        "limit": "0.050000000", "used": "0.001000000", "reserved": "0.000000000", "remaining": "0.049000000", "resetsAtMs": NSNull(), "budgetResetsAtMs": NSNull()]
+      if path == "/v1/gym/coach/onboarding" {
+        response = ["requestId": requestId, "resultId": "onb_" + String(repeating: "a", count: 64), "status": "completed", "expiresAtMs": 1_900_000_000_000 as Int64,
+          "errorCode": NSNull(), "allowance": allowance,
+          "routines": ["A", "B", "C"].map { suffix in
+            ["name": "Full body " + suffix, "entries": ["back-squat", "bench-press", "barbell-row"].map { exercise in
+              ["exerciseId": exercise, "sets": Array(repeating: ["reps": 5, "weightKg": NSNull()] as [String: Any], count: 3), "restSeconds": 120] as [String: Any]
+            }] as [String: Any]
+          }]
+      } else {
+        response = ["bound": path.hasSuffix("/bind"), "allowance": allowance]
+        if path == "/v1/ai/installations" { response["credential"] = String(repeating: "a", count: 43) }
+      }
+    } else if path == "/v1/gym/ask", ProcessInfo.processInfo.arguments.contains("-coach-unavailable") {
       status = 503; response = ["code": "ask-not-configured", "error": CoachCopy.absent]
     } else if path == "/v1/gym/ask" {
       _ = Self.deletedThreads.withLock { $0.remove("coach-fixture-thread") }

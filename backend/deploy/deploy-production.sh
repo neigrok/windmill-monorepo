@@ -92,6 +92,12 @@ try:
     server = json.loads(capture(["docker", "compose", "config", "--format", "json"]))["services"]["server"]
     mode = server["environment"]["AI_ALLOWANCES_ENABLED"]
     cap = server["environment"]["COACH_MAX_OUTPUT_TOKENS"]
+    installations = server["environment"]["AI_INSTALLATIONS_ENABLED"]
+    proxy = server["environment"]["AI_INSTALLATION_PROXY_MODE"]
+    if installations not in ("true", "1", "false", "0") or proxy != "cloudflare":
+        raise SystemExit("FAIL invalid intended installation configuration")
+    if installations in ("true", "1") and (mode not in ("true", "1") or len(server["environment"].get("AI_INSTALLATION_IP_HMAC_KEY", "")) < 32):
+        raise SystemExit("FAIL anonymous AI requires allowances and an installation network key")
     if mode not in ("true", "1", "false", "0") or not re.fullmatch(r"[0-9]+", cap) or not 1024 <= int(cap) <= 8000:
         raise SystemExit("FAIL invalid intended server AI configuration")
     container = capture(["docker", "compose", "ps", "-q", "server"])
@@ -109,15 +115,23 @@ try:
         time.sleep(1)
     else:
         raise SystemExit("FAIL running server did not become ready for sync schema 6")
-    for key, expected in (("AI_ALLOWANCES_ENABLED", mode), ("COACH_MAX_OUTPUT_TOKENS", cap)):
+    for key, expected in (("AI_ALLOWANCES_ENABLED", mode), ("COACH_MAX_OUTPUT_TOKENS", cap),
+                          ("AI_INSTALLATIONS_ENABLED", installations), ("AI_INSTALLATION_PROXY_MODE", proxy)):
         check = subprocess.run(["docker", "compose", "exec", "-T", "server", "sh", "-eu", "-c",
             'grep -Fzxq -- "$1=$2" /proc/1/environ', "sh", key, expected], capture_output=True, timeout=5)
         if check.returncode:
             raise SystemExit("FAIL running server " + key + " differs from intended configuration")
+    if installations in ("true", "1"):
+        check = subprocess.run(["docker", "compose", "exec", "-T", "server", "sh", "-eu", "-c",
+            'grep -Ezq -- "^AI_INSTALLATION_IP_HMAC_KEY=.{32,1024}$" /proc/1/environ', "sh", "installation-key-present"],
+            capture_output=True, timeout=5)
+        if check.returncode:
+            raise SystemExit("FAIL running server installation network key is unavailable")
 except Exception:
     raise SystemExit("FAIL server runtime verification could not complete")
 print("PASS server runtime: image and process environment verified, AI_ALLOWANCES_ENABLED=" + mode +
-      ", COACH_MAX_OUTPUT_TOKENS=" + cap + ", sync schema=6")
+      ", COACH_MAX_OUTPUT_TOKENS=" + cap + ", AI_INSTALLATIONS_ENABLED=" + installations +
+      ", AI_INSTALLATION_PROXY_MODE=" + proxy + ", sync schema=6")
 PY
 rm -f .env.bak rendered.env
 printf 'PASS deployed: environment rendered, DB password preserved, stack running\n'

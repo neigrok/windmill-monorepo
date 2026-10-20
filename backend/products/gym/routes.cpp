@@ -8,6 +8,7 @@
 #include "products/gym/adapters/http/ProgramApi.h"
 #include "products/gym/adapters/http/ThreadsApi.h"
 #include "products/gym/adapters/http/TrainingApi.h"
+#include "products/gym/onboarding/OnboardingApi.h"
 
 #include "platform/adapters/http/WriteRoutes.h"
 
@@ -26,9 +27,21 @@ namespace wm::gym {
 // seven aggregate ports — TrainingApi (the log, its reads, the share), CatalogApi, ProgramApi,
 // PreferencesApi, ThreadsApi, NotesApi, BodyweightApi — and this file is the ONE place the paths are named, so a route's
 // method, its path and the reason it hangs where it does are read in one column. Every path below is
-// owner-scoped but the workout share's read, which is the only unauthenticated route in the product.
+// owner-scoped except public shares and installation-scoped Coach onboarding.
 void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   WriteRoutes routes(app, "gym");
+  if (deps.onboarding && deps.installations) {
+    auto onboarding = std::make_shared<OnboardingApi>(deps.onboarding, deps.installations, deps.failures);
+    if (deps.onShutdown) deps.onShutdown([onboarding] { onboarding->stop(); });
+    routes.registerWriteHandler("gym.coach.onboarding.start", "/v1/gym/coach/onboarding",
+        [onboarding](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+          onboarding->start(req, std::move(cb));
+        }, {drogon::Post});
+    routes.registerHandler("/v1/gym/coach/onboarding/{requestId}",
+        [onboarding](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& requestId) {
+          onboarding->get(req, std::move(cb), requestId);
+        }, {drogon::Get});
+  }
   auto training =
       std::make_shared<TrainingApi>(deps.trainingService, deps.door, deps.authService, deps.appBaseUrl);
   auto catalog =

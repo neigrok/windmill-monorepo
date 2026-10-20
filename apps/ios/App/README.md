@@ -85,10 +85,10 @@ Gym's `accountTransition` pauses training only while sign-out is open (`accountC
 app) and while the engine changes the replica (`replicaChanging`, set by `GymBinding`). Pending
 sign-in, hello and adoption questions leave training available. `rest` is the authenticated
 client handle for Coach, shares and Connected log; engine-backed training writes use domain actions.
-Gym includes routine planning and movement creation, the live set rack and finish receipt, session history/sharing and strength/bodyweight charts, and account-only Coach, proposal review, Notes and Connected log.
+Gym includes routine planning and movement creation, the live set rack and finish receipt, session history/sharing and strength/bodyweight charts, and Coach, account-only proposal review, Notes and Connected log.
 Tapping a routine opens a native summary sheet with Edit and Start. Movements are reached through a
-routine or its editor. Coach has a direct History button; Notes and Connected log live in You’s Settings.
-On a resolved signed-in account whose first Gym pull has completed with no personal data, the room
+routine or its editor. Signed-in Coach has a direct History button; Notes and Connected log live in You’s Settings.
+On a resolved empty anonymous replica, or a signed-in account whose first Gym pull has completed with no personal data, the room
 opens Coach’s routine setup once. Existing drafts/conversations, account adoption, workout and navigation
 state take precedence. Screenshot, program and goal starters prepare the existing composer; Send remains
 explicit. Manual logging or building retires the automatic entry, and empty Routines retains Set up routines.
@@ -100,7 +100,23 @@ checks the existing routine endpoint; a confirmed removal shows the normal unava
 while an unreachable log keeps a refresh action.
 USD allowance refusals preserve drafts and partial creation receipts, and never automatically retry on
 relaunch. An unchanged deliberate Send reuses the original request identity. Existing routine changes
-continue through Review and Apply. Anonymous Coach remains unavailable.
+continue through Review and Apply.
+Anonymous Coach is limited to routine setup: goal, described program or inline photo. Goal setup asks
+for days and supported equipment locally; a single provider call returns bounded public-catalogue
+routines. The server issues a separate installation credential kept in a device-only Keychain service,
+returns the USD allowance, and applies installation, IP and shared budgets. An unreadable or rejected
+credential never creates a replacement. The phone retains immutable requests and resumes the same
+result after interruption. Stop waiting cancels the phone wait, with no claim to cancel provider cost.
+All routines and their replay receipt commit in one domain action before creation links appear. Open
+and Start work before sign-in. Keep your routines uses existing account adoption; usage binds before
+signed-in Coach dispatch, independently of Add/Discard. A binding outage leaves authentication and
+manual Gym available. Local conversation/photo records and drafts stay on this phone, transfer to the
+account’s local Coach draft on Add or empty-account adoption, and are removed on explicit Discard.
+A rejected installation credential remains stored and cannot open another anonymous allowance. An
+authenticated bind returning `invalid_installation` permits account Coach; generic authentication,
+transport and accounting failures still block its dispatch until recovered.
+A pending anonymous response cannot write into the signed-in replica; its retained draft can continue
+with an explicit account request.
 The finished-workout receipt offers Discard, 👑 Share with Coach and the primary Done action.
 
 `GymRoom` keeps `WorkoutScreen` as its full-screen cover through finish and receipt and, on
@@ -141,6 +157,14 @@ paused · update Windmill* with a *Get the update* row; both open TestFlight, an
 leaves the shell's transient *Couldn't open the update. Try again.* The rooms keep working on the phone. The
 `update-required` board signs in against a model server that answers 426 (and keeps answering it across
 `-restore-board`); `update-sign-in` answers 426 only to the sign-in; `keep-gym` opens the gym's Keep sheet.
+
+`GymAnonymousCoachFlowTests` runs light, dark and accessible large text in the standard Coach UI
+shard through the deterministic installation/Coach transport fixture and real local engine. Set
+`TEST_RUNNER_WM_ANONYMOUS_COACH_SERVER` for the same UI flow against an isolated backend and
+`TEST_RUNNER_WM_ANONYMOUS_COACH_SHOTS` for PNG captures. The native `CoachTests` suite uses
+`TEST_RUNNER_WM_ANONYMOUS_COACH_SESSION` (a private JSON file with account/token) plus that server
+to run goal, photo, workout and binding/adoption through real HTTP. Without those variables, the
+photo/adoption case uses the injected transport and local store. Neither standard suite skips tests.
 
 Debug simulator Coach launches add `-coach-fixture`: a signed-in account with a routine, a workout and a
 proposal, and a scripted Coach service over the real REST boundary whose answer reads that workout and proposes

@@ -122,46 +122,6 @@ nonisolated struct CoachClarification: Codable, Equatable, Identifiable, Sendabl
   }
 }
 
-nonisolated struct CoachAllowance: Codable, Equatable, Sendable {
-  let code: String
-  let currency: String
-  let period: String
-  let tier: String
-  let configured: Bool
-  let limit: String?
-  let used: String
-  let reserved: String
-  let remaining: String
-  let resetsAtMs: Int64?
-  let budgetResetsAtMs: Int64?
-  static let refusalCodes: Set<String> = ["subject_exhausted", "free_month_exhausted", "free_day_exhausted",
-    "concurrency_exhausted", "funding_required", "debt_outstanding", "unconfigured", "device_bound"]
-  var message: String {
-    switch code {
-    case "subject_exhausted":
-      if let amount = Decimal(string: remaining, locale: Locale(identifier: "en_US_POSIX")), amount > 0 {
-        return "This request needs more AI capacity than your remaining allowance."
-      }
-      return "Your AI allowance is fully used or reserved."
-    case "free_month_exhausted": return "Coach’s shared free AI capacity is unavailable for this month."
-    case "free_day_exhausted": return "Coach’s shared free AI capacity is unavailable for today."
-    case "concurrency_exhausted": return "Another AI request is still in progress. Try again when it finishes."
-    case "funding_required": return "Your plan has no funded AI allowance for this period."
-    default: return "Coach’s AI allowance is unavailable right now."
-    }
-  }
-  var detail: String? {
-    guard currency == "USD", let limit, let total = Decimal(string: limit, locale: Locale(identifier: "en_US_POSIX")),
-          let available = Decimal(string: remaining, locale: Locale(identifier: "en_US_POSIX")), total >= 0, available >= 0 else { return nil }
-    let balance = "\(available.formatted(.currency(code: "USD").precision(.fractionLength(2...5)))) remaining of \(total.formatted(.currency(code: "USD").precision(.fractionLength(2...5))))."
-    if ["free_day_exhausted", "free_month_exhausted"].contains(code), let reset = budgetResetsAtMs {
-      return balance + " Shared free capacity resets " + Date(timeIntervalSince1970: Double(reset) / 1000).formatted(date: .abbreviated, time: .shortened) + "."
-    }
-    guard code == "subject_exhausted", let reset = resetsAtMs else { return balance }
-    return balance + " Your allowance resets " + Date(timeIntervalSince1970: Double(reset) / 1000).formatted(date: .abbreviated, time: .shortened) + "."
-  }
-}
-
 nonisolated struct CoachGeneration: Codable, Equatable, Identifiable, Sendable {
   let id: String
   let requestId: String
@@ -177,7 +137,7 @@ nonisolated struct CoachGeneration: Codable, Equatable, Identifiable, Sendable {
   let attachments: [CoachAttachment]
   let purpose: CoachPurpose
   let clarification: CoachClarification?
-  let allowanceRefusal: CoachAllowance?
+  let allowanceRefusal: AiAllowance?
   var terminal: Bool { ["completed", "failed", "stopped"].contains(status) }
   enum CodingKeys: String, CodingKey { case id, requestId, question, status, answer, at, steps, receipt, results, revision, stopRequested, attachments, purpose, clarification, allowanceRefusal }
   init(from decoder: any Decoder) throws {
@@ -191,7 +151,7 @@ nonisolated struct CoachGeneration: Codable, Equatable, Identifiable, Sendable {
     attachments = try c.decodeIfPresent([CoachAttachment].self, forKey: .attachments) ?? []
     purpose = try c.decodeIfPresent(CoachPurpose.self, forKey: .purpose) ?? .conversation
     clarification = try c.decodeIfPresent(CoachClarification.self, forKey: .clarification)
-    allowanceRefusal = try c.decodeIfPresent(CoachAllowance.self, forKey: .allowanceRefusal)
+    allowanceRefusal = try c.decodeIfPresent(AiAllowance.self, forKey: .allowanceRefusal)
   }
 }
 
@@ -208,7 +168,7 @@ nonisolated struct CoachTurn: Codable, Equatable, Identifiable, Sendable {
   let attachments: [CoachAttachment]
   let purpose: CoachPurpose
   let clarification: CoachClarification?
-  let allowanceRefusal: CoachAllowance?
+  let allowanceRefusal: AiAllowance?
   var id: Int64 { position }
   enum CodingKeys: String, CodingKey { case from, text, at, receipt, position, generationId, results, status, requestId, attachments, purpose, clarification, allowanceRefusal }
   init(from decoder: any Decoder) throws {
@@ -220,7 +180,7 @@ nonisolated struct CoachTurn: Codable, Equatable, Identifiable, Sendable {
     requestId = try c.decodeIfPresent(String.self, forKey: .requestId); attachments = try c.decodeIfPresent([CoachAttachment].self, forKey: .attachments) ?? []
     purpose = try c.decodeIfPresent(CoachPurpose.self, forKey: .purpose) ?? .conversation
     clarification = try c.decodeIfPresent(CoachClarification.self, forKey: .clarification)
-    allowanceRefusal = try c.decodeIfPresent(CoachAllowance.self, forKey: .allowanceRefusal)
+    allowanceRefusal = try c.decodeIfPresent(AiAllowance.self, forKey: .allowanceRefusal)
   }
 }
 
@@ -306,7 +266,7 @@ nonisolated enum CoachCopy {
 }
 
 nonisolated enum CoachRefusal: Equatable {
-  case retry(String), daily(String), ceiling(String), fresh(String), absent, said(String), allowance(CoachAllowance)
+  case retry(String), daily(String), ceiling(String), fresh(String), absent, said(String), allowance(AiAllowance)
   init(status: Int?, code: String?, message: String?) {
     if status == nil { self = .retry(CoachCopy.noAnswer); return }
     if status == 404 || (status == 503 && code == "ask-not-configured") { self = .absent; return }
@@ -335,5 +295,33 @@ nonisolated struct CoachSSE {
     if line.hasPrefix("event:") { event = String(line.dropFirst(6)).trimmingCharacters(in: .whitespaces) }
     if line.hasPrefix("data:") { lines.append(String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)) }
     return nil
+  }
+}
+
+nonisolated extension AiAllowance {
+  var message: String {
+    switch code {
+    case "subject_exhausted":
+      if let amount = Decimal(string: remaining, locale: Locale(identifier: "en_US_POSIX")), amount > 0 {
+        return "This request needs more AI capacity than your remaining allowance."
+      }
+      return "Your AI allowance is fully used or reserved."
+    case "free_month_exhausted": return "Coach’s shared free AI capacity is unavailable for this month. Signing in does not bypass this limit."
+    case "free_day_exhausted": return "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit."
+    case "concurrency_exhausted": return "Another AI request is still in progress. Try again when it finishes."
+    case "funding_required": return "Your plan has no funded AI allowance for this period."
+    case "device_bound": return "This phone’s AI access belongs to an account. Sign in to use Coach."
+    default: return "Coach’s AI allowance is unavailable right now."
+    }
+  }
+  var detail: String? {
+    guard currency == "USD", let limit, let total = Decimal(string: limit, locale: Locale(identifier: "en_US_POSIX")),
+          let available = Decimal(string: remaining, locale: Locale(identifier: "en_US_POSIX")), total >= 0, available >= 0 else { return nil }
+    let balance = "\(available.formatted(.currency(code: "USD").precision(.fractionLength(2...5)))) remaining of \(total.formatted(.currency(code: "USD").precision(.fractionLength(2...5))))."
+    if ["free_day_exhausted", "free_month_exhausted"].contains(code), let reset = budgetResetsAtMs {
+      return balance + " Shared free capacity resets " + Date(timeIntervalSince1970: Double(reset) / 1000).formatted(date: .abbreviated, time: .shortened) + "."
+    }
+    guard code == "subject_exhausted", let reset = resetsAtMs else { return balance }
+    return balance + " Your allowance resets " + Date(timeIntervalSince1970: Double(reset) / 1000).formatted(date: .abbreviated, time: .shortened) + "."
   }
 }

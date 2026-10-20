@@ -157,13 +157,14 @@ These rules hold on every surface.
 
 - **Everything a person does by hand works signed out** — writing, logging sets, building
   routines, planting steps, editing and every read.
-- **Anonymous AI policy is $0.05 for the lifetime of a verified device**, with no promised
-  question count (`gym/briefs/09-coach.md`). Device attestation and the signed-out Coach route
-  are not yet built; the allowance line must not advertise unavailable access. An action that
+- **Anonymous AI policy is $0.05 for the lifetime of an installation credential**, with no promised
+  question count (`gym/briefs/09-coach.md`). Server-issued credentials, IP limits and global free
+  budgets protect Coach onboarding; resets are not guaranteed to preserve identity. The allowance
+  line appears only after a server read establishes access. An action that
   needs an account opens the sign-in door at that moment and preserves the draft. Admission is
   checked again after sign-in; signing in does not promise immediate AI capacity.
-- Public text import needs a verified device identity in enabled USD mode and is refused before
-  dispatch while that attribution is unavailable.
+- Anonymous public text import remains refused before dispatch in enabled USD mode; installation
+  access is limited to Gym Coach onboarding.
 - Hosted background Echoes use individual USD allowance; existing Echoes remain readable.
 - Every first run still reaches a real thing with zero agent calls: Journal's cursor, Gym's
   **Just log** and **Build it myself**, the roadmap's starter quests and blank tree.
@@ -183,8 +184,8 @@ YOU         signed out: the door, On this phone, About Windmill, Erase data · n
             always clay · About Windmill replays the introduction as a sheet
 APP OWNS    its bar after the room menu, tabs, gestures · its palette · its settings
             its menu line · its skin reported outward once
-AI POLICY   verified device: $0.05 lifetime · account: $0.25 UTC month · funded One: $7 per period
-            all hosted work uses allowance · anonymous access and USD customer rollout pending
+AI POLICY   installation: $0.05 lifetime · account: $0.25 UTC month · funded One: $7 per period
+            all hosted work uses allowance · anonymous access is Gym onboarding only
 ```
 
 ## Web safe areas

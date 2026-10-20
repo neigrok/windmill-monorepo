@@ -25,12 +25,13 @@ arithmetic (sticky carry-forward, tap-to-type, comma-as-decimal parsing).
   routine or settles a proposal, and there is no apply tool at any grant level. The lifter's edits
   and Apply arrive through `/v1/sync`.
 - **No visibility column.** Every owner route is `WHERE user_id = :caller`, and absent is
-  byte-identical to forbidden on all of them. The one non-owner reader comes through a separate table
-  (`gym_session_shares`, `gym_log_shares`) and token-scoped readers that read no private Notes or Coach data.
+  byte-identical to forbidden on all of them. Public shares use separate tables
+  (`gym_session_shares`, `gym_log_shares`). Anonymous onboarding uses an installation-scoped result
+  table and the public seed catalog; it reads no account Notes, history or Coach data.
 - **Gym publishes, gym never imports.** No cross-product read.
-- **Billing gates nothing here.** Gym holds no plan enum; every route answers a signed-in lifter, Coach
-  included. `AskService::ask` reads `Entitlements::aiAllowanceFor`; a gate would be one refusal on
-  that line.
+- **AI admission belongs to the platform.** Training data is independent of paid status. Hosted Coach
+  calls reserve and settle the platform's USD allowances; anonymous onboarding supplies a verified
+  installation principal rather than a placeholder account ID.
 
 ## 2. Layout
 
@@ -49,6 +50,8 @@ adapters/     json/{GymJson,HistoryJson} · postgres/PgGymRows.h + seven Pg repo
               mcp/{GymToolCatalog,GymTools} · llm/AnthropicAsk
 sync/         GymRules · GymProduct (registry + binding) · GymState · PgGym ·
               GymDoor · GymTrainingDoor · GymRecordDoor · GymDoorHash
+onboarding/   Onboarding (pure bounds + repository port) · PgOnboardingRepository ·
+              OnboardingService · AnthropicOnboarding · OnboardingApi
 routes.h/.cpp gym::GymDeps + gym::registerRoutes(app, deps)
 ```
 
@@ -56,13 +59,14 @@ Ports are cut by **aggregate**: the log, the catalog, the program (routines and 
 together), Coach's threads, the settings row, the notes, the weigh-ins. The split is not table
 ownership — the log's reads join the catalog for a movement name. Each Pg adapter's preamble says
 what it reads from another aggregate's tables; shared helpers live in `PgGymRows.h`. The
-repositories read; their only writes are the two shares (`LogRepository`) and Coach's threads
-(`AskThreadRepository`). The in-memory fake (`test/products/gym/Fakes.h`) keeps one shared store
+training repositories read; their writes are the two shares (`LogRepository`) and Coach's threads
+(`AskThreadRepository`). Anonymous generation outcomes use `OnboardingRepository`, without account
+training writes. The in-memory fake (`test/products/gym/Fakes.h`) keeps one shared store
 (`FakeGymStore`) that tests seed directly, and its `ReadOnlyDoor` settles and unlinks nothing and
 refuses every other write: the write rules are the engine's, tested on the real door. `routes.cpp` names every path in one column;
 `TrainingApi.h` holds the status ladder.
 
-**The sync engine is gym's only writer.** The binding lives in `sync/`: the pure rules and the seven
+**The sync engine is the writer of gym's training records.** The binding lives in `sync/`: the pure rules and the seven
 commands in `GymRules`, their registry and binding in `GymProduct`, receipts and command books
 through `GymState`, and the stores over gym's tables in `PgGym`.
 `windmill_gym` embeds `gym.registry.json` (version 6, minimum 4), and
@@ -806,7 +810,9 @@ The last column of a Retire row names the `/v1/sync` write that does that job
 | GET | `/v1/gym/log-shares` | Keep | Log share list. |
 | DELETE | `/v1/gym/log-shares/{id}` | Keep | Log share revocation. |
 | GET | `/v1/gym/shared-logs/{token}` | Keep | Public log share read. |
-| POST | `/v1/gym/ask` | Keep | Coach Ask; mounted only when configured. |
+| POST | `/v1/gym/ask` | Keep | Account Coach Ask; configuration gates new provider work. |
+| POST | `/v1/gym/coach/onboarding` | Keep | Installation-scoped bounded routine generation or immutable replay. |
+| GET | `/v1/gym/coach/onboarding/{requestId}` | Keep | Installation-scoped generation recovery. |
 
 ### 8.2 Shapes
 
@@ -1058,6 +1064,24 @@ Initialize instructions teach the product's use: consult known goals, constraint
 only materially necessary gaps before training decisions; keep coaching friendly and systematic;
 check the consistency of the affected plan; leave existing-routine changes in the user's Apply
 flow. This intake guidance does not block recording supplied workout facts.
+
+### Anonymous onboarding
+
+`onboarding/` owns the one-call goal/program/photo route. `OnboardingService` claims an immutable
+installation/request pair, reads `CatalogRepository::seedCatalog()`, calls the model and stores a
+validated result. The provider has no tools or account repositories. `AnthropicOnboarding` uses the
+shared Messages client and typed installation USD admission; failed attempts with known usage settle,
+while unknown provider outcomes remain held.
+
+`PgOnboardingRepository` serializes new claims on the installation row. It admits eight new IDs per
+UTC day, preserves replay tombstones, terminates abandoned 15-minute leases and clears result content
+after seven days. It stores neither prompts nor photos. Accepted inline photos are decoded under
+byte/pixel limits and fit entirely below the host's 2 MiB memory-body threshold.
+
+The client imports routines atomically into its anonymous engine with a result replay receipt and
+uses normal account adoption after sign-in. The backend has no anonymous routine claim/write door.
+The precise request/result bounds, refusal/reset semantics, provider support and retained data are
+in [the Coach contract](../../../docs/gym-coach-contract.md#anonymous-routine-onboarding).
 
 ## 10. Composition
 

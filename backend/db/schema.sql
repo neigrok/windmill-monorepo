@@ -413,6 +413,45 @@ create table if not exists ai_budget_device_accounts (
 );
 create index if not exists ai_budget_device_accounts_account on ai_budget_device_accounts (account_id);
 
+create table if not exists ai_installations (
+  id text primary key,
+  token_digest text not null unique check (token_digest ~ '^[0-9a-f]{64}$'),
+  created_at_ms bigint not null check (created_at_ms > 0)
+);
+create table if not exists ai_installation_network_limits (
+  network_digest text primary key check (network_digest ~ '^[0-9a-f]{64}$'),
+  expires_at_ms bigint not null check (expires_at_ms > 0),
+  count integer not null check (count > 0)
+);
+create index if not exists ai_installation_network_limits_expiry on ai_installation_network_limits (expires_at_ms);
+create table if not exists ai_installation_network_admissions (
+  installation_id text not null references ai_installations(id),
+  request_id text not null,
+  expires_at_ms bigint not null check (expires_at_ms > 0),
+  primary key (installation_id, request_id)
+);
+create index if not exists ai_installation_network_admissions_expiry on ai_installation_network_admissions (expires_at_ms);
+
+create table if not exists gym_coach_onboarding (
+  device_id text not null references ai_installations(id),
+  request_id text not null,
+  input_hash text not null check (length(input_hash) = 64),
+  result_id text not null,
+  state text not null check (state in ('pending', 'completed', 'failed', 'expired')),
+  payload jsonb,
+  error_code text not null default '',
+  created_at_ms bigint not null,
+  lease_until_ms bigint not null,
+  expires_at_ms bigint not null,
+  terminal_at_ms bigint not null default 0,
+  primary key (device_id, request_id),
+  check ((state = 'completed') = (payload is not null))
+);
+create index if not exists gym_coach_onboarding_active_expiry on gym_coach_onboarding (expires_at_ms) where state <> 'expired';
+create index if not exists gym_coach_onboarding_pending_lease on gym_coach_onboarding (lease_until_ms) where state = 'pending';
+create index if not exists gym_coach_onboarding_device_created on gym_coach_onboarding (device_id, created_at_ms);
+
+
 create table if not exists ai_budget_balances (
   scope            text not null check (scope in ('free_month', 'free_day', 'anonymous_lifetime', 'account_month', 'funded_period')),
   subject_key      text not null,

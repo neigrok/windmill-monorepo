@@ -829,7 +829,7 @@ import SyncTesting
     gym.account = "other-account"; #expect(!coach.allowed && !coach.canCompose)
     await coach.activate(); #expect(coach.saved.text.isEmpty)
     gym.isAnonymous = true; gym.account = nil; await coach.activate()
-    #expect(!coach.allowed && !coach.canCompose && coach.saved.text == "" && coach.saved.request == nil)
+    #expect(coach.allowed && coach.canCompose && coach.saved.text == "" && coach.saved.request == nil && coach.saved.purpose == .routineSetup)
     coach.send(); #expect(!coach.asking && gym.rest.tasks.isEmpty)
     gym.isAnonymous = false; gym.account = "coach-owner"; await coach.activate()
     #expect(coach.saved.text == "Private draft")

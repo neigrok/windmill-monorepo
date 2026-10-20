@@ -20,6 +20,7 @@ public:
   AiBudgetResult release(const std::string& id);
   AiBudgetResult reconcileOverrun(const std::string& id);
   AiBudgetGrantResult fund(const AiBudgetGrant& grant);
+  std::optional<std::string> boundAccount(const std::string& deviceId) const;
   AiBudgetCode bindDevice(const std::string& deviceId, const std::string& accountId);
   std::vector<AiBudgetAlert> claimAlerts(int limit = 20, long long leaseMs = 60'000);
   AiBudgetCode completeAlert(const std::string& id, const std::string& claimToken);

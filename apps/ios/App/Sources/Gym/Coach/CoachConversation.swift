@@ -26,15 +26,18 @@ nonisolated struct CoachSaved: Codable {
       try c.encode(attachmentIds, forKey: .attachmentIds); try c.encode(true, forKey: .stream); try c.encode(purpose, forKey: .purpose)
     }
   }
-  struct Choices: Codable {
+  struct Choices: Codable, Equatable {
     let clarificationId: String
     let base: String
     var groups: [String: [String]]
   }
+  var adoptedSources: [String]?
+  var phoneDrafts: [CoachPhoneDraft]?
+  var onboarding: [CoachOnboardingRecord]?
   var purpose: CoachPurpose?
   var setupChoice: CoachSetupChoice?
   var choices: Choices?
-  var allowance: CoachAllowance?
+  var allowance: AiAllowance?
   var threadId = UUID().uuidString
   var text = ""
   var photo: CoachAttachment?
@@ -44,6 +47,14 @@ nonisolated struct CoachSaved: Codable {
   var thread: CoachThread?
   var generation: CoachGeneration?
   var exchanges: [CoachGeneration] = []
+}
+
+nonisolated struct CoachPhoneDraft: Codable, Equatable {
+  let text: String
+  let photo: CoachAttachment?
+  let photoData: Data?
+  var setupChoice: CoachSetupChoice?
+  var choices: CoachSaved.Choices?
 }
 
 nonisolated struct CoachHandoff: Identifiable, Equatable {
@@ -65,6 +76,27 @@ struct CoachDraftStore {
     if !FileManager.default.fileExists(atPath: url.path) { return CoachSaved() }
     return try JSONDecoder().decode(CoachSaved.self, from: Data(contentsOf: url))
   }
+  func adopt(from source: String, account: String, discard: Bool) throws {
+    let sourceURL = file(source)
+    guard FileManager.default.fileExists(atPath: sourceURL.path) else { return }
+    if !discard {
+      let local = try read(source)
+      var target = try read(account)
+      if target.adoptedSources?.contains(source) == true { try FileManager.default.removeItem(at: sourceURL); return }
+      let existing = Set((target.onboarding ?? []).map(\.id))
+      target.onboarding = (target.onboarding ?? []) + (local.onboarding ?? []).filter { !existing.contains($0.id) }
+      if !local.text.isEmpty || local.photo != nil {
+        if target.text.isEmpty, target.photo == nil {
+          target.text = local.text; target.photo = local.photo; target.photoData = local.photoData; target.purpose = .routineSetup; target.setupChoice = local.setupChoice; target.choices = local.choices
+        } else {
+          target.phoneDrafts = (target.phoneDrafts ?? []) + [CoachPhoneDraft(text: local.text, photo: local.photo, photoData: local.photoData, setupChoice: local.setupChoice, choices: local.choices)]
+        }
+      }
+      target.adoptedSources = (target.adoptedSources ?? []) + [source]
+      try write(target, account: account)
+    }
+    try FileManager.default.removeItem(at: sourceURL)
+  }
   func write(_ saved: CoachSaved, account: String) throws {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     try JSONEncoder().encode(saved).write(to: file(account), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
@@ -80,6 +112,8 @@ struct CoachDraftStore {
   var refusal: CoachRefusal?
   var error: String?
   var asking = false
+  var installationAllowance: AiAllowance?
+  var savingOnboarding = false
   var uploading = false
   var stopping = false
   var reading = false
@@ -93,19 +127,20 @@ struct CoachDraftStore {
   init(gym: GymModel, rest: GymRESTClient? = nil, store: CoachDraftStore = CoachDraftStore()) {
     self.gym = gym; self.rest = rest ?? gym.rest; self.store = store
   }
-  var available: Bool { !gym.isAnonymous && gym.account != nil && !gym.authPaused && !gym.accountTransition }
-  var allowed: Bool { available && owner == gym.account }
+  var available: Bool { seat != nil }
+  var allowed: Bool { available && owner == seat }
   var canCompose: Bool {
     guard allowed, draftReadable else { return false }
     switch refusal { case .daily, .ceiling, .fresh, .absent: return false; default: return true }
   }
   var hasConversation: Bool {
-    !saved.text.isEmpty || saved.photo != nil || saved.request != nil || saved.thread != nil || !saved.exchanges.isEmpty
+    !saved.text.isEmpty || saved.photo != nil || saved.request != nil || saved.thread != nil || !saved.exchanges.isEmpty || !(saved.onboarding ?? []).isEmpty
   }
   var setupNeedsAttention: Bool {
     saved.purpose == .routineSetup && (!saved.text.isEmpty || saved.photo != nil || activeGeneration?.terminal == false || activeClarification != nil)
   }
   var activeClarification: CoachClarification? {
+    if let choices = anonymousGoalChoices { return choices }
     guard !asking, saved.text.utf8.count <= 8000 else { return nil }
     let latest: CoachClarification?
     if let generation = activeGeneration { latest = generation.clarification }
@@ -126,6 +161,7 @@ struct CoachDraftStore {
     return draftReadable ? nil : CoachCopy.unreadableDraft
   }
   var retryable: Bool {
+    if anonymous { return anonymousRetryable }
     guard saved.request != nil, !asking, saved.allowance == nil, activeGeneration?.allowanceRefusal == nil else { return false }
     if case .allowance = refusal { return false }
     if activeGeneration?.status == "stopped" || activeGeneration?.status == "completed" { return false }
@@ -134,16 +170,22 @@ struct CoachDraftStore {
   }
 
   func activate() async {
-    let next = available ? gym.account : nil
+    let next = seat
     if next != owner {
       invalidateRead(); workGeneration += 1; stopGeneration += 1
       work?.cancel(); work = nil; stopWork?.cancel(); stopWork = nil; asking = false; uploading = false; stopping = false
-      owner = next; saved = CoachSaved(); refusal = nil; error = nil; draftReadable = true
+      owner = next; saved = CoachSaved(); installationAllowance = nil; refusal = nil; error = nil; draftReadable = true
       guard let next else { return }
-      do { saved = try store.read(next) }
+      do { saved = try store.read(next); if anonymous { saved.purpose = .routineSetup } }
       catch { draftReadable = false; self.error = CoachCopy.unreadableDraft; gym.report("gym_read", error); return }
     }
     guard let owner, draftReadable else { return }
+    if anonymous {
+      if installationAllowance == nil { await loadInstallationAllowance() }
+      guard self.owner == owner, allowed, anonymous else { return }
+      if let record = anonymousRequest, !record.finished, !record.stopped, !asking { launchOnboarding(owner: owner) }
+      return
+    }
     if let allowance = saved.allowance ?? activeGeneration?.allowanceRefusal { refusal = .allowance(allowance); error = allowance.message }
     if gym.coachUnavailable { refusal = .absent; error = CoachCopy.absent; return }
     if let request = saved.request, saved.allowance == nil, activeGeneration?.terminal != true, !asking {
@@ -152,7 +194,7 @@ struct CoachDraftStore {
   }
 
   @discardableResult func keep(_ next: CoachSaved, failure: String) -> Bool {
-    guard let owner, allowed, gym.account == owner else { return false }
+    guard let owner, allowed else { return false }
     do { try store.write(next, account: owner); saved = next; return true }
     catch { self.error = failure; gym.report("gym_action", error); return false }
   }
@@ -160,24 +202,24 @@ struct CoachDraftStore {
   func edit(_ text: String) {
     guard text != saved.text else { return }
     invalidateRead()
-    var next = saved; next.text = text; next.editedRequestId = next.request?.requestId; next.choices = nil
+    var next = saved; next.text = text; next.editedRequestId = next.request?.requestId; if !anonymous { next.choices = nil }
     if !keep(next, failure: "Your draft couldn’t be saved. Try again.") { saved.text = text; saved.editedRequestId = next.editedRequestId }
   }
   func addPhoto(_ data: Data) throws {
-    let (attachment, bytes) = try CoachPhotoPreparation.prepare(data)
+    let (attachment, bytes) = try CoachPhotoPreparation.prepare(data, maxBytes: anonymous ? 1_048_576 : CoachPhotoPreparation.maxBytes)
     invalidateRead()
     var next = saved; next.photo = attachment; next.photoData = bytes; next.editedRequestId = next.request?.requestId
-    _ = keep(next, failure: "Your draft couldn’t be saved. Try again.")
+    if keep(next, failure: "Your draft couldn’t be saved. Try again.") { gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "photo_selected"]) }
   }
   func removePhoto() {
     invalidateRead()
     var next = saved; next.photo = nil; next.photoData = nil; next.editedRequestId = next.request?.requestId
-    _ = keep(next, failure: "Your draft couldn’t be saved. Try again.")
+    if keep(next, failure: "Your draft couldn’t be saved. Try again.") { gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "photo_removed"]) }
   }
   @discardableResult func newChat(seed: String = "", purpose: CoachPurpose = .conversation) -> Bool {
-    guard !asking else { return false }
+    guard !asking, !anonymous else { return false }
     invalidateRead()
-    var next = CoachSaved(); next.text = seed; next.purpose = purpose; next.setupChoice = saved.setupChoice
+    var next = CoachSaved(); next.adoptedSources = saved.adoptedSources; next.onboarding = saved.onboarding; next.phoneDrafts = saved.phoneDrafts; next.text = seed; next.purpose = purpose; next.setupChoice = saved.setupChoice
     guard keep(next, failure: "Your draft couldn’t be cleared. Try again.") else { return false }
     switch refusal { case .daily, .ceiling, .absent: break; default: refusal = nil; error = nil }
     return true
@@ -201,7 +243,7 @@ struct CoachDraftStore {
   }
   @discardableResult func beginSetup() -> Bool {
     guard allowed, draftReadable, !asking else { return false }
-    if saved.request != nil || saved.thread != nil || !saved.exchanges.isEmpty { return false }
+    if saved.request != nil || saved.thread != nil || !saved.exchanges.isEmpty || !(saved.onboarding ?? []).isEmpty { return false }
     var next = saved; next.purpose = .routineSetup
     return keep(next, failure: "Your setup couldn’t be saved. Try again.")
   }
@@ -216,7 +258,7 @@ struct CoachDraftStore {
       guard !labels.isEmpty else { return nil }
       return labels.joined(separator: ", ") + "."
     }
-    next.text = ([choices.base] + sentences).filter { !$0.isEmpty }.joined(separator: " ")
+    if !anonymous { next.text = ([choices.base] + sentences).filter { !$0.isEmpty }.joined(separator: " ") }
     next.choices = choices; next.editedRequestId = next.request?.requestId
     if keep(next, failure: "Your draft couldn’t be saved. Try again.") {
       gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "clarify"])
@@ -226,6 +268,7 @@ struct CoachDraftStore {
     if offline, error == nil { error = CoachCopy.offline }
   }
   func send() {
+    if anonymous { sendOnboarding(); return }
     guard allowed, !asking, CoachCopy.sendable(saved.text, photo: saved.photo != nil) else { return }
     if let reason = blockedReason {
       error = reason
@@ -260,6 +303,7 @@ struct CoachDraftStore {
     catch { self.error = CoachCopy.unreadableDraft; gym.report("gym_read", error) }
   }
   func retry() {
+    if anonymous { resumeOnboarding(); return }
     guard allowed, !asking, saved.allowance == nil, let owner, let request = saved.request else { return }
     launch(request, owner: owner)
   }
@@ -274,6 +318,8 @@ struct CoachDraftStore {
       guard let self else { return }
       defer { if self.owner == owner, self.saved.threadId == request.thread, self.workGeneration == generation { self.asking = false; self.uploading = false; self.work = nil } }
       do {
+        if let runtime = gym.runtime, let token = runtime.tokens.token(for: owner) { try await runtime.installation.bind(account: owner, token: token) }
+        guard self.owner == owner, self.allowed, self.workGeneration == generation else { throw CancellationError() }
         if !request.attachmentIds.isEmpty, activeGeneration == nil {
           guard let photo = saved.photo, request.attachmentIds == [photo.id], let bytes = saved.photoData else {
             throw AppFailure(message: "That photo is unavailable. Remove it and choose it again.")
@@ -319,7 +365,7 @@ struct CoachDraftStore {
             try? accept(CoachSnapshot(thread: request.thread, generation: generation), request: request)
           }
           if let value = object["allowance"], let data = try? JSONSerialization.data(withJSONObject: value),
-             let allowance = try? JSONDecoder().decode(CoachAllowance.self, from: data), CoachAllowance.refusalCodes.contains(allowance.code) {
+             let allowance = try? JSONDecoder().decode(AiAllowance.self, from: data), AiAllowance.refusalCodes.contains(allowance.code) {
             var next = saved; next.allowance = allowance
             _ = keep(next, failure: "Your message couldn’t be saved. Try again.")
             refusal = .allowance(allowance)
@@ -356,6 +402,7 @@ struct CoachDraftStore {
     error = snapshot.generation.status == "failed" ? CoachCopy.interrupted : snapshot.generation.status == "stopped" ? CoachCopy.stopped : nil
   }
   func stopResponse() {
+    if anonymous { stopOnboarding(); return }
     guard !stopping, let owner, let request = saved.request else { return }
     let wasAsking = asking, wasUploading = uploading
     workGeneration += 1; let generation = workGeneration
@@ -404,7 +451,7 @@ struct CoachDraftStore {
     }
   }
   func open(_ id: String, earlier: Bool = false) async {
-    guard allowed, !asking, let owner else { return }
+    guard allowed, !anonymous, !asking, let owner else { return }
     invalidateRead(); let generation = readGeneration
     reading = true; error = nil
     defer { if self.owner == owner, self.readGeneration == generation { reading = false } }

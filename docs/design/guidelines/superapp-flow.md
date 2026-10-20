@@ -67,9 +67,11 @@ to this phone.*, with the same door as Keep (§6) → **Bringing it back**.
 - **What is made signed out lives on this phone**, and the product says so where it is true: the
   Keep offer (§6) and You (*Not signed in · Everything lives on this phone*, with what the phone
   holds).
-- **Signed-out Coach policy is $0.05 per verified device for its lifetime**, without a promised
-  question count (`gym/briefs/09-coach.md`). Anonymous Coach is not yet available: attestation and
-  suitable model/output settings are prerequisites, and the USD backend is off by default.
+- **Signed-out Coach policy is $0.05 per installation for its lifetime**, without a promised
+  question count (`gym/briefs/09-coach.md`). A server-issued credential, IP limits and shared free
+  budgets protect access. The credential survives ordinary sign-out; resetting the installation
+  is not guaranteed to preserve its identity. Native setup uses one bounded model call after
+  collecting the required details locally.
 - **Windmill One is never shown signed out.**
 - **The only unprompted mentions of signing in** are Where to start?'s quiet Sign in, the Keep
   offer after the first real thing, and You. An account verb the person starts — connecting a
@@ -198,7 +200,7 @@ is the only sign-out confirmation.
 - Three starters: **Add a screenshot** · **Describe your program** · **Share your goal**.
 - Two quiet escapes: **Just log** (straight to the logger) · **Build it myself** (the routine
   editor).
-- Once verified anonymous access is available, show one quiet server-backed USD lifetime
+- Once installation access is available, show one quiet server-backed USD lifetime
   allowance line under the signed-out starters; see the Coach brief for copy. Signed in, the
   same room has no standing allowance line. Do not advertise an unavailable anonymous grant.
 - Coach creates the routines: one truthful creation receipt per routine, each with **Open

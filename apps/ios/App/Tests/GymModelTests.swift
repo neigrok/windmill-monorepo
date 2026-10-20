@@ -23,7 +23,7 @@ import SyncTesting
   }
 
   func runtime(failing: GymStoreFault = GymStoreFault(), telemetry: any Telemetry = NoopTelemetry(), transport: any SyncTransport = JournalModelTransport(), drivesLoops: Bool = false,
-               connectivity: SwitchedConnectivity = SwitchedConnectivity()) throws -> AppRuntime {
+               connectivity: SwitchedConnectivity = SwitchedConnectivity(), installation: AiInstallation? = nil) throws -> AppRuntime {
     let store = try Store.inMemory(registry: SyncSchema.registry, crashPoints: CrashPoints { point in
       if failing.point.withLock({ $0 == point }) { throw AppFailure(message: "private injected storage detail") }
     }, commandResultWrites: AppRuntime.commandResultWrites)
@@ -34,7 +34,7 @@ import SyncTesting
     let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0), holdRemovals: false)
     return AppRuntime(settings: AppSettings(arguments: ["app", "-server", "https://gym.invalid"]), store: store, engine: engine,
                       auth: NativeAuth(baseURL: URL(string: "https://gym.invalid")), runner: runner,
-                      tokens: tokens, revocations: InMemoryTokenStore(), telemetry: telemetry)
+                      tokens: tokens, revocations: InMemoryTokenStore(), telemetry: telemetry, installation: installation ?? AiInstallation(baseURL: URL(string: "https://gym.invalid"), credentials: InstallationMemoryStore(), telemetry: telemetry))
   }
 
   @Test func anonymousGymUsesEngineAndNeverPushes() throws {

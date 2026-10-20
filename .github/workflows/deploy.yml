@@ -81,6 +81,10 @@ jobs:
           WINDMILL_SERVER_ERROR_RETENTION_DAYS: ${{ vars.WINDMILL_SERVER_ERROR_RETENTION_DAYS }}
           TENDING_ENABLED: ${{ vars.TENDING_ENABLED }}
           AI_ALLOWANCES_ENABLED: ${{ vars.AI_ALLOWANCES_ENABLED || 'false' }}
+          AI_INSTALLATIONS_ENABLED: ${{ vars.AI_INSTALLATIONS_ENABLED || 'false' }}
+          AI_INSTALLATION_IP_HMAC_KEY: ${{ secrets.AI_INSTALLATION_IP_HMAC_KEY }}
+          AI_INSTALLATION_ISSUES_PER_DAY: ${{ vars.AI_INSTALLATION_ISSUES_PER_DAY || '10' }}
+          AI_INSTALLATION_GENERATIONS_PER_HOUR: ${{ vars.AI_INSTALLATION_GENERATIONS_PER_HOUR || '30' }}
           COACH_MAX_OUTPUT_TOKENS: ${{ vars.COACH_MAX_OUTPUT_TOKENS || '2000' }}
           AI_ANONYMOUS_LIFETIME_USD: ${{ vars.AI_ANONYMOUS_LIFETIME_USD || '0.05' }}
           AI_LOGGED_IN_MONTHLY_USD: ${{ vars.AI_LOGGED_IN_MONTHLY_USD || '0.25' }}
@@ -134,6 +138,13 @@ jobs:
             exit 1
           fi
 
+          if [ "$AI_INSTALLATIONS_ENABLED" = true ] || [ "$AI_INSTALLATIONS_ENABLED" = 1 ]; then
+            if { [ "$AI_ALLOWANCES_ENABLED" != true ] && [ "$AI_ALLOWANCES_ENABLED" != 1 ]; } || [ "${#AI_INSTALLATION_IP_HMAC_KEY}" -lt 32 ]; then
+              echo "Refusing to render — anonymous AI requires enabled allowances and the installation network secret."
+              exit 1
+            fi
+          fi
+
           # printf so values are written literally. Optional keys write empty; compose defaults apply.
           : > rendered.env
           {
@@ -143,6 +154,8 @@ jobs:
                        TENDING_ENABLED COACH_MAX_OUTPUT_TOKENS AI_ALLOWANCES_ENABLED AI_ANONYMOUS_LIFETIME_USD \
                        AI_LOGGED_IN_MONTHLY_USD AI_ONE_PERIOD_USD AI_FREE_MONTHLY_USD \
                        AI_FREE_DAILY_USD AI_ALLOWANCE_ALERT_EMAIL \
+                       AI_INSTALLATIONS_ENABLED AI_INSTALLATION_IP_HMAC_KEY \
+                       AI_INSTALLATION_ISSUES_PER_DAY AI_INSTALLATION_GENERATIONS_PER_HOUR \
                        SENTRY_DSN SENTRY_ENVIRONMENT SENTRY_LOG_LEVEL \
                        SENTRY_RELEASE AMPLITUDE_API_KEY AMPLITUDE_HOST \
                        WINDMILL_EVENTS_RETENTION_DAYS WINDMILL_FEEDBACK_RETENTION_DAYS \

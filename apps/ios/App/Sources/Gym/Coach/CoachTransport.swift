@@ -109,7 +109,7 @@ extension GymRESTClient {
       if let status { properties["status"] = String(status) }
       telemetry.event("api_request_failed", properties: properties)
       let body = (error as? GymRESTFailure).flatMap { (try? JSONSerialization.jsonObject(with: $0.body)) as? [String: Any] }
-      let unavailable = status == 503 && (body?["code"] as? String == "ask-not-configured" || CoachAllowance.refusalCodes.contains(body?["code"] as? String ?? ""))
+      let unavailable = status == 503 && (body?["code"] as? String == "ask-not-configured" || AiAllowance.refusalCodes.contains(body?["code"] as? String ?? ""))
       if !offline, !unavailable, !ExpectedStatuses.contains(status) {
         telemetry.failure("gym_rest", kind: kind, properties: properties)
       }
@@ -121,7 +121,7 @@ extension GymRESTClient {
 nonisolated enum CoachPhotoPreparation {
   static let maxBytes = 5 * 1024 * 1024
   static let maxEdge = 4096
-  static func prepare(_ data: Data) throws -> (CoachAttachment, Data) {
+  static func prepare(_ data: Data, maxBytes: Int = maxBytes) throws -> (CoachAttachment, Data) {
     guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { throw AppFailure(message: "Choose a supported photo.") }
     let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
       kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: maxEdge,

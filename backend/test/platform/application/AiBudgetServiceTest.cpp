@@ -85,6 +85,10 @@ struct BudgetRepository : AiBudgetRepository {
     markCurrentWrite();
     return {AiBudgetCode::Ok, grant};
   }
+  std::optional<std::string> boundAccount(const std::string& device) override {
+    if (binding.first == device) return binding.second;
+    return std::nullopt;
+  }
   AiBudgetCode bindDevice(const std::string& device, const std::string& account, long long atMs, const AiBudgetLimits&) override {
     ++calls;
     binding = {device, account};

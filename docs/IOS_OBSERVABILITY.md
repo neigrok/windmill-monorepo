@@ -44,7 +44,7 @@ sink cannot delay commits/subscriptions or enter adaptive writer timing.
 HTTP owns transport reports; the engine's deadline uses the same invocation
 diagnostics to avoid a second report and retains the failure kind in pull/push outcome metrics.
 
-HTTP failures carry method, coarse route family (`/v1/auth`, `/v1/me`, `/v1/sync`, `/v1/gym`, `/v1/journal` or `/v1/events`), a static
+HTTP failures carry method, coarse route family (`/v1/ai`, `/v1/auth`, `/v1/me`, `/v1/sync`, `/v1/gym`, `/v1/journal` or `/v1/events`), a static
 operation, `failure_kind`, optional numeric status label and `duration_ms`. Duration uses a monotonic
 clock through response consumption and decoding. Sync outcomes also cover application of the reply
 to the local store. Expected statuses 400, 401, 403, 404, 409, 410, 422, 426 and 429 are product/API metrics,
@@ -100,7 +100,7 @@ action `dismiss_ink` once when writing or a tap lifts it; no ink replay action i
 | Adoption | `room_adoption_answered` | room: journal, gym; action: add, discard; no counts or identifiers |
 | Gym screens | `gym_screen_viewed` | screen: routines, routine, routine_editor (once a visit to the editor, however often its steps pop), routine_targets (a movement's Targets in the editor), routine_movement (the editor's Add movement and Create movement steps), movement, log, on_this_phone (the list On this phone opens), session, fix_set, record, bodyweight, weigh_in, session_share, coach, history, notes, note, review, connected_log, connected_log_guide (How this works), sources (What Coach read), workout |
 | Outside the app | `gym_activity_set_logged`, `gym_activity_offer_refused`, `gym_intent_opened` | surface: activity (the Live Activity's *Log set*), control (the workout control in Control Center), shortcut (an App Shortcut) on every row; `gym_activity_set_logged`: a set logged durable on the phone; `gym_activity_offer_refused`: outcome: refused (the rack had moved past the offer, or a rule of the log refused the set, and the logger opened), failed (the phone could not save the set and the logger opened, or Windmill could not start to log it and opened instead), absent (a *Log set* shortcut found no workout open); `gym_intent_opened`: intent: start_workout, open_workout (Windmill opened on Routines or on the logger, a *Log set* shortcut with nothing on offer included) |
-| Coach routine setup | `gym_setup_step` | screen: coach; action: shown, screenshot, describe, goal, just_log, build_manually, clarify, open_routine. No chosen option, goal, program text, image, amount or routine name is sent. Storage failures use the existing static gym_read/gym_action boundary. |
+| Coach routine setup | `gym_setup_step` | screen: coach; action: shown, screenshot, describe, goal, just_log, build_manually, clarify, open_routine, routines_saved (after the atomic local commit), keep_routines, photo_selected, photo_removed. No chosen option, goal, program text, image, amount or routine name is sent. Storage failures use the existing static gym_read/gym_action boundary. |
 | Training | `gym_session_started`, `gym_set_logged`, `gym_session_finished` | screen: workout; outcome: ok, and refused for a Finish the phone cannot queue |
 | Hidden workout | `gym_hidden_workout` | action: hide when the lifter hides the open workout (*Hide workout*, or *Build my routine* on a first workout); action: open with door: accessory (the tab bar's accessory, iOS 26) or row (The log's Hidden row, iOS 18) when the lifter brings it back. A return the room cannot make records nothing and leaves the band's *Gym could not restore this workout. Try again.* |
 | Routines | `gym_routine_saved` | screen: routine_editor, workout; action: create, update (the editor creates or updates, a workout's kept targets update its routine, the receipt's routine is created) |
@@ -216,7 +216,17 @@ Apple auth operations use static labels `auth_apple`, `auth_apple_create`, `auth
 `auth_methods` and `auth_apple_remove`. Removal uses method `DELETE`; reading methods uses `GET`.
 Gym REST uses `GET` for reads, `POST` for Ask, Stop and share creation, `PUT` for Coach attachments
 and `DELETE` for share revocation and Coach conversations; gym records are written only through the
-engine.
+engine. Anonymous Coach setup uses POST to issue an installation credential and create an immutable
+onboarding request, GET to read the server allowance and poll the same request, and POST to bind its
+cost after verified sign-in. Installation calls use `ai_installation` and the `/v1/ai` route family; onboarding uses `gym_rest` and `/v1/gym`. The separate
+installation Keychain service reports read/write failures with `keychain_read`/`keychain_save` and never
+replaces an unreadable or rejected credential. Expected installation, rate and allowance refusals are
+metrics; accounting and unexpected transport/decoding failures report to Sentry. Stop waiting records
+`gym_ask_outcome:cancelled` for the phone wait, without claiming provider cancellation. Local import
+failures use `gym_action`; no creation receipt appears until all routines and their replay marker commit.
+Keep, sign-in and Add/Discard retain the existing account/adoption events; installation costs bind
+independently of whether local content is added or discarded. Local drafts, photos, result identities,
+allowance amounts and IP signals never enter product events or failure properties.
 The simulator model follows the same auth-boundary failure reporting, without secrets in diagnostics.
 A legacy Apple door returning `created: true` is a decode failure; its session never reaches the engine.
 `auth_pending` is You's *Finish signing in* section, an authenticated sign-in awaiting engine recovery, drawn above

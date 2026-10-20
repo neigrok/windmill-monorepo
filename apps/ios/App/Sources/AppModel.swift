@@ -33,6 +33,7 @@ final class AppModel {
   var accountName = ""
   var keepDismissed: Bool
   var keepSheetPresented = false
+  var keepRoutines = false
   var email = ""
   var code = ""
   var codeSentAt: Date?
@@ -373,6 +374,9 @@ final class AppModel {
       try Task.checkCancellation()
       setSignInSession(resumed)
       if let resumed, !resumed.isComplete, currentAdoption == nil { try await completeAdoption(resumed) }
+      if resumed?.isComplete != false, let active = try runtime.account(), active == preferences.string(forKey: "coachAdoptionAccount") {
+        try finishCoachAdoption(discard: preferences.bool(forKey: "coachAdoptionDiscard"))
+      }
       syncStarted = true
       recoveryDue = nil; recoveryDelayMs = Constants.backoffBaseMs
       refresh()
@@ -396,7 +400,7 @@ final class AppModel {
     }
   }
 
-  func keep() { choose("keep", screen: selectedRoom.rawValue); journal.done(); keepSheetPresented = true; sheet = .keep }
+  func keep(routines: Bool = false) { keepRoutines = routines; choose("keep", screen: selectedRoom.rawValue); journal.done(); keepSheetPresented = true; sheet = .keep }
 
   func closeKeep() { choose("close", screen: "keep"); sheet = nil; dismissKeep() }
 
@@ -646,6 +650,7 @@ final class AppModel {
       try runtime.engine.cancelSignIn()
     } catch { reportBoundary("auth_sign_in", error: error); self.error = "Couldn't cancel the sign-in. Try again."; return }
     pendingSignIn = nil; signInSession = nil; appleAuthorization = nil
+    preferences.removeObject(forKey: "coachAdoptionSource"); preferences.removeObject(forKey: "coachAdoptionAccount"); preferences.removeObject(forKey: "coachAdoptionDiscard")
     restoringSignIn = false; signInDeferred = false; updateRequiredAtSignIn = false; error = nil
     preferences.removeObject(forKey: "pendingAuthMethod"); preferences.removeObject(forKey: "pendingAuthLinked")
     clearAdoptionAnswers()
@@ -664,6 +669,13 @@ final class AppModel {
       try? await runtime.auth.logout(token: identity.token)
       throw AppFailure(message: "Sign in to the same account to resume backup. Your pages stay with this account.")
     }
+    if gym.isAnonymous, let source = try? runtime.runner.read(Gym.scope, { "anonymous:" + $0.replica }) {
+      if preferences.string(forKey: "coachAdoptionSource") != source || preferences.string(forKey: "coachAdoptionAccount") != identity.account {
+        preferences.set(false, forKey: "coachAdoptionDiscard")
+      }
+      preferences.set(source, forKey: "coachAdoptionSource")
+      preferences.set(identity.account, forKey: "coachAdoptionAccount")
+    }
     accountName = identity.name
     accountEmail = identity.email.nilIfEmpty ?? email
     preferences.set(accountEmail, forKey: "accountEmail:\(identity.account)")
@@ -671,8 +683,10 @@ final class AppModel {
     signInMethods = []
     methodsGeneration += 1
     do {
+      try? await runtime.installation.bind(account: identity.account, token: identity.token)
       setSignInSession(try await runtime.engine.signIn(account: identity.account, token: identity.token))
       if let session = signInSession, !session.isComplete, currentAdoption == nil { try await completeAdoption(session) }
+      if signInSession?.isComplete == true { try finishCoachAdoption(discard: preferences.bool(forKey: "coachAdoptionDiscard")) }
     }
     catch { reportBoundary("auth_sign_in", error: error); throw error }
     runtime.updateTelemetryIdentity()
@@ -884,8 +898,20 @@ final class AppModel {
     adoptionAnswers = answers
   }
 
+  func finishCoachAdoption(discard: Bool) throws {
+    guard let source = preferences.string(forKey: "coachAdoptionSource"),
+          let account = preferences.string(forKey: "coachAdoptionAccount") else { return }
+    try CoachDraftStore().adopt(from: source, account: account, discard: discard)
+    preferences.removeObject(forKey: "coachAdoptionSource")
+    preferences.removeObject(forKey: "coachAdoptionAccount")
+    preferences.removeObject(forKey: "coachAdoptionDiscard")
+  }
+
   func completeAdoption(_ session: SignInSession) async throws {
+    let discardGym = adoptionAnswers["gym"] == .discard
+    preferences.set(discardGym, forKey: "coachAdoptionDiscard")
     try await session.complete(adoptionAnswers)
+    try finishCoachAdoption(discard: discardGym)
     runtime?.updateTelemetryIdentity()
     journal.document = PageDocument(); journal.dirty = false; journal.editing = false
     signInSession = nil; clearAdoptionAnswers(); sheet = nil; welcome = false; refresh()

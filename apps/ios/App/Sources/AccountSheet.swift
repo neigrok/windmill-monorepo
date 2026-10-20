@@ -246,9 +246,9 @@ struct AccountSheet: View {
     let journal = model.selectedRoom == .journal || model.welcome
     return VStack(alignment: .leading, spacing: 14) {
       head("icloud.and.arrow.up")
-      Text(journal ? "Keep your pages" : "Keep your log").font(ShellType.title)
+      Text(journal ? "Keep your pages" : model.keepRoutines ? "Keep your routines" : "Keep your log").font(ShellType.title)
       Text(journal ? "They live only on this phone. Sign in to back them up and open them on the web."
-           : "It lives only on this phone. Sign in to back it up and open it on the web.").foregroundStyle(dim).lineSpacing(4)
+           : model.keepRoutines ? "Your routines live only on this phone. Sign in to back them up and open them on the web. This Coach conversation and photo stay on this phone." : "It lives only on this phone. Sign in to back it up and open it on the web.").foregroundStyle(dim).lineSpacing(4)
       if model.canSignIn {
         authDoors.padding(.top, 10)
       } else {
@@ -266,7 +266,7 @@ struct AccountSheet: View {
   }
 
   var emailDoor: some View {
-    Button("Use email instead") {
+    Button(model.runtime?.settings.appleEnabled == true ? "Use email instead" : "Continue with email") {
       model.cancelAuthentication(); usingLink = false; model.choose("email", screen: model.sheet?.telemetryName ?? "keep")
       model.appleTicket = nil; model.appleAuthorization = nil; model.error = nil; model.sheet = .address
     }.font(ShellType.action).foregroundStyle(brand).buttonStyle(.plain).disabled(offline).accessibilityIdentifier("email-sign-in")
@@ -324,7 +324,7 @@ struct AccountSheet: View {
           Text("Sign in").frame(maxWidth: .infinity)
         }.font(ShellType.action)
           .modifier(RoomPrimaryStyle(room: .shell)).disabled(model.working || signInLink.isEmpty).accessibilityIdentifier("sign-in-link-submit")
-        Button("Use email instead") { model.cancelAuthentication(); usingLink = false; model.error = nil }.frame(minHeight: 44)
+        Button(model.runtime?.settings.appleEnabled == true ? "Use email instead" : "Continue with email") { model.cancelAuthentication(); usingLink = false; model.error = nil }.frame(minHeight: 44)
       } else {
       Text(model.sheet == .appleAddress ? "Your Windmill email" : "Sign in with email").font(ShellType.title)
       Text(model.sheet == .appleAddress ? "We'll send a code to confirm it's yours." : "We'll send a six-digit code.").font(ShellType.subheadline).foregroundStyle(dim)

@@ -35,6 +35,10 @@ on:
         description: Run four paid-provider Coach checks on disposable data; do not publish images
         type: boolean
         default: false
+      verify_live_anonymous_coach:
+        description: Run three paid-provider anonymous Coach checks on disposable installations; do not publish images
+        type: boolean
+        default: false
 
 concurrency:
   group: backend-cicd-${{ github.ref }}
@@ -166,7 +170,7 @@ jobs:
           dropdb --if-exists --maintenance-db="$DATABASE_URL" windmill_sync_test
 
   live-coach:
-    if: github.event_name == 'workflow_dispatch' && inputs.verify_live_coach
+    if: github.event_name == 'workflow_dispatch' && inputs.verify_live_coach && !inputs.verify_live_anonymous_coach
     needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -244,9 +248,91 @@ jobs:
           docker rm -f coach-live-server coach-live-observer || true
           sudo rm -rf "$RUNNER_TEMP/coach-live"
 
+  live-anonymous-coach:
+    if: github.event_name == 'workflow_dispatch' && inputs.verify_live_anonymous_coach && !inputs.verify_live_coach
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: anonymous_coach_live
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/anonymous_coach_live
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v4
+      - name: Load this commit's tested server
+        uses: docker/build-push-action@v7
+        with:
+          context: backend
+          build-contexts: contract=packages/api-contract
+          target: build
+          load: true
+          tags: windmill-anonymous-coach-live
+          cache-from: type=gha
+      - name: Prepare isolated accounts and telemetry
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/db/schema.sql
+          python3 backend/test/e2e/anonymous_coach.py prepare --evidence "$RUNNER_TEMP/anonymous-coach-live"
+          docker run -d --name anonymous-coach-observer --network host \
+            -v "$RUNNER_TEMP/anonymous-coach-live:/evidence" \
+            windmill-anonymous-coach-live python3 test/e2e/anonymous_coach.py observe --evidence /evidence
+      - name: Verify anonymous goal, program and photo with actual provider costs
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          test -n "$ANTHROPIC_API_KEY"
+          export AI_INSTALLATION_IP_HMAC_KEY="$(cat "$RUNNER_TEMP/anonymous-coach-live/installation-key")"
+          docker run -d --name anonymous-coach-server --network host \
+            --add-host api.resend.com:127.0.0.1 -v "$RUNNER_TEMP/anonymous-coach-live:/evidence" \
+            -e ANTHROPIC_API_KEY -e DATABASE_URL -e PORT=8088 -e WINDMILL_HOST=127.0.0.1 \
+            -e WINDMILL_APP_URL=http://127.0.0.1:8088 \
+            -e AI_ALLOWANCES_ENABLED=true -e AI_INSTALLATIONS_ENABLED=true \
+            -e AI_INSTALLATION_IP_HMAC_KEY -e AI_INSTALLATION_PROXY_MODE=direct \
+            -e WINDMILL_OWNER_EMAILS=coach-live-owner@example.com \
+            -e AI_ALLOWANCE_ALERT_EMAIL=coach-live-owner@example.com -e RESEND_API_KEY=local-mail-fixture \
+            -e 'RESEND_FROM=Windmill <local@example.com>' -e SSL_CERT_FILE=/evidence/ca-bundle.pem \
+            -e SENTRY_DSN=https://local@localhost:9443/1 -e SENTRY_ENVIRONMENT=anonymous-live-verification \
+            -e AMPLITUDE_API_KEY=local-telemetry-fixture -e AMPLITUDE_HOST=localhost:9443 \
+            windmill-anonymous-coach-live build/windmill_server
+          for ((attempt=0; attempt<50; attempt++)); do
+            if curl -sf -o /dev/null -H 'Sync-Schema: 6' http://127.0.0.1:8088/v1/sync/hello; then
+              python3 backend/test/e2e/anonymous_coach.py verify --provider anthropic --evidence "$RUNNER_TEMP/anonymous-coach-live"
+              exit $?
+            fi
+            sleep 0.2
+          done
+          echo 'The isolated anonymous Coach server did not start.'
+          exit 1
+      - name: Retain bounded verification results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anonymous-coach-live-results
+          path: ${{ runner.temp }}/anonymous-coach-live/results.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Remove isolated server and private evidence
+        if: always()
+        run: |
+          docker rm -f anonymous-coach-server anonymous-coach-observer || true
+          sudo rm -rf "$RUNNER_TEMP/anonymous-coach-live"
+
   build-and-push:
     needs: [test, postgres]
-    if: github.event_name != 'pull_request' && !inputs.verify_live_coach
+    if: github.event_name != 'pull_request' && !inputs.verify_live_coach && !inputs.verify_live_anonymous_coach
     runs-on: ubuntu-latest
     permissions:
       contents: read

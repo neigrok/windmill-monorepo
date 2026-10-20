@@ -2,17 +2,19 @@
 
 [USD AI allowances](../backend/AI_ALLOWANCES.md) is the durable accounting contract, including
 policy, funding validation, approximate per-request reservations and rollout requirements.
-`AI_ALLOWANCES_ENABLED` defaults to false. Anonymous access still needs attestation and suitable
-model/output settings; an Opus 5 output cap of 8,000 tokens alone reserves $0.20, exceeding its
-$0.05 lifetime allowance. Audio accounting and customer USD screens also remain rollout work.
+`AI_ALLOWANCES_ENABLED` defaults to false in configuration and is enabled in production. Anonymous
+Gym onboarding uses a separate installation credential and one bounded model call. It requires
+`AI_INSTALLATIONS_ENABLED`, durable IP limits and the shared free budgets. Installation resets
+are not guaranteed to preserve identity. Audio accounting and customer USD screens remain work.
 
 ## Metered work
 
 | Feature | Operation / configured model | Enabled allowance treatment |
 | --- | --- | --- |
-| Roadmap text composition | `compose` / `claude-haiku-4-5-20251001` | Refused until a verified anonymous device identity exists. |
+| Roadmap text composition | `compose` / `claude-haiku-4-5-20251001` | Anonymous dispatch remains closed; Coach installation access does not enable this route. |
 | Roadmap AI assistance | `tend` / `claude-sonnet-5` | Individual and applicable free/funded budgets; no separate customer request quota. |
 | Gym Coach | `ask` / `claude-opus-5` | Individual and applicable free/funded budgets; technical question burst protection remains. |
+| Anonymous Gym onboarding | `coach.preview` / `claude-sonnet-5` | Lifetime installation and shared free budgets; one bounded call, public exercises only. |
 | Journal Echoes | `echo.segment`, `echo.curate` / `claude-sonnet-5` | Debits the same individual allowance, including automatic background work. |
 | Journal Talk | `transcribe` / `gpt-4o-transcribe` | Refused pending verified audio bounds and audio/text pricing. |
 
@@ -31,7 +33,7 @@ held. New periods do not fund old calls.
 
 ## Allowances and funding
 
-- Anonymous: $0.05 per verified device for its lifetime; one in-flight call.
+- Anonymous: $0.05 per installation credential for its lifetime; one in-flight call.
 - Verified logged-in: $0.25 per UTC calendar month, including current-month anonymous spending
   associated with the account; one in-flight call.
 - Windmill One: $7 per funded subscription billing period; two in-flight calls. Owner access
@@ -40,7 +42,7 @@ held. New periods do not fund old calls.
 Anonymous and free accounts share $100 per UTC calendar month and $5 per UTC day. Paid grants
 are isolated from both free pools. All hosted AI work, including background processing, debits the
 individual budget. Uncertain liabilities and principal debt survive period and tier changes.
-A device-to-account binding is permanent and blocks further anonymous use of that device.
+An installation-to-account binding is permanent and blocks further anonymous use of that credential.
 
 Subscription status alone does not fund usage. A verified, completed positive payment for the
 configured monthly One price creates an idempotent grant for its explicit period. Grants cannot
@@ -63,8 +65,9 @@ retain a historical refusal snapshot in a stored generation. An accepted retry c
 The account and product clients still need this USD contract and the distinction between remaining
 capacity and a request that cannot fit. The drawings need lifetime anonymous, monthly free and
 funded paid states. A daily free-pool pause must name the daily reset rather than imply that the
-user's individual allowance is spent. Verified device endpoints and automatic binding at sign-in
-remain closed until attestation is implemented.
+user's individual allowance is spent. Installation reads use `GET /v1/ai/installations/current`;
+verified sign-in binds with `POST /v1/ai/installations/bind`. The native client retains its credential
+across sign-out. A caller that erases or omits the signal cannot be associated with it by this mechanism.
 
 ## Disabled mode
 

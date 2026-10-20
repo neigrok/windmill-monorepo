@@ -20,16 +20,22 @@ struct AiCallAdmission {
   std::string refusal;
 };
 
+class AiInstallationPrincipal;
+
 class AiCallBudget {
 public:
   AiCallBudget(std::shared_ptr<AiBudgetService> budgets, Entitlements& entitlements,
                AuthRepository& accounts, FailureReporter& failures);
 
   AiCallAdmission begin(const AiSpend& spend, const Json::Value& request, int minOutputTokens = 0);
+  AiCallAdmission beginInstallation(const AiInstallationPrincipal& principal, const AiSpend& spend,
+                                    const Json::Value& request, int minOutputTokens = 1024);
   void finish(const AiBudgetReservation& reservation, const std::string& model,
               const Json::Value& usage, bool complete);
 
 private:
+  AiCallAdmission admit(const AiBudgetPrincipal& principal, const AiSpend& spend,
+                        const Json::Value& request, int minOutputTokens);
   std::shared_ptr<AiBudgetService> budgets_;
   Entitlements& entitlements_;
   AuthRepository& accounts_;

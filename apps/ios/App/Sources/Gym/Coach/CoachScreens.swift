@@ -5,10 +5,15 @@ import SyncEngine
 
 // The shell can supply its existing You sheet without giving a product ownership of account UI.
 private struct CoachAccountDoor: EnvironmentKey { static let defaultValue: (@MainActor () -> Void)? = nil }
+private struct CoachKeepDoor: EnvironmentKey { static let defaultValue: (@MainActor () -> Void)? = nil }
 private struct CoachRoutineDoor: EnvironmentKey { static let defaultValue: (@MainActor (String) -> Void)? = nil }
 private struct CoachSessionDoor: EnvironmentKey { static let defaultValue: (@MainActor (String) -> Void)? = nil }
 private struct CoachAskDoor: EnvironmentKey { static let defaultValue: (@MainActor (CoachHandoff) -> Void)? = nil }
 extension EnvironmentValues {
+  var coachKeepRoutines: (@MainActor () -> Void)? {
+    get { self[CoachKeepDoor.self] }
+    set { self[CoachKeepDoor.self] = newValue }
+  }
   var coachOpenAccount: (@MainActor () -> Void)? {
     get { self[CoachAccountDoor.self] }
     set { self[CoachAccountDoor.self] = newValue }

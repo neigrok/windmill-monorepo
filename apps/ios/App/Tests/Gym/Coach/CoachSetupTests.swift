@@ -108,7 +108,7 @@ extension CoachTests {
     #expect(coach.saved.text == request.question && !coach.retryable && !coach.asking)
     #expect(coach.saved.allowance?.code == "free_day_exhausted")
     #expect(coach.activeGeneration?.results.count == (partial ? 1 : nil))
-    #expect(coach.error == "Coach’s shared free AI capacity is unavailable for today.")
+    #expect(coach.error == "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.")
     let restored = CoachConversation(gym: gym, rest: rest, store: cache)
     await restored.activate()
     #expect(restored.saved.request == request && restored.saved.text == request.question && !restored.asking && !restored.retryable)

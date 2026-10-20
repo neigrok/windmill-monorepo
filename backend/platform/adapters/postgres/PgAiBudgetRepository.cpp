@@ -435,6 +435,14 @@ AiBudgetGrantResult PgAiBudgetRepository::fund(const AiBudgetGrant& grant, const
   return {AiBudgetCode::Ok, grant};
 }
 
+std::optional<std::string> PgAiBudgetRepository::boundAccount(const std::string& deviceId) {
+  PgLease connection{*pool_};
+  pqxx::read_transaction txn{*connection};
+  const auto rows = txn.exec("SELECT account_id FROM ai_budget_device_accounts WHERE device_id = $1", pqxx::params{deviceId});
+  if (rows.empty()) return std::nullopt;
+  return rows[0][0].as<std::string>();
+}
+
 AiBudgetCode PgAiBudgetRepository::bindDevice(const std::string& deviceId, const std::string& accountId,
                                              long long atMs, const AiBudgetLimits& limits) {
   if (!validAiBudgetId(deviceId) || !validAiBudgetId(accountId) || !AiBudgetPeriod::at(atMs) || !limits.valid())

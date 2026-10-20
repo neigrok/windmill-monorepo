@@ -13,6 +13,7 @@ struct CatalogRepository {
   virtual ~CatalogRepository() = default;
 
   virtual std::vector<Exercise> catalog(const UserId& user) = 0;          // seeds + own customs
+  virtual std::vector<Exercise> seedCatalog() = 0;
 };
 
 }

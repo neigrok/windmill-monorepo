@@ -48,12 +48,13 @@ The composer is fixed above the navigation/keyboard inset while the conversation
 | Interrupted | Preserve partial answer; “Response interrupted.” and Retry; completed action receipts remain |
 | Stopped | Preserve partial answer; “Response stopped.”; completed actions are not described as undone |
 | At limit | Server’s accurate refusal and available recovery; New chat never implies a limit resets |
-| Allowance used (signed out, once available) | “You’ve used this device’s AI allowance.” once, then Continue with Apple · Use email instead; draft and conversation kept. Positive remaining capacity that cannot fit a request is a separate refusal |
+| Allowance used (signed out) | “You’ve used this phone’s AI allowance.” once, then Continue with Apple · Use email instead; draft and conversation kept. Positive remaining capacity that cannot fit a request is a separate refusal |
 | Routines created | One grouped row per saved routine: actual name, “Routine created · N movements” and Open routine; completed rows survive interruption |
 
-The signed-out allowance is $0.05 for a verified device's lifetime; no question count is promised. Anonymous Coach still requires attestation and model/output settings that fit that allowance; the USD backend is off by default. Input tokens are estimated for each request, and actual use can exceed a reservation. Shared free daily/monthly pools, individual allowance and concurrent-call limits retain distinct refusal and recovery metadata. Sign-in preserves usage attribution and does not guarantee capacity. See [the Coach brief](briefs/09-coach.md).
+The signed-out allowance is $0.05 for an installation credential's lifetime; no question count is promised. Server-issued credentials, IP limits and shared budgets protect access; installation resets are not guaranteed to preserve identity. Input tokens are estimated for each request, and actual use can exceed a reservation. Shared free daily/monthly pools, individual allowance and concurrent-call limits retain distinct refusal and recovery metadata. Sign-in preserves usage attribution and does not guarantee capacity. See [the Coach brief](briefs/09-coach.md).
 
-Questions and pasted programs accept up to 8,000 UTF-8 bytes. Input beyond that remains editable and
+Signed-in questions and pasted programs accept up to 8,000 UTF-8 bytes. Anonymous setup accepts
+1,000-byte goals, 4,000-byte programs or a photo with a 1,000-byte note. Input beyond that remains editable and
 receives a specific length refusal. Clarification groups and routine receipts come from the typed
 Coach contract; clients never parse generated prose to invent controls, creation outcomes or counts.
 
@@ -61,9 +62,9 @@ Copy returns only the message's visible textual content, preserving line breaks.
 
 Android history omits the redundant Your conversations caption and ordinary Read only/no changes proposed status. “Read only” must not imply a retained conversation cannot continue. A created routine has one outcome fact: “Created {routine}” when named, otherwise the actual count of routines created. Preserve meaningful proposal outcomes and conversation receipts; do not repeat the same state as both a badge and a subtitle.
 
-Use native photo pickers and menus. The attachment control is an accessible Add photo icon. Send accepts a photo with optional text. An attachment-only first conversation uses Photo as its neutral title. Signed in, sent images are kept privately with the account's conversation and reopen from authenticated storage. The draft caption says “Sent to Coach when you send. Kept privately with this chat.” The planned anonymous flow requires local image storage and inline model processing without persisted application-server copies; device access and vendor-retention disclosure remain unresolved in the consistency ledger. Do not fake an image asset or promise unsupported file types in the drawing.
+Use native photo pickers and menus. The attachment control is an accessible Add photo icon. Send accepts a photo with optional text. An attachment-only first conversation uses Photo as its neutral title. Signed in, sent images are kept privately with the account's conversation and reopen from authenticated storage. The draft caption says “Sent to Coach when you send. Kept privately with this chat.” Signed out, the caption says “Sent to our AI provider when you send. Windmill keeps this photo only on this phone.” The application server processes the image inline without persisting it; the caption makes no claim about provider retention. Do not fake an image asset or promise unsupported file types in the drawing.
 
-While streaming, follow new text only when already at the end. Reading older messages preserves position; a quiet Jump to latest affordance appears when needed. Retry/reconnect reattach to the existing logical turn, preserving ordered text and completed tool effects. Stop stops generation and does not reverse a completed routine creation or Apply.
+While streaming, follow new text only when already at the end. Reading older messages preserves position; a quiet Jump to latest affordance appears when needed. Retry/reconnect reattach to the existing logical turn, preserving ordered text and completed tool effects. Signed-in Stop stops generation and does not reverse a completed routine creation or Apply. Anonymous setup uses one request: “Stop waiting” cancels local waiting and saving, while “Check response” recovers the same request without another charge. “Saving your routines…” lasts until the atomic local commit succeeds; only then show creation receipts.
 
 ## Verification and systematization
 
