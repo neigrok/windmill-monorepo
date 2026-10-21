@@ -24,33 +24,35 @@ nothing, because it is a record.
 An empty Gym, signed in or not, opens on Coach. Before the first accepted message Coach speaks
 first, locally — two bubbles, no model turn, no allowance line:
 
-> I’m Coach. I can help with:
+> Hi, I’m Coach. I can help you with:
 >
 > **Build** — a program from a screenshot or your own words.
-> **Goals** — set them here, and I’ll plan around them.
-> **Notes** — I keep what matters, like an old injury.
-> **Adjust** — I review your routines as you train; nothing changes until you apply.
+> **Goals** — tell me your goals, and I will plan for them.
+> **Notes** — I save important facts, like an old injury.
+> **Changes** — as you train, I suggest changes to your routines.
 
-Signed out the second bubble reads **Build** and **Goals** (*tell me what you’re after, and I’ll
-plan around it*) and then **With an account** — *I keep notes and review your routines as you
-train.*, since saving notes and proposing changes need an account. Each claim is a tool Coach has:
+Signed out the second bubble reads **Build** and **Goals** and then **Account** — *sign in, and I
+can also save notes and suggest changes to your routines.*, since saving notes and proposing
+changes need an account. The words are simple English for readers who learned it second: short
+common words, no idioms, one idea per sentence. Every Coach string follows that rule. Each claim is a tool Coach has:
 `create_routine` from an attached image or text; goals, limits and other insight the lifter states
 go into Notes through `save_note`, which every later turn reads; `propose_routine_change` and
-`propose_routine_removal` change nothing until the lifter applies. When the lifter states a goal,
+`propose_routine_removal` wait for the lifter's **Apply**. When the lifter states a goal,
 Coach saves it as a note in that turn.
 
 Under the last bubble sit **Add screenshot** (the system photo picker, no permission) and **Build
-myself** (the routine builder). The greeting and its actions stay until the first user message is
+my own** (the routine builder). The greeting and its actions stay until the first user message is
 accepted; tab changes, a cancelled picker, relaunch and a refused or failed send keep them. There
 is no goal form, no chips and no Just log.
 
 Signed-in program and question text share an 8,000-byte UTF-8 limit. A refusal retains the entire
 draft and asks the person to shorten it; it never truncates text silently.
 
-**Routines Coach writes are drafts, confirmed inline.** They hang under the answer as one card: each
-routine a row that expands in place to its movements, equipment and set targets in their load
-basis, and **Save routines** (**Save routine** for one) on the card. Nothing is saved until that tap.
-After it, the card becomes one receipt per saved routine, *<name>* · *Routine created · N
+**Routines Coach writes are drafts, decided inline.** They hang under the answer as one card,
+eyebrow *3 new routines* (*1 new routine*): each routine a row that expands in place to its
+movements, equipment and set targets in their load basis (one routine is open, with no chevron),
+then **Apply** and **Reject** at 52 pt. **Reject** drops the drafts at once, with no alert, and the
+card collapses to *Rejected · 3 routines*. After **Apply**, the card becomes one receipt per saved routine, *<name>* · *Routine created · N
 movements*, each with **Open routine**. One turn can prepare at most six routines; each has its own
 stable operation identity, so a retry recovers the same draft and the same receipt. Signed-out
 setup adds the Keep row (`../../guidelines/superapp-flow.md` §6). With routines, Gym opens on
@@ -64,10 +66,10 @@ and the receipt live on the proposal card. There is no review sheet.
 ### One · the turn
 
 Coach answers in prose. On web, one inline proposal follows with the routine name, counted changes,
-full diff, **Apply** and **Turn this down**. The decision replaces its actions with a receipt in the
+full diff, **Apply** and **Reject**. The decision replaces its actions with a receipt in the
 same place. A routines-home preview opens the conversation at its inline proposal.
 
-On the phones, the proposal card under the answer carries the diff, **Apply** and **Turn down**.
+On the phones, the proposal card under the answer carries the diff, **Apply** and **Reject**.
 It shows up to three changed rows, then **Show all N changes**, which expands the card in place to
 every change and kept run; **Show less** folds it. A routines-home proposal row opens its
 conversation at the card.
@@ -88,13 +90,12 @@ row). Whether that line names the routine a second time is a copy owner's call t
 (`3j`): Android draws *`<routine>` · `<counted>` · waiting* after its eyebrow has named the routine. Web's inline heading names the routine once beside the count.
 
 **The proposal names its routine.** Web's inline heading reads *<routine> · <counted>*; its routine
-name truncates on one line. Phone cards use *Proposal · <routine name>*. The source attribution remains separate from the routine
+name truncates on one line. Phone cards use *Changes to <routine name>*. The source attribution remains separate from the routine
 name.
 
-**Pending promises disappear when the decision is settled.** Web draws *Logged sets stay unchanged.*
-for a revision, and the intent-specific atomic promise for a removal. Its actions become the server's
-applied or turned-down receipt. Phone cards retain their promise while pending and remove it after
-the decision. A read still in flight is not a settled decision.
+**No promise line.** A pending card carries the diff and its two buttons, nothing under them, on
+every surface. The decision replaces the buttons with the server's applied or rejected receipt. A
+read still in flight is not a settled decision.
 
 **One proposal per turn.** An answer *can* mint several, and two on the same routine kill each other:
 the supersede runs before the second lands, so the first is dead while both ids come back. A second
@@ -106,15 +107,15 @@ the store recorded, in this order: *a newer proposal replaced this one, so it wa
 later proposal took its slot — decided first, because a routine can move after the second mint too,
 and nothing changed but Coach's mind; *that routine changed after this proposal was written, so it
 was not applied* when only the routine's revision moved; *this proposal was superseded before it was
-applied* for a row settled before the reason was kept. Turning one down meets the same three ending
-*…so it was not turned down* (the third: *this proposal was superseded before it was turned down*).
+applied* for a row settled before the reason was kept. Rejecting one meets the same three ending
+*…so it was not rejected* (the third: *this proposal was superseded before it was rejected*).
 Every surface shows the server's sentence as sent; local words only for a reply with none.
 
 ### Two · the review
 
 The review is the card. Web and the phones render the same thing: the complete diff — changed rows
 at full weight, each kept run a collapsed count *in its own place* (*and 7 lines unchanged*) that
-unfolds where it stands — then the actions and the atomic promise. On the phones a long diff opens
+unfolds where it stands — then the actions. On the phones a long diff opens
 on its first three changes and **Show all N changes** expands it in place; nothing opens over the
 conversation.
 
@@ -126,15 +127,26 @@ position carry it without colour. Unchanged fields stay plain; an added movement
 removed one is struck through whole. Drafts use the same blocks (every movement *Added*), and so
 does the receipt for a movement Coach edited.
 
-**The actions are on the card.** **Apply all N** (**Apply** when N is 1, **Remove <routine>** for a
-removal, in the destructive style) and **Turn down**, side by side under the diff, then the promise —
-*All or none. Nothing changes until you tap.* (*Nothing changes until you tap.* for one change;
-*Your logged sets stay. Nothing is removed until you tap.* for a removal). The label carries the
-count the store will apply, never a number the screen counted for itself. Both are disabled while
-a request runs; the server's refusal stays on the card.
+**Every change Coach can make has a drawn block** (Gym file, journey 08, boards 08.15–08.31; the
+table with each source is `ios/ios-redesign.md` §6). From the tools and the change model:
+a proposal is a *revise* or a *remove*; a revise carries an optional new name (*Renamed*) and
+per-movement changes of four kinds — *kept*, *added*, *removed*, *retargeted* — with order changes
+derived (*Moved*). A swap has no kind of its own: it reads as a removed block, then an added one.
+A retarget shows Sets · Reps · Load while every set is the same, and one line per set (*Set 1* …)
+once they differ, so *vary by set* and *ramp up* read set by set; no reps reads *Max*, no weight
+*Last time*, no sets *None*; rest is its own field. Kept movements fold into *No change: N
+movements*. Two writes skip the card because they apply at once and are receipts: `update_exercise`
+(name, equipment, weight per dumbbell) reads *Changed a movement*; `save_note` reads *Saved a note*
+with the note's text. Coach appends notes only; it never edits, reorders or deletes one.
 
-**Turn down asks once** on the phones: *Turn this down?* / *Nothing changes, and it stays in the
-routine’s history as a record.* / **Turn down** (destructive) · **Keep it**. Web settles directly.
+**The actions are on the card.** **Apply** (**Remove routine** for a removal, in the destructive
+style) and **Reject**, stacked under the diff, nothing under them. The header carries the count the
+store will apply, never a number the screen counted for itself. Both are disabled while a request
+runs; a failed write puts one red line above them (*No connection. Not applied.*, or the server's
+refusal) and **Apply** reads **Try again**.
+
+**Reject settles at once** on every surface, with no alert: it changes nothing, and the card stays
+in the conversation as *Rejected · Push A*.
 Leaving the card alone decides nothing: the proposal stays pending in the conversation.
 
 **The card attributes the proposal.** A proposal from a connected tool carries *from Claude
@@ -143,7 +155,7 @@ eyebrow; Coach's own needs no byline, since its answer sits above.
 
 **At the rack, Apply says what it does not do.** A session's plan is a frozen snapshot, so applying
 mid-workout changes nothing about the workout in progress. A pending card seen during a workout on
-web carries *"You are mid-workout. Applying changes next time, not this session."* above the diff,
+web carries *"You are in a workout. Changes start next time."* above the diff,
 never inside the actions, so Apply never moves.
 
 ### Three · the apply
@@ -160,8 +172,8 @@ reason and no actions. The card or stored-thread row carries the receipt line:
 
 > **Applied · Push A · 4 changes**
 
-*1 change* when one; **Applied · Push A · routine removed** for a removal. Turning down writes
-*"Turned down · nothing changed."*
+*1 change* when one; **Applied · Push A · routine removed** for a removal. Rejecting writes
+*"Rejected · Push A."*
 
 A removal applied on either phone keeps its receipt state with the account until the receipt is
 shown. Retries, timeouts and relaunch preserve the pending decision and its confirmed outcome;
@@ -233,7 +245,7 @@ actual request and settled to actual provider cost. No allowance line is shown b
 the way: no countdown, no urgency colour, no *only 1 left*. When the allowance is spent, the next
 send is refused once, as a centred line in the conversation with its way out:
 
-> Your AI allowance is fully used or reserved.
+> You have used all of your AI allowance.
 > Sign in to continue. **Sign in**
 
 Use that refusal only for a spent balance. A request that cannot fit positive remaining capacity
@@ -268,17 +280,17 @@ Signed in, a newly sent photo is kept privately with the account's conversation.
 
 **Android and web keep Coach account-only**, with one stance:
 
-> **Coach reads your log, so it needs you signed in.**
+> **Coach needs your workout log. Please sign in.**
 
 Android draws it as the signed-out room (`../android-delivery.md`), and its suite pins it. On the web the room sits behind
 the gym's own sign-in door, so the sentence is the mid-room 401 stance rather than a screen.
 
 **This deployment does not carry Coach** — not an outage, and the difference matters.
 
-> **Coach isn’t part of this Windmill. Your log is still yours to read.**
+> **This Windmill does not have Coach. You can still read your log.**
 
-*Part of* rather than *available on*: nothing is broken and nothing is coming back later, so a word
-that implies a temporary fault would be a small lie. The second sentence is the useful fact — the
+*Does not have* rather than *is not available*: nothing is broken and nothing is coming back later,
+so a word that implies a temporary fault would be a small lie. The second sentence is the useful fact — the
 thing the lifter actually came for still works. The Notes door stays drawn in this stance, because a
 connected agent reads notes whether or not this Windmill carries Coach.
 

@@ -25,7 +25,6 @@ alternative remains under consistency entry F38.
 Changing the count hides or restores rows without losing their draft values. Growing beyond the
 retained rows copies the last row. Add set first restores a hidden row, then copies one. Clearing
 the count hides the ladder and disables the other head fields; only committing open discards it.
-Show **You decide the numbers at the rack.** above the fields while open and not refused.
 
 Each row edits reps and load through native numeric entry, with Next/Done navigation. Use `max`
 and `last time` placeholders. The planning sign control appears on bodyweight load fields,

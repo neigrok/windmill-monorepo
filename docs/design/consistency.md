@@ -304,7 +304,7 @@ these are the places it disagrees with a drawing, a brief or the build.
   `19-connected-log.md` now give iOS Coach's More as the one door and keep settings as Android's
   second; `10-notes.md` still calls Coach's door a row, where iOS's is a More item. Decide whether
   Android and the shell canon follow.
-- **9s · Notes' lines.** `10-notes.md` heads Notes with *Any agent you connect can read these too.*
+- **9s · Notes' lines.** `10-notes.md` heads Notes with *Agents you connect can also read these.*
   and, under it, *what you write for Coach*, a line it calls load-bearing, and puts *Top note wins.*
   on screen for the order. The spec (§6) draws the first line only and lets the drag handle in Edit
   carry the order; Android pins *Top note wins.* (`Notes.kt`). Rule whether both lines hold on every
@@ -368,9 +368,9 @@ these are the places it disagrees with a drawing, a brief or the build.
   *Could not confirm a note save*. The brief is right that a saved note is never silent; the
   iOS build was the stale side, drawing no saved-note line anywhere, and the spec now rules the row.
   The settled words differ too: the brief's return receipt reads *Applied · Push A · 4 changes*,
-  *Applied · Push A · routine removed* and *Turned down · nothing changed.* ("Four · the return"), as
-  the web's `receiptLine` does; the iOS Review's band says the word alone — *Applied*, *Removed*,
-  *Turned down* — since its title names the routine and its header the count, and the card,
+  *Applied · Push A · routine removed* and *Rejected · Push A.* ("Four · the return"); the web's
+  `receiptLine` still says *Turned down* (10v); the iOS Review's band says the word alone — *Applied*,
+  *Removed*, *Turned down* — since its title names the routine and its header the count, and the card,
   History and band share one table that adds *Out of date* for a superseded proposal, which no
   canon word covers. Restate the brief's step-list and phrase-table paragraphs for iOS (6v already
   holds its `Ask.swift` reference), and decide whether web and Android take *Removed* and *Out of
@@ -421,8 +421,9 @@ these are the places it disagrees with a drawing, a brief or the build.
     these; the spec now states them (§4 Buttons, §5 Lists, §7.5, §7.6, §7.7, §7.10).
 
   Choices the branch forced or left open, for the build and the owner:
-  - The branch's words win: *Equipment* (not *load basis*), *Dumbbells*, *Build myself* (the feedback
-    said *Build it myself*), *Add screenshot*, *Save routine(s)*, *Sign in to continue.*
+  - The branch's words win: *Equipment* (not *load basis*), *Dumbbells*, *Add screenshot*, *Sign in
+    to continue.* The owner's later rulings replace two: *Build my own* (not *Build myself*) and
+    **Apply** / **Reject** on drafts (not *Save routine(s)*) — build work in 10v.
   - The greeting's actions are drawn `.bordered` with the accent tint; the branch uses `.borderless`.
   - The branch adds a *Windmill One* button to a signed-in refusal, opening *Subscriptions aren't
     available yet.* `superapp-shell.md` keeps One in You only, so the interim board (a) draws no One
@@ -464,9 +465,32 @@ these are the places it disagrees with a drawing, a brief or the build.
   `Type=Decimal` on the weigh-in) and Theme `ios/system/red` for every destructive paint. The local
   `gym/destructive` variable is deleted.
 - **10u · Three more symbols awaiting a publish.** `iOS / Symbol / ellipsis` (renamed from the
-  library's private `_sf/ellipsis`), `list.bullet.rectangle` and `plus.circle.fill` were added to
-  the Design System after the first publish. Until the next publish the Gym boards draw them as local
-  `sf/…` frames; `.claude/scratch/gym-figma-targets/post-publish.js` swaps them afterwards.
+  library's private `_sf/ellipsis`), `list.bullet.rectangle` and `plus.circle.fill` are in the
+  Design System file but not yet in a published library version: importing their keys from the Gym
+  file still fails (checked 2026-10-22, second try). Until the owner publishes the library from the
+  Figma UI, the Gym boards draw them as local `sf/…` frames;
+  `.claude/scratch/gym-figma-targets/post-publish.js` swaps them afterwards.
+- **10v · Coach's cards, words and change catalogue (owner rulings, 2026-10-22; build).** The owner
+  ruled: proposals and drafts are decided with **Apply** and **Reject** (*Rejected*, never *Turned
+  down*); Reject asks nothing; no promise, reassurance or restating lines; Coach's strings in simple
+  English. The spec (§6 table), `09-coach.md`, `feedback-contract.md` and boards 01.1–01.15 and
+  08.1–08.31 now say so. Build work, none of it in code today:
+  - *Turn down* / *Turn this down* / *Turned down* and the confirm alert live on in every surface
+    (iOS card and History table, Android `Proposal.kt` and its review actions, web `proposals.js`
+    `receiptLine`) and in the server's dead-proposal sentences (*…so it was not turned down*).
+  - Drafts have no Reject: the card offers only Save; dropping drafts needs a client action (drafts
+    are local until the confirm endpoint, so no server call is needed) and the *Rejected · N
+    routines* line.
+  - The card's field diff (per field old → new, per-set lines once sets differ, *Max*, *Last time*,
+    *None*, *No change: N movements*), the *Renamed* block for `proposedName`, and swap as removed +
+    added are not built on any phone; iOS still opens a review sheet.
+  - A failed apply's red line and **Try again**, Reject disabled while Applying, and the signed-out
+    *Sign in* answer for a change request (08.29–08.31).
+  - Strings in code still carry the cut and pre-simple-English copy: the promise lines, *Your sets
+    stay saved…*, *You decide the numbers at the rack.*, *Every point is a number you typed…*, the
+    greeting (*Adjust*, *With an account*, *Build myself*), *Coach reads your log, so it needs you
+    signed in.*, *Coach isn’t part of this Windmill…*, `AiAllowance.message` (*fully used or
+    reserved*), the photo captions and *The next question frees up…*.
 - **10t · Coach saves a stated goal (build).** The greeting says Coach sets goals and plans around
   them. The prompt (`AnthropicAsk.cpp`) saves only "useful insight" and reads Notes for goals; it
   should say plainly that a goal the lifter states is saved with `save_note` in that turn.
