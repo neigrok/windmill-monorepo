@@ -19,8 +19,8 @@ response cannot restore a deleted conversation. Receipt sharing retains its inte
 and clears that intent when sign-in is cancelled. Event labels contain no writing, ratings,
 workout names, questions or credentials.
 
-The [Figma refinement boards](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=1063-477)
-cover the routine sheet, workout, receipt and Log deletion in light and dark appearances.
+The routine sheet, workout, receipt and Log deletion are drawn in light and dark on the Gym file's
+[iOS page](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=11-2), in flows 02, 03 and 05.
 
 Destructive actions use the system roles and presentation described in Apple's
 [action sheet guidance](https://developer.apple.com/design/human-interface-guidelines/action-sheets).

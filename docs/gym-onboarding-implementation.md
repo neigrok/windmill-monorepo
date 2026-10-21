@@ -18,16 +18,16 @@ shared workout and account boards.
 
 | State | Figma |
 | --- | --- |
-| Signed-in first open | [1081:607](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-607) |
-| Goal clarification | [1081:858](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-858) |
-| Created routines | [1081:800](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-800) |
-| Program result | [1081:925](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-925) |
+| Coach greeting (🚧 target) | [1173:3860](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-3860) |
+| Draft to review (🚧 target) | [1173:4370](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-4370) |
+| Review and save (🚧 target) | [1156:3154](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1156-3154) |
+| Created routines (🚧 target) | [1173:4471](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-4471) |
 | Routine to workout | [1081:829](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-829) |
 
-The program-result frame's “Only on this phone” and “Keep it” belong to anonymous use. Screenshots
-are user attachments, not bundled illustrations. Starter
-symbols are `photo.on.rectangle`, `text.alignleft` and `target`; creation receipts use
-`checkmark.circle` and `arrow.up.right`, confirmed from their Figma component identities.
+The drawn states are targets for the next build (`design/consistency.md` 10p, 10q); the app still
+ships the starters. Screenshots are user attachments, not bundled illustrations. Starter symbols are
+`photo.on.rectangle`, `text.alignleft` and `target`; creation receipts use `checkmark.circle` and
+`arrow.up.right`.
 
 ## Structure
 

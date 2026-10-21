@@ -7,7 +7,7 @@ product contracts it dresses stay where they are — `guidelines/superapp-shell.
 room. Where this file and a brief disagree, this file wins on iOS and the disagreement is in
 `consistency.md`.
 
-Drawings of record: [iOS · Gym refinement · 2026-10-18](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=1063-477) covers the routine summary, workout, finish and Log swipe in both appearances. The other screens use the Gym file's iOS section and Shell's chrome boards and Journal's Echoes boards (§10). Figma uses Inter for editable specimens where its SF Pro renderer supplies no glyph metrics; the app uses the system text styles below. Native chrome is a structural drawing: SwiftUI owns its appearance.
+Drawings of record: the Gym file's iOS page, one section per flow, with Shell's chrome boards and Journal's Echoes boards (§10). Figma uses Inter for editable specimens where its SF Pro renderer supplies no glyph metrics; the app uses the system text styles below. Native chrome is a structural drawing: SwiftUI owns its appearance.
 
 ---
 
@@ -1433,9 +1433,9 @@ Recorded in `consistency.md` under *iOS redesign*:
   boards' W capsule and hand-drawn glass), 9m
   (the iteration-1 boards against §5–§7), 9d under *Onboarding* (the onboarding collection's gym day
   accent).
-- **Drawings against the build:** 10h (Routines' unshipped controls), 10i (Duplicate on the editor
-  board), 10k (*session* on two wave-three boards),
-  10l (the Live Activity double tap), 10o (every board against the simulator).
+- **Drawings against the build:** 10h (Routines' unshipped controls), 10k (*session* on two
+  wave-three boards), 10l (the Live Activity double tap), 10o (every board against the simulator),
+  10p (the gym-feedback targets), 10q (the Coach chat in the Messages language).
 - **The log and progress:** 9b (phones weave, web keeps the strip), 9o (moments are doors on iOS,
   expanders on Android), 9p (a record stated once, and what counts as one), 9q (*Weigh in* in the
   bar), 9y (the month moment named by its month).
@@ -1466,21 +1466,22 @@ its drawing; every section and board name starts with its status (🚀 · 🚧 �
 | Section | Node | Boards |
 |---|---|---|
 | 00 · The room — read me, map, anatomy | `1118:1768` | top bar anatomy `1055:205` · Daylight `1055:274`; colour roles and type ramp `1057:201`; transient band `1057:383`; native anatomy `1063:478` |
-| 01 · First open — Coach-led setup | `1081:565` | signed-out and signed-in first open `1081:569`, `1081:607`; photo `1081:637`, `1081:704`, `1081:1027`; preparing `1081:737`; created `1081:762`, `1081:800`; routine to Start `1081:829`; goal `1081:858`, `1081:894`; program `1081:925`; allowance used `1081:957`; after sign-in `1081:988`; 🚧 targets (10p): greeting `1156:2906`, `1156:2983`; draft `1156:3060`; review `1156:3154`; saved `1158:3295`; allowance used `1158:3420`, interim `1158:3504`, Windmill One `1158:3586` |
-| 02 · Routines | `1113:1474` | Routines `1056:201` · `1056:417`; routine summary `1063:531` · `1065:390`; editor `252:358`, `252:767`; movement picker `258:417`; targets `254:478`; empty Routines `1135:1746`; 🚧 targets (10p): empty Routines `1149:2477`, editor sortable `1149:2200`, trash swipe `1149:2275` |
-| 03 · Workout | `1114:1513` | workout `1065:222` · `1065:441`; keypad `321:281`; fix sheet `327:922`; finish `1063:486` · `1065:343`; ended early `328:646`; no movement yet `320:318`; This workout `1135:1875`; hidden workout `1135:1996`; deviation `1135:2123`; 🚧 targets (10p): rack with Dumbbells `1150:2352`, pressed `1150:2495`, changed `1150:2638`, Bodyweight `1150:2793` |
-| 04 · Outside the app | `1115:1576` | Live Activity `168:29`; Dynamic Island `171:29`; states `175:29`; double tap `177:29`; Control Center control `1138:2636`; 🚧 target (10p): since last set `1152:2533` |
-| 05 · The log, past workouts & progress | `1116:1605` | The log `1056:529` · `1056:779`; discard by swipe `1065:307` · `1065:526`; workout detail `1056:1930`; a deleted set `323:29`; Record `461:60`, scrub `529:60`, panned `529:154`; share sheet `1136:1904`; rename movement `1136:2014`; 🚧 targets (10p): Weigh in seat `1153:2765`, Edit exercise `1153:2559`, Equipment menu `1153:2603` |
+| 01 · First open — Coach-led setup | `1081:565` | 01.1–01.2 greeting `1173:3783`, `1173:3860`; 01.3 photo picker `1081:637`; 01.4–01.5 photo in the composer `1173:3934`, `1173:4111`; 01.6 thinking `1173:4264`; 01.7 draft `1173:4370`; 01.8 review `1156:3154`; 01.9 saved `1173:4471`; 01.10 routine to Start `1081:829`; 01.11–01.13 allowance used `1173:4600`, `1173:4678`, `1173:4754`; 01.14 after sign-in `1173:4833` |
+| 02 · Routines | `1113:1474` | 02.1 Routines `1056:201` · `1056:417`; 02.2 routine summary `1063:531` · `1065:390`; 02.3 editor `252:358`; 02.4 movement picker `258:417`; 02.5 editor, always sortable `1149:2200`; 02.6 targets `254:478`; 02.7 empty Routines `1149:2477`; 02.8 trash swipe `1149:2275` |
+| 03 · Workout | `1114:1513` | 03.1 rack with Dumbbells `1150:2352`; 03.2 keypad `321:281`; 03.3 fix sheet `327:922`; 03.4 This workout `1135:1875`; 03.5 hidden workout `1135:1996`; 03.6 deviation `1135:2123`; 03.7 finish `1063:486` · `1065:343`; 03.8 ended early `328:646`; 03.9 no movement yet `320:318`; 03.10–03.12 rack pressed, changed, Bodyweight `1150:2495`, `1150:2638`, `1150:2793` |
+| 04 · Outside the app | `1115:1576` | 04.1 Control Center control `1138:2636`; 04.2 Live Activity, since last set `1152:2533`; 04.3 Dynamic Island `171:29`; 04.4 states `175:29`; 04.5 double tap `177:29` |
+| 05 · The log, past workouts & progress | `1116:1605` | 05.1 The log, Weigh in seat `1153:2765`; 05.2 discard by swipe `1065:307` · `1065:526`; 05.3 workout detail `1056:1930`; 05.4 a deleted set `323:29`; 05.5 share sheet `1136:1904`; 05.6 Record `461:60`, 05.7 scrub `529:60`, 05.8 panned `529:154`; 05.9 Edit exercise `1153:2559`; 05.10 Equipment menu `1153:2603` |
 | 06 · Bodyweight | `1116:1683` | Bodyweight `128:2`; weigh-in sheet `1136:2114` |
 | 07 · On this phone | `1116:1705` | On this phone `1138:2042`; Inspect `1138:2201`; Fix workout `1138:2362` |
-| 08 · Coach | `1117:1703` | empty `1056:903`; conversation `1056:1048` · `1056:1240`; proposal review `123:2`; no Coach seat `133:1045`; not on this Windmill `133:1152`; the day's cap `224:309`; History `1136:2221`; What Coach read `1136:2318`; 🚧 target (10p): Coach updates a movement `1154:2793` |
+| 08 · Coach | `1117:1703` | 08.1 empty `1170:2943`; 08.2 conversation `1170:3007`; 08.3 proposal review `123:2`; 08.4 History `1172:3561`; 08.5 What Coach read `1172:3621`; 08.6 no Coach seat `133:1045`; 08.7 not on this Windmill `133:1152`; 08.8 the day's cap `1170:3105`; 08.9 Coach updates a movement `1170:3192`; 08.10 a Markdown answer `1170:3266`; 08.11 streaming `1170:3364` |
 | 09 · Notes & Connected log | `1117:1768` | Notes `130:1419`; note editor `135:246`; Connected log `1138:2522` |
 | 10 · Not built — designed only | `1118:1810` | Apple Health (no board) |
 
 The boards bind `Gym · Product colours` and shared Theme `ios/gym/*` roles, including
 `ios/gym/accent`, `ios/gym/accent-soft` and `ios/gym/on-accent` (9a). Most predate iteration 3;
-what §5–§7 rule past them is written here and not yet drawn (9m, 10o). The 🚧 targets listed under
-10p draw the 2026-10-21 gym feedback ahead of its build; each has a Daylight twin beneath it.
+what §5–§7 rule past them is written here and not yet drawn (9m, 10o). 🚧 boards are targets ahead
+of a build (10p, 10q), each with a Daylight twin beneath it; the Coach chat targets draw the
+Messages language, which contradicts §6 until the owner rules (10q).
 
 Shell file `tkI7GnS6TcZvQSDi9lwrBf`, page `iOS` (`1:5`),
 402 × 874 boards:
