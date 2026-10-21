@@ -22,7 +22,61 @@ class JournalReplayFuzzTests {
     private val scope = ScopeRef.product("journal")
     private val key = "acct:A/journal"
     private data class Report(val events: Map<String, Int>, val trace: String)
-    private data class Document(val body: String, val mood: Json, val energy: Json, val source: Json, val stamp: Json)
+    private data class Document(val body: String, val mood: Json, val energy: Json, val source: Json, val stamp: Json) {
+        fun normalized(): Document {
+            if (body.trim().isEmpty()) return copy(body = "", mood = Json.Null, energy = Json.Null, source = Json.of("typed"))
+            return this
+        }
+    }
+
+    @Test fun blankDocumentsAndClaimsKeepTheirContentSemantics() {
+        data class Case(val command: String, val input: String, val expected: String)
+        val cases = listOf(
+            Case("journal.claimPage", """{"body":" ","mood":0,"energy":10,"source":"spoken"}""",
+                """{"body":"","mood":null,"energy":null,"source":"typed"}"""),
+            Case("journal.savePage", """{"body":" ","mood":0,"energy":10,"source":"spoken"}""",
+                """{"body":"","mood":null,"energy":null,"source":"typed"}"""),
+            Case("journal.savePage", """{"body":"Account words.","mood":6,"energy":3,"source":"spoken"}""",
+                """{"body":"Account words.","mood":6,"energy":3,"source":"spoken"}"""),
+            Case("journal.claimPage", """{"body":" ","mood":0,"energy":10,"source":"typed"}""",
+                """{"body":"Account words.","mood":6,"energy":3,"source":"spoken"}"""),
+            Case("journal.claimPage", """{"body":"More words.","mood":0,"energy":null,"source":"typed"}""",
+                """{"body":"Account words.\n\nMore words.","mood":0,"energy":3,"source":"typed"}"""),
+            Case("journal.claimPage", """{"body":"Last words.","mood":null,"energy":0,"source":"spoken"}""",
+                """{"body":"Account words.\n\nMore words.\n\nLast words.","mood":0,"energy":0,"source":"spoken"}"""),
+            Case("journal.savePage", """{"body":"","mood":7,"energy":10,"source":"spoken"}""",
+                """{"body":"","mood":null,"energy":null,"source":"typed"}"""),
+            Case("journal.claimPage", """{"body":" ","mood":5,"energy":7,"source":"spoken"}""",
+                """{"body":"","mood":null,"energy":null,"source":"typed"}""")
+        )
+        val model = ModelServer(registry, JournalServerRules(), ServerState(Json.objectOf("epoch" to Json.of("ep-1"), "clock" to Hlc().json,
+            "accounts" to Json.objectOf("A" to Json.objectOf("name" to Json.of("Ann"))))))
+        val day = "2026-10-01"
+        cases.forEachIndexed { index, case ->
+            val now = start + index
+            val stamp = Json.objectOf("ms" to Json.of(now), "counter" to Json.of(0), "actor" to Json.of(if (case.command == "journal.claimPage") "srv" else "device:1"))
+            val args = Json.parse(case.input).with("day" to Json.of(day)).let {
+                if (case.command == "journal.claimPage") it.with("claimId" to Json.of("claim_deterministic_$index"))
+                else it.with("stamp" to stamp)
+            }
+            val intent = Intent(scope, command = Command(case.command, args)).json
+            val result = checkNotNull(model.call(ServerCall("A", null, case.command, args, listOf(intent)), now))
+            assertEquals("case=$index result", Json.of("ok"), result["s"])
+            val row = Row(model.state.rows.getValue(key).getValue(RecordKey("page", RecordID(day))))
+            val actual = Json.objectOf("body" to Json.of(row.texts.getValue("body").text),
+                "mood" to row.lattice.fields.getValue("mood").value, "energy" to row.lattice.fields.getValue("energy").value,
+                "source" to row.lattice.fields.getValue("source").value, "stamp" to row.lattice.fields.getValue("documentStamp").value)
+            assertEquals("case=$index document", Json.parse(case.expected).with("stamp" to stamp), actual)
+        }
+        val before = model.state.json
+        val firstClaim = Json.parse(cases.first().input).with("day" to Json.of(day), "claimId" to Json.of("claim_deterministic_0"))
+        for ((args, expected) in listOf(firstClaim to "ok", firstClaim.with("body" to Json.of("")) to "claim-conflict")) {
+            val intent = Intent(scope, command = Command("journal.claimPage", args)).json
+            val result = checkNotNull(model.call(ServerCall("A", null, "journal.claimPage", args, listOf(intent)), start + cases.size))
+            assertEquals(Json.of(expected), result[if (expected == "ok") "s" else "code"])
+            assertEquals(before, model.state.json)
+        }
+    }
 
     @Test fun journalReplay() {
         val runs = System.getenv("FUZZ_N")?.toInt() ?: 60
@@ -81,7 +135,7 @@ class JournalReplayFuzzTests {
         engine.signIn("A", mapOf("journal" to false))
         val handle = ModelServerHandle(model, clock)
         var transport = InMemoryTransport(handle, clock)
-        fun document(args: Json) = Document(args.member("body").str(), args.member("mood"), args.member("energy"), args.member("source"), args.member("stamp"))
+        fun document(args: Json) = Document(args.member("body").str(), args.member("mood"), args.member("energy"), args.member("source"), args.member("stamp")).normalized()
         fun intent(name: String, args: Json) = Intent(scope, command = Command(name, args)).json
         fun serverCommand(name: String, args: Json): Json = checkNotNull(model.call(ServerCall("A", null, name, args, listOf(intent(name, args))), clock.now()))
         fun dataPlane(state: ServerState) = state.json.with("replicas" to null, "results" to null, "requests" to null)
@@ -229,8 +283,11 @@ class JournalReplayFuzzTests {
                         assertTrue(stamp.member("ms").long() >= now)
                         assertTrue(stamp.member("counter").long() in 0 until Stamp.COUNTER_LIMIT)
                         if (old != null) assertTrue(newer(stamp, old.stamp))
-                        oracle[day] = Document(body, args.member("mood").orNull() ?: old?.mood ?: Json.Null,
-                            args.member("energy").orNull() ?: old?.energy ?: Json.Null, args.member("source"), stamp)
+                        val blankContribution = here.trim().isEmpty()
+                        oracle[day] = Document(body,
+                            if (blankContribution) old?.mood ?: Json.Null else args.member("mood").orNull() ?: old?.mood ?: Json.Null,
+                            if (blankContribution) old?.energy ?: Json.Null else args.member("energy").orNull() ?: old?.energy ?: Json.Null,
+                            if (blankContribution) old?.source ?: Json.of("typed") else args.member("source"), stamp).normalized()
                     }
                 }
                 pull(); checkState()

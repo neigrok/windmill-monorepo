@@ -37,14 +37,18 @@ The shared Gym corpus claims 568 cases and reports 14 pending
 cases in the saved-workout recovery area. Its training-read expectations independently calculate
 the current equipment-aware volume and emit dumbbell quantity only for dumbbells.
 
-The Android full build passed app and Gym assembly, lint, client corpus coverage (52 files,
+The complete Android README build passes app and Gym assembly, lint, client corpus coverage (52 files,
 792 vectors), model-server coverage (27 files, 813 cases and seven protocol transcripts), and
-the mandatory properties. Nine focused Kotlin schema composition and coverage tests pass.
+all 1,594 sync-testing cases and 260 mandatory property checks, with no skips or failures in
+those suites. Nine focused Kotlin schema composition and coverage tests pass.
 Swift’s schema and mixed-version suites pass eight tests; its Gym server admission suite passes
 all 219 shared cases. The JS reference mixed-version claim suite passes all 15 tests.
 Both schema generators report current output.
 
-The full Android gate remains red on three unchanged JournalReplayFuzzTests oracle assertions:
-one whitespace-only claim body and two absent mood/energy expectations. A separate JVM run with
-the baseline schema-6 Journal registry reproduces the same failures. Journal implementation and
-oracle changes are outside this Gym phase; this is a test-gate follow-up, not a passing full build.
+The Journal replay oracle independently applies the shared blank-document rules: a blank save
+clears ratings and restores the typed source; a blank claim preserves the account's writing and
+metadata; a final blank document is normalized in both paths. The shared normalization stays in
+the oracle's document value, while claim receipts retain the original arguments. Production
+behavior is unchanged. The four focused tests pass, including exact document regressions for
+zero ratings, null inheritance and raw-argument claim conflicts, byte-for-byte replay, and the
+complete 30-start survey of 60 seeds and 160 steps without a coverage miss.
