@@ -340,9 +340,19 @@ import Synchronization
 
   @Test func invalidScaleRetainsDocumentAsUnsaved() throws {
     let (_, model) = try fixture()
+    model.journal.type("Writing to retain"); model.journal.saveTask?.cancel()
     model.journal.setScale("energy", 11)
     #expect(model.journal.dirty && model.journal.error != nil && model.journal.document.energy == 11)
     #expect(model.journal.room?.days.isEmpty == true)
+  }
+
+  @Test func blankInvalidScaleLeavesNoDayOrUnsavedDraft() throws {
+    let (_, model) = try fixture()
+    model.journal.type(" \n\u{a0}"); model.journal.saveTask?.cancel()
+    model.journal.setScale("energy", 11)
+    #expect(!model.journal.dirty && model.journal.error == nil && model.journal.document == PageDocument())
+    #expect(model.journal.room?.days.isEmpty == true && !model.journal.keepDue && !model.journal.scalesDue)
+    #expect(try model.runner.read(Journal.scope) { try $0.device(EditorDraft.key) } == nil)
   }
 
   @Test func pastDayDomainWriteRemainsReadOnly() throws {

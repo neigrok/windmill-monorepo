@@ -9,6 +9,8 @@ struct SessionDetailScreen: View {
   @Environment(\.dismiss) var dismiss
   @Environment(\.gymShareSession) private var share
   @State var fixing: TrainingSet?
+  @State var discard = false
+  @State var discardConfirmed = false
   var session: Session? { gym.sessions.first { $0.id == sessionID } }
   var sets: [TrainingSet] { gym.log?.sets(session: sessionID) ?? [] }
 
@@ -35,7 +37,7 @@ struct SessionDetailScreen: View {
                 SetRow(marker: SetRow.marker(set, in: mine), set: set,
                        caption: LogPresentation.comparison(set, preceding: Array(mine.prefix(index)), plan: session.plan))
               }.accessibilityIdentifier("gym-finished-set-\(set.id)")
-                .swipeActions { Button("Delete", role: .destructive) { gym.run(DeleteSet(set.id)) } }
+                .swipeActions(allowsFullSwipe: false) { Button("Delete", role: .destructive) { gym.run(DeleteSet(set.id)) } }
                 .contextMenu { Button("Fix set", systemImage: "pencil") { fixing = set }; Button("Delete set", systemImage: "trash", role: .destructive) { gym.run(DeleteSet(set.id)) } }
                 .accessibilityAction(named: "Delete set") { gym.run(DeleteSet(set.id)) }
             }
@@ -59,13 +61,29 @@ struct SessionDetailScreen: View {
           ToolbarItem(placement: .topBarTrailing) {
             MoreMenu(identifier: "gym-session-more") {
               Button("Discard workout", systemImage: "trash", role: .destructive) {
-                if let outcome = gym.run(DiscardSession(sessionID)), outcome.refusal == nil { dismiss() }
+                discard = true
               }.accessibilityIdentifier("gym-session-discard")
             }.disabled(gym.accountTransition)
           }
         }
       }.roomBar(.gym)
-      .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo") }
+      .onChange(of: discard) { _, shown in
+        if shown {
+          discardConfirmed = false
+          gym.telemetry.event("gym_action", properties: ["screen": "session", "action": "discard", "state": "shown"])
+        } else if !discardConfirmed {
+          gym.telemetry.event("gym_action", properties: ["screen": "session", "action": "cancel", "outcome": "cancelled"])
+        }
+      }
+      .onChange(of: gym.account) { _, _ in discard = false }
+      .confirmationDialog("Discard this workout?", isPresented: $discard, titleVisibility: .visible) {
+        Button("Discard workout", role: .destructive) {
+          discardConfirmed = true
+          if let outcome = gym.run(DiscardSession(sessionID)), outcome.refusal == nil { dismiss() }
+        }
+        Button("Cancel", role: .cancel) {}
+      } message: { Text("This permanently removes the workout and its sets.") }
+      .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-log-error") }
       .sheet(isPresented: Binding(get: { fixing != nil }, set: { if !$0 { fixing = nil } })) {
         if let fixing { SetEditor(gym: gym, set: fixing, routine: session?.plan?.routine, identifier: "gym-fix") }
       }

@@ -1,4 +1,5 @@
 #include "products/journal/adapters/llm/OpenAiTranscriber.h"
+#include "platform/adapters/llm/AiCallBudget.h"
 
 #include "platform/adapters/http/VendorCall.h"
 #include "platform/adapters/llm/AnthropicClient.h"
@@ -25,19 +26,24 @@ std::string transcriptionExtension(const std::string& mimeType) {
 }
 
 OpenAiTranscriber::OpenAiTranscriber(std::string apiKey, std::string model,
-                                     std::shared_ptr<AiFuse> fuse, std::shared_ptr<UsageSink> usage)
+                                     std::shared_ptr<AiFuse> fuse, std::shared_ptr<UsageSink> usage, std::shared_ptr<AiCallBudget> budget)
     : apiKey_(std::move(apiKey)), model_(std::move(model)), fuse_(std::move(fuse)),
-      usage_(std::move(usage)) {
+      usage_(std::move(usage)), budget_(std::move(budget)) {
   loop_.run();
 }
 
 bool OpenAiTranscriber::configured() const {
-  return !apiKey_.empty();
+  return !apiKey_.empty() && !budget_;
 }
 
 void OpenAiTranscriber::transcribe(const UserId& user, const std::string& audio,
                                    const std::string& mimeType,
                                    std::function<void(std::optional<Transcript>)> done) {
+  if (budget_) {
+    LOG_WARN << "operation=ai.transcribe product=journal door=vendor outcome=unsupported_audio_accounting";
+    done(std::nullopt);
+    return;
+  }
   // The process-wide hourly ceiling, asked before a byte is sent.
   if (fuse_ && !fuse_->allows(nowMs())) {
     LOG_ERROR << "openai transcribe refused: hourly AI fuse";

@@ -10,21 +10,23 @@ public final class Harness {
   let engine: SteppedEngine
   let registry: Registry
   let zone: any Zone
+  let holdRemovals: Bool
 
-  public convenience init(registry: Registry, start: Instant, zone: any Zone = FixedZone(offsetSeconds: 0), seed: UInt64 = 1,
+  public convenience init(holdRemovals: Bool = true, registry: Registry, start: Instant, zone: any Zone = FixedZone(offsetSeconds: 0), seed: UInt64 = 1,
                           account: String? = "acct-1", rules: any ServerRules = NoServerRules(),
                           commandResultWrites: @escaping CommandResultDeviceWrites = { _, _, _, _ in [] },
                           pendingDeviceWork: @escaping PendingDeviceWork = { _, _ in [] }) {
     let engine = SteppedEngine(registry: registry, startMs: start.ms, seed: seed, account: account, rules: rules,
                                commandResultWrites: commandResultWrites, pendingDeviceWork: pendingDeviceWork)
-    self.init(engine, registry: registry, zone: zone)
+    self.init(engine, registry: registry, zone: zone, holdRemovals: holdRemovals)
   }
 
-  init(_ engine: SteppedEngine, registry: Registry, zone: any Zone) {
+  init(_ engine: SteppedEngine, registry: Registry, zone: any Zone, holdRemovals: Bool = true) {
     self.engine = engine
     self.registry = registry
     self.zone = zone
-    runner = ActionRunner(replica: engine.replica, registry: registry, zone: zone)
+    self.holdRemovals = holdRemovals
+    runner = ActionRunner(replica: engine.replica, registry: registry, zone: zone, holdRemovals: holdRemovals)
   }
 
   public var clock: SimClock { engine.clock }
@@ -34,7 +36,7 @@ public final class Harness {
 
   // Another device, on the same account, server and clock.
   public func device() -> Harness {
-    Harness(engine.device(), registry: registry, zone: zone)
+    Harness(engine.device(), registry: registry, zone: zone, holdRemovals: holdRemovals)
   }
 
   // Every device's sender and puller, to quiescence.

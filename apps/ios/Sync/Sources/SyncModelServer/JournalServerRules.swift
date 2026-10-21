@@ -60,10 +60,14 @@ public struct JournalServerRules: ServerRules {
       store(clocks, name: "journalContentClocks", in: context, product: &product)
       document["stamp"] = stamp
       document["body"] = .string(joined)
-      for name in ["mood", "energy"] where args[name]!.isNull { document[name] = current?.lattice.fields[name]?.value ?? .null }
+      for name in ["mood", "energy"] where TextWhitespace.isBlank(body) || args[name]!.isNull { document[name] = current?.lattice.fields[name]?.value ?? .null }
+      if TextWhitespace.isBlank(body) { document["source"] = current?.lattice.fields["source"]?.value ?? "typed" }
       claims[id] = ["digest": .string(digest), "day": .string(day), "documentStamp": stamp]
       store(claims, name: "journalClaims", in: context, product: &product)
     } else { throw Refusal(.invalid) }
+    if TextWhitespace.isBlank(try! document.member("body").asString()) {
+      document["body"] = ""; document["mood"] = .null; document["energy"] = .null; document["source"] = "typed"
+    }
     var pages = book("journalPages", in: context, product: &product)
     pages[day] = ["updatedAt": JSON(context.serverNow)]
     store(pages, name: "journalPages", in: context, product: &product)

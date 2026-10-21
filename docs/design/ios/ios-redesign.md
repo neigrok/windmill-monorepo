@@ -1,4 +1,4 @@
-# iOS redesign — iteration 3
+# iOS rendering contract
 
 The design contract for the Windmill iOS app (`apps/ios/App`): the shell, the Journal room and the
 Gym room, on iOS 26 with Liquid Glass, deploying to iOS 18. It rules how the app renders; the
@@ -7,13 +7,7 @@ product contracts it dresses stay where they are — `guidelines/superapp-shell.
 room. Where this file and a brief disagree, this file wins on iOS and the disagreement is in
 `consistency.md`.
 
-Drawings of record: the Gym file section **iOS redesign · iteration 1 · 2026-10-08** on page `iOS`
-and the Design System file sections **7 · Shell chrome** and **2c · Echoes on iOS** on page
-`iOS · First run · 2026-09-26` (node ids in §10). The boards draw iteration 1; where this text
-rules past them the difference is in `consistency.md` under *iOS redesign*. Build from §7 in order;
-each iteration reviews screenshots against §11. The iteration-3 review of the iteration-2 build is
-`.claude/scratch/ios-design/phase2/designer-review-3.md`; the iteration-3 build list, every place
-the phase-2 build differs from this text, is `.claude/scratch/ios-design/iteration3/BUILD-LIST.md`.
+Drawings of record: the Gym file's iOS page, one section per flow, with Shell's chrome boards and Journal's Echoes boards (§10). Figma uses Inter for editable specimens where its SF Pro renderer supplies no glyph metrics; the app uses the system text styles below. Native chrome is a structural drawing: SwiftUI owns its appearance.
 
 ---
 
@@ -107,13 +101,11 @@ the system blue. The keyboard draws its own keys and takes no tint: an emphasize
 | `gym/done` | `#9AA859` | `#7D8C43` | a logged set's check, a fully logged movement, an applied proposal |
 | `gym/record` | `#D9B04C` | `#6E5217` | a personal record, and nothing else |
 | `gym/alarm` | `#D08268` | `#A84E35` | destructive labels, refusal text in a field |
-| `gym/alarm-fill` | `#A84E35` | `#A84E35` | a destructive swipe action's fill and a removal's primary; `on-alarm` is white |
+| `gym/alarm-fill` | `#A84E35` | `#A84E35` | a removal proposal's primary; native destructive actions use the system red |
 
-These are the Gym Figma `Gym · Colour` ramp values (`surface/*`, `text/*`, `border/*`,
-`state/*`) with one ruling: the light accent is verdigris `#106B5F`, the family's verdigris day
-darkened so text in it holds 4.5:1 on the gym grounds, not the Figma Daylight `brand/base` alias to
-iris `#4C4374` (`consistency.md` F44, 9a). Gold is a *record*, never a warning; brick is destructive
-only.
+These roles bind to Figma Theme `ios/gym/*` in Dark and Light. The native light accent is
+verdigris `#106B5F`, darkened from the shared Gym brand `#137A6C` so text holds 4.5:1 on the
+Gym grounds. Gold is a *record*, never a warning; brick is destructive only.
 
 The Live Activity uses `gym/accent` and `gym/on-accent` for its one button and `gym/accent` for
 the keyline; the banner ground stays the system's. The workout control (§7.19) declares `gym/accent`
@@ -285,7 +277,7 @@ the noun reads:
 | The varied-scheme sheet's footer | *Today's Back Squat ran at 105 against a planned 100. Today's workout already has it. Lower A does not.* | *… Today's session already has it. …* |
 | The logger's band, when the movement order cannot be read | *The workout is saved. Its movement order could not be read. Try again.* | *The session is saved. …* |
 | The logger's band, removing a movement with sets or targets | *A movement with sets or planned targets stays in this workout.* | *… stays in this session.* |
-| The receipt's *Share with Coach*: the line it sends, and the band's footer | *Check my last workout.* · *Sends Coach one line — “Check my last workout.” — and opens the answer.* | *Check my last session.* |
+| The receipt's *Share with Coach*: the line it sends | *Check my last workout.* | *Check my last session.* |
 | Review while a workout is open: the caption slot, and the refusal on Apply or *Turn this down* | *Finish your workout to apply.* · *Finish your workout first.* | *Finish this session to apply.* · *Finish this session* |
 | The workout parameter's title on the Live Activity's and the control's intents (§7.19) | *Workout* | *Session* |
 | Sign-in, when the server's answer holds no sign-in | *Sign-in did not finish. Your pages are still on this phone.* | *Sign-in did not return a native session. …* |
@@ -315,16 +307,15 @@ at 375 × 667 and at the largest accessibility size.
   `Image(systemName: "chevron.down")` at `.caption.weight(.semibold)`, 6 pt apart. No modifier on
   the label: on iOS 26 the toolbar lays it in its own Liquid Glass capsule; on iOS 18 it is a
   plain bar button. The menu's content is the inline `Picker` of rooms with the current room
-  checked, then **You** (`person.crop.circle`) after a `Divider()`, then the room's one item if it
-  has one (Journal: **Show ink notes**, `scribble.variable`). `superapp-shell.md` §3 lists rooms
-  only; the difference is `consistency.md` 9x.
+  checked. It carries rooms only: Journal and Gym. You and settings have one account button; ink
+  notes belong to onboarding and have no replay action in this menu.
 - **Top-right: the account button.** `ToolbarItem(placement: .topBarTrailing)` holding
   `Button { } label: { Image(systemName: "person.crop.circle") }` with the accessibility label
   *You and settings*. The system symbol, default rendering, no custom shape. It sits last; on
   iOS 26 a `ToolbarSpacer(.fixed)` separates it from the room's own actions so it stands in its own
   glass circle and the room's actions share theirs.
 - **The room's own actions** come before the account button: Routines `plus` (*New routine*); The
-  log `scalemass` (*Weigh in*); Coach `ellipsis.circle` (*More*); a pushed screen draws its own.
+  log `scalemass` (*Weigh in*); Coach `clock` (*History*); a pushed screen draws its own.
   Order is actions then account, and nothing is painted inside a toolbar item. All three roots read
   `[Room ⌄] … [action] [account]`.
 - **Journal sits in a `NavigationStack`** so its bar is the system's: a visible bar filled
@@ -333,7 +324,7 @@ at 375 × 667 and at the largest accessibility size.
   toolbar items' frames (`onGeometryChange` inside the labels).
 - **Bar items render in the room's ink** at the bar's default weight in every room (`.roomBar`,
   applied after a screen's toolbar), the room menu and the back chevron included. The room accent
-  appears in a bar only on a confirmation action: *Finish*, the receipt's *Done*, a sheet's
+  appears in a bar only on a confirmation action: *Finish*, a sheet's
   checkmark, and *Done* on the shell's sheets in `shell/brand`. *Close*, *Cancel* and the back
   chevron are dismissals and take the ink in every room, the shell's sign-in steps, Keep and the
   journal's echo reader included. No `.fill` variants in bars; `.fill` is for a selected tab only.
@@ -345,7 +336,7 @@ at 375 × 667 and at the largest accessibility size.
 | Kind | iOS 26 | iOS 18 fallback | Where |
 |---|---|---|---|
 | Primary | `.buttonStyle(.glassProminent)`, `.controlSize(.large)`, full width, tint `accent`, label `on-accent` | `.borderedProminent` | one per screen, in the reach band |
-| Secondary | `.buttonStyle(.glass)` | `.bordered` | ladder keys, chips, Previous/Next, *Ask Coach* on an empty screen |
+| Secondary | `.buttonStyle(.glass)` | `.bordered` | ladder keys, chips, *Ask Coach* on an empty screen |
 | Quiet | `.buttonStyle(.plain)` in `accent` | same | row actions, *Not now*, *Use email instead* |
 | Destructive | `role: .destructive` in a Menu or list row | same | never a prominent fill, except a removal's primary (§6) |
 | Seat | a 44 pt glass circle with one symbol, bottom-trailing, 16 pt from the edges | material circle | Journal *Write* |
@@ -362,15 +353,15 @@ material on both systems, and on iOS 26 the scroll view beneath it also takes th
 nothing reads through its words. The hard edge alone is not opaque: under a band as tall as the
 Review's at AX3, a row's blurred words still show. A band of buttons alone keeps the soft edge. A
 band floats only where reach or a gate rules it:
-*Log set*, *Start workout*, *Just start logging*, *Apply*, *Keep this log* / *Share with Coach*,
+*Log set*, *Start*, *Apply*, the receipt's *Done*,
 *Connect a tool*, Inspect's recovery primary, and the steps of a flow (sign-in, Keep, onboarding).
 A sheet that edits a record commits from its bar (§5).
 
-CTA copy is at most three words: *Just start logging*, *Start workout*, *Log set*, *Save routine*,
-*Share with Coach*, *Keep this log*, *Sign in to share*, *Set*.
+CTA copy is at most three words: *Start*, *Log set*, *Save routine*,
+*Share with Coach*, *Sign in to share*, *Set*.
 
 **Doors and actions in a list.** A row that navigates is a `NavigationLink`: ink label, optional
-symbol, the system's chevron — *Movements*, *About Windmill*. A row that opens a sheet or a cover
+symbol, the system's chevron — *Connected log*, *About Windmill*. A row that opens a sheet or a cover
 (a note in Notes, a weigh-in in Bodyweight; on iOS 18 the **Hidden** row brings back the logger) is
 a `Button` drawing the same chevron (`DoorChevron`, `chevron.forward`, never a hand-set
 `chevron.right`). A row that acts is a `Button` in
@@ -405,12 +396,12 @@ lifter has hidden the workout.
 
 ### Confirmations
 
-- A reversible act happens at once and raises the band with *Undo*, naming the object and the act
-  (*Workout discarded*, *Set deleted*, *Weigh-in deleted*, *Routine deleted*, *Note deleted*,
-  *Conversation deleted*). One object is named alone; more than one is counted through `GymCount`
-  (*3 sets deleted*, *3 sets discarded*). The act is the verb of the item that did it: *Delete*
-  deletes, *Discard* discards. The line comes from what the gesture holds, so it reads the same
-  after a relaunch; *Change deleted* is never drawn.
+- Deletion and discard have no Undo control or delay window. Discarding a whole workout or
+  deleting a Coach conversation asks once using the native confirmation attached to its source,
+  then queues immediately. Their swipe actions reveal a red trash button and disable full swipe.
+  Explicit Delete controls for sets, routines, notes and weigh-ins commit immediately; no gesture
+  deletes through a full swipe. Cancellation leaves a confirmed record untouched. Keep refusal
+  and delivery recovery visible.
 - An irreversible act asks once. A `.alert` carries the act as its destructive button and Cancel
   (*Turn this down?*, *Sign out?*); a choice asked from a row is a `.confirmationDialog` presented
   from that row, title visible (*Remove Apple?*), which SwiftUI anchors to its source on iOS 26.
@@ -438,7 +429,8 @@ content:
 | The builder | `.large`; *Add movement*, Create movement and Targets are steps pushed inside it, each with *Cancel* and its own ✓ (*Add* / *Done*) | *Cancel* · title · ✓ (*Save*) |
 | This workout | `.large` | *Close* · title · *Edit* |
 | Review | `.large` | *Close* · title; *Apply* in the band |
-| Finish | `.large`, one detent: it opens over the finished workout's detail, whose tiles a shorter sheet would leave showing above its own (§7.9) | *Done* |
+| Finish | `.large`, one detent: it opens over the finished workout's detail, whose tiles a shorter sheet would leave showing above its own (§7.9) | no duplicate Done; the primary is in the bottom band |
+| Routine summary | `.medium`, `.large`; accessibility sizes use `.large` | *Close* · title · *Edit* |
 | You, sign-in steps | `.large`; Keep and the Apple questions `.medium` | *Done* / *Close* |
 
 A sheet that edits a record commits from its bar's `.confirmationAction`, drawn once by
@@ -513,19 +505,11 @@ are bands, not canvas text.
 
 ### One transient band
 
-The room has one component, `RoomTransient`, for refusals, notices, Undo and copied-link
-confirmations: a `.footnote` message on `.glassEffect(.regular, in: .rect(cornerRadius: 16))` on
-iOS 26 and `.regularMaterial` with the system shadow on iOS 18 — never `card` — so it reads as
-floating over the list it answers. It wraps rather than truncates and carries one control: its
-action in accent when it has one (*Undo* · *Try again*), otherwise the dismiss `xmark` in `ink-dim`,
-never both. A band that can be dismissed also goes by a swipe down: a refusal or a notice leaves,
-and a band offering *Undo* leaves while its act stays, so the swipe is how an Undo band is
-dismissed and it draws no `xmark`. Acts made inside one another's windows stack: the band offers the
-newest act's *Undo*, and undoing it brings back the one before. A swipe sends away the offer shown
-and every older one beneath it; their acts stay and their windows run out as they would have, so
-only an act made after the swipe raises the band again. A failed read stays until *Try again*
-succeeds. The band floats in the reach band above the primary, honouring the delete window
-(`gym/briefs/13-gestures.md`). Refusal text is `gym/ink`, never red: the band is the signal. A
+The room has one component, `RoomTransient`, for refusals, notices and copied-link
+confirmations: a `.footnote` message on the system glass or material surface. It wraps rather
+than truncates and carries one control: *Try again* when recovery is possible, otherwise the
+dismiss `xmark`. A dismissible notice also leaves by a downward swipe. A failed read remains
+until *Try again* succeeds. The band occupies the reach band without moving its primary. Refusal text is `gym/ink`, never red: the band is the signal. A
 refusal is a sentence, at most twelve words, and names the way out (*Overlaps another workout — fix
 its times.*); the copy is the brief's. The signed-out workout a signed-in account has not taken is
 not a band and not a card on Routines: it is the **On this phone** row at the head of The log
@@ -560,15 +544,9 @@ no capability text, no allowance line until a limit is in the way (`09-coach.md`
 contextual"), no *Done* row and no account item, since the account button is in the bar. *Jump to
 latest* is a 36 pt glass circle with `chevron.down`, bottom-trailing above the composer.
 
-**The More menu** (`ellipsis.circle`, trailing, before the account button) is a `Menu`:
-
-```
-New chat        square.and.pencil   (only while a conversation exists)
-─────
-History         clock
-Notes           note.text
-Connected log   link
-```
+**History** is the trailing `clock` toolbar button before the account button. It opens the
+conversation list. *New chat* belongs in History. Notes and Connected log live in the Gym section
+of You and settings; they have no duplicate Coach-menu entries.
 
 **The composer** is one capsule on `gym/card`: `photo.badge.plus` (a 44 pt target, leading,
 quiet, its glyph capped at `.title3`) · the field *Ask about your training* (1–5 lines, its leading
@@ -694,7 +672,7 @@ readable above it, and *Ask Coach* stays.
 conversation: *Push A · 3 changes* (*Push A · a removal* for a removal; the question when the
 conversation holds no proposal), the date trailing, and a settled proposal's word (the card's table)
 as its caption.
-A swipe-delete raises *Conversation deleted. Routines and notes stay.* · *Undo*. With none it is
+A swipe-delete asks once, then removes the conversation without an Undo band. With none it is
 `ContentUnavailableView("No conversations", systemImage: "bubble.left.and.bubble.right")`. History
 has no pinned primary: Back returns to the composer.
 
@@ -706,15 +684,13 @@ down puts the keyboard away. Signed out, Notes is the room's signed-out shape: a
 `ContentUnavailableView` with `note.text`, no title, *Notes live with your account, so they need you
 signed in.* as its description, and *Sign in* as a `.glass` button.
 
-**There is no Gym settings page**: Notes and Connected log are reached from Coach's More, and a
-hidden workout from the tab bar's accessory on iOS 26 and the **Hidden** row at the head of The
-log on iOS 18 (§7.18). The phone draws kg and offers no units control; nothing about the account,
-the update or the phone's unsent work is in the room's menus, which You and The log own (§7.15,
-§7.16).
+**Gym settings** is a section inside You and settings, holding Notes and Connected log. A hidden
+workout returns through the tab bar's accessory on iOS 26 and the **Hidden** row at the head of
+The log on iOS 18 (§7.18). The phone draws kg and offers no units control.
 
 **Connected log** (`19-connected-log.md`) puts its one primary in the reach band: *Connect a tool*
 is the floating `ActionBand` with `arrow.up.forward` trailing (*Sign in first* signed out). With
-nothing connected, the head line *Your log, read by Claude, Cursor or Codex.* is `.subheadline
+nothing connected, the head line *Your log, read by ChatGPT or Claude.* is `.subheadline
 ink-dim` on the canvas, not a heading, and the Read · Write · Delete rows with the caption sit above
 the band, because there they are the decision. With a connection, the list leads with
 **Connected**: each row is a credential, its levels and day as the subtitle, and opens the shell's
@@ -744,7 +720,7 @@ values.
 
 ### 7.3 Coach (§6)
 
-The More menu with its symbols; the composer; the receipt row and *What Coach read*; the card
+The History toolbar action; the composer; the receipt row and *What Coach read*; the card
 without a body; the Review diff as `GymRow`s; the removal's colours and wait. The keyboard's own bar
 cannot carry *Done* on iOS 26 (`consistency.md` 6w), so while typing *Done* is a 36 pt glass
 `keyboard.chevron.compact.down` circle above the composer's trailing edge, the slot *Jump to
@@ -777,18 +753,17 @@ with 7.11 and 7.12.
   accent, the system chevron. A connected tool's proposal names the source the Review's subtitle
   names (§6): *From Claude · 6:42 PM*, or *From a connected tool · 6:42 PM* when the tool gave no
   name. Settled removal receipts are one row each.
-- *Movements* is the list's last section, one `NavigationLink` row with `list.bullet`.
+- The root lists routines and proposals. Movement discovery belongs to routine editing and the workout.
 - Empty: `ContentUnavailableView("No routines yet", systemImage: "list.bullet.rectangle")` with no
   description; signed in with Coach available it carries one `.glass` action *Ask Coach*, opening a
   new chat with *Build me a routine.* in the composer, unsent.
-- The primary *Just start logging* floats (§4). Large title, `plus` and the account button in the
-  bar.
-- Routine detail numbers its movements (*1. Bench Press*), as Edit does; an open movement reads
-  *open* and carries no footer; History is drawn only when it has rows, each *1 working set · 1
-  movement* with real plurals. A movement row opens the Record. The detail sits on `gym/canvas`.
-- Edit routine ends with a section *Delete routine* in `alarm`. A routine's delete keeps the
-  nine-second Undo the swipe and the context menu give it, so it asks nothing (§5 Confirmations):
-  the editor closes, the routine leaves Routines, and the band reads *Routine deleted* · *Undo*.
+- Large title, `plus` and the account button in the bar. There is no free-workout primary on Routines.
+- Tapping a routine opens a native summary sheet with movement targets, last-trained metadata,
+  *Close* leading, *Edit* trailing, and a full-width *Start* in its bottom band. The sheet supports
+  medium and large detents; accessibility sizes use large. Movement rows retain their Record door.
+  History appears only when it has rows. Editing opens the routine builder after dismissing the summary.
+- Edit routine ends with *Delete routine*, using the system destructive role. Its explicit tap
+  closes the editor and removes the routine without an Undo band.
 - Every movement search lists the two-line `GymRow`: the name, then *Barbell · 80 × 5 · 3 days
   ago*, or *Barbell* alone before the first log. A query with no exact match leads the results with a
   row **Create “<query>”** (`plus.circle.fill`, accent) opening Create movement with the name
@@ -874,7 +849,7 @@ with 7.11 and 7.12.
   row above it on iOS 18 — and none is finished, the title is *No finished workouts yet*, so the log
   never says there are none while one is on screen.
 - Discard and delete raise the band naming what went: *Workout discarded* · *Weigh-in deleted* ·
-  *Set deleted*, with *Undo*.
+  an explicit native Delete action.
 - **The Record** (`MovementRecordScreen.swift`) states each fact once: title the movement, subtitle
   the equipment, `ellipsis.circle` holding *Rename movement*; two `FactTiles` *Best e1RM* and
   *Heaviest*, the standing records; the chart, whose readout line appears only while a finger
@@ -899,15 +874,21 @@ with 7.11 and 7.12.
 - No slot strip, no *Last time* line, no kind control: history prefills the rack (`16-the-workout.md`);
   a new set is Working, as on web and Android; the Fix sheet carries *Kind* as a segmented control
   (warmup · working · drop · failure).
-- The rack is a panel on `gym/card`, top radius 20, padding 16: the numeral row (`68` rounded bold ·
-  *kg* `.title3 ink-dim`, centred), four glass ladder keys, the reps row (`minus` and `plus` as
-  matching 44 pt glass circles either side of *5 reps*), then **Log set** prominent. The button
-  names no numbers; its accessibility label does (*Log set, 100 kilograms, 5 reps*).
-- Previous/Next are 44 pt glass circles beside the movement name; *Movement 1 of 2* is the eyebrow
-  above it. The plan line *plan 4 × 5 · 100* is drawn only when the ledger has no planned rows to
-  show it (*plan open*).
-- The clocks are one `.footnote` line: *32:10 · 1:37 since last set*. The second clock anchors to
-  the latest valid set; until the first set the line is the workout clock alone.
+- The rack is a grounded panel on `gym/card`, with 16 pt padding. Weight is a large rounded
+  numeral with `kg`; four equal ladder keys are at least 48 pt tall. Reps sit in one raised
+  rounded row with equal 48–56 pt minus/plus targets and a centered editable value.
+  **Log set** is a 52 pt minimum full-width primary with a 17 pt headline label, scaling with
+  Dynamic Type. Its visible label names no numbers; its accessibility label names load and reps.
+- The movement title sits above a native page indicator. Horizontal paging follows the finger;
+  there is no movement-position sentence or pair of arrows. Accessibility exposes the current
+  movement count and adjustable previous/next navigation. The title opens *This workout*.
+- Working-set progress is a compact visual row: completed checks, an accent current ring/dot,
+  and quiet planned markers. It never counts warmups as planned working sets. VoiceOver states
+  logged, current and planned totals. The native ledger stays compact, around three 48 pt rows
+  at default size, with recent/current rows visible; all rows remain scrollable and editable.
+- The clocks pair `clock` with workout elapsed time and `timer` with time since the latest valid
+  session-wide set. No visible labels; keep complete accessible names. Before the first set,
+  show only elapsed time. Numerals use monospaced digits.
 - The ledger draws sets in the order they were logged, the same on every draw and every surface; a
   warmup logged between working sets stays between them. It scrolls under the rack's head, not a
   bar, so the system draws no scroll edge there: its top fades over 16 pt (`SoftEdge(.top)`), and at
@@ -940,7 +921,7 @@ with 7.11 and 7.12.
   *Your sets stay saved. Find it at the top of The log.* on iOS 18.
 - **Heavier than the plan** is an `.alert`: *Save 105 to Lower A?* · *Today's workout already has
   it.* · **Save to Lower A** · *Today only* (the cancel role). Leaving a movement raises it — a swipe
-  or Previous/Next, not a control the lifter touched for it — so a dialog would have no source to
+  or accessible movement navigation, not a control the lifter touched for it — so a dialog would have no source to
   anchor to and would float over the ledger (§5 Confirmations). A varied scheme opens a `.medium`
   sheet with its before/after rows, *Today only* leading and ✓ (*Save*) in the bar.
 - The refusal band is §5's glass band; its copy stays at twelve words naming the way out.
@@ -960,8 +941,7 @@ since-last-set clock trailing. Minimal: the room symbol.
   head's footer when true, and *On this phone, not yet on your account.* while true; neither is a
   row.
 - The bar holds `square.and.arrow.up` (*Share this workout*) and `ellipsis.circle`, whose one item
-  is *Discard workout* (`trash`, destructive). Discard pops to The log, where the band reads *Workout
-  discarded* · *Undo*.
+  is *Discard workout* (`trash`, destructive). Discard pops to The log, after its confirmation, without an Undo band.
 - Set rows are `SetRow`s with tap-to-fix and swipe-to-delete: *1 · 100 × 5* with the comparison as
   the trailing caption (*+2.5 over plan*), effort and note as a second line only when present; *W ·
   80 × 3* carries no caption.
@@ -992,12 +972,15 @@ since-last-set clock trailing. Minimal: the room symbol.
   e1RM tile: an estimate belongs to one movement, and the strength news is the *Personal record*
   card. Then *Personal record* in `gym/record` on its own card, then *Performed* in logged order,
   then *Against plan* / *Against last Push A* when one exists.
-- The one full-strength button is pinned in the reach band at full width: *Share with Coach* signed
-  in, *Keep this log* signed out, with its one-line footer on the band's surface. *Save as routine*
-  is a card beneath the tiles: name field, then *Save routine* as a secondary glass button; *Kept as
-  Tuesday.* replaces the card on success. At rest its last row clears the band.
-- *Done* in the bar, `.confirmationAction`, in `gym/accent`. *Share with Coach* and *Keep this log*
-  close the receipt and then open Coach or the Keep sheet.
+- The bottom band has exactly three actions, from top to bottom: quiet native destructive
+  **Discard**, neutral secondary **👑 Share with Coach**, and full-width prominent **Done**.
+  Each has at least a 52 pt target with 10 pt spacing. Done is the primary and appears once.
+  There is no explanatory footer. The crown marks the paid Coach feature; existing account,
+  trial, allowance and entitlement checks remain authoritative. No checkout is offered.
+- Discard confirms once, queues removal and returns to The log. Share dismisses the receipt,
+  follows the existing account/Keep door when required, and opens Coach through the normal send
+  path. Done and a downward sheet dismissal return to the finished workout's detail.
+- The receipt does not offer Save as routine or a second exit action.
 
 ### 7.10 Sheets (§5)
 
@@ -1216,13 +1199,13 @@ per refused workout in Settings and a door on every tab; iOS draws one row and o
   complete, with *Adding it needs a connection.* in the band's transient above them, and while
   backup is paused, with *Sign in again to add it.*
   The bar's `ellipsis.circle` holds *Fix workout* when the copy can be fixed (every reason but
-  `id-taken`) and Fix is not already the primary, and *Discard workout* (destructive, the
-  nine-second window). Discard pops one step, to the screen that opened Inspect — The log's head
-  for one waiting workout, the **On this phone** list for several — where the band reads *Workout
-  discarded* · *Undo*; a list left empty pops on to The log, and its band carries the same Undo.
-  For a stranded set the item reads *Discard 1 set* / *Discard 3 sets*, and the band *Set
-  discarded* / *3 sets discarded* · *Undo* (§5 Confirmations). A workout on its way has no band
-  and no menu.
+  `id-taken`) and Fix is not already the primary, and *Discard workout* (destructive). Discard
+  asks once in a native confirmation, then immediately removes the saved copy and pops one step,
+  to the screen that opened Inspect — The log's head for one waiting workout, the **On this phone**
+  list for several; a list left empty pops on to The log.
+  For stranded sets the item reads *Discard 1 set* / *Discard 3 sets* and uses the same confirmation
+  (§5 Confirmations). There is no success or Undo band. A workout on its way has no recovery
+  primary or menu; its transient reads *Adding [name] to your log.*
 - **Fix workout** is a `.large` sheet that commits from its bar like every edit sheet: *Cancel* ·
   *Fix workout* · ✓, the checkmark's label *Save and retry* (on iOS 18 the bold words), since the
   commit both saves the copy and sends it. Sections: **Times** — *Started*
@@ -1230,7 +1213,7 @@ per refused workout in Settings and a door on every tab; iOS draws one row and o
   with a quiet *Mark finished* that fills it from the last set; a *Linked to Push A* toggle whose off
   state drops the saved plan; then a section per movement, each row opening the Fix set sheet
   (weight, reps, effort, kind, movement, time, note, delete). The sheet has no destructive row:
-  Discard lives on Inspect, with its window. Over 200 sets the bar's ✓ disables and the held reason,
+  Discard lives on Inspect, with its confirmation. Over 200 sets the bar's ✓ disables and the held reason,
   *Over 200 sets · remove 12.*, stands in the band at the sheet's foot; any other refusal the phone
   predicts (below) disables it with that reason's line in the same place. Edits touch the phone's
   copy only; the retry sends the corrected import under the same identity.
@@ -1354,7 +1337,7 @@ Center, on the Lock Screen and on the Action button. A control runs one intent, 
 - **Start workout** opens Windmill in the Gym room on the Routines tab at its root, whichever room
   was in front and past Where to start?; a first launch still shows the introduction first, and its
   end lands there. It starts nothing: a start is a record and the routine is the lifter's choice,
-  and Routines holds every routine and *Just start logging* one tap away. A sheet already open in the
+  and Routines holds every routine, each opening its summary and Start action. A sheet already open in the
   room stays open. When a workout has opened since the control last drew, it opens the logger
   instead.
 - The control and the Live Activity say nothing when they open the app: the app coming forward is
@@ -1381,7 +1364,7 @@ provider's `shortcutTileColor` `.teal`, the system tile colour nearest the room'
   authentication first. Each run is a deliberate command and logs the set on offer when it runs, so
   two runs log two sets, the second being the next set on offer, and each answers with what it
   logged. Nothing debounces a run: catching up a forgotten set is two runs, and an extra set is
-  deleted like any other, with Undo. Only a drawn offer is idempotent — the Live Activity's and the
+  deleted like any other, after confirmation. Only a drawn offer is idempotent — the Live Activity's and the
   control's button log the set they drew once, however often it is pressed.
 - *Start workout* is also the door the control takes when it carries no offer: Routines, or the
   logger while a workout is open.
@@ -1446,10 +1429,13 @@ Recorded in `consistency.md` under *iOS redesign*:
 
 - **Colour and drawings:** 9a (light gym accent vs Figma Daylight `brand/base`), *iOS gym and shell
   day contrast* (the light `gym/accent` and `shell/brand` values, the red-brick `shell/danger`, and
-  the Figma collections that follow them), 9d (two gym light grounds in the Design System collections), 9e (the first-run
-  boards' W capsule and hand-drawn glass), 9h (warm journal day inks in the Figma collection), 9m
+  the Figma collections that follow them), 9e (the first-run
+  boards' W capsule and hand-drawn glass), 9m
   (the iteration-1 boards against §5–§7), 9d under *Onboarding* (the onboarding collection's gym day
   accent).
+- **Drawings against the build:** 10h (Routines' unshipped controls), 10k (*session* on two
+  wave-three boards), 10l (the Live Activity double tap), 10o (every board against the simulator),
+  10p (the gym-feedback targets), 10q (the Coach chat in the Messages language).
 - **The log and progress:** 9b (phones weave, web keeps the strip), 9o (moments are doors on iOS,
   expanders on Android), 9p (a record stated once, and what counts as one), 9q (*Weigh in* in the
   bar), 9y (the month moment named by its month).
@@ -1472,51 +1458,58 @@ settings waits on the owner in 9r and 9w.
 
 ## 10. Drawings
 
-Gym file `vdmdiKWrmZoS1FtcvJRf6O`, page `iOS` (`11:2`), section
-[iOS redesign · iteration 1 · 2026-10-08](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=1055-204)
-(`1055:204`) — 393 × 852 boards, Instrument unless named Daylight:
+Gym file `vdmdiKWrmZoS1FtcvJRf6O`, page [`iOS`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=11-2)
+(`11:2`), one section per flow; each caption names the code that ships the screen and the date of
+its drawing; every section and board name starts with its status (🚀 · 🚧 · 👀, ledger 10o).
+393 × 852 boards (402 × 874 for those drawn on 2026-10-22), Instrument with Daylight in the row beneath:
 
-| Board | Node |
-|---|---|
-| Top bar anatomy — the three root bars and a pushed bar | `1055:205` · Daylight `1055:274` |
-| Routines | `1056:201` · Daylight `1056:417` |
-| The log | `1056:529` · Daylight `1056:779` |
-| Coach — empty | `1056:903` |
-| Coach — conversation | `1056:1048` · Daylight `1056:1240` |
-| Coach — More menu | `1056:1335` |
-| Workout — the logger and the rack | `1056:1455` · Daylight `1056:1638` |
-| Finish receipt | `1056:1737` |
-| Session detail | `1056:1930` |
-| Colour roles and type ramp | `1057:201` |
-| Transient band | `1057:383` |
+| Section | Node | Boards |
+|---|---|---|
+| 00 · The room — read me, map, anatomy | `1118:1768` | top bar anatomy `1055:205` · Daylight `1055:274`; colour roles and type ramp `1057:201`; transient band `1057:383`; native anatomy `1063:478` |
+| 01 · First open — Coach-led setup | `1081:565` | 01.1–01.2 greeting `1173:3783`, `1173:3860`; 01.3 photo picker `1081:637`; 01.4–01.5 photo in the composer `1173:3934`, `1173:4111`; 01.6 thinking `1173:4264`; 01.7 draft `1173:4370`; 01.8 review `1156:3154`; 01.9 saved `1173:4471`; 01.10 routine to Start `1081:829`; 01.11–01.13 allowance used `1173:4600`, `1173:4678`, `1173:4754`; 01.14 after sign-in `1173:4833` |
+| 02 · Routines | `1113:1474` | 02.1 Routines `1056:201` · `1056:417`; 02.2 routine summary `1063:531` · `1065:390`; 02.3 editor `252:358`; 02.4 movement picker `258:417`; 02.5 editor, always sortable `1149:2200`; 02.6 targets `254:478`; 02.7 empty Routines `1149:2477`; 02.8 trash swipe `1149:2275` |
+| 03 · Workout | `1114:1513` | 03.1 rack with Dumbbells `1150:2352`; 03.2 keypad `321:281`; 03.3 fix sheet `327:922`; 03.4 This workout `1135:1875`; 03.5 hidden workout `1135:1996`; 03.6 deviation `1135:2123`; 03.7 finish `1063:486` · `1065:343`; 03.8 ended early `328:646`; 03.9 no movement yet `320:318`; 03.10–03.12 rack pressed, changed, Bodyweight `1150:2495`, `1150:2638`, `1150:2793` |
+| 04 · Outside the app | `1115:1576` | 04.1 Control Center control `1138:2636`; 04.2 Live Activity, since last set `1152:2533`; 04.3 Dynamic Island `171:29`; 04.4 states `175:29`; 04.5 double tap `177:29` |
+| 05 · The log, past workouts & progress | `1116:1605` | 05.1 The log, Weigh in seat `1153:2765`; 05.2 discard by swipe `1065:307` · `1065:526`; 05.3 workout detail `1056:1930`; 05.4 a deleted set `323:29`; 05.5 share sheet `1136:1904`; 05.6 Record `461:60`, 05.7 scrub `529:60`, 05.8 panned `529:154`; 05.9 Edit exercise `1153:2559`; 05.10 Equipment menu `1153:2603` |
+| 06 · Bodyweight | `1116:1683` | Bodyweight `128:2`; weigh-in sheet `1136:2114` |
+| 07 · On this phone | `1116:1705` | On this phone `1138:2042`; Inspect `1138:2201`; Fix workout `1138:2362` |
+| 08 · Coach | `1117:1703` | 08.1 empty `1170:2943`; 08.2 conversation `1170:3007`; 08.3 proposal review `123:2`; 08.4 History `1172:3561`; 08.5 What Coach read `1172:3621`; 08.6 no Coach seat `133:1045`; 08.7 not on this Windmill `133:1152`; 08.8 the day's cap `1170:3105`; 08.9 Coach updates a movement `1170:3192`; 08.10 a Markdown answer `1170:3266`; 08.11 streaming `1170:3364` |
+| 09 · Notes & Connected log | `1117:1768` | Notes `130:1419`; note editor `135:246`; Connected log `1138:2522` |
+| 10 · Not built — designed only | `1118:1810` | Apple Health (no board) |
 
-The boards bind `Gym · Colour` roles and three file-local variables, `ios/accent`,
-`ios/accent-soft` and `ios/on-accent` (`1055:201`–`1055:203`), which carry the verdigris accent in
-both modes (9a). They are iteration-1 drawings; what §5–§7 rule past them is written here and not
-yet drawn (9m).
+The boards bind `Gym · Product colours` and shared Theme `ios/gym/*` roles, including
+`ios/gym/accent`, `ios/gym/accent-soft` and `ios/gym/on-accent` (9a). Most predate iteration 3;
+what §5–§7 rule past them is written here and not yet drawn (9m, 10o). 🚧 boards are targets ahead
+of a build (10p, 10q), each with a Daylight twin beneath it; the Coach chat targets draw the
+Messages language, which contradicts §6 until the owner rules (10q).
 
-Design System file `qoOwNbWOYE1GFi0yR5uGY2`, page `iOS · First run · 2026-09-26` (`112:2`),
+Shell file `tkI7GnS6TcZvQSDi9lwrBf`, page `iOS` (`1:5`),
 402 × 874 boards:
 
 | Section · board | Node |
 |---|---|
-| [7 · Shell chrome · 2026-10-08](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=256-5050) | `256:5050` |
-| 25a · Gym root bar | dark `257:5034` · light `260:5326` |
-| 25b · Journal root bar | `257:5104` |
-| 25c · Room menu open | `257:5149` |
-| 25d · Bar anatomy at 3× — both appearances, dimensions | `258:5134` |
-| 26a · You · signed out | dark `258:5237` · light `260:5385` |
-| 26b · You · signed in | dark `258:5330` · light `260:5460` |
-| [2c · Echoes on iOS · 2026-10-08](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=256-5054) | `256:5054` |
-| 27a · Echo tab · closed | `259:5240` |
-| 27b · Echo ink · open | `259:5296` |
-| 27c · Echo reader · sheet | `259:5377` |
-| 27d · First echo · card | `259:5480` |
-| 27e · Arrival · motion | `259:5558` |
+| [7 · Shell chrome · 2026-10-08](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-3676) | `2:3676` |
+| 25a · Gym root bar | dark `2:3680` · light `2:3975` |
+| 25b · Journal root bar | `2:3704` |
+| 25c · Room menu open | `2:3724` |
+| 25d · Bar anatomy at 3× — both appearances, dimensions | `2:3769` |
+| 26a · You · signed out | dark `2:3853` · light `2:3997` |
+| 26b · You · signed in | dark `2:3906` · light `2:4048` |
 
-The shell boards bind `iOS First Run · Colour`, which gained `shell/*` and `journal/lamp-soft`
-(`256:5034`–`256:5044`). SF fonts do not render in Figma's cloud renderer; the boards use the
-`iOS First Run · Type` stand-ins (Inter, Nunito, JetBrains Mono). Symbols are named for the SF
+Journal file `pC6ciOUnfLmI42oMihd7l3`, page `iOS` (`202:2`):
+
+| Section · board | Node |
+|---|---|
+| [2c · Echoes on iOS · 2026-10-08](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=207-105) | `207:105` |
+| 27a · Echo tab · closed | `207:109` |
+| 27b · Echo ink · open | `207:137` |
+| 27c · Echo reader · sheet | `207:189` |
+| 27d · First echo · card | `207:263` |
+| 27e · Arrival · motion | `207:308` |
+
+The shell and Echoes boards bind shared Theme `ios/shell/*` and `ios/journal/*` roles.
+SF fonts do not render in Figma's cloud renderer; the boards use Scale `ios/font/*`
+stand-ins (Inter, Nunito, JetBrains Mono). Symbols are named for the SF
 Symbol they stand for; the build pulls the real glyph. Glass on a board is `glass/fill` with a
 1 px `glass/stroke`, standing in for what the system renders.
 

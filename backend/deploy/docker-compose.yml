@@ -59,6 +59,19 @@ services:
       # Paste-import LLM escalation (/v1/compose). Empty → the route answers 503 compose-unavailable
       # and the client hides the handle.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      COACH_MAX_OUTPUT_TOKENS: ${COACH_MAX_OUTPUT_TOKENS:-2000}
+      AI_ALLOWANCES_ENABLED: ${AI_ALLOWANCES_ENABLED:-false}
+      AI_INSTALLATIONS_ENABLED: ${AI_INSTALLATIONS_ENABLED:-false}
+      AI_INSTALLATION_IP_HMAC_KEY: ${AI_INSTALLATION_IP_HMAC_KEY:-}
+      AI_INSTALLATION_PROXY_MODE: cloudflare
+      AI_INSTALLATION_ISSUES_PER_DAY: ${AI_INSTALLATION_ISSUES_PER_DAY:-10}
+      AI_INSTALLATION_GENERATIONS_PER_HOUR: ${AI_INSTALLATION_GENERATIONS_PER_HOUR:-30}
+      AI_ANONYMOUS_LIFETIME_USD: ${AI_ANONYMOUS_LIFETIME_USD:-0.05}
+      AI_LOGGED_IN_MONTHLY_USD: ${AI_LOGGED_IN_MONTHLY_USD:-0.25}
+      AI_ONE_PERIOD_USD: ${AI_ONE_PERIOD_USD:-7}
+      AI_FREE_MONTHLY_USD: ${AI_FREE_MONTHLY_USD:-100}
+      AI_FREE_DAILY_USD: ${AI_FREE_DAILY_USD:-5}
+      AI_ALLOWANCE_ALERT_EMAIL: ${AI_ALLOWANCE_ALERT_EMAIL:-}
       # Journal voice (Talk), bought from OpenAI gpt-4o-transcribe. Empty → the transcribe route
       # answers 503 and the client hides Talk. Set it to arm voice for Windmill One subscribers.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

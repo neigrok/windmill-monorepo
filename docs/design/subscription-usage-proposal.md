@@ -1,55 +1,88 @@
-# Account plan and AI credits — design proposal
+# Account plan and USD AI allowance — design proposal
 
-Status: proposal, with illustrative account data. No application behavior changes.
+Status: customer UI proposal. The backend USD contract is enabled in production; its configuration default is off.
+The drawings require the lifetime/free/funded policy and provider capacity states below.
 
 ## Drawings
 
-The shared shell owns this surface. The drawings are on the **Account · Usage · Proposal** page in Windmill · Design System.
+The shared shell owns this surface. The drawings are in the **2026-10 · Account · Usage · Proposal** section on the Proposals page in Windmill · Shell.
 
 | View | Figma |
-|---|---|
-| Desktop overview | [Plan and usage](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2?node-id=89-303) |
-| Mobile web overview | [Plan and usage](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2?node-id=89-304) |
-| Prelaunch supported-data example | [Prelaunch](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2?node-id=89-305) |
-| Mobile web detail | [AI details](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2?node-id=89-306) |
-| Future subscription management | [Manage plan](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2?node-id=91-35) |
+| --- | --- |
+| Desktop overview | [Plan and usage](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-9372) |
+| Mobile web overview | [Plan and usage](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-9405) |
+| Prelaunch supported-data example | [Prelaunch](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-9429) |
+| Mobile web detail | [AI details](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-9445) |
+| Future subscription management | [Manage plan](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-9469) |
 
-## Relative unit
+## USD and allowance periods
 
-The user-facing unit is **AI credits**. Raw model tokens stay out of the customer interface. Credits are a fixed denomination of cost-weighted AI work, identical across plans; an action may debit a fraction of a credit. A credit never means one request.
+USD means model-cost allowance, not prepaid cash, a subscription invoice or a number of questions.
+Amounts come from the server; small charges may use fractional cents. Held reservations reduce
+available capacity and require a pending state. A reservation estimates the current request's
+input cost and includes its output cap; actual usage can be lower or higher. It is not a promised
+final price or hard spending ceiling.
 
-For these examples, one credit equals 0.5% of the base allowance: 200 credits at the base and 400 on One. This is an illustrative conversion of the current 2:1 internal allowance ratio, not an approved commercial grant. The One specimen reconciles exactly: 272 remaining + 72 roadmap + 40 gym + 16 journal = 400. Changing plans must not change the value of an existing credit. Billing dollars and provider cost ceilings must never be presented as the same thing.
+| Tier | Allowance | Display period |
+| --- | --- | --- |
+| Anonymous | $0.05 per installation credential | Lifetime; no reset date |
+| Verified logged-in | $0.25, including associated anonymous spending from the current month | UTC calendar month |
+| Windmill One | $7 per funded period | Actual subscription billing period; owner grants use UTC calendar months |
 
-The service must aggregate exact debits before rounding display values. Keep fractional precision for small charges and disclose rounding in activity details. Avoid rounding every small call up to a whole credit. A production denomination and plan amounts remain a product decision.
+Owner access is a funding source within One and is labeled separately from subscription funding.
+Account capacity is shared across
+products and devices. Signing in permanently binds the anonymous installation to the account;
+it does not grant a fresh anonymous allowance. Current-month anonymous cost counts toward the
+free account allowance. A current subscription grant takes priority over an owner calendar grant;
+the display never combines their remaining amounts. An expired subscription must not hide an
+available owner grant.
 
-## Active requests only
+**All hosted AI work consumes the individual allowance**, including automatic Journal Echoes.
+Show that treatment plainly. Complete existing Echo passages remain readable; do not use cropped
+passages or withheld words as an upgrade prompt. When capacity is unavailable, new background AI
+work waits. No passive-feature switch or separate roadmap request-count meter is introduced here.
 
-Only AI work explicitly requested by the user debits customer credits: roadmap AI requests, gym Coach and journal voice. The specimen's journal activity is voice only. Automatic echoes are included, show complete passages for everyone, cannot be disabled, and never debit the customer allowance. Internal provider cost accounting may still record passive processing without exposing it as a customer charge.
+Free access also depends on shared $100 monthly and $5 daily pools. Paid funded capacity is
+isolated from those pools. These are internal operational amounts; the customer UI displays the
+bounded availability reason and applicable reset, without exposing pool totals. A daily free-pool
+pause must not imply that the individual monthly allowance has been spent. One free or two paid
+in-flight requests can temporarily block another request.
 
-There is one shared credit allowance across products. No separate roadmap run-count meter or calendar-month AI quota belongs in this proposal. Credits return as counted activity becomes older than 30 days; subscription payment dates are separate. A preflight balance never guarantees a fixed number of future actions.
+## Supported and unavailable states
 
-## Supported state and proposed controls
+The [backend contract](../../backend/AI_ALLOWANCES.md) defines exact USD strings, individual
+`resetsAtMs`, constrained-budget `budgetResetsAtMs` and lifetime null reset. A funded period can
+cross a calendar boundary; it must not be drawn as resetting on the first of the month. Period end
+is not a promise of a future paid grant. Uncertain calls can retain capacity after a boundary.
 
-The factual audit is [AI usage review](../AI_USAGE_REVIEW.md). The customer credit balance, product breakdown and fractional receipts require the proposed account usage contract. Anonymous roadmap compose work must not appear as an account debit.
+A positive remaining balance can still be too small for a request's reservation. Draw this as a
+request-capacity refusal rather than zero balance. Do not claim a shorter prompt will necessarily
+fit: the model, history, tools, images and configured output cap also affect the reservation.
+Anonymous access is limited to Gym onboarding through a server-issued installation credential,
+IP limits and shared budgets. Installation resets are not guaranteed to preserve identity.
+Loading and failed reads show an unavailable state; they never flash Free, zero or empty history.
 
-Paid checkout is closed. The prelaunch view therefore shows no checkout, renewal promise or self-service cancellation. It shows an explicit unavailable credit-reporting state, never a zero balance. This is a new design proposal, not a screenshot of the existing app.
-
-Future subscription management requires a customer billing contract: access source, real renewal date, amount and currency, scheduled action kind, hosted billing destination and cancellation. The drawn $12/month and 1 Oct payment are labeled example data. Owner-granted One access needs its own non-renewing access state; subscription status alone must never decide entitlement. Current cancellation remains email support under the pricing canon.
-
-No top-ups, overages or upgrade pressure are introduced. The account page contains no passive-feature switch. [Roadmap AI redesign](roadmap/ai-assistance-redesign.md) specifies the active request, preview and apply flow.
+Checkout is closed. The page offers no purchase, top-up, overage, fabricated renewal or
+self-service cancellation action. Future billing management needs verified access source, renewal
+date, amount/currency, scheduled action and hosted management destination. Example price/payment
+figures in Figma are illustrative and cannot be presented as live facts.
 
 ## Interaction and accessibility
 
-Overview navigation opens details and plan management; Back/Done returns to the originating screen in the Figma prototype. Billing details and cancellation are drawn controls with behavior specified here; they are not executable billing or server integrations.
+Overview opens detail and plan management; Back/Done returns to the originating screen. Keep drafts
+and completed work when a request is refused. Retry requires an explicit user action and server
+admission; a recovered balance never sends a draft automatically.
 
-Cancellation must open a neutral confirmation naming the verified end date, retaining stored work, and offering equally legible Keep plan and Cancel plan controls. Show the scheduled result only after server confirmation. Failed requests keep the current state with a retry affordance. A generic scheduled change must never be relabeled as cancellation.
-
-For fetch failures, show Usage unavailable and Retry. Loading must not flash Free, zero credits or an empty history. Paid access, owner grants, scheduled changes and credit state load independently.
-
-Use the shared button hover and 0.97 press treatment; transition state colors in 150–280ms. Credit bars change only after confirmed data, with a short ease-out update; reduced motion uses the final value directly. No ambient meter pulse or animated countdown.
-
-Mobile web remains one column; detail and management are separate destinations. Cancellation and confirmation actions belong in a pinned bottom action area above the safe inset. Screen readers announce a single remaining-credit value and the window, not every bar segment. Buttons need at least 44px hit areas, keyboard focus and stable back navigation. No custom native iOS or Android components are claimed by these mobile-web drawings.
+Use shared button, focus and reduced-motion behavior. Remaining USD and its period form one screen
+reader announcement. Do not animate urgency, countdowns or ambient meter pulses. Mobile web uses
+one column and separate detail destinations, with at least 44px targets and stable back navigation.
+These mobile-web drawings do not claim native iOS or Android components.
 
 ## Implementation dependencies
 
-Implementation follow-up: account usage contract, metering correctness and subscription management must land before the future example can become a live account page. The dogfood task is account-usage-contract, connected to subscription-allowance-design.
+Account usage screens need the USD and refusal contract; anonymous onboarding uses its installation
+read and binding endpoints. Other anonymous products need their own integration; voice
+needs supported audio accounting. Estimated reservations must be distinguished from actual use
+and unresolved holds. The 50/80/95% owner-email alerts are operational controls, not customer sales
+notifications. Design drift is tracked in [consistency](consistency.md), and account work remains
+linked to the dogfood account-usage-contract and subscription-allowance-design nodes.

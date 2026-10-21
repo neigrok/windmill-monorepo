@@ -12,7 +12,7 @@ import SyncStore
 
 @Suite(.serialized) @MainActor struct BodyweightLogTests {
   func fixture() -> (Harness, GymModel) {
-    let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
+    let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     return (harness, GymModel(runner: harness.runner))
   }
@@ -96,7 +96,7 @@ import SyncStore
     #expect(gym.bodyweight?.entries.isEmpty == true)
   }
 
-  @Test func failedDeleteKeepsEntryThenHeldDeleteCanUndo() throws {
+  @Test func failedDeleteKeepsEntryThenSuccessfulDeletePersists() throws {
     let (harness, gym) = fixture(), day = try gym.runner.moment().today
     var draft = try gym.logWeighInDraft(day: day)
     draft.current.kg = 80
@@ -105,38 +105,24 @@ import SyncStore
     #expect(!gym.logDeleteWeighIn(day: day))
     #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 80)])
     #expect(gym.logDeleteWeighIn(day: day))
-    #expect(gym.bodyweight?.entries.isEmpty == true && gym.bodyweight?.stance == .holding)
-    #expect(try harness.stored(WeighIn.self).map(\.kg) == [80])
-    let offer = try #require(gym.undoOffers.first)
-    #expect(gym.undo(offer.id))
-    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 80)])
-    #expect(gym.logDeleteWeighIn(day: day))
-    harness.advance(ms: Constants.holdMs + 1); gym.refresh()
-    #expect(gym.bodyweight?.entries.isEmpty == true && gym.undoOffers.isEmpty)
+    #expect(gym.bodyweight?.entries.isEmpty == true && gym.bodyweight?.stance == .empty)
+    #expect(try harness.stored(WeighIn.self).isEmpty)
+    #expect(GymModel(runner: harness.runner).bodyweight?.entries.isEmpty == true)
   }
 
-  @Test func reweighingADayInsideItsDeleteWindowRetiresTheUndoAndAFailedReweighKeepsIt() throws {
+  @Test func failedReweighPreservesDeletionAndRetrySavesNewWeight() throws {
     let fault = GymStoreFault(), runtime = try GymModelTests().runtime(failing: fault)
     let gym = GymModel(runner: runtime.runner, runtime: runtime), day = try gym.runner.moment().today
     var first = try gym.logWeighInDraft(day: day)
     first.current.kg = 80
-    #expect(gym.logSaveWeighIn(&first) == nil)
-    #expect(gym.logDeleteWeighIn(day: day))
-    let held = try #require(gym.undoOffers.first)
+    #expect(gym.logSaveWeighIn(&first) == nil && gym.logDeleteWeighIn(day: day))
     fault.point.withLock { $0 = .beforeCommit(.commit) }
-    var failed = try gym.logWeighInDraft(day: day)
-    failed.current.kg = 82.45
-    #expect(gym.logSaveWeighIn(&failed) == "That weigh-in could not be saved. Try again.")
-    fault.point.withLock { $0 = nil }; gym.refresh()
-    #expect(gym.undoOffers.map(\.id) == [held.id] && gym.bodyweight?.entries.isEmpty == true)
-    #expect(gym.undo(held.id))
-    #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 80)])
-    #expect(gym.logDeleteWeighIn(day: day))
-    let again = try #require(gym.undoOffers.first)
     var reweigh = try gym.logWeighInDraft(day: day)
     reweigh.current.kg = 82.45
+    #expect(gym.logSaveWeighIn(&reweigh) == "That weigh-in could not be saved. Try again.")
+    fault.point.withLock { $0 = nil }; gym.refresh()
+    #expect(gym.bodyweight?.entries.isEmpty == true)
     #expect(gym.logSaveWeighIn(&reweigh) == nil)
-    #expect(gym.undoOffers.isEmpty && !gym.undo(again.id))
     #expect(gym.bodyweight?.entries == [Bodyweight.Entry(day: day, kg: 82.45)])
   }
 

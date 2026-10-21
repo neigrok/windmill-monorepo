@@ -684,7 +684,6 @@ enum HiddenWorkoutDoor: String { case accessory, row }
 
 enum WorkoutHandoff: Equatable {
   case detail(ID<Session>?)
-  case keep
   case coach
   case writtenProgram
   static let coachQuestion = "Check my last workout."

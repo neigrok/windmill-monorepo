@@ -22,7 +22,7 @@ import SyncTesting
   }
   func fixture(planned: Bool = true, count: Int = 3) throws -> (Harness, GymModel) {
     let at = Instant(ms: Int64(Date().timeIntervalSince1970 * 1_000) - 937_000)
-    let harness = Harness(registry: SyncSchema.registry, start: at, account: nil,
+    let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: at, account: nil,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     let gym = GymModel(runner: harness.runner)
     models.append(gym)
@@ -161,13 +161,13 @@ import SyncTesting
       XCTAssertEqual(unreadable.workout.sets, retainedSets)
       XCTAssertEqual(unreadable.workout.walk, retainedWalk)
       XCTAssertNil(gym.run(DeleteSet(set.id))?.refusal)
-      try await capture(WorkoutScreen(gym: gym), name: "delete-undo-" + name, appearance: appearance)
+      try await capture(WorkoutScreen(gym: gym), name: "delete-" + name, appearance: appearance)
       let connectivity = SwitchedConnectivity(), transport = JournalModelTransport()
       let store = try Store.inMemory(registry: SyncSchema.registry), tokens = InMemoryTokenStore()
       let engine = try SyncEngine(config: EngineConfig(appVersion: "test", surface: .ios, drivesLoops: false), store: store,
                                   transport: transport, tokens: tokens, forkGuard: InMemoryForkGuardStore(),
                                   clock: .system, random: SeededRandomSource(seed: 24), connectivity: connectivity)
-      let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
+      let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0), holdRemovals: false)
       let runtime = AppRuntime(settings: AppSettings(arguments: ["app", "-server", "https://gym.invalid"]), store: store, engine: engine,
                                auth: NativeAuth(baseURL: URL(string: "https://gym.invalid")), runner: runner,
                                tokens: tokens, revocations: InMemoryTokenStore(), telemetry: NoopTelemetry())

@@ -74,6 +74,7 @@ struct WindmillApp: App {
             if !onboardingFixture, await !ShellFixture.prepare(board, model: created) { await BoardFixture.prepare(board, model: created) }
           }
           try await OfflineFixture.prepare(created)
+          await CoachFixture.prepare(created.gym, signIn: true)
           if settings.board == nil && settings.scenario == nil || onboardingFixture {
             introduction = try OnboardingLaunch.shouldPresent(model: created, deepLink: launchLink || launchDelegate.deepLink || settings.board == "onboarding-deep-link")
           }
@@ -268,15 +269,6 @@ struct RoomMenu: View {
           Label(room.title, systemImage: room.symbol).tag(room).accessibilityIdentifier("room-" + room.rawValue)
         }
       }.pickerStyle(.inline)
-      Divider()
-      Button("You", systemImage: "person.crop.circle") { app.openYou() }
-      if app.selectedRoom == .journal {
-        Button("Show ink notes", systemImage: "scribble.variable") {
-          app.journal.done()
-          app.journal.inkVisible = true
-          app.journal.screenViewed("ink_notes")
-        }
-      }
     } label: {
       HStack(spacing: 6) {
         Text(app.selectedRoom.title).font(.body.weight(.semibold))

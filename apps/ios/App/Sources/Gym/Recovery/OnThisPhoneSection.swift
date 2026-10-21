@@ -38,7 +38,7 @@ struct OnThisPhoneSection: View {
 }
 
 // Every saved workout the account has not taken: the ones that need the lifter, then the ones on their way. Discard
-// from Inspect comes back here with its Undo, and the list leaves once nothing waits.
+// from Inspect removes the copy, and the list leaves once nothing waits.
 struct OnThisPhoneList: View {
   let gym: GymModel
   @Environment(\.dismiss) private var dismiss
@@ -52,8 +52,7 @@ struct OnThisPhoneList: View {
     }.listStyle(.insetGrouped).modifier(GymPage()).navigationTitle("On this phone").navigationBarTitleDisplayMode(.inline)
       .gymTabBar().accessibilityIdentifier("recovery-list")
       .reachBand {
-        GymTransient(gym: gym, held: gym.discardHold.map { hold in .init(text: hold.line, undo: gym.undoDiscard, keep: gym.endDiscardWindow) },
-                     errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo")
+        GymTransient(gym: gym, errorIdentifier: "gym-log-error")
       }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "on_this_phone"]) }
       .onChange(of: rows.isEmpty) { _, empty in if empty { dismiss() } }
@@ -96,11 +95,6 @@ extension WorkoutRecovery {
 
   // What Discard drops: the whole copy, or the sets of a landed workout it still holds.
   var discardTitle: String { retry == .restoreSets ? "Discard \(GymCount.of(strandedSets.count, "set"))" : "Discard workout" }
-  var discardedLine: String {
-    guard retry == .restoreSets else { return "Workout discarded" }
-    return strandedSets.count == 1 ? "Set discarded" : "\(GymCount.of(strandedSets.count, "set")) discarded"
-  }
-
   func title(_ dates: GymDate) -> String {
     guard retry == .restoreSets else { return workout.title(dates) }
     return "\(GymCount.of(strandedSets.count, "set")) from \(workout.name) · \(dates.day(workout.session.startedAt))"

@@ -21,9 +21,9 @@ scrim that writes is the one stroke a lifter cannot see coming.
 **The finish is a sheet on both phones** — iOS's `.sheet`, Android's `ModalBottomSheet` — raised over
 the session it just closed, and it is one statement about two surfaces rather than two conventions
 (`16-the-workout.md`). Because back, the scrim and the handle already dismiss a sheet, the only
-dismissal drawn for it is iOS's toolbar `Done`, on every state; Android draws none of its own. The
-sheet's one full-strength button is `Share with Coach`, a hand-off rather than a way out, drawn only
-where Coach can be reached. And because a sheet covers the room's bottom bar, a refusal raised
+dismissal drawn for it is iOS's bottom primary Done; Android draws none of its own. On iOS,
+Discard is quiet destructive and 👑 Share with Coach is secondary above Done. Android retains
+Share with Coach as its one full-strength handoff where Coach can be reached. And because a sheet covers the room's bottom bar, a refusal raised
 by a control **on** a standing sheet — the receipt's keep-as-routine — is drawn inside it, under that
 control, not in the band every other refusal in the room lands in. That is the rule for a sheet that
 stays up to hear the answer. A sheet that is not there when the answer comes hands its refusal back to
@@ -85,7 +85,7 @@ Detach the shell's home gesture below the root, including the tab-bar band outsi
 navigation stack. The shell must not leave the room while a pushed screen is open.
 
 **Navigation chrome belongs where the platform puts it, and committing actions stay in the
-reach band.** `Log set` and `Just start logging` live in an iOS bottom safe-area inset and in an
+reach band.** `Log set` and routine `Start` live in an iOS bottom safe-area inset and in an
 Android scaffold's bottom bar; **Apply** is the review sheet's own band; the keypad's **Set** stays
 in the band below the pad, and on Android the fix sheet's **Save fix** stays in the band below its
 fields, while the sheets' titles and dismissals are the bar's. Three exceptions are ruled and are
@@ -106,7 +106,8 @@ importance, it is **posture**:
 > routine, editing targets, opening settings — goes to the platform's own top chrome, because nobody
 > plans a training block one-handed at the rack.
 
-So `Just start logging` is the primary in the band and `New routine` is a toolbar action. That also
+On Android, `Just start logging` is the primary in the band and `New routine` is a toolbar action.
+On iOS, Routines has no free-workout button: selecting a routine opens its summary with Start. That also
 keeps the narrowed top-corner rule honest: a top corner may hold an action the lifter is sitting down
 to take, and may never hold one they need mid-set.
 

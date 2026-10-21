@@ -4,9 +4,11 @@ How Sign in with Apple on the iPhone reaches the account a person already has, a
 person adds Apple to it. Companion to `superapp-flow.md` §6 (the Keep sheet, the one sign-in door)
 and `superapp-shell.md` §6 (You). The server contract is `backend/AUTH.md`, "Identities — one
 account, many doors". The drawings of record are section
-[4b · Apple sign-in · one account](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=194-3698)
-of the Figma page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2),
-with its rows in the state matrix and three paths in the flow map.
+[4b · Apple sign-in · one account](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-2878)
+of the Figma page [Shell · iOS](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=1-5),
+with its rows in the [state matrix](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-1092)
+and three paths in the [flow map](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-1150)
+on Shell's Model page.
 
 ---
 

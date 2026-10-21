@@ -176,6 +176,8 @@ struct WorkoutReceipt: View {
   let gym: GymModel
   @Bindable var receipt: WorkoutReceiptData
   @Environment(\.dismiss) var dismiss
+  @State var discard = false
+  @State var discardConfirmed = false
   // The receipt opens over the workout's detail at full height only, so the detail's tiles never show beside its own.
   var body: some View {
     NavigationStack {
@@ -214,31 +216,59 @@ struct WorkoutReceipt: View {
           }
         }.listRowBackground(GymPalette.card)
       }.modifier(GymPage()).roomTitle(receipt.title, subtitle: receipt.subtitle(gym.dates))
-        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.tint(GymPalette.accent) } }.roomBar(.gym)
+        .roomBar(.gym)
         .reachBand(onSurface: true) { band }
     }.modifier(GymPage()).presentationDetents([.large])
+      .confirmationDialog("Discard this workout?", isPresented: $discard, titleVisibility: .visible) {
+        Button("Discard workout", role: .destructive) {
+          discardConfirmed = true
+          guard let result = gym.run(DiscardSession(receipt.session.id)), result.refusal == nil else { return }
+          gym.workout.handoff = .detail(nil); dismiss()
+        }
+        Button("Cancel", role: .cancel) {}
+      } message: { Text("This permanently removes the workout and its sets.") }
+      .onChange(of: discard) { _, shown in
+        if shown {
+          discardConfirmed = false
+          gym.telemetry.event("gym_action", properties: ["screen": "workout", "action": "discard", "state": "shown"])
+        } else if !discardConfirmed {
+          gym.telemetry.event("gym_action", properties: ["screen": "workout", "action": "cancel", "outcome": "cancelled"])
+        }
+      }
+      .onChange(of: gym.account) { _, _ in discard = false }
       .sensoryFeedback(.success, trigger: receipt.keptName) { old, new in old == nil && new != nil }
       .task { await receipt.loadReview(gym) }
       .onAppear { receipt.reconcile(gym) }
       .onChange(of: gym.notices.map(\.id)) { _, _ in receipt.reconcile(gym) }
   }
 
-  // The reach band: a failed review read, then the one primary with its line — Keep signed out, Share with Coach signed in.
   var band: some View {
-    VStack(spacing: 0) {
+    VStack(spacing: 10) {
+      GymTransient(gym: gym)
       if receipt.reviewFailed {
         RoomTransient(message: "The log didn’t answer. The workout is saved.", room: .gym, actionTitle: "Try again",
                       actionIdentifier: "workout-review-retry") { Task { await receipt.loadReview(gym) } }
       }
-      if gym.isAnonymous {
-        ActionBand(title: "Keep this log", room: .gym, footer: "This log is only on this phone.") { gym.workout.handoff = .keep; dismiss() }
-      } else if gym.workout.coachAvailable && !gym.authPaused {
-        ActionBand(title: "Share with Coach", room: .gym, disabled: gym.accountTransition, actionIdentifier: "workout-share-coach",
-                   footer: "Sends Coach one line — “\(WorkoutHandoff.coachQuestion)” — and opens the answer.") {
-          gym.workout.handoff = .coach; dismiss()
-        }
-      }
-    }.roomMotion(receipt.reviewFailed)
+      Button(role: .destructive) { discard = true } label: {
+        Text("Discard").frame(maxWidth: .infinity, minHeight: 52).contentShape(Rectangle())
+      }.buttonStyle(.plain).foregroundStyle(GymPalette.destructive)
+        .accessibilityIdentifier("workout-discard-receipt")
+      Button {
+        gym.telemetry.event("gym_action", properties: ["screen": "workout", "action": "share"])
+        gym.workout.handoff = .coach
+        dismiss()
+      } label: { Text("👑 Share with Coach").frame(maxWidth: .infinity, minHeight: 32) }
+        .modifier(RoomSecondaryStyle()).controlSize(.large).buttonBorderShape(.capsule)
+        .accessibilityIdentifier("workout-share-coach")
+        .accessibilityHint(gym.sharingNeedsSignIn ? "Sign in to continue" : gym.coachUnavailable ? "Coach is unavailable" : "Opens Coach to review this workout")
+        .disabled(gym.coachUnavailable)
+      Button {
+        gym.telemetry.event("first_run_choice", properties: ["screen": "workout", "action": "close"])
+        dismiss()
+      } label: { Text("Done").frame(maxWidth: .infinity, minHeight: 32) }
+        .modifier(RoomPrimaryStyle(room: .gym)).accessibilityIdentifier("workout-done")
+    }.font(.headline).padding(RoomSpace.inset).disabled(gym.accountTransition)
+      .roomMotion(receipt.reviewFailed)
   }
 }
 

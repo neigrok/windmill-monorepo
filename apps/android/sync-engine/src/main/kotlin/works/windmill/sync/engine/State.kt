@@ -97,6 +97,7 @@ internal fun isVisible(type: TypeDef?, lattice: Lattice, texts: Map<String, Text
     type.life -> lattice.life?.isAlive == true
     type.json["visibleWhen"] == null -> lattice.fields.isNotEmpty() || texts.isNotEmpty()
     else -> type.json.member("visibleWhen").arr().any { name ->
+        texts[name.str()]?.let { return@any !TextWhitespace.isBlank(it.text) }
         val value = texts[name.str()]?.let { Json.of(it.text) } ?: lattice.fields[name.str()]?.value
         value != null && value !== Json.Null && value != Json.of("")
     }

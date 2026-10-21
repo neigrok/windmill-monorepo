@@ -184,12 +184,12 @@ import SyncTesting
     #expect(gym.sets.filter { $0.sessionId == value.id } == [original])
   }
 
-  @Test func deleteRemovesTheSetBehindAnUndo() throws {
+  @Test func deletePersistsTheSetRemoval() throws {
     let logs = TrainingLogUITests(), (_, gym) = logs.fixture()
     let value = try logs.session(gym, daysAgo: 1)
     let original = try #require(gym.sets.first { $0.sessionId == value.id }), draft = SetFixDraft(original, account: nil)
     #expect(draft.delete(gym) && draft.failure == nil)
-    #expect(gym.sets.filter { $0.sessionId == value.id }.isEmpty && gym.undoOffers.count == 1)
+    #expect(gym.sets.filter { $0.sessionId == value.id }.isEmpty && GymModel(runner: gym.runner).sets.isEmpty)
   }
 
   @Test func goneFixClosesWithoutRecreatingSet() throws {

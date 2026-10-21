@@ -49,10 +49,12 @@ std::vector<std::pair<std::string, ThreadProposal>> mintedIn(pqxx::work& txn, co
 
 std::vector<ThreadTurn> turnsOf(pqxx::work& txn, const ThreadId& id, std::uint64_t before = 0, int limit = -1, bool context = false) {
   pqxx::result rows = txn.exec_params(
-      "SELECT from_lifter, text, receipt::text, position, generation_id, results::text, request_id, status, attachments::text, "
+      "SELECT t.from_lifter, t.text, t.receipt::text, t.position, t.generation_id, t.results::text, t.request_id, t.status, t.attachments::text, "
+      "g.payload::text AS generation_payload, "
       "(extract(epoch from said_at) * 1000)::bigint AS said_ms "
-      "FROM gym_ask_turns WHERE thread_id = $1 AND ($2::bigint = 0 OR position < $2::bigint) "
-      "AND (NOT $4::boolean OR status='completed') ORDER BY position DESC LIMIT nullif($3::int, -1)",
+      "FROM gym_ask_turns t LEFT JOIN gym_ask_generations g ON g.id=t.generation_id AND g.thread_id=t.thread_id AND g.user_id=t.user_id "
+      "WHERE t.thread_id = $1 AND ($2::bigint = 0 OR t.position < $2::bigint) "
+      "AND (NOT $4::boolean OR t.status='completed') ORDER BY t.position DESC LIMIT nullif($3::int, -1)",
       id.str(), static_cast<long long>(before), limit, context);
   std::vector<ThreadTurn> turns;
   for (const auto& row : rows) {
@@ -65,6 +67,14 @@ std::vector<ThreadTurn> turnsOf(pqxx::work& txn, const ThreadId& id, std::uint64
                                row["generation_id"].is_null() ? "" : row["generation_id"].as<std::string>()});
     turns.back().requestId = row["request_id"].is_null() ? "" : row["request_id"].as<std::string>();
     turns.back().status = row["status"].as<std::string>();
+    if (!row["generation_payload"].is_null()) {
+      const auto generation = generationFrom(parse(row["generation_payload"].as<std::string>()));
+      turns.back().purpose = generation.purpose;
+      if (!fromLifter) {
+        turns.back().clarification = generation.clarification;
+        turns.back().allowanceRefusal = generation.allowanceRefusal;
+      }
+    }
     if (!row["results"].is_null()) turns.back().results = coachResultsFrom(parse(row["results"].as<std::string>()));
     if (!row["attachments"].is_null()) turns.back().attachments = coachAttachmentsFrom(parse(row["attachments"].as<std::string>()));
   }
@@ -341,6 +351,8 @@ void PgAskThreadRepository::saveGeneration(const UserId& user, const ThreadId& t
   if (!prior.empty()) {
     const auto stored = generationFrom(parse(prior[0][0].as<std::string>()));
     if (stored.status == "completed" || stored.status == "stopped") { generation = stored; return; }
+    if (stored.id != generation.id || stored.question != generation.question || stored.purpose != generation.purpose ||
+        stored.attachments != generation.attachments) throw std::runtime_error("conversation request is immutable");
     generation.revision = stored.revision;
   }
   ++generation.revision;
@@ -393,6 +405,7 @@ std::vector<CoachOperation> PgAskThreadRepository::operations(const UserId& user
   std::vector<CoachOperation> operations;
   for (const auto& body : bodies) {
     CoachOperation operation{body["id"].asString(), body["name"].asString(), body["arguments"]};
+    operation.input = body["input"];
     if (body.isMember("result")) {
       ToolResult result;
       result.content = body["result"]["content"];
@@ -412,6 +425,7 @@ void PgAskThreadRepository::saveOperation(const UserId& user, const ThreadId& th
   body["id"] = operation.id;
   body["name"] = operation.name;
   body["arguments"] = operation.arguments;
+  if (!operation.input.isNull()) body["input"] = operation.input;
   if (operation.result) {
     body["result"]["content"] = operation.result->content;
     body["result"]["payload"] = operation.result->payload;
@@ -428,7 +442,13 @@ void PgAskThreadRepository::saveOperation(const UserId& user, const ThreadId& th
   if (bodies.isObject()) { Json::Value list(Json::arrayValue); list.append(bodies); bodies = std::move(list); }
   bool replaced = false;
   for (auto& stored : bodies)
-    if (stored["id"] == body["id"]) { stored = body; replaced = true; break; }
+    if (stored["id"] == body["id"]) {
+      if (stored["name"] != body["name"] || stored["arguments"] != body["arguments"] || stored["input"] != body["input"])
+        throw std::runtime_error("conversation action is immutable");
+      stored = body;
+      replaced = true;
+      break;
+    }
   if (!replaced) bodies.append(body);
   txn.exec_params("UPDATE gym_ask_generations SET operation=$4::jsonb WHERE id=$1 AND user_id=$2::uuid AND thread_id=$3",
                    generationId, user.str(), thread.str(), dump(bodies));

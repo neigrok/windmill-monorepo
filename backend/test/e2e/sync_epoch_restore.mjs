@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
-import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, mkdtempSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -67,7 +67,12 @@ async function prove(order, clocked = false) {
     routine: `ep_removal_${owed}`, proposal: `ep_proposal_${owed}` }));
   let clockOffset = 0;
   const now = () => Date.now() + clockOffset;
-  const tickServer = () => { if (clocked) writeFileSync(clockPath, String(now())); };
+  const tickServer = () => {
+    if (!clocked) return;
+    const next = `${clockPath}.next`;
+    writeFileSync(next, String(now()));
+    renameSync(next, clockPath);
+  };
   let server, engine, port, origin, created = false, pausePull = false, pausePush = false;
   const commandOptions = { encoding: 'utf8', timeout: 30_000, maxBuffer: 4 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] };
   const run = (command, args, options = {}) => execFileSync(command, args, { ...commandOptions, ...options });

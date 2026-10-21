@@ -46,7 +46,7 @@ TendRun TendingService::start(const TreeId& tree, const UserId& caller, const st
   // Over the cap is the "you pasted a document" case — paste-import is the door for that, not this.
   if (prompt.size() > kMaxTendPromptBytes) return refuse(tree, caller, prompt, TendRefusal::promptTooLong);
   if (!enabled_) return refuse(tree, caller, prompt, TendRefusal::notEnabled);
-  if (!allowanceAt(caller, email, clock_.nowMs()).allows())
+  if (!entitlements_.aiAllowancesEnabled() && !allowanceAt(caller, email, clock_.nowMs()).allows())
     return refuse(tree, caller, prompt, TendRefusal::outOfAllowance);
   // The dollar fuse, last because it is the only rung that reads the ledger. It measures what the
   // run count cannot: one sentence that sets a twelve-iteration agent loose costs many times another.
@@ -94,6 +94,7 @@ TendingSummary TendingService::summaryFor(const UserId& caller, const std::strin
   const std::uint64_t now = clock_.nowMs();  // one instant for the whole read: budget, reset, ledger
   TendingSummary summary;
   summary.enabled = enabled_;
+  summary.usdAllowance = entitlements_.aiAllowancesEnabled();
   summary.allowance = allowanceAt(caller, email, now);
   summary.resetAtMs = nextMonthStartMsUtc(now);
   summary.recent = runs_.recentForUser(caller, monthStartMsUtc(now), kLedgerDepth);

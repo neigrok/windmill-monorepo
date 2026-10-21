@@ -6,6 +6,20 @@
 
 using namespace wm;
 
+TEST(a_day_needs_writing_even_when_its_scales_are_answered) {
+  Page page{UserId{"u1"}, LocalDate{"2026-10-18"}};
+  page.mood = Score{0};
+  page.energy = Score{10};
+  for (const std::string body : {std::string(), std::string(Page::whitespace)}) {
+    page.body = body;
+    CHECK_FALSE(page.isWritten());
+  }
+  for (const std::string body : {"  a\n", "\u0085", "\u200b", "\U0001f331"}) {
+    page.body = body;
+    CHECK(page.isWritten());
+  }
+}
+
 // Neither LocalDate nor Score has a throwing observer, so a rejection is proven by constructing
 // one and catching InvalidPage.
 namespace {

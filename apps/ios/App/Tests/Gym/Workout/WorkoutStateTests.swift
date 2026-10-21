@@ -21,7 +21,7 @@ import SyncTesting
   var third: ID<Exercise> { SeedExercises.all[2].id }
 
   func fixture(anonymous: Bool = true, telemetry: any Telemetry = NoopTelemetry()) throws -> (Harness, GymModel) {
-    let harness = Harness(registry: SyncSchema.registry, start: start, account: anonymous ? nil : "workout-tests",
+    let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: start, account: anonymous ? nil : "workout-tests",
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     // The model server starts without the app's seed catalogue.
     let exercise = Exercise(id: first, name: "Workout squat", pattern: "squat", equipment: "barbell", stepKg: 2.5)
@@ -458,7 +458,7 @@ import SyncTesting
     let engine = try SyncEngine(config: EngineConfig(appVersion: "test", surface: .ios, drivesLoops: false), store: store,
       transport: JournalModelTransport(), tokens: tokens, forkGuard: InMemoryForkGuardStore(), clock: .system,
       random: SeededRandomSource(seed: 88), connectivity: SwitchedConnectivity())
-    let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
+    let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0), holdRemovals: false)
     let runtime = AppRuntime(settings: AppSettings(arguments: ["app", "-server", "https://gym.invalid"]),
       store: store, engine: engine, auth: NativeAuth(baseURL: URL(string: "https://gym.invalid")), runner: runner,
       tokens: tokens, revocations: InMemoryTokenStore())
@@ -503,7 +503,7 @@ import SyncTesting
     let engine = try SyncEngine(config: EngineConfig(appVersion: "test", surface: .ios, drivesLoops: drivesLoops), store: store,
                                 transport: fault, tokens: tokens, forkGuard: InMemoryForkGuardStore(), clock: clock,
                                 random: SeededRandomSource(seed: 73), connectivity: connectivity)
-    let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
+    let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0), holdRemovals: false)
     return AppRuntime(settings: AppSettings(arguments: ["app", "-server", "https://gym.invalid"]), store: store, engine: engine,
                       auth: NativeAuth(baseURL: URL(string: "https://gym.invalid")), runner: runner,
                       tokens: tokens, revocations: InMemoryTokenStore())
@@ -614,7 +614,7 @@ import SyncTesting
     #expect(free.planLine == nil && free.tally == "1 set" && !free.complete)
   }
 
-  @Test func deletionAndUndoMoveRestClockToRetainedLatestSet() throws {
+  @Test func deletionMovesRestClockToRetainedLatestSetAcrossRelaunch() throws {
     let (harness, gym) = try fixture(), workout = try begin(gym)
     let session = try #require(workout.session)
     let early = value(gym, session: session, at: start)
@@ -627,8 +627,7 @@ import SyncTesting
     #expect(WorkoutClocks(session: session, sets: workout.sets, now: now).sinceSetMs == 10_000)
     let removal = try #require(gym.run(DeleteSet(latest.id))?.receipt)
     #expect(WorkoutClocks(session: session, sets: workout.sets, now: now).sinceSetMs == 20_000)
-    #expect(gym.undo(removal.gestureId))
-    #expect(WorkoutClocks(session: session, sets: workout.sets, now: now).sinceSetMs == 10_000)
+    #expect(removal.releaseAt == nil)
     let reopenedGym = GymModel(runner: harness.runner), reopened = reopenedGym.workout
     #expect(WorkoutClocks(session: try #require(reopened.session), sets: reopened.sets, now: now) ==
             WorkoutClocks(session: session, sets: workout.sets, now: now))
@@ -875,7 +874,7 @@ import SyncTesting
       let engine = try SyncEngine(config: EngineConfig(appVersion: "test", surface: .ios, drivesLoops: true), store: store,
                                   transport: transport, tokens: tokens, forkGuard: forkGuard, clock: .system,
                                   random: SeededRandomSource(seed: seed), connectivity: connectivity, telemetry: telemetry)
-      let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
+      let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0), holdRemovals: false)
       return AppRuntime(settings: AppSettings(arguments: ["app", "-server", "https://gym.invalid"]), store: store, engine: engine,
                         auth: NativeAuth(baseURL: URL(string: "https://gym.invalid")), runner: runner,
                         tokens: tokens, revocations: InMemoryTokenStore(), telemetry: NoopTelemetry())
@@ -1164,7 +1163,7 @@ import SyncTesting
     #expect(workout.session?.isOpen == false && gym.openSession == nil)
   }
 
-  @Test func pendingSetCorrectionAndHeldDeletionPreventConfirmedFinish() throws {
+  @Test func pendingCorrectionBlocksFinishAndImmediateDeletionQueuesBeforeFinish() throws {
     let (harness, gym) = try fixture(anonymous: false), workout = try begin(gym)
     #expect(workout.canLog)
     workout.logSet()
@@ -1180,10 +1179,10 @@ import SyncTesting
     #expect(try harness.runner.read(Gym.scope) { try $0.commands().isEmpty })
     harness.sync(); gym.refresh()
     let removal = try #require(gym.run(DeleteSet(corrected.id))?.receipt)
-    #expect(workout.sets.isEmpty && gym.run(FinishWorkout(id: session.id))?.refusal != nil)
-    #expect(try harness.runner.read(Gym.scope) { try $0.commands().isEmpty })
-    #expect(gym.undo(removal.gestureId))
+    #expect(workout.sets.isEmpty && removal.releaseAt == nil)
     #expect(gym.run(FinishWorkout(id: session.id))?.receipt != nil && workout.session?.isOpen == true)
+    harness.sync(); gym.refresh()
+    #expect(workout.session?.isOpen == false && workout.sets.isEmpty)
   }
 
   @Test func unsyncedAppendPreventConfirmedFinishUntilAdmission() throws {

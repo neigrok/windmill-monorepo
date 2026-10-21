@@ -80,8 +80,8 @@ bool PgNudgeRepository::wroteToday(const UserId& user, const LocalDate& day) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT EXISTS(SELECT 1 FROM journal_page WHERE user_id = $1::uuid AND day = $2::date) AS wrote",
-      user.str(), day.iso());
+      "SELECT EXISTS(SELECT 1 FROM journal_page WHERE user_id = $1::uuid AND day = $2::date AND btrim(body, $3) <> '') AS wrote",
+      user.str(), day.iso(), std::string(Page::whitespace));
   return rows[0]["wrote"].as<bool>();
 }
 

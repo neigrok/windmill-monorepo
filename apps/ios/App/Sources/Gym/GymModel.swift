@@ -5,7 +5,6 @@ import GymDomain
 import SyncAPI
 import SyncCore
 import SyncEngine
-import struct SyncReplica.OutboxEntry
 import SyncSchema
 import SyncStore
 
@@ -37,16 +36,11 @@ final class GymModel {
   var refusal: GymRefusal?
   var error: String?
   var readFailed = false
-  var undoOffers: [GymUndoOffer] = []
-  // The offers whose band the lifter swiped away: the room offers them no more, and their holds run out as they would.
-  @ObservationIgnored var dismissedUndos: Set<String> = []
   // The room's refusals: undismissed, and none a saved workout owns, since that one is its row's on The log.
   var notices: [DomainNotice<GymRefusal>] = []
   // Every gym notice the replica keeps, dismissed ones too: the saved workouts' review reads their reasons here.
   var recoveryNotices: [DomainNotice<GymRefusal>] = []
   var adoptionWorkouts: [SignedOutWorkout] = []
-  // A saved workout's Discard inside the room's nine-second window: its row has left and The log's band offers Undo.
-  var discardHold: DiscardHold?
   @ObservationIgnored var observationTask: Task<Void, Never>?
   @ObservationIgnored var clockTask: Task<Void, Never>?
   @ObservationIgnored var scopeViews: [RecordsView] = []
@@ -61,9 +55,9 @@ final class GymModel {
   @ObservationIgnored var stalledCoachDecisions: Set<ID<Proposal>> = []
   @ObservationIgnored var awaitedRecoveries: [ID<Session>: RecoveryAction] = [:]
 
-  init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), locale: Locale = .autoupdatingCurrent) {
+  init(runner: ActionRunner, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry(), locale: Locale = .autoupdatingCurrent, rest: GymRESTClient? = nil) {
     self.runner = runner; self.runtime = runtime; self.telemetry = telemetry; self.locale = locale
-    rest = GymRESTClient(runtime: runtime, telemetry: telemetry)
+    self.rest = rest ?? GymRESTClient(runtime: runtime, telemetry: telemetry)
     runtime?.gymBinding.gym = self
     refresh()
   }
@@ -167,7 +161,6 @@ final class GymModel {
       _ = status.account; _ = status.authPaused; _ = status.pendingSignIn; _ = status.ready; _ = status.sent
       _ = status.failedPushes; _ = status.online; _ = status.upgradeRequired
       _ = runtime.engine.notices("gym").notices
-      _ = runtime.engine.undoOffers.offers
     } onChange: { [weak self] in
       Task { @MainActor [weak self] in
         guard let self, self.observationGeneration == generation else { return }
@@ -236,12 +229,6 @@ final class GymModel {
           refusal = latest.refusal; error = message(latest.refusal)
         }
         publish(\.notices, incoming)
-        let held = GymUndoOffer.held(in: replica.outbox.filter { $0.scope == Gym.scope })
-        dismissedUndos.formIntersection(held.map(\.id))
-        publish(\.undoOffers, held.filter { !dismissedUndos.contains($0.id) })
-      } else {
-        let now = (try? runner.moment().now.ms) ?? 0
-        publish(\.undoOffers, undoOffers.filter { $0.releaseAt > now })
       }
       recordAnsweredRecoveries()
       if previousAccount != account || previousAnonymous != isAnonymous { publish(\.coachUnavailable, false) }
@@ -262,10 +249,6 @@ final class GymModel {
     do {
       let outcome = try runner.run(action)
       if let refused = outcome.refusal { refusal = refused; error = message(refused) }
-      if runtime == nil, let receipt = outcome.receipt,
-         let offer = (try? runner.read(Gym.scope) { try GymUndoOffer(receipt: receipt, in: $0) }) ?? nil {
-        undoOffers.append(offer)
-      }
       telemetry.event("gym_action", properties: ["screen": "gym", "outcome": outcome.refusal == nil ? "ok" : "refused"])
       refresh()
       return outcome
@@ -300,34 +283,8 @@ final class GymModel {
   }
 
   @discardableResult
-  func undo(_ gestureId: String) -> Bool {
-    guard !accountTransition else { error = "Wait for the account change to finish."; return false }
-    do {
-      let undone = try runner.undo(gestureId)
-      undoOffers.removeAll { $0.id == gestureId }
-      error = undone ? nil : "That change has already been kept."
-      telemetry.event("gym_undo", properties: ["screen": "gym", "outcome": undone ? "ok" : "refused"])
-      refresh(); return undone
-    } catch {
-      self.error = "Gym could not undo this change. Try again."
-      telemetry.event("gym_undo", properties: ["screen": "gym", "outcome": "failed"]); report("gym_undo", error)
-      return false
-    }
-  }
-
-  // The lifter sent an Undo band away: the act it shows and every older one beneath it stay, and their holds run out as
-  // they would have, so only a gesture made after the swipe raises the band again.
-  func dismissUndo(_ gestureId: String) {
-    guard let shown = undoOffers.firstIndex(where: { $0.id == gestureId }) else { return }
-    dismissedUndos.formUnion(undoOffers[...shown].map(\.id))
-    undoOffers.removeFirst(shown + 1)
-    telemetry.event("gym_undo", properties: ["screen": "gym", "action": "dismiss"])
-  }
-
-  @discardableResult
   func flush() -> Bool {
     rest.cancel()
-    endDiscardWindow()
     refresh()
     guard !readFailed else { return false }
     guard let runtime else { return !readFailed }
@@ -345,8 +302,7 @@ final class GymModel {
 
   func background() {
     rest.cancel()
-    endDiscardWindow()
-    do { try runtime?.engine.leave(); undoOffers = []; refresh() }
+    do { try runtime?.engine.leave(); refresh() }
     catch { self.error = "Gym could not keep pending changes. Try again."; report("gym_flush", error) }
   }
 
@@ -428,7 +384,8 @@ final class GymModel {
       guard (200..<300).contains(response.statusCode) else {
         kind = "http"
         let refusal = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        expectedRefusal = ExpectedStatuses.contains(response.statusCode) || refusal["code"] as? String == "ask-busy"
+        expectedRefusal = ExpectedStatuses.contains(response.statusCode) || refusal["code"] as? String == "ask-busy" ||
+          (response.statusCode == 503 && AiAllowance.refusalCodes.contains(refusal["code"] as? String ?? ""))
         let message = refusal["error"] as? String ?? "Gym could not complete this request. Try again."
         let detail = refusal["detail"] as? String ?? ""
         throw GymRESTFailure(status: response.statusCode, body: data, message: message + (detail.isEmpty ? "" : ". " + detail))
@@ -457,59 +414,6 @@ final class GymModel {
     guard let error = error as? URLError else { return false }
     return [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost,
             .cannotFindHost, .dnsLookupFailed, .timedOut].contains(error.code)
-  }
-}
-
-// A held gesture Undo can still remove, and the band's line naming what it holds: the object and the act
-// (docs/design/ios/ios-redesign.md §5). The line is read from the held records, so a relaunch that reads the outbox
-// again names the gesture the same.
-nonisolated struct GymUndoOffer: Equatable, Identifiable {
-  let id: String
-  let releaseAt: Int64
-  let line: String
-
-  // What each held removal is called, in the order a gesture holding more than one kind is named by.
-  static let objects: [(entity: any Removable.Type, noun: String, act: String)] = [
-    (Session.self, "workout", "discarded"), (Routine.self, "routine", "deleted"), (WeighIn.self, "weigh-in", "deleted"),
-    (Note.self, "note", "deleted"), (TrainingSet.self, "set", "deleted"),
-  ]
-
-  init?(id: String, releaseAt: Int64, holding records: [RecordKey]) {
-    guard let object = Self.objects.first(where: { object in records.contains { $0.type == object.entity.type } }) else { return nil }
-    let count = Set(records.filter { $0.type == object.entity.type }).count
-    self.id = id; self.releaseAt = releaseAt
-    line = count == 1 ? "\(object.noun.prefix(1).uppercased())\(object.noun.dropFirst()) \(object.act)"
-      : "\(GymCount.of(count, object.noun)) \(object.act)"
-  }
-
-  // A gesture the outbox still holds whole, named by the records its entries remove.
-  init?(gesture entries: [OutboxEntry]) {
-    guard let first = entries.first, entries.allSatisfy({ $0.state == .held }) else { return nil }
-    self.init(id: first.gestureId, releaseAt: first.releaseAt,
-              holding: entries.flatMap { $0.intent.deltas.filter(\.removes).map(\.key) })
-  }
-
-  // Without the engine's store a run keeps its own offer: the records its receipt names that the drawn view shows held.
-  init?(receipt: CommitReceipt, in read: Reader) throws {
-    guard let releaseAt = receipt.releaseAt else { return nil }
-    var held: [RecordKey] = []
-    for object in Self.objects {
-      for id in receipt.ids.compactMap({ $0 }) {
-        if try Self.holds(object.entity, id, in: read) { held.append(RecordKey(object.entity.type, id)) }
-      }
-    }
-    self.init(id: receipt.gestureId, releaseAt: releaseAt, holding: held)
-  }
-
-  // Every gesture of the outbox still held whole, oldest first.
-  static func held(in outbox: [OutboxEntry]) -> [GymUndoOffer] {
-    var gestures: [String] = []
-    for entry in outbox where !gestures.contains(entry.gestureId) { gestures.append(entry.gestureId) }
-    return gestures.compactMap { id in GymUndoOffer(gesture: outbox.filter { $0.gestureId == id }) }
-  }
-
-  static func holds<E: Entity>(_ entity: E.Type, _ id: RecordID, in read: Reader) throws -> Bool {
-    try read.repository(entity).record(DomainKit.ID(id), in: .drawn)?.isHeld == true
   }
 }
 

@@ -958,3 +958,40 @@ TEST(pg_echo_a_passage_the_writer_deletes_takes_its_echo_with_it) {
   CHECK_EQ(repo.echoesFor(UserId{kMine}, LocalDate{older}, LocalDate{tonight}).empty(), true);
   CHECK_EQ(repo.inboundPages(UserId{kMine}, LocalDate{older}).empty(), true);
 }
+
+TEST(pg_echo_budget_deferrals_preserve_retries_and_reopen_exhausted_unchanged_pages) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset — requires Postgres");
+  reset();
+  const UserId user{"22222222-2222-2222-2222-222222222222"};
+  const LocalDate day{"2026-05-01"};
+  const PipelineVersions versions{"segmenter-v1", "embedder-v1", "judge-v1"};
+  const std::string body = "A page that waits for shared AI capacity.";
+  writePage(user.str(), day.iso(), body);
+  PgEchoRepository repository{pgTestPool()};
+  repository.replaceSpans(user, day, {SpanWrite{0, Passage{0, 0, static_cast<int>(body.size()), body}, {}}},
+                          versions.embed, body, 0);
+  repository.recordCuration(user, day, {CurationStatus::ok, 0, 9, "", versions});
+  CHECK(repository.duePages(user, 9, versions).empty());
+  for (int pass = 0; pass < kCurationRetries + 3; ++pass) {
+    repository.recordCuration(user, day,
+        {CurationStatus::budgetLimited, 0, 9, "tier_exhausted", {versions.segment, versions.embed, ""}});
+    const auto due = repository.duePages(user, 9, versions);
+    REQUIRE_EQ(due.size(), 1u);
+    CHECK_EQ(due[0].attempts, 0);
+    CHECK_EQ(due[0].body, body);
+    CHECK_EQ(due[0].day.iso(), day.iso());
+    CHECK_FALSE(due[0].bodyMoved);
+    REQUIRE(repository.duePage(user, day, 9, versions));
+  }
+  for (int pass = 0; pass < kCurationRetries; ++pass)
+    repository.recordCuration(user, day, {CurationStatus::transport, 0, 9, "transport", {}});
+  CHECK(repository.duePages(user, 9, versions).empty());
+  repository.recordCuration(user, day, {CurationStatus::budgetLimited, 0, 9, "service_exhausted", {}});
+  const auto due = repository.duePage(user, day, 9, versions);
+  REQUIRE(due);
+  CHECK_EQ(due->attempts, kCurationRetries);
+  CHECK_EQ(repository.duePages(user, 9, versions).size(), 1u);
+  repository.recordCuration(user, day, {CurationStatus::ok, 0, 9, "", versions});
+  CHECK(repository.duePages(user, 9, versions).empty());
+  CHECK_FALSE(repository.duePage(user, day, 9, versions));
+}

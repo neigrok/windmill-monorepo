@@ -198,6 +198,22 @@ test("onboarding state alone does not trigger account journal adoption, blank pa
     false,
   );
 });
+
+test("ratings and Unicode whitespace do not count as account writing", () => {
+  for (const name of ["ratings without writing stay invisible", "Unicode whitespace with ratings stays invisible"]) {
+    const vector = load("admit.json").find((item) => item.name === name);
+    const state = new ServerState(vector.expect.state);
+    assert.equal(isVisible(journalRegistry.type("page"), state.row(key, "page", "2026-10-01")), false);
+    assert.equal(hello({ state, registry: journalRegistry, account: "A", serverTime: vector.input.serverNow }).body.holdsRecords.journal, false);
+  }
+});
+
+test("a blank legacy claim cannot replace account writing or ratings", () => {
+  const vector = load("admit.json").find((item) => item.name === "blank legacy claim keeps account writing and ratings");
+  const row = new ServerState(vector.expect.state).row(key, "page", "2026-10-01");
+  assert.equal(row.x.body.text, "Account words.");
+  assert.deepEqual([row.f.mood[0], row.f.energy[0], row.f.source[0]], [6, 3, "typed"]);
+});
 test("audit retention boundaries have independent expected prefixes", () => {
   const vectors = load("revisions.json");
   assert.deepEqual(vectors[0].expect.kept, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);

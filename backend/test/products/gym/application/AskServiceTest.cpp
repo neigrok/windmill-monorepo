@@ -1,6 +1,7 @@
 #include "products/gym/application/AskService.h"
 #include "products/gym/application/ThreadService.h"
 #include "platform/application/WriteObservation.h"
+#include "platform/adapters/llm/AiCallBudget.h"
 
 #include "products/gym/adapters/json/GymJson.h"
 #include "products/gym/adapters/llm/AnthropicAsk.h"
@@ -999,12 +1000,13 @@ TEST(coach_creation_recovers_after_failure_and_never_recreates_a_deleted_routine
   CHECK_EQ(h.agent.runs, 2);
 }
 
-TEST(coach_requires_notes_and_catalog_before_creating_and_corrects_invalid_movements_in_place) {
+TEST(coach_requires_notes_and_catalog_and_gives_corrected_documents_a_new_action) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Coach h;
   Json::Value create = parse(R"({"id":"rt_model0001","name":"Upper body","position":0,"entries":[{"exerciseId":"missing-movement","sets":[{"reps":8}]}]})");
   Json::Value valid = create;
   valid["entries"][0]["exerciseId"] = "bench-press";
+  valid["id"] = "rt_corrected1";
   h.agent.plan = {{"create_routine", valid}, {"list_notes", Json::Value(Json::objectValue)},
       {"list_exercises", Json::Value(Json::objectValue)}, {"create_routine", create}, {"create_routine", valid}, {"create_routine", valid}};
   const auto answer = h.question(ThreadId{"thr_catalog01"}, "Create my routine", h.user, "req_catalog01");
@@ -1013,7 +1015,7 @@ TEST(coach_requires_notes_and_catalog_before_creating_and_corrects_invalid_movem
   CHECK_EQ(answer.answer.steps, (std::vector<AskStep>{{"create_routine", true}, {"list_notes", false},
       {"list_exercises", false}, {"create_routine", true}, {"create_routine", false}, {"create_routine", false}}));
   CHECK_EQ(stored("select id, name, created_door from gym_routines order by id"),
-           std::vector<std::string>{"rt_" + answer.generation->id + " | Upper body | ask"});
+           std::vector<std::string>{"rt_" + answer.generation->id + "_1 | Upper body | ask"});
   CHECK_EQ(answer.generation->results.size(), 1u);
 }
 
@@ -1083,7 +1085,7 @@ TEST(coach_stop_preserves_partial_text_and_created_routine_and_replays_without_a
   CHECK_EQ(stopped.generation->answer, std::string("Your new routine is ready. Next"));
   REQUIRE_EQ(stopped.generation->results.size(), 1u);
   CHECK_EQ(stored("select id, name, created_door from gym_routines order by id"),
-           std::vector<std::string>{"rt_" + stopped.generation->id + " | Upper body | ask"});
+           std::vector<std::string>{"rt_" + stopped.generation->id + "_0 | Upper body | ask"});
   CHECK_EQ(h.threads.thread(h.user, thread)->turns.back().status, std::string("stopped"));
   CHECK_EQ(ask().generation, stopped.generation);
   CHECK_EQ(agent.runs, 1);
@@ -1151,7 +1153,7 @@ TEST(coach_stop_after_restart_reconciles_committed_creation_without_executing_a_
   const auto recovered = h.ask.stop(h.user, committedThread, committed.requestId);
   REQUIRE(recovered.has_value());
   CHECK_EQ(recovered->status, std::string("stopped"));
-  CHECK_EQ(recovered->results, (std::vector<CoachResult>{{"op_restart2", "rt_restart01", "Upper body"}}));
+  CHECK_EQ(recovered->results, (std::vector<CoachResult>{{"op_restart2", "rt_restart01", "Upper body", 1}}));
   CHECK_EQ(stored("select id from gym_routines"), std::vector<std::string>{});
   CHECK_EQ(h.agent.runs, 0);
 }
@@ -1335,7 +1337,11 @@ TEST(coach_failed_lease_reread_revalidates_the_immutable_request_payload) {
   for (const bool imageConflict : {false, true}) {
     repository.armed = false;
     held.question = imageConflict ? "Question" : "Original";
-    if (imageConflict) held.attachments = {photo.attachment};
+    if (imageConflict) {
+      held.id = "gen_race0002";
+      held.requestId = "req_race0002";
+      held.attachments = {photo.attachment};
+    }
     repository.saveGeneration(h.user, thread, held);
     repository.reads = 0;
     repository.armed = true;
@@ -1363,7 +1369,7 @@ TEST(coach_saves_one_user_insight_alongside_a_routine_and_recovers_both_without_
   REQUIRE(first.generation.has_value());
   CHECK_FALSE(first.answer.ok);
   const std::string note = "note_" + first.generation->id;
-  const std::vector<std::string> routines{"rt_" + first.generation->id + " | Upper body | ask"};
+  const std::vector<std::string> routines{"rt_" + first.generation->id + "_0 | Upper body | ask"};
   REQUIRE_EQ(stored("select id, title, body from gym_notes order by id"),
              std::vector<std::string>{note + " | Schedule | " + insight["body"].asString()});
   REQUIRE_EQ(stored("select id, name, created_door from gym_routines order by id"), routines);
@@ -1430,7 +1436,7 @@ TEST(coach_stopped_note_operation_reconciles_a_saved_note_but_never_executes_an_
   CHECK_EQ(h.agent.runs, 0);
 }
 
-TEST(coach_corrected_note_attempt_clears_its_prior_error_before_the_write_can_commit) {
+TEST(coach_validates_before_reserving_an_immutable_note_and_recovers_a_lost_ack) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Coach h;
   struct LostAck : PgAskThreadRepository {
@@ -1455,7 +1461,7 @@ TEST(coach_corrected_note_attempt_clears_its_prior_error_before_the_write_can_co
   auto invalid = input;
   invalid["body"] = std::string(501, 'x');
   REQUIRE(hands.callTool("save_note", invalid, caller).isError);
-  REQUIRE(threads.operations(h.user, thread, generation.id).front().result->isError);
+  CHECK(threads.operations(h.user, thread, generation.id).empty());
   threads.loseResult = true;
   bool lost = false;
   try { hands.callTool("save_note", input, caller); }
@@ -1527,4 +1533,184 @@ TEST(every_declared_coach_write_tool_has_one_completion_even_when_refused) {
   }
   installWriteSink({});
   CHECK_EQ(writes, 4u);
+}
+
+
+TEST(coach_creates_six_distinct_routines_and_replays_each_immutable_slot_after_restart) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  Coach h;
+  const ThreadId thread{"thr_multicreate"};
+  Json::Value create = parse(R"({"id":"rt_model0001","name":"Day 1","position":0,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8}]}]})");
+  h.agent.plan = {{"list_notes", Json::Value(Json::objectValue)}, {"list_exercises", Json::Value(Json::objectValue)}, {"create_routine", create}};
+  h.agent.answers = false;
+  const auto failed = h.question(thread, "Create my six training days", h.user, "req_multicreate");
+  REQUIRE(failed.generation);
+  REQUIRE_EQ(failed.generation->results.size(), 1u);
+  CHECK_EQ(failed.generation->results.front().movementCount, std::optional<unsigned>{1});
+  h.kill(h.user, "routine", failed.generation->results.front().routineId);
+  h.agent.answers = true;
+  h.agent.plan = {{"list_notes", Json::Value(Json::objectValue)}, {"list_exercises", Json::Value(Json::objectValue)}};
+  for (int index = 0; index < 7; ++index) {
+    create["id"] = "rt_retry" + std::to_string(index);
+    create["name"] = "Day " + std::to_string(index + 1);
+    create["position"] = index;
+    h.agent.plan.emplace_back("create_routine", create);
+    if (index == 0) {
+      create["id"] = "rt_model0001";
+      h.agent.plan.emplace_back("create_routine", create);
+      create["id"] = failed.generation->results.front().routineId;
+      h.agent.plan.emplace_back("create_routine", create);
+      create["name"] = "Changed day";
+      h.agent.plan.emplace_back("create_routine", create);
+    }
+  }
+  const auto reply = h.question(thread, "Create my six training days", h.user, "req_multicreate");
+  REQUIRE(reply.answer.ok);
+  REQUIRE(reply.generation);
+  REQUIRE_EQ(reply.generation->results.size(), 6u);
+  CHECK_EQ(reply.generation->results.front(), failed.generation->results.front());
+  std::vector<CoachResult> expected;
+  std::vector<std::string> rows;
+  for (int index = 0; index < 6; ++index) {
+    expected.push_back({"op_create_" + std::to_string(index) + "_" + reply.generation->id,
+        "rt_" + reply.generation->id + "_" + std::to_string(index), "Day " + std::to_string(index + 1), 1});
+    if (index) rows.push_back(expected.back().routineId + " | " + expected.back().routineName);
+  }
+  CHECK_EQ(reply.generation->results, expected);
+  CHECK_EQ(stored("select id,name from gym_routines order by position"), rows);
+  const auto operations = h.repo.threads.operations(h.user, thread, reply.generation->id);
+  REQUIRE_EQ(operations.size(), 6u);
+  CHECK_EQ(operations.front().input["id"].asString(), std::string("rt_model0001"));
+  CHECK_EQ(h.threads.thread(h.user, thread)->turns.back().results, expected);
+  CHECK_EQ(reply.answer.steps, (std::vector<AskStep>{{"list_notes", false}, {"list_exercises", false},
+      {"create_routine", false}, {"create_routine", false}, {"create_routine", false}, {"create_routine", true},
+      {"create_routine", false}, {"create_routine", false}, {"create_routine", false},
+      {"create_routine", false}, {"create_routine", false}, {"create_routine", true}}));
+  CHECK_EQ(h.question(thread, "Create my six training days", h.user, "req_multicreate").generation, reply.generation);
+  CHECK(h.reports->events.empty());
+}
+
+TEST(coach_setup_clarification_is_typed_immutable_and_persists_in_history) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  Coach h;
+  const ThreadId thread{"thr_setupdetails"};
+  const auto args = parse(R"({"question":"How many days and what equipment?","groups":[{"id":"days","label":"Days each week","multiple":false,"options":[{"id":"three","label":"3 days"},{"id":"four","label":"4 days"}]},{"id":"equipment","label":"Equipment","multiple":true,"options":[{"id":"dumbbells","label":"Dumbbells"},{"id":"barbell","label":"Barbell"}]}]})");
+  h.agent.plan = {{"ask_setup_details", args}};
+  std::promise<AskReply> settled;
+  h.ask.ask(h.user, "sam@example.com", thread, "Help me make a program",
+      [&](AskReply reply) { settled.set_value(std::move(reply)); }, "req_setupdetails", {}, "routine_setup");
+  const auto reply = settled.get_future().get();
+  REQUIRE(reply.generation);
+  REQUIRE(reply.generation->clarification);
+  auto expected = args;
+  expected["id"] = "clarify_" + reply.generation->id;
+  CHECK_EQ(toJson(*reply.generation->clarification), expected);
+  const auto history = h.threads.thread(h.user, thread);
+  REQUIRE(history);
+  REQUIRE_EQ(history->turns.size(), 2u);
+  CHECK_FALSE(history->turns.front().clarification);
+  CHECK_EQ(history->turns.back().clarification, reply.generation->clarification);
+  CHECK_EQ(history->turns.front().purpose, std::string("routine_setup"));
+  CHECK_EQ(history->turns.back().purpose, std::string("routine_setup"));
+  CHECK_EQ(h.question(thread, "Help me make a program", h.user, "req_setupdetails").generation, reply.generation);
+  CHECK(h.reports->events.empty());
+}
+
+TEST(coach_setup_scopes_catalog_and_dispatch_while_preserving_training_context) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  Coach h;
+  AskGeneration generation{"gen_setup_scope", "req_setup_scope", "Create a program"};
+  generation.purpose = "routine_setup";
+  AskTools setup{h.tools, ThreadId{"thr_setup_scope"}, &h.repo.threads, &generation};
+  const ToolCaller caller{h.user, ToolScope::everything()};
+  std::vector<std::string> names;
+  for (const auto& tool : setup.declareTools()) names.push_back(tool.name());
+  std::sort(names.begin(), names.end());
+  CHECK_EQ(names, (std::vector<std::string>{"ask_setup_details", "create_routine", "get_sessions",
+      "list_exercises", "list_notes", "list_routines", "list_sessions", "save_note"}));
+  const auto history = setup.callTool("get_sessions", parse(R"({"sessionIds":["ses_11111111"]})"), caller);
+  REQUIRE(!history.isError);
+  REQUIRE_EQ(history.payload["sessions"].size(), 1u);
+  CHECK_EQ(history.payload["sessions"][0]["session"]["id"].asString(), h.session.str());
+  CHECK_EQ(history.payload["sessions"][0]["sets"][0]["reps"].asInt(), 5);
+  CHECK_EQ(setup.read().tally().sessions, 1);
+  for (const auto* name : {"get_stats", "list_bodyweight", "last_time", "get_last_times", "get_session",
+                           "propose_routine_change", "propose_routine_removal", "log_set", "start_session"}) {
+    const auto refused = setup.callTool(name, Json::Value(Json::objectValue), caller);
+    CHECK(refused.isError);
+    CHECK_EQ(agentToolText(refused), std::string(name) + ": not available during routine setup — use the declared setup tools.");
+  }
+  const auto denied = setup.callTool("create_routine", Json::Value(Json::objectValue),
+                                   ToolCaller{h.user, ToolScope({{"gym", Access::read}})});
+  CHECK(denied.isError);
+  CHECK_EQ(agentToolText(denied), std::string("create_routine: this connection was not granted gym:write, so it cannot run this tool."));
+
+  std::vector<Json::Value> requests;
+  const AskCall capture = [&](const Json::Value& request) -> std::optional<Json::Value> {
+    requests.push_back(request);
+    return parse(R"({"stop_reason":"end_turn","content":[{"type":"text","text":"Your plan."}]})");
+  };
+  const AgentReport report = [](const auto&, const auto&) { CHECK(false); };
+  REQUIRE(driveAsk({AskTurn{true, "Create a program"}}, caller, setup, capture, report).ok);
+  generation.purpose = "conversation";
+  REQUIRE(driveAsk({AskTurn{true, "Create a program"}}, caller, setup, capture, report).ok);
+  REQUIRE_EQ(requests.size(), 2u);
+  CHECK_EQ(requests[0]["messages"], requests[1]["messages"]);
+  CHECK_EQ(requests[0]["system"], requests[1]["system"]);
+  CHECK_EQ(requests[0]["max_tokens"], requests[1]["max_tokens"]);
+  const auto focused = anthropicReservationNanos(requests[0]);
+  const auto ordinary = anthropicReservationNanos(requests[1]);
+  REQUIRE(focused && ordinary);
+  CHECK(*focused + 15'000'000 < *ordinary);
+  CHECK(holds(setup.declareTools(), "propose_routine_change"));
+  CHECK_FALSE(setup.callTool("get_stats", Json::Value(Json::objectValue), caller).isError);
+  CHECK(h.reports->events.empty());
+}
+
+
+TEST(coach_proposal_validation_precedes_the_immutable_action_slot) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  Coach h;
+  h.seedRoutine(RoutineId{"rt_existing01"});
+  for (const bool removal : {true, false}) {
+    const ThreadId thread{removal ? "thr_removal01" : "thr_revise001"};
+    h.repo.threads.openThread(h.user, thread, "Change my routine", h.clock.now);
+    AskGeneration generation{removal ? "gen_removal01" : "gen_revise001", "req_proposal01", "Change my routine"};
+    generation.atMs = h.clock.now;
+    h.repo.threads.saveGeneration(h.user, thread, generation);
+    AskTools tools(h.tools, thread, &h.repo.threads, &generation);
+    const ToolCaller caller{h.user, ToolScope::everything()};
+    const std::string tool = removal ? "propose_routine_removal" : "propose_routine_change";
+    auto input = parse(R"({"id":"prop_setup001","routineId":"rt_existing01","summary":"Adjust training"})");
+    if (!removal) {
+      input["id"] = "prop_setup002";
+      input["name"] = "Changed day";
+      input["entries"] = parse(R"([{"exerciseId":"bench-press","sets":[{"reps":8}]}])");
+    }
+    auto invalid = input;
+    invalid.removeMember("routineId");
+    CHECK(tools.callTool(tool, invalid, caller).isError);
+    invalid = input;
+    invalid["summary"] = std::string(kMaxSummaryLength + 1, 'a');
+    CHECK(tools.callTool(tool, invalid, caller).isError);
+    if (!removal) {
+      invalid = input;
+      invalid["name"] = std::string(kMaxNameLength + 1, 'a');
+      CHECK(tools.callTool(tool, invalid, caller).isError);
+    }
+    CHECK(h.repo.threads.operations(h.user, thread, generation.id).empty());
+    const auto result = tools.callTool(tool, input, caller);
+    REQUIRE(!result.isError);
+    CHECK_EQ(h.repo.threads.operations(h.user, thread, generation.id).size(), 1u);
+    invalid = input;
+    invalid["summary"] = "Different document";
+    CHECK(tools.callTool(tool, invalid, caller).isError);
+    CHECK_EQ(tools.callTool(tool, input, caller).payload, result.payload);
+    auto operation = h.repo.threads.operations(h.user, thread, generation.id).front();
+    operation.arguments["summary"] = "Different document";
+    bool refused = false;
+    try { h.repo.threads.saveOperation(h.user, thread, generation.id, operation); }
+    catch (const std::runtime_error&) { refused = true; }
+    CHECK(refused);
+  }
 }

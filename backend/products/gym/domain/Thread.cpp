@@ -1,6 +1,7 @@
 #include "products/gym/domain/Thread.h"
 
 #include <algorithm>
+#include <set>
 
 namespace wm::gym {
 
@@ -36,6 +37,28 @@ bool anyIn(const AskThread& thread, ProposalState state) {
 }
 
 }  // namespace
+
+bool validClarification(const CoachClarification& clarification) {
+  const auto text = [](const std::string& value, std::size_t limit) {
+    return !value.empty() && value.size() <= limit && storableText(value) &&
+           value.find_first_not_of(" \t\r\n") != std::string::npos;
+  };
+  if (!wellFormedId(clarification.id) || !text(clarification.question, 500) ||
+      clarification.groups.empty() || clarification.groups.size() > 2) return false;
+  std::set<std::string> groups;
+  for (const auto& group : clarification.groups) {
+    if ((group.id != "days" && group.id != "equipment") || !groups.insert(group.id).second ||
+        !text(group.label, 80) || group.options.empty() || group.options.size() > 6 ||
+        (group.id == "days" && group.multiple)) return false;
+    std::set<std::string> options;
+    for (const auto& option : group.options) {
+      if (option.id.empty() || option.id.size() > 32 || !text(option.label, 80) ||
+          !options.insert(option.id).second ||
+          option.id.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_-") != std::string::npos) return false;
+    }
+  }
+  return true;
+}
 
 std::vector<ThreadTurn> contextOf(const std::vector<ThreadTurn>& history) {
   std::vector<ThreadTurn> turns;

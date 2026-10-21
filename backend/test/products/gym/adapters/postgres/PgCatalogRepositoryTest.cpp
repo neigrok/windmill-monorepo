@@ -57,6 +57,19 @@ TEST(pg_gym_catalog_serves_the_seeded_64_in_pattern_then_name_order) {
                                      Equipment::dumbbell, 2.0, false));
   CHECK_EQ(catalog.back(), Exercise(ExerciseId{"walking-lunge"}, "Walking Lunge", Pattern::squat,
                                     Equipment::dumbbell, 2.0, false));
+  CHECK_EQ(repo.seedCatalog(), catalog);
+}
+
+TEST(pg_gym_seed_catalog_has_no_account_names_aliases_or_custom_movements) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  doortest::Harness h;
+  const auto original=h.repo.catalog.seedCatalog();
+  REQUIRE(h.door.createExercise(h.user,ExerciseWrite{ExerciseId{"private-seed-test"},"Private exercise",Pattern::squat,Equipment::barbell,2.5}).exercise);
+  phoneRename(h,h.user,"bench-press","Private rename",true);
+  const auto seeds=h.repo.catalog.seedCatalog();
+  CHECK_EQ(seeds,original);
+  CHECK_EQ(seeds.size(),64U);
+  for (const auto& seed:seeds) { CHECK_FALSE(seed.custom); CHECK(seed.aliases.empty()); }
 }
 
 TEST(pg_gym_create_exercise_is_the_callers_alone_and_a_spent_id_is_refused) {

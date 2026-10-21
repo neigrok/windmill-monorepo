@@ -74,17 +74,51 @@ model extension, the one count formatter, the one date formatter (`GymDate`) and
 
 `GymModel(runner:runtime:telemetry:)` exposes engine-backed log/catalogue/routines/notes/bodyweight/
 preferences/proposals, sessions/sets/openSession, account/isAnonymous/authPaused, notices,
-refusal/error/readFailed and undoOffers, and the one unsent rule: signed out nothing is unsent; signed in,
+refusal/error/readFailed, and the one unsent rule: signed out nothing is unsent; signed in,
 `unsentSets(_:)` and `sessionIsUnsent(_:)` mark what the log has not confirmed while no connection, a paused session
 or a refused push holds it back. Use `run(_:)` for GymDomain actions, `save(_:)` for drafts,
-`undo(_:)` for held gestures, `dismissNotice(_:)`, and `refresh()`; `start()`/`stop()` observe engine
-changes. `flush()` releases holds before account transitions; real backgrounding ends Undo windows.
-An inactive scene persists Journal drafts while Gym live sync, REST work and pending Undo windows continue.
+`dismissNotice(_:)`, and `refresh()`; `start()`/`stop()` observe engine changes. The app constructs its
+ActionRunner with immediate removals. Whole-workout and conversation deletes ask for confirmation;
+there is no Undo band or deletion delay. `flush()` keeps pending work before account transitions.
+An inactive scene persists Journal drafts while Gym live sync and REST work continue.
 Gym's `accountTransition` pauses training only while sign-out is open (`accountChanging`, set by the
 app) and while the engine changes the replica (`replicaChanging`, set by `GymBinding`). Pending
 sign-in, hello and adoption questions leave training available. `rest` is the authenticated
 client handle for Coach, shares and Connected log; engine-backed training writes use domain actions.
-Gym includes routine planning and movement creation, the live set rack and finish receipt, session history/sharing and strength/bodyweight charts, and account-only Coach, proposal review, Notes and Connected log.
+Gym includes routine planning and movement creation, the live set rack and finish receipt, session history/sharing and strength/bodyweight charts, and Coach, account-only proposal review, Notes and Connected log.
+Tapping a routine opens a native summary sheet with Edit and Start. Movements are reached through a
+routine or its editor. Signed-in Coach has a direct History button; Notes and Connected log live in You’s Settings.
+On a resolved empty anonymous replica, or a signed-in account whose first Gym pull has completed with no personal data, the room
+opens Coach’s routine setup once. Existing drafts/conversations, account adoption, workout and navigation
+state take precedence. Screenshot, program and goal starters prepare the existing composer; Send remains
+explicit. Manual logging or building retires the automatic entry, and empty Routines retains Set up routines.
+Setup choices, purpose, editable drafts, photos, clarification selections and frozen request identities
+live in a local Coach archive keyed by account or anonymous replica. Signed-in clarification choices fill
+the draft without sending; editing that text clears the selected-chip markers. Anonymous goal choices
+retain days and equipment separately while the text changes. Each confirmed routine creation has its
+own receipt and opens the existing routine sheet and Start action. A signed-in receipt whose routine has
+not reached the replica checks the existing routine endpoint; a confirmed removal shows the normal
+unavailable routine state, while an unreachable log keeps a refresh action.
+USD allowance refusals preserve drafts and partial creation receipts, and never automatically retry on
+relaunch. An unchanged deliberate Send reuses the original request identity. Existing routine changes
+continue through Review and Apply.
+Anonymous Coach is limited to routine setup: goal, described program or inline photo. Goal setup asks
+for days and supported equipment locally; a single provider call returns bounded public-catalogue
+routines. The server issues a separate installation credential kept in a device-only Keychain service,
+returns the USD allowance, and applies installation, IP and shared budgets. An unreadable or rejected
+credential never creates a replacement. The phone retains immutable requests and resumes the same
+result after interruption. Stop waiting cancels the phone wait, with no claim to cancel provider cost.
+All routines and their replay receipt commit in one domain action before creation links appear. Open
+and Start work before sign-in. Keep your routines uses existing account adoption; usage binds before
+signed-in Coach dispatch, independently of Add/Discard. A binding outage leaves authentication and
+manual Gym available. Local conversation/photo records and drafts stay on this phone, transfer to the
+account’s local Coach draft on Add or empty-account adoption, and are removed on explicit Discard.
+A rejected installation credential remains stored and cannot open another anonymous allowance. An
+authenticated bind returning `invalid_installation` permits account Coach; generic authentication,
+transport and accounting failures still block its dispatch until recovered.
+A pending anonymous response cannot write into the signed-in replica; its retained draft can continue
+with an explicit account request.
+The finished-workout receipt offers Discard, 👑 Share with Coach and the primary Done action.
 
 `GymRoom` keeps `WorkoutScreen` as its full-screen cover through finish and receipt and, on
 dismissal, consumes the workout's handoff once: a finished workout's detail opens in The log, Keep
@@ -125,9 +159,21 @@ leaves the shell's transient *Couldn't open the update. Try again.* The rooms ke
 `update-required` board signs in against a model server that answers 426 (and keeps answering it across
 `-restore-board`); `update-sign-in` answers 426 only to the sign-in; `keep-gym` opens the gym's Keep sheet.
 
+`GymAnonymousCoachFlowTests` runs light, dark and accessible large text in the standard Coach UI
+shard through the deterministic installation/Coach transport fixture and real local engine. Set
+`TEST_RUNNER_WM_ANONYMOUS_COACH_SERVER` for the same UI flow against an isolated backend and
+`TEST_RUNNER_WM_ANONYMOUS_COACH_SHOTS` for PNG captures. The native `CoachTests` suite uses
+`TEST_RUNNER_WM_ANONYMOUS_COACH_SESSION` (a private JSON file with account/token) plus that server
+to run goal, photo, workout and binding/adoption through real HTTP. Without those variables, the
+photo/adoption case uses the injected transport and local store. Neither standard suite skips tests.
+
 Debug simulator Coach launches add `-coach-fixture`: a signed-in account with a routine, a workout and a
 proposal, and a scripted Coach service over the real REST boundary whose answer reads that workout and proposes
-the change. `-coach-removal` makes the proposal a removal and the conversation one that asks for it from your totals,
+the change. Startup prepares the account and fixture before publishing the app model. Scenarios prefixed
+`gym-e2e-anonymous` remain anonymous until the test signs in through the account flow; view-time preparation
+can seed an existing account but cannot sign in. Add `-coach-setup-fixture` for an empty signed-in account
+and scripted routine setup. `-coach-removal` makes the proposal a removal and the conversation one that
+asks for it from your totals,
 `-coach-created` makes it a conversation that creates the routine, saves a note and reads nothing from the log,
 `-coach-out-of-date` has a newer proposal replace it,
 `-coach-removal-stall` leaves its Apply unanswered past the review's 15-second wait,
@@ -139,6 +185,7 @@ or `seed-signed-out`, then reopen it with `-restore-board -server https://offlin
 a refused connection or a request that never answers; only `no-network` also removes the path.
 The `black-hole` cases use `https://192.0.2.1` through the ordinary HTTP transport and path monitor,
 with no loader or connectivity substitution.
+These opted-in offline fixtures use the fixed `BoardClock` across seeding, cold launch and resume.
 Tests exercise cold launch, Home/resume, local journal persistence, workout controls, Coach, settings
 and leaving an unanswered sign-in request. No host networking changes or real credentials are used.
 
@@ -148,6 +195,9 @@ protected Application Support directory. `JournalDomain` owns writing and first-
 The writing tests use `-journal-layout-test` on Debug simulators to read selection, focus and text,
 ink visibility, and UIKit's caret and last-line rectangles in window coordinates, through the editor's accessibility value.
 
+A journal day exists only while its body contains writing. Whitespace and ratings alone do not count;
+clearing the body removes the day from journal reads and exports. Synchronization retains empty
+version markers to keep older offline writing from returning.
 Native editing writes today's page only; past days are read-only. Tapping today's page from its date
 through the space above the mood rows opens the keyboard with the caret at the end. The body reserves
 at least three lines at the current text size. An empty, unfocused page shows a still lamp caret.
@@ -158,8 +208,8 @@ button opens You. The last room persists across launches. A fresh phone gets bot
 introduction on Where to start?.
 Hand-drawn Caveat ink notes appear automatically only on a true first Journal open. Previous Journal
 visits, retained history, drafts and unreadable state suppress automatic presentation; restored sign-in
-stays quiet. Writing or a tap lifts them while the editor keeps the tap. The Journal room menu's
-*Show ink notes* item replays them on request.
+stays quiet. Writing or a tap lifts them while the editor keeps the tap. The room menu contains only the room switcher;
+ink notes belong to the first Journal open.
 `journal-empty-later`, `journal-one-line` and `journal-history` board fixtures seed past pages through
 the journal actions. A `-RM` suffix exercises the journal's Reduce Motion scroll and glyph swap.
 Focus and dismissal emit the bounded `first_run_choice` actions `write` and `done_writing` on the
@@ -258,8 +308,7 @@ telemetry is off unless `WM_DEBUG_TELEMETRY=YES` is supplied; simulator verifica
 `-telemetry -sentry-dsn http://ios@127.0.0.1:8091/42`. Release builds require `IOS_SENTRY_DSN`.
 See [iOS observability](../../../docs/IOS_OBSERVABILITY.md) for the complete event allowlist,
 privacy rules, queue behavior and release verification. CI uses `python3 Tools/generate_project.py`
-with a nonproduction DSN. The manual release workflow uses `--release` with the signing secrets,
-builds with Xcode 26.3 and uploads to TestFlight; it does not run on push.
+with a nonproduction DSN. [TestFlight releases](#testflight-releases) use the manual GitHub Actions pipeline.
 
 The UI test bundle presses Home and activates SpringBoard, waiting for its event loop and animations
 to become idle. It requires the foreground Home screen and a hittable Safari icon before any test
@@ -288,3 +337,43 @@ python3 Tools/export_design_captures.py --result "$RESULT" --output "$CAPTURES"
 
 Each PNG names its screen, state and appearance. The exporter suffixes a name that already exists in
 the output folder and writes a `capture-manifest.json` linking each PNG to its test and result bundle.
+
+## TestFlight releases
+
+TestFlight releases run through [`.github/workflows/ios-release.yml`](../../../.github/workflows/ios-release.yml).
+The workflow uses the repository's signing credentials, builds with Xcode 26.3 and uploads to
+App Store Connect. Normal uploads do not require an interactive App Store Connect login. Separate
+Apple processing or distribution troubleshooting may require App Store Connect access.
+
+Check recent release runs for an existing upload and verify the intended commit is on remote `main`
+before dispatching. The workflow is manual and does not run on push:
+
+```sh
+gh run list --workflow ios-release.yml --limit 5
+gh api repos/neigrok/windmill-monorepo/git/ref/heads/main --jq '.object.sha'
+gh workflow run ios-release.yml --ref main
+```
+
+Find the newly created run explicitly:
+
+```sh
+gh run list --workflow ios-release.yml --branch main --event workflow_dispatch --limit 5 \
+  --json databaseId,headSha,number,url,status
+```
+
+Record its `url` and use its `databaseId` as `RUN_ID` in
+`gh api repos/neigrok/windmill-monorepo/actions/runs/RUN_ID` to inspect `head_sha` and `run_number`.
+The marketing version comes from `project.yml`; `Tools/generate_project.py --release`
+sets both app and widget build numbers to `GITHUB_RUN_NUMBER`. Verify the selected SHA matches the
+intended release and avoid dispatching a duplicate run while it is queued or building.
+
+Monitor the run with `gh run watch RUN_ID --exit-status`, then inspect its job steps and upload log.
+Archive, stored-certificate verification, release-symbol retention, and export/upload must pass.
+The workflow retains `ios-dsyms-RUN_NUMBER` for 30 days. *Upload succeeded* and *EXPORT SUCCEEDED*
+confirm Apple's acceptance of the upload. The read-only status step then checks that archive's exact
+version and build through App Store Connect for up to ten minutes. `testflight-status-RUN_NUMBER`
+records `processingState`, `internalBuildState` and `externalBuildState`; a pending state remains
+pending, and beta readiness does not prove a particular tester can install. No tester groups change.
+If the status step fails after upload, do not rerun the release workflow: the upload already exists.
+Record the verified version, build, source SHA, run URL,
+upload result and any processing or symbol limitations in `WORK_LOG.md`.

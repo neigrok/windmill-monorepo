@@ -68,7 +68,7 @@ to have something true to say when they look back.
 
 The page invites writing by its own geometry, every night, without a word of chrome. Boards 05,
 07c and 07d of the Figma page
-[iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2) draw it.
+[Shell · iOS](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=1-5) draw it.
 
 - **The whole page is the target.** Today's page — the day marker, the body and the space down to
   the mood rows, the full measure wide — is one tap target. A tap focuses the page with the caret
@@ -122,17 +122,20 @@ the canvas to that spot with its neighbours intact**. It never opens a detail vi
 dims the rest of the canvas to 0.22 and leaves the trace lit. They are never stored as user
 input; there is no tagging UI.
 
-## 6. Echoes — included passive assistance
+## 6. Echoes — complete passages and background processing
 
 An **echo** is Journal noticing that today repeats something you wrote months ago and showing
-that connection through the older line. Echoes is included, without a subscription lock or
-paid excerpt. Its automatic processing never spends the user's AI credits. There is no
-allowance-saving switch to disable it.
+that connection through the older line. Existing Echoes remain complete and readable, without a
+subscription lock or paid excerpt. Creating and repairing Echoes uses the individual's USD
+allowance because all hosted AI work, including automatic background work, is accounted for.
+The USD backend is off by default; [AI usage review](../../AI_USAGE_REVIEW.md) records the
+implementation and rollout blockers.
 
-- Reading existing Echoes is free of AI credit use. Writing an entry can trigger background
-  processing without becoming a chargeable active AI request.
-- Service-level processing safeguards are separate from the user's allowance. Do not show
-  those limits as a depleted customer balance or ask for payment to restore processing.
+- Reading existing Echoes incurs no new AI cost. Writing remains available when processing
+  cannot run; any hosted background processing triggered by an entry needs allowance.
+- New processing waits when the individual allowance, a shared free pool or concurrent-call
+  capacity is unavailable. These are separate refusal reasons. Do not present a shared-pool
+  pause as the person's spent balance or ask for payment to restore it.
 - **The margin is a place, not a pop-up.** On desktop it is always there once the account has
   any echo. With no echo on the current page, it rests with the hairline and “No echo on this
   page.” It never fills with substitute content or a spinner.

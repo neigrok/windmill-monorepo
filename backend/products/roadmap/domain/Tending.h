@@ -28,7 +28,7 @@ inline const char* tendStatusName(TendStatus status) {
 }
 
 // `none` is the ordinary case where the run did start. `outOfAllowance` is the published monthly
-// RUNS promise; `outOfBudget` is our own dollar fuse behind it, and both are kept.
+// runs quota in legacy mode; `outOfBudget` is the shared AI allowance.
 enum class TendRefusal { none, notEnabled, rateLimited, outOfAllowance, outOfBudget, treeTooLarge, promptEmpty, promptTooLong };
 
 inline const char* tendRefusalName(TendRefusal refusal) {
@@ -66,7 +66,7 @@ struct TendRun {
 // The prompt cap: a sentence rather than a document — pasting a document is what paste-import is for.
 constexpr std::size_t kMaxTendPromptBytes = 2000;
 
-// A plan grants a monthly allowance of runs, and everything else is free. A refusal costs nothing,
+// Legacy mode grants a monthly allowance of runs. A refusal costs nothing,
 // so only started runs spend the allowance (TendRunRepository::countForUser excludes refusals).
 enum class Plan { free, pro };
 
@@ -94,6 +94,7 @@ struct TendingSummary {
   TendingAllowance allowance;
   std::uint64_t resetAtMs = 0;
   std::vector<TendRun> recent;
+  bool usdAllowance = false;
 };
 
 // `monthStartMsUtc` is the window's floor (the `sinceMs` the count reads from);

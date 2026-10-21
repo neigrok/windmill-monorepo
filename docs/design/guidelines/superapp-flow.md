@@ -2,8 +2,10 @@
 
 Companion to `guidelines/superapp-shell.md`, which rules the frame between the rooms; this doc rules
 how a person gets into the iOS app, what works before they have an account, and what each room's
-first run must be. The drawings of record, including the state matrix and the flow map, are the Figma
-page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2).
+first run must be. The drawings of record are the Figma page
+[Shell · iOS](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=1-5).
+The [state matrix](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-1092)
+and [flow map](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-1150) are on Model.
 
 The four-screen introduction a fresh install shows once before Where to start? is
 `onboarding.md`. Other surfaces: web auth is `roadmap/guidelines/auth.md`; the roadmap's first run is
@@ -67,13 +69,16 @@ to this phone.*, with the same door as Keep (§6) → **Bringing it back**.
 - **What is made signed out lives on this phone**, and the product says so where it is true: the
   Keep offer (§6) and You (*Not signed in · Everything lives on this phone*, with what the phone
   holds).
-- **Coach answers 5 questions per phone without an account**, once, never refilling
-  (`gym/briefs/09-coach.md`).
+- **Signed-out Coach policy is $0.05 per installation for its lifetime**, without a promised
+  question count (`gym/briefs/09-coach.md`). A server-issued credential, IP limits and shared free
+  budgets protect access. The credential survives ordinary sign-out; resetting the installation
+  is not guaranteed to preserve its identity. Native setup uses one bounded model call after
+  collecting the required details locally.
 - **Windmill One is never shown signed out.**
 - **The only unprompted mentions of signing in** are Where to start?'s quiet Sign in, the Keep
   offer after the first real thing, and You. An account verb the person starts — connecting a
-  tool, Notes, a Coach question past the allowance — opens the same door and **resumes the action
-  afterwards**.
+  tool, Notes, a Coach question past the allowance — opens the same door and preserves the action
+  afterwards. AI admission is checked again; sign-in does not reset spending or guarantee capacity.
 - **Never**: on launch · on a timer · after N edits · on exit intent · as a banner · as "save your
   work" · in urgency colours. **Nothing counts declines.**
 
@@ -197,8 +202,9 @@ is the only sign-out confirmation.
 - Three starters: **Add a screenshot** · **Describe your program** · **Share your goal**.
 - Two quiet escapes: **Just log** (straight to the logger) · **Build it myself** (the routine
   editor).
-- Signed out, one quiet line under the starters: *5 questions without an account.* Signed in, the
-  same room with no allowance line.
+- Once installation access is available, show one quiet server-backed USD lifetime
+  allowance line under the signed-out starters; see the Coach brief for copy. Signed in, the
+  same room has no standing allowance line. Do not advertise an unavailable anonymous grant.
 - Coach creates the routines: one truthful creation receipt per routine, each with **Open
   routine**, which opens the routine with **Start workout**. The goal path asks only the materially
   missing questions, answered with chips.

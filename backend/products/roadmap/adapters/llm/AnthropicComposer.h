@@ -77,7 +77,8 @@ public:
   // The reporter, the fuse and the sink are optional (null = do nothing).
   explicit AnthropicComposer(std::string apiKey, std::shared_ptr<FailureReporter> failures = nullptr,
                              std::shared_ptr<AiFuse> fuse = nullptr,
-                             std::shared_ptr<UsageSink> usage = nullptr);
+                             std::shared_ptr<UsageSink> usage = nullptr,
+                             std::shared_ptr<AiCallBudget> budget = nullptr);
 
   bool configured() const override;
   void compose(const std::string& text,
@@ -94,6 +95,7 @@ private:
   std::shared_ptr<FailureReporter> failures_;
   std::shared_ptr<AiFuse> fuse_;
   std::shared_ptr<UsageSink> usage_;
+  std::shared_ptr<AiCallBudget> budget_;
   std::once_flag stopped_;
   trantor::EventLoopThread loop_;
 };

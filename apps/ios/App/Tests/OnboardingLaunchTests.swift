@@ -10,7 +10,7 @@ import SyncSchema
 
 @Suite @MainActor struct OnboardingLaunchTests {
   func model(account: String? = nil) throws -> AppModel {
-    let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: account,
+    let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: account,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry),
                           commandResultWrites: JournalWriting.resultWrites, pendingDeviceWork: JournalWriting.pendingWork)
     return try AppModel(runner: harness.runner, preferences: UserDefaults(suiteName: UUID().uuidString)!)

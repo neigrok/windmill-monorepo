@@ -87,14 +87,16 @@ Android rows name their first movements without recency. Tapping opens a bottom 
 name, movement targets, pinned **Start workout** and quiet **Edit routine**. No rest lines,
 last-trained line, history block or movement-record door belongs in that sheet.
 
-iOS uses a pushed detail with movement targets, `· yours` where applicable, movement-record doors
-and recent History. Web opens the editor. Where routine proposal history is shown, it covers the
+iOS opens a native medium/large summary sheet with movement targets, last-trained metadata,
+movement-record doors and History only when present. Its bar holds Close and Edit, and Start is
+pinned below the content. Accessibility sizes use large. The root has no standalone Movements
+section or Just start logging action. Web opens the editor. Where routine proposal history is shown, it covers the
 newest twenty proposals and must not claim to show all changes. A failed history read is not an
 empty history: retain a useful server reason, otherwise say
 **the log didn’t answer — this routine’s history is out of reach**. A block failure does not add
 a second primary Retry beside a reachable Start workout.
 
-Phones pin Start workout above the safe inset. It is also available from the routine row's
+Phones pin Start (iOS) or Start workout (Android) above the safe inset. It is also available from the routine row's
 long-press action. Web offers past-workout entry and never starts a live session.
 
 ## Open

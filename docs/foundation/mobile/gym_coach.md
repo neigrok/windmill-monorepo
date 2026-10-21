@@ -8,6 +8,9 @@ code can cite them.
 
 **Status:** Specified; not yet implemented. The running Coach is described in
 [gym-coach-contract.md](../../gym-coach-contract.md): the server reads and writes the log itself.
+Anonymous iOS onboarding is a narrower flow: one installation-authenticated request produces a
+bounded routine document for atomic local import. It does not implement the phone tool-host
+protocol specified here. Its installation identity follows §8.
 
 **Adoption:**
 
@@ -23,7 +26,7 @@ code can cite them.
 - the Coach turn: the model loop on the server, and every ability run by the turn's tool host;
 - the gate;
 - the wire between a phone and the server during a turn;
-- allowances, metering, retention and the device grant for signed-out phones;
+- allowances, metering, retention and installation identity for signed-out phones;
 - conversation and picture records.
 
 **§0.2 Outside this spec:**
@@ -77,8 +80,10 @@ the Coach `message` record (§9.1), and `turnId` is its id.
 move or rebind, a discard decision, a sign-out; engine §7.10) first ends a running turn
 `interrupted`.
 
-**D-11 Device grant.** A short-lived credential issued to a signed-out install after platform
-attestation (§8). It admits the Coach turn routes only.
+**D-11 Installation credential.** An opaque server-issued credential held separately from account
+authentication (§8). Its lifetime allowance belongs to an installation, without a guarantee
+against resets. Current admission is limited to the anonymous onboarding routes; it does not
+grant access to account Coach routes or the broader turn protocol.
 
 ---
 
@@ -180,7 +185,7 @@ emoji and combining marks.
 
 1. **Admit locally.** Refuse, keeping the draft, when:
    - there is no connection;
-   - the seat is `anon` and the phone holds no device grant with questions remaining (§8);
+   - the seat is `anon` and the phone holds no installation credential with lifetime USD capacity (§8);
    - a workout is open and the brief refuses Coach mid-workout;
    - the replica has not completed its first pull of history (`coach-replica-syncing`);
    - the question exceeds `MAX_QUESTION_BYTES`, or more than `MAX_PICTURES_PER_MESSAGE` pictures
@@ -310,12 +315,15 @@ MCP calls pass G-1 to G-3 in the server executor, under the same agent rules (IN
 | `GET /v1/gym/coach/turns/{turnId}` | Resume a turn's stream. |
 | `POST /v1/gym/coach/turns/{turnId}/results` | Answer a batch. |
 | `POST /v1/gym/coach/turns/{turnId}/stop` | Request Stop. |
-| `GET /v1/gym/coach/device/challenge` | A nonce for a device grant (§8). |
-| `POST /v1/gym/coach/device` | Exchange an attestation for a device grant (§8). |
+| `POST /v1/ai/installations` | Issue an installation credential (§8). |
+| `GET /v1/ai/installations/current` | Read installation binding and allowance (§8). |
+| `POST /v1/ai/installations/bind` | Bind its usage to a verified account (§8). |
 
-A turn route authenticates with a session (seat `bound(A)`) or a device grant (seat `anon`). Every
+A turn route authenticates with a session (seat `bound(A)`) or an installation credential (seat `anon`). Every
 request of a turn uses the seat that opened it. A deployment with more than one server process
 MUST route every request of a turn to the process that holds it.
+The turn routes remain specified work; installation credentials currently authorize only
+`POST /v1/gym/coach/onboarding` and its request-scoped recovery read.
 
 ### §6.2 Open
 
@@ -335,8 +343,8 @@ Admission, in order:
    the four context reads, within `CONTEXT_READ_BYTES`. Otherwise `coach-bad-request`.
 3. **Identity.** An unseen `turnId` opens a turn. A seen `turnId` with the same body digest
    resumes it. A seen `turnId` with another digest is refused `coach-turn-conflict`.
-4. **Allowance.** A new turn takes one question from the seat (§7.1).
-5. **Spend.** The seat's cost ceiling and, for `anon`, the pool (§7.3) have room.
+4. **Allowance.** Each vendor round reserves USD against the verified principal (§7.1).
+5. **Capacity.** The applicable free pools or funded grant and principal concurrency limit have room (§7.3).
 
 ### §6.3 Events
 
@@ -345,7 +353,7 @@ Admission, in order:
 | `snapshot` | `{text, state, calls?}`: the first event of a resume. |
 | `text` | `{delta}`: visible answer text, in order. |
 | `calls` | `{batch, calls: [{callId, name, input}]}` |
-| `done` | `{state, truncated?, remaining}` |
+| `done` | `{state, truncated?, allowance}`; allowance follows the shared USD read contract |
 | `error` | `{code}` |
 
 Heartbeat comments keep an idle stream open. A refusal before the stream starts is an HTTP error
@@ -373,11 +381,15 @@ again answers `204`. Any other body is refused `coach-turn-order`.
 | `coach-turn-unknown` | No such turn on this server. |
 | `coach-turn-order` | Results that do not answer the pending batch. |
 | `coach-turn-volume` | An ability call over G-6. |
-| `coach-daily-limit` | The account's questions are spent for now. |
-| `coach-ceiling` | The seat's cost ceiling is reached. |
-| `coach-device-unverified` | The phone's attestation did not verify. |
-| `coach-device-spent` | This phone's signed-out allowance is used. |
-| `coach-anon-pool-empty` | The signed-out pool is empty for this hour. |
+| `coach-rate-limited` | The technical burst or concurrency limit is reached; retry later. |
+| `subject_exhausted` | The device/account USD allowance cannot cover this request. |
+| `invalid_installation` | The installation credential is missing or invalid. |
+| `device_bound` | This installation is permanently associated with an account; sign in. |
+| `free_day_exhausted` | Shared free capacity is unavailable for this UTC day; include the daily budget reset. |
+| `free_month_exhausted` | Shared free capacity is unavailable for this UTC month. |
+| `concurrency_exhausted` | The principal already has its permitted number of unresolved calls. |
+| `funding_required` | One access has no active funded allowance period. |
+| `debt_outstanding` | An unresolved unfunded accounting overrun blocks further admission. |
 | `coach-replica-syncing` | Local only: the replica's history is still arriving. |
 | `coach-busy` | The process is at capacity or its cost fuse is open. |
 | `coach-vendor-error` | The vendor failed. |
@@ -388,86 +400,142 @@ again answers `204`. Any other body is refused `coach-turn-order`.
 
 ### §7.1 Allowances
 
-| Seat | Questions | Cost |
+The backend owns exactly three tiers. Amounts are USD of model cost, never question counts:
+
+| Tier | Individual allowance | Period |
 |---|---|---|
-| `bound(A)` | `ASK_BURST` held, refilling `ASK_PER_DAY` a day | the account's 30-day AI ceiling |
-| `anon` | the device grant's questions (§8) | the anonymous pool (§7.3) |
+| Anonymous | $0.05 per installation credential | Lifetime |
+| Verified logged-in | $0.25 per account, including associated anonymous spend from the current month | UTC calendar month |
+| Windmill One | $7 per funded account period | Subscription billing period; owner grants use UTC calendar months |
 
-- A question is taken when a `turnId` is first admitted.
-- It returns when the server sent no vendor request for the turn, or the vendor failed before its
-  first `message_start`.
-- Each model call is capped at the seat's `max_tokens`.
-- The process fuse checks every vendor request.
-- `done.remaining` is the seat's question count after the turn. A room states a count only from
-  `done.remaining` or a grant.
+Every hosted AI cost, including background Journal work, consumes the individual allowance.
+Balances are shared across account devices and products. An installation binds permanently to one verified
+account at sign-in, after which anonymous admission for that installation is closed. Binding retains
+lifetime usage and carries current-month anonymous spend into the free account allowance. Existing
+unresolved holds and debt remain attributable; sign-in cannot erase them.
 
-### §7.2 Metering
+Paid access requires a funded grant, not subscription status alone. A successfully paid,
+non-prorated monthly One event funds its explicit billing period. Owner access automatically funds
+a calendar month when no subscription grant is current. Grants cannot overlap within one account
+and funding source. A current subscription takes priority over the owner grant; capacity is never
+combined, and an expired subscription does not prevent owner calendar funding.
+Unused paid capacity can cross a calendar boundary, but expires at its funded period end.
 
-Every vendor request writes an AI usage row: `product = gym`, `operation = coach`, the model,
-`run = turnId`, `iteration =` the model call, and every token count the vendor reports. A `bound`
-row carries the account. An `anon` row carries no account and the grant's device key. The vendor
-request's `metadata.user_id` is a keyed hash of the account or the device key.
+Every vendor round MUST estimate tokens for its actual system prompt, messages/history, tools,
+results and images, then atomically reserve estimated input cost plus its full output cap sent to the provider
+against individual and applicable shared capacity before dispatch. Coach can reduce that cap to
+fit the locked balances, down to its 1,024-token policy floor; the input estimate remains complete.
+The estimate is not a hard
+spending ceiling. Complete usage settles once at actual cost; unused reservation is released and
+underestimates are charged in full. Settlement atomically absorbs variance when every original
+funding budget can cover it with other unresolved holds and bound-device account usage included,
+and no existing debt. Covered variance creates no debt or Issue. Unfunded variance creates debt;
+a new period cannot fund an old call. Ambiguous sends and incomplete usage remain held. Retrying
+an already dispatched reservation MUST NOT send it again. Unresolved principal calls and overrun
+debt remain effective after a period ends.
 
-### §7.3 The anonymous pool
+`done.allowance` carries exact decimal USD limit, used, reserved and remaining; its period;
+individual `resetsAtMs`; and the constrained scope's `budgetResetsAtMs`. Lifetime reset is null.
+A free daily pause must identify the daily boundary rather than the individual monthly reset.
+A positive balance does not promise that a particular request can fit its reservation.
 
-All `anon` turns together spend at most `ANON_POOL_PER_DAY` of vendor cost per UTC day, released in
-24 hourly slices. An unspent slice carries forward, holding at most two slices. An empty slice
-refuses new `anon` turns with `coach-anon-pool-empty`; admitted turns finish. Per-IP limits apply to
-the challenge, grant and open routes.
+### §7.2 Metering and implementation boundary
+
+Every provider request records bounded product, operation, run/iteration, model, outcome and
+supported token usage. The durable ledger owns admission; telemetry mirrors do not. Neither logs
+nor telemetry contain prompts, images, account/device identifiers or raw vendor errors.
+
+[USD AI allowances](../../../backend/AI_ALLOWANCES.md) describes the implemented backend mode,
+which defaults off in configuration and is enabled in production. Authenticated Claude paths use
+it. Anonymous onboarding has a separate installation boundary; this broader phone-hosted Coach
+protocol remains unimplemented. Account Coach uses operation `ask`.
+
+Claude reservations use local per-request approximate token counts and the full output cap sent to the provider.
+Anonymous onboarding uses one bounded model call with public exercises and no account tools.
+Approximation does not guarantee that a request fits. Full actual cost is recorded; an overrun
+creates debt only when original funding cannot cover it. Voice also needs supported audio
+accounting and complete audio/text pricing. This spec does not promise that either unsupported
+edge is available.
+
+### §7.3 Shared capacity and owner alerts
+
+Anonymous and free accounts share $100 per UTC calendar month and $5 per UTC day. Paid calls use
+only their funded grants and cannot consume either free pool. There is no additional generic
+service-wide monthly ceiling. Admission checks estimated reservations against the free pools or
+funded grant; actual cost can exceed an estimate and is recorded in full. The process fuse is an
+additional safeguard.
+
+A principal may have one unresolved free call or two unresolved paid calls. Reservations,
+dispatched calls and uncertain calls all occupy slots. The backend enforces this across processes,
+tier changes and permanent device binding. Product burst protection remains separate.
+
+Each budget emits a durable owner-email alert when settled plus held usage crosses 50%, 80% or 95%.
+Alert enqueue is atomic with the budget write, and delivery uses leased claims and retry. The
+configured owner receives bounded scope, funding source and amounts, without user identifiers or
+content. These operational alerts are not customer upgrade messages.
 
 ### §7.4 What the server keeps
 
 - Usage rows, allowance state and grant records.
 - A running turn, in memory, until `TURN_LINGER` after it ends.
 
-It never logs a question, answer, picture, history, context or ability result, and never persists
-one for a turn with no bound seat until a sign-in adds its conversation to an account (§9.1); a
-bound seat's conversation is ordinary synced data.
-Error records carry the code, sizes, `turnId` and model call number only. `anon` usage rows and
-grant records are deleted after `ANON_RETENTION_DAYS`.
+It never logs a question, answer, picture, history, context or ability result. Anonymous onboarding
+persists an input digest and a validated routine result for request recovery, without the input
+text or image. Its result expires after seven days; a compact replay tombstone prevents redispatch.
+The phone keeps its conversation and photos locally. The broader turn protocol's conversation
+records described in §9.1 remain specified work.
+Error records carry the code, sizes, `turnId` and model call number only. `ANON_RETENTION_DAYS` applies to expendable operational records. The lifetime allowance and
+permanent binding must survive record cleanup and account erasure without allowing a fresh grant.
 
 ---
 
-## §8 The device grant
+## §8 Installation identity
 
 ### §8.1 Flow
 
-1. `GET /v1/gym/coach/device/challenge` → `{nonce}`, valid for `CHALLENGE_TTL`.
-2. `POST /v1/gym/coach/device` with the platform attestation over the nonce →
-   `{grant, expiresAt, remaining}`.
-3. A grant lives `GRANT_TTL`. The phone renews it with a fresh attestation or assertion over a new
-   challenge; renewal keeps the device's remaining questions.
+1. `POST /v1/ai/installations` issues a 256-bit opaque credential and its lifetime USD allowance.
+2. The client stores the credential securely and sends it in `X-Windmill-Installation` for
+   installation reads and anonymous onboarding. The server stores only a digest of the token.
+3. `GET /v1/ai/installations/current` reads binding and allowance without issuing a replacement.
+4. After verified sign-in, `POST /v1/ai/installations/bind` carries both the account credential and
+   installation credential. Binding attributes usage independently of Add/Discard content choices.
+   Repeating the same binding is idempotent; another account cannot rebind it.
 
 ### §8.2 iOS
 
-- The phone sends a new App Attest key's attestation over the challenge, and a DeviceCheck token.
-- The server verifies the attestation chain to Apple's root, the app id and the counter, then reads
-  the device's DeviceCheck bits.
-- Bit 0 set → `coach-device-spent`. Otherwise the server sets bit 0 and issues `ANON_QUESTIONS`.
-- The allowance is once per phone. A reinstall on the same phone receives none, and questions left
-  on an earlier install are forfeited.
-- Renewal uses an App Attest assertion with the same key.
+The installation credential uses a separate Keychain service from account credentials and survives
+ordinary sign-out. A missing credential on first use may acquire one; an invalid existing credential
+must not silently mint a replacement. Sign-in binds before account Coach becomes available.
+App Attest and DeviceCheck are not launch requirements. Erasing or resetting the installation is
+not guaranteed to preserve its identity; this is an installation allowance, not proof of a unique
+physical phone. IP and global budgets bound that exposure.
 
 ### §8.3 Android
 
-- The phone sends a standard Play Integrity token whose request hash is the challenge.
-- The server requires `MEETS_DEVICE_INTEGRITY`, `PLAY_RECOGNIZED` and `LICENSED`, and a fresh
-  timestamp.
-- With device recall enabled, a set recall bit → `coach-device-spent`; otherwise the server sets it
-  and issues `ANON_QUESTIONS`.
-- Without device recall, the allowance is per install, `ANON_QUESTIONS_ANDROID`.
+Android Coach remains account-only. Delivering anonymous Android onboarding requires its own
+secure credential storage, local routine import and account-adoption integration. The shared
+installation policy does not imply Android delivery or reinstall-resistant identity.
 
 ### §8.4 Failure and privacy
 
-- Any verification failure is `coach-device-unverified`. The room offers sign-in and states no
-  count.
-- The device key is a keyed hash of the attested key id. It is never joined to an account.
-- Signing in neither spends nor restores a device's allowance.
+- Invalid credentials are refused; the room retains the draft and offers a recovery without
+  silently replacing the credential.
+- The subject is an opaque installation identity, absent from telemetry. Its backend binding to
+  one account is permanent and cannot be changed to replenish free usage.
+- Signing in retains lifetime usage, closes anonymous admission for that device and includes its
+  current-month anonymous spend in the account's free allowance. Unresolved calls remain held.
+- A caller that erases or deliberately omits the installation signal cannot be associated with it
+  by this mechanism. No reset-proof or account-association guarantee is made for such a caller.
+- Issuance and generation have durable IP limits. Only the configured trusted proxy's client-IP
+  header is accepted in production; local direct mode uses the socket peer. IP rate records use
+  keyed digests and bounded retention, and raw addresses never enter telemetry.
 
 ### §8.5 Deployment secrets
 
-App Attest app id and Apple's root certificate; DeviceCheck key, key id and team id; the Play
-Integrity Cloud project and service account; the grant signing key; the device-hash key.
+`AI_INSTALLATIONS_ENABLED` requires durable USD allowances and `AI_INSTALLATION_IP_HMAC_KEY`.
+Production fixes `AI_INSTALLATION_PROXY_MODE=cloudflare` behind the Cloudflare-only Caddy gate;
+the server has no public host port. Defaults are ten credential issues per IP per UTC day and
+thirty new generations per IP per UTC hour. Secrets and credentials never appear in logs.
 
 ---
 
@@ -582,11 +650,15 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
 | `TURN_LINGER` | 10 min |
 | `ASK_BURST` | 3 |
 | `ASK_PER_DAY` | 10 |
-| `ANON_QUESTIONS` | 5 |
-| `ANON_QUESTIONS_ANDROID` | open |
-| `ANON_POOL_PER_DAY` | open |
-| `CHALLENGE_TTL` | 5 min |
-| `GRANT_TTL` | 24 h |
+| `AI_ANONYMOUS_LIFETIME_USD` | 0.05 |
+| `AI_LOGGED_IN_MONTHLY_USD` | 0.25 |
+| `AI_ONE_PERIOD_USD` | 7 |
+| `AI_FREE_MONTHLY_USD` | 100 |
+| `AI_FREE_DAILY_USD` | 5 |
+| Free principal concurrency | 1 |
+| Paid principal concurrency | 2 |
+| `AI_INSTALLATION_ISSUES_PER_DAY` | 10 |
+| `AI_INSTALLATION_GENERATIONS_PER_HOUR` | 30 |
 | `ANON_RETENTION_DAYS` | 35 |
 | `CATALOG_RETIRE_DAYS` | 120 |
 
@@ -599,10 +671,12 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
   elsewhere needs a review drawn in canon.
 - **B-2 The model per seat.** Whether `anon` turns use the same model and `max_tokens` as `bound`
   turns.
-- **B-3 The anonymous numbers.** `ANON_POOL_PER_DAY` and `ANON_QUESTIONS_ANDROID`.
-- **B-4 Android attestation.** Play Integrity verdicts pass only for installs from Google Play, and
-  device recall is a beta granted on application. Decide the channel that carries signed-out
-  Coach, and apply for device recall.
+- **B-3 Reservation estimates.** Evaluate per-request estimates against actual usage across text,
+  tools and images. Do not describe approximate admission as a hard spending ceiling. Original
+  funding absorbs covered variance; unfunded overrun debt and ambiguous holds remain accounted
+  for. The free pools and concurrency policy are set.
+- **B-4 Android delivery.** Implement and verify secure installation storage, local onboarding
+  import and account adoption before opening anonymous Coach on Android.
 - **B-5 Evaluation.** Signed-out conversations exist only on phones. Decide whether a lifter can
   send a conversation to Windmill for review.
 

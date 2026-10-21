@@ -60,27 +60,21 @@ import UIKit
     let tab = app.tabBars.buttons[name]
     XCTAssertTrue(tab.wait(for: \.isHittable, toEqual: true, timeout: 10)); tab.tap()
   }
-  func more(_ name: String, _ app: XCUIApplication, snapshot: String? = nil, expecting items: [String]? = nil) {
-    let menu = app.buttons["coach-more"]
-    XCTAssertTrue(waitForVisible(menu, in: app))
-    XCTAssertTrue(menu.isHittable)
-    menu.tap()
-    let ids = ["History": "history", "Notes": "notes", "Connected log": "connections", "New chat": "new-chat"]
-    let choices = app.buttons["coach-menu-history"]
-    XCTAssertTrue(choices.waitForExistence(timeout: 5))
-    if let items {
-      let shown = ids.filter { app.buttons["coach-menu-" + $0.value].exists }.map(\.key)
-      XCTAssertEqual(Set(shown), Set(items))
-      XCTAssertFalse(app.buttons["coach-menu-settings"].exists || app.buttons["coach-menu-account"].exists)
+  func openDestination(_ name: String, _ app: XCUIApplication) {
+    XCTAssertFalse(app.buttons["coach-more"].exists)
+    if name == "History" || name == "New chat" {
+      let history = app.buttons["coach-history"]
+      XCTAssertTrue(waitForVisible(history, in: app)); history.tap()
+      XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 5))
+      if name == "New chat" { app.buttons["coach-new-chat"].tap() }
+      return
     }
-    if let snapshot { capture(snapshot, app) }
-    let item = app.buttons["coach-menu-" + (ids[name] ?? name)]
-    XCTAssertTrue(item.wait(for: \.isHittable, toEqual: true, timeout: 10))
-    let frame = item.frame
-    XCTAssertTrue(frame.minX.isFinite && frame.minY.isFinite && frame.width > 0 && frame.height > 0)
+    app.buttons["you"].tap()
+    let item = app.buttons[name == "Notes" ? "settings-notes" : "settings-connected-log"]
+    XCTAssertTrue(item.waitForExistence(timeout: 5))
+    for _ in 0..<3 where !item.isHittable { app.swipeUp() }
     item.tap()
-    XCTAssertTrue(choices.waitForNonExistence(timeout: 10))
-    if ["History", "Notes", "Connected log"].contains(name) { XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5)) }
+    XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5))
   }
   func ask(_ question: String, _ app: XCUIApplication) {
     let field = app.descendants(matching: .any)["coach-question"]
@@ -96,7 +90,7 @@ import UIKit
     XCTAssertTrue(done.waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
   }
-  func back(_ app: XCUIApplication, expecting title: String? = nil) {
+  func back(_ app: XCUIApplication, expecting title: String? = nil, control: String = "coach-history") {
     let previous = app.navigationBars.firstMatch
     let previousTitle = previous.identifier
     let button = previous.buttons.element(boundBy: 0)
@@ -107,8 +101,11 @@ import UIKit
     app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: frame.midX, dy: frame.midY)).press(forDuration: 0.1)
     XCTAssertTrue(app.navigationBars[previousTitle].waitForNonExistence(timeout: 5))
     if let title {
+      if title == "Coach", app.navigationBars["You"].waitForExistence(timeout: 1) {
+        app.navigationBars["You"].buttons["Done"].tap()
+      }
       XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5))
-      let menu = app.buttons["coach-more"]
+      let menu = app.buttons[control]
       XCTAssertTrue(waitForVisible(menu, in: app))
       XCTAssertTrue(menu.isHittable)
     }
@@ -182,23 +179,16 @@ import UIKit
     capture("coach-review-receipt-\(suffix)", app)
     app.buttons["Close"].tap()
     XCTAssertTrue(review.waitForValue("Applied", timeout: 5))
-    more("History", app, snapshot: "coach-menu-\(suffix)", expecting: ["New chat", "History", "Notes", "Connected log"])
+    openDestination("History", app)
     let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Push A · 3 changes")).firstMatch
     XCTAssertTrue(conversation.waitForExistence(timeout: 5))
     XCTAssertFalse(conversation.label.contains("waiting"), conversation.label)
     XCTAssertFalse(app.buttons["Ask something new"].exists)
     capture("coach-history-\(suffix)", app)
     XCTAssertFalse(app.tabBars.buttons["Coach"].isHittable)
-    conversation.swipeLeft()
-    let delete = app.buttons["Delete"]
-    XCTAssertTrue(delete.waitForExistence(timeout: 5)); delete.tap()
-    XCTAssertTrue(app.staticTexts["Conversation deleted. Routines and notes stay."].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["No conversations"].waitForExistence(timeout: 5), "The emptied list says so")
-    capture("coach-history-deleted-\(suffix)", app)
-    app.buttons["coach-engine-undo"].tap()
-    XCTAssertTrue(conversation.waitForExistence(timeout: 5)); conversation.tap()
+    conversation.tap()
     XCTAssertTrue(app.buttons["coach-review"].waitForExistence(timeout: 5))
-    more("Notes", app)
+    openDestination("Notes", app)
     XCTAssertTrue(app.buttons["coach-add-note"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["Any agent you connect can read these too."].exists)
     XCTAssertFalse(app.staticTexts["what you write for Coach"].exists || app.staticTexts["Top note wins."].exists)
@@ -219,9 +209,9 @@ import UIKit
     XCTAssertTrue(save.waitForExistence(timeout: 5)); XCTAssertFalse(save.isEnabled, "An unchanged note cannot save")
     app.buttons["Cancel"].tap()
     back(app, expecting: "Coach")
-    more("Connected log", app)
+    openDestination("Connected log", app)
     XCTAssertTrue(app.staticTexts["Claude Desktop"].waitForExistence(timeout: 5))
-    XCTAssertFalse(app.staticTexts["Your log, read by Claude, Cursor or Codex."].exists, "The head line steps aside for what is connected.")
+    XCTAssertFalse(app.staticTexts["Your log, read by ChatGPT or Claude."].exists, "The head line steps aside for what is connected.")
     XCTAssertFalse(app.buttons["Manage connections"].exists || app.staticTexts["Read"].exists, "Connected leads and nothing repeats it")
     XCTAssertTrue(app.buttons["coach-connection-grant:fixture"].exists)
     XCTAssertEqual(app.buttons["coach-connect-tool"].label, "Connect a tool")
@@ -232,7 +222,7 @@ import UIKit
     XCTAssertTrue(app.staticTexts["No tool can apply a proposal or edit a logged set."].exists && app.staticTexts["Read"].exists)
     capture("coach-connected-disclosure-\(suffix)", app)
     back(app); back(app, expecting: "Coach")
-    more("New chat", app)
+    openDestination("New chat", app)
     XCTAssertTrue(app.buttons["coach-review"].waitForNonExistence(timeout: 5))
     app.buttons["you"].tap()
     XCTAssertTrue(app.buttons["about-windmill"].waitForExistence(timeout: 5))
@@ -251,6 +241,27 @@ import UIKit
     let brightness = (Double(pixel[0]) + Double(pixel[1]) + Double(pixel[2])) / (3 * 255)
     if appearance == "Light" { XCTAssertGreaterThan(brightness, 0.7, "Gym Account must follow light appearance") }
     else { XCTAssertLessThan(brightness, 0.3, "Gym Account must follow dark appearance") }
+    app.terminate()
+  }
+  func testHistoryConfirmsDeleteAndKeepsItDeletedAfterReopen() {
+    let app = launch("Light")
+    ask("Is Push A still doing anything?", app)
+    openDestination("History", app)
+    let conversation = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Push A · 3 changes")).firstMatch
+    XCTAssertTrue(conversation.waitForExistence(timeout: 5))
+    conversation.swipeLeft()
+    app.buttons["Delete"].tap()
+    XCTAssertTrue(app.buttons["Delete conversation"].waitForExistence(timeout: 5))
+    app.cancelConfirmation()
+    XCTAssertTrue(app.buttons["Delete conversation"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(conversation.exists)
+    conversation.swipeLeft(); app.buttons["Delete"].tap()
+    XCTAssertTrue(app.buttons["Delete conversation"].waitForExistence(timeout: 5)); app.buttons["Delete conversation"].tap()
+    XCTAssertTrue(app.staticTexts["No conversations"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["coach-engine-undo"].exists)
+    back(app, expecting: "Coach")
+    openDestination("History", app)
+    XCTAssertTrue(app.staticTexts["No conversations"].waitForExistence(timeout: 5))
     app.terminate()
   }
   func testLightScreensAndNativeNavigation() { screens("Light") }
@@ -379,22 +390,24 @@ import UIKit
       app.terminate()
     }
   }
-  func testAnonymousCoachExplainsAccountRequirementAndKeepsDoors() {
+  func testAnonymousCoachOffersSetupAndKeepsAccountDoors() {
     for appearance in ["Light", "Dark"] {
       let suffix = appearance.lowercased(), app = launch(appearance, fixture: false)
-      XCTAssertTrue(app.staticTexts["Coach reads your log, so it needs you signed in."].waitForExistence(timeout: 5))
-      XCTAssertEqual(app.buttons["coach-sign-in"].label, "Sign in")
-      XCTAssertFalse(app.descendants(matching: .any)["coach-question"].exists)
-      XCTAssertTrue(app.buttons["coach-sign-in"].exists)
-      capture("coach-account-only-\(suffix)", app)
-      more("Notes", app, expecting: ["History", "Notes", "Connected log"])
+      XCTAssertTrue(app.buttons["coach-setup-goal"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.buttons["coach-setup-describe"].exists)
+      XCTAssertTrue(app.buttons["coach-setup-screenshot"].exists)
+      XCTAssertTrue(app.descendants(matching: .any)["coach-question"].exists)
+      XCTAssertFalse(app.buttons["coach-history"].exists)
+      XCTAssertFalse(app.buttons["coach-sign-in"].exists)
+      capture("coach-anonymous-setup-\(suffix)", app)
+      openDestination("Notes", app)
       XCTAssertTrue(app.staticTexts["Notes live with your account, so they need you signed in."].waitForExistence(timeout: 5))
       XCTAssertTrue(app.buttons["coach-sign-in"].exists)
       capture("coach-notes-account-only-\(suffix)", app)
-      back(app, expecting: "Coach"); more("Connected log", app)
+      back(app, expecting: "Coach", control: "coach-setup-goal"); openDestination("Connected log", app)
       XCTAssertTrue(app.buttons["coach-connect-tool"].waitForExistence(timeout: 5))
       XCTAssertEqual(app.buttons["coach-connect-tool"].label, "Sign in first")
-      XCTAssertTrue(app.staticTexts["Your log, read by Claude, Cursor or Codex."].exists)
+      XCTAssertTrue(app.staticTexts["Your log, read by ChatGPT or Claude."].exists)
       capture("coach-connected-account-only-\(suffix)", app)
       app.buttons["coach-connect-tool"].tap()
       XCTAssertTrue(app.buttons["about-windmill"].waitForExistence(timeout: 5))
@@ -410,9 +423,9 @@ import UIKit
       XCTAssertTrue(app.staticTexts["Coach isn’t part of this Windmill. Your log is still yours to read."].waitForExistence(timeout: 10))
       XCTAssertFalse(question.exists)
       capture("coach-unavailable-\(suffix)", app)
-      more("Notes", app)
+      openDestination("Notes", app)
       XCTAssertTrue(app.buttons["coach-add-note"].waitForExistence(timeout: 5))
-      back(app, expecting: "Coach"); more("Connected log", app)
+      back(app, expecting: "Coach"); openDestination("Connected log", app)
       XCTAssertTrue(app.buttons["coach-connect-tool"].waitForExistence(timeout: 5))
       XCTAssertEqual(app.buttons["coach-connect-tool"].label, "Connect a tool")
       app.terminate()
@@ -429,7 +442,7 @@ import UIKit
     XCTAssertFalse(app.buttons["coach-read-receipt"].isHittable, "At this size the conversation scrolls past its receipt")
     let atEnd = settledFrame(review)
     XCTAssertLessThanOrEqual(atEnd.maxY, composer.frame.minY + 1, "At rest the last card \(atEnd) clears \(composer.frame)")
-    more("History", app)
+    openDestination("History", app)
     XCTAssertFalse(app.tabBars.firstMatch.isHittable, "A pushed screen hides the tab bar")
     back(app, expecting: "Coach")
     let returned = settledFrame(review)
@@ -451,5 +464,113 @@ import UIKit
       frame = element.frame
     }
     return frame
+  }
+
+  func launchSetup(_ appearance: String = "dark", restore: Bool = false, largeText: Bool = false) -> XCUIApplication {
+    let app = XCUIApplication()
+    app.launchEnvironment["TZ"] = "UTC"
+    app.launchArguments = ["-model-server", "-board", "shell-last-room", "-onboarding-appearance", appearance,
+      "-AppleLocale", "en_US", "-AppleLanguages", "(en)", "-coach-fixture", "-coach-setup-fixture"]
+    if restore { app.launchArguments.append("-restore-board") }
+    if largeText { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL", "-coach-long-choices"] }
+    app.launch()
+    if app.textViews["journal-editor"].waitForExistence(timeout: 3) {
+      app.buttons["room-menu"].tap(); app.buttons["room-gym"].tap()
+    }
+    XCTAssertTrue(app.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 15))
+    return app
+  }
+
+  func testSetupGoalChipsAndThreeRoutineReceiptsOpenExistingWorkout() {
+    let app = launchSetup()
+    XCTAssertTrue(app.buttons["coach-setup-goal"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["coach-send"].isEnabled)
+    capture("Coach setup entry", app)
+    app.buttons["coach-setup-goal"].tap()
+    let field = app.descendants(matching: .any)["coach-question"]
+    XCTAssertEqual(field.value as? String, "My goal: ")
+    XCTAssertFalse(app.buttons["coach-choice-days-three"].exists)
+    field.typeText("Get stronger. I train at home.")
+    app.buttons["coach-send"].tap()
+    let days = app.buttons["coach-choice-days-three"]
+    XCTAssertTrue(days.waitForExistence(timeout: 10)); days.tap()
+    app.buttons["coach-choice-equipment-dumbbells"].tap()
+    XCTAssertEqual(field.value as? String, "3 days. Dumbbells.")
+    XCTAssertFalse(app.buttons["coach-created-setup-operation-A"].exists)
+    capture("Coach setup clarification", app)
+    app.buttons["coach-send"].tap()
+    for suffix in ["A", "B", "C"] {
+      XCTAssertTrue(app.buttons["coach-created-setup-operation-" + suffix].waitForExistence(timeout: 10))
+    }
+    capture("Coach setup results", app)
+    let receipt = app.buttons["coach-created-setup-operation-B"]
+    for _ in 0..<3 where !receipt.isHittable { app.swipeUp() }
+    receipt.tap()
+    XCTAssertTrue(app.navigationBars["Full body B"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5))
+    app.buttons["routine-start"].tap()
+    XCTAssertTrue(app.descendants(matching: .any)["gym-workout"].waitForExistence(timeout: 10))
+    capture("Coach setup first workout", app)
+  }
+
+  func testSetupDraftAndSelectionsSurviveRelaunchWithoutSending() {
+    var app = launchSetup()
+    app.buttons["coach-setup-goal"].tap()
+    app.buttons["coach-send"].tap()
+    let days = app.buttons["coach-choice-days-three"]
+    XCTAssertTrue(days.waitForExistence(timeout: 10)); days.tap()
+    app.buttons["coach-choice-equipment-bands"].tap()
+    XCTAssertEqual(app.descendants(matching: .any)["coach-question"].value as? String, "3 days. Bands.")
+    app.terminate()
+    app = launchSetup(restore: true)
+    XCTAssertEqual(app.descendants(matching: .any)["coach-question"].value as? String, "3 days. Bands.")
+    XCTAssertTrue(app.buttons["coach-choice-days-three"].isSelected)
+    XCTAssertTrue(app.buttons["coach-choice-equipment-bands"].isSelected)
+    XCTAssertFalse(app.buttons["coach-created-setup-operation-A"].exists)
+  }
+
+  func testSetupManualEscapesRemainAvailableAfterBuilderCancel() {
+    let app = launchSetup("light")
+    app.buttons["coach-setup-build_manually"].tap()
+    XCTAssertTrue(app.navigationBars["New routine"].waitForExistence(timeout: 10))
+    let close = app.buttons["sheet-close"]
+    if close.exists { close.tap() } else { app.navigationBars["New routine"].buttons.firstMatch.tap() }
+    XCTAssertTrue(app.buttons["routines-setup"].waitForExistence(timeout: 10)); app.buttons["routines-setup"].tap()
+    XCTAssertTrue(app.buttons["coach-setup-just_log"].waitForExistence(timeout: 5)); app.buttons["coach-setup-just_log"].tap()
+    XCTAssertTrue(app.descendants(matching: .any)["gym-workout"].waitForExistence(timeout: 10))
+    app.buttons["workout-assembly"].tap()
+    XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
+    openTab("Routines", app)
+    XCTAssertTrue(app.buttons["routines-setup"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["coach-setup-goal"].exists)
+  }
+
+  func testSetupStartersStayReachableAtAccessibilitySize() {
+    let app = launchSetup(largeText: true)
+    let goal = app.buttons["coach-setup-goal"]
+    XCTAssertTrue(goal.waitForExistence(timeout: 10))
+    for _ in 0..<4 where !goal.isHittable { app.swipeUp() }
+    XCTAssertTrue(goal.isHittable)
+    capture("Coach setup accessibility", app)
+    goal.tap()
+    XCTAssertEqual(app.descendants(matching: .any)["coach-question"].value as? String, "My goal: ")
+    XCTAssertFalse(app.buttons["coach-stop"].exists)
+    app.buttons["coach-send"].tap()
+    let longChoice = app.buttons["coach-choice-equipment-none"]
+    XCTAssertTrue(longChoice.waitForExistence(timeout: 10))
+    for _ in 0..<6 where !longChoice.isHittable { app.swipeUp() }
+    XCTAssertTrue(longChoice.isHittable)
+    XCTAssertEqual(longChoice.label, "Adjustable dumbbells and a bench")
+    XCTAssertGreaterThanOrEqual(longChoice.frame.height, 44)
+    XCTAssertGreaterThanOrEqual(longChoice.frame.minX, app.frame.minX)
+    XCTAssertLessThanOrEqual(longChoice.frame.maxX, app.frame.maxX)
+    longChoice.tap()
+    XCTAssertTrue(longChoice.isSelected)
+    let field = app.descendants(matching: .any)["coach-question"]
+    XCTAssertEqual(field.value as? String, "Adjustable dumbbells and a bench.")
+    XCTAssertLessThan(field.frame.height, app.frame.height / 3)
+    for _ in 0..<6 where !longChoice.isHittable { app.swipeUp() }
+    XCTAssertTrue(longChoice.isHittable)
+    capture("Coach setup long choices accessibility", app)
   }
 }

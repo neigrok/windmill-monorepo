@@ -21,6 +21,44 @@ struct HarnessTests {
     return draft
   }
 
+  @Test func immediateRemovalPolicyCommitsTheWholeGestureAndKeepsTheDefaultHeld() throws {
+    let held = try HarnessTests.phone()
+    let heldFirst = try HarnessTests.sticky(held, "One"), heldSecond = try HarnessTests.sticky(held, "Two")
+    let heldReceipt = try #require(try held.runner.run(RemoveStickies(ids: [heldFirst.id, heldSecond.id])).receipt)
+    #expect(heldReceipt.releaseAt == Probe.start.ms + Constants.holdMs)
+    #expect(try held.drawn(Sticky.self).isEmpty && held.stored(Sticky.self).map(\.id) == [heldFirst.id, heldSecond.id])
+    #expect(try held.runner.undo(heldReceipt.gestureId))
+    #expect(try held.drawn(Sticky.self).map(\.id) == [heldFirst.id, heldSecond.id])
+
+    let immediate = Harness(holdRemovals: false, registry: try Corpus.probeRegistry(), start: Probe.start)
+    let other = immediate.device()
+    let first = try HarnessTests.sticky(immediate, "One"), second = try HarnessTests.sticky(immediate, "Two")
+    immediate.sync()
+    let remove = RemoveStickies(ids: [first.id, second.id])
+    immediate.failNextCommit()
+    #expect(throws: (any Error).self) { try immediate.runner.run(remove) }
+    #expect(try immediate.drawn(Sticky.self).map(\.id) == [first.id, second.id])
+    let receipt = try #require(try immediate.runner.run(remove).receipt)
+    #expect(receipt.releaseAt == nil && immediate.undoOffers().isEmpty)
+    #expect(try immediate.drawn(Sticky.self).isEmpty && immediate.stored(Sticky.self).isEmpty)
+    #expect(try !immediate.runner.undo(receipt.gestureId))
+    immediate.sync()
+    #expect(try other.drawn(Sticky.self).isEmpty)
+    let next = try HarnessTests.sticky(other, "Next")
+    #expect(try other.runner.run(Remove<Sticky, ProbeRefusal>(next.id)).receipt?.releaseAt == nil)
+  }
+
+  struct RemoveStickies: Action {
+    let ids: [ID<Sticky>]
+    var scope: ScopeRef { Probe.scope }
+    func load(_ read: Reader) throws {}
+    func decide(_ loaded: Void, ids: IDSource) -> Decision<Void, ProbeRefusal> {
+      var plan = Plan()
+      for id in self.ids { plan.remove(id) }
+      return .write(plan)
+    }
+  }
+
   @Test func aSecondEditorSeesStaleBeforeAnythingIsSentAndKeepsMine() throws {
     let a = try HarnessTests.phone()
     let b = a.device()

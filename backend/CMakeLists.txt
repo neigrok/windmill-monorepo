@@ -49,8 +49,12 @@ endfunction()
 # --- platform + roadmap domain and application. The adapters (the messy vendor edges) are
 # folded into these same libraries below.
 add_library(windmill_platform
+  platform/ai_installations/AiInstallations.cpp
+  platform/ai_installations/PgAiInstallations.cpp
+  platform/ai_installations/AiInstallationApi.cpp
   platform/domain/AiFuse.cpp
   platform/domain/AiUsage.cpp
+  platform/domain/AiBudget.cpp
   platform/domain/Auth.cpp
   platform/domain/Mail.cpp
   platform/domain/MailArming.cpp
@@ -71,6 +75,7 @@ add_library(windmill_platform
   platform/domain/sync/Admit.cpp
   platform/application/AuthService.cpp
   platform/application/Entitlements.cpp
+  platform/application/AiBudgetService.cpp
   platform/application/LiveSessions.cpp
   platform/application/OAuthService.cpp
   platform/application/McpKeyService.cpp
@@ -134,6 +139,11 @@ target_link_libraries(windmill_journal PUBLIC windmill_platform)
 # --- gym domain, application and sync binding. Other adapters join this library below.
 # Depends on windmill_platform only, never another product.
 add_library(windmill_gym
+  products/gym/onboarding/Onboarding.cpp
+  products/gym/onboarding/PgOnboardingRepository.cpp
+  products/gym/onboarding/AnthropicOnboarding.cpp
+  products/gym/onboarding/OnboardingService.cpp
+  products/gym/onboarding/OnboardingApi.cpp
   products/gym/domain/Training.cpp
   products/gym/domain/Preferences.cpp
   products/gym/domain/Routine.cpp
@@ -205,6 +215,7 @@ target_link_libraries(windmill_platform PUBLIC Trantor::Trantor JsonCpp::JsonCpp
 add_executable(windmill_domain_tests
   test/main.cpp
   test/platform/domain/AiUsageTest.cpp
+  test/platform/domain/AiBudgetTest.cpp
   test/platform/domain/IdsTest.cpp
   test/platform/domain/sync/JcsTest.cpp
   test/platform/domain/sync/DigestTest.cpp
@@ -227,6 +238,8 @@ add_executable(windmill_domain_tests
   test/platform/application/AuthServiceTest.cpp
   test/platform/application/AppleLinkingTest.cpp
   test/platform/application/EntitlementsTest.cpp
+  test/platform/application/AiBudgetServiceTest.cpp
+  test/platform/application/AiBudgetAlertsTest.cpp
   test/platform/application/LiveSessionsTest.cpp
   test/platform/application/OAuthServiceTest.cpp
   test/platform/application/McpKeyServiceTest.cpp
@@ -277,6 +290,9 @@ add_executable(windmill_domain_tests
   test/products/gym/sync/GymRulesTest.cpp
   test/products/journal/sync/JournalRulesTest.cpp
   test/products/journal/sync/JournalFeedTest.cpp
+  test/products/gym/onboarding/OnboardingTest.cpp
+  test/products/gym/onboarding/OnboardingServiceTest.cpp
+  test/products/gym/onboarding/AnthropicOnboardingTest.cpp
   test/products/gym/domain/TrainingTest.cpp
   test/products/gym/domain/PreferencesTest.cpp
   test/products/gym/domain/RoutineTest.cpp
@@ -310,6 +326,8 @@ target_sources(windmill_platform PRIVATE
   platform/adapters/json/JsonText.cpp
   platform/adapters/http/PageShell.cpp
   platform/adapters/http/Caller.cpp
+  platform/adapters/json/AiBudgetJson.cpp
+  platform/adapters/http/AiAllowanceApi.cpp
   platform/adapters/http/AuthApi.cpp
   platform/adapters/http/OAuthApi.cpp
   platform/adapters/http/McpKeyApi.cpp
@@ -318,6 +336,7 @@ target_sources(windmill_platform PRIVATE
   platform/adapters/http/VendorCall.cpp
   platform/adapters/postgres/PgPool.cpp
   platform/adapters/postgres/PgAiUsageRepository.cpp
+  platform/adapters/postgres/PgAiBudgetRepository.cpp
   platform/adapters/postgres/PgAuthRepository.cpp
   platform/adapters/postgres/PgAccountFootprint.cpp
   platform/adapters/postgres/PgOAuthRepository.cpp
@@ -329,6 +348,7 @@ target_sources(windmill_platform PRIVATE
   platform/adapters/crypto/OpenSslTokenGenerator.cpp
   platform/adapters/email/ResendClient.cpp
   platform/adapters/llm/AnthropicClient.cpp
+  platform/adapters/llm/AiCallBudget.cpp
   platform/adapters/llm/AgentLoop.cpp
   platform/adapters/llm/AnthropicStream.cpp
   platform/adapters/email/ResendEmailSender.cpp
@@ -465,6 +485,8 @@ add_test(NAME sync_epoch COMMAND ${Python3_EXECUTABLE}
 set_tests_properties(sync_epoch PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE)
 add_test(NAME auth_differential COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/e2e/auth_differential_test.py)
+add_test(NAME anonymous_coach COMMAND ${Python3_EXECUTABLE}
+  ${CMAKE_SOURCE_DIR}/test/e2e/anonymous_coach_test.py)
 # deploy-production.sh against a modeled Docker host: promotion, the kept database password, Caddy's proof and refusals.
 add_test(NAME deploy_production COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/deploy/deploy_production_test.py)
@@ -535,6 +557,10 @@ add_executable(windmill_adapters_tests
   test/platform/adapters/http/AppleLinkingApiTest.cpp
   test/platform/adapters/http/OAuthApiTest.cpp
   test/platform/adapters/http/McpKeyApiTest.cpp
+  test/platform/ai_installations/AiInstallationApiTest.cpp
+  test/platform/ai_installations/PgAiInstallationsTest.cpp
+  test/platform/adapters/http/AiAllowanceApiTest.cpp
+  test/platform/adapters/json/AiBudgetJsonTest.cpp
   test/platform/adapters/http/EventsApiTest.cpp
   test/platform/adapters/http/FeedbackApiTest.cpp
   test/platform/adapters/http/RateLimiterTest.cpp
@@ -556,6 +582,7 @@ add_executable(windmill_adapters_tests
   test/platform/adapters/amplitude/AmplitudeUsageSinkTest.cpp
   test/platform/adapters/amplitude/AmplitudeClientTest.cpp
   test/platform/adapters/postgres/PgAiUsageRepositoryTest.cpp
+  test/platform/adapters/postgres/PgAiBudgetRepositoryTest.cpp
   test/platform/adapters/postgres/PgAuthRepositoryTest.cpp
   test/platform/adapters/postgres/PgAppleLinkingTest.cpp
   test/platform/adapters/postgres/PgPoolTest.cpp
@@ -574,6 +601,7 @@ add_executable(windmill_adapters_tests
   test/products/roadmap/adapters/http/TreeRegistryApiTest.cpp
   test/products/roadmap/adapters/http/RemindersApiTest.cpp
   test/products/roadmap/adapters/ws/CollabTest.cpp
+  test/platform/adapters/llm/AiCallBudgetTest.cpp
   test/platform/adapters/llm/AgentLoopTest.cpp
   test/platform/adapters/llm/AnthropicStreamTest.cpp
   test/products/roadmap/adapters/llm/AnthropicComposerTest.cpp
@@ -596,6 +624,8 @@ test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
   test/products/gym/adapters/http/NotesApiTest.cpp
   test/products/gym/adapters/http/BodyweightApiTest.cpp
   test/products/gym/adapters/http/ThreadsApiTest.cpp
+  test/products/gym/onboarding/PgOnboardingRepositoryTest.cpp
+  test/products/gym/onboarding/OnboardingApiTest.cpp
   test/products/gym/adapters/http/AskApiTest.cpp
   test/products/gym/adapters/llm/AnthropicAskTest.cpp
   test/products/gym/application/AskServiceTest.cpp

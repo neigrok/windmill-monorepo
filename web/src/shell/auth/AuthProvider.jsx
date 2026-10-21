@@ -99,10 +99,26 @@ export default function AuthProvider({ children }) {
       // A cookie replaced elsewhere cannot move this account's work to its successor.
       await engine.finishSignOut({ choice: 'keep' });
     }
-    const result = await engine.signIn(me.id, answers);
+    let result = await engine.signIn(me.id, answers);
+    if (!result.complete) {
+      const automatic = (result.due ?? []).flatMap((question) => {
+        if (answers.decisions?.[question.product]) return [];
+        const answer = PRODUCTS.find((product) => product.id === question.product)?.sync?.adoptionAnswer?.(engine);
+        return answer ? [[question.product, answer, question.counted]] : [];
+      });
+      if (automatic.length) {
+        answers = { ...answers,
+          decisions: { ...answers.decisions, ...Object.fromEntries(automatic.map(([product, answer]) => [product, answer])) },
+          counted: { ...answers.counted, ...Object.fromEntries(automatic.map(([product, , counted]) => [product, counted])) } };
+        result = await engine.signIn(me.id, answers);
+      }
+    }
     pending.current = { user: me, ...answers };
     if (!result.complete) {
-      setQuestion(result.due?.[0] ?? null);
+      const due = result.due?.[0];
+      const product = PRODUCTS.find((product) => product.id === due?.product)?.sync;
+      const count = product?.adoptionCount?.(engine);
+      setQuestion(due && count !== undefined ? { ...due, count: { ...due.count, [product.signedOutWork.type]: count } } : due ?? null);
       setError(!result.upgradeRequired && !result.due?.length);
       return;
     }

@@ -18,6 +18,8 @@
 
 namespace wm {
 
+class AiCallBudget;
+
 constexpr const char* kAnthropicBaseUrl = "https://api.anthropic.com";
 constexpr const char* kAnthropicHost = "api.anthropic.com";
 constexpr const char* kAnthropicApiVersion = "2023-06-01";
@@ -46,6 +48,7 @@ struct MessagesRequest {
   // low | medium | high | xhigh | max. Thinking stays on: disabling it leaks reasoning into the
   // response text and breaks the JSON.
   std::string effort = "high";
+  Json::Value content;
 };
 
 // `ok` false always carries a failure and no output; `ok` true always carries an output. `tokens`
@@ -56,6 +59,8 @@ struct MessagesReply {
   Json::Value output;
   TokenUse tokens;
   std::string outcome;
+  Json::Value usage;
+  bool usageComplete = false;
 };
 
 struct MessagesApi {
@@ -64,6 +69,7 @@ struct MessagesApi {
   virtual MessagesReply send(const MessagesRequest& request) = 0;
 };
 
+Json::Value messagesBody(const MessagesRequest& request);
 std::string messagesPayload(const MessagesRequest& request);
 
 MessagesReply readMessagesReply(int status, const std::string& body);
@@ -72,7 +78,7 @@ MessagesReply readMessagesReply(int status, const std::string& body);
 // configured() false and every send a transport failure.
 class AnthropicClient : public MessagesApi {
 public:
-  explicit AnthropicClient(std::string apiKey);
+  explicit AnthropicClient(std::string apiKey, std::string baseUrl = kAnthropicBaseUrl);
   ~AnthropicClient();
   void stop();
 
@@ -81,6 +87,7 @@ public:
 
 private:
   std::string apiKey_;
+  std::string baseUrl_;
   trantor::EventLoopThread loop_;
   std::atomic<bool> stopped_{false};
 };
@@ -107,6 +114,9 @@ using ModelCall = std::function<std::optional<Json::Value>(const Json::Value& re
 ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
                   std::shared_ptr<UsageSink> usage,
                   std::function<void(const std::string& where, const std::string& detail)> report,
-                  std::function<void()> onDenied = {});
+                  std::function<void()> onDenied = {},
+                  std::shared_ptr<AiCallBudget> budget = nullptr,
+                  std::function<void(const std::string&)> onBudgetDenied = {},
+                  int minOutputTokens = 0);
 
 }
