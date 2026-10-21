@@ -92,12 +92,13 @@ On a resolved empty anonymous replica, or a signed-in account whose first Gym pu
 opens Coach’s routine setup once. Existing drafts/conversations, account adoption, workout and navigation
 state take precedence. Screenshot, program and goal starters prepare the existing composer; Send remains
 explicit. Manual logging or building retires the automatic entry, and empty Routines retains Set up routines.
-Setup choices, purpose, editable drafts, photos, typed clarification selections and frozen request identities
-live in the existing account-scoped Coach draft store. Clarification choices fill the draft without sending;
-editing that text clears the selected-chip markers. Each confirmed routine creation has its own receipt
-and opens the existing routine sheet and Start action. A receipt whose routine has not reached the replica
-checks the existing routine endpoint; a confirmed removal shows the normal unavailable routine state,
-while an unreachable log keeps a refresh action.
+Setup choices, purpose, editable drafts, photos, clarification selections and frozen request identities
+live in a local Coach archive keyed by account or anonymous replica. Signed-in clarification choices fill
+the draft without sending; editing that text clears the selected-chip markers. Anonymous goal choices
+retain days and equipment separately while the text changes. Each confirmed routine creation has its
+own receipt and opens the existing routine sheet and Start action. A signed-in receipt whose routine has
+not reached the replica checks the existing routine endpoint; a confirmed removal shows the normal
+unavailable routine state, while an unreachable log keeps a refresh action.
 USD allowance refusals preserve drafts and partial creation receipts, and never automatically retry on
 relaunch. An unchanged deliberate Send reuses the original request identity. Existing routine changes
 continue through Review and Apply.
@@ -168,7 +169,11 @@ photo/adoption case uses the injected transport and local store. Neither standar
 
 Debug simulator Coach launches add `-coach-fixture`: a signed-in account with a routine, a workout and a
 proposal, and a scripted Coach service over the real REST boundary whose answer reads that workout and proposes
-the change. `-coach-removal` makes the proposal a removal and the conversation one that asks for it from your totals,
+the change. Startup prepares the account and fixture before publishing the app model. Scenarios prefixed
+`gym-e2e-anonymous` remain anonymous until the test signs in through the account flow; view-time preparation
+can seed an existing account but cannot sign in. Add `-coach-setup-fixture` for an empty signed-in account
+and scripted routine setup. `-coach-removal` makes the proposal a removal and the conversation one that
+asks for it from your totals,
 `-coach-created` makes it a conversation that creates the routine, saves a note and reads nothing from the log,
 `-coach-out-of-date` has a newer proposal replace it,
 `-coach-removal-stall` leaves its Apply unanswered past the review's 15-second wait,
@@ -180,6 +185,7 @@ or `seed-signed-out`, then reopen it with `-restore-board -server https://offlin
 a refused connection or a request that never answers; only `no-network` also removes the path.
 The `black-hole` cases use `https://192.0.2.1` through the ordinary HTTP transport and path monitor,
 with no loader or connectivity substitution.
+These opted-in offline fixtures use the fixed `BoardClock` across seeding, cold launch and resume.
 Tests exercise cold launch, Home/resume, local journal persistence, workout controls, Coach, settings
 and leaving an unanswered sign-in request. No host networking changes or real credentials are used.
 

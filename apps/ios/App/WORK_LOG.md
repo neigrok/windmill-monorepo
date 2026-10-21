@@ -65,13 +65,17 @@ The output-offer migration adds its constraint only when absent, retaining histo
 and avoiding constraint replacement on each deployment. Upgrading from the production schema, repeated
 application and all 1,275 Postgres adapter cases pass locally.
 
-Production runs `bfede62ac3009a32cf6a9c0b3b4f2f2c92769bd3` with USD enforcement enabled.
-[Activation deployment](https://github.com/neigrok/windmill-monorepo/actions/runs/39306863773)
-verifies the intended image, process settings and schema 6 readiness; independent public health
-returns HTTP 200. Configured limits are $0.25 per month for verified free accounts and $7 per funded
-One period, with free spending capped at $5 per day and $100 per month. Alerts target the configured
-owner address. Anonymous composition is disabled in that deployed build, and Journal voice
-remains unavailable pending supported audio accounting.
+Production activation for merged source `617b373a8af3181acc7fc4b9e1b5a64670263f2c` is verified by
+the [enabled deployment](https://github.com/neigrok/windmill-monorepo/actions/runs/39571832936) and
+[main-source deployment](https://github.com/neigrok/windmill-monorepo/actions/runs/39573012755).
+The runtime has USD enforcement and anonymous installations enabled, Cloudflare client-IP handling,
+an installation network key present and a 2,000-token output ceiling. Public checks at
+2026-10-21 08:47:42 UTC pass all eight assertions: schema 6, credential issuance, format and readback,
+a private `no-store` response, and the unbound
+anonymous lifetime allowance of $0.05 with no used or reserved cost. These activation checks make no
+provider calls. Verified free accounts receive $0.25 per month and funded One periods receive $7,
+with free spending capped at $5 per day and $100 per month. Alerts target the configured owner address.
+Journal voice remains unavailable pending supported audio accounting.
 
 UI checks query the exact current accessibility value after returning from a Live Activity. A
 retained element can carry an older snapshot even when the same attachment's fresh query shows
@@ -80,15 +84,16 @@ Log navigation permits one recorded re-tap inside its existing deadline only whi
 Routines tab remains selected and no alert or sheet is present. The target and content assertions
 remain exact; this recovers a lost synthesized tap without claiming first-tap delivery is reliable.
 
-Release **0.2.0 (19)**, source `bfede62ac3009a32cf6a9c0b3b4f2f2c92769bd3`, is uploaded to
-App Store Connect by [iOS release run 19](https://github.com/neigrok/windmill-monorepo/actions/runs/39307121727).
-The 2026-10-19 run passed archive, stored-certificate verification and export; Apple confirmed
-*Upload succeeded* at 19:06:59 UTC. The archive-derived status artifact confirms version `0.2.0`,
-build `19`, bundle `works.windmill.app`, processing `VALID`, internal state `IN_BETA_TESTING` and
+Release **0.2.0 (20)**, source `617b373a8af3181acc7fc4b9e1b5a64670263f2c`, is uploaded to
+App Store Connect by [iOS release run 20](https://github.com/neigrok/windmill-monorepo/actions/runs/39572022225).
+The 2026-10-21 run passed archive, stored-certificate verification and export; Apple confirmed
+*Upload succeeded* at 09:01:38 UTC. The archive-derived status artifact confirms version `0.2.0`,
+build `20`, bundle `works.windmill.app`, processing `VALID`, internal state `IN_BETA_TESTING` and
 external state `READY_FOR_BETA_SUBMISSION`. External beta review has not been submitted by this
 release. The read-only check does not inspect individual tester membership or device installation.
 
-The retained `ios-dsyms-19` artifact contains the app and workout widget dSYMs. Export reported the
+The retained `ios-dsyms-20` artifact contains the app and workout widget dSYMs for version `0.2.0`,
+build `20`. Export reported the
 nonblocking warning *Upload Symbols Failed. The archive did not include a dSYM for the
 Sentry.framework*. Production Sentry symbolication is not verified.
 
@@ -109,6 +114,12 @@ verification against the isolated C++ backend and fixture provider covers goal a
 generation, atomic import, workout start, installation binding, account adoption and local archive
 retention. The native UI's bounded setup events reach the first-party intake and local observer.
 These native checks use a deterministic provider; they do not establish actual-provider quality.
+
+[Full native CI](https://github.com/neigrok/windmill-monorepo/actions/runs/39523283374) passes packages,
+App unit tests, Debug and Release builds, and all 152 UI cases. Two UI shards passed 120 cases on the
+first attempt; the 32 Coach/offline cases passed on one unchanged-source rerun after two offline UI interaction
+timeouts. Both affected cases also passed unchanged locally. The Coach shard includes all three
+anonymous appearance variants.
 
 Coach fixture authentication completes before the app model is published. Anonymous fixture scenarios
 retain their local seat until the test uses the account flow; view-time preparation only seeds data for

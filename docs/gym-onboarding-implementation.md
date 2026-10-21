@@ -95,8 +95,28 @@ The [anonymous live-provider run](https://github.com/neigrok/windmill-monorepo/a
 passes 59 checks across exactly three calls: three goal routines cost $0.014618, two program routines
 cost $0.009686, and two photo routines cost $0.011990. Program and photo targets match their sources
 without invented weights. All $0.036294 settles at actual cost, with no debt or duplicate replay
-spending. Every installation stays below its $0.05 lifetime allowance. Full native CI and deployed
-feature-flag proof remain release gates.
+spending. Every installation stays below its $0.05 lifetime allowance.
+
+[Full native CI](https://github.com/neigrok/windmill-monorepo/actions/runs/39523283374) passes packages,
+App unit tests, Debug and Release builds, and all 152 UI cases. Two UI shards passed 120 cases on the
+first attempt; the 32 Coach/offline cases passed on one unchanged-source rerun after two offline UI interaction
+timeouts. Both affected cases also passed unchanged locally. The verified native source matches
+merged source `617b373a8af3181acc7fc4b9e1b5a64670263f2c`.
+
+The [enabled production deployment](https://github.com/neigrok/windmill-monorepo/actions/runs/39571832936)
+and [main-source deployment](https://github.com/neigrok/windmill-monorepo/actions/runs/39573012755)
+verify USD enforcement, anonymous installation admission, Cloudflare client-IP handling and the
+2,000-token output ceiling. All eight public activation checks pass at 2026-10-21 08:47:42 UTC,
+including schema 6, installation credential issuance and readback, `no-store` responses and the
+$0.05 lifetime allowance with zero used or reserved cost. This activation proof makes no provider calls;
+actual-provider goal, program and photo behavior is covered by the separate live-provider run above.
+
+TestFlight **0.2.0 (20)** uses the same merged source and was uploaded by
+[iOS release run 20](https://github.com/neigrok/windmill-monorepo/actions/runs/39572022225) at
+2026-10-21 09:01:38 UTC. The release artifact confirms bundle `works.windmill.app`, processing `VALID`,
+internal state `IN_BETA_TESTING` and external state `READY_FOR_BETA_SUBMISSION`; external beta review
+has not been submitted. The app and workout widget dSYMs are retained in `ios-dsyms-20`. Export reports
+a nonblocking missing `Sentry.framework` dSYM warning; production Sentry symbolication is not verified.
 
 ## Structure observations
 

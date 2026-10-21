@@ -127,12 +127,17 @@ through the SQLite store, in `SyncStoreTests`.
 [CI](../../.github/workflows/ios.yml) pins Xcode 26.3 and runs five parallel jobs. The packages/builds job checks the
 generated registry, tests `WindmillSync`, `WindmillDomain` and `SyncTestingSurface` with the explicit import check,
 builds Sync and SyncProbe for the simulator, checks the App tools, and builds the App in Debug and Release. App unit
-tests select `WindmillTests` on iPhone 17. Three UI shards select each standard `WindmillUITests` class once: log/workout/account
-(`GymLogFlowTests`, `GymWorkoutFlowTests`, `AppleLinkingFlowTests`), routines/journal (`GymRoutinesFlowTests`,
-`JournalFlowTests`, `JournalEchoFlowTests`, `WorkoutActivityFlowTests`), and Coach/shell (`GymCoachFlowTests`,
-`GymIntegrationFlowTests`, `OnboardingFlowTests`, `ShellFlowTests`, `OfflineFlowTests`). Each test job builds its own
-App, and the packages job checks that the UI class partition stays complete. The opt-in `DesignCaptureTests` class is
-excluded; its environment flag and screenshot export command are in [the App README](App/README.md). Each UI shard
+tests select `WindmillTests` on iPhone 17. Three UI shards select each standard `WindmillUITests` class once:
+
+| Shard | Classes |
+|---|---|
+| `log-workout-account` | `GymLogFlowTests`, `GymWorkoutFlowTests`, `AppleLinkingFlowTests`, `GymRecoveryFlowTests`, `GymIntegrationFlowTests` |
+| `routines-journal` | `GymRoutinesFlowTests`, `JournalFlowTests`, `JournalEchoFlowTests`, `WorkoutActivityFlowTests`, `RoomTransientFlowTests`, `WorkoutOutsideFlowTests`, `OnboardingFlowTests`, `ShellFlowTests` |
+| `coach-shell` | `GymCoachFlowTests`, `GymAnonymousCoachFlowTests`, `OfflineFlowTests` |
+
+Each test job builds its own App, and the packages job checks that the UI class partition stays complete.
+The opt-in `DesignCaptureTests` class is excluded; its environment flag and screenshot export command are
+in [the App README](App/README.md). Each UI shard
 creates its own iPhone 17 on iOS 26.5 and prepares it with `App/Tools/prepare_simulator.py <udid>`, which prepares a
 new local simulator the same way: it seeds English/US preferences, Live Activity consent and completed Apple
 Intelligence notification state before boot, waits for boot completion, then sets and checks accessibility
