@@ -846,6 +846,24 @@ for (const stop of ['close', 'handoff']) test(`a request stalled on storage does
   engine.close();
 });
 
+for (const stop of ['response', 'page']) test(`a pull whose ${stop} lands as the engine closes stores nothing and reports no storage failure`, async () => {
+  const env = environment(), engine = await open(env);
+  env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
+  await engine.commit('self/probe', card());
+  await engine.send();
+  const request = env.transport.request.bind(env.transport), storePage = engine.storePage.bind(engine);
+  if (stop === 'response') env.transport.request = async (...args) => { const answer = await request(...args); engine.close(); return answer; };
+  else engine.storePage = async (...args) => { engine.close(); return storePage(...args); };
+  await engine.pull();
+  await assert.rejects(engine.write(null, () => {}), (error) => error instanceof CommitError && error.kind === 'store');
+  assert.deepEqual(env.failures, []);
+  env.options.navigator.onLine = false;
+  const reopened = await BrowserSyncEngine.open(env.options);
+  assert.equal(reopened.device.activeReplica.cursorOf('self/probe').cursor, null);
+  assert.deepEqual(reopened.device.activeReplica.entries().map(({ state }) => state), ['acked']);
+  reopened.close();
+});
+
 test('stale sign-out cannot finish against another account after a missed invalidation', async () => {
   const env = environment(), stale = await open(env);
   env.transport.account = 'A'; await stale.signIn('A'); await until(() => stale.leader);

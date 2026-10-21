@@ -111,7 +111,7 @@ export class BrowserSyncEngine {
       }, { scopes: (device) => [...this.governingScopes(device), ...scopes] });
     } catch (error) {
       if (error !== thrown) {
-        this.telemetry.failure('storage');
+        if (!this.closed) this.telemetry.failure('storage');
         throw new CommitError('the device store did not commit', 'store', { cause: error });
       }
       if (!(error instanceof CommitError) && error !== context.callerError) this.telemetry.failure('storage');
