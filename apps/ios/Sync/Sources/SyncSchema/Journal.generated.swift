@@ -147,7 +147,7 @@ public enum Journal {
         "primary": true,
         "scope": "product:journal",
         "type": "page",
-        "visibleWhen": ["body", "mood", "energy"],
+        "visibleWhen": ["body"],
       ],
       [
         "fields": [

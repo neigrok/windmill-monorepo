@@ -181,9 +181,93 @@ TEST(write_http_expected_refusals_never_create_issues_and_unsafe_codes_are_disca
   CHECK_EQ(writeHttpOutcome(error(drogon::k429TooManyRequests, "private"), "gym.write"), std::string("http_429"));
   CHECK_EQ(writeHttpOutcome(error(drogon::k400BadRequest, "private", "PRIVATE TOKEN"), "gym.write"),
            std::string("http_400"));
-  CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "billing is not configured"),
-                           "platform.POST.v1.billing.checkout"), std::string("unavailable"));
+  CHECK_EQ(writeHttpOutcome(error(drogon::k503ServiceUnavailable, "Windmill One checkout is closed.", "checkout_closed"),
+                           "platform.POST.v1.billing.checkout"), std::string("checkout_closed"));
   CHECK_EQ(writeHttpOutcome(error(drogon::k502BadGateway, "private"), "gym.write"), std::string("failed"));
+}
+
+TEST(write_http_ai_allowance_and_funding_refusals_keep_their_codes_without_issues) {
+  HttpWriteCapture capture;
+  installWriteReporter(std::shared_ptr<FailureReporter>(&capture, [](FailureReporter*) {}));
+  struct Refusal {
+    std::string operation;
+    std::string code;
+    drogon::HttpStatusCode status = drogon::k503ServiceUnavailable;
+  };
+  std::vector<Refusal> refusals{
+      {"roadmap.POST.v1.compose", "compose-unavailable"},
+      {"journal.POST.v1.journal.transcribe", "voice_unavailable"},
+      {"journal.POST.v1.journal.transcribe", "voice_busy"},
+      {"platform.POST.v1.billing.checkout", "checkout_closed"},
+      {"platform.POST.v1.paddle.webhook", "funding_binding_pending"},
+      {"platform.POST.v1.paddle.webhook", "funding_unconfigured"},
+      {"platform.GET.v1.ai.allowance", "ai_allowance_disabled"},
+      {"ai.installation.issue", "anonymous_ai_unavailable"},
+      {"ai.installation.bind", "anonymous_ai_unavailable"},
+      {"platform.GET.v1.ai.installations.current", "anonymous_ai_unavailable"},
+      {"gym.coach.onboarding.start", "anonymous_ai_unavailable"},
+      {"ai.installation.issue", "installation_rate_limited", drogon::k429TooManyRequests},
+      {"ai.installation.bind", "installation_bound", drogon::k409Conflict},
+      {"ai.installation.issue", "invalid_installation", drogon::k401Unauthorized},
+      {"platform.POST.v1.paddle.webhook", "invalid_payment_identity", drogon::k400BadRequest},
+      {"platform.POST.v1.paddle.webhook", "funding_account_mismatch", drogon::k409Conflict},
+      {"platform.POST.v1.paddle.webhook", "funding_conflict", drogon::k409Conflict},
+      {"gym.POST.v1.gym.ask", "subject_exhausted", drogon::k429TooManyRequests}};
+  for (const auto* operation : {"gym.POST.v1.gym.ask", "roadmap.POST.v1.trees.id.tend",
+                                "roadmap.POST.v1.compose", "journal.POST.v1.journal.transcribe"})
+    for (const auto* code : {"free_month_exhausted", "free_day_exhausted", "subject_exhausted",
+                             "debt_outstanding", "concurrency_exhausted", "funding_required", "device_bound",
+                             "unconfigured", "unsupported_ai_pricing", "device_verification_required"})
+      refusals.push_back({operation, code});
+  for (const auto& refusal : refusals) {
+    auto request = drogon::HttpRequest::newHttpRequest();
+    beginWriteRequest(request, {"/v1/test/refusal", refusal.operation, "platform", "rest", {drogon::Post}});
+    const auto response = error(refusal.status, "PRIVATE RESPONSE CONTENT", refusal.code.c_str());
+    finishWriteRequest(request, response);
+    finishWriteRequest(request, response);
+  }
+  REQUIRE_EQ(capture.lines.size(), refusals.size());
+  for (std::size_t index = 0; index < refusals.size(); ++index) {
+    CHECK_EQ(capture.lines[index].operation, refusals[index].operation);
+    CHECK_EQ(capture.lines[index].outcome, refusals[index].code);
+  }
+  CHECK(capture.issues.empty());
+}
+
+TEST(write_http_accounting_and_unknown_server_failures_still_create_one_issue) {
+  HttpWriteCapture capture;
+  installWriteReporter(std::shared_ptr<FailureReporter>(&capture, [](FailureReporter*) {}));
+  struct Failure {
+    std::string operation;
+    std::string code;
+    drogon::HttpStatusCode status = drogon::k503ServiceUnavailable;
+  };
+  std::vector<Failure> failures{
+      {"platform.POST.v1.unrelated", "free_day_exhausted"},
+      {"platform.POST.v1.unrelated", "funding_binding_pending"},
+      {"platform.POST.v1.unrelated", "checkout_closed"},
+      {"gym.POST.v1.gym.ask", "free_day_exhausted", drogon::k500InternalServerError}};
+  for (const auto* operation : {"gym.POST.v1.gym.ask", "roadmap.POST.v1.trees.id.tend",
+                                "roadmap.POST.v1.compose", "journal.POST.v1.journal.transcribe",
+                                "platform.POST.v1.billing.checkout", "platform.POST.v1.paddle.webhook",
+                                "platform.GET.v1.ai.allowance"})
+    for (const auto* code : {"ai_accounting_unavailable", "PRIVATE UNKNOWN CODE", ""})
+      failures.push_back({operation, code});
+  for (const auto& failure : failures) {
+    auto request = drogon::HttpRequest::newHttpRequest();
+    beginWriteRequest(request, {"/v1/test/failure", failure.operation, "platform", "rest", {drogon::Post}});
+    const auto response = error(failure.status, "PRIVATE RESPONSE CONTENT", failure.code.c_str());
+    finishWriteRequest(request, response);
+    finishWriteRequest(request, response);
+  }
+  REQUIRE_EQ(capture.lines.size(), failures.size());
+  REQUIRE_EQ(capture.issues.size(), failures.size());
+  for (std::size_t index = 0; index < failures.size(); ++index) {
+    CHECK_EQ(capture.lines[index].operation, failures[index].operation);
+    CHECK_EQ(capture.lines[index].outcome, std::string("failed"));
+    CHECK(capture.issues[index].find("HttpWriteFailure") != std::string::npos);
+    CHECK(capture.issues[index].find("PRIVATE") == std::string::npos);
+  }
 }
 
 TEST(write_http_redirect_refusals_are_bounded_outcomes_without_urls_or_response_changes) {

@@ -1,8 +1,8 @@
 import XCTest
+import UIKit
 
-// The one band names what went, and a swipe down sends an Undo band away while the act stays.
 @MainActor final class RoomTransientFlowTests: XCTestCase {
-  func testASwipeDownSendsTheUndoBandAwayAndTheDiscardStays() {
+  func testNativeTrashRequiresConfirmationAndLeavesNoUndo() throws {
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", "shell-anonymous", "-onboarding-appearance", "light", "-gym-log-fixture"]
     app.launch()
@@ -12,14 +12,30 @@ import XCTest
     XCTAssertTrue(row.waitForExistence(timeout: 20))
     let id = row.identifier
     row.swipeLeft()
-    let discard = app.buttons["Discard"]
-    XCTAssertTrue(discard.wait(for: \.isHittable, toEqual: true, timeout: 5)); discard.tap()
-    let band = app.descendants(matching: .any)["gym-log-undo-band"]
-    XCTAssertTrue(band.waitForExistence(timeout: 5))
-    XCTAssertTrue(band.staticTexts["Workout discarded"].exists)
-    band.swipeDown()
-    XCTAssertTrue(band.waitForNonExistence(timeout: 5))
+    let trash = app.buttons["Delete"]
+    XCTAssertTrue(trash.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertTrue(app.buttons[id].exists)
+    XCTAssertFalse(app.buttons["Discard"].exists)
+    let image = try XCTUnwrap(trash.screenshot().image.cgImage)
+    var pixel = [UInt8](repeating: 0, count: 4)
+    pixel.withUnsafeMutableBytes { bytes in
+      let context = CGContext(data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+      context?.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+    }
+    XCTAssertGreaterThan(Int(pixel[0]), Int(pixel[1]) + 30)
+    XCTAssertGreaterThan(Int(pixel[0]), Int(pixel[2]) + 30)
+    trash.tap()
+    let confirmation = app.buttons["Discard workout"]
+    XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+    app.cancelConfirmation()
+    XCTAssertTrue(confirmation.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.buttons[id].exists)
+    app.buttons[id].swipeLeft()
+    XCTAssertTrue(trash.wait(for: \.isHittable, toEqual: true, timeout: 5)); trash.tap()
+    XCTAssertTrue(confirmation.waitForExistence(timeout: 5)); confirmation.tap()
+    XCTAssertTrue(app.buttons[id].waitForNonExistence(timeout: 5))
     XCTAssertFalse(app.buttons["gym-log-undo"].exists)
-    XCTAssertFalse(app.buttons[id].exists)
+    XCTAssertFalse(app.descendants(matching: .any)["gym-log-undo-band"].exists)
   }
 }

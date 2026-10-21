@@ -7,7 +7,7 @@
 namespace wm {
 
 // Pasted prose in, a markdown plan in the paste grammar out; the client re-parses that plan with the
-// same parser as a hand-typed paste. configured() is false when no upstream is wired. compose is
+// same parser as a hand-typed paste. configured() is false when composition is unavailable. compose is
 // asynchronous: done gets the plan, or nullopt on upstream error or timeout, and may fire on a
 // different thread than the caller's. composeStream: onDelta once per verbatim model text delta, then
 // onDone exactly once — true only after a clean end_turn finish, false on upstream error, deadline or

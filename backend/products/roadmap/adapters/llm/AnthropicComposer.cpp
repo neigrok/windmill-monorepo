@@ -1,4 +1,5 @@
 #include "products/roadmap/adapters/llm/AnthropicComposer.h"
+#include "platform/adapters/llm/AiCallBudget.h"
 
 #include "platform/adapters/http/VendorCall.h"
 #include "platform/adapters/llm/AnthropicClient.h"
@@ -342,11 +343,11 @@ void AnthropicStreamParser::dispatch(const std::string& event, const std::string
 }
 
 AnthropicComposer::AnthropicComposer(std::string apiKey, std::shared_ptr<FailureReporter> failures,
-                                     std::shared_ptr<AiFuse> fuse, std::shared_ptr<UsageSink> usage)
+                                     std::shared_ptr<AiFuse> fuse, std::shared_ptr<UsageSink> usage, std::shared_ptr<AiCallBudget> budget)
     : apiKey_(std::move(apiKey)),
       failures_(std::move(failures)),
       fuse_(std::move(fuse)),
-      usage_(std::move(usage)) {
+      usage_(std::move(usage)), budget_(std::move(budget)) {
   loop_.run();
 }
 
@@ -366,7 +367,7 @@ AnthropicStreamParser::Reporter AnthropicComposer::reporter(
   };
 }
 
-bool AnthropicComposer::configured() const { return !apiKey_.empty(); }
+bool AnthropicComposer::configured() const { return !apiKey_.empty() && !budget_; }
 
 void AnthropicComposer::compose(const std::string& text,
                                 std::function<void(std::optional<std::string>)> done) {
@@ -378,6 +379,11 @@ void AnthropicComposer::compose(const std::string& text,
     observation->finish(reply ? "ok" : refusal->empty() ? "failed" : *refusal);
     done(std::move(reply));
   };
+  if (budget_) {
+    *refusal = "device_verification_required";
+    done(std::nullopt);
+    return;
+  }
   // The paste cap and the fuse are checked before a socket is opened.
   if (apiKey_.empty() || text.size() > kMaxPasteBytes || (fuse_ && !fuse_->allows(nowMs()))) {
     *refusal = apiKey_.empty() ? "not_configured" : text.size() > kMaxPasteBytes ? "invalid-arguments" : "ai-fuse";
@@ -488,6 +494,11 @@ std::function<void()> AnthropicComposer::composeStream(
   auto observation = std::make_shared<WriteObservation>("roadmap.compose.stream", "roadmap", "REST", "", failures_.get());
   WriteContext context{*observation};
   auto refusal = std::make_shared<std::string>();
+  if (budget_) {
+    observation->finish("device_verification_required");
+    onDone(false);
+    return []() {};
+  }
   // Nothing is spent here, so nothing is recorded.
   if (apiKey_.empty() || text.size() > kMaxPasteBytes || (fuse_ && !fuse_->allows(nowMs()))) {
     observation->finish(apiKey_.empty() ? "not_configured" : text.size() > kMaxPasteBytes ? "invalid-arguments" : "ai-fuse");

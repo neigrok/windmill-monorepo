@@ -144,7 +144,7 @@ struct Feed {
     if type.life { return row.lattice.life?.isAlive == true }
     guard let visibleWhen = type.visibleWhen else { return !row.lattice.fields.isEmpty || !row.texts.isEmpty }
     return visibleWhen.contains { name in
-      if let text = row.texts[name] { return !text.text.isEmpty }
+      if let text = row.texts[name] { return !TextWhitespace.isBlank(text.text) }
       guard let value = row.lattice.fields[name]?.value else { return false }
       return !value.isNull && value != ""
     }

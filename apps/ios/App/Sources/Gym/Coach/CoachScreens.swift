@@ -5,10 +5,15 @@ import SyncEngine
 
 // The shell can supply its existing You sheet without giving a product ownership of account UI.
 private struct CoachAccountDoor: EnvironmentKey { static let defaultValue: (@MainActor () -> Void)? = nil }
+private struct CoachKeepDoor: EnvironmentKey { static let defaultValue: (@MainActor () -> Void)? = nil }
 private struct CoachRoutineDoor: EnvironmentKey { static let defaultValue: (@MainActor (String) -> Void)? = nil }
 private struct CoachSessionDoor: EnvironmentKey { static let defaultValue: (@MainActor (String) -> Void)? = nil }
 private struct CoachAskDoor: EnvironmentKey { static let defaultValue: (@MainActor (CoachHandoff) -> Void)? = nil }
 extension EnvironmentValues {
+  var coachKeepRoutines: (@MainActor () -> Void)? {
+    get { self[CoachKeepDoor.self] }
+    set { self[CoachKeepDoor.self] = newValue }
+  }
   var coachOpenAccount: (@MainActor () -> Void)? {
     get { self[CoachAccountDoor.self] }
     set { self[CoachAccountDoor.self] = newValue }
@@ -65,7 +70,7 @@ struct NotesScreen: View {
     }.navigationTitle("Notes").modifier(GymPage()).accessibilityIdentifier("gym-notes")
       .gymTabBar()
       .toolbar { if gym.coachAccountAvailable, !gym.notes.isEmpty { EditButton() } }
-      .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
+      .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-coach-error") }
       .sheet(item: $editor) { identity in NoteEditor(gym: gym, identity: identity) }
       .sensoryFeedback(.selection, trigger: ordered)
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "notes"]) }
@@ -78,7 +83,7 @@ struct NotesScreen: View {
             Button { editor = NoteEditorIdentity(note: note) } label: {
               GymRow(title: note.title, meta: note.body.split(whereSeparator: \.isNewline).first.map(String.init), trailing: .door, lineLimit: 2)
             }
-              .swipeActions { Button("Delete", role: .destructive) { _ = gym.run(DeleteNote(note.id)) } }
+              .swipeActions(allowsFullSwipe: false) { Button("Delete", role: .destructive) { _ = gym.run(DeleteNote(note.id)) } }
               .contextMenu {
                 Button("Edit") { editor = NoteEditorIdentity(note: note) }
                 Button("Move up") { move(note, by: -1) }
@@ -161,7 +166,7 @@ struct NoteEditor: View {
           }
         }
       }.scrollDismissesKeyboard(.interactively).navigationTitle("Note").modifier(GymPage())
-        .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo") }
+        .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-coach-error") }
         .sheetCommit("Save", identifier: "coach-note-save", disabled: !savable, dismiss: { dismiss() }) {
           guard current else { gym.error = "The account changed. Open this note again."; return }
           if case .saved = gym.save(&draft) { saved = true; dismiss() }

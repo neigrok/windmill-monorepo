@@ -1,9 +1,12 @@
 #include "products/gym/adapters/llm/AnthropicAsk.h"
+#include "platform/adapters/llm/AiCallBudget.h"
 
 #include "platform/adapters/llm/AnthropicStream.h"
 #include "platform/application/WriteObservation.h"
 
 #include <stdexcept>
+#include <charconv>
+#include <string_view>
 #include <drogon/utils/Utilities.h>
 #include "platform/adapters/llm/AnthropicClient.h"
 
@@ -55,7 +58,8 @@ Catalog metadata does not fully specify a movement's variant or required setup. 
 
 Keep internal IDs and tool-by-tool narration out of replies unless they help the user identify or act on something.
 
-- create_routine saves a requested new routine immediately. Read Notes for goals and constraints and list_exercises for actual movement IDs first. Report creation only after a successful tool result; use its returned ID for further tool references.
+- create_routine saves a requested new routine immediately. At most six additions are allowed per answer, each with a distinct stable id and an immutable document. Replay server-held actions in their original order after interruption; their receipts describe the original creation and never restore later edits or deletions. Read Notes for goals and constraints and list_exercises for actual movement IDs first. Report creation only after a successful tool result; use its returned ID for further tool references.
+- ask_setup_details is available only during routine setup. Ask it only for materially missing days or equipment, using bounded choices. Do not repeat facts the user supplied. Its result fills an editable draft; wait for the lifter to send before creating routines based on those choices. Include the question in your answer for clients without choice support.
 - save_note saves useful insight the user actually provided. Read list_notes first, avoid duplicate information, and use the user's own wording for their actual constraints. Save at most one concise note per answer, alongside a routine action if needed. It appends at the bottom and never edits, deletes or reorders existing notes. Notes are limited to ten, with a title of at most 60 characters and a body of at most 500 UTF-8 bytes. Claim a save only after the tool succeeds; a replay receipt records the original save and does not imply that a user-deleted note was restored.
 - propose_routine_change and propose_routine_removal CHANGE NOTHING until the user taps Apply. Name the proposal as a proposal. Read list_routines first and send the WHOLE routine document: an omitted line is a proposed removal.
 - A routine line's `sets` scheme contains one item per set, in order, each with `reps` (omit for max) and `weightKg` (omit for last time's corresponding set). Five sets of five at 80 kg require five identical items. A ramp needs each distinct target. Omit `sets` for an open line; never send an empty list. Change just the intended item to adjust one set.
@@ -72,9 +76,6 @@ The app displays the server's factual read receipt; do not invent a read count. 
 
 constexpr const char* kModel = "claude-opus-5";
 constexpr const char* kEffort = "medium";
-
-// max_tokens covers thinking and the answer on this model.
-constexpr int kMaxTokens = 8000;
 
 // Hitting the cap is a failure.
 constexpr int kMaxIterations = 8;
@@ -99,6 +100,16 @@ void appendToolRoundText(std::string& transcript, const Json::Value& message) {
 }
 
 }  // namespace
+
+int coachMaxOutputTokens(const char* configured) {
+  if (!configured || !*configured) return kCoachMaxOutputTokens;
+  const std::string_view value{configured};
+  int tokens = 0;
+  const auto parsed = std::from_chars(value.data(), value.data() + value.size(), tokens);
+  if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || tokens < 1024 || tokens > 8000)
+    throw std::invalid_argument("COACH_MAX_OUTPUT_TOKENS must be an integer from 1024 to 8000");
+  return tokens;
+}
 
 Json::Value askOpeningMessages(const std::vector<AskTurn>& turns, const std::string& notesDocument,
                                const std::string& logDocument) {
@@ -141,7 +152,8 @@ Json::Value askOpeningMessages(const std::vector<AskTurn>& turns, const std::str
 }
 
 AskAnswer driveAsk(const std::vector<AskTurn>& turns, const ToolCaller& caller, ToolHost& tools,
-                   const AskCall& call, const AgentReport& report, const AskControl& control) {
+                   const AskCall& call, const AgentReport& report, const AskControl& control,
+                   int maxOutputTokens) {
   AskAnswer outcome;
   if (turns.empty()) {
     outcome.error = "Coach was given no question to answer";
@@ -170,7 +182,7 @@ AskAnswer driveAsk(const std::vector<AskTurn>& turns, const ToolCaller& caller, 
   AgentLoopSpec spec;
   spec.model = kModel;
   spec.effort = kEffort;
-  spec.maxTokens = kMaxTokens;
+  spec.maxTokens = maxOutputTokens;
   spec.maxIterations = kMaxIterations;
   spec.system = kSystemPrompt;
   spec.messages = askOpeningMessages(turns, agentToolText(notes), agentToolText(opening));
@@ -194,11 +206,16 @@ AskAnswer driveAsk(const std::vector<AskTurn>& turns, const ToolCaller& caller, 
 }
 
 AnthropicAsk::AnthropicAsk(std::string apiKey, std::shared_ptr<FailureReporter> failures,
-                           std::shared_ptr<AiFuse> fuse, std::shared_ptr<UsageSink> usage, std::string baseUrl)
+                           std::shared_ptr<AiFuse> fuse, std::shared_ptr<UsageSink> usage, std::string baseUrl,
+                           std::shared_ptr<AiCallBudget> budget, int maxOutputTokens)
     : apiKey_(std::move(apiKey)),
       failures_(std::move(failures)),
       fuse_(std::move(fuse)),
-      usage_(std::move(usage)), baseUrl_(std::move(baseUrl)) {}
+      usage_(std::move(usage)), budget_(std::move(budget)), baseUrl_(std::move(baseUrl)),
+      maxOutputTokens_(maxOutputTokens) {
+  if (maxOutputTokens_ < 1024 || maxOutputTokens_ > 8000)
+    throw std::invalid_argument("Coach output tokens must be from 1024 to 8000");
+}
 
 bool AnthropicAsk::configured() const { return !apiKey_.empty(); }
 
@@ -253,8 +270,9 @@ AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCall
   frame.runId = newRunId("ask");
 
   auto answer = driveAsk(turns, caller, tools,
-                         metered(call, frame, fuse_, usage_, report, [&] { refusal = "ai-fuse"; }),
-                         report, control);
+                         metered(call, frame, fuse_, usage_, report, [&] { refusal = "ai-fuse"; },
+                                 budget_, [&](const std::string& code) { refusal = code; }, 1'024),
+                         report, control, maxOutputTokens_);
   answer.outcomeCode = refusal;
   return answer;
 }

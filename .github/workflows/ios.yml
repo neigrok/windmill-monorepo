@@ -168,6 +168,7 @@ jobs:
               -only-testing:WindmillUITests/GymWorkoutFlowTests
               -only-testing:WindmillUITests/AppleLinkingFlowTests
               -only-testing:WindmillUITests/GymRecoveryFlowTests
+              -only-testing:WindmillUITests/GymIntegrationFlowTests
           - shard: routines-journal
             timeout: 75
             tests: >-
@@ -177,13 +178,13 @@ jobs:
               -only-testing:WindmillUITests/WorkoutActivityFlowTests
               -only-testing:WindmillUITests/RoomTransientFlowTests
               -only-testing:WindmillUITests/WorkoutOutsideFlowTests
+              -only-testing:WindmillUITests/OnboardingFlowTests
+              -only-testing:WindmillUITests/ShellFlowTests
           - shard: coach-shell
             timeout: 95
             tests: >-
               -only-testing:WindmillUITests/GymCoachFlowTests
-              -only-testing:WindmillUITests/GymIntegrationFlowTests
-              -only-testing:WindmillUITests/OnboardingFlowTests
-              -only-testing:WindmillUITests/ShellFlowTests
+              -only-testing:WindmillUITests/GymAnonymousCoachFlowTests
               -only-testing:WindmillUITests/OfflineFlowTests
     defaults:
       run:

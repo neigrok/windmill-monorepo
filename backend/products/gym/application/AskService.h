@@ -26,7 +26,7 @@
 
 namespace wm::gym {
 
-// Coach exposes reads, one routine action and one durable insight save per generation.
+// Coach exposes reads and bounded actions; routine setup omits analysis and existing-routine proposals.
 class AskTools : public ToolHost {
 public:
   // The thread is carried, not looked up: every proposal this run mints is stamped with the
@@ -49,6 +49,8 @@ private:
   AskThreadRepository* repository_;
   AskGeneration* generation_;
   std::vector<CoachOperation> operations_;
+  std::unordered_map<std::string, std::string> callIds_;
+  std::size_t routineIndex_ = 0;
   void observe(const ToolResult& result, const std::string& name, const std::string& operationId = "");
   ThreadId thread_;
   ReadReceipt read_;
@@ -73,6 +75,8 @@ enum class AskRefusal {
   sessionOpen,      // a workout is running: Ask is never offered mid-session, and the server says so
   dailyLimit,       // the day's questions are used — the cap that keeps Ask open to everybody
   outOfBudget,      // this account is over OUR AI ceiling for the window — a fuse, not a sales door
+  aiBudget,
+  aiAccountingUnavailable,
 };
 
 // `read` and `proposals` are the server's own observations, never the model's.
@@ -83,10 +87,11 @@ struct AskReply {
   std::vector<std::string> proposals;   // ids minted during the exchange, in mint order
   std::optional<AnswerReceipt> receipt;
   std::optional<AskGeneration> generation;
+  std::optional<AiBudgetView> allowance;
 };
 
 // The byte limit for a user question; stored history has no turn ceiling.
-constexpr std::size_t kMaxAskTurnBytes = 1000;
+constexpr std::size_t kMaxAskTurnBytes = 8000;
 
 // A bucket in MEMORY and therefore best-effort: a deploy refills it, and `AskRation` forgets an
 // account only once its bucket has caught all the way up. The hard limit is the money, held by the
@@ -133,7 +138,7 @@ public:
   // The id is the client's to mint, and a fresh one opens a thread titled by this question, verbatim.
   void ask(const UserId& caller, const std::string& email, const ThreadId& thread,
            std::string question, std::function<void(AskReply)> done, std::string requestId = "",
-           std::vector<std::string> attachmentIds = {});
+           std::vector<std::string> attachmentIds = {}, std::string purpose = "");
   void readGeneration(const UserId& user, const ThreadId& thread, const std::string& requestId,
                       std::function<void(bool, std::optional<AskGeneration>)> done);
   std::optional<AskGeneration> stop(const UserId& user, const ThreadId& thread, const std::string& requestId);

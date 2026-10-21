@@ -1,4 +1,5 @@
 #include "products/journal/adapters/llm/AnthropicCurator.h"
+#include "platform/adapters/llm/AiCallBudget.h"
 
 #include <algorithm>
 #include <cmath>
@@ -209,13 +210,13 @@ CurationPrompt curationPrompt(const std::vector<Vectored>& tonight,
 
 AnthropicCurator::AnthropicCurator(std::shared_ptr<MessagesApi> transport, std::string model,
                                    std::string effort, std::shared_ptr<AiFuse> fuse,
-                                   std::shared_ptr<UsageSink> usage, float floor)
+                                   std::shared_ptr<UsageSink> usage, float floor, std::shared_ptr<AiCallBudget> budget)
     : transport_(std::move(transport)),
       model_(std::move(model)),
       effort_(std::move(effort)),
       floor_(floor),
       fuse_(std::move(fuse)),
-      usage_(std::move(usage)) {}
+      usage_(std::move(usage)), budget_(std::move(budget)) {}
 
 bool AnthropicCurator::configured() const { return transport_ && transport_->configured(); }
 
@@ -264,15 +265,29 @@ Curation AnthropicCurator::curate(const UserId& user, const std::vector<Vectored
   request.schema = verdictSchema();
   request.effort = effort_;
 
-  const MessagesReply reply = transport_->send(request);
-  // Recorded here rather than in the transport, which knows neither the operation nor the account.
-  // Every outcome lands, refusals and truncations included.
   AiSpend spend;
   spend.user = user;
   spend.product = "journal";
   spend.operation = "echo.curate";
   spend.runId = newRunId("curate");
   spend.model = model_;
+  std::optional<AiBudgetReservation> reservation;
+  if (budget_) {
+    const auto admission = budget_->begin(spend, messagesBody(request));
+    if (!admission.reservation) {
+      curation.failure = admission.refusal;
+      return curation;
+    }
+    reservation = admission.reservation;
+  }
+  MessagesReply reply;
+  try {
+    reply = transport_->send(request);
+  } catch (...) {
+    if (reservation) budget_->finish(*reservation, model_, {}, false);
+    throw;
+  }
+  if (reservation) budget_->finish(*reservation, model_, reply.usage, reply.usageComplete);
   spend.outcome = reply.outcome;
   spend.tokens = reply.tokens;
   meterSpend(spend, fuse_, usage_);

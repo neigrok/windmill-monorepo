@@ -127,6 +127,55 @@ select count(*) from (
 ) retired;
 """]))
 
+    def test_ai_output_offer_upgrade_preserves_legacy_rows_and_constraint_identity(self):
+        self.apply_schema()
+        query = ["psql", self.database, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c"]
+        command([*query, """
+alter table ai_budget_reservations drop constraint ai_budget_output_offer;
+alter table ai_budget_reservations drop column input_cost_nanos, drop column output_token_cost_nanos,
+  drop column min_output_tokens, drop column max_output_tokens;
+insert into ai_budget_reservations(id,subject_kind,subject_id,tier,period_start_ms,period_end_ms,
+  admitted_at_ms,amount_nanos,state,actual_nanos)
+select state,'account','legacy-account','logged_in',0,2678400000,1,100,state,actual
+from (values ('reserved',null::bigint),('dispatched',null),('uncertain',null),('settled',50),('released',null)) old(state,actual);
+"""])
+        legacy_query = "select to_jsonb(t)::text from ai_budget_reservations t order by id"
+        legacy_rows = command([*query, legacy_query])
+        self.apply_schema()
+        self.assertEqual(legacy_rows, command([*query, """
+select (to_jsonb(t)-array['input_cost_nanos','output_token_cost_nanos','min_output_tokens','max_output_tokens'])::text
+from ai_budget_reservations t order by id;
+"""]))
+        self.assertEqual("5\n", command([*query, """
+select count(*) from ai_budget_reservations where input_cost_nanos is null and output_token_cost_nanos is null
+  and min_output_tokens is null and max_output_tokens is null;
+"""]))
+        insert = """
+insert into ai_budget_reservations(id,subject_kind,subject_id,tier,period_start_ms,period_end_ms,
+  admitted_at_ms,amount_nanos,state,input_cost_nanos,output_token_cost_nanos,min_output_tokens,max_output_tokens)
+values('adaptive','account','new-account','logged_in',0,2678400000,1,{amount},'reserved',{input},{unit},{floor},{ceiling});
+"""
+        for values in [dict(amount=47_500_000, input="null", unit=25_000, floor=1_024, ceiling=2_000),
+                       dict(amount=47_500_001, input=10_000_000, unit=25_000, floor=1_024, ceiling=2_000),
+                       dict(amount=35_575_000, input=10_000_000, unit=25_000, floor=1_024, ceiling=2_000),
+                       dict(amount=60_025_000, input=10_000_000, unit=25_000, floor=1_024, ceiling=2_000),
+                       dict(amount=1, input=0, unit=0, floor=1, ceiling=2),
+                       dict(amount=1, input=0, unit=9_223_372_036_854_775_807, floor=1, ceiling=2)]:
+            with self.subTest(offer=values):
+                with self.assertRaisesRegex(RuntimeError, "ai_budget_output_offer"):
+                    command([*query, insert.format(**values)])
+        command([*query, insert.format(amount=47_500_000, input=10_000_000, unit=25_000, floor=1_024, ceiling=2_000)])
+        constraint = """
+select oid,pg_get_constraintdef(oid),convalidated from pg_constraint
+where conrelid='ai_budget_reservations'::regclass and conname='ai_budget_output_offer';
+"""
+        identity = command([*query, constraint])
+        self.assertRegex(identity, r"^\d+\|CHECK .+\|t\n$")
+        before = self.snapshot()
+        self.apply_schema()
+        self.assertEqual(identity, command([*query, constraint]))
+        self.assertEqual(before, self.snapshot())
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

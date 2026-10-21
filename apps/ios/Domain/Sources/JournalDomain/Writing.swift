@@ -132,11 +132,16 @@ public struct SavePage: Action {
   public let day: LocalDay
   public let document: PageDocument
   public let retirements: [String]
-  public init(day: LocalDay, document: PageDocument, retiring: [String] = []) { self.day = day; self.document = document; retirements = retiring }
+  public init(day: LocalDay, document: PageDocument, retiring: [String] = []) {
+    self.day = day
+    self.document = document
+    retirements = retiring
+  }
   public func load(_ read: Reader) throws -> JournalWriteState { try JournalWriteState(read, day: day) }
 
   public func decide(_ loaded: JournalWriteState, ids: IDSource) throws(Violation) -> Decision<String?, JournalRefusal> {
     guard day == loaded.moment.today else { throw Violation(rule: "journal.day", path: "day", reason: .custom("readOnlyDay")) }
+    let document = self.document.hasText ? self.document : PageDocument()
     try JournalRules.check(document, body: loaded.anonymous ? ClaimPageCommand.body : JournalRules.body,
       source: loaded.anonymous ? ClaimPageCommand.source : SavePageCommand.source)
     var retiring = JournalWriting.retired(loaded.state)
@@ -144,9 +149,16 @@ public struct SavePage: Action {
       guard loaded.state.fields[field] != nil else { throw Violation(rule: "journalState", path: Path(field), reason: .custom("unknownState")) }
       retiring[field] = "retired"
     }
-    if !document.body.isEmpty { retiring["placeholder"] = "retired" }
+    if document.hasText { retiring["placeholder"] = "retired" }
     if document.isWritten { retiring["privacyLine"] = "retired"; retiring["firstPage"] = "retired" }
     if document.mood != nil || document.energy != nil { retiring["scales"] = "retired" }
+    if !document.isWritten && loaded.page == nil && !loaded.pending.contains(where: { $0.day == day }) &&
+      !loaded.commands.contains(where: { $0.command.args["day"] == .string(day.text) }) {
+      var plan = Plan()
+      if loaded.hasEditorDraft { plan.device(EditorDraft.key, nil) }
+      try JournalWriting.retire(retiring, in: &plan, at: loaded.moment)
+      return .write(plan, nil)
+    }
     if !loaded.anonymous, var pending = loaded.pending.first(where: { $0.day == day }) {
       pending.edit(document, retiring: retiring)
       var plan = Plan(); plan.device(pending.key, pending.json)
@@ -157,6 +169,14 @@ public struct SavePage: Action {
       let prior = loaded.commands.filter { $0.command.name == Journal.Commands.claimPage && $0.command.args["day"] == .string(day.text) }
       guard prior.allSatisfy(\.canSupersede) else { throw Violation(rule: "journal.claim", path: "day", reason: .custom("claimInFlight")) }
       for pending in loaded.pending where pending.day == day { retiring.merge(pending.retirements) { $1 } }
+      if !document.isWritten {
+        var plan = Plan()
+        plan.supersede(prior.map(\.gestureId))
+        for pending in loaded.pending where pending.day == day { plan.device(pending.key, nil) }
+        if loaded.hasEditorDraft { plan.device(EditorDraft.key, nil) }
+        try JournalWriting.retire(retiring, in: &plan, at: loaded.moment)
+        return .write(plan, nil)
+      }
       let claimId = ids.opaqueID()
       let command = try ClaimPageCommand(day: day, document: document, claimId: claimId)
       var plan = try Plan(running: command, predicting: [JournalWriting.prediction(day: day, document: document)])
@@ -285,7 +305,7 @@ public enum JournalWriting {
   }
 
   static func trim(_ text: String, leading: Bool) -> String {
-    let whitespace: (Unicode.Scalar) -> Bool = { [9, 10, 11, 12, 13, 32, 160, 5760, 8232, 8233, 8239, 8287, 12288, 65279].contains($0.value) || (8192...8202).contains($0.value) }
+    let whitespace = TextWhitespace.contains
     var scalars = Array(text.unicodeScalars)
     if leading { scalars = Array(scalars.drop(while: whitespace)) }
     else { while let last = scalars.last, whitespace(last) { scalars.removeLast() } }

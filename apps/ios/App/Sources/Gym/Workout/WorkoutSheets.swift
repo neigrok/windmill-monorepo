@@ -53,7 +53,7 @@ struct WorkoutAssembly: View {
         }.roomBar(.gym)
         .reachBand {
           GymTransient(gym: workout.gym, message: workout.message, dismiss: { workout.message = nil }, noticeMessage: workout.gym.workoutNotice,
-                       retry: { workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
+                       retry: { workout.retryRead() }, errorIdentifier: "workout-refusal")
             .modifier(BoundedBand())
         }
     }.modifier(GymPage()).presentationDetents([.large])
@@ -116,7 +116,7 @@ struct WorkoutDeviationSheet: View {
                      commit: { workout.resolveDeviation(save: true) })
         .reachBand {
           GymTransient(gym: workout.gym, message: workout.message, dismiss: { workout.message = nil },
-                       noticeMessage: workout.gym.workoutNotice, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
+                       noticeMessage: workout.gym.workoutNotice, errorIdentifier: "workout-refusal")
         }
     }.modifier(GymPage()).presentationDetents([.medium])
   }

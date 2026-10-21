@@ -11,10 +11,12 @@ import struct SyncModelServer.ServerCall
 struct RoutinesTab: View {
   let gym: GymModel
   var onReviewProposal: ((ID<Proposal>) -> Void)?
+  var onSetup: (() -> Void)?
   @Environment(\.coachOpenAccount) private var openAccount
   @Environment(\.coachAsk) private var ask
   @State private var building: RoutineEditingSession?
-  @State private var savedID: ID<Routine>?
+  @State private var selectedID: ID<Routine>?
+  @State private var startID: ID<Routine>?
 
   var body: some View {
     let proposals = gym.routineProposals
@@ -24,8 +26,9 @@ struct RoutinesTab: View {
         ContentUnavailableView {
           Label("No routines yet", systemImage: "list.bullet.rectangle")
         } actions: {
-          if gym.workout.coachAvailable {
-            Button("Ask Coach") { ask?(CoachHandoff(question: "Build me a routine.")) }
+          if gym.workout.coachAvailable || (gym.isAnonymous && !gym.accountTransition) {
+            Button("Set up routines") { if let onSetup { onSetup() } else { ask?(CoachHandoff(question: "", purpose: .routineSetup)) } }
+              .accessibilityIdentifier("routines-setup")
               .modifier(RoomSecondaryStyle()).controlSize(.large)
           }
         }
@@ -54,10 +57,10 @@ struct RoutinesTab: View {
             if !routines.isEmpty {
               Section {
                 ForEach(routines, id: \.id) { routine in
-                  NavigationLink { RoutineDetail(gym: gym, id: routine.id) } label: {
+                  Button { selectedID = routine.id } label: {
                     GymRow(title: routine.name, meta: gym.routineLine(routine))
                   }.accessibilityIdentifier("routine-\(routine.id)")
-                    .swipeActions(edge: .trailing) { Button("Delete", role: .destructive) { gym.run(DeleteRoutine(routine.id)) } }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) { Button("Delete", role: .destructive) { gym.run(DeleteRoutine(routine.id)) } }
                     .contextMenu {
                       Button("Start workout", systemImage: "play.fill") { gym.startWorkout(routineId: routine.id) }
                       Button("Delete routine", systemImage: "trash", role: .destructive) { gym.run(DeleteRoutine(routine.id)) }
@@ -67,16 +70,11 @@ struct RoutinesTab: View {
                 }
               }
             }
-            Section {
-              NavigationLink { MovementPicker(gym: gym, purpose: .browse) } label: {
-                Label { Text("Movements").foregroundStyle(GymPalette.ink) } icon: { Image(systemName: "list.bullet") }
-              }.accessibilityIdentifier("routines-movements")
-            }
           }.listRowBackground(GymPalette.card)
         }.listStyle(.insetGrouped)
       }
     }.modifier(GymPage(titleDisplayMode: .large))
-      .navigationTitle("Routines").accessibilityIdentifier("gym-routines")
+      .navigationTitle("Routines").accessibilityElement(children: .contain).accessibilityIdentifier("gym-routines")
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
           Button("New routine", systemImage: "plus") { building = RoutineEditingSession(gym: gym, routine: nil) }
@@ -85,16 +83,12 @@ struct RoutinesTab: View {
         if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
         ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
       }.roomBar(.gym)
-      .reachBand {
-        VStack(spacing: 0) {
-          GymTransient(gym: gym)
-          ActionBand(title: "Just start logging", room: .gym,
-                     disabled: gym.accountTransition || gym.readFailed) { gym.startWorkout() }
-        }
-      }
-      .sheet(item: $building) { editing in RoutineBuilder(gym: gym, editing: editing) { savedID = $0 } }
-      .navigationDestination(isPresented: Binding(get: { savedID != nil && building == nil }, set: { if !$0 { savedID = nil } })) {
-        if let savedID { RoutineDetail(gym: gym, id: savedID) }
+      .reachBand { GymTransient(gym: gym) }
+      .sheet(item: $building) { editing in RoutineBuilder(gym: gym, editing: editing) { selectedID = $0 } }
+      .sheet(isPresented: Binding(get: { selectedID != nil && building == nil }, set: { if !$0 { selectedID = nil } }), onDismiss: {
+        if let id = startID { startID = nil; gym.startWorkout(routineId: id) }
+      }) {
+        if let selectedID { RoutineSummarySheet(gym: gym, id: selectedID) { startID = selectedID; self.selectedID = nil } }
       }
       .preferredColorScheme(OnboardingFixture.appearance)
       .onAppear {
@@ -116,44 +110,46 @@ struct RoutinesTab: View {
 struct RoutineDetail: View {
   let gym: GymModel
   let id: ID<Routine>
+  var start: (() -> Void)?
+  var awaitSync = false
   @State private var editing: RoutineEditingSession?
+  @State private var confirmedAbsent = false
   @Environment(\.dismiss) private var dismiss
   var routine: Routine? { gym.routines.first { $0.id == id } }
+  var waitsForSync: Bool { awaitSync && routine == nil && !confirmedAbsent }
 
   var body: some View {
     Group {
       if let routine {
-        let history = Array(gym.routineHistory(id).prefix(20)), dates = gym.dates
         List {
           Group {
             Section {
               ForEach(Array(routine.entries.enumerated()), id: \.offset) { index, entry in
-                NavigationLink { MovementRecordScreen(gym: gym, exerciseID: entry.exerciseId) } label: {
-                  let exercise = gym.catalogue.find(entry.exerciseId)
-                  let custom = exercise != nil && !SeedExercises.all.contains { $0.id == entry.exerciseId }
-                  GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")\(custom ? " · yours" : "")",
-                              meta: Readout.target(entry.sets))
-                }.accessibilityIdentifier("routine-detail-movement-\(entry.exerciseId)")
+                let exercise = gym.catalogue.find(entry.exerciseId)
+                let custom = exercise != nil && !SeedExercises.all.contains { $0.id == entry.exerciseId }
+                GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")\(custom ? " · yours" : "")",
+                       meta: Readout.target(entry.sets))
+                  .accessibilityIdentifier("routine-detail-movement-\(entry.exerciseId)")
               }
-            } header: { Text("Movements") }
-            if !history.isEmpty {
-              Section("History") {
-                ForEach(history, id: \.id) { session in
-                  NavigationLink { SessionDetailScreen(gym: gym, sessionID: session.id) } label: {
-                    GymRow(title: dates.subtitle(session.startedAt), meta: RoutineLines.session(SessionReadout(session: session, sets: gym.sets)))
-                  }.accessibilityIdentifier("routine-history-\(session.id)")
-                }
-              }
-            }
+            } header: { Text(gym.routineLine(routine)) }
           }.listRowBackground(GymPalette.card)
         }.listStyle(.insetGrouped)
+      } else if waitsForSync {
+        ContentUnavailableView {
+          Label("Routine not on this phone yet", systemImage: "arrow.triangle.2.circlepath")
+        } description: { Text("Your log may still be syncing, or this routine may have been removed. Refresh to check.") }
+        actions: {
+          Button("Refresh") { Task { await refreshReceipt() } }
+            .disabled(gym.runtime?.engine.status.online == false)
+        }
       } else {
         ContentUnavailableView("That routine is no longer in your program.", systemImage: "list.bullet.rectangle",
                                description: Text("Everything you logged against it is still in the log."))
       }
     }.modifier(GymPage())
-      .navigationTitle(routine?.name ?? "Routine").accessibilityIdentifier("routine-detail").gymTabBar()
+      .navigationTitle(routine?.name ?? "Routine").navigationBarTitleDisplayMode(.inline).accessibilityIdentifier("routine-detail")
       .toolbar {
+        ToolbarItem(placement: .cancellationAction) { Button("Close", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly).accessibilityIdentifier("routine-close") }
         if let routine {
           ToolbarItem(placement: .topBarTrailing) {
             Button("Edit") { editing = RoutineEditingSession(gym: gym, routine: routine) }.accessibilityIdentifier("edit-routine")
@@ -164,14 +160,39 @@ struct RoutineDetail: View {
         VStack(spacing: 0) {
           GymTransient(gym: gym)
           if let routine {
-            ActionBand(title: "Start workout", room: .gym,
-                       disabled: gym.accountTransition || gym.readFailed) { gym.startWorkout(routineId: routine.id) }
+            ActionBand(title: "Start", room: .gym,
+                       disabled: gym.accountTransition || gym.readFailed, actionIdentifier: "routine-start") {
+              if let start { start() } else { gym.startWorkout(routineId: routine.id) }
+            }
           }
         }
       }
       // The editor deletes the routine at once, so the detail it leaves behind has nothing to show and goes too.
       .sheet(item: $editing, onDismiss: { if routine == nil { dismiss() } }) { editing in RoutineBuilder(gym: gym, editing: editing) { _ in } }
       .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "routine"]) }
+      .task(id: id) { if awaitSync, routine == nil { await refreshReceipt() } }
+  }
+  func refreshReceipt() async {
+    let owner = gym.account
+    let exists = await gym.routineExists(id)
+    guard owner == gym.account, !Task.isCancelled else { return }
+    confirmedAbsent = exists == false
+    gym.runtime?.engine.foreground(); gym.refresh()
+  }
+}
+
+struct RoutineSummarySheet: View {
+  let gym: GymModel
+  let id: ID<Routine>
+  var awaitSync = false
+  let start: () -> Void
+  @Environment(\.dynamicTypeSize) var typeSize
+
+  var body: some View {
+    NavigationStack { RoutineDetail(gym: gym, id: id, start: start, awaitSync: awaitSync) }
+      .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.medium, .large])
+      .presentationDragIndicator(.visible)
+      .onAppear { if awaitSync { gym.runtime?.engine.foreground(); gym.refresh() } }
   }
 }
 
@@ -197,6 +218,16 @@ enum RoutineLines {
 }
 
 extension GymModel {
+  func routineExists(_ id: ID<Routine>) async -> Bool? {
+    do {
+      _ = try await rest.request("/v1/gym/routines/" + CoachCopy.escaped(id.description))
+      return true
+    } catch {
+      if (error as? GymRESTFailure)?.status == 404 { return false }
+      return nil
+    }
+  }
+
   var historyKnown: Bool { !readFailed && (isAnonymous || log?.firstPullComplete == true) }
 
   var routinesByLastTraining: [Routine] {

@@ -3466,10 +3466,10 @@
           "state": "bound",
           "nextN": 1,
           "hlc": {
-            "ms": 5003,
+            "ms": 5004,
             "counter": 0
           },
-          "hlcHigh": "5003:0:r_aaaaaaaaaaaa",
+          "hlcHigh": "5004:0:r_aaaaaaaaaaaa",
           "admittedHigh": "0:0:",
           "serverOffsetMs": 0,
           "offsetSamples": [],
@@ -3636,6 +3636,37 @@
               ],
               "gestureId": "g4"
             }
+          },
+          {
+            "localId": "g5/0",
+            "gestureId": "g5",
+            "lineage": "A",
+            "scope": "self/overlay/b_00000001",
+            "state": "ready",
+            "commitOrder": 5,
+            "releaseAt": 0,
+            "stamp": "5004:0:r_aaaaaaaaaaaa",
+            "intent": {
+              "scope": "self/overlay/b_00000001",
+              "d": [
+                {
+                  "t": "mark",
+                  "id": "elm",
+                  "x": {
+                    "memo": {
+                      "text": " \t\n    ﻿",
+                      "base": {
+                        "text": ""
+                      }
+                    }
+                  }
+                }
+              ],
+              "gestureId": "g5"
+            },
+            "baseTexts": {
+              "[\"mark\",\"elm\",\"memo\"]": ""
+            }
           }
         ]
       },
@@ -3661,6 +3692,9 @@
               null,
               "1000:0:r_aaaaaaaaaaaa"
             ]
+          },
+          "x": {
+            "memo": " \t\n    ﻿"
           }
         },
         {

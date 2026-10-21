@@ -6,9 +6,13 @@ One C++20 modular-monolith binary serving every product. Brand-wide rules live i
 ## Layering
 
 `platform/` is the product-neutral half — auth, oauth, billing, the MCP engine, the sync engine, email,
-telemetry, access, the HTTP host, and the AI spend meter (`domain/AiUsage`, `domain/AiFuse`,
-`ports/AiUsageRepository`: every vendor call is priced and recorded, and the ceilings read the same
-rows the owner page does).
+telemetry, access, the HTTP host, the AI usage meter (`domain/AiUsage`, `domain/AiFuse`,
+`ports/AiUsageRepository`) and durable USD admission (`domain/AiBudget`, `application/AiBudgetService`,
+`ports/AiBudgetRepository`). The durable mode owns free daily/monthly pools, lifetime devices,
+funded subscription/owner periods, permanent device binding, concurrency and threshold alerts.
+`platform/ai_installations/` holds server-issued anonymous Coach credentials and network admission.
+Every hosted AI call, including background work, debits its individual allowance in that mode;
+[AI_ALLOWANCES.md](AI_ALLOWANCES.md) defines its rollout switch and unsupported edges.
 
 `products/<p>/` is one product each (roadmap, journal, gym, and the sync engine's test-only probe),
 with four shared layers: `domain/` (pure), `application/` (services over

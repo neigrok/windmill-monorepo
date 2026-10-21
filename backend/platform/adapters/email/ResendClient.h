@@ -48,7 +48,11 @@ public:
   void send(const Email& to, const std::string& templateId, const Json::Value& variables,
             const Json::Value& headers, std::function<void(bool)> done);
 
+  void sendText(const Email& to, const std::string& subject, const std::string& text,
+                const std::string& idempotencyKey, std::function<void(bool)> done);
+
 private:
+  void sendBody(const Json::Value& body, const std::string& idempotencyKey, std::function<void(bool)> done);
   std::string apiKey_;
   std::string from_;
   std::once_flag stopped_;

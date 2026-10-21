@@ -79,7 +79,7 @@ struct CuratedEchoes {
 
 // `emptyOk` is a page that had nothing to reach back to. Everything after it is a failure and must
 // never be stored as an empty result.
-enum class CurationStatus { ok, emptyOk, transport, rateLimited, truncated, schemaInvalid, refused };
+enum class CurationStatus { ok, emptyOk, transport, rateLimited, budgetLimited, truncated, schemaInvalid, refused };
 
 inline bool isSuccess(CurationStatus status) {
   return status == CurationStatus::ok || status == CurationStatus::emptyOk;

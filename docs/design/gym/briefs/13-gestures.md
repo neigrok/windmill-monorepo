@@ -1,20 +1,24 @@
 # Gym gestures
 
 Use platform gestures with discoverable controls and accessibility alternatives. The room owns
-shared delete windows; each feature owns its gesture meaning.
+shared deletion behavior; each feature owns its gesture meaning.
 
 ## Five laws
 
 1. **Every action has an accessible alternative.** iOS swipe actions expose the Actions rotor.
    Android swipe rows must declare custom accessibility actions unless a real control already
    offers the same act. A long-press menu needs equivalent accessible actions.
-2. **Destructive gestures require Undo.** Hold a delete for 9000ms before sending it. Turning a
+2. **Destructive gestures use the surface contract.** iOS reveals a native red trash action,
+   disables full swipe and queues explicit Delete actions immediately with no Undo. Whole-workout
+   discard and Coach conversation deletion ask once before queuing. Android and web hold
+   a delete for 9000ms before sending it. Turning a
    proposal down has no undo path and must never be a swipe. Its decision flow belongs to
    `09-coach.md`.
 3. **One gesture has one owner.** System Back owns the leading edge; sheets own dismiss gestures.
    Room gestures start outside the system edge and must not compete with a second scroller.
-4. **Preserve state when removing controls.** A deleted row's Undo and pending state move to the
-   room transient; they cannot disappear with the row. Prefer gestures that simplify a screen.
+4. **Preserve delivery state when removing controls.** A failure must remain recoverable after
+   its row disappears. Android and web keep Undo in the room transient. iOS carries refusals and
+   recovery without Undo. Prefer gestures that simplify a screen.
 5. **Use restrained native feedback.** No feedback on scrolling and no double feedback for one
    act. Android logging adds no sound or haptic; `../feedback-contract.md` governs set feedback.
 
@@ -30,10 +34,13 @@ The handle names its row and place, for example `Move Back Squat, 2 of 3`; a hel
 `rail.js`. Native lists use platform reordering and expose Move up/Move down where needed.
 The Android routine editor supports continuous drag scrolling as well as accessible movement.
 
-## Delete windows
+## Delete windows — Android and web
+
+This section applies to Android and web. iOS queues explicit deletion immediately, after confirmation for whole workouts and conversations, and has no
+Undo window or offer. An existing pending queue still completes through the sync engine.
 
 Withheld means **not sent**. An offered Undo cannot depend on reversing a server deletion. A held
-delete is stored on the device the moment it is held, on every surface, so it outlives the process.
+delete is stored on the device the moment it is held, on those surfaces, so it outlives the process.
 The following acts use the room's nine-second window without confirmation:
 
 | Act | Consequence after the window |
@@ -81,8 +88,7 @@ wording remains in `../../consistency.md`.
 
 **Leaving the app ends the Undo.** Every held delete is let go into the device's queue, which sends
 it as soon as it can (at once when online, on reconnecting when not), and Undo is not offered again
-on return. Leaving is the app going to the background on Android, the last scene going to the
-background on iOS, and on the web no Windmill tab staying visible past a short debounce, or the last
+on return. Leaving is the app going to the background on Android, and on the web no Windmill tab staying visible past a short debounce, or the last
 tab closing. Moving between two Windmill tabs is not leaving.
 
 **Staying in the app keeps the hold.** A pop, a tab change, a sheet dismissal, a switch to another
@@ -106,15 +112,15 @@ ranking and other room reads remains open under 4u.
 - **Past-session set:** tap to fix, trailing swipe to delete. The fix sheet retains a visible
   Delete set action. Android declares accessible Delete. iOS set deletion does not full-swipe.
 - **Routine:** trailing swipe to Delete, with an accessible path. Web's overflow offers Log past
-  and Delete. No surface offers Duplicate. iOS routine deletion permits full swipe.
+  and Delete. No surface offers Duplicate. iOS routine deletion requires tapping the revealed destructive action; full swipe is disabled.
 - **Conversation:** trailing swipe to Delete. A refreshed server list stays filtered by active holds.
 - **Live logged set:** tap to fix. Logging sends immediately and offers no after-log Undo;
-  Delete set from the fix sheet uses the normal delete window. No live-row swipe competes with
+  Delete set from the fix sheet queues immediately on iOS and uses the delete window on Android/web. No live-row swipe competes with
   movement paging.
 - **Refusal notice:** swipe to dismiss with a declared accessibility action. This dismisses a
   notice, not stored data.
 - **Log session:** long press offers Share this workout and Discard session. The session detail
-  keeps a visible discard door. The finish receipt has no discard; the web live mirror has none.
+  keeps a visible discard door. The iOS finish receipt also exposes Discard; the Android receipt and web live mirror do not.
 
 ## Workout paging
 
@@ -123,7 +129,8 @@ the rack stays fixed; cancellation restores the original movement and rack draft
 prefill and any deviation question change only after settling. Editing and logging are disabled
 while the pager moves. A second move cannot overwrite a pending deviation question.
 
-The head's Previous/Next controls and accessibility actions remain available. Vertical gestures
+Android retains Previous/Next controls. iOS uses a native page indicator and accessible
+adjustable navigation without duplicate arrows or position prose. Vertical gestures
 scroll the ledger. Do not add system-gesture exclusions; Back during a live workout stays in the
 workout. On iOS, coordinate the room gesture with the shell's reserved leading edge.
 Detailed Android arbitration and streaming behavior live in `../interaction-polish.md`.

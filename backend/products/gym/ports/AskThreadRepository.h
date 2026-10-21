@@ -40,6 +40,7 @@ struct CoachOperation {
   std::string name;
   Json::Value arguments;
   std::optional<ToolResult> result;
+  Json::Value input;
 };
 
 // Ask's door to gym storage: the threads and their turns. A thread's proposals are the program's

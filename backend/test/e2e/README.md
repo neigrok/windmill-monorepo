@@ -8,9 +8,35 @@
 | `deploy_auth_env_test.py` | that `deploy.yml` forwards the native-auth settings |
 | `sync_probe.sh` | the sync engine against `windmill_server_probe` |
 | `sync_epoch_restore.mjs` | real dump/restore and epoch rotation in both reconnect orders; production-server replicas replay independent/dependent work and retain wrong-incarnation notices; the test-clock composition also covers two starts that joined one session, their shared delete, and applied removals with and without an older acknowledgement |
+| `coach_live.py` | opt-in real-provider text setup and independent free/One photo flows on disposable accounts, including USD settlement, ownership, replay and telemetry; `backend/RUNNING.md` names the paid-run controls |
+| `anonymous_coach.py` | installation-scoped goal/program/photo, immutable replay, account isolation, bind attribution, individual/global USD pools, first-party events and privacy; supports a local deterministic provider or the manual paid verification below |
+| `anonymous_coach_test.py` | maximum accepted photo preserves PNG pixels and stays below the host's in-memory body threshold |
 | `journal_echo.sh`, `journal_nudge.sh` | journal echoes and nudges against the local stack |
 
 Each shell and Node script's header names its prerequisites and how to run it.
+
+## Anonymous Coach
+
+`backend.yml` has a manual `verify_live_anonymous_coach` input. It builds the selected commit and
+runs one goal, one program and one photo generation against the actual provider using the existing
+CI secret, each on a fresh $0.05 lifetime installation. It checks each installation's actual cost
+and debt, exact source targets for program/photo, durable replay without another call, no account
+training/image writes, bind attribution and local telemetry delivery. There are no automatic model
+retries. The verification dispatch publishes no image and retains only bounded `results.json`;
+synthetic credentials and private collector data are removed. Keep `verify_live_coach` false.
+
+Local verification uses an isolated database named `wm_anonymous_coach_*`, the production server on
+8088, the harness provider on 8097 and the existing TLS observer on 9443. `prepare` creates disposable
+accounts, certificates and an installation HMAC key. Start `fixture` and `observe`, configure the
+server's `COACH_ANTHROPIC_BASE_URL=http://127.0.0.1:8097`, enable USD allowances/installations and use direct
+proxy mode. Then run `verify --provider fixture` with the same database and evidence directory.
+The fixture accepts a valid 1 MiB PNG, records only provider metadata, injects charged truncation and
+an unknown transport outcome, and exercises a shared free-budget pause. Never reset a fixture while
+a native verification client is using it.
+
+The restore harness writes its test clock to a sibling file and renames it atomically. Concurrent
+server requests must always read a complete timestamp; truncating the live file can fail a request
+and its clock-dependent error response before the next timestamp is written.
 
 ## Authentication differential
 

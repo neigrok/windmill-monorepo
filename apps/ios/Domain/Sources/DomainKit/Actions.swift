@@ -89,11 +89,13 @@ public final class ActionRunner: Sendable {
   let replica: any Replica
   let registry: Registry
   let zone: any Zone
+  let holdRemovals: Bool
 
-  public init(replica: any Replica, registry: Registry, zone: any Zone) {
+  public init(replica: any Replica, registry: Registry, zone: any Zone, holdRemovals: Bool = true) {
     self.replica = replica
     self.registry = registry
     self.zone = zone
+    self.holdRemovals = holdRemovals
   }
 
   public func run<A: Action>(_ action: A) throws -> Outcome<A.Result, A.Refusal> {
@@ -137,7 +139,7 @@ public final class ActionRunner: Sendable {
           case .unchanged(let result): return (nil, .done(.unchanged(result)))
           case .write(let plan, let result):
             if let gone = try plan.firstGone(in: context, of: scope, registry: registry) { return (nil, .done(.refused(D.Refusal(gone)))) }
-            return (try plan.gesture(in: scope, registry: registry), .writing(plan, result))
+            return (try plan.gesture(in: scope, registry: registry, holdRemovals: holdRemovals), .writing(plan, result))
           }
         }
       } catch let failure as CommitFailure where failure.kind == .malformed {

@@ -138,7 +138,7 @@ import SyncModelServer
   }
 
   @Test func anonymousAndPausedAccountsAreRefusedBeforeNetworking() async {
-    let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
+    let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     let gym = GymModel(runner: harness.runner), id = gym.runner.mint(Session.self)
     do { _ = try await gym.mintSessionShare(id); Issue.record("Expected account refusal") }

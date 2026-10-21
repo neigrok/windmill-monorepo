@@ -21,8 +21,9 @@ long long windowFloorMs() {
 }
 
 Entitlements::Entitlements(SubscriptionRepository& subscriptions, AiUsageRepository& usage,
-                           std::string owners, std::vector<std::string> passiveOperations)
-    : subscriptions_(subscriptions), usage_(usage),
+                           std::string owners, std::vector<std::string> passiveOperations,
+                           std::shared_ptr<AiBudgetService> budgets)
+    : budgets_(std::move(budgets)), subscriptions_(subscriptions), usage_(usage),
       passiveOperations_(std::move(passiveOperations)), owners_(std::move(owners)) {}
 
 // No mirrored subscription is no access.
@@ -59,7 +60,23 @@ bool Entitlements::hasWindmillOne(const UserId& user, const std::string& email) 
   return subscription && grantsAccess(subscription->status);
 }
 
+AiBudgetPrincipal Entitlements::aiPrincipalFor(const UserId& user, const std::string& email) const {
+  const bool owner = isOwner(email);
+  const auto tier = hasWindmillOne(user, email) ? AiBudgetTier::WindmillOne : AiBudgetTier::LoggedIn;
+  return {{AiBudgetSubjectKind::Account, user.str()}, tier, owner};
+}
+
+AiBudgetView Entitlements::aiAllowanceView(const UserId& user, const std::string& email) const {
+  if (!budgets_) return {};
+  return budgets_->view(aiPrincipalFor(user, email));
+}
+
 AiAllowance Entitlements::aiAllowanceFor(const UserId& user, const std::string& email) const {
+  if (budgets_) {
+    const auto view = aiAllowanceView(user, email);
+    if (!view.configured || !view.limitNanos) return {};
+    return {*view.limitNanos, *view.limitNanos - view.remainingNanos};
+  }
   const long long limit =
       hasWindmillOne(user, email) ? kProMonthlyAiNanos : kFreeMonthlyAiNanos;
   // An empty product is every product.

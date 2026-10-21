@@ -4,6 +4,7 @@ import java.io.File
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.Registry
 import works.windmill.sync.core.Row
+import works.windmill.sync.core.TextWhitespace
 import works.windmill.sync.api.TextValue
 
 enum class CorpusRole { ALL, CLIENT, SERVER }
@@ -84,6 +85,7 @@ fun Record(confirmed: Row, registry: Registry): works.windmill.sync.api.Record {
         definition.life -> confirmed.lattice.life?.isAlive == true
         definition.json["visibleWhen"] == null -> confirmed.lattice.fields.isNotEmpty() || confirmed.texts.isNotEmpty()
         else -> definition.json.member("visibleWhen").arr().any { name ->
+            confirmed.texts[name.str()]?.let { return@any !TextWhitespace.isBlank(it.text) }
             val value = confirmed.texts[name.str()]?.let { Json.of(it.text) } ?: confirmed.lattice.fields[name.str()]?.value
             value != null && value !== Json.Null && value != Json.of("")
         }

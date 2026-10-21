@@ -6,15 +6,42 @@
 
 #include <optional>
 #include <drogon/HttpAppFramework.h>
+#include <drogon/utils/Utilities.h>
+#include <algorithm>
+#include <cctype>
 #include <mutex>
 #include "platform/adapters/json/JsonText.h"
 #include <utility>
+#include <variant>
 
 namespace wm::gym {
 
 namespace {
 
-drogon::HttpResponsePtr refusalOf(AskRefusal refusal) {
+drogon::HttpResponsePtr refusalOf(const AskReply& reply) {
+  const auto refusal = reply.refusal;
+  if (refusal == AskRefusal::aiAccountingUnavailable)
+    return error(drogon::k503ServiceUnavailable, "Coach's AI allowance could not be checked right now.",
+                 "ai_accounting_unavailable");
+  if (refusal == AskRefusal::aiBudget && reply.allowance) {
+    const auto& allowance = *reply.allowance;
+    const bool individual = allowance.code == AiBudgetCode::SubjectExhausted;
+    const bool capacity = individual && allowance.remainingNanos > 0;
+    Json::Value body(Json::objectValue);
+    body["code"] = std::string(aiBudgetCodeName(allowance.code));
+    body["reason"] = capacity ? "request_exceeds_remaining" : individual ? "allowance_exhausted" : "unavailable";
+    body["error"] = capacity ? "This request needs more AI capacity than your remaining allowance."
+        : individual ? "Your AI allowance is fully used or reserved."
+        : allowance.code == AiBudgetCode::FreeMonthExhausted ? "Coach's shared free AI capacity is unavailable for this month."
+        : allowance.code == AiBudgetCode::FreeDayExhausted ? "Coach's shared free AI capacity is unavailable for today."
+        : allowance.code == AiBudgetCode::ConcurrencyExhausted ? "Another AI request is still in progress."
+        : allowance.code == AiBudgetCode::FundingRequired ? "Your plan has no funded AI allowance for this period."
+        : "Coach's AI allowance is unavailable right now.";
+    body["allowance"] = toJson(allowance);
+    auto response = jsonResponse(body);
+    response->setStatusCode(individual ? drogon::k429TooManyRequests : drogon::k503ServiceUnavailable);
+    return response;
+  }
   if (refusal == AskRefusal::threadMalformed)
     return error(drogon::k400BadRequest, "that isn’t a conversation Coach can answer");
   if (refusal == AskRefusal::threadTaken)
@@ -59,8 +86,10 @@ drogon::HttpResponsePtr refusalOf(AskRefusal refusal) {
 
 class CoachStream : public std::enable_shared_from_this<CoachStream> {
 public:
-  CoachStream(drogon::ResponseStreamPtr stream, std::shared_ptr<AskService> ask, UserId user, ThreadId thread, std::string requestId)
-      : stream_(std::move(stream)), ask_(std::move(ask)), user_(std::move(user)), thread_(std::move(thread)), requestId_(std::move(requestId)) {}
+  using Transport = std::variant<drogon::ResponseStreamPtr, HttpCallback>;
+
+  CoachStream(Transport transport, std::shared_ptr<AskService> ask, UserId user, ThreadId thread, std::string requestId)
+      : transport_(std::move(transport)), ask_(std::move(ask)), user_(std::move(user)), thread_(std::move(thread)), requestId_(std::move(requestId)) {}
 
   void poll() {
     {
@@ -72,13 +101,11 @@ public:
         std::lock_guard lock(self->mutex_);
         if (self->closed_) return;
         if (!available) {
-          self->stream_->send("event: error\ndata: {\"error\":\"Could not read Coach state\",\"status\":503}\n\n");
-          self->stream_->close();
-          self->closed_ = true;
+          self->publish("event: error\ndata: {\"error\":\"Could not read Coach state\",\"status\":503}\n\n", true);
           return;
         }
         if (generation && (generation->status == "running" || self->accepted_)) self->snapshot(*generation);
-        if (!self->closed_ && self->tick_++ % 15 == 0 && !self->stream_->send(": heartbeat\n\n")) self->closed_ = true;
+        if (!self->closed_ && self->tick_++ % 15 == 0) self->publish(": heartbeat\n\n", false);
         if (self->closed_) return;
       }
       drogon::app().getLoop()->runAfter(1.0, [self] { self->poll(); });
@@ -91,7 +118,7 @@ public:
     accepted_ = true;
     if (reply.generation && reply.refusal == AskRefusal::none) snapshot(*reply.generation);
     if (reply.refusal != AskRefusal::none) {
-      const auto response = refusalOf(reply.refusal);
+      const auto response = refusalOf(reply);
       Json::Value body = *response->getJsonObject();
       body["status"] = static_cast<int>(response->getStatusCode());
       if (reply.generation) {
@@ -99,32 +126,46 @@ public:
         body["generation"] = toJson(*reply.generation);
         body["results"] = body["generation"]["results"];
       }
-      stream_->send("event: error\ndata: " + dump(body) + "\n\n");
-      stream_->close();
-      closed_ = true;
+      publish("event: error\ndata: " + dump(body) + "\n\n", true);
       return;
     }
     if (!reply.generation) {
-      stream_->send("event: error\ndata: {\"error\":\"Coach did not answer\",\"status\":502}\n\n");
-      stream_->close();
-      closed_ = true;
+      publish("event: error\ndata: {\"error\":\"Coach did not answer\",\"status\":502}\n\n", true);
     }
   }
 
 private:
+  void publish(std::string frame, bool terminal) {
+    if (closed_) return;
+    if (auto* stream = std::get_if<drogon::ResponseStreamPtr>(&transport_)) {
+      if (!(*stream)->send(frame)) { closed_ = true; return; }
+      if (terminal) { (*stream)->close(); closed_ = true; }
+      return;
+    }
+    if (!terminal) return;
+    closed_ = true;
+    auto response = drogon::HttpResponse::newHttpResponse();
+    response->setContentTypeString("text/event-stream");
+    response->addHeader("cache-control", "no-cache");
+    response->addHeader("x-accel-buffering", "no");
+    response->setBody(std::move(frame));
+    std::get<HttpCallback>(transport_)(response);
+  }
+
   void snapshot(const AskGeneration& generation) {
-    if (!seen_ || generation.revision > revision_) {
+    const bool terminal = generation.status != "running";
+    if (terminal || !seen_ || generation.revision > revision_) {
       Json::Value body(Json::objectValue);
       body["thread"] = thread_.str();
       body["generation"] = toJson(generation);
       seen_ = true;
       revision_ = generation.revision;
-      if (!stream_->send("id: " + generation.id + ":" + std::to_string(revision_) + "\nevent: snapshot\ndata: " + dump(body) + "\n\n")) closed_ = true;
+      publish("id: " + generation.id + ":" + std::to_string(revision_) +
+              "\nevent: snapshot\ndata: " + dump(body) + "\n\n", terminal);
     }
-    if (generation.status != "running") { stream_->close(); closed_ = true; }
   }
   std::mutex mutex_;
-  drogon::ResponseStreamPtr stream_;
+  Transport transport_;
   std::shared_ptr<AskService> ask_;
   UserId user_;
   ThreadId thread_;
@@ -157,6 +198,11 @@ void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
     cb(error(drogon::k400BadRequest, "expected a request id"));
     return;
   }
+  if (json->isMember("purpose") && (!(*json)["purpose"].isString() ||
+      ((*json)["purpose"].asString() != "conversation" && (*json)["purpose"].asString() != "routine_setup"))) {
+    cb(error(drogon::k400BadRequest, "expected conversation or routine_setup purpose")); return;
+  }
+  const std::string purpose = json->get("purpose", "").asString();
   const std::string requestId = json->get("requestId", "").asString();
   std::vector<std::string> attachments;
   if (json->isMember("attachmentIds")) {
@@ -169,14 +215,23 @@ void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
     }
   }
   const std::string question = json->get("question", "").asString();
-  if (json->get("stream", false).isBool() && json->get("stream", false).asBool()) {
-    if (requestId.empty()) { cb(error(drogon::k400BadRequest, "streaming requires a stable request id")); return; }
+  const bool streamRequested = json->get("stream", false).isBool() && json->get("stream", false).asBool();
+  if (streamRequested && requestId.empty()) {
+    cb(error(drogon::k400BadRequest, "streaming requires a stable request id")); return;
+  }
+  std::string connection = req->getHeader("connection");
+  std::transform(connection.begin(), connection.end(), connection.begin(),
+                 [](unsigned char byte) { return static_cast<char>(std::tolower(byte)); });
+  const auto connectionOptions = drogon::utils::splitStringViewToSet(connection, ",");
+  const bool bufferedStream = streamRequested &&
+      (req->version() == drogon::Version::kHttp10 || connectionOptions.count("close"));
+  if (streamRequested && !bufferedStream) {
     const ThreadId thread{(*json)["thread"].asString()};
     auto response = drogon::HttpResponse::newAsyncStreamResponse(
-        [ask = ask_, caller = *caller, thread, question, requestId, attachments](drogon::ResponseStreamPtr stream) {
+        [ask = ask_, caller = *caller, thread, question, requestId, attachments, purpose](drogon::ResponseStreamPtr stream) {
           auto reply = std::make_shared<CoachStream>(std::move(stream), ask, caller.id, thread, requestId);
           ask->ask(caller.id, caller.email.value, thread, question,
-                   [reply](AskReply answer) { reply->finish(answer); }, requestId, attachments);
+                   [reply](AskReply answer) { reply->finish(answer); }, requestId, attachments, purpose);
           reply->poll();
         }, true);
     response->setContentTypeString("text/event-stream");
@@ -186,12 +241,22 @@ void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
     return;
   }
 
+  if (bufferedStream) {
+    // Drogon skips async stream callbacks on closing connections; send one final SSE frame instead.
+    const ThreadId thread{(*json)["thread"].asString()};
+    auto reply = std::make_shared<CoachStream>(std::move(cb), ask_, caller->id, thread, requestId);
+    ask_->ask(caller->id, caller->email.value, thread, question,
+              [reply](AskReply answer) { reply->finish(answer); }, requestId, attachments, purpose);
+    reply->poll();
+    return;
+  }
+
   // The reply lands on a worker thread: no handler thread blocks on the vendor.
   const ThreadId thread{(*json)["thread"].asString()};
   ask_->ask(caller->id, caller->email.value, thread, question,
             [cb = std::move(cb), thread](AskReply reply) {
     if (reply.refusal != AskRefusal::none) {
-      auto response = refusalOf(reply.refusal);
+      auto response = refusalOf(reply);
       if (reply.generation) {
         Json::Value body = *response->getJsonObject();
         body["thread"] = thread.str();
@@ -241,9 +306,10 @@ void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
       body["generation"] = toJson(*reply.generation);
       body["results"] = body["generation"]["results"];
     }
+    if (reply.generation && reply.generation->clarification) body["clarification"] = toJson(*reply.generation->clarification);
     if (reply.receipt) body["receipt"] = toJson(*reply.receipt);
     cb(jsonResponse(body));
-  }, requestId, attachments);
+  }, requestId, attachments, purpose);
 } catch (const GymUnavailable& unavailable) {
   cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }

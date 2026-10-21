@@ -4,6 +4,9 @@ import UIKit
 // Asset names and values follow docs/design/ios/ios-redesign.md §2; `ui` roles resolve in the UIKit view that draws them.
 
 nonisolated enum GymPalette {
+  static let control = Color(uiColor: .tertiarySystemFill)
+  static let uiInkFaint = UIColor(named: "gym/ink-faint")!
+  static let destructive = Color(uiColor: .systemRed)
   static let canvas = Color("gym/canvas")
   static let card = Color("gym/card")
   static let line = Color("gym/line")

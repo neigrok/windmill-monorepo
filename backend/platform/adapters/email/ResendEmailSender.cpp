@@ -6,6 +6,17 @@ namespace wm {
 
 ResendEmailSender::ResendEmailSender(ResendClient& client) : client_(client) {}
 
+void ResendEmailSender::sendAiAllowanceAlert(const Email& to, const AiBudgetAlert& alert,
+                                             std::function<void(bool)> done) {
+  const std::string scope{aiBudgetScopeName(alert.scope)};
+  const std::string source = alert.fundingSource ? std::string(aiBudgetFundingSourceName(*alert.fundingSource)) : "free";
+  const std::string subject = "Windmill AI allowance: " + std::to_string(alert.thresholdPercent) + "%";
+  const std::string text = "Budget: " + scope + "\nFunding: " + source +
+      "\nThreshold: " + std::to_string(alert.thresholdPercent) + "%\nLimit USD: " + formatAiUsd(alert.limitNanos) +
+      "\nSpent USD: " + formatAiUsd(alert.spentNanos) + "\nReserved USD: " + formatAiUsd(alert.heldNanos) + "\n";
+  client_.sendText(to, subject, text, "ai-allowance/" + alert.id, std::move(done));
+}
+
 void ResendEmailSender::sendMagicLink(const Email& to, const std::string& magicLinkUrl,
                                       std::function<void(bool)> done) {
   Json::Value variables(Json::objectValue);

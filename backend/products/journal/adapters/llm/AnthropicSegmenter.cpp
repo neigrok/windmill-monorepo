@@ -1,4 +1,5 @@
 #include "products/journal/adapters/llm/AnthropicSegmenter.h"
+#include "platform/adapters/llm/AiCallBudget.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -89,12 +90,12 @@ std::string numbered(const std::vector<Passage>& atoms) {
 
 AnthropicSegmenter::AnthropicSegmenter(std::shared_ptr<MessagesApi> transport, std::string model,
                                        std::string effort, std::shared_ptr<AiFuse> fuse,
-                                       std::shared_ptr<UsageSink> usage)
+                                       std::shared_ptr<UsageSink> usage, std::shared_ptr<AiCallBudget> budget)
     : transport_(std::move(transport)),
       model_(std::move(model)),
       effort_(std::move(effort)),
       fuse_(std::move(fuse)),
-      usage_(std::move(usage)) {}
+      usage_(std::move(usage)), budget_(std::move(budget)) {}
 
 bool AnthropicSegmenter::configured() const { return transport_ && transport_->configured(); }
 
@@ -152,15 +153,29 @@ Segmentation AnthropicSegmenter::unitsOf(const UserId& user, const std::string& 
   request.schema = unitsSchema();
   request.effort = effort_;
 
-  const MessagesReply reply = transport_->send(request);
-  // Recorded from HERE, not the transport: this frame knows the model, the operation and whose page
-  // it was. Every outcome lands, refusals and truncations included.
   AiSpend spend;
   spend.user = user;
   spend.product = "journal";
   spend.operation = "echo.segment";
   spend.runId = newRunId("segment");
   spend.model = model_;
+  std::optional<AiBudgetReservation> reservation;
+  if (budget_) {
+    const auto admission = budget_->begin(spend, messagesBody(request));
+    if (!admission.reservation) {
+      cut.failure = admission.refusal;
+      return cut;
+    }
+    reservation = admission.reservation;
+  }
+  MessagesReply reply;
+  try {
+    reply = transport_->send(request);
+  } catch (...) {
+    if (reservation) budget_->finish(*reservation, model_, {}, false);
+    throw;
+  }
+  if (reservation) budget_->finish(*reservation, model_, reply.usage, reply.usageComplete);
   spend.outcome = reply.outcome;
   spend.tokens = reply.tokens;
   meterSpend(spend, fuse_, usage_);

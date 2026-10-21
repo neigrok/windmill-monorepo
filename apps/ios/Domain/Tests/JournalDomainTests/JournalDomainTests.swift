@@ -100,13 +100,13 @@ struct JournalDomainTests {
     let text = "  e\u{301}\n"
     try JournalRules.check(PageDocument(body: text, mood: 0))
     #expect(try JournalRules.body.apply(text, at: "body") as String == text)
-    #expect(PageDocument(body: " ").isWritten && PageDocument(energy: 0).isWritten && !PageDocument().isWritten)
+    #expect(!PageDocument(body: " ").isWritten && !PageDocument(energy: 0).isWritten && !PageDocument().isWritten)
     let record = Record(type: Page.type, id: RecordID(Self.day.text), life: nil, born: nil, values: ["mood": .null, "energy": 0, "source": "typed"],
       texts: ["body": TextValue(text: String(repeating: "x", count: 131_073), merged: false, pending: false)], serials: [:], rc: nil, ru: nil, isVisible: true, isPending: false, isHeld: false)
     #expect(try Page(Fields(record)).document.body.utf8.count == 131_073)
   }
 
-  @Test(arguments: [PageDocument(body: "\u{0}"), PageDocument(body: String(repeating: "😀", count: 32_769)), PageDocument(mood: 11), PageDocument(energy: -1), PageDocument(source: "other")])
+  @Test(arguments: [PageDocument(body: "\u{0}"), PageDocument(body: String(repeating: "😀", count: 32_769)), PageDocument(body: "Text", mood: 11), PageDocument(body: "Text", energy: -1), PageDocument(body: "Text", source: "other")])
   func invalidSnapshotsAreRefusedWithoutWrites(_ document: PageDocument) throws {
     let d = try Device()
     let result = try d.runner.run(SavePage(day: Self.day, document: document))
@@ -118,6 +118,50 @@ struct JournalDomainTests {
     let d = try Device()
     #expect(try d.runner.run(SavePage(day: Self.day.adding(days: -1), document: PageDocument(body: "old"))).refusal != nil)
     #expect(try d.pending().isEmpty)
+  }
+
+  @Test(arguments: [PageDocument(), PageDocument(body: " \t\n\u{a0}\u{1680}\u{2000}\u{2028}\u{feff}"), PageDocument(mood: 0, energy: 10), PageDocument(body: String(repeating: " ", count: 131_073), mood: 11)])
+  func unwrittenDaysHaveNoClaimRecordOrFirstPageRetirement(_ document: PageDocument) throws {
+    let d = try Device()
+    _ = try d.runner.run(PreserveEditorDraft(day: Self.day, document: document))
+    _ = try d.runner.run(SavePage(day: Self.day, document: document))
+    #expect(try d.pending().isEmpty)
+    #expect(try d.outbox().isEmpty)
+    let room = try d.runner.read(Journal.scope, JournalRoom.init)
+    #expect(room.days.isEmpty && room.stance == .empty)
+    #expect(room.state == JournalState())
+  }
+
+  @Test func erasingAnAnonymousPageCancelsTheClaimBeforeAdoption() throws {
+    let d = try Device()
+    _ = try d.runner.run(SavePage(day: Self.day, document: PageDocument(body: "Words", mood: 4, energy: 8)))
+    _ = try d.runner.run(SavePage(day: Self.day, document: PageDocument(body: " \n\t", mood: 4, energy: 8)))
+    #expect(try d.pending().isEmpty)
+    #expect(try d.outbox().allSatisfy { $0.intent.command == nil })
+    let room = try d.runner.read(Journal.scope, JournalRoom.init)
+    #expect(room.days.isEmpty && !room.keepDue && !room.scaleInvitationDue)
+    _ = try d.store.signIn(account: "A", holdsRecords: ["journal": true, "gym": false], decisions: [:], counted: [:], identities: d.identities)
+    try d.restart()
+    #expect(try d.runner.read(Journal.scope) { try JournalRoom($0).days.isEmpty })
+  }
+
+  @Test func clearingASyncedPageKeepsOnlyItsOrderingMarkerAndAllowsWritingAgain() throws {
+    let d = try Device()
+    var server = Self.server()
+    try d.bind()
+    for document in [PageDocument(body: "Words", mood: 4), PageDocument(body: "\n\u{a0}", mood: 4), PageDocument(body: "  New words\n")] {
+      _ = try d.runner.run(SavePage(day: Self.day, document: document))
+      let (request, response) = try d.push(&server)
+      try d.result(request, response); try d.pull(&server); try d.restart()
+      let room = try d.runner.read(Journal.scope, JournalRoom.init)
+      if document.isWritten {
+        #expect(room.days.map(\.document) == [document])
+      } else {
+        #expect(room.days.isEmpty && room.stance == .empty)
+        let marker = try d.runner.read(Journal.scope) { try $0.confirmed(Page.self, ID(Self.day)) }
+        #expect(marker?.texts["body"]?.text == "" && marker?.values["mood"] == .null && marker?.values["energy"] == .null)
+      }
+    }
   }
 
   @Test(arguments: ["anonymous", "bound", "pending"])
@@ -256,7 +300,10 @@ struct JournalDomainTests {
 
   @Test func signOutCountsInvitationOnlyPendingWorkAndExcludesTheContentClock() async throws {
     let d = try Device()
-    _ = try d.runner.run(SavePage(day: Self.day, document: PageDocument(body: "")))
+    let pending = PendingClaim(day: Self.day, claimId: "legacy-empty", document: PageDocument(), retirements: [:])
+    let command = try ClaimPageCommand(day: Self.day, document: pending.base, claimId: pending.claimId)
+    _ = try d.engine.commit(Journal.scope, Gesture(changes: [], command: Command(name: ClaimPageCommand.name,
+      args: .object(JSON.Object(uniqueKeysWithValues: command.args.map { ($0.key, $0.value) }))), local: [DeviceWrite(key: pending.key, value: pending.json)]))
     try d.bind()
     d.connectivity.set(online: false)
     let untouched = try await d.engine.signOut()

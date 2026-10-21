@@ -34,15 +34,15 @@ public struct JournalRoom: Sendable {
   public let state: JournalState
   public let firstRunKnown: Bool
   public let isAnonymous: Bool
-  public var scaleInvitationDue: Bool { firstRunKnown && state.scaleInvitationDue }
-  public var keepDue: Bool { isAnonymous && firstRunKnown && state.keepDue }
+  public var scaleInvitationDue: Bool { firstRunKnown && !days.isEmpty && state.scaleInvitationDue }
+  public var keepDue: Bool { isAnonymous && firstRunKnown && !days.isEmpty && state.keepDue }
 
   public init(_ read: Reader) throws {
     let complete = try read.firstPullComplete()
     isAnonymous = read.isAnonymous; firstRunKnown = isAnonymous || complete
     var state = try read.repository(JournalState.self).find(ID(RecordID("journalState")), in: .drawn) ?? JournalState()
     let stored = try read.repository(Page.self).all(in: .stored)
-    stance = stored.isEmpty ? (firstRunKnown ? .empty : .unknown) : .holding
+    stance = !stored.contains(where: { $0.document.isWritten }) ? (firstRunKnown ? .empty : .unknown) : .holding
     let pages = try read.repository(Page.self).all(in: .drawn)
     var byDay: [LocalDay: Day] = [:]
     for page in pages {

@@ -61,6 +61,8 @@ Source parseSource(std::string_view text);   // anything but "spoken" reads as t
 // convergence key: two devices editing a day converge on the greater stamp, last-writer-wins.
 // `updatedAtMs` is server time, for display only.
 struct Page {
+  static constexpr std::string_view whitespace = "\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff";
+  static bool hasWriting(std::string_view body);
   UserId user;
   LocalDate day;
   std::string body;
@@ -73,6 +75,8 @@ struct Page {
   Page(UserId user, LocalDate day, std::string body, std::optional<Score> mood,
        std::optional<Score> energy, Source source, Hlc stamp, std::uint64_t updatedAtMs);
   Page(UserId user, LocalDate day);
+
+  bool isWritten() const { return hasWriting(body); }
 
   bool operator==(const Page&) const = default;
 };

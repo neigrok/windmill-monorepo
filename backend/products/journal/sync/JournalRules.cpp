@@ -54,7 +54,13 @@ void checkedBody(const std::string& body) {
   if (body.size() > kMaxPageBytes) throw Refusal("too-large");
 }
 
-CommandOutcome replace(const Json::Value& args, const Row* current, Ms now) {
+CommandOutcome replace(Json::Value args, const Row* current, Ms now) {
+  if (isBlank(args["body"].asString())) {
+    args["body"] = "";
+    args["mood"] = Json::nullValue;
+    args["energy"] = Json::nullValue;
+    args["source"] = "typed";
+  }
   Delta delta{.t = "page", .id = RecordId(args["day"])};
   WriteEntry write{.t = "page", .id = delta.id};
   for (const char* name : {"mood", "energy", "source"}) {
@@ -170,7 +176,9 @@ JournalOutcome runJournal(const std::string& name, const Json::Value& args, cons
   joined["body"] = claimBody(account, args["body"].asString());
   checkedBody(joined["body"].asString());
   joined["stamp"] = nextDocumentStamp(books["contentClock"], value(current, "documentStamp"), now, "srv");
-  for (const char* field : {"mood", "energy"}) if (args[field].isNull()) joined[field] = value(current, field);
+  const bool blankContribution = isBlank(args["body"].asString());
+  for (const char* field : {"mood", "energy"}) if (blankContribution || args[field].isNull()) joined[field] = value(current, field);
+  if (blankContribution) joined["source"] = current ? value(current, "source") : Json::Value("typed");
   Json::Value receipt(Json::objectValue);
   receipt["digest"] = digest;
   receipt["day"] = args["day"];
