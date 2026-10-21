@@ -12,6 +12,12 @@ The product and library drawings live in five Figma files.
 | Windmill · Gym (web · iOS · Android) | `vdmdiKWrmZoS1FtcvJRf6O` |
 | Windmill · Marketing | `uWLMdVmzTcobOh8hbeem81` |
 
+Gym's canonical Coach-led onboarding lives on the Design System page
+[iOS · Gym onboarding](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=284-5416),
+in [Gym onboarding · Coach-led](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=141-1290).
+The Gym file's [iOS READ ME](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=11-25)
+links directly to this flow. Shared workout and account boards stay linked from the canonical flow.
+
 The approved logo is [Windmill, node 9:129](https://www.figma.com/design/v21I1eIsWkyIaN7byJ8GdV/Windmill?node-id=9-129).
 Its source and usage are recorded in `brand-logo.md`.
 
