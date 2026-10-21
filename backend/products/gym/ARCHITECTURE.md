@@ -69,7 +69,7 @@ refuses every other write: the write rules are the engine's, tested on the real 
 **The sync engine is the writer of gym's training records.** The binding lives in `sync/`: the pure rules and the seven
 commands in `GymRules`, their registry and binding in `GymProduct`, receipts and command books
 through `GymState`, and the stores over gym's tables in `PgGym`.
-`windmill_gym` embeds `gym.registry.json` (version 6, minimum 4), and
+`windmill_gym` embeds `gym.registry.json` (version 7, minimum 4), and
 `platform/infra/SyncProducts` seals it with journal's into the catalog `windmill_server` serves at
 `/v1/sync`. Phones and web write sets, deletions, corrections, routine edits, proposal apply and
 dismiss, renames, notes, weigh-ins and preferences through `/v1/sync`, as the registry and
@@ -116,7 +116,8 @@ session's set revisions and share, a log share's snapshots, Coach's tables) and 
 - Aliases are what the picker searches beside the current name. A rename writes the `aliases`
   register (GymRules): the name it replaced, then the earlier aliases less the old and new names,
   the first five, newest first — so the name a movement holds is never one of them. `PgGym` keeps
-  them as rows of `gym_exercise_aliases`, and the list ships on the catalog read.
+  them as rows of `gym_exercise_aliases`, written only by the row that holds the register: a custom
+  movement's `exercise`, or a seed's `exerciseName`. The list ships on the catalog read.
 - The seed is **64 movements** across the seven patterns, `ON CONFLICT DO NOTHING`. Steps by equipment:
   barbell 2.5, dumbbell 2.0, machine 5.0, cable 2.5, bodyweight 2.5, kettlebell 4.0. `dip`, `pull-up`
   and `muscle-up` are distinct ids; "weighted" is load, not identity.
@@ -1298,15 +1299,22 @@ committed changes; deleted conversation IDs remain tombstoned.
 
 ### Coach routine review and exercise loading
 
-Built-in Coach's `create_routine` stores a draft in the generation's `routineDrafts`; it never calls
-the program write door. `POST /v1/gym/threads/{thread}/generations/{request}/routines/{operation}/confirm`
-applies only the owner-scoped held document after user review. The thread lease excludes a running
-generation. Creation receipts preserve retry identity across later edits and deletion. External MCP
-retains its explicit create tool. No model-facing tool can confirm a draft.
+Coach offers `create_routine` only to a client that reviews drafts: `POST /v1/gym/ask` with
+`routineReview: true`, kept on the generation so a resumed or recovered answer offers the same tools.
+Without it the tool is absent, a call to it is refused, and the system prompt says new routines are not
+saved from that app version. Built-in Coach's `create_routine` stores a draft in the generation's
+`routineDrafts` after the same catalog check live or in recovery; it never calls the program write door.
+`POST /v1/gym/threads/{thread}/generations/{request}/routines/{operation}/confirm` applies only the
+owner-scoped held document after user review. The thread lease excludes a running generation; a
+confirmation that finds the lease held by another confirmation waits for it (bounded) and answers
+with the saved draft. Creation receipts preserve retry identity across later edits and deletion.
+External MCP retains its explicit create tool. No model-facing tool can confirm a draft.
 
-`exerciseName` holds optional name, equipment and loadCount overrides keyed by an existing movement,
-including custom movements. These nullable LWW registers are additive in schema 7/minimum 4; the
-base equipment register retains its const contract. Names and loading metadata resolve across the
+`exerciseName` overrides a movement's loading by its stable id. Keyed by a seed it holds optional
+`name`, `equipment` and `loadCount`; keyed by a custom movement it holds only `equipment` and
+`loadCount`, since a custom movement's name and aliases live on its `exercise` row. The registers are
+optional LWW fields, additive in schema 7/minimum 4: unset is absent, and a null register is refused.
+The base equipment register retains its const contract. Names and loading metadata resolve across the
 history by stable exercise ID, with raw set values unchanged. Counts apply only to dumbbells.
 Goblet squat, dumbbell row, suitcase carry and overhead triceps extension have explicit one-dumbbell
 seed metadata. Other dumbbell movements default to two, and the lifter can edit that count.

@@ -90,7 +90,7 @@ class LiveCoachProof:
         self.stage = label
         self.check("generation_bound_" + label, len(self.results["generations"]) < 4)
         self.check("cost_before_" + label, self.usage()["costNanos"] < 750_000_000)
-        payload = {"thread": thread, "requestId": "req_" + uuid.uuid4().hex, "purpose": "routine_setup", "question": question}
+        payload = {"thread": thread, "requestId": "req_" + uuid.uuid4().hex, "purpose": "routine_setup", "question": question, "routineReview": True}
         if attachments:
             payload["attachmentIds"] = attachments
         answer = []

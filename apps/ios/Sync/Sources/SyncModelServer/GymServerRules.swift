@@ -401,13 +401,13 @@ public struct GymServerRules: ServerRules {
           append(.serverUpdate(row.key, born: row.lattice.born, fields: ["aliases": renamed(value(row, "aliases"), before: beforeName, after: afterName)]))
         }
       case "exerciseName":
-        let seed = context.product["seeds"]?[row.key.id.description]
-        let custom = staged[key("exercise", row.key.id.description)]
-        guard seed != nil || custom?.isAlive == true else { throw Refusal(.invalid) }
+        guard let seed = context.product["seeds"]?[row.key.id.description] else {
+          guard knownExercise(row.key.id.json), row.lattice.fields["name"] == nil else { throw Refusal(.invalid) }
+          continue
+        }
         if blankNamed(change, field: "name") { throw Refusal(.invalid) }
-        let baseName = seed?["name"] ?? value(custom, "name") ?? .string("")
-        let beforeName = value(before, "name") ?? baseName
-        let afterName = value(row, "name") ?? baseName
+        let beforeName = value(before, "name") ?? seed["name"]!
+        let afterName = value(row, "name") ?? seed["name"]!
         if beforeName != afterName {
           append(.serverUpdate(row.key, born: nil, fields: ["aliases": renamed(value(row, "aliases"), before: beforeName, after: afterName)]))
         }

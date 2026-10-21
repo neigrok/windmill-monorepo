@@ -232,11 +232,9 @@ class GymServerRules : ServerRules {
                 }
                 "exerciseName" -> {
                     val seed = c.product["seeds"]?.get(row.key.id.toString())
-                    val custom = staged[key("exercise", row.key.id.toString())]
-                    if (seed == null && custom?.isAlive != true) throw Refusal("invalid")
+                    if (seed == null) { if (!known(row.key.id.json) || "name" in row.lattice.fields) throw Refusal("invalid"); continue }
                     if (blankNamed(change, "name")) throw Refusal("invalid")
-                    val baseName = seed?.member("name") ?: value(custom, "name") ?: Json.of("")
-                    val bn = value(before, "name") ?: baseName; val an = value(row, "name") ?: baseName
+                    val bn = value(before, "name") ?: seed.member("name"); val an = value(row, "name") ?: seed.member("name")
                     if (bn != an) append(PlannedDelta.update(row.key, null, mapOf("aliases" to renamed(value(row, "aliases"), bn, an))))
                 }
                 "weighin" -> if (row.isAlive && row.key.id.toString() > utcDay(c.serverNow + 86_400_000)) throw Refusal("bad-instant")

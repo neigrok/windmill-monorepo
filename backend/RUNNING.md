@@ -119,10 +119,10 @@ cmake --build build-426 --target windmill_server
 ```
 
 Stop the engine server by its port and serve `./build-426/windmill_server` with the same command and
-database. A hello at version 7 answers `"schema":7,"minSchema":7`, and the app's version 6 is refused:
+database. A hello at version 8 answers `"schema":8,"minSchema":8`, and the app's version 7 is refused:
 
 ```sh
-curl -si "http://127.0.0.1:$WM_ENGINE_PORT/v1/sync/hello" -H 'Sync-Schema: 6'
+curl -si "http://127.0.0.1:$WM_ENGINE_PORT/v1/sync/hello" -H 'Sync-Schema: 7'
 # HTTP/1.1 426 Upgrade Required … {"epoch":"…","error":"upgrade-required","serverTime":…}
 ```
 

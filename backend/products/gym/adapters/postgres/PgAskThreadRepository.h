@@ -22,6 +22,7 @@ public:
                                              const std::string& requestId) override;
   bool threadAvailable(const UserId& user, const ThreadId& id) override;
   std::unique_ptr<ThreadLease> tryLease(const UserId& user, const ThreadId& id) override;
+  std::unique_ptr<ThreadLease> awaitLease(const UserId& user, const ThreadId& id, std::chrono::milliseconds wait) override;
   std::vector<AskThread> threadPage(const UserId& user, const ThreadCursor& cursor) override;
   std::optional<AskThread> messagePage(const UserId& user, const ThreadId& id,
                                       std::uint64_t before, int limit) override;

@@ -80,12 +80,13 @@ struct Coach : doortest::Harness {
   }
 
   // ask() answers on a worker thread when it runs and inline when it refuses; both land here.
+  // Asked as the current clients ask: they review routine drafts.
   AskReply question(AskService& service, const ThreadId& thread, const std::string& text, const UserId& caller,
-                    const std::string& requestId = "") {
+                    const std::string& requestId = "", bool routineReview = true) {
     std::promise<AskReply> settled;
     std::future<AskReply> reply = settled.get_future();
-    service.ask(caller, "sam@example.com", thread, text,
-                [&settled](AskReply answer) { settled.set_value(std::move(answer)); }, requestId);
+    service.ask(caller, "sam@example.com", {thread, text, requestId, {}, "", routineReview},
+                [&settled](AskReply answer) { settled.set_value(std::move(answer)); });
     return reply.get();
   }
 
@@ -980,9 +981,11 @@ TEST(coach_drafts_wait_for_confirmation_and_saved_receipts_never_restore_deleted
   CHECK_EQ(recovered.generation->routineDrafts, failed.generation->routineDrafts);
   CHECK_EQ(stored("select id from gym_routines"), std::vector<std::string>{});
   const auto draft = recovered.generation->routineDrafts.front();
-  CHECK_FALSE(h.ask.confirmRoutine(h.other, thread, "req_creation1", draft.operationId));
-  CHECK_FALSE(h.ask.confirmRoutine(h.user, thread, "req_creation1", "op_unknown01"));
-  const auto saved = h.ask.confirmRoutine(h.user, thread, "req_creation1", draft.operationId);
+  CHECK(h.ask.confirmRoutine(h.other, thread, "req_creation1", draft.operationId).refusal == ConfirmRefusal::draftNotFound);
+  CHECK(h.ask.confirmRoutine(h.user, thread, "req_creation1", "op_unknown01").refusal == ConfirmRefusal::draftNotFound);
+  const auto confirmed = h.ask.confirmRoutine(h.user, thread, "req_creation1", draft.operationId);
+  REQUIRE(confirmed.refusal == ConfirmRefusal::none);
+  const auto saved = confirmed.generation;
   REQUIRE(saved);
   CHECK_EQ(saved->routineDrafts.front().state, std::string("saved"));
   CHECK_EQ(stored("select id,name,created_door from gym_routines"),
@@ -990,7 +993,7 @@ TEST(coach_drafts_wait_for_confirmation_and_saved_receipts_never_restore_deleted
   CHECK_EQ(saved->results, (std::vector<CoachResult>{{draft.operationId, draft.routineId, "Upper body", 1}}));
   CHECK_EQ(h.threads.thread(h.user, thread)->turns.back().routineDrafts, saved->routineDrafts);
   h.kill(h.user, "routine", draft.routineId);
-  CHECK_EQ(h.ask.confirmRoutine(h.user, thread, "req_creation1", draft.operationId), saved);
+  CHECK_EQ(h.ask.confirmRoutine(h.user, thread, "req_creation1", draft.operationId).generation, saved);
   CHECK_EQ(stored("select id from gym_routines"), std::vector<std::string>{});
   CHECK_EQ(h.agent.runs, 2);
 }
@@ -1029,10 +1032,10 @@ TEST(coach_active_generation_replays_pending_identity_and_guards_conversation_de
   } agent;
   AskService service{h.training, h.repo.threads, h.clock, agent, h.tools, h.entitlements};
   std::promise<AskReply> first;
-  service.ask(h.user, "sam@example.com", ThreadId{"thr_active01"}, "one", [&](AskReply reply) { first.set_value(reply); }, "req_active01");
+  service.ask(h.user, "sam@example.com", {ThreadId{"thr_active01"}, "one", "req_active01"}, [&](AskReply reply) { first.set_value(reply); });
   agent.entered.get_future().wait();
   std::promise<AskReply> duplicate;
-  service.ask(h.user, "sam@example.com", ThreadId{"thr_active01"}, "one", [&](AskReply reply) { duplicate.set_value(reply); }, "req_active01");
+  service.ask(h.user, "sam@example.com", {ThreadId{"thr_active01"}, "one", "req_active01"}, [&](AskReply reply) { duplicate.set_value(reply); });
   const auto pending = duplicate.get_future().get();
   REQUIRE(pending.generation.has_value());
   CHECK_EQ(pending.generation->status, std::string("running"));
@@ -1072,7 +1075,7 @@ TEST(coach_stop_preserves_partial_text_and_routine_draft_and_replays_without_a_n
   const auto ask = [&] {
     std::promise<AskReply> reply;
     auto future = reply.get_future();
-    service.ask(h.user, "sam@example.com", thread, "Create my routine", [&](AskReply answer) { reply.set_value(answer); }, "req_stop0001");
+    service.ask(h.user, "sam@example.com", {thread, "Create my routine", "req_stop0001", {}, "", true}, [&](AskReply answer) { reply.set_value(answer); });
     return future.get();
   };
   const auto stopped = ask();
@@ -1096,7 +1099,7 @@ TEST(coach_image_only_question_has_a_photo_title_and_an_immutable_owner_scoped_a
   const auto ask = [&](const UserId& user, std::vector<std::string> images) {
     std::promise<AskReply> reply;
     auto future = reply.get_future();
-    h.ask.ask(user, "sam@example.com", thread, "", [&](AskReply answer) { reply.set_value(answer); }, "req_image001", images);
+    h.ask.ask(user, "sam@example.com", {thread, "", "req_image001", images}, [&](AskReply answer) { reply.set_value(answer); });
     return future.get();
   };
   CHECK(ask(h.other, {photo.attachment.id}).refusal == AskRefusal::attachmentInvalid);
@@ -1208,8 +1211,8 @@ TEST(coach_admission_classifies_more_requests_than_model_workers_without_waiting
   const auto submit = [&](const UserId& owner, const ThreadId& thread, const std::string& question, const std::string& id) {
     const auto reply = std::make_shared<std::promise<AskReply>>();
     auto future = reply->get_future();
-    service.ask(owner, "sam@example.com", thread, question,
-        [reply](AskReply answer) { reply->set_value(std::move(answer)); }, id);
+    service.ask(owner, "sam@example.com", {thread, question, id},
+        [reply](AskReply answer) { reply->set_value(std::move(answer)); });
     return future;
   };
   const ThreadId firstThread{"thr_busy0001"};
@@ -1290,8 +1293,8 @@ TEST(coach_overlap_at_arrival_stays_refused_when_database_admission_is_delayed_p
   const auto submit = [&](const std::string& thread, const std::string& request) {
     const auto reply = std::make_shared<std::promise<AskReply>>();
     auto future = reply->get_future();
-    service.ask(h.user, "sam@example.com", ThreadId{thread}, "Question",
-        [reply](AskReply answer) { reply->set_value(std::move(answer)); }, request);
+    service.ask(h.user, "sam@example.com", {ThreadId{thread}, "Question", request},
+        [reply](AskReply answer) { reply->set_value(std::move(answer)); });
     return future;
   };
   auto first = submit("thr_delay001", "req_delay001");
@@ -1343,8 +1346,8 @@ TEST(coach_failed_lease_reread_revalidates_the_immutable_request_payload) {
     repository.armed = true;
     std::promise<AskReply> reply;
     auto future = reply.get_future();
-    service.ask(h.user, "sam@example.com", thread, "Question",
-        [&](AskReply answer) { reply.set_value(std::move(answer)); }, held.requestId);
+    service.ask(h.user, "sam@example.com", {thread, "Question", held.requestId},
+        [&](AskReply answer) { reply.set_value(std::move(answer)); });
     const auto conflict = future.get();
     CHECK(conflict.refusal == AskRefusal::requestConflict);
     CHECK_EQ(conflict.generation, std::optional<AskGeneration>{held});
@@ -1563,6 +1566,7 @@ TEST(every_declared_coach_write_tool_has_one_completion_even_when_refused) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Coach h;
   AskGeneration generation{"generation", "request", "PRIVATE_COACH_QUESTION"};
+  generation.routineReview = true;
   AskTools tools{h.tools, ThreadId{"thr_00000001"}, &h.repo.threads, &generation};
   const ToolCaller reader{h.user, ToolScope({{"gym", Access::read}})};
   std::vector<WriteCompletion> completions;
@@ -1648,8 +1652,8 @@ TEST(coach_setup_clarification_is_typed_immutable_and_persists_in_history) {
   const auto args = parse(R"({"question":"How many days and what equipment?","groups":[{"id":"days","label":"Days each week","multiple":false,"options":[{"id":"three","label":"3 days"},{"id":"four","label":"4 days"}]},{"id":"equipment","label":"Equipment","multiple":true,"options":[{"id":"dumbbells","label":"Dumbbells"},{"id":"barbell","label":"Barbell"}]}]})");
   h.agent.plan = {{"ask_setup_details", args}};
   std::promise<AskReply> settled;
-  h.ask.ask(h.user, "sam@example.com", thread, "Help me make a program",
-      [&](AskReply reply) { settled.set_value(std::move(reply)); }, "req_setupdetails", {}, "routine_setup");
+  h.ask.ask(h.user, "sam@example.com", {thread, "Help me make a program", "req_setupdetails", {}, "routine_setup", true},
+      [&](AskReply reply) { settled.set_value(std::move(reply)); });
   const auto reply = settled.get_future().get();
   REQUIRE(reply.generation);
   REQUIRE(reply.generation->clarification);
@@ -1672,6 +1676,7 @@ TEST(coach_setup_scopes_catalog_and_dispatch_while_preserving_training_context) 
   Coach h;
   AskGeneration generation{"gen_setup_scope", "req_setup_scope", "Create a program"};
   generation.purpose = "routine_setup";
+  generation.routineReview = true;
   AskTools setup{h.tools, ThreadId{"thr_setup_scope"}, &h.repo.threads, &generation};
   const ToolCaller caller{h.user, ToolScope::everything()};
   std::vector<std::string> names;
@@ -1764,4 +1769,123 @@ TEST(coach_proposal_validation_precedes_the_immutable_action_slot) {
     catch (const std::runtime_error&) { refused = true; }
     CHECK(refused);
   }
+}
+
+// A client that cannot review routine drafts is never offered create_routine and never gets a draft; the
+// generation keeps what the asking client could review, so a resumed answer offers the same tools.
+TEST(coach_offers_routine_drafts_only_to_a_client_that_reviews_them) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  Coach h;
+  const auto create = parse(R"({"id":"rt_model0001","name":"Upper body","position":0,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8}]}]})");
+  h.agent.plan = {{"list_notes", parse("{}")}, {"list_exercises", parse("{}")}, {"create_routine", create}};
+  const auto offered = [&] {
+    std::vector<std::string> names;
+    for (const auto& tool : h.agent.seenCatalog) names.push_back(tool["name"].asString());
+    return std::find(names.begin(), names.end(), "create_routine") != names.end();
+  };
+
+  const auto installed = h.question(h.ask, ThreadId{"thr_review001"}, "Create an upper-body routine", h.user, "req_review001", false);
+  REQUIRE(installed.answer.ok);
+  CHECK_FALSE(offered());
+  CHECK_FALSE(installed.generation->routineReview);
+  CHECK(installed.generation->routineDrafts.empty());
+  CHECK_EQ(installed.answer.steps, (std::vector<AskStep>{{"list_notes", false}, {"list_exercises", false}, {"create_routine", true}}));
+  auto kept = *h.repo.threads.generation(h.user, ThreadId{"thr_review001"}, "req_review001");
+  AskTools resumed{h.tools, ThreadId{"thr_review001"}, &h.repo.threads, &kept};
+  CHECK_FALSE(holds(resumed.declareTools(), "create_routine"));
+
+  const auto current = h.question(h.ask, ThreadId{"thr_review002"}, "Create an upper-body routine", h.user, "req_review002", true);
+  REQUIRE(current.answer.ok);
+  CHECK(offered());
+  CHECK(current.generation->routineReview);
+  CHECK_EQ(current.generation->routineDrafts.size(), 1u);
+  CHECK_EQ(stored("select id from gym_routines"), std::vector<std::string>{});
+}
+
+// A draft recovered without a stored result passes the same catalog check as a live one, and a failed
+// check is stored as the operation's result rather than offered for saving.
+TEST(coach_recovered_draft_takes_the_live_catalog_check) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  Coach h;
+  const ThreadId thread{"thr_recover01"};
+  h.repo.threads.openThread(h.user, thread, "Create routine", h.clock.now);
+  AskGeneration generation{"gen_recover01", "req_recover01", "Create routine"};
+  generation.atMs = h.clock.now;
+  generation.routineReview = true;
+  h.repo.threads.saveGeneration(h.user, thread, generation);
+  const CoachOperation unknown{"op_recover01", "create_routine", parse(R"({"id":"rt_recover01","name":"Upper body","position":0,"entries":[{"exerciseId":"missing-movement","sets":[{"reps":8}]}]})")};
+  h.repo.threads.saveOperation(h.user, thread, generation.id, unknown);
+  AskTools recovered(h.tools, thread, &h.repo.threads, &generation);
+  recovered.recover(ToolCaller{h.user, ToolScope::everything()});
+  CHECK(generation.routineDrafts.empty());
+  CHECK_EQ(recovered.steps(), (std::vector<AskStep>{{"create_routine", true}}));
+  const auto held = h.repo.threads.operations(h.user, thread, generation.id);
+  REQUIRE_EQ(held.size(), 1u);
+  REQUIRE(held.front().result.has_value());
+  CHECK_EQ(agentToolText(*held.front().result), std::string("a routine draft names an unknown exercise; read list_exercises first"));
+  CHECK_EQ(stored("select id from gym_routines"), std::vector<std::string>{});
+}
+
+// A double tap or an overlapping retry waits for the confirmation already saving and answers with the same saved
+// draft; exactly one routine stands.
+TEST(coach_overlapping_confirmations_all_answer_with_the_one_saved_routine) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  Coach h;
+  const ThreadId thread{"thr_confirm01"};
+  h.agent.plan = {{"list_notes", parse("{}")}, {"list_exercises", parse("{}")},
+      {"create_routine", parse(R"({"id":"rt_model0001","name":"Upper body","position":0,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8}]}]})")}};
+  const auto drafted = h.question(thread, "Create an upper-body routine", h.user, "req_confirm01");
+  REQUIRE(drafted.answer.ok);
+  REQUIRE_EQ(drafted.generation->routineDrafts.size(), 1u);
+  const auto draft = drafted.generation->routineDrafts.front();
+  std::vector<std::future<ConfirmReply>> confirmations;
+  for (int tap = 0; tap < 4; ++tap)
+    confirmations.push_back(std::async(std::launch::async, [&] { return h.ask.confirmRoutine(h.user, thread, "req_confirm01", draft.operationId); }));
+  for (auto& confirmation : confirmations) {
+    const auto reply = confirmation.get();
+    CHECK(reply.refusal == ConfirmRefusal::none);
+    REQUIRE(reply.generation);
+    CHECK_EQ(reply.generation->routineDrafts.front().state, std::string("saved"));
+    CHECK_EQ(reply.generation->results, (std::vector<CoachResult>{{draft.operationId, draft.routineId, "Upper body", 1}}));
+  }
+  CHECK_EQ(stored("select id from gym_routines"), std::vector<std::string>{draft.routineId});
+  CHECK(h.reports->events.empty());
+}
+
+// Every confirmation that saves nothing says why: the draft is gone, Coach is still answering, another
+// confirmation still holds the conversation, or the held document can no longer be written.
+TEST(coach_confirmation_refusals_name_why_nothing_was_saved) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  Coach h;
+  const ThreadId thread{"thr_confirm02"};
+  h.agent.plan = {{"list_notes", parse("{}")}, {"list_exercises", parse("{}")},
+      {"create_routine", parse(R"({"id":"rt_model0001","name":"Upper body","position":0,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8}]}]})")}};
+  const auto drafted = h.question(thread, "Create an upper-body routine", h.user, "req_confirm02");
+  REQUIRE(drafted.answer.ok);
+  const auto draft = drafted.generation->routineDrafts.front();
+  CHECK(h.ask.confirmRoutine(h.user, thread, "req_unknown01", draft.operationId).refusal == ConfirmRefusal::draftNotFound);
+  CHECK(h.ask.confirmRoutine(h.user, ThreadId{"thr_unknown01"}, "req_confirm02", draft.operationId).refusal == ConfirmRefusal::draftNotFound);
+
+  {
+    const auto held = h.repo.threads.tryLease(h.user, thread);
+    REQUIRE(held);
+    CHECK(h.ask.confirmRoutine(h.user, thread, "req_confirm02", draft.operationId).refusal == ConfirmRefusal::saveInProgress);
+  }
+
+  h.door.createRoutine(h.user, RoutineWrite{RoutineId{draft.routineId}, "Another day", 0, {benchEntry()}}, std::nullopt);
+  const auto invalid = h.ask.confirmRoutine(h.user, thread, "req_confirm02", draft.operationId);
+  CHECK(invalid.refusal == ConfirmRefusal::draftInvalid);
+  CHECK_FALSE(invalid.generation.has_value());
+  CHECK_EQ(h.repo.threads.generation(h.user, thread, "req_confirm02")->routineDrafts.front().state, std::string("pending"));
+  CHECK_EQ(stored("select id,name from gym_routines"), std::vector<std::string>{draft.routineId + " | Another day"});
+
+  const ThreadId running{"thr_confirm03"};
+  h.repo.threads.openThread(h.user, running, "Create routine", h.clock.now);
+  AskGeneration answering{"gen_confirm03", "req_confirm03", "Create routine"};
+  answering.atMs = h.clock.now;
+  answering.routineReview = true;
+  answering.routineDrafts = {{"op_confirm03", "rt_confirm03", "Upper body", 0, {benchEntry()}}};
+  h.repo.threads.saveGeneration(h.user, running, answering);
+  CHECK(h.ask.confirmRoutine(h.user, running, "req_confirm03", "op_confirm03").refusal == ConfirmRefusal::generationActive);
+  CHECK(h.reports->events.empty());
 }

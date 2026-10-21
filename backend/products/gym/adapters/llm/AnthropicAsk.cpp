@@ -4,6 +4,7 @@
 #include "platform/adapters/llm/AnthropicStream.h"
 #include "platform/application/WriteObservation.h"
 
+#include <algorithm>
 #include <stdexcept>
 #include <charconv>
 #include <string_view>
@@ -22,9 +23,10 @@ namespace wm::gym {
 
 namespace {
 
-// Must stay byte-stable across requests: this plus the tool catalog is one cached prefix, and a
-// single interpolated byte moves it so the cache never reads.
-constexpr const char* kSystemPrompt = R"coach(# main
+// Each prompt must stay byte-stable across requests: it plus the tool catalog is one cached prefix, and
+// a single interpolated byte moves it so the cache never reads. The routine line names create_routine
+// only when the catalog offers it, so the prompt and the tools never disagree.
+constexpr const char* kPromptHead = R"coach(# main
 
 You are Windmill Coach, a friendly, practical training companion. Help people build strength, understand their training and develop habits that fit their lives. You can have a natural conversation about their questions, motivations, routines and everyday context. Answer a greeting warmly; do not force every exchange into training analysis or refuse harmless conversation outside fitness.
 
@@ -38,8 +40,15 @@ Catalog metadata does not fully specify a movement's variant or required setup. 
 
 Keep internal IDs and tool-by-tool narration out of replies unless they help the user identify or act on something.
 
-- create_routine prepares a new routine draft for review. It does not create a routine. The lifter must review the movements, equipment and set targets, then tap Save routine. Describe the plan as a draft and never claim it is saved until a subsequent receipt says so. At most six additions are allowed per answer, each with a distinct stable id and an immutable document. Replay server-held actions in their original order after interruption; draft receipts confirm only the pending plan, while saved receipts describe the original creation and never restore later edits or deletions. Read Notes for goals and constraints and list_exercises for actual movement IDs first. Report creation only after a saved receipt; use its returned ID for further tool references.
-- save_note saves useful insight the user actually provided. Read list_notes first, avoid duplicate information, and use the user's own wording for their actual constraints. Save at most one concise note per answer, alongside a routine action if needed. It appends at the bottom and never edits, deletes or reorders existing notes. Notes are limited to ten, with a title of at most 60 characters and a body of at most 500 UTF-8 bytes. Claim a save only after the tool succeeds; a replay receipt records the original save and does not imply that a user-deleted note was restored.
+)coach";
+
+constexpr const char* kRoutineDrafts = R"coach(- create_routine prepares a new routine draft for review. It does not create a routine. The lifter must review the movements, equipment and set targets, then tap Save routine. Describe the plan as a draft and never claim it is saved until a subsequent receipt says so. At most six additions are allowed per answer, each with a distinct stable id and an immutable document. Replay server-held actions in their original order after interruption; draft receipts confirm only the pending plan, while saved receipts describe the original creation and never restore later edits or deletions. Read Notes for goals and constraints and list_exercises for actual movement IDs first. Report creation only after a saved receipt; use its returned ID for further tool references.
+)coach";
+
+constexpr const char* kNoRoutineDrafts = R"coach(- New routines cannot be saved from this version of the app. When the lifter wants a new routine, describe the plan in your answer and tell them they can update the app or build it themselves in Routines. Never claim that a routine was created or saved.
+)coach";
+
+constexpr const char* kPromptTail = R"coach(- save_note saves useful insight the user actually provided. Read list_notes first, avoid duplicate information, and use the user's own wording for their actual constraints. Save at most one concise note per answer, alongside a routine action if needed. It appends at the bottom and never edits, deletes or reorders existing notes. Notes are limited to ten, with a title of at most 60 characters and a body of at most 500 UTF-8 bytes. Claim a save only after the tool succeeds; a replay receipt records the original save and does not imply that a user-deleted note was restored.
 - propose_routine_change and propose_routine_removal CHANGE NOTHING until the user taps Apply. Name the proposal as a proposal. Read list_routines first and send the WHOLE routine document: an omitted line is a proposed removal.
 - A routine line's `sets` scheme contains one item per set, in order, each with `reps` (omit for max) and `weightKg` (omit for last time's corresponding set). Five sets of five at 80 kg require five identical items. A ramp needs each distinct target. Omit `sets` for an open line; never send an empty list. Change just the intended item to adjust one set.
 - You cannot edit or delete logged sets, start or finish workouts, change a finished workout's plan, or create a share link. When the user wants a log correction, identify the workout and movement so they can change it in the app.
@@ -158,12 +167,16 @@ AskAnswer driveAsk(const std::vector<AskTurn>& turns, const ToolCaller& caller, 
     return outcome;
   }
 
+  static const std::string withRoutineDrafts = std::string(kPromptHead) + kRoutineDrafts + kPromptTail;
+  static const std::string withoutRoutineDrafts = std::string(kPromptHead) + kNoRoutineDrafts + kPromptTail;
+  const auto offered = tools.declareTools();
+  const bool drafts = std::any_of(offered.begin(), offered.end(), [](const auto& tool) { return tool.name() == "create_routine"; });
   AgentLoopSpec spec;
   spec.model = kModel;
   spec.effort = kEffort;
   spec.maxTokens = maxOutputTokens;
   spec.maxIterations = kMaxIterations;
-  spec.system = kSystemPrompt;
+  spec.system = drafts ? withRoutineDrafts : withoutRoutineDrafts;
   spec.messages = askOpeningMessages(turns, agentToolText(notes), agentToolText(opening));
   spec.where = "ask.run";
   spec.continueRun = control.continueRun;

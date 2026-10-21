@@ -718,7 +718,7 @@ ToolResult GymTools::callTool(const std::string& name, const Json::Value& argume
     reportCurrentWriteFailure(error);
     return ToolResult::failure(name + ": that call failed inside the server; the detail is in the "
                                "server log. Read the workout back before retrying a write, and "
-                               "reuse the SAME id if you do.");
+                               "reuse the SAME id if you do.", "failed");
   }
 }
 

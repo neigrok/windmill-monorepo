@@ -25,7 +25,7 @@ Json::Value toJson(const HistoryWorkout& workout) {
     line["exerciseId"] = set.exerciseId;
     line["exercise"] = set.exercise;
     line["equipment"] = toString(set.equipment);
-    line["loadCount"] = set.equipment == Equipment::dumbbell && set.loadCount != 1 ? 2 : 1;
+    if (set.equipment == Equipment::dumbbell) line["loadCount"] = set.loadCount == 1 ? 1 : 2;
     line["setNumber"] = set.setNumber;
     line["weightKg"] = set.weightKg;
     line["reps"] = set.reps;

@@ -223,8 +223,10 @@ bases are captured:
   snapshot which survives that death. Equal or losing writes and position-only edits move no revision.
 - **Exercise.** A death → `invalid`. A create without `stepKg` → `invalid`. A change of `name` writes
   `aliases := [the name it replaced, ...the aliases without that name or the new one]`, at most 5.
-- **ExerciseName.** Keyed by an id that is not a seed → `invalid`. A change of the displayed name (the
-  register, else the seed's name) writes `aliases` as for an exercise.
+- **ExerciseName.** Keyed by a seed: a change of the displayed name (the register, else the seed's name)
+  writes `aliases` as for an exercise. Keyed by a custom movement alive in the joined rows (stored, or
+  created in the same intent, in either order): only `equipment` and `loadCount`, and a `name` → `invalid`.
+  Keyed by any other id → `invalid`. A null `name`, `equipment` or `loadCount` → `invalid`.
 - **Note.** Create or a net title/body value change writes server `updatedAt := serverNow`. Reorder,
   equal-value restamp, losing writes and retries preserve it, although `ru` can move.
 - **Weighin.** An alive put of a day later than the UTC date of `serverNow + 86 400 000` → `bad-instant`.
@@ -257,7 +259,7 @@ converge on the current service digest.
 ## The journal product
 
 `reference/test/journal/claim-edit.test.js` covers the installed v4 journal registry against a
-composed v6 service with minimum version 4. Ready/sent/acked saves and pending claims survive gym
+composed v7 service with minimum version 4. Ready/sent/acked saves and pending claims survive gym
 writes through MCP/ask doors, client relaunch and a lost claim response; retained typing reconciles
 once, with no epoch change and no gym subscription.
 

@@ -142,7 +142,7 @@ Json::Value onboardingInput(const OnboardingIn& input) {
 std::optional<std::vector<OnboardingRoutine>> readOnboardingRoutines(
     const Json::Value& output, const OnboardingIn& input, const std::vector<Exercise>& seeds) {
   const bool dialogue = input.mode == "conversation";
-  if (!(dialogue ? fields(output, {"message", "routines"}) && label(output["message"], 4000) : fields(output, {"routines"})) || !output["routines"].isArray() ||
+  if (!(dialogue ? fields(output, {"message", "routines"}) && label(output["message"], std::string::npos) : fields(output, {"routines"})) || !output["routines"].isArray() ||
       (!dialogue && output["routines"].empty()) || output["routines"].size() > 3 ||
       (input.mode == "goal" && output["routines"].size() > static_cast<unsigned>(input.daysPerWeek))) return std::nullopt;
   if (input.mode == "goal" && (input.equipment == "bands" || input.equipment == "other")) return std::nullopt;
@@ -220,6 +220,18 @@ Json::Value onboardingRoutines(const std::vector<OnboardingRoutine>& routines) {
     out["routines"].append(row);
   }
   return out;
+}
+
+OnboardingMessage onboardingMessage(const std::string& said) {
+  if (said.size() <= kOnboardingMessageBytes) return {said, false};
+  const std::string ellipsis = "…";
+  const auto whitespace = [](char byte) { return byte == ' ' || byte == '\t' || byte == '\r' || byte == '\n'; };
+  std::size_t boundary = kOnboardingMessageBytes - ellipsis.size();
+  while (boundary > 0 && (static_cast<unsigned char>(said[boundary]) & 0xC0) == 0x80) --boundary;
+  std::size_t end = boundary;
+  while (end > 0 && !whitespace(said[end])) --end;
+  while (end > 0 && whitespace(said[end - 1])) --end;
+  return {said.substr(0, end == 0 ? boundary : end) + ellipsis, true};
 }
 
 OnboardingRecord expireOnboarding(OnboardingRecord record, long long nowMs) {

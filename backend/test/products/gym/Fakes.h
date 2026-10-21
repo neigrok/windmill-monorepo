@@ -23,6 +23,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -889,6 +890,13 @@ public:
     std::lock_guard lock(mutex);
     if (!active.insert(id.str()).second) return nullptr;
     return std::make_unique<Lease>(*this, id.str());
+  }
+  std::unique_ptr<ThreadLease> awaitLease(const UserId& user, const ThreadId& id, std::chrono::milliseconds wait) override {
+    const auto deadline = std::chrono::steady_clock::now() + wait;
+    for (auto lease = tryLease(user, id);; lease = tryLease(user, id)) {
+      if (lease || std::chrono::steady_clock::now() >= deadline) return lease;
+      std::this_thread::sleep_for(std::chrono::milliseconds{5});
+    }
   }
   std::vector<AskThread> threadPage(const UserId& user, const ThreadCursor& cursor) override {
     std::vector<AskThread> result;

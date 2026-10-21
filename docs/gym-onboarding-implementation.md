@@ -109,9 +109,10 @@ does not inherit a previous release's test totals, live-provider run or TestFlig
 
 ## Release compatibility and maintenance
 
-Routine confirmation requires a client that renders `routineDrafts` and invokes explicit
-confirmation. Coordinate backend and client availability or provide update guidance before an
-older client receives an unusable pending draft. Silent creation is not a compatibility fallback.
+Coach prepares routine drafts only for a client that sends `routineReview: true`, which renders
+`routineDrafts` and invokes explicit confirmation. A client that does not is never offered
+`create_routine`; Coach tells its lifter to update the app or build the routine in Routines. Silent
+creation is not a compatibility fallback.
 
 Keep setup within the Coach conversation and reuse one receipt shape for single or multiple
 creations. Entry preference stays separate from content; deleting a routine must not reset a

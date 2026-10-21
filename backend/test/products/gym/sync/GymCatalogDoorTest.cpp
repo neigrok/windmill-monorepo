@@ -236,6 +236,29 @@ TEST(renaming_a_seed_is_this_accounts_alone_and_the_id_never_moves) {
   CHECK_EQ(listed[0].summary.exerciseNames, std::vector<std::string>{"Low-bar Squat"});
 }
 
+// A custom movement's aliases live on its exercise row: an equipment override under the same id leaves them
+// in place, a name on that override is refused, and the stored digest stays the sum of the rows.
+TEST(a_custom_movements_equipment_override_keeps_its_aliases_and_the_scope_digest) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  Harness h;
+  REQUIRE(h.door.createExercise(h.user, ExerciseWrite{ExerciseId{"ex_custom01"}, "Sled push", Pattern::carry,
+                                                      Equipment::machine, 5.0}).exercise);
+  REQUIRE(h.door.updateExercise(h.user, ExerciseUpdate{ExerciseId{"ex_custom01"}, "Prowler", {}, {}}));
+  REQUIRE(h.door.updateExercise(h.user, ExerciseUpdate{ExerciseId{"ex_custom01"}, {}, Equipment::dumbbell, 1}));
+
+  CHECK_EQ(h.repo.catalog.catalog(h.user), seedsWith({Exercise{ExerciseId{"ex_custom01"}, "Prowler", Pattern::carry,
+                                                               Equipment::dumbbell, 5.0, true, {"Sled push"}, 1}}));
+  CHECK(doortest::scopeConsistent(h.user));
+
+  REQUIRE(h.door.updateExercise(h.user, ExerciseUpdate{ExerciseId{"ex_custom01"}, "Custom carry", Equipment::dumbbell, 2}));
+  CHECK_EQ(GymDoor::refusal(renamed(h, h.user, "exerciseName", "ex_custom01", "Sled")), std::string("invalid"));
+
+  CHECK_EQ(h.repo.catalog.catalog(h.user),
+           seedsWith({Exercise{ExerciseId{"ex_custom01"}, "Custom carry", Pattern::carry, Equipment::dumbbell, 5.0, true,
+                               {"Prowler", "Sled push"}, 2}}));
+  CHECK(doortest::scopeConsistent(h.user));
+}
+
 // A rename names a movement this account can see and a name it can hold, or nothing is written.
 TEST(a_rename_refuses_a_movement_this_account_cannot_see_and_a_name_past_the_bound) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");

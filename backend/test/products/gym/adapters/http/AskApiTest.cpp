@@ -767,7 +767,7 @@ TEST(gym_setup_http_retains_multiple_routine_drafts_after_later_usd_refusal) {
   auto failures = std::make_shared<CoachFailures>();
   auto service = std::make_shared<AskService>(h.training, h.repo.threads, h.clock, agent, h.tools, entitlements, failures);
   AskApi api{service, h.auth};
-  const auto request = parse(R"({"thread":"thr_httpmulti","requestId":"req_httpmulti","question":"Build three days","purpose":"routine_setup"})");
+  const auto request = parse(R"({"thread":"thr_httpmulti","requestId":"req_httpmulti","question":"Build three days","purpose":"routine_setup","routineReview":true})");
   std::promise<drogon::HttpResponsePtr> settled;
   api.ask(postRequest("/v1/gym/ask", request, "s-door"), [&](const auto& response) { settled.set_value(response); });
   const auto response = settled.get_future().get();

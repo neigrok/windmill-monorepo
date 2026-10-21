@@ -1,6 +1,6 @@
 # Coach conversation contract
 
-The `/v1/gym/ask` JSON route accepts `{thread, question, requestId, purpose?}`. Questions are at most 8,000 UTF-8 bytes; invalid UTF-8 and NUL bytes are refused. `purpose` is `conversation` by default or `routine_setup`; setup clients keep that purpose on subsequent turns in the same setup conversation. An omitted purpose inherits the stored purpose on a retry, so older clients can reopen setup exchanges. An explicitly supplied purpose is immutable on a request retry and is emitted on generations and history turns only when it is `routine_setup`. `requestId` is a client-minted 8–64 character ASCII identifier containing letters, digits, `_` or `-`. Persist it with the draft before sending and reuse it, the same thread and the same question after a timeout, reconnect or retry. A different question requires a different request ID. Clients without `requestId` remain accepted; each legacy request is a new generation and cannot recover an ambiguous submission by identity.
+The `/v1/gym/ask` JSON route accepts `{thread, question, requestId, purpose?, routineReview?}`. Questions are at most 8,000 UTF-8 bytes; invalid UTF-8 and NUL bytes are refused. `purpose` is `conversation` by default or `routine_setup`; setup clients keep that purpose on subsequent turns in the same setup conversation. An omitted purpose inherits the stored purpose on a retry, so older clients can reopen setup exchanges. An explicitly supplied purpose is immutable on a request retry and is emitted on generations and history turns only when it is `routine_setup`. `requestId` is a client-minted 8–64 character ASCII identifier containing letters, digits, `_` or `-`. Persist it with the draft before sending and reuse it, the same thread and the same question after a timeout, reconnect or retry. A different question requires a different request ID. Clients without `requestId` remain accepted; each legacy request is a new generation and cannot recover an ambiguous submission by identity. `routineReview` is a boolean: a client that renders routine drafts and their Save routine control sends `true` on every ask, retries included. The generation keeps the value its request created it with, and a generation without it is never offered `create_routine`; its prompt says new routines are not saved from that app version and the lifter can update the app or build the routine in Routines. A non-boolean value is `400`.
 
 A completed reply contains `answer`, `steps`, `read`, `proposals`, `thread`, `receipt`, `generation` and `results`. `generation` contains `id`, `requestId`, `question`, `status` (`running`, `completed`, `failed`, `stopped`), `answer`, `at` (the original question acceptance time in epoch milliseconds), `steps`, optional `receipt`, and `results`. A result has `{kind:"routine-created", operationId, routineId, routineName, movementCount?}`. `movementCount` counts entries in the durable original creation document; it is absent on older receipts. These values are server-observed durable facts, including when answer generation fails after creating a routine. Open a result using the routine route and handle a routine that was subsequently deleted.
 
@@ -12,7 +12,7 @@ The server replays the stored completed reply for the same request without anoth
 
 Thread outcomes include `created` when the conversation created a routine; `changes` then counts created routines and a sole result carries its routine identity. Full history remains stored. Model context uses the newest successfully completed exchanges, at most 24 messages and 24,000 text bytes, plus the current question and freshly read Notes/log data. Historical receipts, routine results and proposals remain available in stored history even when their text is outside model context. Coach does not claim to have consulted discarded text.
 
-Coach can prepare up to six requested routine drafts, mint one existing-routine proposal and save one useful new user-provided insight per generation. The server requires successful Notes and movement-catalog reads before routine creation and a Notes read before an insight save. It persists each operation with its chosen ID and complete arguments before executing it, and its observed result before model continuation. Routine additions use ordered durable action slots and server-owned routine IDs. Repeated calls in one run reuse their original slot; a changed document is refused. After interruption the model must replay each held document in order before adding new routines, even if it invents different model IDs. Failed durable attempts count toward the six-slot cap. Syntactically invalid documents are rejected before reserving a slot. The operation collection also reads legacy single-operation records. Existing routine changes still use proposals and human Apply. A retry recovers those same operations and never chooses a new routine or note-save ID. Generation exclusion uses a database session lock, released on process exit; retrying the same unfinished request after restart recovers it. Deletion during an active generation returns `409 ask-generation-active`. Deleting a conversation removes its generations and messages and preserves routine, saved-note and applied-proposal consequences.
+For a client that reviews drafts, Coach can prepare up to six requested routine drafts, mint one existing-routine proposal and save one useful new user-provided insight per generation. The server requires successful Notes and movement-catalog reads before routine creation and a Notes read before an insight save. It persists each operation with its chosen ID and complete arguments before executing it, and its observed result before model continuation. Routine additions use ordered durable action slots and server-owned routine IDs. Repeated calls in one run reuse their original slot; a changed document is refused. After interruption the model must replay each held document in order before adding new routines, even if it invents different model IDs. Failed durable attempts count toward the six-slot cap. Syntactically invalid documents are rejected before reserving a slot. The operation collection also reads legacy single-operation records. Existing routine changes still use proposals and human Apply. A retry recovers those same operations and never chooses a new routine or note-save ID. Generation exclusion uses a database session lock, released on process exit; retrying the same unfinished request after restart recovers it. Deletion during an active generation returns `409 ask-generation-active`. Deleting a conversation removes its generations and messages and preserves routine, saved-note and applied-proposal consequences.
 
 Refusals after reading a known generation retain `generation` and `results`, including later allowance or model-capacity refusals. Never discard an accepted or ambiguous request ID because a retry is refused. Deleted conversation IDs remain unavailable through an account-cascaded tombstone; delayed asks return `409 ask-thread-taken` and cannot recreate the conversation.
 
@@ -20,7 +20,7 @@ Refusals after reading a known generation retain `generation` and `results`, inc
 
 Only `routine_setup` exposes `ask_setup_details`. It persists a typed question in the existing generation payload, with no additional workflow table. The optional `clarification` is `{id, question, groups:[{id,label,multiple,options:[{id,label}]}]}` and is also present on successful buffered replies. The server assigns `clarify_<generation-id>`; repeated calls must keep the same question and choices. Assistant history reads the same payload through an owner/thread/generation-scoped join.
 
-Routine setup uses a focused tool catalog: `list_sessions`, `get_sessions`, `list_notes`, `save_note`, `list_exercises`, `list_routines`, `create_routine` and `ask_setup_details`. These retain owned training history, standing constraints, movement metadata and existing plans while creating new routines. Other tools, including existing-routine change/removal proposals, are refused at dispatch during setup. Ordinary conversations retain the full Coach catalog. Both purposes use the same prompt, model loop, authorization and durable action receipts.
+Routine setup uses a focused tool catalog: `list_sessions`, `get_sessions`, `list_notes`, `save_note`, `list_exercises`, `list_routines`, `create_routine` (for a client that reviews drafts) and `ask_setup_details`. These retain owned training history, standing constraints, movement metadata and existing plans while creating new routines. Other tools, including existing-routine change/removal proposals, are refused at dispatch during setup. Ordinary conversations retain the full Coach catalog. Both purposes use the same prompt for the same `routineReview`, and the same model loop, authorization and durable action receipts.
 
 Questions have 1–500 UTF-8 bytes, labels 1–80 bytes, and blank or unstorable text is refused. There are one or two distinct groups, named `days` or `equipment`, each with one to six options. `days` is single-select. Option IDs are unique within a group, 1–32 lowercase ASCII letters, digits, underscores or hyphens. Unknown properties and arbitrary UI actions are refused. Choices fill an editable draft and cause no network work until explicit Send. The model includes its question in prose for older clients. It uses supplied facts, asks only for materially missing days/equipment and offers mutually compatible multi-select equipment items.
 
@@ -58,10 +58,27 @@ existing routine entry shape and `state` is `pending` or `saved`. Drafts survive
 and retries. They are not routine-created results.
 
 `POST /v1/gym/threads/{thread}/generations/{requestId}/routines/{operationId}/confirm`, with `{}`,
-authenticates the owner and applies the exact server-held draft. It returns `{thread,generation,results}`.
-A missing or foreign draft returns 404; an active conversation returns 409. The server uses the same
-routine identity and immutable creation receipt for every retry, including after later user edits
-or deletion. No model tool can call confirmation. Existing routine revisions still require Apply.
+authenticates the owner and applies the exact server-held draft. A draft is checked against the
+movement catalog when Coach prepares it and again when a retry recovers it; a draft that fails the
+check is stored as a failed action and never offered. Outcomes:
+
+| Status | `code` | Meaning | Client |
+|---|---|---|---|
+| 200 | — | `{thread,generation,results}`: the draft is saved, including when an earlier or overlapping confirmation saved it | show the saved routine |
+| 400 | — | malformed thread, request or operation id | — |
+| 401 | — | signed out | sign-in note |
+| 404 | `coach-draft-not-found` | no such draft for this account (absent and foreign are one answer) | "This draft is no longer available."; hide Save |
+| 409 | `ask-generation-active` | Coach is still answering that request | retry copy |
+| 409 | `routine-save-in-progress` | another confirmation still holds the conversation after a bounded wait | retry copy |
+| 422 | `coach-draft-invalid` | the held document cannot be written: a movement it names is gone or its routine id is taken | "This draft can’t be saved. Ask Coach for a new one."; hide Save |
+| 503 | `gym-engine-busy`, `gym-engine-unavailable` | the engine could not take the write now | retry copy |
+| 503 | — | unexpected failure | retry copy |
+
+Retry copy is "Couldn’t save the routine. Try again."; a lost reply never asserts the routine was not
+saved. A double tap waits for the first confirmation and answers 200 with the same saved draft. The
+server uses the same routine identity and immutable creation receipt for every retry, including after
+later user edits or deletion. No model tool can call confirmation. Existing routine revisions still
+require Apply.
 
 `update_exercise` accepts `exerciseId` and optional `name`, `equipment` and `loadCount` (1 or 2).
 An optional `requestId` makes an edit replayable without overwriting later changes. Coach supplies
@@ -125,8 +142,9 @@ or another installation's request. Both routes return this shape with private/no
 }
 ```
 
-`status` is `pending`, `completed`, `failed` or `expired`. `message` is the assistant reply, bounded to
-4,000 UTF-8 bytes for conversation mode. `routines` is empty until completed and may remain empty
+`status` is `pending`, `completed`, `failed` or `expired`. `message` is the assistant reply, at most
+4,000 UTF-8 bytes for conversation mode: the model is asked for at most 1,200 characters, and a longer
+reply is clipped after its last whole word within the bound and ends with `…`. `routines` is empty until completed and may remain empty
 for ordinary dialogue;
 `errorCode` is null unless failed or expired. Poll at one-second intervals with the same credential.
 Pending work becomes terminal after a 15-minute lease, including after a server restart. Replaying a

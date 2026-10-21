@@ -550,6 +550,7 @@ Json::Value toJson(const AskGeneration& generation) {
   body["requestId"] = generation.requestId;
   body["question"] = generation.question;
   if (generation.purpose != "conversation") body["purpose"] = generation.purpose;
+  if (generation.routineReview) body["routineReview"] = true;
   if (generation.clarification) body["clarification"] = toJson(*generation.clarification);
   body["status"] = generation.status;
   body["answer"] = generation.answer;
@@ -574,6 +575,7 @@ AskGeneration generationFrom(const Json::Value& body) {
   generation.requestId = body["requestId"].asString();
   generation.question = body["question"].asString();
   generation.purpose = body.get("purpose", "conversation").asString();
+  generation.routineReview = body.get("routineReview", false).asBool();
   generation.clarification = clarificationFrom(body["clarification"]);
   generation.status = body["status"].asString();
   generation.answer = body.get("answer", "").asString();

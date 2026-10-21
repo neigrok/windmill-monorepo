@@ -131,25 +131,27 @@ void ThreadsApi::putImage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, 
     return;
   }
   uploads_.getNextLoop()->queueInLoop([this, req, caller = *caller, thread, id, cb = std::move(cb)] {
-    const auto upload = [&]() -> drogon::HttpResponsePtr {
-      const auto image = decodeCoachImage(id, req->getHeader("content-type"), req->body());
-      if (!image) return error(drogon::k400BadRequest, "choose a valid JPEG or PNG photo no larger than 4096 pixels per edge");
-      const auto outcome = threads_->putImage(caller, ThreadId{thread}, *image);
-      if (outcome == ImageWriteError::notFound) return error(drogon::k404NotFound, "no such conversation");
-      if (outcome == ImageWriteError::idTaken) return error(drogon::k409Conflict, "that attachment id is already in use");
-      if (outcome == ImageWriteError::dailyLimit) return error(drogon::k429TooManyRequests, "photo uploads are full for today", "ask-image-limit");
-      Json::Value body(Json::objectValue);
-      body["attachment"] = toJson(image->attachment);
-      return jsonResponse(body);
-    };
-    drogon::HttpResponsePtr response;
-    try { response = upload(); }
-    catch (const std::exception& failure) {
-      writeHttpFailure(req, failure);
-      response = error(drogon::k503ServiceUnavailable, "photo could not be saved; try again shortly");
-    }
-    --uploadCount_;
-    cb(response);
+    observeHttpWork(req, [&] {
+      const auto upload = [&]() -> drogon::HttpResponsePtr {
+        const auto image = decodeCoachImage(id, req->getHeader("content-type"), req->body());
+        if (!image) return error(drogon::k400BadRequest, "choose a valid JPEG or PNG photo no larger than 4096 pixels per edge");
+        const auto outcome = threads_->putImage(caller, ThreadId{thread}, *image);
+        if (outcome == ImageWriteError::notFound) return error(drogon::k404NotFound, "no such conversation");
+        if (outcome == ImageWriteError::idTaken) return error(drogon::k409Conflict, "that attachment id is already in use");
+        if (outcome == ImageWriteError::dailyLimit) return error(drogon::k429TooManyRequests, "photo uploads are full for today", "ask-image-limit");
+        Json::Value body(Json::objectValue);
+        body["attachment"] = toJson(image->attachment);
+        return jsonResponse(body);
+      };
+      drogon::HttpResponsePtr response;
+      try { response = upload(); }
+      catch (const std::exception& failure) {
+        writeHttpFailure(req, failure);
+        response = error(drogon::k503ServiceUnavailable, "photo could not be saved; try again shortly");
+      }
+      --uploadCount_;
+      cb(response);
+    });
   });
 }
 
@@ -175,22 +177,35 @@ void ThreadsApi::confirmRoutine(const drogon::HttpRequestPtr& req, HttpCallback&
     cb(error(drogon::k400BadRequest, "invalid routine draft identity")); return;
   }
   uploads_.getNextLoop()->queueInLoop([this, req, caller = *caller, thread, requestId, operationId, cb = std::move(cb)] {
-    try {
-      const auto generation = ask_->confirmRoutine(caller, ThreadId{thread}, requestId, operationId);
-      if (!generation) { cb(error(drogon::k404NotFound, "no such routine draft")); return; }
-      Json::Value body(Json::objectValue);
-      body["thread"] = thread;
-      body["generation"] = toJson(*generation);
-      body["results"] = toJson(generation->results);
-      cb(jsonResponse(body));
-    } catch (const ThreadBusy&) {
-      cb(error(drogon::k409Conflict, "wait for Coach to finish before saving", "ask-generation-active"));
-    } catch (const GymUnavailable& unavailable) {
-      cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
-    } catch (const std::exception& failure) {
-      writeHttpFailure(req, failure);
-      cb(error(drogon::k503ServiceUnavailable, "routine could not be saved; try again shortly"));
-    }
+    observeHttpWork(req, [&] {
+      const auto confirm = [&]() -> drogon::HttpResponsePtr {
+        const auto reply = ask_->confirmRoutine(caller, ThreadId{thread}, requestId, operationId);
+        switch (reply.refusal) {
+          case ConfirmRefusal::draftNotFound:
+            return error(drogon::k404NotFound, "this draft is no longer available", "coach-draft-not-found");
+          case ConfirmRefusal::generationActive:
+            return error(drogon::k409Conflict, "wait for Coach to finish before saving", "ask-generation-active");
+          case ConfirmRefusal::saveInProgress:
+            return error(drogon::k409Conflict, "this routine is still being saved; try again shortly", "routine-save-in-progress");
+          case ConfirmRefusal::draftInvalid:
+            return error(drogon::k422UnprocessableEntity, "this draft can't be saved; ask Coach for a new one", "coach-draft-invalid");
+          case ConfirmRefusal::none: break;
+        }
+        Json::Value body(Json::objectValue);
+        body["thread"] = thread;
+        body["generation"] = toJson(*reply.generation);
+        body["results"] = toJson(reply.generation->results);
+        return jsonResponse(body);
+      };
+      drogon::HttpResponsePtr response;
+      try { response = confirm(); }
+      catch (const GymUnavailable& unavailable) { response = error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()); }
+      catch (const std::exception& failure) {
+        writeHttpFailure(req, failure);
+        response = error(drogon::k503ServiceUnavailable, "routine could not be saved; try again shortly");
+      }
+      cb(response);
+    });
   });
 }
 

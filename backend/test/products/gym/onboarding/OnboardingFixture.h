@@ -79,12 +79,13 @@ struct Model : OnboardingModel {
   std::atomic<int> calls=0;
   std::function<void()> before;
   std::string error;
+  std::string message;
   bool configured() const override { return available; }
   OnboardingAnswer generate(const AiInstallationPrincipal&,const std::string&,const OnboardingIn&,const std::vector<Exercise>&) override {
     ++calls;
     if (before) before();
     if (!error.empty()) return {{},error};
-    return {{{"Push",{RoutineEntry{1,ExerciseId{"bench-press"},{SetTarget{8,std::nullopt}},120}}}}, {}};
+    return {{{"Push",{RoutineEntry{1,ExerciseId{"bench-press"},{SetTarget{8,std::nullopt}},120}}}}, {}, message};
   }
 };
 

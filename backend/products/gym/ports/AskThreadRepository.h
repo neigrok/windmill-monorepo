@@ -4,6 +4,7 @@
 #include "platform/ports/ToolHost.h"
 #include "products/gym/domain/Training.h"
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -54,6 +55,8 @@ struct AskThreadRepository {
                                                      const std::string& requestId) = 0;
   virtual bool threadAvailable(const UserId& user, const ThreadId& id) = 0;
   virtual std::unique_ptr<ThreadLease> tryLease(const UserId& user, const ThreadId& id) = 0;
+  // Waits at most `wait` for a lease another request holds; nullptr when it is still held.
+  virtual std::unique_ptr<ThreadLease> awaitLease(const UserId& user, const ThreadId& id, std::chrono::milliseconds wait) = 0;
   virtual std::vector<AskThread> threadPage(const UserId& user, const ThreadCursor& cursor) = 0;
   virtual std::optional<AskThread> messagePage(const UserId& user, const ThreadId& id,
                                               std::uint64_t before, int limit) = 0;

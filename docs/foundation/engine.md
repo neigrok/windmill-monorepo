@@ -14,9 +14,10 @@ journal), iOS (journal, gym) and Android (gym) write through replicas, and MCP, 
 import door admit as the server (A.2). Production's gym and journal rows were adopted in place
 (Appendices C and D). `windmill_server_probe` carries the test-only contract.
 
-**Registry contract:** The composed registry has version 6 and minimum version 4, so installed v4
-and v5 clients remain supported. A.2 specifies gym's metadata and additive corrections; a server
-advertising v6 accepts correction-set `kind` and `preserveOtherSets`. C.8 specifies how the adopted
+**Registry contract:** The composed registry has version 7 and minimum version 4, so installed v4,
+v5 and v6 clients remain supported. A.2 specifies gym's metadata, additive corrections and movement
+overrides; a server advertising v6 or newer accepts correction-set `kind` and `preserveOtherSets`, and
+v7 adds the optional `exerciseName` registers `equipment` and `loadCount`. C.8 specifies how the adopted
 rows took their metadata. `composition.json` composes gym and journal, whose versions rise together (§2.4); journal's
 field shape is unchanged. Every other product starts from empty stores.
 
@@ -344,8 +345,11 @@ composition, and a type its product's registry, in the change that binds it on t
 composition's `version` rises with it (§9.1). `minVersion` MUST rise above every incompatible
 version when the envelope shape changes, a declared product or type is dropped, or a rule enforced
 by clients changes. Additive products, types and fields do not raise `minVersion`: clients retain
-and hash unknown fields and types harmlessly (§7.6). The v6 correction arguments are additive, so
-v6 accepts v4 and v5 requests unchanged; clients use them only when the server advertises v6 or newer. The v7 gym equipment and load-count overrides add nullable LWW fields; v7 retains minimum v4 and keeps base exercise equipment const.
+and hash unknown fields and types harmlessly (§7.6). The correction arguments (v6) and the
+`exerciseName` equipment and load-count registers (v7) are additive, so the current registry accepts
+v4 and v5 requests unchanged; clients use each only when the server advertises the version that
+declares it. The v7 registers are optional LWW fields: a writer leaves an unset register absent, and
+a null register is refused `invalid`. v7 keeps minimum v4, and the base `exercise.equipment` stays const.
 
 - **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern`,
   `key` (a keyed type's natural key: an id of another type, or a tuple of such ids, whose types, and
@@ -2627,7 +2631,7 @@ catalog outside every scope (§0): each seed id is `foreign` to every account, a
 | `routine` | minted g | terminal, spent | lww: `name` 1–240 bytes, `position` an integer 0–2 147 483 647 (default 0), `entries` (`maxItems` 50 of {`exerciseId` (the only required key), `restSeconds` 15–900, `sets` (`maxItems` 20 of {`reps` 1–100, `weightKg` ±500 quantum 0.01})}); lww server: `revision` 1–2 147 483 647; const server: `createdDoor` ∈ {mcp, ask}, `createdEntries` 0–2 147 483 647 | `entries` holds one entry or more, and an entry's `sets`, when present, one set or more (`invalid`): an absent `sets` is the open line, a set's absent `reps` is max and its absent `weightKg` last time's, and an absent `restSeconds` the lifter's rest target. Editor save guards the fields it writes. Changing `name` or `entries` supersedes its pending proposals, every door's, with no `supersededBy`. Delete kills its proposals and writes `routineId = null` on its sessions. `createdDoor` is the agent door that created it, unset for the lifter's hand. R118: server-authored revision and original entry count; an ask create also writes the independent `routineCreation` snapshot below. |
 | `routineCreation` | keyed string, same id pattern as routine; no ref | none | const server: `snapshot` JSON | R118: exact immutable Coach creation receipt, in `gym_routine_creations`; survives routine/conversation deletion, purged only with its account. Not a primary type. No public writer. |
 | `exercise` | minted g | terminal, spent | lww: `name` 1–240 bytes; const: `pattern` ∈ {squat, hinge, press, pull, carry, core, isolation}, `equipment` ∈ {barbell, dumbbell, machine, cable, bodyweight, kettlebell}, `stepKg` 0.01–99.99 quantum 0.01; lww server: `aliases` (`maxItems` 5 of 1–240 bytes) | Never deleted (a delete is `invalid`). A create carries `stepKg` (`invalid` otherwise). A change of `name` writes `aliases :=` the name it replaced, then the aliases less that name and the new one, the first 5: newest first, so the name it holds is never an alias. |
-| `exerciseName` | keyed (`ref<exercise>`, a seed) | none | lww: `name` 1–240 bytes; lww server: `aliases` as an exercise's | A seed's name for the account: `name` unset reads as the seed's own name, and a seed renamed back to it holds it. Keyed by an id that is not a seed → `invalid`. A change of the displayed name writes `aliases` as an exercise's rename does. |
+| `exerciseName` | keyed (`ref<exercise>`: a seed, or a custom movement of the account) | none | lww, each optional: `name` 1–240 bytes, `equipment` (the `exercise.equipment` enum), `loadCount` integer 1–2; lww server: `aliases` as an exercise's | The account's name and loading for a movement. Keyed by a seed: `name` unset reads as the seed's own name, a seed renamed back to it holds it, and a change of the displayed name writes `aliases` as an exercise's rename does. Keyed by a custom movement alive in the joined rows, stored or created in the same intent: only `equipment` and `loadCount`; a `name` → `invalid`, since a custom movement's name and aliases live on its `exercise`. Keyed by any other id → `invalid`. A null register → `invalid`. `loadCount` counts only for `dumbbell` equipment. |
 | `session` | minted g | terminal, spent | lww server: `routineId` `ref<routine>` or null, `startedAt` an epoch ms, `finishedAt` an epoch ms, `closedBy` ∈ {finish, stale}, `displayName` ≤240 bytes or null; const server: `historyRoutineId` (the routine it started from, kept after that routine's death), `plan` JSON or null | Created only by commands. At most one session with `finishedAt` unset per account. `closedBy` is unset while `finishedAt` is, and on a session finished before gym recorded who closed it (Appendix C), which every rule reads as `finish`. A delete of a session whose `finishedAt` is unset is refused `session-open`, unless its last activity is 4 h or more before `serverNow`. Delete kills its sets. |
 | `set` | minted g | terminal, spent | `sessionId` const `ref<session>` parent; `exerciseId` const `ref<exercise>`; `setNumber` serial 1–2 147 483 647, next `[sessionId, exerciseId]`; lww: `weightKg` ±500 quantum 0.01, `reps` 1–500, `kind` ∈ {warmup, working, drop, failure}, `rpe` 1–10 or null quantum 0.1, `note` ≤4000 bytes, never null, `completedAt` an epoch ms | Set rules below. |
 | `note` | minted g | terminal, spent | lww: `title` 1–60 chars, `body` ≤500 bytes, `ord` (D-25); lww server: `updatedAt` epoch ms ≥0 | Cap 10. Editor save guards the fields it writes. Client-derived `position` is the dense rank from 0 of `(ord, id)` among alive notes. R118 `updatedAt` is its content admission time; reorder leaves it alone. |

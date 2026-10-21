@@ -54,8 +54,8 @@ AskReply asked(AskService& service, const wm::UserId& user, const ThreadId& thre
                const std::string& request = "") {
   std::promise<AskReply> reply;
   auto future = reply.get_future();
-  service.ask(user, "gym-pgtest@example.com", thread, question,
-              [&reply](AskReply answer) { reply.set_value(std::move(answer)); }, request);
+  service.ask(user, "gym-pgtest@example.com", {thread, question, request, {}, "", true},
+              [&reply](AskReply answer) { reply.set_value(std::move(answer)); });
   return future.get();
 }
 
@@ -463,7 +463,7 @@ TEST(pg_coach_generation_replays_creation_after_an_uncertain_commit_and_keeps_te
   REQUIRE(failed.generation.has_value());
   REQUIRE_EQ(failed.generation->routineDrafts.size(), 1u);
   CHECK(h.repo.program.routines(owner).empty());
-  failed.generation = desk.ask.confirmRoutine(owner, thread, "req_durable01", failed.generation->routineDrafts.front().operationId);
+  failed.generation = desk.ask.confirmRoutine(owner, thread, "req_durable01", failed.generation->routineDrafts.front().operationId).generation;
   REQUIRE(failed.generation);
   REQUIRE_EQ(failed.generation->results.size(), 1u);
   const auto result = failed.generation->results.front();
@@ -696,8 +696,8 @@ TEST(pg_coach_two_services_classify_replays_and_conflicts_while_one_model_holds_
   const auto submit = [&](AskService& service, const wm::UserId& user, const std::string& question, const std::string& id) {
     const auto reply = std::make_shared<std::promise<AskReply>>();
     auto future = reply->get_future();
-    service.ask(user, "gym-pgtest@example.com", thread, question,
-        [reply](AskReply answer) { reply->set_value(std::move(answer)); }, id);
+    service.ask(user, "gym-pgtest@example.com", {thread, question, id},
+        [reply](AskReply answer) { reply->set_value(std::move(answer)); });
     return future;
   };
   auto original = submit(first, owner, "Question", "req_pg_busy1");

@@ -20,6 +20,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -45,6 +46,10 @@ public:
 
 private:
   ToolResult dispatch(const std::string& name, const Json::Value& arguments, const ToolCaller& caller);
+  // Coach's own writes: routine drafts only for a client that reviews them, notes and movement edits always.
+  bool writes(const std::string& name) const;
+  // A routine draft is held, never written, and names only movements the catalog holds.
+  ToolResult draftRoutine(const Json::Value& document, const ToolCaller& caller);
   GymTools& inner_;
   AskThreadRepository* repository_;
   AskGeneration* generation_;
@@ -79,6 +84,16 @@ enum class AskRefusal {
   aiAccountingUnavailable,
 };
 
+// One question as the client sends it; the thread and request ids are the client's to mint.
+struct AskRequest {
+  ThreadId thread;
+  std::string question;
+  std::string requestId;
+  std::vector<std::string> attachmentIds;
+  std::string purpose;
+  bool routineReview = false;  // the client shows Coach's routine drafts and their Save routine control
+};
+
 // `read` and `proposals` are the server's own observations, never the model's.
 struct AskReply {
   AskRefusal refusal = AskRefusal::none;
@@ -88,6 +103,21 @@ struct AskReply {
   std::optional<AnswerReceipt> receipt;
   std::optional<AskGeneration> generation;
   std::optional<AiBudgetView> allowance;
+};
+
+// Why a routine draft was not saved; a transient engine refusal throws GymUnavailable with the engine's code.
+enum class ConfirmRefusal {
+  none,
+  draftNotFound,     // no such draft for this account: absent and another account's are one answer
+  generationActive,  // Coach is still answering the request that holds the draft
+  saveInProgress,    // another confirmation still holds the conversation after the bounded wait
+  draftInvalid,      // the held document cannot be written: a movement left the catalog, or its id is spent
+};
+
+// `generation` carries the saved draft and its receipt when `refusal` is none.
+struct ConfirmReply {
+  ConfirmRefusal refusal = ConfirmRefusal::none;
+  std::optional<AskGeneration> generation;
 };
 
 // The byte limit for a user question; stored history has no turn ceiling.
@@ -135,12 +165,11 @@ public:
   // Whether this deployment can answer at all; main.cpp reads it to decide whether the route exists.
   bool configured() const;
 
-  // The id is the client's to mint, and a fresh one opens a thread titled by this question, verbatim.
-  void ask(const UserId& caller, const std::string& email, const ThreadId& thread,
-           std::string question, std::function<void(AskReply)> done, std::string requestId = "",
-           std::vector<std::string> attachmentIds = {}, std::string purpose = "");
-  std::optional<AskGeneration> confirmRoutine(const UserId& user, const ThreadId& thread,
-      const std::string& requestId, const std::string& operationId);
+  // A fresh thread id opens a thread titled by this question, verbatim.
+  void ask(const UserId& caller, const std::string& email, AskRequest request, std::function<void(AskReply)> done);
+  // Saves a held draft once; a repeated or overlapping confirmation answers with the saved draft.
+  ConfirmReply confirmRoutine(const UserId& user, const ThreadId& thread, const std::string& requestId,
+                              const std::string& operationId);
   void readGeneration(const UserId& user, const ThreadId& thread, const std::string& requestId,
                       std::function<void(bool, std::optional<AskGeneration>)> done);
   std::optional<AskGeneration> stop(const UserId& user, const ThreadId& thread, const std::string& requestId);

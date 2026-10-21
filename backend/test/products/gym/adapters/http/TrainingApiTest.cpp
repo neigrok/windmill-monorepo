@@ -1247,7 +1247,7 @@ TEST(gym_log_share_http_mints_replays_lists_revokes_and_never_exposes_private_fi
   CHECK_EQ(publicRead->getHeader("Cache-Control"), "no-store");
   const auto page = bodyOf(publicRead);
   CHECK_EQ(wm::dump(page["sessions"][0]),
-      "{\"exerciseNames\":[\"Bench Press\"],\"finishedAt\":1700003600000,\"id\":\"ses_history01\",\"movements\":[{\"exerciseId\":\"bench-press\",\"reps\":8,\"sets\":1,\"tonnageKg\":660.0}],\"reps\":8,\"routineName\":\"\",\"setCount\":1,\"sets\":[{\"completedAt\":1700000060000,\"equipment\":\"barbell\",\"exercise\":\"Bench Press\",\"exerciseId\":\"bench-press\",\"id\":\"set_history011\",\"loadCount\":1,\"reps\":8,\"setNumber\":1,\"weightKg\":82.5}],\"startedAt\":1700000000000,\"tonnageKg\":660.0,\"workingSetCount\":1}");
+      "{\"exerciseNames\":[\"Bench Press\"],\"finishedAt\":1700003600000,\"id\":\"ses_history01\",\"movements\":[{\"exerciseId\":\"bench-press\",\"reps\":8,\"sets\":1,\"tonnageKg\":660.0}],\"reps\":8,\"routineName\":\"\",\"setCount\":1,\"sets\":[{\"completedAt\":1700000060000,\"equipment\":\"barbell\",\"exercise\":\"Bench Press\",\"exerciseId\":\"bench-press\",\"id\":\"set_history011\",\"reps\":8,\"setNumber\":1,\"weightKg\":82.5}],\"startedAt\":1700000000000,\"tonnageKg\":660.0,\"workingSetCount\":1}");
   CHECK_EQ(wm::dump(page["share"]), wm::dump(wm::parse(
       "{\"createdAt\":" + share["createdAt"].asString() + ",\"expiresAt\":" + share["expiresAt"].asString() +
       ",\"mode\":\"snapshot\",\"scope\":\"all\"}")));

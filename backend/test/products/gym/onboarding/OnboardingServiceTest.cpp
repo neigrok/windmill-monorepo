@@ -1,7 +1,10 @@
 #include "test/products/gym/onboarding/OnboardingFixture.h"
+#include "platform/application/WriteObservation.h"
 #include "test/testing.h"
 
 #include <future>
+#include <string>
+#include <vector>
 
 using namespace wm;
 using namespace wm::gym;
@@ -131,4 +134,32 @@ TEST(gym_onboarding_switch_off_preserves_results_without_claim_or_provider_dispa
   CHECK_EQ(h.records->rows.size(),1U);
   CHECK_EQ(h.model->calls.load(),0);
   CHECK_EQ(h.installationRepository.admissions,0);
+}
+
+// A reply longer than the bound is kept, clipped after its last whole word, and logged as an expected outcome.
+TEST(gym_onboarding_service_keeps_a_long_reply_clipped_without_an_issue) {
+  Harness h;
+  REQUIRE(h.issue.principal);
+  std::string reply;
+  while (reply.size()<=kOnboardingMessageBytes) reply+="Keep the bar close. ";
+  h.model->message=reply;
+  std::promise<void> answered;
+  h.model->before=[&]{answered.set_value();};
+  std::vector<WriteCompletion> generated;
+  installWriteSink([&](const WriteCompletion& completion) {
+    if (completion.operation=="gym.coach.onboarding.generate") generated.push_back(completion);
+  });
+  OnboardingIn input{.requestId="12345678-1234-1234-1234-123456789abc",.mode="conversation",.text="How do I deadlift?"};
+  h.service->start(*h.issue.principal,"127.0.0.1",input);
+  answered.get_future().wait();
+  h.service->stop();
+  installWriteSink({});
+  const auto saved=h.service->get(*h.issue.principal,input.requestId);
+  REQUIRE(saved);
+  CHECK_EQ(saved->state,"completed");
+  CHECK_EQ(saved->payload["message"].asString(),onboardingMessage(reply).text);
+  CHECK(saved->payload["message"].asString().size()<=kOnboardingMessageBytes);
+  REQUIRE_EQ(generated.size(),1U);
+  CHECK_EQ(generated[0].outcome,"message_clipped");
+  CHECK(h.failures->reports.empty());
 }

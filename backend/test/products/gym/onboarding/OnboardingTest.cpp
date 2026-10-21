@@ -159,5 +159,29 @@ TEST(gym_onboarding_conversation_has_bounded_context_and_accepts_dialogue_withou
   invalid=body; invalid["text"]=" ";
   CHECK_FALSE(readOnboardingIn(invalid));
   auto oversized=answer; oversized["message"]=std::string(4001,'x');
-  CHECK_FALSE(readOnboardingRoutines(oversized,*input,{}));
+  CHECK(readOnboardingRoutines(oversized,*input,{}));
+  auto blank=answer; blank["message"]=" ";
+  CHECK_FALSE(readOnboardingRoutines(blank,*input,{}));
+}
+
+// A reply over the byte bound keeps the words that fit and says it was cut; a bound inside a character never
+// splits it, and a reply with no space to cut at stops at the last whole character.
+TEST(gym_onboarding_message_over_the_bound_keeps_whole_words_and_whole_characters) {
+  const std::string fits(kOnboardingMessageBytes,'x');
+  CHECK_EQ(onboardingMessage(fits).text,fits);
+  CHECK_FALSE(onboardingMessage(fits).clipped);
+
+  std::string words;
+  while (words.size()<=kOnboardingMessageBytes) words+="squat deep  ";
+  const auto clipped=onboardingMessage(words);
+  CHECK(clipped.clipped);
+  CHECK_EQ(clipped.text,words.substr(0,3994)+"…");
+  CHECK(clipped.text.size()<=kOnboardingMessageBytes);
+
+  std::string cyrillic;
+  for (int index=0;index<2001;++index) cyrillic+="ж";
+  const auto unbroken=onboardingMessage(cyrillic);
+  CHECK(unbroken.clipped);
+  CHECK_EQ(unbroken.text,cyrillic.substr(0,3996)+"…");
+  CHECK(storableText(unbroken.text));
 }

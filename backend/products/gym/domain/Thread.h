@@ -113,6 +113,7 @@ struct AskGeneration {
   std::vector<CoachAttachment> attachments;
   std::optional<AiBudgetView> allowanceRefusal;
   std::string purpose = "conversation";
+  bool routineReview = false;  // the asking client reviews routine drafts, so Coach may prepare them
   std::optional<CoachClarification> clarification;
   std::vector<CoachRoutineDraft> routineDrafts;
   bool operator==(const AskGeneration&) const = default;

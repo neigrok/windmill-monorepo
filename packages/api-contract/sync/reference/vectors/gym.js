@@ -116,6 +116,8 @@ function catalog() {
   const withSeedLine = gymState({ rows: { [GYM_A]: [EXERCISE, seedLine], [GYM_B]: [] } });
   const rename = (name, stamp = s(T + 9 * H)) => gym([update('exercise', 'sledpush01', s(T), stamp, { name })]);
   const seedRename = (name) => gym([{ t: 'exerciseName', id: 'back-squat', f: regs(s(T + 9 * H), { name }) }]);
+  const oneDumbbell = create('exercise', 'dbpress001', s(T + 9 * H), { name: 'Floor Press', pattern: 'press', equipment: 'dumbbell', stepKg: 2 });
+  const oneDumbbellCount = { t: 'exerciseName', id: 'dbpress001', f: regs(s(T + 9 * H), { loadCount: 1 }) };
   return [
     admitted('renaming a custom movement appends the name it replaced to its aliases', { state: base(), intent: rename('Prowler') }),
     admitted('renaming back to an alias takes it out of the aliases and appends the name it replaced', { state: withAliases(['Prowler']), intent: rename('Prowler') }),
@@ -124,11 +126,16 @@ function catalog() {
     admitted('a server-origin rename appends alike', { state: base(), origin: SERVER_A, intent: gym([update('exercise', 'sledpush01', s(T), null, { name: 'Prowler' })]) }),
     admitted('renaming a seed writes its exerciseName, whose aliases take the seed\'s own name', { state: base(), intent: seedRename('Squat') }),
     admitted('renaming a seed back to its own name keeps the line, and the name it replaced joins the aliases', { state: withSeedLine, intent: seedRename('Back Squat') }),
-    admitted('an exerciseName keyed by a custom movement keeps its stable identity', { state: base(), intent: gym([{ t: 'exerciseName', id: 'sledpush01', f: regs(s(T + 9 * H), { name: 'Sled' }) }]) }),
+    admitted('a name on an exerciseName keyed by a custom movement is invalid: a custom movement\'s name lives on its exercise', { state: base(), intent: gym([{ t: 'exerciseName', id: 'sledpush01', f: regs(s(T + 9 * H), { name: 'Sled' }) }]) }),
     admitted('equipment metadata overrides a seed without renaming or replacing it', { state: base(), intent: gym([{ t: 'exerciseName', id: 'back-squat', f: regs(s(T + 9 * H), { equipment: 'dumbbell', loadCount: 2 }) }]) }),
     admitted('equipment metadata overrides a custom movement without replacing it', { state: base(), intent: gym([{ t: 'exerciseName', id: 'sledpush01', f: regs(s(T + 9 * H), { equipment: 'dumbbell', loadCount: 1 }) }]) }),
+    admitted('an equipment override on a renamed custom movement leaves the movement\'s aliases on its exercise', { state: withAliases(['Sled']), intent: gym([{ t: 'exerciseName', id: 'sledpush01', f: regs(s(T + 9 * H), { equipment: 'dumbbell' }) }]) }),
+    admitted('a custom movement and its one-dumbbell count are admitted in one intent, the exercise first', { state: base(), intent: gym([oneDumbbell, oneDumbbellCount]) }),
+    admitted('a custom movement and its one-dumbbell count are admitted in one intent, the count first', { state: base(), intent: gym([oneDumbbellCount, oneDumbbell]) }),
+    admitted('an exerciseName keyed by an id that is neither a seed nor a live custom movement is invalid', { state: base(), intent: gym([oneDumbbellCount]) }),
     admitted('invalid dumbbell count is refused', { state: base(), intent: gym([{ t: 'exerciseName', id: 'back-squat', f: regs(s(T + 9 * H), { loadCount: 3 }) }]) }),
     admitted('unknown equipment is refused', { state: base(), intent: gym([{ t: 'exerciseName', id: 'back-squat', f: regs(s(T + 9 * H), { equipment: 'unknown' }) }]) }),
+    ...['name', 'equipment', 'loadCount'].map((field) => admitted(`a null ${field} on an exerciseName is invalid: its registers are absent or set, never null`, { state: base(), intent: gym([{ t: 'exerciseName', id: 'back-squat', f: regs(s(T + 9 * H), { [field]: null }) }]) })),
     admitted('a custom movement created without stepKg is invalid: every creator writes it', { state: base(), intent: gym([create('exercise', 'kbswing001', s(T + 9 * H), { name: 'Swing', pattern: 'hinge', equipment: 'kettlebell' })]) }),
     admitted('a custom movement is created with its stepKg', { state: base(), intent: gym([create('exercise', 'kbswing001', s(T + 9 * H), { name: 'Swing', pattern: 'hinge', equipment: 'kettlebell', stepKg: 4 })]) }),
     admitted('a movement is never deleted: a delete is invalid', { state: base(), intent: gym([{ t: 'exercise', id: 'sledpush01', born: s(T), life: ['dead', s(T + 9 * H)] }]) }),
