@@ -279,15 +279,12 @@ these are the places it disagrees with a drawing, a brief or the build.
   since-last-set clock without ruling labels; the iteration-1 build labels both (*Workout*, *Since
   last set*), which `16-the-workout.md` bans in the app. The spec (§7.7) draws both unlabelled.
   Restate the brief and draw the banner, expanded and compact Island.
-- **9m · Iteration-1 boards.** The iteration-1 boards kept on the Gym file's iOS page (flows 00,
-  02, 05 and 08; their captions say *drawn 2026-10-08*) predate the spec's §5–§7: the one-slot
-  Review band and the diff as rows, the current row's readout, the Record tiles and axis labels,
-  Bodyweight rows, the Fix sheet's subtitle and bar commit, the glass transient band, You's
-  native sections, **On this phone**, the update-required alert and the Live Activity. Redraw them
-  from the spec.
-- **9n · The set-note footer.** The iteration-1 Fix sheet drew *A record for you — not an
-  instruction to Coach.* under the set note; `09-coach.md` rules the set-note field says nothing,
-  and the spec (§7.10) draws no footer. Check the Android Fix sheet for the same line.
+- **9m · Iteration-1 boards outside the Gym page.** The Gym iOS page was redrawn to the spec on
+  2026-10-22 (10o). Iteration-1 drawings of You's native sections and the update-required alert
+  predate §5–§7; redraw them from the spec.
+- **9n · The set-note footer.** `09-coach.md` rules the set-note field says nothing, and the spec
+  (§7.10) draws no footer. Check the Android Fix sheet for an *A record for you — not an
+  instruction to Coach.* line.
 - **9o · Moments are doors on iOS.** `18-progress.md` has Android expand a moment in place to its
   compact chart and *Open record*; the spec (§7.6) makes every iOS moment a row that navigates — a
   best moment opens the Record with its session's point marked, a weigh-in moment opens
@@ -354,8 +351,7 @@ these are the places it disagrees with a drawing, a brief or the build.
   menu, with account/settings reached once through the account button. Ink notes are onboarding
   only. Update the Design System's `_Room capsule` variant descriptions (`117:52`, `226:4310`)
   and boards 21a/21b to this contract; its set description (`226:4315`) must name both iOS rooms.
-- **iOS native specimens.** The Gym refinement boards (`1063:486`, `1063:531`, `1065:307` and their Daylight
-  pairs, in flows 02, 03 and 05 of the iOS page) use editable Inter
+- **iOS native specimens.** The Gym iOS boards use editable Inter
   specimens because Figma's SF Pro export returns zero-width glyphs, and local icon vectors
   because importing the subscribed Apple iOS 26 library is denied. Native implementation uses
   system text and controls. Replace these specimen assets when the native library can be imported.
@@ -398,48 +394,20 @@ these are the places it disagrees with a drawing, a brief or the build.
   lists and never prints `read.weeks`, so a totals-only answer reads *Read your movement history*
   with no number (spec §6); web and Android print the server's weeks (`coach.js` `readLine`,
   `Ask.kt`). The fix belongs to the backend: dogfood node `coach-receipt-weeks-provable`.
-- **10h · Routines draws what §7.5 rules out.** The Routines boards (`1056:201`, `1056:417`) draw
-  *Just start logging* and a *Movements* row. The spec (§7.5) and `15-the-routine.md` rule both out,
-  and `RoutinesTab.swift` has neither. Redraw the board without them.
-- **10k · Session on the wave-three boards.** The boards *Ended early* (`328:646`) and *before the
-  first movement* (`320:318`) say *session* (*Discard session*, *Session · no routine*); the app
-  says *workout* on every iOS screen (9z). Redraw both with *workout*.
-- **10l · The Live Activity double tap.** Board `177:29` draws a watch double tap reaching *Log set*.
-  Nothing in `apps/ios/App` handles it; what ships is the parameterless *Log set* App Shortcut
-  (`WorkoutLogRackSetIntent`). Verify on a device and either rule the double tap in or retire the
-  board.
-- **10n · The no-seat state's title.** Board `133:1045` (08.6) draws a *Sign in to use Coach*
-  title; `CoachUnavailable` renders no title. Redraw the board from the code.
-- **10o · Boards against the simulator.** On 2026-10-21 and 2026-10-22 (iPhone 17 simulator, iOS 26.5;
-  Dark compared board by board, Daylight captured and spot-checked) every iOS Gym board was compared
-  with the running app. Status lives in the Figma layer names (🚀 In production · 🚧 In progress ·
-  👀 Review); this entry holds the detail behind each 👀. The system photo picker (`1081:637`) and
-  the boards drawn from captures for screens that had none are 🚀. The rest differ where iterations 2
-  and 3 moved past them:
-  - Setup (`1081:829`): a created routine opens as the summary sheet with *Start*, not a pushed page
-    with *Start workout*.
-  - Routines (`1056:201`, `1063:531`, `252:358`, `258:417`, `254:478`): the proposal row reads
-    *Push A · 3 changes · From Coach*; summary rows are numbered without a chevron; the editors commit
-    with a ✓ glass button and hold Movements, History and a Delete routine row; Targets is a stepper
-    sheet (open · max · last time, *Vary by set*).
-  - Workout (`321:281`, `327:922`, `1063:486`, `328:646`, `320:318`): the keypad's bar holds Cancel
-    and ⌫ with a *.* key; Fix set adds Effort and a Note; the receipt states a record as a sentence and Performed rows
-    carry trailing facts without chevrons; *Ended early* is the same sheet; an empty workout centres
-    *Choose your first movement* over one *Add movement* button.
-  - The log (`1065:307`, `1056:1930`, `461:60`, `529:60`, `128:2`): the swipe shows a round red
-    *Delete*; workout facts share one card;
-    the Record is an inline-titled page with *Estimated strength* and *Earlier records*, and a touched
-    point is ringed with its readout under the chart; Bodyweight has a 90 days · All segment and
-    chevron rows.
-  - Coach (`123:2`, `130:1419`, `135:246`): Review is one grouped list with *Apply*;
-    Notes has no subtitle or *Top note wins.*; the note editor is a sheet.
-  - Room (`1055:205`, `1063:478`): The log's root bar carries *Weigh in*; *Discard* renders system
-    red, not clay.
-  🚧 boards draw what the app does not have: the transient board's *Undo* example (`1057:383`) and
-  the deleted-set window (`323:29`) — deletes are immediate; the Live Activity double tap
-  (`177:29`); Apple Health. Unchecked, so 👀: the Dynamic Island and the Control Center control
-  (need a device), the Record's pan, Coach with no seat. The 🚧 targets of 10p and 10q replaced the
-  boards they supersede.
+- **10o · The page is the target (owner decision, 2026-10-22).** The owner treats the Gym iOS page
+  as the target: no board is 👀 Review. Boards that matched the app on the 2026-10-21/22 simulator
+  pass (iPhone 17, iOS 26.5) stay 🚀; everything else is 🚧. Where a drawing lagged behind the app's
+  iteration 2 and 3, it was redrawn to the spec first so no target asks for a regression: 00.1 top
+  bar (no bar creation action), 00.3 transient band (no Undo; deletes are immediate), 01.10 summary
+  sheet with Start, 02.1 Routines, 02.2 summary, 02.3 editor with ✓, 02.4 picker, 02.6 stepper
+  Targets, 03.7 receipt, 03.8 Ended early as the same sheet, 03.9 Choose your first movement, 05.2
+  round red Delete, 05.3 workout detail, 05.4 immediate delete, 05.6–05.8 Record, 06.2 Bodyweight,
+  08.3 Review, 08.6 no title, 08.7, 09.1 Notes, 09.2 note sheet. Relabelled without a redraw: 00.2
+  colour roles, 00.4 native anatomy (Discard is system red; no Theme token yet), 04.1 Control
+  Center control, 04.3 Dynamic Island, 04.4 Live Activity states (clock labels removed). Still
+  needing a device or a fixture, named in their captions: 04.1, 04.3, 04.4, 05.8's pan, 08.6, 08.7.
+  The Live Activity double tap (`177:29`, 04.5) draws what the app does not do: verify on a device
+  and either rule it in or retire the board.
 - **10p · Target boards ahead of the gym-feedback build.** The Gym file's iOS page draws the owner's
   2026-10-21 feedback as 🚧 targets (Dark, with a Daylight twin beneath), from branch
   `codex/gym-coach-feedback` (`docs/design/gym/feedback-2026-10-21.md` there). Each target holds
@@ -453,6 +421,18 @@ these are the places it disagrees with a drawing, a brief or the build.
   - 05: The log with the Weigh in seat 05.1 `1153:2765`; Edit exercise 05.9 `1153:2559`; the
     Equipment menu 05.10 `1153:2603`.
   - 08: Coach updates a movement 08.9, listed under 10q.
+  - The floating +: Routines (02.7, 02.1) and The log (05.1) share one 60 pt accent floating action,
+    the local component `_Gym / Floating action` (`1178:15505`, Gym Components page).
+  - The rack names its equipment as a symbol in the movement header (03.1, 03.10–03.12); the
+    branch's *Two dumbbells · 32 kg total* line is gone from the rack, while totals keep its model.
+  - Tapping the load or reps opens a native wheel, 03.2 `1180:3930`, load in the movement's steps
+    and reps beside it; the ladder keys stay for one-tap nudges. Fix set, 03.3 `1180:4021`, is
+    rebuilt on the same wheel with Effort and Note; Kind and Delete set live in its ⋯ menu.
+  Owner decisions these targets take against written canon: §7.10 *Keypad* and the rack's *the
+  numeral opens the keypad* (now the wheel); §7.7 and §7.10 *Kind as a segmented control* (now a
+  menu); §4 and §7.6 *Weigh in is the bar's action* and §7.5 *plus in the bar* (now the floating
+  action, as the branch rules); §7.10 Fix set's *Cancel · Save* bar, centred `WeightInstrument` and
+  *Push A keeps its planned targets.* caption (now ✓, the wheel and no caption).
 
   Choices the branch forced or left open, for the build and the owner:
   - The branch's words win: *Equipment* (not *load basis*), *Dumbbells*, *Build myself* (the feedback

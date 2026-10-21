@@ -22,7 +22,7 @@ shared workout and account boards.
 | Draft to review (🚧 target) | [1173:4370](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-4370) |
 | Review and save (🚧 target) | [1156:3154](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1156-3154) |
 | Created routines (🚧 target) | [1173:4471](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-4471) |
-| Routine to workout | [1081:829](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-829) |
+| Routine to workout (🚧 target) | [1182:4650](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1182-4650) |
 
 The drawn states are targets for the next build (`design/consistency.md` 10p, 10q); the app still
 ships the starters. Screenshots are user attachments, not bundled illustrations. Starter symbols are
