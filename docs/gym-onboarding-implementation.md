@@ -20,17 +20,19 @@ The [iOS READ ME](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=11
 links to this flow. The drawings need the interaction updates recorded in the
 [consistency ledger](design/consistency.md); their presence does not establish parity with the build.
 
-| Drawing reference | Required current behavior |
+| State | Figma |
 | --- | --- |
-| [Entry · 1081:607](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-607) | Conversational greeting, Add screenshot and Build myself |
-| [Conversation · 1081:858](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-858) | Ordinary dialogue, without goal fields or mandatory choices |
-| [Routine results · 1081:800](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-800) | Review pending drafts before explicit Save; creation receipts follow persistence |
-| [Program result · 1081:925](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-925) | Anonymous device ownership, retained draft and explicit save |
-| [Routine to workout · 1081:829](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-829) | Open the saved routine, then start its workout |
+| Coach greeting (🚧 target) | [1173:3860](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-3860) |
+| Draft to review (🚧 target) | [1173:4370](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-4370) |
+| Review and save (🚧 target) | [1156:3154](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1156-3154) |
+| Created routines (🚧 target) | [1173:4471](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1173-4471) |
+| Routine to workout | [1081:829](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-829) |
 
+The 🚧 states are targets (`design/consistency.md` 10p, 10q) not yet compared with this build.
 “Only on this phone” and “Keep it” belong to anonymous results. Screenshots are user attachments,
-not bundled illustrations. The current native attachment control uses `photo.badge.plus`; the
-builder action uses `plus`. Room controls reuse Theme, system typography and native navigation.
+not bundled illustrations. The greeting's actions use `photo.badge.plus` and `plus`; creation
+receipts use `checkmark.circle` and `arrow.up.right`. Room controls reuse Theme, system typography
+and native navigation.
 
 ## Current interaction
 
