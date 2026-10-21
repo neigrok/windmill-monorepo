@@ -213,6 +213,19 @@ rendering contract is [`ios/ios-redesign.md`](ios/ios-redesign.md).
 Spec: [`ios/ios-redesign.md`](ios/ios-redesign.md) (iteration 3). It rules the iOS rendering;
 these are the places it disagrees with a drawing, a brief or the build.
 
+- **Native review · authentication fields.** The spec's §1 requires unmodified system text
+  fields, while §7.11 preserves the sign-in layout. `AccountSheet.swift` uses native `TextField`
+  editing with custom padding, rounded fills and accent strokes for email, code and link entry.
+  Design owner: specify this field chrome as an exception or prescribe system field styling.
+  Evidence: [iOS native UI review](../../reports/ios-native-ui-review.html).
+  Tracking: `ios-native-interface-review`.
+- **Native review · ladder buttons.** The spec's §4 assigns ladder keys `.glass` on iOS 26 and
+  `.bordered` on iOS 18; §2 assigns ladder keys the raised role, and §7.7 describes the grounded
+  rack. `WeightInstrument` in `SetEditor.swift` draws `.plain` buttons with a rounded
+  `GymPalette.control` fill. Design owner: state whether ladder keys are a rack exception or
+  require the generic secondary style, then align the implementation and drawings with that rule.
+  Evidence: [iOS native UI review](../../reports/ios-native-ui-review.html).
+  Tracking: `ios-native-interface-review`.
 - **9a · Light gym accent.** The Gym file's `brand/base` aliases to iris `#4C4374` in Daylight
   (F44); the owner's 2026-09-06 ruling and the decided onboarding boards use verdigris `#137A6C`,
   and the spec its darker `#106B5F` (§2, Onboarding 9d). The iOS boards bind a file-local

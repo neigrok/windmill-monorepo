@@ -1,5 +1,21 @@
 # Journal and Gym refinement observations
 
+## Native interface review
+
+The [HTML review](../../../../reports/ios-native-ui-review.html) inventories custom controls,
+custom styling of native controls and intentional branded content. Authentication changes steps
+through sheet state and a manual Back toolbar action; native push/pop navigation is a candidate
+for simplification. Shared instruments and transient bands concentrate custom interaction logic
+in reusable components. Native menus, sheets, page controls and system button styles remain
+distinct from those custom components.
+
+The authentication field and ladder-button rules have unresolved contradictions recorded in
+`docs/design/consistency.md`. The dogfood node `ios-native-interface-review` tracks the report
+and follow-ups. This review is based on source inspection; runtime gestures, VoiceOver behavior
+and rendered layouts are not verified by this review.
+
+## Product and verification observations
+
 The Journal's written-day projection requires non-whitespace text. Mood, energy and invitation
 retirements cannot create a day. Erasure retains the sync version needed to prevent stale devices
 from resurrecting writing, while Journal reads, exports and counts exclude it. Adoption presents
