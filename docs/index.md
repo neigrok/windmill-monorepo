@@ -7,6 +7,8 @@ that ships it. Status lives in the Figma layer names. Only Gym on iOS is indexed
 
 Figma: Gym file, page [iOS](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=11-2).
 Code: `apps/ios/App/Sources/Gym/`. Spec: [ios-redesign.md](design/ios/ios-redesign.md).
+🚧 target boards for the next build sit beside the boards they replace in 01–05 and 08
+([consistency.md](design/consistency.md) 10p).
 
 | Flow | Section | Entry → exit |
 |---|---|---|

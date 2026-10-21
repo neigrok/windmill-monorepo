@@ -450,6 +450,40 @@ these are the places it disagrees with a drawing, a brief or the build.
   Activity, Dynamic Island and the Control Center control (need a device), the Record's pan, the
   photo-in-composer and waiting states, Coach with no seat, the daily cap, the spent allowance, and
   the signed-in setup after Send (it ends in *Coach didn't answer* on the model server).
+- **10p · Target boards ahead of the gym-feedback build.** On 2026-10-22 the Gym file's iOS page
+  gained 🚧 target boards (Dark, with a Daylight twin beneath) for the owner's 2026-10-21 feedback,
+  drawn from branch `codex/gym-coach-feedback` (`docs/design/gym/feedback-2026-10-21.md` there). The
+  superseded boards keep their status until the build lands; each target's caption names what it
+  replaces. Board → what it supersedes:
+  - 01: greeting signed out `1156:2906` → 08a `1081:569`; greeting signed in `1156:2983` → 08b
+    `1081:607` (both retire the goal and describe boards 09g `1081:858`, 09h `1081:894`, 09i
+    `1081:925`); draft to review `1156:3060` → 09d `1081:762`; review and Save routines `1156:3154`
+    (new); routines saved `1158:3295` → 09e `1081:800`; allowance used signed out `1158:3420` → 09j
+    `1081:957`; signed in, interim `1158:3504` (new); signed in, Windmill One `1158:3586` (new, ships
+    only with checkout open — owner decision; `paidPlansOpen()` is false).
+  - 02: empty Routines with a plus seat `1149:2477` → 02.7 `1135:1746`; editor always sortable
+    `1149:2200` → 02.5 `252:767`; remove by native trash swipe `1149:2275` → the text-only Discard.
+  - 03: rack with Dumbbells `1150:2352` → 03.1 `1065:222`; pressed `1150:2495`, changed with 56 pt
+    hit areas `1150:2638` and Bodyweight with added load `1150:2793` (new states).
+  - 04: Live Activity with since-last-set top right `1152:2533` → 04.2 `168:29`.
+  - 05: The log with the Weigh in seat `1153:2765` → 05.1 `1056:529`; Edit exercise `1153:2559` →
+    05.9 `1136:2014`; the Equipment menu `1153:2603` (new).
+  - 08: Coach updates a movement `1154:2793` (new).
+
+  Choices the branch forced or left open, for the build and the owner:
+  - The branch's words win: *Equipment* (not *load basis*), *Dumbbells*, *Build myself* (the feedback
+    said *Build it myself*), *Add screenshot*, *Save routine(s)*, *Sign in to continue.*
+  - The greeting's actions are drawn `.bordered` with the accent tint; the branch uses `.borderless`.
+  - The branch adds a *Windmill One* button to a signed-in refusal, opening *Subscriptions aren't
+    available yet.* `superapp-shell.md` keeps One in You only, so the interim board (a) draws no One
+    entry; board (b) is the owner's paid upsell and must wait for checkout.
+  - The set-editing haptic is a `.selection` tick per accepted rack change. The branch keeps the
+    canon's silence on Log set, which the boards keep.
+  - The library has no SF stand-ins for `minus`, `line.3.horizontal`, `pencil`, `photo.badge.plus`,
+    `chevron.up.chevron.down` and the two `figure.strengthtraining.*` symbols, nor a system-red
+    token (`ios/system/alert` resolves to an alert ground). The boards draw local `sf/…` vectors and
+    paint destructive actions `ios/gym/alarm`. Adding them is a Design System change, which then
+    needs a library publish from the Figma UI.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, the
   spec (§6) and `gym/feedback-contract.md` draw an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen
