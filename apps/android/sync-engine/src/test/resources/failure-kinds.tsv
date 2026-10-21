@@ -4,6 +4,8 @@ unreachable	java.net.ConnectException(Connection refused)
 unreachable	java.net.NoRouteToHostException(No route to host)
 unreachable	java.net.SocketException(Software caused connection abort)
 unreachable	java.net.SocketException(Connection reset)
+unreachable	java.net.SocketException(Socket is not connected)
+unreachable	java.net.SocketException(Broken pipe)
 unreachable	java.net.SocketTimeoutException(Read timed out)
 unreachable	java.io.InterruptedIOException(timeout)
 unreachable	java.io.EOFException

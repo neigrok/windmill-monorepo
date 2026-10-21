@@ -71,26 +71,29 @@ capture, logs, tracing and profiling are not enabled. Coach questions, answers, 
 addresses, tokens, authorization headers and response bodies are excluded. Crash reports rely on
 stack/type, release and operation tags; cross-event navigation history is in behavioral metrics.
 
-The application adapts `EngineTelemetry` to the existing `Telemetry` interface. The engine's
-bounded queue carries static operation/outcome enums, allowlisted codes and an HTTP answer's
-status. Unexpected storage, read, writer, transport and lifecycle failures report under
-`sync_<operation>` as a `SyncEngineFailure`, one Sentry issue per operation; expected HTTP refusals
-(400, 401, 403, 404, 409, 410, 422, 426 and 429, and 413 on a push), including update-required
-responses, emit metrics with their `status` and no Sentry issue. The engine owns hello, push, pull,
-live, retries, deadlines and cancellation. A request or live socket that loses the network emits
-`sync_engine` with `failure_kind=unreachable` and no Sentry issue: no DNS answer, a refused, reset or
-cut connection or handshake, an HTTP/2 connection that shut down or a stream it cancelled or
-refused, a timeout before a whole reply, a socket dropped without an HTTP response, or a heartbeat
-with no pong. Every other transport failure is a fault, and its `failure_kind` says why: `http` with
-the `status` of an unexpected answer, `tls` for a refused certificate or TLS exchange, `protocol` for
-a broken status line or HTTP/2 stream reset, `malformed` for a reply or frame the engine cannot
-read, `limit` for an oversized reply or frame or a full live queue, and `transport` for any other I/O
-failure. Both labels reach the `sync_engine` event and, for a fault, the issue's tags and its
-`client_error` event; a supplied `failure_kind` is kept, not replaced by the exception's class. A
-fault that repeats the fault its operation last filed, the same kind with the same status or
-exception, is a metric alone until that operation is answered by a valid HTTP 200 or live frame.
-Lost network or a refusal ends the run, so the next fault files. A steady fault therefore files once
-per outage of its operation.
+The application adapts `EngineTelemetry` to the existing `Telemetry` interface. The engine's bounded
+queue carries static operation/outcome enums, allowlisted codes and an HTTP answer's status.
+Unexpected storage, read, writer, transport and lifecycle failures report under `sync_<operation>`
+as a `SyncEngineFailure`, one Sentry issue per operation; expected HTTP refusals (400, 401, 403,
+404, 409, 410, 422, 426 and 429, and 413 on a push), including update-required responses, emit
+metrics with their `status` and no Sentry issue. The engine owns hello, push, pull, live, retries,
+deadlines and cancellation. A request or live socket that loses the network emits `sync_engine` with
+`failure_kind=unreachable` and no Sentry issue: no DNS answer, a refused, reset or cut connection or
+handshake, an HTTP/2 connection that shut down or a stream it cancelled or refused, a timeout before
+a whole reply, a socket dropped without an HTTP response, an open live socket reset or ended without
+a close frame, or a heartbeat with no pong. A close frame with a normal closure (1000) or going away
+(1001) emits nothing, and the server's session-ended close (1008) is a `refused` metric with no
+Sentry issue. Every other transport failure is a fault, and its `failure_kind` says why: `http` with
+the `status` of an unexpected answer, `tls` for a refused certificate or TLS exchange, `protocol`
+for a broken status line or HTTP/2 stream reset, `malformed` for a reply or frame the engine cannot
+read, including a push's recovery `409` with a malformed envelope, `limit` for an oversized reply or
+frame or a full live queue, and `transport` for a live socket the server closes with any other code,
+or none, and for any other I/O failure. Both labels reach the `sync_engine` event and, for a fault,
+the issue's tags and its `client_error` event; a supplied `failure_kind` is kept, not replaced by
+the exception's class. A fault that repeats the fault its operation last filed, the same kind with
+the same status or exception, is a metric alone until that operation is answered by a valid HTTP 200
+or live frame. Lost network or a refusal ends the run, so the next fault files. A steady fault
+therefore files once per outage of its operation.
 Each live socket reports only its first end. Intentional request/socket close and coroutine
 cancellation do not report. Unchanged engine transactions enqueue no success telemetry.
 Runtime-owned workers contain unexpected exceptions at their coroutine boundary and report only
@@ -115,7 +118,9 @@ Settings Retry and a corrected set kind enter import reconciliation before their
 the server accepted it. A scheduling failure retains the source, reports at the Settings boundary
 and emits no completed event; cancellation propagates without a failure report.
 
-The update dialog responds to an engine 426 without deleting local work.
+The update dialog responds when the engine stops for an upgrade, on the server's
+`426 upgrade-required` or a hello whose `minSchema` is above the app's registry, without deleting
+local work. A bare 426, such as a proxy's, is a failure like any other and shows no dialog.
 `-Pwindmill.updateUrl=<public Android update URL>` configures its destination. With no
 configured URL, **Open Windmill** opens `https://windmill.works`. The release workflow supplies
 `https://github.com/neigrok/windmill-monorepo/releases/latest`, labeled **Get the update**.
@@ -219,8 +224,9 @@ HTTP/WebSocket collectors. It checks zero idle HTTP requests and queued events, 
 recovery after a closed live connection. `TransportTests` and `SyncRuntimeTests` drop requests and
 live sockets on real local sockets and check one `unreachable` event per drop, each fault's kind and
 status, and one issue per outage, including a refused certificate, a broken status line and a stream
-reset after lost network and a bad live frame across reconnects; `EngineTelemetryTests` carries the
-same drops through the application adapter.
+reset after lost network, a bad live frame across reconnects, and a live socket the server resets,
+ends or closes with each kind of close code; `EngineTelemetryTests` carries the same drops through
+the application adapter.
 `EngineNotesScreenTests` checks unread versus empty notebooks, first-pull refresh and
 server-refused saves through the gym engine.
 
