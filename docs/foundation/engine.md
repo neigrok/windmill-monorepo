@@ -1585,7 +1585,7 @@ closes the socket. A re-authentication that clears `authPaused` opens the socket
 `k := 0`. The server's `426 upgrade-required` from any request stops sync until the app is upgraded
 (§9.6), on every tab (§7.8). The Swift and Kotlin engines read that cause from the body
 (`HTTPFailure.requiresUpgrade`, `SyncResponse.requiresUpgrade`): a bare `426`, a proxy's or a captive
-portal's, is a failure like any other, and a `426` at the socket's upgrade, which carries no body,
+portal's, is a failure like any other, and a `426` at the socket's upgrade proves nothing on its own: it
 opens again after the backoff while the pull the failed open runs hears the server's verdict. The web
 engine stops on any `426`.
 
