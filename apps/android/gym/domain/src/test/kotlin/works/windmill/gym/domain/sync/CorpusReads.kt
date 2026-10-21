@@ -75,6 +75,11 @@ fun trainingReadsForm(vector: Vector, read: Reader): Json {
                     Json.objectOf("before" to it.before.id.json, "after" to it.after.id.json)
                 }))
         }
+        "ProgressRecords" -> ProgressRecords(log.progress).let { records ->
+            Json.objectOf("movements" to Json.Obj(records.movements.map { (id, run) -> id.record.string!! to Json.Arr(run.map {
+                Json.objectOf("session" to it.point.id.json, "previous" to it.previous.id.json, "estimate" to Json.of(it.estimate), "gain" to Json.of(it.gain))
+            }) }), "sessions" to Json.Arr(records.sessions.sorted().map { it.json }))
+        }
         "Readout" -> when (f.string("operation")) {
             "estimate" -> Json.of(Readout.estimate(f.double("value")))
             "target" -> Json.of(Readout.target(f.optionalList("sets", SetTarget)))

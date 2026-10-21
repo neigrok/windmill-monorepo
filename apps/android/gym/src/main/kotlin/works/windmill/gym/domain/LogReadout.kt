@@ -46,15 +46,12 @@ object LogReadout {
         val monthFormat = DateTimeFormatter.ofPattern("MMMM", Locale.ENGLISH)
         return when (moment) {
             is LogEntry.Moment.Best -> {
-                val value = moment.session.fact.estimate!!.e1rm
-                val previous = moment.previous
-                val change = if (previous == null) day(date, nowMs, zone) else {
-                    val previousDate = Instant.ofEpochMilli(previous.startedAt).atZone(zone).toLocalDate()
-                    val since = previousDate.format(DateTimeFormatter.ofPattern(
-                        if (previousDate.year != date.year) "MMMM uuuu" else if (previousDate.month == date.month) "d MMM" else "MMMM", Locale.ENGLISH))
-                    "up ${Readout.estimatedWeight(value - previous.fact.estimate!!.e1rm)} kg since $since"
-                }
-                Moment("${Readout.movement(moment.exerciseId, catalog)} · new best", "${Readout.estimatedWeight(value)} kg est · $change")
+                val best = moment.best
+                val previousDate = Instant.ofEpochMilli(best.previousStartedAt).atZone(zone).toLocalDate()
+                val since = previousDate.format(DateTimeFormatter.ofPattern(
+                    if (previousDate.year != date.year) "MMMM uuuu" else if (previousDate.month == date.month) "d MMM" else "MMMM", Locale.ENGLISH))
+                Moment("${Readout.movement(best.exerciseId, catalog)} · new best",
+                    "${Readout.estimatedWeight(best.estimate)} kg est · up ${Readout.estimatedWeight(best.gain)} kg since $since")
             }
             is LogEntry.Moment.Month -> Moment("Trained ${moment.weeks} of ${moment.weeks} weeks", "${moment.month.format(monthFormat)} · full month")
             is LogEntry.Moment.Weight -> {

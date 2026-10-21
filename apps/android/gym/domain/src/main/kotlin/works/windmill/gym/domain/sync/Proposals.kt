@@ -142,27 +142,52 @@ class ProposeRoutine(val id: Id<Proposal>, val routineId: Id<Routine>, val name:
     }
 }
 
-data class ProposalState(val proposal: Proposal?, val routine: Routine?, val moment: Moment, val routineVisible: Boolean = true) {
-    constructor(read: Reader, id: Id<Proposal>) : this(read.repository(Proposal).find(id, ViewMode.stored), read.repository(Proposal).find(id, ViewMode.stored)?.let {
-        read.repository(Routine).find(it.routineId, ViewMode.stored)
-    }, read.moment, read.repository(Proposal).find(id, ViewMode.stored)?.let {
-        read.repository(Routine).find(it.routineId, ViewMode.drawn)
-    } != null)
+// A proposal with its routine three ways: as this phone stores it, whether it is in sight, and as the log last confirmed it.
+data class ProposalState(val proposal: Proposal?, val routine: Routine?, val moment: Moment, val routineVisible: Boolean = true,
+    val confirmedRoutine: Routine? = null) {
+    constructor(read: Reader, id: Id<Proposal>) : this(read, read.repository(Proposal).find(id, ViewMode.stored))
+    private constructor(read: Reader, proposal: Proposal?) : this(proposal,
+        proposal?.let { read.repository(Routine).find(it.routineId, ViewMode.stored) }, read.moment,
+        proposal?.let { read.repository(Routine).find(it.routineId, ViewMode.drawn) } != null,
+        proposal?.let { read.confirmed(Routine, it.routineId) }?.let { Routine.decode(Fields(it)) })
+
+    // What the log would answer the decision, said before it is sent. Applying asks more than turning down: the routine
+    // must stand as the proposal found it, on the log and on this phone, and in sight.
     fun refusal(id: Id<Proposal>, applying: Boolean): GymRefusal? {
+        fun superseded(reason: String) = GymRefusal.of(Refused(RefusalCode(Gym.Codes.proposalSuperseded), id.ref, Json.objectOf("reason" to Json.of(reason)), Refused.Path.predicted))
         val value = proposal ?: return GymRefusal.of(Refused(RefusalCode.unknownRecord, id.ref, path = Refused.Path.predicted))
-        val reason = when {
-            value.supersededBy != null -> "replaced"
-            routine?.revision != null && value.baseRevision != null && routine.revision != value.baseRevision -> "routine-changed"
-            value.state == "superseded" && routine?.revision != null && value.baseRevision != null -> "superseded"
-            else -> null
+        if (value.state == "superseded") {
+            if (value.supersededBy != null) return superseded("replaced")
+            val revision = routine?.revision ?: return null
+            val base = value.baseRevision ?: return null
+            return superseded(if (revision == base) "superseded" else "routine-changed")
         }
-        if (value.state == "superseded" || (applying && value.state == "pending" && reason == "routine-changed")) {
-            if (reason == null) return null
-            return GymRefusal.of(Refused(RefusalCode(Gym.Codes.proposalSuperseded), id.ref, Json.objectOf("reason" to Json.of(reason)), Refused.Path.predicted))
+        if (value.state == "pending") {
+            if (!applying) return null
+            if (routineMoved) return superseded("routine-changed")
+            if (routine == null || !routineVisible) return GymRefusal.of(Refused(RefusalCode.unknownRecord, value.routineId.ref, path = Refused.Path.predicted))
+            return null
         }
-        if (value.state != "pending" && value.state != if (applying) "applied" else "dismissed")
-            return GymRefusal.of(Refused(RefusalCode(Gym.Codes.proposalSettled), id.ref, Json.objectOf("state" to Json.of(value.state)), Refused.Path.predicted))
-        return null
+        if (value.state == if (applying) "applied" else "dismissed") return null
+        return GymRefusal.of(Refused(RefusalCode(Gym.Codes.proposalSettled), id.ref, Json.objectOf("state" to Json.of(value.state)), Refused.Path.predicted))
+    }
+
+    // Out of date, a proposal can no longer be applied: a newer one replaced it, the log set it aside, or its routine
+    // moved while it waited, on the log, in an edit the log has not confirmed, or out of sight.
+    val outOfDate: Boolean get() {
+        val value = proposal ?: return false
+        if (value.state == "superseded" || value.supersededBy != null) return true
+        return value.state == "pending" && refusal(value.id, applying = true) != null
+    }
+
+    // The routine moved under the proposal: the log counted a new revision, or this phone holds a new name or new
+    // movements the log has not confirmed yet, which it will count before it reads the decision.
+    val routineMoved: Boolean get() {
+        val value = proposal ?: return false
+        if (routine?.revision != null && value.baseRevision != null && routine.revision != value.baseRevision) return true
+        val held = routine ?: return false
+        val confirmed = confirmedRoutine ?: return false
+        return held.name != confirmed.name || held.entries != confirmed.entries
     }
 }
 
@@ -175,7 +200,7 @@ class ApplyProposal(val id: Id<Proposal>) : Action<ProposalState, Unit, GymRefus
         val proposal = loaded.proposal!!
         if (proposal.state == "applied") return Decision.Unchanged(Unit)
         if (proposal.state == "superseded") return Decision.Write(Plan(GymCommand(Gym.Commands.applyProposal, mapOf("proposalId" to id.json))), Unit)
-        val routine = loaded.routine?.takeIf { loaded.routineVisible } ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, proposal.routineId.ref, path = Refused.Path.predicted)))
+        val routine = loaded.routine!!
         val change = if (proposal.intent == "remove") Prediction.remove(Routine, routine.id)
         else Prediction.update(Routine, routine.id, mapOf("name" to Json.of(proposal.proposedName), "entries" to Json.Arr(proposal.document.map { it.json })))
         val settled = Prediction.update(Proposal, id, mapOf("state" to Json.of("applied"), "settledAt" to Json.of(loaded.moment.now.ms)))
