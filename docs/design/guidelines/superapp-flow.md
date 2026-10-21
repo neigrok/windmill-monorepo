@@ -2,8 +2,10 @@
 
 Companion to `guidelines/superapp-shell.md`, which rules the frame between the rooms; this doc rules
 how a person gets into the iOS app, what works before they have an account, and what each room's
-first run must be. The drawings of record, including the state matrix and the flow map, are the Figma
-page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2).
+first run must be. The drawings of record are the Figma page
+[Shell · iOS](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=1-5).
+The [state matrix](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-1092)
+and [flow map](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-1150) are on Model.
 
 The four-screen introduction a fresh install shows once before Where to start? is
 `onboarding.md`. Other surfaces: web auth is `roadmap/guidelines/auth.md`; the roadmap's first run is

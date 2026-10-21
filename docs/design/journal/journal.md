@@ -68,7 +68,7 @@ to have something true to say when they look back.
 
 The page invites writing by its own geometry, every night, without a word of chrome. Boards 05,
 07c and 07d of the Figma page
-[iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2) draw it.
+[Shell · iOS](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=1-5) draw it.
 
 - **The whole page is the target.** Today's page — the day marker, the body and the space down to
   the mood rows, the full measure wide — is one tap target. A tap focuses the page with the caret

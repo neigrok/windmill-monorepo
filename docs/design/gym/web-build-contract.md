@@ -62,7 +62,7 @@ The fourteen current `Gym/Web/*` styles:
 
 The narrow conflict comparison uses the 32/40 Title style.
 
-Use existing token aliases, not these verification hex values as new literals. Instrument: canvas #0b1111, surface #161c1d, line #202627, strong line #2a3133, ink #f1f0eb, dim #b6b5af, faint #727771, brand #5fcdb4, accent ink #1b1408, PR #d9b04c. Daylight: canvas #ebe7e3, surface #f8f6f4, ink #1a1918, dim #4c4744, faint #625c58, brand #4c4374, accent ink white. Colour is bound to Gym · Colour; spaces/radii/measures to Gym · Metrics.
+Use existing token aliases, not these verification hex values as new literals. Dark: canvas #0b1111, surface #161c1d, line #202627, strong line #2a3133, ink #f1f0eb, dim #b6b5af, faint #727771, brand #5fcdb4, accent ink #1b1408, PR #d9b04c. Light: canvas #ebe7e3, surface #f8f6f4, ink #1a1918, dim #4c4744, faint #625c58, brand #137a6c, accent ink white. Shared colours bind Theme and Brand; product-only colours remain in Gym · Product colours. Spaces/radii/measures bind Gym · Metrics.
 
 Card radius 16 is the general rule. Existing progress cards, editable rows and local action-band buttons bind radius/md 12. Spacing follows 4px increments: 32px between sections, 24px within sections and 8/12/16px between related elements. Do not flatten all component radii to one value.
 

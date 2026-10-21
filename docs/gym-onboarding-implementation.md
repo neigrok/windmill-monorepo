@@ -8,9 +8,9 @@ Coach protocol and customer Usage screens remain separate work.
 ## Design sources
 
 The canonical iOS flow is
-[Gym onboarding · Coach-led](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=141-1290)
-on the Design System's
-[iOS · Gym onboarding](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=284-5416)
+[Gym onboarding · Coach-led](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-565)
+on the Gym file's
+[Gym · iOS](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=11-2)
 page. The Gym file's
 [iOS READ ME](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=11-25) links directly to it.
 The flow uses the existing Coach room, Routines destination and workout logger, with links to the
@@ -18,11 +18,11 @@ shared workout and account boards.
 
 | State | Figma |
 | --- | --- |
-| Signed-in first open | [143:1390](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=143-1390) |
-| Goal clarification | [147:2095](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=147-2095) |
-| Created routines | [146:1937](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=146-1937) |
-| Program result | [148:2224](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=148-2224) |
-| Routine to workout | [147:1975](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=147-1975) |
+| Signed-in first open | [1081:607](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-607) |
+| Goal clarification | [1081:858](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-858) |
+| Created routines | [1081:800](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-800) |
+| Program result | [1081:925](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-925) |
+| Routine to workout | [1081:829](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-829) |
 
 The program-result frame's “Only on this phone” and “Keep it” belong to anonymous use. Screenshots
 are user attachments, not bundled illustrations. Starter

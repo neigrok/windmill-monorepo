@@ -3,8 +3,9 @@
 The once-ever introduction on the two phones: one screen for Windmill, one for each product. A
 picture and a few words each. Companion to `superapp-flow.md` (the iOS journey, which the pager
 precedes) and `gym/android-delivery.md` (the Android room it precedes). The drawings of record are
-the Figma page [Onboarding · 2026-10-04](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=209-2)
-in the Design System file. Decided by the owner on 2026-10-04: direction A · Three rooms, iOS page 4
+the Figma section [Shell · iOS onboarding](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-9719)
+in the Shell file, with [Android onboarding](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-10082)
+on its Android page. Decided by the owner on 2026-10-04: direction A · Three rooms, iOS page 4
 leads to Where to start?, About Windmill in You and the account sheet, and the four screens are the
 accepted exception to `superapp-flow.md` §3 and §8. Drift is ledger `consistency.md` § Onboarding.
 
@@ -152,12 +153,11 @@ Onboarding* (`209:69`): `_Glimpse / Roadmap` `210:2`, `_Glimpse / Journal` `210:
 
 - **Size.** 354 × 340 pt on iOS (card radius 24, 1 pt line); the same component centred in the
   372 dp column on Android. The three-rooms glimpse is three 354 × 100 bands.
-- **Palette.** Every fill is bound to the hidden collection `Onboarding · Colour` (Dark / Light),
-  whose values are the shipped family, roadmap, journal and gym tokens; the roadmap kind colours
-  and locked treatments come from `tokens/colors.css`. Gym day on the boards uses verdigris
-  `#137A6C` (owner ruling); the iOS app's light `gym/accent` is the darker `#106B5F`
-  (`../ios/ios-redesign.md` §2, ledger Onboarding 9d), and Android's Daylight skin still ships iris,
-  ledger F44. The build draws the glimpses from its own tokens — it ships no PNGs.
+- **Palette.** iOS fills bind Theme `ios/*` roles; Android uses shared surface, text and colour
+  roles with each room's Brand mode. Product glimpses use Theme `illustration/*` roles.
+  Gym's iOS day accent is `#106B5F`, matching the app (`../ios/ios-redesign.md` §2);
+  Android's boards and onboarding glimpse use `#137A6C`, while its Daylight skin ships iris
+  (ledger F44). The build draws the glimpses from its own tokens — it ships no PNGs.
 - **Roadmap.** A root (*Learn to sail*, complete, olive, the crown halo), three children (one
   complete terracotta, two available with sky and gold rings), three locked grandchildren on dormant
   edges, one travel head on the lit edge to *Rig the mast*. Available nodes are card-filled with the

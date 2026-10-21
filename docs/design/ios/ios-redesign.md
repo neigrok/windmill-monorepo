@@ -7,7 +7,7 @@ product contracts it dresses stay where they are — `guidelines/superapp-shell.
 room. Where this file and a brief disagree, this file wins on iOS and the disagreement is in
 `consistency.md`.
 
-Drawings of record: [iOS · Gym refinement · 2026-10-18](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=1063-477) covers the routine summary, workout, finish and Log swipe in both appearances. The other screens use the Gym file's iOS section and the Design System's shell and Echoes boards (§10). Figma uses Inter for editable specimens where its SF Pro renderer supplies no glyph metrics; the app uses the system text styles below. Native chrome is a structural drawing: SwiftUI owns its appearance.
+Drawings of record: [iOS · Gym refinement · 2026-10-18](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=1063-477) covers the routine summary, workout, finish and Log swipe in both appearances. The other screens use the Gym file's iOS section and Shell's chrome boards and Journal's Echoes boards (§10). Figma uses Inter for editable specimens where its SF Pro renderer supplies no glyph metrics; the app uses the system text styles below. Native chrome is a structural drawing: SwiftUI owns its appearance.
 
 ---
 
@@ -103,11 +103,9 @@ the system blue. The keyboard draws its own keys and takes no tint: an emphasize
 | `gym/alarm` | `#D08268` | `#A84E35` | destructive labels, refusal text in a field |
 | `gym/alarm-fill` | `#A84E35` | `#A84E35` | a removal proposal's primary; native destructive actions use the system red |
 
-These are the Gym Figma `Gym · Colour` ramp values (`surface/*`, `text/*`, `border/*`,
-`state/*`) with one ruling: the light accent is verdigris `#106B5F`, the family's verdigris day
-darkened so text in it holds 4.5:1 on the gym grounds, not the Figma Daylight `brand/base` alias to
-iris `#4C4374` (`consistency.md` F44, 9a). Gold is a *record*, never a warning; brick is destructive
-only.
+These roles bind to Figma Theme `ios/gym/*` in Dark and Light. The native light accent is
+verdigris `#106B5F`, darkened from the shared Gym brand `#137A6C` so text holds 4.5:1 on the
+Gym grounds. Gold is a *record*, never a warning; brick is destructive only.
 
 The Live Activity uses `gym/accent` and `gym/on-accent` for its one button and `gym/accent` for
 the keyline; the banner ground stays the system's. The workout control (§7.19) declares `gym/accent`
@@ -1431,8 +1429,8 @@ Recorded in `consistency.md` under *iOS redesign*:
 
 - **Colour and drawings:** 9a (light gym accent vs Figma Daylight `brand/base`), *iOS gym and shell
   day contrast* (the light `gym/accent` and `shell/brand` values, the red-brick `shell/danger`, and
-  the Figma collections that follow them), 9d (two gym light grounds in the Design System collections), 9e (the first-run
-  boards' W capsule and hand-drawn glass), 9h (warm journal day inks in the Figma collection), 9m
+  the Figma collections that follow them), 9e (the first-run
+  boards' W capsule and hand-drawn glass), 9m
   (the iteration-1 boards against §5–§7), 9d under *Onboarding* (the onboarding collection's gym day
   accent).
 - **The log and progress:** 9b (phones weave, web keeps the strip), 9o (moments are doors on iOS,
@@ -1478,33 +1476,37 @@ Gym file `vdmdiKWrmZoS1FtcvJRf6O`, page `iOS` (`11:2`), section
 | Colour roles and type ramp | `1057:201` |
 | Transient band | `1057:383` |
 
-The boards bind `Gym · Colour` roles and three file-local variables, `ios/accent`,
-`ios/accent-soft` and `ios/on-accent` (`1055:201`–`1055:203`), which carry the verdigris accent in
-both modes (9a). They are iteration-1 drawings; what §5–§7 rule past them is written here and not
+The boards bind `Gym · Product colours` and shared Theme `ios/gym/*` roles, including
+`ios/gym/accent`, `ios/gym/accent-soft` and `ios/gym/on-accent` (9a). They are iteration-1 drawings; what §5–§7 rule past them is written here and not
 yet drawn (9m).
 
-Design System file `qoOwNbWOYE1GFi0yR5uGY2`, page `iOS · First run · 2026-09-26` (`112:2`),
+Shell file `tkI7GnS6TcZvQSDi9lwrBf`, page `iOS` (`1:5`),
 402 × 874 boards:
 
 | Section · board | Node |
 |---|---|
-| [7 · Shell chrome · 2026-10-08](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=256-5050) | `256:5050` |
-| 25a · Gym root bar | dark `257:5034` · light `260:5326` |
-| 25b · Journal root bar | `257:5104` |
-| 25c · Room menu open | `257:5149` |
-| 25d · Bar anatomy at 3× — both appearances, dimensions | `258:5134` |
-| 26a · You · signed out | dark `258:5237` · light `260:5385` |
-| 26b · You · signed in | dark `258:5330` · light `260:5460` |
-| [2c · Echoes on iOS · 2026-10-08](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=256-5054) | `256:5054` |
-| 27a · Echo tab · closed | `259:5240` |
-| 27b · Echo ink · open | `259:5296` |
-| 27c · Echo reader · sheet | `259:5377` |
-| 27d · First echo · card | `259:5480` |
-| 27e · Arrival · motion | `259:5558` |
+| [7 · Shell chrome · 2026-10-08](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-3676) | `2:3676` |
+| 25a · Gym root bar | dark `2:3680` · light `2:3975` |
+| 25b · Journal root bar | `2:3704` |
+| 25c · Room menu open | `2:3724` |
+| 25d · Bar anatomy at 3× — both appearances, dimensions | `2:3769` |
+| 26a · You · signed out | dark `2:3853` · light `2:3997` |
+| 26b · You · signed in | dark `2:3906` · light `2:4048` |
 
-The shell boards bind `iOS First Run · Colour`, which gained `shell/*` and `journal/lamp-soft`
-(`256:5034`–`256:5044`). SF fonts do not render in Figma's cloud renderer; the boards use the
-`iOS First Run · Type` stand-ins (Inter, Nunito, JetBrains Mono). Symbols are named for the SF
+Journal file `pC6ciOUnfLmI42oMihd7l3`, page `iOS` (`202:2`):
+
+| Section · board | Node |
+|---|---|
+| [2c · Echoes on iOS · 2026-10-08](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=207-105) | `207:105` |
+| 27a · Echo tab · closed | `207:109` |
+| 27b · Echo ink · open | `207:137` |
+| 27c · Echo reader · sheet | `207:189` |
+| 27d · First echo · card | `207:263` |
+| 27e · Arrival · motion | `207:308` |
+
+The shell and Echoes boards bind shared Theme `ios/shell/*` and `ios/journal/*` roles.
+SF fonts do not render in Figma's cloud renderer; the boards use Scale `ios/font/*`
+stand-ins (Inter, Nunito, JetBrains Mono). Symbols are named for the SF
 Symbol they stand for; the build pulls the real glyph. Glass on a board is `glass/fill` with a
 1 px `glass/stroke`, standing in for what the system renders.
 

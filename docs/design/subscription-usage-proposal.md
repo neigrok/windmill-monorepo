@@ -5,16 +5,15 @@ The drawings require the lifetime/free/funded policy and provider capacity state
 
 ## Drawings
 
-The shared shell owns this surface. The drawings are on **Account · Usage · Proposal** in
-Windmill · Design System.
+The shared shell owns this surface. The drawings are in the **2026-10 · Account · Usage · Proposal** section on the Proposals page in Windmill · Shell.
 
 | View | Figma |
 | --- | --- |
-| Desktop overview | [Plan and usage](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2?node-id=89-303) |
-| Mobile web overview | [Plan and usage](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2?node-id=89-304) |
-| Prelaunch supported-data example | [Prelaunch](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2?node-id=89-305) |
-| Mobile web detail | [AI details](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2?node-id=89-306) |
-| Future subscription management | [Manage plan](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2?node-id=91-35) |
+| Desktop overview | [Plan and usage](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-9372) |
+| Mobile web overview | [Plan and usage](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-9405) |
+| Prelaunch supported-data example | [Prelaunch](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-9429) |
+| Mobile web detail | [AI details](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-9445) |
+| Future subscription management | [Manage plan](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-9469) |
 
 ## USD and allowance periods
 

@@ -2,19 +2,20 @@
 
 Current guidelines, feature contracts and open design gaps.
 
-The product and library drawings live in five Figma files.
+The product, shell and library drawings live in six Figma files.
 
 | File | Key |
 |---|---|
 | Windmill · Design System (the published library) | `qoOwNbWOYE1GFi0yR5uGY2` |
+| [Windmill · Shell](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf) | `tkI7GnS6TcZvQSDi9lwrBf` |
 | Windmill · Roadmap | `HM4d8YWzJZg5clVRJKNuDr` |
 | Windmill · Journal | `pC6ciOUnfLmI42oMihd7l3` |
 | Windmill · Gym (web · iOS · Android) | `vdmdiKWrmZoS1FtcvJRf6O` |
 | Windmill · Marketing | `uWLMdVmzTcobOh8hbeem81` |
 
-Gym's canonical Coach-led onboarding lives on the Design System page
-[iOS · Gym onboarding](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=284-5416),
-in [Gym onboarding · Coach-led](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=141-1290).
+Gym's canonical Coach-led onboarding lives on the Gym file's page
+[Gym · iOS](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=11-2),
+in [Gym onboarding · Coach-led](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-565).
 The Gym file's [iOS READ ME](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=11-25)
 links directly to this flow. Shared workout and account boards stay linked from the canonical flow.
 

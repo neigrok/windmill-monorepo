@@ -16,7 +16,7 @@ what is on that screen and works. Under them there is no onboarding layer: no ov
 marks, no tour. The page invites writing by its own geometry — the parked caret, the page-sized
 tap target and the Write seat (`journal.md` §4a) — every night, not once. The drawings are
 sections *2 · Journal first run* and *2b · Journal onboarding · Ink notes* of the Figma page
-[iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2): board 05
+[Shell · iOS](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=1-5): board 05
 is the first open, 07j-a1 the same open under the ink, 07c and 07d the empty and the one-line
 page later.
 

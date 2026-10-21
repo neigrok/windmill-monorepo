@@ -9,7 +9,7 @@ Android carries Gym alone and draws no shell between rooms.
 > How someone arrives is `guidelines/superapp-flow.md`. Journal's canon is `journal/journal.md`;
 > Gym's is `gym/briefs/`. Web auth is `roadmap/guidelines/auth.md`. Pricing is
 > `marketing/guidelines/pricing.md`. The drawings of record are the Figma page
-> [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2).
+> [Shell · iOS](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=1-5).
 
 ---
 
