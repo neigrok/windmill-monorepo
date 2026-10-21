@@ -164,7 +164,7 @@ The review fix passes all 128 Swift GymDomain tests across 13 suites. Backend ve
 2,178 domain cases (28 intentional skips), 280 MCP cases, 729 sync cases and 1,291 adapter cases,
 including lost-acknowledgement recovery after a newer exercise edit.
 
-Native simulator verification passes 11 affected UI flows across focused runs, including a full
+Native iOS 26.5 simulator verification passes 11 affected UI flows across focused runs, including a full
 routine/workout/history/weigh-in/note flow against the local sync backend. Seed renaming preserves
 history identity and raw set values; the keyboard leaves the One/Two dumbbell selector reachable.
 Rapid minus/plus presses update the visible rack and log those exact values. Both root empty states
@@ -183,6 +183,18 @@ and permanent reorder uses the existing target-navigation state without adding a
 
 The affected app unit suites pass 367 tests across twelve suites: 269 in the ten unchanged suites,
 then 98 in the final workout/picker run, including owner teardown and the explicit flush boundaries.
-The complete app unit target remains unverified: its simulator test host stalled before test startup.
-Focused execution succeeds after preparing the dedicated simulator; the final build-for-testing is
-clean. The final rapid-button UI check also exercises the weak-owner persistence fix.
+The complete app unit target passes CI run 39597020292, job 119211740948, alongside the packages and
+build gate. Local focused execution succeeds after preparing the dedicated simulator. The final
+rapid-button UI check also exercises the weak-owner persistence fix.
+
+The Coach composer uses a direct safe-area inset with a bar-material surface. Its native field and
+the parent focus state share the same host, so Done and tab-bar visibility follow keyboard focus;
+the greeting retains its scrollable layout at accessible text sizes. The signed-in UI helper requires
+Done to dismiss the keyboard without losing the draft, then refocuses and sends. Anonymous checks
+require the same keyboard, Done and tab-bar behavior. CI and local verification both use Xcode 26.3
+with iOS 26.5; CI uses iPhone 17 and the dedicated local simulator is iPhone 17 Pro. All five focused
+UI flows pass: signed-in Coach in light and dark, anonymous Coach at the largest text size, and Log
+in light and dark. The Log correction retains an exact assertion for the barbell label,
+`Weight, 90 kg total`. The native flows use local model-server fixtures; they verify keyboard focus, draft
+retention, navigation, review clearance and weight editing without making a claim about live model
+quality. The build-for-testing is clean, and the focused result contains five tests with zero failures.

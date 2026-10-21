@@ -75,7 +75,7 @@ struct CoachTab: View {
         case .notes: NotesScreen(gym: gym)
         }
       }
-      .reachBand(onSurface: true) {
+      .safeAreaInset(edge: .bottom) {
         VStack(spacing: 0) {
           band
           if composing {
@@ -84,7 +84,7 @@ struct CoachTab: View {
               .frame(maxWidth: .infinity, alignment: .trailing).padding(.horizontal, 12)
           }
           if coach.allowed, coach.refusal != .absent { composer }
-        }
+        }.background { Rectangle().fill(.bar).ignoresSafeArea(edges: .bottom) }
       }
       .sheet(item: $review) { id in
         ProposalReviewSheet(gym: gym, proposalId: id.id) { name in composing = coach.newChat(seed: "Tell me about the proposal for \(name).") }

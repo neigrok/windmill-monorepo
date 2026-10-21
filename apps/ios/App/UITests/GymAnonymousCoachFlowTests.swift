@@ -50,8 +50,18 @@ import XCTest
     }
     let question = app.descendants(matching: .any)["coach-question"]
     question.tap(); question.typeText("Build a short full body routine for three days each week")
-    let done = app.buttons["coach-keyboard-done"]
-    if done.wait(for: \.isHittable, toEqual: true, timeout: 3) { done.tap() }
+    let done = app.buttons["coach-keyboard-done"], keyboard = app.keyboards.firstMatch
+    let tab = app.tabBars.buttons["Coach"]
+    XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+    XCTAssertTrue(done.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertTrue(tab.wait(for: \.isHittable, toEqual: false, timeout: 5))
+    XCTAssertFalse(done.frame.intersects(app.buttons["coach-send"].frame))
+    try capture(app, "anonymous-composer-focused-" + suffix)
+    done.tap()
+    XCTAssertTrue(done.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(keyboard.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(tab.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertEqual(question.value as? String, "Build a short full body routine for three days each week")
     XCTAssertTrue(app.staticTexts["coach-greeting"].exists)
     app.buttons["coach-send"].tap()
     let review = app.buttons["coach-review-routines"]

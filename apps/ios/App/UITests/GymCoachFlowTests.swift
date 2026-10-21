@@ -82,13 +82,27 @@ import UIKit
     XCTAssertFalse(app.buttons["coach-send"].isEnabled, "An empty question cannot be sent.")
     field.tap(); field.typeText(question)
     let done = app.buttons["coach-keyboard-done"], send = app.buttons["coach-send"]
+    let keyboard = app.keyboards.firstMatch, tab = app.tabBars.buttons["Coach"]
+    XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
     XCTAssertTrue(done.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertTrue(tab.wait(for: \.isHittable, toEqual: false, timeout: 5))
     XCTAssertFalse(done.frame.intersects(send.frame))
+    capture("coach-composer-focused", app)
+    done.tap()
+    XCTAssertTrue(done.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(keyboard.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(tab.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertEqual(field.value as? String, question)
+    field.tap()
+    XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+    XCTAssertTrue(done.wait(for: \.isHittable, toEqual: true, timeout: 5))
+    XCTAssertTrue(tab.wait(for: \.isHittable, toEqual: false, timeout: 5))
     send.tap()
     XCTAssertTrue(app.buttons["coach-review"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons["coach-stop"].waitForNonExistence(timeout: 10))
     XCTAssertTrue(done.waitForNonExistence(timeout: 5))
-    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(keyboard.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(tab.wait(for: \.isHittable, toEqual: true, timeout: 5))
   }
   func back(_ app: XCUIApplication, expecting title: String? = nil, control: String = "coach-history") {
     let previous = app.navigationBars.firstMatch

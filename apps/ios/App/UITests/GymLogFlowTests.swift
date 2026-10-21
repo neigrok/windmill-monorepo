@@ -452,7 +452,7 @@ import XCTest
     XCTAssertEqual(app.staticTexts["workout-keypad-value"].label, "90")
     // Set and Save each land before their sheet leaves, so what they wrote is read, not awaited: a wait drops a slow accessibility read at its timeout.
     app.buttons["workout-keypad-set"].tap()
-    XCTAssertEqual(weight.label, "Weight, 90 kilograms")
+    XCTAssertEqual(weight.label, "Weight, 90 kg total")
     app.buttons["gym-fix-save"].tap()
     XCTAssertTrue(weight.waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 5))
