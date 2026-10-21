@@ -1,15 +1,16 @@
 # USD AI allowances
 
 `AI_ALLOWANCES_ENABLED=false` is the default. The enabled backend has durable USD admission,
-funding, device binding and operational alerts. Customer rollout still needs device attestation,
-audio accounting and client allowance surfaces. Internal money is integer nano-USD; HTTP
+funding, installation binding and operational alerts. Anonymous Gym onboarding uses a separate
+server-issued installation credential, network limits and the shared free budgets. Journal voice
+still needs audio accounting. Internal money is integer nano-USD; HTTP
 amounts are exact decimal USD strings.
 
 ## Policy
 
 | Tier | Individual allowance | Period | Shared spending controls | Concurrent calls |
 | --- | --- | --- | --- | --- |
-| Anonymous | $0.05 per verified device | Lifetime | Free pool: $100 per UTC calendar month and $5 per UTC day | 1 |
+| Anonymous | $0.05 per authenticated installation | Lifetime | Free pool: $100 per UTC calendar month and $5 per UTC day | 1 |
 | Verified logged-in | $0.25 per account, including associated anonymous usage | UTC calendar month | The same free monthly and daily pools | 1 |
 | Windmill One | $7 per funded account period | Paid subscription billing period; owner grants use UTC calendar months | The funded grant itself | 2 |
 
@@ -20,8 +21,8 @@ checks estimated reservations against the free pools or funded grant; estimates 
 spending ceilings, and actual cost can exceed them. The process-hour fuse and product burst limits
 are additional safeguards.
 
-A verified device can be permanently bound to one account through an internal service operation.
-The device cannot receive further anonymous admission after binding. Its anonymous settled cost
+An authenticated installation can be permanently bound to one verified account through
+`POST /v1/ai/installations/bind`. The installation cannot receive further anonymous admission after binding. Its anonymous settled cost
 from the current month contributes to that account's free allowance; unresolved holds and debt
 remain attributable across boundaries. Binding does not erase device lifetime usage, mint another
 allowance or move costs into a paid grant. An attempted rebind to another account is refused.
@@ -31,6 +32,11 @@ allowance or move costs into a paid grant. An attempted rebind to another accoun
 | Setting | Default |
 | --- | --- |
 | `AI_ALLOWANCES_ENABLED` | `false` |
+| `AI_INSTALLATIONS_ENABLED` | `false`; controls anonymous issuance and generation, not existing identity or binding |
+| `AI_INSTALLATION_IP_HMAC_KEY` | required private key of at least 32 bytes when installations are enabled |
+| `AI_INSTALLATION_PROXY_MODE` | `direct` locally; fixed `cloudflare` in production Compose |
+| `AI_INSTALLATION_ISSUES_PER_DAY` | `10` per network per UTC day |
+| `AI_INSTALLATION_GENERATIONS_PER_HOUR` | `30` per network per UTC hour |
 | `AI_ANONYMOUS_LIFETIME_USD` | `0.05` |
 | `AI_LOGGED_IN_MONTHLY_USD` | `0.25` |
 | `AI_ONE_PERIOD_USD` | `7` |
@@ -122,9 +128,9 @@ curation. Expected background budget refusals leave work due and report a bounde
 without a Sentry Issue. Roadmap's customer request-count quota is disabled in this mode; its read
 contract names USD and links the shared allowance endpoint.
 
-Anonymous roadmap composition returns `compose-unavailable` before dispatch because no verified
-device identity is available. The internal device binding API does not expose an attestation or
-grant endpoint. Journal voice returns `unsupported_ai_pricing`: compressed upload size is not a
+Anonymous Gym Coach previews use the authenticated installation path described below. Anonymous
+roadmap composition remains `compose-unavailable`; it is not wired to this credential.
+Journal voice returns `unsupported_ai_pricing`: compressed upload size is not a
 verified audio duration/token bound, and audio/text prices need separate accounting.
 
 The supported Claude model allowlist matches `AiUsage.cpp`. Unknown models, unsupported pricing
@@ -157,15 +163,65 @@ creates debt that blocks further admission until reconciled. Missing or ambiguou
 the hold. A positive remaining balance still does not promise that a particular request can fit.
 For example, an Opus 5 request with an 8,000-token output cap reserves $0.20 for output alone,
 exceeding the $0.05 anonymous lifetime allowance.
-Anonymous rollout therefore needs suitable model/output configuration as well as device
-attestation; the anonymous edge remains closed. Audio requires its own supported accounting.
+Anonymous previews use Sonnet 5 with a bounded input, one provider request and an affordable
+output cap. Signed-in Coach uses Opus 5. Audio requires its own supported accounting.
+
+## Installation credentials and network admission
+
+`platform/ai_installations/` owns credential issuance, strict HTTP resolution and durable network
+admission. `POST /v1/ai/installations` accepts an empty JSON object with no account or installation
+credential and returns 201 with `credential`, `bound:false` and the existing USD `allowance` object.
+The secret has 256 bits of cryptographic randomness; only its SHA-256 digest is stored. The client
+keeps it in its separate secure credential store. A client UUID never establishes the principal.
+
+`X-Windmill-Installation` carries exactly one opaque credential. Duplicate, malformed or unknown
+values return 401 `invalid_installation`; issuance never replaces an existing invalid credential.
+A valid credential already present at issuance returns 409 `installation_already_present`.
+Every account credential line is resolved strictly before an installation request is served:
+invalid, conflicting or duplicate account credentials return 401 `unauthenticated`, never anonymous
+access. `GET /v1/ai/installations/current` returns `bound` and the lifetime USD allowance.
+
+`POST /v1/ai/installations/bind` requires a verified live account credential and the installation
+credential. It returns `bound:true` and the account USD allowance. Same-account retries are
+idempotent. Another account returns 409 `installation_bound`; this does not invalidate ordinary
+account login or change the binding. The supported native sign-in flow binds before it enables
+account Coach. A missing installation signal cannot be reconstructed on arbitrary account calls.
+All installation responses are `Cache-Control: no-store` and expose no account identifier.
+
+Production trusts exactly one valid `CF-Connecting-IP` only behind the existing Cloudflare-only
+Caddy gate. The backend port is not published outside the private Compose network. HTTPS
+installation mode refuses direct-proxy configuration. Local direct mode reads the socket peer and
+refuses forwarded identity headers. Empty, duplicate, malformed or ambiguous identity never gets
+an unlimited bucket. IPv4 and IPv4-mapped IPv6 share the same key; native IPv6 aggregates by /64.
+Network identifiers are HMAC-SHA256 digests keyed with `AI_INSTALLATION_IP_HMAC_KEY` and separated
+by operation and UTC window. Raw addresses, prefixes, digests and credentials never enter telemetry.
+
+Installation HTTP work runs in a bounded worker queue, away from socket event loops.
+Issuance and generation counters are atomic durable writes. Generation admission has one
+installation/request replay key and is called only after the product's durable generation claim;
+HTTP replay cannot consume a second rate slot or dispatch again. The expiry sweep removes network
+counters and their replay keys hourly, and new admission also collects expired rows. Digest keys
+expire at their UTC day/hour boundary and survive at most one additional scheduled hour while the
+service runs. Product generation tombstones independently prevent redispatch after network-key
+expiry. The installation credential digest, its budget ledger and permanent binding remain for
+lifetime accounting. Account erasure does not remove that binding or reopen anonymous admission;
+it leaves an opaque account ID in the accounting relation, without email or other profile content.
+
+`AI_INSTALLATIONS_ENABLED` requires enabled USD allowances and the private network key. When false,
+new installation issuance and anonymous generation return 503 `anonymous_ai_unavailable`.
+Existing credential authentication, allowance reads, account binding and saved result recovery remain
+available while USD allowances are enabled, without requiring the network key. This keeps signed-in
+Coach available after anonymous access is disabled. Network limits return 429
+`installation_rate_limited`. Unexpected storage failures return bounded accounting failures and
+report static Sentry operations. Network limits complement the individual $0.05 and shared $5/day
+and $100/month budgets; a reset installation is not guaranteed to be recognizable.
 
 ## Read and refusal contracts
 
 `GET /v1/ai/allowance` requires a live authenticated account and applies strict handling to every
 received credential line. It returns 401 for invalid credentials, 503 `ai_allowance_disabled` when
 the feature is off, and 503 `ai_accounting_unavailable` for an accounting read failure. Responses
-are `Cache-Control: no-store`. Device reads remain closed pending attestation.
+are `Cache-Control: no-store`. Anonymous installation reads use their separate credential endpoint.
 
 The response carries tier, period, configured state, bounded code, limit, used, reserved, remaining,
 `resetsAtMs`, `budgetResetsAtMs` and availability status. Period is `lifetime`, `calendar_month_utc`
@@ -192,8 +248,12 @@ request quotas. Enabling the durable ledger does not invent reservations for ear
 
 ## Structure observations and remaining work
 
-- Keep the unverified device edge closed. Attestation must establish a durable lifetime identity,
-  preserve it across supported reinstalls and securely bind it to the verified account.
+- Installation identity and account binding remain available independently of anonymous admission.
+  An absent network key selects identity-only service construction; an enabled admission mode
+  requires a valid key. Operational shutdown can stop new spending without blocking account recovery.
+- The server-issued installation credential is an abuse signal, not physical-device attestation.
+  Losing or deliberately discarding it cannot be detected reliably; network and global budgets
+  bound that exposure. Do not claim reset-proof identity.
 - Keep per-round token estimation separate from exact USD settlement. Check estimates against
   actual usage; let original funding absorb covered variance while retaining unfunded overrun
   debt and ambiguous holds. Do not promise a hard cost ceiling. Choose model/output settings that

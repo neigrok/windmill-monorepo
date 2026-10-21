@@ -8,6 +8,9 @@ code can cite them.
 
 **Status:** Specified; not yet implemented. The running Coach is described in
 [gym-coach-contract.md](../../gym-coach-contract.md): the server reads and writes the log itself.
+Anonymous iOS onboarding is a narrower flow: one installation-authenticated request produces a
+bounded routine document for atomic local import. It does not implement the phone tool-host
+protocol specified here. Its installation identity follows §8.
 
 **Adoption:**
 
@@ -23,7 +26,7 @@ code can cite them.
 - the Coach turn: the model loop on the server, and every ability run by the turn's tool host;
 - the gate;
 - the wire between a phone and the server during a turn;
-- allowances, metering, retention and the device grant for signed-out phones;
+- allowances, metering, retention and installation identity for signed-out phones;
 - conversation and picture records.
 
 **§0.2 Outside this spec:**
@@ -77,8 +80,10 @@ the Coach `message` record (§9.1), and `turnId` is its id.
 move or rebind, a discard decision, a sign-out; engine §7.10) first ends a running turn
 `interrupted`.
 
-**D-11 Device grant.** A short-lived credential issued to a signed-out install after platform
-attestation (§8). It admits the Coach turn routes only.
+**D-11 Installation credential.** An opaque server-issued credential held separately from account
+authentication (§8). Its lifetime allowance belongs to an installation, without a guarantee
+against resets. Current admission is limited to the anonymous onboarding routes; it does not
+grant access to account Coach routes or the broader turn protocol.
 
 ---
 
@@ -180,7 +185,7 @@ emoji and combining marks.
 
 1. **Admit locally.** Refuse, keeping the draft, when:
    - there is no connection;
-   - the seat is `anon` and the phone holds no verified device grant with lifetime USD capacity (§8);
+   - the seat is `anon` and the phone holds no installation credential with lifetime USD capacity (§8);
    - a workout is open and the brief refuses Coach mid-workout;
    - the replica has not completed its first pull of history (`coach-replica-syncing`);
    - the question exceeds `MAX_QUESTION_BYTES`, or more than `MAX_PICTURES_PER_MESSAGE` pictures
@@ -310,12 +315,15 @@ MCP calls pass G-1 to G-3 in the server executor, under the same agent rules (IN
 | `GET /v1/gym/coach/turns/{turnId}` | Resume a turn's stream. |
 | `POST /v1/gym/coach/turns/{turnId}/results` | Answer a batch. |
 | `POST /v1/gym/coach/turns/{turnId}/stop` | Request Stop. |
-| `GET /v1/gym/coach/device/challenge` | A nonce for a device grant (§8). |
-| `POST /v1/gym/coach/device` | Exchange an attestation for a device grant (§8). |
+| `POST /v1/ai/installations` | Issue an installation credential (§8). |
+| `GET /v1/ai/installations/current` | Read installation binding and allowance (§8). |
+| `POST /v1/ai/installations/bind` | Bind its usage to a verified account (§8). |
 
-A turn route authenticates with a session (seat `bound(A)`) or a device grant (seat `anon`). Every
+A turn route authenticates with a session (seat `bound(A)`) or an installation credential (seat `anon`). Every
 request of a turn uses the seat that opened it. A deployment with more than one server process
 MUST route every request of a turn to the process that holds it.
+The turn routes remain specified work; installation credentials currently authorize only
+`POST /v1/gym/coach/onboarding` and its request-scoped recovery read.
 
 ### §6.2 Open
 
@@ -375,8 +383,8 @@ again answers `204`. Any other body is refused `coach-turn-order`.
 | `coach-turn-volume` | An ability call over G-6. |
 | `coach-rate-limited` | The technical burst or concurrency limit is reached; retry later. |
 | `subject_exhausted` | The device/account USD allowance cannot cover this request. |
-| `coach-device-unverified` | The phone's attestation did not verify. |
-| `device_bound` | This verified device is permanently associated with an account; use that account. |
+| `invalid_installation` | The installation credential is missing or invalid. |
+| `device_bound` | This installation is permanently associated with an account; sign in. |
 | `free_day_exhausted` | Shared free capacity is unavailable for this UTC day; include the daily budget reset. |
 | `free_month_exhausted` | Shared free capacity is unavailable for this UTC month. |
 | `concurrency_exhausted` | The principal already has its permitted number of unresolved calls. |
@@ -396,13 +404,13 @@ The backend owns exactly three tiers. Amounts are USD of model cost, never quest
 
 | Tier | Individual allowance | Period |
 |---|---|---|
-| Anonymous | $0.05 per verified device | Lifetime |
+| Anonymous | $0.05 per installation credential | Lifetime |
 | Verified logged-in | $0.25 per account, including associated anonymous spend from the current month | UTC calendar month |
 | Windmill One | $7 per funded account period | Subscription billing period; owner grants use UTC calendar months |
 
 Every hosted AI cost, including background Journal work, consumes the individual allowance.
-Balances are shared across account devices and products. A device binds permanently to one verified
-account at sign-in, after which anonymous admission for that device is closed. Binding retains
+Balances are shared across account devices and products. An installation binds permanently to one verified
+account at sign-in, after which anonymous admission for that installation is closed. Binding retains
 lifetime usage and carries current-month anonymous spend into the free account allowance. Existing
 unresolved holds and debt remain attributable; sign-in cannot erase them.
 
@@ -438,13 +446,13 @@ supported token usage. The durable ledger owns admission; telemetry mirrors do n
 nor telemetry contain prompts, images, account/device identifiers or raw vendor errors.
 
 [USD AI allowances](../../../backend/AI_ALLOWANCES.md) describes the implemented backend mode,
-which defaults off. Authenticated Claude paths use it; device attestation/grant endpoints and this
-phone-hosted Coach protocol remain unimplemented. The deployed Coach operation is `ask`.
+which defaults off in configuration and is enabled in production. Authenticated Claude paths use
+it. Anonymous onboarding has a separate installation boundary; this broader phone-hosted Coach
+protocol remains unimplemented. Account Coach uses operation `ask`.
 
 Claude reservations use local per-request approximate token counts and the full output cap sent to the provider.
-An Opus 5 8,000-token output cap alone reserves $0.20, exceeding the anonymous $0.05 lifetime
-allowance. Anonymous rollout needs suitable model/output settings as well as device attestation;
-approximation does not guarantee that a request fits. Full actual cost is recorded; an overrun
+Anonymous onboarding uses one bounded model call with public exercises and no account tools.
+Approximation does not guarantee that a request fits. Full actual cost is recorded; an overrun
 creates debt only when original funding cannot cover it. Voice also needs supported audio
 accounting and complete audio/text pricing. This spec does not promise that either unsupported
 edge is available.
@@ -471,56 +479,63 @@ content. These operational alerts are not customer upgrade messages.
 - Usage rows, allowance state and grant records.
 - A running turn, in memory, until `TURN_LINGER` after it ends.
 
-It never logs a question, answer, picture, history, context or ability result, and never persists
-one for a turn with no bound seat until a sign-in adds its conversation to an account (§9.1); a
-bound seat's conversation is ordinary synced data.
+It never logs a question, answer, picture, history, context or ability result. Anonymous onboarding
+persists an input digest and a validated routine result for request recovery, without the input
+text or image. Its result expires after seven days; a compact replay tombstone prevents redispatch.
+The phone keeps its conversation and photos locally. The broader turn protocol's conversation
+records described in §9.1 remain specified work.
 Error records carry the code, sizes, `turnId` and model call number only. `ANON_RETENTION_DAYS` applies to expendable operational records. The lifetime allowance and
-permanent binding must survive record cleanup without allowing a fresh grant; their retention and
-account-erasure treatment must be specified before the external device endpoints ship.
+permanent binding must survive record cleanup and account erasure without allowing a fresh grant.
 
 ---
 
-## §8 The device grant
+## §8 Installation identity
 
 ### §8.1 Flow
 
-1. `GET /v1/gym/coach/device/challenge` → `{nonce}`, valid for `CHALLENGE_TTL`.
-2. `POST /v1/gym/coach/device` with the platform attestation over the nonce →
-   `{grant, expiresAt, allowance}` with the shared USD fields.
-3. A grant lives `GRANT_TTL`. The phone renews it with a fresh attestation or assertion over a new
-   challenge; renewal keeps the same device's lifetime USD balance. These endpoints are specified
-   here and are not implemented by the current backend.
+1. `POST /v1/ai/installations` issues a 256-bit opaque credential and its lifetime USD allowance.
+2. The client stores the credential securely and sends it in `X-Windmill-Installation` for
+   installation reads and anonymous onboarding. The server stores only a digest of the token.
+3. `GET /v1/ai/installations/current` reads binding and allowance without issuing a replacement.
+4. After verified sign-in, `POST /v1/ai/installations/bind` carries both the account credential and
+   installation credential. Binding attributes usage independently of Add/Discard content choices.
+   Repeating the same binding is idempotent; another account cannot rebind it.
 
 ### §8.2 iOS
 
-The device-verification implementation must verify App Attest against the app identity and fresh
-server challenge, then bind the request to a durable lifetime device subject. DeviceCheck may
-support abuse detection; the server ledger records exact USD usage. Renewal and supported
-reinstall handling must preserve all lifetime usage. The exact reinstall-resistant
-subject binding remains an implementation prerequisite; a freshly generated key cannot silently
-receive a fresh allowance.
+The installation credential uses a separate Keychain service from account credentials and survives
+ordinary sign-out. A missing credential on first use may acquire one; an invalid existing credential
+must not silently mint a replacement. Sign-in binds before account Coach becomes available.
+App Attest and DeviceCheck are not launch requirements. Erasing or resetting the installation is
+not guaranteed to preserve its identity; this is an installation allowance, not proof of a unique
+physical phone. IP and global budgets bound that exposure.
 
 ### §8.3 Android
 
-The device-verification implementation must verify a fresh Play Integrity verdict bound to the
-server challenge and the intended app. Device recall and distribution eligibility must be
-verified before promising a per-device allowance across reinstall. An install id alone is
-insufficient. A phone for which the backend cannot establish the required verified subject is
-refused as unverified; it does not receive a separate per-install budget.
+Android Coach remains account-only. Delivering anonymous Android onboarding requires its own
+secure credential storage, local routine import and account-adoption integration. The shared
+installation policy does not imply Android delivery or reinstall-resistant identity.
 
 ### §8.4 Failure and privacy
 
-- Any verification failure is `coach-device-unverified`. The room offers sign-in and states no
-  count.
-- The subject is an opaque verified device identity, absent from telemetry. Its backend binding to
+- Invalid credentials are refused; the room retains the draft and offers a recovery without
+  silently replacing the credential.
+- The subject is an opaque installation identity, absent from telemetry. Its backend binding to
   one account is permanent and cannot be changed to replenish free usage.
 - Signing in retains lifetime usage, closes anonymous admission for that device and includes its
   current-month anonymous spend in the account's free allowance. Unresolved calls remain held.
+- A caller that erases or deliberately omits the installation signal cannot be associated with it
+  by this mechanism. No reset-proof or account-association guarantee is made for such a caller.
+- Issuance and generation have durable IP limits. Only the configured trusted proxy's client-IP
+  header is accepted in production; local direct mode uses the socket peer. IP rate records use
+  keyed digests and bounded retention, and raw addresses never enter telemetry.
 
 ### §8.5 Deployment secrets
 
-App Attest app id and Apple's root certificate; DeviceCheck key, key id and team id; the Play
-Integrity Cloud project and service account; the grant signing key; the device-hash key.
+`AI_INSTALLATIONS_ENABLED` requires durable USD allowances and `AI_INSTALLATION_IP_HMAC_KEY`.
+Production fixes `AI_INSTALLATION_PROXY_MODE=cloudflare` behind the Cloudflare-only Caddy gate;
+the server has no public host port. Defaults are ten credential issues per IP per UTC day and
+thirty new generations per IP per UTC hour. Secrets and credentials never appear in logs.
 
 ---
 
@@ -642,8 +657,8 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
 | `AI_FREE_DAILY_USD` | 5 |
 | Free principal concurrency | 1 |
 | Paid principal concurrency | 2 |
-| `CHALLENGE_TTL` | 5 min |
-| `GRANT_TTL` | 24 h |
+| `AI_INSTALLATION_ISSUES_PER_DAY` | 10 |
+| `AI_INSTALLATION_GENERATIONS_PER_HOUR` | 30 |
 | `ANON_RETENTION_DAYS` | 35 |
 | `CATALOG_RETIRE_DAYS` | 120 |
 
@@ -660,9 +675,8 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
   tools and images. Do not describe approximate admission as a hard spending ceiling. Original
   funding absorbs covered variance; unfunded overrun debt and ambiguous holds remain accounted
   for. The free pools and concurrency policy are set.
-- **B-4 Android attestation.** Play Integrity verdicts pass only for installs from Google Play, and
-  device recall is a beta granted on application. Decide the channel that carries signed-out
-  Coach, and apply for device recall.
+- **B-4 Android delivery.** Implement and verify secure installation storage, local onboarding
+  import and account adoption before opening anonymous Coach on Android.
 - **B-5 Evaluation.** Signed-out conversations exist only on phones. Decide whether a lifter can
   send a conversation to Windmill for review.
 

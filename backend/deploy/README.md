@@ -244,3 +244,30 @@ web deploy first** — the backend comes up either way, but the embedder's mount
   is run — one process serves REST, the collab socket and MCP against a single `RoomRegistry`.
 - `windmill_server` has no health route, so its container health check only confirms the port answers
   HTTP.
+
+## Anonymous Coach access
+
+`AI_INSTALLATIONS_ENABLED=true` enables server-issued installation credentials for Gym Coach
+onboarding. It requires `AI_ALLOWANCES_ENABLED=true` and the GitHub secret
+`AI_INSTALLATION_IP_HMAC_KEY` containing at least 32 random bytes. The deployment renderer refuses
+an enabled installation mode without those prerequisites. Configure the optional
+`AI_INSTALLATION_ISSUES_PER_DAY` and `AI_INSTALLATION_GENERATIONS_PER_HOUR` variables to override
+10 new installation credentials per UTC day and 30 new generations per UTC hour per network.
+
+Setting `AI_INSTALLATIONS_ENABLED=false` stops new credentials and anonymous generation. Keep
+`AI_ALLOWANCES_ENABLED=true` to retain existing credential authentication, allowance reads, account
+binding and saved preview recovery; these operations do not require the network secret. Signed-in
+Coach can therefore finish binding a retained installation after anonymous access is turned off.
+
+Production Compose fixes `AI_INSTALLATION_PROXY_MODE=cloudflare`. Keep the server port private,
+keep the Cloudflare gate first on both Caddy hosts and maintain the Cloudflare firewall allowlist.
+The backend requires one canonical `CF-Connecting-IP`; it does not trust X-Forwarded-For or fall
+back to an unlimited bucket. IPv6 network budgets aggregate /64 prefixes. Local direct mode uses
+the socket peer and rejects forwarded identity headers.
+
+The deploy receipt verifies the running process's installation flag and proxy mode alongside
+its image, allowance flag, output cap and schema readiness. Enabled mode also checks that a
+network key is present in the running process, without printing or comparing its secret value.
+Key rotation changes active network buckets; installation credentials and lifetime balances do
+not change. Keep the key stable during ordinary deployment. Resetting or losing an installation
+credential is not physical-device attestation and cannot be identified reliably.

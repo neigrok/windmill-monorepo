@@ -48,6 +48,7 @@ struct MessagesRequest {
   // low | medium | high | xhigh | max. Thinking stays on: disabling it leaks reasoning into the
   // response text and breaks the JSON.
   std::string effort = "high";
+  Json::Value content;
 };
 
 // `ok` false always carries a failure and no output; `ok` true always carries an output. `tokens`
@@ -77,7 +78,7 @@ MessagesReply readMessagesReply(int status, const std::string& body);
 // configured() false and every send a transport failure.
 class AnthropicClient : public MessagesApi {
 public:
-  explicit AnthropicClient(std::string apiKey);
+  explicit AnthropicClient(std::string apiKey, std::string baseUrl = kAnthropicBaseUrl);
   ~AnthropicClient();
   void stop();
 
@@ -86,6 +87,7 @@ public:
 
 private:
   std::string apiKey_;
+  std::string baseUrl_;
   trantor::EventLoopThread loop_;
   std::atomic<bool> stopped_{false};
 };

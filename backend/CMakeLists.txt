@@ -49,6 +49,9 @@ endfunction()
 # --- platform + roadmap domain and application. The adapters (the messy vendor edges) are
 # folded into these same libraries below.
 add_library(windmill_platform
+  platform/ai_installations/AiInstallations.cpp
+  platform/ai_installations/PgAiInstallations.cpp
+  platform/ai_installations/AiInstallationApi.cpp
   platform/domain/AiFuse.cpp
   platform/domain/AiUsage.cpp
   platform/domain/AiBudget.cpp
@@ -136,6 +139,11 @@ target_link_libraries(windmill_journal PUBLIC windmill_platform)
 # --- gym domain, application and sync binding. Other adapters join this library below.
 # Depends on windmill_platform only, never another product.
 add_library(windmill_gym
+  products/gym/onboarding/Onboarding.cpp
+  products/gym/onboarding/PgOnboardingRepository.cpp
+  products/gym/onboarding/AnthropicOnboarding.cpp
+  products/gym/onboarding/OnboardingService.cpp
+  products/gym/onboarding/OnboardingApi.cpp
   products/gym/domain/Training.cpp
   products/gym/domain/Preferences.cpp
   products/gym/domain/Routine.cpp
@@ -282,6 +290,9 @@ add_executable(windmill_domain_tests
   test/products/gym/sync/GymRulesTest.cpp
   test/products/journal/sync/JournalRulesTest.cpp
   test/products/journal/sync/JournalFeedTest.cpp
+  test/products/gym/onboarding/OnboardingTest.cpp
+  test/products/gym/onboarding/OnboardingServiceTest.cpp
+  test/products/gym/onboarding/AnthropicOnboardingTest.cpp
   test/products/gym/domain/TrainingTest.cpp
   test/products/gym/domain/PreferencesTest.cpp
   test/products/gym/domain/RoutineTest.cpp
@@ -474,6 +485,8 @@ add_test(NAME sync_epoch COMMAND ${Python3_EXECUTABLE}
 set_tests_properties(sync_epoch PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE)
 add_test(NAME auth_differential COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/e2e/auth_differential_test.py)
+add_test(NAME anonymous_coach COMMAND ${Python3_EXECUTABLE}
+  ${CMAKE_SOURCE_DIR}/test/e2e/anonymous_coach_test.py)
 # deploy-production.sh against a modeled Docker host: promotion, the kept database password, Caddy's proof and refusals.
 add_test(NAME deploy_production COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/deploy/deploy_production_test.py)
@@ -544,6 +557,8 @@ add_executable(windmill_adapters_tests
   test/platform/adapters/http/AppleLinkingApiTest.cpp
   test/platform/adapters/http/OAuthApiTest.cpp
   test/platform/adapters/http/McpKeyApiTest.cpp
+  test/platform/ai_installations/AiInstallationApiTest.cpp
+  test/platform/ai_installations/PgAiInstallationsTest.cpp
   test/platform/adapters/http/AiAllowanceApiTest.cpp
   test/platform/adapters/json/AiBudgetJsonTest.cpp
   test/platform/adapters/http/EventsApiTest.cpp
@@ -609,6 +624,8 @@ test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
   test/products/gym/adapters/http/NotesApiTest.cpp
   test/products/gym/adapters/http/BodyweightApiTest.cpp
   test/products/gym/adapters/http/ThreadsApiTest.cpp
+  test/products/gym/onboarding/PgOnboardingRepositoryTest.cpp
+  test/products/gym/onboarding/OnboardingApiTest.cpp
   test/products/gym/adapters/http/AskApiTest.cpp
   test/products/gym/adapters/llm/AnthropicAskTest.cpp
   test/products/gym/application/AskServiceTest.cpp

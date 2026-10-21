@@ -28,11 +28,13 @@ import XCTest
   }
 
   func assertGym(_ app: XCUIApplication) {
-    XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["coach-setup-goal"].waitForExistence(timeout: 5))
     XCTAssertEqual(app.buttons["room-menu"].label, "Gym")
     XCTAssertTrue(app.tabBars.buttons["Routines"].exists)
     XCTAssertTrue(app.tabBars.buttons["The log"].exists)
     XCTAssertTrue(app.tabBars.buttons["Coach"].exists)
+    XCTAssertTrue(app.tabBars.buttons["Coach"].isSelected)
   }
 
   func testSwitchRoomsKeepsJournalAndUsesGymTabs() {

@@ -10,6 +10,7 @@ telemetry, access, the HTTP host, the AI usage meter (`domain/AiUsage`, `domain/
 `ports/AiUsageRepository`) and durable USD admission (`domain/AiBudget`, `application/AiBudgetService`,
 `ports/AiBudgetRepository`). The durable mode owns free daily/monthly pools, lifetime devices,
 funded subscription/owner periods, permanent device binding, concurrency and threshold alerts.
+`platform/ai_installations/` holds server-issued anonymous Coach credentials and network admission.
 Every hosted AI call, including background work, debits its individual allowance in that mode;
 [AI_ALLOWANCES.md](AI_ALLOWANCES.md) defines its rollout switch and unsupported edges.
 

@@ -1,6 +1,6 @@
 # Account plan and USD AI allowance — design proposal
 
-Status: customer UI proposal. The backend USD contract is behind an off-by-default rollout switch.
+Status: customer UI proposal. The backend USD contract is enabled in production; its configuration default is off.
 The drawings require the lifetime/free/funded policy and provider capacity states below.
 
 ## Drawings
@@ -26,13 +26,13 @@ final price or hard spending ceiling.
 
 | Tier | Allowance | Display period |
 | --- | --- | --- |
-| Anonymous | $0.05 per verified device | Lifetime; no reset date |
+| Anonymous | $0.05 per installation credential | Lifetime; no reset date |
 | Verified logged-in | $0.25, including associated anonymous spending from the current month | UTC calendar month |
 | Windmill One | $7 per funded period | Actual subscription billing period; owner grants use UTC calendar months |
 
 Owner access is a funding source within One and is labeled separately from subscription funding.
 Account capacity is shared across
-products and devices. Signing in permanently binds a verified anonymous device to the account;
+products and devices. Signing in permanently binds the anonymous installation to the account;
 it does not grant a fresh anonymous allowance. Current-month anonymous cost counts toward the
 free account allowance. A current subscription grant takes priority over an owner calendar grant;
 the display never combines their remaining amounts. An expired subscription must not hide an
@@ -59,8 +59,8 @@ is not a promise of a future paid grant. Uncertain calls can retain capacity aft
 A positive remaining balance can still be too small for a request's reservation. Draw this as a
 request-capacity refusal rather than zero balance. Do not claim a shorter prompt will necessarily
 fit: the model, history, tools, images and configured output cap also affect the reservation.
-Anonymous access needs attestation and model/output settings that fit its lifetime allowance;
-an Opus 5 8,000-token output cap alone reserves $0.20 against a $0.05 allowance.
+Anonymous access is limited to Gym onboarding through a server-issued installation credential,
+IP limits and shared budgets. Installation resets are not guaranteed to preserve identity.
 Loading and failed reads show an unavailable state; they never flash Free, zero or empty history.
 
 Checkout is closed. The page offers no purchase, top-up, overage, fabricated renewal or
@@ -81,8 +81,8 @@ These mobile-web drawings do not claim native iOS or Android components.
 
 ## Implementation dependencies
 
-Clients need the USD and refusal contract; device attestation and sign-in binding need secure
-external endpoints; anonymous model/output settings need to fit the intended allowance; voice
+Account usage screens need the USD and refusal contract; anonymous onboarding uses its installation
+read and binding endpoints. Other anonymous products need their own integration; voice
 needs supported audio accounting. Estimated reservations must be distinguished from actual use
 and unresolved holds. The 50/80/95% owner-email alerts are operational controls, not customer sales
 notifications. Design drift is tracked in [consistency](consistency.md), and account work remains

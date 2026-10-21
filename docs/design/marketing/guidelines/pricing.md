@@ -2,8 +2,8 @@
 
 The design contract covers one shared account and one Windmill One plan across roadmap, journal
 and gym. The products remain useful without paid AI assistance. This is the approved allowance
-policy; the USD backend is off by default and customer rollout remains blocked. The current
-implementation and blockers are in [AI usage review](../../../AI_USAGE_REVIEW.md).
+policy; USD admission is enabled in production, while customer usage screens remain work. The
+current implementation and remaining boundaries are in [AI usage review](../../../AI_USAGE_REVIEW.md).
 
 ## What spends the allowance
 
@@ -18,9 +18,10 @@ or repairing Echoes consumes allowance and waits when the applicable capacity is
 Do not crop existing passages, lock them behind a subscription or describe new processing as
 exempt from the individual's balance.
 
-Anonymous calls require a verified device identity. The enabled backend refuses public text
-import before dispatch while that identity is unavailable; it must not silently bypass allowance
-admission. Audio also remains closed in enabled mode until its accounting bound is supported.
+Anonymous Gym onboarding uses a server-issued installation credential with IP limits and shared
+budgets. Identity is not guaranteed to survive installation resets. Public text import remains
+refused before dispatch in enabled mode; Coach access does not enable it. Audio also remains
+closed in enabled mode until its accounting bound is supported.
 
 ## The unit: USD
 
@@ -34,14 +35,14 @@ unused capacity returns, while an overrun remains fully accounted for.
 
 | Tier | Individual allowance | Period |
 | --- | --- | --- |
-| Anonymous | $0.05 per verified device | Lifetime; no reset |
+| Anonymous | $0.05 per installation credential | Lifetime; no reset |
 | Verified logged-in | $0.25 per account, including associated anonymous usage from the current month | UTC calendar month |
 | Windmill One | $7 per funded account period | Subscription billing period; owner grants use UTC calendar months |
 
 The two free tiers share $100 per UTC calendar month and $5 per UTC day. Paid calls use only their
 funded grant. An active subscription grant takes priority over an owner grant; balances never
 combine. Unused subscription availability crosses calendar boundaries until its billing period
-ends. Reserved or uncertain calls retain their liability. A verified device permanently binds to
+ends. Reserved or uncertain calls retain their liability. An installation permanently binds to
 one account on sign-in and cannot receive further anonymous admission.
 
 Free principals can have one in-flight AI call; paid principals can have two. These are separate

@@ -50,6 +50,103 @@ Coach assigns `note_<generation-id>` and an independent `op_note_<generation-id>
 
 The owner-provided main/style/workflow/boundaries prompt is stored verbatim in `AnthropicAsk.cpp`. Factual tool, privacy and context rules are separate. They require equipment/variant clarity and honest movement-pattern coverage, and keep internal IDs and tool narration out of replies unless useful to the user. The runtime still fetches current sessions and Notes before making a model request.
 
+## Anonymous routine onboarding
+
+The installation-scoped onboarding API prepares reusable routines before sign-in. It reads the public
+seed exercise catalog, makes one bounded model call, and returns validated routine documents. It
+does not create an account, a Coach conversation, a server routine or a stored photo. Account Coach,
+history, attachments and account tools still require account authentication.
+
+Obtain a credential from `POST /v1/ai/installations` with `{}` and retain its opaque `credential`.
+Send it as `X-Windmill-Installation` on the following requests. Malformed or conflicting account
+credentials are refused even when an installation credential is valid. The installation is a
+server-issued signal, not hardware attestation; resetting local credentials can evade device identity.
+IP admission and shared free budgets bound that exposure.
+
+`POST /v1/gym/coach/onboarding` accepts exactly one of these shapes:
+
+```json
+{"requestId":"12345678-1234-1234-1234-123456789abc","mode":"goal","goal":"Build general strength","daysPerWeek":3,"equipment":"gym"}
+{"requestId":"12345678-1234-1234-1234-123456789abc","mode":"program","program":"Bench Press 3x8"}
+{"requestId":"12345678-1234-1234-1234-123456789abc","mode":"photo","image":{"mimeType":"image/png","data":"<base64>"},"note":"Preserve my program"}
+```
+
+Persist a lowercase UUID `requestId` before sending; reuse it and the exact input after a timeout or
+relaunch. Goal text is 1–1,000 UTF-8 bytes and requires 1–6 weekly days plus equipment. Supported goal
+equipment is `gym`, `dumbbells`, `barbell` or `bodyweight`. `bands` and `other` produce the durable
+`unsupported_equipment` failure before provider dispatch. Program text is 1–4,000 bytes. Photo notes
+are optional and at most 1,000 bytes. Photos are base64 JPEG or PNG, at most 1 MiB decoded, at most
+4,096 pixels on either edge and 16,777,216 pixels total. The backend checks signature, PNG checksums
+and complete image decoding. Accepted JSON bodies remain below Drogon's 2 MiB in-memory threshold;
+accepted photos are held in memory and sent inline to the provider, with no application upload file.
+
+New work returns `202` with `status:"pending"`. A terminal POST replay returns `200`.
+`GET /v1/gym/coach/onboarding/{requestId}` returns `200` for every stored state and `404` for an absent
+or another installation's request. Both routes return this shape with private/no-store caching:
+
+```json
+{
+  "requestId":"12345678-1234-1234-1234-123456789abc",
+  "resultId":"onb_<stable digest>",
+  "status":"completed",
+  "expiresAtMs":1800000000000,
+  "routines":[{"name":"Push","entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":null}],"restSeconds":120}]}],
+  "errorCode":null,
+  "allowance":{"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.050000000","used":"0.012000000","reserved":"0.000000000","remaining":"0.038000000","resetsAtMs":null,"budgetResetsAtMs":null}
+}
+```
+
+`status` is `pending`, `completed`, `failed` or `expired`. `routines` is empty until completed;
+`errorCode` is null unless failed or expired. Poll at one-second intervals with the same credential.
+Pending work becomes terminal after a 15-minute lease, including after a server restart. Replaying a
+request never dispatches it again, including terminal failures. Changing input under the same ID
+returns `409 request_conflict`. Clients must not automatically mint a new ID after failure.
+The rollout switch stops new claims with `503 anonymous_ai_unavailable`; existing POST replays and
+GET recovery remain available. Binding also preserves GET recovery.
+
+The result contains 1–3 reusable routines, at most six distinct seed exercises per routine and at
+most eight explicit set targets per exercise. It does not promise a six-day calendar. Names are
+nonblank and at most 80 UTF-8 bytes. Reps are 1–100 or null, rest is 15–600 seconds or null, and kg
+weights are finite numbers within the domain's −500 to 500 range, with at most two decimal places,
+or null. Negative loads represent explicitly supplied assistance. Goal generation always returns
+null weights. Program/photo instructions preserve supplied targets and leave unknown values null;
+an empty `sets` array means the source omitted a set count. Unreadable, unsupported or oversized
+programs return `insufficient_details`; incomplete model output returns `output_truncated` without
+partial routines. Domain validation rejects invented IDs, duplicate exercises and malformed values.
+
+The installation receives $0.05 of lifetime actual provider cost. Every call reserves its estimated
+maximum before dispatch against that allowance and the free $5/day and $100/calendar-month pools,
+then settles actual usage, including charged failures. Unknown provider outcomes retain their hold.
+The current allowance accompanies stored results; an original refusal retains its own code and
+original global reset time in `budgetResetsAtMs`. This distinguishes a shared daily/monthly pause from
+lifetime exhaustion. A separate technical bound admits eight new request IDs per installation per
+UTC day (`429 request_limit`); it does not renew the lifetime dollar allowance.
+
+The server retains validated result content for seven days. A compact request digest and terminal
+identity remain after expiry so an old request can never redispatch. No prompt or image is persisted.
+Native clients atomically import completed routines into their anonymous local engine together with
+a `resultId` replay receipt. They can start a workout before sign-in. Keep/sign-in and the existing
+Add/Discard flow adopt those local records through sync. `POST /v1/ai/installations/bind` attributes
+anonymous spend to the verified account; sign-up grants no second anonymous allowance.
+
+The model is `claude-sonnet-5` with adaptive thinking, low effort, structured JSON output and a
+2,000-token total output ceiling, reduced when the remaining allowance requires it. The provider's
+[model overview](https://platform.claude.com/docs/en/models/sonnet-5/overview) lists it as active
+(legacy), supports image input and adaptive thinking, and prices input/output at $2/$10 per million
+tokens. [Effort guidance](https://platform.claude.com/docs/en/build-with-claude/effort) explicitly
+supports low effort for Sonnet 5.
+[Structured-output compatibility](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
+includes Sonnet 5 and defines `output_config.format` with `type:"json_schema"`.
+[Thinking cost controls](https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost)
+make `max_tokens` the hard ceiling for thinking plus response text. These capabilities do not prove
+routine quality or completion within the ceiling; the manual live verification exercises a
+representative three-routine goal and two-routine program/photo without automatic paid retries.
+
 ## Structure observations
 
 The generation payload owns setup purpose, clarification and allowance refusals; message reads derive those fields from that payload. Durable action slots reuse the existing operation list and creation receipts, keeping recovery and normal execution on the same Gym write door. Routine creation limits are a domain constant; text and choice validation stays in domain types while JSON shape validation stays at the adapter boundary. The bounded native `gym_setup_step` event uses the generic first-party intake and the native telemetry allowlist.
+
+Anonymous onboarding is one feature package: pure input/result bounds, durable operation repository,
+service orchestration, provider and HTTP boundaries. Explicit `seedCatalog()` prevents account-shaped
+placeholder IDs from entering public catalog reads. The result receipt belongs to the local engine;
+the server stores generation outcomes and cost accounting without a second routine ownership path.

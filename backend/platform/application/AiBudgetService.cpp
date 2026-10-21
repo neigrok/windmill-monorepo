@@ -121,6 +121,10 @@ AiBudgetGrantResult AiBudgetService::fund(const AiBudgetGrant& grant) {
   });
 }
 
+std::optional<std::string> AiBudgetService::boundAccount(const std::string& deviceId) const {
+  return repository_.boundAccount(deviceId);
+}
+
 AiBudgetCode AiBudgetService::bindDevice(const std::string& deviceId, const std::string& accountId) {
   return observeAiBudgetWrite("ai.budget.bind_device", [&] {
     const long long atMs = clock_();

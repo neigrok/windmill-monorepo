@@ -47,20 +47,24 @@ struct CoachTab: View {
   @State var choosePhoto = false
   @State var atLatest = true
   @Environment(\.coachOpenAccount) var openAccount
+  @Environment(\.coachKeepRoutines) var keepRoutines
   @Environment(\.scenePhase) var phase
   @Environment(\.dynamicTypeSize) var typeSize
   @FocusState var composing: Bool
   init(gym: GymModel, handoff: Binding<CoachHandoff?> = .constant(nil), coach: CoachConversation? = nil, escapeSetup: ((CoachSetupChoice) -> Void)? = nil) { self.gym = gym; self.escapeSetup = escapeSetup; _handoff = handoff; let rest = coach?.rest ?? CoachFixture.rest(gym)
-    _coach = State(initialValue: coach ?? CoachConversation(gym: gym, rest: rest)); _history = State(initialValue: CoachHistory(gym: gym, rest: rest)) }
+    _coach = State(initialValue: coach ?? CoachConversation(gym: gym, rest: rest)); _history = State(initialValue: CoachHistory(gym: gym, rest: rest))
+    _fixturePrepared = State(initialValue: !gym.isAnonymous) }
 
   var body: some View {
     room.modifier(GymPage()).navigationTitle("Coach").accessibilityIdentifier("gym-coach")
       .toolbar {
-        ToolbarItem(placement: .topBarTrailing) {
-          Button("History", systemImage: "clock") { destination = .history }
-            .accessibilityIdentifier("coach-history")
+        if !gym.isAnonymous {
+          ToolbarItem(placement: .topBarTrailing) {
+            Button("History", systemImage: "clock") { destination = .history }
+              .accessibilityIdentifier("coach-history")
+          }
+          if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
         }
-        if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
         ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
       }.roomBar(.gym)
       .navigationDestination(item: $destination) { destination in
@@ -86,7 +90,7 @@ struct CoachTab: View {
       .sheet(item: $sources) { reading in CoachSourcesSheet(gym: gym, reading: reading) }
       .gymTabBar(hidden: composing)
       .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition):\(handoff?.id.uuidString ?? "")") {
-        if !CoachFixture.setup, !fixturePrepared { fixturePrepared = true; await CoachFixture.prepare(gym) }
+        if !CoachFixture.setup, !fixturePrepared { fixturePrepared = await CoachFixture.prepare(gym) }
         history.resetOwner(); await coach.activate()
         if let handoff, coach.begin(handoff) { self.handoff = nil; composing = !handoff.send }
         coach.noteOffline()
@@ -130,7 +134,7 @@ struct CoachTab: View {
         ZStack(alignment: .bottom) {
           Color.clear.containerRelativeFrame(.vertical)
           LazyVStack(alignment: .leading, spacing: 20) {
-            if coach.saved.purpose == .routineSetup, coach.saved.request == nil, coach.saved.thread == nil, coach.saved.exchanges.isEmpty {
+            if coach.saved.purpose == .routineSetup, coach.saved.request == nil, coach.saved.thread == nil, coach.saved.exchanges.isEmpty, (coach.saved.onboarding ?? []).isEmpty {
               CoachSetupView { choice in
                 guard coach.chooseSetup(choice) else { return }
                 if choice == .screenshot { choosePhoto = true }
@@ -143,6 +147,27 @@ struct CoachTab: View {
               Button("Earlier messages") { Task { await coach.open(coach.saved.threadId, earlier: true) } }
                 .font(.subheadline).frame(minHeight: RoomSpace.minimumTarget).disabled(coach.reading || coach.asking)
             }
+            if coach.anonymous, let allowance = coach.installationAllowance {
+              VStack(alignment: .leading, spacing: RoomSpace.small) {
+                Text("One-time AI setup allowance").font(.footnote.weight(.semibold))
+                if let detail = allowance.detail { Text(detail).font(.footnote) }
+              }.foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("coach-installation-allowance")
+            }
+            ForEach(Array((coach.saved.phoneDrafts ?? []).enumerated()), id: \.offset) { index, draft in
+              VStack(alignment: .leading, spacing: RoomSpace.related) {
+                Text("Draft kept on this phone").font(.footnote).foregroundStyle(GymPalette.inkDim)
+                Text(draft.text)
+                Button("Continue saved draft") {
+                  var next = coach.saved
+                  let previous = CoachPhoneDraft(text: next.text, photo: next.photo, photoData: next.photoData, setupChoice: next.setupChoice, choices: next.choices)
+                  next.text = draft.text; next.photo = draft.photo; next.photoData = draft.photoData; next.purpose = .routineSetup; next.setupChoice = draft.setupChoice; next.choices = draft.choices
+                  next.phoneDrafts?.remove(at: index)
+                  if !previous.text.isEmpty || previous.photo != nil { next.phoneDrafts?.append(previous) }
+                  _ = coach.keep(next, failure: "Your draft couldn’t be opened. Try again.")
+                }
+              }
+            }
+            ForEach(coach.saved.onboarding ?? []) { record in onboarding(record) }
             ForEach(coach.visibleTurns) { turn in
               if turn.from == "lifter" { question(turn.text, attachments: turn.attachments) }
               else {
@@ -185,8 +210,8 @@ struct CoachTab: View {
   }
 
   var band: some View {
-    let tooLong = coach.saved.text.utf8.count > 8000
-    let message = tooLong ? "Keep your question within 8000 bytes." : coach.refusal == .absent ? nil : coach.error ?? (coach.retryable ? CoachCopy.interrupted : nil)
+    let tooLong = coach.saved.text.utf8.count > coach.textLimit
+    let message = tooLong ? "Keep your message within \(coach.textLimit) bytes." : coach.refusal == .absent ? nil : coach.error ?? (coach.retryable ? CoachCopy.interrupted : nil)
     let retry: (() -> Void)? = tooLong ? nil : coach.retryable ? { composing = false; coach.retry() } : coach.draftReadable ? nil : { coach.reloadDraft() }
     return GymTransient(gym: gym, message: message, dismiss: tooLong || retry != nil ? nil : { coach.error = nil }, retryMessage: retry,
                         errorIdentifier: "gym-coach-error")
@@ -207,7 +232,7 @@ struct CoachTab: View {
                 .frame(width: RoomSpace.minimumTarget, height: RoomSpace.minimumTarget).contentShape(Circle())
             }.buttonStyle(.plain).offset(x: 18, y: -18).accessibilityLabel("Remove photo")
           }.padding(.leading, RoomSpace.minimumTarget).padding(.top, RoomSpace.related)
-        Text("Sent to Coach when you send. Kept privately with this chat.").font(.caption).foregroundStyle(GymPalette.inkDim)
+        Text(coach.anonymous ? "Sent to our AI provider when you send. Windmill keeps this photo only on this phone." : "Sent to Coach when you send. Kept privately with this chat.").font(.caption).foregroundStyle(GymPalette.inkDim)
           .padding(.horizontal, RoomSpace.inset)
       }
       HStack(alignment: .bottom, spacing: 0) {
@@ -215,7 +240,7 @@ struct CoachTab: View {
         PhotosPicker(selection: $photo, matching: .images) {
           Image(systemName: "photo.badge.plus").dynamicTypeSize(...DynamicTypeSize.xxxLarge).frame(width: target, height: target)
         }.accessibilityLabel("Add photo").disabled(coach.asking || preparing || !coach.draftReadable)
-        TextField("Ask about your training", text: Binding(get: { coach.saved.text }, set: { coach.edit($0) }), axis: .vertical)
+        TextField(coach.anonymous ? "Describe your program" : "Ask about your training", text: Binding(get: { coach.saved.text }, set: { coach.edit($0) }), axis: .vertical)
           .lineLimit(1...(typeSize.isAccessibilitySize ? 2 : 5)).focused($composing).disabled(coach.asking || !coach.draftReadable).accessibilityIdentifier("coach-question")
           .id(coach.asking).padding(.vertical, 11)
         send
@@ -227,12 +252,41 @@ struct CoachTab: View {
   @ViewBuilder var send: some View {
     if coach.asking {
       Button { coach.stopResponse() } label: { circle("stop.fill", dimmed: coach.stopping) }.buttonStyle(.plain)
-        .disabled(coach.stopping).accessibilityLabel(coach.uploading ? "Cancel upload" : "Stop response").accessibilityIdentifier("coach-stop")
+        .disabled(coach.stopping).accessibilityLabel(coach.anonymous ? "Stop waiting" : coach.uploading ? "Cancel upload" : "Stop response").accessibilityIdentifier("coach-stop")
     } else {
-      let empty = !CoachCopy.sendable(coach.saved.text, photo: coach.saved.photo != nil) || preparing
+      let empty = (!CoachCopy.sendable(coach.saved.text, photo: coach.saved.photo != nil) && !coach.anonymousRetryable) || preparing || coach.saved.text.utf8.count > coach.textLimit
       Button { if coach.blockedReason == nil { composing = false }; coach.send() } label: { circle("arrow.up", dimmed: empty || coach.blockedReason != nil) }
         .buttonStyle(.plain).disabled(empty)
-        .accessibilityLabel("Ask Coach").accessibilityHint(coach.blockedReason ?? "").accessibilityIdentifier("coach-send")
+        .accessibilityLabel(coach.anonymousRetryable ? "Check response" : "Ask Coach").accessibilityHint(coach.blockedReason ?? "").accessibilityIdentifier("coach-send")
+    }
+  }
+
+  @ViewBuilder func onboarding(_ record: CoachOnboardingRecord) -> some View {
+    VStack(alignment: .leading, spacing: 16) {
+      CoachQuestion(gym: gym, thread: coach.saved.threadId, text: record.request.question, attachments: record.photo.map { [$0] } ?? [],
+        draft: record.photo.flatMap { photo in record.request.image.flatMap { Data(base64Encoded: $0.data).map { (photo.id, $0) } } })
+      if !record.results.isEmpty {
+        CoachAnswerView(gym: gym, text: "", receipt: nil, steps: [], results: record.results,
+          review: { _ in }, read: { _ in }, notes: {})
+        if gym.isAnonymous {
+          Button { gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "keep_routines"]); keepRoutines?() } label: {
+            Label("Only on this phone · Keep it", systemImage: "iphone").font(.footnote).frame(minHeight: RoomSpace.minimumTarget)
+          }.buttonStyle(.plain).accessibilityIdentifier("coach-keep-routines")
+        }
+        Label("Read nothing from your log", systemImage: "book.closed").font(.footnote).foregroundStyle(GymPalette.inkDim)
+          .accessibilityIdentifier("coach-read-receipt")
+      } else if coach.asking, record.id == coach.anonymousRequest?.id {
+        progress(coach.savingOnboarding ? "Saving your routines…" : "Making your routines…")
+      } else if !coach.anonymous, record.results.isEmpty {
+        Text("This setup stayed on this phone. Your saved draft can continue with your account’s AI allowance.").font(.footnote).foregroundStyle(GymPalette.inkDim)
+      } else if !record.finished, record.stopped || record.response?.status != "failed" {
+        Button("Check response") { coach.resumeOnboarding() }.accessibilityIdentifier("coach-check-response")
+      }
+      if let response = record.response, response.status == "failed", AiAllowance.refusalCodes.contains(response.errorCode ?? "") {
+        allowanceMessage(response.allowance)
+      } else if record.finished, record.results.isEmpty, let code = record.refusalCode ?? record.response?.errorCode {
+        Text(CoachConversation.onboardingRefusalMessage(code)).font(.footnote).foregroundStyle(GymPalette.inkDim)
+      }
     }
   }
 
@@ -259,7 +313,7 @@ struct CoachTab: View {
                     review: { review = ProposalReviewID(id: $0) }, read: { sources = $0 }, notes: { destination = .notes })
   }
 
-  func allowanceMessage(_ allowance: CoachAllowance) -> some View {
+  func allowanceMessage(_ allowance: AiAllowance) -> some View {
     VStack(alignment: .leading, spacing: RoomSpace.small) {
       Text(allowance.message)
       if let detail = allowance.detail { Text(detail) }
@@ -473,7 +527,7 @@ struct CoachPhotoView: View {
   @State var enlarged = false
   @Namespace var zoom
   var image: UIImage? {
-    guard owner == gym.account, gym.coachAccountAvailable, local != nil || loadedOwner == gym.account else { return nil }
+    guard owner == gym.account, (gym.isAnonymous && !gym.accountTransition && local != nil) || (gym.coachAccountAvailable && (local != nil || loadedOwner == gym.account)) else { return nil }
     return (data ?? local).flatMap(UIImage.init(data:))
   }
   var body: some View {

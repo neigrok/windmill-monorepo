@@ -9,6 +9,7 @@ namespace wm::fake {
 
 struct FakeAiBudgetRepository : AiBudgetRepository {
   AiBudgetSnapshot totals;
+  std::map<std::string, std::string> bindings;
   std::map<std::string, AiBudgetReservation> reservations;
   std::map<std::string, AiBudgetGrant> grants;
   std::vector<AiBudgetAlert> alerts;
@@ -25,6 +26,7 @@ struct FakeAiBudgetRepository : AiBudgetRepository {
     ++reads;
     if (failRead) throw std::runtime_error("private database detail");
     auto result = totals;
+    if (principal.subject.kind == AiBudgetSubjectKind::Device && bindings.count(principal.subject.id)) result.deviceBound = true;
     result.period = principal.tier == AiBudgetTier::Anonymous ? AiBudgetPeriod::lifetime() : *AiBudgetPeriod::at(atMs);
     result.window = principal.tier == AiBudgetTier::Anonymous ? AiBudgetWindow::Lifetime : AiBudgetWindow::CalendarMonth;
     if (principal.tier != AiBudgetTier::WindmillOne) return result;
@@ -73,8 +75,16 @@ struct FakeAiBudgetRepository : AiBudgetRepository {
     if (inserted) return {AiBudgetCode::Ok, grant};
     return {row->second == grant ? AiBudgetCode::Replay : AiBudgetCode::Conflict, row->second};
   }
-  AiBudgetCode bindDevice(const std::string&, const std::string&, long long, const AiBudgetLimits&) override {
-    return AiBudgetCode::Ok;
+  std::optional<std::string> boundAccount(const std::string& device) override {
+    if (failRead) throw std::runtime_error("private database detail");
+    const auto row = bindings.find(device);
+    if (row == bindings.end()) return std::nullopt;
+    return row->second;
+  }
+  AiBudgetCode bindDevice(const std::string& device, const std::string& account, long long, const AiBudgetLimits&) override {
+    const auto [row, inserted] = bindings.emplace(device, account);
+    if (inserted) return AiBudgetCode::Ok;
+    return row->second == account ? AiBudgetCode::Replay : AiBudgetCode::Conflict;
   }
   std::vector<AiBudgetAlert> claimAlerts(long long, int, long long) override { return alerts; }
   AiBudgetCode completeAlert(const std::string& id, const std::string&) override {

@@ -361,6 +361,17 @@ listed separately because their only server writes are authentication refresh or
 | `AiBudgetService::view` | `ai.budget.view` | completion when trusted owner access creates a grant; successful pure reads omit write logs | unexpected read or grant failure |
 | Durable alert worker | `ai.budget.alert.claim`, `ai.budget.alert.delivered`, `ai.budget.alert.retry`, `ai.budget.alert_send` | claim/delivery/retry outcome; no recipient, identifiers or amounts in telemetry | unexpected outbox or delivery failure |
 | `AiCallBudget` | `ai.call.admit`, `ai.call.account`; `ai_output_admission` diagnostic | admission refusal or settlement/uncertainty; diagnostic carries only input nanos, output-token nanos, minimum/maximum/selected tokens and static code; no prompt, image, account or provider body | unexpected boundary failure, shared request deduplication |
+| `POST /v1/ai/installations` | `ai.installation.issue` | bounded issue or rate-limit outcome | unexpected storage/credential failures |
+| `GET /v1/ai/installations/current` | `ai.installation.read` | HTTP status; no credential, balance or identifier | unexpected read failures |
+| `POST /v1/ai/installations/bind` | `ai.installation.bind`, `ai.budget.bind_device` | bounded success, replay or binding conflict | unexpected binding/accounting failures |
+| Anonymous generation network admission | `ai.installation.admit` | bounded success, replay, disabled, rate limit or bound refusal | unexpected counter failures |
+| Expired network-key sweep | `ai.installation.prune` | committed deletion only | unexpected retention failures |
+| `POST /v1/gym/coach/onboarding` | `gym.coach.onboarding.start` | acceptance, replay or bounded refusal | unexpected request/storage failures |
+| Anonymous Coach worker | `gym.coach.onboarding.generate` | completed or bounded failure outcome | unexpected generation/storage failures |
+| Anonymous Coach model boundary | `gym.coach.onboarding.model` | expected refusal and provider rate limits are log-only outcomes | transport, truncation or invalid result failures |
+| Anonymous Coach fallback persistence | `gym.coach.onboarding.persist` | bounded terminal persistence failure | unexpected fallback write failures |
+| `GET /v1/gym/coach/onboarding/{requestId}` | `gym.coach.onboarding.read` | HTTP status; no routine or credential data | unexpected result read failures |
+| Anonymous Coach result expiry | `background.gym-coach-onboarding-retention` | committed expiry writes only | unexpected retention failures |
 | `GET /v1/ai/allowance` | `ai.allowance.read` | HTTP status via access log; no balance in telemetry | static failure detail on unavailable accounting |
 | Coach JSON/SSE allowance refusal | `ask.run` | bounded `subject_exhausted`, `free_day_exhausted`, `free_month_exhausted`, `concurrency_exhausted`, `funding_required` or `debt_outstanding` | expected refusals create no Issue |
 
@@ -368,9 +379,9 @@ Standalone MCP accepts unprefixed tool aliases; completions use canonical operat
 (for example `mcp.roadmap_create_tree`). Process construction/teardown exceptions use `server.lifecycle`,
 `mcp.stdio.lifecycle`, `mcp.http.lifecycle` or `process.shutdown` with the same privacy rules.
 
-USD allowance mode adds backend admission, funding, permanent device binding and owner-email alert
-steps. Existing user-visible Coach/tending events continue through `/v1/events`; customer USD
-screens are not implemented. Every budget queues 50/80/95% settled-plus-held threshold crossings
+USD allowance mode adds backend admission, funding, permanent installation binding and owner-email alert
+steps. Existing user-visible Coach/tending events continue through `/v1/events`; Coach displays
+read the exact USD allowance contract. Dedicated Usage screens remain separate work. Every budget queues 50/80/95% settled-plus-held threshold crossings
 atomically to the durable outbox. Alert email contains scope, funding source and numeric totals,
 but no account/device identifiers or user content; the configured owner email is never telemetry.
 The `ai_usage` Amplitude mirror remains separate from durable admission.
@@ -389,4 +400,4 @@ Coach's `ask.run` observation covers setup admission, model turns and terminal p
 
 Routine setup refuses writes outside its focused tool catalog before any action is persisted. Those attempts retain the tool's static `gym.<tool>` completion with `refused` and create no Issue.
 
-Native setup emits `gym_setup_step` through `/v1/events`, with `screen:coach` and the bounded action labels `shown`, `screenshot`, `describe`, `goal`, `just_log`, `build_manually`, `clarify`, `open_routine`. Client validation excludes questions, option values, routine names and allowance amounts. The product-neutral intake stores and forwards the accepted event using its existing batch observation.
+Native setup emits `gym_setup_step` through `/v1/events`, with `screen:coach` and the bounded action labels `shown`, `screenshot`, `describe`, `goal`, `just_log`, `build_manually`, `clarify`, `open_routine`, `routines_saved`, `keep_routines`, `photo_selected`, `photo_removed`. Client validation excludes questions, option values, routine names and allowance amounts. The product-neutral intake stores and forwards the accepted event using its existing batch observation.

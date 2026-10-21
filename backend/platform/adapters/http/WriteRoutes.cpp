@@ -36,6 +36,8 @@ struct HttpWriteFailure : std::runtime_error {
 };
 
 const std::set<std::string> refusalCodes{
+    "anonymous_ai_unavailable", "installation_already_present", "installation_bound", "installation_rate_limited",
+    "request_conflict", "not_found", "invalid_installation", "invalid_client_address", "invalid_network", "invalid_input", "invalid_image", "input_too_large", "request_limit",
     "access_denied", "account-mismatch", "account-not-empty", "ai_allowance_disabled", "ask-attachment-invalid", "ask-busy",
     "ask-daily-limit", "ask-generation-active", "ask-image-busy", "ask-image-limit",
     "ask-not-configured", "ask-out-of-budget", "ask-request-conflict", "ask-request-malformed",
@@ -164,6 +166,9 @@ std::string writeHttpOutcome(const drogon::HttpResponsePtr& response, const std:
   const std::string code = responseCode(response);
   if (status < 500) return code.empty() ? "http_" + std::to_string(status) : code;
   if (status != 503) return "failed";
+  if ((operation == "ai.installation.issue" || operation == "ai.installation.bind" ||
+       operation == "platform.GET.v1.ai.installations.current" || operation == "gym.coach.onboarding.start") &&
+      code == "anonymous_ai_unavailable") return code;
   if (code == "unavailable" || code == "temporarily_unavailable" || code.rfind("gym-", 0) == 0 ||
       code.rfind("journal-", 0) == 0 || code == "ask-busy" || code == "ask-not-configured") return code;
   const bool aiRequest = operation == "gym.POST.v1.gym.ask" || operation == "roadmap.POST.v1.trees.id.tend" ||

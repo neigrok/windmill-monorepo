@@ -26,7 +26,7 @@ struct RoutinesTab: View {
         ContentUnavailableView {
           Label("No routines yet", systemImage: "list.bullet.rectangle")
         } actions: {
-          if gym.workout.coachAvailable {
+          if gym.workout.coachAvailable || (gym.isAnonymous && !gym.accountTransition) {
             Button("Set up routines") { if let onSetup { onSetup() } else { ask?(CoachHandoff(question: "", purpose: .routineSetup)) } }
               .accessibilityIdentifier("routines-setup")
               .modifier(RoomSecondaryStyle()).controlSize(.large)

@@ -87,6 +87,7 @@ final class AppRuntime {
   let lifecycle: AppLifecycle
   let tokens: any TokenStore
   let revocations: any TokenStore
+  let installation: AiInstallation
   let hadInstallHistory: Bool
   let connectivity: (any Connectivity)?
   var revoking = false
@@ -95,7 +96,7 @@ final class AppRuntime {
 
   init(settings: AppSettings, telemetry: any Telemetry = NoopTelemetry(), directory: URL? = nil,
        service: String? = nil, syncTransport: (any SyncTransport)? = nil,
-       connectivity: any Connectivity = PathConnectivity(), authSession: URLSession? = nil) throws {
+       connectivity: any Connectivity = PathConnectivity(), authSession: URLSession? = nil, installation: AiInstallation? = nil) throws {
     self.settings = settings; self.telemetry = telemetry
     gymBinding = GymBinding()
     self.connectivity = connectivity
@@ -105,6 +106,14 @@ final class AppRuntime {
     let keychainService = service ?? settings.board.map { "works.windmill.boards.\($0)" } ?? settings.scenario.map { "works.windmill.scenarios.\($0)" } ?? "works.windmill.app"
     tokens = KeychainTokenStore(service: keychainService, telemetry: telemetry)
     revocations = KeychainTokenStore(service: keychainService + ".signed-out-sessions", telemetry: telemetry)
+    var installationSession: URLSession?
+    #if DEBUG && targetEnvironment(simulator)
+    if settings.modelServer, settings.scenario?.hasPrefix("gym-e2e-anonymous") == true {
+      let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [CoachFixtureProtocol.self]
+      installationSession = URLSession(configuration: config)
+    }
+    #endif
+    self.installation = installation ?? AiInstallation(baseURL: settings.baseURL, credentials: KeychainInstallationCredentialStore(service: keychainService + ".ai-installation"), session: installationSession, telemetry: telemetry)
     // Engine launch can prune credentials; preserve the phone's history before it mutates anything.
     hadInstallHistory = FileManager.default.fileExists(atPath: storageDirectory.path) ||
       !tokens.accounts().isEmpty || !revocations.accounts().isEmpty
@@ -117,7 +126,7 @@ final class AppRuntime {
       throw error
     }
     let transport: any SyncTransport
-    let boardClock = settings.board != nil && settings.board?.hasPrefix("workout-live-activity") != true
+    let boardClock = (settings.board != nil && settings.board?.hasPrefix("workout-live-activity") != true) || OfflineFixture.mode != nil
     #if DEBUG
     if settings.modelServer {
       let persistsModel = settings.scenario == "gym-e2e-conflict" || ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture")
@@ -157,12 +166,13 @@ final class AppRuntime {
     updateTelemetryIdentity()
   }
 
-  init(settings: AppSettings, store: Store, engine: SyncEngine, auth: NativeAuth, runner: ActionRunner, tokens: any TokenStore, revocations: any TokenStore, telemetry: any Telemetry = NoopTelemetry(), gymBinding: GymBinding = GymBinding()) {
+  init(settings: AppSettings, store: Store, engine: SyncEngine, auth: NativeAuth, runner: ActionRunner, tokens: any TokenStore, revocations: any TokenStore, telemetry: any Telemetry = NoopTelemetry(), gymBinding: GymBinding = GymBinding(), installation: AiInstallation? = nil) {
     self.telemetry = telemetry
     self.gymBinding = gymBinding
     connectivity = nil
     self.settings = settings; self.store = store; self.engine = engine; self.auth = auth; self.runner = runner
     self.tokens = tokens; self.revocations = revocations
+    self.installation = installation ?? AiInstallation(baseURL: settings.baseURL, credentials: KeychainInstallationCredentialStore(service: "works.windmill.tests.ai-installation." + UUID().uuidString), telemetry: telemetry)
     hadInstallHistory = true
     lifecycle = AppLifecycle(engine: engine, signals: .application, time: ApplicationBackgroundTime())
   }

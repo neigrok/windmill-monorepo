@@ -5,6 +5,10 @@
 #include "platform/adapters/postgres/PgAccountFootprint.h"
 #include "platform/adapters/paddle/BillingApi.h"
 #include "platform/application/AiBudgetAlerts.h"
+#include "platform/ai_installations/AiInstallationApi.h"
+#include "platform/ai_installations/PgAiInstallations.h"
+#include "products/gym/onboarding/PgOnboardingRepository.h"
+#include "products/gym/onboarding/OnboardingService.h"
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "platform/adapters/email/ResendClient.h"
 #include "platform/adapters/email/ResendEmailSender.h"
@@ -456,6 +460,49 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   std::shared_ptr<AiCallBudget> aiCallBudget;
   if (aiBudgets) aiCallBudget = std::make_shared<AiCallBudget>(aiBudgets, *entitlements, *authRepo, *sentry);
   auto aiAllowanceApi = std::make_shared<AiAllowanceApi>(authService, entitlements, sentry);
+  const char* installationModeEnv = std::getenv("AI_INSTALLATIONS_ENABLED");
+  const std::string installationMode = installationModeEnv ? installationModeEnv : "false";
+  if (installationMode != "true" && installationMode != "1" && installationMode != "false" && installationMode != "0" && !installationMode.empty())
+    throw std::runtime_error("AI_INSTALLATIONS_ENABLED must be true or false");
+  std::shared_ptr<PgAiInstallations> aiInstallationRepo;
+  std::shared_ptr<AiInstallations> aiInstallations;
+  const char* installationProxyEnv = std::getenv("AI_INSTALLATION_PROXY_MODE");
+  const std::string installationProxyMode = installationProxyEnv ? installationProxyEnv : "direct";
+  if (installationProxyMode != "direct" && installationProxyMode != "cloudflare")
+    throw std::runtime_error("Invalid AI installation proxy mode");
+  const AiInstallationProxy installationProxy = installationProxyMode == "cloudflare"
+      ? AiInstallationProxy::Cloudflare : AiInstallationProxy::Direct;
+  std::optional<std::string> installationNetworkKey;
+  AiInstallationPolicy installationPolicy;
+  if (installationMode == "true" || installationMode == "1") {
+    if (!aiBudgets) throw std::runtime_error("AI installations require enabled AI allowances");
+    const char* networkKey = std::getenv("AI_INSTALLATION_IP_HMAC_KEY");
+    if (secureCookies && installationProxy != AiInstallationProxy::Cloudflare)
+      throw std::runtime_error("HTTPS AI installations require Cloudflare proxy mode");
+    const auto readLimit = [](const char* name, int fallback) {
+      const char* value = std::getenv(name);
+      if (!value || !*value) return fallback;
+      const std::string text(value);
+      if (text.size() > 5 || text.find_first_not_of("0123456789") != std::string::npos)
+        throw std::runtime_error("Invalid AI installation rate limit");
+      return std::stoi(text);
+    };
+    installationNetworkKey = networkKey ? networkKey : "";
+    installationPolicy.issuesPerDay = readLimit("AI_INSTALLATION_ISSUES_PER_DAY", installationPolicy.issuesPerDay);
+    installationPolicy.generationsPerHour = readLimit("AI_INSTALLATION_GENERATIONS_PER_HOUR", installationPolicy.generationsPerHour);
+  }
+  if (aiBudgets) {
+    aiInstallationRepo = std::make_shared<PgAiInstallations>(pool);
+    aiInstallations = std::make_shared<AiInstallations>(*aiInstallationRepo, aiBudgets, *tokens, *systemClock,
+                                                       std::move(installationNetworkKey), installationPolicy);
+    lifetime.watch(aiInstallations, aiInstallationRepo, aiBudgets, aiBudgetRepo, tokens, systemClock);
+    aiInstallations->start();
+  }
+  auto aiInstallationApi = std::make_shared<AiInstallationApi>(aiInstallations, authService, entitlements, sentry, installationProxy);
+  auto aiInstallationWorkers = std::make_shared<WorkerPool>("ai-installation-http", 2, 16);
+  lifetime.onStop([aiInstallationWorkers] { aiInstallationWorkers->stopAndJoin(); }, aiInstallationApi, authService,
+                  aiInstallations, entitlements, sentry);
+
   lifetime.onStop([] {}, aiCallBudget, aiBudgets, aiBudgetRepo, entitlements, authRepo, sentry);
 
   auto productsCatalog = sync::productCatalog();
@@ -609,6 +656,19 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   lifetime.watch(gymAsk, gymTrainingService, gymThreads, systemClock, gymAskAgent, gymTools, entitlements,
                  subscriptionRepo, aiUsageRepo, gymLog, gymProgram, gymCatalog, gymNotes, gymBodyweight, tokens, gymDoor, gymPreferences);
 
+  std::shared_ptr<gym::OnboardingService> gymOnboarding;
+  if (aiInstallations) {
+    auto repository = std::make_shared<gym::PgOnboardingRepository>(pool);
+    auto messages = std::make_shared<AnthropicClient>(anthropicKey ? anthropicKey : "",
+        std::getenv("COACH_ANTHROPIC_BASE_URL") ? std::getenv("COACH_ANTHROPIC_BASE_URL") : kAnthropicBaseUrl);
+    auto model = std::make_shared<gym::AnthropicOnboarding>(messages, aiCallBudget, aiSpendSink, sentry);
+    gymOnboarding = std::make_shared<gym::OnboardingService>(repository, model, gymCatalog, aiInstallations,
+                                                            *tokens, *systemClock, sentry);
+    lifetime.watch(gymOnboarding, repository, model, messages, gymCatalog, aiInstallations, tokens, systemClock,
+                   sentry, aiCallBudget, aiSpendSink);
+    gymOnboarding->startRetention();
+  }
+
   // Every product's module behind one host, filtered by the grant the credential carries. A
   // duplicate tool name across two products refuses to boot. Tending is deliberately NOT given this
   // host — it keeps *mcpTools directly, so an agent reading node text cannot reach another product.
@@ -758,6 +818,22 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
         billingApi->startCheckout(req, std::move(cb));
       },
       {drogon::Post});
+  const auto installationHandler = [aiInstallationApi, aiInstallationWorkers](auto action) {
+    return [aiInstallationApi, aiInstallationWorkers, action](const drogon::HttpRequestPtr& request, HttpCallback&& reply) {
+      auto callback = std::make_shared<HttpCallback>(std::move(reply));
+      if (aiInstallationWorkers->post([aiInstallationApi, request, callback, action] {
+        observeHttpWork(request, [&] { ((*aiInstallationApi).*action)(request, std::move(*callback)); });
+      })) return;
+      const auto response = error(drogon::k503ServiceUnavailable, "Anonymous AI access is busy.", "unavailable");
+      response->addHeader("Cache-Control", "no-store");
+      (*callback)(response);
+    };
+  };
+  routes.registerWriteHandler("ai.installation.issue", "/v1/ai/installations",
+      installationHandler(&AiInstallationApi::issue), {drogon::Post});
+  routes.registerHandler("/v1/ai/installations/current", installationHandler(&AiInstallationApi::current), {drogon::Get});
+  routes.registerWriteHandler("ai.installation.bind", "/v1/ai/installations/bind",
+      installationHandler(&AiInstallationApi::bind), {drogon::Post});
   routes.registerHandler(
       "/v1/ai/allowance",
       [aiAllowanceApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
@@ -1065,7 +1141,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                        .authService = authService,
                        .askService = gymAsk,
                        .appBaseUrl = appBaseUrl,
-                       .onShutdown = [&lifetime](std::function<void()> stop) { lifetime.onStop(std::move(stop)); }};
+                       .onShutdown = [&lifetime](std::function<void()> stop) { lifetime.onStop(std::move(stop)); },
+                       .onboarding = gymOnboarding, .installations = aiInstallationApi, .failures = sentry};
   gym::registerRoutes(app, gymDeps);
 
   const auto& syncRegistry = syncCatalog->registry();
@@ -1112,7 +1189,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // Backstop cap; a full PUT document can be large. Above it Drogon answers a bare 413 before any handler runs,
   // which engine.md §9.1 allows a transport: it sits above PUSH_MAX_BYTES and PULL_MAX_BYTES.
   app.setClientMaxBodySize(8 * 1024 * 1024);
-  app.setClientMaxMemoryBodySize(1 * 1024 * 1024);
+  app.setClientMaxMemoryBodySize(2 * 1024 * 1024);
   app.setMaxConnectionNum(20000);                    // global socket ceiling (all arrive via Caddy)
   const char* listenHostEnv = std::getenv("WINDMILL_HOST");
   const std::string listenHost = listenHostEnv && *listenHostEnv ? listenHostEnv : "0.0.0.0";

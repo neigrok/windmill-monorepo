@@ -19,6 +19,9 @@ def server_config():
     return {"image": "ghcr.io/neigrok/windmill-monorepo:" + env["IMAGE_TAG"], "environment": {
         "AI_ALLOWANCES_ENABLED": env.get("AI_ALLOWANCES_ENABLED", "false"),
         "COACH_MAX_OUTPUT_TOKENS": env.get("COACH_MAX_OUTPUT_TOKENS", "2000"),
+        "AI_INSTALLATIONS_ENABLED": env.get("AI_INSTALLATIONS_ENABLED", "false"),
+        "AI_INSTALLATION_PROXY_MODE": env.get("AI_INSTALLATION_PROXY_MODE", "cloudflare"),
+        "AI_INSTALLATION_IP_HMAC_KEY": env.get("AI_INSTALLATION_IP_HMAC_KEY", ""),
         "POSTGRES_PASSWORD": env["POSTGRES_PASSWORD"]}}
 
 
@@ -61,6 +64,9 @@ def compose(state, arguments):
             return 0, state["healthResponses"].pop(0)
         return (1, "PRIVATE_DEPLOY_SECRET") if state.get("unhealthy") else (0, "200")
     if server and server[:3] == ["sh", "-eu", "-c"]:
+        if server[-1] == "installation-key-present":
+            key = state.get("serverEnvironment", {}).get("AI_INSTALLATION_IP_HMAC_KEY", server_config()["environment"]["AI_INSTALLATION_IP_HMAC_KEY"])
+            return (0, "") if 32 <= len(key) <= 1024 else (1, "PRIVATE_DEPLOY_SECRET")
         key, expected = server[-2:]
         actual = state.get("serverEnvironment", {}).get(key, server_config()["environment"][key])
         return (0, "") if actual == expected else (1, "PRIVATE_DEPLOY_SECRET")
@@ -134,7 +140,7 @@ class DeployProductionTest(unittest.TestCase):
     def test_promotes_the_candidate_keeps_the_database_password_and_recreates_a_changed_caddy(self):
         result = self.deploy()
         self.assertEqual((result.returncode, result.stdout, result.stderr),
-                         (0, "PASS server runtime: image and process environment verified, AI_ALLOWANCES_ENABLED=false, COACH_MAX_OUTPUT_TOKENS=2000, sync schema=6\n"
+                         (0, "PASS server runtime: image and process environment verified, AI_ALLOWANCES_ENABLED=false, COACH_MAX_OUTPUT_TOKENS=2000, AI_INSTALLATIONS_ENABLED=false, AI_INSTALLATION_PROXY_MODE=cloudflare, sync schema=6\n"
                           "PASS deployed: environment rendered, DB password preserved, stack running\n", ""))
         self.assertEqual(self.files(), {".env": "IMAGE_TAG=new\nDOMAIN_APP=example.test\nPOSTGRES_PASSWORD=live-secret\n",
                                         "docker-compose.yml": "# candidate compose\n",
@@ -162,7 +168,11 @@ class DeployProductionTest(unittest.TestCase):
                 ["compose", "exec", "-T", "server", "sh", "-eu", "-c", 'grep -Fzxq -- "$1=$2" /proc/1/environ',
                  "sh", "AI_ALLOWANCES_ENABLED", "false"],
                 ["compose", "exec", "-T", "server", "sh", "-eu", "-c", 'grep -Fzxq -- "$1=$2" /proc/1/environ',
-                 "sh", "COACH_MAX_OUTPUT_TOKENS", "2000"]],
+                 "sh", "COACH_MAX_OUTPUT_TOKENS", "2000"],
+                ["compose", "exec", "-T", "server", "sh", "-eu", "-c", 'grep -Fzxq -- "$1=$2" /proc/1/environ',
+                 "sh", "AI_INSTALLATIONS_ENABLED", "false"],
+                ["compose", "exec", "-T", "server", "sh", "-eu", "-c", 'grep -Fzxq -- "$1=$2" /proc/1/environ',
+                 "sh", "AI_INSTALLATION_PROXY_MODE", "cloudflare"]],
             "caddyMount": "# candidate Caddyfile\n",
             "caddyActive": {"file": "# candidate Caddyfile\n"}})
         self.assertEqual(list(self.temporary.iterdir()), [])
@@ -261,11 +271,42 @@ class DeployProductionTest(unittest.TestCase):
         self.state(healthFailures=1, healthResponses=["302"])
         result = self.deploy()
         self.assertEqual((result.returncode, result.stdout, result.stderr),
-                         (0, "PASS server runtime: image and process environment verified, AI_ALLOWANCES_ENABLED=true, COACH_MAX_OUTPUT_TOKENS=1536, sync schema=6\n"
+                         (0, "PASS server runtime: image and process environment verified, AI_ALLOWANCES_ENABLED=true, COACH_MAX_OUTPUT_TOKENS=1536, AI_INSTALLATIONS_ENABLED=false, AI_INSTALLATION_PROXY_MODE=cloudflare, sync schema=6\n"
                           "PASS deployed: environment rendered, DB password preserved, stack running\n", ""))
         self.assertEqual(sum(command[1:6] == ["exec", "-T", "server", "curl", "--fail"]
                              for command in self.state()["commands"]), 3)
+        self.assertFalse(any(command[-1] == "installation-key-present" for command in self.state()["commands"]))
         self.assertEqual(list(self.temporary.iterdir()), [])
+
+    def test_enabled_installations_require_a_private_key_and_prove_the_running_mode(self):
+        with (self.work / "rendered.env").open("a") as out:
+            out.write("AI_ALLOWANCES_ENABLED=true\nAI_INSTALLATIONS_ENABLED=true\nAI_INSTALLATION_IP_HMAC_KEY=" + "private_key_canary" * 4 + "\n")
+        result = self.deploy()
+        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                         (0, "PASS server runtime: image and process environment verified, AI_ALLOWANCES_ENABLED=true, COACH_MAX_OUTPUT_TOKENS=2000, AI_INSTALLATIONS_ENABLED=true, AI_INSTALLATION_PROXY_MODE=cloudflare, sync schema=6\n"
+                          "PASS deployed: environment rendered, DB password preserved, stack running\n", ""))
+        self.assertNotIn("private_key_canary", result.stdout + result.stderr)
+        self.assertNotIn("private_key_canary", json.dumps(self.state()["commands"]))
+
+    def test_enabled_installations_refuse_a_missing_running_key_without_logging_the_configured_key(self):
+        with (self.work / "rendered.env").open("a") as out:
+            out.write("AI_ALLOWANCES_ENABLED=true\nAI_INSTALLATIONS_ENABLED=true\nAI_INSTALLATION_IP_HMAC_KEY=" + "private_key_canary" * 4 + "\n")
+        self.state(serverEnvironment={"AI_INSTALLATION_IP_HMAC_KEY": ""})
+        result = self.deploy()
+        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                         (1, "", "FAIL running server installation network key is unavailable\n"))
+        self.assertNotIn("private_key_canary", json.dumps(self.state()["commands"]))
+
+    def test_anonymous_ai_refuses_missing_key_or_wrong_proxy_without_disclosing_configuration(self):
+        for fields, failure in [
+            ("AI_ALLOWANCES_ENABLED=true\nAI_INSTALLATIONS_ENABLED=true\n", "anonymous AI requires allowances and an installation network key"),
+            ("AI_INSTALLATION_PROXY_MODE=direct\n", "invalid intended installation configuration")]:
+            with self.subTest(fields=fields):
+                self.upload_candidate()
+                with (self.work / "rendered.env").open("a") as out:
+                    out.write(fields)
+                result = self.deploy()
+                self.assertEqual((result.returncode, result.stdout, result.stderr), (1, "", "FAIL " + failure + "\n"))
 
     def test_runtime_mismatches_fail_without_exposing_configuration_or_command_output(self):
         for state, failure in [
@@ -273,6 +314,8 @@ class DeployProductionTest(unittest.TestCase):
             ({"serverImageId": "sha256:old"}, "running server image differs from intended image"),
             ({"serverEnvironment": {"AI_ALLOWANCES_ENABLED": "true"}}, "running server AI_ALLOWANCES_ENABLED differs from intended configuration"),
             ({"serverEnvironment": {"COACH_MAX_OUTPUT_TOKENS": "8000"}}, "running server COACH_MAX_OUTPUT_TOKENS differs from intended configuration"),
+            ({"serverEnvironment": {"AI_INSTALLATIONS_ENABLED": "true"}}, "running server AI_INSTALLATIONS_ENABLED differs from intended configuration"),
+            ({"serverEnvironment": {"AI_INSTALLATION_PROXY_MODE": "direct"}}, "running server AI_INSTALLATION_PROXY_MODE differs from intended configuration"),
             ({"unhealthy": True}, "running server did not become ready for sync schema 6")]:
             with self.subTest(state=state):
                 self.upload_candidate()

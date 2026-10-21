@@ -742,6 +742,7 @@ public:
 
   // The seeds under this account's names, then its own movements.
   std::vector<Exercise> catalog(const UserId& user) override { return db.catalogOf(user); }
+  std::vector<Exercise> seedCatalog() override { return db.seeds; }
 };
 
 class FakeProgramRepository : public ProgramRepository {

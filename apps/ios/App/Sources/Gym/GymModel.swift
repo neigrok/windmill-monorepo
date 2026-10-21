@@ -385,7 +385,7 @@ final class GymModel {
         kind = "http"
         let refusal = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         expectedRefusal = ExpectedStatuses.contains(response.statusCode) || refusal["code"] as? String == "ask-busy" ||
-          (response.statusCode == 503 && CoachAllowance.refusalCodes.contains(refusal["code"] as? String ?? ""))
+          (response.statusCode == 503 && AiAllowance.refusalCodes.contains(refusal["code"] as? String ?? ""))
         let message = refusal["error"] as? String ?? "Gym could not complete this request. Try again."
         let detail = refusal["detail"] as? String ?? ""
         throw GymRESTFailure(status: response.statusCode, body: data, message: message + (detail.isEmpty ? "" : ". " + detail))

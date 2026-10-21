@@ -17,6 +17,7 @@ struct AiBudgetRepository {
   virtual AiBudgetResult release(const std::string& id) = 0;
   virtual AiBudgetResult reconcileOverrun(const std::string& id) = 0;
   virtual AiBudgetGrantResult fund(const AiBudgetGrant& grant, const AiBudgetLimits& limits) = 0;
+  virtual std::optional<std::string> boundAccount(const std::string& deviceId) = 0;
   virtual AiBudgetCode bindDevice(const std::string& deviceId, const std::string& accountId,
                                  long long atMs, const AiBudgetLimits& limits) = 0;
   virtual std::vector<AiBudgetAlert> claimAlerts(long long atMs, int limit, long long leaseUntilMs) = 0;

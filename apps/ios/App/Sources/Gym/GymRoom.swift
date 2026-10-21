@@ -10,7 +10,6 @@ struct GymRoom: View {
   @Bindable var gym: GymModel
   @Bindable var app: AppModel
   @State var coach: CoachConversation
-  @State var fixturePrepared = false
   @State var setupNavigationChosen = false
   @State var routineAwaitingSync = false
   @State var setupChecked: String?
@@ -71,7 +70,8 @@ struct GymRoom: View {
       } else { tabs }
     }
     .environment(\.coachOpenAccount, app.openYou)
-    .environment(\.coachOpenRoutine, { id in tab = .routines; routineAwaitingSync = true; routine = ID(RecordID(id)) })
+    .environment(\.coachKeepRoutines, { app.keep(routines: true) })
+    .environment(\.coachOpenRoutine, { id in tab = .routines; routineAwaitingSync = !gym.isAnonymous; routine = ID(RecordID(id)) })
     .environment(\.coachOpenSession, { id in tab = .log; logPath.append(Destination.session(id)) })
     .environment(\.coachAsk, { handoff in ask(handoff.question, send: handoff.send, purpose: handoff.purpose) })
     .environment(\.gymShareSession, { id in share = SessionShareID(id: id) })
@@ -125,14 +125,13 @@ struct GymRoom: View {
       gym.workout.coachAvailable = gym.account != nil && !gym.isAnonymous && !gym.authPaused && !gym.accountTransition && !gym.coachUnavailable
     }
     .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition)") {
-      if CoachFixture.setup, !fixturePrepared { fixturePrepared = true; await CoachFixture.prepare(gym) }
       await coach.activate()
     }
     .onChange(of: gym.account) { _, _ in setupBuilder = nil; coachHandoff = nil }
     .onChange(of: gym.accountTransition) { _, active in if active { setupBuilder = nil } }
     .onChange(of: tab) { _, _ in if !setupReady { setupNavigationChosen = true } }
     .onChange(of: setupReady, initial: true) { _, ready in
-      guard ready, let account = gym.account, setupChecked != account else { return }
+      guard ready, let account = coach.seat, setupChecked != account else { return }
       setupChecked = account
       let occupied = setupNavigationChosen || tab != .routines || !routinesPath.isEmpty || !logPath.isEmpty || !coachPath.isEmpty ||
         gym.openSession != nil || gym.workout.isPresented || routine != nil || proposal != nil || coachHandoff != nil || app.routinesRequested
