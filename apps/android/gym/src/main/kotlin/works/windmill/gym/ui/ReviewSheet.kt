@@ -81,7 +81,6 @@ import works.windmill.platform.design.WindmillSpace
 @Composable
 fun ReviewSheet(
     proposalId: String,
-    routineId: String,
     store: TrainingStore,
     // Null where Coach is not offered. Nothing on the wire says whether a deployment has Coach, so the
     // room learns it from the first bare 404 and takes both doors down for the life of the room.
@@ -124,14 +123,12 @@ fun ReviewSheet(
         }
     }
 
-    // A routine that has moved PAST the revision this diff was written against has superseded it, and
-    // the log will refuse the tap. Read off the PROGRAM and never the drawn list: a window taking the
-    // row off the routines home would answer `not superseded` for want of a routine to compare, and
-    // this sheet would offer an Apply the log is about to refuse.
-    val held = store.allRoutines.firstOrNull { it.id == routineId }
+    // Out of date is the domain's Apply rule, read off the engine and never this room's lists: the
+    // routine moved on the log, was edited here and not yet confirmed, or left sight, and the log
+    // will refuse the tap. A window taking the row off the routines home changes none of it.
     val standing = proposal
-    val superseded = standing?.supersededBy(held) == true
-    val decidable = standing != null && standing.isPending && !superseded && !overtaken && store.session == null
+    val outOfDate = proposalId in store.outOfDateProposals
+    val decidable = standing != null && standing.isPending && !outOfDate && !overtaken && store.session == null
 
     fun decide(apply: Boolean) {
         val open = proposal ?: return
@@ -188,7 +185,7 @@ fun ReviewSheet(
         ) {
             if (gone) Text(ProposalRead.Gone.line, style = WindmillFont.body(15).copy(lineHeight = 22.sp), color = skin.inkDim)
             if (store.session != null) Text("Finish this session", style = WindmillFont.body(20, FontWeight.Bold), color = skin.ink)
-            if (store.session == null) standing?.let { Body(it, store.catalog, superseded) }
+            if (store.session == null) standing?.let { Body(it, store.catalog, outOfDate) }
             standing?.let { proposal ->
                 onAsk?.let { ask ->
                     Row(
@@ -234,7 +231,7 @@ private fun Head(proposal: Proposal?) {
 private fun Body(
     proposal: Proposal,
     catalog: List<Exercise>,
-    superseded: Boolean,
+    outOfDate: Boolean,
 ) {
     val skin = LocalGymColors.current
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -259,7 +256,7 @@ private fun Body(
             MoveLine("", proposal.baseName, proposal.name)
         }
     }
-    val note = if (superseded && proposal.isPending) supersededLine else null
+    val note = if (outOfDate && proposal.isPending) supersededLine else null
     note?.let {
         Text(
             it,

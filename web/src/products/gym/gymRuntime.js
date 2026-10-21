@@ -21,7 +21,7 @@ import { GymRefusals } from './domain/gymRules.js';
 import { DeleteNote, MoveNote, Note, NoteRules, NoteValue } from './domain/notes.js';
 import { ChangePreferences, Preferences, PreferencesValue, restSettings } from './domain/preferences.js';
 import { DeleteRoutine, PlanSnapshot, Routine, RoutineValue } from './domain/routines.js';
-import { AcknowledgeRoutineRemoval, ApplyProposalKeepingReceipt, DismissProposal, Proposal,
+import { AcknowledgeRoutineRemoval, ApplyProposalKeepingReceipt, DismissProposal, Proposal, ProposalState,
   REMOVAL_RECEIPTS, removalReceipts } from './domain/proposals.js';
 import { exerciseDocument, proposalDocument, proposalsDocument, sessionDocument, setDocument, TrainingHistory } from './domain/trainingHistory.js';
 import { Session, SessionRules, TrainingSet } from './domain/training.js';
@@ -315,14 +315,17 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
     event(operation, saved.result.receipt ? 'saved-local' : 'unchanged');
     return routineDocument(saved.draft.current);
   };
-  const removalDocument = (reader, receipt) => ({ ...proposalDocument(reader, receipt.proposal),
+  // The review's document: the shared proposal document plus the domain's Apply rule, never the proposal's state alone.
+  const reviewDocument = (reader, value) => value === null ? null
+    : { ...proposalDocument(reader, value), outOfDate: ProposalState.of(reader, value.id).outOfDate };
+  const removalDocument = (reader, receipt) => ({ ...reviewDocument(reader, receipt.proposal),
     removalOutcome: receipt.outcome, removalOwner: owner,
     ...(receipt.outcome === 'refused' ? { removalRefusal: gymRefusalError(GymRefusals.ofRefused(new Refused(
       receipt.code, receipt.proposal.id.ref, receipt.detail, 'notice'))).sentence } : {}) });
   const proposal = (reader, record) => {
     const receipt = removalReceipts(reader).find((receipt) => receipt.proposal.id.record === record);
     if (receipt) return removalDocument(reader, receipt);
-    return proposalDocument(reader, reader.repository(Proposal).find(new Id(record, Proposal), 'drawn')) ?? shown.get(record) ?? null;
+    return reviewDocument(reader, reader.repository(Proposal).find(new Id(record, Proposal), 'drawn')) ?? shown.get(record) ?? null;
   };
   const decideProposal = (record, applying) => boundary(applying ? 'proposal-apply' : 'proposal-dismiss', async () => {
     const id = new Id(record, Proposal);

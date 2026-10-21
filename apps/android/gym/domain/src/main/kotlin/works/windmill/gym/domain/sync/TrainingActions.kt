@@ -63,7 +63,7 @@ class FinishSession(val id: Id<Session>, val finishedAt: Instant? = null) : Acti
     override fun decide(loaded: TrainingState, ids: IDSource): Decision<Unit, GymRefusal> {
         val session = loaded.session(id)?.takeIf { loaded.drawn.any { drawn -> drawn.id == id } } ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, id.ref, path = Refused.Path.predicted)))
         val at = finishedAt ?: loaded.moment.now
-        if (!SessionRules.canFinishAt(session, at)) return Decision.Refuse(GymRefusal.of(Refused(RefusalCode(Gym.Codes.badInstant), id.ref, path = Refused.Path.predicted)))
+        if (!SessionRules.canFinishAt(session, at)) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.badInstant, id.ref))
         val finished = SessionRules.finish(session, at)
         if (finished == session) return Decision.Unchanged(Unit)
         return Decision.Write(Plan(GymCommand(Gym.Commands.finish, mapOf("sessionId" to id.json, "finishedAt" to Json.of(at.ms))),
@@ -79,15 +79,35 @@ class AppendSet(val value: TrainingSet) : Action<TrainingState, Id<TrainingSet>,
         val valid = Valid(value, TrainingSet, at = loaded.moment)
         val session = loaded.session(value.sessionId)?.takeIf { loaded.drawn.any { drawn -> drawn.id == value.sessionId } }
             ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, value.sessionId.ref, path = Refused.Path.predicted)))
-        if (!SessionRules.lateSetLands(session, value.completedAt)) return Decision.Refuse(GymRefusal.of(Refused(RefusalCode(Gym.Codes.sessionFinished), value.id.ref, path = Refused.Path.predicted)))
-        if (loaded.catalogue.find(value.exerciseId) == null) return Decision.Refuse(GymRefusal.of(Refused(RefusalCode(Gym.Codes.unknownExercise), value.id.ref, path = Refused.Path.predicted)))
-        val existing = loaded.sets.firstOrNull { it.id == value.id }
-        if (existing != null) return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.idTaken, value.id.ref, path = Refused.Path.predicted)))
-        if (SetRules.nextNumber(loaded.sets, value.sessionId, value.exerciseId) == null)
-            throw Violation("set.setNumber", Path("setNumber"), Violation.Reason.Above(Int.MAX_VALUE.toDouble()))
+        refusal(valid, session, loaded)?.let { return Decision.Refuse(it) }
         val plan = Plan()
         plan.create(valid)
         return Decision.Write(plan, value.id)
+    }
+    companion object {
+        // What the log refuses before a set is appended: a workout no late set lands in, a movement the catalogue
+        // lacks, a spent identity, or a number past the last, the sets already planned beside it counted.
+        fun refusal(valid: Valid<TrainingSet>, session: Session, state: TrainingState, planned: List<TrainingSet> = emptyList()): GymRefusal? {
+            val value = valid.value
+            if (!SessionRules.lateSetLands(session, value.completedAt)) return GymRefusal.predicted(Gym.Codes.sessionFinished, value.id.ref)
+            if (state.catalogue.find(value.exerciseId) == null) return GymRefusal.predicted(Gym.Codes.unknownExercise, value.id.ref)
+            if ((state.sets + planned).any { it.id == value.id }) return GymRefusal.of(Refused(RefusalCode.idTaken, value.id.ref, path = Refused.Path.predicted))
+            val numbered = planned.count { it.sessionId == value.sessionId && it.exerciseId == value.exerciseId }
+            val next = SetRules.nextNumber(state.sets, value.sessionId, value.exerciseId)
+            if (next == null || next.toLong() + numbered > Int.MAX_VALUE) throw Violation("set.setNumber", Path("setNumber"), Violation.Reason.Above(Int.MAX_VALUE.toDouble()))
+            return null
+        }
+        // Every set appended to the workout in one plan, in the order given, or the refusal of the first the log would refuse.
+        fun appended(sets: List<TrainingSet>, session: Session, state: TrainingState, plan: Plan): GymRefusal? {
+            val planned = mutableListOf<TrainingSet>()
+            for (set in sets) {
+                val valid = Valid(set, TrainingSet, at = state.moment)
+                refusal(valid, session, state, planned)?.let { return it }
+                plan.create(valid)
+                planned += valid.value
+            }
+            return null
+        }
     }
 }
 
@@ -116,7 +136,7 @@ class DiscardSession(val id: Id<Session>) : Action<TrainingState, Unit, GymRefus
     override fun decide(loaded: TrainingState, ids: IDSource): Decision<Unit, GymRefusal> {
         val session = loaded.session(id)?.takeIf { loaded.drawn.any { drawn -> drawn.id == id } } ?: return Decision.Unchanged(Unit)
         if (session.isOpen && SessionRules.autoCloseAt(session, loaded.sets, loaded.moment.now) == null)
-            return Decision.Refuse(GymRefusal.of(Refused(RefusalCode(Gym.Codes.sessionOpen), id.ref, path = Refused.Path.predicted)))
+            return Decision.Refuse(GymRefusal.predicted(Gym.Codes.sessionOpen, id.ref))
         val plan = Plan()
         plan.remove(id)
         return Decision.Write(plan, Unit)
@@ -134,15 +154,19 @@ class ImportSession(val id: Id<Session>, val startedAt: Instant, val finishedAt:
     override val scope = Session.scope
     override val refusals = GymRefusal
     override fun load(read: Reader) = Loaded(TrainingState(read), routineId?.let { read.repository(Routine).find(it, ViewMode.drawn) })
-    override fun decide(loaded: Loaded, ids: IDSource): Decision<Id<Session>, GymRefusal> {
+    // The import's own checks, before the log: the window's instants, the count and identities of its sets, their
+    // place inside the window, then each set's values.
+    fun refusal(at: Moment): GymRefusal? {
         SessionRules.instant(startedAt, "session.startedAt", Path("startedAt"))
         SessionRules.instant(finishedAt, "session.finishedAt", Path("finishedAt"))
         if (sets.size > 200 || sets.map { it.id }.distinct().size != sets.size) throw Violation("session.sets", Path("sets"), Violation.Reason.Custom("invalid"))
-        if (finishedAt < startedAt || sets.any { it.completedAt !in startedAt..finishedAt })
-            return Decision.Refuse(GymRefusal.of(Refused(RefusalCode(Gym.Codes.badInstant), id.ref, path = Refused.Path.predicted)))
-        val checked = sets.map { set ->
-            Valid(set.value(id), TrainingSet, at = loaded.state.moment).value
-        }
+        if (finishedAt < startedAt || sets.any { it.completedAt !in startedAt..finishedAt }) return GymRefusal.predicted(Gym.Codes.badInstant, id.ref)
+        for (set in sets) Valid(set.value(id), TrainingSet, at = at)
+        return null
+    }
+    override fun decide(loaded: Loaded, ids: IDSource): Decision<Id<Session>, GymRefusal> {
+        refusal(loaded.state.moment)?.let { return Decision.Refuse(it) }
+        val checked = sets.map { set -> Valid(set.value(id), TrainingSet, at = loaded.state.moment).value }
         val routine = loaded.routine
         val predicted = Session(id, startedAt, finishedAt, "finish", routine?.id, plan = routine?.let(::PlanSnapshot))
         val args = buildMap {
@@ -176,11 +200,11 @@ class CorrectSession(val id: Id<Session>, val requestId: String, val startedAt: 
             sets.map { it.exerciseId to it.setNumber }.distinct().size != sets.size)
             throw Violation("session.sets", Path("sets"), Violation.Reason.Custom("invalid"))
         if (finishedAt < startedAt || sets.any { it.completedAt !in startedAt..finishedAt })
-            return Decision.Refuse(GymRefusal.of(Refused(RefusalCode(Gym.Codes.badInstant), id.ref, path = Refused.Path.predicted)))
+            return Decision.Refuse(GymRefusal.predicted(Gym.Codes.badInstant, id.ref))
         val old = loaded.sets.filter { it.sessionId == id }
         val retained = if (preserveOtherSets) old.filter { prior -> sets.none { it.id == prior.id } } else emptyList()
         if (retained.any { it.completedAt !in startedAt..finishedAt })
-            return Decision.Refuse(GymRefusal.of(Refused(RefusalCode(Gym.Codes.badInstant), id.ref, path = Refused.Path.predicted)))
+            return Decision.Refuse(GymRefusal.predicted(Gym.Codes.badInstant, id.ref))
         if (sets.any { named -> retained.any { it.exerciseId == named.exerciseId && it.setNumber?.toLong() == named.setNumber } })
             throw Violation("session.sets", Path("sets"), Violation.Reason.Custom("invalid"))
         val checked = sets.map { set ->

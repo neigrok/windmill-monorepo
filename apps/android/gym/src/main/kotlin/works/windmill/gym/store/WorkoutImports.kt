@@ -5,12 +5,16 @@ import works.windmill.domain.kit.*
 import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.domain.WorkoutEvent
-import works.windmill.gym.domain.sync.ImportSession
-import works.windmill.gym.domain.sync.ImportedSet
+import works.windmill.gym.domain.sync.AppendSet
+import works.windmill.gym.domain.sync.Catalogue
 import works.windmill.gym.domain.sync.CorrectSession
 import works.windmill.gym.domain.sync.CorrectedSet
 import works.windmill.gym.domain.sync.GymRefusal
-import works.windmill.gym.domain.sync.AppendSet
+import works.windmill.gym.domain.sync.SignedOutWorkout
+import works.windmill.gym.domain.sync.TrainingLog
+import works.windmill.gym.domain.sync.WorkoutFix
+import works.windmill.gym.domain.sync.WorkoutRecovery
+import works.windmill.gym.domain.sync.nonJoiningStart
 import works.windmill.sync.api.*
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.PushResult
@@ -30,6 +34,7 @@ import works.windmill.gym.domain.sync.Session as SyncSession
 import works.windmill.gym.domain.sync.TrainingSet as SyncSet
 import works.windmill.gym.domain.sync.Exercise as SyncExercise
 import works.windmill.gym.domain.sync.Routine as SyncRoutine
+import works.windmill.gym.domain.sync.PlanSnapshot as SyncPlan
 
 // A workout this phone holds for an account: the journal keeps it exactly as it was saved, with the
 // ids of sets deleted off it.
@@ -205,11 +210,16 @@ class WorkoutImports(private val engine: Engine) {
                     val plan = Json.objectOf("routine" to routine.values.getValue("name"), "entries" to routine.values.getValue("entries"))
                     if (plan != fields["plan"]) throw RefusedImport("frozen-plan-changed")
                 }
-                val args = mutableMapOf("id" to Json.of(session.id), "startedAt" to Json.of(session.startedAtMs), "joinOpenSession" to Json.of(false))
-                session.routineId?.let { args["routineId"] = Json.of(it) }
+                val owed = item.payload["entries"]?.obj().orEmpty().values.map { decode(it, OwedSet.serializer()) }.filter { it.write != Owed.Delete }
+                val copy = SavedWorkout(session, owed.map { it.set }).signedOut()
+                if (context.isAnonymous || context.firstPullComplete()) {
+                    val reader = Reader(context, scope, Moment(Instant(context.now), FixedZone(0)), engine.registry)
+                    copy.retryRefusal(reader.moment, TrainingLog(reader).drawnSessions, Catalogue(reader))?.let { throw RefusedImport(code(it)) }
+                }
+                val start = nonJoiningStart(copy.session)
                 val predict = Change.create(Gym.Types.session, NewID.Given(RecordID(session.id)), fields)
                 Gesture(session.routineId?.let { listOf(Change.update(Gym.Types.routine, RecordID(it))) }.orEmpty(),
-                    command = Command(Gym.Commands.start, Json.Obj(args.toList())), predict = listOf(predict), local = writes,
+                    command = Command(start.name, Json.Obj(start.args.toList())), predict = listOf(predict), local = writes,
                     guards = session.routineId?.let { id -> listOf("name", "entries").map { field -> RegisterRef(Gym.Types.routine, RecordID(id), field) } }.orEmpty())
             }
         }
@@ -239,13 +249,11 @@ class WorkoutImports(private val engine: Engine) {
         val finished = session.finishedAtMs ?: throw RefusedImport("bad-instant")
         if (source["session"]?.get("closedItself") == Json.of(true) || source["session"]?.get("closedBy") == Json.of("stale"))
             throw RefusedImport("source-auto-closed")
-        if (session.startedAtMs > context.now || finished > context.now) throw RefusedImport("bad-instant")
         if (row.sets.any { it.id in row.deleted }) throw RefusedImport("deleted-set-conflict")
         if (confirmedEquivalent(row, context)) return Gesture(emptyList())
         if (context.drawn(Gym.Types.session, RecordID(session.id)) != null) throw RefusedImport("session-id-taken")
         if (!context.isAnonymous && (!context.firstPullComplete() || context.checkpoint().cleanSeq == null))
             throw RefusedImport("waiting-for-firstpull")
-        if (row.sets.size > 200) throw RefusedImport("too-many-sets")
         val numbers = mutableMapOf<String, Int>()
         row.sets.forEach { set ->
             val next = (numbers[set.exerciseId] ?: 0) + 1
@@ -257,18 +265,15 @@ class WorkoutImports(private val engine: Engine) {
         val frozenPlan = sessionFields(session).getValue("plan")
         if ((currentPlan ?: Json.Null) != frozenPlan) throw RefusedImport("frozen-plan-changed")
         if (session.routineId != null && routine == null) throw RefusedImport("routine-missing")
-        val reader = Reader(context, scope, Moment(Instant(context.now), FixedZone(0)), works.windmill.sync.schema.SyncSchema.registry)
-        val action = ImportSession(Id(session.id, SyncSession), Instant(session.startedAtMs), Instant(finished), row.sets.map { set ->
-            val value = SyncSet(Id(set.id, SyncSet), Id(session.id, SyncSession), Id(set.exerciseId, SyncExercise), set.weightKg, set.reps,
-                set.kind.wire, set.rpe, set.note, Instant(set.completedAtMs), set.setNumber)
-            if (Valid(value, SyncSet, at = reader.moment).value != value) throw RefusedImport("source-needs-correction")
-            ImportedSet(value.id, value.exerciseId, value.weightKg, value.reps, value.completedAt, value.kind, value.rpe, value.note, true)
-        }, session.routineId?.let { Id(it, SyncRoutine) })
+        val reader = Reader(context, scope, Moment(Instant(context.now), FixedZone(0)), engine.registry)
+        val copy = row.signedOut(finishedAtMs = finished)
+        val action = copy.importAction
         val loaded = action.load(reader)
-        if (loaded.state.overlap(Instant(session.startedAtMs), Instant(finished), Id(session.id, SyncSession)) != null)
-            throw RefusedImport("session-overlap")
+        copy.importRefusal(reader.moment, loaded.state.stored, loaded.state.catalogue)?.let { throw RefusedImport(code(it)) }
+        // The saved source imports unchanged: a value the checks would normalise is the person's to correct.
+        if (copy.sets.any { Valid(it, SyncSet, at = reader.moment).value != it }) throw RefusedImport("source-needs-correction")
         return when (val decision = action.decision(loaded, IDSource(context))) {
-            is Decision.Write -> decision.plan.gesture(scope, works.windmill.sync.schema.SyncSchema.registry).also { gesture ->
+            is Decision.Write -> decision.plan.gesture(scope, engine.registry).also { gesture ->
                 gesture.atomic = true
                 if (session.routineId != null) {
                     gesture.changes += Change.update(Gym.Types.routine, RecordID(session.routineId))
@@ -276,7 +281,7 @@ class WorkoutImports(private val engine: Engine) {
                 }
                 gesture.predict = gesture.predict.map { change -> if (change.type == Gym.Types.session) change.copy(values = sessionFields(session)) else change }
             }
-            is Decision.Refuse -> throw RefusedImport(if (decision.refusal is GymRefusal.Invalid) "source-needs-correction" else "bad-instant")
+            is Decision.Refuse -> throw RefusedImport(code(decision.refusal))
             is Decision.Unchanged -> Gesture(emptyList())
         }
     }
@@ -549,7 +554,7 @@ class WorkoutImports(private val engine: Engine) {
     fun keepWorkout(id: String) {
         val source = retainedWorkouts().firstOrNull { it.session.id == id } ?: return
         if (source.session.isOpen) {
-            val finish = source.sets.maxOfOrNull { it.completedAtMs } ?: source.session.startedAtMs
+            val finish = checkNotNull(WorkoutFix(source.signedOut()).markFinished().finishedAt).ms
             val result = engine.commitWithPrerequisites(scope) { context ->
                 val saved = context.devices(journalPrefix).entries.firstOrNull { (_, journal) -> journal["items"]?.obj().orEmpty().values.any { it["id"] == Json.of(id) && it["kind"] == Json.of("start") && it["state"] == Json.of("refused") } }
                     ?: return@commitWithPrerequisites null to null
@@ -775,6 +780,16 @@ class WorkoutImports(private val engine: Engine) {
             return journal.changed("items" to Json.Obj(items.toList()), "count" to Json.Obj(count.map { it.key to Json.of(it.value) }))
         }
         private fun journal(reader: ScopeReader, key: String) = reader.device(key) ?: Json.objectOf("version" to Json.of(1), "items" to Json.objectOf())
+        // The saved copy as the domain reads it, for the checks this phone runs before asking the account.
+        private fun SavedWorkout.signedOut(finishedAtMs: Long? = session.finishedAtMs): SignedOutWorkout {
+            val id = Id(session.id, SyncSession)
+            val saved = SyncSession(id, Instant(session.startedAtMs), finishedAtMs?.let(::Instant), if (finishedAtMs == null) null else "finish",
+                session.routineId?.let { Id(it, SyncRoutine) }, plan = SyncPlan.decode(session.plan?.let(::planFields)))
+            return SignedOutWorkout(saved, sets.map { SyncSet(Id(it.id, SyncSet), id, Id(it.exerciseId, SyncExercise), it.weightKg, it.reps,
+                it.kind.wire, it.rpe, it.note, Instant(it.completedAtMs), it.setNumber) })
+        }
+        // A refusal this phone predicts, under the journal's code: the bounded label recovery reports everywhere.
+        private fun code(refusal: GymRefusal): String = WorkoutRecovery.Reason.of(refusal).label
         // A journal source may carry an earlier shape of a frozen plan's targets; it is read in this build's shape.
         private fun <T> decode(value: Json, serializer: kotlinx.serialization.KSerializer<T>): T =
             diskJson.decodeFromJsonElement(serializer, StoredDocument.migrated(diskJson.parseToJsonElement(value.jcs)))
@@ -906,7 +921,7 @@ class WorkoutImports(private val engine: Engine) {
         fun reason(code: String): String = when (code) {
             "session-open" -> "Another workout is open on the account. Inspect this saved workout, then choose Keep to save it as a finished workout at its last set."
             "session-overlap" -> "This workout overlaps another workout. Correct its dates or times, then retry."
-            "session-id-taken" -> "A workout with this identity is already on the log. Review that workout before retrying; this original stays on this phone."
+            "session-id-taken", "id-taken", "id-spent" -> "A workout with this identity is already on the log. Review that workout before retrying; this original stays on this phone."
             "bad-instant", "clock-skew" -> "The workout has a future or invalid time. Correct its dates or times, then retry."
             "too-many-sets", "too-large" -> "This workout exceeds the import limit. Edit the workout explicitly, then retry."
             "frozen-plan-changed", "routine-missing", "stale" -> "The linked routine differs from this workout’s saved plan. Restore that routine or explicitly remove the link, then retry."
@@ -916,6 +931,7 @@ class WorkoutImports(private val engine: Engine) {
             "source-needs-update" -> "This saved workout includes fields this build cannot preserve. Keep it on this phone and update the app."
             "source-unreadable" -> "This saved training cannot be read by this build. Keep it on this phone and update the app."
             "unknown-exercise" -> "A movement is missing. Restore the movement, then retry."
+            "invalid-set" -> "A saved set holds a value the log does not accept. Correct the set, then retry."
             "parent-dead" -> "A linked movement or routine was refused. Restore it, then retry this workout."
             "session-finished" -> "This set is saved on this phone. Retry restores it to the account, in a separate workout when needed."
             "recovery-session-open" -> "Finish the account’s open workout, then retry saving this set as a separate workout."

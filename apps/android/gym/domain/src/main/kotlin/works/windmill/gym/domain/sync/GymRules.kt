@@ -44,6 +44,9 @@ sealed interface GymRefusal {
             }
         }
         override fun isGeneric(refusal: GymRefusal): Boolean = refusal is Other
+        // What this phone refuses before asking the account, under a product code: nothing was written.
+        fun predicted(code: String, subject: RecordRef, detail: Json? = null): GymRefusal =
+            of(Refused(RefusalCode(code), subject, detail, Refused.Path.predicted))
     }
 }
 

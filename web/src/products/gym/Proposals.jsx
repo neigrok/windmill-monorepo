@@ -4,7 +4,7 @@ import { failureReason } from './errors.js';
 import { arrivedLabel, nameOfMovement, proposalHref, recordHref, threadHref } from './log.js';
 import {
   atomicLine, collapseKept, conversationOf, CONVERSATION_VERB, countedLabel, diffRows,
-  isPending, keptRunLabel, MID_WORKOUT_CAVEAT, receiptLine,
+  isPending, keptRunLabel, MID_WORKOUT_CAVEAT, OUT_OF_DATE_LINE, receiptLine,
   sourceLabel, stateChip, summaryLine, TURN_DOWN_VERB,
 } from './proposals.js';
 import { useGymRead } from './useGymRead.js';
@@ -34,6 +34,8 @@ export function ProposalPanel({ id, log, onChanged = null, onSettled = null, inC
   const [receiptNode, setReceiptNode] = useState(null);
   const proposal = settled ?? (view.phase === 'ready' ? view.data : null);
   const pending = proposal ? isPending(proposal) : false;
+  // Decidable only while the domain reads it as current: an out-of-date proposal's Apply would be refused.
+  const decidable = pending && proposal.outOfDate !== true;
   const waitingRemoval = proposal?.removalOutcome === 'pending';
   const rows = proposal ? collapseKept(diffRows(proposal), expanded) : [];
 
@@ -53,7 +55,7 @@ export function ProposalPanel({ id, log, onChanged = null, onSettled = null, inC
   }, [api, id, receiptNode, proposal?.removalOutcome, proposal?.removalOwner, waitingRemoval]);
 
   const decide = async (verb) => {
-    if (busy || !pending || waitingRemoval) return;
+    if (busy || !decidable || waitingRemoval) return;
     setBusy(true);
     setRefusal('');
     try {
@@ -83,15 +85,16 @@ export function ProposalPanel({ id, log, onChanged = null, onSettled = null, inC
     <p className="gym-proposal-kicker">{proposal.baseName && <span className="gym-proposal-name">{proposal.baseName}</span>}<span>{`${proposal.baseName ? ' · ' : ''}${countedLabel(proposal)}`}</span></p>
     {proposal.source?.door !== 'ask' && <p className="gym-proposal-from">{`from ${sourceLabel(proposal.source)} · ${arrivedLabel(proposal.createdAt)}`}</p>}
     {!inConversation && conversationOf(proposal.source) && <a className="gym-proposal-thread" href={threadHref(conversationOf(proposal.source))}>{CONVERSATION_VERB}</a>}
-    {log.session && pending && <p className="gym-proposal-caveat">{MID_WORKOUT_CAVEAT}</p>}
+    {log.session && decidable && <p className="gym-proposal-caveat">{MID_WORKOUT_CAVEAT}</p>}
     <ul className="gym-diff">{rows.map((row, index) => row.kind === 'kept-run'
       ? <li className="gym-diff-row is-kept-run" key={`run-${row.at}`}><button className="gym-diff-unfold" type="button" onClick={() => setExpanded((held) => new Set([...held, row.at]))}>{keptRunLabel(row.rows.length)} ›</button></li>
       : <li className={`gym-diff-row is-${row.kind}`} key={`${index}-${row.exerciseId ?? row.kind}`}><DiffRow row={row} catalog={log.catalog} unfold /></li>)}</ul>
-    {waitingRemoval ? <p className="gym-coach-receipt" role="status">Removal waiting to sync.</p> : pending ? <div className="gym-proposal-band">
+    {waitingRemoval ? <p className="gym-coach-receipt" role="status">Removal waiting to sync.</p> : decidable ? <div className="gym-proposal-band">
       <Button disabled={busy} onClick={() => decide('apply')}>{busy ? 'Saving…' : 'Apply'}</Button>
       <p className="gym-proposal-atomic">{proposal.intent === 'revise' ? 'Logged sets stay unchanged.' : atomicLine(proposal)}</p>
       <button type="button" className="gym-proposal-turn-down" disabled={busy} onClick={() => decide('dismiss')}>{TURN_DOWN_VERB}</button>
-    </div> : <p className="gym-coach-receipt" role="status" ref={setReceiptNode}>{proposal.state === 'applied'
+    </div> : pending ? <p className="gym-coach-receipt" role="status">{OUT_OF_DATE_LINE}</p>
+      : <p className="gym-coach-receipt" role="status" ref={setReceiptNode}>{proposal.state === 'applied'
       ? receiptLine({ verb: 'apply', proposal }) : proposal.state === 'dismissed'
         ? receiptLine({ verb: 'dismiss', proposal }) : `${stateChip(proposal)} · nothing applied.`}</p>}
     {(refusal || proposal.removalRefusal) && <p className="gym-proposal-refusal" role="alert"

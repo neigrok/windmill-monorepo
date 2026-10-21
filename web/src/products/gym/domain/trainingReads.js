@@ -4,7 +4,7 @@ import { Id } from '../../../platform/domain-kit/entities.js';
 import { LocalDay } from '../../../platform/domain-kit/time.js';
 import { precondition } from '../../../platform/domain-kit/values.js';
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
-import { roundHalfAway, roundToQuantum } from '../../../../../packages/api-contract/sync/reference/core/values.js';
+import { roundHalfAway } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 import { Catalogue, Exercise } from './catalogue.js';
 import { GymEstimate, Session, SessionRules, TrainingSet } from './training.js';
 import { GymUnits, WeightLadder } from './units.js';
@@ -373,6 +373,66 @@ export class MovementProgress {
   }
 }
 
+export class ProgressRecord {
+  /** @param {MovementPoint} point @param {MovementPoint} previous @param {number} estimate @param {number} gain */
+  constructor(point, previous, estimate, gain) {
+    this.point = point;
+    this.previous = previous;
+    this.estimate = estimate;
+    this.gain = gain;
+    Object.freeze(this);
+  }
+}
+
+// The log's new bests: a movement's first estimate is its baseline; a new best beats the best before it as stated.
+export class ProgressRecords {
+  /** @type {Map<string, readonly ProgressRecord[]>} */
+  #byMovement = new Map();
+
+  /** @param {StatsProgress} progress */
+  constructor(progress) {
+    this.progress = progress;
+    /** @type {Map<string, { id: Id<ExerciseValue>, estimates: { point: MovementPoint, estimate: number }[] }>} */
+    const series = new Map();
+    for (const session of progress.isComplete ? progress.sessions : []) {
+      for (const fact of session.movements) {
+        if (fact.estimate === null) continue;
+        const key = jcs(fact.exerciseId.json);
+        const movement = series.get(key) ?? { id: fact.exerciseId, estimates: [] };
+        movement.estimates.push({ point: Object.freeze({ id: session.sessionId, startedAt: session.startedAt, fact }), estimate: GymEstimate.stated(fact.estimate.e1rm) });
+        series.set(key, movement);
+      }
+    }
+    /** @type {Id<ExerciseValue>[]} */
+    const exercises = [];
+    for (const [key, movement] of series) {
+      const [baseline, ...later] = movement.estimates;
+      if (baseline === undefined) continue;
+      let best = baseline;
+      /** @type {ProgressRecord[]} */
+      const run = [];
+      for (const next of later) {
+        const gain = GymEstimate.stated(next.estimate - best.estimate);
+        if (gain <= 0) continue;
+        run.push(new ProgressRecord(next.point, best.point, next.estimate, gain));
+        best = next;
+      }
+      if (run.length === 0) continue;
+      this.#byMovement.set(key, Object.freeze(run));
+      exercises.push(movement.id);
+    }
+    this.exercises = Object.freeze(exercises.sort(Id.compare));
+    /** @type {Map<string, Id<SessionValue>>} */
+    const sessions = new Map();
+    for (const run of this.#byMovement.values()) for (const record of run) sessions.set(jcs(record.point.id.json), record.point.id);
+    this.sessions = Object.freeze([...sessions.values()].sort(Id.compare));
+    Object.freeze(this);
+  }
+
+  /** @param {Id<ExerciseValue>} exerciseId */
+  movement(exerciseId) { return this.#byMovement.get(jcs(exerciseId.json)) ?? Object.freeze([]); }
+}
+
 const months = Object.freeze(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']);
 
 export const Readout = Object.freeze({
@@ -392,8 +452,7 @@ export const Readout = Object.freeze({
   effort(weightKg, reps, units = GymUnits.kg) { return `${Readout.weight(weightKg, units)} × ${reps}`; },
   /** @param {number} e1rm @param {GymUnits} units */
   estimatedWeight(e1rm, units = GymUnits.kg) {
-    const displayed = units.value === 'lb' ? e1rm / GymUnits.kilogramsPerPound : e1rm;
-    return Readout.weight(roundToQuantum(displayed, 0.1));
+    return Readout.weight(GymEstimate.stated(units.value === 'lb' ? e1rm / GymUnits.kilogramsPerPound : e1rm));
   },
   /** @param {number} e1rm @param {GymUnits} units */
   estimate(e1rm, units = GymUnits.kg) { return `e1RM ${Readout.estimatedWeight(e1rm, units)}`; },

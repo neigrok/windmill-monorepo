@@ -3,10 +3,8 @@
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
 v7/minimum-4 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json` runs in
-Swift alone, pending in Kotlin and not applying on the web (its row says why), and so do the `ProgressRecords` reads
-of `training-reads.json`, pending in Kotlin and on the web (Reads says why), and the proposal state's cases over a
-routine the log has not confirmed or out of sight, with its `OutOfDate` read, pending in Kotlin and on the web
-(Proposal state says why). R118 metadata reads remain optional
+Swift and Kotlin and does not apply on the web (its row says why); every other file runs in all three.
+R118 metadata reads remain optional
 for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCreation` decodes separately.
 
 ## Files
@@ -21,7 +19,7 @@ for legacy records. The pinned rule book covers the nine v4 entities; `RoutineCr
 | `catalogue-actions.json` | Create (a dumbbell movement's count included), rename, seed overrides, aliases, byte-sensitive search, decoding failures |
 | `preferences-actions.json` | Draft preference saves and rest defaults |
 | `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
-| `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery and discard. Runs in Swift `GymDomain`. Kotlin holds it pending until Android's recovery (`WorkoutImports.kt`, in the store today) moves into its domain; the web holds no signed-out workout, so it records the file as not applying |
+| `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery and discard. Runs in Swift `GymDomain` and Kotlin `:gym:domain`; the web holds no signed-out workout, so it records the file as not applying |
 | `proposals-actions.json` | Propose, apply/dismiss, the proposal state's refusals and out of date, ordered diff, change count, provenance and optional R118 metadata reads |
 | `training-reads.json` | Prefill, last time, readouts, the canonical estimate, complete progress projection, movement records, the log's new bests, chart windows and shared history documents |
 | `units.json` | Units, signed weight ladder, formatting, rounding and rep steps |
@@ -111,8 +109,6 @@ true when absent). Applying a pending proposal is refused `proposalSuperseded` w
 routine's revision moved or its name or movements differ from the confirmed copy, an edit the log will count before it
 reads the decision; a reorder alone does not refuse. It is refused `gone` when the routine is absent or out of sight.
 Turning down ignores both. A proposal is out of date when it is superseded, replaced, or pending with its Apply refused.
-Kotlin and the web hold these cases pending: their `ProposalState` reads no confirmed routine and leaves a routine out
-of sight to `ApplyProposal`'s decide, and neither has an `OutOfDate` read.
 
 ## Reads
 
@@ -142,9 +138,8 @@ that fact; the all-load `mostReps` read retains its own ordering. Partial histor
 `ProgressRecords` (`input:{}`) is the log's new bests. A movement's first estimate is its baseline, never a new best;
 a later estimate is a new best when, stated to a tenth of a kilogram, it beats the best before it as stated. Each names
 its session, the best it beat (`previous`), its stated `estimate` and its `gain` over that best to a tenth; the read
-also lists the sessions that set one. Partial history has none. It runs in Swift alone: Android weaves its log's bests
-in the app module (`LogTimeline.kt`), counting a movement's first estimate and every exact record step, and the web's
-log weaves none, so both hold the read pending.
+also lists the sessions that set one. Partial history has none. It runs in all three; the web's log weaves no new
+bests yet.
 
 `TrainingHistory` composes the mirror documents through the same entities and reads. Its vectors use
 `input:{method,args}` and preserve catalogue and routine joins, proposal provenance, last-set selection,

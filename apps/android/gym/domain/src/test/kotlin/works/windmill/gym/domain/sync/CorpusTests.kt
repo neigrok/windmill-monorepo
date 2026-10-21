@@ -4,9 +4,16 @@ import org.junit.Assert.*
 import org.junit.Test
 import works.windmill.domain.kit.*
 import works.windmill.domain.testing.*
+import works.windmill.sync.api.Notice
+import works.windmill.sync.api.NoticeContent
 import works.windmill.sync.api.ViewMode
+import works.windmill.sync.core.Command
+import works.windmill.sync.core.Delta
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.RecordID
+import works.windmill.sync.core.RefusalCode
+import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.schema.SyncSchema
 import works.windmill.sync.testing.Vector
 
 class CorpusTests {
@@ -15,28 +22,16 @@ class CorpusTests {
     val paths = listOf("gym/domain/rules.json", "gym/domain/values.json", "gym/domain/notes-actions.json",
         "gym/domain/bodyweight-actions.json", "gym/domain/routines-actions.json", "gym/domain/catalogue-actions.json",
         "gym/domain/preferences-actions.json", "gym/domain/proposals-actions.json", "gym/domain/training-actions.json",
-        "gym/domain/training-reads.json", "gym/domain/units.json", "gym/rules/bodyweight.json")
-    val pending = mapOf("gym/domain/recovery-actions.json" to "Android's saved-workout recovery lives in the store's WorkoutImports.kt, not yet in :gym:domain")
-    val pendingReads = mapOf("ProgressRecords" to "Android weaves its log's new bests in :gym's LogTimeline.kt, not yet in :gym:domain, and counts every exact record step from a first estimate")
-    val unconfirmedRoutine = "Android's ProposalState reads no confirmed routine and leaves a routine out of sight to ApplyProposal's decide"
-    val pendingProposals = mapOf(
-        "OutOfDate" to "Android's ReviewSheet.kt decides a proposal out of date in :gym, so :gym:domain has no OutOfDate read",
-        "pending apply over movements the log has not confirmed refuses as a routine change" to unconfirmedRoutine,
-        "pending apply over a name the log has not confirmed refuses as a routine change" to unconfirmedRoutine,
-        "pending apply with its routine out of sight is gone" to unconfirmedRoutine,
-        "pending apply with no routine is gone" to unconfirmedRoutine)
+        "gym/domain/recovery-actions.json", "gym/domain/training-reads.json", "gym/domain/units.json", "gym/rules/bodyweight.json")
 
     @Test fun everyProductFileIsClaimedAndEveryVectorPasses() {
-        assertEquals((paths + pending.keys).sorted(), Contract.files("gym"))
+        assertEquals(paths.sorted(), Contract.files("gym"))
         val failures = mutableListOf<String>()
         try { RuleBookParity.check(book, paths[0]) } catch (error: Exception) {
             failures += "${paths[0]} · ${error.message}"
         }
         var cases = 1
-        var skipped = 0
         for (path in paths.drop(1)) for (vector in Contract.vectors(path)) {
-            if (path == "gym/domain/training-reads.json" && vector.input.member("read").str() in pendingReads) { skipped++; continue }
-            if (path == "gym/domain/proposals-actions.json" && (vector.input.member("action").str() in pendingProposals || vector.name in pendingProposals)) { skipped++; continue }
             try {
                 val actual = run(vector)
                 if (vector.expect.jcs != actual.jcs) failures += "$path · ${vector.name}\n  got    ${actual.jcs}\n  expect ${vector.expect.jcs}"
@@ -45,7 +40,7 @@ class CorpusTests {
         }
         failures.forEach(::println)
         assertTrue("${failures.size} gym corpus failures:\n${failures.joinToString("\n")}", failures.isEmpty())
-        println("Gym corpus: ${paths.size}/${paths.size + pending.size} files, $cases cases, ${pending.size} pending, $skipped pending cases, no unclaimed file")
+        println("Gym corpus: ${paths.size}/${paths.size} files, $cases cases, no pending case, no unclaimed file")
     }
 
     @Test fun everySharedLocalRuleAndCodeIsCovered() {
@@ -94,6 +89,7 @@ class CorpusTests {
             "gym/domain/preferences-actions.json" -> preferences(vector, input!!)
             "gym/domain/proposals-actions.json" -> proposals(vector, input!!)
             "gym/domain/training-actions.json" -> training(vector, input!!)
+            "gym/domain/recovery-actions.json" -> recovery(vector, input!!)
             "gym/domain/training-reads.json" -> corpus.read(vector, Session.scope) { trainingReadsForm(vector, it) }
             "gym/domain/units.json" -> unitsForm(vector.input)
             else -> error("unclaimed gym file ${vector.file}")
@@ -178,10 +174,12 @@ class CorpusTests {
                     "state" to Json.of(p.state), "provenance" to provenance)
             }
             "RoutineCreation" -> Json.objectOf("snapshot" to (RoutineCreation.fromForm(input).snapshot ?: Json.Null))
-            "StateRefusal" -> {
+            "StateRefusal", "OutOfDate" -> {
                 val p = input["proposal"]?.orNull()?.let { Proposal.fromForm(it) }
                 val r = input["routine"]?.orNull()?.let { Routine.fromForm(it) }
-                Json.objectOf("refusal" to (ProposalState(p, r, moment(vector.input)).refusal(Id("proposal1", Proposal), f.bool("applying"))?.let(::refusalForm) ?: Json.Null))
+                val state = ProposalState(p, r, moment(vector.input), f.bool("routineVisible", true), input["confirmedRoutine"]?.let { Routine.fromForm(it) } ?: r)
+                if (vector.input.member("action").str() == "OutOfDate") Json.objectOf("outOfDate" to Json.of(state.outOfDate))
+                else Json.objectOf("refusal" to (state.refusal(Id("proposal1", Proposal), f.bool("applying"))?.let(::refusalForm) ?: Json.Null))
             }
             "ValidateProposal" -> try { Json.objectOf("fields" to Json.Obj(Valid(Proposal.fromForm(input), Proposal, at = moment(vector.input)).value.fields().toList())) }
                 catch (violation: Violation) { Json.objectOf("violation" to violation.json) }
@@ -238,6 +236,54 @@ class CorpusTests {
             else -> error("unclaimed training action")
         }
     }
+
+    fun recovery(vector: Vector, input: Json): Json {
+        val f = Fields(input)
+        if (vector.input["read"] != null) return corpus.read(vector, Session.scope) { read ->
+            val saved = SignedOutWorkout.read(read)
+            val log = TrainingLog(read)
+            val catalogue = Catalogue(read)
+            val rows = WorkoutRecovery.review(saved, input["notices"]?.arr().orEmpty().map(::notice), log, catalogue)
+            when (vector.input.member("read").str()) {
+                "WorkoutRecovery" -> Json.Arr(rows.map { row ->
+                    Json.objectOf("id" to row.id.json, "reason" to Json.of(row.reason.label), "retry" to Json.of(row.retry.name),
+                        "noticeIds" to Json.Arr(row.noticeIds.map(Json::of)), "strandedSets" to Json.Arr(row.strandedSets.map { it.id.json }),
+                        "refusal" to (row.refusal?.let(::refusalForm) ?: Json.Null), "canFix" to Json.of(row.canFix))
+                })
+                "owns" -> Json.of(saved.first { it.session.id == f.ref("id", Session) }.owns(notice(input.member("notice"))))
+                "WorkoutFix" -> {
+                    val id = f.ref("id", Session)
+                    var fix = rows.firstOrNull { it.id == id }?.let { WorkoutFix(it) } ?: WorkoutFix(saved.first { it.session.id == id })
+                    f.optionalInstant("startedAt")?.let { fix = fix.copy(startedAt = it) }
+                    if (input["finishedAt"] != null) fix = fix.copy(finishedAt = f.optionalInstant("finishedAt"))
+                    input["sets"]?.let { sets -> fix = fix.copy(sets = sets.arr().map { set ->
+                        WorkoutFix.SetFix(TrainingSet.decode(Fields(TrainingSet.type, RecordID(set.member("id")), set.obj() - "id" + ("sessionId" to id.json))))
+                    }) }
+                    Json.objectOf("landed" to Json.of(fix.landed), "sets" to Json.Arr(fix.sets.map { it.id.json }),
+                        "refusal" to (fix.refusal(log.moment, log.drawnSessions, catalogue)?.let(::refusalForm) ?: Json.Null))
+                }
+                else -> error("unclaimed recovery read")
+            }
+        }
+        val id = f.ref("id", Session)
+        val revised = input["revised"]?.let(SignedOutWorkout::decode)
+        return when (vector.input.member("action").str()) {
+            "AdoptWorkout" -> corpus.decision(AdoptWorkout(id, if (f.string("mode") == "keep") AdoptWorkout.Mode.keep else AdoptWorkout.Mode.restart, revised), vector, { Json.Null }, ::refusalForm)
+            "RecoverStrandedSets" -> corpus.decision(RecoverStrandedSets(id,
+                if (f.string("placement") == "intoWorkout") RecoverStrandedSets.Placement.intoWorkout else RecoverStrandedSets.Placement.separately, revised), vector, { Json.Null }, ::refusalForm)
+            "DiscardSignedOutWorkout" -> corpus.decision(DiscardSignedOutWorkout(id), vector, { Json.Null }, ::refusalForm)
+            else -> error("unclaimed recovery action")
+        }
+    }
+}
+
+// The kit corpus's notice form, `{id, scope, code, detail?, content: {d, cmd?, dependents?}, at, dismissed?}`.
+fun notice(json: Json): DomainNotice<GymRefusal> {
+    fun content(json: Json): NoticeContent = NoticeContent(json["d"]?.arr().orEmpty().map { Delta(it) }, json["cmd"]?.let { Command(it) },
+        json["dependents"]?.arr().orEmpty().map { content(it) })
+    val notice = Notice(json.member("id").str(), "gym", ScopeRef(json.member("scope").str()), RefusalCode(json.member("code").str()), json["detail"],
+        content(json.member("content")), json["at"]?.long() ?: 0, json["dismissed"]?.bool() ?: false)
+    return DomainNotice(notice, SyncSchema.registry, GymRefusal)
 }
 
 fun nullable(value: Number?): Json = value?.let(Json::of) ?: Json.Null

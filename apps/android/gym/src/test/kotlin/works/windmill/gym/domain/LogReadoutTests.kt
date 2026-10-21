@@ -51,13 +51,10 @@ class LogReadoutTests {
         val zone = ZoneId.of("UTC")
         val at = Instant.parse("2026-09-24T18:00:00Z").toEpochMilli()
         val previousAt = Instant.parse("2026-08-21T18:00:00Z").toEpochMilli()
-        val first = MovementProgress.Session("a", previousAt, MovementSessionFact("bench", 1,
-            PerformedFact("set-a", 72.0, 1), EstimatedFact("set-a", 72.0, 1, e1rm = 72.0)))
-        val last = MovementProgress.Session("b", at, MovementSessionFact("bench", 1,
-            PerformedFact("set-b", 76.0, 1), EstimatedFact("set-b", 76.0, 1, e1rm = 76.0)))
+        val best = NewBest("bench", sessionId = "b", startedAt = at, previousSessionId = "a", previousStartedAt = previousAt, estimate = 76.0, gain = 4.0)
         val catalog = listOf(Exercise("bench", "Bench Press"))
         assertEquals(LogReadout.Moment("Bench Press · new best", "76 kg est · up 4 kg since August"),
-            LogReadout.moment(LogEntry.Moment.Best("bench", last, first), catalog, emptyList(), at, zone))
+            LogReadout.moment(LogEntry.Moment.Best(best), catalog, emptyList(), at, zone))
         val entry = WeighIn("2026-09-24", 82.4, at)
         assertEquals(LogReadout.Moment("Weighed in · 82.4 kg", "Today · 0.5 kg down since August"),
             LogReadout.moment(LogEntry.Moment.Weight(entry, at), catalog,

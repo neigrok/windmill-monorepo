@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { Id } from '../../../src/platform/domain-kit/entities.js';
+import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/runner.js';
+import { FixedZone } from '../../../src/platform/domain-kit/time.js';
+import { registry } from '../../../src/platform/sync/schema.js';
+import { GymRefusals } from '../../../src/products/gym/domain/gymRules.js';
 import { REMOVAL_RECEIPTS } from '../../../src/products/gym/domain/proposals.js';
+import { Routine, RoutineValue } from '../../../src/products/gym/domain/routines.js';
 import { browserWith, confirmed, elementsOf, findByClass, gymAccount, loadScreen, renderHook, roomLog, settle, textOf } from './harness.mjs';
 
 const routine = (id, name) => confirmed('routine', id, { name, position: 0, entries: [
@@ -194,4 +200,24 @@ test('a direct proposal can switch to another routine review and follows the nex
   screen.redraw();
   await settle();
   assert.equal(panelId(), 'proposal0001');
+});
+
+test('a pending proposal over an edit the log has not confirmed is out of date: the domain closes Apply and Turn this down and says why', async (t) => {
+  browserWith();
+  const gym = await gymAccount(t, [routine('routinePushA', 'Push A'), proposal()]);
+  // The lifter renames the routine on this device; the log has not confirmed it, so the proposal's base is gone from under it.
+  const runner = new ActionRunner(new EngineReplica(gym.engine), registry, new FixedZone(0));
+  const draft = runner.open(Routine, new Id('routinePushA', Routine));
+  const saved = await runner.save(draft.edit((held) => new RoutineValue(held.id, 'Push B', held.position, held.entries)), GymRefusals);
+  assert.equal(saved.result.kind, 'saved');
+  assert.deepEqual(gym.owed(), ['ready update routine routinePushA name']);
+  const { ProposalPanel } = await loadScreen('products/gym/Proposals.jsx');
+  const screen = renderHook(t, () => ProposalPanel({ id: 'proposal0001', log: roomLog() }));
+  await settle();
+  assert.equal(button(screen.tree, 'Apply'), undefined);
+  assert.equal(button(screen.tree, 'Turn this down'), undefined);
+  assert.equal(findByClass(screen.tree, 'gym-proposal-band').length, 0);
+  assert.equal(textOf(findByClass(screen.tree, 'gym-coach-receipt')[0]), 'The routine changed after this was written. Nothing was applied.');
+  assert.equal(findByClass(screen.tree, 'gym-diff-row').length, 2);
+  assert.equal(findByClass(screen.tree, 'gym-proposal-refusal').length, 0);
 });

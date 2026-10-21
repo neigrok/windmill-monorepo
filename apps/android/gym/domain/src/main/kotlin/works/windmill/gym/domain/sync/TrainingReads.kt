@@ -16,6 +16,8 @@ object GymEstimate {
         if (value(weightKg, reps, kind, rpe) == null) return null
         return Quantum.halfAway(weightKg * 100) * (if (reps == 1) 30 else 30 + reps)
     }
+
+    fun stated(e1rm: Double): Double = Quantum(0.1).rounded(e1rm)
 }
 
 class SessionReadout(session: Session, sets: List<TrainingSet>, catalogue: Catalogue) {
@@ -170,6 +172,37 @@ class MovementProgress(val exerciseId: Id<Exercise>, sessions: List<Point>, val 
     companion object { const val gapDays = 21 }
 }
 
+// The log's new bests: a movement's first estimate is its baseline; a new best beats the best before it as stated.
+class ProgressRecords(val progress: StatsProgress) {
+    data class Record(val point: MovementProgress.Point, val previous: MovementProgress.Point, val estimate: Double, val gain: Double)
+    data class Stated(val point: MovementProgress.Point, val estimate: Double)
+    constructor(read: Reader) : this(StatsProgress(read))
+
+    val movements: Map<Id<Exercise>, List<Record>>
+    val sessions: Set<Id<Session>>
+
+    init {
+        val series = linkedMapOf<Id<Exercise>, MutableList<Stated>>()
+        if (progress.isComplete) for (session in progress.sessions) for (fact in session.movements) {
+            val estimate = fact.estimate ?: continue
+            series.getOrPut(fact.exerciseId) { mutableListOf() } +=
+                Stated(MovementProgress.Point(session.sessionId, session.startedAt, fact), GymEstimate.stated(estimate.e1rm))
+        }
+        movements = series.mapValues { (_, estimates) ->
+            var best = estimates.first()
+            val run = mutableListOf<Record>()
+            for (next in estimates.drop(1)) {
+                val gain = GymEstimate.stated(next.estimate - best.estimate)
+                if (gain <= 0) continue
+                run += Record(next.point, best.point, next.estimate, gain)
+                best = next
+            }
+            run.toList()
+        }.filterValues { it.isNotEmpty() }
+        sessions = movements.values.flatten().mapTo(mutableSetOf()) { it.point.id }
+    }
+}
+
 fun TrainingLog.readout(session: Id<Session>): SessionReadout? = drawnSessions.firstOrNull { it.id == session }?.let { SessionReadout(it, sets(session), catalogue) }
 fun TrainingLog.lastTime(exerciseId: Id<Exercise>): LastTime = LastTime.of(exerciseId, this)
 val TrainingLog.progress: StatsProgress get() = StatsProgress(this)
@@ -190,7 +223,7 @@ object Readout {
     }
     fun effort(weightKg: Double, reps: Int, units: GymUnits = GymUnits.kg): String = "${weight(weightKg, units)} × $reps"
     fun estimatedWeight(e1rm: Double, units: GymUnits = GymUnits.kg): String =
-        weight(Quantum(0.1).rounded(if (units == GymUnits.lb) e1rm / GymUnits.kilogramsPerPound else e1rm))
+        weight(GymEstimate.stated(if (units == GymUnits.lb) e1rm / GymUnits.kilogramsPerPound else e1rm))
     fun estimate(e1rm: Double, units: GymUnits = GymUnits.kg): String = "e1RM ${estimatedWeight(e1rm, units)}"
     fun repTarget(reps: Int?): String = reps?.toString() ?: "max"
     fun setTarget(set: SetTarget): String = "${set.weightKg?.let { weight(it) } ?: "last"} × ${repTarget(set.reps)}"
