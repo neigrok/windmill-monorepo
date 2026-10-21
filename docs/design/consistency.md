@@ -420,6 +420,35 @@ these are the places it disagrees with a drawing, a brief or the build.
   (08.4), the sources sheet (08.5) and Connected log (09.3). Draw them from §5–§7.
 - **10n · The no-seat state's title.** Board `133:1045` (08.6) draws a *Sign in to use Coach*
   title; `CoachUnavailable` renders no title. Redraw the board from the code.
+- **10o · Boards against the simulator.** On 2026-10-21 (commit `cd7bdbe5`, iPhone 17 simulator,
+  iOS 26.5; Dark compared board by board, Daylight captured and spot-checked) every iOS Gym board was compared with a capture; each caption carries
+  its mark and the difference. One board matches (the system photo picker). The rest differ where
+  iterations 2 and 3 moved past them:
+  - Setup (`1081:569`, `1081:607`, `1081:762`, `1081:894`): the bar holds History and the account
+    button, not ⋯; the allowance reads *One-time AI setup allowance* with the remaining amount under
+    the escapes; the photo button sits inside the composer; receipts follow no prose answer, and
+    *Only on this phone · Keep it* is one footnote link, not a button.
+  - Routines (`1056:201`, `1063:531`, `252:358`, `252:767`, `258:417`, `254:478`): the proposal row
+    reads *Push A · 3 changes · From Coach*; summary rows are numbered without a chevron; the editors
+    commit with a ✓ glass button and hold Movements, History and a Delete routine row; Targets is a
+    stepper sheet (open · max · last time, *Vary by set*).
+  - Workout (`1065:222`, `321:281`, `327:922`, `1063:486`, `328:646`): glass bar buttons and a start
+    time under the title; rows without *kg*; the keypad's bar holds Cancel and ⌫ with a *.* key; Fix
+    set adds Effort and a Note; the receipt states a record as a sentence and Performed rows carry
+    trailing facts without chevrons; *Ended early* is the same sheet.
+  - The log (`1056:529`, `1056:1930`, `323:29`, `461:60`, `128:2`): no *Weighed in* rows; moments are
+    dotted doors; workout facts share one card; deletes are immediate, so the deleted-set window and
+    the transient board's *Undo* example (`1057:383`) draw nothing that ships; the Record is an
+    inline-titled page with *Estimated strength* and *Earlier records*; Bodyweight has a 90 days · All
+    segment and chevron rows.
+  - Coach (`1056:903`, `1056:1048`, `123:2`, `130:1419`, `135:246`): the empty composer dims Send;
+    History is in the bar; the proposal card is body-less; Review is one grouped list with *Apply*;
+    Notes has no subtitle or *Top note wins.*; the note editor is a sheet.
+  - Room (`1055:205`, `1063:478`): The log's root bar carries *Weigh in*; *Discard* renders system
+    red, not clay.
+  Redraw from §5–§7 and fresh simulator captures (`DesignCaptureTests`). Not verified for
+  want of a device: the Live Activity, Dynamic Island, the Control Center control and the double tap;
+  for want of a fixture: Coach with no seat, the daily cap and the signed-in setup after Send.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, the
   spec (§6) and `gym/feedback-contract.md` draw an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen
