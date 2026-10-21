@@ -13,6 +13,7 @@ public:
   explicit PgCatalogRepository(std::shared_ptr<PgPool> pool);
 
   std::vector<Exercise> catalog(const UserId& user) override;
+  std::vector<Exercise> seedCatalog() override;
 
 private:
   std::shared_ptr<PgPool> pool_;

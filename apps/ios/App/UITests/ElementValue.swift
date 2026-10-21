@@ -12,3 +12,13 @@ extension XCUIElement {
     return XCTWaiter.wait(for: [shown], timeout: timeout) == .completed
   }
 }
+
+extension XCUIApplication {
+  func cancelConfirmation() {
+    let cancel = buttons["Cancel"]
+    if cancel.exists { cancel.tap(); return }
+    let dismiss = otherElements["PopoverDismissRegion"]
+    XCTAssertTrue(dismiss.waitForExistence(timeout: 5))
+    dismiss.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5)).tap()
+  }
+}

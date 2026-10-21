@@ -9,6 +9,8 @@
 #include "products/gym/application/TrainingService.h"
 #include "products/gym/ports/BodyweightRepository.h"
 #include "products/gym/ports/PreferencesRepository.h"
+#include "products/gym/onboarding/OnboardingService.h"
+#include "platform/ai_installations/AiInstallationApi.h"
 
 #include <drogon/HttpAppFramework.h>
 
@@ -33,6 +35,9 @@ struct GymDeps {
   std::shared_ptr<AskService> askService;  // null (or unconfigured) ⇒ no /v1/gym/ask route exists
   std::string appBaseUrl;                  // the browser app's origin — a workout share's link
   std::function<void(std::function<void()>)> onShutdown;
+  std::shared_ptr<OnboardingService> onboarding;
+  std::shared_ptr<AiInstallationApi> installations;
+  std::shared_ptr<FailureReporter> failures;
 };
 
 // Mounts the gym product on the shared app: every /v1/gym/* route. All of them are owner-scoped

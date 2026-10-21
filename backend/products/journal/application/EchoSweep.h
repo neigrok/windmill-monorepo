@@ -24,6 +24,7 @@ struct EchoSweepReport {
   int passagesEmbedded = 0;
   int echoesWritten = 0;
   int pagesFailed = 0;
+  int pagesDeferred = 0;
   // Boundary indices a segmenter named that could not be used — out of range, out of order, or the
   // same atom opened twice. It counts confusion rather than invention: since the model answers with
   // atom numbers instead of text, it cannot misquote anyone. Above zero on an ordinary night means

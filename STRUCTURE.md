@@ -85,9 +85,10 @@ their consumers; web also checks its email README and the verify skill because t
 
 Backend Postgres integration cases require `WM_PG_TEST` and two isolated databases (`DATABASE_URL`
 and `WM_SYNC_DATABASE_URL`, initialized as [RUNNING.md §7](backend/RUNNING.md#7-tests) describes).
-The Docker build skips them; backend CI runs them in that image against a Postgres service. Automated model tests use
-deterministic fakes and fixtures. Actual-model exploration is manual and local with a user-provided
-key.
+The Docker build skips them; backend CI runs them in that image against a Postgres service. Ordinary model tests use
+deterministic fakes and fixtures. Actual-model exploration is manual: locally with a user-provided
+key, or through the opt-in Coach verification dispatch using the existing repository secret and
+disposable accounts (`backend/RUNNING.md`).
 
 The web deploy must land first on a fresh host because the embedder mounts its weights from the
 served web directory. See [deployment](backend/deploy/README.md) and
@@ -111,8 +112,11 @@ contents. Native acceptance and a same-key update check precede publication. See
   (`apps/android/sync-*`) clients;
   [the domain kit](docs/foundation/domain-kit.md), the pure-logic layer every Swift and Kotlin feature
   domain is declared on, built in Swift (`apps/ios/Domain`) and Kotlin (`apps/android/domain-kit`); and
-  [gym Coach on the client](docs/foundation/mobile/gym_coach.md) for both phones, specified and not
-  yet built.
+  [phone-hosted Coach abilities](docs/foundation/mobile/gym_coach.md), specified for both phones
+  and not yet implemented.
+- [The running Coach conversation contract](docs/gym-coach-contract.md) covers the server-hosted
+  model loop used by web, iOS and Android. [The iOS app](apps/ios/App/README.md) also documents
+  signed-in routine onboarding.
 - [Web rules](web/CLAUDE.md), [iOS](apps/ios/README.md) and [Android](apps/android/README.md).
 - [Product direction](docs/PRODUCT_LOG.md) and [design consistency gaps](docs/design/consistency.md).
   `docs/design/` holds written canon; Figma holds the drawings.

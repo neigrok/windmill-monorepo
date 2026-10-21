@@ -22,6 +22,8 @@ HTTP response codes, engine codes and tool outcomes are read without modifying w
 Refusals without a machine code use `http_NNN` or `refused`. Expected refusals — unavailable
 configuration, a busy gym engine, rate limits, invalid tool arguments and every 4xx, a retired path's
 410 included — never create Issues.
+AI allowance, funding, pricing and closed-checkout 503 refusals keep their bounded codes on the
+matching HTTP routes. Accounting failures and unknown 503 responses remain Issues.
 Unexpected exceptions and unclassified 5xx create Issues grouped by static operation and compiled
 exception type; the Issue's `tags.request_id` matches its completion. Nested boundaries share the
 request state and report its first unexpected failure once. Admission, command and postcommit
@@ -120,8 +122,8 @@ Amplitude key intentionally disables forwarding.
 The inventory has 89 HTTP write registrations: REST platform 27, roadmap 13, gym 29 (20 of them
 retired paths), journal 11, probe 2; sync 3; MCP transport 4. Excluding the two dev routes and two
 standalone transport duplicates leaves 85 production HTTP operations. MCP has 36 write declarations
-(roadmap 23, gym 13); compatibility aliases share their canonical operation. Coach has 27 operations
-(ask 2, gym abilities 4, scoped roadmap abilities 21). The catalogs have nine production commands
+(roadmap 23, gym 13); compatibility aliases share their canonical operation. Coach has 28 operations
+(ask 2, gym abilities 5, scoped roadmap abilities 21). The catalogs have nine production commands
 (gym 7, journal 2), plus four probe commands. Background coverage includes 21 scheduled/stage
 operations plus sync publication, Amplitude forwarding and the AI usage ledger (24 background
 operations). Server-origin entry points include the gym door, ServerCall metadata, session refresh
@@ -354,7 +356,48 @@ listed separately because their only server writes are authentication refresh or
 | `Collab::onMessage` rate gate | `roadmap.ws.frame` | completion; `rate_limited` | log only |
 | `GET /v1/journal/export`, `GET /v1/gym/history`, session/share/download reads | `auth.session.refresh` or `gym.server_call` | authentication refresh; actual lazy settlement where applicable; no export body | unexpected write failure |
 | `PgAiUsageRepository::record` (noexcept ledger persistence, including transcription callback) | `ai.usage.record` | completion; `ok` or `failed`; no spend fields | unexpected compiled storage exception |
+| `AiBudgetService` reservation lifecycle | `ai.budget.reserve`, `ai.budget.dispatch`, `ai.budget.uncertain`, `ai.budget.settle`, `ai.budget.release`, `ai.budget.reconcile_overrun` | one completion per transition; bounded outcome and duration; no subject, USD amount or content | unexpected storage failure; unfunded overrun under `ai.budget.settle` |
+| `AiBudgetService` funding and device binding | `ai.budget.fund`, `ai.budget.bind_device` | funded/idempotent/conflict outcomes; no payment/account/device identifiers | unexpected storage failure |
+| `AiBudgetService::view` | `ai.budget.view` | completion when trusted owner access creates a grant; successful pure reads omit write logs | unexpected read or grant failure |
+| Durable alert worker | `ai.budget.alert.claim`, `ai.budget.alert.delivered`, `ai.budget.alert.retry`, `ai.budget.alert_send` | claim/delivery/retry outcome; no recipient, identifiers or amounts in telemetry | unexpected outbox or delivery failure |
+| `AiCallBudget` | `ai.call.admit`, `ai.call.account`; `ai_output_admission` diagnostic | admission refusal or settlement/uncertainty; diagnostic carries only input nanos, output-token nanos, minimum/maximum/selected tokens and static code; no prompt, image, account or provider body | unexpected boundary failure, shared request deduplication |
+| `POST /v1/ai/installations` | `ai.installation.issue` | bounded issue or rate-limit outcome | unexpected storage/credential failures |
+| `GET /v1/ai/installations/current` | `ai.installation.read` | HTTP status; no credential, balance or identifier | unexpected read failures |
+| `POST /v1/ai/installations/bind` | `ai.installation.bind`, `ai.budget.bind_device` | bounded success, replay or binding conflict | unexpected binding/accounting failures |
+| Anonymous generation network admission | `ai.installation.admit` | bounded success, replay, disabled, rate limit or bound refusal | unexpected counter failures |
+| Expired network-key sweep | `ai.installation.prune` | committed deletion only | unexpected retention failures |
+| `POST /v1/gym/coach/onboarding` | `gym.coach.onboarding.start` | acceptance, replay or bounded refusal | unexpected request/storage failures |
+| Anonymous Coach worker | `gym.coach.onboarding.generate` | completed or bounded failure outcome | unexpected generation/storage failures |
+| Anonymous Coach model boundary | `gym.coach.onboarding.model` | expected refusal and provider rate limits are log-only outcomes | transport, truncation or invalid result failures |
+| Anonymous Coach fallback persistence | `gym.coach.onboarding.persist` | bounded terminal persistence failure | unexpected fallback write failures |
+| `GET /v1/gym/coach/onboarding/{requestId}` | `gym.coach.onboarding.read` | HTTP status; no routine or credential data | unexpected result read failures |
+| Anonymous Coach result expiry | `background.gym-coach-onboarding-retention` | committed expiry writes only | unexpected retention failures |
+| `GET /v1/ai/allowance` | `ai.allowance.read` | HTTP status via access log; no balance in telemetry | static failure detail on unavailable accounting |
+| Coach JSON/SSE allowance refusal | `ask.run` | bounded `subject_exhausted`, `free_day_exhausted`, `free_month_exhausted`, `concurrency_exhausted`, `funding_required` or `debt_outstanding` | expected refusals create no Issue |
 
 Standalone MCP accepts unprefixed tool aliases; completions use canonical operations
 (for example `mcp.roadmap_create_tree`). Process construction/teardown exceptions use `server.lifecycle`,
 `mcp.stdio.lifecycle`, `mcp.http.lifecycle` or `process.shutdown` with the same privacy rules.
+
+USD allowance mode adds backend admission, funding, permanent installation binding and owner-email alert
+steps. Existing user-visible Coach/tending events continue through `/v1/events`; Coach displays
+read the exact USD allowance contract. Dedicated Usage screens remain separate work. Every budget queues 50/80/95% settled-plus-held threshold crossings
+atomically to the durable outbox. Alert email contains scope, funding source and numeric totals,
+but no account/device identifiers or user content; the configured owner email is never telemetry.
+The `ai_usage` Amplitude mirror remains separate from durable admission.
+[AI_ALLOWANCES.md](AI_ALLOWANCES.md) lists provider coverage and rollout requirements.
+
+Per-request token estimates can differ from actual usage. Settlement records full actual cost and
+absorbs a positive variance without an Issue when every original funding budget can cover it,
+including other unresolved holds and bound-device account attribution, with no existing debt.
+An unfunded variance retains overrun debt and produces a static `ai.budget.settle` Issue;
+settlement replay does not
+repeat the report. Neither path logs request content, token-estimator inputs or raw provider data.
+
+## Signed-in Gym routine setup
+
+Coach's `ask.run` observation covers setup admission, model turns and terminal persistence. `gym.ask_setup_details` logs the typed question write with `ok` or `refused`; unexpected storage failures report under that static operation. Its text, choices and IDs never enter logs. Every routine addition retains its own `gym.create_routine` and GymDoor write observations, including replay and expected immutable-slot/cap refusals. Stop and later allowance failures retain the existing static operations and factual creation receipts.
+
+Routine setup refuses writes outside its focused tool catalog before any action is persisted. Those attempts retain the tool's static `gym.<tool>` completion with `refused` and create no Issue.
+
+Native setup emits `gym_setup_step` through `/v1/events`, with `screen:coach` and the bounded action labels `shown`, `screenshot`, `describe`, `goal`, `just_log`, `build_manually`, `clarify`, `open_routine`, `routines_saved`, `keep_routines`, `photo_selected`, `photo_removed`. Client validation excludes questions, option values, routine names and allowance amounts. The product-neutral intake stores and forwards the accepted event using its existing batch observation.

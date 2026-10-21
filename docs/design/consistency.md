@@ -19,8 +19,8 @@ acceptance. Figma review tasks below need a fresh file inspection before editing
   `#171719`. The recorded published value is `#17120B` (`VariableID:1:66`, key
   `f5e7a675adcd56fc6c985da0c7d8341fca46caac`). Gym's local `shell/clay/*` aliases must remain
   until shared imports resolve consistently. Verify `border/subtle` and `text/tertiary` imports too.
-- **F40 / F52 / F54 · Figma components.** Give shared Buttons room-scoped brand bindings;
-  rename Room Switch Button text layers by role; add sheet-radius tokens where needed.
+- **F52 / F54 · Figma components.** Rename Room Switch Button text layers by role;
+  add sheet-radius tokens where needed.
   Shared component typography and mixed prose/numeral runs must not be flattened into one Gym style.
 - **F5 / 1w · Unused glow.** Audit the Gym library's Daylight `glow/set-done` values and remove
   unused bindings. Daylight web has no set-done glow.
@@ -33,7 +33,7 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
 
 - **7a · Leaving the app.** Canon (`gym/briefs/13-gestures.md` "Leaving the app"; owner ruling
   2026-09-26): a held delete is stored on the device. Leaving the app — Android to the background,
-  the last iOS scene to the background, on the web no Windmill tab visible past a short debounce or
+  on the web no Windmill tab visible past a short debounce or
   the last tab closing — lets it go into the queue, which sends it when it can, and Undo is not
   offered on return. A screen recreated in place keeps the Undo with its remaining time; sign-in lets
   holds go before its question, and a discarded room's go with it unsent; a hold cut off by the
@@ -41,8 +41,7 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
   stores and releases them, and the gym room draws their Undo from the engine's offers
   (`useTrainingLog.js`). These holds still go the other way, putting the row back and sending
   nothing: the web's Coach conversation delete, a REST call held in the gym room's memory, when the
-  document hides or the room unmounts; iOS's withheld Coach deletes when the scene goes to the
-  background (`CoachHistory.swift`); and Android's holds, which are in memory, on `ON_STOP` and on
+  document hides or the room unmounts; Android's holds, which are in memory, on `ON_STOP` and on
   disposal (`GymRoom.kt`, `abandonWithheld`).
 - **7c · Sign-out.** Canon (`guidelines/superapp-flow.md` §3 and §7, `roadmap/guidelines/auth.md`
   §4, `roadmap/guidelines/front-door.md` §2; owner ruling 2026-09-26): signing out takes the
@@ -59,8 +58,8 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
     unsynced edits included, with no warning: `accountChange.js` calls each product's
     `forgetDevice`, and the roadmap's (`routes.js`) runs `forgetDeviceTrees` (`localTrees.js`),
     which deletes every account-stamped registry row, sync blob and per-tree store.
-  - Figma: board [16c](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=152-2661) draws only the base alert and needs the unconfirmed-changes variant;
-    board [16d](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=152-2780) needs the kept-changes line; the first-run READ ME (`128:1151`) still
+  - Figma: board [16c](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-2031) draws only the base alert and needs the unconfirmed-changes variant;
+    board [16d](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-2085) needs the kept-changes line; the first-run READ ME (`2:984`) still
     lists sign-out with unsent changes as open question 6; the Android *Account / Profile* board
     ([`669:8214`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=669-8214)) draws no confirmation. The web's confirmation is not drawn.
 - **7d · Signing in with local data.** Canon (`guidelines/superapp-flow.md` §6 "Signing in with work
@@ -82,7 +81,7 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
     *Unclaimed log* (`678:11183`, These are mine / Not mine) and its *Local log removed* Undo
     (`678:11192`), which the sign-in question replaces; the Android *Account / Sign in* board
     ([`669:8237`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=669-8237)) says *What you made on this device joins your account when you sign
-    in.*, true only for an account with no gym records; the first-run READ ME line `174:4274` says
+    in.*, true only for an account with no gym records; the first-run READ ME line `2:1029` says
     signed-out work *moves to the account on sign-in* with no question. No surface draws the sign-in
     question or its Discard confirmation.
 - **7f · Notes stored verbatim.** `gym/briefs/10-notes.md` stores a note's title and body
@@ -132,7 +131,7 @@ source-review findings; native sign-in behavior has not been exercised in the we
 ### Sign-in doors
 
 Canon: `guidelines/account-linking.md` and the Figma section
-[4b · Apple sign-in · one account](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=194-3698).
+[4b · Apple sign-in · one account](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-2878).
 Apple sign-in is off in every build, so no surface draws it yet.
 
 - **8b · The fork-guard footnote.** Canon and boards 14, 02b and 16a carry no footnote;
@@ -173,9 +172,11 @@ Apple sign-in is off in every build, so no surface draws it yet.
 
 `apps/ios/App` carries the Journal room and the Gym room on the engine, with the workout Live
 Activity. First-run canon: `guidelines/superapp-shell.md`, `guidelines/superapp-flow.md`,
-`gym/briefs/09-coach.md` and the Figma page
-[iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2). The
-rendering contract is [`ios/ios-redesign.md`](ios/ios-redesign.md).
+`gym/briefs/09-coach.md` and the Figma pages
+[Shell · iOS](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=1-5) for shared
+first-run and account boards, and
+[Gym · iOS](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=11-2)
+for the canonical Coach-led flow. The rendering contract is [`ios/ios-redesign.md`](ios/ios-redesign.md).
 
 - **6v · Briefs that cite the deleted app.** Several gym briefs state the previous native app's
   code or behavior as current. Restate each as the rebuilt room's requirement or drop it:
@@ -185,11 +186,25 @@ rendering contract is [`ios/ios-redesign.md`](ios/ios-redesign.md).
   and routine detail), `17-set-targets.md`, `19-connected-log.md` (`ConnectInvite`),
   `12-native-idiom.md` and `guidelines/superapp-shell.md` §8 (F4, 4j), and
   `gym/feedback-contract.md` (iOS acceptance).
-- **6k · Backend: signed-out Coach.** Coach is account-only: `AskRation` keys an in-memory token
-  bucket by account (`kAskPerDay` 10, `kAskBackToBack` 3; a deploy refills it) under the account's
-  30-day AI ceiling. Signed-out Coach needs a device-scoped identity, a durable 5-per-phone count
-  that never refills, its own refusal reason, and a decision on what Coach reads for a phone whose
-  log is not on the server. [Gym Coach on the client](../foundation/mobile/gym_coach.md) specifies all four.
+- **6k · Backend: signed-out Coach.** Anonymous onboarding uses a separate installation boundary. The USD backend
+  implements anonymous $0.05 lifetime, verified free $0.25 per UTC month including associated
+  anonymous spend, and One $7 per funded period. Owner grants use calendar months. Free access
+  shares $100/month and $5/day; paid funding is isolated. The launch identity is a server-issued
+  installation credential with IP limits; it does not promise persistence across resets.
+  Onboarding creates bounded local routines from one model call. The broader phone tool-host
+  protocol remains separate work. Per-request input estimates are approximate and settle to actual usage. See
+  [the mobile specification](../foundation/mobile/gym_coach.md) and
+  [backend contract](../../backend/AI_ALLOWANCES.md).
+- **6u · USD allowance drawings.** Canonical Coach onboarding (`1081:565`) uses the $0.05 lifetime
+  installation allowance and current free/funded policy. Account · Usage · Proposal and
+  Roadmap · AI requests · Proposal still need the current policy. The written pricing, shell,
+  Coach, roadmap and Journal contracts use USD. Replace remaining drawing question/credit
+  figures with server-backed USD and period labels. Customer usage drawings must show
+  held/uncertain usage, free daily-pool pauses, individual exhaustion, request-capacity refusals
+  and concurrency. Anonymous lifetime allowance has no reset; One billing periods can cross a
+  calendar boundary. All hosted AI, including background Echoes, consumes the individual budget.
+  Signing in binds the device and includes its current-month anonymous spend in free usage.
+  Server-issued installation credentials are implemented; customer USD screens remain unbuilt.
 - **6l · Backend: signed-out routines.** Coach creates routines on the server for an account.
   Signed out they must land on the phone with a stable, retry-safe identity and be adopted once on
   sign-in under the sign-in rule (7d), without duplicates.
@@ -214,11 +229,10 @@ rendering contract is [`ios/ios-redesign.md`](ios/ios-redesign.md).
 Spec: [`ios/ios-redesign.md`](ios/ios-redesign.md) (iteration 3). It rules the iOS rendering;
 these are the places it disagrees with a drawing, a brief or the build.
 
-- **9a · Light gym accent.** The Gym file's `brand/base` aliases to iris `#4C4374` in Daylight
-  (F44); the owner's 2026-09-06 ruling and the decided onboarding boards use verdigris `#137A6C`,
-  and the spec its darker `#106B5F` (§2, Onboarding 9d). The iOS boards bind a file-local
-  `ios/accent`. Repoint `brand/base` or keep both and
-  say which surface each serves.
+- **9a · Light gym accent.** Android's Daylight skin still uses iris `#4C4374` (F44),
+  while its onboarding glimpse uses verdigris `#137A6C`. Figma's shared Gym light brand is
+  `#137A6C`; its native `ios/gym/accent` is the spec's darker `#106B5F`. Align Android's
+  skin and glimpse with its intended platform accent.
 - **iOS gym and shell day contrast.** The spec and the iOS build use the light values the owner
   adopted for text: `gym/accent` `#106B5F` (5.19:1 on `gym/canvas` · 5.92:1 card · 4.60:1 raised ·
   white on it 6.38:1), with `accent-soft` tracking it, and `shell/brand` `#9F5B38` (4.79:1 on
@@ -229,28 +243,19 @@ these are the places it disagrees with a drawing, a brief or the build.
   room. The other surfaces keep the earlier values:
   Android's onboarding glimpses draw the gym accent `#137A6C` (`OnboardingGlimpses.kt`,
   `OnboardingPager.kt`), and the web's clay and roadmap `--color-brand` is `#BC6C42`
-  (`--accent-terracotta-500`). To do: the Figma colour collections take the iOS values — the Gym
-  file's `ios/accent` and `ios/accent-soft` (`1055:201`–`1055:202`) and the Design System's
-  `shell/brand` and `shell/danger`.
+  (`--accent-terracotta-500`). Figma Theme roles `ios/gym/accent`, `ios/gym/accent-soft`,
+  `ios/shell/brand` and `ios/shell/danger` use the iOS values.
 - **9b · Phones weave.** `gym/briefs/18-progress.md` gives web and iOS the movement strip and
   Android the woven moments; the spec gives both phones the woven timeline and only the web the
-  strip. The brief now says so; the Progress section's iOS strip boards (`459:29`, `531:532`)
-  are superseded.
+  strip. The brief now says so.
 - **9c · The rack's kind picker.** `16-the-workout.md` kept iOS's kind picker at the rack; the
   spec moves Kind off the rack into the Fix sheet on iOS, and a new set is Working, as on web and
   Android. The brief now says so. Android's Fix sheet has no Kind control: `FixSheet.kt` carries a
   set's kind through unchanged.
-- **9d · Two gym light grounds.** Design System `iOS First Run · Colour` has `gym/canvas` light
-  `#F4F4EB` and `gym/card` `#F9FDFC`; `Onboarding · Colour` and the Gym file have `#EBE7E3` and
-  `#F8F6F4`, which the spec adopts. Align the first-run collection.
 - **9e · First-run boards' chrome.** The first-run and Coach-wave boards draw a *W* capsule, a
   hand-drawn glass fill and a drawn account glyph; the spec's room menu and `person.crop.circle`
-  on system glass replace them. Redraw the top band of boards 02d, 05–07d, 08a–09k, 10–13b, 21a/21b
-  and the Gym file's Coach-wave iOS boards from the new section's bar anatomy.
-- **9h · Journal day inks.** `iOS First Run · Colour` light `journal/ink` `#2A2118`, `ink-dim`
-  `#74654F`, `ink-faint` `#8E8272` are warm; the web's journal day (`palettes.css`), the spec and
-  the app's onboarding glimpse are cool paper (`#161E28` / `#4E5968` / `#5E6979`). Align the
-  collection.
+  on system glass replace them. Redraw the top band of boards 02d, 05–07d, 10–13b and 21a/21b from
+  the new section's bar anatomy.
 - **9i · The proposal card.** `gym/briefs/09-coach.md` ("One · the turn") gives a phone card its
   summary, its counted changes on their own line and **Review**, says iOS's card shows no diff rows,
   and keeps the promise on the card while pending; ("Two · the review") a closed review leaves the
@@ -274,12 +279,12 @@ these are the places it disagrees with a drawing, a brief or the build.
   since-last-set clock without ruling labels; the iteration-1 build labels both (*Workout*, *Since
   last set*), which `16-the-workout.md` bans in the app. The spec (§7.7) draws both unlabelled.
   Restate the brief and draw the banner, expanded and compact Island.
-- **9m · Iteration-1 boards.** The Gym file's *iOS redesign · iteration 1* boards (`1055:204`)
-  predate the spec's §5–§7: the composer's disabled state, the one-slot Review band and the diff as
-  rows, the body-less proposal card, the current row's readout, the Record tiles and axis labels,
-  moments as doors, *Weigh in* in The log's bar, Bodyweight rows, the Fix sheet's subtitle and bar
-  commit, the glass transient band, You's native sections, **On this phone**, the update-required
-  alert and the Live Activity. Redraw from the spec, or retitle the section as superseded.
+- **9m · Iteration-1 boards.** The iteration-1 boards kept on the Gym file's iOS page (flows 00,
+  02, 05 and 08; their captions say *drawn 2026-10-08*) predate the spec's §5–§7: the one-slot
+  Review band and the diff as rows, the current row's readout, the Record tiles and axis labels,
+  Bodyweight rows, the Fix sheet's subtitle and bar commit, the glass transient band, You's
+  native sections, **On this phone**, the update-required alert and the Live Activity. Redraw them
+  from the spec.
 - **9n · The set-note footer.** The iteration-1 Fix sheet drew *A record for you — not an
   instruction to Coach.* under the set note; `09-coach.md` rules the set-note field says nothing,
   and the spec (§7.10) draws no footer. Check the Android Fix sheet for the same line.
@@ -345,13 +350,15 @@ these are the places it disagrees with a drawing, a brief or the build.
   · …), draws no **Your data** and no room settings, and has neither **Erase data** nor **Delete
   account**, which no iOS build draws. Decide whether the shell canon follows the spec; if the owner
   wants *Erase data* and *Delete account* on iOS, they are build work for the dogfood tree.
-- **9x · The room menu.** `guidelines/superapp-shell.md` §3 rules that the room menu carries rooms
-  only — *You is never a row*, no item of a room's own — and describes iOS as one room, Journal
-  alone. The spec (§4) and the build draw the rooms, then **You** after a divider, then Journal's
-  **Show ink notes**. The Design System's `_Room capsule` disagrees with itself: the set's
-  description (`226:4315`) says rooms only and *iOS today: Journal alone*; the `Menu=On` and
-  `Menu=Off` descriptions (`117:52`, `226:4310`) say *Journal · Gym · You*. Rule one menu, then
-  align the shell canon and the component descriptions, and check boards 21a/21b.
+- **9x · Shared room-menu drawings.** The iOS contract uses Journal and Gym only in the room
+  menu, with account/settings reached once through the account button. Ink notes are onboarding
+  only. Update the Design System's `_Room capsule` variant descriptions (`117:52`, `226:4310`)
+  and boards 21a/21b to this contract; its set description (`226:4315`) must name both iOS rooms.
+- **iOS native specimens.** The Gym refinement boards (`1063:486`, `1063:531`, `1065:307` and their Daylight
+  pairs, in flows 02, 03 and 05 of the iOS page) use editable Inter
+  specimens because Figma's SF Pro export returns zero-width glyphs, and local icon vectors
+  because importing the subscribed Apple iOS 26 library is denied. Native implementation uses
+  system text and controls. Replace these specimen assets when the native library can be imported.
 - **9y · The month moment.** `18-progress.md` words a month trained in full *Trained 4 of the last
   4 weeks*, the head's own sentence, so a past month's moment and the head's *Trained 3 of the last
   4 weeks* answer one question twice on one screen and disagree. The spec (§7.6) words the moment by
@@ -391,8 +398,102 @@ these are the places it disagrees with a drawing, a brief or the build.
   lists and never prints `read.weeks`, so a totals-only answer reads *Read your movement history*
   with no number (spec §6); web and Android print the server's weeks (`coach.js` `readLine`,
   `Ask.kt`). The fix belongs to the backend: dogfood node `coach-receipt-weeks-provable`.
-- **Proposal · one suggestion on an empty Coach (owner decision).** The spec (§6) and
-  `gym/feedback-contract.md` draw an empty Coach as the bar, the canvas and the composer only. The
+- **10h · Routines draws what §7.5 rules out.** The Routines boards (`1056:201`, `1056:417`) draw
+  *Just start logging* and a *Movements* row. The spec (§7.5) and `15-the-routine.md` rule both out,
+  and `RoutinesTab.swift` has neither. Redraw the board without them.
+- **10k · Session on the wave-three boards.** The boards *Ended early* (`328:646`) and *before the
+  first movement* (`320:318`) say *session* (*Discard session*, *Session · no routine*); the app
+  says *workout* on every iOS screen (9z). Redraw both with *workout*.
+- **10l · The Live Activity double tap.** Board `177:29` draws a watch double tap reaching *Log set*.
+  Nothing in `apps/ios/App` handles it; what ships is the parameterless *Log set* App Shortcut
+  (`WorkoutLogRackSetIntent`). Verify on a device and either rule the double tap in or retire the
+  board.
+- **10n · The no-seat state's title.** Board `133:1045` (08.6) draws a *Sign in to use Coach*
+  title; `CoachUnavailable` renders no title. Redraw the board from the code.
+- **10o · Boards against the simulator.** On 2026-10-21 and 2026-10-22 (iPhone 17 simulator, iOS 26.5;
+  Dark compared board by board, Daylight captured and spot-checked) every iOS Gym board was compared
+  with the running app. Status lives in the Figma layer names (🚀 In production · 🚧 In progress ·
+  👀 Review); this entry holds the detail behind each 👀. The system photo picker (`1081:637`) and
+  the boards drawn from captures for screens that had none are 🚀. The rest differ where iterations 2
+  and 3 moved past them:
+  - Setup (`1081:829`): a created routine opens as the summary sheet with *Start*, not a pushed page
+    with *Start workout*.
+  - Routines (`1056:201`, `1063:531`, `252:358`, `258:417`, `254:478`): the proposal row reads
+    *Push A · 3 changes · From Coach*; summary rows are numbered without a chevron; the editors commit
+    with a ✓ glass button and hold Movements, History and a Delete routine row; Targets is a stepper
+    sheet (open · max · last time, *Vary by set*).
+  - Workout (`321:281`, `327:922`, `1063:486`, `328:646`, `320:318`): the keypad's bar holds Cancel
+    and ⌫ with a *.* key; Fix set adds Effort and a Note; the receipt states a record as a sentence and Performed rows
+    carry trailing facts without chevrons; *Ended early* is the same sheet; an empty workout centres
+    *Choose your first movement* over one *Add movement* button.
+  - The log (`1065:307`, `1056:1930`, `461:60`, `529:60`, `128:2`): the swipe shows a round red
+    *Delete*; workout facts share one card;
+    the Record is an inline-titled page with *Estimated strength* and *Earlier records*, and a touched
+    point is ringed with its readout under the chart; Bodyweight has a 90 days · All segment and
+    chevron rows.
+  - Coach (`123:2`, `130:1419`, `135:246`): Review is one grouped list with *Apply*;
+    Notes has no subtitle or *Top note wins.*; the note editor is a sheet.
+  - Room (`1055:205`, `1063:478`): The log's root bar carries *Weigh in*; *Discard* renders system
+    red, not clay.
+  🚧 boards draw what the app does not have: the transient board's *Undo* example (`1057:383`) and
+  the deleted-set window (`323:29`) — deletes are immediate; the Live Activity double tap
+  (`177:29`); Apple Health. Unchecked, so 👀: the Dynamic Island and the Control Center control
+  (need a device), the Record's pan, Coach with no seat. The 🚧 targets of 10p and 10q replaced the
+  boards they supersede.
+- **10p · Target boards ahead of the gym-feedback build.** The Gym file's iOS page draws the owner's
+  2026-10-21 feedback as 🚧 targets (Dark, with a Daylight twin beneath), from branch
+  `codex/gym-coach-feedback` (`docs/design/gym/feedback-2026-10-21.md` there). Each target holds
+  the slot and number of the board it replaced; the replaced boards are deleted. Targets:
+  - 01: review and Save routines 01.8 `1156:3154`; the Coach chat targets of 01 are listed under 10q.
+  - 02: editor always sortable 02.5 `1149:2200`; empty Routines with a plus seat 02.7 `1149:2477`;
+    remove by native trash swipe 02.8 `1149:2275`.
+  - 03: rack with Dumbbells 03.1 `1150:2352`; its states pressed 03.10 `1150:2495`, changed with 56 pt
+    hit areas 03.11 `1150:2638`, Bodyweight with added load 03.12 `1150:2793`.
+  - 04: Live Activity with since-last-set top right 04.2 `1152:2533`.
+  - 05: The log with the Weigh in seat 05.1 `1153:2765`; Edit exercise 05.9 `1153:2559`; the
+    Equipment menu 05.10 `1153:2603`.
+  - 08: Coach updates a movement 08.9, listed under 10q.
+
+  Choices the branch forced or left open, for the build and the owner:
+  - The branch's words win: *Equipment* (not *load basis*), *Dumbbells*, *Build myself* (the feedback
+    said *Build it myself*), *Add screenshot*, *Save routine(s)*, *Sign in to continue.*
+  - The greeting's actions are drawn `.bordered` with the accent tint; the branch uses `.borderless`.
+  - The branch adds a *Windmill One* button to a signed-in refusal, opening *Subscriptions aren't
+    available yet.* `superapp-shell.md` keeps One in You only, so the interim board (a) draws no One
+    entry; board (b) is the owner's paid upsell and must wait for checkout.
+  - The set-editing haptic is a `.selection` tick per accepted rack change. The branch keeps the
+    canon's silence on Log set, which the boards keep.
+  - The library has no SF stand-ins for `minus`, `line.3.horizontal`, `pencil`, `photo.badge.plus`,
+    `chevron.up.chevron.down` and the two `figure.strengthtraining.*` symbols, nor a system-red
+    token (`ios/system/alert` resolves to an alert ground). The boards draw local `sf/…` vectors and
+    paint destructive actions `ios/gym/alarm`. Adding them is a Design System change, which then
+    needs a library publish from the Figma UI.
+- **10q · Coach chat in the Messages language (owner decision, 2026-10-22).** The owner asked for
+  the Coach chat to read like iOS Messages, drawn as 🚧 targets over every Coach chat board in
+  journeys 01 and 08, with local components on the Gym Components page: `_Coach / Bubble`
+  (`1167:185`: sender × tail × text, image, typing) and `_Coach / Composer · Messages` (`1168:212`:
+  empty, typed, photo). Boards: 01.1 `1173:3783`, 01.2 `1173:3860`, 01.4 `1173:3934`,
+  01.5 `1173:4111`, 01.6 `1173:4264`, 01.7 `1173:4370`, 01.9 `1173:4471`, 01.11 `1173:4600`,
+  01.12 `1173:4678`, 01.13 `1173:4754`, 01.14 `1173:4833`; 08.1 `1170:2943`, 08.2 `1170:3007`,
+  08.4 `1172:3561`, 08.5 `1172:3621`, 08.8 `1170:3105`, 08.9 `1170:3192`, 08.10 `1170:3266`,
+  08.11 `1170:3364`. Each conflicts with written canon, for the owner to settle before the spec
+  moves:
+  - `ios/ios-redesign.md` §6: *Coach's turn is plain prose on the canvas, no bubble*. The targets put
+    Coach in a left bubble with a tail, full width for headings, lists and tables.
+  - §6: the lifter's bubble is `gym/accent-soft`, radius 18, max 78 %. The targets fill it with
+    `gym/accent` and set it in `on-accent`, with a tail, grouped Messages-style.
+  - §6: a sent photo is a 56 pt thumbnail under the text, *not a bubble-wide image*. The targets send
+    it as a 200 pt image bubble.
+  - §6: the composer is one capsule with `photo.badge.plus` inside and a send circle that only
+    dims when empty, *never a different size, shape or colour*. The targets put a round + outside the
+    field and show the send arrow only when there is something to send.
+  - `gym/feedback-contract.md` "Coach conversation" and §6 *Signed out* still describe the starters,
+    escapes and the signed-out `ContentUnavailableView`; the targets' greeting, typing bubble,
+    centred service notes and timestamps are not in canon.
+  - The library has no `clock` symbol; the targets draw History with `clock.arrow.circlepath`
+    while the app uses `clock`.
+- **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, the
+  spec (§6) and `gym/feedback-contract.md` draw an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen
   from the lifter's state and never from capability copy — *Build me a routine* with no routines,
   *How did today go?* after a workout today. A tap fills the composer without sending, and the
@@ -400,8 +501,8 @@ these are the places it disagrees with a drawing, a brief or the build.
 
 ## Onboarding
 
-Brief: `guidelines/onboarding.md`; drawings: Design System page
-[Onboarding · 2026-10-04](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=209-2). The
+Brief: `guidelines/onboarding.md`; drawings: Shell iOS section
+[Shell · iOS onboarding](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=2-9719). The
 four-screen introduction was decided on 2026-10-04 — direction A · Three rooms, iOS page 4 leads to
 Where to start?, About Windmill in You and the account sheet, and the four screens are the accepted
 exception to `guidelines/superapp-flow.md` §3 and §8. Both phones draw it (`Onboarding.swift`,
@@ -415,15 +516,13 @@ exception to `guidelines/superapp-flow.md` §3 and §8. Both phones draw it (`On
   the right, like the landing boards; the product renders radially (0k). The glimpse is an
   illustration, not a layout specimen; if it is ever drawn from the product, draw it from a live
   screenshot.
-- **9d · Gym day accent on the boards.** The onboarding light boards use verdigris `#137A6C` for gym
-  (owner ruling 2026-09-06) where Android's `GymSkin.kt` ships iris `#4C4374` by day (F44). The
-  boards follow the ruling; the skin follows when F44 closes. The iOS app's glimpse draws its light
-  `gym/accent`, the darker `#106B5F` (`ios/ios-redesign.md` §2), so the light boards and the iOS
-  build differ. Align `Onboarding · Colour`'s gym day accent with the app, or say which surface each
-  value serves.
+- **9d · Gym day accent on Android.** Android's Daylight skin ships iris `#4C4374`
+  (F44); its onboarding glimpse uses verdigris `#137A6C`. The Figma Android boards use
+  light `color/brand` `#137A6C`; iOS uses `ios/gym/accent` `#106B5F`. Align Android's glimpse and skin
+  with the intended Android accent and identify any intentional platform difference.
 - **9e · About Windmill is written, not drawn.** `guidelines/superapp-shell.md` §6 and
   `gym/android-delivery.md` Profile list the **About Windmill** row; the iOS You boards (first-run
-  section *4 · Account*, `120:81`) and the Android Profile sheet (`669:8214`, `678:10634`) do not draw
+  section *4 · Account*, `2:1867`) and the Android Profile sheet (`669:8214`, `678:10634`) do not draw
   it. Add the row to both drawings.
 - **9f · The gym glimpse draws a rack neither phone has.** `onboarding.md` §4's page-4 fixture
   (*Squat · set 3 of 5 · … Set 3 · target 100 × 5 · … Last time · 97.5 kg × 5 · Set 3 logged ·
@@ -472,7 +571,7 @@ exception to `guidelines/superapp-flow.md` §3 and §8. Both phones draw it (`On
 
 - **iOS journal first run · R117.** AX3 keeps the longer privacy fact and scales in a scrollable page.
 
-- **Mood and energy entry.** [Input alternatives](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=176-837)
+- **Mood and energy entry.** [Input alternatives](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=204-1159)
   compare quiet rails, a folded picker and a number ribbon. The folded picker is the recommendation,
   pending entry-frequency and focus/caret checks. Preserve independent optional integers 0–10,
   null versus zero, Clear, keyboard-up suppression and 44px targets; update `journal.md` and
@@ -483,9 +582,14 @@ exception to `guidelines/superapp-flow.md` §3 and §8. Both phones draw it (`On
 - **F28 · Echo layout drawings.** Above the margin breakpoint, the echo form is margin-only.
   Boards showing an in-page desktop form must state a width where that form can appear.
 - **Echo drawings · included passages.** [Caption 33:426](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=33-426)
-  still describes a cut passage, withheld words and a free path. `journal.md` §6 requires full
-  passages for everyone, without AI credits or a paywall; notes `34:294` and `43:360` agree.
+  still describes a cut passage, withheld words and a free path. `journal.md` §6 requires complete
+  existing passages for everyone, with no new AI cost to read them or subscription paywall.
   Reconcile the caption and the free-path labels on the phone echo boards `31:211` and `33:327`.
+- **Echo allowance drawings.** Journal and account drawing specimens must distinguish complete
+  readable Echo passages from the cost of creating new ones, as the written Journal and pricing
+  contracts require. All hosted background AI debits the individual USD allowance; new work waits
+  when its applicable capacity is unavailable. Remove drawing claims that automatic Echoes never
+  consume allowance. Existing passages are not cropped or withheld to pressure an upgrade.
 - **iOS Journal daylight.** The journal room answers light with the spec's Day column
   (`ios/ios-redesign.md` §2): the canvas, source pages, the echo ink and the reader. Its lamp is
   `#90651C` (4.82:1 on `#F7F7F5`); the web's day lamp `#986B1E` (`palettes.css`) measures 4.39:1 on
@@ -542,24 +646,34 @@ it in these places.
 
 - **6p · Android signed-out Coach.** The brief keeps Android Coach account-only and lists Android's
   signed-out Coach as open. The owner decided on 2026-09-26 that Android carries it. Draw Android's
-  signed-out room and allowance line. Until Play Integrity device recall is enabled, the Android
-  allowance is per install, so Android copy cannot say *per phone*.
+  signed-out room and lifetime USD allowance line. The approved launch identity is a server-issued
+  installation credential with IP and global budgets. Android delivery remains separate from iOS
+  onboarding; the identity does not guarantee protection against installation resets.
 - **6q · One agent rule per ability.** The brief never lets Coach log, fix or delete a set, finish
   or discard a workout, or write a bodyweight. MCP runs `start_session`, `log_set`, `log_sets`,
   `finish_session`, `discard_session` and `import_session`. The spec gives each ability one agent
   rule for both doors and withholds these until the brief sets them (its Appendix B-1).
-- **6r · Where a signed-out photo goes.** The brief says a signed-out photo is *stored only on the
-  phone; the server keeps no copy*. A copy goes to the model vendor to read, under the vendor's
-  retention terms. The copy must say so, with the terms verified at release.
-- **6s · Pasted programs.** The brief leaves open whether a pasted program may exceed the
-  1,000-byte question limit. The spec sets 8,000 bytes. Confirm the limit and its refusal sentence.
-- **6t · States the room does not draw.** The spec adds a `declined` answer (the model refused), a
-  truncated completed answer, a phone whose attestation fails (`coach-device-unverified`), and an
-  iPhone whose allowance was spent on an earlier install (`coach-device-spent`). The brief draws
-  none of them.
+- **6r · Where a signed-out photo goes.** The anonymous caption identifies the AI provider as the
+  processing destination and limits the phone-only storage claim to Windmill. The application
+  server must not persist the image or input text. Native verification must cover draft retention,
+  inline submission, and the local history/photo ownership decision at sign-in.
+- **6s · Pasted programs.** The Coach contract and signed-in iOS setup accept 8,000 UTF-8 bytes.
+  Android's `Ask.maxTurnBytes` and web's `QUESTION_BYTES` remain at 1,000; the web textarea also
+  limits character count to 1,000. Align those clients when delivering their setup flow, preserving
+  the complete draft and a specific length refusal rather than silently truncating a pasted program.
+- **6t · States the room does not draw.** Add specimens for provider refusal, truncated output,
+  unavailable or invalid installation credentials, permanent account binding, and lifetime
+  allowance exhaustion. Anonymous waiting and local saving are distinct states; “Stop waiting”
+  cannot promise that provider spending stopped. The brief defines these recoveries, but the
+  drawings do not cover their full matrix.
 
 ### Native and web differences
 
+- **Web Coach capability line.** The Coach header says “Reads your log · proposes only”, while
+  requested routine creation saves routines directly and returns creation receipts. Existing
+  routine changes still require Review/Apply. Replace the inaccurate header with wording that
+  distinguishes creation from proposed changes; the signed-in iOS setup phase does not change web
+  chrome.
 - **Coach Markdown.** Android renders answer Markdown blocks and paces streamed text; web
   `CoachRoom.jsx` renders plain text. Decide the shared block typography and pacing, then align the
   other clients and Figma specimens. Tracking: `gym-android-coach-stream-markdown`.
@@ -624,8 +738,13 @@ it in these places.
 
 ### Figma reconciliation
 
-- **F53 · Retired boards.** Archive or remove Today/Ask generations on the Gym `Boards` page
-  (`6:3`, `9:42`, `25:23`) so they cannot be mistaken for current delivery.
+- **Coach setup chrome.** The Coach targets (10q) draw the tab bar's `list.bullet.clipboard` for
+  Routines and History as `clock.arrow.circlepath`; the app uses `list.bullet.rectangle` and `clock`.
+  The library carries neither app symbol. Short conversations start at the top in the targets; the
+  app keeps them bottom-aligned.
+- **Coach creation-row typography.** The app's receipt rows are the shared iOS `GymRow`: semibold
+  body routine name and subheadline metadata. Target 01.9 (`1173:4471`) draws them with the library
+  `iOS / List row`; compare the type treatment when the build lands.
 - **5x · Logger masters.** Promote the quiet-ledger shape to canonical Android logger frames
   (`659:7175`, `660:7955`); remove the after-log Undo from proposal frame `805:4536` because logging
   is corrected from its set row. Preserve delete Undo.

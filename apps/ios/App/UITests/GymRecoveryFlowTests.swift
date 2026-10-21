@@ -135,19 +135,15 @@ import XCTest
     inspect("fixture-id-taken", app)
     XCTAssertFalse(app.buttons["recovery-primary"].exists)
     choose("recovery-discard", app)
-    XCTAssertTrue(app.descendants(matching: .any)["recovery-inspect"].waitForNonExistence(timeout: 5), "Discard returns to the list it came from")
-    let band = app.descendants(matching: .any)["gym-log-undo-band"]
-    XCTAssertTrue(band.waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["Workout discarded"].exists)
-    XCTAssertFalse(row("fixture-id-taken", app).exists, "The row leaves while the window is open")
-    app.buttons["gym-log-undo"].tap()
-    XCTAssertTrue(band.waitForNonExistence(timeout: 5))
-    XCTAssertTrue(row("fixture-id-taken", app).waitForExistence(timeout: 5))
-    inspect("fixture-id-taken", app)
+    XCTAssertTrue(app.buttons["Discard workout"].waitForExistence(timeout: 5))
+    app.cancelConfirmation()
+    XCTAssertTrue(app.buttons["Discard workout"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.descendants(matching: .any)["recovery-inspect"].exists)
     choose("recovery-discard", app)
-    XCTAssertTrue(band.waitForExistence(timeout: 5))
-    XCTAssertTrue(band.waitForNonExistence(timeout: 20), "The window closes into the discard")
-    XCTAssertFalse(row("fixture-id-taken", app).exists)
+    XCTAssertTrue(app.buttons["Discard workout"].waitForExistence(timeout: 5)); app.buttons["Discard workout"].tap()
+    XCTAssertTrue(app.descendants(matching: .any)["recovery-inspect"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(row("fixture-id-taken", app).waitForNonExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["gym-log-undo"].exists)
   }
 
   func testAPausedAccountShowsTheWorkoutOnItsWayAndHoldsTheRest() {

@@ -145,7 +145,7 @@ export function browserWith() {
     },
     addEventListener: bind,
     removeEventListener: unbind,
-    location: { hash: '#/gym' },
+    location: { hash: '#/gym', hostname: 'localhost' },
   };
   globalThis.document = { visibilityState: 'visible', addEventListener: bind, removeEventListener: unbind };
   globalThis.navigator = { onLine: true };

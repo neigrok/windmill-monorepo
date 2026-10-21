@@ -25,8 +25,11 @@ import XCTest
     app.launchArguments = ["-model-server", "-board", "workout-live-activity-planned", "-onboarding-appearance", appearance]
     app.launch()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 20))
-    let sets = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-"))
-    XCTAssertEqual(sets.count, 3)
+    let progress = app.descendants(matching: .any)["workout-set-progress"]
+    XCTAssertTrue(progress.waitForValue("2 of 4 sets"))
+    let before = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
+    XCTAssertEqual(before.map(\.label), ["Warmup, logged, 80 kilograms, 3 reps", "Set 1, logged, 100 kilograms, 5 reps",
+      "Set 2, logged, 100 kilograms, 5 reps"])
     XCUIDevice.shared.press(.home)
 
     let control = controlCenterControl(springboard)
@@ -37,10 +40,12 @@ import XCTest
     XCTAssertTrue(control.wait(for: \.label, toEqual: "Log set", timeout: 10))
     XCUIDevice.shared.press(.home)
     app.activate()
-    let logged = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in sets.count == 4 }, object: nil)
-    XCTAssertEqual(XCTWaiter.wait(for: [logged], timeout: 10), .completed)
-    XCTAssertEqual(sets.allElementsBoundByIndex.map(\.label), ["Warmup, logged, 80 kilograms, 3 reps", "Set 1, logged, 100 kilograms, 5 reps",
+    XCTAssertTrue(progress.waitForValue("3 of 4 sets"))
+    let after = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
+    XCTAssertEqual(after.map(\.label), ["Warmup, logged, 80 kilograms, 3 reps", "Set 1, logged, 100 kilograms, 5 reps",
       "Set 2, logged, 100 kilograms, 5 reps", "Set 3, logged, 100 kilograms, 5 reps"])
+    XCTAssertEqual(after.prefix(before.count).map(\.identifier), before.map(\.identifier))
+    XCTAssertEqual(Set(after.map(\.identifier)).count, 4)
 
     app.buttons["workout-assembly"].tap()
     let hide = app.buttons["Hide workout"]
@@ -52,7 +57,10 @@ import XCTest
     controlCenterControl(springboard).tap()
     XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 10))
-    XCTAssertEqual(sets.count, 4)
+    XCTAssertTrue(progress.waitForValue("3 of 4 sets"))
+    let reopened = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
+    XCTAssertEqual(reopened.map(\.identifier), after.map(\.identifier))
+    XCTAssertEqual(reopened.map(\.label), after.map(\.label))
 
     app.buttons["workout-finish"].tap()
     XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 10)); app.buttons["Done"].tap()

@@ -20,8 +20,6 @@ final class RoutineEditingSession: Identifiable {
   var saved = false
   var editMode = EditMode.inactive
   var refusal: String?
-  var removed: (index: Int, entry: RoutineEntry)?
-  var removals = 0
   var appeared = false
 
   init(gym: GymModel, routine: Routine?) {
@@ -67,7 +65,6 @@ final class RoutineEditingSession: Identifiable {
     guard draft.current.entries.count < 50, !draft.current.entries.contains(where: { $0.exerciseId == entry.exerciseId }) else { return }
     var transaction = Transaction(animation: nil); transaction.disablesAnimations = true
     withTransaction(transaction) {
-      if removed?.entry.exerciseId == entry.exerciseId { removed = nil }
       draft.current.entries.append(entry); path = []
     }
   }
@@ -78,11 +75,7 @@ final class RoutineEditingSession: Identifiable {
   }
   func remove(_ index: Int) {
     guard draft.current.entries.indices.contains(index) else { return }
-    removed = (index, draft.current.entries.remove(at: index)); removals += 1
-  }
-  func undoRemoval() {
-    guard let (index, entry) = removed, draft.current.entries.count < 50 else { return }
-    draft.current.entries.insert(entry, at: min(index, draft.current.entries.count)); removed = nil
+    draft.current.entries.remove(at: index)
   }
   @discardableResult func save(_ gym: GymModel) -> Bool {
     guard account == gym.account, anonymous == gym.isAnonymous else {
@@ -95,7 +88,6 @@ final class RoutineEditingSession: Identifiable {
     refusal = gym.error ?? "This routine could not be saved. Try again."
     return false
   }
-  // A routine's delete keeps the room's nine-second Undo, so it asks nothing and happens at once.
   @discardableResult func delete(_ gym: GymModel) -> Bool {
     guard account == gym.account, anonymous == gym.isAnonymous else {
       refusal = "The account changed while editing. Open the routine again."; return false
@@ -124,8 +116,7 @@ struct RoutineBuilder: View {
                      dismiss: { dismiss() }, commit: save)
         .reachBand {
           GymTransient(gym: gym, message: editing.refusal,
-                       held: editing.removed.map { _ in GymTransient.Held(text: "Movement removed", undo: editing.undoRemoval) },
-                       errorIdentifier: "routine-refusal", undoIdentifier: "builder-undo")
+                       errorIdentifier: "routine-refusal")
         }
         .navigationDestination(for: RoutineEditingSession.Step.self, destination: destination)
         // The plan appears again each time a step pops off it, so its first appearance is the visit.
@@ -136,12 +127,6 @@ struct RoutineBuilder: View {
         }
         .onChange(of: editing.path) { _, _ in nameFocused = false }
         .onChange(of: nameFocused) { _, focused in if !focused { editing.leaveName() } }
-        // A removed movement's Undo lasts the room's nine seconds, like every other held change.
-        .task(id: editing.removals) {
-          guard editing.removed != nil else { return }
-          try? await Task.sleep(for: .seconds(9))
-          if !Task.isCancelled { editing.removed = nil }
-        }
         .sensoryFeedback(.selection, trigger: editing.draft.current.entries.map(\.exerciseId))
         .sensoryFeedback(.success, trigger: editing.saved)
     }.modifier(GymPage()).presentationDetents([.large])
@@ -161,7 +146,7 @@ struct RoutineBuilder: View {
             NavigationLink(value: exercise.map { RoutineEditingSession.Step.targets($0.id) }) {
               GymRow(title: "\(index + 1). \(exercise?.name ?? "Movement unavailable")", meta: Readout.target(entry.sets))
             }.accessibilityIdentifier("builder-movement-\(entry.exerciseId)")
-              .swipeActions { Button("Remove", role: .destructive) { editing.remove(index) } }
+              .swipeActions(allowsFullSwipe: false) { Button("Remove", role: .destructive) { editing.remove(index) } }
               .contextMenu {
                 Button("Move up") { editing.move(index, by: -1) }.disabled(index == 0)
                 Button("Move down") { editing.move(index, by: 1) }.disabled(index == editing.draft.current.entries.count - 1)

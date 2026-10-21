@@ -373,7 +373,7 @@ struct ProposalReviewSheet: View {
   // Apply, its caption and Turn this down until the log answers; then the receipt stands in their place, or why it is out of date.
   @ViewBuilder var band: some View {
     VStack(spacing: RoomSpace.related) {
-      GymTransient(gym: gym, errorIdentifier: "gym-coach-error", undoIdentifier: "coach-engine-undo")
+      GymTransient(gym: gym, errorIdentifier: "gym-coach-error")
       if owner != gym.account || !gym.coachAccountAvailable { EmptyView() }
       else if let proposal, !pending, ["applied", "dismissed"].contains(proposal.state) { receipt(proposal) }
       else if !pending, let outOfDate {

@@ -1675,6 +1675,300 @@
     }
   },
   {
+    "name": "ratings without writing stay invisible",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/journal": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_00000000000000000000000000000001",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/journal",
+        "cmd": {
+          "name": "journal.savePage",
+          "args": {
+            "day": "2026-10-01",
+            "body": "",
+            "mood": 0,
+            "energy": 10,
+            "source": "typed",
+            "stamp": {
+              "ms": 1759999999900,
+              "counter": 0,
+              "actor": "old:writer"
+            }
+          }
+        }
+      },
+      "serverNow": 1760000000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 1,
+        "write": [
+          {
+            "t": "page",
+            "id": "2026-10-01",
+            "f": {
+              "mood": "1760000000000:0:srv",
+              "energy": "1760000000000:0:srv",
+              "source": "1760000000000:0:srv",
+              "documentStamp": "1760000000000:0:srv"
+            }
+          }
+        ]
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1760000000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/journal": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "f6c1462bde99db887a2cd27c0970020771ddc43ac0ff6761722272b402f8ac15"
+          }
+        },
+        "rows": {
+          "acct:A/journal": [
+            {
+              "t": "page",
+              "id": "2026-10-01",
+              "f": {
+                "documentStamp": [
+                  {
+                    "ms": 1759999999900,
+                    "counter": 0,
+                    "actor": "old:writer"
+                  },
+                  "1760000000000:0:srv"
+                ],
+                "energy": [
+                  null,
+                  "1760000000000:0:srv"
+                ],
+                "mood": [
+                  null,
+                  "1760000000000:0:srv"
+                ],
+                "source": [
+                  "typed",
+                  "1760000000000:0:srv"
+                ]
+              },
+              "x": {
+                "body": {
+                  "text": "",
+                  "rev": 1,
+                  "merged": false
+                }
+              },
+              "seq": 1,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            }
+          ]
+        },
+        "product": {
+          "journalPages": {
+            "acct:A/journal": {
+              "2026-10-01": {
+                "updatedAt": 1760000000000
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "Unicode whitespace with ratings stays invisible",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/journal": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_00000000000000000000000000000001",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/journal",
+        "cmd": {
+          "name": "journal.savePage",
+          "args": {
+            "day": "2026-10-01",
+            "body": " \t\n    ﻿",
+            "mood": 4,
+            "energy": 8,
+            "source": "typed",
+            "stamp": {
+              "ms": 1759999999900,
+              "counter": 0,
+              "actor": "old:writer"
+            }
+          }
+        }
+      },
+      "serverNow": 1760000000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 1,
+        "write": [
+          {
+            "t": "page",
+            "id": "2026-10-01",
+            "f": {
+              "mood": "1760000000000:0:srv",
+              "energy": "1760000000000:0:srv",
+              "source": "1760000000000:0:srv",
+              "documentStamp": "1760000000000:0:srv"
+            }
+          }
+        ]
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1760000000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/journal": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "f6c1462bde99db887a2cd27c0970020771ddc43ac0ff6761722272b402f8ac15"
+          }
+        },
+        "rows": {
+          "acct:A/journal": [
+            {
+              "t": "page",
+              "id": "2026-10-01",
+              "f": {
+                "documentStamp": [
+                  {
+                    "ms": 1759999999900,
+                    "counter": 0,
+                    "actor": "old:writer"
+                  },
+                  "1760000000000:0:srv"
+                ],
+                "energy": [
+                  null,
+                  "1760000000000:0:srv"
+                ],
+                "mood": [
+                  null,
+                  "1760000000000:0:srv"
+                ],
+                "source": [
+                  "typed",
+                  "1760000000000:0:srv"
+                ]
+              },
+              "x": {
+                "body": {
+                  "text": "",
+                  "rev": 1,
+                  "merged": false
+                }
+              },
+              "seq": 1,
+              "rc": 1760000000000,
+              "ru": 1760000000000
+            }
+          ]
+        },
+        "product": {
+          "journalPages": {
+            "acct:A/journal": {
+              "2026-10-01": {
+                "updatedAt": 1760000000000
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
     "name": "scale-only save archives duplicate body",
     "input": {
       "state": {
@@ -2071,6 +2365,227 @@
           ]
         },
         "product": {
+          "journalPages": {
+            "acct:A/journal": {
+              "2026-10-01": {
+                "updatedAt": 1760000000000
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "blank legacy claim keeps account writing and ratings",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/journal": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "f9bf06a8e39d9cf438d3e844b2985d9e2a9acae3216c6010d630e4f7ac0c2295"
+          }
+        },
+        "rows": {
+          "acct:A/journal": [
+            {
+              "t": "page",
+              "id": "2026-10-01",
+              "f": {
+                "documentStamp": [
+                  {
+                    "ms": 1759999999800,
+                    "counter": 0,
+                    "actor": "old:writer"
+                  },
+                  "1759999999800:0:srv"
+                ],
+                "energy": [
+                  3,
+                  "1759999999800:0:srv"
+                ],
+                "mood": [
+                  6,
+                  "1759999999800:0:srv"
+                ],
+                "source": [
+                  "typed",
+                  "1759999999800:0:srv"
+                ]
+              },
+              "x": {
+                "body": {
+                  "text": "Account words.",
+                  "rev": 1,
+                  "merged": false
+                }
+              },
+              "seq": 1,
+              "rc": 1759999999800,
+              "ru": 1759999999800
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_00000000000000000000000000000001",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/journal",
+        "cmd": {
+          "name": "journal.claimPage",
+          "args": {
+            "day": "2026-10-01",
+            "body": " \n﻿",
+            "mood": 0,
+            "energy": 10,
+            "source": "spoken",
+            "claimId": "claim_00000001"
+          }
+        }
+      },
+      "serverNow": 1760000000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 2,
+        "write": [
+          {
+            "t": "page",
+            "id": "2026-10-01",
+            "f": {
+              "mood": "1760000000000:0:srv",
+              "energy": "1760000000000:0:srv",
+              "source": "1760000000000:0:srv",
+              "documentStamp": "1760000000000:0:srv"
+            }
+          }
+        ]
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1760000000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/journal": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "0466b3221607c632ffd4d31eab9cbab0641beda5fad8660aac48d3ba4be9cbc9"
+          }
+        },
+        "rows": {
+          "acct:A/journal": [
+            {
+              "t": "page",
+              "id": "2026-10-01",
+              "f": {
+                "documentStamp": [
+                  {
+                    "ms": 1760000000000,
+                    "counter": 0,
+                    "actor": "srv"
+                  },
+                  "1760000000000:0:srv"
+                ],
+                "energy": [
+                  3,
+                  "1760000000000:0:srv"
+                ],
+                "mood": [
+                  6,
+                  "1760000000000:0:srv"
+                ],
+                "source": [
+                  "typed",
+                  "1760000000000:0:srv"
+                ]
+              },
+              "x": {
+                "body": {
+                  "text": "Account words.",
+                  "rev": 2,
+                  "merged": false
+                }
+              },
+              "seq": 2,
+              "rc": 1759999999800,
+              "ru": 1760000000000
+            }
+          ]
+        },
+        "revisions": {
+          "acct:A/journal": [
+            {
+              "archivedAt": 1760000000000,
+              "documentStamp": {
+                "ms": 1759999999800,
+                "counter": 0,
+                "actor": "old:writer"
+              },
+              "t": "page",
+              "id": "2026-10-01",
+              "field": "body",
+              "rev": 1,
+              "text": "Account words."
+            }
+          ]
+        },
+        "product": {
+          "journalClaims": {
+            "acct:A/journal": {
+              "claim_00000001": {
+                "digest": "53f53a564ab0fd9f1e03b2d16be64877bde1268e9dd5229781665141d9ca7010",
+                "day": "2026-10-01",
+                "documentStamp": {
+                  "ms": 1760000000000,
+                  "counter": 0,
+                  "actor": "srv"
+                }
+              }
+            }
+          },
+          "journalContentClocks": {
+            "acct:A/journal": {
+              "server": {
+                "ms": 1760000000000,
+                "counter": 0
+              }
+            }
+          },
           "journalPages": {
             "acct:A/journal": {
               "2026-10-01": {

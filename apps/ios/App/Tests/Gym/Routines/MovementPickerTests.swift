@@ -30,7 +30,7 @@ import SyncModelServer
   }
 
   func fixture() -> (Harness, GymModel) {
-    let harness = Harness(registry: SyncSchema.registry, start: now, account: nil,
+    let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: now, account: nil,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     return (harness, GymModel(runner: harness.runner))
   }

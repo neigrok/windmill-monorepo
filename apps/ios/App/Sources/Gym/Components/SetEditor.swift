@@ -142,8 +142,8 @@ struct WeightInstrument: View {
         ForEach(0..<4) { index in
           let label = WeightLadder.labels(weightKg)[index]
           Button { weightKg = WeightLadder.bump(weightKg, direction: index < 2 ? -1 : 1, big: index == 0 || index == 3) } label: {
-            Text(label).foregroundStyle(GymPalette.ink)
-          }.modifier(RoomSecondaryStyle()).frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget)
+            Text(label).foregroundStyle(GymPalette.ink).frame(maxWidth: .infinity, minHeight: 48)
+          }.buttonStyle(.plain).background(GymPalette.control, in: RoundedRectangle(cornerRadius: RoomSpace.inset))
             .accessibilityLabel("\(label) kilograms")
         }
       }.font(.body.monospacedDigit())

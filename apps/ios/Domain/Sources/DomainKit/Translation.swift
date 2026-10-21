@@ -4,7 +4,7 @@ import SyncCore
 // §8.2 a plan becomes one gesture, by each type's identity class, and §8.3's rules refuse a plan no write path makes. The
 // kit's test support reads a decision's gesture through it.
 extension Plan {
-  package func gesture(in scope: ScopeRef, registry: Registry) throws(PlanError) -> Gesture {
+  package func gesture(in scope: ScopeRef, registry: Registry, holdRemovals: Bool = true) throws(PlanError) -> Gesture {
     var changes: [Change] = []
     for operation in operations {
       if let change = try operation.change(in: scope, registry: registry) { changes.append(change) }
@@ -14,7 +14,7 @@ extension Plan {
     return Gesture(
       changes: changes,
       atomic: changes.count > 1,
-      hold: isHeld,
+      hold: isHeld && holdRemovals,
       guards: try guards(registry),
       retire: retire(registry),
       supersede: supersededGestures,

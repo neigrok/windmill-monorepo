@@ -140,6 +140,7 @@ function scenarios() {
     { op: 'commit', scope: overlay, changes: [{ op: 'write', t: 'mark', id: 'oak', x: { memo: 'third draft' } }], actor: OTHER, deviceNow: 5001 },
     { op: 'commit', scope: overlay, changes: [{ op: 'write', t: 'mark', id: 'ash', f: { done: null }, x: { memo: '' } }], deviceNow: 5002 },
     { op: 'commit', scope: overlay, changes: [{ op: 'write', t: 'mark', id: 'yew', f: { done: false } }], deviceNow: 5003 },
+    { op: 'commit', scope: overlay, changes: [{ op: 'write', t: 'mark', id: 'elm', x: { memo: ' \t\n\u00a0\u1680\u2000\u2028\ufeff' } }], deviceNow: 5004 },
   ]);
   const tree = `tree/${BOARD}`;
   const links = after(bound({

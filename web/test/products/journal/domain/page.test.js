@@ -57,22 +57,21 @@ test('retained deletion overlays account prose and preserves its first-run retir
   pending.refusal = 'claim-conflict';
   const room = new JournalRoom(reader({ drawn: [row], devices: { [pending.key]: pending.json } }));
   assert.deepEqual(form(room), {
-    stance: 'holding', firstRunKnown: true, isAnonymous: false, scaleInvitationDue: true, keepDue: false,
+    stance: 'holding', firstRunKnown: true, isAnonymous: false, scaleInvitationDue: false, keepDue: false,
     state: { placeholder: 'retired', privacyLine: 'retired', firstPage: 'retired', scales: 'pending' },
     pages: [{ day, document: { ...document, body: '' }, stamp, backup: 'refused' }], days: [],
   });
 });
 
-test('zero-only pages are written and unsaved editor drafts are kept outside the page projection', () => {
+test('scale-only pages and unsaved editor drafts are kept outside the written day projection', () => {
   const pending = new PendingClaim({ day, claimId: 'claim01', document: { ...document, body: '', mood: 0 },
     retirements: { privacyLine: 'retired', firstPage: 'retired', scales: 'retired' } });
   const draft = new EditorDraft({ day, document: { ...document, body: 'Unsaved typing' } });
   const room = new JournalRoom(reader({ anonymous: true, devices: { [pending.key]: pending.json, [EditorDraft.key]: draft.json } }));
-  assert.equal(room.days.length, 1);
-  assert.equal(room.days[0]?.document.body, '');
-  assert.equal(room.days[0]?.document.mood, 0);
+  assert.deepEqual(room.days, []);
+  assert.equal(room.stance, 'empty');
   assert.equal(room.state.placeholder, 'pending');
-  assert.equal(room.keepDue, true);
+  assert.equal(room.keepDue, false);
   assert.deepEqual(JournalWriting.pendingWork('journal', { [pending.key]: pending.json, [EditorDraft.key]: draft.json }), [EditorDraft.key, pending.key]);
   assert.deepEqual(JournalWriting.pendingWork('gym', { [pending.key]: pending.json }), []);
 });

@@ -364,7 +364,7 @@ struct DeltaBuilder {
   }
 
   // A command's prediction stays local, including deaths and server-assigned serial values.
-  func predicted(_ change: Change) throws -> Delta {
+  mutating func predicted(_ change: Change) throws -> Delta {
     let type = try typeOf(change.type)
     guard let id = change.id else { throw CommitFailure.malformed("a prediction names its record") }
     for (name, value) in change.serials {
@@ -413,15 +413,7 @@ struct DeltaBuilder {
     default:
       throw CommitFailure.malformed("a prediction is a create, update, delete, put or write")
     }
-    for (name, edit) in change.texts {
-      guard let field = type.field(name), case .text = field.kind else {
-        throw CommitFailure.malformed("a prediction names an unknown text field")
-      }
-      let from = edit.editedFrom ?? current?.texts[name] ?? ""
-      let confirmed = replica.rows(scope).row(key)?.texts[name]
-      let base: TextBase = if let confirmed, confirmed.text.utf8.elementsEqual(from.utf8) { .rev(confirmed.rev) } else { .text(from) }
-      delta.texts[name] = TextWrite(text: edit.text, base: base)
-    }
+    delta.texts = try texts(type, key, change.texts, current: current, server: true)
     delta.serials = change.serials
     return delta
   }
@@ -615,10 +607,11 @@ struct DeltaBuilder {
 
   // A text change names the text it was edited from (the drawn text by default); its base is the confirmed rev when
   // that text is the confirmed one, otherwise the text itself.
-  mutating func texts(_ type: TypeDef, _ key: RecordKey, _ edits: [String: TextEdit], current: ViewRecord?) throws -> [String: TextWrite] {
+  mutating func texts(_ type: TypeDef, _ key: RecordKey, _ edits: [String: TextEdit], current: ViewRecord?, server: Bool = false) throws -> [String: TextWrite] {
     var out: [String: TextWrite] = [:]
     for (name, edit) in edits {
-      guard let field = type.field(name), case .text = field.kind, field.writer == .client else { throw CommitFailure.malformed("\(type.name).\(name) is not a client text field") }
+      guard let field = type.field(name), case .text = field.kind else { throw CommitFailure.malformed("\(type.name).\(name) is not a text field") }
+      guard field.writer == .client || server else { throw CommitFailure.malformed("\(type.name).\(name) is written by the server") }
       let shown = current?.texts[name] ?? ""
       let from = edit.editedFrom ?? shown
       if edit.text.utf8.elementsEqual(shown.utf8) { continue }

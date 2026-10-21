@@ -12,6 +12,8 @@ struct LogTab: View {
   @Namespace private var moments
   @State var limit = 30
   @State var weighing = false
+  @State var discard: ID<Session>?
+  @State var discardConfirmed = false
   @State var historyNoticeDismissed = false
 
   static var hasTabBarAccessory: Bool {
@@ -66,9 +68,25 @@ struct LogTab: View {
       }.roomBar(.gym)
       .reachBand {
         GymTransient(gym: gym, message: historyNotice, dismiss: { historyNoticeDismissed = true },
-                     held: gym.discardHold.map { hold in .init(text: hold.line, undo: gym.undoDiscard, keep: gym.endDiscardWindow) },
-                     errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo")
+                     errorIdentifier: "gym-log-error")
       }
+      .onChange(of: discard) { _, shown in
+        if shown != nil {
+          discardConfirmed = false
+          gym.telemetry.event("gym_action", properties: ["screen": "log", "action": "discard", "state": "shown"])
+        } else if !discardConfirmed {
+          gym.telemetry.event("gym_action", properties: ["screen": "log", "action": "cancel", "outcome": "cancelled"])
+        }
+      }
+      .onChange(of: gym.account) { _, _ in discard = nil }
+      .confirmationDialog("Discard this workout?", isPresented: Binding(get: { discard != nil }, set: { if !$0 { discard = nil } }), titleVisibility: .visible, presenting: discard) { id in
+        Button("Discard workout", role: .destructive) {
+          discardConfirmed = true
+          gym.run(DiscardSession(id))
+          discard = nil
+        }
+        Button("Cancel", role: .cancel) {}
+      } message: { _ in Text("This permanently removes the workout and its sets.") }
       .sheet(isPresented: $weighing) { WeighInSheet(gym: gym) }
       .onAppear { prepareLogFixture(); gym.telemetry.event("gym_screen_viewed", properties: ["screen": "log"]) }
       .onChange(of: gym.account) { _, _ in limit = 30; historyNoticeDismissed = false }
@@ -83,10 +101,10 @@ struct LogTab: View {
     return GymCount.of(gym.finishedLogSessions.count, "workout")
   }
 
-  // Signed in before the first pull lands, the band says the history is still arriving; it never covers a refusal or an Undo.
+  // Signed in before the first pull lands, the band says the history is still arriving; it never covers a refusal.
   var historyNotice: String? {
     guard !gym.isAnonymous, gym.log?.firstPullComplete == false, !historyNoticeDismissed,
-          gym.error == nil, gym.notices.isEmpty, gym.undoOffers.isEmpty, gym.discardHold == nil else { return nil }
+          gym.error == nil, gym.notices.isEmpty else { return nil }
     return "Your full training history needs a connection to finish syncing."
   }
 
@@ -144,11 +162,11 @@ struct LogTab: View {
       .contextMenu {
         NavigationLink("Open workout") { SessionDetailScreen(gym: gym, sessionID: session.id) }
         Button("Share this workout", systemImage: "square.and.arrow.up") { share?(session.id) }
-        Button("Discard workout", systemImage: "trash", role: .destructive) { gym.run(DiscardSession(session.id)) }
+        Button("Discard workout", systemImage: "trash", role: .destructive) { discard = session.id }
       }
-      .swipeActions { Button("Discard", role: .destructive) { gym.run(DiscardSession(session.id)) } }
+      .swipeActions(allowsFullSwipe: false) { Button("Delete", systemImage: "trash", role: .destructive) { discard = session.id }.tint(GymPalette.destructive) }
       .accessibilityAction(named: "Share this workout") { share?(session.id) }
-      .accessibilityAction(named: "Discard workout") { gym.run(DiscardSession(session.id)) }
+      .accessibilityAction(named: "Discard workout") { discard = session.id }
   }
 
   // A new best is a door to its movement's Record, which zooms from the moment and opens at the session that set it.

@@ -15,8 +15,10 @@ scope, progress, outcome and follow-ups. Implementation plans and delivery histo
   per product and permission level.
 - Ordinary use of the editor, journal and training log remains free. Products share one paid
   entitlement, Windmill One, rather than defining independent subscriptions.
-- Only actively requested AI work counts against the account AI allowance. Passive Echoes has a
-  separate operational budget. Customer credit quantities and conversion are not approved.
+- All AI provider cost, including automatic Journal processing, counts against the applicable
+  USD allowance. Anonymous access has a $0.05 lifetime installation allowance; verified free
+  accounts have $0.25 per calendar month; funded Windmill One periods have $7. Free access also
+  shares $5 daily and $100 monthly budgets, separate from paid funding.
 
 Checkout is closed: `paidPlansOpen()` returns false, and the server refuses checkout without a
 configured Paddle price. [AI usage and billing](AI_USAGE_REVIEW.md) records the implemented limits

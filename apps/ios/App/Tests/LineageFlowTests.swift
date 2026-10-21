@@ -21,7 +21,7 @@ import Synchronization
     let engine = try SyncEngine(config: EngineConfig(appVersion: "test", surface: .ios), bindings: [binding] + bindings, store: store,
                                 transport: syncTransport ?? transport, tokens: tokens, forkGuard: InMemoryForkGuardStore(),
                                 clock: .system, random: SeededRandomSource(seed: seed), connectivity: connectivity, telemetry: telemetry)
-    let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
+    let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0), holdRemovals: false)
     let runtime = AppRuntime(settings: AppSettings(arguments: ["app", "-model-server"]), store: store, engine: engine, auth: auth ?? NativeAuth(baseURL: nil, fake: transport), runner: runner, tokens: tokens, revocations: revocations, telemetry: telemetry, gymBinding: binding)
     return try AppModel(runner: runner, preferences: UserDefaults(suiteName: UUID().uuidString)!, runtime: runtime, telemetry: telemetry, authRetryNow: authRetryNow)
   }
@@ -112,6 +112,62 @@ import Synchronization
     #expect(model.account == identity.account && model.sheet == nil)
     let pending = try model.runner.read(Journal.scope) { try $0.devices(prefix: "pendingClaim:").members.count }
     #expect(pending == (add ? 1 : 0))
+  }
+
+  @Test(arguments: [false, true], [false, true]) func unwrittenAnonymousWorkAdoptsSilentlyWithoutChangingAccountWriting(legacyClaim: Bool, restoring: Bool) async throws {
+    let transport = JournalModelTransport(), existing = try fixture(transport)
+    let identity = transport.identity(email: "unwritten@example.com")
+    try await existing.signIn(identity)
+    existing.journal.type("Account writing"); existing.journal.document.mood = 3; existing.journal.document.energy = 4
+    existing.journal.save(); existing.journal.done()
+    await existing.beginSignOut(); await existing.finishSignOut(.keep)
+    var model = try fixture(transport)
+    if legacyClaim {
+      let pending = PendingClaim(day: model.journal.editorDay, claimId: "legacy-blank", document: PageDocument(body: " \n\u{a0}\u{feff}", mood: 0, energy: 10, source: "spoken"), retirements: [:])
+      let command = try ClaimPageCommand(day: pending.day, document: pending.base, claimId: pending.claimId)
+      _ = try #require(model.runtime).engine.commit(Journal.scope, Gesture(changes: [],
+        command: Command(name: ClaimPageCommand.name, args: .object(JSON.Object(uniqueKeysWithValues: command.args.map { ($0.key, $0.value) }))),
+        local: [DeviceWrite(key: pending.key, value: pending.json)]))
+    } else {
+      model.journal.type("Temporary writing"); model.journal.save(); model.journal.done()
+      model.journal.type(" \n\u{a0}"); model.journal.save(); model.journal.done()
+      #expect(model.journal.room?.days.isEmpty == true)
+    }
+    let signIn = transport.identity(email: "unwritten@example.com")
+    if restoring {
+      let runtime = try #require(model.runtime)
+      let pending = try await runtime.engine.signIn(account: signIn.account, token: signIn.token)
+      #expect(!pending.isComplete)
+      model = try AppModel(runner: model.runner, preferences: model.preferences, runtime: runtime)
+      #expect(model.restoringSignIn)
+      await model.resumeBackup()
+      #expect(!model.restoringSignIn)
+    } else { try await model.signIn(signIn) }
+    #expect(model.account == identity.account && model.sheet == nil && model.currentAdoption == nil)
+    await model.runtime?.engine.start(); try await AppScenario.backedUp(model)
+    #expect(model.journal.document == PageDocument(body: "Account writing", mood: 3, energy: 4))
+    #expect(model.journal.room?.days.count == 1)
+    if !legacyClaim { #expect(model.journal.room?.state.firstPage == "retired") }
+  }
+
+  @Test func adoptionCountsWrittenDaysWithoutLegacyBlankClaims() async throws {
+    let transport = JournalModelTransport(), existing = try fixture(transport)
+    let identity = transport.identity(email: "mixed-pages@example.com")
+    try await existing.signIn(identity)
+    existing.journal.type("Account writing"); existing.journal.save(); existing.journal.done()
+    await existing.beginSignOut(); await existing.finishSignOut(.keep)
+    let model = try fixture(transport)
+    model.journal.type("Local writing"); model.journal.save(); model.journal.done()
+    let day = try #require(LocalDay("2026-01-01"))
+    let pending = PendingClaim(day: day, claimId: "legacy-blank", document: PageDocument(body: "\n\u{a0}", mood: 0, energy: 10), retirements: [:])
+    let command = try ClaimPageCommand(day: day, document: pending.base, claimId: pending.claimId)
+    _ = try #require(model.runtime).engine.commit(Journal.scope, Gesture(changes: [],
+      command: Command(name: ClaimPageCommand.name, args: .object(JSON.Object(uniqueKeysWithValues: command.args.map { ($0.key, $0.value) }))),
+      local: [DeviceWrite(key: pending.key, value: pending.json)]))
+    try await model.signIn(transport.identity(email: "mixed-pages@example.com"))
+    #expect(model.sheet == .adoption && model.account == nil)
+    #expect(model.adoptionCount == 1 && model.adoptionSummary == "1 page" && model.adoptionIsSingle)
+    #expect(model.journal.document.body == "Local writing")
   }
 
   @Test func changedAdoptionWorkRequiresNewQuestion() async throws {
@@ -312,7 +368,7 @@ import Synchronization
     let engine = try SyncEngine(config: EngineConfig(appVersion: "test", surface: .ios, drivesLoops: false), store: store, transport: server,
                                 tokens: tokens, forkGuard: InMemoryForkGuardStore(try store.read { try $0.device().meta.forkGuard }),
                                 clock: .system, random: SeededRandomSource(seed: 31), connectivity: SwitchedConnectivity())
-    let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
+    let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0), holdRemovals: false)
     let restoredRuntime = AppRuntime(settings: runtime.settings, store: store, engine: engine, auth: runtime.auth, runner: runner, tokens: tokens, revocations: runtime.revocations)
     let restored = try AppModel(runner: runner, preferences: model.preferences, runtime: restoredRuntime)
     #expect(restored.account == identity.account && restored.authPaused && restored.journal.backup == "backup paused")

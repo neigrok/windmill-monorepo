@@ -9,7 +9,7 @@ Android carries Gym alone and draws no shell between rooms.
 > How someone arrives is `guidelines/superapp-flow.md`. Journal's canon is `journal/journal.md`;
 > Gym's is `gym/briefs/`. Web auth is `roadmap/guidelines/auth.md`. Pricing is
 > `marketing/guidelines/pricing.md`. The drawings of record are the Figma page
-> [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2).
+> [Shell · iOS](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=1-5).
 
 ---
 
@@ -82,10 +82,11 @@ room's appearance stays inside the room.
   the web), Settings, **About Windmill**, **Sign out** (`superapp-flow.md` §7) and **Delete
   account**.
 
-**Windmill One** is one shared plan for actively requested AI assistance; credits do not pay for
-passive Echoes or ordinary product use. Purchasing is closed and allowance quantities remain a
-proposal (`marketing/guidelines/pricing.md`). **It never appears while signed out**, and signed in
-it appears nowhere but You. You is always clay, whatever room opened it.
+**Windmill One** is one shared plan with a funded USD allowance. All hosted AI work, including
+background Echoes, uses individual allowance; ordinary manual use and reading existing work
+remain available. Purchasing is closed and the USD backend is off by default, with customer
+rollout blockers (`marketing/guidelines/pricing.md`). **One never appears while signed out**, and
+signed in it appears nowhere but You. You is always clay, whatever room opened it.
 
 On the web, the settings home is `roadmap/guidelines/auth.md` §5, with one difference of place:
 Appearance is not on the settings page. On `/app` it is in the account seat's pop-up — a
@@ -156,13 +157,15 @@ These rules hold on every surface.
 
 - **Everything a person does by hand works signed out** — writing, logging sets, building
   routines, planting steps, editing and every read.
-- **Account-metered AI assistance needs an account, with one exception:** on iOS, Coach answers
-  5 questions per phone without one, once, never refilling (`gym/briefs/09-coach.md`). When an
-  action needs an account — an account verb, or a Coach question past the allowance — the door
-  opens at that moment and the action resumes afterwards.
-- Public text import on the web is anonymous; it cannot debit an account until attribution is
-  defined.
-- Passive Echoes use no AI credits.
+- **Anonymous AI policy is $0.05 for the lifetime of an installation credential**, with no promised
+  question count (`gym/briefs/09-coach.md`). Server-issued credentials, IP limits and global free
+  budgets protect Coach onboarding; resets are not guaranteed to preserve identity. The allowance
+  line appears only after a server read establishes access. An action that
+  needs an account opens the sign-in door at that moment and preserves the draft. Admission is
+  checked again after sign-in; signing in does not promise immediate AI capacity.
+- Anonymous public text import remains refused before dispatch in enabled USD mode; installation
+  access is limited to Gym Coach onboarding.
+- Hosted background Echoes use individual USD allowance; existing Echoes remain readable.
 - Every first run still reaches a real thing with zero agent calls: Journal's cursor, Gym's
   **Just log** and **Build it myself**, the roadmap's starter quests and blank tree.
 
@@ -181,7 +184,8 @@ YOU         signed out: the door, On this phone, About Windmill, Erase data · n
             always clay · About Windmill replays the introduction as a sheet
 APP OWNS    its bar after the room menu, tabs, gestures · its palette · its settings
             its menu line · its skin reported outward once
-AI REQUESTS account-metered · iOS Coach: 5 questions per phone, once, without an account
+AI POLICY   installation: $0.05 lifetime · account: $0.25 UTC month · funded One: $7 per period
+            all hosted work uses allowance · anonymous access is Gym onboarding only
 ```
 
 ## Web safe areas

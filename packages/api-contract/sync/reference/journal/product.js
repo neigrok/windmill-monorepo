@@ -147,8 +147,9 @@ export class JournalProduct {
     const args = {
       ...cmd.args,
       body,
-      mood: cmd.args.mood ?? current?.f.mood[0] ?? null,
-      energy: cmd.args.energy ?? current?.f.energy[0] ?? null,
+      mood: (cmd.args.body.trim() ? cmd.args.mood : null) ?? current?.f.mood[0] ?? null,
+      energy: (cmd.args.body.trim() ? cmd.args.energy : null) ?? current?.f.energy[0] ?? null,
+      source: cmd.args.body.trim() ? cmd.args.source : current?.f.source[0] ?? "typed",
       stamp,
     };
     const outcome = this.replace(ctx, args);
@@ -161,6 +162,7 @@ export class JournalProduct {
   }
 
   replace(ctx, args) {
+    if (args.body.trim() === "") args = { ...args, body: "", mood: null, energy: null, source: "typed" };
     const current = ctx.stored("page", args.day);
     book(ctx, "journalPages")[args.day] = { updatedAt: ctx.serverNow };
     const names = ["mood", "energy", "source"];

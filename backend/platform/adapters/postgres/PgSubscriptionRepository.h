@@ -14,6 +14,8 @@ public:
 
   void upsertCustomer(const PaddleCustomer& customer) override;
   void upsertSubscription(const PaddleSubscription& subscription) override;
+  std::optional<PaddleCustomer> findCustomer(const std::string& customerId) override;
+  std::optional<PaddleSubscription> findSubscription(const std::string& subscriptionId) override;
   std::optional<PaddleSubscription> findFor(const UserId& user, const std::string& email) override;
 
 private:

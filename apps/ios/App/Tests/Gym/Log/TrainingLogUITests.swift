@@ -12,7 +12,7 @@ import SyncTesting
 
 @Suite(.serialized) @MainActor struct TrainingLogUITests {
   func fixture() -> (Harness, GymModel) {
-    let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
+    let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     return (harness, GymModel(runner: harness.runner))
   }
@@ -30,7 +30,7 @@ import SyncTesting
   @Test func unreadablePlanReportsStaticFailureWhileFactsCorrectionsAndDiscardRemainAvailable() throws {
     let engine = SteppedEngine(registry: SyncSchema.registry, startMs: 1_790_424_000_000, account: nil,
                                rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
-    let runner = ActionRunner(replica: engine.replica, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
+    let runner = ActionRunner(replica: engine.replica, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0), holdRemovals: false)
     let id = ID<Session>(RecordID("sessionP2")), setID = ID<TrainingSet>(RecordID("set00001"))
     let plan: JSON = ["routine": "PRIVATE_FROZEN_PLAN", "entries": "broken"]
     let session = Session(id: id, startedAt: Instant(ms: 100), finishedAt: Instant(ms: 900), closedBy: "finish", unreadablePlan: plan)
@@ -44,11 +44,12 @@ import SyncTesting
     #expect(telemetry.entries.withLock { $0.map(\.properties) } == [["operation": "gym_read", "failure_kind": "unexpected"]])
     var corrected = set; corrected.reps = 9
     #expect(gym.run(CorrectSet(corrected))?.receipt != nil)
+    let retainedPlan: JSON? = try runner.read(Gym.scope) { try $0.repository(Session.self).find(id, in: .stored)?.fields["plan"] }
+    #expect(retainedPlan == plan)
     #expect(gym.run(DiscardSession(id))?.receipt != nil)
     #expect(telemetry.entries.withLock { $0.filter { $0.properties["operation"] == "gym_read" }.map(\.properties) } ==
             [["operation": "gym_read", "failure_kind": "unexpected"]])
-    let retainedPlan: JSON? = try runner.read(Gym.scope) { try $0.repository(Session.self).find(id, in: .stored)?.fields["plan"] }
-    #expect(retainedPlan == plan)
+    #expect(try runner.read(Gym.scope) { try $0.repository(Session.self).find(id, in: .stored) } == nil)
     #expect(telemetry.entries.withLock { $0.allSatisfy { !$0.properties.values.contains { $0.contains("PRIVATE_FROZEN_PLAN") } } })
   }
 
@@ -105,7 +106,7 @@ import SyncTesting
 
   // Wednesday Mar 10, 2027: February trained in each of its four weeks names its month, whatever the head says of the last four.
   @Test func aMonthMomentNamesItsMonthWhateverTheHeadSays() throws {
-    let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_804_680_000_000), account: nil,
+    let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_804_680_000_000), account: nil,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     let gym = GymModel(runner: harness.runner), zone = try #require(gym.log?.moment.zone)
     let read = {
@@ -148,17 +149,15 @@ import SyncTesting
     #expect(LogPresentation.instant(day, in: CalendarZone(value: zone)).ms == Int64(expected.timeIntervalSince1970 * 1000))
   }
 
-  @Test func finishedDeleteDiscardAndUndoRestoreSessionReadout() throws {
+  @Test func finishedDeleteAndDiscardPersistSessionReadout() throws {
     let (_, gym) = fixture(), value = try session(gym, daysAgo: 1)
     let set = try #require(gym.sets.first)
     let removed = try #require(gym.run(DeleteSet(set.id))?.receipt)
     #expect(gym.log?.readout(session: value.id)?.workingSetCount == 0)
-    #expect(gym.undo(removed.gestureId))
-    #expect(gym.log?.readout(session: value.id)?.volumeKg == 300)
+    #expect(removed.releaseAt == nil && gym.log?.readout(session: value.id)?.volumeKg == 0)
     let discarded = try #require(gym.run(DiscardSession(value.id))?.receipt)
     #expect(gym.finishedLogSessions.isEmpty)
-    #expect(gym.undo(discarded.gestureId))
-    #expect(gym.log?.sets(session: value.id) == [set])
+    #expect(discarded.releaseAt == nil && GymModel(runner: gym.runner).finishedLogSessions.isEmpty)
   }
 
   @Test func failedRereadRetainsFinishedSetsAndSessionsForRetry() throws {

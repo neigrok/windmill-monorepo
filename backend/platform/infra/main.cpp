@@ -4,6 +4,11 @@
 #include "platform/adapters/oidc/GoogleOAuthClient.h"
 #include "platform/adapters/postgres/PgAccountFootprint.h"
 #include "platform/adapters/paddle/BillingApi.h"
+#include "platform/application/AiBudgetAlerts.h"
+#include "platform/ai_installations/AiInstallationApi.h"
+#include "platform/ai_installations/PgAiInstallations.h"
+#include "products/gym/onboarding/PgOnboardingRepository.h"
+#include "products/gym/onboarding/OnboardingService.h"
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "platform/adapters/email/ResendClient.h"
 #include "platform/adapters/email/ResendEmailSender.h"
@@ -33,6 +38,9 @@
 #include "platform/adapters/postgres/PgAuthRepository.h"
 #include "platform/adapters/amplitude/AmplitudeUsageSink.h"
 #include "platform/adapters/postgres/PgAiUsageRepository.h"
+#include "platform/adapters/postgres/PgAiBudgetRepository.h"
+#include "platform/adapters/llm/AiCallBudget.h"
+#include "platform/adapters/http/AiAllowanceApi.h"
 #include "platform/adapters/postgres/PgEventRepository.h"
 #include "platform/adapters/postgres/PgFeedbackRepository.h"
 #include "platform/adapters/postgres/PgMcpKeyRepository.h"
@@ -371,6 +379,32 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto subscriptionRepo = std::make_shared<PgSubscriptionRepository>(pool);
   // The spend ledger the ceilings read back; the Amplitude mirror below is only the eyes.
   auto aiUsageRepo = std::make_shared<PgAiUsageRepository>(pool);
+  const char* aiAllowanceFlag = std::getenv("AI_ALLOWANCES_ENABLED");
+  const std::string aiAllowanceMode = aiAllowanceFlag ? aiAllowanceFlag : "false";
+  if (aiAllowanceMode != "true" && aiAllowanceMode != "1" && aiAllowanceMode != "false" &&
+      aiAllowanceMode != "0" && !aiAllowanceMode.empty())
+    throw std::runtime_error("AI_ALLOWANCES_ENABLED must be true or false");
+  AiBudgetLimits aiLimits;
+  std::shared_ptr<PgAiBudgetRepository> aiBudgetRepo;
+  std::shared_ptr<AiBudgetService> aiBudgets;
+  if (aiAllowanceMode == "true" || aiAllowanceMode == "1") {
+    const auto readUsd = [](const char* name, long long fallback) -> long long {
+      const char* value = std::getenv(name);
+      if (!value || !*value) return fallback;
+      const auto parsed = parseAiUsd(value);
+      if (!parsed) throw std::runtime_error(std::string("invalid USD configuration: ") + name);
+      return *parsed;
+    };
+    aiLimits.anonymousLifetimeNanos = readUsd("AI_ANONYMOUS_LIFETIME_USD", aiLimits.anonymousLifetimeNanos);
+    aiLimits.loggedInMonthlyNanos = readUsd("AI_LOGGED_IN_MONTHLY_USD", aiLimits.loggedInMonthlyNanos);
+    aiLimits.paidPeriodNanos = readUsd("AI_ONE_PERIOD_USD", aiLimits.paidPeriodNanos);
+    aiLimits.freeMonthlyNanos = readUsd("AI_FREE_MONTHLY_USD", aiLimits.freeMonthlyNanos);
+    aiLimits.freeDailyNanos = readUsd("AI_FREE_DAILY_USD", aiLimits.freeDailyNanos);
+    if (!aiLimits.valid()) throw std::runtime_error("invalid AI allowance configuration");
+    aiBudgetRepo = std::make_shared<PgAiBudgetRepository>(pool);
+    aiBudgets = std::make_shared<AiBudgetService>(*aiBudgetRepo, [aiLimits] { return aiLimits; },
+                                                 [systemClock] { return systemClock->nowMs(); });
+  }
   // One in-process trailing-hour ceiling over every vendor call; holds no database, so it still
   // bounds spend when Postgres is down.
   auto aiFuse = std::make_shared<AiFuse>(kHourlyFuseNanos);
@@ -380,7 +414,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   const char* ownerEmailsEnv = std::getenv("WINDMILL_OWNER_EMAILS");
   auto entitlements = std::make_shared<Entitlements>(*subscriptionRepo, *aiUsageRepo,
                                                      ownerEmailsEnv ? ownerEmailsEnv : "",
-                                                     std::vector<std::string>{"echo.segment", "echo.curate"});
+                                                     std::vector<std::string>{"echo.segment", "echo.curate"}, aiBudgets);
 
   // An empty SENTRY_DSN leaves a no-op client.
   auto serverErrors = std::make_shared<PgServerErrorRepository>(pool);
@@ -409,6 +443,67 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // rest of this composition is already on the wire. SENTRY_LOG_LEVEL (default info) is the volume.
   installLogTee(sentry, logLevelFromEnv(std::getenv("SENTRY_LOG_LEVEL")));
   installWriteReporter(sentry);
+
+  std::shared_ptr<AiBudgetAlerts> aiBudgetAlerts;
+  if (aiBudgets) {
+    const char* alertEmailEnv = std::getenv("AI_ALLOWANCE_ALERT_EMAIL");
+    const auto alertEmail = parseEmail(alertEmailEnv ? alertEmailEnv : "");
+    if (!alertEmail || !entitlements->isOwner(alertEmail->value))
+      throw std::runtime_error("AI_ALLOWANCE_ALERT_EMAIL must name a configured Windmill owner");
+    if (!resendKey || !*resendKey)
+      throw std::runtime_error("RESEND_API_KEY is required for AI allowance alerts");
+    aiBudgetAlerts = std::make_shared<AiBudgetAlerts>(aiBudgets, emailSender, systemClock, *alertEmail);
+    lifetime.watch(aiBudgetAlerts, aiBudgets, aiBudgetRepo, emailSender, resendClient, systemClock);
+    aiBudgetAlerts->start();
+  }
+
+  std::shared_ptr<AiCallBudget> aiCallBudget;
+  if (aiBudgets) aiCallBudget = std::make_shared<AiCallBudget>(aiBudgets, *entitlements, *authRepo, *sentry);
+  auto aiAllowanceApi = std::make_shared<AiAllowanceApi>(authService, entitlements, sentry);
+  const char* installationModeEnv = std::getenv("AI_INSTALLATIONS_ENABLED");
+  const std::string installationMode = installationModeEnv ? installationModeEnv : "false";
+  if (installationMode != "true" && installationMode != "1" && installationMode != "false" && installationMode != "0" && !installationMode.empty())
+    throw std::runtime_error("AI_INSTALLATIONS_ENABLED must be true or false");
+  std::shared_ptr<PgAiInstallations> aiInstallationRepo;
+  std::shared_ptr<AiInstallations> aiInstallations;
+  const char* installationProxyEnv = std::getenv("AI_INSTALLATION_PROXY_MODE");
+  const std::string installationProxyMode = installationProxyEnv ? installationProxyEnv : "direct";
+  if (installationProxyMode != "direct" && installationProxyMode != "cloudflare")
+    throw std::runtime_error("Invalid AI installation proxy mode");
+  const AiInstallationProxy installationProxy = installationProxyMode == "cloudflare"
+      ? AiInstallationProxy::Cloudflare : AiInstallationProxy::Direct;
+  std::optional<std::string> installationNetworkKey;
+  AiInstallationPolicy installationPolicy;
+  if (installationMode == "true" || installationMode == "1") {
+    if (!aiBudgets) throw std::runtime_error("AI installations require enabled AI allowances");
+    const char* networkKey = std::getenv("AI_INSTALLATION_IP_HMAC_KEY");
+    if (secureCookies && installationProxy != AiInstallationProxy::Cloudflare)
+      throw std::runtime_error("HTTPS AI installations require Cloudflare proxy mode");
+    const auto readLimit = [](const char* name, int fallback) {
+      const char* value = std::getenv(name);
+      if (!value || !*value) return fallback;
+      const std::string text(value);
+      if (text.size() > 5 || text.find_first_not_of("0123456789") != std::string::npos)
+        throw std::runtime_error("Invalid AI installation rate limit");
+      return std::stoi(text);
+    };
+    installationNetworkKey = networkKey ? networkKey : "";
+    installationPolicy.issuesPerDay = readLimit("AI_INSTALLATION_ISSUES_PER_DAY", installationPolicy.issuesPerDay);
+    installationPolicy.generationsPerHour = readLimit("AI_INSTALLATION_GENERATIONS_PER_HOUR", installationPolicy.generationsPerHour);
+  }
+  if (aiBudgets) {
+    aiInstallationRepo = std::make_shared<PgAiInstallations>(pool);
+    aiInstallations = std::make_shared<AiInstallations>(*aiInstallationRepo, aiBudgets, *tokens, *systemClock,
+                                                       std::move(installationNetworkKey), installationPolicy);
+    lifetime.watch(aiInstallations, aiInstallationRepo, aiBudgets, aiBudgetRepo, tokens, systemClock);
+    aiInstallations->start();
+  }
+  auto aiInstallationApi = std::make_shared<AiInstallationApi>(aiInstallations, authService, entitlements, sentry, installationProxy);
+  auto aiInstallationWorkers = std::make_shared<WorkerPool>("ai-installation-http", 2, 16);
+  lifetime.onStop([aiInstallationWorkers] { aiInstallationWorkers->stopAndJoin(); }, aiInstallationApi, authService,
+                  aiInstallations, entitlements, sentry);
+
+  lifetime.onStop([] {}, aiCallBudget, aiBudgets, aiBudgetRepo, entitlements, authRepo, sentry);
 
   auto productsCatalog = sync::productCatalog();
 #ifdef WM_SYNC_PROBE
@@ -443,15 +538,10 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // An empty PADDLE_WEBHOOK_SECRET refuses every delivery (Paddle retries), so billing is dark
   // rather than forgeable until the secret lands.
   const char* paddleWebhookSecret = std::getenv("PADDLE_WEBHOOK_SECRET");
-  const char* paddleApiKey = std::getenv("PADDLE_API_KEY");
-  const char* paddleEnv = std::getenv("PADDLE_ENV");
   const char* paddlePriceId = std::getenv("PADDLE_PRICE_ID");
-  auto paddleClient = std::make_shared<PaddleApiClient>(paddleApiKey ? paddleApiKey : "",
-                                                        paddleEnv ? paddleEnv : "sandbox");
-  lifetime.watch(paddleClient);
   auto billingApi = std::make_shared<BillingApi>(*subscriptionRepo, authService, *systemClock,
                                                  paddleWebhookSecret ? paddleWebhookSecret : "",
-                                                 paddleClient, paddlePriceId ? paddlePriceId : "");
+                                                 paddlePriceId ? paddlePriceId : "", aiBudgets, authRepo.get(), aiLimits.paidPeriodNanos);
 
   // The one sweep that deletes; no product table is reachable from it. 0 or less on any window
   // means keep forever.
@@ -469,7 +559,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   // No ANTHROPIC_API_KEY leaves /v1/compose answering 503.
   const char* anthropicKey = std::getenv("ANTHROPIC_API_KEY");
-  auto composer = std::make_shared<AnthropicComposer>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink);
+  auto composer = std::make_shared<AnthropicComposer>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink, aiCallBudget);
   lifetime.watch(composer);
 
   // MCP runs in this process, so agent edits go through the same RoomRegistry as REST and the
@@ -514,7 +604,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
       throw;
     }
   }
-  auto tendingAgent = std::make_shared<AnthropicAgent>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink);
+  auto tendingAgent = std::make_shared<AnthropicAgent>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink, aiCallBudget);
   lifetime.watch(tendingAgent);
   const bool tendingEnabled =
       (tendingEnabledFlag == "true" || tendingEnabledFlag == "1") && tendingAgent->configured();
@@ -559,11 +649,25 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   // AskService retains Stop/recovery without a vendor key; only new asks require configuration.
   auto gymAskAgent = std::make_shared<gym::AnthropicAsk>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink,
-      std::getenv("COACH_ANTHROPIC_BASE_URL") ? std::getenv("COACH_ANTHROPIC_BASE_URL") : kAnthropicBaseUrl);
+      std::getenv("COACH_ANTHROPIC_BASE_URL") ? std::getenv("COACH_ANTHROPIC_BASE_URL") : kAnthropicBaseUrl, aiCallBudget,
+      gym::coachMaxOutputTokens(std::getenv("COACH_MAX_OUTPUT_TOKENS")));
   auto gymAsk = std::make_shared<gym::AskService>(*gymTrainingService, *gymThreads, *systemClock, *gymAskAgent,
                                                *gymTools, *entitlements, sentry);
   lifetime.watch(gymAsk, gymTrainingService, gymThreads, systemClock, gymAskAgent, gymTools, entitlements,
                  subscriptionRepo, aiUsageRepo, gymLog, gymProgram, gymCatalog, gymNotes, gymBodyweight, tokens, gymDoor, gymPreferences);
+
+  std::shared_ptr<gym::OnboardingService> gymOnboarding;
+  if (aiInstallations) {
+    auto repository = std::make_shared<gym::PgOnboardingRepository>(pool);
+    auto messages = std::make_shared<AnthropicClient>(anthropicKey ? anthropicKey : "",
+        std::getenv("COACH_ANTHROPIC_BASE_URL") ? std::getenv("COACH_ANTHROPIC_BASE_URL") : kAnthropicBaseUrl);
+    auto model = std::make_shared<gym::AnthropicOnboarding>(messages, aiCallBudget, aiSpendSink, sentry);
+    gymOnboarding = std::make_shared<gym::OnboardingService>(repository, model, gymCatalog, aiInstallations,
+                                                            *tokens, *systemClock, sentry);
+    lifetime.watch(gymOnboarding, repository, model, messages, gymCatalog, aiInstallations, tokens, systemClock,
+                   sentry, aiCallBudget, aiSpendSink);
+    gymOnboarding->startRetention();
+  }
 
   // Every product's module behind one host, filtered by the grant the credential carries. A
   // duplicate tool name across two products refuses to boot. Tending is deliberately NOT given this
@@ -714,6 +818,28 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
         billingApi->startCheckout(req, std::move(cb));
       },
       {drogon::Post});
+  const auto installationHandler = [aiInstallationApi, aiInstallationWorkers](auto action) {
+    return [aiInstallationApi, aiInstallationWorkers, action](const drogon::HttpRequestPtr& request, HttpCallback&& reply) {
+      auto callback = std::make_shared<HttpCallback>(std::move(reply));
+      if (aiInstallationWorkers->post([aiInstallationApi, request, callback, action] {
+        observeHttpWork(request, [&] { ((*aiInstallationApi).*action)(request, std::move(*callback)); });
+      })) return;
+      const auto response = error(drogon::k503ServiceUnavailable, "Anonymous AI access is busy.", "unavailable");
+      response->addHeader("Cache-Control", "no-store");
+      (*callback)(response);
+    };
+  };
+  routes.registerWriteHandler("ai.installation.issue", "/v1/ai/installations",
+      installationHandler(&AiInstallationApi::issue), {drogon::Post});
+  routes.registerHandler("/v1/ai/installations/current", installationHandler(&AiInstallationApi::current), {drogon::Get});
+  routes.registerWriteHandler("ai.installation.bind", "/v1/ai/installations/bind",
+      installationHandler(&AiInstallationApi::bind), {drogon::Post});
+  routes.registerHandler(
+      "/v1/ai/allowance",
+      [aiAllowanceApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+        aiAllowanceApi->get(req, std::move(cb));
+      }, {drogon::Get});
+
   routes.registerHandler(
       "/v1/subscription",
       [billingApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
@@ -950,7 +1076,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   if (anthropicKey && *anthropicKey) {
     auto transport = std::make_shared<AnthropicClient>(anthropicKey);
     lifetime.watch(transport);
-    journalCurator = std::make_shared<AnthropicCurator>(transport, "claude-sonnet-5", "low", aiFuse, aiSpendSink);
+    journalCurator = std::make_shared<AnthropicCurator>(transport, "claude-sonnet-5", "low", aiFuse, aiSpendSink, 0.6f, aiCallBudget);
   } else
     journalCurator = std::make_shared<NullCurator>();
   // Without an Anthropic key, the line-and-sentence rule cuts the page instead.
@@ -958,7 +1084,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   if (anthropicKey && *anthropicKey) {
     auto transport = std::make_shared<AnthropicClient>(anthropicKey);
     lifetime.watch(transport);
-    journalSegmenter = std::make_shared<AnthropicSegmenter>(transport, "claude-sonnet-5", "low", aiFuse, aiSpendSink);
+    journalSegmenter = std::make_shared<AnthropicSegmenter>(transport, "claude-sonnet-5", "low", aiFuse, aiSpendSink, aiCallBudget);
   } else
     journalSegmenter = std::make_shared<RuleSegmenter>();
   auto journalSpans = std::make_shared<PgEchoRepository>(pool);
@@ -990,7 +1116,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   const char* openaiKeyEnv = std::getenv("OPENAI_API_KEY");
   std::shared_ptr<Transcriber> journalTranscriber;
   if (openaiKeyEnv && *openaiKeyEnv) {
-    auto transport = std::make_shared<OpenAiTranscriber>(openaiKeyEnv, "gpt-4o-transcribe", aiFuse, aiSpendSink);
+    auto transport = std::make_shared<OpenAiTranscriber>(openaiKeyEnv, "gpt-4o-transcribe", aiFuse, aiSpendSink, aiCallBudget);
     lifetime.watch(transport);
     journalTranscriber = transport;
   } else journalTranscriber = std::make_shared<NullTranscriber>();
@@ -1015,7 +1141,8 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                        .authService = authService,
                        .askService = gymAsk,
                        .appBaseUrl = appBaseUrl,
-                       .onShutdown = [&lifetime](std::function<void()> stop) { lifetime.onStop(std::move(stop)); }};
+                       .onShutdown = [&lifetime](std::function<void()> stop) { lifetime.onStop(std::move(stop)); },
+                       .onboarding = gymOnboarding, .installations = aiInstallationApi, .failures = sentry};
   gym::registerRoutes(app, gymDeps);
 
   const auto& syncRegistry = syncCatalog->registry();
@@ -1062,7 +1189,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   // Backstop cap; a full PUT document can be large. Above it Drogon answers a bare 413 before any handler runs,
   // which engine.md §9.1 allows a transport: it sits above PUSH_MAX_BYTES and PULL_MAX_BYTES.
   app.setClientMaxBodySize(8 * 1024 * 1024);
-  app.setClientMaxMemoryBodySize(1 * 1024 * 1024);
+  app.setClientMaxMemoryBodySize(2 * 1024 * 1024);
   app.setMaxConnectionNum(20000);                    // global socket ceiling (all arrive via Caddy)
   const char* listenHostEnv = std::getenv("WINDMILL_HOST");
   const std::string listenHost = listenHostEnv && *listenHostEnv ? listenHostEnv : "0.0.0.0";

@@ -133,9 +133,7 @@
         }
       },
       "visibleWhen": [
-        "body",
-        "mood",
-        "energy"
+        "body"
       ]
     },
     {

@@ -234,18 +234,26 @@ export class SavePage {
   decide(loaded, ids) {
     if (this.day.text !== loaded.moment.today.text) throw new Violation('journal.day', new Path('day'), { kind: 'custom', custom: 'readOnlyDay' });
     const contribution = loaded.anonymous || (!loaded.firstPullComplete && loaded.page === null);
-    JournalRules.check(this.document, contribution ? ClaimPageSpecs : SavePageSpecs);
+    const normalized = this.document.hasText ? this.document : new PageDocument();
+    JournalRules.check(normalized, contribution ? ClaimPageSpecs : SavePageSpecs);
     const retiring = Object.fromEntries(Object.entries(loaded.state.fields()).filter(([, value]) => value === 'retired'));
     for (const field of this.retiring) {
       if (!STATE_FIELDS.includes(field)) throw new Violation('journalState', new Path(field), { kind: 'custom', custom: 'unknownState' });
       retiring[field] = 'retired';
     }
-    if (this.document.body !== '') retiring.placeholder = 'retired';
-    if (this.document.isWritten) { retiring.privacyLine = 'retired'; retiring.firstPage = 'retired'; }
-    if (this.document.mood !== null || this.document.energy !== null) retiring.scales = 'retired';
+    if (normalized.hasText) retiring.placeholder = 'retired';
+    if (normalized.isWritten) { retiring.privacyLine = 'retired'; retiring.firstPage = 'retired'; }
+    if (normalized.mood !== null || normalized.energy !== null) retiring.scales = 'retired';
+    if (!normalized.isWritten && loaded.page === null && !loaded.pending.some((claim) => claim.day.text === this.day.text)
+      && !loaded.commands.some(({ command }) => command.args.day === this.day.text)) {
+      const plan = new Plan();
+      if (loaded.hasEditorDraft) plan.device(EditorDraft.key, null);
+      JournalWriting.retire(retiring, plan, loaded.moment);
+      return JournalWriting.write(plan, null);
+    }
     const pending = loaded.pending.find((claim) => claim.day.text === this.day.text);
     if (!loaded.anonymous && pending) {
-      pending.edit(this.document, retiring);
+      pending.edit(normalized, retiring);
       const plan = new Plan();
       plan.device(pending.key, pending.json);
       if (loaded.hasEditorDraft) plan.device(EditorDraft.key, null);
@@ -256,16 +264,24 @@ export class SavePage {
       if (prior.some((entry) => !entry.canSupersede)) throw new Violation('journal.claim', new Path('day'), { kind: 'custom', custom: 'claimInFlight' });
       const replaced = loaded.pending.filter((claim) => claim.day.text === this.day.text);
       for (const claim of replaced) Object.assign(retiring, claim.retirements);
+      if (!normalized.isWritten) {
+        const plan = new Plan();
+        plan.supersede(prior.map((entry) => entry.gestureId));
+        for (const claim of replaced) plan.device(claim.key, null);
+        if (loaded.hasEditorDraft) plan.device(EditorDraft.key, null);
+        JournalWriting.retire(retiring, plan, loaded.moment);
+        return JournalWriting.write(plan, null);
+      }
       const claimId = ids.opaqueID();
-      const plan = JournalWriting.claimPlan({ day: this.day, document: this.document, claimId, retirements: retiring }, loaded.moment);
+      const plan = JournalWriting.claimPlan({ day: this.day, document: normalized, claimId, retirements: retiring }, loaded.moment);
       plan.supersede(prior.map((entry) => entry.gestureId));
       for (const claim of replaced) plan.device(claim.key, null);
       if (loaded.hasEditorDraft) plan.device(EditorDraft.key, null);
       return JournalWriting.write(plan, claimId);
     }
     const stamp = JournalWriting.stamp(loaded, loaded.page?.f?.documentStamp?.[0] ?? null);
-    const plan = Plan.running(new SavePageCommand({ day: this.day, ...this.document.fields(), stamp }),
-      [JournalWriting.prediction(this.day, this.document, stamp)]);
+    const plan = Plan.running(new SavePageCommand({ day: this.day, ...normalized.fields(), stamp }),
+      [JournalWriting.prediction(this.day, normalized, stamp)]);
     plan.device('contentClock', ContentClock.pair(stamp));
     if (loaded.hasEditorDraft) plan.device(EditorDraft.key, null);
     JournalWriting.retire(retiring, plan, loaded.moment);

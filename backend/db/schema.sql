@@ -392,6 +392,140 @@ update ai_usage set cost_floor_nanos = cost_nanos where cost_floor_nanos = 0 and
 create index if not exists ai_usage_user_ts on ai_usage (user_id, ts);
 create index if not exists ai_usage_ts on ai_usage (ts);
 
+create table if not exists ai_budget_grants (
+  id                 text primary key,
+  account_id         text not null,
+  source             text not null check (source in ('subscription', 'owner')),
+  funding_reference  text not null,
+  period_start_ms    bigint not null,
+  period_end_ms      bigint not null check (period_end_ms > period_start_ms),
+  amount_nanos       bigint not null check (amount_nanos > 0),
+  unique (source, funding_reference),
+  unique (account_id, source, period_start_ms, period_end_ms)
+);
+create index if not exists ai_budget_grants_account_period
+  on ai_budget_grants (account_id, period_start_ms, period_end_ms);
+
+create table if not exists ai_budget_device_accounts (
+  device_id   text primary key,
+  account_id  text not null,
+  bound_at_ms bigint not null
+);
+create index if not exists ai_budget_device_accounts_account on ai_budget_device_accounts (account_id);
+
+create table if not exists ai_installations (
+  id text primary key,
+  token_digest text not null unique check (token_digest ~ '^[0-9a-f]{64}$'),
+  created_at_ms bigint not null check (created_at_ms > 0)
+);
+create table if not exists ai_installation_network_limits (
+  network_digest text primary key check (network_digest ~ '^[0-9a-f]{64}$'),
+  expires_at_ms bigint not null check (expires_at_ms > 0),
+  count integer not null check (count > 0)
+);
+create index if not exists ai_installation_network_limits_expiry on ai_installation_network_limits (expires_at_ms);
+create table if not exists ai_installation_network_admissions (
+  installation_id text not null references ai_installations(id),
+  request_id text not null,
+  expires_at_ms bigint not null check (expires_at_ms > 0),
+  primary key (installation_id, request_id)
+);
+create index if not exists ai_installation_network_admissions_expiry on ai_installation_network_admissions (expires_at_ms);
+
+create table if not exists gym_coach_onboarding (
+  device_id text not null references ai_installations(id),
+  request_id text not null,
+  input_hash text not null check (length(input_hash) = 64),
+  result_id text not null,
+  state text not null check (state in ('pending', 'completed', 'failed', 'expired')),
+  payload jsonb,
+  error_code text not null default '',
+  created_at_ms bigint not null,
+  lease_until_ms bigint not null,
+  expires_at_ms bigint not null,
+  terminal_at_ms bigint not null default 0,
+  primary key (device_id, request_id),
+  check ((state = 'completed') = (payload is not null))
+);
+create index if not exists gym_coach_onboarding_active_expiry on gym_coach_onboarding (expires_at_ms) where state <> 'expired';
+create index if not exists gym_coach_onboarding_pending_lease on gym_coach_onboarding (lease_until_ms) where state = 'pending';
+create index if not exists gym_coach_onboarding_device_created on gym_coach_onboarding (device_id, created_at_ms);
+
+
+create table if not exists ai_budget_balances (
+  scope            text not null check (scope in ('free_month', 'free_day', 'anonymous_lifetime', 'account_month', 'funded_period')),
+  subject_key      text not null,
+  period_start_ms  bigint not null,
+  period_end_ms    bigint not null check (period_end_ms > period_start_ms or (period_start_ms = 0 and period_end_ms = 0)),
+  limit_nanos      bigint not null check (limit_nanos >= 0),
+  spent_nanos      numeric not null default 0 check (spent_nanos >= 0 and spent_nanos = trunc(spent_nanos)),
+  held_nanos       numeric not null default 0 check (held_nanos >= 0 and held_nanos = trunc(held_nanos)),
+  debt_nanos       numeric not null default 0 check (debt_nanos >= 0 and debt_nanos = trunc(debt_nanos)),
+  primary key (scope, subject_key, period_start_ms)
+);
+
+create table if not exists ai_budget_reservations (
+  id                  text primary key,
+  subject_kind        text not null check (subject_kind in ('device', 'account')),
+  subject_id          text not null,
+  tier                text not null check (tier in ('anonymous', 'logged_in', 'windmill_one')),
+  period_start_ms     bigint not null,
+  period_end_ms       bigint not null check (period_end_ms > period_start_ms or (period_start_ms = 0 and period_end_ms = 0)),
+  admitted_at_ms      bigint not null,
+  grant_id            text references ai_budget_grants(id),
+  amount_nanos        bigint not null check (amount_nanos > 0),
+  state               text not null check (state in ('reserved', 'dispatched', 'uncertain', 'settled', 'released')),
+  actual_nanos        bigint check (actual_nanos >= 0),
+  overrun_reconciled  boolean not null default false,
+  check ((tier = 'anonymous') = (subject_kind = 'device')),
+  check ((tier = 'windmill_one') = (grant_id is not null)),
+  check ((state = 'settled') = (actual_nanos is not null)),
+  check (not overrun_reconciled or (state = 'settled' and actual_nanos > amount_nanos))
+);
+create index if not exists ai_budget_reservations_subject on ai_budget_reservations (subject_kind, subject_id, admitted_at_ms);
+create index if not exists ai_budget_reservations_unresolved on ai_budget_reservations (subject_kind, subject_id)
+  where state in ('reserved', 'dispatched', 'uncertain');
+
+alter table ai_budget_reservations add column if not exists input_cost_nanos bigint;
+alter table ai_budget_reservations add column if not exists output_token_cost_nanos bigint;
+alter table ai_budget_reservations add column if not exists min_output_tokens integer;
+alter table ai_budget_reservations add column if not exists max_output_tokens integer;
+do $$ begin
+  if not exists (select 1 from pg_constraint
+      where conrelid = 'ai_budget_reservations'::regclass and conname = 'ai_budget_output_offer') then
+    alter table ai_budget_reservations add constraint ai_budget_output_offer check (
+      (input_cost_nanos is null and output_token_cost_nanos is null and min_output_tokens is null and max_output_tokens is null)
+      or (input_cost_nanos is not null and output_token_cost_nanos is not null and min_output_tokens is not null
+          and max_output_tokens is not null and input_cost_nanos >= 0 and output_token_cost_nanos > 0
+          and min_output_tokens > 0 and max_output_tokens >= min_output_tokens
+          and input_cost_nanos::numeric + max_output_tokens::numeric * output_token_cost_nanos <= 9223372036854775807
+          and amount_nanos >= input_cost_nanos::numeric + min_output_tokens::numeric * output_token_cost_nanos
+          and amount_nanos <= input_cost_nanos::numeric + max_output_tokens::numeric * output_token_cost_nanos
+          and mod(amount_nanos::numeric - input_cost_nanos, nullif(output_token_cost_nanos, 0)) = 0)
+    );
+  end if;
+end $$;
+
+create table if not exists ai_budget_alerts (
+  id                 text primary key default gen_random_uuid()::text,
+  scope              text not null check (scope in ('free_month', 'free_day', 'anonymous_lifetime', 'account_month', 'funded_period')),
+  subject_key        text not null,
+  period_start_ms    bigint not null,
+  period_end_ms      bigint not null,
+  threshold_percent int not null check (threshold_percent in (50, 80, 95)),
+  limit_nanos        bigint not null,
+  spent_nanos        bigint not null,
+  held_nanos         bigint not null,
+  funding_source     text check (funding_source in ('subscription', 'owner')),
+  state              text not null default 'pending' check (state in ('pending', 'claimed', 'delivered')),
+  claim_token        text,
+  lease_until_ms     bigint not null default 0,
+  next_attempt_ms    bigint not null,
+  unique (scope, subject_key, period_start_ms, threshold_percent)
+);
+create index if not exists ai_budget_alerts_due on ai_budget_alerts (next_attempt_ms, lease_until_ms)
+  where state <> 'delivered';
+
 -- ── Sync engine (platform/, docs/foundation/engine.md §2.1) ──────────────────────────────────
 -- The engine's own tables. A product's synced types live in its own typed tables (§2.2), which the
 -- engine reaches only through the product's store. Times the engine writes (dead_at, last_seen,
@@ -931,7 +1065,7 @@ create table if not exists journal_echo_offer_dismissal (
 -- body_stamp_ms across those spans, which is monotone only while a corpus grows: emptying a page
 -- could LOWER it, and `corpus_stamp < stored` then reopened nothing at all.
 -- These stamps are the "am I done" record: never advance them on a failed curate. status is
--- ok | empty_ok | transport | rate_limited | truncated | schema_invalid | refused; ok, empty_ok and
+-- ok | empty_ok | transport | rate_limited | budget_limited | truncated | schema_invalid | refused; ok, empty_ok and
 -- refused advance them, the rest do not. The due queries skip a refused row on corpus movement, so
 -- only an edit to that body makes it due again. attempts counts consecutive unsettled failures, and
 -- the due queries stop reopening a page past kCurationRetries of them — an unsettled page is due on

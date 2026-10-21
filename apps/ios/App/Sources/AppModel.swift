@@ -33,6 +33,7 @@ final class AppModel {
   var accountName = ""
   var keepDismissed: Bool
   var keepSheetPresented = false
+  var keepRoutines = false
   var email = ""
   var code = ""
   var codeSentAt: Date?
@@ -66,6 +67,7 @@ final class AppModel {
   // Why the last Sign out could not begin or be carried out; the next Sign out clears it.
   var signOutRefusal: String?
   var adoptionAnswers: [String: LineageAnswer] = [:]
+  var journalAdoptionPages: Int?
   var appearance: Appearance
   var updateRequiredAtSignIn = false
   var updateAlert = false
@@ -206,8 +208,8 @@ final class AppModel {
 
   func dismissUpdateFailure() { updateOpenFailed = false }
 
-  var adoptionCount: Int { currentAdoption?.counts["page"] ?? 0 }
-  var adoptionIsSingle: Bool { currentAdoption?.counts.filter { $0.key != "journalState" }.values.reduce(0, +) == 1 }
+  var adoptionCount: Int { adoptionCounts["page"] ?? 0 }
+  var adoptionIsSingle: Bool { adoptionCounts.filter { $0.key != "journalState" }.values.reduce(0, +) == 1 }
 
   func openJournal() { openRoom(.journal) }
   func openYou() { journal.done(); sheet = .you }
@@ -372,6 +374,9 @@ final class AppModel {
       try Task.checkCancellation()
       setSignInSession(resumed)
       if let resumed, !resumed.isComplete, currentAdoption == nil { try await completeAdoption(resumed) }
+      if resumed?.isComplete != false, let active = try runtime.account(), active == preferences.string(forKey: "coachAdoptionAccount") {
+        try finishCoachAdoption(discard: preferences.bool(forKey: "coachAdoptionDiscard"))
+      }
       syncStarted = true
       recoveryDue = nil; recoveryDelayMs = Constants.backoffBaseMs
       refresh()
@@ -395,7 +400,7 @@ final class AppModel {
     }
   }
 
-  func keep() { choose("keep", screen: selectedRoom.rawValue); journal.done(); keepSheetPresented = true; sheet = .keep }
+  func keep(routines: Bool = false) { keepRoutines = routines; choose("keep", screen: selectedRoom.rawValue); journal.done(); keepSheetPresented = true; sheet = .keep }
 
   func closeKeep() { choose("close", screen: "keep"); sheet = nil; dismissKeep() }
 
@@ -645,6 +650,7 @@ final class AppModel {
       try runtime.engine.cancelSignIn()
     } catch { reportBoundary("auth_sign_in", error: error); self.error = "Couldn't cancel the sign-in. Try again."; return }
     pendingSignIn = nil; signInSession = nil; appleAuthorization = nil
+    preferences.removeObject(forKey: "coachAdoptionSource"); preferences.removeObject(forKey: "coachAdoptionAccount"); preferences.removeObject(forKey: "coachAdoptionDiscard")
     restoringSignIn = false; signInDeferred = false; updateRequiredAtSignIn = false; error = nil
     preferences.removeObject(forKey: "pendingAuthMethod"); preferences.removeObject(forKey: "pendingAuthLinked")
     clearAdoptionAnswers()
@@ -663,6 +669,13 @@ final class AppModel {
       try? await runtime.auth.logout(token: identity.token)
       throw AppFailure(message: "Sign in to the same account to resume backup. Your pages stay with this account.")
     }
+    if gym.isAnonymous, let source = try? runtime.runner.read(Gym.scope, { "anonymous:" + $0.replica }) {
+      if preferences.string(forKey: "coachAdoptionSource") != source || preferences.string(forKey: "coachAdoptionAccount") != identity.account {
+        preferences.set(false, forKey: "coachAdoptionDiscard")
+      }
+      preferences.set(source, forKey: "coachAdoptionSource")
+      preferences.set(identity.account, forKey: "coachAdoptionAccount")
+    }
     accountName = identity.name
     accountEmail = identity.email.nilIfEmpty ?? email
     preferences.set(accountEmail, forKey: "accountEmail:\(identity.account)")
@@ -670,7 +683,10 @@ final class AppModel {
     signInMethods = []
     methodsGeneration += 1
     do {
+      try? await runtime.installation.bind(account: identity.account, token: identity.token)
       setSignInSession(try await runtime.engine.signIn(account: identity.account, token: identity.token))
+      if let session = signInSession, !session.isComplete, currentAdoption == nil { try await completeAdoption(session) }
+      if signInSession?.isComplete == true { try finishCoachAdoption(discard: preferences.bool(forKey: "coachAdoptionDiscard")) }
     }
     catch { reportBoundary("auth_sign_in", error: error); throw error }
     runtime.updateTelemetryIdentity()
@@ -807,8 +823,14 @@ final class AppModel {
   }
 
   var adoptionSummary: String {
-    guard let decision = currentAdoption else { return "" }
-    return Self.summary(decision.counts)
+    Self.summary(adoptionCounts)
+  }
+
+  var adoptionCounts: [String: Int] {
+    guard let decision = currentAdoption else { return [:] }
+    var counts = decision.counts
+    if decision.product == "journal", let journalAdoptionPages { counts["page"] = journalAdoptionPages }
+    return counts
   }
 
   static func summary(_ counts: [String: Int]) -> String {
@@ -835,20 +857,36 @@ final class AppModel {
 
   func setSignInSession(_ session: SignInSession?) {
     signInSession = session
-    adoptionAnswers = [:]
+    adoptionAnswers = [:]; journalAdoptionPages = nil
     guard let session, !session.isComplete else { clearAdoptionAnswers(); return }
-    guard let data = preferences.data(forKey: "roomAdoption"),
-      let saved = try? JSONDecoder().decode(SavedAdoption.self, from: data), saved.account == session.account else { return }
-    for decision in session.decisions {
-      if saved.counted[decision.product] == decision.counted && saved.counts[decision.product] == decision.counts,
-        let value = saved.answers[decision.product], let answer = LineageAnswer(rawValue: value) {
-        adoptionAnswers[decision.product] = answer
+    if let data = preferences.data(forKey: "roomAdoption"),
+      let saved = try? JSONDecoder().decode(SavedAdoption.self, from: data), saved.account == session.account {
+      for decision in session.decisions {
+        if saved.counted[decision.product] == decision.counted && saved.counts[decision.product] == decision.counts,
+          let value = saved.answers[decision.product], let answer = LineageAnswer(rawValue: value) {
+          adoptionAnswers[decision.product] = answer
+        }
       }
+    }
+    if session.decisions.contains(where: { $0.product == "journal" }), adoptionAnswers["journal"] == nil {
+      do {
+        var days = try runner.read(Journal.scope) { read in
+          var days = Set(try JournalRoom(read).days.map(\.day))
+          if let raw = try read.device(EditorDraft.key) {
+            let draft = try EditorDraft(json: raw)
+            if draft.document.isWritten { days.insert(draft.day) }
+          }
+          return days
+        }
+        if journal.document.isWritten { days.insert(journal.editorDay) }
+        journalAdoptionPages = days.count
+        if days.isEmpty { adoptionAnswers["journal"] = .add }
+      } catch { reportBoundary("auth_adopt", error: error) }
     }
   }
 
   func clearAdoptionAnswers() {
-    adoptionAnswers = [:]; preferences.removeObject(forKey: "roomAdoption")
+    adoptionAnswers = [:]; journalAdoptionPages = nil; preferences.removeObject(forKey: "roomAdoption")
   }
 
   func saveAdoptionAnswers(_ answers: [String: LineageAnswer], session: SignInSession) throws {
@@ -860,8 +898,20 @@ final class AppModel {
     adoptionAnswers = answers
   }
 
+  func finishCoachAdoption(discard: Bool) throws {
+    guard let source = preferences.string(forKey: "coachAdoptionSource"),
+          let account = preferences.string(forKey: "coachAdoptionAccount") else { return }
+    try CoachDraftStore().adopt(from: source, account: account, discard: discard)
+    preferences.removeObject(forKey: "coachAdoptionSource")
+    preferences.removeObject(forKey: "coachAdoptionAccount")
+    preferences.removeObject(forKey: "coachAdoptionDiscard")
+  }
+
   func completeAdoption(_ session: SignInSession) async throws {
+    let discardGym = adoptionAnswers["gym"] == .discard
+    preferences.set(discardGym, forKey: "coachAdoptionDiscard")
     try await session.complete(adoptionAnswers)
+    try finishCoachAdoption(discard: discardGym)
     runtime?.updateTelemetryIdentity()
     journal.document = PageDocument(); journal.dirty = false; journal.editing = false
     signInSession = nil; clearAdoptionAnswers(); sheet = nil; welcome = false; refresh()
@@ -889,6 +939,7 @@ final class AppModel {
           try Task.checkCancellation()
           session = recounted; setSignInSession(recounted)
         }
+        if !session.isComplete, currentAdoption == nil { try await completeAdoption(session); return }
         if answer == .discard { sheet = .adoption; error = "The work changed. Choose again for the current counts."; return }
       }
       guard currentAdoption == decision else { sheet = .adoption; error = "The work changed. Choose again for the current counts."; return }
@@ -909,6 +960,7 @@ final class AppModel {
       let resumed = try await runtime?.engine.resumeSignIn()
       try Task.checkCancellation()
       if let resumed { setSignInSession(resumed) }
+      if let resumed, !resumed.isComplete, currentAdoption == nil { try await completeAdoption(resumed); return }
       sheet = .adoption; error = "The work changed. Choose again for the current counts."
     } catch {
       guard !Task.isCancelled else { return }

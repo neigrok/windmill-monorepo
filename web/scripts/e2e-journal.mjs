@@ -77,6 +77,7 @@ async function converged(page, text) {
     throw error;
   }
   const result = await page.request.get(`${backend}/v1/journal/page/${today}`);
+  if (text.trim() === '') { assert.equal(result.status(), 404); return; }
   assert.equal(result.status(), 200);
   assert.equal((await result.json()).body, text);
 }
@@ -160,6 +161,54 @@ try {
       await page.goto(`${origin}/app/journal`); await ready(page);
       assert.equal(await page.getByRole('textbox', { name: 'Write today' }).inputValue(), 'offline page');
       await context.setOffline(false); await converged(page, 'offline page');
+    } finally { await context.close(); }
+  });
+  await check('unwritten days disappear locally and erasure reaches another browser and REST', async () => {
+    const first = await browser.newContext(), second = await browser.newContext();
+    const id = randomUUID(), secret = randomBytes(24).toString('hex');
+    sql(`insert into users(id,email,name) values('${id}','journal-empty-${id}@example.com','Empty journal');
+      insert into sessions(token_hash,user_id,expires_ms) values('${hash(secret)}','${id}',99999999999999);`);
+    try {
+      const page = await first.newPage(); await page.goto(`${origin}/app/journal`); await ready(page);
+      await page.evaluate(async (today) => {
+        const engine = journal.syncSession.engine;
+        for (const body of ['', ' \t\n\u00a0\u1680\u2000\ufeff', ' '.repeat(131073)]) {
+          await journal.savePage(engine, { day: today, body, mood: 0, energy: 10, source: 'typed' });
+          if (journal.pagesOf(engine).some(journal.isWritten) || engine.device.activeReplica.entries('self/journal').some((entry) => entry.intent.cmd)) throw new Error('unwritten day created a page');
+        }
+      }, today);
+      await cookie(first, secret); await page.reload(); await ready(page);
+      await page.getByRole('textbox', { name: 'Write today' }).fill('A page to erase'); await converged(page, 'A page to erase');
+      await cookie(second, secret);
+      const observer = await second.newPage(); await observer.goto(`${origin}/app/journal`); await ready(observer); await converged(observer, 'A page to erase');
+      await page.evaluate((today) => journal.savePage(journal.syncSession.engine,
+        { day: today, body: '\n\u00a0', mood: 7, energy: 9, source: 'typed' }), today);
+      await converged(page, '');
+      await observer.reload(); await ready(observer); await converged(observer, '');
+      assert.deepEqual(await observer.evaluate(() => journal.pagesOf(journal.syncSession.engine).filter(journal.isWritten)), []);
+      assert.equal(await observer.getByRole('textbox', { name: 'Write today' }).inputValue(), '');
+      for (const endpoint of ['/v1/journal/pages', '/v1/journal/export']) {
+        const response = await observer.request.get(`${backend}${endpoint}`);
+        assert.deepEqual(await response.json(), { pages: [] });
+      }
+      await page.reload(); await ready(page); await converged(page, '');
+      await page.getByRole('textbox', { name: 'Write today' }).fill('  Written again\n'); await converged(page, '  Written again\n');
+    } finally { await first.close(); await second.close(); }
+  });
+  await check('erased anonymous writing preserves invitation state and signs in without an empty adoption question', async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage(); await page.goto(`${origin}/app/journal`); await ready(page);
+      await page.getByRole('textbox', { name: 'Write today' }).fill('Temporary writing'); await saved(page, 'Temporary writing');
+      await page.getByRole('textbox', { name: 'Write today' }).fill(' \n\u00a0');
+      await page.waitForFunction(() => !journal.pagesOf(journal.syncSession.engine).some(journal.isWritten));
+      await cookie(context); await page.reload(); await ready(page);
+      await page.waitForFunction(() => journal.syncSession.getSnapshot().signedIn);
+      assert.equal(await page.getByText('Add to your account?', { exact: true }).count(), 0);
+      await converged(page, 'offline page');
+      assert.equal(await page.getByRole('textbox', { name: 'Write today' }).inputValue(), 'offline page');
+      assert.equal(await page.evaluate(() => journal.syncSession.engine.observe('self/journal').getSnapshot().drawn
+        .find((row) => row.t === 'journalState')?.f.firstPage?.[0]), 'retired');
     } finally { await context.close(); }
   });
   for (const choice of ['Add', 'Discard']) await check(`signed-out draft → occupied account → ${choice}`, async () => {
@@ -359,7 +408,8 @@ try {
   assert.ok(Number(sql("select count(*) from events where name in ('sync_commit','sync_signin','sync_signout','sync_writer')").toString().match(/\n\s*(\d+)\s*\n/)?.[1] ?? 0) > 0, 'sync beacons reached the local intake');
   assert.ok(Number(sql("select count(*) from events where name = 'sync_signout' and props->>'outcome' = 'ok'").toString().match(/\n\s*(\d+)\s*\n/)?.[1] ?? 0) >= 3,
     'all three completed sign-outs reached the local beacon intake');
-  console.log(`Journal local-stack e2e: ${passed}/8 passed, 0 skipped; local beacon intake verified`);
+  assert.equal(passed, 10, 'every journal local-stack scenario must finish');
+  console.log(`Journal local-stack e2e: ${passed}/10 passed, 0 skipped; local beacon intake verified`);
 } catch (error) {
   console.error(error);
   console.error(`Stack diagnostics: ${logPath}`);

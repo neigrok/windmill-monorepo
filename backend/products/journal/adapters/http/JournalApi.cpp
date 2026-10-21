@@ -38,7 +38,7 @@ void JournalApi::getPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     return;
   }
   std::optional<Page> page = pages_->load(*caller, *day);
-  if (!page) {
+  if (!page || !page->isWritten()) {
     cb(error(drogon::k404NotFound, "nothing written"));
     return;
   }
@@ -84,13 +84,17 @@ void JournalApi::listPages(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
       return;
     }
     Json::Value body(Json::objectValue);
-    body["pages"] = toJson(pages_->range(*caller, *first, *last));
+    auto pages = pages_->range(*caller, *first, *last);
+    std::erase_if(pages, [](const Page& page) { return !page.isWritten(); });
+    body["pages"] = toJson(pages);
     cb(jsonResponse(body));
     return;
   }
 
   Json::Value body(Json::objectValue);
-  body["pages"] = toJson(pages_->all(*caller));
+  auto pages = pages_->all(*caller);
+  std::erase_if(pages, [](const Page& page) { return !page.isWritten(); });
+  body["pages"] = toJson(pages);
   cb(jsonResponse(body));
 }
 
@@ -101,7 +105,9 @@ void JournalApi::exportAll(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
     return;
   }
   Json::Value body(Json::objectValue);
-  body["pages"] = toJson(pages_->all(*caller));
+  auto pages = pages_->all(*caller);
+  std::erase_if(pages, [](const Page& page) { return !page.isWritten(); });
+  body["pages"] = toJson(pages);
   cb(jsonResponse(body));
 }
 

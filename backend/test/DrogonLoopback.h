@@ -21,7 +21,7 @@ namespace wm::test {
 
 // Drogon listening on loopback in this process, so a test sends a request's bytes and gets back the request Drogon's
 // own parser made of them. Each request it hands over is answered with the response the test chose; one Drogon
-// refuses never reaches a test, which reads the refusal instead. Started on first use, stopped when the process ends.
+// refuses never reaches a test, which reads the refusal instead. The test main stops it before static destruction.
 class DrogonLoopback {
 public:
   using Respond = std::function<drogon::HttpResponsePtr(const drogon::HttpRequestPtr&)>;
@@ -38,7 +38,17 @@ public:
     return loopback;
   }
 
+  static void stopExisting() {
+    if (existing_) existing_->stop();
+  }
+
   ~DrogonLoopback() {
+    stop();
+    existing_ = nullptr;
+  }
+
+  void stop() {
+    if (!runner_.joinable()) return;
     drogon::app().quit();
     runner_.join();
   }
@@ -118,6 +128,7 @@ private:
         .setLogLevel(trantor::Logger::kWarn)
         .disableSigtermHandling();
     runner_ = std::thread([] { drogon::app().run(); });
+    existing_ = this;
   }
 
   static std::uint16_t freePort() {
@@ -153,6 +164,7 @@ private:
     return req;
   }
 
+  inline static DrogonLoopback* existing_ = nullptr;
   std::uint16_t port_;
   std::thread runner_;
   std::mutex mutex_;
