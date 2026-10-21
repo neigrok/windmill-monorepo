@@ -157,7 +157,7 @@ class CoachAnswerTests {
             CoachAnswer("Review this plan", null, listOf(Exercise("dumbbell-bench-press", "Flat press", equipment = "dumbbell")), 0,
                 routineDrafts = listOf(draft), onConfirmRoutine = {
                     requests += it
-                    works.windmill.gym.store.GymResult.Failed(works.windmill.gym.store.WriteFailure.Refused("Try again"))
+                    if (requests.size == 1) DraftOutcome.Failed(Ask.draftRetry) else DraftOutcome.Closed(Ask.draftGone)
                 })
         } }
         compose.onNodeWithText("Review routine").assertIsDisplayed()
@@ -166,8 +166,29 @@ class CoachAnswerTests {
         compose.onNodeWithText("1 × 8 · 16 kg each · Two dumbbells").assertIsDisplayed()
         compose.runOnIdle { assertEquals(emptyList<CoachRoutineDraft>(), requests) }
         compose.onNodeWithText("Save routine").performClick()
-        compose.onNodeWithText("Routine wasn’t confirmed. Try Save routine again.").assertIsDisplayed()
-        compose.runOnIdle { assertEquals(listOf(draft), requests) }
+        compose.onNodeWithText("Couldn’t save the routine. Try again.").assertIsDisplayed()
+        compose.onNodeWithText("Save routine").performClick()
+        compose.onNodeWithText("This draft is no longer available.").assertIsDisplayed()
+        compose.onNodeWithText("Save routine").assertDoesNotExist()
+        compose.onNodeWithText("Couldn’t save the routine. Try again.").assertDoesNotExist()
+        compose.runOnIdle { assertEquals(listOf(draft, draft), requests) }
+    }
+
+    @Test fun aTurnThatCreatedItsRoutineAtOnceKeepsThePastTenseStep() {
+        compose.setContent { GymMaterial {
+            Column {
+                CoachAnswer("Made it", null, emptyList(), 0, legacyRead = ReadTally(sets = 1), legacySteps = listOf(AskStep("create_routine")),
+                    results = listOf(CoachResult("routine-created", "operation-a", "routine-a", "Push")))
+                CoachAnswer("Drafted it", null, emptyList(), 0, legacyRead = ReadTally(sets = 2), legacySteps = listOf(AskStep("update_exercise"), AskStep("create_routine")),
+                    routineDrafts = listOf(CoachRoutineDraft("operation-b", "routine-b", "Pull", 1, emptyList(), "saved")),
+                    results = listOf(CoachResult("routine-created", "operation-b", "routine-b", "Pull")))
+            }
+        } }
+        compose.onNodeWithText("Read 1 set").performClick()
+        compose.onNodeWithText("Created a routine").assertIsDisplayed()
+        compose.onNodeWithText("Read 2 sets").performClick()
+        compose.onNodeWithText("Updated a movement").assertIsDisplayed()
+        compose.onNodeWithText("Drafted a routine for your review").assertIsDisplayed()
     }
 
 }

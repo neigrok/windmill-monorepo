@@ -184,7 +184,7 @@ data class SessionSummary(
     val record: Boolean = false,
     val closedItself: Boolean = false,
 ) {
-    constructor(session: Session, sets: List<TrainingSet>, catalog: List<Exercise> = emptyList()) : this(
+    constructor(session: Session, sets: List<TrainingSet>, catalog: List<Exercise>) : this(
         id = session.id,
         startedAtMs = session.startedAtMs,
         finishedAtMs = session.finishedAtMs,
@@ -194,11 +194,7 @@ data class SessionSummary(
         workingSetCount = sets.count { it.kind == SetKind.Working },
         // Clamped the server's way: an assisted set adds zero rather than subtracting.
         tonnageKg = sets.filter { it.kind == SetKind.Working }
-            .sumOf { set ->
-                val exercise = catalog.firstOrNull { it.id == set.exerciseId }
-                val count = exercise?.loadCount ?: works.windmill.gym.domain.sync.SeedExercises.all.firstOrNull { it.id.record.string == set.exerciseId }?.loadCount ?: 1
-                max(0.0, set.weightKg) * set.reps * count
-            },
+            .sumOf { set -> max(0.0, set.weightKg) * set.reps * (catalog.firstOrNull { it.id == set.exerciseId }?.loadCount ?: 1) },
         exercises = sets.sortedBy { it.completedAtMs }.map { it.exerciseId }.distinct(),
         topSet = sets.filter { it.kind == SetKind.Working }
             .maxWithOrNull(compareBy({ it.weightKg }, { it.reps }))
@@ -213,7 +209,7 @@ data class SessionSummary(
     companion object {
         // Read against the account's history: its best estimate, and the dot when a session full
         // enough to count earned a record.
-        fun of(detail: SessionDetail, history: List<SessionDetail>, catalog: List<Exercise> = emptyList()): SessionSummary {
+        fun of(detail: SessionDetail, history: List<SessionDetail>, catalog: List<Exercise>): SessionSummary {
             val sets = working(detail)
             return SessionSummary(detail.session, detail.sets, catalog).copy(topE1rm = sets.mapNotNull(::estimate).maxOrNull(),
                 record = sets.size >= Review.slightWorkingSets && earned(detail, history) != null)

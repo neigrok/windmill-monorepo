@@ -505,7 +505,7 @@ class EngineTrainingTests {
         assertEquals("e1rm", review.record!!.kind)
         assertEquals("session1", review.against!!.sessionId)
         assertEquals(PlannedLine(listOf(SetTarget(5, 80.0))), review.against!!.movements.single().planned)
-        assertTrue(SessionSummary.of(later, listOf(earlier, later)).record)
+        assertTrue(SessionSummary.of(later, listOf(earlier, later), listOf(Exercise("back-squat", "Back Squat"))).record)
     }
     @Test fun trainingStoreUsesEngineForAnonymousAndNotificationLogThenFinish() = runTest {
         EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->

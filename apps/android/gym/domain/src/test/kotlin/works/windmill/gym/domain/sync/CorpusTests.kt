@@ -126,7 +126,11 @@ class CorpusTests {
     }
 
     fun catalogue(vector: Vector, input: Json): Json = when (vector.input["action"]?.str()) {
-        "CreateExercise" -> corpus.decision(CreateExercise(Exercise.fromForm(input.member("exercise"))), vector, { it.json }, ::refusalForm)
+        "CreateExercise" -> {
+            val exercise = Exercise.fromForm(input.member("exercise"))
+            val value = input["loadCount"]?.let { exercise.copy(loadCount = it.long().toInt()) } ?: exercise
+            corpus.decision(CreateExercise(value), vector, { it.json }, ::refusalForm)
+        }
         "RenameExercise" -> corpus.decision(RenameExercise(Id(RecordID(input.member("id")), Exercise), input.member("name").str()), vector, { Json.Null }, ::refusalForm)
         null -> decoded { corpus.read(vector, Exercise.scope) { read -> when (vector.input.member("read").str()) {
             "SeedExercises" -> Json.Arr(SeedExercises.all.map(::exerciseForm))

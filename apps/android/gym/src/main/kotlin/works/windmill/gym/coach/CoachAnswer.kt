@@ -25,7 +25,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
-import works.windmill.gym.store.GymResult
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -76,7 +75,7 @@ internal fun CoachAnswer(
     results: List<CoachResult> = emptyList(),
     onOpenRoutine: ((String) -> Unit)? = null,
     routineDrafts: List<CoachRoutineDraft> = emptyList(),
-    onConfirmRoutine: (suspend (CoachRoutineDraft) -> GymResult<AskGeneration>)? = null,
+    onConfirmRoutine: (suspend (CoachRoutineDraft) -> DraftOutcome)? = null,
 ) {
     val skin = LocalGymColors.current
     val evidence = receipt?.takeIf { it.supported }
@@ -87,6 +86,7 @@ internal fun CoachAnswer(
                 val scope = rememberCoroutineScope()
                 var busy by remember { mutableStateOf(false) }
                 var note by remember { mutableStateOf<String?>(null) }
+                var closed by remember { mutableStateOf(false) }
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth().background(skin.surface, RoundedCornerShape(20.dp)).padding(16.dp)) {
                     Text("Review routine", style = WindmillFont.body(14), color = skin.inkDim)
@@ -108,13 +108,17 @@ internal fun CoachAnswer(
                         }
                     }
                     note?.let { Text(it, style = WindmillFont.body(14), color = skin.inkDim) }
-                    CoachAction(if (busy) "Saving…" else "Save routine", primary = true, enabled = !busy && onConfirmRoutine != null, onClick = {
-                        if (!busy) {
+                    if (!closed) CoachAction(if (busy) "Saving…" else "Save routine", primary = true, enabled = !busy && onConfirmRoutine != null, onClick = {
+                        if (!busy && onConfirmRoutine != null) {
                             busy = true
                             note = null
                             scope.launch {
                                 try {
-                                    if (onConfirmRoutine?.invoke(draft) is GymResult.Failed) note = "Routine wasn’t confirmed. Try Save routine again."
+                                    when (val saved = onConfirmRoutine(draft)) {
+                                        is DraftOutcome.Saved -> Unit
+                                        is DraftOutcome.Closed -> { note = saved.said; closed = true }
+                                        is DraftOutcome.Failed -> note = saved.said
+                                    }
                                 } finally { busy = false }
                             }
                         }
@@ -157,7 +161,7 @@ internal fun CoachAnswer(
         }
         val tally = evidence?.read ?: legacyRead
         if (tally != null) {
-            val phrases = Ask.steps(evidence?.steps ?: legacySteps)
+            val phrases = Ask.steps(evidence?.steps ?: legacySteps, drafted = routineDrafts.isNotEmpty())
             val observations = evidence?.observed.orEmpty()
             val expandable = phrases.isNotEmpty() || observations.isNotEmpty()
             var expanded by rememberSaveable { mutableStateOf(false) }

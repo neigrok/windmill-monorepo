@@ -9,6 +9,7 @@ import works.windmill.domain.kit.FixedZone
 import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Moment
 import works.windmill.domain.kit.Instant as DomainInstant
+import works.windmill.gym.domain.sync.Catalogue as DomainCatalogue
 import works.windmill.gym.domain.sync.Exercise as DomainExercise
 import works.windmill.gym.domain.sync.PerformedFact as DomainPerformedFact
 import works.windmill.gym.domain.sync.Session as DomainSession
@@ -30,6 +31,7 @@ data class StatsProgress(val asOf: Long, val sessions: List<ProgressSession>) {
         ?.movements?.mapNotNull { it.estimate?.e1rm }?.maxOrNull()
 
     companion object {
+        // Progress reads estimates, never load counts, so each session's log carries no movements.
         fun of(details: List<SessionDetail>, asOf: Long): StatsProgress {
             val moment = Moment(DomainInstant(asOf), FixedZone(0))
             return StatsProgress(asOf, details.filter { !it.session.isOpen }.mapNotNull { detail ->
@@ -38,7 +40,7 @@ data class StatsProgress(val asOf: Long, val sessions: List<ProgressSession>) {
                     DomainInstant(detail.session.finishedAtMs!!))), detail.sets.map { set ->
                     DomainTrainingSet(Id(set.id, DomainTrainingSet), id, Id(set.exerciseId, DomainExercise),
                         set.weightKg, set.reps, set.kind.wire, set.rpe, set.note, DomainInstant(set.completedAtMs), set.setNumber)
-                }, moment)
+                }, DomainCatalogue(emptyList()), moment)
                 val session = DomainStatsProgress(log).sessions.singleOrNull() ?: return@mapNotNull null
                 ProgressSession(session.sessionId.record.string!!, session.startedAt.ms, session.movements.map { fact ->
                     MovementSessionFact(fact.exerciseId.record.string!!, fact.workingSetCount, PerformedFact(fact.heaviest),

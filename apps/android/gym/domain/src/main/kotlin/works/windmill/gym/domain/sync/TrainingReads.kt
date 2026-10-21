@@ -18,7 +18,7 @@ object GymEstimate {
     }
 }
 
-class SessionReadout(session: Session, sets: List<TrainingSet>, catalogue: Catalogue = Catalogue(SeedExercises.all)) {
+class SessionReadout(session: Session, sets: List<TrainingSet>, catalogue: Catalogue) {
     val sessionId = session.id
     val name = session.name
     val durationMs = session.finishedAt?.let { maxOf(0, it.ms - session.startedAt.ms) }

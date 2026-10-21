@@ -361,8 +361,7 @@ private fun Answer(
 ) {
     val skin = LocalGymColors.current
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
-        val confirmed = coach.confirmedGeneration(requestId)
-        val current = if (confirmed != null && confirmed.revision >= (answer.generation?.revision ?: 0)) confirmed.response() else answer
+        val current = answer.confirmedBy(coach.confirmedGeneration(requestId))
         CoachAnswer(current.answer, current.receipt, catalog, nowMs, current.read.takeIf { settled }, current.steps, current.results, onOpenRoutine,
             routineDrafts = current.routineDrafts,
             onConfirmRoutine = if (canConfirm && requestId.isNotBlank()) { draft -> coach.confirmRoutine(threadId, requestId, draft) } else null)

@@ -161,8 +161,7 @@ data class FinishedSession(
     val reviewRead: Boolean = true,
 ) {
     val routine: String? get() = session.plan?.routine
-    val summary: SessionSummary get() = SessionSummary(session, sets)
-    val slight: Boolean get() = (summary.workingSetCount ?: 0) < 4
+    val slight: Boolean get() = sets.count { it.kind == SetKind.Working } < Review.slightWorkingSets
 
     // Offered only for a session that had nothing written down for it, and never over a slight one.
     val offersRoutine: Boolean

@@ -19,7 +19,7 @@ class LogTimelineTests {
         }
         val now = at("2026-08-27")
         val stats = StatsProgress.of(details.reversed(), now)
-        val summaries = details.map { SessionSummary(it.session, it.sets) }
+        val summaries = details.map { SessionSummary(it.session, it.sets, listOf(Exercise("bench", "Bench Press"))) }
         val records = stats.movement("bench").records
         val expected = listOf(
             LogEntry.Workout(summaries[3]),

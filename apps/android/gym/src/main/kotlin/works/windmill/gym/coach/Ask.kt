@@ -9,15 +9,15 @@ import kotlinx.serialization.Serializable
 // Request identities survive retries; generation snapshots retain completed actions.
 
 // A step is drawn in the lifter's words or not at all: a tool this build cannot name prints NOTHING,
-// and the receipt beside the list still says what was read.
+// and the receipt beside the list still says what was read. Only a turn that carries routine drafts says
+// Coach drafted one; a turn from before drafts created its routine at once.
 @Serializable
 data class AskStep(val tool: String, val failed: Boolean = false) {
-    val phrase: String?
-        get() {
-            if (tool == "save_note" && failed) return "could not confirm a note save"
-            val said = Ask.phrases[tool] ?: return null
-            return if (failed) "$said (nothing came back)" else said
-        }
+    fun phrase(drafted: Boolean = true): String? {
+        if (tool == "save_note" && failed) return "could not confirm a note save"
+        val said = (if (tool == "create_routine" && !drafted) Ask.createdRoutine else Ask.phrases[tool]) ?: return null
+        return if (failed) "$said (nothing came back)" else said
+    }
 }
 
 // Server-counted. Nothing on this phone may compute, sum or infer it.
@@ -36,7 +36,15 @@ data class AskAnswer(
     val generation: AskGeneration? = null,
     val results: List<CoachResult> = emptyList(),
     val routineDrafts: List<CoachRoutineDraft> = emptyList(),
-)
+) {
+    // A draft is saved once the log's turn or this phone's confirmation says so; neither unsaves it.
+    fun confirmedBy(confirmation: AskGeneration?): AskAnswer {
+        if (confirmation == null) return this
+        val saved = confirmation.routineDrafts.filter { it.state == "saved" }.associateBy { it.operationId }
+        return copy(routineDrafts = routineDrafts.map { saved[it.operationId] ?: it },
+            results = (results + confirmation.results).distinctBy { it.kind to it.operationId })
+    }
+}
 
 @Serializable
 data class CoachResult(val kind: String, val operationId: String, val routineId: String, val routineName: String)
@@ -168,10 +176,6 @@ object Ask {
 
     const val fromLifter = "lifter"
 
-    // The rest is said where it counts: the subtitle says what Coach reads, `promise` on every
-    // proposal card says what it cannot touch.
-    const val whatItIs = "Ask about your training. Coach can draft routines and propose changes — you decide on the diff."
-
     const val allowance = "Ten questions a day, three back to back."
     const val capReached = "The next question frees up in a couple of hours."
 
@@ -198,6 +202,12 @@ object Ask {
     const val promise =
         "Nothing changes until you confirm the proposal. Your logged sets are never part of a proposal."
 
+    // A routine draft's Save. A draft the log no longer holds, or cannot write, takes Save away.
+    const val draftGone = "This draft is no longer available."
+    const val draftInvalid = "This draft can’t be saved. Ask Coach for a new one."
+    const val draftRetry = "Couldn’t save the routine. Try again."
+    const val draftSignIn = "Sign in again to save this routine."
+
     const val waiting = "reading your log…"
 
     const val interrupted = "Response interrupted. Retry to continue this response."
@@ -222,12 +232,15 @@ object Ask {
         "save_note" to "saved a note",
         "list_bodyweight" to "read your bodyweight",
         "create_routine" to "drafted a routine for your review",
+        "update_exercise" to "updated a movement",
         "propose_routine_change" to "wrote a proposal for one of your routines",
         "propose_routine_removal" to "wrote a proposal to remove a routine",
     )
 
+    const val createdRoutine = "created a routine"
+
     // In call order, each phrase once, the nameless dropped.
-    fun steps(steps: List<AskStep>): List<String> = steps.mapNotNull { it.phrase }.distinct()
+    fun steps(steps: List<AskStep>, drafted: Boolean): List<String> = steps.mapNotNull { it.phrase(drafted) }.distinct()
 
     // Run on the way in: a pending exchange was in flight when the room went down.
     fun settled(thread: List<AskExchange>): List<AskExchange> {

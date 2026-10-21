@@ -31,8 +31,9 @@ data class Exercise(override val id: Id<Exercise>, val name: String, val pattern
 data class ExerciseName(override val id: Id<ExerciseName>, val name: String?, val aliases: List<String> = emptyList(),
     val equipment: String? = null, val loadCount: Int? = null) : Writable<ExerciseName> {
     override fun fields(): Map<String, Json> = buildMap {
-        put("name", name?.let(Json::of) ?: Json.Null)
-        equipment?.let { put("equipment", Json.of(it)) }; loadCount?.let { put("loadCount", Json.of(it)) }
+        name?.let { put("name", Json.of(it)) }
+        equipment?.let { put("equipment", Json.of(it)) }
+        loadCount?.let { put("loadCount", Json.of(it)) }
     }
     companion object : WritableType<ExerciseName> {
         override val type = Gym.Types.exerciseName
@@ -93,6 +94,8 @@ class CreateExercise(val value: Exercise) : Action<Moment, Id<Exercise>, GymRefu
     override fun decide(loaded: Moment, ids: IDSource): Decision<Id<Exercise>, GymRefusal> {
         val plan = Plan()
         plan.create(Valid(value, Exercise, at = loaded))
+        if (value.equipment == "dumbbell" && value.loadCount != ExerciseRules.defaultLoadCount(value.equipment, value.id.record.string))
+            plan.create(Valid(ExerciseName(Id(value.id.record, ExerciseName), null, loadCount = value.loadCount), ExerciseName, at = loaded))
         return Decision.Write(plan, value.id)
     }
 }

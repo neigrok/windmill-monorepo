@@ -45,7 +45,7 @@ class GymHttp(private val api: WindmillApi) : GymRest {
     }
 
     override suspend fun ask(question: AskQuestion): AskAnswer {
-        val reply = api.send<AskResponse>("POST", "/v1/gym/ask", question, timeoutSeconds = 660, operation = "gym_ask")
+        val reply = api.send<AskResponse>("POST", "/v1/gym/ask", AskRequest(question, stream = false), timeoutSeconds = 660, operation = "gym_ask")
         if (reply.generation?.status == "running") return AskAnswer("", ReadTally(), generation = reply.generation)
         if (reply.generation?.status == "stopped") return reply.generation.response()
         return AskAnswer(reply.answer ?: throw WindmillApiException.Malformed, reply.read ?: throw WindmillApiException.Malformed,
@@ -54,8 +54,8 @@ class GymHttp(private val api: WindmillApi) : GymRest {
 
     override suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit): AskAnswer {
         val requestId = requireNotNull(question.requestId)
-        val body = WindmillJson.encodeToString(CoachStreamRequest.serializer(), CoachStreamRequest(question.thread, question.question,
-            requestId, question.attachmentIds, true)).toRequestBody("application/json".toMediaType())
+        val body = WindmillJson.encodeToString(AskRequest.serializer(), AskRequest(question, stream = true))
+            .toRequestBody("application/json".toMediaType())
         return coroutineScope {
             val snapshots = Channel<AskGeneration>(Channel.CONFLATED)
             val response = async {
@@ -164,9 +164,12 @@ private data class GrantsResponse(val grants: List<OAuthGrant> = emptyList())
 @Serializable
 private data class McpKeysResponse(val keys: List<McpKey> = emptyList())
 
+// `routineReview` tells the log this build draws Coach's routine drafts with a Save, so Coach may draft one.
 @Serializable
-private data class CoachStreamRequest(val thread: String, val question: String, val requestId: String,
-    val attachmentIds: List<String>, val stream: Boolean)
+private data class AskRequest(val thread: String, val question: String, val requestId: String?, val attachmentIds: List<String>,
+    val stream: Boolean, val routineReview: Boolean) {
+    constructor(asked: AskQuestion, stream: Boolean) : this(asked.thread, asked.question, asked.requestId, asked.attachmentIds, stream, true)
+}
 
 @Serializable
 internal data class CoachSnapshotResponse(val thread: String, val generation: AskGeneration)

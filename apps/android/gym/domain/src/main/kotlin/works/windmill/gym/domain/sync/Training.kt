@@ -104,8 +104,8 @@ object SessionRules {
     }
 }
 
-data class TrainingLog(val sessions: List<Session>, val sets: List<TrainingSet>, val moment: Moment, val firstPullComplete: Boolean = true, val catalogue: Catalogue = Catalogue(SeedExercises.all)) {
-    constructor(read: Reader) : this(read.repository(Session).all(works.windmill.sync.api.ViewMode.drawn), read.repository(TrainingSet).all(works.windmill.sync.api.ViewMode.drawn), read.moment, read.firstPullComplete(), Catalogue(read))
+data class TrainingLog(val sessions: List<Session>, val sets: List<TrainingSet>, val catalogue: Catalogue, val moment: Moment, val firstPullComplete: Boolean = true) {
+    constructor(read: Reader) : this(read.repository(Session).all(works.windmill.sync.api.ViewMode.drawn), read.repository(TrainingSet).all(works.windmill.sync.api.ViewMode.drawn), Catalogue(read), read.moment, read.firstPullComplete())
     val drawnSessions: List<Session> get() = sessions.map { SessionRules.drawn(it, sets, moment.now) }
         .sortedWith(compareByDescending<Session> { it.startedAt }.thenBy { it.id })
     val open: Session? get() = drawnSessions.firstOrNull { it.isOpen }

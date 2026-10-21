@@ -90,7 +90,7 @@ class TrainingStore(
 ) {
     val coach = CoachStore(
         accountOwner = { owner }, withheldIds = { withheldIds }, onProgramChanged = { routines = training.program() },
-        rest = rest, localCoach = localCoach, telemetry = telemetry, elapsedNanos = elapsedNanos,
+        rest = rest, localCoach = localCoach, telemetry = telemetry, elapsedNanos = elapsedNanos, scope = scope,
     )
 
     // A refusal is an answer the screen says, never a failure to report.

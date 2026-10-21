@@ -85,7 +85,7 @@ class CoachTransportTests {
             assertEquals("/v1/gym/ask", request.path)
             assertEquals("Bearer private-bearer", request.getHeader("Authorization"))
             assertEquals("text/event-stream", request.getHeader("Accept"))
-            assertEquals("""{"thread":"thread-a","question":"Question","requestId":"request-a","attachmentIds":[],"stream":true}""", request.body.readUtf8())
+            assertEquals("""{"thread":"thread-a","question":"Question","requestId":"request-a","attachmentIds":[],"stream":true,"routineReview":true}""", request.body.readUtf8())
         } finally { server.shutdown() }
     }
 
