@@ -73,7 +73,7 @@ last time's Nth working set, then today's last set, then the empty bar. Missing 
 time's Nth set, then the last set's reps. The plan must not be flattened to the preceding slot.
 
 Logged rows show actual values and open Fix. The current row shows its target; future rows remain
-read-only and have spoken position/target names. Warmups do not consume working-set slots; extra
+read-only and have spoken position/target names. Every logged set takes a slot; extra
 sets append without a target. Android's quiet ledger, iOS's current strip and the web mirror
 follow [workouts](16-the-workout.md). A lock-screen offer uses the current slot's prefilled values.
 

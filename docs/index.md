@@ -9,7 +9,7 @@ Figma: Gym file, page [iOS](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?
 Code: `apps/ios/App/Sources/Gym/`. Spec: [ios-redesign.md](design/ios/ios-redesign.md).
 The page is the target: 🚀 boards match the app, 🚧 boards are what the next build draws, and each
 target holds the slot and number of the board it replaced ([consistency.md](design/consistency.md)
-10o, 10p, 10q).
+10o, 10p, 10q, 10r).
 
 | Flow | Section | Entry → exit |
 |---|---|---|
@@ -19,7 +19,7 @@ target holds the slot and number of the board it replaced ([consistency.md](desi
 | 03 · Workout | [`1114:1513`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1114-1513) | Start / control → rack → wheel or Fix set → receipt → workout detail (05) or Coach (08) |
 | 04 · Outside the app | [`1115:1576`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1115-1576) | Control Center, Live Activity, Dynamic Island → workout (03) |
 | 05 · The log, past workouts & progress | [`1116:1605`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1116-1605) | The log tab → workout detail, share, movement record |
-| 06 · Bodyweight | [`1116:1683`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1116-1683) | Weigh in → Bodyweight |
+| 06 · Bodyweight | [`1116:1683`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1116-1683) | The log’s Weigh in → weigh-in sheet (decimal pad); Bodyweight → correct or swipe-delete |
 | 07 · On this phone | [`1116:1705`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1116-1705) | The log → inspect → fix or discard |
 | 08 · Coach | [`1117:1703`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1117-1703) | Coach tab → conversation → proposal review |
 | 09 · Notes & Connected log | [`1117:1768`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1117-1768) | You → Notes / Connected log |

@@ -248,10 +248,10 @@ these are the places it disagrees with a drawing, a brief or the build.
 - **9b · Phones weave.** `gym/briefs/18-progress.md` gives web and iOS the movement strip and
   Android the woven moments; the spec gives both phones the woven timeline and only the web the
   strip. The brief now says so.
-- **9c · The rack's kind picker.** `16-the-workout.md` kept iOS's kind picker at the rack; the
-  spec moves Kind off the rack into the Fix sheet on iOS, and a new set is Working, as on web and
-  Android. The brief now says so. Android's Fix sheet has no Kind control: `FixSheet.kt` carries a
-  set's kind through unchanged.
+- **9c · Sets have no type (build drift).** The owner removed set types from the product; canon and
+  the Gym boards state none. iOS code on main and on `codex/gym-coach-feedback` still carries
+  `SetKind`: `GymRows.swift` dims warm-ups and prints the *W* prefix, and `SetEditor` offers Kind;
+  Android's `FixSheet.kt` carries a set's kind through. Build work: remove it on every surface.
 - **9e · First-run boards' chrome.** The first-run and Coach-wave boards draw a *W* capsule, a
   hand-drawn glass fill and a drawn account glyph; the spec's room menu and `person.crop.circle`
   on system glass replace them. Redraw the top band of boards 02d, 05–07d, 10–13b and 21a/21b from
@@ -413,26 +413,25 @@ these are the places it disagrees with a drawing, a brief or the build.
   `codex/gym-coach-feedback` (`docs/design/gym/feedback-2026-10-21.md` there). Each target holds
   the slot and number of the board it replaced; the replaced boards are deleted. Targets:
   - 01: review and Save routines 01.8 `1156:3154`; the Coach chat targets of 01 are listed under 10q.
-  - 02: editor always sortable 02.5 `1149:2200`; empty Routines with a plus seat 02.7 `1149:2477`;
-    remove by native trash swipe 02.8 `1149:2275`.
+  - 02: editor always sortable 02.5 `1149:2200`; empty Routines with the floating + 02.7 `1149:2477`;
+    remove by the trash circle 02.8 `1149:2275`.
   - 03: rack with Dumbbells 03.1 `1150:2352`; its states pressed 03.10 `1150:2495`, changed with 56 pt
     hit areas 03.11 `1150:2638`, Bodyweight with added load 03.12 `1150:2793`.
   - 04: Live Activity with since-last-set top right 04.2 `1152:2533`.
-  - 05: The log with the Weigh in seat 05.1 `1153:2765`; Edit exercise 05.9 `1153:2559`; the
+  - 05: The log with its labelled Weigh in 05.1 `1153:2765`; Edit exercise 05.9 `1153:2559`; the
     Equipment menu 05.10 `1153:2603`.
   - 08: Coach updates a movement 08.9, listed under 10q.
-  - The floating +: Routines (02.7, 02.1) and The log (05.1) share one 60 pt accent floating action,
-    the local component `_Gym / Floating action` (`1178:15505`, Gym Components page).
+  - Floating actions are Liquid Glass with their symbol in the accent: `_Gym / Floating action`
+    (`1190:195`, Gym Components page) — Label=None, the 60 pt + for New routine (02.1, 02.7);
+    Label=Text, the labelled *Weigh in* capsule on The log (05.1), since a bare + did not say what it
+    adds.
   - The rack names its equipment as a symbol in the movement header (03.1, 03.10–03.12); the
     branch's *Two dumbbells · 32 kg total* line is gone from the rack, while totals keep its model.
   - Tapping the load or reps opens a native wheel, 03.2 `1180:3930`, load in the movement's steps
     and reps beside it; the ladder keys stay for one-tap nudges. Fix set, 03.3 `1180:4021`, is
-    rebuilt on the same wheel with Effort and Note; Kind and Delete set live in its ⋯ menu.
-  Owner decisions these targets take against written canon: §7.10 *Keypad* and the rack's *the
-  numeral opens the keypad* (now the wheel); §7.7 and §7.10 *Kind as a segmented control* (now a
-  menu); §4 and §7.6 *Weigh in is the bar's action* and §7.5 *plus in the bar* (now the floating
-  action, as the branch rules); §7.10 Fix set's *Cancel · Save* bar, centred `WeightInstrument` and
-  *Push A keeps its planned targets.* caption (now ✓, the wheel and no caption).
+    rebuilt on the same wheel with Effort and Note and Delete set as its last row. The weigh-in
+    (06.1 `1191:5884`) uses the system `.decimalPad` in a focused field. The owner settled each of
+    these; the spec now states them (§4 Buttons, §5 Lists, §7.5, §7.6, §7.7, §7.10).
 
   Choices the branch forced or left open, for the build and the owner:
   - The branch's words win: *Equipment* (not *load basis*), *Dumbbells*, *Build myself* (the feedback
@@ -445,8 +444,10 @@ these are the places it disagrees with a drawing, a brief or the build.
     canon's silence on Log set, which the boards keep.
   - The library has no SF stand-ins for `minus`, `line.3.horizontal`, `pencil`, `photo.badge.plus`,
     `chevron.up.chevron.down` and the two `figure.strengthtraining.*` symbols, nor a system-red
-    token (`ios/system/alert` resolves to an alert ground). The boards draw local `sf/…` vectors and
-    paint destructive actions `ios/gym/alarm`. Adding them is a Design System change, which then
+    token (`ios/system/alert` resolves to an alert ground). The boards draw local `sf/…` vectors.
+    System red lives locally as `gym/destructive` in *iOS · Gym roles* (#FF453A dark, #FF3B30
+    light), used by the swipe trash circle and *Delete set*; older destructive labels on the boards
+    still paint `ios/gym/alarm`. Moving both into the library is a Design System change, which then
     needs a library publish from the Figma UI.
 - **10q · Coach chat in the Messages language (owner decision, 2026-10-22).** The owner asked for
   the Coach chat to read like iOS Messages, drawn as 🚧 targets over every Coach chat board in
@@ -472,6 +473,27 @@ these are the places it disagrees with a drawing, a brief or the build.
     centred service notes and timestamps are not in canon.
   - The library has no `clock` symbol; the targets draw History with `clock.arrow.circlepath`
     while the app uses `clock`.
+- **10r · Swipe delete is the native trash circle (owner ruling, 2026-10-22).** Everywhere in gym a
+  trailing swipe slides the row and reveals a round red trash circle with no text label (spec §5
+  Lists), drawn with the local component `_Gym / Swipe actions` (`1190:172`). Audit of the iOS code
+  (`apps/ios/App/Sources/Gym`, main) against the boards:
+
+  | Place | Code today | Board | Build work |
+  |---|---|---|---|
+  | Routines list | `RoutinesTab.swift:63` text *Delete*, no symbol | 02.1 `1181:4042` | text label |
+  | Routine editor movements | `RoutineBuilder.swift:149` text *Remove* (the branch adds `trash`) | 02.8 `1149:2275` | text label |
+  | Targets, per set | `RoutineTargets.swift:262` text *Delete* | none (Vary by set rows not drawn) | text label |
+  | This workout movements | `WorkoutSheets.swift:28` text *Remove* | 03.4 `1135:1875` | text label |
+  | The log sessions | `LogTab.swift:167` `trash` + *Delete*, `.tint(GymPalette.destructive)` | 05.2 `1185:4905` | custom tint, not the system red |
+  | Workout detail sets | `SessionDetailScreen.swift:40` text *Delete* | 05.4 `1188:5811` | text label |
+  | Bodyweight entries | `BodyweightScreen.swift:137` text *Delete* | 06.2 `1185:5500` | text label |
+  | Notes | `CoachScreens.swift:86` text *Delete*; `onDelete` in Edit | 09.1 `1186:5557` | text label |
+  | Coach History | `CoachHistory.swift:148` `trash` + *Delete*, `.tint(GymPalette.destructive)` | 08.4 `1172:3561` | custom tint |
+
+  Deletes outside swipes keep their native form: context-menu *Delete routine*, *Delete set*,
+  *Delete conversation*, *Discard workout*; the editor's *Delete routine*; the sheets' *Delete set*,
+  *Delete weigh-in*, *Delete note*; Inspect's *Discard workout*; the receipt's quiet *Discard*
+  (`WorkoutReceipt.swift:252`), which is the receipt's band action, not a swipe.
 - **Proposal · one suggestion on an empty Coach (owner decision).** Outside first-use setup, the
   spec (§6) and `gym/feedback-contract.md` draw an empty Coach as the bar, canvas and composer. The
   proposal: while no conversation exists, at most one `.glass` capsule above the composer, chosen
@@ -605,11 +627,9 @@ exception to `guidelines/superapp-flow.md` §3 and §8. Both phones draw it (`On
 
 ## Gym
 
-### Set kind · product direction
+### Sets · product direction
 
-Web and Android entry/correction omit Kind. New sets use Working; corrections preserve stored
-classification. Historical warmups remain readable and do not consume planned working-set numbers.
-Targets are references: actual weight/reps remain independent for every set, including extra or
+Sets have no type on any surface. Targets are references: actual weight/reps remain independent for every set, including extra or
 skipped sets and substituted movements.
 
 ### Open concepts
