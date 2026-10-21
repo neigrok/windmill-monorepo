@@ -443,9 +443,9 @@ these are the places it disagrees with a drawing, a brief or the build.
   empty, typed, photo). Boards: 01.1 `1173:3783`, 01.2 `1173:3860`, 01.4 `1173:3934`,
   01.5 `1173:4111`, 01.6 `1173:4264`, 01.7 `1173:4370`, 01.8 `1173:4471`, 01.9 `1182:4650`,
   01.10 `1173:4600`, 01.11 `1173:4678`, 01.12 `1173:4754`, 01.13 `1173:4833`; 08.1 `1170:2943`,
-  08.2 `1170:3007`, 08.3 `1198:6144`, 08.4 `1172:3561`, 08.5 `1172:3621`, 08.8 `1170:3105`, 08.9
+  08.2 `1203:6633`, 08.3 `1203:6896`, 08.4 `1172:3561`, 08.5 `1172:3621`, 08.8 `1170:3105`, 08.9
   `1170:3192`, 08.10 `1170:3266`,
-  08.11 `1170:3364`, 08.12–08.14 `1198:6275`, `1198:6381`, `1198:6484`. Owner rulings since:
+  08.11 `1170:3364`, 08.12–08.14 `1203:7214`, `1203:7452`, `1203:7628`. Owner rulings since:
   proposals and drafts are decided inline on their cards (no review sheet; `09-coach.md`, §6), and
   the greeting is two bubbles of anchored capabilities. Still open against written canon, for the
   owner to settle before the spec moves:
@@ -459,19 +459,14 @@ these are the places it disagrees with a drawing, a brief or the build.
     dims when empty, *never a different size, shape or colour*. The targets put a round + outside the
     field and show the send arrow only when there is something to send.
   - The typing bubble, centred service notes and timestamps are not in canon.
-  - The targets draw History with `clock.arrow.circlepath` while the app uses `clock`; `clock` joins
-    the library with 10s.
-- **10s · Library additions awaiting a publish (2026-10-22).** The Design System file
-  (`qoOwNbWOYE1GFi0yR5uGY2`) gained Theme `ios/system/red` (aliasing new Brand primitives
-  `light/ios/system/red` #FF3B30 and `dark/ios/system/red` #FF453A); fourteen symbols on its iOS page
-  (`minus`, `line.3.horizontal`, `pencil`, `photo.badge.plus`, `chevron.up.chevron.down`,
-  `figure.strengthtraining.traditional`, `figure.strengthtraining.functional`, `delete.left`,
-  `scalemass`, `magnifyingglass`, `square.and.arrow.up`, `clock`, `timer`,
-  `exclamationmark.triangle`); `iOS / Keyboard`'s delete key now `delete.left` in both variants and a
-  new `Type=Decimal` variant (the `.decimalPad`). Until the owner publishes, the Gym file keeps its
-  local stand-ins: `gym/destructive`, `sf/…` vector frames and interim `delete.left` overlays on the
-  keyboards. After the publish, `.claude/scratch/gym-figma-targets/post-publish.js` swaps them for the
-  library assets and the local variable is deleted.
+- **10s · Library swap (closed 2026-10-22).** The owner published the Design System additions; the Gym
+  iOS and Components pages now use library symbols, the library keyboard (`delete.left`, and
+  `Type=Decimal` on the weigh-in) and Theme `ios/system/red` for every destructive paint. The local
+  `gym/destructive` variable is deleted.
+- **10u · Three more symbols awaiting a publish.** `iOS / Symbol / ellipsis` (renamed from the
+  library's private `_sf/ellipsis`), `list.bullet.rectangle` and `plus.circle.fill` were added to
+  the Design System after the first publish. Until the next publish the Gym boards draw them as local
+  `sf/…` frames; `.claude/scratch/gym-figma-targets/post-publish.js` swaps them afterwards.
 - **10t · Coach saves a stated goal (build).** The greeting says Coach sets goals and plans around
   them. The prompt (`AnthropicAsk.cpp`) saves only "useful insight" and reads Notes for goals; it
   should say plainly that a goal the lifter states is saved with `save_note` in that turn.
@@ -740,10 +735,9 @@ it in these places.
 
 ### Figma reconciliation
 
-- **Coach setup chrome.** The Coach targets (10q) draw the tab bar's `list.bullet.clipboard` for
-  Routines and History as `clock.arrow.circlepath`; the app uses `list.bullet.rectangle` and `clock`.
-  The library carries neither app symbol. Short conversations start at the top in the targets; the
-  app keeps them bottom-aligned.
+- **Coach setup chrome.** The tab bar component draws Routines as `list.bullet.clipboard`; the app
+  uses `list.bullet.rectangle`, which joins the library with 10u. Short conversations start at the
+  top in the targets; the app keeps them bottom-aligned.
 - **Coach creation-row typography.** The app's receipt rows are the shared iOS `GymRow`: semibold
   body routine name and subheadline metadata. Target 01.9 (`1173:4471`) draws them with the library
   `iOS / List row`; compare the type treatment when the build lands.

@@ -587,37 +587,52 @@ it read in the phrase table's words (`09-coach.md`, "The verbs"), with no number
 since there is nothing to open: *Read your movement history* when it read your totals
 (`get_stats`), *Read nothing from your log* when it read nothing.
 
-**A proposal is decided on its card**, in the conversation — there is no review sheet. The card on
-`gym/card`, radius 18, 1 pt `gym/accent` stroke, under the answer:
+**A proposal is decided on its card**, in the conversation — there is no review sheet. The card
+spans the reading width (16 pt gutters) on `gym/card`, radius 22, 1 pt `gym/accent` stroke:
 
 ```
-PROPOSAL · PUSH A                                   (eyebrow, accent)
-→ Bench Press     5 × 5 · 82.5 → 3 × 3 · 90 kg total   (change rows: symbol accent, title ink, change ink-dim)
-+ Incline Press   Added · 3 × 10 · 24 kg each · after Bench Press
-− Cable Fly       Removed · 3 × 12 · 15
-Show all 4 changes ⌄                                 (expands in place; Show less ⌃ folds)
-[ Apply all 4 ]  [ Turn down ]                       (prominent accent · quiet, side by side)
-All or none. Nothing changes until you tap.          (.caption, ink-dim)
+PROPOSAL · PUSH A                                   5 changes
+───────────────────────────────────────────────────────────────
+✎ CHANGED                      (kind: symbol + word, .footnote semibold, accent)
+Bench Press                    (movement, .headline)
+Sets   5̶  →  3                  (label ink-dim · old struck, ink-dim · → · new semibold ink)
+Reps   5̶  →  3
+Load   8̶2̶.̶5̶ ̶k̶g̶  →  90 kg
+───────────────────────────────────────────────────────────────
++ ADDED
+Incline Dumbbell Press
+Sets 3 · Reps 10 · Load 24 kg each   (each on its own line, all new)
+───────────────────────────────────────────────────────────────
+Show all 5 changes ⌄                (expands in place; Show fewer folds)
+[            Apply all 5            ]   (52 pt, prominent)
+[             Turn down             ]   (52 pt, quiet)
+All or none. Nothing changes until you tap.
 ```
 
-Rows are `GymRow`s in the proposal's order: `arrow.right` retargeted (its rest when that moves,
-*· rest 1:30 → 2:00*), `plus` added (*Added · open · after Back Squat*), `minus` removed (*Removed ·
-3 × 8 · 40 kg*), `pencil` *Name* (*Push A → Push A2*), `arrow.up.arrow.down` *Order* (the new order
-in full); a kept run is *4 unchanged*, unfolding in place. Up to three rows show; **Show all N
-changes** expands the card in place. **Apply all N** (*Apply* for one) carries the store's count
-(`changeCount`); *Turn down* raises the `.alert` with the destructive role. A connected tool's
-proposal carries *from Claude Desktop* under the eyebrow (*from a connected tool* with no name). A
-removal's card shows one row, `minus` in `gym/destructive` · *Routine* · *Removed*, and **Remove
-routine** in the destructive style, with *Your logged sets stay. Nothing is removed until you tap.*
+**The diff rule.** Each change is its own block, separated by a hairline: a kind badge — a symbol
+and a word, never a bare sign: *Changed* (`pencil`), *Added* (`plus`), *Removed* (`minus`, in
+`ios/system/red`), *Moved* (`line.3.horizontal`) — then the movement name, then one line per field
+(sets, reps, load, equipment, order, movement) at body size with monospaced digits. A field that
+changed reads old → new on one line: the old value struck through in `ink-dim` on the left, an arrow,
+the new value semibold in `ink` on the right. Strikethrough and position carry the difference, so it
+reads without colour and in both appearances; a field that did not change is plain `ink-dim`. An
+added movement shows every value as new; a removed one is struck through and dimmed, name and
+values. The first two changes show in full; **Show all N changes** expands the card in place.
+**Apply all N** (*Apply* for one; **Remove routine** in the destructive style for a removal) and
+**Turn down** are 52 pt buttons under the list, then the promise. *Turn down* raises the `.alert`
+with the destructive role. A connected tool's proposal carries *from Claude Desktop* under the
+eyebrow (*from a connected tool* with no name). The pieces are the local components
+`_Coach / Change row` and `_Coach / Diff field` (Gym Components page); routine drafts (all *Added*)
+and Coach's movement edits (*Changed*, one field) use the same blocks.
 
 While a decision waits on the log the pressed button holds in place with an inline `ProgressView`
 (*Applying…*, *Turning down…*, *Removing…*); after 15 seconds it offers *Retry* and the caption
 reads *Not confirmed yet.* A decision the phone could not write raises its refusal in the band and
-the buttons return. **Settled**, the card collapses to one receipt line: *Applied · Push A · 4
-changes* with `checkmark.circle` (a door to the routine), *Turned down · Push A* in `ink-dim`.
-**Out of date**, the card stays readable in grey with the server's reason — *The routine changed
-after this was written. Nothing was applied.* / *A newer proposal replaced this one. Nothing was
-applied.* — and no buttons.
+the buttons return. **Applied**, the card drops its actions and stroke and reads *✓ Applied · Push
+A* over the same change blocks, a record of what landed. **Turned down**, it collapses to one line,
+*Turned down · Push A · nothing changed*, in `ink-dim`. **Out of date**, the change blocks stay
+readable, dimmed, with the server's reason — *The routine changed after this was written. Nothing
+was applied.* / *A newer proposal replaced this one. Nothing was applied.* — and no buttons.
 
 What Coach did besides answering is one row under the answer, each a door: a created routine
 *Open routine · Push A ›* with `list.bullet.rectangle`; a saved note *Saved a note ›* with
@@ -1435,7 +1450,7 @@ its drawing; every section and board name starts with its status (🚀 · 🚧; 
 | 05 · The log, past workouts & progress | `1116:1605` | 05.1 The log, Weigh in `1153:2765`; 05.2 discard by swipe `1185:4905`; 05.3 workout detail `1185:4993`; 05.4 a set deleted `1188:5811`; 05.5 share sheet `1136:1904`; 05.6 Record `1185:5111`, 05.7 scrub `1185:5238`, 05.8 panned `1185:5371`; 05.9 Edit exercise `1153:2559`; 05.10 Equipment menu `1153:2603` |
 | 06 · Bodyweight | `1116:1683` | 06.1 Weigh in `1191:5884`; 06.2 Bodyweight `1185:5500` |
 | 07 · On this phone | `1116:1705` | On this phone `1138:2042`; Inspect `1138:2201`; Fix workout `1138:2362` |
-| 08 · Coach | `1117:1703` | 08.1 empty `1170:2943`; 08.2 conversation, proposal pending `1170:3007`; 08.3 proposal expanded `1198:6144`; 08.4 History `1172:3561`; 08.5 What Coach read `1172:3621`; 08.6 no Coach seat `1186:5415`; 08.7 not on this Windmill `1186:5489`; 08.8 the day's cap `1170:3105`; 08.9 Coach updates a movement `1170:3192`; 08.10 a Markdown answer `1170:3266`; 08.11 streaming `1170:3364`; 08.12 applied `1198:6275`; 08.13 turned down `1198:6381`; 08.14 out of date `1198:6484` |
+| 08 · Coach | `1117:1703` | 08.1 empty `1170:2943`; 08.2 conversation, proposal pending `1203:6633`; 08.3 proposal expanded `1203:6896`; 08.4 History `1172:3561`; 08.5 What Coach read `1172:3621`; 08.6 no Coach seat `1186:5415`; 08.7 not on this Windmill `1186:5489`; 08.8 the day's cap `1170:3105`; 08.9 Coach updates a movement `1170:3192`; 08.10 a Markdown answer `1170:3266`; 08.11 streaming `1170:3364`; 08.12 applied `1203:7214`; 08.13 turned down `1203:7452`; 08.14 out of date `1203:7628` |
 | 09 · Notes & Connected log | `1117:1768` | 09.1 Notes `1186:5557`; 09.2 note editor `1186:5614`; 09.3 Connected log `1138:2522` |
 | 10 · Not built — designed only | `1118:1810` | Apple Health (no board) |
 

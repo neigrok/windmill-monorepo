@@ -35,7 +35,7 @@ The composer is fixed above the navigation/keyboard inset while the conversation
 | State | UI and action |
 | --- | --- |
 | First open | Coach's two-bubble greeting, Add screenshot · Build myself, and the composer; no allowance count, goal form, chips or upgrade action |
-| Proposal | One card under the answer: the diff (Show all N in place), Apply all N · Turn down, the all-or-none promise; settled, a receipt line; out of date, grey with the reason |
+| Proposal | One full-width card under the answer: each change its own block — kind (symbol and word), movement, then fields old → new with the old struck through and dim, at body size — the first two in full, Show all N in place; Apply all N and Turn down as full-size buttons; the all-or-none promise. Applied keeps the blocks as a record; turned down is one line; out of date dims the blocks and names why |
 | Empty | Empty reading region and composer; no unsolicited message |
 | History | Retained conversations; selecting a row opens that same editable conversation; ordinary rows show a date, and creation/proposal rows add one concise outcome |
 | Resumed | Ordered existing messages, unchanged conversation identity, active composer, New chat in More |

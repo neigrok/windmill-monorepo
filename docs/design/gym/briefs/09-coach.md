@@ -118,6 +118,14 @@ unfolds where it stands — then the actions and the atomic promise. On the phon
 on its first three changes and **Show all N changes** expands it in place; nothing opens over the
 conversation.
 
+**Every change reads as a diff, at body size.** Each change is its own block: its kind as a symbol
+and a word (*Changed*, *Added*, *Removed*, *Moved*), the movement name, then one line per field —
+sets, reps, load, equipment, order. A changed field shows its old value struck through and dimmed,
+then its new value in full ink: old on the left, new on the right, so the strikethrough and the
+position carry it without colour. Unchanged fields stay plain; an added movement is all new; a
+removed one is struck through whole. Drafts use the same blocks (every movement *Added*), and so
+does the receipt for a movement Coach edited.
+
 **The actions are on the card.** **Apply all N** (**Apply** when N is 1, **Remove <routine>** for a
 removal, in the destructive style) and **Turn down**, side by side under the diff, then the promise —
 *All or none. Nothing changes until you tap.* (*Nothing changes until you tap.* for one change;
