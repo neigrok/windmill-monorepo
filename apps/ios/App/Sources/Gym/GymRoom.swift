@@ -10,7 +10,6 @@ struct GymRoom: View {
   @Bindable var gym: GymModel
   @Bindable var app: AppModel
   @State var coach: CoachConversation
-  @State var fixturePrepared = false
   @State var setupNavigationChosen = false
   @State var routineAwaitingSync = false
   @State var setupChecked: String?
@@ -126,7 +125,6 @@ struct GymRoom: View {
       gym.workout.coachAvailable = gym.account != nil && !gym.isAnonymous && !gym.authPaused && !gym.accountTransition && !gym.coachUnavailable
     }
     .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition)") {
-      if CoachFixture.setup, !fixturePrepared { fixturePrepared = true; await CoachFixture.prepare(gym) }
       await coach.activate()
     }
     .onChange(of: gym.account) { _, _ in setupBuilder = nil; coachHandoff = nil }

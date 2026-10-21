@@ -89,9 +89,14 @@ native event labels arrive without private input or credential canaries.
 
 The native client passes real HTTP goal/photo creation, atomic local import, starting a workout,
 verified account binding and engine adoption while retaining local Coach history. All 89 Coach
-tests pass. A bounded anonymous live-provider run remains a release gate: fixture responses do not
-establish model quality or photo interpretation. Release evidence must identify the tested source
-and deployed feature flags.
+tests pass. Light, dark and Accessibility XXXL anonymous flows also pass in CI.
+
+The [anonymous live-provider run](https://github.com/neigrok/windmill-monorepo/actions/runs/39513495133)
+passes 59 checks across exactly three calls: three goal routines cost $0.014618, two program routines
+cost $0.009686, and two photo routines cost $0.011990. Program and photo targets match their sources
+without invented weights. All $0.036294 settles at actual cost, with no debt or duplicate replay
+spending. Every installation stays below its $0.05 lifetime allowance. Full native CI and deployed
+feature-flag proof remain release gates.
 
 ## Structure observations
 
@@ -124,3 +129,8 @@ preserves account binding and saved-result reads/replays, including through the 
 A server-rejected installation credential stays on the phone without reopening the trial; a
 verified account can continue after that specific rejection. Transport and accounting failures
 still prevent dispatch until binding can be resolved.
+
+Backend CI reconstructs its tested builder through the cache for each downstream job. Source-layer
+cache misses in the live-provider run caused 10–12 minutes of repeated compilation per job; image
+loading itself took about 20 seconds. An immutable tested-image handoff is tracked in the dogfood
+node `ci-reuse-builder-and-balance-ios`; the source-cache miss cause is not established.

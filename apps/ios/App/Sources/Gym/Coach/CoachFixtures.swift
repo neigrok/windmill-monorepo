@@ -38,12 +38,14 @@ enum CoachFixture {
     #endif
     return gym.rest
   }
-  static func prepare(_ gym: GymModel) async {
+  @discardableResult static func prepare(_ gym: GymModel, signIn: Bool = false) async -> Bool {
     #if DEBUG && targetEnvironment(simulator)
-    guard ProcessInfo.processInfo.arguments.contains("-coach-fixture"), let runtime = gym.runtime, let server = runtime.auth.fake else { return }
+    guard ProcessInfo.processInfo.arguments.contains("-coach-fixture"), let runtime = gym.runtime, let server = runtime.auth.fake else { return true }
+    if gym.isAnonymous, runtime.settings.scenario?.hasPrefix("gym-e2e-anonymous") == true { return false }
     do {
       gym.refresh()
       if gym.account == nil {
+        guard signIn else { return false }
         let identity = server.identity(email: "coach-fixture@example.com")
         _ = try await runtime.engine.signIn(account: identity.account, token: identity.token)
         gym.refresh()
@@ -52,7 +54,7 @@ enum CoachFixture {
       if !ProcessInfo.processInfo.arguments.contains("-restore-board") {
         try? FileManager.default.removeItem(at: CoachDraftStore().file(owner))
       }
-      if ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") { return }
+      if ProcessInfo.processInfo.arguments.contains("-coach-setup-fixture") { return true }
       _ = gym.run(SaveNoteCall(Note(id: ID("coach-fixture-note"), title: "How I want to be talked to", body: "Don’t cheerlead. Say the number and stop.")))
       _ = gym.run(SaveNoteCall(Note(id: ID("coach-fixture-goal"), title: "What I am training for", body: "A stronger squat.")))
       var routine = Draft(new: Routine(id: ID("coach-fixture-routine"), name: "Push A", entries: [RoutineEntry(exerciseId: ID("back-squat"), sets: [SetTarget(reps: 5, weightKg: 80)])]))
@@ -81,6 +83,7 @@ enum CoachFixture {
       gym.error = "Coach fixture could not be prepared (\(reason))."
     }
     #endif
+    return true
   }
 
   static func applySetupResults(_ results: [CoachResult], gym: GymModel) {

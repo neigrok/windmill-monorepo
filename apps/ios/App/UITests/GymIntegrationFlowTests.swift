@@ -359,6 +359,7 @@ import XCTest
     let anonymous = XCUIApplication()
     anonymous.launchArguments = ["-model-server", "-server", "http://127.0.0.1:1", "-scenario", "gym-e2e-anonymous", "-coach-fixture"]
     anonymous.launch()
+    XCTAssertTrue(anonymous.tabBars.buttons["Routines"].waitForExistence(timeout: 15)); anonymous.tabBars.buttons["Routines"].tap()
     XCTAssertTrue(anonymous.buttons["new-routine"].waitForExistence(timeout: 15)); anonymous.buttons["new-routine"].tap()
     replace(anonymous.textFields["routine-name"], "Training day\n")
     anonymous.buttons["add-movement"].tap(); pickBench(anonymous, routineEditor: true)
@@ -387,6 +388,7 @@ import XCTest
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-server", "http://127.0.0.1:1", "-scenario", "gym-e2e-anonymous", "-coach-fixture"]
     app.launch()
+    XCTAssertTrue(app.tabBars.buttons["Routines"].waitForExistence(timeout: 15)); app.tabBars.buttons["Routines"].tap()
     XCTAssertTrue(app.buttons["new-routine"].waitForExistence(timeout: 15)); app.buttons["new-routine"].tap()
     replace(app.textFields["routine-name"], "Training day\n")
     app.buttons["add-movement"].tap(); pickBench(app, routineEditor: true)

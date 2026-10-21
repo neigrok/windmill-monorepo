@@ -90,7 +90,7 @@ import UIKit
     XCTAssertTrue(done.waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
   }
-  func back(_ app: XCUIApplication, expecting title: String? = nil) {
+  func back(_ app: XCUIApplication, expecting title: String? = nil, control: String = "coach-history") {
     let previous = app.navigationBars.firstMatch
     let previousTitle = previous.identifier
     let button = previous.buttons.element(boundBy: 0)
@@ -105,7 +105,7 @@ import UIKit
         app.navigationBars["You"].buttons["Done"].tap()
       }
       XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5))
-      let menu = app.buttons["coach-history"]
+      let menu = app.buttons[control]
       XCTAssertTrue(waitForVisible(menu, in: app))
       XCTAssertTrue(menu.isHittable)
     }
@@ -390,19 +390,21 @@ import UIKit
       app.terminate()
     }
   }
-  func testAnonymousCoachExplainsAccountRequirementAndKeepsDoors() {
+  func testAnonymousCoachOffersSetupAndKeepsAccountDoors() {
     for appearance in ["Light", "Dark"] {
       let suffix = appearance.lowercased(), app = launch(appearance, fixture: false)
-      XCTAssertTrue(app.staticTexts["Coach reads your log, so it needs you signed in."].waitForExistence(timeout: 5))
-      XCTAssertEqual(app.buttons["coach-sign-in"].label, "Sign in")
-      XCTAssertFalse(app.descendants(matching: .any)["coach-question"].exists)
-      XCTAssertTrue(app.buttons["coach-sign-in"].exists)
-      capture("coach-account-only-\(suffix)", app)
+      XCTAssertTrue(app.buttons["coach-setup-goal"].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.buttons["coach-setup-describe"].exists)
+      XCTAssertTrue(app.buttons["coach-setup-screenshot"].exists)
+      XCTAssertTrue(app.descendants(matching: .any)["coach-question"].exists)
+      XCTAssertFalse(app.buttons["coach-history"].exists)
+      XCTAssertFalse(app.buttons["coach-sign-in"].exists)
+      capture("coach-anonymous-setup-\(suffix)", app)
       openDestination("Notes", app)
       XCTAssertTrue(app.staticTexts["Notes live with your account, so they need you signed in."].waitForExistence(timeout: 5))
       XCTAssertTrue(app.buttons["coach-sign-in"].exists)
       capture("coach-notes-account-only-\(suffix)", app)
-      back(app, expecting: "Coach"); openDestination("Connected log", app)
+      back(app, expecting: "Coach", control: "coach-setup-goal"); openDestination("Connected log", app)
       XCTAssertTrue(app.buttons["coach-connect-tool"].waitForExistence(timeout: 5))
       XCTAssertEqual(app.buttons["coach-connect-tool"].label, "Sign in first")
       XCTAssertTrue(app.staticTexts["Your log, read by ChatGPT or Claude."].exists)

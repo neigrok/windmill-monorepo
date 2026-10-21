@@ -52,7 +52,8 @@ struct CoachTab: View {
   @Environment(\.dynamicTypeSize) var typeSize
   @FocusState var composing: Bool
   init(gym: GymModel, handoff: Binding<CoachHandoff?> = .constant(nil), coach: CoachConversation? = nil, escapeSetup: ((CoachSetupChoice) -> Void)? = nil) { self.gym = gym; self.escapeSetup = escapeSetup; _handoff = handoff; let rest = coach?.rest ?? CoachFixture.rest(gym)
-    _coach = State(initialValue: coach ?? CoachConversation(gym: gym, rest: rest)); _history = State(initialValue: CoachHistory(gym: gym, rest: rest)) }
+    _coach = State(initialValue: coach ?? CoachConversation(gym: gym, rest: rest)); _history = State(initialValue: CoachHistory(gym: gym, rest: rest))
+    _fixturePrepared = State(initialValue: !gym.isAnonymous) }
 
   var body: some View {
     room.modifier(GymPage()).navigationTitle("Coach").accessibilityIdentifier("gym-coach")
@@ -89,7 +90,7 @@ struct CoachTab: View {
       .sheet(item: $sources) { reading in CoachSourcesSheet(gym: gym, reading: reading) }
       .gymTabBar(hidden: composing)
       .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition):\(handoff?.id.uuidString ?? "")") {
-        if !CoachFixture.setup, !fixturePrepared { fixturePrepared = true; await CoachFixture.prepare(gym) }
+        if !CoachFixture.setup, !fixturePrepared { fixturePrepared = await CoachFixture.prepare(gym) }
         history.resetOwner(); await coach.activate()
         if let handoff, coach.begin(handoff) { self.handoff = nil; composing = !handoff.send }
         coach.noteOffline()

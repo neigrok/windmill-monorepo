@@ -109,3 +109,18 @@ verification against the isolated C++ backend and fixture provider covers goal a
 generation, atomic import, workout start, installation binding, account adoption and local archive
 retention. The native UI's bounded setup events reach the first-party intake and local observer.
 These native checks use a deterministic provider; they do not establish actual-provider quality.
+
+Coach fixture authentication completes before the app model is published. Anonymous fixture scenarios
+retain their local seat until the test uses the account flow; view-time preparation only seeds data for
+an existing account. This keeps setup activation independent of fixture sign-in timing. Anonymous
+navigation checks require the Coach setup controls while Notes and Connected log retain their account
+gates. The shared return-navigation assertion names its expected control and retains History for
+signed-in callers.
+
+Offline verification fixtures use a fixed clock across cold launches and resumes, so UTC midnight does
+not change the page under a local-persistence assertion. UI shards assign integration cases with the
+workout/account group and onboarding/shell cases with routines/journal; all 16 UI classes remain
+selected exactly once. The grouping balances the measured class durations without reducing coverage.
+Local verification covers all 11 corrected UI cases and the three anonymous appearance variants,
+89 Coach unit tests and 42 app-tool tests. Fixture boundaries and the final navigation assertion pass
+independent review.

@@ -74,6 +74,7 @@ struct WindmillApp: App {
             if !onboardingFixture, await !ShellFixture.prepare(board, model: created) { await BoardFixture.prepare(board, model: created) }
           }
           try await OfflineFixture.prepare(created)
+          await CoachFixture.prepare(created.gym, signIn: true)
           if settings.board == nil && settings.scenario == nil || onboardingFixture {
             introduction = try OnboardingLaunch.shouldPresent(model: created, deepLink: launchLink || launchDelegate.deepLink || settings.board == "onboarding-deep-link")
           }
