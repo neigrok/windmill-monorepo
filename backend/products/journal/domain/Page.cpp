@@ -23,6 +23,17 @@ Page::Page(UserId user, LocalDate day)
     : user(std::move(user)), day(std::move(day)), body(), mood(std::nullopt), energy(std::nullopt),
       source(Source::typed), stamp(), updatedAtMs(0) {}
 
+bool Page::hasWriting(std::string_view body) {
+  while (!body.empty()) {
+    const auto first = static_cast<unsigned char>(body.front());
+    const std::size_t size = first < 0x80 ? 1 : first < 0xe0 ? 2 : first < 0xf0 ? 3 : 4;
+    const auto scalar = body.substr(0, size);
+    if (whitespace.find(scalar) == std::string_view::npos) return true;
+    body.remove_prefix(scalar.size());
+  }
+  return false;
+}
+
 LocalDate::LocalDate(std::string iso) {
   auto digit = [](char c) { return c >= '0' && c <= '9'; };
   bool shaped = iso.size() == 10 && iso[4] == '-' && iso[7] == '-' &&

@@ -106,8 +106,9 @@ TEST(gym_engine_real_coach_records_keep_provenance_and_thread_delete_admits_unli
   const auto created = coach.callTool("create_routine", routineBody("rt_unused001"), caller);
   REQUIRE(!created.isError);
   const auto routineId = created.payload["id"].asString();
-  CHECK_EQ(routineId, "rt_gen_doorcoach");
+  CHECK_EQ(routineId, "rt_gen_doorcoach_0");
   Json::Value note(Json::objectValue);
+  note["id"] = "note_doorcoach";
   note["title"] = "Goal";
   note["body"] = "Build strength";
   REQUIRE(!coach.callTool("save_note", note, caller).isError);

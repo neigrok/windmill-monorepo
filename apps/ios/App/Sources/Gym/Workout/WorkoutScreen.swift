@@ -8,7 +8,6 @@ struct WorkoutScreen: View {
   let gym: GymModel
   @Bindable var workout: WorkoutState
   @Environment(\.scenePhase) var scenePhase
-  @Environment(\.dynamicTypeSize) var typeSize
   @State var assembly = false
   @State var addMovement = false
   @State var addAfterAssembly = false
@@ -114,15 +113,14 @@ struct WorkoutScreen: View {
             .accessibilityIdentifier("workout-add")
         }
       } else {
-        movementHead
-        WorkoutPager(gym: gym, workout: workout, fix: { fixing = $0 })
+        WorkoutPager(gym: gym, workout: workout, assembly: { assembly = true }, fix: { fixing = $0 })
       }
     }
     .modifier(GymPage())
     .reachBand(spacing: 0) {
       VStack(spacing: 0) {
         GymTransient(gym: gym, message: workout.message, dismiss: { workout.message = nil }, noticeMessage: gym.workoutNotice,
-                     retry: { gym.workout.retryRead() }, errorIdentifier: "workout-refusal", undoIdentifier: "workout-undo")
+                     retry: { gym.workout.retryRead() }, errorIdentifier: "workout-refusal")
           .modifier(BoundedBand())
         if workout.selected != nil {
           WorkoutRack(workout: workout, edit: { keypad = $0 })
@@ -136,29 +134,6 @@ struct WorkoutScreen: View {
       }.frame(maxWidth: .infinity)
     }
   }
-  // The eyebrow over the name, Previous and Next beside it; at accessibility sizes the eyebrow, plan and clocks move into the ledger.
-  var movementHead: some View {
-    let order = workout.walk.order, position = workout.walk.position(of: workout.selected)
-    return VStack(spacing: RoomSpace.small) {
-      if let position, !typeSize.isAccessibilitySize { WorkoutFacts.eyebrow(position) }
-      HStack(spacing: RoomSpace.related) {
-        if let position {
-          WorkoutCircle(title: "Previous movement", symbol: "chevron.left") { workout.select(order[position.index - 1]) }
-            .disabled(position.index == 0 || workout.paging).accessibilityIdentifier("workout-previous")
-        }
-        Button { assembly = true } label: {
-          Text(gym.catalogue.find(workout.selected ?? ID("missing"))?.name ?? "Movement")
-            .font(typeSize.isAccessibilitySize ? .caption.weight(.bold) : .title2.weight(.bold))
-            .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity)
-        }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).accessibilityHint("Open this workout’s movements")
-        if let position {
-          WorkoutCircle(title: "Next movement", symbol: "chevron.right") { workout.select(order[position.index + 1]) }
-            .disabled(position.index + 1 >= position.count || workout.paging).accessibilityIdentifier("workout-next")
-        }
-      }
-      if !typeSize.isAccessibilitySize { WorkoutFacts(workout: workout, planLine: workout.selected.flatMap { workout.ledger($0).planLine }) }
-    }.padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.inset)
-  }
   func updateAwake() {
     let live = scenePhase == .active && workout.session?.isOpen == true
     if live && !awake { idleTimerWasDisabled = UIApplication.shared.isIdleTimerDisabled; UIApplication.shared.isIdleTimerDisabled = true; awake = true }
@@ -169,12 +144,11 @@ struct WorkoutScreen: View {
   }
 }
 
-// One movement's sets in the order they were logged, then the current set and the plan still ahead. Logging a set turns the
-// current row into it and scrolls the next row into the current slot (docs/design/ios/ios-redesign.md §5 Motion).
 struct WorkoutLedger: View {
   let gym: GymModel
   let workout: WorkoutState
   let exerciseId: ID<Exercise>
+  var assembly: () -> Void = {}
   let fix: (TrainingSet) -> Void
   @Environment(\.dynamicTypeSize) var typeSize
   @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -182,33 +156,83 @@ struct WorkoutLedger: View {
     let ledger = workout.ledger(exerciseId)
     let unsent = gym.unsentSets(workout.sets)
     let fixable = !(workout.paging || workout.finishing || workout.finishQueued || gym.accountTransition)
-    ScrollViewReader { scroll in
-    List {
-      if typeSize.isAccessibilitySize {
-        Section {
-          WorkoutFacts(workout: workout, planLine: ledger.planLine, position: workout.walk.position(of: exerciseId)).frame(maxWidth: .infinity)
-        }.listRowBackground(GymPalette.canvas)
-      }
-      // Every row is the same view whatever its place, so the row a set is logged into keeps its identity and its mark: its
-      // modifiers stay put, and only a logged set is a button that opens Fix set.
-      Section {
-        ForEach(ledger.rows) { row in
-          WorkoutLedgerRow(row: row, unsent: row.set.map { unsent.contains($0.id) } ?? false)
-            .contentShape(Rectangle())
-            .onTapGesture { if let set = row.set, fixable { fix(set) } }
-            .accessibilityRemoveTraits(row.set == nil ? [.isButton, .isSelected] : .isSelected)
-            .accessibilityAddTraits(row.set == nil ? .isStaticText : .isButton)
-            .accessibilityRespondsToUserInteraction(row.set != nil)
-            .accessibilityHint(row.set == nil ? "" : "Opens Fix set.")
-            .accessibilityAction { if let set = row.set, fixable { fix(set) } }
-        }
-      }.listRowBackground(GymPalette.card)
-    }.listStyle(.insetGrouped).listSectionSpacing(.compact)
-      .contentMargins(.bottom, RoomSpace.minimumTarget, for: .scrollContent).modifier(GymPage()).modifier(SoftEdge(.top))
-      .onAppear { scroll.scrollTo(ledger.current.id, anchor: .bottom) }
-      .onChange(of: ledger.sets.count) { _, _ in
-        withAnimation(reduceMotion ? nil : .spring) { scroll.scrollTo(ledger.current.id, anchor: .bottom) }
-      }
+    VStack(spacing: RoomSpace.related) {
+      Button(action: assembly) {
+        Text(gym.catalogue.find(exerciseId)?.name ?? "Movement")
+          .font(.title2.weight(.bold)).multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity)
+      }.buttonStyle(.plain).foregroundStyle(GymPalette.ink)
+        .accessibilityHint("Open this workout’s movements")
+        .padding(.horizontal, RoomSpace.inset)
+      WorkoutPageControl(workout: workout, exerciseId: exerciseId).frame(height: RoomSpace.minimumTarget)
+      WorkoutFacts(workout: workout)
+      ScrollView(.horizontal) {
+        HStack(spacing: RoomSpace.related) {
+          Text("Sets").font(.subheadline).foregroundStyle(GymPalette.inkDim)
+          ForEach(0..<max(ledger.targets.count, ledger.working + 1), id: \.self) { index in
+            Image(systemName: index < ledger.working ? "checkmark.circle.fill" : index == ledger.working ? "record.circle" : "circle.fill")
+              .font(.title3).foregroundStyle(index < ledger.working ? GymPalette.done : index == ledger.working ? GymPalette.accent : GymPalette.inkFaint)
+              .frame(width: 28, height: 28)
+          }
+        }.padding(.horizontal, RoomSpace.inset)
+      }.scrollIndicators(.hidden).fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .ignore).accessibilityLabel("Working sets").accessibilityValue(ledger.tally)
+        .accessibilityIdentifier("workout-set-progress")
+      ScrollViewReader { scroll in
+        List {
+          Section {
+            ForEach(ledger.rows) { row in
+              WorkoutLedgerRow(row: row, unsent: row.set.map { unsent.contains($0.id) } ?? false)
+                .frame(minHeight: 32).contentShape(Rectangle())
+                .onTapGesture { if let set = row.set, fixable { fix(set) } }
+                .accessibilityRemoveTraits(row.set == nil ? [.isButton, .isSelected] : .isSelected)
+                .accessibilityAddTraits(row.set == nil ? .isStaticText : .isButton)
+                .accessibilityRespondsToUserInteraction(row.set != nil)
+                .accessibilityHint(row.set == nil ? "" : "Opens Fix set.")
+                .accessibilityAction { if let set = row.set, fixable { fix(set) } }
+            }
+          }.listRowBackground(GymPalette.card)
+        }.listStyle(.plain)
+          .contentMargins(.vertical, 0, for: .scrollContent).modifier(GymPage())
+          .onAppear { scroll.scrollTo(ledger.current.id, anchor: .bottom) }
+          .onChange(of: ledger.sets.count) { _, _ in
+            withAnimation(reduceMotion ? nil : .spring) { scroll.scrollTo(ledger.current.id, anchor: .bottom) }
+          }
+      }.frame(maxHeight: typeSize.isAccessibilitySize ? .infinity : 144)
+        .background(GymPalette.card).clipShape(RoundedRectangle(cornerRadius: RoomSpace.cardRadius))
+        .padding(.horizontal, RoomSpace.inset)
+      if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
+    }.padding(.top, RoomSpace.related).background(GymPalette.canvas)
+  }
+}
+
+struct WorkoutPageControl: UIViewRepresentable {
+  let workout: WorkoutState
+  let exerciseId: ID<Exercise>
+  func makeCoordinator() -> Coordinator { Coordinator(workout) }
+  func makeUIView(context: Context) -> UIPageControl {
+    let control = UIPageControl()
+    control.currentPageIndicatorTintColor = GymPalette.uiAccent
+    control.pageIndicatorTintColor = GymPalette.uiInkFaint
+    control.backgroundStyle = .minimal
+    control.addTarget(context.coordinator, action: #selector(Coordinator.select(_:)), for: .valueChanged)
+    control.accessibilityLabel = "Movements"
+    control.accessibilityIdentifier = "workout-pages"
+    return control
+  }
+  func updateUIView(_ control: UIPageControl, context: Context) {
+    let order = workout.walk.order
+    control.numberOfPages = order.count
+    control.currentPage = order.firstIndex(of: exerciseId) ?? 0
+    control.isEnabled = !(workout.paging || workout.finishing || workout.finishQueued || workout.gym.accountTransition)
+  }
+  final class Coordinator: NSObject {
+    let workout: WorkoutState
+    init(_ workout: WorkoutState) { self.workout = workout }
+    @objc func select(_ control: UIPageControl) {
+      let order = workout.walk.order
+      guard order.indices.contains(control.currentPage) else { return }
+      workout.select(order[control.currentPage])
     }
   }
 }
@@ -259,49 +283,24 @@ struct WorkoutLedgerRow: View {
   }
 }
 
-// The movement's plan line, where it says what the ledger does not, and the one clock line under its name, led by its place
-// in the walk where the head has no room for it.
 struct WorkoutFacts: View {
   let workout: WorkoutState
-  let planLine: String?
-  var position: (index: Int, count: Int)?
-  static func eyebrow(_ position: (index: Int, count: Int)) -> some View {
-    Text("Movement \(position.index + 1) of \(position.count)").font(.caption).textCase(.uppercase).foregroundStyle(GymPalette.inkFaint)
-  }
   var body: some View {
-    VStack(spacing: RoomSpace.small) {
-      if let position { Self.eyebrow(position) }
-      if let planLine { Text(planLine).font(.subheadline).monospacedDigit().foregroundStyle(GymPalette.inkDim) }
-      TimelineView(.periodic(from: .now, by: 1)) { _ in
-        if let clocks = workout.clocks {
-          HStack(spacing: 0) {
-            Text(WorkoutClocks.reading(clocks.workoutMs))
-              .accessibilityLabel("Workout time").accessibilityValue(WorkoutClocks.reading(clocks.workoutMs))
-            if let since = clocks.sinceSetMs {
-              Text(" · \(WorkoutClocks.reading(since)) since last set")
-                .accessibilityLabel("Since last set").accessibilityValue(WorkoutClocks.reading(since))
-            }
-          }.font(.footnote.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
-        }
+    TimelineView(.periodic(from: .now, by: 1)) { _ in
+      if let clocks = workout.clocks {
+        HStack(spacing: RoomSpace.panel) {
+          Label(WorkoutClocks.reading(clocks.workoutMs), systemImage: "clock")
+            .accessibilityLabel("Workout time").accessibilityValue(WorkoutClocks.reading(clocks.workoutMs))
+          if let since = clocks.sinceSetMs {
+            Label(WorkoutClocks.reading(since), systemImage: "timer")
+              .accessibilityLabel("Since last set").accessibilityValue(WorkoutClocks.reading(since))
+          }
+        }.font(.subheadline.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
       }
     }
   }
 }
 
-// A 44 pt glass circle holding one symbol: Previous and Next beside the movement, fewer and more reps beside the count.
-struct WorkoutCircle: View {
-  let title: String
-  let symbol: String
-  let action: () -> Void
-  @Environment(\.isEnabled) var enabled
-  var body: some View {
-    Button(title, systemImage: symbol, action: action).labelStyle(.iconOnly).buttonStyle(RoomSeatStyle())
-      .foregroundStyle(enabled ? GymPalette.ink : GymPalette.inkFaint)
-  }
-}
-
-// The rack never scrolls and never clips: its labels stop growing at the first accessibility size, where the ladder
-// stands two by two and the ledger above gives up its height first.
 struct WorkoutRack: View {
   @Bindable var workout: WorkoutState
   let edit: (SetKeypad.Field) -> Void
@@ -309,18 +308,23 @@ struct WorkoutRack: View {
   var body: some View {
     VStack(spacing: RoomSpace.related) {
       WeightInstrument(weightKg: $workout.weightKg, identifier: "workout-weight") { edit(.weight) }
-      HStack(spacing: RoomSpace.related) {
-        WorkoutCircle(title: "Fewer reps", symbol: "minus") { workout.reps = max(1, workout.reps - 1) }
+      HStack(spacing: 0) {
+        Button { workout.reps = max(1, workout.reps - 1) } label: {
+          Image(systemName: "minus").frame(width: 56, height: 56)
+        }.accessibilityLabel("Fewer reps").disabled(workout.reps <= 1)
         Button { edit(.reps) } label: {
-          Text(GymCount.of(workout.reps, "rep")).font(.title3).monospacedDigit()
+          Text(GymCount.of(workout.reps, "rep")).font(.title3.monospacedDigit())
             .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: Double(workout.reps)))
-            .roomMotion(workout.reps)
-            .frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget)
-        }.buttonStyle(.plain).foregroundStyle(GymPalette.ink).accessibilityIdentifier("workout-reps")
-        WorkoutCircle(title: "More reps", symbol: "plus") { workout.reps = min(99, workout.reps + 1) }
-      }
-      Button { workout.logSet() } label: { Text("Log set").frame(maxWidth: .infinity, minHeight: RoomSpace.minimumTarget) }
-        .modifier(RoomPrimaryStyle(room: .gym)).disabled(!workout.canLog)
+            .roomMotion(workout.reps).frame(maxWidth: .infinity, minHeight: 56)
+        }.accessibilityIdentifier("workout-reps")
+        Button { workout.reps = min(99, workout.reps + 1) } label: {
+          Image(systemName: "plus").frame(width: 56, height: 56)
+        }.accessibilityLabel("More reps").disabled(workout.reps >= 99)
+      }.buttonStyle(.plain).font(.title3.weight(.medium)).foregroundStyle(GymPalette.ink)
+        .background(GymPalette.control, in: RoundedRectangle(cornerRadius: RoomSpace.inset))
+      Button { workout.logSet() } label: {
+        Text("Log set").font(.headline).frame(maxWidth: .infinity, minHeight: 32)
+      }.modifier(RoomPrimaryStyle(room: .gym)).disabled(!workout.canLog)
         .accessibilityLabel("Log set, \(Readout.weight(workout.weightKg)) kilograms, \(GymCount.of(workout.reps, "rep"))")
         .accessibilityIdentifier("workout-log")
     }.dynamicTypeSize(...DynamicTypeSize.accessibility1)
@@ -331,6 +335,7 @@ struct WorkoutRack: View {
 struct WorkoutPager: UIViewControllerRepresentable {
   let gym: GymModel
   let workout: WorkoutState
+  let assembly: () -> Void
   let fix: (TrainingSet) -> Void
   func makeCoordinator() -> Coordinator { Coordinator(self) }
   func makeUIViewController(context: Context) -> UIPageViewController {
@@ -347,7 +352,7 @@ struct WorkoutPager: UIViewControllerRepresentable {
     var pages: [ID<Exercise>: UIHostingController<WorkoutLedger>] = [:]
     init(_ parent: WorkoutPager) { self.parent = parent }
     func page(_ id: ID<Exercise>) -> UIHostingController<WorkoutLedger> {
-      let view = WorkoutLedger(gym: parent.gym, workout: parent.workout, exerciseId: id, fix: parent.fix)
+      let view = WorkoutLedger(gym: parent.gym, workout: parent.workout, exerciseId: id, assembly: parent.assembly, fix: parent.fix)
       if let page = pages[id] { page.rootView = view; return page }
       let page = UIHostingController(rootView: view); pages[id] = page; return page
     }

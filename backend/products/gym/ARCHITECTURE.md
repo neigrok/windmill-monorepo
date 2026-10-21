@@ -25,12 +25,13 @@ arithmetic (sticky carry-forward, tap-to-type, comma-as-decimal parsing).
   routine or settles a proposal, and there is no apply tool at any grant level. The lifter's edits
   and Apply arrive through `/v1/sync`.
 - **No visibility column.** Every owner route is `WHERE user_id = :caller`, and absent is
-  byte-identical to forbidden on all of them. The one non-owner reader comes through a separate table
-  (`gym_session_shares`, `gym_log_shares`) and token-scoped readers that read no private Notes or Coach data.
+  byte-identical to forbidden on all of them. Public shares use separate tables
+  (`gym_session_shares`, `gym_log_shares`). Anonymous onboarding uses an installation-scoped result
+  table and the public seed catalog; it reads no account Notes, history or Coach data.
 - **Gym publishes, gym never imports.** No cross-product read.
-- **Billing gates nothing here.** Gym holds no plan enum; every route answers a signed-in lifter, Coach
-  included. `AskService::ask` reads `Entitlements::aiAllowanceFor`; a gate would be one refusal on
-  that line.
+- **AI admission belongs to the platform.** Training data is independent of paid status. Hosted Coach
+  calls reserve and settle the platform's USD allowances; anonymous onboarding supplies a verified
+  installation principal rather than a placeholder account ID.
 
 ## 2. Layout
 
@@ -49,6 +50,8 @@ adapters/     json/{GymJson,HistoryJson} · postgres/PgGymRows.h + seven Pg repo
               mcp/{GymToolCatalog,GymTools} · llm/AnthropicAsk
 sync/         GymRules · GymProduct (registry + binding) · GymState · PgGym ·
               GymDoor · GymTrainingDoor · GymRecordDoor · GymDoorHash
+onboarding/   Onboarding (pure bounds + repository port) · PgOnboardingRepository ·
+              OnboardingService · AnthropicOnboarding · OnboardingApi
 routes.h/.cpp gym::GymDeps + gym::registerRoutes(app, deps)
 ```
 
@@ -56,13 +59,14 @@ Ports are cut by **aggregate**: the log, the catalog, the program (routines and 
 together), Coach's threads, the settings row, the notes, the weigh-ins. The split is not table
 ownership — the log's reads join the catalog for a movement name. Each Pg adapter's preamble says
 what it reads from another aggregate's tables; shared helpers live in `PgGymRows.h`. The
-repositories read; their only writes are the two shares (`LogRepository`) and Coach's threads
-(`AskThreadRepository`). The in-memory fake (`test/products/gym/Fakes.h`) keeps one shared store
+training repositories read; their writes are the two shares (`LogRepository`) and Coach's threads
+(`AskThreadRepository`). Anonymous generation outcomes use `OnboardingRepository`, without account
+training writes. The in-memory fake (`test/products/gym/Fakes.h`) keeps one shared store
 (`FakeGymStore`) that tests seed directly, and its `ReadOnlyDoor` settles and unlinks nothing and
 refuses every other write: the write rules are the engine's, tested on the real door. `routes.cpp` names every path in one column;
 `TrainingApi.h` holds the status ladder.
 
-**The sync engine is gym's only writer.** The binding lives in `sync/`: the pure rules and the seven
+**The sync engine is the writer of gym's training records.** The binding lives in `sync/`: the pure rules and the seven
 commands in `GymRules`, their registry and binding in `GymProduct`, receipts and command books
 through `GymState`, and the stores over gym's tables in `PgGym`.
 `windmill_gym` embeds `gym.registry.json` (version 6, minimum 4), and
@@ -334,7 +338,7 @@ routine is deleted.
 `gym_ask_threads` stores an owner, immutable first-message title and activity timestamps.
 `gym_ask_turns` stores ordered message pairs with immutable factual receipts, generation/request
 identities, status and routine-creation results. `gym_ask_generations` stores the request identity,
-question, answer, generation state and its durable tool operations. Terminal failures retain their
+question, setup purpose, typed clarification, allowance refusal, answer, generation state and its durable tool operations. History reads derive setup metadata from the owner-scoped generation payload. Routine additions occupy at most six immutable action slots; recovery replays each slot before accepting another addition. Terminal failures retain their
 question, partial answer and completed actions; retry updates the same pair. All three tables cascade
 with the account, and generations and messages also cascade with their conversation.
 
@@ -806,7 +810,9 @@ The last column of a Retire row names the `/v1/sync` write that does that job
 | GET | `/v1/gym/log-shares` | Keep | Log share list. |
 | DELETE | `/v1/gym/log-shares/{id}` | Keep | Log share revocation. |
 | GET | `/v1/gym/shared-logs/{token}` | Keep | Public log share read. |
-| POST | `/v1/gym/ask` | Keep | Coach Ask; mounted only when configured. |
+| POST | `/v1/gym/ask` | Keep | Account Coach Ask; configuration gates new provider work. |
+| POST | `/v1/gym/coach/onboarding` | Keep | Installation-scoped bounded routine generation or immutable replay. |
+| GET | `/v1/gym/coach/onboarding/{requestId}` | Keep | Installation-scoped generation recovery. |
 
 ### 8.2 Shapes
 
@@ -1059,6 +1065,24 @@ only materially necessary gaps before training decisions; keep coaching friendly
 check the consistency of the affected plan; leave existing-routine changes in the user's Apply
 flow. This intake guidance does not block recording supplied workout facts.
 
+### Anonymous onboarding
+
+`onboarding/` owns the one-call goal/program/photo route. `OnboardingService` claims an immutable
+installation/request pair, reads `CatalogRepository::seedCatalog()`, calls the model and stores a
+validated result. The provider has no tools or account repositories. `AnthropicOnboarding` uses the
+shared Messages client and typed installation USD admission; failed attempts with known usage settle,
+while unknown provider outcomes remain held.
+
+`PgOnboardingRepository` serializes new claims on the installation row. It admits eight new IDs per
+UTC day, preserves replay tombstones, terminates abandoned 15-minute leases and clears result content
+after seven days. It stores neither prompts nor photos. Accepted inline photos are decoded under
+byte/pixel limits and fit entirely below the host's 2 MiB memory-body threshold.
+
+The client imports routines atomically into its anonymous engine with a result replay receipt and
+uses normal account adoption after sign-in. The backend has no anonymous routine claim/write door.
+The precise request/result bounds, refusal/reset semantics, provider support and retained data are
+in [the Coach contract](../../../docs/gym-coach-contract.md#anonymous-routine-onboarding).
+
 ## 10. Composition
 
 `windmill_gym` contains the domain, application, sync binding, adapters and routes, and links
@@ -1118,9 +1142,11 @@ streaming, pictures, Stop and durable note saves. The design canon is
 ### 12.1 The narrowing
 
 `GymTools` does not gate — over MCP the grant is settled above it by `CompositeToolHost` — so a chat
-wired straight to it would be a door with no lock. **`AskTools` is that lock.** It offers every
-`Access::read` declaration, `mintsProposal(name)`, `create_routine` and `save_note` when durable generation storage
-is present. The declaration's product and access still gate every call. Coach can read the log,
+wired straight to it would be a door with no lock. **`AskTools` is that lock.** Ordinary conversations
+offer every `Access::read` declaration and `mintsProposal(name)`, plus `create_routine` and `save_note`
+when durable generation storage is present. Routine setup offers `list_sessions`, `get_sessions`,
+`list_notes`, `save_note`, `list_exercises`, `list_routines`, `create_routine` and `ask_setup_details`;
+dispatch refuses tools outside that catalog. The declaration's product and access still gate every call. Coach can read the log,
 propose an existing-routine change, create a new routine and append one useful user-provided insight. It cannot log a set, finish a workout,
 mint a share, create a movement or discard anything. Creation requires successful Notes and movement
 catalog reads. The server persists the operation and chosen routine ID before the write, and its
@@ -1137,9 +1163,7 @@ set**, so Coach's most important refusal is not a sentence in its prompt.
 composite: without it a misspelled argument is dropped and the tool answers a wider question than the
 model asked. The check is written twice, once per door.
 
-**One routine action and one note save per generation.** Each occupies an independent durable
-operation; a stored record holding a single operation reads as a list of one. Repeated calls replay successful results; a confirmed validation failure may correct
-arguments under the same identity. Existing-routine edits and removal still require human Apply.
+**Up to six routine additions, one proposal and one note save per generation.** Each occupies an independent durable operation; a stored record holding a single operation reads as a list of one. Input validation precedes reservation. Saved documents are immutable, and replay resolves both original model IDs and returned server IDs. Recovery replays ordered creation slots before accepting another addition. Existing-routine edits and removal still require human Apply.
 
 ### 12.2 Bounds
 
@@ -1149,12 +1173,12 @@ arguments under the same identity. Existing-routine edits and removal still requ
 | Reach | the whole log | Coach is a tab and is reached from a proposal card, not from one workout |
 | Never mid-session | `409 ask-session-open`, checked on the server | three clients each remembering it is three chances to forget |
 | Iterations | 8, and hitting it is a **failure** | an unfinished answer is worse than "Coach didn’t answer" |
-| Actions per generation | one routine creation/proposal plus one note save | stable identity across model retries and process restarts |
+| Actions per generation | up to six routine additions, one existing-routine proposal and one note save | stable identity across model retries and process restarts |
 | Model context | `kMaxContextTurns` (24) and `kMaxContextBytes` (24,000) | latest completed exchanges; full stored history remains available through pagination |
-| Question | `kMaxAskTurnBytes` (1000) | bounds each submitted text |
+| Question | `kMaxAskTurnBytes` (8000 UTF-8 bytes) | bounds each submitted text |
 | Entitlement | all signed-in accounts | allowance is resolved through `Entitlements::aiAllowanceFor` |
 | Request ration | per-account token bucket: capacity 3, refilling at 10/day (`AskRation`) | In memory; a deploy refills it. Taken after admission checks and refunded only when `AskAnswer::modelTurns` is zero |
-| Dollar ceiling | the platform's `AiFuse` hourly + `aiAllowanceFor` over 30 days | never shown as money to anybody |
+| Dollar ceiling | durable USD allowances when enabled; legacy `AiFuse` and rolling allowance otherwise | per-request token estimate reserves provider cost before dispatch; actual usage reconciles it |
 | Vendor | absent when unkeyed | no `ANTHROPIC_API_KEY` ⇒ `registerRoutes` omits new asks; durable Stop/recovery and history remain available |
 
 ### 12.3 The read receipt

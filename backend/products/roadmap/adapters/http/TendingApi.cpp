@@ -39,6 +39,14 @@ Json::Value toJson(const TendingSummary& summary) {
   body["limit"] = allowance.limit;
   body["used"] = allowance.used;
   body["remaining"] = allowance.remaining();
+  if (summary.usdAllowance) {
+    body["allowanceUnit"] = "USD";
+    body["allowanceUrl"] = "/v1/ai/allowance";
+    body["runCount"] = allowance.used;
+    body["used"] = Json::Value();
+    body["limit"] = Json::Value();
+    body["remaining"] = Json::Value();
+  }
   body["resetAtMs"] = Json::Value::UInt64(summary.resetAtMs);
   Json::Value runs(Json::arrayValue);
   for (const TendRun& run : summary.recent) runs.append(toJson(run));

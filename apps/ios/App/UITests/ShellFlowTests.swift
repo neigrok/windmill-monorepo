@@ -28,11 +28,13 @@ import XCTest
   }
 
   func assertGym(_ app: XCUIApplication) {
-    XCTAssertTrue(app.descendants(matching: .any)["gym-routines"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["coach-setup-goal"].waitForExistence(timeout: 5))
     XCTAssertEqual(app.buttons["room-menu"].label, "Gym")
     XCTAssertTrue(app.tabBars.buttons["Routines"].exists)
     XCTAssertTrue(app.tabBars.buttons["The log"].exists)
     XCTAssertTrue(app.tabBars.buttons["Coach"].exists)
+    XCTAssertTrue(app.tabBars.buttons["Coach"].isSelected)
   }
 
   func testSwitchRoomsKeepsJournalAndUsesGymTabs() {
@@ -292,15 +294,17 @@ import XCTest
     XCTAssertEqual(accessory.value as? String, "32:10", "The value is the workout's clock as the logger reads it")
     // It goes where the tab bar goes: a pushed screen draws neither, and back at the root both return.
     app.tabBars.buttons["Routines"].tap()
-    XCTAssertTrue(app.buttons["routines-movements"].waitForExistence(timeout: 5)); app.buttons["routines-movements"].tap()
-    XCTAssertTrue(accessory.waitForNonExistence(timeout: 5) && !app.tabBars.buttons["Routines"].isHittable)
-    app.navigationBars.buttons.element(boundBy: 0).tap()
-    XCTAssertTrue(accessory.waitForExistence(timeout: 5))
+    let routine = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "routine-", "Lower A,")).firstMatch
+    XCTAssertTrue(routine.waitForExistence(timeout: 5)); routine.tap()
+    XCTAssertTrue(app.buttons["routine-close"].waitForExistence(timeout: 5))
+    XCTAssertFalse(accessory.isHittable)
+    app.buttons["routine-close"].tap()
+    XCTAssertTrue(accessory.wait(for: \.isHittable, toEqual: true, timeout: 5))
     accessory.tap()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
     XCTAssertEqual(sets.count, logged, "The workout comes back with its sets")
     app.buttons["workout-finish"].tap()
-    let receiptDone = app.navigationBars.buttons["Done"]
+    let receiptDone = app.buttons["workout-done"]
     XCTAssertTrue(receiptDone.waitForExistence(timeout: 5)); receiptDone.tap()
     // The receipt hands the finished workout to The log; back at its root the tab bar carries no accessory.
     let back = app.navigationBars.buttons.element(boundBy: 0)

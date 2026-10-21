@@ -75,8 +75,11 @@ TEST(voice_without_a_vendor_wired_is_503) {
   UserId me = h.signIn("s-live");
   h.subs->subscribe(me);
   h.transcriber->on = false;
-  CHECK_EQ(send(h.api, post("opus-bytes", "s-live"))->getStatusCode(),
-           drogon::k503ServiceUnavailable);
+  const auto response = send(h.api, post("opus-bytes", "s-live"));
+  CHECK_EQ(response->getStatusCode(), drogon::k503ServiceUnavailable);
+  CHECK_EQ(dump(*response->getJsonObject()),
+           std::string{R"({"code":"voice_unavailable","error":"voice is not available right now"})"});
+  CHECK_EQ(h.transcriber->calls, 0);
 }
 
 TEST(voice_for_a_subscriber_transcribes_the_audio_and_makes_no_page) {

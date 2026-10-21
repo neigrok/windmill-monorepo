@@ -134,7 +134,7 @@ struct BodyweightScreen: View {
               .accessibilityLabel("\(BodyweightLogInput.kilograms(entry.kg)) kilograms, \(dates.day(entry.day))")
               .accessibilityHint("Correct this weigh-in")
               .accessibilityIdentifier("gym-weigh-in-\(entry.day.text)")
-              .swipeActions {
+              .swipeActions(allowsFullSwipe: false) {
                 Button("Delete", role: .destructive) { gym.logDeleteWeighIn(day: entry.day) }
               }
               .accessibilityAction(named: "Delete weigh-in") { gym.logDeleteWeighIn(day: entry.day) }
@@ -153,7 +153,7 @@ struct BodyweightScreen: View {
     .navigationBarTitleDisplayMode(.inline)
     .gymTabBar()
     .accessibilityIdentifier("gym-bodyweight")
-    .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo") }
+    .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-log-error") }
     .sheet(item: $correcting) { WeighInSheet(gym: gym, entry: $0.entry) }
     .onChange(of: gym.account) { _, _ in correcting = nil }
     .onAppear { gym.telemetry.event("gym_screen_viewed", properties: ["screen": "bodyweight"]) }

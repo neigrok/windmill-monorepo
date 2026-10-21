@@ -1,6 +1,8 @@
 #include "platform/adapters/paddle/BillingApi.h"
 
 #include "test/platform/Fakes.h"
+#include "test/platform/FakeAiBudgetRepository.h"
+#include "platform/adapters/json/JsonText.h"
 #include "test/testing.h"
 
 #include <drogon/utils/Utilities.h>
@@ -36,6 +38,14 @@ struct RecordingSubscriptions : SubscriptionRepository {
   void upsertSubscription(const PaddleSubscription& subscription) override {
     if (dead) throw std::runtime_error("that table is on fire");
     subscriptions.push_back(subscription);
+  }
+  std::optional<PaddleCustomer> findCustomer(const std::string& id) override {
+    for (const auto& row : customers) if (row.customerId == id) return row;
+    return std::nullopt;
+  }
+  std::optional<PaddleSubscription> findSubscription(const std::string& id) override {
+    for (const auto& row : subscriptions) if (row.subscriptionId == id) return row;
+    return std::nullopt;
   }
   std::optional<PaddleSubscription> findFor(const UserId& user, const std::string&) override {
     for (const PaddleSubscription& row : subscriptions)
@@ -325,7 +335,7 @@ TEST(billing_the_read_reports_paddle_s_word_and_our_verdict_on_it_separately) {
   CHECK_FALSE(ended.isMember("scheduledChangeAt"));
 }
 
-TEST(billing_a_checkout_needs_a_signed_in_caller_and_a_configured_paddle) {
+TEST(billing_checkout_stays_closed_for_authenticated_accounts) {
   Harness h;
 
   auto req = drogon::HttpRequest::newHttpRequest();
@@ -340,5 +350,115 @@ TEST(billing_a_checkout_needs_a_signed_in_caller_and_a_configured_paddle) {
   h.api.startCheckout(req, [&](const drogon::HttpResponsePtr& r) { captured = r; });
   CHECK_EQ(captured->getStatusCode(), drogon::k503ServiceUnavailable);
   CHECK_EQ((*captured->getJsonObject())["error"].asString(),
-           std::string("billing is not configured"));
+           std::string("Windmill One checkout is closed."));
+}
+
+namespace {
+Json::Value fundedTransaction(const std::string& account) {
+  Json::Value event;
+  Json::Reader reader;
+  reader.parse(R"({"event_type":"transaction.completed","event_id":"evt_funded_month", "data":{
+    "id":"txn_funded_month","status":"completed","customer_id":"ctm_funded","subscription_id":"sub_funded",
+    "billing_period":{"starts_at":"2023-11-01T00:00:00Z","ends_at":"2023-12-01T00:00:00Z"},
+    "items":[{"quantity":1,"proration":null,"price":{"id":"pri_monthly","billing_cycle":{"interval":"month","frequency":1}}}],
+    "details":{"totals":{"grand_total":"1000","balance":"0"},
+      "line_items":[{"price_id":"pri_monthly","quantity":1,"proration":null,"totals":{"total":"1000"}}]},
+    "payments":[{"status":"captured","amount":"1000","captured_at":"2023-11-14T22:13:20.000Z"}]}})", event);
+  event["data"]["custom_data"]["user_id"] = account;
+  return event;
+}
+
+struct FundingHarness {
+  Harness billing;
+  FakeAiBudgetRepository repository;
+  AiBudgetLimits limits;
+  std::shared_ptr<AiBudgetService> budgets = std::make_shared<AiBudgetService>(repository,
+      [this] { return limits; }, [this] { return billing.clock->now; });
+  BillingApi api{billing.subscriptions, billing.auth, *billing.clock, kSecret, "pri_monthly",
+                 budgets, &billing.authRepo};
+  UserId account = billing.signIn("s-live");
+
+  void mirrors() {
+    billing.subscriptions.customers.push_back({"ctm_funded", "sam@example.com"});
+    billing.subscriptions.subscriptions.push_back({"sub_funded", "ctm_funded", account.str(), "active", "pri_monthly"});
+  }
+  drogon::HttpResponsePtr post(const Json::Value& event, bool signedEvent = true) {
+    const auto body = dump(event);
+    drogon::HttpResponsePtr response;
+    api.webhook(delivery(body, signedEvent ? sign(body, kTimestamp) : "invalid"),
+                [&](const auto& result) { response = result; });
+    return response;
+  }
+};
+}
+
+TEST(billing_only_verified_completed_monthly_payments_create_one_funded_period) {
+  FundingHarness h;
+  h.mirrors();
+  const auto event = fundedTransaction(h.account.str());
+  CHECK_EQ(h.post(event, false)->getStatusCode(), drogon::k401Unauthorized);
+  CHECK(h.repository.grants.empty());
+  const auto first = h.post(event);
+  CHECK_EQ(first->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(dump(*first->getJsonObject()), std::string{"{\"received\":true}"});
+  REQUIRE_EQ(h.repository.grants.size(), 1u);
+  const auto grant = h.repository.grants.begin()->second;
+  CHECK_EQ(grant.accountId, h.account.str());
+  CHECK_EQ(grant.amountNanos, 7'000'000'000);
+  CHECK(grant.source == AiBudgetFundingSource::Subscription);
+  CHECK_EQ(grant.period.startMs, 1'698'796'800'000);
+  CHECK_EQ(grant.period.endMs, 1'701'388'800'000);
+  CHECK_EQ(grant.fundingReference, std::string{"txn_funded_month"});
+  h.billing.subscriptions.subscriptions.front().status = "canceled";
+  CHECK_EQ(h.post(event)->getStatusCode(), drogon::k200OK);
+  REQUIRE_EQ(h.repository.grants.size(), 1u);
+  CHECK(h.repository.grants.begin()->second == grant);
+  auto changed = event;
+  changed["data"]["billing_period"]["starts_at"] = "2023-12-01T00:00:00Z";
+  changed["data"]["billing_period"]["ends_at"] = "2024-01-01T00:00:00Z";
+  CHECK_EQ(h.post(changed)->getStatusCode(), drogon::k409Conflict);
+  CHECK(h.repository.grants.begin()->second == grant);
+}
+
+TEST(billing_unsupported_or_unfunded_transactions_never_mint_an_allowance) {
+  for (int variant = 0; variant < 13; ++variant) {
+    FundingHarness h;
+    h.mirrors();
+    auto event = fundedTransaction(h.account.str());
+    auto& data = event["data"];
+    if (variant == 0) event["event_type"] = "transaction.paid";
+    if (variant == 1) data["status"] = "past_due";
+    if (variant == 2) data["items"][0]["price"]["id"] = "pri_other";
+    if (variant == 3) data["items"][0]["price"]["billing_cycle"]["interval"] = "year";
+    if (variant == 4) data["items"][0]["quantity"] = 2;
+    if (variant == 5) data["items"][0]["proration"]["rate"] = "0.5";
+    if (variant == 6) data["details"]["totals"]["grand_total"] = "0";
+    if (variant == 7) data["payments"][0]["status"] = "authorized";
+    if (variant == 8) data["payments"][0]["amount"] = "0";
+    if (variant == 9) data.removeMember("billing_period");
+    if (variant == 10) data["billing_period"]["ends_at"] = "2023-13-01T00:00:00Z";
+    if (variant == 11) data["billing_period"]["ends_at"] = "2024-12-01T00:00:00Z";
+    if (variant == 12) data["details"]["line_items"][0]["totals"]["total"] = "0";
+    CHECK_EQ(h.post(event)->getStatusCode(), drogon::k200OK);
+    CHECK(h.repository.grants.empty());
+  }
+}
+
+TEST(billing_unordered_mirrors_retry_and_conflicting_account_claims_never_receive_funding) {
+  FundingHarness h;
+  auto event = fundedTransaction(h.account.str());
+  CHECK_EQ(h.post(event)->getStatusCode(), drogon::k503ServiceUnavailable);
+  CHECK(h.repository.grants.empty());
+  h.mirrors();
+  event["data"]["custom_data"]["user_id"] = "foreign-account";
+  CHECK_EQ(h.post(event)->getStatusCode(), drogon::k409Conflict);
+  CHECK(h.repository.grants.empty());
+  event = fundedTransaction(h.account.str());
+  h.repository.failFund = true;
+  CHECK_EQ(h.post(event)->getStatusCode(), drogon::k500InternalServerError);
+  CHECK(h.repository.grants.empty());
+  h.repository.failFund = false;
+  h.billing.subscriptions.subscriptions.front().status = "past_due";
+  CHECK_EQ(h.post(event)->getStatusCode(), drogon::k200OK);
+  REQUIRE_EQ(h.repository.grants.size(), 1u);
 }

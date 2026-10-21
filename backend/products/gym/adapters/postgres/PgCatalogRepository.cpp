@@ -29,4 +29,15 @@ std::vector<Exercise> PgCatalogRepository::catalog(const UserId& user) {
   return out;
 }
 
+std::vector<Exercise> PgCatalogRepository::seedCatalog() {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  const pqxx::result rows = txn.exec(
+      "SELECT id, name, pattern, equipment, step_kg::float8 AS step_kg, created_by, "
+      "'[]' AS aliases FROM gym_exercises WHERE created_by IS NULL ORDER BY pattern, name");
+  std::vector<Exercise> out;
+  for (const auto& row : rows) out.push_back(exerciseFrom(row));
+  return out;
+}
+
 }

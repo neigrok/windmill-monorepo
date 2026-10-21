@@ -1,7 +1,7 @@
 # Connected log
 
-The native gym screen for connected tools, reached from Coach on both phones and from Settings on
-Android; iOS has no gym settings page (`../../ios/ios-redesign.md` §6). Web uses the shared
+The native gym screen for connected tools lives in Settings on both phones. iOS reaches it from
+the Gym section in You and settings; Android also keeps its Coach entry. Web uses the shared
 `/app/connect` page and shared connection management. Gym has no CSV export; account export
 belongs to the shell.
 
@@ -10,7 +10,7 @@ belongs to the shell.
 Top to bottom on iOS and Android, with platform-native chrome.
 
 1. **Title** — `Connected log`. The bar's title on the phones.
-2. **Head line** — `Your log, read by Claude, Cursor or Codex.` The shared Connect page
+2. **Head line** — `Your log, read by ChatGPT or Claude.` The shared Connect page
    carries setup for other MCP clients.
 3. **The grant, as three rows** — one per level, in the ladder's order. Row label 1 word, row meta
    facts and never a sentence:
@@ -122,7 +122,7 @@ said; otherwise both native surfaces carry the same bytes, and each surface's su
 | Key | String | Budget |
 |---|---|---|
 | title | `Connected log` | title ≤ 3 |
-| head | `Your log, read by Claude, Cursor or Codex.` | line ≤ 12 · 8 |
+| head | `Your log, read by ChatGPT or Claude.` | line ≤ 12 · 8 |
 | level.read | `Read` | label |
 | level.read.meta | `sets, workouts, routines, records, notes, weigh-ins` | meta ≤ 8 · 7 (`weigh-ins` counts as two) |
 | level.write | `Write` | label |

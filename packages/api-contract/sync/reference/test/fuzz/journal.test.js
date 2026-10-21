@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ZERO_DIGEST, replaceRow } from "../../core/digest.js";
 import { jcs } from "../../core/jcs.js";
-import { stampsOf } from "../../core/rows.js";
+import { isVisible, stampsOf } from "../../core/rows.js";
 import { claimBody, JOURNAL_STATE_FIELDS } from "../../journal/product.js";
 import { admit } from "../../server/admit.js";
 import { ServerState } from "../../server/state.js";
@@ -78,6 +78,9 @@ function simulate(seed) {
     replay: 0,
     conflict: 0,
     empty: 0,
+    blankSave: 0,
+    blankClaim: 0,
+    blankClaimPreservesWriting: 0,
     future: 0,
   };
   for (let i = 0; i < steps; i++) {
@@ -90,7 +93,7 @@ function simulate(seed) {
       if (name === "journal.claimPage" && rng.chance(0.2))
         args.body += "changed";
     } else {
-      const body = rng.pick(["", " ", `word ${rng.int(30)}`]),
+      const body = rng.pick(["", " ", "\t\n\u00a0\u1680\u2000\u2028\ufeff", `word ${rng.int(30)}`]),
         mood = rng.pick([null, 0, 5, 10]),
         energy = rng.pick([null, 0, 7, 10]),
         source = rng.pick(["typed", "spoken"]);
@@ -145,8 +148,14 @@ function simulate(seed) {
         (a.ms === b.ms &&
           (a.counter > b.counter ||
             (a.counter === b.counter && a.actor > b.actor)));
-      if (newer) oracle.set(args.day, structuredClone(args));
-      else {
+      if (newer) {
+        const expected = structuredClone(args);
+        if (args.body.trim() === "") {
+          Object.assign(expected, { body: "", mood: null, energy: null, source: "typed" });
+          seen.blankSave++;
+        }
+        oracle.set(args.day, expected);
+      } else {
         assert.deepEqual(state.toJSON(), before);
         seen.stale++;
       }
@@ -157,19 +166,29 @@ function simulate(seed) {
       seen.claim++;
       receipts.set(args.claimId, structuredClone(args));
       const row = state.row(key, "page", args.day);
-      oracle.set(args.day, {
+      const blankContribution = args.body.trim() === "";
+      const expected = {
         ...args,
         body: claimBody(old?.body ?? "", args.body),
-        mood: args.mood ?? old?.mood ?? null,
-        energy: args.energy ?? old?.energy ?? null,
+        mood: blankContribution ? old?.mood ?? null : args.mood ?? old?.mood ?? null,
+        energy: blankContribution ? old?.energy ?? null : args.energy ?? old?.energy ?? null,
+        source: blankContribution ? old?.source ?? "typed" : args.source,
         stamp: row.f.documentStamp[0],
-      });
+      };
+      if (expected.body.trim() === "")
+        Object.assign(expected, { body: "", mood: null, energy: null, source: "typed" });
+      oracle.set(args.day, expected);
+      if (blankContribution) {
+        seen.blankClaim++;
+        if (old?.body.trim()) seen.blankClaimPreservesWriting++;
+      }
       if (old) assert.ok(row.f.documentStamp[0].ms >= old.stamp.ms);
     }
     for (const [date, expected] of oracle) {
       const row = state.row(key, "page", date);
       assert.equal(row.x.body.text, expected.body);
       assert.equal(row.x.body.merged, false);
+      assert.equal(isVisible(journalRegistry.type("page"), row), expected.body.trim() !== "");
       for (const field of ["mood", "energy", "source"])
         assert.equal(row.f[field][0], expected[field]);
       assert.deepEqual(row.f.documentStamp[0], expected.stamp);

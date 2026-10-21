@@ -23,11 +23,13 @@ class JournalServerRules : ServerRules {
                 context.ensure("journalContentClocks")
                 val stamp = try { ContentClock.next(context.entry("journalContentClocks", "server"), current?.lattice?.fields?.get("documentStamp")?.value, context.serverNow, "srv") } catch (_: IllegalArgumentException) { throw Refusal("invalid") }
                 context.store("journalContentClocks", "server", ContentClock.pair(stamp))
-                document = args + mapOf("stamp" to stamp, "body" to Json.of(joined)) + listOf("mood", "energy").filter { args[it] === Json.Null }.associateWith { current?.lattice?.fields?.get(it)?.value ?: Json.Null }
+                document = args + mapOf("stamp" to stamp, "body" to Json.of(joined)) + listOf("mood", "energy").filter { TextWhitespace.isBlank(body) || args[it] === Json.Null }.associateWith { current?.lattice?.fields?.get(it)?.value ?: Json.Null }
+                if (TextWhitespace.isBlank(body)) document = document + ("source" to (current?.lattice?.fields?.get("source")?.value ?: Json.of("typed")))
                 context.store("journalClaims", id, Json.objectOf("digest" to Json.of(digest), "day" to Json.of(day), "documentStamp" to stamp))
             }
             else -> throw Refusal("invalid")
         }
+        if (TextWhitespace.isBlank(document.getValue("body").str())) document = document + mapOf("body" to Json.of(""), "mood" to Json.Null, "energy" to Json.Null, "source" to Json.of("typed"))
         context.ensure("journalPages"); context.store("journalPages", day, Json.objectOf("updatedAt" to Json.of(context.serverNow)))
         val fields = listOf("mood", "energy", "source").associateWith { document.getValue(it) } + ("documentStamp" to document.getValue("stamp"))
         val archive = Json.objectOf("archivedAt" to Json.of(context.serverNow)).with("documentStamp" to current?.lattice?.fields?.get("documentStamp")?.value)

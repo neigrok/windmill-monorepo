@@ -124,6 +124,36 @@ TEST(journal_get_of_an_unwritten_day_is_404) {
   CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"nothing written"})"));
 }
 
+TEST(journal_reads_hide_unwritten_days_but_delta_reads_keep_erasure_markers) {
+  Harness h;
+  const auto user = h.signIn("s-live");
+  Page blank{user, ld("2026-07-27")};
+  blank.body = std::string(Page::whitespace);
+  blank.mood = Score{0};
+  blank.energy = Score{10};
+  blank.stamp = hlc(2, 0, "dev");
+  Page written{user, ld("2026-07-26")};
+  written.body = "  Kept as written\n";
+  written.stamp = hlc(1, 0, "dev");
+  h.repo->byKey.emplace(FakeJournalRepository::key(user, blank.day), blank);
+  h.repo->byKey.emplace(FakeJournalRepository::key(user, written.day), written);
+  CHECK_EQ(sendGet(h.api, getRequest("/v1/journal/page/2026-07-27", "s-live"), "2026-07-27")->getStatusCode(), drogon::k404NotFound);
+  const std::string expected = "{\"pages\":[" + dump(toJson(written)) + "]}";
+  for (const std::string mode : {"all", "range", "export"}) {
+    auto request = getRequest("/v1/journal/pages", "s-live");
+    if (mode == "range") { request->setParameter("from", "2026-07-01"); request->setParameter("to", "2026-07-31"); }
+    drogon::HttpResponsePtr response;
+    if (mode == "export") h.api.exportAll(request, [&](const auto& value) { response = value; });
+    else h.api.listPages(request, [&](const auto& value) { response = value; });
+    CHECK_EQ(dump(bodyOf(response)), expected);
+  }
+  auto delta = getRequest("/v1/journal/pages", "s-live");
+  delta->setParameter("since", "1:0:dev");
+  drogon::HttpResponsePtr response;
+  h.api.listPages(delta, [&](const auto& value) { response = value; });
+  CHECK_EQ(dump(bodyOf(response)), "{\"pages\":[" + dump(toJson(blank)) + "]}");
+}
+
 TEST(journal_get_answers_the_stored_page_in_its_wire_shape) {
   Harness h;
   UserId me = h.signIn("s-live");

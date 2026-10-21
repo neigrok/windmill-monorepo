@@ -25,13 +25,13 @@ test('journalMarkdown — one document, oldest first, scales as the fractions th
   ].join('\n'));
 });
 
-test('journalMarkdown — a scale with no words is a page, an untouched day is not', () => {
+test('journalMarkdown — scales without words and untouched days are absent', () => {
   const markdown = journalMarkdown([
     { day: '2026-08-01', body: '', mood: 4, energy: null },
     { day: '2026-08-03', body: '', mood: null, energy: null },
   ]);
 
-  assert.equal(markdown, '# Windmill journal\n\n## 2026-08-01\n\n_mood 4/10_\n');
+  assert.equal(markdown, '# Windmill journal\n\n');
 });
 
 test('journalMarkdown — an account with nothing in it is an honest empty document', () => {

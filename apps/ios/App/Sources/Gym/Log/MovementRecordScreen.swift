@@ -84,7 +84,7 @@ struct MovementRecordScreen: View {
           }.disabled(gym.readFailed || gym.accountTransition || movement == nil)
         }
       }
-      .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-log-error", undoIdentifier: "gym-log-undo") }
+      .reachBand { GymTransient(gym: gym, errorIdentifier: "gym-log-error") }
       .sheet(isPresented: $renaming) { if let movement { RenameMovementSheet(gym: gym, exercise: movement) } }
       .onAppear {
         gym.telemetry.event("gym_screen_viewed", properties: ["screen": "record"])

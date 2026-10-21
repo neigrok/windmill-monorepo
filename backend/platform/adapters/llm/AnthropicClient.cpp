@@ -1,4 +1,5 @@
 #include "platform/adapters/llm/AnthropicClient.h"
+#include "platform/adapters/llm/AiCallBudget.h"
 
 #include "platform/adapters/http/VendorCall.h"
 
@@ -25,7 +26,7 @@ void applyAnthropicHeaders(const drogon::HttpRequestPtr& request, const std::str
   request->addHeader("anthropic-version", kAnthropicApiVersion);
 }
 
-std::string messagesPayload(const MessagesRequest& request) {
+Json::Value messagesBody(const MessagesRequest& request) {
   // The one cached block. Everything that varies per request lives in the user turn: a single
   // interpolated byte here moves the prefix and the cache silently never reads.
   Json::Value system(Json::objectValue);
@@ -36,7 +37,7 @@ std::string messagesPayload(const MessagesRequest& request) {
 
   Json::Value message(Json::objectValue);
   message["role"] = "user";
-  message["content"] = request.user;
+  message["content"] = request.content.isArray() ? request.content : Json::Value(request.user);
 
   Json::Value format(Json::objectValue);
   format["type"] = "json_schema";
@@ -58,18 +59,24 @@ std::string messagesPayload(const MessagesRequest& request) {
   body["thinking"] = Json::Value(Json::objectValue);
   body["thinking"]["type"] = "adaptive";
 
+  return body;
+}
+
+std::string messagesPayload(const MessagesRequest& request) {
   Json::StreamWriterBuilder builder;
   builder["indentation"] = "";
-  return Json::writeString(builder, body);
+  return Json::writeString(builder, messagesBody(request));
 }
 
 MessagesReply readMessagesReply(int status, const std::string& body) {
   // `failure` is what the caller branches on; `outcome` is what the meter aggregates by.
-  const auto failed = [](const char* failure, const char* outcome, const TokenUse& tokens) {
+  const auto failed = [](const char* failure, const char* outcome, const TokenUse& tokens, const Json::Value& usage = Json::Value(), bool complete = false) {
     MessagesReply reply;
     reply.failure = failure;
     reply.outcome = outcome;
     reply.tokens = tokens;
+    reply.usage = usage;
+    reply.usageComplete = complete;
     return reply;
   };
 
@@ -92,15 +99,17 @@ MessagesReply readMessagesReply(int status, const std::string& body) {
 
   // stop_reason is read BEFORE content: a refusal is an HTTP 200 whose content array is empty or half filled.
   const Json::Value& stop = reply["stop_reason"];
+  const bool complete = stop.isString() && (stop == "end_turn" || stop == "tool_use" ||
+                                             stop == "max_tokens" || stop == "refusal");
   if (stop.isString() && stop.asString() == "refusal")
-    return failed(MessagesFailure::refused, AiOutcome::refused, tokens);
+    return failed(MessagesFailure::refused, AiOutcome::refused, tokens, reply["usage"], complete);
   // Anything that is not a clean finish — max_tokens, a missing stop_reason — is refused rather than parsed.
   if (!stop.isString() || stop.asString() != "end_turn")
-    return failed(MessagesFailure::truncated, AiOutcome::truncated, tokens);
+    return failed(MessagesFailure::truncated, AiOutcome::truncated, tokens, reply["usage"], complete);
 
   const Json::Value& content = reply["content"];
   if (!content.isArray() || content.empty())
-    return failed(MessagesFailure::schemaInvalid, AiOutcome::schemaInvalid, tokens);
+    return failed(MessagesFailure::schemaInvalid, AiOutcome::schemaInvalid, tokens, reply["usage"], complete);
 
   // A reasoning model leads with a thinking block; the constrained answer is the first TEXT block.
   std::string answer;
@@ -110,22 +119,25 @@ MessagesReply readMessagesReply(int status, const std::string& body) {
       break;
     }
   }
-  if (answer.empty()) return failed(MessagesFailure::schemaInvalid, AiOutcome::schemaInvalid, tokens);
+  if (answer.empty()) return failed(MessagesFailure::schemaInvalid, AiOutcome::schemaInvalid, tokens, reply["usage"], complete);
 
   Json::Value output;
   if (!reader->parse(answer.data(), answer.data() + answer.size(), &output, &errors) ||
       !output.isObject())
-    return failed(MessagesFailure::schemaInvalid, AiOutcome::schemaInvalid, tokens);
+    return failed(MessagesFailure::schemaInvalid, AiOutcome::schemaInvalid, tokens, reply["usage"], complete);
 
   MessagesReply good;
   good.ok = true;
   good.output = output;
   good.tokens = tokens;
+  good.usage = reply["usage"];
+  good.usageComplete = complete;
   good.outcome = AiOutcome::ok;
   return good;
 }
 
-AnthropicClient::AnthropicClient(std::string apiKey) : apiKey_(std::move(apiKey)) { loop_.run(); }
+AnthropicClient::AnthropicClient(std::string apiKey, std::string baseUrl)
+    : apiKey_(std::move(apiKey)), baseUrl_(std::move(baseUrl)) { loop_.run(); }
 
 AnthropicClient::~AnthropicClient() { stop(); }
 
@@ -138,7 +150,7 @@ void AnthropicClient::stop() {
 MessagesReply AnthropicClient::send(const MessagesRequest& request) {
   if (apiKey_.empty() || stopped_) return {false, MessagesFailure::transport, {}};
 
-  auto client = drogon::HttpClient::newHttpClient(kAnthropicBaseUrl, loop_.getLoop());
+  auto client = drogon::HttpClient::newHttpClient(baseUrl_, loop_.getLoop());
   auto req = drogon::HttpRequest::newHttpRequest();
   req->setMethod(drogon::Post);
   req->setPath("/v1/messages");
@@ -183,11 +195,13 @@ void meterSpend(AiSpend spend, const std::shared_ptr<AiFuse>& fuse,
 ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
                   std::shared_ptr<UsageSink> usage,
                   std::function<void(const std::string&, const std::string&)> report,
-                  std::function<void()> onDenied) {
+                  std::function<void()> onDenied, std::shared_ptr<AiCallBudget> budget,
+                  std::function<void(const std::string&)> onBudgetDenied, int minOutputTokens) {
   auto turn = std::make_shared<int>(0);
   return [inner = std::move(inner), frame = std::move(frame), fuse = std::move(fuse),
           usage = std::move(usage), report = std::move(report), onDenied = std::move(onDenied),
-          turn](const Json::Value& request) -> std::optional<Json::Value> {
+          budget = std::move(budget), onBudgetDenied = std::move(onBudgetDenied),
+          turn, minOutputTokens](const Json::Value& request) -> std::optional<Json::Value> {
     AiSpend spend = frame;
 
     // Asked before the call. allows() raises tripped() itself, so the flag is read first — whoever
@@ -205,7 +219,31 @@ ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
     // Numbered only now: a turn the fuse refused made no call and must not consume an ordinal.
     spend.iteration = (*turn)++;
 
-    const std::optional<Json::Value> reply = inner(request);
+    std::optional<AiBudgetReservation> reservation;
+    auto outbound = request;
+    if (budget) {
+      const auto admission = budget->begin(spend, request, minOutputTokens);
+      if (!admission.reservation) {
+        if (onBudgetDenied) onBudgetDenied(admission.refusal);
+        return std::nullopt;
+      }
+      reservation = admission.reservation;
+      if (reservation->outputBudget)
+        outbound["max_tokens"] = *reservation->outputBudget->tokensFor(reservation->amountNanos);
+    }
+    std::optional<Json::Value> reply;
+    try {
+      reply = inner(outbound);
+    } catch (...) {
+      if (reservation) budget->finish(*reservation, spend.model, {}, false);
+      throw;
+    }
+    if (reservation) {
+      const std::string reason = reply && (*reply)["stop_reason"].isString()
+          ? (*reply)["stop_reason"].asString() : std::string();
+      const bool complete = reason == "end_turn" || reason == "tool_use" || reason == "max_tokens" || reason == "refusal";
+      budget->finish(*reservation, spend.model, reply ? (*reply)["usage"] : Json::Value(), complete);
+    }
     if (!reply) {
       spend.outcome = AiOutcome::transport;
       meterSpend(spend, fuse, usage);

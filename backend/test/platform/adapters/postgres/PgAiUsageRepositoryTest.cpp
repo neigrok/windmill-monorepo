@@ -166,11 +166,11 @@ TEST(pg_ai_usage_the_budget_read_sums_one_account_s_window_and_one_product_of_it
   // 9999 in + 9999 out at the fable rate ($10/$50 per MTok): the ceiling's read takes the floor column, while the dashboard's read shows the nullable truth.
   const long long floor = 9999LL * 10'000 + 9999LL * 50'000;
 
-  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "", kFromMs), 21'000'000 + floor);
-  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "pgtest-roadmap", kFromMs), 18'000'000 + floor);
-  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "pgtest-journal", kFromMs), 3'000'000);
+  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "", kFromMs), 14'000'000 + floor);
+  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "pgtest-roadmap", kFromMs), 12'000'000 + floor);
+  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "pgtest-journal", kFromMs), 2'000'000);
   CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "pgtest-nothing", kFromMs), 0);
-  CHECK_EQ(repo.spentSinceNanos(UserId{kOther}, "", kFromMs), 18'000'000);
+  CHECK_EQ(repo.spentSinceNanos(UserId{kOther}, "", kFromMs), 12'000'000);
   CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "", kToMs), 0);
 }
 
@@ -251,14 +251,14 @@ TEST(pg_ai_usage_the_ranked_table_names_people_and_never_the_anonymous_canvas) {
 
   CHECK_EQ(spenders[0].user, UserId{kMine});
   CHECK_EQ(spenders[0].email, kMyEmail);
-  CHECK_EQ(spenders[0].costNanos, 30'000'000 + 3'000'000);
+  CHECK_EQ(spenders[0].costNanos, 30'000'000 + 2'000'000);
   CHECK_EQ(spenders[0].calls, 3);
   CHECK_EQ(spenders[0].unpricedCalls, 1);
   CHECK_EQ(spenders[0].topProduct, std::string("pgtest-roadmap"));
 
   CHECK_EQ(spenders[1].user, UserId{kOther});
   CHECK_EQ(spenders[1].email, kOtherEmail);
-  CHECK_EQ(spenders[1].costNanos, 3'000'000);
+  CHECK_EQ(spenders[1].costNanos, 2'000'000);
   CHECK_EQ(spenders[1].calls, 1);
   CHECK_EQ(spenders[1].unpricedCalls, 0);
   CHECK_EQ(spenders[1].topProduct, std::string("pgtest-journal"));
@@ -286,19 +286,19 @@ TEST(pg_ai_usage_passive_operations_are_separate_from_active_allowance_and_retai
     stampLatest(kDayOneMs);
   }
 
-  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "", kFromMs, active), 15'000'000);
-  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "pgtest-journal", kFromMs, active), 3'000'000);
-  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "pgtest-journal", kFromMs, passive), 6'000'000);
+  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "", kFromMs, active), 10'000'000);
+  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "pgtest-journal", kFromMs, active), 2'000'000);
+  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "pgtest-journal", kFromMs, passive), 4'000'000);
   CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "pgtest-gym", kFromMs, passive), 0);
   CHECK_EQ(repo.spentSinceNanos(UserId{kOther}, "", kFromMs, passive), 0);
   CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "", kToMs, active), 0);
   CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "", kFromMs, {AiOperationMatch::Include, {}}), 0);
-  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "", kFromMs), 21'000'000);
-  CHECK_EQ(repo.summary(kFromMs, kToMs).costNanos, 21'000'000);
+  CHECK_EQ(repo.spentSinceNanos(UserId{kMine}, "", kFromMs), 14'000'000);
+  CHECK_EQ(repo.summary(kFromMs, kToMs).costNanos, 14'000'000);
   CHECK_EQ(repo.summary(kFromMs, kToMs).calls, 7);
   const auto spenders = repo.topSpenders(kFromMs, kToMs, 10);
   REQUIRE_EQ(spenders.size(), 1u);
-  CHECK_EQ(spenders[0].costNanos, 21'000'000);
+  CHECK_EQ(spenders[0].costNanos, 14'000'000);
   CHECK_EQ(spenders[0].calls, 7);
 }
 

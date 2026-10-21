@@ -26,6 +26,11 @@ constexpr std::uint64_t kEchoLookbackMs = 24ull * 60 * 60 * 1000;
 
 CurationStatus statusFor(const std::string& failure) {
   if (failure == "rate_limited") return CurationStatus::rateLimited;
+  for (const auto* code : {"unconfigured", "free_month_exhausted", "free_day_exhausted",
+                           "concurrency_exhausted", "funding_required", "device_bound", "subject_exhausted",
+                           "debt_outstanding", "unsupported_ai_pricing", "unauthenticated",
+                           "device_verification_required"})
+    if (failure == code) return CurationStatus::budgetLimited;
   if (failure == "truncated") return CurationStatus::truncated;
   if (failure == "schema_invalid") return CurationStatus::schemaInvalid;
   if (failure == "refused") return CurationStatus::refused;
@@ -36,6 +41,7 @@ CurationStatus statusFor(const std::string& failure) {
 void countPage(EchoSweepReport& report, CurationStatus status) {
   if (isSuccess(status)) ++report.pagesDerived;
   else if (status == CurationStatus::refused) ++report.pagesRefused;
+  else if (status == CurationStatus::budgetLimited) ++report.pagesDeferred;
   else ++report.pagesFailed;
 }
 }
@@ -51,12 +57,12 @@ void EchoSweep::start() {
   heartbeat_.start(kEchoFirstTickSeconds, kEchoTickSeconds, [this] {
     const std::uint64_t now = clock_.nowMs();
     const EchoSweepReport report = run(now - kEchoLookbackMs);
-    if (report.pagesDerived > 0 || report.pagesFailed > 0 || report.pagesRefused > 0)
+    if (report.pagesDerived > 0 || report.pagesFailed > 0 || report.pagesRefused > 0 || report.pagesDeferred > 0)
       LOG_INFO << "journal echo: " << report.usersScanned << " users, " << report.pagesDerived
                << " pages, " << report.passagesEmbedded << " passages, " << report.echoesWritten
                << " echoes, " << report.triggersSkippedRefrain << " refrains, "
                << report.inboundEnqueued << " inbound, " << report.pagesFailed << " failed, "
-               << report.pagesRefused << " refused, " << report.unitsDiscarded
+               << report.pagesRefused << " refused, " << report.pagesDeferred << " deferred, " << report.unitsDiscarded
                << " units discarded, " << report.pagesOverBudget << " over budget, "
                << report.usersOverAiBudget << " users out of AI budget";
   });
@@ -102,7 +108,7 @@ EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) 
     }
     ++report.usersScanned;
 
-    if (!entitlements_.sweepAllowanceFor(user, "journal").allows()) {
+    if (!entitlements_.aiAllowancesEnabled() && !entitlements_.sweepAllowanceFor(user, "journal").allows()) {
       ++report.usersOverAiBudget;
       observation.skip();
       return report;
@@ -115,6 +121,7 @@ EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) 
     CurationOutcome outcome = settlePage(user, *page, corpusStamp, report);
     countPage(report, outcome.status);
     if (report.pagesFailed > 0) observation.finish("failed");
+    else if (report.pagesDeferred > 0) observation.finish("budget_limited");
     else if (observation.writeCount() == writes) observation.skip();
     else observation.finish(report.pagesRefused > 0 ? "refused" : "ok");
     return report;
@@ -145,7 +152,7 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs, bool rejudgeAll) {
 
       // The background bucket, asked once per user. Dry means skipped, not failed: no stamp advances
       // and every page is still owed next pass.
-      if (!entitlements_.sweepAllowanceFor(user, "journal").allows()) {
+      if (!entitlements_.aiAllowancesEnabled() && !entitlements_.sweepAllowanceFor(user, "journal").allows()) {
         ++report.usersOverAiBudget;
         continue;
       }
@@ -188,6 +195,7 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs, bool rejudgeAll) {
       }
     }
     if (report.pagesFailed > 0) observation.finish("failed");
+    else if (report.pagesDeferred > 0) observation.finish("budget_limited");
     else if (observation.writeCount() == writes) observation.skip();
     else observation.finish(report.pagesRefused > 0 ? "refused" : "ok");
     return report;
@@ -211,6 +219,7 @@ CurationOutcome EchoSweep::settlePage(const UserId& user, const DuePage& page,
     if (isSuccess(outcome.status)) observation.finish();
     else if (outcome.status == CurationStatus::rateLimited) observation.finish("rate_limited");
     else if (outcome.status == CurationStatus::refused) observation.finish("refused");
+    else if (outcome.status == CurationStatus::budgetLimited) observation.finish("budget_limited");
     else observation.fail(std::runtime_error("echo derivation failed"));
     return outcome;
   } catch (const std::exception& error) {

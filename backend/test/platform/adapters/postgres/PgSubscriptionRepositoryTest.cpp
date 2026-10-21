@@ -172,3 +172,22 @@ TEST(pg_subscription_the_read_finds_a_subscription_bound_only_by_its_customer_s_
 
   CHECK_FALSE(repo.findFor(UserId{kStranger}, "stranger-pgtest@example.com").has_value());
 }
+
+TEST(pg_subscription_funding_reads_customer_and_subscription_by_exact_provider_id) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgSubscriptionRepository repo{pgTestPool()};
+  repo.upsertCustomer({kCustomer, kMyEmail});
+  repo.upsertSubscription(event("active", kLate));
+  const auto customer = repo.findCustomer(kCustomer);
+  const auto subscription = repo.findSubscription(kSubscription);
+  REQUIRE(customer);
+  REQUIRE(subscription);
+  CHECK_EQ(customer->customerId, kCustomer);
+  CHECK_EQ(customer->email, kMyEmail);
+  CHECK_EQ(subscription->subscriptionId, kSubscription);
+  CHECK_EQ(subscription->customerId, kCustomer);
+  CHECK_EQ(subscription->userId, kMine);
+  CHECK_FALSE(repo.findCustomer("ctm_pgtest_missing"));
+  CHECK_FALSE(repo.findSubscription("sub_pgtest_missing"));
+}

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/domain/Auth.h"
+#include "platform/domain/AiBudget.h"
 
 #include <functional>
 #include <string>
@@ -13,6 +14,7 @@ namespace wm {
 // may fire on the sender's own loop thread rather than the caller's.
 struct EmailSender {
   virtual ~EmailSender() = default;
+  virtual void sendAiAllowanceAlert(const Email&, const AiBudgetAlert&, std::function<void(bool)> done) { done(false); }
   virtual void sendMagicLink(const Email& to, const std::string& magicLinkUrl,
                              std::function<void(bool)> done) = 0;
   virtual void sendForkLink(const Email& to, const std::string& magicLinkUrl,

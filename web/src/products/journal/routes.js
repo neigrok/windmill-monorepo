@@ -4,7 +4,7 @@
 import { lazy } from 'react';
 import { journalLandingHead } from './marketing/landingHead.js';
 import { migratePages } from './migrate.js';
-import { adoptDeviceRows, onSyncResult, pendingClaimWork, watchClaims } from './pages.js';
+import { adoptDeviceRows, isWritten, onSyncResult, pagesOf, pendingClaimWork, recoveredDrafts, watchClaims } from './pages.js';
 
 const importJournalApp = () => import('./JournalApp.jsx').then((m) => ({ default: m.JournalApp }));
 const JournalApp = lazy(importJournalApp);
@@ -47,6 +47,8 @@ export const journalRoutes = {
     onPushResult: onSyncResult,
     pendingDeviceWork: pendingClaimWork,
     adoptDeviceRows,
+    adoptionAnswer: (engine) => [...pagesOf(engine), ...recoveredDrafts(engine)].some(isWritten) ? null : 'add',
+    adoptionCount: (engine) => new Set([...pagesOf(engine), ...recoveredDrafts(engine)].filter(isWritten).map((page) => page.day)).size,
     // The work a sign-in question counts from before sign-in: the journal's pages.
     signedOutWork: { type: 'page', one: 'page', many: 'pages' },
   },

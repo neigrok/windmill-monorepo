@@ -1,6 +1,7 @@
 #include "platform/application/WriteObservation.h"
 
 #include "products/roadmap/adapters/llm/AnthropicAgent.h"
+#include "platform/adapters/llm/AiCallBudget.h"
 
 #include "platform/adapters/http/VendorCall.h"
 #include "platform/adapters/llm/AnthropicClient.h"
@@ -334,11 +335,11 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
 }
 
 AnthropicAgent::AnthropicAgent(std::string apiKey, std::shared_ptr<FailureReporter> failures,
-                               std::shared_ptr<AiFuse> fuse, std::shared_ptr<UsageSink> usage)
+                               std::shared_ptr<AiFuse> fuse, std::shared_ptr<UsageSink> usage, std::shared_ptr<AiCallBudget> budget)
     : apiKey_(std::move(apiKey)),
       failures_(std::move(failures)),
       fuse_(std::move(fuse)),
-      usage_(std::move(usage)) {
+      usage_(std::move(usage)), budget_(std::move(budget)) {
   loop_.run();
 }
 
@@ -418,7 +419,8 @@ AgentOutcome AnthropicAgent::run(const std::string& prompt, const TreeId& tree, 
 
   try {
     auto outcome = driveAgent(prompt, tree, caller, tools,
-                             metered(call, frame, fuse_, usage_, report, [&] { refusal = "ai-fuse"; }),
+                             metered(call, frame, fuse_, usage_, report, [&] { refusal = "ai-fuse"; },
+                                 budget_, [&](const std::string& code) { refusal = code; }),
                              onStep, report);
     outcome.outcomeCode = refusal;
     observation.finish(outcome.ok ? "ok" : refusal.empty() ? "failed" : refusal);

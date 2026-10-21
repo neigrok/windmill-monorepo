@@ -8,6 +8,11 @@ comparisons. `pages.js` runs its actions and adapts `JournalRoom` to the web's f
 holds the server features over the
 session cookie: echoes, nudges, transcription and export.
 
+Only a body with non-whitespace text makes a journal day. Mood and energy alone never make a
+page. Blank drafts normalize before validation; a new blank draft queues no page command, and
+erasing anonymous writing cancels its claim while preserving invitation state. Clearing an account
+page keeps an invisible sync ordering marker so older offline saves cannot revive it.
+
 An anonymous save, or typing before an account's first read without a confirmed page, queues a
 receipt-protected contribution claim. Anonymous replacements retain cumulative retirements.
 Binding and terminal refusals retain edits under the original receipt; they cannot enqueue a new
@@ -17,7 +22,10 @@ in one transaction. Invalid writing stays in an editor draft; failed transaction
 durable state and the editor keeps newer input available for retry. Pending text takes precedence
 over older refusal notices. Not now retires only the invitation.
 
-Sign-in counts device-only drafts and pins their bytes before Add or Discard. Adoption preserves
+Sign-in counts written days and preserves device-only drafts; the engine pins their bytes before
+Add or Discard. Device work without writing adopts automatically, including invitation state and
+legacy blank claims, without an empty personal-data question. A blank legacy claim preserves an
+account page's writing, scores and source. Adoption preserves
 both sides of a draft collision. Displaced drafts live in the reserved device rows
 `pendingClaim:__editorRecovery__<digest>` and appear under **Recovered drafts** on the canvas;
 they never overlay the current page. A recovered editor follows peer corrections, while locally

@@ -16,7 +16,7 @@ what is on that screen and works. Under them there is no onboarding layer: no ov
 marks, no tour. The page invites writing by its own geometry — the parked caret, the page-sized
 tap target and the Write seat (`journal.md` §4a) — every night, not once. The drawings are
 sections *2 · Journal first run* and *2b · Journal onboarding · Ink notes* of the Figma page
-[iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2): board 05
+[Shell · iOS](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=1-5): board 05
 is the first open, 07j-a1 the same open under the ink, 07c and 07d the empty and the one-line
 page later.
 
@@ -122,6 +122,8 @@ it for good. Nothing counts declines.
 **One invitation at a time.** Signed out, the quiet Keep row appears only after the mood and energy
 invitation is answered or dismissed. Signed-in pages never show Keep
 (`../guidelines/superapp-flow.md` §6).
+Both invitations require at least one written day. Erasing the last page hides the invitations;
+their answered state stays retired. A day with only whitespace or mood and energy is absent.
 
 **Never during the first run:** Echoes (needs a corpus), sign-in (the shell's Keep offer comes
 only after the first kept page and the scale invitation is answered or dismissed —
@@ -178,9 +180,11 @@ feature does not rely on a settings page to be honest.
 Neither is onboarding; both are what onboarding is *for*.
 
 - **Search is free, semantic and on-device** (`journal.md` §5).
-- **Echoes are included and use no AI credits** (`journal.md` §6). Today's page, answered with your own
-  older line and a visible count — no interpretation, no advice. Beside the page, never above
-  the cursor, always carrying "Not useful".
+- **Existing Echoes are complete and readable; new hosted processing uses USD allowance**
+  (`journal.md` §6). Today's page, answered with your own older line and a visible count — no
+  interpretation, no advice. Beside the page, never above the cursor, always carrying "Not useful".
+  Writing remains available when processing waits for capacity. This allowance policy does not
+  claim the off-by-default USD backend is ready for customer rollout.
 - **First-run rule:** an echo does not appear during onboarding.
 
 ## 8. Open

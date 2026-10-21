@@ -742,6 +742,7 @@ public:
 
   // The seeds under this account's names, then its own movements.
   std::vector<Exercise> catalog(const UserId& user) override { return db.catalogOf(user); }
+  std::vector<Exercise> seedCatalog() override { return db.seeds; }
 };
 
 class FakeProgramRepository : public ProgramRepository {
@@ -935,10 +936,13 @@ public:
               turn.receipt = turn.fromLifter ? std::nullopt : generation.receipt;
               turn.results = turn.fromLifter ? std::vector<CoachResult>{} : generation.results;
               turn.status = generation.status;
+              turn.purpose = generation.purpose;
+              turn.clarification = turn.fromLifter ? std::nullopt : generation.clarification;
+              turn.allowanceRefusal = turn.fromLifter ? std::nullopt : generation.allowanceRefusal;
               replaced = true;
             }
-      if (!replaced) appendTurns(user, thread, {{true, generation.question, generation.atMs, {}, 0, generation.id, {}, generation.requestId, generation.status, generation.attachments},
-        {false, generation.answer, generation.atMs, generation.receipt, 0, generation.id, generation.results, generation.requestId, generation.status}});
+      if (!replaced) appendTurns(user, thread, {{true, generation.question, generation.atMs, {}, 0, generation.id, {}, generation.requestId, generation.status, generation.attachments, generation.purpose},
+        {false, generation.answer, generation.atMs, generation.receipt, 0, generation.id, generation.results, generation.requestId, generation.status, {}, generation.purpose, generation.clarification, generation.allowanceRefusal}});
     }
     for (auto& held : db.threadRows)
       if (held.user == user && held.id == thread) { held.generation = generation; held.askedAtMs = generation.atMs; }
@@ -952,7 +956,11 @@ public:
     for (auto& row : generations) {
       if (row.user != user || row.thread != thread || row.generation.id != generationId) continue;
       for (auto& stored : row.operations)
-        if (stored.id == operation.id) { stored = operation; return; }
+        if (stored.id == operation.id) {
+          if (stored.name != operation.name || stored.arguments != operation.arguments || stored.input != operation.input)
+            throw std::runtime_error("conversation action is immutable");
+          stored = operation; return;
+        }
       row.operations.push_back(operation);
       return;
     }

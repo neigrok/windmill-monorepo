@@ -17,6 +17,8 @@
 
 namespace wm::gym {
 
+Json::Value toJson(const AiBudgetView& allowance);
+
 // REST/MCP arguments, read replies and stored JSON; sync records follow gym.registry.json.
 
 SessionStart parseSessionStart(const Json::Value& body);   // throws InvalidTraining
@@ -53,6 +55,8 @@ Json::Value toJson(const std::vector<CoachResult>& results);
 std::vector<CoachResult> coachResultsFrom(const Json::Value& results);
 Json::Value toJson(const CoachAttachment& attachment);
 std::vector<CoachAttachment> coachAttachmentsFrom(const Json::Value& attachments);
+Json::Value toJson(const CoachClarification& clarification);
+std::optional<CoachClarification> clarificationFrom(const Json::Value& body);
 Json::Value toJson(const AskGeneration& generation);
 AskGeneration generationFrom(const Json::Value& body);
 Json::Value toJson(const AskThread& thread);

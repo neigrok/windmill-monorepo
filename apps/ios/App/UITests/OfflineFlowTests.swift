@@ -35,15 +35,18 @@ import XCTest
     app.launch()
     ready(app.buttons["Done"]); app.buttons["Done"].tap()
     switchRoom("Gym", in: app)
-    ready(app.buttons["Just start logging"]); app.buttons["Just start logging"].tap()
-    ready(app.buttons["workout-add"]); app.buttons["workout-add"].tap()
-    let search = app.searchFields.firstMatch
-    ready(search); search.tap(); search.typeText("Bench")
+    ready(app.buttons["new-routine"]); app.buttons["new-routine"].tap()
+    let name = app.textFields["routine-name"]
+    ready(name); name.tap(); name.typeText("Offline routine\n")
+    app.buttons["add-movement"].tap()
     ready(app.buttons["gym-movement-bench-press"]); app.buttons["gym-movement-bench-press"].tap()
-    let sets = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-"))
+    app.buttons["save-routine"].tap()
+    ready(app.buttons["routine-start"]); app.buttons["routine-start"].tap()
+    let progress = app.descendants(matching: .any)["workout-set-progress"]
     ready(app.buttons["workout-log"]); app.buttons["workout-log"].tap()
-    XCTAssertEqual(sets.count, 1, "Pending sign-in must not prevent a local set from being saved.")
-    let firstSet = sets.firstMatch.identifier
+    XCTAssertTrue(progress.waitForValue("1 set"))
+    var saved = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
+    XCTAssertEqual(saved.count, 1, "Pending sign-in must not prevent a local set from being saved.")
 
     for cold in [false, true] {
       ready(app.buttons["workout-assembly"]); app.buttons["workout-assembly"].tap()
@@ -52,12 +55,20 @@ import XCTest
         app.terminate(); app.launch()
         ready(app.buttons["Done"]); app.buttons["Done"].tap()
       }
-      ready(app.buttons["Just start logging"]); app.buttons["Just start logging"].tap()
+      ready(app.buttons["gym-hidden-workout"]); app.buttons["gym-hidden-workout"].tap()
       ready(app.buttons["workout-log"])
-      XCTAssertTrue(sets.matching(identifier: firstSet).firstMatch.exists)
-      XCTAssertEqual(sets.count, cold ? 2 : 1)
+      XCTAssertTrue(progress.waitForValue(cold ? "2 sets" : "1 set"))
+      let restored = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
+      XCTAssertEqual(restored.map(\.identifier), saved.map(\.identifier))
+      XCTAssertEqual(restored.map(\.label), saved.map(\.label))
       app.buttons["workout-log"].tap()
-      XCTAssertEqual(sets.count, cold ? 3 : 2)
+      XCTAssertTrue(progress.waitForValue(cold ? "3 sets" : "2 sets"))
+      let after = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
+      XCTAssertEqual(after.count, cold ? 3 : 2)
+      XCTAssertEqual(Set(after.map(\.identifier)).count, after.count)
+      XCTAssertEqual(after.prefix(saved.count).map(\.identifier), saved.map(\.identifier))
+      XCTAssertEqual(after.prefix(saved.count).map(\.label), saved.map(\.label))
+      saved = after
     }
   }
 
@@ -165,10 +176,15 @@ import XCTest
     } else {
       ready(app.tabBars.buttons["Routines"])
       app.tabBars.buttons["Routines"].tap()
-      ready(app.buttons["Just start logging"])
-      app.buttons["Just start logging"].tap()
+      ready(app.buttons["new-routine"]); app.buttons["new-routine"].tap()
+      let name = app.textFields["routine-name"]
+      ready(name); name.tap(); name.typeText("Offline routine\n")
+      app.buttons["add-movement"].tap()
+      ready(app.buttons["gym-movement-bench-press"]); app.buttons["gym-movement-bench-press"].tap()
+      app.buttons["save-routine"].tap()
+      ready(app.buttons["routine-start"]); app.buttons["routine-start"].tap()
     }
-    ready(app.buttons["workout-add"])
+    ready(app.buttons["workout-log"])
     ready(app.buttons["workout-assembly"])
     app.buttons["workout-assembly"].tap()
     ready(app.buttons["workout-hide"])
@@ -180,12 +196,14 @@ import XCTest
     } else {
       XCTAssertTrue(app.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 3))
     }
-    ready(app.buttons["coach-more"])
-    app.buttons["coach-more"].tap()
-    ready(app.buttons["coach-menu-notes"])
-    app.buttons["coach-menu-notes"].tap()
+    ready(app.buttons["you"])
+    app.buttons["you"].tap()
+    ready(app.buttons["settings-notes"])
+    app.buttons["settings-notes"].tap()
     XCTAssertTrue(app.navigationBars["Notes"].waitForExistence(timeout: 3))
     app.navigationBars["Notes"].buttons.element(boundBy: 0).tap()
+    ready(app.navigationBars["You"].buttons["Done"])
+    app.navigationBars["You"].buttons["Done"].tap()
     openYou(app, signedIn: signedIn)
     switchRoom("Journal", in: app)
     XCTAssertEqual(editor.value as? String, previous + suffix)

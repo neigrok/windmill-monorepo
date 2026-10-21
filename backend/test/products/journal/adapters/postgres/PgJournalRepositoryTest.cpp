@@ -1,4 +1,6 @@
 #include "products/journal/adapters/postgres/PgJournalRepository.h"
+#include "products/journal/adapters/postgres/PgNudgeRepository.h"
+#include "products/journal/adapters/postgres/PgEchoRepository.h"
 
 #include "test/PgTestPool.h"
 #include "test/testing.h"
@@ -248,6 +250,23 @@ TEST(pg_journal_load_is_absent_until_the_day_is_written) {
   const std::optional<Page> got = repo.load(UserId{kUser}, LocalDate{"2026-07-27"});
   REQUIRE(got.has_value());
   CHECK_EQ(written({*got}), std::vector<std::string>{"2026-07-27 here"});
+}
+
+TEST(pg_journal_unwritten_days_do_not_count_or_suppress_nudges) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgEchoRepository echoes{pgTestPool()};
+  PgNudgeRepository nudges{pgTestPool()};
+  const UserId user{kUser};
+  const LocalDate day{"2026-07-27"};
+  for (const std::string body : {std::string(), std::string(Page::whitespace)}) {
+    stored(page(body, Score{0}, Score{10}, Source::typed, Hlc{100, 0, "dev"}));
+    CHECK_EQ(echoes.pagesWritten(user), 0);
+    CHECK_FALSE(nudges.wroteToday(user, day));
+  }
+  stored(page("  A line\n", Score{0}, Score{10}, Source::typed, Hlc{200, 0, "dev"}));
+  CHECK_EQ(echoes.pagesWritten(user), 1);
+  CHECK(nudges.wroteToday(user, day));
 }
 
 TEST(pg_journal_range_is_the_inclusive_window_oldest_first) {

@@ -4,13 +4,15 @@ import GymDomain
 
 // A saved workout the account has not taken, read-only, with the one way out its reason names in the band; a refusal
 // that arrives while it is open is said there too. A workout that lands stays on screen as last seen until the lifter
-// goes back. Discard returns to The log, which holds it for the room's window with Undo in its band.
+// goes back. A confirmed discard removes the saved copy immediately.
 struct WorkoutInspectScreen: View {
   let gym: GymModel
   let id: ID<Session>
   @State var seen: SignedOutWorkout?
   @State var fixing: WorkoutFix?
   @State var message: String?
+  @State var discard = false
+  @State var discardConfirmed = false
   @Environment(\.dismiss) var dismiss
 
   var saved: SignedOutWorkout? { gym.adoptionWorkouts.first { $0.session.id == id } }
@@ -32,12 +34,28 @@ struct WorkoutInspectScreen: View {
           ToolbarItem(placement: .topBarTrailing) {
             MoreMenu(identifier: "recovery-more") {
               if recovery.canFix, recovery.primary != .fix { Button("Fix workout", systemImage: "pencil") { fix() } }
-              Button(recovery.discardTitle, systemImage: "trash", role: .destructive) { gym.holdDiscard(id); dismiss() }
+              Button(recovery.discardTitle, systemImage: "trash", role: .destructive) { discard = true }
                 .accessibilityIdentifier("recovery-discard")
             }
           }
         }
       }
+      .onChange(of: discard) { _, shown in
+        if shown {
+          discardConfirmed = false
+          gym.telemetry.event("gym_action", properties: ["screen": "on_this_phone", "action": "discard", "state": "shown"])
+        } else if !discardConfirmed {
+          gym.telemetry.event("gym_action", properties: ["screen": "on_this_phone", "action": "cancel", "outcome": "cancelled"])
+        }
+      }
+      .onChange(of: gym.account) { _, _ in discard = false }
+      .confirmationDialog("Discard this workout?", isPresented: $discard, titleVisibility: .visible) {
+        Button(recovery?.discardTitle ?? "Discard workout", role: .destructive) {
+          discardConfirmed = true
+          if gym.discardWorkout(id) { dismiss() }
+        }
+        Button("Cancel", role: .cancel) {}
+      } message: { Text("This permanently removes the copy saved on this phone.") }
       .reachBand { band(recovery) }
       .sheet(isPresented: Binding(get: { fixing != nil }, set: { if !$0 { fixing = nil } })) {
         if let fixing, let recovery { WorkoutFixSheet(gym: gym, fix: fixing, reason: recovery.reason) { message = nil } }
@@ -83,7 +101,7 @@ struct WorkoutInspectScreen: View {
     return VStack(spacing: 0) {
       GymTransient(gym: gym, message: message ?? gym.addingLine(id) ?? (waiting ? gym.recoveryWait : nil),
                    dismiss: message == nil ? nil : { message = nil },
-                   errorIdentifier: "recovery-error", undoIdentifier: "recovery-undo")
+                   errorIdentifier: "recovery-error")
       if let recovery, let primary {
         ActionBand(title: primary.title, room: .gym, disabled: waiting, actionIdentifier: "recovery-primary") { act(primary, recovery) }
       }

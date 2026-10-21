@@ -88,6 +88,18 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     #expect(TelemetryPrivacy.properties(["action": "open", "door": "accessory", "name": "private-marker"]) == ["action": .label("open"), "door": .label("accessory")])
   }
 
+  @Test func receiptAndConfirmationStepsRetainOnlyBoundedActionLabels() {
+    #expect(TelemetryPrivacy.properties(["screen": "workout", "action": "share", "sessionId": "private-id", "question": "private-text"]) ==
+            ["screen": .label("workout"), "action": .label("share")])
+    for screen in ["workout", "log", "session", "on_this_phone", "history"] {
+      #expect(TelemetryPrivacy.properties(["screen": screen, "action": "discard", "state": "shown", "name": "private-title"]) ==
+              ["screen": .label(screen), "action": .label("discard"), "state": .label("shown")])
+      #expect(TelemetryPrivacy.properties(["screen": screen, "action": "cancel", "outcome": "cancelled", "threadId": "private-id"]) ==
+              ["screen": .label(screen), "action": .label("cancel"), "outcome": .label("cancelled")])
+    }
+    #expect(!TelemetryPrivacy.events.contains("gym_undo") && TelemetryPrivacy.properties(["operation": "gym_undo"]).isEmpty)
+  }
+
   @Test func echoNamesAndDiagnosticsAllowOnlyContentFreeLabels() {
     #expect(TelemetryPrivacy.events.filter { $0.hasPrefix("journal_echo_") } ==
             Set(["journal_echo_shown", "journal_echo_opened", "journal_echo_dismissed", "journal_echo_useful", "journal_echo_ink",
@@ -451,7 +463,7 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
   }
 
   @Test func firstRunReportsChoicesAndSaveWithoutTextOrScaleValues() throws {
-    let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
+    let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry),
                           commandResultWrites: JournalWriting.resultWrites, pendingDeviceWork: JournalWriting.pendingWork)
     let recorder = TelemetryRecorder()

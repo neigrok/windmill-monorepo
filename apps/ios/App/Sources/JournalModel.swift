@@ -120,7 +120,7 @@ final class JournalModel {
   func type(_ text: String) {
     guard !editorReadOnly else { return }
     liftInk()
-    if !text.isEmpty && room?.state.placeholder == "pending" {
+    if PageDocument(body: text).hasText && room?.state.placeholder == "pending" {
       do { _ = try runner.run(RetireJournalInvitation("placeholder")); room = try runner.read(Journal.scope, JournalRoom.init) }
       catch { reportBoundary("journal_choice", error: error); self.error = "Couldn't save on this phone. Your writing stays in the editor." }
     }
@@ -139,7 +139,7 @@ final class JournalModel {
     saveTask?.cancel()
     do {
       _ = try transitionDay()
-      if document.body.utf8.count > 131_072 {
+      if document.hasText && document.body.utf8.count > 131_072 {
         error = "Your draft is kept on this phone. Shorten this page before it can be backed up."; dirty = true; return false
       }
       let previousBody = room?.days.first(where: { $0.day == editorDay })?.document.body ?? ""

@@ -20,6 +20,7 @@ import XCTest
       if !anonymous { app.launchArguments += ["-code-file", ProcessInfo.processInfo.environment["WM_GYM_E2E_SESSION"]!] }
     } else { app.launchArguments += ["-model-server", "-server", "http://127.0.0.1:1"] }
     app.launch()
+    XCTAssertTrue(app.tabBars.buttons["Routines"].waitForExistence(timeout: 20)); app.tabBars.buttons["Routines"].tap()
     XCTAssertTrue(app.buttons["new-routine"].waitForExistence(timeout: 20))
     let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: app.buttons["new-routine"])
     XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed)
@@ -54,7 +55,7 @@ import XCTest
     XCTAssertTrue(app.buttons["workout-finish"].waitForExistence(timeout: 5)); app.buttons["workout-finish"].tap()
     XCTAssertTrue(app.staticTexts[count < 4 ? "Ended early." : "Well done."].waitForExistence(timeout: 20)); capture(app, "e2e-receipt")
     if !close { return }
-    app.buttons["Done"].tap()
+    app.buttons["workout-done"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-session-detail"].waitForExistence(timeout: 10))
   }
   func testRoutineWorkoutReceiptLogRecordWeightNoteAndEdit() throws {
@@ -66,7 +67,7 @@ import XCTest
     replace(app.textFields["gym-target-sets"], "4"); replace(app.textFields["gym-target-reps"], "8"); replace(app.textFields["gym-target-weight"], "60")
     app.buttons["gym-target-set"].tap(); app.buttons["save-routine"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["routine-detail"].waitForExistence(timeout: 5))
-    app.buttons["Start workout"].tap(); logAndFinish(app)
+    app.buttons["routine-start"].tap(); logAndFinish(app)
     app.buttons["gym-session-movement"].firstMatch.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5)); capture(app, "e2e-record")
     back(app); back(app)
@@ -77,16 +78,18 @@ import XCTest
       let routine = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "routine-", "Integration A")).firstMatch
       XCTAssertTrue(routine.waitForExistence(timeout: 5)); routine.tap()
     }
-    XCTAssertTrue(app.buttons["edit-routine"].waitForExistence(timeout: 5)); app.buttons["edit-routine"].tap(); replace(app.textFields["routine-name"], "Integration B"); app.buttons["save-routine"].tap(); back(app)
+    XCTAssertTrue(app.buttons["edit-routine"].waitForExistence(timeout: 5)); app.buttons["edit-routine"].tap(); replace(app.textFields["routine-name"], "Integration B"); app.buttons["save-routine"].tap(); app.buttons["routine-close"].tap()
     app.tabBars.buttons["Coach"].tap()
-    XCTAssertTrue(app.buttons["coach-more"].waitForExistence(timeout: 5)); app.buttons["coach-more"].tap()
-    XCTAssertTrue(app.buttons["coach-menu-notes"].waitForExistence(timeout: 5)); app.buttons["coach-menu-notes"].tap()
+    XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 5)); app.buttons["you"].tap()
+    XCTAssertTrue(app.buttons["settings-notes"].waitForExistence(timeout: 5)); app.buttons["settings-notes"].tap()
     app.buttons["coach-add-note"].tap(); replace(app.textFields["coach-note-title"], "Training focus")
     let body = app.textFields["coach-note-body"].exists ? app.textFields["coach-note-body"] : app.textViews["coach-note-body"]
     replace(body, "Keep the bench controlled."); app.buttons["coach-note-save"].tap()
     XCTAssertTrue(app.staticTexts["Training focus"].waitForExistence(timeout: 5)); capture(app, "e2e-notes")
+    back(app)
+    XCTAssertTrue(app.navigationBars["You"].buttons["Done"].waitForExistence(timeout: 5))
+    app.navigationBars["You"].buttons["Done"].tap()
     if server != nil {
-      back(app)
       let question = app.descendants(matching: .any)["coach-question"]
       XCTAssertTrue(question.waitForExistence(timeout: 10)); question.tap(); question.typeText("How is my training?")
       app.buttons["coach-send"].tap()
@@ -97,9 +100,11 @@ import XCTest
   }
   func testAnonymousWorkoutAdoptedAtSignIn() throws {
     let app = launch(anonymous: true)
-    app.buttons["Just start logging"].tap()
-    XCTAssertTrue(app.buttons["workout-add"].waitForExistence(timeout: 5)); app.buttons["workout-add"].tap()
-    pickBench(app)
+    XCTAssertTrue(app.buttons["new-routine"].waitForExistence(timeout: 15)); app.buttons["new-routine"].tap()
+    replace(app.textFields["routine-name"], "Training day\n")
+    app.buttons["add-movement"].tap(); pickBench(app, routineEditor: true)
+    app.buttons["save-routine"].tap()
+    XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5)); app.buttons["routine-start"].tap()
     logAndFinish(app); back(app)
     app.buttons["you"].tap()
     if let link = identities["adopt"]?["link"] {
@@ -107,7 +112,8 @@ import XCTest
       XCTAssertTrue(app.textFields["email-address"].waitForValue("gym-mail-failure@example.com")); app.buttons["Send code"].tap()
       XCTAssertTrue(app.staticTexts["Can't reach windmill.works. Nothing you've written is lost."].waitForExistence(timeout: 10))
       capture(app, "e2e-auth-mail-unavailable")
-      replace(app.textFields["email-address"], "gym-adopt@example.com"); app.buttons["Send code"].tap()
+      app.terminate(); app.launchArguments += ["-restore-board", "-sign-in-link-fixture"]; app.launch()
+      app.launchArguments.removeAll { $0 == "-restore-board" || $0 == "-sign-in-link-fixture" }
       XCTAssertTrue(app.buttons["link-sign-in"].waitForExistence(timeout: 10)); app.buttons["link-sign-in"].tap()
       replace(app.textFields["sign-in-link"], link); app.buttons["sign-in-link-submit"].tap()
     } else {
@@ -125,23 +131,37 @@ import XCTest
       ? XCTUnwrap(conflictModelSnapshot(app, expectedSessions: 1)["identity"] as? [String: String])
       : XCTUnwrap(identities["conflict"])
     let accountWorkout = try XCTUnwrap(identity["openSession"])
-    app.buttons["Just start logging"].tap()
-    XCTAssertTrue(app.buttons["workout-add"].waitForExistence(timeout: 5)); app.buttons["workout-add"].tap(); pickBench(app)
+    XCTAssertTrue(app.buttons["new-routine"].waitForExistence(timeout: 15)); app.buttons["new-routine"].tap()
+    replace(app.textFields["routine-name"], "Training day\n")
+    app.buttons["add-movement"].tap(); pickBench(app, routineEditor: true)
+    app.buttons["save-routine"].tap()
+    XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5)); app.buttons["routine-start"].tap()
     logAndFinish(app, count: 2); back(app)
     app.tabBars.buttons["Routines"].tap()
-    let start = app.buttons["Just start logging"]
+    let routine = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "routine-", "Training day,")).firstMatch
+    XCTAssertTrue(routine.waitForExistence(timeout: 5)); routine.tap()
+    let start = app.buttons["routine-start"]
     XCTAssertTrue(start.waitForExistence(timeout: 5)); XCTAssertTrue(start.wait(for: \.isEnabled, toEqual: true, timeout: 10)); start.tap()
-    XCTAssertTrue(app.buttons["workout-add"].waitForExistence(timeout: 5)); app.buttons["workout-add"].tap(); pickBench(app)
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
-    app.buttons["workout-log"].tap(); app.buttons["workout-log"].tap()
-    XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).count, 2)
+    let progress = app.descendants(matching: .any)["workout-set-progress"]
+    app.buttons["workout-log"].tap()
+    XCTAssertTrue(progress.waitForValue("1 set"))
+    let firstSet = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
+    XCTAssertEqual(firstSet.count, 1)
+    app.buttons["workout-log"].tap()
+    XCTAssertTrue(progress.waitForValue("2 sets"))
+    let retainedSets = app.workoutLedgerRows().filter { $0.identifier.hasPrefix("workout-set-") }
+    XCTAssertEqual(retainedSets.count, 2)
+    XCTAssertEqual(Set(retainedSets.map(\.identifier)).count, 2)
+    XCTAssertEqual(retainedSets.prefix(1).map(\.identifier), firstSet.map(\.identifier))
+    XCTAssertEqual(retainedSets.prefix(1).map(\.label), firstSet.map(\.label))
     app.buttons["workout-assembly"].tap()
     XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
     XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 5)); app.buttons["you"].tap()
     if server != nil {
       let link = try XCTUnwrap(identity["link"])
-      app.buttons["email-sign-in"].tap(); replace(app.textFields["email-address"], "gym-conflict-link@example.com")
-      XCTAssertTrue(app.textFields["email-address"].waitForValue("gym-conflict-link@example.com")); app.buttons["Send code"].tap()
+      app.terminate(); app.launchArguments += ["-restore-board", "-sign-in-link-fixture"]; app.launch()
+      app.launchArguments.removeAll { $0 == "-restore-board" || $0 == "-sign-in-link-fixture" }
       XCTAssertTrue(app.buttons["link-sign-in"].waitForExistence(timeout: 10)); app.buttons["link-sign-in"].tap()
       replace(app.textFields["sign-in-link"], link); app.buttons["sign-in-link-submit"].tap()
     } else {
@@ -310,9 +330,12 @@ import XCTest
     let signed = XCUIApplication()
     signed.launchArguments = ["-model-server", "-server", "http://127.0.0.1:1", "-scenario", "gym-e2e", "-coach-fixture"]
     signed.launch()
-    XCTAssertTrue(signed.buttons["Just start logging"].waitForExistence(timeout: 15)); signed.buttons["Just start logging"].tap()
-    XCTAssertTrue(signed.buttons["workout-add"].waitForExistence(timeout: 5)); signed.buttons["workout-add"].tap()
-    pickBench(signed)
+    XCTAssertTrue(signed.tabBars.buttons["Routines"].waitForExistence(timeout: 15)); signed.tabBars.buttons["Routines"].tap()
+    XCTAssertTrue(signed.buttons["new-routine"].waitForExistence(timeout: 15)); signed.buttons["new-routine"].tap()
+    replace(signed.textFields["routine-name"], "Training day\n")
+    signed.buttons["add-movement"].tap(); pickBench(signed, routineEditor: true)
+    signed.buttons["save-routine"].tap()
+    XCTAssertTrue(signed.buttons["routine-start"].waitForExistence(timeout: 5)); signed.buttons["routine-start"].tap()
     logAndFinish(signed, close: false)
     let share = signed.buttons["workout-share-coach"]
     for _ in 0..<4 where !share.isHittable { signed.swipeUp() }
@@ -333,15 +356,67 @@ import XCTest
     XCTAssertTrue(question.waitForExistence(timeout: 5))
     XCTAssertTrue(question.wait(for: \.isHittable, toEqual: true, timeout: 5))
     signed.terminate()
-    let anonymous = launch(anonymous: true)
-    anonymous.buttons["Just start logging"].tap()
-    XCTAssertTrue(anonymous.buttons["workout-add"].waitForExistence(timeout: 5)); anonymous.buttons["workout-add"].tap()
-    pickBench(anonymous)
+    let anonymous = XCUIApplication()
+    anonymous.launchArguments = ["-model-server", "-server", "http://127.0.0.1:1", "-scenario", "gym-e2e-anonymous", "-coach-fixture"]
+    anonymous.launch()
+    XCTAssertTrue(anonymous.tabBars.buttons["Routines"].waitForExistence(timeout: 15)); anonymous.tabBars.buttons["Routines"].tap()
+    XCTAssertTrue(anonymous.buttons["new-routine"].waitForExistence(timeout: 15)); anonymous.buttons["new-routine"].tap()
+    replace(anonymous.textFields["routine-name"], "Training day\n")
+    anonymous.buttons["add-movement"].tap(); pickBench(anonymous, routineEditor: true)
+    anonymous.buttons["save-routine"].tap()
+    XCTAssertTrue(anonymous.buttons["routine-start"].waitForExistence(timeout: 5)); anonymous.buttons["routine-start"].tap()
     logAndFinish(anonymous, close: false)
-    let keep = anonymous.buttons["Keep this log"]
-    for _ in 0..<4 where !keep.isHittable { anonymous.swipeUp() }
-    keep.tap()
+    let anonymousShare = anonymous.buttons["workout-share-coach"]
+    for _ in 0..<4 where !anonymousShare.isHittable { anonymous.swipeUp() }
+    anonymousShare.tap()
     XCTAssertTrue(anonymous.staticTexts["Keep your log"].waitForExistence(timeout: 10))
+    anonymous.buttons["email-sign-in"].tap()
+    replace(anonymous.textFields["email-address"], "receipt-share@example.com")
+    XCTAssertTrue(anonymous.textFields["email-address"].waitForValue("receipt-share@example.com"))
+    anonymous.buttons["Send code"].tap(); replace(anonymous.textFields["email-code"], "482913")
+    if anonymous.alerts.buttons["Add"].waitForExistence(timeout: 5) { anonymous.alerts.buttons["Add"].tap() }
+    XCTAssertTrue(anonymous.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 15))
+    XCTAssertTrue(anonymous.buttons["coach-review"].waitForExistence(timeout: 15))
+    XCTAssertTrue(anonymous.buttons["coach-stop"].waitForNonExistence(timeout: 10))
+    let deferredQuestion = anonymous.staticTexts["Check my last workout."]
+    for _ in 0..<4 where !deferredQuestion.isHittable { anonymous.swipeDown() }
+    XCTAssertTrue(deferredQuestion.waitForExistence(timeout: 5))
+    XCTAssertEqual(anonymous.staticTexts.matching(NSPredicate(format: "label == %@", "Check my last workout.")).count, 1)
+  }
+
+  func testCancelledReceiptCoachSignInDoesNotSendAfterLaterSignIn() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-server", "http://127.0.0.1:1", "-scenario", "gym-e2e-anonymous", "-coach-fixture"]
+    app.launch()
+    XCTAssertTrue(app.tabBars.buttons["Routines"].waitForExistence(timeout: 15)); app.tabBars.buttons["Routines"].tap()
+    XCTAssertTrue(app.buttons["new-routine"].waitForExistence(timeout: 15)); app.buttons["new-routine"].tap()
+    replace(app.textFields["routine-name"], "Training day\n")
+    app.buttons["add-movement"].tap(); pickBench(app, routineEditor: true)
+    app.buttons["save-routine"].tap()
+    XCTAssertTrue(app.buttons["routine-start"].waitForExistence(timeout: 5)); app.buttons["routine-start"].tap()
+    logAndFinish(app, close: false)
+    let share = app.buttons["workout-share-coach"]
+    for _ in 0..<4 where !share.isHittable { app.swipeUp() }
+    share.tap()
+    XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 10)); app.buttons["email-sign-in"].tap()
+    XCTAssertTrue(app.textFields["email-address"].waitForExistence(timeout: 5))
+    app.navigationBars["Sign in"].buttons["Close"].tap()
+    XCTAssertTrue(app.textFields["email-address"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.tabBars.buttons["Routines"].isSelected)
+    XCTAssertFalse(app.staticTexts["Check my last workout."].exists)
+    app.buttons["you"].tap()
+    XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 5)); app.buttons["email-sign-in"].tap()
+    replace(app.textFields["email-address"], "receipt-cancel@example.com")
+    XCTAssertTrue(app.textFields["email-address"].waitForValue("receipt-cancel@example.com"))
+    app.buttons["Send code"].tap(); replace(app.textFields["email-code"], "482913")
+    if app.alerts.buttons["Add"].waitForExistence(timeout: 5) { app.alerts.buttons["Add"].tap() }
+    XCTAssertTrue(app.textFields["email-code"].waitForNonExistence(timeout: 15))
+    XCTAssertTrue(app.tabBars.buttons["Routines"].isSelected, "A cancelled receipt action must not navigate after a later sign-in")
+    app.tabBars.buttons["Coach"].tap()
+    XCTAssertTrue(app.descendants(matching: .any)["coach-question"].waitForExistence(timeout: 15))
+    XCTAssertFalse(app.staticTexts["Check my last workout."].exists)
+    XCTAssertFalse(app.buttons["coach-review"].exists)
+    XCTAssertFalse(app.buttons["coach-stop"].exists)
   }
 
   func verifyServer(_ kind: String, edited: Bool) {

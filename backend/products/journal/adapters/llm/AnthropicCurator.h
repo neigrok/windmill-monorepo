@@ -31,7 +31,8 @@ public:
   explicit AnthropicCurator(std::shared_ptr<MessagesApi> transport,
                             std::string model = "claude-sonnet-5", std::string effort = "low",
                             std::shared_ptr<AiFuse> fuse = nullptr,
-                            std::shared_ptr<UsageSink> usage = nullptr, float floor = 0.6f);
+                            std::shared_ptr<UsageSink> usage = nullptr, float floor = 0.6f,
+                            std::shared_ptr<AiCallBudget> budget = nullptr);
 
   bool configured() const override;
 
@@ -49,6 +50,7 @@ private:
   float floor_ = 0.6f;
   std::shared_ptr<AiFuse> fuse_;
   std::shared_ptr<UsageSink> usage_;
+  std::shared_ptr<AiCallBudget> budget_;
 };
 
 }

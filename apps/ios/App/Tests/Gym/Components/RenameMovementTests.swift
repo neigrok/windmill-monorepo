@@ -13,7 +13,7 @@ import SyncTesting
 
 @Suite(.serialized) @MainActor struct RenameMovementTests {
   func fixture(account: String? = nil) -> (Harness, GymModel) {
-    let harness = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: account,
+    let harness = Harness(holdRemovals: false, registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: account,
                           rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     return (harness, GymModel(runner: harness.runner))
   }
@@ -116,7 +116,7 @@ import SyncTesting
     let engine = try SyncEngine(config: EngineConfig(appVersion: "test", surface: .ios), store: store,
                                 transport: transport, tokens: tokens, forkGuard: InMemoryForkGuardStore(),
                                 clock: .system, random: SeededRandomSource(seed: 17), connectivity: SwitchedConnectivity())
-    let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
+    let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0), holdRemovals: false)
     let runtime = AppRuntime(settings: AppSettings(arguments: ["app", "-server", "https://gym.invalid"]), store: store, engine: engine,
                              auth: NativeAuth(baseURL: URL(string: "https://gym.invalid")), runner: runner,
                              tokens: tokens, revocations: InMemoryTokenStore())

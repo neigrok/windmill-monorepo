@@ -15,6 +15,7 @@ class ResendEmailSender : public EmailSender {
 public:
   explicit ResendEmailSender(ResendClient& client);
 
+  void sendAiAllowanceAlert(const Email& to, const AiBudgetAlert& alert, std::function<void(bool)> done) override;
   void sendMagicLink(const Email& to, const std::string& magicLinkUrl,
                      std::function<void(bool)> done) override;
   void sendForkLink(const Email& to, const std::string& magicLinkUrl,

@@ -1,6 +1,63 @@
 import XCTest
 
 @MainActor final class JournalFlowTests: XCTestCase {
+  func testWhitespaceAndRatingsWithoutWritingLeaveNoPageAfterRelaunch() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "05-journal-first-open"]
+    app.launch()
+    let editor = app.textViews["journal-editor"]
+    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+    app.buttons["write-today"].tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    app.typeText("  \n \n")
+    app.buttons["done-writing"].tap()
+    XCTAssertTrue(editor.waitForValue(""))
+    for scale in ["Mood", "Energy"] {
+      let control = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", scale)).firstMatch
+      XCTAssertTrue(control.waitForExistence(timeout: 5))
+      control.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5)).tap()
+      XCTAssertTrue(control.waitForValue("Not answered"))
+    }
+    XCTAssertFalse(app.buttons["Keep it"].exists)
+    app.terminate(); app.launchArguments.append("-restore-board"); app.launch()
+    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+    XCTAssertEqual(editor.value as? String, "")
+    XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "journal-day-")).count, 0)
+    XCTAssertFalse(app.buttons["Clear mood"].isEnabled)
+    XCTAssertFalse(app.buttons["Clear energy"].isEnabled)
+    XCTAssertFalse(app.buttons["Keep it"].exists)
+  }
+
+  func testErasingWritingAlsoRemovesRatingsAfterRelaunch() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "05-journal-first-open"]
+    app.launch()
+    let editor = app.textViews["journal-editor"]
+    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+    let text = "A day to remove."
+    app.buttons["write-today"].tap(); app.typeText(text)
+    XCTAssertTrue(editor.waitForValue(text))
+    app.buttons["done-writing"].tap()
+    for scale in ["Mood", "Energy"] {
+      let control = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", scale)).firstMatch
+      XCTAssertTrue(control.waitForExistence(timeout: 5))
+      control.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5)).tap()
+      XCTAssertTrue(app.buttons["Clear " + scale.lowercased()].isEnabled)
+    }
+    app.buttons["write-today"].tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    app.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: text.count))
+    XCTAssertTrue(editor.waitForValue(""))
+    app.buttons["done-writing"].tap()
+    app.terminate(); app.launchArguments.append("-restore-board"); app.launch()
+    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+    XCTAssertEqual(editor.value as? String, "")
+    XCTAssertFalse(app.buttons["Clear mood"].isEnabled)
+    XCTAssertFalse(app.buttons["Clear energy"].isEnabled)
+    XCTAssertFalse(app.buttons["Keep it"].exists)
+    XCTAssertEqual(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "journal-day-")).count, 0)
+  }
+
   func testEmptyPageTapBelowTextOpensKeyboardAtEnd() {
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", "05-journal-first-open", "-journal-layout-test"]
@@ -168,10 +225,11 @@ import XCTest
     assertInkVisible(false, in: editor)
     XCTAssertFalse(app.keyboards.firstMatch.exists)
     roomMenu.tap()
-    let showInk = app.buttons["Show ink notes"]
-    XCTAssertTrue(showInk.waitForExistence(timeout: 5))
-    showInk.tap()
-    assertInkVisible(true, in: editor)
+    XCTAssertTrue(app.buttons["room-journal"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["Show ink notes"].exists)
+    XCTAssertFalse(app.buttons["You"].exists)
+    app.buttons["room-journal"].tap()
+    assertInkVisible(false, in: editor)
     let screenshot = XCTAttachment(screenshot: app.screenshot())
     screenshot.name = "room-menu"
     screenshot.lifetime = .keepAlways
