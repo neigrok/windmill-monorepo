@@ -105,7 +105,10 @@ void OnboardingService::generate(AiInstallationPrincipal installation, Onboardin
       const auto answer = model_->generate(installation, record.resultId, input, seeds);
       record.state = answer.refusal.empty() ? "completed" : "failed";
       record.errorCode = answer.refusal;
-      if (answer.refusal.empty()) record.payload = onboardingRoutines(answer.routines);
+      if (answer.refusal.empty()) {
+        record.payload = onboardingRoutines(answer.routines);
+        record.payload["message"] = answer.message;
+      }
     }
     const bool saved = repository_->finish(record, clock_.nowMs());
     observation.finish(saved ? (record.errorCode.empty() ? "completed" : record.errorCode) : "interrupted");

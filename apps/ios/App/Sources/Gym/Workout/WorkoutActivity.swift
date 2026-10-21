@@ -122,7 +122,7 @@ extension WorkoutState {
     catch { gym.report("gym_activity_update", error); return false }
   }
   func activityOffer() -> WorkoutActivityOffer? {
-    guard activityIdentityResolved else { return nil }
+    guard flushRack(), activityIdentityResolved else { return nil }
     do {
       guard var record = try activityRecord() else { return nil }
       guard canLog, walk.pending == nil, !rackEditing, !gym.workoutHidden, weightKg.isFinite, abs(weightKg) <= 500, (1...99).contains(reps),
@@ -261,7 +261,7 @@ extension WorkoutState {
     let workout = gym.workout, clocks = try self.clocks(session)
     let state = WorkoutActivityAttributes.ContentState(title: session.name ?? Readout.noRoutine,
       movement: workout.selected.flatMap { gym.catalogue.find($0)?.name } ?? "Choose a movement",
-      load: Readout.weight(workout.weightKg) + " kg", reps: workout.reps,
+      load: Readout.weight(workout.weightKg) + " " + MovementEquipment(workout.selected.flatMap { gym.catalogue.find($0)?.equipment } ?? "").unit, reps: workout.reps,
       workingSetOrdinal: workout.currentSets.filter { $0.kind == "working" }.count + 1,
       plannedWorkingSetCount: workout.entry?.sets?.count, startedAt: clocks.startedAt, lastSetAt: clocks.lastSetAt,
       staleAt: clocks.staleAt, unsentSetCount: gym.unsentSets(workout.sets).count, offer: offer)

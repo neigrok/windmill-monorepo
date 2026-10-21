@@ -6,6 +6,70 @@ import GymDomain
 @testable import Windmill
 
 extension CoachTests {
+  @Test func pendingRoutineDraftRequiresExplicitConfirmationAndRetainsIdentityOnRetry() async throws {
+    let (gym, rest, _) = try await authed(.stalled), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let coach = CoachConversation(gym: gym, rest: rest, store: cache)
+    await coach.activate()
+    coach.edit("Create a routine")
+    let request = CoachSaved.Request(thread: coach.saved.threadId, question: coach.saved.text, requestId: "draft-request", attachmentIds: [])
+    var saved = coach.saved; saved.request = request
+    #expect(coach.keep(saved, failure: "save"))
+    var generation: [String: Any] = ["id": "draft-generation", "requestId": request.requestId, "question": request.question,
+      "status": "completed", "revision": 1, "answer": "Review your draft.",
+      "routineDrafts": [["operationId": "draft-operation", "routineId": "draft-routine", "name": "Upper", "position": 0,
+        "entries": [["position": 1, "exerciseId": "bench-press", "sets": [["reps": 8, "weightKg": NSNull()]], "restSeconds": 120]], "state": "pending"]]]
+    let response = try JSONDecoder().decode(CoachSnapshot.self, from: JSONSerialization.data(withJSONObject: ["thread": request.thread, "generation": generation]))
+    try coach.accept(response, request: request)
+    #expect(gym.routines.isEmpty && coach.activeGeneration?.results.isEmpty == true)
+    #expect(CoachTestProtocol.state.withLock { $0.requests.isEmpty })
+    let draft = try #require(coach.activeGeneration?.routineDrafts.first)
+    let review = CoachRoutineReview(id: draft.id, requestId: request.requestId, drafts: [draft.routine], operationId: draft.operationId)
+    CoachTestProtocol.state.withLock { $0.reply = .failure(.networkConnectionLost) }
+    #expect(await coach.saveRoutines(review) == false)
+    #expect(coach.activeGeneration?.routineDrafts.first?.state == "pending" && gym.routines.isEmpty)
+    generation["revision"] = 2
+    var drafts = try #require(generation["routineDrafts"] as? [[String: Any]]); drafts[0]["state"] = "saved"; generation["routineDrafts"] = drafts
+    generation["results"] = [["kind": "routine-created", "operationId": "draft-operation", "routineId": "draft-routine", "routineName": "Upper", "movementCount": 1]]
+    let body = String(decoding: try JSONSerialization.data(withJSONObject: ["thread": request.thread, "generation": generation]), as: UTF8.self)
+    CoachTestProtocol.state.withLock { $0.reply = .http(200, body) }
+    #expect(await coach.saveRoutines(review))
+    #expect(coach.activeGeneration?.routineDrafts.first?.state == "saved" && coach.activeGeneration?.results.count == 1)
+    let calls = CoachTestProtocol.state.withLock { $0.requests }
+    #expect(calls.map(\.path) == Array(repeating: "/v1/gym/threads/" + request.thread + "/generations/draft-request/routines/draft-operation/confirm", count: 2))
+    #expect(calls.map(\.body) == [Data("{}".utf8), Data("{}".utf8)])
+  }
+
+  @Test func coachStreamOverridesTheProductionAuthTimeoutAndRemainsLiveBetweenHeartbeats() async throws {
+    let (gym, original, _) = try await authed(.partial(": heartbeat\n\n"))
+    let configuration = NativeAuth.nativeSession().configuration
+    #expect(configuration.timeoutIntervalForRequest == 8 && configuration.timeoutIntervalForResource == 15)
+    configuration.protocolClasses = [CoachTestProtocol.self]
+    let rest = GymRESTClient(runtime: original.runtime, telemetry: gym.telemetry, session: URLSession(configuration: configuration))
+    var activity = 0, ended = false
+    let work = Task {
+      defer { ended = true }
+      _ = try await rest.coachRequest("/v1/gym/ask", activity: CoachStreamActivity { activity += 1 }) { _ in Issue.record("Heartbeat produced a snapshot") }
+    }
+    try await settle { activity == 2 }
+    #expect(CoachTestProtocol.state.withLock { $0.active?.request.timeoutInterval } == 60)
+    try await Task.sleep(for: .seconds(9))
+    #expect(!ended && rest.tasks.count == 1)
+    work.cancel(); _ = try? await work.value
+    #expect(rest.tasks.isEmpty)
+  }
+
+  @Test func streamHeartbeatCountsAsActivityWithoutChangingTheAnswer() async throws {
+    let (_, rest, _) = try await authed(.partial(": heartbeat\n\n"))
+    var activity = 0
+    let work = Task { try await rest.coachRequest("/v1/gym/ask", activity: CoachStreamActivity { activity += 1 }) { _ in Issue.record("Heartbeat produced a snapshot") } }
+    try await settle { activity == 2 }
+    #expect(rest.tasks.count == 1)
+    work.cancel()
+    _ = try? await work.value
+    #expect(rest.tasks.isEmpty)
+  }
+
   @Test func setupNeedsResolvedHydratedEmptyAccountAndAnUnoccupiedRoom() {
     for mask in 0..<64 {
       let flags = (0..<6).map { mask & (1 << $0) != 0 }
@@ -25,12 +89,12 @@ extension CoachTests {
       let coach = CoachConversation(gym: gym, rest: rest, store: cache)
       await coach.activate()
       #expect(coach.beginSetup() && coach.chooseSetup(choice))
-      #expect(coach.saved.text == choice.draft && coach.saved.setupChoice == choice)
+      #expect(coach.saved.text == (choice == .screenshot ? "" : choice.draft) && coach.saved.setupChoice == choice)
       #expect(coach.saved.purpose == (choice.starter ? .routineSetup : .conversation))
       #expect(coach.saved.request == nil && !coach.asking && CoachTestProtocol.state.withLock { $0.requests.isEmpty })
       let restored = CoachConversation(gym: gym, rest: rest, store: cache)
       await restored.activate()
-      #expect(restored.saved.text == choice.draft && restored.saved.setupChoice == choice && !restored.asking)
+      #expect(restored.saved.text == (choice == .screenshot ? "" : choice.draft) && restored.saved.setupChoice == choice && !restored.asking)
       #expect(restored.newChat() && restored.saved.setupChoice == choice)
       #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_setup_step" }.map(\.properties) } == [["screen": "coach", "action": choice.rawValue]])
       gym.account = "different-owner"; await restored.activate()

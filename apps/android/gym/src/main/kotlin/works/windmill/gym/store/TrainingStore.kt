@@ -596,7 +596,7 @@ class TrainingStore(
     private fun refusedImports(): List<SessionSummary> {
         val drawn = training.details().mapTo(mutableSetOf()) { it.session.id }
         return training.imports.refusals().mapNotNull { refused -> refused.session?.let { session ->
-            SessionSummary(session, refused.sets)
+            SessionSummary(session, refused.sets, catalog)
         } }.filterNot { it.id in drawn }
     }
 

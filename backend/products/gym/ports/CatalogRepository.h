@@ -14,6 +14,7 @@ struct CatalogRepository {
 
   virtual std::vector<Exercise> catalog(const UserId& user) = 0;          // seeds + own customs
   virtual std::vector<Exercise> seedCatalog() = 0;
+  virtual std::optional<Exercise> exerciseUpdate(const UserId&, const std::string& requestId) = 0;
 };
 
 }

@@ -77,10 +77,10 @@ export function proposalDocument(read, value) {
 /** @param {readonly TrainingSetValue[]} sets */
 function working(sets) { return sets.filter((set) => set.kind === 'working'); }
 
-/** @param {readonly TrainingSetValue[]} sets */
-function totals(sets) {
+/** @param {readonly TrainingSetValue[]} sets @param {Catalogue} catalogue */
+function totals(sets, catalogue) {
   return { sets: sets.length, reps: sets.reduce((sum, set) => sum + set.reps, 0),
-    tonnageKg: sets.reduce((sum, set) => sum + Math.max(0, roundHalfAway(set.weightKg * 100)) * set.reps, 0) / 100 };
+    tonnageKg: sets.reduce((sum, set) => sum + Math.max(0, roundHalfAway(set.weightKg * 100)) * set.reps * (catalogue.find(set.exerciseId)?.loadCount ?? 1), 0) / 100 };
 }
 
 /** @param {readonly TrainingSetValue[]} sets */
@@ -118,7 +118,7 @@ export class TrainingHistory {
   }
 
   exercises() {
-    return this.catalogue.exercises.map((value) => ({ id: value.id.record, ...value.fields(),
+    return this.catalogue.exercises.map((value) => ({ id: value.id.record, ...value.fields(), ...(value.equipment === 'dumbbell' ? { loadCount: value.loadCount } : {}),
       custom: !SeedExercises.all.some((seed) => seed.id.equals(value.id)),
       ...(value.aliases.length ? { aliases: [...value.aliases] } : {}) }))
       .sort((a, b) => compareText(a.pattern, b.pattern) || compareText(a.name, b.name) || compareText(String(a.id), String(b.id)));
@@ -238,7 +238,7 @@ export class TrainingHistory {
     return pageOf(this.log.drawnSessions, query).page.map((session) => {
       const held = this.log.setsFor(session.id); const worked = working(held); const top = topSet(worked);
       const topE1rm = this.log.topE1rm(session.id);
-      return { ...sessionDocument(session), setCount: held.length, workingSetCount: worked.length, tonnageKg: totals(worked).tonnageKg,
+      return { ...sessionDocument(session), setCount: held.length, workingSetCount: worked.length, tonnageKg: totals(worked, this.catalogue).tonnageKg,
         exercises: [...new Set(held.flatMap((set) => { const exercise = this.#exercisesById.get(jcs(set.exerciseId.json)); return exercise ? [exercise.name] : []; }))].sort(compareText),
         ...(top ? { topSet: { weightKg: top.weightKg, reps: top.reps } } : {}), ...(topE1rm === null ? {} : { topE1rm }),
         record: this.log.firstPullComplete && worked.length >= 4 && this.recordAgainst(session) !== null,
@@ -303,15 +303,15 @@ export class TrainingHistory {
     }
     /** @param {Document} a @param {Document} b */
     const facetOrder = (a, b) => compareText(a.name, b.name) || compareText(a.id, b.id);
-    const total = totals(scoped.flatMap((session) => working(this.log.setsFor(session.id))));
+    const total = totals(scoped.flatMap((session) => working(this.log.setsFor(session.id))), this.catalogue);
     return { sessions: page.map((session) => {
-      const held = this.log.setsFor(session.id); const worked = working(held); const count = totals(worked);
+      const held = this.log.setsFor(session.id); const worked = working(held); const count = totals(worked, this.catalogue);
       const names = held.map((set) => this.#exercisesById.get(jcs(set.exerciseId.json))?.name ?? '');
       return { id: session.id.record, startedAt: session.startedAt.ms, finishedAt: session.finishedAt?.ms,
         ...(session.historyRoutineId === null ? {} : { routineId: session.historyRoutineId.record }), routineName: session.name ?? '',
         setCount: held.length, workingSetCount: worked.length, reps: count.reps, tonnageKg: count.tonnageKg,
         sets: held.map((set) => { const { kind, note, ...fields } = setDocument(set); return { ...fields, exercise: this.#exercisesById.get(jcs(set.exerciseId.json))?.name ?? '' }; }),
-        movements: [...new Set(held.map((set) => String(set.exerciseId.record)))].sort(compareText).map((exerciseId) => ({ exerciseId, ...totals(worked.filter((set) => set.exerciseId.record === exerciseId)) })),
+        movements: [...new Set(held.map((set) => String(set.exerciseId.record)))].sort(compareText).map((exerciseId) => ({ exerciseId, ...totals(worked.filter((set) => set.exerciseId.record === exerciseId), this.catalogue) })),
         exerciseNames: [...new Set(names)].sort(compareText) };
     }), summary: { sessions: scoped.length, ...total },
     months: [...months].sort(([a], [b]) => compareText(b, a)).map(([month, sessions]) => ({ month, sessions })),

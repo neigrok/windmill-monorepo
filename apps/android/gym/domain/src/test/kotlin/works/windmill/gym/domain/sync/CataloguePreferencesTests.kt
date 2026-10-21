@@ -111,4 +111,29 @@ class CataloguePreferencesTests {
         assertEquals(listOf(Change.write(Preferences.type, base.id.record, mapOf("units" to Json.of("lb")))), gesture.changes)
         assertTrue(gesture.guards.isEmpty())
     }
+    @Test fun equipmentOverridesRecalculateHistoryAndRenameKeepsMetadata() {
+        val exercise = Exercise(Id("custom1", Exercise), "Custom press", "press", "barbell", 2.5)
+        val override = ExerciseName(Id("custom1", ExerciseName), "Ignored seed name", equipment = "dumbbell", loadCount = 1)
+        val renamed = ExerciseName(Id("dumbbell-bench-press", ExerciseName), "Flat dumbbells")
+        val session = session(finishedAt = testMoment.now, closedBy = "finish")
+        val sets = listOf("dumbbell-bench-press", "goblet-squat", "custom1", "pull-up").mapIndexed { index, id ->
+            trainingSet(Id("set0000$index", TrainingSet)).copy(exerciseId = Id(id, Exercise), weightKg = if (index == 3) 20.0 else 16.0)
+        }
+        val read = reader(listOf(row(exercise), row(override), row(renamed), row(session)) + sets.map(::setRow))
+        val catalogue = Catalogue(read)
+        assertEquals(listOf(2, 1, 1, 1), sets.map { catalogue.find(it.exerciseId)!!.loadCount })
+        assertEquals("Custom press", catalogue.find(exercise.id)!!.name)
+        assertEquals("Flat dumbbells", catalogue.find(Id("dumbbell-bench-press", Exercise))!!.name)
+        val log = TrainingLog(read)
+        assertEquals(420.0, log.volumeKg(session.id), 0.0)
+        assertEquals(420.0, log.readout(session.id)!!.volumeKg, 0.0)
+        assertEquals(16.0 * (1 + 5 / 30.0), log.sets(session.id).first().e1rm!!, 0.0)
+        assertEquals(Json.objectOf("sessions" to Json.of(1), "sets" to Json.of(4), "reps" to Json.of(20), "tonnageKg" to Json.of(420)),
+            TrainingHistory(read).history().member("summary"))
+        val seedOverride = ExerciseName(Id("dumbbell-bench-press", ExerciseName), "Flat dumbbells", equipment = "dumbbell", loadCount = 1)
+        val result = writing(decide(RenameExercise(Id("dumbbell-bench-press", Exercise), "New name"), reader(listOf(row(seedOverride)))))
+        assertEquals(listOf(Change.write(ExerciseName.type, seedOverride.id.record, mapOf("name" to Json.of("New name")))),
+            result.plan.gesture(Exercise.scope, SyncSchema.registry).changes)
+    }
+
 }

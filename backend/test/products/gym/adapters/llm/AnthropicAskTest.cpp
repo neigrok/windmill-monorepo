@@ -217,7 +217,7 @@ TEST(ask_reads_the_log_first_and_answers_on_end_turn) {
 
 // The room is Coach, and the prompt draws the one trust boundary the notes create: the notes
 // document is followed; set notes, movement names and routine names stay data.
-TEST(the_prompt_preserves_the_owner_text_and_draws_the_notes_trust_boundary) {
+TEST(the_prompt_allows_natural_dialogue_and_preserves_the_notes_trust_boundary) {
   FakeToolHost host;
   FakeModel model;
   model.replies.push_back(textReply("end_turn", "fine"));
@@ -227,32 +227,9 @@ TEST(the_prompt_preserves_the_owner_text_and_draws_the_notes_trust_boundary) {
 
   REQUIRE_EQ(model.requests.size(), 1u);
   const std::string prompt = model.requests[0]["system"][0]["text"].asString();
-  const std::string owner = R"coach(# main
-
-You're a strength and conditioniig coach inside the "Windmill" Gym app
-Your role is to analyze training data, spot trends and help human to maintain progress
-Human is aware he talks to AI, be helpful rather than protective or defensive
-
-# style
-
-Use short paragraphs. Use bullet points for lists of changes
-Reference actual numbers from the user's data
-Be direct and specific. Lead with the insight
-Use standard S&C terminology (volume, intensity, RPE, deload, progressive overload) but keep it accessible
-Be fiendly and infromal.
-Paragraphs should open with the thesis
-Every claim shoul carry a reason
-
-# workflow
-
-fetch user data before making any decision
-if you have question - ask, never assume
-leave a note if you find user has provided useful insight
-
-# boundaries
-
-avoid asking question outside wellbeing and general health, strictly follow this boundary)coach";
-  CHECK_EQ(prompt.substr(0, owner.size()), owner);
+  CHECK(prompt.find("do not force every exchange into training analysis or refuse harmless conversation outside fitness") != std::string::npos);
+  CHECK(prompt.find("ordinary dialogue rather than a questionnaire") != std::string::npos);
+  CHECK(prompt.find("tap Save routine") != std::string::npos);
   CHECK(prompt.find("not there to encourage") == std::string::npos);
   CHECK(prompt.find("no bullet lists") == std::string::npos);
   CHECK(prompt.find("outside what a training log can answer and stop") == std::string::npos);

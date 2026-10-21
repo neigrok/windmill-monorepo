@@ -743,6 +743,7 @@ public:
   // The seeds under this account's names, then its own movements.
   std::vector<Exercise> catalog(const UserId& user) override { return db.catalogOf(user); }
   std::vector<Exercise> seedCatalog() override { return db.seeds; }
+  std::optional<Exercise> exerciseUpdate(const UserId&, const std::string&) override { return std::nullopt; }
 };
 
 class FakeProgramRepository : public ProgramRepository {
@@ -915,9 +916,9 @@ public:
       if (row.user == user && row.thread == thread && row.generation.requestId == requestId) return row.generation;
     return std::nullopt;
   }
-  void saveGeneration(const UserId& user, const ThreadId& thread, AskGeneration& generation) override {
+  void saveGeneration(const UserId& user, const ThreadId& thread, AskGeneration& generation, bool settleDraft = false) override {
     auto prior = this->generation(user, thread, generation.requestId);
-    if (prior && (prior->status == "completed" || prior->status == "stopped")) { generation = *prior; return; }
+    if (prior && !settleDraft && (prior->status == "completed" || prior->status == "stopped")) { generation = *prior; return; }
     generation.revision = prior ? prior->revision + 1 : 1;
     generation.stopRequested = prior && prior->stopRequested;
     bool found = false;
@@ -1186,6 +1187,7 @@ struct ReadOnlyDoor : GymWriteDoor {
   ProposalMintOutcome proposeRemoval(const UserId&, const ProposalId&, const RoutineId&, const std::string&,
                                      const ProposalSource&) override { refuse(); }
   ExerciseInsertOutcome createExercise(const UserId&, const ExerciseWrite&) override { refuse(); }
+  std::optional<Exercise> updateExercise(const UserId&, const ExerciseUpdate&) override { refuse(); }
   NoteWriteOutcome saveInsight(const Note&) override { refuse(); }
 };
 

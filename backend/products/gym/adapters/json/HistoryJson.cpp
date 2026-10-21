@@ -24,6 +24,8 @@ Json::Value toJson(const HistoryWorkout& workout) {
     line["id"] = set.id;
     line["exerciseId"] = set.exerciseId;
     line["exercise"] = set.exercise;
+    line["equipment"] = toString(set.equipment);
+    line["loadCount"] = set.equipment == Equipment::dumbbell && set.loadCount != 1 ? 2 : 1;
     line["setNumber"] = set.setNumber;
     line["weightKg"] = set.weightKg;
     line["reps"] = set.reps;
@@ -57,7 +59,8 @@ HistoryWorkout historyWorkoutFrom(const Json::Value& value) {
     if (set["rpe"].isNumeric()) rpe = set["rpe"].asDouble();
     workout.sets.push_back(HistorySet{set["id"].asString(), set["exerciseId"].asString(),
         set["exercise"].asString(), set["setNumber"].asInt(), set["weightKg"].asDouble(),
-        set["reps"].asInt(), rpe, set["completedAt"].asUInt64(), set["working"].asBool()});
+        set["reps"].asInt(), rpe, set["completedAt"].asUInt64(), set["working"].asBool(), equipmentFromStored(set.get("equipment", "barbell").asString()),
+        set.get("loadCount", 0).asInt()});
   }
   return workout;
 }

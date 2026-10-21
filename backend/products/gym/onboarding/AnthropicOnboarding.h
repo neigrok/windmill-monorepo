@@ -10,6 +10,7 @@ namespace wm::gym {
 struct OnboardingAnswer {
   std::vector<OnboardingRoutine> routines;
   std::string refusal;
+  std::string message;
 };
 
 struct OnboardingModel {

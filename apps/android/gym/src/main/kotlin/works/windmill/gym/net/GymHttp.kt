@@ -16,6 +16,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSink
 import okio.BufferedSource
 import works.windmill.gym.coach.CoachAttachment
+import works.windmill.gym.coach.CoachRoutineDraft
+import works.windmill.gym.coach.CoachRoutineConfirmation
 import works.windmill.platform.net.WindmillJson
 import works.windmill.gym.coach.AskAnswer
 import works.windmill.gym.coach.AskQuestion
@@ -47,7 +49,7 @@ class GymHttp(private val api: WindmillApi) : GymRest {
         if (reply.generation?.status == "running") return AskAnswer("", ReadTally(), generation = reply.generation)
         if (reply.generation?.status == "stopped") return reply.generation.response()
         return AskAnswer(reply.answer ?: throw WindmillApiException.Malformed, reply.read ?: throw WindmillApiException.Malformed,
-            reply.steps, reply.proposals, reply.receipt, reply.generation, reply.results)
+            reply.steps, reply.proposals, reply.receipt, reply.generation, reply.results, reply.generation?.routineDrafts ?: reply.routineDrafts)
     }
 
     override suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit): AskAnswer {
@@ -77,6 +79,15 @@ class GymHttp(private val api: WindmillApi) : GymRest {
 
     override suspend fun stop(threadId: String, requestId: String): AskGeneration =
         api.send<CoachSnapshotResponse>("POST", "/v1/gym/threads/$threadId/generations/$requestId/stop", operation = "gym_ask_stop").generation
+
+    override suspend fun confirmRoutine(threadId: String, requestId: String, operationId: String): CoachRoutineConfirmation =
+        api.consume("POST", "/v1/gym/threads/$threadId/generations/$requestId/routines/$operationId/confirm",
+            "{}".toRequestBody("application/json".toMediaType()), operation = "gym_coach_routine_confirm") { response ->
+            val reply = WindmillJson.decodeFromString<CoachRoutineConfirmation>(response.body?.string().orEmpty())
+            if (reply.thread != threadId || reply.generation.requestId != requestId ||
+                reply.generation.routineDrafts.none { it.operationId == operationId && it.state == "saved" }) throw WindmillApiException.Malformed
+            reply
+        }
 
     override suspend fun uploadPhoto(threadId: String, photo: CoachAttachment, bytes: ByteArray, onProgress: (Float) -> Unit): CoachAttachment {
         val caller = currentCoroutineContext()
@@ -144,6 +155,7 @@ private data class AskResponse(
     val receipt: AnswerReceipt? = null,
     val generation: AskGeneration? = null,
     val results: List<CoachResult> = emptyList(),
+    val routineDrafts: List<CoachRoutineDraft> = emptyList(),
 )
 
 @Serializable

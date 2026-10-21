@@ -42,6 +42,7 @@ TEST(gym_engine_real_mcp_write_catalog_admits_synced_records_and_keeps_shares) {
   note["title"] = "Goal";
   note["body"] = "Build strength";
   admit("save_note", note);
+  admit("update_exercise", parse(R"({"exerciseId":"bench-press","equipment":"dumbbell","loadCount":2})"));
   const auto started = admit("start_session", startBody("ses_door0001", h.clock.now - 120000));
   CHECK_EQ(started.payload["id"].asString(), "ses_door0001");
   Json::Value set = setBody("set_door0001", "bench-press", 80, h.clock.now - 100000);
@@ -76,7 +77,7 @@ TEST(gym_engine_real_mcp_write_catalog_admits_synced_records_and_keeps_shares) {
   admit("discard_session", sessionArgs("ses_door0001"));
   for (const auto& tool : h.tools.declareTools())
     if (tool.access != Access::read) CHECK(written.contains(tool.name()));
-  CHECK_EQ(written.size(), std::size_t{13});
+  CHECK_EQ(written.size(), std::size_t{14});
   PgLease lease{*doortest::pool()};
   pqxx::work txn{*lease};
   const auto spent = txn.exec_params("select type,id from sync_spent where scope_key=$1 order by type,id", "acct:" + h.user.str() + "/gym");
@@ -107,6 +108,15 @@ TEST(gym_engine_real_coach_records_keep_provenance_and_thread_delete_admits_unli
   REQUIRE(!created.isError);
   const auto routineId = created.payload["id"].asString();
   CHECK_EQ(routineId, "rt_gen_doorcoach_0");
+  CHECK(h.repo.program.routines(h.user).empty());
+  FakeSubscriptionRepository subscriptions;
+  FakeAiUsageRepository usage;
+  Entitlements entitlements{subscriptions, usage};
+  FakeAsk agent;
+  AskService service{h.training, h.repo.threads, h.clock, agent, h.tools, entitlements};
+  generation.status = "completed";
+  h.repo.threads.saveGeneration(h.user, thread, generation);
+  REQUIRE(service.confirmRoutine(h.user, thread, generation.requestId, generation.routineDrafts.front().operationId));
   Json::Value note(Json::objectValue);
   note["id"] = "note_doorcoach";
   note["title"] = "Goal";

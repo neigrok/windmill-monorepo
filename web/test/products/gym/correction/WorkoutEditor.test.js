@@ -28,7 +28,8 @@ for (const future of [false, true]) test(`a ${future ? 'future' : 'known overlap
     confirmed('set', setId, { ...setFields, sessionId: session.id }),
     confirmed('session', 'sessionOther', { startedAt: new Date(2026, 8, 22, 18).getTime(), finishedAt: new Date(2026, 8, 22, 19).getTime(), displayName: 'Legs' })]);
   const { WorkoutEditor } = await loadScreen('products/gym/correction/WorkoutEditor.jsx');
-  const view = renderHook(t, () => WorkoutEditor({ session, sets: [set], catalog: [{ id: 'bench-press', name: 'Bench Press' }], log: roomLog(), from: '#/gym/log' }));
+  const view = renderHook(t, () => WorkoutEditor({ session, sets: [set], catalog: [{ id: 'bench-press', name: 'Bench Press', equipment: 'dumbbell', loadCount: 2 }], log: roomLog(), from: '#/gym/log' }));
+  assert.deepEqual(elementsOf(findByClass(view.tree, 'gym-workout-totals')[0]).filter((node) => node.type === 'dd').map((node) => textOf(node.props.children)), ['1', '8', '960']);
   const field = (name) => elementsOf(view.tree).find((node) => node.type === 'input' && node.props.name === name);
   window.location.hash = '#/gym/session/ses_correction/edit';
   field('date').props.onChange({ target: { value: future ? '2026-09-25' : '2026-09-22' } });

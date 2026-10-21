@@ -95,7 +95,7 @@ TEST(gym_onboarding_http_validates_photo_pixels_and_returns_only_device_scoped_r
   CHECK(body["errorCode"].isNull());
   CHECK_EQ(body["routines"],parse(R"([{"name":"Push","entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":null}],"restSeconds":120}]}])"));
   CHECK_EQ(body["allowance"],parse(R"({"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.050000000","used":"0.000000000","reserved":"0.000000000","remaining":"0.050000000","resetsAtMs":null,"budgetResetsAtMs":null})"));
-  CHECK_EQ(body.getMemberNames(),(Json::Value::Members{"allowance","errorCode","expiresAtMs","requestId","resultId","routines","status"}));
+  CHECK_EQ(body.getMemberNames(),(Json::Value::Members{"allowance","errorCode","expiresAtMs","message","requestId","resultId","routines","status"}));
   CHECK_EQ(result->getHeader("Cache-Control"),"private, no-store");
   const auto other=h.h.installations->issue("127.0.0.2");
   const auto hidden=h.get(photo["requestId"].asString(),other.credential);
@@ -132,4 +132,14 @@ TEST(gym_onboarding_http_switch_off_recovers_cloudflare_replays_without_new_clai
   CHECK_EQ(h.h.records->rows.size(),1U);
   CHECK_EQ(h.h.model->calls.load(),0);
   CHECK_EQ(h.h.installationRepository.admissions,0);
+}
+
+TEST(gym_onboarding_conversation_photo_checks_pixels_before_claim) {
+  HttpHarness h;
+  auto body=parse(R"({"requestId":"12345678-1234-1234-1234-123456789abc","mode":"conversation","text":"Please read this","context":[],"image":{"mimeType":"image/png","data":"AAAA"}})");
+  const auto result=h.post(body,h.h.issue.credential);
+  CHECK_EQ(result->getStatusCode(),drogon::k400BadRequest);
+  CHECK_EQ(parse(std::string(result->body()))["code"],"invalid_image");
+  CHECK_EQ(h.h.model->calls.load(),0);
+  CHECK(h.h.records->rows.empty());
 }

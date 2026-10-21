@@ -149,4 +149,25 @@ class CoachAnswerTests {
         compose.onNodeWithText("From your log").assertDoesNotExist()
         compose.onNodeWithText("Read nothing from your log").assertDoesNotExist()
     }
+    @Test fun routineDraftShowsEquipmentAndTargetsBeforeAnExplicitSave() {
+        val draft = CoachRoutineDraft("operation-a", "routine-a", "Push", 1,
+            listOf(RoutineEntry(1, "dumbbell-bench-press", listOf(SetTarget(8, 16.0)))), "pending")
+        val requests = mutableListOf<CoachRoutineDraft>()
+        compose.setContent { GymMaterial {
+            CoachAnswer("Review this plan", null, listOf(Exercise("dumbbell-bench-press", "Flat press", equipment = "dumbbell")), 0,
+                routineDrafts = listOf(draft), onConfirmRoutine = {
+                    requests += it
+                    works.windmill.gym.store.GymResult.Failed(works.windmill.gym.store.WriteFailure.Refused("Try again"))
+                })
+        } }
+        compose.onNodeWithText("Review routine").assertIsDisplayed()
+        compose.onNodeWithText("Push").assertIsDisplayed()
+        compose.onNodeWithText("Flat press").assertIsDisplayed()
+        compose.onNodeWithText("1 × 8 · 16 kg each · Two dumbbells").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(emptyList<CoachRoutineDraft>(), requests) }
+        compose.onNodeWithText("Save routine").performClick()
+        compose.onNodeWithText("Routine wasn’t confirmed. Try Save routine again.").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(listOf(draft), requests) }
+    }
+
 }

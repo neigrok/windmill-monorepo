@@ -271,7 +271,7 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
   const sets = setsAfter(view.data.detail.sets, moves).filter((set) => !hiddenSets.has(set.id));
   const names = new Map(view.data.catalog.map((exercise) => [exercise.id, exercise.name]));
   const frozen = planFrozenLabel(session);
-  const totals = workoutTotals(sets);
+  const totals = workoutTotals(sets, view.data.catalog);
   if (edit && isFinished(session)) return <WorkoutEditor session={session} sets={sets} catalog={view.data.catalog} log={log} from={from} onDelete={discard} />;
   const focusedSet = fixSetId ? sets.find((set) => set.id === fixSetId) : fixing;
   if (focusedSet) return <FixSheet key={focusedSet.id} set={focusedSet} sets={sets} movement={names.get(focusedSet.exerciseId) ?? focusedSet.exerciseId} session={session} onSave={(fix) => saveFix(focusedSet, fix)} onDelete={() => dropSet(focusedSet)} onClose={closeFix} />;
@@ -287,7 +287,7 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
       </header>
       {logged.length === 0 && <p className="gym-quiet">No sets in this session.</p>}
       {groupByExercise(sets).map(([exerciseId, group]) => {
-        const movementTotals = workoutTotals(group);
+        const movementTotals = workoutTotals(group, view.data.catalog);
         const scheme = collapsedScheme(group);
         const collapsed = scheme && !expanded.has(exerciseId);
         return (

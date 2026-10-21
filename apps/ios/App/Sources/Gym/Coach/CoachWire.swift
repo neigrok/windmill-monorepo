@@ -1,4 +1,7 @@
 import Foundation
+import DomainKit
+import GymDomain
+import SyncCore
 
 nonisolated struct CoachAttachment: Codable, Equatable, Identifiable, Sendable {
   let id: String
@@ -97,6 +100,27 @@ nonisolated struct CoachResult: Codable, Equatable, Identifiable, Sendable {
   var id: String { operationId }
 }
 
+nonisolated struct CoachRoutineDraft: Codable, Equatable, Identifiable, Sendable {
+  struct Entry: Codable, Equatable, Sendable {
+    struct Target: Codable, Equatable, Sendable { let reps: Int?; let weightKg: Double? }
+    let exerciseId: String
+    let sets: [Target]?
+    let restSeconds: Int?
+  }
+  let operationId: String
+  let routineId: String
+  let name: String
+  let position: Int
+  let entries: [Entry]
+  var state: String
+  var id: String { operationId }
+  var routine: CoachRoutine {
+    CoachRoutine(name: name, entries: entries.map { entry in
+      RoutineEntry(exerciseId: DomainKit.ID(RecordID(entry.exerciseId)), sets: entry.sets.map { $0.map { SetTarget(reps: $0.reps, weightKg: $0.weightKg) } }, restSeconds: entry.restSeconds)
+    })
+  }
+}
+
 nonisolated enum CoachPurpose: String, Codable, Sendable {
   case conversation, routineSetup = "routine_setup"
 }
@@ -131,7 +155,8 @@ nonisolated struct CoachGeneration: Codable, Equatable, Identifiable, Sendable {
   let at: Int64
   let steps: [CoachStep]
   let receipt: CoachReceipt?
-  let results: [CoachResult]
+  var results: [CoachResult]
+  var routineDrafts: [CoachRoutineDraft]
   let revision: Int64
   let stopRequested: Bool
   let attachments: [CoachAttachment]
@@ -139,13 +164,14 @@ nonisolated struct CoachGeneration: Codable, Equatable, Identifiable, Sendable {
   let clarification: CoachClarification?
   let allowanceRefusal: AiAllowance?
   var terminal: Bool { ["completed", "failed", "stopped"].contains(status) }
-  enum CodingKeys: String, CodingKey { case id, requestId, question, status, answer, at, steps, receipt, results, revision, stopRequested, attachments, purpose, clarification, allowanceRefusal }
+  enum CodingKeys: String, CodingKey { case id, requestId, question, status, answer, at, steps, receipt, results, routineDrafts, revision, stopRequested, attachments, purpose, clarification, allowanceRefusal }
   init(from decoder: any Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
     id = try c.decode(String.self, forKey: .id); requestId = try c.decode(String.self, forKey: .requestId)
     question = try c.decode(String.self, forKey: .question); status = try c.decode(String.self, forKey: .status)
     answer = try c.decodeIfPresent(String.self, forKey: .answer) ?? ""; at = try c.decodeIfPresent(Int64.self, forKey: .at) ?? 0
     steps = try c.decodeIfPresent([CoachStep].self, forKey: .steps) ?? []; receipt = try c.decodeIfPresent(CoachReceipt.self, forKey: .receipt)
+    routineDrafts = try c.decodeIfPresent([CoachRoutineDraft].self, forKey: .routineDrafts) ?? []
     results = try c.decodeIfPresent([CoachResult].self, forKey: .results) ?? []; revision = try c.decodeIfPresent(Int64.self, forKey: .revision) ?? 0
     stopRequested = try c.decodeIfPresent(Bool.self, forKey: .stopRequested) ?? false
     attachments = try c.decodeIfPresent([CoachAttachment].self, forKey: .attachments) ?? []
@@ -162,7 +188,8 @@ nonisolated struct CoachTurn: Codable, Equatable, Identifiable, Sendable {
   let receipt: CoachReceipt?
   let position: Int64
   let generationId: String?
-  let results: [CoachResult]
+  var results: [CoachResult]
+  var routineDrafts: [CoachRoutineDraft]
   let status: String
   let requestId: String?
   let attachments: [CoachAttachment]
@@ -170,12 +197,13 @@ nonisolated struct CoachTurn: Codable, Equatable, Identifiable, Sendable {
   let clarification: CoachClarification?
   let allowanceRefusal: AiAllowance?
   var id: Int64 { position }
-  enum CodingKeys: String, CodingKey { case from, text, at, receipt, position, generationId, results, status, requestId, attachments, purpose, clarification, allowanceRefusal }
+  enum CodingKeys: String, CodingKey { case from, text, at, receipt, position, generationId, results, routineDrafts, status, requestId, attachments, purpose, clarification, allowanceRefusal }
   init(from decoder: any Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
     from = try c.decode(String.self, forKey: .from); text = try c.decode(String.self, forKey: .text)
     at = try c.decodeIfPresent(Int64.self, forKey: .at) ?? 0; receipt = try c.decodeIfPresent(CoachReceipt.self, forKey: .receipt)
     position = try c.decodeIfPresent(Int64.self, forKey: .position) ?? 0; generationId = try c.decodeIfPresent(String.self, forKey: .generationId)
+    routineDrafts = try c.decodeIfPresent([CoachRoutineDraft].self, forKey: .routineDrafts) ?? []
     results = try c.decodeIfPresent([CoachResult].self, forKey: .results) ?? []; status = try c.decodeIfPresent(String.self, forKey: .status) ?? "completed"
     requestId = try c.decodeIfPresent(String.self, forKey: .requestId); attachments = try c.decodeIfPresent([CoachAttachment].self, forKey: .attachments) ?? []
     purpose = try c.decodeIfPresent(CoachPurpose.self, forKey: .purpose) ?? .conversation
@@ -315,13 +343,8 @@ nonisolated extension AiAllowance {
     }
   }
   var detail: String? {
-    guard currency == "USD", let limit, let total = Decimal(string: limit, locale: Locale(identifier: "en_US_POSIX")),
-          let available = Decimal(string: remaining, locale: Locale(identifier: "en_US_POSIX")), total >= 0, available >= 0 else { return nil }
-    let balance = "\(available.formatted(.currency(code: "USD").precision(.fractionLength(2...5)))) remaining of \(total.formatted(.currency(code: "USD").precision(.fractionLength(2...5))))."
-    if ["free_day_exhausted", "free_month_exhausted"].contains(code), let reset = budgetResetsAtMs {
-      return balance + " Shared free capacity resets " + Date(timeIntervalSince1970: Double(reset) / 1000).formatted(date: .abbreviated, time: .shortened) + "."
-    }
-    guard code == "subject_exhausted", let reset = resetsAtMs else { return balance }
-    return balance + " Your allowance resets " + Date(timeIntervalSince1970: Double(reset) / 1000).formatted(date: .abbreviated, time: .shortened) + "."
+    let reset = ["free_day_exhausted", "free_month_exhausted"].contains(code) ? budgetResetsAtMs : resetsAtMs
+    guard let reset else { return nil }
+    return "Available again " + Date(timeIntervalSince1970: Double(reset) / 1000).formatted(date: .abbreviated, time: .shortened) + "."
   }
 }

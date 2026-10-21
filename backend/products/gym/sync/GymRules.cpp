@@ -380,12 +380,13 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
     }
     if (after.t == "exerciseName") {
       const Json::Value seed = facts.books["seeds"][after.id.column()];
-      if (seed.isNull()) throw Refusal(code::invalid);
+      if (!known(after.id.json())) throw Refusal(code::invalid);
       if (blankNamed(change, "name")) throw Refusal(code::invalid);
       Json::Value before = value(change.stored ? &*change.stored : nullptr, "name");
       Json::Value next = value(&after, "name");
-      if (before.isNull()) before = seed["name"];
-      if (next.isNull()) next = seed["name"];
+      const Json::Value baseName = seed.isNull() ? value(current("exercise", after.id.json()), "name") : seed["name"];
+      if (before.isNull()) before = baseName;
+      if (next.isNull()) next = baseName;
       if (before != next) append(fields(after, object({{"aliases", renamed(value(&after, "aliases"), before, next)}})));
       continue;
     }

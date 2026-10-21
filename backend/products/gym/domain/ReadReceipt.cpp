@@ -12,12 +12,14 @@ WorkoutObservation::WorkoutObservation(const Session& session, int workingSetCou
     durationMs = *session.finishedAtMs - session.startedAtMs;
 }
 
-WorkoutObservation::WorkoutObservation(const Session& session, const std::vector<Set>& sets)
+WorkoutObservation::WorkoutObservation(const Session& session, const std::vector<Set>& sets, const std::vector<Exercise>& catalog)
     : WorkoutObservation(session, 0, 0) {
   for (const Set& set : sets) {
     if (set.kind != SetKind::working) continue;
     ++workingSetCount;
-    tonnageKg += std::max(0.0, set.weightKg) * set.reps;
+    const auto exercise = std::find_if(catalog.begin(), catalog.end(), [&](const auto& item) { return item.id == set.exercise; });
+    tonnageKg += liftedVolume(set.weightKg, set.reps, exercise == catalog.end() ? Equipment::barbell : exercise->equipment,
+                             exercise == catalog.end() ? 1 : exercise->loadCount);
   }
 }
 

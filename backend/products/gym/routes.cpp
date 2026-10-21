@@ -212,6 +212,10 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
       [threads](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread, const std::string& id) {
         threads->getImage(req, std::move(cb), thread, id);
       }, {drogon::Get});
+  routes.registerWriteHandler("gym.coach.routine.confirm", "/v1/gym/threads/{thread}/generations/{request}/routines/{operation}/confirm",
+      [threads](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread, const std::string& request, const std::string& operation) {
+        threads->confirmRoutine(req, std::move(cb), thread, request, operation);
+      }, {drogon::Post});
   routes.registerHandler("/v1/gym/threads/{thread}/generations/{request}/stop",
       [threads](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread, const std::string& request) {
         threads->stopGeneration(req, std::move(cb), thread, request);

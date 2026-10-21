@@ -52,7 +52,10 @@ and preserve history depth and editor drafts. Hook reads reuse results while the
 selector inputs stay unchanged; retry and clock refreshes invalidate them. Live sessions refresh at
 their idle deadline. Each training read indexes sets by session and caches progress; record receipts
 come from one chronological pass. Equal cent-load estimate scores keep the earliest record, and
-bodyweight repetition records remain independent of assisted and loaded sets.
+bodyweight repetition records remain independent of assisted and loaded sets. Equipment and load-count overrides
+resolve through the current catalogue for old and new sets. Dumbbell entries are per dumbbell; working-set volume
+multiplies by the configured one or two dumbbells. Other equipment counts the entered external load once. Estimates
+retain the entered unit. Seed and custom names continue to identify the same movement throughout history.
 Creation and proposal chronology use the confirmed record's authoritative `rc` envelope. Command
 predictions persist workout fields, correction removals and routine deaths from removal proposals
 through offline restart. Set numbers arrive with server admission; a pending correction retains the
@@ -63,7 +66,7 @@ admission. Workout forms preflight known conflicts in their commit transaction a
 submitted draft in `rack:workoutDrafts` until admission succeeds. Pending saves stay on the form;
 refusals keep it editable, survive reload, and offer a route back from the log. Only acceptance shows
 Saved or leaves the editor. HTTP refusals also recover through the engine's durable notices.
-The composition is schema v6 with minimum v4. Routine `revision` and `createdEntries`, proposal
+The composition is schema v7 with minimum v4. Routine `revision` and `createdEntries`, proposal
 `baseRevision`, `baseName` and `changeCount`, and note `updatedAt` come from server-authored registers.
 Editors never write them. Note positions are zero-based; a move writes the moved note's `ord` alone,
 right after the row drawn above it. The independent `routineCreation.snapshot` record is read-only
@@ -80,6 +83,12 @@ report a static `gym-<operation>` to Sentry, without exceptions, IDs, names, bod
 a `GymRefusal` is expected and reports nothing, and a store failure is the engine's to report.
 Engine telemetry owns transport, storage, authentication and admission failures. Refusal content stays on the device; the room announces
 unresolved notices.
+
+Coach routine creation produces a review card with movements, targets, equipment and load basis. Only **Save routine**
+confirms its persisted operation. Drafts survive interrupted responses and thread history; confirmation retries retain the
+thread, request and operation identity. Saved state and its receipt survive older streamed or paged snapshots.
+`gym_coach_routine_confirm` reports only `outcome` (`started`, `saved`, `failed`, `refused`). Unexpected confirmation
+failures report static `gym-coach-routine-confirm` to Sentry. Neither report contains routine or conversation content.
 
 ## Gates
 

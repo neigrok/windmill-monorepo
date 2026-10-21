@@ -77,6 +77,14 @@ export const gymApi = {
     return json(await call(`/threads/${encodeURIComponent(thread)}/generations/${encodeURIComponent(requestId)}/stop`, { method: 'POST' }));
   },
 
+  async confirmCoachRoutine(thread, requestId, operationId) {
+    const reply = await json(await call(`/threads/${encodeURIComponent(thread)}/generations/${encodeURIComponent(requestId)}/routines/${encodeURIComponent(operationId)}/confirm`, {
+      method: 'POST', body: '{}',
+    }));
+    if (reply.thread !== thread || reply.generation?.requestId !== requestId) throw new Error('Routine confirmation did not match this conversation.');
+    return reply;
+  },
+
   async uploadCoachPhoto(thread, id, blob, { signal, onProgress } = {}) {
     return new Promise((resolve, reject) => {
       const upload = new XMLHttpRequest();

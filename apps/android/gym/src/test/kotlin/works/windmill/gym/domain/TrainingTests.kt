@@ -282,7 +282,7 @@ class TrainingWireTests {
         assertEquals(1_754_300_000_000L, routine.lastTrainedAtMs)
         assertEquals(
             listOf(RoutineEntry(position = 1, exerciseId = "bench-press",
-                                sets = List(3) { SetTarget(5, 82.5) })),
+                                sets = List(3) { SetTarget(5, 82.5) }, restSeconds = 180)),
             routine.entries)
     }
 

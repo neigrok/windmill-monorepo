@@ -510,8 +510,8 @@ import XCTest
     let record = app.buttons["gym-session-movement"].firstMatch
     XCTAssertTrue(record.waitForExistence(timeout: 5)); record.tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
-    if app.buttons["Rename"].waitForExistence(timeout: 2) { app.buttons["Rename"].tap() }
-    else { app.navigationBars.buttons["More"].tap(); app.buttons["Rename movement"].tap() }
+    app.navigationBars.buttons["More"].tap()
+    app.buttons["Edit exercise"].tap()
     XCTAssertTrue(app.textFields["gym-rename-movement-name"].waitForExistence(timeout: 5))
     capture("gym-routine-rename-movement-sheet-\(appearance)", app)
   }
@@ -868,12 +868,12 @@ import XCTest
   func testWorkoutRecordLight() { workoutRecord("light") }
   func testWorkoutRecordDark() { workoutRecord("dark") }
 
-  // Signed in with Coach at hand, an empty Routines offers Set up routines; the signed-in board's free workout hides to reach it.
+  // Empty Routines exposes one bottom-trailing New routine control.
   func routinesSignedInEmpty(_ appearance: String) {
     let app = launch("workout-notice", appearance: appearance)
     XCTAssertTrue(app.buttons["workout-assembly"].waitForExistence(timeout: 10)); app.buttons["workout-assembly"].tap()
     XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
-    XCTAssertTrue(app.buttons["routines-setup"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["new-routine"].waitForExistence(timeout: 10))
     for _ in 0..<3 where app.buttons["Dismiss message"].exists { app.buttons["Dismiss message"].firstMatch.tap() }
     capture("gym-routines-empty-signed-in-\(appearance)", app)
   }
@@ -948,9 +948,8 @@ import XCTest
     }
     XCTAssertTrue(routines.buttons["builder-movement-deadlift"].waitForExistence(timeout: 5))
     capture(name("builder", routines), routines)
-    reach(routines.buttons["reorder-movements"], routines).tap()
+    XCTAssertTrue(routines.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Reorder")).firstMatch.exists)
     capture(name("builder-reorder", routines), routines)
-    routines.buttons["reorder-movements"].tap()
     reach(routines.buttons["builder-movement-bench-press"], routines).tap()
     XCTAssertTrue(routines.buttons["gym-target-set"].waitForExistence(timeout: 5))
     capture(name("targets", routines), routines)

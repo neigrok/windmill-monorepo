@@ -112,6 +112,8 @@ export class TrainingSetValue {
   }
 
   get volumeKg() { return this.kind === 'working' ? Math.max(0, this.weightKg) * this.reps : 0; }
+  /** @param {ExerciseValue | null} exercise */
+  volumeFor(exercise) { return this.volumeKg * (exercise?.loadCount ?? 1); }
   get e1rm() { return GymEstimate.value(this.weightKg, this.reps, this.kind, this.rpe); }
 }
 

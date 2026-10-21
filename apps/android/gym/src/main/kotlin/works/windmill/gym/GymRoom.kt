@@ -611,7 +611,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     haptics.finished()
                     keptRoutine = null
                     finishFailure = null
-                    away = listOf(Away.Session(SessionSummary(ended.detail.session, ended.detail.sets), ended.detail))
+                    away = listOf(Away.Session(SessionSummary(ended.detail.session, ended.detail.sets, store.catalog), ended.detail))
                     pruneReceipts()
                     finished = FinishedSession(ended.detail.session, ended.detail.sets, review = null,
                         isFirst = store.allSessions.size <= 1, routinePosition = store.allRoutines.size, reviewRead = false)
@@ -627,7 +627,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         if (!account.resolved || account.user?.id.orEmpty() != seat) return@LaunchedEffect
         val detail = receipt ?: return@LaunchedEffect
         finished = finished?.copy(session = detail.session, sets = detail.sets)
-        if (away.isEmpty()) away = listOf(Away.Session(SessionSummary(detail.session, detail.sets), detail))
+        if (away.isEmpty()) away = listOf(Away.Session(SessionSummary(detail.session, detail.sets, store.catalog), detail))
         val owner = currentAccount.user?.id
         val review = store.review(detail.session.id)
         if (owner == currentAccount.user?.id && receipt?.session?.id == detail.session.id) {

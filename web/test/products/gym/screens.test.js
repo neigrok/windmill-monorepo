@@ -294,7 +294,7 @@ test('workout rows read actual facts and collapse only an honest common scheme',
   const source = read('Log.jsx');
   assert.equal(source.includes('const scheme = collapsedScheme(group);'), true);
   assert.equal(source.includes('setLoadLabel(set)'), true);
-  assert.equal(source.includes('workoutTotals(sets)'), true);
+  assert.equal(source.includes('workoutTotals(sets, view.data.catalog)'), true);
   assert.equal(source.includes('setNoteOf('), false);
   assert.equal(source.includes('planFrozenLabel(session)'), true);
 });

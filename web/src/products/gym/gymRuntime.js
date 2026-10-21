@@ -128,7 +128,7 @@ export function gymRefusalError(refused) {
 }
 
 export function exerciseDocument(value) {
-  return { id: value.id.record, ...value.fields(), custom: !SeedExercises.all.some((seed) => seed.id.equals(value.id)),
+  return { id: value.id.record, ...value.fields(), ...(value.equipment === 'dumbbell' ? { loadCount: value.loadCount } : {}), custom: !SeedExercises.all.some((seed) => seed.id.equals(value.id)),
     ...(value.aliases.length ? { aliases: [...value.aliases] } : {}) };
 }
 

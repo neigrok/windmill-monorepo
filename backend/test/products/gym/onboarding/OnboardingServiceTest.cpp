@@ -36,7 +36,7 @@ TEST(gym_onboarding_service_replays_pending_and_completed_and_never_reads_accoun
   const auto saved=h.service->get(*h.issue.principal,input.requestId);
   REQUIRE(saved);
   CHECK_EQ(saved->state,"completed");
-  CHECK_EQ(saved->payload,parse(R"({"routines":[{"name":"Push","entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":null}],"restSeconds":120}]}]})"));
+  CHECK_EQ(saved->payload,parse(R"({"message":"","routines":[{"name":"Push","entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":null}],"restSeconds":120}]}]})"));
   input.goal="Private goal";
   const auto complete=h.service->start(*h.issue.principal,"127.0.0.1",input);
   REQUIRE(complete.record);

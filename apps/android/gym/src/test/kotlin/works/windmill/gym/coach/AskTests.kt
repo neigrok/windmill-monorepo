@@ -90,7 +90,7 @@ class AskTests {
         )
         assertEquals("the same table the web draws from, plus the notes and bodyweight reads",
             setOf("list_sessions", "get_session", "last_time", "list_exercises", "list_routines",
-                "get_stats", "list_notes", "save_note", "list_bodyweight", "propose_routine_change", "propose_routine_removal"),
+                "get_stats", "list_notes", "save_note", "list_bodyweight", "create_routine", "propose_routine_change", "propose_routine_removal"),
             Ask.phrases.keys)
     }
 

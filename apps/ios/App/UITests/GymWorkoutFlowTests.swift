@@ -13,14 +13,109 @@ import Vision
     return app
   }
 
+  func capture(_ app: XCUIApplication, _ name: String) throws {
+    let screenshot = app.screenshot()
+    let attachment = XCTAttachment(screenshot: screenshot)
+    attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+    if let path = ProcessInfo.processInfo.environment["WM_GYM_FEEDBACK_SHOTS"] {
+      let directory = URL(fileURLWithPath: path)
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      try screenshot.pngRepresentation.write(to: directory.appending(path: name + ".png"))
+    }
+  }
+
+  func testRepeatedStepEdgesUpdateAndLogVisibleValues() throws {
+    let app = launch(appearance: "light")
+    let weight = app.buttons["workout-weight"], reps = app.buttons["workout-reps"]
+    for (id, expected) in [(0, "90"), (0, "80"), (0, "70"), (1, "67.5"), (1, "65"), (2, "67.5")] {
+      let step = app.buttons["workout-weight-step-\(id)"]
+      XCTAssertGreaterThanOrEqual(step.frame.width, 44); XCTAssertGreaterThanOrEqual(step.frame.height, 44)
+      step.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.2)).tap()
+      XCTAssertEqual(weight.label, "Weight, \(expected) kg total")
+    }
+    for (id, expected) in [("minus", "4 reps"), ("minus", "3 reps"), ("plus", "4 reps")] {
+      let step = app.buttons["workout-reps-" + id]
+      XCTAssertGreaterThanOrEqual(step.frame.width, 44); XCTAssertGreaterThanOrEqual(step.frame.height, 44)
+      step.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.8)).tap()
+      XCTAssertEqual(reps.label, expected)
+    }
+    try capture(app, "workout-steps-light")
+    app.buttons["workout-log"].tap()
+    let logged = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label == %@", "workout-set-", "Set 3, logged, 67.5 kilograms, 4 reps")).firstMatch
+    XCTAssertTrue(logged.waitForExistence(timeout: 5))
+    logged.tap()
+    XCTAssertTrue(app.buttons["workout-fix-weight"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.buttons["workout-fix-weight"].label, "Weight, 67.5 kg total")
+  }
+
+  func testSeedRenameAndDumbbellCountKeepHistoryTogether() throws {
+    let app = launch(appearance: "light")
+    app.buttons["workout-assembly"].tap()
+    let movement = app.buttons["Back Squat, 2 of 4 sets"]
+    XCTAssertTrue(movement.waitForExistence(timeout: 5)); movement.press(forDuration: 1)
+    app.buttons["Edit exercise"].tap()
+    let name = app.textFields["gym-rename-movement-name"]
+    XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "Back Squat".count) + "Dumbbell squat")
+    let equipment = app.buttons["gym-rename-movement-equipment"]
+    for _ in 0..<3 where !equipment.isHittable { app.swipeUp() }
+    XCTAssertTrue(equipment.isHittable); equipment.tap()
+    app.buttons["Dumbbells"].tap()
+    let count = app.segmentedControls["gym-rename-movement-equipment-count"]
+    for _ in 0..<3 where !count.buttons["One"].isHittable { app.swipeUp() }
+    XCTAssertTrue(count.buttons["Two"].isSelected)
+    count.buttons["One"].tap(); XCTAssertTrue(count.buttons["One"].isSelected)
+    count.buttons["Two"].tap(); XCTAssertTrue(count.buttons["Two"].isSelected)
+    count.buttons["One"].tap(); XCTAssertTrue(count.buttons["One"].isSelected)
+    XCTAssertTrue(app.keyboards.firstMatch.exists)
+    XCTAssertLessThanOrEqual(count.frame.maxY, app.keyboards.firstMatch.frame.minY)
+    try capture(app, "dumbbell-editor-keyboard-light")
+    app.buttons["gym-rename-movement-commit"].tap()
+    XCTAssertTrue(name.waitForNonExistence(timeout: 5))
+    app.navigationBars["This workout"].buttons["Close"].tap()
+    XCTAssertEqual(app.buttons["workout-weight"].label, "Weight, 100 kg each")
+    XCTAssertTrue(app.staticTexts["One dumbbell · 100 kg total"].exists)
+    XCTAssertTrue(app.buttons["Dumbbell squat"].exists)
+    try capture(app, "dumbbell-rack-light")
+    app.buttons["workout-finish"].tap()
+    XCTAssertTrue(app.buttons["workout-done"].waitForExistence(timeout: 10)); app.buttons["workout-done"].tap()
+    let history = app.buttons["gym-session-movement"].firstMatch
+    XCTAssertTrue(history.waitForExistence(timeout: 5))
+    XCTAssertTrue(history.label.hasPrefix("Dumbbell squat, kg each"), history.label)
+    let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-finished-set-"))
+    XCTAssertEqual(rows.allElementsBoundByIndex.map(\.label), ["W · 80 × 3", "1 · 100 × 5, on plan", "2 · 100 × 5, on plan"])
+    try capture(app, "seed-renamed-history-light")
+    history.tap()
+    XCTAssertTrue(app.navigationBars.staticTexts["Dumbbell squat"].waitForExistence(timeout: 5))
+    app.navigationBars.buttons["More"].tap(); app.buttons["Edit exercise"].tap()
+    XCTAssertTrue(app.segmentedControls["gym-rename-movement-equipment-count"].buttons["One"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.segmentedControls["gym-rename-movement-equipment-count"].buttons["One"].isSelected)
+  }
+
+  func testCurrentSetRemainsFullyVisibleAtLargestText() throws {
+    let app = launch(appearance: "light", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+    let current = app.descendants(matching: .any)["workout-current-set"]
+    XCTAssertTrue(current.waitForExistence(timeout: 5))
+    let visible = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      let frame = current.frame
+      return frame.height >= 44 && app.frame.contains(frame) && frame.maxY <= app.buttons["workout-weight"].frame.minY
+    }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [visible], timeout: 5), .completed)
+    XCTAssertEqual(current.label, "Set 3, current, target 100 kilograms, 5 reps")
+    try capture(app, "workout-current-set-largest-text")
+  }
+
   func testKeypadCancelCommitAndLiveFix() {
     let app = launch()
     app.buttons["workout-weight"].tap()
     XCTAssertTrue(app.buttons["workout-key-1"].waitForExistence(timeout: 5))
     let value = app.staticTexts["workout-keypad-value"], kilograms = app.staticTexts["workout-keypad-unit"]
-    XCTAssertTrue(kilograms.waitForExistence(timeout: 5)); XCTAssertEqual(kilograms.label, "kg")
+    XCTAssertTrue(kilograms.waitForExistence(timeout: 5)); XCTAssertEqual(kilograms.label, "kg total")
     XCTAssertTrue(kilograms.frame.minX >= value.frame.maxX && kilograms.frame.maxY <= value.frame.maxY,
                   "The unit \(kilograms.frame) stands at the numeral's baseline \(value.frame), as on the rack")
+    for digit in ["±", "0", "."] {
+      XCTAssertLessThanOrEqual(app.buttons["workout-key-" + digit].frame.maxY, app.buttons["workout-keypad-set"].frame.minY)
+    }
     app.buttons["workout-key-1"].tap(); app.buttons["workout-key-2"].tap()
     XCTAssertEqual(app.staticTexts["workout-keypad-value"].label, "12")
     app.buttons["Cancel"].tap()
@@ -69,7 +164,7 @@ import Vision
       XCTAssertLessThanOrEqual(button.frame.maxY, set.frame.minY, "Key \(key) \(button.frame) sits under Set \(set.frame)")
     }
     app.buttons["workout-key-6"].tap(); app.buttons["workout-key-0"].tap(); set.tap()
-    XCTAssertTrue(app.buttons["workout-weight"].wait(for: \.label, toEqual: "Weight, 60 kilograms", timeout: 5))
+    XCTAssertTrue(app.buttons["workout-weight"].wait(for: \.label, toEqual: "Weight, 60 kg total", timeout: 5))
   }
 
   func testReceiptActionsRemainReachableAtAccessibilityText() {
@@ -193,7 +288,7 @@ import Vision
     app.buttons["gym-movement-bench-press"].tap()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["Bench Press"].waitForExistence(timeout: 5))
-    XCTAssertEqual(app.buttons["workout-weight"].label, "Weight, 20 kilograms")
+    XCTAssertEqual(app.buttons["workout-weight"].label, "Weight, 20 kg total")
     app.buttons["workout-log"].tap()
     let chosenSet = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "workout-set-")).firstMatch
     XCTAssertTrue(chosenSet.waitForExistence(timeout: 5))

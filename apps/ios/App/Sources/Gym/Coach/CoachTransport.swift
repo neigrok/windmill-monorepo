@@ -3,9 +3,13 @@ import UIKit
 import ImageIO
 import SyncEngine
 
+struct CoachStreamActivity {
+  let receive: @MainActor () throws -> Void
+}
+
 extension GymRESTClient {
   func coachRequest(_ path: String, method: String = "GET", body: Data? = nil,
-                    mediaType: String? = nil, expectedAccount: String? = nil, snapshot: (@MainActor (CoachSnapshot) throws -> Void)? = nil) async throws -> Data {
+                    mediaType: String? = nil, expectedAccount: String? = nil, idleTimeout: TimeInterval = 60, activity: CoachStreamActivity? = nil, snapshot: (@MainActor (CoachSnapshot) throws -> Void)? = nil) async throws -> Data {
     if let expectedAccount {
       guard let runtime, try runtime.account() == expectedAccount else { throw CancellationError() }
     }
@@ -24,11 +28,12 @@ extension GymRESTClient {
     request.httpMethod = method; request.httpBody = body
     request.setValue("Bearer \(token.value)", forHTTPHeaderField: "Authorization")
     if body != nil { request.setValue(mediaType ?? "application/json", forHTTPHeaderField: "Content-Type") }
-    if snapshot != nil { request.setValue("text/event-stream", forHTTPHeaderField: "Accept") }
+    if snapshot != nil { request.setValue("text/event-stream", forHTTPHeaderField: "Accept"); request.timeoutInterval = idleTimeout }
     let requestGeneration = generation
     let id = UUID()
     let streamConfiguration = session.configuration
-    streamConfiguration.timeoutIntervalForResource = 120
+    streamConfiguration.timeoutIntervalForRequest = idleTimeout
+    streamConfiguration.timeoutIntervalForResource = 3600
     let transport = snapshot == nil ? session : URLSession(configuration: streamConfiguration)
     defer { if snapshot != nil { transport.invalidateAndCancel() } }
     let wireRequest = request
@@ -56,6 +61,14 @@ extension GymRESTClient {
           if line.last == 13 { line.removeLast() }
           guard let text = String(data: line, encoding: .utf8) else { throw URLError(.cannotDecodeContentData) }
           line.removeAll(keepingCapacity: true)
+          if let activity {
+            try await MainActor.run {
+              try Task.checkCancellation()
+              guard generation == requestGeneration, !blocked,
+                    try runtime.account() == owner, runtime.tokens.token(for: owner) == token else { throw CancellationError() }
+              try activity.receive()
+            }
+          }
           if let (event, data) = parser.consume(text) {
             if event == "error" {
               try await MainActor.run {

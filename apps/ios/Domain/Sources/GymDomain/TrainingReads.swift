@@ -26,7 +26,7 @@ public struct SessionReadout: Equatable, Sendable {
   public let volumeKg: Double
   public let topE1rm: Double?
 
-  public init(session: Session, sets: [TrainingSet]) {
+  public init(session: Session, sets: [TrainingSet], catalogue: Catalogue = Catalogue(custom: [], names: [])) {
     let sets = sets.filter { $0.sessionId == session.id }
     let working = sets.filter { $0.kind == "working" }
     sessionId = session.id
@@ -34,7 +34,10 @@ public struct SessionReadout: Equatable, Sendable {
     durationMs = session.finishedAt.map { max(0, $0.ms - session.startedAt.ms) }
     workingSetCount = working.count
     movementCount = Set(sets.map(\.exerciseId)).count
-    volumeKg = working.reduce(0) { $0 + $1.volumeKg }
+    volumeKg = working.reduce(0) { total, set in
+      let exercise = catalogue.find(set.exerciseId)
+      return total + set.volumeKg(equipment: exercise?.equipment ?? "", loadCount: exercise?.loadCount ?? 1)
+    }
     topE1rm = working.compactMap(\.e1rm).max()
   }
 }
@@ -324,7 +327,7 @@ public struct ProgressRecords: Equatable, Sendable {
 
 extension TrainingLog {
   public func readout(session id: ID<Session>) -> SessionReadout? {
-    drawnSessions.first { $0.id == id }.map { SessionReadout(session: $0, sets: sets(session: id)) }
+    drawnSessions.first { $0.id == id }.map { SessionReadout(session: $0, sets: sets(session: id), catalogue: catalogue) }
   }
   public func lastTime(for exerciseId: ID<Exercise>) -> LastTime { LastTime.of(exerciseId, log: self) }
   public var progress: StatsProgress { StatsProgress(log: self) }

@@ -67,10 +67,11 @@ import SyncTesting
   }
 
   @Test(arguments: ["load", "reps"])
-  func rackEditReplacesTheDurableOfferBeforeImmediateColdLaunch(field: String) throws {
+  func rackEditReplacesTheDurableOfferAtFlushBeforeColdLaunch(field: String) throws {
     let (harness, gym) = try fixture(), workout = try begin(gym)
     let old = try #require(workout.activityOffer())
     if field == "load" { workout.weightKg = old.weightKg + 2.5 } else { workout.reps = old.reps + 1 }
+    #expect(gym.flush())
     let durable = try #require(try workout.activityRecord()?.offer)
     #expect(durable != old && durable.setID != old.setID)
     #expect(durable.weightKg == workout.weightKg && durable.reps == workout.reps)
@@ -88,6 +89,7 @@ import SyncTesting
     let old = try #require(workout.activityOffer())
     harness.failNextCommit()
     if field == "load" { workout.weightKg = old.weightKg + 2.5 } else { workout.reps = old.reps + 1 }
+    #expect(!workout.flushRack())
     #expect(workout.weightKg == old.weightKg && workout.reps == old.reps)
     #expect(workout.message == "The rack could not be changed. Try again.")
     #expect(try workout.activityRecord()?.offer == nil)
@@ -106,6 +108,7 @@ import SyncTesting
     fault.point.withLock { $0 = .beforeCommit(.commit) }
     defer { fault.point.withLock { $0 = nil } }
     workout.weightKg = old.weightKg + 2.5
+    #expect(!workout.flushRack())
     #expect(workout.weightKg == old.weightKg && workout.reps == old.reps)
     #expect(workout.message == "The rack could not be changed. Try again." && gym.readFailed)
     #expect(try workout.activityRecord()?.offer == old)
@@ -121,6 +124,36 @@ import SyncTesting
     #expect(replacement.weightKg == old.weightKg + 2.5 && replacement.setID != old.setID)
     #expect(!cold.logActivityOffer(old) && cold.sets.isEmpty)
     #expect(cold.logActivityOffer(replacement) && cold.sets.map(\.id.description) == [replacement.setID])
+  }
+
+  @Test func delayedRackSaveDoesNotRetainOrAccessReleasedOwner() async throws {
+    weak var owner: GymModel?
+    let retained = try autoreleasepool {
+      let (_, gym) = try fixture(), workout = try begin(gym)
+      owner = gym
+      workout.weightKg = 47.5
+      return workout
+    }
+    #expect(owner == nil)
+    try await Task.sleep(for: .milliseconds(90))
+    #expect(owner == nil && retained.weightKg == 47.5)
+  }
+
+  @Test func rapidRackEditsSurviveReconcileAndFlushBeforeAccountChange() throws {
+    let (_, gym) = try fixture(), workout = try begin(gym), session = try #require(workout.session)
+    workout.weightKg = 55; workout.reps = 8; workout.weightKg = 57.5
+    #expect(workout.weightKg == 57.5 && workout.reps == 8)
+    #expect(gym.run(AppendSet(value(gym, session: session, weight: 75, reps: 6)))?.receipt != nil)
+    workout.reconcile()
+    #expect(workout.weightKg == 57.5 && workout.reps == 8)
+    #expect(gym.flush())
+    let offer = try #require(try workout.activityRecord()?.offer)
+    #expect(offer.weightKg == 57.5 && offer.reps == 8)
+    workout.weightKg = 60
+    gym.accountChanging = true
+    #expect(!workout.flushRack())
+    #expect(workout.weightKg == 57.5 && workout.reps == 8)
+    #expect(try workout.activityRecord()?.offer == offer)
   }
 
   @Test func hidingAndRestoringWorkoutIsDurableAndKeepsItsSets() throws {
@@ -794,6 +827,7 @@ import SyncTesting
     let (harness, gym) = try fixture(), workout = try begin(gym), session = try #require(workout.session)
     harness.advance(ms: 20_000)
     workout.weightKg = -25.5; workout.reps = 8
+    #expect(workout.flushRack())
     let before = WorkoutClocks(session: session, sets: workout.sets, now: Instant(ms: harness.clock.nowMs()))
     harness.failNextCommit(); workout.logSet()
     #expect(workout.sets.isEmpty && workout.weightKg == -25.5 && workout.reps == 8)
@@ -1474,8 +1508,9 @@ import SyncTesting
     #expect(entries.filter { $0.name == "gym_set_logged" }.map(\.properties) == [["screen": "workout", "outcome": "ok"]])
     #expect(entries.filter { $0.name == "gym_session_finished" }.map(\.properties) == [["screen": "workout", "outcome": "ok"]])
     #expect(entries.filter { $0.name == "gym_routine_saved" }.map(\.properties) == [["screen": "workout", "action": "update"]])
-    #expect(entries.allSatisfy { Set($0.properties.keys).isSubset(of: ["screen", "action", "outcome", "operation", "failure_kind"]) })
-    #expect(entries.allSatisfy { $0.properties.values.allSatisfy { ["workout", "gym", "update", "ok", "refused", "failed"].contains($0) } })
+    #expect(entries.filter { $0.name == "gym_workout_adjusted" }.map(\.properties) == [["screen": "workout", "field": "weight", "outcome": "ok"]])
+    #expect(entries.allSatisfy { Set($0.properties.keys).isSubset(of: ["screen", "action", "field", "outcome", "operation", "failure_kind"]) })
+    #expect(entries.allSatisfy { $0.properties.values.allSatisfy { ["workout", "gym", "update", "weight", "ok", "refused", "failed"].contains($0) } })
   }
 
   @Test func drainReturnsSuccessAndCancelsTimeoutChild() async {

@@ -215,7 +215,7 @@ fun SessionScreen(
     val currentDetail = detail?.let(store::retainedSession)
     val readId = currentDetail?.session?.id ?: summary.id
     val visibleSets = currentDetail?.sets?.filterNot { it.id in store.deletedSets || it.id in store.withheldIds }
-    val standing = currentDetail?.let { SessionSummary(it.session, visibleSets.orEmpty()) }
+    val standing = currentDetail?.let { SessionSummary(it.session, visibleSets.orEmpty(), store.catalog) }
         ?: store.recent.firstOrNull { it.id == summary.id } ?: summary
     var shareOpen by rememberSaveable(summary.id) { mutableStateOf(false) }
     // Null until the read lands, which is a different silence from a session with no sets in it. A

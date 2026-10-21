@@ -29,7 +29,7 @@ export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
   const busy = saving || pending || !api?.ready;
   const names = new Map(catalog.map((exercise) => [exercise.id, exercise.name]));
   const back = `${sessionHref(session.id)}?from=${encodeURIComponent(from)}`;
-  const totals = workoutTotals(originalSets);
+  const totals = workoutTotals(originalSets, catalog);
   const name = routineNameOf(original) ?? NO_ROUTINE;
   const date = draft.date ? new Date(`${draft.date}T12:00`) : null;
   useEffect(() => {

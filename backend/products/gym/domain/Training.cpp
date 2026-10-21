@@ -156,17 +156,22 @@ double defaultStepKg(Equipment equipment) {
   return 2.5;
 }
 
+double liftedVolume(double weightKg, int reps, Equipment equipment, int loadCount) {
+  return std::max(weightKg, 0.0) * reps * (equipment == Equipment::dumbbell && loadCount != 1 ? 2 : 1);
+}
+
 Exercise::Exercise(ExerciseId id, std::string name, Pattern pattern, Equipment equipment,
-                   double stepKg, bool custom, std::vector<std::string> aliases)
+                   double stepKg, bool custom, std::vector<std::string> aliases, int loadCount)
     : Exercise(Stored{}, std::move(id), std::move(name), pattern, equipment, stepKg, custom,
-               std::move(aliases)) {
+               std::move(aliases), loadCount) {
   if (sync::isBlank(this->name)) throw InvalidTraining("an exercise needs a name");
 }
 
 Exercise::Exercise(Stored, ExerciseId id, std::string name, Pattern pattern, Equipment equipment,
-                   double stepKg, bool custom, std::vector<std::string> aliases)
+                   double stepKg, bool custom, std::vector<std::string> aliases, int loadCount)
     : id(std::move(id)), name(trimmedName(std::move(name))), pattern(pattern),
-      equipment(equipment), stepKg(stepKg), custom(custom), aliases(std::move(aliases)) {
+      equipment(equipment), stepKg(stepKg), custom(custom), aliases(std::move(aliases)),
+      loadCount(equipment == Equipment::dumbbell ? (loadCount == 1 ? 1 : 2) : 1) {
   if (this->id.empty()) throw InvalidTraining("an exercise needs an id");
   if (this->name.size() > kMaxNameLength) throw InvalidTraining("exercise name too long");
   // A NUL truncates a name to its own head; non-UTF-8 bytes are refused by Postgres mid-transaction,

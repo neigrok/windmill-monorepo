@@ -298,6 +298,8 @@ struct FinishWorkout: Action {
   // The rack drafts load and reps only: a new set is Working, and the Fix sheet is where a kind changes.
   private var rackWeightKg = Prefill.emptyBarKg
   private var rackReps = Prefill.emptyBarReps
+  @ObservationIgnored private var rackSave: Task<Void, Never>?
+  @ObservationIgnored private var rackBase: Prefill?
   var weightKg: Double {
     get { rackWeightKg }
     set { editRack(weightKg: newValue, reps: reps) }
@@ -330,11 +332,29 @@ struct FinishWorkout: Action {
 
   init(gym: GymModel) { self.gym = gym; restore() }
   func restoreRack(weightKg: Double, reps: Int) {
+    rackSave?.cancel(); rackSave = nil; rackBase = nil
     rackWeightKg = weightKg; rackReps = reps
     activityChanged()
   }
   func editRack(weightKg: Double, reps: Int) {
     guard weightKg != self.weightKg || reps != self.reps else { return }
+    let field = weightKg != self.weightKg ? "weight" : "reps"
+    if rackBase == nil { rackBase = Prefill(weightKg: self.weightKg, reps: self.reps) }
+    rackWeightKg = weightKg; rackReps = reps
+    gym.telemetry.event("gym_workout_adjusted", properties: ["screen": "workout", "field": field, "outcome": "ok"])
+    rackSave?.cancel()
+    rackSave = Task { @MainActor [weak gym] in
+      do { try await Task.sleep(for: .milliseconds(45)) } catch { return }
+      gym?.workout.flushRack()
+    }
+  }
+  @discardableResult func flushRack() -> Bool {
+    guard let previous = rackBase else { return true }
+    rackSave?.cancel(); rackSave = nil; rackBase = nil
+    guard !gym.accountTransition else {
+      restoreRack(weightKg: previous.weightKg, reps: previous.reps); return false
+    }
+    let weightKg = self.weightKg, reps = self.reps
     var revoke: WorkoutActivityRecord?
     do {
       if let sessionId, var record = try activityRecord() {
@@ -348,7 +368,9 @@ struct FinishWorkout: Action {
         }
         let result = try gym.runner.run(KeepWorkoutActivity(sessionID: sessionId, record: record, walk: walk))
         if let refusal = result.refusal {
-          gym.refusal = refusal; message = gym.message(refusal); gym.error = message; return
+          gym.refusal = refusal; message = gym.message(refusal); gym.error = message
+          restoreRack(weightKg: previous.weightKg, reps: previous.reps)
+          return false
         }
       }
     } catch {
@@ -361,13 +383,17 @@ struct FinishWorkout: Action {
         } catch { gym.readFailed = true; gym.report("gym_activity_update", error) }
       } else { gym.readFailed = true }
       message = "The rack could not be changed. Try again."; gym.error = message
-      return
+      let field = weightKg != previous.weightKg ? "weight" : "reps"
+      gym.telemetry.event("gym_workout_adjusted", properties: ["screen": "workout", "field": field, "outcome": "failed"])
+      restoreRack(weightKg: previous.weightKg, reps: previous.reps)
+      return false
     }
     restoreRack(weightKg: weightKg, reps: reps)
     if message == "The rack could not be changed. Try again." {
       message = nil
       if gym.error == "The rack could not be changed. Try again." { gym.error = nil }
     }
+    return true
   }
   var session: Session? { gym.sessions.first { $0.id == sessionId } ?? receipt?.session }
   var sets: [TrainingSet] { gym.log?.sets(session: sessionId ?? ID("missing")) ?? [] }
@@ -450,7 +476,11 @@ struct FinishWorkout: Action {
       }
     }
     if previousSelected != selected { prefill(); restoreActivityDraft() }
-    else if offerSession != session || !LogWorkoutSet.matchesOfferedSets(sets, offerSets) { prefill() }
+    else if offerSession != session || !LogWorkoutSet.matchesOfferedSets(sets, offerSets) {
+      let pending = rackBase.map { _ in Prefill(weightKg: weightKg, reps: reps) }
+      prefill()
+      if let pending { editRack(weightKg: pending.weightKg, reps: pending.reps) }
+    }
     if awaitingReceipt && session.closedBy == "finish" { completeFinish(session) }
   }
   func retryRead() { gym.refresh(); reconcile() }
@@ -466,7 +496,7 @@ struct FinishWorkout: Action {
     walk = next; activityChanged(); return true
   }
   func select(_ id: ID<Exercise>) {
-    guard walk.order.contains(id), id != selected, !finishing else { return }
+    guard walk.order.contains(id), id != selected, !finishing, flushRack() else { return }
     if let pending = deviation {
       message = "\(gym.catalogue.find(pending.exerciseId)?.name ?? "That movement") first — that question is still open."; return
     }
@@ -483,7 +513,7 @@ struct FinishWorkout: Action {
     if let draft = drafts[id] { restoreRack(weightKg: draft.weightKg, reps: draft.reps) }
   }
   func add(_ id: ID<Exercise>) {
-    guard !walk.order.contains(id), gym.catalogue.find(id) != nil, !finishing else { return }
+    guard !walk.order.contains(id), gym.catalogue.find(id) != nil, !finishing, flushRack() else { return }
     if let pending = deviation {
       message = "\(gym.catalogue.find(pending.exerciseId)?.name ?? "That movement") first — that question is still open."; return
     }
@@ -506,12 +536,14 @@ struct FinishWorkout: Action {
     !sets.contains { $0.exerciseId == id } && session?.plan?.entries.contains { $0.exerciseId == id } != true
   }
   func remove(_ id: ID<Exercise>) {
+    guard flushRack() else { return }
     guard canRemove(id) else { message = "A movement with sets or planned targets stays in this workout."; return }
     var next = walk; next.order.removeAll { $0 == id }
     if selected == id { next.selected = next.order.first }
     if keep(next) { prefill() }
   }
   @discardableResult func logSet(offered: WorkoutActivityOffer? = nil) -> Bool {
+    guard flushRack() else { return false }
     guard canLog, let selected, let session else { message = "Check the weight and reps before logging."; return false }
     guard offerSession == session && LogWorkoutSet.matchesOfferedSets(sets, offerSets) else { message = "The workout changed. Check the current set."; prefill(); return false }
     guard weightKg.isFinite, abs(weightKg) <= 500, (1...99).contains(reps) else { message = "Check the weight and reps before logging."; return false }
@@ -575,6 +607,7 @@ struct FinishWorkout: Action {
 
   // A tapped Finish always ends in a queued finish or a refusal, even when its task is cancelled while it waits.
   func finish() async {
+    guard flushRack() else { return }
     guard !finishing, !paging, let session, session.isOpen, !gym.readFailed, !gym.accountTransition else { return }
     let account = gym.account
     finishing = true; message = nil
@@ -713,7 +746,7 @@ extension GymModel {
     return id
   }
   @discardableResult func hideWorkout() -> Bool {
-    guard openSession != nil, !workout.finishing, workout.receipt == nil else { return false }
+    guard openSession != nil, !workout.finishing, workout.receipt == nil, workout.flushRack() else { return false }
     var next = workout.walk; next.hidden = true
     guard workout.keep(next) else { return false }
     telemetry.event("gym_hidden_workout", properties: ["action": "hide"])

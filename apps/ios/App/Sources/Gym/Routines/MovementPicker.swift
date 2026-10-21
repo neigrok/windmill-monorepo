@@ -83,13 +83,14 @@ struct MovementCreationDraft {
   let id: ID<Exercise>
   var name: String
   var equipment = "barbell"
+  var loadCount = 2
   var sets: [SetTarget]?
   var refusal: String?
-  static let equipmentChoices = ["barbell", "dumbbell", "machine", "bodyweight"]
+  static let equipmentChoices = MovementEquipment.choices
 
   var exercise: Exercise {
     Exercise(id: id, name: MovementName.trimmed(name), pattern: "isolation", equipment: equipment,
-             stepKg: ExerciseRules.defaultStepKg(equipment: equipment))
+             stepKg: ExerciseRules.defaultStepKg(equipment: equipment), loadCount: loadCount)
   }
 
   var problem: String? {
@@ -307,10 +308,8 @@ struct CreateMovementSheet: View {
           TextField("Name", text: $draft.name).focused($nameFocused).autocorrectionDisabled().textInputAutocapitalization(.words).onSubmit { nameFocused = false }
             .disabled(busy).accessibilityIdentifier("gym-movement-name")
           if let counter = MovementName.counter(draft.name) { Text(counter).font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim) }
-          Picker("Equipment", selection: $draft.equipment) {
-            ForEach(MovementCreationDraft.equipmentChoices, id: \.self) { Text($0.capitalized).tag($0) }
-          }.pickerStyle(.menu).disabled(busy).accessibilityIdentifier("gym-movement-equipment")
-        }
+          MovementEquipmentPicker(equipment: $draft.equipment, loadCount: $draft.loadCount, identifier: "gym-movement-equipment").disabled(busy)
+        } footer: { Text(MovementEquipment(draft.equipment).help) }
         if purpose == .routine {
           Section {
             NavigationLink(value: RoutineEditingSession.Step.targets(draft.id)) {

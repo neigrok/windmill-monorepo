@@ -189,26 +189,22 @@ is the only sign-out confirmation.
   pages and a page control, shown once per device, skippable from every page (`onboarding.md`).
 - The first run **is the real surface** with its opening move filled in. No carousel, no progress
   dots, no "you're all set" screen inside a room.
-- Every first run can reach a real thing with zero agent calls: beside Coach's starters, Gym keeps
-  **Just log** and **Build it myself**.
+- Every first run can reach a real thing with zero agent calls: Gym's **Build myself** opens the
+  routine builder, and its Routines and Log tabs remain available.
 
 **Journal** — `journal/onboarding.md`.
 
-**Gym is Coach-led, in both states.** A first open with no routines lands in Coach:
+**Gym is Coach-led on iOS.** An eligible empty Gym account opens a conversational welcome with
+**Add screenshot**, **Build myself** and the composer. The greeting explains what Coach helps with;
+it does not claim to have read the log. It stays until the first accepted user message, including
+through tab changes, picker cancellation and failed sends.
 
-> **Set up your routines**
-> Built from what you bring.
-
-- Three starters: **Add a screenshot** · **Describe your program** · **Share your goal**.
-- Two quiet escapes: **Just log** (straight to the logger) · **Build it myself** (the routine
-  editor).
-- Once installation access is available, show one quiet server-backed USD lifetime
-  allowance line under the signed-out starters; see the Coach brief for copy. Signed in, the
-  same room has no standing allowance line. Do not advertise an unavailable anonymous grant.
-- Coach creates the routines: one truthful creation receipt per routine, each with **Open
-  routine**, which opens the routine with **Start workout**. The goal path asks only the materially
-  missing questions, answered with chips.
-- With routines, Gym opens on Routines.
+There is no goal form, mandatory days/equipment selector, Just log or remaining-allowance line.
+Goals and constraints arise through plain dialogue. Coach offers routine drafts with **Review**;
+only the human's **Save routine** creates the routine and shows **Open routine**. At exhausted
+anonymous access, offer sign-in while retaining the draft. Signed-in non-One access can lead to
+Windmill One information, which states that subscriptions are unavailable while checkout is closed.
+With routines, Gym opens on Routines. Its empty state uses one bottom-right plus for manual creation.
 
 The full contract is `gym/briefs/09-coach.md`.
 

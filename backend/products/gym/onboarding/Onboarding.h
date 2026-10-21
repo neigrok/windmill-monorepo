@@ -24,6 +24,8 @@ struct OnboardingIn {
   std::string note;
   std::string imageMimeType;
   std::string imageBase64;
+  std::string text;
+  Json::Value context{Json::arrayValue};
 };
 
 struct OnboardingRoutine {

@@ -21,8 +21,9 @@ The training log is an endpoint the lifter's own Claude or ChatGPT reads over MC
 their last twelve weeks of squats, drafts next block's progression, and the change arrives in gym as
 a typed diff they tap to apply. **The model proposes, the human applies.**
 
-`Coach` is a second door onto the same engine. It can create requested routines and append useful
-user-provided insights to Notes. Changes to existing routines require human Apply; Coach cannot
+`Coach` is a second door onto the same engine. It prepares requested routine drafts for human
+Review and Save, and appends useful user-provided insights to Notes. Changes to existing routines
+require human Apply; Coach cannot
 edit logged sets or frozen plans. Its tone is friendly, informal and grounded in training records,
 without unsolicited check-ins, grades or streaks. The conversation contract is `09-coach.md`.
 

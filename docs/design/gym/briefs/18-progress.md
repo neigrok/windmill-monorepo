@@ -40,7 +40,7 @@ Record screen — and a second room onto the same chart is two doors onto one va
 
 The head scrolls away, and that is right: a chart is read sitting down, and the reach band keeps
 exactly one control, the weigh-in chip, at every scroll position. On iOS *Weigh in* is The log's
-bar action instead, and nothing floats over the list. A card is a destination and may stand in the
+bottom-trailing plus seat, with a safe-area inset keeping the final row clear. A card is a destination and may stand in the
 top band (`12-native-idiom.md`: a destination is not an action).
 
 The strip has no cap. A lifter following a written program works six to ten movements; a strip of

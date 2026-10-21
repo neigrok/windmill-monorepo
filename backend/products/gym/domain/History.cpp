@@ -18,7 +18,7 @@ HistoryTotals HistoryWorkout::totals(const std::optional<std::string>& exercise)
     if (!set.working || (exercise && set.exerciseId != *exercise)) continue;
     ++total.sets;
     total.reps += set.reps;
-    total.tonnageKg += std::max(set.weightKg, 0.0) * set.reps;
+    total.tonnageKg += liftedVolume(set.weightKg, set.reps, set.equipment, set.loadCount);
   }
   return total;
 }

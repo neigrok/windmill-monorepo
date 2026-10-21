@@ -2,6 +2,7 @@
 
 #include "platform/adapters/postgres/PgPool.h"
 #include "products/gym/adapters/postgres/PgGymRows.h"
+#include "products/gym/adapters/json/GymJson.h"
 
 #include <pqxx/pqxx>
 
@@ -34,10 +35,19 @@ std::vector<Exercise> PgCatalogRepository::seedCatalog() {
   pqxx::work txn{*conn};
   const pqxx::result rows = txn.exec(
       "SELECT id, name, pattern, equipment, step_kg::float8 AS step_kg, created_by, "
-      "'[]' AS aliases FROM gym_exercises WHERE created_by IS NULL ORDER BY pattern, name");
+      "'[]' AS aliases,coalesce(load_count,0) AS load_count FROM gym_exercises WHERE created_by IS NULL ORDER BY pattern, name");
   std::vector<Exercise> out;
   for (const auto& row : rows) out.push_back(exerciseFrom(row));
   return out;
+}
+
+std::optional<Exercise> PgCatalogRepository::exerciseUpdate(const UserId& user, const std::string& requestId) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  const auto rows = txn.exec_params("SELECT exercise::text FROM gym_exercise_updates WHERE user_id=$1::uuid AND request_id=$2",
+                                    user.str(), requestId);
+  if (rows.empty()) return std::nullopt;
+  return exerciseFromJson(parse(rows[0][0].as<std::string>()));
 }
 
 }

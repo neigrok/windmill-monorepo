@@ -204,7 +204,7 @@ function gymDoorWrites(state, now) {
   return state;
 }
 
-test("v4 journal ready, sent and acked saves survive v6 service and gym door writes without an epoch reset", () => {
+test("v4 journal ready, sent and acked saves survive v7 service and gym door writes without an epoch reset", () => {
   const sample = vectors.find((v) => v.input.occupied && !v.input.strategy).input;
   for (const phase of ["ready", "sent", "acked"]) {
     let state = new ServerState(sample.server);
@@ -234,7 +234,7 @@ test("v4 journal ready, sent and acked saves survive v6 service and gym door wri
     assert.deepEqual(device.activeReplica.entries()[0], pending);
     const greeting = hello({ state, registry: composedRegistry, account: "A", serverTime: sample.now + 6 });
     assert.equal(greeting.status, 200);
-    assert.equal(greeting.body.schema, 6);
+    assert.equal(greeting.body.schema, 7);
     assert.equal(greeting.body.minSchema, v4JournalRegistry.version);
     if (phase !== "acked") {
       request = nextPush(device.activeReplica, ctx(7));
@@ -260,7 +260,7 @@ test("v4 journal ready, sent and acked saves survive v6 service and gym door wri
   }
 });
 
-test("v4 journal pending claim and retained typing survive v6 gym writes, a lost answer and relaunch", () => {
+test("v4 journal pending claim and retained typing survive v7 gym writes, a lost answer and relaunch", () => {
   const sample = vectors.find((v) => v.input.occupied && !v.input.strategy).input;
   let state = new ServerState(sample.server);
   let device = new Device({ active: sample.replica, replicas: [Replica.fresh({ replica: sample.replica }).toJSON()] });

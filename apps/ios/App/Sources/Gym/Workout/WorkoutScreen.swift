@@ -70,7 +70,7 @@ struct WorkoutScreen: View {
     }
     .sheet(isPresented: Binding(get: { keypad != nil }, set: { if !$0 { keypad = nil } })) {
       if let keypad {
-        SetKeypadSheet(field: keypad, value: keypad == .weight ? workout.weightKg : Double(workout.reps)) { value in
+        SetKeypadSheet(field: keypad, value: keypad == .weight ? workout.weightKg : Double(workout.reps), equipment: workout.selected.flatMap { gym.catalogue.find($0)?.equipment } ?? "") { value in
           if keypad == .weight { workout.weightKg = value } else { workout.reps = Int(value) }
         }
       }
@@ -95,10 +95,10 @@ struct WorkoutScreen: View {
     .onChange(of: gym.account) { _, _ in finishTask?.cancel(); workout.accountChanged(); updateAwake() }
     .onChange(of: gym.accountTransition) { _, changing in if changing { finishTask?.cancel() } }
     .onChange(of: scenePhase) { _, phase in
-      if phase == .background { finishTask?.cancel() }
+      if phase == .background { workout.flushRack(); finishTask?.cancel() }
       updateAwake()
     }
-    .onDisappear { workout.rackEditing = false; finishTask?.cancel(); releaseAwake() }
+    .onDisappear { workout.flushRack(); workout.rackEditing = false; finishTask?.cancel(); releaseAwake() }
   }
 
   func live(_ session: Session) -> some View {
@@ -164,26 +164,17 @@ struct WorkoutLedger: View {
       }.buttonStyle(.plain).foregroundStyle(GymPalette.ink)
         .accessibilityHint("Open this workout’s movements")
         .padding(.horizontal, RoomSpace.inset)
-      WorkoutPageControl(workout: workout, exerciseId: exerciseId).frame(height: RoomSpace.minimumTarget)
-      WorkoutFacts(workout: workout)
-      ScrollView(.horizontal) {
-        HStack(spacing: RoomSpace.related) {
-          Text("Sets").font(.subheadline).foregroundStyle(GymPalette.inkDim)
-          ForEach(0..<max(ledger.targets.count, ledger.working + 1), id: \.self) { index in
-            Image(systemName: index < ledger.working ? "checkmark.circle.fill" : index == ledger.working ? "record.circle" : "circle.fill")
-              .font(.title3).foregroundStyle(index < ledger.working ? GymPalette.done : index == ledger.working ? GymPalette.accent : GymPalette.inkFaint)
-              .frame(width: 28, height: 28)
-          }
-        }.padding(.horizontal, RoomSpace.inset)
-      }.scrollIndicators(.hidden).fixedSize(horizontal: false, vertical: true)
-        .accessibilityElement(children: .ignore).accessibilityLabel("Working sets").accessibilityValue(ledger.tally)
-        .accessibilityIdentifier("workout-set-progress")
+      if !typeSize.isAccessibilitySize { details }
       ScrollViewReader { scroll in
         List {
+          if typeSize.isAccessibilitySize {
+            Section { details.listRowInsets(EdgeInsets()).listRowSeparator(.hidden) }
+              .listRowBackground(GymPalette.canvas)
+          }
           Section {
             ForEach(ledger.rows) { row in
               WorkoutLedgerRow(row: row, unsent: row.set.map { unsent.contains($0.id) } ?? false)
-                .frame(minHeight: 32).contentShape(Rectangle())
+                .frame(minHeight: RoomSpace.minimumTarget).contentShape(Rectangle())
                 .onTapGesture { if let set = row.set, fixable { fix(set) } }
                 .accessibilityRemoveTraits(row.set == nil ? [.isButton, .isSelected] : .isSelected)
                 .accessibilityAddTraits(row.set == nil ? .isStaticText : .isButton)
@@ -203,6 +194,27 @@ struct WorkoutLedger: View {
         .padding(.horizontal, RoomSpace.inset)
       if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
     }.padding(.top, RoomSpace.related).background(GymPalette.canvas)
+  }
+
+  var details: some View {
+    let ledger = workout.ledger(exerciseId)
+    return VStack(spacing: RoomSpace.related) {
+      WorkoutPageControl(workout: workout, exerciseId: exerciseId).frame(height: RoomSpace.minimumTarget)
+      WorkoutFacts(workout: workout)
+      ScrollView(.horizontal) {
+        HStack(spacing: RoomSpace.related) {
+          Text("Sets · " + MovementEquipment(gym.catalogue.find(exerciseId)?.equipment ?? "").unit)
+            .font(.subheadline).foregroundStyle(GymPalette.inkDim)
+          ForEach(0..<max(ledger.targets.count, ledger.working + 1), id: \.self) { index in
+            Image(systemName: index < ledger.working ? "checkmark.circle.fill" : index == ledger.working ? "record.circle" : "circle.fill")
+              .font(.system(size: 20)).foregroundStyle(index < ledger.working ? GymPalette.done : index == ledger.working ? GymPalette.accent : GymPalette.inkFaint)
+              .frame(width: 28, height: 28)
+          }
+        }.padding(.horizontal, RoomSpace.inset)
+      }.scrollIndicators(.hidden).fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .ignore).accessibilityLabel("Working sets, " + MovementEquipment(gym.catalogue.find(exerciseId)?.equipment ?? "").unit).accessibilityValue(ledger.tally)
+        .accessibilityIdentifier("workout-set-progress")
+    }
   }
 }
 
@@ -253,6 +265,7 @@ struct WorkoutLedgerRow: View {
       Text(row.marker).foregroundStyle(row.place == .current ? GymPalette.accent : row.place == .planned ? GymPalette.inkFaint : GymPalette.inkDim)
         .frame(minWidth: 24, alignment: .leading)
       Text(row.reading).foregroundStyle(row.place == .planned ? GymPalette.inkFaint : GymPalette.ink)
+        .fixedSize(horizontal: false, vertical: true)
         .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion))
       Spacer(minLength: RoomSpace.related)
       Image(systemName: mark.symbol).font(row.set == nil ? .system(size: RoomSpace.related) : .body)
@@ -285,10 +298,13 @@ struct WorkoutLedgerRow: View {
 
 struct WorkoutFacts: View {
   let workout: WorkoutState
+  @Environment(\.dynamicTypeSize) var typeSize
   var body: some View {
     TimelineView(.periodic(from: .now, by: 1)) { _ in
       if let clocks = workout.clocks {
-        HStack(spacing: RoomSpace.panel) {
+        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: RoomSpace.small))
+          : AnyLayout(HStackLayout(spacing: RoomSpace.panel))
+        layout {
           Label(WorkoutClocks.reading(clocks.workoutMs), systemImage: "clock")
             .accessibilityLabel("Workout time").accessibilityValue(WorkoutClocks.reading(clocks.workoutMs))
           if let since = clocks.sinceSetMs {
@@ -307,21 +323,20 @@ struct WorkoutRack: View {
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   var body: some View {
     VStack(spacing: RoomSpace.related) {
-      WeightInstrument(weightKg: $workout.weightKg, identifier: "workout-weight") { edit(.weight) }
-      HStack(spacing: 0) {
+      WeightInstrument(weightKg: $workout.weightKg, identifier: "workout-weight", equipment: workout.selected.flatMap { workout.gym.catalogue.find($0)?.equipment } ?? "", loadCount: workout.selected.flatMap { workout.gym.catalogue.find($0)?.loadCount } ?? 1) { edit(.weight) }
+      HStack(spacing: RoomSpace.related) {
         Button { workout.reps = max(1, workout.reps - 1) } label: {
-          Image(systemName: "minus").frame(width: 56, height: 56)
-        }.accessibilityLabel("Fewer reps").disabled(workout.reps <= 1)
+          Image(systemName: "minus").frame(width: 56, height: 56).contentShape(Rectangle())
+        }.accessibilityLabel("Fewer reps").accessibilityIdentifier("workout-reps-minus").disabled(workout.reps <= 1)
         Button { edit(.reps) } label: {
           Text(GymCount.of(workout.reps, "rep")).font(.title3.monospacedDigit())
             .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: Double(workout.reps)))
             .roomMotion(workout.reps).frame(maxWidth: .infinity, minHeight: 56)
         }.accessibilityIdentifier("workout-reps")
         Button { workout.reps = min(99, workout.reps + 1) } label: {
-          Image(systemName: "plus").frame(width: 56, height: 56)
-        }.accessibilityLabel("More reps").disabled(workout.reps >= 99)
-      }.buttonStyle(.plain).font(.title3.weight(.medium)).foregroundStyle(GymPalette.ink)
-        .background(GymPalette.control, in: RoundedRectangle(cornerRadius: RoomSpace.inset))
+          Image(systemName: "plus").frame(width: 56, height: 56).contentShape(Rectangle())
+        }.accessibilityLabel("More reps").accessibilityIdentifier("workout-reps-plus").disabled(workout.reps >= 99)
+      }.buttonStyle(GymInstrumentButtonStyle()).font(.title3.weight(.medium))
       Button { workout.logSet() } label: {
         Text("Log set").font(.headline).frame(maxWidth: .infinity, minHeight: 32)
       }.modifier(RoomPrimaryStyle(room: .gym)).disabled(!workout.canLog)

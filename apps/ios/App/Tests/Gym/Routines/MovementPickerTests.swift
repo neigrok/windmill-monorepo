@@ -198,15 +198,19 @@ import SyncModelServer
     #expect(draft.name == "Cable curl kept")
   }
 
-  @Test func creationOffersOnlyTheFourAndroidEquipmentChoicesAndAcceptsOpenTargets() {
-    #expect(MovementCreationDraft.equipmentChoices == ["barbell", "dumbbell", "machine", "bodyweight"])
+  @Test func creationPreservesAllEquipmentChoicesAndAcceptsOpenTargets() {
+    #expect(MovementCreationDraft.equipmentChoices == ["barbell", "dumbbell", "bodyweight", "machine", "cable", "kettlebell"])
     var draft = MovementCreationDraft(id: ID("movement1"), name: " \n")
     #expect(draft.problem == "Name it to save it.")
     draft.name = "Custom"
     #expect(draft.problem == nil)
     draft.sets = [SetTarget()]
     #expect(draft.problem == nil)
-    draft.equipment = "cable"
+    for equipment in MovementCreationDraft.equipmentChoices {
+      draft.equipment = equipment
+      #expect(draft.problem == nil)
+    }
+    draft.equipment = "unknown"
     #expect(draft.problem == "check the movement name and equipment")
   }
 

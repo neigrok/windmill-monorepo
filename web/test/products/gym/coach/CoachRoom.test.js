@@ -641,3 +641,59 @@ test('a stored conversation exposes its withheld delete action through More', as
   assert.equal(removed, 1);
   assert.equal(findByClass(room.tree, 'gym-thread-delete-verb').length, 0);
 });
+
+test('routine drafts remain reviewable across interruption and Save retries retain the same operation', async (t) => {
+  browserWith();
+  const { spellWeightsIn } = await import('../../../../src/products/gym/units.js');
+  spellWeightsIn('lb');
+  t.after(() => spellWeightsIn('kg'));
+  const draft = { operationId: 'operation-a', routineId: 'routine-a', name: 'Push', position: 1,
+    entries: [
+      { exerciseId: 'dumbbell-bench-press', sets: [{ reps: 8, weightKg: 16 }] },
+      { exerciseId: 'bench-press', sets: [{ reps: 8, weightKg: 32 }] },
+      { exerciseId: 'pull-up', sets: [{ reps: 8, weightKg: 0 }] },
+    ], state: 'pending' };
+  const generation = { id: 'generation-a', requestId: 'request-a', question: 'Plan a workout', at: 10,
+    status: 'failed', answer: 'Review this plan.', revision: 2, routineDrafts: [draft] };
+  const sent = [];
+  const api = {
+    confirmCoachRoutine: async (...ids) => {
+      sent.push(ids);
+      if (sent.length === 1) throw new Error('private server text');
+      return { thread: 'thread-a', generation: { ...generation, revision: 3,
+        routineDrafts: [{ ...draft, state: 'saved' }], results: [{ kind: 'routine-created', operationId: draft.operationId,
+          routineId: draft.routineId, routineName: draft.name }] } };
+    },
+  };
+  const { generationTurns } = await import('../../../../src/products/gym/coach/coach.js');
+  const room = renderHook(t, () => useCoachConversation({ accountId: 'alice',
+    initialThread: { id: 'thread-a', turns: generationTurns(generation), generation }, api }));
+  const { CoachMessage } = await loadScreen('products/gym/coach/CoachRoom.jsx');
+  const message = renderHook(t, () => CoachMessage({ turn: room.tree.turns.at(-1),
+    log: { ...roomLog(), catalog: [
+      { id: 'dumbbell-bench-press', name: 'Flat press', equipment: 'dumbbell', loadCount: 2 },
+      { id: 'bench-press', name: 'Bench press', equipment: 'barbell' },
+      { id: 'pull-up', name: 'Pull-up', equipment: 'bodyweight' },
+    ] },
+    onConfirm: room.tree.confirmRoutine }));
+  assert.equal(sent.length, 0);
+  assert.match(textOf(message.tree), /Review routine.*Push.*Flat press.*1 × 8 · 16 kg each · Two dumbbells/);
+  const review = findByClass(message.tree, 'gym-coach-routine-draft')[0];
+  assert.deepEqual(elementsOf(review).filter((element) => element.type === 'li').map((element) => textOf(element.props.children)), [
+    'Flat press1 × 8 · 16 kg each · Two dumbbells',
+    'Bench press1 × 8 · 32 kg total · Barbell',
+    'Pull-up1 × 8 · Bodyweight',
+  ]);
+  const save = elementsOf(message.tree).find((element) => element.props.onClick && textOf(element.props.children) === 'Save routine');
+  await save.props.onClick();
+  assert.equal(room.tree.confirmNote, 'Routine wasn’t confirmed. Try Save routine again.');
+  assert.equal(room.tree.turns.at(-1).routineDrafts[0].state, 'pending');
+  await room.tree.confirmRoutine(room.tree.turns.at(-1), draft);
+  assert.deepEqual(sent, [['thread-a', 'request-a', 'operation-a'], ['thread-a', 'request-a', 'operation-a']]);
+  assert.equal(readCoachDraft('alice', 'thread-a').turns.at(-1).routineDrafts[0].state, 'saved');
+  await save.props.onClick();
+  assert.equal(sent.length, 2, 'a stale Save callback cannot send a saved operation again');
+  const restored = readCoachDraft('alice', 'thread-a');
+  assert.equal(restored.turns.at(-1).results[0].kind, 'routine-created');
+  assert.equal(readCoachDraft('bob', 'thread-a'), null);
+});

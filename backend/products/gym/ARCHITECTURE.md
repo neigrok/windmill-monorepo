@@ -18,8 +18,8 @@ arithmetic (sticky carry-forward, tap-to-type, comma-as-decimal parsing).
 
 - **Changes to an existing routine use proposals.** Every mutation an agent can make declares
   `record` or `intent` (`domain/Proposal.h`). Supplied workout facts are recorded immediately. New
-  exercises and routines are also created immediately; a new routine is a training decision and
-  requires the user's relevant goals and constraints. Changing an existing routine mints a
+  exercises and external MCP routines are also created immediately. Built-in Coach prepares
+  routine drafts; the user reviews and explicitly saves each before any routine exists. Changing an existing routine mints a
   proposal that does nothing until the lifter taps Apply. Enforcement is the server's door, the
   only place gym can tell an agent from a hand: `GymWriteDoor` has no method that edits an existing
   routine or settles a proposal, and there is no apply tool at any grant level. The lifter's edits
@@ -424,7 +424,7 @@ the import route's 400 and a tool's `invalid-arguments` failure are the construc
 `InvalidTraining` caught at the boundary. The rules a write must meet in storage are the engine
 binding's, `sync/GymRules` (§5).
 
-`Exercise` (id, name, pattern, equipment, stepKg, custom, aliases) · `Session` (id, user,
+`Exercise` (id, name, pattern, equipment, stepKg, custom, aliases, loadCount) · `Session` (id, user,
 startedAtMs, finishedAtMs?, routine?, plan?, closedBy?, displayName? — plan absent = ad-hoc) · `Set`
 (id, session, exercise, setNumber, weightKg, reps, kind, rpe?, note, completedAtMs) · `SetBatch` (one
 session's sets, 1–200 or 0–200 for an import, validated whole) · `PlanSnapshot` of `PlanEntry` (exercise, sets,
@@ -630,9 +630,9 @@ grouping in first-performed order, assembled client-side from numbered sets.
 - The row's derived facts ride the same statement, so the list never loads a session's sets. `topSet`
   is a lateral over the session's **working** sets — heaviest, ties to more reps, never volume, absent
   for a session holding none.
-- **`tonnageKg` is `sum(greatest(weight_kg, 0) * reps)` over the working rows.** The clamp is what
-  makes it printable, since band-assisted work stores a negative kg; an assisted or bodyweight set
-  contributes zero. **A session or week whose tonnage is zero shows nothing where the tonnage would
+- **`tonnageKg` sums nonnegative entered kg × reps × dumbbell count over working rows.**
+  Dumbbell values are per dumbbell; count is one or two. Other equipment has multiplier one.
+  Barbell values include the bar. Bodyweight values are added load only; assistance contributes zero. **A session or week whose tonnage is zero shows nothing where the tonnage would
   go, never `0.0 t`.** Weeks are the client's own fold over the page it holds — there is no week
   endpoint — so the oldest loaded week omits its tonnage until more is loaded.
 - **`topE1rm` is `topE1rmOf` over `workingMarks`**, not Epley over `topSet`; absent where Epley is
@@ -954,7 +954,7 @@ the conversation.
 
 ## 9. MCP tools
 
-`adapters/mcp/GymToolCatalog` declares twenty-three tools; `adapters/mcp/GymTools` dispatches them.
+`adapters/mcp/GymToolCatalog` declares twenty-four tools; `adapters/mcp/GymTools` dispatches them.
 The table uses product-local names. External MCP publishes only `gym_<local>` names and accepts
 unambiguous raw compatibility aliases; in-process Coach uses the local catalog. **The level is declared beside the description**, in the same `ToolDeclaration` the
 gate reads, so a tool cannot be described as one thing and gated as another.
@@ -964,16 +964,17 @@ gate reads, so a tool cannot be described as one thing and gated as another.
 | `list_exercises` | `start_session` | `discard_session` |
 | `list_sessions` — the log, paged | `log_set` — one set into an open workout | `propose_routine_removal` — **deletes nothing** |
 | `get_session` — one workout + its sets (`review: true` adds the finish readout) | `finish_session` | `revoke_share` |
-| `last_time` — the prefill | `create_routine` — a NEW day; **lands immediately** | |
+| `last_time` — the prefill | `create_routine` — external MCP creates immediately; Coach prepares a draft for Save | |
 | `list_routines` — all, or one by `routineId`; carries `pendingProposal` | `propose_routine_change` — **changes nothing** | |
 | `get_stats` — all movements, or one by `exerciseId` | `create_exercise` | |
 | `list_notes` — the lifter's notes for the agent, precedence order, no receipt | `share_session` — `{url, token, expiresAt}` | |
 | `list_bodyweight` — weigh-ins, day ascending, `from`/`to`, no receipt | `save_note` — append a useful user-provided insight | |
 | `get_sessions` — 1–50 exact unique ids, requested order, explicit missing ids, optional review | `log_sets` — 1–200 ordered sets, one transaction | |
 | `get_last_times` — 1–50 exact unique exercise ids, explicit missing ids and no non-warmup history | `import_session` — one completed historical workout with 0–200 sets | |
+| | `update_exercise` — rename or change equipment while retaining the movement ID | |
 
 The names carry the record/intent split: a day of the program that does not exist yet is `fresh` and
-`create_routine` writes it; a day that already stands is `existing` and the two `propose_` tools mint a
+external MCP's `create_routine` writes it; Coach holds it for explicit Save. A day that already stands is `existing` and the two `propose_` tools mint a
 diff and write nothing. **The receipt is never shaped like a write** — it carries the proposal, its
 `state`, the typed diff and a `reviewUrl`, and no routine at all, so an agent cannot tell its human the
 program changed. **Retired names answer with their replacements** (`GymTools::retiredTools()`,
@@ -1143,7 +1144,7 @@ streaming, pictures, Stop and durable note saves. The design canon is
 
 `GymTools` does not gate — over MCP the grant is settled above it by `CompositeToolHost` — so a chat
 wired straight to it would be a door with no lock. **`AskTools` is that lock.** Ordinary conversations
-offer every `Access::read` declaration and `mintsProposal(name)`, plus `create_routine` and `save_note`
+offer every `Access::read` declaration and `mintsProposal(name)`, plus `create_routine`, `update_exercise` and `save_note`
 when durable generation storage is present. Routine setup offers `list_sessions`, `get_sessions`,
 `list_notes`, `save_note`, `list_exercises`, `list_routines`, `create_routine` and `ask_setup_details`;
 dispatch refuses tools outside that catalog. The declaration's product and access still gate every call. Coach can read the log,
@@ -1169,11 +1170,11 @@ model asked. The check is written twice, once per door.
 
 | Bound | Value | Why |
 |---|---|---|
-| Grant | `gym:read`, proposal mints, durable `create_routine` and `save_note` | new routines and notes save immediately; existing routine changes require Apply |
+| Grant | `gym:read`, proposal mints, durable `create_routine`, `update_exercise` and `save_note` | routine drafts require Save routine; requested exercise edits and notes save immediately; existing routine changes require Apply |
 | Reach | the whole log | Coach is a tab and is reached from a proposal card, not from one workout |
 | Never mid-session | `409 ask-session-open`, checked on the server | three clients each remembering it is three chances to forget |
 | Iterations | 8, and hitting it is a **failure** | an unfinished answer is worse than "Coach didn’t answer" |
-| Actions per generation | up to six routine additions, one existing-routine proposal and one note save | stable identity across model retries and process restarts |
+| Actions per generation | up to six routine additions, one existing-routine proposal, one note save and one immutable edit per exercise | stable identity across model retries and process restarts |
 | Model context | `kMaxContextTurns` (24) and `kMaxContextBytes` (24,000) | latest completed exchanges; full stored history remains available through pagination |
 | Question | `kMaxAskTurnBytes` (8000 UTF-8 bytes) | bounds each submitted text |
 | Entitlement | all signed-in accounts | allowance is resolved through `Entitlements::aiAllowanceFor` |
@@ -1294,3 +1295,21 @@ committed changes; deleted conversation IDs remain tombstoned.
   exposes `before`/`beforeId` without a continuation marker; `get_last_times` queries per exercise.
 - Coach duplicates the unknown-argument check instead of using the platform's `ToolDeclaration`
   validation shared by MCP and roadmap assistance.
+
+### Coach routine review and exercise loading
+
+Built-in Coach's `create_routine` stores a draft in the generation's `routineDrafts`; it never calls
+the program write door. `POST /v1/gym/threads/{thread}/generations/{request}/routines/{operation}/confirm`
+applies only the owner-scoped held document after user review. The thread lease excludes a running
+generation. Creation receipts preserve retry identity across later edits and deletion. External MCP
+retains its explicit create tool. No model-facing tool can confirm a draft.
+
+`exerciseName` holds optional name, equipment and loadCount overrides keyed by an existing movement,
+including custom movements. These nullable LWW registers are additive in schema 7/minimum 4; the
+base equipment register retains its const contract. Names and loading metadata resolve across the
+history by stable exercise ID, with raw set values unchanged. Counts apply only to dumbbells.
+Goblet squat, dumbbell row, suitcase carry and overhead triceps extension have explicit one-dumbbell
+seed metadata. Other dumbbell movements default to two, and the lifter can edit that count.
+`update_exercise` uses the same sync door and preserves IDs; Coach reads the catalog before an edit.
+Its account-scoped `gym_exercise_updates` receipt commits in that engine transaction. Recovery returns
+the original exercise snapshot even after a later user edit, without writing the fields again.

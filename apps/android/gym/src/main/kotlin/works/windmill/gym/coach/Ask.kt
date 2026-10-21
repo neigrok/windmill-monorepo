@@ -2,6 +2,7 @@ package works.windmill.gym.coach
 
 import works.windmill.gym.domain.Notes
 import works.windmill.gym.domain.Readout
+import works.windmill.gym.domain.RoutineEntry
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -34,10 +35,24 @@ data class AskAnswer(
     val receipt: AnswerReceipt? = null,
     val generation: AskGeneration? = null,
     val results: List<CoachResult> = emptyList(),
+    val routineDrafts: List<CoachRoutineDraft> = emptyList(),
 )
 
 @Serializable
 data class CoachResult(val kind: String, val operationId: String, val routineId: String, val routineName: String)
+
+@Serializable
+data class CoachRoutineDraft(
+    val operationId: String,
+    val routineId: String,
+    val name: String,
+    val position: Int,
+    val entries: List<RoutineEntry>,
+    val state: String,
+)
+
+@Serializable
+data class CoachRoutineConfirmation(val thread: String, val generation: AskGeneration, val results: List<CoachResult> = emptyList())
 
 @Serializable
 data class CoachAttachment(val id: String, val mediaType: String, val width: Int, val height: Int, val bytes: Long)
@@ -59,9 +74,10 @@ data class AskGeneration(
     val revision: Long = 0,
     val stopRequested: Boolean = false,
     val attachments: List<CoachAttachment> = emptyList(),
+    val routineDrafts: List<CoachRoutineDraft> = emptyList(),
 ) {
     val terminal: Boolean get() = status in setOf("completed", "failed", "stopped")
-    fun response(): AskAnswer = AskAnswer(answer, receipt?.read ?: ReadTally(), steps, receipt?.proposals.orEmpty(), receipt, this, results)
+    fun response(): AskAnswer = AskAnswer(answer, receipt?.read ?: ReadTally(), steps, receipt?.proposals.orEmpty(), receipt, this, results, routineDrafts)
 
     fun exchange(): AskExchange = AskExchange(
         question = question,
@@ -154,7 +170,7 @@ object Ask {
 
     // The rest is said where it counts: the subtitle says what Coach reads, `promise` on every
     // proposal card says what it cannot touch.
-    const val whatItIs = "Ask about your training. Coach can create routines and propose changes — you decide on the diff."
+    const val whatItIs = "Ask about your training. Coach can draft routines and propose changes — you decide on the diff."
 
     const val allowance = "Ten questions a day, three back to back."
     const val capReached = "The next question frees up in a couple of hours."
@@ -205,6 +221,7 @@ object Ask {
         "list_notes" to "read your notes",
         "save_note" to "saved a note",
         "list_bodyweight" to "read your bodyweight",
+        "create_routine" to "drafted a routine for your review",
         "propose_routine_change" to "wrote a proposal for one of your routines",
         "propose_routine_removal" to "wrote a proposal to remove a routine",
     )

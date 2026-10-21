@@ -192,4 +192,42 @@ class CoachTransportTests {
             }
         } finally { server.shutdown() }
     }
+    @Test fun routineConfirmationUsesTheOriginalIdentityAndEmptyBody() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            val draft = works.windmill.gym.coach.CoachRoutineDraft("operation-a", "routine-a", "Push", 1,
+                listOf(RoutineEntry(1, "dumbbell-bench-press", listOf(SetTarget(8, 16.0)))), "saved")
+            val generation = AskGeneration("generation-a", "request-a", "Question", "completed", revision = 4, routineDrafts = listOf(draft))
+            val reply = works.windmill.gym.coach.CoachRoutineConfirmation("thread-a", generation)
+            val pending = generation.copy(routineDrafts = listOf(draft.copy(state = "pending")))
+            server.enqueue(MockResponse().setHeader("Content-Type", "application/json")
+                .setBody("""{"answer":"Review this routine.","read":{},"generation":${WindmillJson.encodeToString(AskGeneration.serializer(), pending)}}"""))
+            val pendingAnswer = GymHttp(WindmillApi(server.url("/"), { "private-bearer" })).ask(AskQuestion("thread-a", "Question", "request-a"))
+            assertEquals(pending.routineDrafts, pendingAnswer.routineDrafts)
+            assertEquals("/v1/gym/ask", server.takeRequest().path)
+            server.enqueue(MockResponse().setHeader("Content-Type", "application/json")
+                .setBody(WindmillJson.encodeToString(works.windmill.gym.coach.CoachRoutineConfirmation.serializer(), reply)))
+            val events = mutableListOf<Pair<String, Map<String, String>>>()
+            val failures = mutableListOf<Pair<String, Throwable>>()
+            val telemetry = object : works.windmill.platform.telemetry.Telemetry {
+                override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+                override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation to error }
+            }
+            val gym = GymHttp(WindmillApi(server.url("/"), { "private-bearer" }, telemetry = telemetry))
+            assertEquals(reply, gym.confirmRoutine("thread-a", "request-a", "operation-a"))
+            val request = server.takeRequest()
+            assertEquals("POST", request.method)
+            assertEquals("/v1/gym/threads/thread-a/generations/request-a/routines/operation-a/confirm", request.path)
+            assertEquals("{}", request.body.readUtf8())
+            server.enqueue(MockResponse().setHeader("Content-Type", "application/json")
+                .setBody(WindmillJson.encodeToString(works.windmill.gym.coach.CoachRoutineConfirmation.serializer(), reply.copy(thread = "foreign-thread"))))
+            assertTrue(runCatching { gym.confirmRoutine("thread-a", "request-a", "operation-a") }.exceptionOrNull() is WindmillApiException.Malformed)
+            assertEquals(listOf("gym_coach_routine_confirm" to WindmillApiException.Malformed), failures)
+            assertEquals(listOf("api_request_failed" to mapOf("method" to "POST", "route" to "/v1/gym", "failure_kind" to "malformed",
+                "operation" to "gym_coach_routine_confirm", "network_phase" to "response_body")), events.map { it.first to (it.second - "duration_ms") })
+            assertTrue(events.single().second.getValue("duration_ms").toLong() >= 0)
+        } finally { server.shutdown() }
+    }
+
 }

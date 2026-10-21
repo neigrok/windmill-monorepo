@@ -51,7 +51,7 @@ test('read receipts preserve the server counts, including a real zero, and never
 test('tool descriptions are ordered, deduplicated and bounded to known facts', () => {
   assert.equal(stepsLine([
     { tool: 'list_notes' }, { tool: 'list_notes' }, { tool: 'list_exercises', failed: true }, { tool: 'create_routine' },
-  ]), 'It read your notes, then read your movement list (nothing came back), then created a routine.');
+  ]), 'It read your notes, then read your movement list (nothing came back), then drafted a routine for your review.');
   assert.equal(stepsLine([{ tool: 'save_note' }, { tool: 'save_note' }]), 'It saved a note.');
   assert.equal(stepsLine([{ tool: 'save_note', failed: true }]), 'It could not confirm a note save.');
   assert.equal(stepsLine([{ tool: 'new_tool' }]), null);
@@ -103,4 +103,12 @@ test('overlapping pages merge by server position with ordered complete messages'
   const older = turns.slice(200, 260);
   assert.deepEqual(mergeTurns(latest, older), turns.slice(200));
   assert.deepEqual(mergeTurns(mergeTurns(latest, older), turns.slice(0, 210)), turns);
+});
+
+test('stale history cannot revert a confirmed routine draft or lose its receipt', () => {
+  const draft = { operationId: 'op1', routineId: 'rt1', name: 'Push', position: 1, entries: [], state: 'saved' };
+  const saved = { from: 'ask', requestId: 'request1', routineDrafts: [draft], revision: 5,
+    results: [{ kind: 'routine-created', operationId: 'op1', routineId: 'rt1', routineName: 'Push' }] };
+  assert.deepEqual(mergeTurns([saved], [{ ...saved, revision: 4, routineDrafts: [{ ...draft, state: 'pending' }], results: [] }]), [saved]);
+  assert.deepEqual(mergeTurns([saved], [{ from: 'ask', requestId: 'request1', routineDrafts: [{ ...draft, state: 'pending' }], results: [] }]), [saved]);
 });

@@ -180,6 +180,6 @@ public enum Journal {
         "type": "journalState",
       ],
     ],
-    "version": 6,
+    "version": 7,
   ]
 }

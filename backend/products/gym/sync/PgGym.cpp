@@ -179,7 +179,7 @@ Row readRow(SyncTxn& txn, const ScopeKey& scope, const TypeDef& type, const R& r
 }
 
 std::string fallback(const std::string& type, const std::string& name) {
-  if (type == "exerciseName" && name == "name") return "null";
+  if (type == "exerciseName" && (name == "name" || name == "equipment" || name == "loadCount")) return "null";
   if (name == "name" || name == "body" || name == "summary" || name == "connection" || name == "agent" || name == "proposedName" || name == "note") return "''";
   if (name == "revision" || name == "baseRevision") return "1";
   if (name == "baseName") return "''";

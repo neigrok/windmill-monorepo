@@ -104,7 +104,7 @@ test('unreadable frozen plans allow unrelated set fixes and held workout deletio
 test('authoritative gym fields and independent routine creation snapshots survive persisted engine restart', async (t) => {
   const opened = await open(t);
   const { api, engine, reopen } = opened;
-  assert.equal(registry.version, 6);
+  assert.equal(registry.version, 7);
   assert.equal(registry.minVersion, 4);
   const receipt = { id: routine.id, name: 'Original lower', position: 0, revision: 1, entries: [{ position: 1, exerciseId: 'bench-press' }] };
   const rows = [
@@ -434,7 +434,7 @@ test('a movement, a routine and a note are each created with their name trimmed,
 test('custom exercise creation preserves a supplied step and validates it before committing', async (t) => {
   const { api, engine, events, failures } = await open(t);
   assert.deepEqual(await api.createExercise({ id: 'ex_custom01', name: 'Carry', pattern: 'carry', equipment: 'dumbbell', stepKg: 2.125 }),
-    { id: 'ex_custom01', name: 'Carry', pattern: 'carry', equipment: 'dumbbell', stepKg: 2.13, aliases: [], custom: true });
+    { id: 'ex_custom01', name: 'Carry', pattern: 'carry', equipment: 'dumbbell', stepKg: 2.13, loadCount: 2, aliases: [], custom: true });
   const before = structuredClone(engine.device.activeReplica.outbox);
   await assert.rejects(api.createExercise({ id: 'ex_custom02', name: 'Carry', pattern: 'carry', equipment: 'dumbbell', stepKg: 0 }), { code: 'invalid' });
   assert.deepEqual(engine.device.activeReplica.outbox, before);

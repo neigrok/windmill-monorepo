@@ -39,6 +39,7 @@ class CoachStore internal constructor(
 
     internal fun resetThreads() {
         conversations = emptyList()
+        confirmations = emptyMap()
         nextThreadCursor = null
     }
 
@@ -114,6 +115,42 @@ class CoachStore internal constructor(
         if (current.status in listOf("completed", "stopped")) withContext(Dispatchers.IO) { localCoach?.clear(seat, threadId, requestId) }
         check(seat == owner) { accountChanged }
         return current
+    }
+
+    private var confirmations by mutableStateOf<Map<Pair<String, String>, CoachRoutineConfirmation>>(emptyMap())
+    private val routineConfirmation = Mutex()
+
+    fun confirmedGeneration(requestId: String): AskGeneration? = owner?.let { seat ->
+        confirmations[seat to requestId]?.generation ?: localCoach?.confirmed(seat, requestId)
+    }
+
+    suspend fun confirmRoutine(threadId: String, requestId: String, draft: CoachRoutineDraft): GymResult<AskGeneration> {
+        val seat = owner ?: return GymResult.Failed(WriteFailure.Refused(signInFirst))
+        val coach = rest() ?: return GymResult.Failed(WriteFailure.Refused(signInFirst))
+        return routineConfirmation.withLock {
+            if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
+            confirmedGeneration(requestId)?.takeIf { generation -> generation.routineDrafts.any { it.operationId == draft.operationId && it.state == "saved" } }
+                ?.let { return@withLock GymResult.Ok(it) }
+            telemetry.event("gym_coach_routine_confirm", mapOf("outcome" to "started"))
+            try {
+                val reply = coach.confirmRoutine(threadId, requestId, draft.operationId)
+                if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
+                if (reply.thread != threadId || reply.generation.requestId != requestId ||
+                    reply.generation.routineDrafts.none { it.operationId == draft.operationId && it.routineId == draft.routineId && it.state == "saved" }) error("routine-confirmation-mismatch")
+                withContext(Dispatchers.IO) { localCoach?.confirm(seat, reply) }
+                if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
+                confirmations = confirmations + ((seat to requestId) to reply)
+                onProgramChanged()
+                telemetry.event("gym_coach_routine_confirm", mapOf("outcome" to "saved"))
+                GymResult.Ok(reply.generation)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                reportFailure("gym.coachRoutineConfirm", failure)
+                telemetry.event("gym_coach_routine_confirm", mapOf("outcome" to if (failure is WindmillApiException.Refused) "refused" else "failed"))
+                GymResult.Failed(WriteFailure(failure))
+            }
+        }
     }
 
     fun pendingExchange(question: AskQuestion): AskExchange {
@@ -289,6 +326,7 @@ class CoachStore internal constructor(
                 if (seat != owner) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
                 conversations = conversations.filterNot { it.id == id }
                 if (seat != null) localCoach?.clear(seat, id)
+                confirmations = confirmations.filter { (key, value) -> key.first != seat || value.thread != id }
                 GymResult.Ok(Unit)
             } catch (interrupted: CancellationException) {
                 throw interrupted

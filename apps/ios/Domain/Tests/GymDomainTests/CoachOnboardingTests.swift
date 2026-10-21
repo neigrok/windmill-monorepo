@@ -36,8 +36,10 @@ struct CoachOnboardingTests {
     #expect(try phone.runner.read(Gym.scope) { try $0.device(ImportCoachRoutines.receiptKey) } == nil)
     let account = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_800_000_000_000))
     let accountReplica = try account.runner.read(Gym.scope) { $0.replica }
-    #expect(try account.runner.run(ImportCoachRoutines(replica: accountReplica, requestId: "request", resultId: "result", routines: [valid])).refusal != nil)
-    #expect(try account.drawn(Routine.self).isEmpty)
+    let action = ImportCoachRoutines(replica: accountReplica, requestId: "request", resultId: "result", routines: [valid])
+    let created = try #require(committed(account.runner.run(action)))
+    #expect(try account.drawn(Routine.self).map(\.entries) == [valid.entries])
+    #expect(try unchanged(account.runner.run(action)) == created)
   }
 
   @Test func resultBoundsRejectOverlargeSetsAndPreserveOpenAndAssistedTargets() throws {

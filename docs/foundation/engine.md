@@ -345,7 +345,7 @@ composition's `version` rises with it (§9.1). `minVersion` MUST rise above ever
 version when the envelope shape changes, a declared product or type is dropped, or a rule enforced
 by clients changes. Additive products, types and fields do not raise `minVersion`: clients retain
 and hash unknown fields and types harmlessly (§7.6). The v6 correction arguments are additive, so
-v6 accepts v4 and v5 requests unchanged; clients use them only when the server advertises v6 or newer.
+v6 accepts v4 and v5 requests unchanged; clients use them only when the server advertises v6 or newer. The v7 gym equipment and load-count overrides add nullable LWW fields; v7 retains minimum v4 and keeps base exercise equipment const.
 
 - **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern`,
   `key` (a keyed type's natural key: an id of another type, or a tuple of such ids, whose types, and

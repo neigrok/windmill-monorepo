@@ -36,7 +36,7 @@ struct WorkoutActivityWidget: Widget {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
           Label(context.state.title, systemImage: "dumbbell.fill").font(.headline).lineLimit(1)
           Spacer(minLength: 8)
-          WorkoutActivityClock(name: "Workout time", from: context.state.startedAt, until: context.state.staleAt)
+          WorkoutActivityClock(name: context.state.lastSetAt == nil ? "Workout time" : "Since last set", from: context.state.lastSetAt ?? context.state.startedAt, until: context.state.staleAt)
             .font(.headline).frame(maxWidth: 96, alignment: .trailing)
         }
         WorkoutActivityDetails(state: context.state, isStale: context.isStale)
@@ -48,7 +48,7 @@ struct WorkoutActivityWidget: Widget {
           Label(context.state.title, systemImage: "dumbbell.fill").font(.headline).lineLimit(1).padding(.leading, 4)
         }
         DynamicIslandExpandedRegion(.trailing) {
-          WorkoutActivityClock(name: "Workout time", from: context.state.startedAt, until: context.state.staleAt)
+          WorkoutActivityClock(name: context.state.lastSetAt == nil ? "Workout time" : "Since last set", from: context.state.lastSetAt ?? context.state.startedAt, until: context.state.staleAt)
             .font(.headline).frame(maxWidth: 96, alignment: .trailing).padding(.trailing, 12)
         }
         DynamicIslandExpandedRegion(.bottom) {
@@ -61,7 +61,7 @@ struct WorkoutActivityWidget: Widget {
           WorkoutActivityClock(name: "Workout time", from: context.state.startedAt, until: context.state.staleAt).frame(maxWidth: 52)
         }.font(.caption2)
       } compactTrailing: {
-        WorkoutActivityClock(name: "Since last set", from: context.state.lastSetAt ?? context.state.startedAt, until: context.state.staleAt)
+        WorkoutActivityClock(name: context.state.lastSetAt == nil ? "Workout time" : "Since last set", from: context.state.lastSetAt ?? context.state.startedAt, until: context.state.staleAt)
           .font(.caption2).frame(maxWidth: 52)
       } minimal: {
         Image(systemName: "dumbbell.fill").foregroundStyle(GymPalette.accent)

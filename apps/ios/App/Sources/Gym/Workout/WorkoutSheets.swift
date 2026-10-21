@@ -9,24 +9,41 @@ struct WorkoutAssembly: View {
   @Bindable var workout: WorkoutState
   let add: () -> Void
   @Environment(\.dismiss) var dismiss
+  @State private var exerciseToEdit: Exercise?
   var body: some View {
     NavigationStack {
       List {
         Group {
           Section {
             ForEach(workout.walk.order, id: \.self) { id in
-              Button {
-                workout.select(id)
-                if workout.selected == id { dismiss() }
-              } label: {
-                let ledger = workout.ledger(id)
-                GymRow(title: workout.gym.catalogue.find(id)?.name ?? "Movement", meta: ledger.tally,
-                       trailing: ledger.complete ? .check : nil).tint(GymPalette.done)
+              HStack {
+                Button {
+                  workout.select(id)
+                  if workout.selected == id { dismiss() }
+                } label: {
+                  let ledger = workout.ledger(id)
+                  GymRow(title: workout.gym.catalogue.find(id)?.name ?? "Movement", meta: ledger.tally,
+                         trailing: ledger.complete ? .check : nil).tint(GymPalette.done)
+                }.buttonStyle(.borderless)
+                if workout.canRemove(id) {
+                  Button(role: .destructive) { workout.remove(id) } label: {
+                    Image(systemName: "trash").frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                  }.buttonStyle(.borderless)
+                    .accessibilityLabel("Remove exercise").accessibilityIdentifier("workout-remove-\(id)")
+                }
+              }
+              .contextMenu {
+                if let exercise = workout.gym.catalogue.find(id) {
+                  Button("Edit exercise", systemImage: "pencil") { exerciseToEdit = exercise }
+                }
+                if workout.canRemove(id) {
+                  Button("Remove exercise", systemImage: "trash", role: .destructive) { workout.remove(id) }
+                }
               }
               .accessibilityAddTraits(workout.selected == id ? .isSelected : [])
               .deleteDisabled(!workout.canRemove(id)).moveDisabled(workout.finishing)
               .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                if workout.canRemove(id) { Button("Remove", role: .destructive) { workout.remove(id) } }
+                if workout.canRemove(id) { Button("Remove", systemImage: "trash", role: .destructive) { workout.remove(id) } }
               }
               .accessibilityAction(named: "Move up") {
                 if let index = workout.walk.order.firstIndex(of: id), index > 0 { workout.move(from: IndexSet(integer: index), to: index - 1) }
@@ -46,10 +63,9 @@ struct WorkoutAssembly: View {
             else { Text("Your sets stay saved. Find it at the top of The log.") }
           }
         }.listRowBackground(GymPalette.card)
-      }.modifier(GymPage()).navigationTitle("This workout").navigationBarTitleDisplayMode(.inline)
+      }.environment(\.editMode, .constant(.active)).modifier(GymPage()).navigationTitle("This workout").navigationBarTitleDisplayMode(.inline)
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
-          ToolbarItem(placement: .topBarTrailing) { EditButton() }
         }.roomBar(.gym)
         .reachBand {
           GymTransient(gym: workout.gym, message: workout.message, dismiss: { workout.message = nil }, noticeMessage: workout.gym.workoutNotice,
@@ -57,6 +73,9 @@ struct WorkoutAssembly: View {
             .modifier(BoundedBand())
         }
     }.modifier(GymPage()).presentationDetents([.large])
+      .sheet(isPresented: Binding(get: { exerciseToEdit != nil }, set: { if !$0 { exerciseToEdit = nil } })) {
+        if let exerciseToEdit { RenameMovementSheet(gym: workout.gym, exercise: exerciseToEdit) }
+      }
   }
 }
 

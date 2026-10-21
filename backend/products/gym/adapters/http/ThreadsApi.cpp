@@ -166,6 +166,34 @@ void ThreadsApi::getImage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, 
   cb(response);
 }
 
+void ThreadsApi::confirmRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
+    const std::string& thread, const std::string& requestId, const std::string& operationId) {
+  const auto caller = callerOf(req, *auth_);
+  if (!caller) { cb(error(drogon::k401Unauthorized, "sign in to save this routine")); return; }
+  if (!ask_) { cb(error(drogon::k503ServiceUnavailable, "Coach is unavailable")); return; }
+  if (!wellFormedId(thread) || !wellFormedId(requestId) || !wellFormedId(operationId)) {
+    cb(error(drogon::k400BadRequest, "invalid routine draft identity")); return;
+  }
+  uploads_.getNextLoop()->queueInLoop([this, req, caller = *caller, thread, requestId, operationId, cb = std::move(cb)] {
+    try {
+      const auto generation = ask_->confirmRoutine(caller, ThreadId{thread}, requestId, operationId);
+      if (!generation) { cb(error(drogon::k404NotFound, "no such routine draft")); return; }
+      Json::Value body(Json::objectValue);
+      body["thread"] = thread;
+      body["generation"] = toJson(*generation);
+      body["results"] = toJson(generation->results);
+      cb(jsonResponse(body));
+    } catch (const ThreadBusy&) {
+      cb(error(drogon::k409Conflict, "wait for Coach to finish before saving", "ask-generation-active"));
+    } catch (const GymUnavailable& unavailable) {
+      cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
+    } catch (const std::exception& failure) {
+      writeHttpFailure(req, failure);
+      cb(error(drogon::k503ServiceUnavailable, "routine could not be saved; try again shortly"));
+    }
+  });
+}
+
 void ThreadsApi::stopGeneration(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread, const std::string& requestId) try {
   const auto caller = callerOf(req, *auth_);
   if (!caller) { cb(error(drogon::k401Unauthorized, "sign in to stop Coach")); return; }

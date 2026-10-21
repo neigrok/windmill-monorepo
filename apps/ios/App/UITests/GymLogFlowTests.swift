@@ -24,14 +24,20 @@ import XCTest
     return app
   }
   func snapshot(_ name: String, app: XCUIApplication) {
-    let attachment = XCTAttachment(screenshot: app.screenshot())
+    let screenshot = app.screenshot()
+    let attachment = XCTAttachment(screenshot: screenshot)
     attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+    if let path = ProcessInfo.processInfo.environment["WM_GYM_FEEDBACK_SHOTS"] {
+      let directory = URL(fileURLWithPath: path)
+      try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      try? screenshot.pngRepresentation.write(to: directory.appending(path: name + ".png"))
+    }
   }
   func back(_ app: XCUIApplication) { app.navigationBars.buttons.element(boundBy: 0).tap() }
   func sessionRow(_ app: XCUIApplication) -> XCUIElement {
     app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-log-session-")).firstMatch
   }
-  // Nothing floats over The log; only the tab bar meets the list's foot.
+  // The log keeps its rows above the tab bar.
   func listBottom(_ app: XCUIApplication) -> CGFloat { app.tabBars.firstMatch.frame.minY }
   func visibleSessionRow(_ app: XCUIApplication) -> XCUIElement {
     let first = sessionRow(app)
@@ -82,7 +88,13 @@ import XCTest
     let app = launch("dark", seeded: false)
     XCTAssertTrue(app.staticTexts["No workouts yet"].exists)
     XCTAssertFalse(app.buttons["gym-bodyweight-door"].exists)
-    app.buttons["gym-weigh-in"].tap()
+    let add = app.buttons["gym-weigh-in"]
+    XCTAssertGreaterThanOrEqual(add.frame.height, 44)
+    XCTAssertGreaterThan(add.frame.midX, app.frame.midX)
+    XCTAssertGreaterThan(add.frame.midY, app.frame.midY)
+    XCTAssertFalse(app.navigationBars.buttons["gym-weigh-in"].exists)
+    snapshot("weight-empty-plus-dark", app: app)
+    add.tap()
     XCTAssertTrue(app.textFields["gym-weigh-in-weight"].waitForExistence(timeout: 5))
     let save = app.buttons["gym-weigh-in-save"]
     XCTAssertFalse(save.isEnabled)
@@ -103,12 +115,13 @@ import XCTest
     XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-weigh-in-2026-")).firstMatch.waitForExistence(timeout: 5))
   }
 
-  func testWeighInIsTheLogsBarActionAndItsSheetSavesFromTheBar() {
+  func testWeighInUsesReachablePlusAndItsSheetSavesFromTheBar() {
     let app = launch("light")
     XCTAssertTrue(sessionRow(app).waitForExistence(timeout: 20))
     let weighIn = app.buttons["gym-weigh-in"]
     XCTAssertTrue(weighIn.isHittable)
-    XCTAssertLessThanOrEqual(weighIn.frame.maxY, app.navigationBars.firstMatch.frame.maxY)
+    XCTAssertGreaterThan(weighIn.frame.midY, app.frame.midY)
+    XCTAssertGreaterThan(weighIn.frame.midX, app.frame.midX)
     weighIn.tap()
     let save = app.buttons["gym-weigh-in-save"]
     XCTAssertTrue(save.waitForExistence(timeout: 5))

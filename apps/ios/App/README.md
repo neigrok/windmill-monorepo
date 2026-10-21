@@ -89,35 +89,38 @@ Gym includes routine planning and movement creation, the live set rack and finis
 Tapping a routine opens a native summary sheet with Edit and Start. Movements are reached through a
 routine or its editor. Signed-in Coach has a direct History button; Notes and Connected log live in You’s Settings.
 On a resolved empty anonymous replica, or a signed-in account whose first Gym pull has completed with no personal data, the room
-opens Coach’s routine setup once. Existing drafts/conversations, account adoption, workout and navigation
-state take precedence. Screenshot, program and goal starters prepare the existing composer; Send remains
-explicit. Manual logging or building retires the automatic entry, and empty Routines retains Set up routines.
-Setup choices, purpose, editable drafts, photos, clarification selections and frozen request identities
-live in a local Coach archive keyed by account or anonymous replica. Signed-in clarification choices fill
-the draft without sending; editing that text clears the selected-chip markers. Anonymous goal choices
-retain days and equipment separately while the text changes. Each confirmed routine creation has its
-own receipt and opens the existing routine sheet and Start action. A signed-in receipt whose routine has
-not reached the replica checks the existing routine endpoint; a confirmed removal shows the normal
-unavailable routine state, while an unreachable log keeps a refresh action.
-USD allowance refusals preserve drafts and partial creation receipts, and never automatically retry on
-relaunch. An unchanged deliberate Send reuses the original request identity. Existing routine changes
-continue through Review and Apply.
-Anonymous Coach is limited to routine setup: goal, described program or inline photo. Goal setup asks
-for days and supported equipment locally; a single provider call returns bounded public-catalogue
-routines. The server issues a separate installation credential kept in a device-only Keychain service,
-returns the USD allowance, and applies installation, IP and shared budgets. An unreadable or rejected
-credential never creates a replacement. The phone retains immutable requests and resumes the same
-result after interruption. Stop waiting cancels the phone wait, with no claim to cancel provider cost.
-All routines and their replay receipt commit in one domain action before creation links appear. Open
-and Start work before sign-in. Keep your routines uses existing account adoption; usage binds before
-signed-in Coach dispatch, independently of Add/Discard. A binding outage leaves authentication and
-manual Gym available. Local conversation/photo records and drafts stay on this phone, transfer to the
-account’s local Coach draft on Add or empty-account adoption, and are removed on explicit Discard.
-A rejected installation credential remains stored and cannot open another anonymous allowance. An
-authenticated bind returning `invalid_installation` permits account Coach; generic authentication,
-transport and accounting failures still block its dispatch until recovered.
-A pending anonymous response cannot write into the signed-in replica; its retained draft can continue
-with an explicit account request.
+opens Coach. Existing drafts/conversations, account adoption, workout and navigation state take
+precedence. Coach greets the user locally with a short introduction and compact Add screenshot and
+Build myself actions. The greeting persists through typing, photo selection/cancellation, navigation,
+relaunch and failed sends until the first accepted message. Goals and constraints use plain dialogue.
+Empty Routines has one bottom-trailing plus opening the routine builder.
+
+Draft text, photos, request identities, retained anonymous responses and acceptance state live in an
+account- or replica-scoped local Coach archive. Every new routine is a draft: Review shows its
+movements, equipment and targets, and Save is the only creation path. Signed-in confirmation replays
+the exact server-held document using its generation/request and operation identity. Anonymous results
+commit all routines and the replay receipt in one domain action only after Save; a retained result
+can also be explicitly saved after account adoption. Creation links appear after that save succeeds.
+Existing routine changes continue through Review and Apply.
+
+Allowance refusals preserve drafts and retained results, with no balance indicator. Anonymous users
+get Sign in to continue. Signed-in non-One users can open Windmill One, whose informational sheet
+states that subscriptions are not available yet. One members receive the actual refusal and any
+server-provided reset time. An unchanged deliberate Send preserves its original request identity.
+
+Anonymous Coach accepts bounded conversation text, up to twelve prior text messages within 16 KB,
+and one inline photo. Each call returns an assistant message and zero to three public-catalogue
+routine drafts. The server issues a separate installation credential in device-only Keychain storage
+and applies installation, IP and shared budgets. An unreadable or rejected credential never creates
+a replacement. The phone retains immutable requests and resumes the same result after interruption.
+Stop waiting cancels the phone wait without promising cancellation of provider spending. Open and
+Start work before sign-in after a routine is saved. Keep uses existing account adoption; usage binds
+before signed-in Coach dispatch independently of Add/Discard. A binding outage leaves authentication
+and manual Gym available. Local records transfer to the account archive on Add or empty-account
+adoption and are removed on explicit Discard. An authenticated bind returning invalid_installation
+permits account Coach; other authentication, transport and accounting failures block dispatch until
+recovered. Work from a previous account/replica cannot publish into the active seat.
+
 The finished-workout receipt offers Discard, 👑 Share with Coach and the primary Done action.
 
 `GymRoom` keeps `WorkoutScreen` as its full-screen cover through finish and receipt and, on
@@ -164,7 +167,7 @@ shard through the deterministic installation/Coach transport fixture and real lo
 `TEST_RUNNER_WM_ANONYMOUS_COACH_SERVER` for the same UI flow against an isolated backend and
 `TEST_RUNNER_WM_ANONYMOUS_COACH_SHOTS` for PNG captures. The native `CoachTests` suite uses
 `TEST_RUNNER_WM_ANONYMOUS_COACH_SESSION` (a private JSON file with account/token) plus that server
-to run goal, photo, workout and binding/adoption through real HTTP. Without those variables, the
+to run dialogue, reviewed routine drafts, photo, workout and binding/adoption through real HTTP. Without those variables, the
 photo/adoption case uses the injected transport and local store. Neither standard suite skips tests.
 
 Debug simulator Coach launches add `-coach-fixture`: a signed-in account with a routine, a workout and a
@@ -237,7 +240,7 @@ Offline boundary observations:
 | Local journal, routines, sets, preferences and movement rename | Read and commit against the local replica. First-pull status describes incomplete history and backup confidence. Workout logging and restoration remain local during pending sign-in, including before Not now. Adoption recounts any new work before completion. |
 | Auth and Gym REST | No wait for connectivity; 8-second idle and 15-second total deadlines. Back, Close and Done cancel active auth work. Late responses cannot navigate or change the active account after cancellation. |
 | Workout Finish | Online, a set the log accepted but has not yet confirmed gets up to 3 seconds for its confirming pull, with Finish, Log set and Hide locked; offline there is no wait. Finish then attempts the durable local action, releases controls and confirms in the background. Cancelling the wait still ends in that decision. Unconfirmed sets on an already-synced workout remain editable, and the refusal above the rack names the connection requirement; at accessibility text sizes it wraps in a bounded band while Log set and Hide remain reachable. |
-| Coach streaming | Parsing runs off the main actor; 8-second idle and 120-second total deadlines. Stop releases the composer immediately. Its late reply preserves newer draft text and photos on the phone. |
+| Coach streaming | Parsing runs off the main actor. Server heartbeats count as transport activity; the default request idle timeout is 60 seconds and the total stream limit is one hour. A real interrupted stream resumes the same request up to three times, retains partial output and clears Reconnecting on activity. Terminal interruption remains visible with Retry. Stop releases the composer immediately and preserves newer draft text and photos. |
 | Revocation and telemetry | Run independently of launch, room refresh and local sign-out. Offline events stay queued; repeated connection failures coalesce into one content-free state. |
 
 The network-dependent native features are Coach, journal echoes, account authentication, sharing and

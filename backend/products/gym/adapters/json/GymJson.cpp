@@ -311,12 +311,21 @@ Json::Value toJson(const LogRow& row) {
   return body;
 }
 
+Exercise exerciseFromJson(const Json::Value& body) {
+  std::vector<std::string> aliases;
+  for (const auto& alias : body["aliases"]) aliases.push_back(alias.asString());
+  return Exercise{Stored{}, ExerciseId{body["id"].asString()}, body["name"].asString(),
+    patternFromStored(body["pattern"].asString()), equipmentFromStored(body["equipment"].asString()),
+    body["stepKg"].asDouble(), body["custom"].asBool(), std::move(aliases), body.get("loadCount", 0).asInt()};
+}
+
 Json::Value toJson(const Exercise& exercise) {
   Json::Value body(Json::objectValue);
   body["id"] = exercise.id.str();
   body["name"] = exercise.name;
   body["pattern"] = toString(exercise.pattern);
   body["equipment"] = toString(exercise.equipment);
+  if (exercise.equipment == Equipment::dumbbell) body["loadCount"] = exercise.loadCount;
   body["stepKg"] = exercise.stepKg;
   body["custom"] = exercise.custom;
   if (!exercise.aliases.empty()) {
@@ -347,15 +356,9 @@ Json::Value toJson(const std::vector<LastSet>& movements) {
   return array;
 }
 
-Json::Value toJson(const Routine& routine) {
-  Json::Value body(Json::objectValue);
-  body["id"] = routine.id.str();
-  body["name"] = routine.name;
-  body["position"] = routine.position;
-  body["revision"] = routine.revision;
-  if (routine.lastTrainedAtMs) body["lastTrainedAt"] = Json::Value::UInt64(*routine.lastTrainedAtMs);
+Json::Value toJson(const std::vector<RoutineEntry>& source) {
   Json::Value entries(Json::arrayValue);
-  for (const RoutineEntry& entry : routine.entries) {
+  for (const RoutineEntry& entry : source) {
     Json::Value line(Json::objectValue);
     line["position"] = entry.position;
     line["exerciseId"] = entry.exercise.str();
@@ -363,7 +366,17 @@ Json::Value toJson(const Routine& routine) {
     if (entry.restSeconds) line["restSeconds"] = *entry.restSeconds;
     entries.append(line);
   }
-  body["entries"] = entries;
+  return entries;
+}
+
+Json::Value toJson(const Routine& routine) {
+  Json::Value body(Json::objectValue);
+  body["id"] = routine.id.str();
+  body["name"] = routine.name;
+  body["position"] = routine.position;
+  body["revision"] = routine.revision;
+  if (routine.lastTrainedAtMs) body["lastTrainedAt"] = Json::Value::UInt64(*routine.lastTrainedAtMs);
+  body["entries"] = toJson(routine.entries);
   return body;
 }
 
@@ -501,6 +514,36 @@ std::optional<CoachClarification> clarificationFrom(const Json::Value& body) {
   return clarification;
 }
 
+Json::Value toJson(const std::vector<CoachRoutineDraft>& drafts) {
+  Json::Value out(Json::arrayValue);
+  for (const auto& draft : drafts) {
+    Json::Value body(Json::objectValue);
+    body["operationId"] = draft.operationId;
+    body["routineId"] = draft.routineId;
+    body["name"] = draft.name;
+    body["position"] = draft.position;
+    body["entries"] = toJson(draft.entries);
+    body["state"] = draft.state;
+    out.append(body);
+  }
+  return out;
+}
+
+std::vector<CoachRoutineDraft> coachRoutineDraftsFrom(const Json::Value& drafts) {
+  std::vector<CoachRoutineDraft> out;
+  for (const auto& draft : drafts) {
+    auto body = draft;
+    body["id"] = draft["routineId"];
+    body.removeMember("routineId");
+    body.removeMember("operationId");
+    body.removeMember("state");
+    const auto routine = parseRoutineWrite(body);
+    out.push_back({draft["operationId"].asString(), routine.id.str(), routine.name,
+                   routine.position, routine.entries, draft.get("state", "pending").asString()});
+  }
+  return out;
+}
+
 Json::Value toJson(const AskGeneration& generation) {
   Json::Value body(Json::objectValue);
   body["id"] = generation.id;
@@ -513,6 +556,7 @@ Json::Value toJson(const AskGeneration& generation) {
   body["at"] = Json::UInt64(generation.atMs);
   body["steps"] = toJson(generation.steps);
   body["results"] = toJson(generation.results);
+  if (!generation.routineDrafts.empty()) body["routineDrafts"] = toJson(generation.routineDrafts);
   body["revision"] = Json::UInt64(generation.revision);
   if (generation.stopRequested) body["stopRequested"] = true;
   if (!generation.attachments.empty()) {
@@ -538,6 +582,7 @@ AskGeneration generationFrom(const Json::Value& body) {
   for (const Json::Value& step : body["steps"])
     generation.steps.push_back({step["tool"].asString(), step["failed"].asBool()});
   generation.results = coachResultsFrom(body["results"]);
+  generation.routineDrafts = coachRoutineDraftsFrom(body["routineDrafts"]);
   generation.attachments = coachAttachmentsFrom(body["attachments"]);
   generation.revision = body.get("revision", Json::UInt64(0)).asUInt64();
   generation.stopRequested = body.get("stopRequested", false).asBool();
@@ -581,6 +626,7 @@ Json::Value toJson(const AskThread& thread) {
       }
       if (said.purpose != "conversation") turn["purpose"] = said.purpose;
       if (said.clarification) turn["clarification"] = toJson(*said.clarification);
+      if (!said.routineDrafts.empty()) turn["routineDrafts"] = toJson(said.routineDrafts);
       if (said.allowanceRefusal) turn["allowanceRefusal"] = toJson(*said.allowanceRefusal);
       if (!said.results.empty()) turn["results"] = toJson(said.results);
       if (!said.attachments.empty()) {

@@ -38,7 +38,7 @@ export const TOOL_PHRASE = {
   list_notes: 'read your notes',
   save_note: 'saved a note',
   list_bodyweight: 'read your bodyweight',
-  create_routine: 'created a routine',
+  create_routine: 'drafted a routine for your review',
   propose_routine_change: 'wrote a proposal for one of your routines',
   propose_routine_removal: 'wrote a proposal to remove a routine',
 };
@@ -86,6 +86,7 @@ export function answerTurn(reply) {
     steps: reply.steps,
     read: reply.read,
     proposals: reply.proposals ?? [],
+    ...(reply.routineDrafts?.length ? { routineDrafts: reply.routineDrafts } : {}),
     ...(reply.receipt ? { receipt: reply.receipt } : {}),
     ...(reply.results ? { results: reply.results } : {}),
   };
@@ -146,7 +147,15 @@ export function mergeTurns(held, incoming) {
     ) || (turn.requestId && existing.requestId === turn.requestId && existing.from === turn.from)
       || (turn.generationId && existing.generationId === turn.generationId && existing.from === turn.from));
     if (index < 0) merged.push(turn);
-    else merged[index] = { ...merged[index], ...turn };
+    else {
+      const previous = merged[index];
+      if ((previous.revision ?? -1) > (turn.revision ?? Number.MAX_SAFE_INTEGER)) continue;
+      const saved = new Map((previous.routineDrafts ?? []).filter((draft) => draft.state === 'saved').map((draft) => [draft.operationId, draft]));
+      merged[index] = { ...previous, ...turn,
+        ...(turn.routineDrafts ? { routineDrafts: turn.routineDrafts.map((draft) => saved.get(draft.operationId) ?? draft) } : {}),
+        ...(saved.size ? { results: [...new Map([...(previous.results ?? []), ...(turn.results ?? [])].map((result) => [result.operationId, result])).values()] } : {}),
+      };
+    }
   }
   return merged.sort((left, right) => {
     if (Number.isInteger(left.position) && Number.isInteger(right.position)) return left.position - right.position;
@@ -161,7 +170,7 @@ export function generationTurns(generation) {
   return [
     { ...identity, from: 'lifter', text: generation.question, ...(generation.attachments?.length ? { attachments: generation.attachments } : {}) },
     { ...identity, from: 'ask', text: generation.answer ?? '', status: generation.status,
-      receipt: generation.receipt, results: generation.results ?? [] },
+      receipt: generation.receipt, results: generation.results ?? [], routineDrafts: generation.routineDrafts ?? [] },
   ];
 }
 

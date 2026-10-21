@@ -72,6 +72,7 @@ std::vector<ThreadTurn> turnsOf(pqxx::work& txn, const ThreadId& id, std::uint64
       turns.back().purpose = generation.purpose;
       if (!fromLifter) {
         turns.back().clarification = generation.clarification;
+        turns.back().routineDrafts = generation.routineDrafts;
         turns.back().allowanceRefusal = generation.allowanceRefusal;
       }
     }
@@ -340,7 +341,7 @@ std::optional<AskGeneration> PgAskThreadRepository::generation(const UserId& use
 }
 
 void PgAskThreadRepository::saveGeneration(const UserId& user, const ThreadId& thread,
-                                            AskGeneration& generation) {
+                                            AskGeneration& generation, bool settleDraft) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   if (txn.exec_params("SELECT 1 FROM gym_ask_threads WHERE id = $1 AND user_id = $2::uuid FOR UPDATE",
@@ -350,7 +351,9 @@ void PgAskThreadRepository::saveGeneration(const UserId& user, const ThreadId& t
       user.str(), thread.str(), generation.requestId);
   if (!prior.empty()) {
     const auto stored = generationFrom(parse(prior[0][0].as<std::string>()));
-    if (stored.status == "completed" || stored.status == "stopped") { generation = stored; return; }
+    if ((stored.status == "completed" || stored.status == "stopped") && !settleDraft) { generation = stored; return; }
+    if (settleDraft && (stored.status == "running" || stored.answer != generation.answer || stored.status != generation.status))
+      throw std::runtime_error("only a settled answer can confirm a routine");
     if (stored.id != generation.id || stored.question != generation.question || stored.purpose != generation.purpose ||
         stored.attachments != generation.attachments) throw std::runtime_error("conversation request is immutable");
     generation.revision = stored.revision;

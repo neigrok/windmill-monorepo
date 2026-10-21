@@ -407,7 +407,8 @@ test('every book entity agrees with the registry and every writable sample round
     if (!type.isWritable) { RegistryCheck.entity(type, null, book); continue; }
     const sample = values.find((vector) => vector.input.entity === type.type);
     assert.ok(sample, `${type.type} has no entity sample`);
-    RegistryCheck.entity(type, type.decode(Fields.values(type.type, sample.input.id, sample.input.fields)), book);
+    RegistryCheck.entity(type, type.decode(Fields.values(type.type, sample.input.id, { ...sample.input.fields,
+      ...(type.type === 'exerciseName' ? { equipment: 'dumbbell', loadCount: 2 } : {}) })), book);
   }
 });
 

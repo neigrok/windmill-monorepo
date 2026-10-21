@@ -139,6 +139,8 @@ public:
   void ask(const UserId& caller, const std::string& email, const ThreadId& thread,
            std::string question, std::function<void(AskReply)> done, std::string requestId = "",
            std::vector<std::string> attachmentIds = {}, std::string purpose = "");
+  std::optional<AskGeneration> confirmRoutine(const UserId& user, const ThreadId& thread,
+      const std::string& requestId, const std::string& operationId);
   void readGeneration(const UserId& user, const ThreadId& thread, const std::string& requestId,
                       std::function<void(bool, std::optional<AskGeneration>)> done);
   std::optional<AskGeneration> stop(const UserId& user, const ThreadId& thread, const std::string& requestId);

@@ -136,6 +136,7 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Motion settings | technical failure `onboarding_motion_settings` | static operation; motion falls back to reduced |
 | Brand onboarding | `onboarding_opened`, `onboarding_page_viewed`, `onboarding_action`, `onboarding_exited` | state, screen, action, outcome |
 | Coach | `gym_ask_started`, `gym_ask_outcome` | outcome, failure_kind, status, duration_ms, cap |
+| Coach routine confirmation | `gym_coach_routine_confirm` | outcome: `started`, `saved`, `failed`, `refused`; no IDs, names or contents |
 | Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged` | common metadata only |
 | Bodyweight/notes | `gym_bodyweight_saved`, `gym_note_moved` | common metadata only; successful local commits, no event for an unchanged drop |
 | Routines/proposals | `gym_routine_saved`, `gym_proposal_outcome`, `gym_proposal_receipt_shown` | action, outcome |
@@ -225,3 +226,5 @@ server-refused saves through the gym engine.
 
 Native crash delivery and vendor receipt require a separate installed-app check. Local collectors
 and a successful build do not establish either.
+
+Coach routine confirmation uses the static HTTP operation `gym_coach_routine_confirm`; malformed replies report within that transport boundary. Unexpected local persistence or response validation failures report `gym.coachRoutineConfirm`. Failed or refused saves leave the same persisted operation available to retry. Account changes prevent late replies from appearing in another account.

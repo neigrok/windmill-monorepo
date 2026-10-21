@@ -183,7 +183,7 @@ struct WorkoutReceipt: View {
     NavigationStack {
       List {
         Group {
-          Section { FactTiles(receipt.readout).padding(.vertical, RoomSpace.small) }
+          Section { FactTiles(SessionReadout(session: receipt.session, sets: receipt.sets, catalogue: gym.catalogue)).padding(.vertical, RoomSpace.small) }
           if let sentence = receipt.review?.record?.sentence(gym.catalogue, dates: gym.dates) {
             Section("Personal record") { Text(sentence).font(.body.weight(.semibold)).foregroundStyle(GymPalette.record).modifier(RecordArrival()) }
           }

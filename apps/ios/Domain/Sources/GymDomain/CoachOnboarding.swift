@@ -12,7 +12,6 @@ public struct CoachRoutine: Equatable, Sendable {
 public struct ImportCoachRoutines: Action {
   public struct Loaded {
     let replica: String
-    let anonymous: Bool
     let receipts: JSON.Object
     let routines: [Routine]
     let moment: Moment
@@ -29,13 +28,13 @@ public struct ImportCoachRoutines: Action {
   }
 
   public func load(_ read: Reader) throws -> Loaded {
-    Loaded(replica: read.replica, anonymous: read.isAnonymous,
+    Loaded(replica: read.replica,
       receipts: try read.device(Self.receiptKey)?.asObject() ?? [:],
       routines: try read.repository(Routine.self).all(in: .stored), moment: read.moment)
   }
 
   public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<[ID<Routine>], GymRefusal> {
-    guard loaded.replica == replica, loaded.anonymous else {
+    guard loaded.replica == replica else {
       throw Violation(rule: "coach.seat", path: "replica", reason: .custom("seatChanged"))
     }
     guard !requestId.isEmpty, requestId.utf8.count <= 64, !resultId.isEmpty, resultId.utf8.count <= 128 else {

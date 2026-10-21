@@ -42,8 +42,14 @@ import UIKit
       XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed)
       XCTAssertTrue(app.buttons["gym-new-movement"].isHittable)
     }
-    let attachment = XCTAttachment(screenshot: app.screenshot())
+    let screenshot = app.screenshot()
+    let attachment = XCTAttachment(screenshot: screenshot)
     attachment.name = "routines-" + name; attachment.lifetime = .keepAlways; add(attachment)
+    if let path = ProcessInfo.processInfo.environment["WM_GYM_FEEDBACK_SHOTS"] {
+      let directory = URL(fileURLWithPath: path)
+      try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      try? screenshot.pngRepresentation.write(to: directory.appending(path: "routines-" + name + ".png"))
+    }
   }
   func descendant(in snapshot: any XCUIElementSnapshot, type: XCUIElement.ElementType, named name: String) -> (any XCUIElementSnapshot)? {
     if snapshot.elementType == type && (snapshot.identifier == name || snapshot.label == name) { return snapshot }
@@ -142,12 +148,10 @@ import UIKit
       XCTAssertEqual(field.value as? String, text)
     }
   }
-  // The Record holds Rename; a menu may carry it as Rename movement.
   func openRename(_ app: XCUIApplication) {
     XCTAssertTrue(app.descendants(matching: .any)["gym-movement-record"].waitForExistence(timeout: 5))
-    if app.buttons["Rename"].waitForExistence(timeout: 2) { app.buttons["Rename"].tap(); return }
     app.navigationBars.buttons["More"].tap()
-    let item = app.buttons["Rename movement"]
+    let item = app.buttons["Edit exercise"]
     XCTAssertTrue(item.wait(for: \.isHittable, toEqual: true, timeout: 5)); item.tap()
   }
   func createRoutine(_ app: XCUIApplication) {
@@ -295,10 +299,8 @@ import UIKit
       movement.tap()
     }
     XCTAssertTrue(refusal.waitForNonExistence(timeout: 5))
-    let reorder = app.buttons["reorder-movements"]
-    for _ in 0..<4 where !(reorder.exists && reorder.isHittable) { app.swipeUp(velocity: .slow) }
-    reorder.tap()
-    XCTAssertTrue(reorder.wait(for: \.label, toEqual: "Done", timeout: 5))
+    XCTAssertFalse(app.buttons["reorder-movements"].exists)
+    XCTAssertTrue(app.buttons["Reorder 2. Deadlift"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.navigationBars.staticTexts["New routine"].exists, "The builder's title left the bar while reordering")
     XCTAssertTrue(save.exists && save.isHittable, "Save folded into the bar's overflow")
     XCTAssertLessThanOrEqual(save.frame.maxY, app.navigationBars.firstMatch.frame.maxY)
@@ -383,24 +385,22 @@ import UIKit
     XCTAssertFalse(app.buttons["gym-routines-undo"].exists)
   }
 
-  // Empty Routines offers setup even with an existing workout; choosing a starter keeps the draft unsent.
-  func testSignedInEmptyRoutinesAsksCoachToBuildOne() {
+  func testSignedInEmptyRoutinesOffersOneReachablePlus() {
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", "workout-notice", "-onboarding-appearance", "dark"]
     app.launch()
     XCTAssertTrue(app.buttons["workout-assembly"].waitForExistence(timeout: 10)); app.buttons["workout-assembly"].tap()
     XCTAssertTrue(app.buttons["workout-hide"].waitForExistence(timeout: 5)); app.buttons["workout-hide"].tap()
     XCTAssertTrue(app.staticTexts["No routines yet"].waitForExistence(timeout: 10))
-    let ask = app.buttons["routines-setup"]
-    XCTAssertTrue(ask.waitForExistence(timeout: 5))
-    XCTAssertGreaterThanOrEqual(ask.frame.height, 44, "Set up routines answers a 44 pt target")
+    let add = app.buttons["new-routine"]
+    XCTAssertTrue(add.waitForExistence(timeout: 5))
+    XCTAssertGreaterThanOrEqual(add.frame.height, 44)
+    XCTAssertGreaterThan(add.frame.midY, app.frame.midY)
+    XCTAssertGreaterThan(add.frame.midX, app.frame.midX)
+    XCTAssertFalse(app.buttons["routines-setup"].exists)
     capture(app, "empty-signed-in")
-    ask.tap()
-    let question = app.descendants(matching: .any)["coach-question"]
-    XCTAssertTrue(question.waitForExistence(timeout: 10))
-    XCTAssertTrue(app.buttons["coach-setup-describe"].waitForExistence(timeout: 5)); app.buttons["coach-setup-describe"].tap()
-    XCTAssertEqual(question.value as? String, "My program: ")
-    XCTAssertFalse(app.buttons["coach-stop"].exists, "The question waits in the composer, unsent")
+    add.tap()
+    XCTAssertTrue(app.textFields["routine-name"].waitForExistence(timeout: 5))
   }
 
   func testRoutineSummaryClosesReopensAndStartsWorkout() {
@@ -471,8 +471,9 @@ import UIKit
     openRename(app)
     retype(app.textFields["gym-rename-movement-name"], with: "Bench today")
     app.buttons["gym-rename-movement-commit"].tap()
-    XCTAssertTrue(app.staticTexts["gym-rename-movement-refusal"].waitForExistence(timeout: 5))
-    XCTAssertEqual(app.textFields["gym-rename-movement-name"].value as? String, "Bench today")
+    XCTAssertTrue(app.textFields["gym-rename-movement-name"].waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.navigationBars.staticTexts["Bench today"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.staticTexts["gym-record-empty"].exists)
   }
 
   func testBuilderReorderRemoveAndAddMovementAgain() {
@@ -483,16 +484,12 @@ import UIKit
       app.buttons["add-movement"].tap()
       app.buttons["gym-movement-" + id].tap()
     }
-    let reorder = app.buttons["reorder-movements"]
-    reorder.tap()
-    XCTAssertTrue(reorder.wait(for: \.label, toEqual: "Done", timeout: 5))
+    XCTAssertFalse(app.buttons["reorder-movements"].exists)
     XCTAssertTrue(app.navigationBars.staticTexts["New routine"].exists, "The builder's title left the bar while reordering")
     let deadliftHandle = app.buttons["Reorder 2. Deadlift"]
     XCTAssertTrue(deadliftHandle.wait(for: \.isHittable, toEqual: true, timeout: 5))
     XCTAssertTrue(app.buttons["Reorder 1. Bench Press"].wait(for: \.isHittable, toEqual: true, timeout: 5))
-    reorder.tap()
-    XCTAssertTrue(reorder.wait(for: \.label, toEqual: "Reorder", timeout: 5))
-    XCTAssertTrue(deadliftHandle.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(deadliftHandle.exists)
     let deadlift = app.buttons["builder-movement-deadlift"]
     func settledFrame() -> CGRect {
       let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
@@ -509,11 +506,7 @@ import UIKit
     XCTAssertTrue(moveUp.wait(for: \.isHittable, toEqual: true, timeout: 5)); moveUp.tap()
     let firstMovement = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "builder-movement-")).element(boundBy: 0)
     XCTAssertTrue(firstMovement.wait(for: \.identifier, toEqual: "builder-movement-deadlift", timeout: 5))
-    let row = settledFrame()
-    let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: row.maxX - 40, dy: row.midY))
-    start.press(forDuration: 0.01, thenDragTo: start.withOffset(CGVector(dx: -min(150, row.width / 2), dy: 0)),
-      withVelocity: .slow, thenHoldForDuration: 0.1)
-    let remove = app.buttons["Remove"]
+    let remove = app.buttons["builder-remove-deadlift"]
     XCTAssertTrue(remove.wait(for: \.isHittable, toEqual: true, timeout: 5)); remove.tap()
     XCTAssertTrue(deadlift.waitForNonExistence(timeout: 5))
     XCTAssertFalse(app.buttons["builder-undo"].exists)

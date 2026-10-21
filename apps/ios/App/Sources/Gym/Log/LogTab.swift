@@ -59,16 +59,19 @@ struct LogTab: View {
     }.listStyle(.insetGrouped).modifier(GymPage(titleDisplayMode: .large))
       .navigationTitle("The log").accessibilityIdentifier("gym-log")
       .toolbar {
-        ToolbarItem(placement: .topBarTrailing) {
-          Button("Weigh in", systemImage: "scalemass") { weighing = true }.labelStyle(.iconOnly)
-            .accessibilityIdentifier("gym-weigh-in").disabled(gym.accountTransition)
-        }
-        if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
         ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: { openAccount?() }).disabled(gym.accountTransition) }
       }.roomBar(.gym)
       .reachBand {
-        GymTransient(gym: gym, message: historyNotice, dismiss: { historyNoticeDismissed = true },
-                     errorIdentifier: "gym-log-error")
+        VStack(spacing: RoomSpace.related) {
+          GymTransient(gym: gym, message: historyNotice, dismiss: { historyNoticeDismissed = true },
+                       errorIdentifier: "gym-log-error")
+          HStack {
+            Spacer()
+            Button("Weigh in", systemImage: "plus") { weighing = true }
+              .labelStyle(.iconOnly).buttonStyle(RoomSeatStyle()).font(.title3.weight(.semibold))
+              .accessibilityIdentifier("gym-weigh-in").disabled(gym.accountTransition)
+          }.padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.related)
+        }
       }
       .onChange(of: discard) { _, shown in
         if shown != nil {

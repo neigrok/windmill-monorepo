@@ -1,5 +1,6 @@
 #include "products/gym/application/AskService.h"
 #include "platform/application/WriteObservation.h"
+#include "platform/domain/sync/Digest.h"
 
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 #include "products/gym/adapters/json/GymJson.h"
@@ -112,7 +113,7 @@ void AskTools::observe(const ToolResult& result, const std::string& name, const 
     const auto id = result.payload["proposal"]["id"].asString();
     if (std::find(proposals_.begin(), proposals_.end(), id) == proposals_.end()) proposals_.push_back(id);
   }
-  if (name == "create_routine" && generation_ &&
+  if (name == "create_routine" && generation_ && !result.payload["confirmationRequired"].asBool() &&
       std::none_of(generation_->results.begin(), generation_->results.end(), [&](const auto& held) { return held.operationId == operationId; })) {
     generation_->results.push_back({operationId, result.payload["id"].asString(), result.payload["name"].asString()});
     if (result.payload["entries"].isArray()) generation_->results.back().movementCount = result.payload["entries"].size();
@@ -125,7 +126,13 @@ void AskTools::recover(const ToolCaller& caller, bool allowWrite) {
   if (operations_.empty()) return;
   for (auto& operation : operations_) {
     if (!operation.result) {
-      operation.result = inner_.completedAction(caller.user, operation.name, operation.arguments["id"].asString());
+      operation.result = inner_.completedAction(caller.user, operation.name,
+        operation.arguments[operation.name == "update_exercise" ? "requestId" : "id"].asString());
+      if (!operation.result && operation.name == "create_routine") {
+        auto draft = operation.arguments;
+        draft["confirmationRequired"] = true;
+        operation.result = ToolResult::json(draft);
+      }
       if (!operation.result && !allowWrite) continue;
       if (operation.result) repository_->saveOperation(caller.user, thread_, generation_->id, operation);
     }
@@ -151,6 +158,11 @@ void AskTools::recover(const ToolCaller& caller, bool allowWrite) {
       }
       repository_->saveOperation(caller.user, thread_, generation_->id, operation);
     }
+    if (operation.name == "create_routine" && operation.result->payload["confirmationRequired"].asBool() &&
+        std::none_of(generation_->routineDrafts.begin(), generation_->routineDrafts.end(), [&](const auto& draft) { return draft.operationId == operation.id; })) {
+      const auto routine = parseRoutineWrite(operation.arguments);
+      generation_->routineDrafts.push_back({operation.id, routine.id.str(), routine.name, routine.position, routine.entries});
+    }
     observe(*operation.result, operation.name, operation.id);
     steps_.push_back({operation.name, operation.result->isError});
   }
@@ -168,8 +180,11 @@ std::vector<ToolDeclaration> AskTools::declareTools() const {
           name != "create_routine") continue;
     }
     if (declaration.access == Access::read || mintsProposal(declaration.name()) ||
-        (repository_ && (declaration.name() == "create_routine" || declaration.name() == "save_note")))
+        (repository_ && (declaration.name() == "create_routine" || declaration.name() == "save_note" || declaration.name() == "update_exercise"))) {
+      if (declaration.name() == "create_routine")
+        declaration.descriptor["description"] = "Prepare a new routine for the lifter to review. This saves only a draft. No routine exists until the lifter taps Save routine. Use actual exercise IDs from list_exercises and read list_notes first. Explain the plan and ask the lifter to review it. Each routine needs a distinct stable id; replay exactly the same document.";
       offered.push_back(std::move(declaration));
+    }
   }
   if (setup) {
     offered.push_back({parse(R"({
@@ -258,7 +273,7 @@ ToolResult AskTools::dispatch(const std::string& name, const Json::Value& argume
       return ToolResult::failure(name + ": not available during routine setup — use the declared setup tools.");
   }
   if (declared->access != Access::read && name != "ask_setup_details" && !mintsProposal(name) &&
-      !(repository_ && (name == "create_routine" || name == "save_note")))
+      !(repository_ && (name == "create_routine" || name == "save_note" || name == "update_exercise")))
     // Asked FIRST, before the grant below, so a tool this door never offers answers the same at
     // every grant.
     return ToolResult::failure(name +
@@ -283,6 +298,26 @@ ToolResult AskTools::dispatch(const std::string& name, const Json::Value& argume
     generation_->clarification = clarification;
     repository_->saveGeneration(caller.user, thread_, *generation_);
     return ToolResult::json(toJson(*clarification));
+  }
+
+  if (name == "update_exercise") {
+    if (!arguments["exerciseId"].isString()) return ToolResult::failure("exerciseId must name an existing movement");
+    if (std::none_of(steps_.begin(), steps_.end(), [](const auto& step) { return step.tool == "list_exercises" && !step.failed; }))
+      return ToolResult::failure("read list_exercises before editing an existing exercise");
+    const std::string id = sync::sha256("update_exercise:" + generation_->id + ":" + arguments["exerciseId"].asString()).hex();
+    const auto held = std::find_if(operations_.begin(), operations_.end(), [&](const auto& operation) { return operation.id == id; });
+    if (held != operations_.end()) {
+      if (held->input != arguments) return ToolResult::failure("this answer already holds a different edit for that exercise");
+      if (held->result) return *held->result;
+    }
+    auto input = arguments;
+    input["requestId"] = id;
+    CoachOperation edit{id, name, input, std::nullopt, arguments};
+    repository_->saveOperation(caller.user, thread_, generation_->id, edit);
+    edit.result = inner_.callTool(name, input, caller, ProposalSource{ProposalDoor::ask, "", "", thread_}, read_);
+    repository_->saveOperation(caller.user, thread_, generation_->id, edit);
+    if (held == operations_.end()) operations_.push_back(edit); else *held = edit;
+    return *edit.result;
   }
 
   Json::Value input = arguments;
@@ -374,8 +409,23 @@ ToolResult AskTools::dispatch(const std::string& name, const Json::Value& argume
   } else if (mintsProposal(name) && !proposals_.empty()) {
     return ToolResult::failure(name + ": you already wrote a proposal this turn; fold both into one document");
   }
-  const ToolResult outcome = inner_.callTool(
-      name, input, caller, ProposalSource{ProposalDoor::ask, "", "", thread_}, read_);
+  const ToolResult outcome = [&] {
+    if (name == "create_routine" && operation) {
+      const auto routine = parseRoutineWrite(input);
+      const auto catalog = inner_.callTool("list_exercises", Json::Value(Json::objectValue), caller);
+      if (catalog.isError) return catalog;
+      for (const auto& entry : routine.entries) {
+        const auto& exercises = catalog.payload["exercises"];
+        if (std::none_of(exercises.begin(), exercises.end(), [&](const auto& exercise) { return exercise["id"].asString() == entry.exercise.str(); }))
+          return ToolResult::failure("a routine draft names an unknown exercise; read list_exercises first");
+      }
+      generation_->routineDrafts.push_back({operation->id, routine.id.str(), routine.name, routine.position, routine.entries});
+      auto draft = input;
+      draft["confirmationRequired"] = true;
+      return ToolResult::json(draft);
+    }
+    return inner_.callTool(name, input, caller, ProposalSource{ProposalDoor::ask, "", "", thread_}, read_);
+  }();
   if (operation) {
     operation->result = outcome;
     repository_->saveOperation(caller.user, thread_, generation_->id, *operation);
@@ -393,6 +443,36 @@ AskService::AskService(TrainingService& training, AskThreadRepository& threads, 
   workers_.start();
   readers_.start();
   admissions_.start();
+}
+
+std::optional<AskGeneration> AskService::confirmRoutine(const UserId& user, const ThreadId& thread,
+    const std::string& requestId, const std::string& operationId) {
+  if (!threads_.threadAvailable(user, thread)) return std::nullopt;
+  auto lease = threads_.tryLease(user, thread);
+  if (!lease) throw ThreadBusy{};
+  auto generation = threads_.generation(user, thread, requestId);
+  if (!generation) return std::nullopt;
+  if (generation->status == "running") throw ThreadBusy{};
+  auto draft = std::find_if(generation->routineDrafts.begin(), generation->routineDrafts.end(),
+                           [&](const auto& item) { return item.operationId == operationId; });
+  if (draft == generation->routineDrafts.end()) return std::nullopt;
+  if (draft->state == "saved") return generation;
+  auto operations = threads_.operations(user, thread, generation->id);
+  auto operation = std::find_if(operations.begin(), operations.end(),
+                              [&](const auto& item) { return item.id == operationId && item.name == "create_routine"; });
+  if (operation == operations.end()) throw std::logic_error("routine draft has no held document");
+  ReadReceipt read;
+  const ToolCaller caller{user, ToolScope({{"gym", Access::write}})};
+  const auto result = gymTools_.callTool("create_routine", operation->arguments, caller,
+                                      ProposalSource{ProposalDoor::ask, "", "", thread}, read);
+  if (result.isError) throw GymUnavailable{"coach-draft-unavailable", "This routine could not be saved. Review its exercises and try again."};
+  operation->result = result;
+  threads_.saveOperation(user, thread, generation->id, *operation);
+  draft->state = "saved";
+  if (std::none_of(generation->results.begin(), generation->results.end(), [&](const auto& item) { return item.operationId == operationId; }))
+    generation->results.push_back({operationId, draft->routineId, draft->name, static_cast<unsigned>(draft->entries.size())});
+  threads_.saveGeneration(user, thread, *generation, true);
+  return generation;
 }
 
 bool AskService::configured() const { return agent_.configured(); }

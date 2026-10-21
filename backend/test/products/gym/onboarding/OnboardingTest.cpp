@@ -132,3 +132,32 @@ TEST(gym_onboarding_stale_work_is_terminal_and_expiry_removes_result_content) {
   CHECK(expired.payload.isNull());
   CHECK_EQ(expired.inputHash, "digest");
 }
+
+TEST(gym_onboarding_conversation_has_bounded_context_and_accepts_dialogue_without_routines) {
+  auto body=parse(R"({"requestId":"12345678-1234-1234-1234-123456789abc","mode":"conversation","text":"I am new here","context":[{"role":"user","text":"Hello"},{"role":"assistant","text":"Hi. What are you working on?"}]})");
+  const auto input=readOnboardingIn(body);
+  REQUIRE(input);
+  CHECK_EQ(onboardingInput(*input),body);
+  const auto answer=parse(R"({"message":"Welcome. What would you like to work on?","routines":[]})");
+  const auto routines=readOnboardingRoutines(answer,*input,{});
+  REQUIRE(routines);
+  CHECK(routines->empty());
+  auto invalid=body;
+  invalid["context"][0]["role"]="system";
+  CHECK_FALSE(readOnboardingIn(invalid));
+  invalid=body;
+  for (int index=0;index<11;++index) invalid["context"].append(body["context"][0]);
+  CHECK_FALSE(readOnboardingIn(invalid));
+  invalid=body;
+  invalid["context"]=Json::Value(Json::arrayValue);
+  for (int index=0;index<5;++index) {
+    auto turn=body["context"][0]; turn["text"]=std::string(4000,'x'); invalid["context"].append(turn);
+  }
+  CHECK_FALSE(readOnboardingIn(invalid));
+  invalid=body; invalid["text"]=std::string(4001,'x');
+  CHECK_FALSE(readOnboardingIn(invalid));
+  invalid=body; invalid["text"]=" ";
+  CHECK_FALSE(readOnboardingIn(invalid));
+  auto oversized=answer; oversized["message"]=std::string(4001,'x');
+  CHECK_FALSE(readOnboardingRoutines(oversized,*input,{}));
+}

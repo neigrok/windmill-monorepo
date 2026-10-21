@@ -28,35 +28,48 @@ Use minutes/seconds below one hour and hours/minutes/seconds thereafter without 
 
 ## Coach conversation
 
-The initial room opens directly to the composer, with one exception: signed-in iOS Gym setup draws **Set up your routines**, its three starters and its two escapes above the composer. Entry waits for loaded account data and preserves active workouts, account adoption, saved conversations and drafts. A deliberate manual choice prevents repeated automatic entry; empty Routines retains **Set up routines**. Starters leave after the first send ([Coach](briefs/09-coach.md)). Keep Coach as the native title, History as a navigation action, and a 48 dp/44 pt More menu. More contains Notes, Connected log and Account, and New chat when a conversation exists. The current iOS chrome differences are recorded in the consistency ledger. Beyond setup, do not stack greetings, empty-state headings, repeated capability text, suggestions, connection pitches or permanent correction instructions. Composer placeholder: “Ask about your training”.
+The iOS room shows one local conversational welcome until its first accepted user message, with
+**Add screenshot**, **Build myself** and the composer. It survives picker cancellation, tab changes,
+relaunch and failed/refused sends. No goal form, required chips, Just log or remaining-allowance
+indicator is drawn. Automatic empty-account entry waits for account hydration and preserves active
+workouts, adoption and saved conversation state. Empty Routines instead has one bottom-right plus
+opening the routine builder. See [Coach](briefs/09-coach.md).
 
-The composer is fixed above the navigation/keyboard inset while the conversation scrolls. Notes/connection details remain available in their destinations. Show allowance, access, connection and generation failures when they affect an action, with a concrete recovery. Preserve factual read receipts and creation/proposal results; optional tool detail stays collapsed. Keep existing human Apply semantics on each surface. Coach may create a routine when requested; routine edits continue through their existing proposal path. The owner's supplied prompt is preserved verbatim in the Coach implementation. Coach may also append useful new user-provided insights to Notes; existing notes remain under the user's edit and delete controls.
+Keep Coach as the native title and History as a navigation action. iOS Notes and Connected log
+live in You and settings; New chat is in History. Other surfaces retain their own native More
+menus. The composer stays above navigation/keyboard insets while conversation content scrolls.
+Placeholder: **Ask about your training**. After onboarding, an empty conversation needs no repeated
+capability text. Coach supports natural dialogue and contextual follow-up questions.
 
 | State | UI and action |
 | --- | --- |
-| Setup (signed-in iOS) | Automatic entry only for an empty Gym account; empty Routines also offers explicit entry. Set up your routines, three starters, Just log · Build it myself, and the composer; no allowance count or upgrade action |
-| Clarification | Bounded days/equipment choices wrap at available width; selected options have a checkmark and fill an editable draft; selection never sends |
-| Empty | Empty reading region and composer; no unsolicited message |
-| History | Retained conversations; selecting a row opens that same editable conversation; ordinary rows show a date, and creation/proposal rows add one concise outcome |
-| Resumed | Ordered existing messages, unchanged conversation identity, active composer, New chat in More |
-| Copy | Long press either speaker → native Copy; also expose accessibility Copy; web keeps selection and keyboard/context-menu access |
-| Attachment draft | One image thumbnail above input, Remove photo target, optional text; retain draft on failure |
-| Uploading | Thumbnail with progress and Cancel upload; no duplicate Send |
-| Upload failed | “Photo didn’t upload.” with Retry; preserve photo and text |
-| Unsupported | “Choose a supported photo.”; accepted formats and size come from the actual API |
-| Generating | Incremental text, Stop in Send’s existing target; no raw tool trace or internal reasoning |
-| Interrupted | Preserve partial answer; “Response interrupted.” and Retry; completed action receipts remain |
-| Stopped | Preserve partial answer; “Response stopped.”; completed actions are not described as undone |
-| At limit | Server’s accurate refusal and available recovery; New chat never implies a limit resets |
-| Allowance used (signed out) | “You’ve used this phone’s AI allowance.” once, then Continue with Apple · Use email instead; draft and conversation kept. Positive remaining capacity that cannot fit a request is a separate refusal |
-| Routines created | One grouped row per saved routine: actual name, “Routine created · N movements” and Open routine; completed rows survive interruption |
+| First message (iOS) | Local greeting, Add screenshot, Build myself and the composer |
+| Empty after onboarding | Empty reading region and composer |
+| History / resumed | The same editable conversation, ordered messages and factual outcomes |
+| Copy | Native Copy for either speaker, including partial text; web keeps selection/context access |
+| Attachment draft | One thumbnail, Remove photo, optional text; retain the draft on failure |
+| Uploading | Thumbnail progress and Cancel upload; no duplicate Send |
+| Upload failed | Photo didn’t upload. · Retry; preserve image and text |
+| Unsupported | Choose a supported photo. · accepted formats/size follow the API |
+| Generating | Incremental text and Stop in Send's target; no internal reasoning |
+| Reconnecting | Only after transport failure; recover the same turn and clear after recovery |
+| Interrupted | Preserve partial text, Response interrupted. and Retry; saved receipts remain |
+| Stopped | Preserve partial text; never describe completed actions as undone |
+| At limit | Actual refusal and available recovery; no new-chat reset claim |
+| Exhausted anonymous | Sign-in recovery, preserving draft and conversation |
+| Exhausted signed-in | Windmill One information for eligible non-One accounts; no unavailable checkout |
+| Routine draft | Actual name/count and Review; the human confirms Save routine |
+| Routine saved | Routine created · N movements and Open routine, only after successful saving |
 
-The signed-out allowance is $0.05 for an installation credential's lifetime; no question count is promised. Server-issued credentials, IP limits and shared budgets protect access; installation resets are not guaranteed to preserve identity. Input tokens are estimated for each request, and actual use can exceed a reservation. Shared free daily/monthly pools, individual allowance and concurrent-call limits retain distinct refusal and recovery metadata. Sign-in preserves usage attribution and does not guarantee capacity. See [the Coach brief](briefs/09-coach.md).
+Installation access uses the server-issued lifetime grant with no promised question count. Shared
+budgets, individual allowance, request size and concurrent-call limits remain distinct refusals.
+Sign-in preserves usage attribution and does not guarantee capacity. While checkout is closed,
+the Windmill One destination says **Subscriptions aren’t available yet.** Existing One users receive
+recovery for their actual limit. There is no standing allowance/balance line.
 
-Signed-in questions and pasted programs accept up to 8,000 UTF-8 bytes. Anonymous setup accepts
-1,000-byte goals, 4,000-byte programs or a photo with a 1,000-byte note. Input beyond that remains editable and
-receives a specific length refusal. Clarification groups and routine receipts come from the typed
-Coach contract; clients never parse generated prose to invent controls, creation outcomes or counts.
+Signed-in text accepts 8,000 UTF-8 bytes; anonymous conversation text accepts 4,000. Overlong input
+remains editable and receives a length refusal. Routine drafts, save outcomes and counts come from
+typed contract data; clients never parse generated prose to invent controls or completed writes.
 
 Copy returns only the message's visible textual content, preserving line breaks. It excludes timestamps, hidden metadata, receipt controls and image filenames. Do not offer an empty text Copy for an attachment-only message. Partial text remains copyable. Proposal actions stay separate from message context menus.
 

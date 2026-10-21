@@ -284,6 +284,7 @@ final class GymModel {
 
   @discardableResult
   func flush() -> Bool {
+    guard workout.flushRack() else { return false }
     rest.cancel()
     refresh()
     guard !readFailed else { return false }

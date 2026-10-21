@@ -91,3 +91,12 @@
   .gym-root .gym-coach-workout:not(.is-expanded) .gym-coach-workout-mirror { display: none; }
   .gym-root .gym-coach.is-workout > .gym-coach-workout.is-expanded { justify-content: flex-start; }
 }
+
+.gym-root .gym-coach-routine-draft { display: flex; align-items: stretch; flex-direction: column; gap: 16px; padding: 20px; text-align: left; background: var(--gym-surface); border: 1px solid var(--gym-line); border-radius: var(--radius-md); }
+.gym-root .gym-coach-routine-draft h2, .gym-root .gym-coach-routine-draft p { margin: 0; }
+.gym-root .gym-coach-routine-draft h2 { font: 700 20px/28px var(--font-body); }
+.gym-root .gym-coach-routine-draft > p { font: 400 13px/18px var(--font-body); color: var(--gym-ink-dim); }
+.gym-root .gym-coach-routine-draft ul { display: grid; gap: 16px; margin: 0; padding: 0; list-style: none; }
+.gym-root .gym-coach-routine-draft li { display: grid; gap: 4px; }
+.gym-root .gym-coach-routine-draft li span { font: 400 13px/18px var(--font-body); color: var(--gym-ink-dim); }
+.gym-root .gym-coach-routine-draft button { align-self: flex-start; min-height: 44px; }

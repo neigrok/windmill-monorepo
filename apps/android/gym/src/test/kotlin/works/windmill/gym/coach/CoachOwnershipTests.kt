@@ -351,4 +351,72 @@ class CoachOwnershipTests {
         }
     }
 
+    @Test fun routineConfirmationRetriesTheSameOperationAndPersistsOnlyForItsOwner() = runTest {
+        val file = File(tmp.root, "confirmations")
+        val disk = LocalCoach(file)
+        val draft = CoachRoutineDraft("operation-a", "routine-a", "Private routine", 1,
+            listOf(RoutineEntry(1, "dumbbell-bench-press", listOf(SetTarget(8, 16.0)))), "pending")
+        val generation = AskGeneration("generation-a", "request-a", "Private question", "failed", "Review this plan",
+            revision = 3, routineDrafts = listOf(draft.copy(state = "saved")),
+            results = listOf(CoachResult("routine-created", "operation-a", "routine-a", "Private routine")))
+        val calls = mutableListOf<List<String>>()
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val failures = mutableListOf<String>()
+        var owner: String? = "alice"
+        var refreshes = 0
+        val api = object : GymRest by FakeGymRest() {
+            override suspend fun confirmRoutine(threadId: String, requestId: String, operationId: String): CoachRoutineConfirmation {
+                calls += listOf(threadId, requestId, operationId)
+                if (calls.size == 1) throw IllegalStateException("Private server text")
+                return CoachRoutineConfirmation(threadId, generation)
+            }
+        }
+        val telemetry = object : works.windmill.platform.telemetry.Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { failures += operation }
+        }
+        val store = CoachStore({ owner }, { emptySet() }, { refreshes++ }, { api }, disk, telemetry, System::nanoTime)
+        assertEquals(emptyList<List<String>>(), calls)
+        assertTrue(store.confirmRoutine("thread-a", "request-a", draft) is GymResult.Failed)
+        assertNull(disk.confirmed("alice", "request-a"))
+        assertEquals(GymResult.Ok(generation), store.confirmRoutine("thread-a", "request-a", draft))
+        assertEquals(GymResult.Ok(generation), store.confirmRoutine("thread-a", "request-a", draft))
+        assertEquals(listOf(listOf("thread-a", "request-a", "operation-a"), listOf("thread-a", "request-a", "operation-a")), calls)
+        assertEquals(1, refreshes)
+        assertEquals(generation, LocalCoach(file).confirmed("alice", "request-a"))
+        assertEquals(listOf("gym.coachRoutineConfirm"), failures)
+        assertEquals(listOf("started", "failed", "started", "saved").map { "gym_coach_routine_confirm" to mapOf("outcome" to it) }, events)
+        owner = "bob"
+        assertNull(store.confirmedGeneration("request-a"))
+        disk.clear("alice", "thread-a")
+        assertNull(LocalCoach(file).confirmed("alice", "request-a"))
+    }
+
+    @Test fun lateRoutineConfirmationCannotAppearInAnotherAccount() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var owner: String? = "alice"
+        val file = File(tmp.root, "late-confirmation")
+        val disk = LocalCoach(file)
+        val draft = CoachRoutineDraft("operation-a", "routine-a", "Routine", 1, emptyList(), "pending")
+        val api = object : GymRest by FakeGymRest() {
+            override suspend fun confirmRoutine(threadId: String, requestId: String, operationId: String): CoachRoutineConfirmation {
+                started.complete(Unit)
+                release.await()
+                return CoachRoutineConfirmation(threadId, AskGeneration("generation-a", requestId, "Question", "completed",
+                    revision = 3, routineDrafts = listOf(draft.copy(state = "saved"))))
+            }
+        }
+        val store = CoachStore({ owner }, { emptySet() }, { fail("Foreign program refresh") }, { api }, disk,
+            works.windmill.platform.telemetry.Telemetry.None, System::nanoTime)
+        val result = async { store.confirmRoutine("thread-a", "request-a", draft) }
+        started.await()
+        owner = "bob"
+        release.complete(Unit)
+        assertTrue(result.await() is GymResult.Failed)
+        assertNull(store.confirmedGeneration("request-a"))
+        assertNull(disk.confirmed("alice", "request-a"))
+        assertNull(disk.confirmed("bob", "request-a"))
+    }
+
 }

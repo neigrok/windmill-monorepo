@@ -95,11 +95,12 @@ struct Exercise {
   double stepKg;
   bool custom;
   std::vector<std::string> aliases;
+  int loadCount;
 
   Exercise(ExerciseId id, std::string name, Pattern pattern, Equipment equipment, double stepKg,
-           bool custom, std::vector<std::string> aliases = {});
+           bool custom, std::vector<std::string> aliases = {}, int loadCount = 0);
   Exercise(Stored, ExerciseId id, std::string name, Pattern pattern, Equipment equipment, double stepKg,
-           bool custom, std::vector<std::string> aliases = {});
+           bool custom, std::vector<std::string> aliases = {}, int loadCount = 0);
 
   bool operator==(const Exercise&) const = default;
 };
@@ -107,6 +108,7 @@ struct Exercise {
 // The increment a movement takes when nothing names one. NOT the tap ladder, which comes from the
 // load band in packages/api-contract/gym-ladder.json.
 double defaultStepKg(Equipment equipment);
+double liftedVolume(double weightKg, int reps, Equipment equipment, int loadCount = 0);
 
 // One set of a routine line's scheme. Both fields mean something by their ABSENCE and never by a
 // zero: no reps is `max`, no load is last time's set of the same number. The load is rounded to the

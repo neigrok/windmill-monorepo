@@ -19,7 +19,7 @@ class RegistryAndPersonalFactsTests {
         RegistryCheck.entity(WeighIn, WeighIn(testMoment.today, 80.0, testMoment.now), book)
         RegistryCheck.entity(Routine, routine, book)
         RegistryCheck.entity(Exercise, Exercise(Id("exercise1", Exercise), "Custom", "squat", "barbell", 2.5), book)
-        RegistryCheck.entity(ExerciseName, ExerciseName(Id(squat.record, ExerciseName), "My squat"), book)
+        RegistryCheck.entity(ExerciseName, ExerciseName(Id(squat.record, ExerciseName), "My squat", equipment = "dumbbell", loadCount = 2), book)
         RegistryCheck.entity(TrainingSet, trainingSet(), book)
         RegistryCheck.entity(Preferences, Preferences(), book)
         RegistryCheck.entity(Proposal, Proposal(proposalId, routineId, "revise", "Lower B", "Summary",

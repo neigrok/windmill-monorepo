@@ -191,7 +191,7 @@ fun AskScreen(
                                 Text(Ask.waiting, style = WindmillFont.body(12).copy(lineHeight = 17.sp), color = skin.inkDim)
                             }
                             answered?.let { answer ->
-                                Answer(answer.copy(answer = text), exchange.answer != null, minted + store.settledProposals, store.catalog, nowMs, lookedAt, onReview, onOpenRoutine)
+                                Answer(answer.copy(answer = text), exchange.answer != null, minted + store.settledProposals, store.catalog, nowMs, lookedAt, onReview, onOpenRoutine, store.coach, conversationId, exchange.requestId, !asking)
                                 answer.proposals.filter { it !in minted && it !in store.settledProposals }.forEach { id ->
                                     if (id in missing) Trouble(ProposalRead.Gone.line, null)
                                     else Text("Reading proposal…", style = WindmillFont.body(14), color = skin.inkDim)
@@ -354,10 +354,18 @@ private fun Answer(
     lookedAt: Set<String>,
     onReview: (Proposal) -> Unit,
     onOpenRoutine: ((String) -> Unit)?,
+    coach: CoachStore,
+    threadId: String,
+    requestId: String,
+    canConfirm: Boolean,
 ) {
     val skin = LocalGymColors.current
     Column(verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3)) {
-        CoachAnswer(answer.answer, answer.receipt, catalog, nowMs, answer.read.takeIf { settled }, answer.steps, answer.results, onOpenRoutine)
+        val confirmed = coach.confirmedGeneration(requestId)
+        val current = if (confirmed != null && confirmed.revision >= (answer.generation?.revision ?: 0)) confirmed.response() else answer
+        CoachAnswer(current.answer, current.receipt, catalog, nowMs, current.read.takeIf { settled }, current.steps, current.results, onOpenRoutine,
+            routineDrafts = current.routineDrafts,
+            onConfirmRoutine = if (canConfirm && requestId.isNotBlank()) { draft -> coach.confirmRoutine(threadId, requestId, draft) } else null)
         // Drawn from the LOG's own copy and never from what the model said about it.
         answer.proposals.mapNotNull { minted[it] }.forEach { proposal ->
             Minted(proposal, catalog, nowMs, stillWaiting = proposal.id in lookedAt) { onReview(proposal) }

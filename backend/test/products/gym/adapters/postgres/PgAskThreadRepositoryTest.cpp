@@ -459,8 +459,12 @@ TEST(pg_coach_generation_replays_creation_after_an_uncertain_commit_and_keeps_te
       {"list_exercises", Json::Value(Json::objectValue)},
       {"create_routine", wm::parse(R"({"id":"rt_model0001","name":"Upper body","position":0,"entries":[{"exerciseId":"bench-press","sets":[{"reps":8}]}]})")}};
   desk.agent.answers = false;
-  const auto failed = asked(desk.ask, owner, thread, "Create my upper body routine", "req_durable01");
+  auto failed = asked(desk.ask, owner, thread, "Create my upper body routine", "req_durable01");
   REQUIRE(failed.generation.has_value());
+  REQUIRE_EQ(failed.generation->routineDrafts.size(), 1u);
+  CHECK(h.repo.program.routines(owner).empty());
+  failed.generation = desk.ask.confirmRoutine(owner, thread, "req_durable01", failed.generation->routineDrafts.front().operationId);
+  REQUIRE(failed.generation);
   REQUIRE_EQ(failed.generation->results.size(), 1u);
   const auto result = failed.generation->results.front();
   CHECK_EQ(h.repo.program.routines(owner).size(), 1u);

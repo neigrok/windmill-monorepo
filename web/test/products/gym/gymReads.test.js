@@ -16,8 +16,8 @@ const seed = seedsInDomain.find((exercise) => exercise.id === 'bench-press');
 
 test('global catalog mirrors every schema seed, overrides seed names, and omits empty aliases', () => {
   const schema = readFileSync(new URL('../../../../backend/db/schema.sql', import.meta.url), 'utf8');
-  const source = schema.split('insert into gym_exercises (id, name, pattern, equipment, step_kg) values\n')[1].split('on conflict (id) do nothing;')[0];
-  const seeds = [...source.matchAll(/\('([^']+)',\s*'([^']+)',\s*'([^']+)',\s*'([^']+)',\s*([\d.]+)\)/g)].map(([, id, name, pattern, equipment, step]) => ({ id, name, pattern, equipment, stepKg: Number(step), custom: false }));
+  const source = schema.split('insert into gym_exercises (id, name, pattern, equipment, step_kg, load_count) values\n')[1].split('on conflict (id) do nothing;')[0];
+  const seeds = [...source.matchAll(/\('([^']+)',\s*'([^']+)',\s*'([^']+)',\s*'([^']+)',\s*([\d.]+),\s*(null|[\d]+)\)/g)].map(([, id, name, pattern, equipment, step, loadCount]) => ({ id, name, pattern, equipment, stepKg: Number(step), ...(equipment === 'dumbbell' ? { loadCount: loadCount === 'null' ? 2 : Number(loadCount) } : {}), custom: false }));
   assert.deepEqual(seedsInDomain, seeds);
   const rows = [row('exerciseName', 'bench-press', { name: 'Flat Press', aliases: ['Bench Press'] }), row('exerciseName', 'deadlift', { aliases: [] }), row('exercise', 'custom_mv', { name: 'My Press', equipment: 'machine', pattern: 'press', stepKg: 5, aliases: [] })];
   const api = readView(rows);
@@ -234,4 +234,28 @@ test('record ladder, recent nonwarmup rows, and stats use lifetime finished work
   assert.deepEqual(stats.movements, [{ exerciseId: 'bench-press', lastTrainedAt: at, points: [{ at: old, weightKg: 50, reps: 8, e1rm: 50 * (1 + 8 / 30) }, { at, weightKg: 60, reps: 8, e1rm: 76 }], bestE1rm: { weightKg: 60, reps: 8, at, e1rm: 76 }, heaviest: { weightKg: 60, reps: 8, at, e1rm: 76 } }]);
   assert.equal(stats.weeks.length, 15);
   assert.deepEqual(stats.weeks[1], { startedAt: Date.UTC(2026, 5, 22), sessions: 0, workingSets: 0 });
+});
+
+test('effective equipment and names change historical totals without changing entered loads or estimates', () => {
+  const rows = [sessionRow('session_equipment', at),
+    row('exercise', 'custom_press', { name: 'My press', pattern: 'press', equipment: 'barbell', stepKg: 2.5 }),
+    row('exerciseName', 'custom_press', { name: 'Ignored seed name', equipment: 'dumbbell', loadCount: 1 }),
+    row('exerciseName', 'dumbbell-bench-press', { name: 'Flat dumbbells' }),
+    ...['dumbbell-bench-press', 'goblet-squat', 'custom_press', 'pull-up'].map((exerciseId, index) =>
+      setRow(`set_equipment${index}`, 'session_equipment', { exerciseId, weightKg: index === 3 ? 20 : 16, reps: 5 })),
+    setRow('warmup_equipment', 'session_equipment', { exerciseId: 'dumbbell-bench-press', weightKg: 50, reps: 5, kind: 'warmup' })];
+  const api = readView(rows);
+  assert.deepEqual(api.history().summary, { sessions: 1, sets: 4, reps: 20, tonnageKg: 420 });
+  assert.deepEqual(api.sessions()[0].exercises, ['Flat dumbbells', 'Goblet Squat', 'My press', 'Pull Up']);
+  assert.deepEqual(api.history().sessions[0].movements, [
+    { exerciseId: 'custom_press', sets: 1, reps: 5, tonnageKg: 80 },
+    { exerciseId: 'dumbbell-bench-press', sets: 1, reps: 5, tonnageKg: 160 },
+    { exerciseId: 'goblet-squat', sets: 1, reps: 5, tonnageKg: 80 },
+    { exerciseId: 'pull-up', sets: 1, reps: 5, tonnageKg: 100 },
+  ]);
+  assert.equal(api.record('dumbbell-bench-press').bestE1rm.weightKg, 16);
+  assert.equal(api.record('dumbbell-bench-press').bestE1rm.e1rm, 16 * (1 + 5 / 30));
+  assert.deepEqual(api.session('session_equipment').sets.map(({ weightKg, reps }) => ({ weightKg, reps })), [
+    { weightKg: 16, reps: 5 }, { weightKg: 16, reps: 5 }, { weightKg: 16, reps: 5 }, { weightKg: 20, reps: 5 }, { weightKg: 50, reps: 5 },
+  ]);
 });

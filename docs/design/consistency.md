@@ -4,6 +4,19 @@ Open disagreements between written canon, drawings and code. Remove an entry whe
 current behavior belongs in its owning contract. Source checks establish code shape, not rendered
 acceptance. Figma review tasks below need a fresh file inspection before editing.
 
+## Gym feedback drawings
+
+- **2026-10-21 · Native interactions.** The [iOS workout reference](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1065-222)
+  has the shared hierarchy, but the equipment-aware units and One/Two dumbbell count need matching
+  specimens. The exercise editor, always-visible reorder handles with native red trash, empty-root
+  bottom-right plus seats, conversational Coach welcome, routine draft review and exhausted-access
+  states follow [the feedback contract](gym/feedback-2026-10-21.md). Reuse shared masters and Theme
+  roles when drawing them. The Live Activity's banner/expanded top-right clock is since last set.
+  Figma drawings do not establish hit testing, stream recovery, persistence or device timers.
+- **Routine confirmation compatibility.** Older clients do not render the pending draft confirmation
+  flow. Backend and client availability require a coordinated release or explicit update guidance;
+  silently saving for an old client would violate the human confirmation contract.
+
 ## Shared system
 
 - **F4 · Gym Daylight PR ink.** Web and the [approved specimen](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=874-7735)
@@ -191,12 +204,13 @@ for the canonical Coach-led flow. The rendering contract is [`ios/ios-redesign.m
   anonymous spend, and One $7 per funded period. Owner grants use calendar months. Free access
   shares $100/month and $5/day; paid funding is isolated. The launch identity is a server-issued
   installation credential with IP limits; it does not promise persistence across resets.
-  Onboarding creates bounded local routines from one model call. The broader phone tool-host
+  Onboarding prepares bounded routine drafts from one model call; explicit review/save imports
+  them locally. The broader phone tool-host
   protocol remains separate work. Per-request input estimates are approximate and settle to actual usage. See
   [the mobile specification](../foundation/mobile/gym_coach.md) and
   [backend contract](../../backend/AI_ALLOWANCES.md).
-- **6u · USD allowance drawings.** Canonical Coach onboarding (`1081:565`) uses the $0.05 lifetime
-  installation allowance and current free/funded policy. Account · Usage · Proposal and
+- **6u · USD allowance drawings.** Coach onboarding (`1081:565`) must omit standing allowance and remaining
+  balance copy; exhausted access offers contextual recovery. Account · Usage · Proposal and
   Roadmap · AI requests · Proposal still need the current policy. The written pricing, shell,
   Coach, roadmap and Journal contracts use USD. Replace remaining drawing question/credit
   figures with server-backed USD and period labels. Customer usage drawings must show
@@ -205,8 +219,8 @@ for the canonical Coach-led flow. The rendering contract is [`ios/ios-redesign.m
   calendar boundary. All hosted AI, including background Echoes, consumes the individual budget.
   Signing in binds the device and includes its current-month anonymous spend in free usage.
   Server-issued installation credentials are implemented; customer USD screens remain unbuilt.
-- **6l · Backend: signed-out routines.** Coach creates routines on the server for an account.
-  Signed out they must land on the phone with a stable, retry-safe identity and be adopted once on
+- **6l · Backend: signed-out routines.** Coach prepares routine drafts; the human confirms saving.
+  Signed out they must then land on the phone with a stable, retry-safe identity and be adopted once on
   sign-in under the sign-in rule (7d), without duplicates.
 - **6m · Backend: signed-out photos.** A sent photo is kept in private storage with the account's
   conversation. Signed out it must be sent inline for Coach to read and not persisted server-side;
@@ -276,14 +290,13 @@ these are the places it disagrees with a drawing, a brief or the build.
   *Saved workouts need review (N)* door on every tab (`android-delivery.md`). The Gym Figma boards
   draw neither. Decide whether Android adopts the log row; draw the row, the pushed list, the
   Inspect screen and the Fix sheet.
-- **9l · Live Activity labels.** `gym/briefs/14-live-activity.md` lists the workout clock and the
-  since-last-set clock without ruling labels; the iteration-1 build labels both (*Workout*, *Since
-  last set*), which `16-the-workout.md` bans in the app. The spec (§7.7) draws both unlabelled.
-  Restate the brief and draw the banner, expanded and compact Island.
+- **9l · Live Activity drawings.** Draw the banner and expanded Island with since-last-set in the
+  top-right corner and compact Island with workout elapsed leading and since-set trailing. Use
+  the timestamp and accessibility rules in `gym/briefs/14-live-activity.md` and the feedback contract.
 - **9m · Iteration-1 boards.** The Gym file's *iOS redesign · iteration 1* boards (`1055:204`)
   predate the spec's §5–§7: the composer's disabled state, the one-slot Review band and the diff as
   rows, the body-less proposal card, the current row's readout, the Record tiles and axis labels,
-  moments as doors, *Weigh in* in The log's bar, Bodyweight rows, the Fix sheet's subtitle and bar
+  moments as doors, the bottom-right creation seats on Routines and The log, Bodyweight rows, the Fix sheet's subtitle and bar
   commit, the glass transient band, You's native sections, **On this phone**, the update-required
   alert and the Live Activity. Redraw from the spec, or retitle the section as superseded.
 - **9n · The set-note footer.** The iteration-1 Fix sheet drew *A record for you — not an
@@ -308,11 +321,9 @@ these are the places it disagrees with a drawing, a brief or the build.
   best can stand there at the same stated value as the best before it; and the receipt's *Personal
   record* is the server's (`Review.cpp` `recordFor`), which needs a prior estimate but compares
   exactly. Rule whether both follow the stated rule.
-- **9q · Weigh in is a bar action on iOS.** `18-progress.md` keeps one control in Android's reach
-  band, the weigh-in chip; the spec (§4, §7.6) and the iOS build put *Weigh in* in The log's bar
-  (`scalemass`, before the account button) and float nothing over the list, since a floating control
-  over rows that end in dates and chevrons always covers one. The brief states both. Decide whether
-  Android follows.
+- **9q · Weigh-in drawings.** iOS uses a bottom-trailing plus seat and content inset; Android keeps
+  its weigh-in chip in the reach band. Align each drawing to its surface contract and check the
+  final row remains unobscured.
 - **9r · No Gym settings on iOS.** The spec (§6) draws no Gym settings page: Notes and Connected
   log are reached from Coach's More, and a hidden workout from the tab bar's accessory on iOS 26
   and the **Hidden** row at the head of The log on iOS 18 (§7.18).
@@ -552,7 +563,8 @@ it in these places.
 
 - **6p · Android signed-out Coach.** The brief keeps Android Coach account-only and lists Android's
   signed-out Coach as open. The owner decided on 2026-09-26 that Android carries it. Draw Android's
-  signed-out room and lifetime USD allowance line. The approved launch identity is a server-issued
+  signed-out room with conversational entry and contextual exhausted-access recovery, without a
+  standing allowance line. The approved launch identity is a server-issued
   installation credential with IP and global budgets. Android delivery remains separate from iOS
   onboarding; the identity does not guarantee protection against installation resets.
 - **6q · One agent rule per ability.** The brief never lets Coach log, fix or delete a set, finish
@@ -575,11 +587,6 @@ it in these places.
 
 ### Native and web differences
 
-- **Web Coach capability line.** The Coach header says “Reads your log · proposes only”, while
-  requested routine creation saves routines directly and returns creation receipts. Existing
-  routine changes still require Review/Apply. Replace the inaccurate header with wording that
-  distinguishes creation from proposed changes; the signed-in iOS setup phase does not change web
-  chrome.
 - **Coach Markdown.** Android renders answer Markdown blocks and paces streamed text; web
   `CoachRoom.jsx` renders plain text. Decide the shared block typography and pacing, then align the
   other clients and Figma specimens. Tracking: `gym-android-coach-stream-markdown`.
@@ -649,10 +656,11 @@ it in these places.
   separate photo seat and input capsule, `photo.on.rectangle`, a More menu and
   `list.bullet.clipboard` for Routines. The current iOS room keeps one composer surface,
   `photo.badge.plus`, its Account toolbar action and `list.bullet.rectangle`. Its History action
-  uses `clock`; the goal/result drawings use `clock.arrow.circlepath`. The signed-in setup phase
-  preserves existing native chrome. Reconcile these shared controls in the iOS room contract and
-  drawings rather than giving onboarding a second composer or toolbar. Short conversations retain
-  the app's bottom alignment; the goal specimen places its first turn near the top. The anonymous program
+  uses `clock`; the goal/result drawings use `clock.arrow.circlepath`. Replace goal-form specimens
+  with the conversational greeting and Add screenshot / Build myself actions. Reconcile these
+  shared controls without giving onboarding a second composer or toolbar. The local greeting and
+  actions start together at the top of scrollable content; sent conversations retain the app's
+  bottom alignment. The anonymous program
   frame's “Only on this phone” / “Keep it” row does not appear in signed-in setup.
 - **Coach creation-row typography.** The signed-in setup uses the shared iOS `GymRow`: semibold
   body routine name and subheadline metadata. Result frame

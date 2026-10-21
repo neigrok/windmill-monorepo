@@ -12,7 +12,7 @@ The server replays the stored completed reply for the same request without anoth
 
 Thread outcomes include `created` when the conversation created a routine; `changes` then counts created routines and a sole result carries its routine identity. Full history remains stored. Model context uses the newest successfully completed exchanges, at most 24 messages and 24,000 text bytes, plus the current question and freshly read Notes/log data. Historical receipts, routine results and proposals remain available in stored history even when their text is outside model context. Coach does not claim to have consulted discarded text.
 
-Coach can create up to six requested routines, mint one existing-routine proposal and save one useful new user-provided insight per generation. The server requires successful Notes and movement-catalog reads before routine creation and a Notes read before an insight save. It persists each operation with its chosen ID and complete arguments before executing it, and its observed result before model continuation. Routine additions use ordered durable action slots and server-owned routine IDs. Repeated calls in one run reuse their original slot; a changed document is refused. After interruption the model must replay each held document in order before adding new routines, even if it invents different model IDs. Failed durable attempts count toward the six-slot cap. Syntactically invalid documents are rejected before reserving a slot. The operation collection also reads legacy single-operation records. Existing routine changes still use proposals and human Apply. A retry recovers those same operations and never chooses a new routine or note-save ID. Generation exclusion uses a database session lock, released on process exit; retrying the same unfinished request after restart recovers it. Deletion during an active generation returns `409 ask-generation-active`. Deleting a conversation removes its generations and messages and preserves routine, saved-note and applied-proposal consequences.
+Coach can prepare up to six requested routine drafts, mint one existing-routine proposal and save one useful new user-provided insight per generation. The server requires successful Notes and movement-catalog reads before routine creation and a Notes read before an insight save. It persists each operation with its chosen ID and complete arguments before executing it, and its observed result before model continuation. Routine additions use ordered durable action slots and server-owned routine IDs. Repeated calls in one run reuse their original slot; a changed document is refused. After interruption the model must replay each held document in order before adding new routines, even if it invents different model IDs. Failed durable attempts count toward the six-slot cap. Syntactically invalid documents are rejected before reserving a slot. The operation collection also reads legacy single-operation records. Existing routine changes still use proposals and human Apply. A retry recovers those same operations and never chooses a new routine or note-save ID. Generation exclusion uses a database session lock, released on process exit; retrying the same unfinished request after restart recovers it. Deletion during an active generation returns `409 ask-generation-active`. Deleting a conversation removes its generations and messages and preserves routine, saved-note and applied-proposal consequences.
 
 Refusals after reading a known generation retain `generation` and `results`, including later allowance or model-capacity refusals. Never discard an accepted or ambiguous request ID because a retry is refused. Deleted conversation IDs remain unavailable through an account-cascaded tombstone; delayed asks return `409 ask-thread-taken` and cannot recreate the conversation.
 
@@ -48,12 +48,34 @@ The usage ledger preserves every input, cache and output token count reported by
 
 Coach assigns `note_<generation-id>` and an independent `op_note_<generation-id>` operation identity. The tool returns `{saved:true,note:{id,position,title,body,updatedAt}}` only after a durable save. The receipt in `gym_note_saves` is owner-scoped and written atomically with the note insert or exact-text deduplication. Reusing an ID with different text is refused. Original receipts survive user edits/deletion so a lost-ack retry cannot overwrite or resurrect a note. They cascade on account deletion. A successful replay proves the original save, not the note's current presence; the model receives that distinction on recovery. Note saves appear in generic tool steps and the durable operation receipt, without a conversation `results` entry.
 
-The owner-provided main/style/workflow/boundaries prompt is stored verbatim in `AnthropicAsk.cpp`. Factual tool, privacy and context rules are separate. They require equipment/variant clarity and honest movement-pattern coverage, and keep internal IDs and tool narration out of replies unless useful to the user. The runtime still fetches current sessions and Notes before making a model request.
+The conversational prompt in `AnthropicAsk.cpp` welcomes natural dialogue, practical questions and useful follow-ups. It retains factual tool, privacy and context rules. They require equipment/variant clarity and honest movement-pattern coverage, and keep internal IDs and tool narration out of replies unless useful to the user. The runtime still fetches current sessions and Notes before making a model request.
 
-## Anonymous routine onboarding
+## Routine review and exercise edits
 
-The installation-scoped onboarding API prepares reusable routines before sign-in. It reads the public
-seed exercise catalog, makes one bounded model call, and returns validated routine documents. It
+New routines remain drafts until the user reviews and saves them. Generations and their assistant
+turns carry `routineDrafts:[{operationId,routineId,name,position,entries,state}]`; entries use the
+existing routine entry shape and `state` is `pending` or `saved`. Drafts survive interrupted answers
+and retries. They are not routine-created results.
+
+`POST /v1/gym/threads/{thread}/generations/{requestId}/routines/{operationId}/confirm`, with `{}`,
+authenticates the owner and applies the exact server-held draft. It returns `{thread,generation,results}`.
+A missing or foreign draft returns 404; an active conversation returns 409. The server uses the same
+routine identity and immutable creation receipt for every retry, including after later user edits
+or deletion. No model tool can call confirmation. Existing routine revisions still require Apply.
+
+`update_exercise` accepts `exerciseId` and optional `name`, `equipment` and `loadCount` (1 or 2).
+An optional `requestId` makes an edit replayable without overwriting later changes. Coach supplies
+this identity; the sync door commits the original result with the edit, and recovery reads that receipt.
+Coach reads the catalog first and makes these edits only when the user requests them. Stable IDs
+keep all historical sets together. Equipment controls load interpretation: barbell includes the bar,
+dumbbell is per dumbbell, bodyweight is added load. Volume multiplies working-set load by the declared
+number of dumbbells; it never changes the recorded kg, reps or one-rep-max units.
+
+## Anonymous Coach dialogue
+
+The installation-scoped API supports dialogue and routine drafts before sign-in. It reads the public
+seed exercise catalog, makes one bounded model call, and returns an assistant message with optional
+validated routine drafts. It
 does not create an account, a Coach conversation, a server routine or a stored photo. Account Coach,
 history, attachments and account tools still require account authentication.
 
@@ -66,10 +88,16 @@ IP admission and shared free budgets bound that exposure.
 `POST /v1/gym/coach/onboarding` accepts exactly one of these shapes:
 
 ```json
+{"requestId":"12345678-1234-1234-1234-123456789abc","mode":"conversation","text":"Hello","context":[]}
 {"requestId":"12345678-1234-1234-1234-123456789abc","mode":"goal","goal":"Build general strength","daysPerWeek":3,"equipment":"gym"}
 {"requestId":"12345678-1234-1234-1234-123456789abc","mode":"program","program":"Bench Press 3x8"}
 {"requestId":"12345678-1234-1234-1234-123456789abc","mode":"photo","image":{"mimeType":"image/png","data":"<base64>"},"note":"Preserve my program"}
 ```
+
+Conversation text is at most 4,000 UTF-8 bytes and may be empty only with an image. `context` holds
+at most twelve `{role:"user"|"assistant",text}` messages, each nonblank and at most 4,000 bytes,
+with a total 16,000-byte text bound. An optional `image` uses the same validated photo shape below.
+The goal/program/photo modes remain supported for existing clients.
 
 Persist a lowercase UUID `requestId` before sending; reuse it and the exact input after a timeout or
 relaunch. Goal text is 1–1,000 UTF-8 bytes and requires 1–6 weekly days plus equipment. Supported goal
@@ -90,13 +118,16 @@ or another installation's request. Both routes return this shape with private/no
   "resultId":"onb_<stable digest>",
   "status":"completed",
   "expiresAtMs":1800000000000,
+  "message":"Here is a draft to review before saving.",
   "routines":[{"name":"Push","entries":[{"exerciseId":"bench-press","sets":[{"reps":8,"weightKg":null}],"restSeconds":120}]}],
   "errorCode":null,
   "allowance":{"code":"ok","currency":"USD","period":"lifetime","tier":"anonymous","configured":true,"limit":"0.050000000","used":"0.012000000","reserved":"0.000000000","remaining":"0.038000000","resetsAtMs":null,"budgetResetsAtMs":null}
 }
 ```
 
-`status` is `pending`, `completed`, `failed` or `expired`. `routines` is empty until completed;
+`status` is `pending`, `completed`, `failed` or `expired`. `message` is the assistant reply, bounded to
+4,000 UTF-8 bytes for conversation mode. `routines` is empty until completed and may remain empty
+for ordinary dialogue;
 `errorCode` is null unless failed or expired. Poll at one-second intervals with the same credential.
 Pending work becomes terminal after a 15-minute lease, including after a server restart. Replaying a
 request never dispatches it again, including terminal failures. Changing input under the same ID
@@ -104,7 +135,7 @@ returns `409 request_conflict`. Clients must not automatically mint a new ID aft
 The rollout switch stops new claims with `503 anonymous_ai_unavailable`; existing POST replays and
 GET recovery remain available. Binding also preserves GET recovery.
 
-The result contains 1–3 reusable routines, at most six distinct seed exercises per routine and at
+A result with routine drafts contains 1–3 reusable routines, at most six distinct seed exercises per routine and at
 most eight explicit set targets per exercise. It does not promise a six-day calendar. Names are
 nonblank and at most 80 UTF-8 bytes. Reps are 1–100 or null, rest is 15–600 seconds or null, and kg
 weights are finite numbers within the domain's −500 to 500 range, with at most two decimal places,
@@ -124,8 +155,9 @@ UTC day (`429 request_limit`); it does not renew the lifetime dollar allowance.
 
 The server retains validated result content for seven days. A compact request digest and terminal
 identity remain after expiry so an old request can never redispatch. No prompt or image is persisted.
-Native clients atomically import completed routines into their anonymous local engine together with
-a `resultId` replay receipt. They can start a workout before sign-in. Keep/sign-in and the existing
+Native clients retain completed drafts for review. Only explicit Save atomically imports the selected
+result’s routines into the local engine together with a `resultId` replay receipt. A retained draft
+can also be saved after account adoption. They can start a workout before sign-in after saving. Keep/sign-in and the existing
 Add/Discard flow adopt those local records through sync. `POST /v1/ai/installations/bind` attributes
 anonymous spend to the verified account; sign-up grants no second anonymous allowance.
 

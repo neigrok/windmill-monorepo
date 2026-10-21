@@ -183,7 +183,7 @@ LogPage PgLogRepository::log(const UserId& user, const LogCursor& cursor) {
   pqxx::result tallies = txn.exec_params(
       "SELECT st.session_id, coalesce(n.name, e.name) AS name, count(*)::int AS set_count, "
       "  (count(*) FILTER (WHERE st.kind = 'working'))::int AS working_set_count, "
-      "  coalesce(sum(greatest(st.weight_kg, 0) * st.reps) "
+      "  coalesce(sum(greatest(st.weight_kg, 0) * st.reps * CASE WHEN coalesce(n.equipment,e.equipment)='dumbbell' AND coalesce(n.load_count,e.load_count,0)<>1 THEN 2 ELSE 1 END) "
       "           FILTER (WHERE st.kind = 'working'), 0)::float8 AS tonnage_kg "
       "FROM gym_sets st JOIN gym_exercises e ON e.id = st.exercise_id "
       "                 LEFT JOIN gym_exercise_names n "

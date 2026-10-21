@@ -28,7 +28,7 @@ public:
   std::optional<AskGeneration> generation(const UserId& user, const ThreadId& thread,
                                          const std::string& requestId) override;
   void saveGeneration(const UserId& user, const ThreadId& thread,
-                      AskGeneration& generation) override;
+                      AskGeneration& generation, bool settleDraft = false) override;
   std::vector<CoachOperation> operations(const UserId& user, const ThreadId& thread,
                                         const std::string& generationId) override;
   void saveOperation(const UserId& user, const ThreadId& thread,

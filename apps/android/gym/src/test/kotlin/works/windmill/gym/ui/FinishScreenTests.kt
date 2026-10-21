@@ -306,12 +306,12 @@ class FinishedSessionTests {
                 listOf(partial.summary.setCount, partial.summary.tonnageKg, partial.summary.exercises, partial.slight))
         }
         val full = FinishedSession(session(null), bench + press + raise, null, false)
-        assertEquals(listOf(9, 2700.0, listOf("bench-press", "overhead-press", "lateral-raise"), false),
+        assertEquals(listOf(9, 3240.0, listOf("bench-press", "overhead-press", "lateral-raise"), false),
             listOf(full.summary.setCount, full.summary.tonnageKg, full.summary.exercises, full.slight))
         val free = FinishedSession(session(null), listOf(bench.first().copy(weightKg = 57.5)), null, false)
         assertEquals(listOf(1, 460.0, true), listOf(free.summary.setCount, free.summary.tonnageKg, free.slight))
         val warm = full.copy(sets = full.sets + bench.first().copy(id = "warm", kind = SetKind.Warmup))
-        assertEquals(listOf(10, 9, 2700.0), listOf(warm.summary.setCount, warm.summary.workingSetCount, warm.summary.tonnageKg))
+        assertEquals(listOf(10, 9, 3240.0), listOf(warm.summary.setCount, warm.summary.workingSetCount, warm.summary.tonnageKg))
     }
 
 }

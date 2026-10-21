@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { gymApi } from '../gymApi.js';
+import { track } from '../../../telemetry/beacon.js';
+import { captureError } from '../../../telemetry/sentry.js';
 import { mintId } from '../mint.js';
 import {
   answerTurn, askFailure, generationTurns, mergeTurns, NO_ANSWER_NOTE, questionTooLong,
@@ -303,6 +305,32 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
     return () => clearTimeout(timer);
   }, [state.pending, state.busy, state.attempt, workoutInProgress]);
 
+  const confirmRoutine = async (turn, draft) => {
+    const thread = current.current.thread;
+    const key = `${turn.requestId}:${draft.operationId}`;
+    const held = current.current.turns.find((value) => value.from === 'ask' && value.requestId === turn.requestId);
+    if (!accountId || !turn.requestId || current.current.confirmBusy || held?.routineDrafts?.find((value) => value.operationId === draft.operationId)?.state !== 'pending') return;
+    const event = (outcome) => { try { track('gym_coach_routine_confirm', { outcome }); } catch { /* reporting cannot stop a save */ } };
+    change({ confirmBusy: key, confirmNote: '' });
+    event('started');
+    try {
+      const reply = await api.confirmCoachRoutine(thread, turn.requestId, draft.operationId);
+      if (!mounted.current || current.current.thread !== thread) return;
+      if (reply.thread !== thread || reply.generation?.requestId !== turn.requestId) throw new Error();
+      const confirmed = reply.generation.routineDrafts?.find((value) => value.operationId === draft.operationId);
+      if (confirmed?.state !== 'saved' || confirmed.routineId !== draft.routineId) throw new Error();
+      change({ turns: mergeTurns(current.current.turns, generationTurns(reply.generation)), confirmNote: '' });
+      event('saved');
+    } catch (error) {
+      const refused = error.status >= 400 && error.status < 500;
+      event(refused ? 'refused' : 'failed');
+      if (!refused) { try { captureError('gym', 'gym-coach-routine-confirm', '', '/gym'); } catch { /* reporting cannot stop a retry */ } }
+      if (mounted.current && current.current.thread === thread) change({ confirmNote: 'Routine wasn’t confirmed. Try Save routine again.' });
+    } finally {
+      if (mounted.current && current.current.thread === thread) change({ confirmBusy: null });
+    }
+  };
+
   const older = async () => {
     if (!current.current.nextCursor || current.current.olderBusy) return;
     change({ olderBusy: true, olderNote: '' });
@@ -326,7 +354,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
 
   return {
     ...state, turns,
-    send, stop, older, selectPhoto, uploadPhoto,
+    send, stop, older, selectPhoto, uploadPhoto, confirmRoutine,
     cancelUpload: () => upload.current?.abort(),
     removePhoto: async () => {
       if (current.current.request) return;
@@ -337,7 +365,7 @@ export function useCoachConversation({ accountId, initialThread, workoutInProgre
     },
     setDraft: (draft) => change({ draft }),
     newChat: () => {
-      if (active.current || upload.current || current.current.photoBusy) return;
+      if (active.current || upload.current || current.current.photoBusy || current.current.confirmBusy) return;
       forgetCoachDraft(accountId);
       change({ thread: mintId(THREAD_PREFIX), turns: [], draft: '', photo: null, request: null, nextCursor: null,
         pending: false, attempt: 0, stopRequested: false, note: '', closed: '' });

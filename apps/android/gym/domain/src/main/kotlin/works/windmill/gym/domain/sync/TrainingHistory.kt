@@ -17,6 +17,7 @@ class TrainingHistory(private val read: Reader) {
 
     private fun exerciseDocument(value: Exercise): Json = Json.Obj((value.fields() + mapOf("id" to value.id.json,
         "custom" to Json.of(SeedExercises.all.none { it.id == value.id })) +
+        (if (value.equipment == "dumbbell") mapOf("loadCount" to Json.of(value.loadCount)) else emptyMap()) +
         if (value.aliases.isEmpty()) emptyMap() else mapOf("aliases" to Json.Arr(value.aliases.map(Json::of)))).toList())
 
     fun exercises(): Json = Json.Arr(catalogue.exercises.sortedWith { a, b ->
@@ -44,7 +45,7 @@ class TrainingHistory(private val read: Reader) {
 
     private fun top(sets: List<TrainingSet>): TrainingSet? = sets.sortedWith(compareByDescending<TrainingSet> { it.weightKg }.thenByDescending { it.reps }.thenBy { it.id }).firstOrNull()
 
-    private fun tonnage(sets: List<TrainingSet>): Double = sets.filter { it.kind == "working" }.sumOf { maxOf(0.0, works.windmill.sync.core.Quantum.halfAway(it.weightKg * 100)) * it.reps } / 100
+    private fun tonnage(sets: List<TrainingSet>): Double = sets.filter { it.kind == "working" }.sumOf { maxOf(0.0, works.windmill.sync.core.Quantum.halfAway(it.weightKg * 100)) * it.reps * (catalogue.find(it.exerciseId)?.loadCount ?: 1) } / 100
 
     private fun summary(value: Session): Json {
         val sets = log.sets(value.id)

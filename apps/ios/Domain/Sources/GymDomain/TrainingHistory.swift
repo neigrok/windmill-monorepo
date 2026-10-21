@@ -34,6 +34,7 @@ public struct TrainingHistory {
   func exerciseDocument(_ value: Exercise) -> JSON {
     .object(omittingNil: ["id": value.id.json, "name": .string(value.name), "pattern": .string(value.pattern),
       "equipment": .string(value.equipment), "stepKg": .of(value.stepKg), "custom": .bool(!SeedExercises.all.contains { $0.id == value.id }),
+      "loadCount": value.equipment == "dumbbell" ? JSON(value.loadCount) : nil,
       "aliases": value.aliases.isEmpty ? nil : .array(value.aliases.map(JSON.string))])
   }
 
@@ -75,7 +76,9 @@ public struct TrainingHistory {
   }
 
   func tonnage(_ sets: [TrainingSet]) -> Double {
-    sets.filter { $0.kind == "working" }.reduce(0) { $0 + max(0, Quantum(1)!.rounded($1.weightKg * 100)) * Double($1.reps) } / 100
+    sets.filter { $0.kind == "working" }.reduce(0) { total, set in
+      total + max(0, Quantum(1)!.rounded(set.weightKg * 100)) * Double(set.reps) * Double(catalogue.find(set.exerciseId)?.loadCount ?? 1)
+    } / 100
   }
 
   func summary(_ value: Session) -> JSON {

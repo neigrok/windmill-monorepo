@@ -74,7 +74,7 @@ struct WorkoutInspectScreen: View {
     // A stranded set has no span of its own, so its tiles read without the workout's finish.
     let span = stranded ? Session(id: workout.session.id, startedAt: start) : workout.session
     Section {
-      FactTiles(SessionReadout(session: span, sets: sets))
+      FactTiles(SessionReadout(session: span, sets: sets, catalogue: gym.catalogue))
     } footer: {
       if let recovery { Text(recovery.line).accessibilityIdentifier("recovery-reason") }
     }

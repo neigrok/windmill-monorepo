@@ -23,6 +23,7 @@ data class AskTurn(
     val status: String = "completed",
     val requestId: String? = null,
     val attachments: List<CoachAttachment> = emptyList(),
+    val routineDrafts: List<CoachRoutineDraft> = emptyList(),
 ) {
     val fromLifter: Boolean get() = from == Ask.fromLifter
 }
@@ -131,9 +132,9 @@ data class AskThread(
                     exchanges += previous.copy(requestId = request, trouble = if (turn.status == "stopped") Ask.stopped else Ask.interrupted,
                         again = turn.status == "failed" && request.isNotEmpty(),
                         generation = AskGeneration(turn.generationId.orEmpty(), request, previous.question, turn.status,
-                            turn.text, turn.atMs, turn.receipt?.steps.orEmpty(), turn.receipt, turn.results, attachments = previous.attachments))
-                } else exchanges += previous.copy(answer = AskAnswer(turn.text, turn.receipt?.read ?: ReadTally(),
-                    turn.receipt?.steps.orEmpty(), turn.receipt?.proposals.orEmpty(), turn.receipt, results = turn.results))
+                            turn.text, turn.atMs, turn.receipt?.steps.orEmpty(), turn.receipt, turn.results, attachments = previous.attachments, routineDrafts = turn.routineDrafts))
+                } else exchanges += previous.copy(requestId = turn.requestId ?: previous.requestId, answer = AskAnswer(turn.text, turn.receipt?.read ?: ReadTally(),
+                    turn.receipt?.steps.orEmpty(), turn.receipt?.proposals.orEmpty(), turn.receipt, results = turn.results, routineDrafts = turn.routineDrafts))
             }
         }
         generation?.let { current ->

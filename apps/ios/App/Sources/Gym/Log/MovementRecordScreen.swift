@@ -75,12 +75,12 @@ struct MovementRecordScreen: View {
         }
       }
     }.listStyle(.insetGrouped).modifier(GymPage())
-      .roomTitle(movement?.name ?? "Movement", subtitle: movement?.equipment.capitalized)
+      .roomTitle(movement?.name ?? "Movement", subtitle: movement.map { MovementEquipment($0.equipment).title + " · " + MovementEquipment($0.equipment).unit })
       .gymTabBar()
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
           MoreMenu(identifier: "gym-record-more") {
-            Button("Rename movement", systemImage: "pencil") { renaming = true }.accessibilityIdentifier("gym-record-rename")
+            Button("Edit exercise", systemImage: "pencil") { renaming = true }.accessibilityIdentifier("gym-record-rename")
           }.disabled(gym.readFailed || gym.accountTransition || movement == nil)
         }
       }

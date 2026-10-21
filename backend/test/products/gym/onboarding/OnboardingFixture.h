@@ -71,6 +71,7 @@ struct Catalog : CatalogRepository {
   std::atomic<int> seedReads=0;
   std::vector<Exercise> catalog(const UserId&) override { ++ownerReads; throw std::runtime_error("private catalog must not be read"); }
   std::vector<Exercise> seedCatalog() override { ++seedReads; return seeds; }
+  std::optional<Exercise> exerciseUpdate(const UserId&, const std::string&) override { return std::nullopt; }
 };
 
 struct Model : OnboardingModel {

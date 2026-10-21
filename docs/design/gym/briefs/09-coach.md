@@ -6,55 +6,49 @@ asks the same questions of the same tools.
 
 ## What the name does not buy
 
-Coach uses the owner’s supplied system prompt: friendly, informal, direct and grounded in the lifter’s records. It reads user data before deciding, asks when needed and saves useful user-provided insights to Notes. It limits its questions to wellbeing and general health. Notes retain the lifter’s instructions and stated context.
+Coach is friendly, informal, direct and grounded in the lifter’s records. It welcomes natural dialogue, greetings and everyday context, asks useful follow-up questions without forcing a questionnaire, and reads relevant data before making personal training claims. It saves useful user-provided insights to Notes. Notes retain the lifter’s instructions and stated context.
 
-- **It does not speak first.** No greeting, no daily check-in, no "how did that feel?".
+- **One local welcome on iOS.** Before the first accepted message, explain what Coach helps with. No daily check-in or unsolicited follow-up.
 - **No unread badge, no count, no notification, nothing waiting.** Pinned by
   `../../guidelines/superapp-shell.md`.
 - **No grade or streak.** Keep factual progress distinct from supportive conversation.
-- **Existing routine changes are proposed; the human applies.** Requested routine creation has its own truthful creation receipt. There is no apply tool at any grant level.
+- **Routine changes need a human decision.** New routines need Review and Save; existing changes need Review and Apply. No Coach tool can perform the human confirmation.
 - **It is refused mid-workout.** The room reads a log that is still being written.
 
 The lifter’s Notes are written in `10-notes.md`. The trust boundary distinguishes two fields: a **set note is a record** and the prompt treats lifter-typed text as data, never instruction;
 a **note is directive**, and Coach follows it. The Notes screen says so. The set-note field says
 nothing, because it is a record.
 
-## First open — set up your routines
+## First open — a conversation
 
-Signed-in iOS Gym offers setup automatically after account data has loaded, when the account has
-no Gym data and no active workout, account transition or adoption decision. A saved conversation or
-draft takes precedence. A person who deliberately chose a manual route is not redirected on each
-visit; empty Routines retains a quiet **Set up routines** action. Signed-out setup uses the
-installation and local persistence boundary below.
+Signed-in iOS Gym offers setup after account data loads when the account has no Gym data and no
+active workout, account transition or adoption decision. A saved conversation or draft takes
+precedence. A deliberate manual choice prevents repeated automatic entry. Empty Routines has one
+bottom-trailing plus opening the routine builder; Coach remains available from its tab.
 
-The empty setup room is headed **Set up your routines** · *Built from what you bring.* and offers
-three starters as one list:
+On iOS, before the first accepted user message, Coach shows one local greeting:
 
-- **Add a screenshot** opens the system photo picker, which needs no permission; the photo waits
-  in the composer as the attachment draft (`../feedback-contract.md`).
-- **Describe your program** takes pasted or typed program text.
-- **Share your goal** takes a goal. Coach asks only the materially missing questions, each
-  answered with chips that fill one draft. Selecting chips invokes no AI work; submitting the
-  draft can use USD allowance.
+> I’m Coach. I can help you plan training and understand your log. Tell me what you’re working on,
+> or share a routine.
 
-Two quiet escapes sit under the starters: **Just log** opens the logger, **Build it myself** opens
-the routine editor. Both preserve the choice for that account. Text starters prepare an editable
-draft and focus the composer; they never send automatically. The starters leave after the first
-send. The heading and starters are the room's, not a message: Coach still does not speak first.
+**Add screenshot** opens the native photo picker and leaves the image in the composer.
+**Build myself** opens the routine editor. The greeting and actions remain through picker dismissal,
+tab changes, relaunch and refused or failed sends. A successfully accepted first message consumes
+this onboarding state; an attachment-only message counts. The greeting does not call the provider
+or claim that the log has been read. There is no goal form, required days/equipment selector,
+Just log action or standing allowance line. Follow-up questions belong in ordinary dialogue.
 
-Signed-in program and question text share an 8,000-byte UTF-8 limit. A refusal retains the entire draft and
-asks the person to shorten it; it never truncates text silently. Clarification choices arrive as
-bounded, typed days/equipment groups. The client does not derive buttons from Coach's prose. A
-selection updates the editable draft, and the person still taps Send.
+Signed-in text accepts 8,000 UTF-8 bytes; anonymous conversation text accepts 4,000. An overlong
+input stays editable and receives a length refusal. Photo attachment limits come from the API.
 
-When Coach creates requested routines, show one creation receipt per saved routine, *<name>* ·
-*Routine created · N movements*, each with **Open routine** — three saved routines yield three receipts.
-One turn can create at most six routines. Each creation has its own stable operation identity;
-replaying the same request recovers the same saved routine and receipt. An interrupted answer keeps
-its completed creation rows even if the next provider call is refused by an allowance.
-Open routine shows the routine with **Start workout**. Signed-out setup adds the Keep row
-(`../../guidelines/superapp-flow.md` §6); signed-in setup has no phone-only or Keep claim. With
-routines, Gym opens on Routines.
+Requested routines first appear as pending drafts, each with its actual name, movement count and
+**Review**. Review shows the complete movements, equipment and targets, with **Save routine** pinned
+at the bottom; an atomic collection uses **Save routines**. Closing review retains the draft. Only
+successful explicit saving produces *Routine created · N movements* and **Open routine**.
+One signed-in turn may prepare at most six routines. Each has a stable operation and routine
+identity, so retries recover the same result. Completed creation receipts survive interruption.
+Signed-out saving imports the reviewed result atomically into the phone's gym data, and its Keep
+row follows the account adoption rule. With routines, Gym opens on Routines.
 
 ## The loop — four beats
 
@@ -236,11 +230,12 @@ invent a historical conversation turn from a transient return receipt.
 
 ## The verbs
 
-Coach can create a routine when the lifter requests it. Read relevant goals, constraints and the movement catalog; ask only for materially missing context. Creation carries a stable operation/routine identity and a factual receipt with Open routine. Retry must recover the same result, never create a duplicate. Changes to existing routines retain the current proposal and human Apply path.
+Coach prepares a routine draft when requested. Read relevant constraints and the movement catalog; ask only for materially missing context through dialogue. The human reviews and saves the exact draft. Only that save produces a creation receipt with Open routine. Stable operation/routine identities make retry recover the same result. Changes to existing routines retain the proposal and human Apply path.
 
 | Verb | What the lifter receives |
 | --- | --- |
-| create a routine | A saved routine, truthful creation receipt and Open routine |
+| create a routine | A pending draft, Review and Save routine; then a truthful receipt and Open routine |
+| edit an exercise | A requested name/equipment correction on the same identity; history resolves that identity |
 | change a routine | The existing proposal review and human Apply |
 | remove a routine | The existing review including retained logged sets |
 | save a useful insight | An appended note and a truthful saved-note step; the lifter controls later edits/deletion |
@@ -272,11 +267,11 @@ nothing says so in words — *read nothing from your log* — never *read 0 sets
 
 ## The limits, said on screen
 
-Limits are contextual. Signed in, the empty room leads directly to its composer with no allowance line; the signed-out room has one quiet allowance line once installation access exists. When a limit prevents a question, show the server’s accurate reason and available recovery once; preserve the draft and conversation. Individual lifetime/monthly/funded allowance, a request too large for its remaining balance, shared free daily/monthly pools, concurrent calls and burst limits are distinct states. New chat resets none of them. Use the refused budget's reset metadata; a shared daily-pool pause is not the account's monthly reset.
+Limits are contextual. Neither signed-in nor signed-out Coach shows a standing allowance count or remaining balance. When a limit prevents a question, show the server’s accurate reason and available recovery once; preserve the draft and conversation. Individual lifetime/monthly/funded allowance, a request too large for its remaining balance, shared free daily/monthly pools, concurrent calls and burst limits are distinct states. New chat resets none of them. Use the refused budget's reset metadata; a shared daily-pool pause is not the account's monthly reset.
 
 A conversation has no question cap of its own: History reopens the same editable conversation however many questions it holds. Backend model-context bounds are independent of visible retained history. Generating, stopped and interrupted answers keep their truthful partial state and completed action receipts.
 
-The full quiet-room, copying, image attachment and streaming contract is [feedback-contract.md](../feedback-contract.md). The owner’s supplied prompt is preserved by the implementation.
+The full conversation, copying, image attachment and streaming contract is [feedback-contract.md](../feedback-contract.md). A slow answer is not a connection failure: Reconnecting appears only after transport failure, clears after recovery, and preserves the same logical turn.
 
 ## Signed out, and not carried
 
@@ -284,48 +279,34 @@ The full quiet-room, copying, image attachment and streaming contract is [feedba
 the credential; the phone keeps it separately from account credentials and retains it on sign-out.
 IP issuance and generation limits and the shared free daily/monthly pools bound exposure.
 Installation resets are not guaranteed to preserve identity. Input tokens are estimated for each
-actual request and settled to actual provider cost. Show the server's lifetime grant once under
-the first-open starters, without promising a number of questions:
+actual request and settled to actual provider cost. No standing allowance or remaining-balance
+indicator is drawn. When a send exhausts installation access, explain the actual refusal once and
+offer sign-in while keeping the draft and conversation. Sign-in binds installation usage to the
+account; it does not erase spend or promise capacity. Use the ordinary account sign-in door and
+its available providers. The account adoption decision governs local routines, history and photos.
 
-> $0.05 of AI use without an account. Does not renew.
+Signed-in users without One receive a **Windmill One** information destination when their
+individual access is exhausted. Checkout is closed: it says **Subscriptions aren’t available yet.**
+There is no enabled purchase action or promise of immediate restored capacity. Existing One users
+receive the actual refusal and available recovery. Shared-pool, concurrency and rate refusals stay
+distinct from individual exhaustion; a new chat resets none of them.
 
-No countdown, no urgency colour, no *only 1 left*. When the allowance is spent, the next send is
-refused once, in place of an answer:
+Signed-out Coach sends plain dialogue, with optional image, and bounded prior turns. Each request
+makes one bounded provider call. Conversation text accepts 4,000 UTF-8 bytes; the context holds up
+to twelve messages within 16,000 bytes. JPEG/PNG images remain limited to 1 MiB. The response can
+be a conversational answer or up to three routine drafts, with six movements per routine and eight
+target sets per movement. It does not promise a weekly calendar or invent unknown movement IDs.
 
-> **You’ve used this phone’s AI allowance.**
-> Sign in to keep your routines. If your account already has training, you’ll be
-> asked first.
-
-Use that refusal only for a spent balance. A request that cannot fit positive remaining capacity
-needs its own explanation. Sign-in binds the installation permanently and includes its current
-month's anonymous spend in the account's $0.25 monthly free usage; it does not reset usage or
-promise capacity. Unresolved calls remain accounted for across sign-in and period boundaries.
-
-**Continue with Apple** leads and **Use email instead** follows, as on the Keep sheet. The draft
-stays in the composer and the conversation stays on screen. After sign-in the conversation and the
-phone's routines join the account by the sign-in rule (`../../guidelines/superapp-flow.md` §6): the
-same conversation continues under the account, receipts included, unless the person discards the
-phone's gym work when asked, which discards the conversation with it.
-
-Signed-out setup makes one bounded provider request. A goal accepts up to 1,000 UTF-8 bytes and
-requires local Days (1–6) and Equipment (Full gym, Dumbbells, Barbell, Bodyweight) choices before
-Send. A supplied program accepts up to 4,000 bytes without mandatory goal choices. A photo accepts
-JPEG or PNG up to 1 MiB with an optional 1,000-byte note. Limits preserve the full editable draft.
-The result contains at most three reusable routines, six movements per routine and eight target
-sets per movement; it does not promise a weekly calendar. Unknown movements or insufficient
-source details are refused rather than invented.
-
-The phone validates and saves the entire result and its replay receipt atomically before showing
-**Routine created**. Opening a routine and starting a workout need no account. **Stop waiting**
-stops waiting and local saving, not provider spending; **Check response** recovers the same request.
-Local save retry uses the saved result without another provider request.
+The phone retains the validated result for Review. **Save routines** atomically imports it and its
+replay receipt before showing **Routine created**. Opening a saved routine and starting a workout
+need no account. **Stop waiting** stops waiting, not provider spending; **Check response** recovers
+the same request. Save retry uses the retained result without another provider request.
 
 **A signed-out photo is sent to the AI provider when the person sends. Windmill keeps the photo
-only on the phone.** The application server does not persist the image or input text. The provider
-processes it under its own retention terms. A validated routine result is retained briefly for
-request recovery. Signing in keeps routines through the ordinary Add/Discard rule; local Coach
-history and photos must follow that same ownership decision without implying cloud chat backup.
-Signed in, a newly sent photo is kept privately with the account's conversation.
+only on the phone.** The application server does not persist its image or input text. The provider
+processes it under its own retention terms. A validated response is retained briefly for recovery.
+Local Coach history and photos follow the account ownership decision without implying cloud chat
+backup. Signed in, a newly sent photo is kept privately with the account's conversation.
 
 **Android and web keep Coach account-only**, with one stance:
 
@@ -352,7 +333,7 @@ lifter typed — no auto-title, no folders, no pinning. The outcome chip is deri
 The finish receipt's `Share with Coach` is one such first message: it opens a fresh conversation and
 sends *Check my last session.* through the send path a typed question takes, so that sentence is the
 thread's title verbatim and the receipt's caption promises exactly what the title will read
-(`16-the-workout.md`). The lifter's tap sent it, so Coach has still not spoken first.
+(`16-the-workout.md`). The lifter's tap sends it through the ordinary authenticated path.
 History opens a retained conversation with an active composer and the same identity. Copy works for either speaker, including partial text; attachment-only messages offer no empty text copy. Deleting a conversation deletes the conversation and not its consequence: a change that was applied
 still says it came from Coach.
 

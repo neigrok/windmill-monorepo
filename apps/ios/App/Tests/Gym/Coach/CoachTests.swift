@@ -275,7 +275,7 @@ import SyncTesting
     var completed = false, timedOut = false
     let call = Task {
       defer { completed = true }
-      do { _ = try await rest.coachRequest("/v1/gym/ask") { _ in Issue.record("A partial snapshot was delivered") } }
+      do { _ = try await rest.coachRequest("/v1/gym/ask", idleTimeout: 0.05) { _ in Issue.record("A partial snapshot was delivered") } }
       catch { timedOut = (error as? URLError)?.code == .timedOut }
     }
     try await settle { CoachTestProtocol.state.withLock { !$0.requests.isEmpty } }
@@ -603,7 +603,8 @@ import SyncTesting
     await restarted.work?.value; #expect(!restarted.asking)
     #expect(restarted.activeGeneration?.answer == "Recovered" && restarted.saved.request == request)
     let calls = CoachTestProtocol.state.withLock { $0.requests.compactMap(\.body) }
-    #expect(calls.count == 3)
+    #expect(calls.count == (status == "running" ? 6 : 3))
+    #expect(restarted.error == nil)
     for call in calls { #expect(try JSONDecoder().decode(CoachSaved.Request.self, from: call) == request) }
   }
   @Test func acceptedJSONSnapshotPollsSameRequestUntilTerminal() async throws {

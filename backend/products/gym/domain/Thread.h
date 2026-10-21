@@ -31,6 +31,16 @@ struct CoachResult {
   bool operator==(const CoachResult&) const = default;
 };
 
+struct CoachRoutineDraft {
+  std::string operationId;
+  std::string routineId;
+  std::string name;
+  int position = 0;
+  std::vector<RoutineEntry> entries;
+  std::string state = "pending";
+  bool operator==(const CoachRoutineDraft&) const = default;
+};
+
 struct CoachChoice {
   std::string id;
   std::string label;
@@ -71,6 +81,7 @@ struct ThreadTurn {
   std::string purpose = "conversation";
   std::optional<CoachClarification> clarification;
   std::optional<AiBudgetView> allowanceRefusal;
+  std::vector<CoachRoutineDraft> routineDrafts;
 
   bool operator==(const ThreadTurn&) const = default;
 };
@@ -103,6 +114,7 @@ struct AskGeneration {
   std::optional<AiBudgetView> allowanceRefusal;
   std::string purpose = "conversation";
   std::optional<CoachClarification> clarification;
+  std::vector<CoachRoutineDraft> routineDrafts;
   bool operator==(const AskGeneration&) const = default;
 };
 

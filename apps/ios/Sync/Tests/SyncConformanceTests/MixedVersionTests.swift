@@ -45,7 +45,7 @@ struct MixedVersionTests {
   }
 
   @Test(arguments: ["ready", "sent", "acked"])
-  func pendingV4SavesSurviveV6GymWritesPullsAndRelaunch(_ phase: String) throws {
+  func pendingV4SavesSurviveCurrentGymWritesPullsAndRelaunch(_ phase: String) throws {
     let now = try Self.sample.member("now").asInteger(), day = try Self.sample.member("day").asString()
     let replica = try Self.sample.member("replica").asString()
     var instance = Instance(actor: try Stamp.Actor(ClientSteps.actor), deviceNow: now + 1, appVersion: "v4")
@@ -76,7 +76,7 @@ struct MixedVersionTests {
     #expect(try device.dump() == pending)
     let greeting = server.hello(credential: .account("A"), at: now + 6)
     #expect(greeting.status == 200)
-    #expect(greeting.body["schema"] == 6)
+    #expect(greeting.body["schema"] == 7)
     #expect(greeting.body["minSchema"] == JSON(Self.v4.version))
     try device.hello(.ok(try HelloResponse(json: greeting.body)), timing: .steady(send: now + 6, recv: now + 6))
     if phase != "acked" {
@@ -112,7 +112,7 @@ struct MixedVersionTests {
     #expect(Set(loaded.cursors.keys) == [Self.scope])
   }
 
-  @Test func aV4ClaimRetainsTypingAcrossV6GymWritesLostReplyAndRelaunch() throws {
+  @Test func aV4ClaimRetainsTypingAcrossCurrentGymWritesLostReplyAndRelaunch() throws {
     let now = try Self.sample.member("now").asInteger()
     let answer = try JournalHandlers.claimEdit(Self.sample, clientRegistry: Self.v4, serverRegistry: Self.current,
       beforeAdmission: { try Self.gymDoorWrites(&$0, at: now + 4) }, loseClaimReply: true)

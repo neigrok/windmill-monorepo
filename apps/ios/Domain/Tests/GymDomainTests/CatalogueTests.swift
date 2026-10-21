@@ -7,6 +7,26 @@ import SyncSchema
 import Testing
 
 struct CatalogueTests {
+  @Test func exerciseMetadataKeepsIdsAndRawHistoryWhileChangingDerivedVolume() throws {
+    let phone = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_800_000_000_000), account: nil)
+    let id = phone.runner.mint(Exercise.self)
+    #expect(try phone.runner.run(CreateExercise(Exercise(id: id, name: "Custom press", pattern: "press", equipment: "barbell", stepKg: 2.5))).receipt != nil)
+    let session = phone.runner.mint(Session.self)
+    #expect(try phone.runner.run(StartSession(id: session)).receipt != nil)
+    let set = TrainingSet(id: phone.runner.mint(TrainingSet.self), sessionId: session, exerciseId: id, weightKg: 16, reps: 10, completedAt: Instant(ms: 1_800_000_000_001))
+    #expect(try phone.runner.run(AppendSet(set)).receipt != nil)
+    #expect(try phone.runner.run(UpdateExercise(id, name: "Dumbbell press", equipment: "dumbbell", loadCount: 2)).receipt != nil)
+    let log = try phone.runner.read(Gym.scope) { try TrainingLog($0) }
+    #expect(log.catalogue.find(id)?.name == "Dumbbell press")
+    #expect(log.catalogue.find(id)?.equipment == "dumbbell" && log.catalogue.find(id)?.loadCount == 2)
+    #expect(log.sets == [set] && log.volumeKg(session: session) == 320)
+    #expect(try phone.drawn(Exercise.self).first?.equipment == "barbell")
+    #expect(try phone.runner.run(UpdateExercise(id, name: "Single press", loadCount: 1)).receipt != nil)
+    #expect(try phone.runner.read(Gym.scope) { try TrainingLog($0).volumeKg(session: session) } == 160)
+    #expect(try phone.runner.run(RenameExercise(id, name: "My press")).receipt != nil)
+    #expect(try phone.runner.read(Gym.scope) { try Catalogue($0).find(id)?.loadCount } == 1)
+  }
+
   @Test func formerNamesAreSearchableBeforeSyncAndAfterReopeningWithoutWritingServerAliases() throws {
     let phone = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_800_000_000_000), account: nil)
     let id = phone.runner.mint(Exercise.self)
@@ -35,7 +55,7 @@ struct CatalogueTests {
   @Test func catalogueEntitiesAgreeWithTheRegistryAndServerAliasesAreExcluded() throws {
     let sample = Exercise(id: ID("exercise1"), name: "Custom squat", pattern: "squat", equipment: "barbell", stepKg: 2.5, aliases: ["Old squat"])
     try RegistryCheck.entity(Exercise.self, sample: sample, book: GymRules.book, registry: SyncSchema.registry)
-    try RegistryCheck.entity(ExerciseName.self, sample: ExerciseName(id: ID("back-squat"), name: "My squat", aliases: ["Back Squat"]),
+    try RegistryCheck.entity(ExerciseName.self, sample: ExerciseName(id: ID("back-squat"), name: "My squat", equipment: "dumbbell", loadCount: 2, aliases: ["Back Squat"]),
                              book: GymRules.book, registry: SyncSchema.registry)
     #expect(sample.fields["aliases"] == nil)
     #expect(SeedExercises.all.count == 64 && Set(SeedExercises.all.map(\.id)).count == 64)

@@ -549,10 +549,12 @@ const RULES = {
   exerciseName(ctx, record, { append }) {
     const { after } = record;
     const seed = ownValue(ctx.productState.seeds, after.id);
-    if (!seed) throw new Refusal('invalid');
+    const custom = ctx.rowsOf('exercise').find((row) => row.id === after.id && isAlive(row));
+    if (!seed && !custom) throw new Refusal('invalid');
     if (blankNamed(record, 'name')) throw new Refusal('invalid');
-    const before = valueOf(record.original, 'name') ?? seed.name;
-    const now = valueOf(after, 'name') ?? seed.name;
+    const baseName = seed?.name ?? valueOf(custom, 'name');
+    const before = valueOf(record.original, 'name') ?? baseName;
+    const now = valueOf(after, 'name') ?? baseName;
     if (before === now) return;
     append({ t: 'exerciseName', id: after.id, f: { aliases: [renamed(valueOf(after, 'aliases'), before, now), null] } });
   },

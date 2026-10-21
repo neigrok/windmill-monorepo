@@ -4,6 +4,7 @@
 #include "platform/domain/sync/FractionalIndex.h"
 #include "platform/domain/sync/Jcs.h"
 #include "products/gym/adapters/json/GymJson.h"
+#include "products/gym/adapters/postgres/PgGymRows.h"
 
 #include <algorithm>
 
@@ -143,6 +144,63 @@ ExerciseInsertOutcome GymDoor::createExercise(const UserId& user, const Exercise
   if (held) return {held, ExerciseInsertError::none};
   for (const auto& exercise : catalog_.catalog(user)) if (exercise.id == incoming.id) return {exercise, ExerciseInsertError::none};
   return {std::nullopt, ExerciseInsertError::idTaken};
+}
+
+std::optional<Exercise> GymDoor::updateExercise(const UserId& user, const ExerciseUpdate& update) {
+  if (update.name && (trimmedName(*update.name).empty() || update.name->size() > kMaxNameLength || !storableText(*update.name)))
+    throw InvalidTraining("an exercise needs a bounded, storable name");
+  if (update.loadCount && *update.loadCount != 1 && *update.loadCount != 2)
+    throw InvalidTraining("loadCount must be 1 or 2");
+  if (update.requestId && !wellFormedId(*update.requestId)) throw InvalidTraining("requestId must be a stable, well-formed id");
+  Json::Value arguments(Json::objectValue);
+  arguments["exerciseId"] = update.id.str();
+  if (update.name) arguments["name"] = *update.name;
+  if (update.equipment) arguments["equipment"] = toString(*update.equipment);
+  if (update.loadCount) arguments["loadCount"] = *update.loadCount;
+  std::optional<Exercise> saved;
+  bool found = false;
+  const auto result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
+    if (update.requestId) {
+      const auto rows = sync::sqlOf(txn).exec("select arguments::text,exercise::text from gym_exercise_updates where user_id=$1::uuid and request_id=$2",
+                                            pqxx::params{user.str(), *update.requestId});
+      if (!rows.empty()) {
+        if (sync::parseJson(rows[0][0].as<std::string>()) != arguments) throw InvalidTraining("requestId already holds a different exercise edit");
+        saved = exerciseFromJson(sync::parseJson(rows[0][1].as<std::string>()));
+        return std::nullopt;
+      }
+    }
+    const auto catalog = catalog_.catalog(user);
+    const auto existing = std::find_if(catalog.begin(), catalog.end(), [&](const auto& item) { return item.id == update.id; });
+    if (existing == catalog.end()) return std::nullopt;
+    found = true;
+    Json::Value fields(Json::objectValue);
+    if (update.name && !existing->custom) fields["name"] = trimmedName(*update.name);
+    if (update.equipment) fields["equipment"] = toString(*update.equipment);
+    if (update.loadCount) fields["loadCount"] = *update.loadCount;
+    auto built = intent();
+    if (update.name && existing->custom) {
+      Json::Value name(Json::objectValue);
+      name["name"] = trimmedName(*update.name);
+      built["d"].append(delta("exercise", update.id.str(), name));
+    }
+    if (!fields.empty()) built["d"].append(delta("exerciseName", update.id.str(), fields));
+    if (built["d"].empty()) return std::nullopt;
+    if (update.requestId) dynamic_cast<sync::PgSyncTxn&>(txn).beforeCommit([&, txnPtr = &txn] {
+      auto& sql = sync::sqlOf(*txnPtr);
+      const auto rows = sql.exec("select " + std::string(kExerciseColumns) + " from " + std::string(kExerciseFrom) +
+        " where e.id=$2 and (e.created_by is null or e.created_by=$1::uuid)", pqxx::params{user.str(), update.id.str()});
+      if (rows.empty()) throw std::logic_error("admitted exercise update is missing");
+      saved = exerciseFrom(rows[0]);
+      sql.exec("insert into gym_exercise_updates(user_id,request_id,arguments,exercise) values($1::uuid,$2,$3::jsonb,$4::jsonb)",
+               pqxx::params{user.str(), *update.requestId, sync::jcs(arguments), sync::jcs(toJson(*saved))});
+    });
+    return built;
+  });
+  requireOk(result);
+  if (saved) return saved;
+  if (!found) return std::nullopt;
+  for (const auto& exercise : catalog_.catalog(user)) if (exercise.id == update.id) return exercise;
+  return std::nullopt;
 }
 
 NoteWriteOutcome GymDoor::saveInsight(const Note& incoming) {

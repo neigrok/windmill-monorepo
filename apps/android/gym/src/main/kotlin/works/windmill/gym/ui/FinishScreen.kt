@@ -262,7 +262,7 @@ fun FinishScreen(
             Text("${finished.routine ?: "Free session"} · Workout saved", style = WindmillFont.body(16), color = skin.inkDim)
         }
 
-        val summary = finished.summary
+        val summary = SessionSummary(finished.session, finished.sets, catalog)
         val facts = listOf(summary.setCount.toString() to "Sets",
             Readout.weight(summary.tonnageKg ?: 0.0) to "kg lifted",
             summary.exercises.size.toString() to "Movements")

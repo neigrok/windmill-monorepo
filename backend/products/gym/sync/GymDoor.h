@@ -53,6 +53,7 @@ public:
   ProposalMintOutcome proposeRemoval(const UserId&, const ProposalId&, const RoutineId&,
                                      const std::string&, const ProposalSource&) override;
   ExerciseInsertOutcome createExercise(const UserId&, const ExerciseWrite&) override;
+  std::optional<Exercise> updateExercise(const UserId&, const ExerciseUpdate&) override;
   NoteWriteOutcome saveInsight(const Note&) override;
 
 private:
