@@ -23,6 +23,9 @@ within its owner, not a separate product file. Proposals remain separate from de
 
 Journal's Model page and Marketing's Store listings page are empty. Gym's retired
 Today/Ask drawings sit in the [Boards archive](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1084-15663).
+Superseded iOS Gym boards sit in Proposals →
+[2026-10-21 · Archive · Superseded iOS boards](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1118-17302);
+Gym's iOS page is organized as one section per user flow (see [the flow index](index.md)).
 The organization check establishes their archive location; it does not establish visual acceptance
 of the screens.
 

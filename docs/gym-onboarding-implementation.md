@@ -16,7 +16,7 @@ The current interaction contract is
 The drawing references live in
 [Gym onboarding · Coach-led](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1081-565)
 on [Gym · iOS](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=11-2).
-The [iOS READ ME](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=11-25)
+The [iOS READ ME](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1118-1772)
 links to this flow. The drawings need the interaction updates recorded in the
 [consistency ledger](design/consistency.md); their presence does not establish parity with the build.
 
