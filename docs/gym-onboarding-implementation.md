@@ -7,7 +7,14 @@ Coach protocol and customer Usage screens remain separate work.
 
 ## Design sources
 
-The iOS flow uses the existing Coach room, Routines destination and workout logger.
+The canonical iOS flow is
+[Gym onboarding · Coach-led](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=141-1290)
+on the Design System's
+[iOS · Gym onboarding](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=284-5416)
+page. The Gym file's
+[iOS READ ME](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=11-25) links directly to it.
+The flow uses the existing Coach room, Routines destination and workout logger, with links to the
+shared workout and account boards.
 
 | State | Figma |
 | --- | --- |
@@ -119,6 +126,9 @@ has not been submitted. The app and workout widget dSYMs are retained in `ios-ds
 a nonblocking missing `Sentry.framework` dSYM warning; production Sentry symbolication is not verified.
 
 ## Structure observations
+
+Keep one canonical onboarding flow and link its shared workout and account destinations. Individual
+board links remain stable when the flow's page changes.
 
 Keep setup beside the Coach conversation instead of introducing a separate onboarding coordinator.
 Keep presentation-only prompt choices in the Coach contract, not the routine or sync domain. Reuse

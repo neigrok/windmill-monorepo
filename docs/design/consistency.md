@@ -172,9 +172,11 @@ Apple sign-in is off in every build, so no surface draws it yet.
 
 `apps/ios/App` carries the Journal room and the Gym room on the engine, with the workout Live
 Activity. First-run canon: `guidelines/superapp-shell.md`, `guidelines/superapp-flow.md`,
-`gym/briefs/09-coach.md` and the Figma page
-[iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2). The
-rendering contract is [`ios/ios-redesign.md`](ios/ios-redesign.md).
+`gym/briefs/09-coach.md` and the Figma pages
+[iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2) for shared
+first-run and account boards, and
+[iOS · Gym onboarding](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=284-5416)
+for the canonical Coach-led flow. The rendering contract is [`ios/ios-redesign.md`](ios/ios-redesign.md).
 
 - **6v · Briefs that cite the deleted app.** Several gym briefs state the previous native app's
   code or behavior as current. Restate each as the rebuilt room's requirement or drop it:
@@ -193,15 +195,16 @@ rendering contract is [`ios/ios-redesign.md`](ios/ios-redesign.md).
   protocol remains separate work. Per-request input estimates are approximate and settle to actual usage. See
   [the mobile specification](../foundation/mobile/gym_coach.md) and
   [backend contract](../../backend/AI_ALLOWANCES.md).
-- **6u · USD allowance drawings.** Coach first-open (`141:1290`), Account · Usage · Proposal and
-  Roadmap · AI requests · Proposal need the current lifetime/free/funded policy. The written
-  pricing, shell, Coach, roadmap and Journal contracts use USD. Replace drawing question/credit
-  figures with server-backed USD and period labels. Show
+- **6u · USD allowance drawings.** Canonical Coach onboarding (`141:1290`) uses the $0.05 lifetime
+  installation allowance and current free/funded policy. Account · Usage · Proposal and
+  Roadmap · AI requests · Proposal still need the current policy. The written pricing, shell,
+  Coach, roadmap and Journal contracts use USD. Replace remaining drawing question/credit
+  figures with server-backed USD and period labels. Customer usage drawings must show
   held/uncertain usage, free daily-pool pauses, individual exhaustion, request-capacity refusals
   and concurrency. Anonymous lifetime allowance has no reset; One billing periods can cross a
   calendar boundary. All hosted AI, including background Echoes, consumes the individual budget.
   Signing in binds the device and includes its current-month anonymous spend in free usage.
-  Native device grants and customer USD screens are not built.
+  Server-issued installation credentials are implemented; customer USD screens remain unbuilt.
 - **6l · Backend: signed-out routines.** Coach creates routines on the server for an account.
   Signed out they must land on the phone with a stable, retry-safe identity and be adopted once on
   sign-in under the sign-in rule (7d), without duplicates.
