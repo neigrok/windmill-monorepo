@@ -123,7 +123,7 @@ test('a draft line names its movement as the log knows it, its load basis in the
     draftEntryLine({ exerciseId: 'pull-up', sets: [{ reps: 8 }] }, catalog),
   ], [
     { name: 'Pull Up', detail: '1 × 8 · −10 kg assisted · Bodyweight' },
-    { name: 'Goblet Squat', detail: '1 × 8 · 24 kg each · One dumbbell · 90s rest' },
+    { name: 'Goblet Squat', detail: '1 × 8 · 24 kg · One dumbbell · 90s rest' },
     { name: 'New movement', detail: '1 × 8 · 16' },
     { name: 'Pull Up', detail: '1 × 8 · Bodyweight' },
   ]);

@@ -119,8 +119,8 @@ test('focused correction disables fields and navigation while its write is pendi
 
 test('the fix sheet names what a load counts for its movement, in kilograms', async (t) => {
   const single = await sheet(t, { exerciseId: 'dumbbell-row' }, null, { id: 'dumbbell-row', name: 'Dumbbell Row', equipment: 'dumbbell', loadCount: 1 });
-  assert.deepEqual(findByClass(single.tree(), 'gym-fix-units').map(textOf), ['kg each × reps']);
-  assert.equal(single.field('weightKg').props['aria-label'], 'Load in kg each');
+  assert.deepEqual(findByClass(single.tree(), 'gym-fix-units').map(textOf), ['kg × reps']);
+  assert.equal(single.field('weightKg').props['aria-label'], 'Load in kg');
   const assisted = await sheet(t, { exerciseId: 'pull-up', weightKg: -10 }, null, { id: 'pull-up', name: 'Pull Up', equipment: 'bodyweight' });
   assert.deepEqual(findByClass(assisted.tree(), 'gym-fix-units').map(textOf), ['kg added × reps']);
   const unknown = await sheet(t, {}, null, null);

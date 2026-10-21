@@ -268,7 +268,6 @@ nonisolated enum CoachCopy {
   static let unreadableDraft = "Your draft couldn’t be read."
   static let reconnecting = "Reconnecting…"
   static let signInToContinue = "Sign in to continue."
-  static let updatedMovement = "Updated a movement"
   static let confirmRetry = "Couldn’t save the routine. Try again."
   static let draftGone = "This draft is no longer available."
   static let draftUnsavable = "This draft can’t be saved. Ask Coach for a new one."
@@ -302,7 +301,7 @@ nonisolated enum CoachCopy {
   // A movement Coach corrected lands at once, so its row says so, or that the change could not be confirmed.
   static func movementUpdate(_ steps: [CoachStep]) -> String? {
     let updates = steps.filter { $0.tool == "update_exercise" }
-    if updates.contains(where: { !$0.failed }) { return updatedMovement }
+    if updates.contains(where: { !$0.failed }) { return "Updated a movement" }
     return updates.isEmpty ? nil : "Could not confirm a movement update"
   }
 }

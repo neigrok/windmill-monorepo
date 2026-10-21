@@ -574,16 +574,13 @@ void AskService::ask(const UserId& caller, const std::string& email, AskRequest 
                         !reply.answer.outcomeCode.empty() ? reply.answer.outcomeCode : reply.answer.ok || (reply.generation && reply.generation->status == "running") ? "ok" : "failed");
     done(std::move(reply));
   };
-  const auto& purpose = request.purpose;
-  const auto& attachmentIds = request.attachmentIds;
-  const auto& question = request.question;
-  if (!purpose.empty() && purpose != "conversation" && purpose != "routine_setup") { done(AskReply{AskRefusal::requestMalformed}); return; }
+  if (!request.purpose.empty() && request.purpose != "conversation" && request.purpose != "routine_setup") { done(AskReply{AskRefusal::requestMalformed}); return; }
   if (!wellFormedId(request.thread.str())) { done(AskReply{AskRefusal::threadMalformed}); return; }
   if (!request.requestId.empty() && !wellFormedId(request.requestId)) { done(AskReply{AskRefusal::requestMalformed}); return; }
-  if (attachmentIds.size() > 1 || std::any_of(attachmentIds.begin(), attachmentIds.end(), [](const auto& id) { return !wellFormedId(id); })) { done(AskReply{AskRefusal::attachmentInvalid}); return; }
-  if (attachmentIds.empty() && question.find_first_not_of(" \t\r\n") == std::string::npos) { done(AskReply{AskRefusal::questionEmpty}); return; }
-  if (question.size() > kMaxAskTurnBytes) { done(AskReply{AskRefusal::questionTooLong}); return; }
-  if (!storableText(question)) { done(AskReply{AskRefusal::questionUnstorable}); return; }
+  if (request.attachmentIds.size() > 1 || std::any_of(request.attachmentIds.begin(), request.attachmentIds.end(), [](const auto& id) { return !wellFormedId(id); })) { done(AskReply{AskRefusal::attachmentInvalid}); return; }
+  if (request.attachmentIds.empty() && request.question.find_first_not_of(" \t\r\n") == std::string::npos) { done(AskReply{AskRefusal::questionEmpty}); return; }
+  if (request.question.size() > kMaxAskTurnBytes) { done(AskReply{AskRefusal::questionTooLong}); return; }
+  if (!storableText(request.question)) { done(AskReply{AskRefusal::questionUnstorable}); return; }
   if (admissionCount_.fetch_add(1) >= 64) {
     --admissionCount_;
     done(AskReply{AskRefusal::busy});

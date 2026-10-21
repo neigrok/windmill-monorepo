@@ -401,5 +401,5 @@ test('a session’s set rows say what each load counts for its movement', async 
   ]);
   const room = await sessionInARoom(t);
   assert.deepEqual(findByClass(room.screen(), 'gym-set-load').map(textOf),
-    ['16 kg each × 8', '24 kg each × 8', '−10 kg assisted × 8', '100 kg total × 8', '140 kg × 8']);
+    ['16 kg each × 8', '24 kg × 8', '−10 kg assisted × 8', '100 kg total × 8', '140 kg × 8']);
 });

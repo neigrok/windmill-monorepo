@@ -57,8 +57,9 @@ resolve through the current catalogue for old and new sets. Dumbbell entries are
 multiplies by the configured one or two dumbbells. Other equipment counts the entered external load once. Estimates
 retain the entered unit. Seed and custom names continue to identify the same movement throughout history. Set rows,
 the fix sheet, workout corrections and past-workout entry name each load's basis from the catalogue: `kg each` for
-dumbbells, `kg added` for bodyweight (`assisted` below zero on a row), `kg total` for barbells and the plain unit
-otherwise; rows read in the display unit, typed fields in kilograms. Every volume read takes the catalogue.
+a pair of dumbbells, `kg added` for bodyweight (`assisted` below zero on a row), `kg total` for barbells and the
+plain unit for one dumbbell and otherwise; rows read in the display unit, typed fields in kilograms. Every volume
+read takes the catalogue.
 Creation and proposal chronology use the confirmed record's authoritative `rc` envelope. Command
 predictions persist workout fields, correction removals and routine deaths from removal proposals
 through offline restart. Set numbers arrive with server admission; a pending correction retains the

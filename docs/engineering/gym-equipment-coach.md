@@ -23,13 +23,13 @@ detail totals and finish receipts all take the account's catalogue for this inte
 Coach prepares a durable routine draft only for a client that reviews drafts (`routineReview: true` on
 every ask), and a separate confirmation door saves it; its outcomes are in
 [the Coach contract](../gym-coach-contract.md). Clients review movements, target loads with their
-basis, and equipment before the lifter selects Save routine. Web labels the basis "kg each" for
-dumbbells, "kg added" (or "assisted" for a negative target) for bodyweight and "kg total" for
-barbells, shows targets in the lifter's display unit, and names a movement it has not synced yet
-"New movement" with no basis. Retry keeps the thread, request and operation identities. Stream and
-history merges preserve saved state and receipts against older snapshots. Android retains
-confirmation receipts under their account and clears them with the conversation. Late responses never
-publish across an account change.
+basis, and equipment before the lifter selects Save routine. Web labels the basis "kg each" for a
+pair of dumbbells, plain "kg" for one, "kg added" (or "assisted" for a negative target) for
+bodyweight and "kg total" for barbells, shows targets in the lifter's display unit, and names a
+movement it has not synced yet "New movement" with no basis. Retry keeps the thread, request and
+operation identities. Stream and history merges preserve saved state and receipts against older
+snapshots. Android retains confirmation receipts under their account and clears them with the
+conversation. Late responses never publish across an account change.
 
 Load interpretation lives in each surface's gym domain, and the same typed generation carries partial
 replies, routine drafts and saved receipts; no screen writes a routine by another path. Confirmation

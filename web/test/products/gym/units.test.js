@@ -110,7 +110,7 @@ test('every kilogram field on a screen carries the word kg', () => {
   assert.equal(read('backfill/Backfill.jsx').includes('kg <span className="gym-past-times">×</span> reps'), true);
   assert.equal(read('backfill/Backfill.jsx').includes("{ field: 'load', key: 'weightKg', spoken: (basis) => `load in ${basis}` },"), true);
   assert.equal(read('backfill/Backfill.jsx').includes('basis={loadBasisLabel(movementOf(log.catalog, movement.exerciseId), 0, KG)}'), true);
-  // A typed load names its basis in kilograms: kg each, kg added or kg total.
+  // A typed load names its basis in kilograms: kg each, kg, kg added or kg total.
   assert.equal(read('FixSheet.jsx').includes('const basis = loadBasisLabel(exercise, 0, KG);'), true);
   assert.equal(read('FixSheet.jsx').includes('aria-label={`Load in ${basis}`}'), true);
   assert.equal(read('correction/WorkoutEditor.jsx').includes('load in ${loadBasisLabel(movementOf(catalog, exerciseId), 0, KG)}'), true);

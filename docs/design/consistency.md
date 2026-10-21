@@ -13,11 +13,10 @@ acceptance. Figma review tasks below need a fresh file inspection before editing
   states follow [the feedback contract](gym/feedback-2026-10-21.md). Reuse shared masters and Theme
   roles when drawing them. The Live Activity's banner/expanded top-right clock is since last set.
   Figma drawings do not establish hit testing, stream recovery, persistence or device timers.
-- **Web dumbbell basis.** iOS reads a pair of dumbbells as *kg each* and one dumbbell as *kg*, in the
-  rack, set editor, keypad, targets, movement record, session detail and Coach review, VoiceOver
-  included (canon above). Web's `loadBasisLabel` (`log.js`) and the Coach review line (`coach.js`
-  `draftEntryLine`) say *kg each* for every dumbbell, so a one-dumbbell movement reads *16 kg each*.
-  Android needs the same check. Align them to the One/Two rule.
+- **Android load basis.** iOS, web and Android's Coach review read a pair of dumbbells as *kg each*,
+  one dumbbell as *kg*, a barbell as *kg total* and bodyweight as *kg added* (canon above). Android's
+  logger, keypad and fix sheet (`LoggerScreen.kt`, `KeypadSheet.kt`, `FixSheet.kt`) still label every
+  load plain *kg*, so a dumbbell entry does not say it is per dumbbell. Carry the basis there.
 - **Coach movement edits apply at once.** `update_exercise` corrects a movement's name or equipment
   immediately, with no review; every client says *updated a movement* (iOS draws *Updated a movement*
   under the answer). `09-coach.md` ("The verbs", *edit an exercise*) does not say the edit lands

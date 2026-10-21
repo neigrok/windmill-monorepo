@@ -529,11 +529,11 @@ export function slotRows(sets, entry) {
   return [...others, ...lifted, ...coming];
 }
 
-// What an entered load counts for its movement: one dumbbell, weight added to the body (assistance
-// below zero), or the whole bar. Other equipment, and a movement the log does not know, read the unit.
+// What an entered load counts for its movement: each of a pair of dumbbells, weight added to the body (assistance
+// below zero), or the whole bar. One dumbbell, other equipment and a movement the log does not know read the unit.
 export function loadBasisLabel(exercise, weightKg = 0, unit = weightUnit()) {
   switch (exercise?.equipment) {
-    case 'dumbbell': return `${unit} each`;
+    case 'dumbbell': return exercise.loadCount === 1 ? unit : `${unit} each`;
     case 'bodyweight': return `${unit} ${weightKg < 0 ? 'assisted' : 'added'}`;
     case 'barbell': return `${unit} total`;
     default: return unit;

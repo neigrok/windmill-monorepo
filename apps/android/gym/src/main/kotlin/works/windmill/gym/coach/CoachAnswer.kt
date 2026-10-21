@@ -99,8 +99,13 @@ internal fun CoachAnswer(
                             null -> "Equipment not available"
                             else -> exercise.equipment.replaceFirstChar { it.uppercase() }
                         }
-                        val basis = when (exercise?.equipment) { "dumbbell" -> "each"; "bodyweight" -> "added"; else -> "total" }
-                        val scheme = Readout.target(entry.sets) + if (entry.sets.any { it.weightKg != null }) " kg $basis" else ""
+                        val basis = when (exercise?.equipment) {
+                            "dumbbell" -> if (exercise.loadCount == 1) "" else " each"
+                            "bodyweight" -> if (entry.sets.any { (it.weightKg ?: 0.0) < 0 }) " assisted" else " added"
+                            "barbell" -> " total"
+                            else -> ""
+                        }
+                        val scheme = Readout.target(entry.sets) + if (entry.sets.any { it.weightKg != null }) " kg$basis" else ""
                         val rest = entry.restSeconds?.let { " · ${it}s rest" }.orEmpty()
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(Readout.movement(entry.exerciseId, catalog), style = WindmillFont.body(16, FontWeight.Bold), color = skin.ink)

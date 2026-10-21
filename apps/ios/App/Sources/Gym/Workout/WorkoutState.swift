@@ -346,6 +346,7 @@ struct FinishWorkout: Action {
       gym?.workout.flushRack()
     }
   }
+  static let rackUnchanged = "The rack could not be changed. Try again."
   // One save per burst of taps, reported once; an account change flushes first, so a burst that meets one is refused aloud.
   @discardableResult func flushRack() -> Bool {
     guard let previous = rackBase else { return true }
@@ -355,7 +356,7 @@ struct FinishWorkout: Action {
       self.gym.telemetry.event("gym_workout_adjusted", properties: ["screen": "workout", "field": weightKg != previous.weightKg ? "weight" : "reps", "outcome": outcome])
     }
     guard !gym.accountTransition else {
-      message = "The rack could not be changed. Try again."; gym.error = message
+      message = Self.rackUnchanged; gym.error = message
       restoreRack(weightKg: previous.weightKg, reps: previous.reps); adjusted("refused"); return false
     }
     var revoke: WorkoutActivityRecord?
@@ -385,14 +386,14 @@ struct FinishWorkout: Action {
           }
         } catch { gym.readFailed = true; gym.report("gym_activity_update", error) }
       } else { gym.readFailed = true }
-      message = "The rack could not be changed. Try again."; gym.error = message
+      message = Self.rackUnchanged; gym.error = message
       restoreRack(weightKg: previous.weightKg, reps: previous.reps); adjusted("failed")
       return false
     }
     restoreRack(weightKg: weightKg, reps: reps); adjusted("ok")
-    if message == "The rack could not be changed. Try again." {
+    if message == Self.rackUnchanged {
       message = nil
-      if gym.error == "The rack could not be changed. Try again." { gym.error = nil }
+      if gym.error == Self.rackUnchanged { gym.error = nil }
     }
     return true
   }

@@ -104,10 +104,9 @@ know yet reads *New movement*, with no equipment or load basis. Every signed-in 
 and operation identity; a draft that arrived without its request offers no Save. A draft the server no
 longer holds, or cannot write, says so and retires Save; a signed-out, busy or unanswered confirmation
 keeps Save for another try, and an account change during the save says so without claiming a failure.
-Anonymous results
-commit all routines and the replay receipt in one domain action only after Save; a retained result
-can also be explicitly saved after account adoption. Creation links appear after that save succeeds.
-Existing routine changes continue through Review and Apply.
+Anonymous results commit all routines and the replay receipt in one domain action only after Save; a
+retained result can also be explicitly saved after account adoption. Creation links appear after that
+save succeeds. Existing routine changes continue through Review and Apply.
 
 Allowance refusals preserve drafts and retained results, with no balance indicator. The refusal and
 its reset time are drawn once, on the turn it belongs to or in the composer band, and only the

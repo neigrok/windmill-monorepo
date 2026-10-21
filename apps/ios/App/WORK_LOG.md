@@ -140,9 +140,9 @@ catalogue identity. External-load volume uses each set’s equipment basis and o
 while displayed load and strength estimates retain the entered per-dumbbell amount. Workout rack
 feedback updates immediately; persistence coalesces rapid taps into one save, which also runs before
 sign-out, a seat change and backgrounding, so the last accepted value is kept. A tap made while an
-account change is under way is refused with *The rack could not be changed. Try again.* Routine rows expose reorder handles directly; root creation controls use one bottom-trailing
-plus. The Live Activity’s primary clock anchors to the most recent valid set, or session start before
-the first set.
+account change is under way is refused with *The rack could not be changed. Try again.* Routine rows
+expose reorder handles directly; root creation controls use one bottom-trailing plus. The Live
+Activity’s primary clock anchors to the most recent valid set, or session start before the first set.
 
 The focused native Coach suite passes 93 tests, including a transport configured from the production
 8-second authentication session: Coach overrides its idle timeout to 60 seconds and stays live

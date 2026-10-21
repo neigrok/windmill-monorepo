@@ -115,9 +115,8 @@ extension GymRESTClient {
       return data
     } catch {
       if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
-      let failure = coachFailure(error, method: method)
-      telemetry.event("api_request_failed", properties: failure.properties)
-      if reportsFailure, failure.reportable { telemetry.failure("gym_rest", kind: failure.properties["failure_kind"] ?? "transport", properties: failure.properties) }
+      telemetry.event("api_request_failed", properties: coachFailure(error, method: method).properties)
+      if reportsFailure { reportCoachFailure(error, method: method) }
       throw error
     }
   }
@@ -134,7 +133,7 @@ extension GymRESTClient {
     return (properties, !offline && !unavailable && !ExpectedStatuses.contains(status))
   }
 
-  // The one report a streamed ask makes once it gives up: an idle stream it reconnects is expected and reports nothing.
+  // A Coach request's unexpected failure, reported once: a streamed ask reports only the failure it gives up on.
   func reportCoachFailure(_ error: any Error, method: String) {
     guard !(error is CancellationError), (error as? URLError)?.code != .cancelled else { return }
     let failure = coachFailure(error, method: method)

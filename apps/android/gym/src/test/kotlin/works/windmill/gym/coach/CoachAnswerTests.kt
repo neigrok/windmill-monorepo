@@ -173,6 +173,25 @@ class CoachAnswerTests {
         compose.onNodeWithText("Couldn’t save the routine. Try again.").assertDoesNotExist()
         compose.runOnIdle { assertEquals(listOf(draft, draft), requests) }
     }
+    @Test fun routineDraftNamesEachLoadBasisByEquipmentAndCount() {
+        val draft = CoachRoutineDraft("operation-b", "routine-b", "Mixed", 1, listOf(
+            RoutineEntry(0, "goblet-squat", listOf(SetTarget(8, 24.0))),
+            RoutineEntry(1, "back-squat", listOf(SetTarget(5, 100.0))),
+            RoutineEntry(2, "pull-up", listOf(SetTarget(6, -10.0))),
+            RoutineEntry(3, "cable-row", listOf(SetTarget(10, 40.0)))), "pending")
+        compose.setContent { GymMaterial {
+            CoachAnswer("Review this plan", null, listOf(
+                Exercise("goblet-squat", "Goblet Squat", equipment = "dumbbell", loadCount = 1),
+                Exercise("back-squat", "Back Squat", equipment = "barbell"),
+                Exercise("pull-up", "Pull Up", equipment = "bodyweight"),
+                Exercise("cable-row", "Cable Row", equipment = "cable")), 0,
+                routineDrafts = listOf(draft), onConfirmRoutine = { DraftOutcome.Closed(Ask.draftGone) })
+        } }
+        compose.onNodeWithText("1 × 8 · 24 kg · One dumbbell").assertIsDisplayed()
+        compose.onNodeWithText("1 × 5 · 100 kg total · Barbell").assertIsDisplayed()
+        compose.onNodeWithText(Readout.target(listOf(SetTarget(6, -10.0))) + " kg assisted · Bodyweight").assertIsDisplayed()
+        compose.onNodeWithText("1 × 10 · 40 kg · Cable").assertIsDisplayed()
+    }
 
     @Test fun aTurnThatCreatedItsRoutineAtOnceKeepsThePastTenseStep() {
         compose.setContent { GymMaterial {
