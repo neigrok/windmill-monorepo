@@ -13,9 +13,23 @@ acceptance. Figma review tasks below need a fresh file inspection before editing
   states follow [the feedback contract](gym/feedback-2026-10-21.md). Reuse shared masters and Theme
   roles when drawing them. The Live Activity's banner/expanded top-right clock is since last set.
   Figma drawings do not establish hit testing, stream recovery, persistence or device timers.
-- **Routine confirmation compatibility.** Older clients do not render the pending draft confirmation
-  flow. Backend and client availability require a coordinated release or explicit update guidance;
-  silently saving for an old client would violate the human confirmation contract.
+- **Web dumbbell basis.** iOS reads a pair of dumbbells as *kg each* and one dumbbell as *kg*, in the
+  rack, set editor, keypad, targets, movement record, session detail and Coach review, VoiceOver
+  included (canon above). Web's `loadBasisLabel` (`log.js`) and the Coach review line (`coach.js`
+  `draftEntryLine`) say *kg each* for every dumbbell, so a one-dumbbell movement reads *16 kg each*.
+  Android needs the same check. Align them to the One/Two rule.
+- **Coach movement edits apply at once.** `update_exercise` corrects a movement's name or equipment
+  immediately, with no review; every client says *updated a movement* (iOS draws *Updated a movement*
+  under the answer). `09-coach.md` ("The verbs", *edit an exercise*) does not say the edit lands
+  without a review, while routine changes wait for Apply. State it in the brief, and keep intro copy
+  from claiming the lifter reviews every change.
+- **Draft-save failure copy.** Confirming a Coach routine draft answers in four sentences on every
+  client: *This draft is no longer available.* (gone, Save retires), *This draft can’t be saved. Ask
+  Coach for a new one.* (invalid, Save retires), *Couldn’t save the routine. Try again.* (busy, server
+  error or no answer). Signed out, web says *Coach reads your log, so it needs you signed in.* and
+  iOS/Android *Sign in again to save this routine.*; an account change mid-save says *The account
+  changed. Open this again.* on iOS and Android. `09-coach.md` and the review specimens draw none of
+  these; add them and pick one signed-out sentence.
 
 ## Shared system
 

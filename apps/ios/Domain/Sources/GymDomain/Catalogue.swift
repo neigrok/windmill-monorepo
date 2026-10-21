@@ -85,10 +85,7 @@ public struct ExerciseName: Writable, Equatable {
   }
 
   public var fields: [String: JSON] {
-    var result: [String: JSON] = ["name": .of(name)]
-    if let equipment { result["equipment"] = .string(equipment) }
-    if let loadCount { result["loadCount"] = JSON(loadCount) }
-    return result
+    ["name": name.map(JSON.string), "equipment": equipment.map(JSON.string), "loadCount": loadCount.map(JSON.init)].compactMapValues { $0 }
   }
 
   public static let checks: [Check<ExerciseName>] = [
@@ -189,10 +186,11 @@ public struct CreateExercise: Action {
   public func load(_ read: Reader) -> Moment { read.moment }
 
   public func decide(_ loaded: Moment, ids: IDSource) throws(Violation) -> Decision<ID<Exercise>, GymRefusal> {
+    let exercise = try Valid(value, at: loaded)
     var plan = Plan()
-    plan.create(try Valid(value, at: loaded))
-    if value.equipment == "dumbbell", value.loadCount != 2 {
-      plan.create(try Valid(ExerciseName(id: ID(value.id.record), name: nil, loadCount: value.loadCount), at: loaded))
+    plan.create(exercise)
+    if exercise.value.equipment == "dumbbell", exercise.value.loadCount != 2 {
+      plan.create(try Valid(ExerciseName(id: ID(value.id.record), name: nil, loadCount: exercise.value.loadCount), at: loaded), fields: ["loadCount"])
     }
     return .write(plan, value.id)
   }
@@ -203,11 +201,11 @@ public typealias RenameExercise = UpdateExercise
 public struct UpdateExercise: Action {
   public typealias Loaded = (exercise: Exercise?, formerNames: JSON.Object, moment: Moment)
   public let id: ID<Exercise>
-  public let name: String
+  public let name: String?
   public let equipment: String?
   public let loadCount: Int?
 
-  public init(_ id: ID<Exercise>, name: String, equipment: String? = nil, loadCount: Int? = nil) {
+  public init(_ id: ID<Exercise>, name: String? = nil, equipment: String? = nil, loadCount: Int? = nil) {
     self.id = id
     self.name = name
     self.equipment = equipment
@@ -219,32 +217,36 @@ public struct UpdateExercise: Action {
     (try Catalogue(read, in: .stored).find(id), try read.device(Catalogue.formerNamesKey)?.asObject() ?? JSON.Object(), read.moment)
   }
 
+  // Writes only what differs from the stored movement, so an edit on a stale phone never re-sends a field it left alone.
   public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
     guard var old = loaded.exercise else { return .refuse(GymRefusal(Refused(.unknownRecord, subject: id.ref, path: .predicted))) }
-    let next = try ExerciseRules.name.apply(name, at: "name")
-    let nextEquipment = try ExerciseRules.equipment.apply(equipment ?? old.equipment, at: "equipment")
-    let nextCount = nextEquipment == "dumbbell" ? loadCount ?? (old.equipment == "dumbbell" ? old.loadCount : 2) : 1
-    if old.name.utf8.elementsEqual(next.utf8) && old.equipment == nextEquipment && old.loadCount == nextCount { return .unchanged(()) }
+    var renamed: String?
+    if let name {
+      let next = try ExerciseRules.name.apply(name, at: "name")
+      if !next.utf8.elementsEqual(old.name.utf8) { renamed = next }
+    }
+    var equipped: String?
+    if let equipment {
+      let next = try ExerciseRules.equipment.apply(equipment, at: "equipment")
+      if next != old.equipment { equipped = next }
+    }
+    var counted: Int?
+    if let loadCount, (equipped ?? old.equipment) == "dumbbell", equipped != nil || loadCount != old.loadCount { counted = loadCount }
+    let seed = SeedExercises.all.contains { $0.id == id }
+    let metadata = ExerciseName(id: ID(id.record), name: seed ? renamed : nil, equipment: equipped, loadCount: counted)
+    if renamed == nil && metadata.fields.isEmpty { return .unchanged(()) }
     var plan = Plan()
-    var former = loaded.formerNames
-    former[id.record.description] = ["name": .string(next), "aliases": .array(ExerciseRules.renamedAliases(previous: old.name, next: next, aliases: old.aliases).map(JSON.string))]
-    plan.device(Catalogue.formerNamesKey, .object(former))
-    let metadataChanged = equipment != nil || loadCount != nil
-    if SeedExercises.all.contains(where: { $0.id == id }) {
-      let override = ExerciseName(id: ID(id.record), name: next,
-                                  equipment: metadataChanged ? nextEquipment : nil,
-                                  loadCount: metadataChanged ? nextCount : nil)
-      plan.create(try Valid(override, at: loaded.moment))
-    } else {
-      if !old.name.utf8.elementsEqual(next.utf8) {
-        old.name = next
+    if let renamed {
+      var former = loaded.formerNames
+      former[id.record.description] = ["name": .string(renamed), "aliases": .array(ExerciseRules.renamedAliases(previous: old.name, next: renamed, aliases: old.aliases).map(JSON.string))]
+      plan.device(Catalogue.formerNamesKey, .object(former))
+      if !seed {
+        old.name = renamed
         plan.update(try Valid(old, fields: ["name"], at: loaded.moment))
       }
-      if metadataChanged {
-        plan.create(try Valid(ExerciseName(id: ID(id.record), name: nil, equipment: nextEquipment, loadCount: nextCount), at: loaded.moment),
-                    fields: ["equipment", "loadCount"])
-      }
     }
+    let changed = Array(metadata.fields.keys)
+    if !changed.isEmpty { plan.create(try Valid(metadata, fields: changed, at: loaded.moment), fields: changed) }
     return .write(plan)
   }
 }

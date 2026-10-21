@@ -12,7 +12,7 @@ import SyncModelServer
   let now = Instant(ms: 1_790_424_000_000)
 
   func log(sessions: [Session] = [], sets: [TrainingSet] = [], complete: Bool = true) -> TrainingLog {
-    TrainingLog(sessions: sessions, sets: sets, moment: Moment(now: now, zone: FixedZone(offsetSeconds: 0)), firstPullComplete: complete)
+    TrainingLog(sessions: sessions, sets: sets, moment: Moment(now: now, zone: FixedZone(offsetSeconds: 0)), firstPullComplete: complete, catalogue: Catalogue(custom: [], names: []))
   }
 
   func exercise(_ id: String, name: String, aliases: [String] = []) -> Exercise {

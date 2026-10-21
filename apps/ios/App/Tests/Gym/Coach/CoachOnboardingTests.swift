@@ -96,6 +96,7 @@ extension CoachTests {
     #expect(coach.showsGreeting && coach.activeClarification == nil)
     coach.send()
     try await settle { CoachTestProtocol.state.withLock { $0.activeByPath["/v1/gym/coach/onboarding"] != nil } }
+    #expect(coach.asking && !coach.showsGreeting)
     let record = try #require(coach.anonymousRequest)
     #expect(record.request.mode == "conversation" && record.request.text == "Get stronger" && record.request.context == [])
     let call = try #require(CoachTestProtocol.state.withLock { $0.activeByPath["/v1/gym/coach/onboarding"] })
@@ -108,8 +109,8 @@ extension CoachTests {
     await restored.activate()
     #expect(!restored.showsGreeting && !restored.asking && restored.gym.routines.isEmpty)
     let review = CoachRoutineReview(id: completed.id, requestId: completed.id, drafts: try #require(completed.response).routines.map(\.domain), operationId: nil)
-    #expect(await restored.saveRoutines(review))
-    #expect(await restored.saveRoutines(review))
+    #expect(await restored.saveRoutines(review) == .saved)
+    #expect(await restored.saveRoutines(review) == .saved)
     #expect(restored.gym.routines.count == 1 && restored.anonymousRequest?.results.count == 1)
     #expect(CoachTestProtocol.state.withLock { $0.requests.filter { $0.path == "/v1/gym/coach/onboarding" }.count } == 1)
   }
@@ -164,11 +165,11 @@ extension CoachTests {
     let completed = try #require(coach.anonymousRequest)
     let review = CoachRoutineReview(id: completed.id, requestId: completed.id, drafts: try #require(completed.response).routines.map(\.domain), operationId: nil)
     fault.point.withLock { $0 = .beforeCommit(.commit) }
-    #expect(await coach.saveRoutines(review) == false)
+    #expect(await coach.saveRoutines(review) == .kept("Your routines couldn’t be saved. The response is kept on this phone; try again."))
     #expect(coach.gym.routines.isEmpty && coach.anonymousRequest?.results == [])
     #expect(coach.anonymousRequest?.response?.status == "completed")
     fault.point.withLock { $0 = nil }
-    #expect(await coach.saveRoutines(review))
+    #expect(await coach.saveRoutines(review) == .saved)
     #expect(coach.gym.routines.count == 1 && coach.anonymousRequest?.results.count == 1)
     #expect(CoachTestProtocol.state.withLock { $0.requests.filter { $0.path == "/v1/gym/coach/onboarding" }.count } == 1)
   }
@@ -208,7 +209,7 @@ extension CoachTests {
       let call = try #require(CoachTestProtocol.state.withLock { $0.activeByPath["/v1/gym/coach/onboarding"] })
       call.respond(200, try onboardingResponse(request)); await coach.work?.value
       let response = try #require(coach.anonymousRequest?.response)
-      #expect(await coach.saveRoutines(CoachRoutineReview(id: request.requestId, requestId: request.requestId, drafts: response.routines.map(\.domain), operationId: nil)))
+      #expect(await coach.saveRoutines(CoachRoutineReview(id: request.requestId, requestId: request.requestId, drafts: response.routines.map(\.domain), operationId: nil)) == .saved)
       #expect(coach.gym.routines.count == 1)
       try cache.adopt(from: #require(coach.owner), account: "photo-account", discard: false)
       #expect(try cache.read("photo-account").onboarding == coach.saved.onboarding)
@@ -236,7 +237,7 @@ extension CoachTests {
     coach.send(); await coach.work?.value
     let goal = try #require(coach.anonymousRequest), response = try #require(goal.response)
     #expect(model.gym.routines.isEmpty && goal.results.isEmpty && model.gym.isAnonymous)
-    #expect(await coach.saveRoutines(CoachRoutineReview(id: goal.id, requestId: goal.id, drafts: response.routines.map(\.domain), operationId: nil)))
+    #expect(await coach.saveRoutines(CoachRoutineReview(id: goal.id, requestId: goal.id, drafts: response.routines.map(\.domain), operationId: nil)) == .saved)
     let count = model.gym.routines.count
     #expect(coach.chooseSetup(.screenshot))
     let photo = UIGraphicsImageRenderer(size: CGSize(width: 480, height: 240)).image { context in
@@ -246,7 +247,7 @@ extension CoachTests {
     try coach.addPhoto(#require(photo.pngData())); coach.send(); await coach.work?.value
     let photoRecord = try #require(coach.anonymousRequest), photoResponse = try #require(photoRecord.response)
     #expect(photoRecord.request.mode == "conversation" && photoRecord.results.isEmpty)
-    #expect(await coach.saveRoutines(CoachRoutineReview(id: photoRecord.id, requestId: photoRecord.id, drafts: photoResponse.routines.map(\.domain), operationId: nil)))
+    #expect(await coach.saveRoutines(CoachRoutineReview(id: photoRecord.id, requestId: photoRecord.id, drafts: photoResponse.routines.map(\.domain), operationId: nil)) == .saved)
     #expect(model.gym.routines.count > count)
     let routine = try #require(model.gym.routines.first)
     model.gym.startWorkout(routineId: routine.id)

@@ -261,7 +261,7 @@ extension WorkoutState {
     let workout = gym.workout, clocks = try self.clocks(session)
     let state = WorkoutActivityAttributes.ContentState(title: session.name ?? Readout.noRoutine,
       movement: workout.selected.flatMap { gym.catalogue.find($0)?.name } ?? "Choose a movement",
-      load: Readout.weight(workout.weightKg) + " " + MovementEquipment(workout.selected.flatMap { gym.catalogue.find($0)?.equipment } ?? "").unit, reps: workout.reps,
+      load: Readout.weight(workout.weightKg) + " " + MovementEquipment(workout.selected.flatMap { gym.catalogue.find($0) }).unit, reps: workout.reps,
       workingSetOrdinal: workout.currentSets.filter { $0.kind == "working" }.count + 1,
       plannedWorkingSetCount: workout.entry?.sets?.count, startedAt: clocks.startedAt, lastSetAt: clocks.lastSetAt,
       staleAt: clocks.staleAt, unsentSetCount: gym.unsentSets(workout.sets).count, offer: offer)

@@ -73,7 +73,7 @@ import Vision
     app.buttons["gym-rename-movement-commit"].tap()
     XCTAssertTrue(name.waitForNonExistence(timeout: 5))
     app.navigationBars["This workout"].buttons["Close"].tap()
-    XCTAssertEqual(app.buttons["workout-weight"].label, "Weight, 100 kg each")
+    XCTAssertEqual(app.buttons["workout-weight"].label, "Weight, 100 kg")
     XCTAssertTrue(app.staticTexts["One dumbbell · 100 kg total"].exists)
     XCTAssertTrue(app.buttons["Dumbbell squat"].exists)
     try capture(app, "dumbbell-rack-light")
@@ -81,7 +81,7 @@ import Vision
     XCTAssertTrue(app.buttons["workout-done"].waitForExistence(timeout: 10)); app.buttons["workout-done"].tap()
     let history = app.buttons["gym-session-movement"].firstMatch
     XCTAssertTrue(history.waitForExistence(timeout: 5))
-    XCTAssertTrue(history.label.hasPrefix("Dumbbell squat, kg each"), history.label)
+    XCTAssertTrue(history.label.hasPrefix("Dumbbell squat, kg") && !history.label.contains("kg each"), history.label)
     let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "gym-finished-set-"))
     XCTAssertEqual(rows.allElementsBoundByIndex.map(\.label), ["W · 80 × 3", "1 · 100 × 5, on plan", "2 · 100 × 5, on plan"])
     try capture(app, "seed-renamed-history-light")
@@ -148,7 +148,7 @@ import Vision
     let app = launch(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
     let log = app.buttons["workout-log"]
     XCTAssertTrue(log.wait(for: \.isHittable, toEqual: true, timeout: 5))
-    let ladder = ["−10 kilograms", "−2.5 kilograms", "+2.5 kilograms", "+10 kilograms"].map { app.buttons[$0] }
+    let ladder = ["−10 kg total", "−2.5 kg total", "+2.5 kg total", "+10 kg total"].map { app.buttons[$0] }
     for control in ladder + [app.buttons["Fewer reps"], app.buttons["workout-reps"], app.buttons["More reps"], app.buttons["workout-weight"]] {
       XCTAssertTrue(control.exists && control.isHittable, "\(control) is out of reach at rest")
       XCTAssertTrue(app.frame.contains(control.frame), "\(control.frame) leaves the screen")
@@ -254,7 +254,7 @@ import Vision
     XCTAssertFalse(app.buttons["workout-next"].exists)
     XCTAssertFalse(app.buttons["workout-previous"].exists)
     XCTAssertFalse(app.staticTexts["Movement 1 of 2"].exists)
-    for control in [app.buttons["Fewer reps"], app.buttons["More reps"], app.buttons["−2.5 kilograms"], app.buttons["+2.5 kilograms"]] {
+    for control in [app.buttons["Fewer reps"], app.buttons["More reps"], app.buttons["−2.5 kg total"], app.buttons["+2.5 kg total"]] {
       XCTAssertGreaterThanOrEqual(control.frame.width, 44)
       XCTAssertGreaterThanOrEqual(control.frame.height, 44)
     }

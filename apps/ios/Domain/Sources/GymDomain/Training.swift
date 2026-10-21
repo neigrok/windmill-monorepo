@@ -83,9 +83,9 @@ public struct TrainingSet: Writable, Removable, Equatable {
     ["sessionId": sessionId.json, "exerciseId": exerciseId.json, "weightKg": .of(weightKg), "reps": JSON(reps),
      "kind": .string(kind), "rpe": .of(rpe), "note": .string(note), "completedAt": .of(completedAt)]
   }
-  public func volumeKg(equipment: String, loadCount: Int = 2) -> Double {
+  public func volumeKg(on exercise: Exercise?) -> Double {
     guard kind == "working" else { return 0 }
-    return max(0, weightKg) * Double(reps) * (equipment == "dumbbell" ? Double(loadCount) : 1)
+    return max(0, weightKg) * Double(reps) * Double(exercise?.loadCount ?? 1)
   }
   public var e1rm: Double? { GymEstimate.value(weightKg: weightKg, reps: reps, kind: kind, rpe: rpe) }
 
@@ -178,7 +178,7 @@ public struct TrainingLog: Sendable {
   public let firstPullComplete: Bool
   public let catalogue: Catalogue
 
-  public init(sessions: [Session], sets: [TrainingSet], moment: Moment, firstPullComplete: Bool = true, catalogue: Catalogue = Catalogue(custom: [], names: [])) {
+  public init(sessions: [Session], sets: [TrainingSet], moment: Moment, firstPullComplete: Bool = true, catalogue: Catalogue) {
     self.catalogue = catalogue
     self.sessions = sessions; self.sets = sets; self.moment = moment; self.firstPullComplete = firstPullComplete
   }
@@ -206,10 +206,7 @@ public struct TrainingLog: Sendable {
     return sets.filter { $0.sessionId == session }.sorted { $0.completedAt == $1.completedAt ? $0.id < $1.id : $0.completedAt < $1.completedAt }
   }
   public func volumeKg(session: ID<Session>) -> Double {
-    sets(session: session).reduce(0) { total, set in
-      let exercise = catalogue.find(set.exerciseId)
-      return total + set.volumeKg(equipment: exercise?.equipment ?? "", loadCount: exercise?.loadCount ?? 1)
-    }
+    sets(session: session).reduce(0) { total, set in total + set.volumeKg(on: catalogue.find(set.exerciseId)) }
   }
   public func topE1rm(session: ID<Session>) -> Double? { sets(session: session).compactMap(\.e1rm).max() }
 }

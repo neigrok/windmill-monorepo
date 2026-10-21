@@ -703,10 +703,11 @@ final class AppModel {
     let generation = authGeneration
     journal.liftInk()
     signOutRefusal = nil
-    accountTransition = true; signingOut = true; journal.editing = false
-    defer { if authGeneration == generation { accountTransition = false; signingOut = false } }
+    journal.editing = false
     choose("sign_out", screen: "you")
     guard flushRooms() else { await refuseSignOut(error ?? Self.signOutFailed); return }
+    accountTransition = true; signingOut = true
+    defer { if authGeneration == generation { accountTransition = false; signingOut = false } }
     do {
       let session = try await runtime.engine.signOut()
       guard !Task.isCancelled else { await session.cancel(); return }

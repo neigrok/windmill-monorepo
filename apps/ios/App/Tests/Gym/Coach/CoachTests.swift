@@ -748,7 +748,7 @@ import SyncTesting
     defer { try? FileManager.default.removeItem(at: cache.directory) }
     let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
     coach.edit("Prior draft"); let priorThread = coach.saved.threadId
-    let handoff = CoachHandoff(question: "Help me turn my written program into a routine.")
+    let handoff = CoachHandoff(account: gym.account, question: "Help me turn my written program into a routine.")
     #expect(coach.begin(handoff))
     #expect(coach.saved.threadId != priorThread && coach.saved.text == handoff.question && coach.saved.request == nil)
     #expect(try cache.read(gym.account!).text == handoff.question)
@@ -760,13 +760,15 @@ import SyncTesting
     defer { try? FileManager.default.removeItem(at: cache.directory) }
     let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
     let priorThread = coach.saved.threadId
-    #expect(coach.begin(CoachHandoff(question: WorkoutHandoff.coachQuestion, send: true)))
-    await coach.work?.value; #expect(!coach.asking)
+    #expect(coach.begin(CoachHandoff(account: gym.account, question: WorkoutHandoff.coachQuestion, send: true)))
+    #expect(coach.asking && !coach.showsGreeting)
+    await coach.work?.value; #expect(!coach.asking && coach.showsGreeting)
     let request = try #require(coach.saved.request)
     #expect(request.thread != priorThread && request.question == WorkoutHandoff.coachQuestion && request.attachmentIds.isEmpty)
     let call = try #require(CoachTestProtocol.state.withLock { $0.requests.first })
     #expect(call.path == "/v1/gym/ask" && call.method == "POST" && call.authorization?.hasPrefix("Bearer ") == true)
     #expect(try JSONDecoder().decode(CoachSaved.Request.self, from: #require(call.body)) == request)
+    #expect((try JSONSerialization.jsonObject(with: #require(call.body)) as? [String: Any])?["routineReview"] as? Bool == true)
     #expect(coach.retryable && coach.saved.text == request.question)
   }
 
@@ -775,8 +777,53 @@ import SyncTesting
     defer { try? FileManager.default.removeItem(at: cache.directory) }
     let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate(); coach.edit("Prior draft")
     try FileManager.default.removeItem(at: cache.directory); try Data("blocked".utf8).write(to: cache.directory)
-    #expect(!coach.begin(CoachHandoff(question: WorkoutHandoff.coachQuestion, send: true)))
+    #expect(!coach.begin(CoachHandoff(account: gym.account, question: WorkoutHandoff.coachQuestion, send: true)))
     #expect(coach.saved.text == "Prior draft" && coach.saved.request == nil && !coach.asking)
+    #expect(CoachTestProtocol.state.withLock { $0.requests.isEmpty })
+  }
+
+  @Test func recoveryIsOfferedOnlyWhereSigningInOrWindmillOneCanHelp() {
+    for code in ["subject_exhausted", "device_bound", "installation_bound", "invalid_installation"] {
+      #expect(CoachRecovery(code: code, tier: "anonymous", anonymous: true) == .signIn)
+    }
+    for code in ["free_day_exhausted", "free_month_exhausted", "concurrency_exhausted", "funding_required", "unconfigured"] {
+      #expect(CoachRecovery(code: code, tier: "anonymous", anonymous: true) == nil)
+      #expect(CoachRecovery(code: code, tier: "logged_in", anonymous: false) == nil)
+    }
+    #expect(CoachRecovery(code: "subject_exhausted", tier: "logged_in", anonymous: false) == .windmillOne)
+    #expect(CoachRecovery(code: "subject_exhausted", tier: "windmill_one", anonymous: false) == nil)
+    #expect(CoachRecovery(code: "subject_exhausted", tier: "unknown", anonymous: false) == nil)
+    #expect(CoachRecovery(.daily("Later"), anonymous: false) == nil && CoachRecovery(.ceiling("Later"), anonymous: false) == nil)
+    #expect(CoachRecovery(.installation("Bound"), anonymous: true) == .signIn && CoachRecovery(.installation("Bound"), anonymous: false) == nil)
+    #expect(CoachCopy.movementUpdate([CoachStep(tool: "list_exercises"), CoachStep(tool: "update_exercise")]) == "Updated a movement")
+    #expect(CoachCopy.movementUpdate([CoachStep(tool: "update_exercise", failed: true)]) == "Could not confirm a movement update")
+    #expect(CoachCopy.movementUpdate([CoachStep(tool: "save_note")]) == nil)
+  }
+
+  @Test func aFailedFirstAnswerKeepsTheGreetingAfterTheNextSend() async throws {
+    let (gym, rest, _) = try await authed(.stalled), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
+    coach.edit("First question"); let first = CoachSaved.Request(thread: coach.saved.threadId, question: "First question", requestId: "first", attachmentIds: [])
+    var saved = coach.saved; saved.request = first; #expect(coach.keep(saved, failure: "save"))
+    let failed: [String: Any] = ["id": "failed-generation", "requestId": "first", "question": "First question", "status": "failed", "revision": 1]
+    try coach.accept(JSONDecoder().decode(CoachSnapshot.self, from: JSONSerialization.data(withJSONObject: ["thread": first.thread, "generation": failed])), request: first)
+    #expect(coach.showsGreeting && coach.saved.acceptedFirstMessage != true)
+    coach.edit("Second question"); coach.send()
+    #expect(coach.saved.exchanges.map(\.id) == ["failed-generation"] && coach.asking && !coach.showsGreeting)
+    coach.stopResponse()
+    #expect(!coach.asking && coach.showsGreeting)
+  }
+
+  @Test func handoffAskedUnderAnotherAccountNeverStartsAChat() async throws {
+    let (gym, rest, _) = try await authed(.stalled), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate(); coach.edit("Prior draft")
+    let priorThread = coach.saved.threadId
+    #expect(!coach.begin(CoachHandoff(account: "another-account", question: WorkoutHandoff.coachQuestion, send: true)))
+    #expect(!coach.begin(CoachHandoff(account: nil, question: WorkoutHandoff.coachQuestion, send: true)))
+    #expect(coach.saved.threadId == priorThread && coach.saved.text == "Prior draft" && coach.saved.request == nil && !coach.asking)
+    #expect(try cache.read(gym.account!).text == "Prior draft")
     #expect(CoachTestProtocol.state.withLock { $0.requests.isEmpty })
   }
 

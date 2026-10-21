@@ -75,7 +75,7 @@ struct MovementRecordScreen: View {
         }
       }
     }.listStyle(.insetGrouped).modifier(GymPage())
-      .roomTitle(movement?.name ?? "Movement", subtitle: movement.map { MovementEquipment($0.equipment).title + " · " + MovementEquipment($0.equipment).unit })
+      .roomTitle(movement?.name ?? "Movement", subtitle: movement.map { MovementEquipment($0).title + " · " + MovementEquipment($0).unit })
       .gymTabBar()
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {

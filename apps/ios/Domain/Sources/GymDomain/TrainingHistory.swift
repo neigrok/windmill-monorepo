@@ -5,14 +5,13 @@ import SyncCore
 public struct TrainingHistory {
   public let log: TrainingLog
   let read: Reader
-  let catalogue: Catalogue
   let routineValues: [Routine]
   let proposalValues: [Proposal]
   let routineCreated: [ID<Routine>: Int64]
   let proposalCreated: [ID<Proposal>: Int64]
 
   public init(_ read: Reader) throws {
-    self.read = read; log = try TrainingLog(read); catalogue = try Catalogue(read)
+    self.read = read; log = try TrainingLog(read)
     routineValues = try read.repository(Routine.self).all(in: .drawn).filter { !$0.entries.isEmpty }
     let proposals = try read.repository(Proposal.self).all(in: .drawn)
     routineCreated = try Dictionary(uniqueKeysWithValues: routineValues.compactMap { value in
@@ -28,6 +27,7 @@ public struct TrainingHistory {
     }
   }
 
+  var catalogue: Catalogue { log.catalogue }
   var finished: [Session] { log.drawnSessions.filter { !$0.isOpen } }
   static func before(_ a: String, _ b: String) -> Bool { a.utf8.lexicographicallyPrecedes(b.utf8) }
 
@@ -196,7 +196,7 @@ public struct TrainingHistory {
       "months": .array(months.keys.sorted(by: >).map { ["month": .string($0), "sessions": JSON(months[$0]!.count)] }),
       "exercises": .array(exercises.sorted(by: facetOrder)), "routines": .array(routines.sorted(by: facetOrder)), "next": .null]
     if after.count > limit, let last = page.last { result["next"] = ["before": .of(last.startedAt), "beforeId": last.id.json] }
-    if try f.optionalString("projection") == "progress" { result["progress"] = StatsProgress(log: TrainingLog(sessions: scoped, sets: allSets, moment: read.moment, firstPullComplete: log.firstPullComplete)).json }
+    if try f.optionalString("projection") == "progress" { result["progress"] = StatsProgress(log: TrainingLog(sessions: scoped, sets: allSets, moment: read.moment, firstPullComplete: log.firstPullComplete, catalogue: catalogue)).json }
     return .object(JSON.Object(uniqueKeysWithValues: result.map { ($0.key, $0.value) }))
   }
 
@@ -303,8 +303,8 @@ public struct TrainingHistory {
   func recordFor(_ value: Session) -> JSON? {
     guard log.firstPullComplete else { return nil }
     let previous = finished.filter { $0.startedAt < value.startedAt || ($0.startedAt == value.startedAt && $0.id < value.id) }
-    let prior = StatsProgress(log: TrainingLog(sessions: previous, sets: log.sets, moment: read.moment))
-    let current = StatsProgress(log: TrainingLog(sessions: [value], sets: log.sets, moment: read.moment))
+    let prior = StatsProgress(log: TrainingLog(sessions: previous, sets: log.sets, moment: read.moment, catalogue: catalogue))
+    let current = StatsProgress(log: TrainingLog(sessions: [value], sets: log.sets, moment: read.moment, catalogue: catalogue))
     struct Candidate {
       let rank: Int, kind: String, exercise: ID<Exercise>, fact: PerformedFact, amount: Double, before: Double, beforeAt: Instant
       var score: Double { GymEstimate.score(weightKg: fact.weightKg, reps: fact.reps, rpe: fact.rpe) ?? 0 }

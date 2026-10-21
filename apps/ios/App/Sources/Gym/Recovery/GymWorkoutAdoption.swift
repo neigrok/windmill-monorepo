@@ -11,7 +11,7 @@ import SyncSchema
   var changingGym: GymModel?
   var seatChanges = 0
   func seatWillChange() async throws {
-    if seatChanges == 0 { changingGym = gym; changingGym?.replicaChanging = true }
+    if seatChanges == 0 { gym?.workout.flushRack(); changingGym = gym; changingGym?.replicaChanging = true }
     seatChanges += 1
     guard let gym = changingGym else { return }
     if let controller = gym.existingWorkoutActivity {

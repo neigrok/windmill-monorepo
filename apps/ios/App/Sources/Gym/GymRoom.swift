@@ -127,7 +127,7 @@ struct GymRoom: View {
     .task(id: "\(gym.account ?? ""):\(gym.authPaused):\(gym.accountTransition)") {
       await coach.activate()
     }
-    .onChange(of: gym.account) { _, _ in setupBuilder = nil; coachHandoff = nil }
+    .onChange(of: gym.account) { _, account in setupBuilder = nil; if coachHandoff?.account != account { coachHandoff = nil } }
     .onChange(of: gym.accountTransition) { _, active in if active { setupBuilder = nil } }
     .onChange(of: tab) { _, _ in if !setupReady { setupNavigationChosen = true } }
     .onChange(of: setupReady, initial: true) { _, ready in
@@ -189,12 +189,11 @@ struct GymRoom: View {
     gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "shown"])
   }
   func escapeSetup(_ choice: CoachSetupChoice) {
-    if choice == .justLog { tab = .log; gym.startWorkout(); return }
     if choice == .buildManually { tab = .routines; setupBuilder = RoutineEditingSession(gym: gym, routine: nil) }
   }
   func ask(_ question: String, send: Bool = false, purpose: CoachPurpose = .conversation) {
     coachPath = NavigationPath(); tab = .coach
-    coachHandoff = CoachHandoff(question: question, send: send, purpose: purpose)
+    coachHandoff = CoachHandoff(account: gym.account, question: question, send: send, purpose: purpose)
   }
   func receiveWorkout() {
     risingFromAccessory = false

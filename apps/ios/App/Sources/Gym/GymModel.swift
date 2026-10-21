@@ -302,6 +302,7 @@ final class GymModel {
   }
 
   func background() {
+    workout.flushRack()
     rest.cancel()
     do { try runtime?.engine.leave(); refresh() }
     catch { self.error = "Gym could not keep pending changes. Try again."; report("gym_flush", error) }

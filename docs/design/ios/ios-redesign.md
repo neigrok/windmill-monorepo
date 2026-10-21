@@ -608,7 +608,9 @@ card, in History and in the Review's band:
 What Coach did besides answering is one row under the answer, each a door: a created routine
 *Open routine · Push A ›* with `list.bullet.rectangle`; a saved note *Saved a note ›* with
 `note.text`, opening Notes — and, when the save could not be confirmed, *Could not confirm a note
-save ›*, opening Notes the same way, where the note is or is not. A write is never silent.
+save ›*, opening Notes the same way, where the note is or is not. A movement Coach corrected reads
+*Updated a movement* with `pencil`, or *Could not confirm a movement update*; it is not a door, since
+the change has already landed and the step names no movement. A write is never silent.
 
 **Signed out** the room is a `ContentUnavailableView` with `bubble.left.and.bubble.right`, no title
 (the bar already says Coach), the canon sentence *Coach reads your log, so it needs you signed in.*
@@ -883,7 +885,7 @@ with 7.11 and 7.12.
   a new set is Working, as on web and Android; the Fix sheet carries *Kind* as a segmented control
   (warmup · working · drop · failure).
 - The rack is a grounded panel on `gym/card`, with 16 pt padding. Weight is a large rounded
-  numeral with `kg total` for Barbell, `kg each` for Dumbbells and `kg added` for Bodyweight.
+  numeral with `kg total` for Barbell, `kg each` for two Dumbbells, `kg` for one and `kg added` for Bodyweight.
   Dumbbells also states One/Two and the combined external load; Bodyweight distinguishes added,
   unweighted and assistance. Four equal ladder keys are at least 48 pt tall. Reps has separate
   56 pt minus/plus targets and a centered editable value; their hit areas never overlap. Touch-down

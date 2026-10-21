@@ -50,7 +50,7 @@ struct TrainingReadsTests {
       TrainingSet(id: ID("unweighted"), sessionId: session.id, exerciseId: ID("body"), weightKg: 0, reps: 5, completedAt: Instant(ms: 7)),
       TrainingSet(id: ID("warmup"), sessionId: session.id, exerciseId: ID("pair"), weightKg: 16, reps: 10, kind: "warmup", completedAt: Instant(ms: 8)),
     ]
-    #expect(sets.map { $0.volumeKg(equipment: catalogue.find($0.exerciseId)!.equipment, loadCount: catalogue.find($0.exerciseId)!.loadCount) } == [320, 160, 320, 50, 0, 0, 0])
+    #expect(sets.map { $0.volumeKg(on: catalogue.find($0.exerciseId)) } == [320, 160, 320, 50, 0, 0, 0])
     let readout = SessionReadout(session: session, sets: sets, catalogue: catalogue)
     #expect(readout.volumeKg == 850)
     #expect(readout.workingSetCount == 6 && readout.movementCount == 4)

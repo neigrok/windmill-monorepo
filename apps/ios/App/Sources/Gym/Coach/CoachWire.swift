@@ -266,6 +266,14 @@ nonisolated enum CoachCopy {
   static let signedOut = "Coach reads your log, so it needs you signed in."
   static let absent = "Coach isn’t part of this Windmill. Your log is still yours to read."
   static let unreadableDraft = "Your draft couldn’t be read."
+  static let reconnecting = "Reconnecting…"
+  static let signInToContinue = "Sign in to continue."
+  static let updatedMovement = "Updated a movement"
+  static let confirmRetry = "Couldn’t save the routine. Try again."
+  static let draftGone = "This draft is no longer available."
+  static let draftUnsavable = "This draft can’t be saved. Ask Coach for a new one."
+  static let draftSignIn = "Sign in again to save this routine."
+  static let accountChanged = "The account changed. Open this again."
   static func sendable(_ text: String, photo: Bool) -> Bool {
     let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
     return (!text.isEmpty || photo) && text.utf8.count <= 8000
@@ -291,10 +299,33 @@ nonisolated enum CoachCopy {
     if saves.contains(where: { !$0.failed }) { return "Saved a note" }
     return saves.isEmpty ? nil : "Could not confirm a note save"
   }
+  // A movement Coach corrected lands at once, so its row says so, or that the change could not be confirmed.
+  static func movementUpdate(_ steps: [CoachStep]) -> String? {
+    let updates = steps.filter { $0.tool == "update_exercise" }
+    if updates.contains(where: { !$0.failed }) { return updatedMovement }
+    return updates.isEmpty ? nil : "Could not confirm a movement update"
+  }
+}
+
+// Recovery for a refused send: sign-in where the phone's own AI access is spent or bound, Windmill One for a non-One account's own allowance.
+nonisolated enum CoachRecovery: Equatable {
+  case signIn, windmillOne
+  init?(code: String, tier: String?, anonymous: Bool) {
+    if anonymous, ["subject_exhausted", "device_bound", "installation_bound", "invalid_installation"].contains(code) { self = .signIn }
+    else if !anonymous, code == "subject_exhausted", tier == "logged_in" { self = .windmillOne }
+    else { return nil }
+  }
+  init?(_ refusal: CoachRefusal?, anonymous: Bool) {
+    switch refusal {
+    case .allowance(let allowance): self.init(code: allowance.code, tier: allowance.tier, anonymous: anonymous)
+    case .installation: if anonymous { self = .signIn } else { return nil }
+    default: return nil
+    }
+  }
 }
 
 nonisolated enum CoachRefusal: Equatable {
-  case retry(String), daily(String), ceiling(String), fresh(String), absent, said(String), allowance(AiAllowance)
+  case retry(String), daily(String), ceiling(String), fresh(String), absent, said(String), allowance(AiAllowance), installation(String)
   init(status: Int?, code: String?, message: String?) {
     if status == nil { self = .retry(CoachCopy.noAnswer); return }
     if status == 404 || (status == 503 && code == "ask-not-configured") { self = .absent; return }
@@ -308,7 +339,7 @@ nonisolated enum CoachRefusal: Equatable {
     }
   }
   var message: String {
-    switch self { case .retry(let m), .daily(let m), .ceiling(let m), .fresh(let m), .said(let m): m; case .absent: CoachCopy.absent; case .allowance(let allowance): allowance.message }
+    switch self { case .retry(let m), .daily(let m), .ceiling(let m), .fresh(let m), .said(let m), .installation(let m): m; case .absent: CoachCopy.absent; case .allowance(let allowance): allowance.message }
   }
 }
 
@@ -338,7 +369,7 @@ nonisolated extension AiAllowance {
     case "free_day_exhausted": return "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit."
     case "concurrency_exhausted": return "Another AI request is still in progress. Try again when it finishes."
     case "funding_required": return "Your plan has no funded AI allowance for this period."
-    case "device_bound": return "This phone’s AI access belongs to an account. Sign in to use Coach."
+    case "device_bound": return "This phone’s AI access belongs to an account."
     default: return "Coach’s AI allowance is unavailable right now."
     }
   }

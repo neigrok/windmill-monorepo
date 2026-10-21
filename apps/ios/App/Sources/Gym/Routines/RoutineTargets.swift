@@ -248,11 +248,11 @@ struct RoutineTargetsSheet: View {
         Section {
           headField("Sets", field: .sets, placeholder: "open", focus: .sets)
           headField("Reps", field: .reps, placeholder: draft.varies(.reps) ? "varies" : "max", focus: .reps)
-          headField(MovementEquipment(exercise.equipment).unit, field: .weight, placeholder: draft.varies(.weight) ? "varies" : "last time", focus: .weight)
+          headField(MovementEquipment(exercise).unit, field: .weight, placeholder: draft.varies(.weight) ? "varies" : "last time", focus: .weight)
           Toggle("Vary by set", isOn: $draft.varyBySet)
             .disabled(!draft.canChangeVariation)
         } footer: {
-          Text(MovementEquipment(exercise.equipment).help)
+          Text(MovementEquipment(exercise).help)
           if draft.isOpen && draft.refusal == nil { Text("You decide the numbers at the rack.") }
         }
         if !draft.isOpen && draft.varyBySet {
@@ -336,13 +336,13 @@ struct RoutineTargetsSheet: View {
       if dynamicTypeSize.isAccessibilitySize {
         rowField("Reps", field: .reps, index: index, placeholder: "max", focus: .rowReps(index), refusal: refusal)
         HStack {
-          rowField(MovementEquipment(exercise.equipment).unit, field: .weight, index: index, placeholder: "last time", focus: .rowWeight(index), refusal: refusal)
+          rowField(MovementEquipment(exercise).unit, field: .weight, index: index, placeholder: "last time", focus: .rowWeight(index), refusal: refusal)
           if exercise.equipment == "bodyweight" { signButton(row: index) }
         }
       } else {
         HStack(spacing: 16) {
           rowField("Reps", field: .reps, index: index, placeholder: "max", focus: .rowReps(index), refusal: refusal)
-          rowField(MovementEquipment(exercise.equipment).unit, field: .weight, index: index, placeholder: "last time", focus: .rowWeight(index), refusal: refusal)
+          rowField(MovementEquipment(exercise).unit, field: .weight, index: index, placeholder: "last time", focus: .rowWeight(index), refusal: refusal)
           if exercise.equipment == "bodyweight" { signButton(row: index) }
         }
       }

@@ -179,8 +179,8 @@ struct CoachTab: View {
               if turn.from == "lifter" { question(turn.text, attachments: turn.attachments) }
               else {
                 answer(turn.text, receipt: turn.clarification != nil && turn.clarification?.id == coach.activeClarification?.id ? nil : turn.receipt, steps: turn.receipt?.steps ?? [], results: turn.results)
-                routineDrafts(turn.routineDrafts, requestId: turn.requestId ?? turn.generationId ?? "")
-                if let allowance = turn.allowanceRefusal { allowanceMessage(allowance) }
+                routineDrafts(turn.routineDrafts, requestId: turn.requestId)
+                if let allowance = turn.allowanceRefusal { allowanceMessage(allowance, current: false) }
                 else if turn.status == "failed" || turn.status == "stopped" {
                   Text(turn.status == "failed" ? CoachCopy.interrupted : CoachCopy.stopped).font(.footnote).foregroundStyle(GymPalette.inkDim)
                 }
@@ -219,16 +219,18 @@ struct CoachTab: View {
 
   var band: some View {
     let tooLong = coach.saved.text.utf8.count > coach.textLimit
-    let message = tooLong ? "Keep your message within \(coach.textLimit) bytes." : coach.refusal == .absent ? nil : coach.error ?? (coach.retryable ? CoachCopy.interrupted : nil)
+    let transcribed = coach.transcriptAllowance != nil && { if case .allowance = coach.refusal { true } else { false } }()
+    let message = tooLong ? "Keep your message within \(coach.textLimit) bytes." : coach.refusal == .absent || transcribed ? nil : coach.error ?? (coach.retryable ? CoachCopy.interrupted : nil)
     let retry: (() -> Void)? = tooLong ? nil : coach.retryable ? { composing = false; coach.retry() } : coach.draftReadable ? nil : { coach.reloadDraft() }
+    let detail: String? = tooLong || transcribed ? nil : { if case .allowance(let allowance) = coach.refusal { allowance.detail } else { nil } }()
+    let recovery = tooLong || transcribed ? nil : CoachRecovery(coach.refusal, anonymous: coach.anonymous)
     return VStack(alignment: .leading, spacing: RoomSpace.small) {
-      Group {
-        switch coach.refusal {
-        case .allowance(let allowance): accessRecovery(allowance)
-        case .daily, .ceiling: accessRecovery()
-        default: EmptyView()
-        }
-      }.padding(.horizontal, RoomSpace.inset)
+      if detail != nil || recovery != nil {
+        VStack(alignment: .leading, spacing: RoomSpace.small) {
+          if let detail { Text(detail) }
+          if let recovery { accessRecovery(recovery) }
+        }.font(.footnote).foregroundStyle(GymPalette.inkDim).padding(.horizontal, RoomSpace.inset)
+      }
       GymTransient(gym: gym, message: message, dismiss: tooLong || retry != nil ? nil : { coach.error = nil }, retryMessage: retry,
                         errorIdentifier: "gym-coach-error")
       .onChange(of: coach.error) { _, error in if let error { UIAccessibility.post(notification: .announcement, argument: error) } }
@@ -314,7 +316,7 @@ struct CoachTab: View {
         Button("Check response") { coach.resumeOnboarding() }.accessibilityIdentifier("coach-check-response")
       }
       if let response = record.response, response.status == "failed", AiAllowance.refusalCodes.contains(response.errorCode ?? "") {
-        allowanceMessage(response.allowance)
+        allowanceMessage(response.allowance, current: record.id == coach.anonymousRequest?.id)
       } else if record.finished, record.results.isEmpty, let code = record.refusalCode ?? record.response?.errorCode {
         Text(CoachConversation.onboardingRefusalMessage(code)).font(.footnote).foregroundStyle(GymPalette.inkDim)
       }
@@ -344,7 +346,7 @@ struct CoachTab: View {
                     review: { review = ProposalReviewID(id: $0) }, read: { sources = $0 }, notes: { destination = .notes })
   }
 
-  @ViewBuilder func routineDrafts(_ drafts: [CoachRoutineDraft], requestId: String) -> some View {
+  @ViewBuilder func routineDrafts(_ drafts: [CoachRoutineDraft], requestId: String?) -> some View {
     ForEach(drafts.filter { $0.state == "pending" }) { draft in
       Button {
         routineReview = CoachRoutineReview(id: draft.id, requestId: requestId, drafts: [draft.routine], operationId: draft.operationId)
@@ -357,21 +359,24 @@ struct CoachTab: View {
     }
   }
 
-  func allowanceMessage(_ allowance: AiAllowance) -> some View {
+  // A refusal's reason and reset stay with its turn; only the refusal the conversation ends on offers its recovery.
+  func allowanceMessage(_ allowance: AiAllowance, current: Bool) -> some View {
     VStack(alignment: .leading, spacing: RoomSpace.small) {
       Text(allowance.message)
       if let detail = allowance.detail { Text(detail) }
-      accessRecovery(allowance)
+      if current, let recovery = CoachRecovery(code: allowance.code, tier: allowance.tier, anonymous: coach.anonymous) { accessRecovery(recovery) }
     }.font(.footnote).foregroundStyle(GymPalette.inkDim).accessibilityIdentifier("coach-allowance")
   }
 
-  @ViewBuilder func accessRecovery(_ allowance: AiAllowance? = nil) -> some View {
-    if coach.anonymous {
+  @ViewBuilder func accessRecovery(_ recovery: CoachRecovery) -> some View {
+    switch recovery {
+    case .signIn:
+      Text(CoachCopy.signInToContinue)
       Button("Sign in") {
         gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "sign_in"])
         if let keepRoutines { keepRoutines() } else { openAccount?() }
       }.frame(minHeight: RoomSpace.minimumTarget).accessibilityIdentifier("coach-sign-in")
-    } else if allowance?.tier != "windmill_one", allowance?.code != "concurrency_exhausted" {
+    case .windmillOne:
       Button("Windmill One") {
         gym.telemetry.event("gym_setup_step", properties: ["screen": "coach", "action": "windmill_one"])
         showWindmillOne = true
@@ -385,7 +390,7 @@ struct CoachTab: View {
       if generation.answer.isEmpty, generation.status == "running" { progress("reading your log…") }
       answer(generation.answer, receipt: generation.clarification != nil && generation.clarification?.id == coach.activeClarification?.id ? nil : generation.receipt, steps: generation.steps, results: generation.results)
       routineDrafts(generation.routineDrafts, requestId: generation.requestId)
-      if let allowance = generation.allowanceRefusal { allowanceMessage(allowance) }
+      if let allowance = generation.allowanceRefusal { allowanceMessage(allowance, current: generation.id == coach.activeGeneration?.id) }
     }
   }
 }
@@ -454,6 +459,10 @@ struct CoachAnswerView: View {
       }
       if let receipt, !created.isEmpty { receiptRow(receipt) }
       if let saved = CoachCopy.noteSave(steps) { door("note.text", saved, action: notes).accessibilityIdentifier("coach-saved-note") }
+      if let updated = CoachCopy.movementUpdate(steps) {
+        GymRow(title: updated, leading: .symbol("pencil", GymPalette.accent)).frame(minHeight: RoomSpace.minimumTarget)
+          .accessibilityElement(children: .combine).accessibilityIdentifier("coach-updated-movement")
+      }
     }.frame(maxWidth: .infinity, alignment: .leading)
   }
   // What Coach wrote besides answering, one row each: its symbol in accent, what it did, and the door to it.

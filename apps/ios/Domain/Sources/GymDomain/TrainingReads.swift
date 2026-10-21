@@ -26,7 +26,7 @@ public struct SessionReadout: Equatable, Sendable {
   public let volumeKg: Double
   public let topE1rm: Double?
 
-  public init(session: Session, sets: [TrainingSet], catalogue: Catalogue = Catalogue(custom: [], names: [])) {
+  public init(session: Session, sets: [TrainingSet], catalogue: Catalogue) {
     let sets = sets.filter { $0.sessionId == session.id }
     let working = sets.filter { $0.kind == "working" }
     sessionId = session.id
@@ -34,10 +34,7 @@ public struct SessionReadout: Equatable, Sendable {
     durationMs = session.finishedAt.map { max(0, $0.ms - session.startedAt.ms) }
     workingSetCount = working.count
     movementCount = Set(sets.map(\.exerciseId)).count
-    volumeKg = working.reduce(0) { total, set in
-      let exercise = catalogue.find(set.exerciseId)
-      return total + set.volumeKg(equipment: exercise?.equipment ?? "", loadCount: exercise?.loadCount ?? 1)
-    }
+    volumeKg = working.reduce(0) { total, set in total + set.volumeKg(on: catalogue.find(set.exerciseId)) }
     topE1rm = working.compactMap(\.e1rm).max()
   }
 }

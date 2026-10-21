@@ -92,20 +92,30 @@ On a resolved empty anonymous replica, or a signed-in account whose first Gym pu
 opens Coach. Existing drafts/conversations, account adoption, workout and navigation state take
 precedence. Coach greets the user locally with a short introduction and compact Add screenshot and
 Build myself actions. The greeting persists through typing, photo selection/cancellation, navigation,
-relaunch and failed sends until the first accepted message. Goals and constraints use plain dialogue.
+relaunch and failed sends until the first accepted message, and steps aside while a message is on its
+way. Goals and constraints use plain dialogue.
 Empty Routines has one bottom-trailing plus opening the routine builder.
 
 Draft text, photos, request identities, retained anonymous responses and acceptance state live in an
 account- or replica-scoped local Coach archive. Every new routine is a draft: Review shows its
-movements, equipment and targets, and Save is the only creation path. Signed-in confirmation replays
-the exact server-held document using its generation/request and operation identity. Anonymous results
+movements, equipment and targets, and Save is the only creation path. A movement the phone does not
+know yet reads *New movement*, with no equipment or load basis. Every signed-in ask sends
+`routineReview: true`. Signed-in confirmation replays the exact server-held document using its request
+and operation identity; a draft that arrived without its request offers no Save. A draft the server no
+longer holds, or cannot write, says so and retires Save; a signed-out, busy or unanswered confirmation
+keeps Save for another try, and an account change during the save says so without claiming a failure.
+Anonymous results
 commit all routines and the replay receipt in one domain action only after Save; a retained result
 can also be explicitly saved after account adoption. Creation links appear after that save succeeds.
 Existing routine changes continue through Review and Apply.
 
-Allowance refusals preserve drafts and retained results, with no balance indicator. Anonymous users
-get Sign in to continue. Signed-in non-One users can open Windmill One, whose informational sheet
-states that subscriptions are not available yet. One members receive the actual refusal and any
+Allowance refusals preserve drafts and retained results, with no balance indicator. The refusal and
+its reset time are drawn once, on the turn it belongs to or in the composer band, and only the
+refusal the conversation ends on offers recovery. Signed out, *Sign in to continue.* and Sign in
+appear only where the phone's own AI access is used up or belongs to an account; shared free-pool,
+concurrency and rate refusals offer nothing to do. Signed in, Windmill One appears only when an
+account without it has used its own allowance; its informational sheet states that subscriptions are
+not available yet. One members, and daily or ceiling limits, receive the actual refusal and any
 server-provided reset time. An unchanged deliberate Send preserves its original request identity.
 
 Anonymous Coach accepts bounded conversation text, up to twelve prior text messages within 16 KB,
@@ -125,7 +135,8 @@ The finished-workout receipt offers Discard, 👑 Share with Coach and the prima
 
 `GymRoom` keeps `WorkoutScreen` as its full-screen cover through finish and receipt and, on
 dismissal, consumes the workout's handoff once: a finished workout's detail opens in The log, Keep
-opens the account flow, Share with Coach sends *Check my last workout.* in a new conversation, and
+opens the account flow, Share with Coach sends *Check my last workout.* in a new conversation (a
+handoff belongs to the account it was asked under, so the sign-in it waited for keeps it), and
 the movement picker's written-program door opens You signed out or paused, Coach otherwise.
 `gym.startWorkout(routineId:)` never joins an open workout (`joinOpenSession: false`); with one
 open, the start is refused and the open workout returns. The device row `rack:<session-id>` holds
@@ -133,7 +144,7 @@ the workout's movement order, selected movement, hidden status and deviation off
 entry and the routine's revision, which Save guards; an offer the routine has moved past is rebuilt
 against the current routine. A set logged before the clock passes the latest set completes 1 ms
 after it, so every surface draws sets in logged order. Before the engine changes the replica,
-`GymBinding` ends the Live Activity and snapshots each signed-out workout for recovery; a failed
+`GymBinding` saves the rack's pending value, ends the Live Activity and snapshots each signed-out workout for recovery; a failed
 snapshot aborts the account change. `WorkoutActivityController` keeps the Live Activity's
 pre-minted offer and its dismissal in the device row `rack:liveactivity`; the widget's
 `WorkoutLogSetIntent` runs in the app and logs through the same runner as the rack only while the
@@ -240,7 +251,7 @@ Offline boundary observations:
 | Local journal, routines, sets, preferences and movement rename | Read and commit against the local replica. First-pull status describes incomplete history and backup confidence. Workout logging and restoration remain local during pending sign-in, including before Not now. Adoption recounts any new work before completion. |
 | Auth and Gym REST | No wait for connectivity; 8-second idle and 15-second total deadlines. Back, Close and Done cancel active auth work. Late responses cannot navigate or change the active account after cancellation. |
 | Workout Finish | Online, a set the log accepted but has not yet confirmed gets up to 3 seconds for its confirming pull, with Finish, Log set and Hide locked; offline there is no wait. Finish then attempts the durable local action, releases controls and confirms in the background. Cancelling the wait still ends in that decision. Unconfirmed sets on an already-synced workout remain editable, and the refusal above the rack names the connection requirement; at accessibility text sizes it wraps in a bounded band while Log set and Hide remain reachable. |
-| Coach streaming | Parsing runs off the main actor. Server heartbeats count as transport activity; the default request idle timeout is 60 seconds and the total stream limit is one hour. A real interrupted stream resumes the same request up to three times, retains partial output and clears Reconnecting on activity. Terminal interruption remains visible with Retry. Stop releases the composer immediately and preserves newer draft text and photos. |
+| Coach streaming | Parsing runs off the main actor. Server heartbeats count as transport activity; the default request idle timeout is 60 seconds and the total stream limit is one hour. A real interrupted stream resumes the same request up to three times, retains partial output and clears Reconnecting on activity; a reply that is not a stream and not finished is asked again after 1, 2, 4, 8 and then every 16 seconds. Terminal interruption remains visible with Retry. Stop releases the composer immediately and preserves newer draft text and photos. |
 | Revocation and telemetry | Run independently of launch, room refresh and local sign-out. Offline events stay queued; repeated connection failures coalesce into one content-free state. |
 
 The network-dependent native features are Coach, journal echoes, account authentication, sharing and

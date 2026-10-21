@@ -70,7 +70,7 @@ struct WorkoutScreen: View {
     }
     .sheet(isPresented: Binding(get: { keypad != nil }, set: { if !$0 { keypad = nil } })) {
       if let keypad {
-        SetKeypadSheet(field: keypad, value: keypad == .weight ? workout.weightKg : Double(workout.reps), equipment: workout.selected.flatMap { gym.catalogue.find($0)?.equipment } ?? "") { value in
+        SetKeypadSheet(field: keypad, value: keypad == .weight ? workout.weightKg : Double(workout.reps), basis: MovementEquipment(workout.selected.flatMap { gym.catalogue.find($0) })) { value in
           if keypad == .weight { workout.weightKg = value } else { workout.reps = Int(value) }
         }
       }
@@ -203,7 +203,7 @@ struct WorkoutLedger: View {
       WorkoutFacts(workout: workout)
       ScrollView(.horizontal) {
         HStack(spacing: RoomSpace.related) {
-          Text("Sets · " + MovementEquipment(gym.catalogue.find(exerciseId)?.equipment ?? "").unit)
+          Text("Sets · " + MovementEquipment(gym.catalogue.find(exerciseId)).unit)
             .font(.subheadline).foregroundStyle(GymPalette.inkDim)
           ForEach(0..<max(ledger.targets.count, ledger.working + 1), id: \.self) { index in
             Image(systemName: index < ledger.working ? "checkmark.circle.fill" : index == ledger.working ? "record.circle" : "circle.fill")
@@ -212,7 +212,7 @@ struct WorkoutLedger: View {
           }
         }.padding(.horizontal, RoomSpace.inset)
       }.scrollIndicators(.hidden).fixedSize(horizontal: false, vertical: true)
-        .accessibilityElement(children: .ignore).accessibilityLabel("Working sets, " + MovementEquipment(gym.catalogue.find(exerciseId)?.equipment ?? "").unit).accessibilityValue(ledger.tally)
+        .accessibilityElement(children: .ignore).accessibilityLabel("Working sets, " + MovementEquipment(gym.catalogue.find(exerciseId)).unit).accessibilityValue(ledger.tally)
         .accessibilityIdentifier("workout-set-progress")
     }
   }
@@ -323,7 +323,7 @@ struct WorkoutRack: View {
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   var body: some View {
     VStack(spacing: RoomSpace.related) {
-      WeightInstrument(weightKg: $workout.weightKg, identifier: "workout-weight", equipment: workout.selected.flatMap { workout.gym.catalogue.find($0)?.equipment } ?? "", loadCount: workout.selected.flatMap { workout.gym.catalogue.find($0)?.loadCount } ?? 1) { edit(.weight) }
+      WeightInstrument(weightKg: $workout.weightKg, identifier: "workout-weight", basis: MovementEquipment(workout.selected.flatMap { workout.gym.catalogue.find($0) })) { edit(.weight) }
       HStack(spacing: RoomSpace.related) {
         Button { workout.reps = max(1, workout.reps - 1) } label: {
           Image(systemName: "minus").frame(width: 56, height: 56).contentShape(Rectangle())

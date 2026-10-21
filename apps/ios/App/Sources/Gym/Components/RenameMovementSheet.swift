@@ -26,18 +26,33 @@ enum MovementName {
   }
 }
 
+// The fields an edit changes; an unchanged field is never written, so a stale phone cannot revert another phone's edit.
+struct MovementEdit: Equatable {
+  let name: String?
+  let equipment: String?
+  let loadCount: Int?
+  init(_ exercise: Exercise, name: String, equipment: String? = nil, loadCount: Int? = nil) {
+    let nextEquipment = equipment.flatMap { $0 == exercise.equipment ? nil : $0 }
+    self.name = MovementName.changed(from: exercise.name, to: name) ? MovementName.trimmed(name) : nil
+    self.equipment = nextEquipment
+    self.loadCount = (equipment ?? exercise.equipment) == "dumbbell" ? loadCount.flatMap { nextEquipment != nil || $0 != exercise.loadCount ? $0 : nil } : nil
+  }
+  var isEmpty: Bool { name == nil && equipment == nil && loadCount == nil }
+  var action: String { equipment != nil || loadCount != nil ? "equipment" : "rename" }
+}
+
 extension GymModel {
   func renameMovement(_ exercise: Exercise, to name: String, equipment: String? = nil, loadCount: Int? = nil) -> Bool {
     if let problem = MovementName.problem(name) { error = problem; return false }
-    guard MovementName.changed(from: exercise.name, to: name) || equipment.map({ $0 != exercise.equipment }) == true || loadCount.map({ $0 != exercise.loadCount }) == true else { return false }
+    let edit = MovementEdit(exercise, name: name, equipment: equipment, loadCount: loadCount)
+    guard !edit.isEmpty else { return false }
     refresh()
     guard !readFailed else { return false }
     if let current = catalogue.find(exercise.id), current.name != exercise.name || current.equipment != exercise.equipment || current.loadCount != exercise.loadCount {
       error = "That movement changed. Review its name."; return false
     }
-    let outcome = run(UpdateExercise(exercise.id, name: MovementName.trimmed(name), equipment: equipment, loadCount: loadCount))
-    telemetry.event("gym_exercise_updated", properties: ["screen": "movement",
-      "action": equipment.map({ $0 != exercise.equipment }) == true || loadCount.map({ $0 != exercise.loadCount }) == true ? "equipment" : "rename",
+    let outcome = run(UpdateExercise(exercise.id, name: edit.name, equipment: edit.equipment, loadCount: edit.loadCount))
+    telemetry.event("gym_exercise_updated", properties: ["screen": "movement", "action": edit.action,
       "outcome": outcome == nil ? "failed" : outcome?.refusal == nil ? "ok" : "refused"])
     return outcome != nil && outcome?.refusal == nil
   }
@@ -77,12 +92,12 @@ struct RenameMovementSheet: View {
           .listRowBackground(GymPalette.card)
         Section {
           MovementEquipmentPicker(equipment: $equipment, loadCount: $loadCount, identifier: "gym-rename-movement-equipment").disabled(saving)
-        } footer: { Text(MovementEquipment(equipment).help + " Equipment updates how your history counts volume.") }
+        } footer: { Text(MovementEquipment(equipment, loadCount: loadCount).help + " Equipment changes recalculate your history’s volume; logged weights stay as entered.") }
           .listRowBackground(GymPalette.card)
       }
       .modifier(GymPage()).navigationTitle("Edit exercise")
       .sheetCommit("Save", identifier: "gym-rename-movement-commit",
-                   disabled: gym.accountTransition || (MovementName.problem(name) != nil || (MovementName.trimmed(name) == exercise.name && equipment == exercise.equipment && (equipment != "dumbbell" || loadCount == exercise.loadCount))), busy: saving,
+                   disabled: gym.accountTransition || MovementName.problem(name) != nil || MovementEdit(exercise, name: name, equipment: equipment, loadCount: loadCount).isEmpty, busy: saving,
                    dismiss: { dismiss() }, commit: rename)
       .interactiveDismissDisabled(saving)
       .onAppear { nameFocused = true; gym.telemetry.event("gym_screen_viewed", properties: ["screen": "movement"]) }
@@ -111,11 +126,14 @@ struct RenameMovementSheet: View {
   }
 }
 
+// A movement's equipment and the basis of its entered load: a pair of dumbbells per dumbbell, one dumbbell as itself.
 struct MovementEquipment {
   let value: String
-  init(_ value: String) { self.value = value }
+  let loadCount: Int
+  init(_ value: String, loadCount: Int = 2) { self.value = value; self.loadCount = value == "dumbbell" ? loadCount : 1 }
+  init(_ exercise: Exercise?) { self.init(exercise?.equipment ?? "", loadCount: exercise?.loadCount ?? 2) }
   static let choices = ["barbell", "dumbbell", "bodyweight", "machine", "cable", "kettlebell"]
-  var title: String { value == "dumbbell" ? "Dumbbells" : value.capitalized }
+  var title: String { value == "dumbbell" ? loadCount == 1 ? "One dumbbell" : "Dumbbells" : value.capitalized }
   var symbol: String {
     switch value {
     case "barbell": "figure.strengthtraining.traditional"
@@ -127,7 +145,7 @@ struct MovementEquipment {
   }
   var unit: String {
     switch value {
-    case "dumbbell": "kg each"
+    case "dumbbell": loadCount == 1 ? "kg" : "kg each"
     case "bodyweight": "kg added"
     case "barbell": "kg total"
     default: "kg"
@@ -135,7 +153,7 @@ struct MovementEquipment {
   }
   var help: String {
     switch value {
-    case "dumbbell": "Enter each dumbbell’s weight. Select how many you lift to calculate total volume."
+    case "dumbbell": loadCount == 1 ? "Enter the dumbbell’s weight. Volume counts one dumbbell." : "Enter each dumbbell’s weight. Volume counts both."
     case "bodyweight": "Enter added weight, or a negative number for assistance. Zero means bodyweight only. Volume counts added weight only."
     case "barbell": "Enter the total weight, including the bar."
     default: "Enter the external weight you lift."
@@ -151,7 +169,7 @@ struct MovementEquipmentPicker: View {
     Group {
       Picker(selection: $equipment) {
         ForEach(MovementEquipment.choices, id: \.self) { value in
-          Label(MovementEquipment(value).title, systemImage: MovementEquipment(value).symbol).tag(value)
+          Label(value == "dumbbell" ? "Dumbbells" : MovementEquipment(value).title, systemImage: MovementEquipment(value).symbol).tag(value)
         }
       } label: {
         Label("Equipment", systemImage: MovementEquipment(equipment).symbol)

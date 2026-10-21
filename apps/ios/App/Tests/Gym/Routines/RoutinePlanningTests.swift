@@ -163,9 +163,9 @@ import UIKit
     let session = Session(id: ID("s"), startedAt: Instant(ms: 1), finishedAt: Instant(ms: 2))
     let set = TrainingSet(id: ID("set-one1"), sessionId: session.id, exerciseId: ID("bench-press"), weightKg: 100, reps: 5, completedAt: Instant(ms: 1))
     let warmup = TrainingSet(id: ID("set-two2"), sessionId: session.id, exerciseId: ID("deadlift"), weightKg: 60, reps: 5, kind: "warmup", completedAt: Instant(ms: 1))
-    #expect(RoutineLines.session(SessionReadout(session: session, sets: [set])) == "1 working set · 1 movement")
-    #expect(RoutineLines.session(SessionReadout(session: session, sets: [set, warmup])) == "1 working set · 2 movements")
-    #expect(RoutineLines.session(SessionReadout(session: session, sets: [warmup])) == "0 working sets · 1 movement")
+    #expect(RoutineLines.session(SessionReadout(session: session, sets: [set], catalogue: Catalogue(custom: [], names: []))) == "1 working set · 1 movement")
+    #expect(RoutineLines.session(SessionReadout(session: session, sets: [set, warmup], catalogue: Catalogue(custom: [], names: []))) == "1 working set · 2 movements")
+    #expect(RoutineLines.session(SessionReadout(session: session, sets: [warmup], catalogue: Catalogue(custom: [], names: []))) == "0 working sets · 1 movement")
   }
 
   @Test func aProposalSaysWhoProposedItAndOnlyAServerStampedTime() {
@@ -298,7 +298,7 @@ import UIKit
     let a = Routine(id: ID("a"), name: "A", position: 0), b = Routine(id: ID("b"), name: "B", position: 1)
     gym.routines = [a, b]
     let moment = gym.log!.moment
-    gym.log = TrainingLog(sessions: [Session(id: ID("s"), startedAt: Instant(ms: 1), finishedAt: Instant(ms: 2), historyRoutineId: b.id)], sets: [], moment: moment)
+    gym.log = TrainingLog(sessions: [Session(id: ID("s"), startedAt: Instant(ms: 1), finishedAt: Instant(ms: 2), historyRoutineId: b.id)], sets: [], moment: moment, catalogue: Catalogue(custom: [], names: []))
     #expect(gym.routinesByLastTraining.map(\.id) == [b.id, a.id])
     #expect(gym.routineHistory(b.id).map(\.id) == [ID("s")])
   }

@@ -204,22 +204,22 @@ extension CoachConversation {
       return
     }
     error = Self.onboardingRefusalMessage(code)
-    refusal = .said(error!)
+    refusal = ["invalid_installation", "installation_bound", "device_bound"].contains(code) ? .installation(error!) : .said(error!)
   }
 
   static func onboardingRefusalMessage(_ code: String) -> String {
     switch code {
-    case "invalid_installation": return "This phone’s AI access couldn’t be verified. Your draft is kept. Sign in to continue."
-    case "installation_bound", "device_bound": return "This phone’s AI access belongs to an account. Sign in to use Coach."
+    case "invalid_installation": return "This phone’s AI access couldn’t be verified. Your draft is kept."
+    case "installation_bound", "device_bound": return "This phone’s AI access belongs to an account."
     case "installation_rate_limited", "onboarding_rate_limited", "request_limit": return "Too many requests from this connection. Your draft is kept; try again later."
     case "insufficient_details": return "Coach needs a clearer program. Add the movements and sets, or a clearer photo."
     case "expired", "result_expired": return "This response has expired. Your draft is still on this phone."
     case "anonymous_ai_unavailable", "unconfigured": return "Coach setup is unavailable right now. Your draft is kept."
-    case "unsupported_equipment": return "Choose Full gym, Dumbbells, Barbell or Bodyweight."
-    case "invalid_input", "invalid_image": return "Check your program details or choose a different photo, then send again."
-    case "model_refused": return "Coach couldn’t help with that request. Edit your program details and try again."
+    case "unsupported_equipment": return "Coach can’t plan with that equipment yet. Your draft is kept."
+    case "invalid_input", "invalid_image": return "Check your message or choose a different photo, then send again."
+    case "model_refused": return "Coach couldn’t help with that request. Edit your message and try again."
     case "output_truncated", "invalid_result": return "Coach couldn’t make complete routines. Your draft is kept."
-    default: return "Coach couldn’t finish these routines. Your draft is kept."
+    default: return "Coach couldn’t answer that. Your draft is kept."
     }
   }
 }

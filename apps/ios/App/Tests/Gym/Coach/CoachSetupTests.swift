@@ -7,7 +7,7 @@ import GymDomain
 
 extension CoachTests {
   @Test func pendingRoutineDraftRequiresExplicitConfirmationAndRetainsIdentityOnRetry() async throws {
-    let (gym, rest, _) = try await authed(.stalled), cache = store()
+    let (gym, rest, telemetry) = try await authed(.stalled), cache = store()
     defer { try? FileManager.default.removeItem(at: cache.directory) }
     let coach = CoachConversation(gym: gym, rest: rest, store: cache)
     await coach.activate()
@@ -26,18 +26,49 @@ extension CoachTests {
     let draft = try #require(coach.activeGeneration?.routineDrafts.first)
     let review = CoachRoutineReview(id: draft.id, requestId: request.requestId, drafts: [draft.routine], operationId: draft.operationId)
     CoachTestProtocol.state.withLock { $0.reply = .failure(.networkConnectionLost) }
-    #expect(await coach.saveRoutines(review) == false)
+    #expect(await coach.saveRoutines(review) == .kept("Couldn’t save the routine. Try again."))
     #expect(coach.activeGeneration?.routineDrafts.first?.state == "pending" && gym.routines.isEmpty)
     generation["revision"] = 2
     var drafts = try #require(generation["routineDrafts"] as? [[String: Any]]); drafts[0]["state"] = "saved"; generation["routineDrafts"] = drafts
     generation["results"] = [["kind": "routine-created", "operationId": "draft-operation", "routineId": "draft-routine", "routineName": "Upper", "movementCount": 1]]
     let body = String(decoding: try JSONSerialization.data(withJSONObject: ["thread": request.thread, "generation": generation]), as: UTF8.self)
     CoachTestProtocol.state.withLock { $0.reply = .http(200, body) }
-    #expect(await coach.saveRoutines(review))
+    #expect(await coach.saveRoutines(review) == .saved)
     #expect(coach.activeGeneration?.routineDrafts.first?.state == "saved" && coach.activeGeneration?.results.count == 1)
     let calls = CoachTestProtocol.state.withLock { $0.requests }
     #expect(calls.map(\.path) == Array(repeating: "/v1/gym/threads/" + request.thread + "/generations/draft-request/routines/draft-operation/confirm", count: 2))
     #expect(calls.map(\.body) == [Data("{}".utf8), Data("{}".utf8)])
+    #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_coach_routine_confirm" }.map { $0.properties["outcome"] ?? "" } } == ["started", "failed", "started", "saved"])
+    #expect(telemetry.entries.withLock { $0.filter { $0.name == "client_error" }.isEmpty })
+  }
+
+  // Each refusal the confirmation door answers says what the draft can still do; only a 5xx or no answer is a failure.
+  @Test(arguments: [404, 422, 400, 401, 409, 503])
+  func confirmationAnswersSayWhatTheDraftCanStillDo(status: Int) async throws {
+    let code = [404: "coach-draft-not-found", 422: "coach-draft-invalid", 409: "routine-save-in-progress", 503: "gym-engine-busy"][status] ?? "invalid"
+    let (gym, rest, telemetry) = try await authed(.http(status, #"{"code":""# + code + #"","error":"A private server refusal"}"#)), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
+    let draft = CoachRoutine(name: "Upper", entries: [RoutineEntry(exerciseId: ID("bench-press"))])
+    let expected: CoachRoutineSave = switch status {
+    case 404: .closed("This draft is no longer available.")
+    case 400, 422: .closed("This draft can’t be saved. Ask Coach for a new one.")
+    case 401: .kept("Sign in again to save this routine.")
+    default: .kept("Couldn’t save the routine. Try again.")
+    }
+    #expect(await coach.saveRoutines(CoachRoutineReview(id: "draft-operation", requestId: "draft-request", drafts: [draft], operationId: "draft-operation")) == expected)
+    #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_coach_routine_confirm" }.map { $0.properties["outcome"] ?? "" } } == ["started", status < 500 ? "refused" : "failed"])
+    #expect(telemetry.entries.withLock { $0.filter { $0.name == "client_error" }.map(\.properties) } == (status < 500 ? [] : [["operation": "gym_rest", "failure_kind": "http"]]))
+  }
+
+  @Test func aDraftWithoutItsRequestOffersNoSave() async throws {
+    let (gym, rest, telemetry) = try await authed(.stalled), cache = store()
+    defer { try? FileManager.default.removeItem(at: cache.directory) }
+    let coach = CoachConversation(gym: gym, rest: rest, store: cache); await coach.activate()
+    let review = CoachRoutineReview(id: "draft-operation", requestId: nil, drafts: [CoachRoutine(name: "Upper", entries: [])], operationId: "draft-operation")
+    #expect(!review.savable)
+    #expect(await coach.saveRoutines(review) == .closed("This draft can’t be saved. Ask Coach for a new one."))
+    #expect(CoachTestProtocol.state.withLock { $0.requests.isEmpty } && telemetry.entries.withLock { $0.filter { $0.name == "gym_coach_routine_confirm" }.isEmpty })
   }
 
   @Test func coachStreamOverridesTheProductionAuthTimeoutAndRemainsLiveBetweenHeartbeats() async throws {
@@ -82,19 +113,19 @@ extension CoachTests {
     }
   }
 
-  @Test func startersOnlyPrepareDurableAccountScopedDraftsAndManualChoicesRetireSetup() async throws {
+  @Test func choicesOnlyMarkADurableAccountScopedSetupAndNeverWriteTheDraft() async throws {
     for choice in CoachSetupChoice.allCases {
       let (gym, rest, telemetry) = try await authed(.stalled), cache = store()
       defer { try? FileManager.default.removeItem(at: cache.directory) }
       let coach = CoachConversation(gym: gym, rest: rest, store: cache)
       await coach.activate()
       #expect(coach.beginSetup() && coach.chooseSetup(choice))
-      #expect(coach.saved.text == (choice == .screenshot ? "" : choice.draft) && coach.saved.setupChoice == choice)
+      #expect(coach.saved.text.isEmpty && coach.saved.setupChoice == choice)
       #expect(coach.saved.purpose == (choice.starter ? .routineSetup : .conversation))
       #expect(coach.saved.request == nil && !coach.asking && CoachTestProtocol.state.withLock { $0.requests.isEmpty })
       let restored = CoachConversation(gym: gym, rest: rest, store: cache)
       await restored.activate()
-      #expect(restored.saved.text == (choice == .screenshot ? "" : choice.draft) && restored.saved.setupChoice == choice && !restored.asking)
+      #expect(restored.saved.text.isEmpty && restored.saved.setupChoice == choice && !restored.asking)
       #expect(restored.newChat() && restored.saved.setupChoice == choice)
       #expect(telemetry.entries.withLock { $0.filter { $0.name == "gym_setup_step" }.map(\.properties) } == [["screen": "coach", "action": choice.rawValue]])
       gym.account = "different-owner"; await restored.activate()

@@ -29,8 +29,7 @@ import SyncCore
     let name = session.startedAt.date.formatted(.dateTime.weekday(.wide))
     routine = Draft(new: Routine(id: routineId, name: name, position: routinePosition, entries: entries))
   }
-  var readout: SessionReadout { SessionReadout(session: session, sets: sets) }
-  var slight: Bool { readout.workingSetCount < 4 }
+  var slight: Bool { sets.filter { $0.kind == "working" }.count < 4 }
   var title: String { slight ? "Ended early." : "Well done." }
   func subtitle(_ dates: GymDate) -> String { "\(session.name ?? Readout.noRoutine) · \(dates.subtitle(session.startedAt))" }
   // Each movement once, in the order its first set was logged, with its working sets — or every set when none was working.

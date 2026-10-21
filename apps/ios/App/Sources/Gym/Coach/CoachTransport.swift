@@ -9,7 +9,7 @@ struct CoachStreamActivity {
 
 extension GymRESTClient {
   func coachRequest(_ path: String, method: String = "GET", body: Data? = nil,
-                    mediaType: String? = nil, expectedAccount: String? = nil, idleTimeout: TimeInterval = 60, activity: CoachStreamActivity? = nil, snapshot: (@MainActor (CoachSnapshot) throws -> Void)? = nil) async throws -> Data {
+                    mediaType: String? = nil, expectedAccount: String? = nil, idleTimeout: TimeInterval = 60, reportsFailure: Bool = true, activity: CoachStreamActivity? = nil, snapshot: (@MainActor (CoachSnapshot) throws -> Void)? = nil) async throws -> Data {
     if let expectedAccount {
       guard let runtime, try runtime.account() == expectedAccount else { throw CancellationError() }
     }
@@ -115,19 +115,30 @@ extension GymRESTClient {
       return data
     } catch {
       if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
-      let status = (error as? GymRESTFailure)?.status
-      let offline = [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed].contains((error as? URLError)?.code)
-      let kind = offline ? "offline" : (error as? URLError)?.code == .timedOut ? "timeout" : status != nil ? "http" : error is DecodingError ? "decode" : "transport"
-      var properties = ["operation": "gym_rest", "route": "/v1/gym", "method": method, "failure_kind": kind]
-      if let status { properties["status"] = String(status) }
-      telemetry.event("api_request_failed", properties: properties)
-      let body = (error as? GymRESTFailure).flatMap { (try? JSONSerialization.jsonObject(with: $0.body)) as? [String: Any] }
-      let unavailable = status == 503 && (body?["code"] as? String == "ask-not-configured" || AiAllowance.refusalCodes.contains(body?["code"] as? String ?? ""))
-      if !offline, !unavailable, !ExpectedStatuses.contains(status) {
-        telemetry.failure("gym_rest", kind: kind, properties: properties)
-      }
+      let failure = coachFailure(error, method: method)
+      telemetry.event("api_request_failed", properties: failure.properties)
+      if reportsFailure, failure.reportable { telemetry.failure("gym_rest", kind: failure.properties["failure_kind"] ?? "transport", properties: failure.properties) }
       throw error
     }
+  }
+
+  // A Coach request's failure as its event says it, and whether it is unexpected enough to report.
+  nonisolated func coachFailure(_ error: any Error, method: String) -> (properties: [String: String], reportable: Bool) {
+    let status = (error as? GymRESTFailure)?.status
+    let offline = [.notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed].contains((error as? URLError)?.code)
+    let kind = offline ? "offline" : (error as? URLError)?.code == .timedOut ? "timeout" : status != nil ? "http" : error is DecodingError ? "decode" : "transport"
+    var properties = ["operation": "gym_rest", "route": "/v1/gym", "method": method, "failure_kind": kind]
+    if let status { properties["status"] = String(status) }
+    let body = (error as? GymRESTFailure).flatMap { (try? JSONSerialization.jsonObject(with: $0.body)) as? [String: Any] }
+    let unavailable = status == 503 && (body?["code"] as? String == "ask-not-configured" || AiAllowance.refusalCodes.contains(body?["code"] as? String ?? ""))
+    return (properties, !offline && !unavailable && !ExpectedStatuses.contains(status))
+  }
+
+  // The one report a streamed ask makes once it gives up: an idle stream it reconnects is expected and reports nothing.
+  func reportCoachFailure(_ error: any Error, method: String) {
+    guard !(error is CancellationError), (error as? URLError)?.code != .cancelled else { return }
+    let failure = coachFailure(error, method: method)
+    if failure.reportable { telemetry.failure("gym_rest", kind: failure.properties["failure_kind"] ?? "transport", properties: failure.properties) }
   }
 }
 

@@ -1,28 +1,9 @@
 import SwiftUI
 
+// The greeting offers Add screenshot and Build myself; the other cases stay so drafts kept by earlier versions still read.
 nonisolated enum CoachSetupChoice: String, Codable, CaseIterable {
   case screenshot, describe, goal, justLog = "just_log", buildManually = "build_manually"
   var starter: Bool { self == .screenshot || self == .describe || self == .goal }
-  var title: String {
-    switch self {
-    case .screenshot: "Add screenshot"
-    case .describe: "Describe your program"
-    case .goal: "Share your goal"
-    case .justLog: "Just log"
-    case .buildManually: "Build myself"
-    }
-  }
-  var symbol: String {
-    switch self { case .screenshot: "photo.on.rectangle"; case .describe: "text.alignleft"; case .goal: "target"; default: "" }
-  }
-  var draft: String {
-    switch self {
-    case .screenshot: "Turn this program into routines."
-    case .describe: "My program: "
-    case .goal: "My goal: "
-    default: ""
-    }
-  }
 }
 
 nonisolated enum CoachSetupEligibility {
@@ -52,7 +33,7 @@ struct CoachSetupView: View {
   @ViewBuilder var actions: some View {
     ForEach([CoachSetupChoice.screenshot, .buildManually], id: \.self) { choice in
       Button { choose(choice) } label: {
-        Label(choice.title, systemImage: choice == .screenshot ? "photo.badge.plus" : "plus")
+        Label(choice == .screenshot ? "Add screenshot" : "Build myself", systemImage: choice == .screenshot ? "photo.badge.plus" : "plus")
           .font(.subheadline).fixedSize(horizontal: false, vertical: true)
           .frame(minHeight: RoomSpace.minimumTarget)
       }.buttonStyle(.borderless).accessibilityIdentifier("coach-setup-" + choice.rawValue)

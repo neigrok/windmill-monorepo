@@ -152,8 +152,27 @@ import SyncTesting
     workout.weightKg = 60
     gym.accountChanging = true
     #expect(!workout.flushRack())
-    #expect(workout.weightKg == 57.5 && workout.reps == 8)
+    #expect(workout.weightKg == 57.5 && workout.reps == 8 && workout.message == "The rack could not be changed. Try again.")
     #expect(try workout.activityRecord()?.offer == offer)
+  }
+
+  @Test func seatChangeAndBackgroundFlushTheRackFirstAndEachFlushReportsOnce() async throws {
+    let recorder = TelemetryRecorder(), (_, gym) = try fixture(telemetry: recorder), workout = try begin(gym)
+    workout.weightKg = 52.5; workout.weightKg = 55
+    gym.background()
+    #expect(try workout.activityRecord()?.offer?.weightKg == 55)
+    workout.reps = 9
+    let binding = GymBinding(); binding.gym = gym
+    try await binding.seatWillChange()
+    #expect(gym.accountTransition && workout.reps == 9 && workout.message == nil)
+    #expect(try workout.activityRecord()?.offer?.reps == 9)
+    workout.weightKg = 70
+    #expect(!workout.flushRack() && workout.weightKg == 55 && workout.message == "The rack could not be changed. Try again.")
+    await binding.seatChangeFinished()
+    #expect(!gym.accountTransition)
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "gym_workout_adjusted" }.map(\.properties) } == [
+      ["screen": "workout", "field": "weight", "outcome": "ok"], ["screen": "workout", "field": "reps", "outcome": "ok"],
+      ["screen": "workout", "field": "weight", "outcome": "refused"]])
   }
 
   @Test func hidingAndRestoringWorkoutIsDurableAndKeepsItsSets() throws {
@@ -614,7 +633,7 @@ import SyncTesting
     let receipt = WorkoutReceiptData(session: session, sets: sets.reversed(), routineId: gym.runner.mint(Routine.self), routinePosition: 0)
     #expect(receipt.sets == sets && receipt.title == "Ended early.")
     #expect(receipt.subtitle(GymDate(gym.dates.moment, locale: Locale(identifier: "en_US"))) == "Free workout · Sat, Sep 26")
-    #expect(FactTiles(receipt.readout).facts == [FactTiles.Fact(value: "1m", label: "Duration"), FactTiles.Fact(value: "3", label: "Working sets"),
+    #expect(FactTiles(SessionReadout(session: receipt.session, sets: receipt.sets, catalogue: gym.catalogue)).facts == [FactTiles.Fact(value: "1m", label: "Duration"), FactTiles.Fact(value: "3", label: "Working sets"),
                                                  FactTiles.Fact(value: "1325 kg", label: "Volume")])
     #expect(receipt.performed.map(\.exerciseId) == [second, first] && receipt.performed.map(\.reading) == ["1 × 5 · 100", "2 × 5 · 80–85"])
   }
@@ -1174,7 +1193,7 @@ import SyncTesting
     await workout.finish()
     let receipt = try #require(workout.receipt)
     #expect(!receipt.session.isOpen && receipt.session.closedBy == "finish" && receipt.sets == workout.sets)
-    #expect(gym.openSession == nil && workout.message == nil && receipt.readout.durationMs == 5_000)
+    #expect(gym.openSession == nil && workout.message == nil && SessionReadout(session: receipt.session, sets: receipt.sets, catalogue: gym.catalogue).durationMs == 5_000)
     workout.closeReceipt()
     #expect(workout.receipt == nil && workout.handoff == .detail(workout.sessionId))
   }
@@ -1303,9 +1322,9 @@ import SyncTesting
     let working = (0..<4).map { value(gym, session: session, at: Instant(ms: start.ms + Int64($0))) }
     let warmup = value(gym, session: session, kind: "warmup")
     let three = WorkoutReceiptData(session: session, sets: Array(working.prefix(3)) + [warmup], routineId: gym.runner.mint(Routine.self), routinePosition: 0)
-    #expect(three.slight && !three.offersRoutine && three.readout.workingSetCount == 3)
+    #expect(three.slight && !three.offersRoutine && SessionReadout(session: three.session, sets: three.sets, catalogue: gym.catalogue).workingSetCount == 3)
     let four = WorkoutReceiptData(session: session, sets: working + [warmup], routineId: gym.runner.mint(Routine.self), routinePosition: 0)
-    #expect(!four.slight && four.offersRoutine && four.readout.workingSetCount == 4 && four.readout.volumeKg == 1_600)
+    #expect(!four.slight && four.offersRoutine && SessionReadout(session: four.session, sets: four.sets, catalogue: gym.catalogue).workingSetCount == 4 && SessionReadout(session: four.session, sets: four.sets, catalogue: gym.catalogue).volumeKg == 1_600)
     let plan = try routine(gym, scheme: [SetTarget(reps: 5, weightKg: 80)]), planned = finished(gym, routine: plan)
     let plannedSets = (0..<4).map { _ in value(gym, session: planned) }
     #expect(!WorkoutReceiptData(session: planned, sets: plannedSets, routineId: gym.runner.mint(Routine.self), routinePosition: 0).offersRoutine)

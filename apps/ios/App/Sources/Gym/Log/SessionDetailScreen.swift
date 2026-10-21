@@ -31,7 +31,7 @@ struct SessionDetailScreen: View {
           Section {
             NavigationLink { MovementRecordScreen(gym: gym, exerciseID: id) } label: {
               GymRow(title: gym.catalogue.find(id)?.name ?? "Movement", meta: [
-                gym.catalogue.find(id).map { MovementEquipment($0.equipment).unit },
+                gym.catalogue.find(id).map { MovementEquipment($0).unit },
                 LogPresentation.planLine(id, plan: session.plan)
               ].compactMap { $0 }.joined(separator: " · "))
             }.accessibilityIdentifier("gym-session-movement")

@@ -338,23 +338,26 @@ struct FinishWorkout: Action {
   }
   func editRack(weightKg: Double, reps: Int) {
     guard weightKg != self.weightKg || reps != self.reps else { return }
-    let field = weightKg != self.weightKg ? "weight" : "reps"
     if rackBase == nil { rackBase = Prefill(weightKg: self.weightKg, reps: self.reps) }
     rackWeightKg = weightKg; rackReps = reps
-    gym.telemetry.event("gym_workout_adjusted", properties: ["screen": "workout", "field": field, "outcome": "ok"])
     rackSave?.cancel()
     rackSave = Task { @MainActor [weak gym] in
       do { try await Task.sleep(for: .milliseconds(45)) } catch { return }
       gym?.workout.flushRack()
     }
   }
+  // One save per burst of taps, reported once; an account change flushes first, so a burst that meets one is refused aloud.
   @discardableResult func flushRack() -> Bool {
     guard let previous = rackBase else { return true }
     rackSave?.cancel(); rackSave = nil; rackBase = nil
-    guard !gym.accountTransition else {
-      restoreRack(weightKg: previous.weightKg, reps: previous.reps); return false
-    }
     let weightKg = self.weightKg, reps = self.reps
+    let adjusted = { (outcome: String) in
+      self.gym.telemetry.event("gym_workout_adjusted", properties: ["screen": "workout", "field": weightKg != previous.weightKg ? "weight" : "reps", "outcome": outcome])
+    }
+    guard !gym.accountTransition else {
+      message = "The rack could not be changed. Try again."; gym.error = message
+      restoreRack(weightKg: previous.weightKg, reps: previous.reps); adjusted("refused"); return false
+    }
     var revoke: WorkoutActivityRecord?
     do {
       if let sessionId, var record = try activityRecord() {
@@ -369,7 +372,7 @@ struct FinishWorkout: Action {
         let result = try gym.runner.run(KeepWorkoutActivity(sessionID: sessionId, record: record, walk: walk))
         if let refusal = result.refusal {
           gym.refusal = refusal; message = gym.message(refusal); gym.error = message
-          restoreRack(weightKg: previous.weightKg, reps: previous.reps)
+          restoreRack(weightKg: previous.weightKg, reps: previous.reps); adjusted("refused")
           return false
         }
       }
@@ -383,12 +386,10 @@ struct FinishWorkout: Action {
         } catch { gym.readFailed = true; gym.report("gym_activity_update", error) }
       } else { gym.readFailed = true }
       message = "The rack could not be changed. Try again."; gym.error = message
-      let field = weightKg != previous.weightKg ? "weight" : "reps"
-      gym.telemetry.event("gym_workout_adjusted", properties: ["screen": "workout", "field": field, "outcome": "failed"])
-      restoreRack(weightKg: previous.weightKg, reps: previous.reps)
+      restoreRack(weightKg: previous.weightKg, reps: previous.reps); adjusted("failed")
       return false
     }
-    restoreRack(weightKg: weightKg, reps: reps)
+    restoreRack(weightKg: weightKg, reps: reps); adjusted("ok")
     if message == "The rack could not be changed. Try again." {
       message = nil
       if gym.error == "The rack could not be changed. Try again." { gym.error = nil }

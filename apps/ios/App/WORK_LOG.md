@@ -138,8 +138,9 @@ balance display, and the Windmill One destination reflects the closed checkout.
 Exercise identity and equipment share one editor. Read paths resolve current names from the stable
 catalogue identity. External-load volume uses each set’s equipment basis and one/two-dumbbell count,
 while displayed load and strength estimates retain the entered per-dumbbell amount. Workout rack
-feedback updates immediately and persistence coalesces rapid taps without losing the last accepted
-value. Routine rows expose reorder handles directly; root creation controls use one bottom-trailing
+feedback updates immediately; persistence coalesces rapid taps into one save, which also runs before
+sign-out, a seat change and backgrounding, so the last accepted value is kept. A tap made while an
+account change is under way is refused with *The rack could not be changed. Try again.* Routine rows expose reorder handles directly; root creation controls use one bottom-trailing
 plus. The Live Activity’s primary clock anchors to the most recent valid set, or session start before
 the first set.
 
@@ -151,9 +152,9 @@ persistence, and the absence of automatic routine creation. A final simplificati
 allowance-display and automatic-import progress state; broad final verification belongs to the phase
 gauntlet. The actual provider and external production telemetry are not exercised by this run.
 
-Coach routine drafts require the new review/save UI on every released client. Older native builds
-ignore `routineDrafts` and cannot confirm them. The backend and native release therefore require
-coordination; this change does not add client-capability negotiation or an automatic legacy write.
+Coach offers routine drafts only to a client that sends `routineReview: true`, which every current
+client does on each ask; an older build that omits it gets no draft tool, and Coach tells it new
+routines need an app update or Routines. Nothing is ever written without the lifter's Save.
 
 Exercise edits use an account-scoped receipt committed with the sync-engine mutation. Lost Coach
 acknowledgements recover that original result without overwriting a later user edit. Swift history
@@ -198,3 +199,11 @@ in light and dark. The Log correction retains an exact assertion for the barbell
 `Weight, 90 kg total`. The native flows use local model-server fixtures; they verify keyboard focus, draft
 retention, navigation, review clearance and weight editing without making a claim about live model
 quality. The build-for-testing is clean, and the focused result contains five tests with zero failures.
+
+A Coach handoff carries the account it was asked under. An account change drops only a handoff
+asked under another account, so the sign-in that a receipt's Share with Coach waited for keeps its
+question, and Coach refuses a handoff from another account. The greeting steps aside while a message
+is on its way and returns after a failed or refused one. Confirming a draft reports
+`gym_coach_routine_confirm` and words each answer by what the draft can still do; access recovery is
+drawn once, only where signing in or Windmill One can help. Movement edits write only the fields
+that changed, and the load basis reads *kg each* for two dumbbells and *kg* for one.

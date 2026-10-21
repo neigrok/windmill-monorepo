@@ -53,21 +53,21 @@ struct SetKeypadSheet: View {
   @Environment(\.dynamicTypeSize) private var typeSize
   @State var pad: SetKeypad
   let commit: (Double) -> Void
-  let equipment: String
-  init(field: SetKeypad.Field, value: Double, equipment: String = "", commit: @escaping (Double) -> Void) {
-    _pad = State(initialValue: SetKeypad(field, value: value)); self.commit = commit; self.equipment = equipment
+  let basis: MovementEquipment?
+  init(field: SetKeypad.Field, value: Double, basis: MovementEquipment? = nil, commit: @escaping (Double) -> Void) {
+    _pad = State(initialValue: SetKeypad(field, value: value)); self.commit = commit; self.basis = basis
   }
   var body: some View {
     NavigationStack {
       ScrollView {
         VStack(spacing: RoomSpace.small) {
-          NumeralAndUnit(unit: pad.field == .weight ? MovementEquipment(equipment).unit : pad.field.unit, identifier: "workout-keypad-unit") {
+          NumeralAndUnit(unit: pad.field == .weight ? (basis ?? MovementEquipment("")).unit : pad.field.unit, identifier: "workout-keypad-unit") {
             Text(pad.text.isEmpty ? "—" : pad.text.replacingOccurrences(of: "-", with: "−"))
               .modifier(GymKeypadNumeral()).lineLimit(1).minimumScaleFactor(0.5)
               .accessibilityIdentifier("workout-keypad-value")
           }.frame(maxWidth: .infinity)
-          if pad.field == .weight, !equipment.isEmpty {
-            Text(MovementEquipment(equipment).help).font(.footnote).foregroundStyle(GymPalette.inkDim)
+          if pad.field == .weight, let basis, !basis.value.isEmpty {
+            Text(basis.help).font(.footnote).foregroundStyle(GymPalette.inkDim)
           }
           Text(pad.reading.refusal ?? " ").font(.subheadline).foregroundStyle(GymPalette.ink)
             .accessibilityHidden(pad.reading.refusal == nil).accessibilityIdentifier("workout-keypad-hint")
@@ -129,19 +129,18 @@ struct NumeralAndUnit<Numeral: View>: View {
 struct WeightInstrument: View {
   @Binding var weightKg: Double
   let identifier: String
-  var equipment = ""
-  var loadCount = 2
+  var basis = MovementEquipment("")
   let edit: () -> Void
   @Environment(\.dynamicTypeSize) private var typeSize
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     VStack(spacing: RoomSpace.related) {
-      NumeralAndUnit(unit: MovementEquipment(equipment).unit, identifier: "\(identifier)-unit") {
+      NumeralAndUnit(unit: basis.unit, identifier: "\(identifier)-unit") {
         Button(action: edit) {
           Text(Readout.weight(weightKg)).modifier(GymNumeral()).lineLimit(1).minimumScaleFactor(0.5)
             .contentTransition(RoomMotion.numeral(reduceMotion: reduceMotion, value: weightKg))
-        }.buttonStyle(.plain).accessibilityLabel("Weight, \(Readout.weight(weightKg)) \(MovementEquipment(equipment).unit)")
+        }.buttonStyle(.plain).accessibilityLabel("Weight, \(Readout.weight(weightKg)) \(basis.unit)")
           .accessibilityIdentifier(identifier)
       }.roomMotion(weightKg)
       LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: typeSize.isAccessibilitySize ? 2 : 4), spacing: RoomSpace.related) {
@@ -150,13 +149,13 @@ struct WeightInstrument: View {
           Button { weightKg = WeightLadder.bump(weightKg, direction: index < 2 ? -1 : 1, big: index == 0 || index == 3) } label: {
             Text(label).frame(maxWidth: .infinity, minHeight: 48).contentShape(Rectangle())
           }.buttonStyle(GymInstrumentButtonStyle())
-            .accessibilityLabel("\(label) kilograms").accessibilityIdentifier("\(identifier)-step-\(index)")
+            .accessibilityLabel("\(label) \(basis.unit)").accessibilityIdentifier("\(identifier)-step-\(index)")
         }
       }.font(.body.monospacedDigit())
-      if equipment == "dumbbell" {
-        Text("\(loadCount == 1 ? "One dumbbell" : "Two dumbbells") · \(Readout.weight(max(0, weightKg) * Double(loadCount))) kg total")
+      if basis.value == "dumbbell" {
+        Text("\(basis.loadCount == 1 ? "One dumbbell" : "Two dumbbells") · \(Readout.weight(max(0, weightKg) * Double(basis.loadCount))) kg total")
           .font(.caption.monospacedDigit()).foregroundStyle(GymPalette.inkDim)
-      } else if equipment == "bodyweight" {
+      } else if basis.value == "bodyweight" {
         Text(weightKg < 0 ? "Assistance" : weightKg == 0 ? "Bodyweight only" : "Added weight only")
           .font(.caption).foregroundStyle(GymPalette.inkDim)
       }
@@ -274,7 +273,7 @@ struct SetEditor: View {
       Form {
         Group {
           Section {
-            WeightInstrument(weightKg: $draft.weightKg, identifier: "\(identifier)-weight", equipment: gym.catalogue.find(draft.exerciseId)?.equipment ?? "", loadCount: gym.catalogue.find(draft.exerciseId)?.loadCount ?? 1) { keypad = .weight }
+            WeightInstrument(weightKg: $draft.weightKg, identifier: "\(identifier)-weight", basis: MovementEquipment(gym.catalogue.find(draft.exerciseId))) { keypad = .weight }
             LabeledContent("Reps") {
               Button("\(draft.reps)") { keypad = .reps }.font(.title2.monospacedDigit()).accessibilityIdentifier("\(identifier)-reps")
             }
@@ -321,7 +320,7 @@ struct SetEditor: View {
     }.modifier(GymPage()).presentationDetents([.large])
       .sheet(isPresented: Binding(get: { keypad != nil }, set: { if !$0 { keypad = nil } })) {
         if let keypad {
-          SetKeypadSheet(field: keypad, value: keypad == .weight ? draft.weightKg : Double(draft.reps), equipment: gym.catalogue.find(draft.exerciseId)?.equipment ?? "") { value in
+          SetKeypadSheet(field: keypad, value: keypad == .weight ? draft.weightKg : Double(draft.reps), basis: MovementEquipment(gym.catalogue.find(draft.exerciseId))) { value in
             if keypad == .weight { draft.weightKg = value } else { draft.reps = Int(value) }
           }
         }
