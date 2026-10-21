@@ -54,7 +54,7 @@ test('the real API sends immutable photo/request identity, consumes snapshots an
   });
   const snapshots = [];
   const reply = await gymApi.askStream('thr_1', 'Hello', 'ask_1', { attachmentIds: ['img_1'], onSnapshot: (snapshot) => snapshots.push(snapshot) });
-  assert.deepEqual(JSON.parse(calls[0].options.body), { thread: 'thr_1', question: 'Hello', requestId: 'ask_1', stream: true, attachmentIds: ['img_1'] });
+  assert.deepEqual(JSON.parse(calls[0].options.body), { thread: 'thr_1', question: 'Hello', requestId: 'ask_1', stream: true, routineReview: true, attachmentIds: ['img_1'] });
   assert.equal(calls[0].options.credentials, 'include');
   assert.equal(reply.generation.answer, 'Done.');
   assert.equal(snapshots.length, 1);

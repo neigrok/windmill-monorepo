@@ -65,3 +65,9 @@ exception messages are reported.
 Proposal decisions run through the gym domain. Removal snapshots persist in the account replica
 until their outcome is visible; acknowledging one emits `gym_action` with `proposal-apply` and
 `closed`. Failed acknowledgment uses `gym-proposal-apply`; a storage failure remains engine-owned.
+
+Coach routine confirmation emits `gym_coach_routine_confirm` with only `outcome`: `started` when Save routine
+sends, `saved` once the server confirms the draft (emitted even when the room has unmounted), `refused` when the
+server answers 4xx (400, 401, 404, 409, 422) and `failed` on a 5xx, a network loss or a reply naming another draft.
+Only `failed` reports to Sentry, under the static operation `gym-coach-routine-confirm`. No routine name, movement,
+conversation, question, identifier or server text is reported.

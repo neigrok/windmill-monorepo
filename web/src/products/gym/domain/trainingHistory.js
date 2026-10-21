@@ -34,6 +34,12 @@ export function sessionDocument(value) {
     ...(value.displayName === null ? {} : { routineName: value.displayName }) };
 }
 
+/** @param {import('./catalogue.js').ExerciseValue} value @returns {Document} */
+export function exerciseDocument(value) {
+  return { id: value.id.record, ...value.fields(), ...(value.equipment === 'dumbbell' ? { loadCount: value.loadCount } : {}),
+    custom: !SeedExercises.has(value.id), ...(value.aliases.length ? { aliases: [...value.aliases] } : {}) };
+}
+
 /** @param {TrainingSetValue} value @returns {Document} */
 export function setDocument(value) {
   return { id: value.id.record, exerciseId: value.exerciseId.record, ...(value.setNumber === null ? {} : { setNumber: value.setNumber }),
@@ -104,23 +110,18 @@ function pageOf(sessions, { before = SessionRules.maxInstantMs, beforeId = '', l
 export class TrainingHistory {
   /** @type {Map<string, Document | null> | null} */
   #records = null;
-  /** @type {Map<string, import('./catalogue.js').ExerciseValue>} */
-  #exercisesById;
 
   /** @param {import('../../../platform/domain-kit/reading.js').Reader} read */
   constructor(read) {
     this.read = read;
     this.log = new TrainingLog(read);
-    this.catalogue = new Catalogue(read);
+    this.catalogue = this.log.catalogue;
     this.finished = Object.freeze(this.log.drawnSessions.filter((session) => !session.isOpen));
-    this.#exercisesById = new Map(this.catalogue.exercises.map((exercise) => [jcs(exercise.id.json), exercise]));
     Object.freeze(this);
   }
 
   exercises() {
-    return this.catalogue.exercises.map((value) => ({ id: value.id.record, ...value.fields(), ...(value.equipment === 'dumbbell' ? { loadCount: value.loadCount } : {}),
-      custom: !SeedExercises.all.some((seed) => seed.id.equals(value.id)),
-      ...(value.aliases.length ? { aliases: [...value.aliases] } : {}) }))
+    return this.catalogue.exercises.map(exerciseDocument)
       .sort((a, b) => compareText(a.pattern, b.pattern) || compareText(a.name, b.name) || compareText(String(a.id), String(b.id)));
   }
 
@@ -239,7 +240,7 @@ export class TrainingHistory {
       const held = this.log.setsFor(session.id); const worked = working(held); const top = topSet(worked);
       const topE1rm = this.log.topE1rm(session.id);
       return { ...sessionDocument(session), setCount: held.length, workingSetCount: worked.length, tonnageKg: totals(worked, this.catalogue).tonnageKg,
-        exercises: [...new Set(held.flatMap((set) => { const exercise = this.#exercisesById.get(jcs(set.exerciseId.json)); return exercise ? [exercise.name] : []; }))].sort(compareText),
+        exercises: [...new Set(held.flatMap((set) => { const exercise = this.catalogue.find(set.exerciseId); return exercise ? [exercise.name] : []; }))].sort(compareText),
         ...(top ? { topSet: { weightKg: top.weightKg, reps: top.reps } } : {}), ...(topE1rm === null ? {} : { topE1rm }),
         record: this.log.firstPullComplete && worked.length >= 4 && this.recordAgainst(session) !== null,
         closedItself: session.closedBy ? session.closedBy === 'stale' : session.finishedAt?.ms === SessionRules.lastActivity(session, held).ms };
@@ -291,7 +292,7 @@ export class TrainingHistory {
       const month = LocalDay.in(session.startedAt, this.read.moment.zone).text.slice(0, 7);
       months.set(month, (months.get(month) ?? 0) + 1);
       for (const id of new Set(this.log.setsFor(session.id).map((set) => String(set.exerciseId.record)))) {
-        const known = this.#exercisesById.get(jcs(id));
+        const known = this.catalogue.find(new Id(id, Exercise));
         const facet = exercises.get(id) ?? { id, name: known?.name ?? '', sessions: 0, ...(known?.equipment ? { equipment: known.equipment } : {}) };
         facet.sessions += 1; exercises.set(id, facet);
       }
@@ -306,11 +307,11 @@ export class TrainingHistory {
     const total = totals(scoped.flatMap((session) => working(this.log.setsFor(session.id))), this.catalogue);
     return { sessions: page.map((session) => {
       const held = this.log.setsFor(session.id); const worked = working(held); const count = totals(worked, this.catalogue);
-      const names = held.map((set) => this.#exercisesById.get(jcs(set.exerciseId.json))?.name ?? '');
+      const names = held.map((set) => this.catalogue.find(set.exerciseId)?.name ?? '');
       return { id: session.id.record, startedAt: session.startedAt.ms, finishedAt: session.finishedAt?.ms,
         ...(session.historyRoutineId === null ? {} : { routineId: session.historyRoutineId.record }), routineName: session.name ?? '',
         setCount: held.length, workingSetCount: worked.length, reps: count.reps, tonnageKg: count.tonnageKg,
-        sets: held.map((set) => { const { kind, note, ...fields } = setDocument(set); return { ...fields, exercise: this.#exercisesById.get(jcs(set.exerciseId.json))?.name ?? '' }; }),
+        sets: held.map((set) => { const { kind, note, ...fields } = setDocument(set); return { ...fields, exercise: this.catalogue.find(set.exerciseId)?.name ?? '' }; }),
         movements: [...new Set(held.map((set) => String(set.exerciseId.record)))].sort(compareText).map((exerciseId) => ({ exerciseId, ...totals(worked.filter((set) => set.exerciseId.record === exerciseId), this.catalogue) })),
         exerciseNames: [...new Set(names)].sort(compareText) };
     }), summary: { sessions: scoped.length, ...total },

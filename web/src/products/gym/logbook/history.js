@@ -68,7 +68,8 @@ export function collapsedScheme(sets) {
   return `${sets.length} × ${first.reps} · ${first.weightKg === 0 ? 'bodyweight' : fmt(first.weightKg)}`;
 }
 
-export function workoutTotals(sets, catalog = []) {
+export function workoutTotals(sets, catalog) {
+  const counts = new Map(catalog.map((exercise) => [exercise.id, exercise.loadCount ?? 1]));
   const working = sets.filter((set) => set.kind === 'working');
-  return { sets: working.length, reps: working.reduce((sum, set) => sum + set.reps, 0), tonnageKg: working.reduce((sum, set) => sum + Math.max(0, set.weightKg) * set.reps * (catalog.find((exercise) => exercise.id === set.exerciseId)?.loadCount ?? 1), 0) };
+  return { sets: working.length, reps: working.reduce((sum, set) => sum + set.reps, 0), tonnageKg: working.reduce((sum, set) => sum + Math.max(0, set.weightKg) * set.reps * (counts.get(set.exerciseId) ?? 1), 0) };
 }

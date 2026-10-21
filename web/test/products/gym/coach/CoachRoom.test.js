@@ -677,16 +677,16 @@ test('routine drafts remain reviewable across interruption and Save retries reta
     ] },
     onConfirm: room.tree.confirmRoutine }));
   assert.equal(sent.length, 0);
-  assert.match(textOf(message.tree), /Review routine.*Push.*Flat press.*1 × 8 · 16 kg each · Two dumbbells/);
+  assert.match(textOf(message.tree), /Review routine.*Push.*Flat press.*1 × 8 · 35.3 lb each · Two dumbbells/);
   const review = findByClass(message.tree, 'gym-coach-routine-draft')[0];
   assert.deepEqual(elementsOf(review).filter((element) => element.type === 'li').map((element) => textOf(element.props.children)), [
-    'Flat press1 × 8 · 16 kg each · Two dumbbells',
-    'Bench press1 × 8 · 32 kg total · Barbell',
+    'Flat press1 × 8 · 35.3 lb each · Two dumbbells',
+    'Bench press1 × 8 · 70.5 lb total · Barbell',
     'Pull-up1 × 8 · Bodyweight',
   ]);
   const save = elementsOf(message.tree).find((element) => element.props.onClick && textOf(element.props.children) === 'Save routine');
   await save.props.onClick();
-  assert.equal(room.tree.confirmNote, 'Routine wasn’t confirmed. Try Save routine again.');
+  assert.deepEqual(room.tree.confirmNote, { key: 'request-a:operation-a', text: 'Couldn’t save the routine. Try again.', closed: false });
   assert.equal(room.tree.turns.at(-1).routineDrafts[0].state, 'pending');
   await room.tree.confirmRoutine(room.tree.turns.at(-1), draft);
   assert.deepEqual(sent, [['thread-a', 'request-a', 'operation-a'], ['thread-a', 'request-a', 'operation-a']]);
@@ -696,4 +696,79 @@ test('routine drafts remain reviewable across interruption and Save retries reta
   const restored = readCoachDraft('alice', 'thread-a');
   assert.equal(restored.turns.at(-1).results[0].kind, 'routine-created');
   assert.equal(readCoachDraft('bob', 'thread-a'), null);
+});
+
+test('a Save routine that does not come back saved says why inside its card and offers Save only while a retry can help', async (t) => {
+  browserWith();
+  const { CoachMessage } = await loadScreen('products/gym/coach/CoachRoom.jsx');
+  const draft = { operationId: 'operation-a', routineId: 'routine-a', name: 'Push', position: 1, state: 'pending',
+    entries: [{ exerciseId: 'goblet-squat', sets: [{ reps: 8, weightKg: 24 }] }] };
+  const generation = { id: 'generation-a', requestId: 'request-a', question: 'Plan a workout', at: 10,
+    status: 'completed', answer: 'Review this plan.', revision: 2, routineDrafts: [draft] };
+  const { generationTurns } = await import('../../../../src/products/gym/coach/coach.js');
+  const cases = [
+    [new GymError(404, 'gone', 'coach-draft-not-found'), 'This draft is no longer available.', true, 'refused'],
+    [new GymError(422, 'unsavable', 'coach-draft-invalid'), 'This draft can’t be saved. Ask Coach for a new one.', true, 'refused'],
+    [new GymError(400, 'malformed', ''), 'This draft can’t be saved. Ask Coach for a new one.', true, 'refused'],
+    [new GymError(401, 'signed out', ''), 'Coach reads your log, so it needs you signed in.', false, 'refused'],
+    [new GymError(409, 'busy', 'routine-save-in-progress'), 'Couldn’t save the routine. Try again.', false, 'refused'],
+    [new GymError(503, 'busy', 'gym-engine-busy'), 'Couldn’t save the routine. Try again.', false, 'failed'],
+    [new TypeError('Failed to fetch'), 'Couldn’t save the routine. Try again.', false, 'failed'],
+  ];
+  for (const [error, text, closed, outcome] of cases) {
+    const events = [];
+    const failures = [];
+    let calls = 0;
+    const api = { confirmCoachRoutine: async () => { calls += 1; throw error; } };
+    const telemetry = { track: (name, props) => events.push([name, props]), captureError: (...args) => failures.push(args) };
+    const room = renderHook(t, () => useCoachConversation({ accountId: 'alice', api, telemetry,
+      initialThread: { id: 'thread-a', turns: generationTurns(generation), generation } }));
+    await room.tree.confirmRoutine(room.tree.turns.at(-1), draft);
+    await room.tree.confirmRoutine(room.tree.turns.at(-1), draft);
+    assert.equal(calls, closed ? 1 : 2, `${error.status}: a closed draft is not sent again`);
+    assert.deepEqual(room.tree.confirmNote, { key: 'request-a:operation-a', text, closed });
+    assert.deepEqual(events.slice(0, 2), [['gym_coach_routine_confirm', { outcome: 'started' }], ['gym_coach_routine_confirm', { outcome }]]);
+    assert.deepEqual(failures, outcome === 'failed' ? [['gym', 'gym-coach-routine-confirm', '', '/gym'], ['gym', 'gym-coach-routine-confirm', '', '/gym']] : []);
+    const message = renderHook(t, () => CoachMessage({ turn: room.tree.turns.at(-1), log: { ...roomLog(), catalog: [] },
+      onConfirm: room.tree.confirmRoutine, confirmNote: room.tree.confirmNote }));
+    const card = findByClass(message.tree, 'gym-coach-routine-draft')[0];
+    assert.deepEqual(findByClass(card, 'gym-coach-note').map(textOf), [text]);
+    assert.equal(elementsOf(card).some((element) => textOf(element.props.children) === 'Save routine'), !closed);
+    assert.deepEqual(elementsOf(card).filter((element) => element.type === 'li').map((element) => textOf(element.props.children)),
+      ['New movement1 × 8 · 24']);
+  }
+});
+
+test('a saved routine is counted after its room has gone, and New chat waits for the save and clears its note', async (t) => {
+  browserWith();
+  const draft = { operationId: 'operation-a', routineId: 'routine-a', name: 'Push', position: 1, state: 'pending', entries: [] };
+  const generation = { id: 'generation-a', requestId: 'request-a', question: 'Plan a workout', at: 10,
+    status: 'completed', answer: 'Review this plan.', revision: 2, routineDrafts: [draft] };
+  const { generationTurns } = await import('../../../../src/products/gym/coach/coach.js');
+  const saved = { thread: 'thread-a', generation: { ...generation, revision: 3, routineDrafts: [{ ...draft, state: 'saved' }],
+    results: [{ kind: 'routine-created', operationId: 'operation-a', routineId: 'routine-a', routineName: 'Push' }] } };
+  const events = [];
+  const telemetry = { track: (name, props) => events.push(props.outcome), captureError: () => assert.fail('a saved routine reports nothing') };
+  let answer;
+  const api = { confirmCoachRoutine: () => new Promise((resolve) => { answer = resolve; }) };
+  const open = () => renderHook(t, () => useCoachConversation({ accountId: 'alice', api, telemetry,
+    initialThread: { id: 'thread-a', turns: generationTurns(generation), generation } }));
+  const gone = open();
+  const leaving = gone.tree.confirmRoutine(gone.tree.turns.at(-1), draft);
+  gone.unmount();
+  answer(saved);
+  await leaving;
+  assert.deepEqual(events, ['started', 'saved']);
+  events.length = 0;
+  const room = open();
+  const saving = room.tree.confirmRoutine(room.tree.turns.at(-1), draft);
+  room.tree.newChat();
+  assert.equal(room.tree.thread, 'thread-a', 'New chat waits while the routine saves');
+  answer(new Promise((resolve, reject) => reject(new GymError(503, 'busy', 'gym-engine-busy'))));
+  await saving.catch(() => {});
+  assert.deepEqual(events, ['started', 'failed']);
+  assert.equal(room.tree.confirmNote.text, 'Couldn’t save the routine. Try again.');
+  room.tree.newChat();
+  assert.notEqual(room.tree.thread, 'thread-a');
+  assert.equal(room.tree.confirmNote, null);
 });

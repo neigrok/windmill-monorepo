@@ -55,7 +55,10 @@ come from one chronological pass. Equal cent-load estimate scores keep the earli
 bodyweight repetition records remain independent of assisted and loaded sets. Equipment and load-count overrides
 resolve through the current catalogue for old and new sets. Dumbbell entries are per dumbbell; working-set volume
 multiplies by the configured one or two dumbbells. Other equipment counts the entered external load once. Estimates
-retain the entered unit. Seed and custom names continue to identify the same movement throughout history.
+retain the entered unit. Seed and custom names continue to identify the same movement throughout history. Set rows,
+the fix sheet, workout corrections and past-workout entry name each load's basis from the catalogue: `kg each` for
+dumbbells, `kg added` for bodyweight (`assisted` below zero on a row), `kg total` for barbells and the plain unit
+otherwise; rows read in the display unit, typed fields in kilograms. Every volume read takes the catalogue.
 Creation and proposal chronology use the confirmed record's authoritative `rc` envelope. Command
 predictions persist workout fields, correction removals and routine deaths from removal proposals
 through offline restart. Set numbers arrive with server admission; a pending correction retains the
@@ -84,11 +87,18 @@ a `GymRefusal` is expected and reports nothing, and a store failure is the engin
 Engine telemetry owns transport, storage, authentication and admission failures. Refusal content stays on the device; the room announces
 unresolved notices.
 
-Coach routine creation produces a review card with movements, targets, equipment and load basis. Only **Save routine**
-confirms its persisted operation. Drafts survive interrupted responses and thread history; confirmation retries retain the
-thread, request and operation identity. Saved state and its receipt survive older streamed or paged snapshots.
-`gym_coach_routine_confirm` reports only `outcome` (`started`, `saved`, `failed`, `refused`). Unexpected confirmation
-failures report static `gym-coach-routine-confirm` to Sentry. Neither report contains routine or conversation content.
+Every ask sends `routineReview: true`, so Coach drafts new routines for review instead of saving them. The review card
+lists movements, targets in the display unit with their load basis, and equipment; a movement the log has not synced yet
+reads "New movement" with no basis. Only **Save routine** confirms its persisted operation. Drafts survive interrupted
+responses and thread history; confirmation retries retain the thread, request and operation identity. Saved state and its
+receipt survive older streamed or paged snapshots. An unsaved confirmation answers inside its card: a missing draft (404)
+or one the server cannot write (400, 422) closes the card's Save; signed out (401) asks for sign-in; a busy lease (409),
+an unavailable engine (5xx) or a lost reply offers a retry without asserting the routine was not saved. New chat waits
+while a routine saves and clears the card's note. `gym_coach_routine_confirm` reports only `outcome`: `started`, `saved`
+(even after the room unmounts), `refused` (a 4xx answer) or `failed` (5xx, network or a reply naming another draft).
+Only `failed` reports static `gym-coach-routine-confirm` to Sentry. Neither report contains routine or conversation content.
+A step receipt says `drafted a routine for your review` on a turn that carries drafts, `created a routine` on an older
+turn that saved directly, and `updated a movement` for a catalogue change Coach applied.
 
 ## Gates
 

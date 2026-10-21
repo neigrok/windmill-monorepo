@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { gymReadView, namedZone, createGymApi, exerciseDocument } from '../../../src/products/gym/gymRuntime.js';
+import { gymReadView, namedZone, createGymApi } from '../../../src/products/gym/gymRuntime.js';
+import { exerciseDocument } from '../../../src/products/gym/domain/trainingHistory.js';
 import { gymAccount } from './harness.mjs';
 
 const readView = (rows, { now = Date.now(), timeZone = 'UTC' } = {}) => gymReadView({ drawn: rows, stored: rows }, { now, zone: namedZone(timeZone) });
@@ -239,7 +240,7 @@ test('record ladder, recent nonwarmup rows, and stats use lifetime finished work
 test('effective equipment and names change historical totals without changing entered loads or estimates', () => {
   const rows = [sessionRow('session_equipment', at),
     row('exercise', 'custom_press', { name: 'My press', pattern: 'press', equipment: 'barbell', stepKg: 2.5 }),
-    row('exerciseName', 'custom_press', { name: 'Ignored seed name', equipment: 'dumbbell', loadCount: 1 }),
+    row('exerciseName', 'custom_press', { equipment: 'dumbbell', loadCount: 1 }),
     row('exerciseName', 'dumbbell-bench-press', { name: 'Flat dumbbells' }),
     ...['dumbbell-bench-press', 'goblet-squat', 'custom_press', 'pull-up'].map((exerciseId, index) =>
       setRow(`set_equipment${index}`, 'session_equipment', { exerciseId, weightKg: index === 3 ? 20 : 16, reps: 5 })),

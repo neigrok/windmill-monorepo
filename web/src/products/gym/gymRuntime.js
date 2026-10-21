@@ -23,8 +23,7 @@ import { ChangePreferences, Preferences, PreferencesValue, restSettings } from '
 import { DeleteRoutine, PlanSnapshot, Routine, RoutineValue } from './domain/routines.js';
 import { AcknowledgeRoutineRemoval, ApplyProposalKeepingReceipt, DismissProposal, Proposal,
   REMOVAL_RECEIPTS, removalReceipts } from './domain/proposals.js';
-import { SeedExercises } from './domain/seedExercises.js';
-import { proposalDocument, proposalsDocument, sessionDocument, setDocument, TrainingHistory } from './domain/trainingHistory.js';
+import { exerciseDocument, proposalDocument, proposalsDocument, sessionDocument, setDocument, TrainingHistory } from './domain/trainingHistory.js';
 import { Session, SessionRules, TrainingSet } from './domain/training.js';
 import { CorrectedSet, CorrectSession, CorrectSet, DeleteSet, ImportedSet, ImportSession } from './domain/trainingActions.js';
 import { GymRefusal, isStoreFailure } from './errors.js';
@@ -125,11 +124,6 @@ export function gymRefusalError(refused) {
   if (refused.kind === 'proposalSettled') return new GymRefusal('proposal-settled', { sentence: 'That proposal has already been settled.' });
   const code = refused.refused?.code ?? ({ gone: 'record-dead', taken: 'id-taken', full: 'cap' }[refused.kind] ?? refused.kind);
   return new GymRefusal(code, code === 'stale' ? { sentence: 'This changed on another device. Read it again before saving.' } : {});
-}
-
-export function exerciseDocument(value) {
-  return { id: value.id.record, ...value.fields(), ...(value.equipment === 'dumbbell' ? { loadCount: value.loadCount } : {}), custom: !SeedExercises.all.some((seed) => seed.id.equals(value.id)),
-    ...(value.aliases.length ? { aliases: [...value.aliases] } : {}) };
 }
 
 export function routineValue(document) {

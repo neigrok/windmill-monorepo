@@ -6,7 +6,7 @@ import { GymProduct } from '../../../../../packages/api-contract/sync/reference/
 import { Id } from '../../../../src/platform/domain-kit/entities.js';
 import { registry } from '../../../../src/platform/sync/schema.js';
 import { Catalogue, CreateExercise, Exercise, ExerciseName, ExerciseValue, RenameExercise } from '../../../../src/products/gym/domain/catalogue.js';
-import { refusalForm } from '../../../../src/products/gym/domain/gymRules.js';
+import { GymRefusals, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';
 import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises.js';
 import { Harness } from '../../../platform/domain-kit/harness.js';
 
@@ -48,6 +48,25 @@ test('a failed catalogue create writes nothing and retry retains its id through 
   assert.deepEqual(exercise(a, id), expected);
   assert.deepEqual(exercise(b, id), expected);
   assert.equal(a.server.rowsOf('acct:A/gym').filter((/** @type {{ t: string }} */ row) => row.t === 'exercise').length, 1);
+});
+
+test('a one-dumbbell custom movement lands with its count in one gesture and reads back as one dumbbell on every phone', async (t) => {
+  const a = await open(t);
+  const b = await a.device();
+  const id = new Id('exercise1', Exercise);
+  const saved = await a.runner.run(new CreateExercise(new ExerciseValue(id, 'Single press', 'press', 'dumbbell', 2, [], 1)));
+  assert.equal(saved.kind, 'committed');
+  /** @param {Harness} phone */
+  const held = (phone) => {
+    const value = phone.runner.read(Exercise.scope, (read) => new Catalogue(read).find(id));
+    return value && { equipment: value.equipment, loadCount: value.loadCount };
+  };
+  assert.deepEqual(held(a), { equipment: 'dumbbell', loadCount: 1 });
+  await a.sync();
+  assert.deepEqual(a.notices(GymRefusals), []);
+  assert.deepEqual([held(a), held(b)], [{ equipment: 'dumbbell', loadCount: 1 }, { equipment: 'dumbbell', loadCount: 1 }]);
+  assert.deepEqual(a.server.rowsOf('acct:A/gym').filter((/** @type {{ t: string }} */ row) => row.t === 'exerciseName')
+    .map((/** @type {{ id: string, f: Record<string, unknown> }} */ row) => [row.id, Object.keys(row.f).sort()]), [['exercise1', ['loadCount']]]);
 });
 
 test('custom and seed renames converge with server aliases while refused and unchanged names add no intent', async (t) => {

@@ -6,10 +6,13 @@ import { Plan } from '../../../platform/domain-kit/plans.js';
 import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Check, Valid } from '../../../platform/domain-kit/validation.js';
 import { Path } from '../../../platform/domain-kit/values.js';
+import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { ExerciseRules, GymRefusals } from './gymRules.js';
 import { SeedExercises } from './seedExercises.js';
 
 export class ExerciseValue {
+  static pairedLoadCount = 2;
+
   /**
    * @param {Id<ExerciseValue>} id
    * @param {string} name
@@ -19,7 +22,7 @@ export class ExerciseValue {
    * @param {readonly string[]} aliases
    * @param {number} loadCount
    */
-  constructor(id, name, pattern, equipment, stepKg, aliases = [], loadCount = defaultLoadCount(equipment, id.record)) {
+  constructor(id, name, pattern, equipment, stepKg, aliases = [], loadCount = ExerciseValue.pairedLoadCount) {
     this.id = id;
     this.name = name;
     this.pattern = pattern;
@@ -52,8 +55,10 @@ export class ExerciseNameValue {
     Object.freeze(this);
   }
 
-  fields() { return { name: this.name, ...(this.equipment === null ? {} : { equipment: this.equipment }),
-    ...(this.loadCount === null ? {} : { loadCount: this.loadCount }) }; }
+  fields() {
+    return { ...(this.name === null ? {} : { name: this.name }), ...(this.equipment === null ? {} : { equipment: this.equipment }),
+      ...(this.loadCount === null ? {} : { loadCount: this.loadCount }) };
+  }
 }
 
 /** @param {import('../../../platform/domain-kit/entities.js').Fields} fields */
@@ -74,13 +79,13 @@ export const Exercise = new EntityType({
     f.string('equipment'), f.double('stepKg'), aliasesOf(f)),
   checks: [
     new Check('name', (value) => new ExerciseValue(value.id, ExerciseRules.name.apply(value.name, new Path('name')),
-      value.pattern, value.equipment, value.stepKg, value.aliases)),
+      value.pattern, value.equipment, value.stepKg, value.aliases, value.loadCount)),
     new Check('pattern', (value) => new ExerciseValue(value.id, value.name, ExerciseRules.pattern.apply(value.pattern, new Path('pattern')),
-      value.equipment, value.stepKg, value.aliases)),
+      value.equipment, value.stepKg, value.aliases, value.loadCount)),
     new Check('equipment', (value) => new ExerciseValue(value.id, value.name, value.pattern,
-      ExerciseRules.equipment.apply(value.equipment, new Path('equipment')), value.stepKg, value.aliases)),
+      ExerciseRules.equipment.apply(value.equipment, new Path('equipment')), value.stepKg, value.aliases, value.loadCount)),
     new Check('stepKg', (value) => new ExerciseValue(value.id, value.name, value.pattern, value.equipment,
-      ExerciseRules.stepKg.apply(value.stepKg, new Path('stepKg')), value.aliases)),
+      ExerciseRules.stepKg.apply(value.stepKg, new Path('stepKg')), value.aliases, value.loadCount)),
   ],
 });
 
@@ -95,11 +100,6 @@ export const ExerciseName = new EntityType({
     new Check('loadCount', (value) => new ExerciseNameValue(value.id, value.name, value.aliases, value.equipment,
       ExerciseRules.loadCount.applyOptional(value.loadCount, new Path('loadCount'))))],
 });
-
-/** @param {string} equipment @param {import('../../../platform/domain-kit/entities.js').RecordID} id */
-export function defaultLoadCount(equipment, id) {
-  return equipment === 'dumbbell' && !['goblet-squat', 'dumbbell-row', 'suitcase-carry', 'overhead-triceps-extension'].includes(String(id)) ? 2 : 1;
-}
 
 /** @param {string} equipment */
 export function defaultStepKg(equipment) {
@@ -117,27 +117,32 @@ export function renamedAliases(previous, next, aliases) {
 }
 
 export class Catalogue {
+  /** @type {Map<string, ExerciseValue>} */
+  #byId;
+
   /**
    * @param {import('../../../platform/domain-kit/reading.js').Reader} read
    * @param {import('../../../platform/domain-kit/reading.js').ViewMode} view
    */
   constructor(read, view = 'drawn') {
-    const names = read.repository(ExerciseName).all(view);
-    const custom = read.repository(Exercise).all(view);
-    this.exercises = Object.freeze([...SeedExercises.all, ...custom].map((exercise) => {
-      const override = names.find((value) => value.id.record === exercise.id.record);
+    const overrides = new Map(read.repository(ExerciseName).all(view).map((value) => [jcs(value.id.json), value]));
+    /** @param {ExerciseValue} exercise @param {boolean} seed */
+    const resolved = (exercise, seed) => {
+      const override = overrides.get(jcs(exercise.id.json));
       if (!override) return exercise;
-      const seed = SeedExercises.all.some((value) => value.id.equals(exercise.id));
-      const equipment = override.equipment ?? exercise.equipment;
-      return new ExerciseValue(exercise.id, seed ? override.name ?? exercise.name : exercise.name,
-        exercise.pattern, equipment, exercise.stepKg, seed ? override.aliases : exercise.aliases,
-        override.loadCount ?? defaultLoadCount(equipment, exercise.id.record));
-    }).sort((a, b) => compareText(a.name, b.name) || Id.compare(a.id, b.id)));
+      return new ExerciseValue(exercise.id, seed ? override.name ?? exercise.name : exercise.name, exercise.pattern,
+        override.equipment ?? exercise.equipment, exercise.stepKg, seed ? override.aliases : exercise.aliases,
+        override.loadCount ?? (exercise.equipment === 'dumbbell' ? exercise.loadCount : ExerciseValue.pairedLoadCount));
+    };
+    this.exercises = Object.freeze([...SeedExercises.all.map((seed) => resolved(seed, true)),
+      ...read.repository(Exercise).all(view).map((custom) => resolved(custom, false))]
+      .sort((a, b) => compareText(a.name, b.name) || Id.compare(a.id, b.id)));
+    this.#byId = new Map(this.exercises.map((exercise) => [jcs(exercise.id.json), exercise]));
     Object.freeze(this);
   }
 
   /** @param {Id<ExerciseValue>} id */
-  find(id) { return this.exercises.find((value) => value.id.equals(id)) ?? null; }
+  find(id) { return id.entity.type === Exercise.type ? this.#byId.get(jcs(id.json)) ?? null : null; }
 
   /** @param {string} text */
   search(text) {
@@ -163,6 +168,9 @@ export class CreateExercise {
   decide(loaded) {
     const plan = new Plan();
     plan.create(new Valid(this.value, loaded));
+    if (this.value.equipment === 'dumbbell' && this.value.loadCount !== ExerciseValue.pairedLoadCount) {
+      plan.create(new Valid(new ExerciseNameValue(new Id(this.value.id.record, ExerciseName), null, [], null, this.value.loadCount), loaded));
+    }
     return Decision.write(plan, this.value.id);
   }
 }
@@ -188,7 +196,7 @@ export class RenameExercise {
     const name = ExerciseRules.name.apply(this.name, new Path('name'));
     if (old.name === name) return Decision.unchanged(null);
     const plan = new Plan();
-    if (SeedExercises.all.some((seed) => seed.id.equals(this.id))) {
+    if (SeedExercises.has(this.id)) {
       const override = new ExerciseNameValue(new Id(this.id.record, ExerciseName), name, old.aliases,
         loaded.override?.equipment ?? null, loaded.override?.loadCount ?? null);
       if (loaded.override) plan.update(new Valid(override, loaded.moment, ['name']));

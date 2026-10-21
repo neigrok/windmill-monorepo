@@ -1,7 +1,7 @@
 // The pure rules behind the Coach room: the step phrases, the receipt, the turn shape and every
 // sentence the room says of its own. Server sentences are shown as sent and never rewritten here.
 
-import { entryLabel, nameOfMovement, planOf, planReadingOf, routineNameOf, slotRows, timeLabel } from '../log.js';
+import { entryLabel, loadBasisLabel, movementOf, nameOfMovement, planOf, planReadingOf, routineNameOf, slotRows, targetLoadOf, timeLabel } from '../log.js';
 
 export function coachWorkout(session, sets = [], catalog = []) {
   const plan = planOf(session);
@@ -38,21 +38,25 @@ export const TOOL_PHRASE = {
   list_notes: 'read your notes',
   save_note: 'saved a note',
   list_bodyweight: 'read your bodyweight',
-  create_routine: 'drafted a routine for your review',
+  create_routine: 'created a routine',
+  update_exercise: 'updated a movement',
   propose_routine_change: 'wrote a proposal for one of your routines',
   propose_routine_removal: 'wrote a proposal to remove a routine',
 };
+
+// A turn that carries routine drafts asked the lifter to save each one; an older turn's create_routine saved it itself.
+export const DRAFTED_ROUTINE_PHRASE = 'drafted a routine for your review';
 
 export const NO_STEPS = 'Answered from your recent workouts alone.';
 
 // A tool with no phrase prints nothing — a raw tool name is developer output on a lifter's screen.
 // The receipt beside this line is what the honesty claim rests on, so a step list that empties out
 // draws no sentence at all rather than claiming the answer came from nowhere.
-export function stepsLine(steps) {
+export function stepsLine(steps, { drafted = false } = {}) {
   if (!steps || steps.length === 0) return NO_STEPS;
   const seen = [];
   for (const step of steps) {
-    const phrase = TOOL_PHRASE[step.tool];
+    const phrase = step.tool === 'create_routine' && drafted ? DRAFTED_ROUTINE_PHRASE : TOOL_PHRASE[step.tool];
     if (!phrase) continue;
     const said = step.tool === 'save_note' && step.failed
       ? 'could not confirm a note save'
@@ -135,6 +139,36 @@ export function askFailure(error) {
   if (error?.code === 'ask-generation-active') return { note: note('Coach is answering another question in this conversation. Try again shortly.'), refused: true };
   if (error?.code === 'ask-request-conflict') return { note: note('That request belongs to another question. Open the conversation again.'), gone: true };
   return { note: note(NO_ANSWER_NOTE) };
+}
+
+export const CONFIRM_RETRY_NOTE = 'Couldn’t save the routine. Try again.';
+export const DRAFT_GONE_NOTE = 'This draft is no longer available.';
+export const DRAFT_UNSAVABLE_NOTE = 'This draft can’t be saved. Ask Coach for a new one.';
+
+// A Save routine that did not come back saved: what the draft card says, whether Save stays offered, and the
+// funnel outcome. A lost reply asserts nothing about the routine; only a refusal the server answered closes the draft.
+export function confirmFailure(error) {
+  const status = error?.status;
+  if (!(status >= 400 && status < 500)) return { outcome: 'failed', note: CONFIRM_RETRY_NOTE, closed: false };
+  if (status === 404) return { outcome: 'refused', note: DRAFT_GONE_NOTE, closed: true };
+  if (status === 400 || status === 422) return { outcome: 'refused', note: DRAFT_UNSAVABLE_NOTE, closed: true };
+  if (status === 401) return { outcome: 'refused', note: SIGNED_OUT_NOTE, closed: false };
+  return { outcome: 'refused', note: CONFIRM_RETRY_NOTE, closed: false };
+}
+
+export const NEW_MOVEMENT = 'New movement';
+const EQUIPMENT_LABEL = { barbell: 'Barbell', bodyweight: 'Bodyweight', machine: 'Machine', cable: 'Cable', kettlebell: 'Kettlebell' };
+
+// One movement of a routine draft as the log knows it: targets in the lifter's unit with what a load counts, then
+// equipment and rest. A movement the log has not synced yet is named neutrally and asserts no basis or equipment.
+export function draftEntryLine(entry, catalog) {
+  const exercise = movementOf(catalog, entry.exerciseId);
+  const load = entry.sets?.map((set) => targetLoadOf(set.weightKg)).find((value) => value != null) ?? null;
+  const equipment = exercise?.equipment === 'dumbbell' ? (exercise.loadCount === 1 ? 'One dumbbell' : 'Two dumbbells')
+    : EQUIPMENT_LABEL[exercise?.equipment] ?? null;
+  const scheme = load === null || !exercise ? entryLabel(entry) : `${entryLabel(entry)} ${loadBasisLabel(exercise, load)}`;
+  return { name: exercise?.name ?? NEW_MOVEMENT,
+    detail: [scheme, equipment, entry.restSeconds ? `${entry.restSeconds}s rest` : null].filter(Boolean).join(' · ') };
 }
 
 export const THREAD_PREFIX = 'thr_';

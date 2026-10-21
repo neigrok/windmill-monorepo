@@ -96,6 +96,7 @@
 .gym-root .gym-coach-routine-draft h2, .gym-root .gym-coach-routine-draft p { margin: 0; }
 .gym-root .gym-coach-routine-draft h2 { font: 700 20px/28px var(--font-body); }
 .gym-root .gym-coach-routine-draft > p { font: 400 13px/18px var(--font-body); color: var(--gym-ink-dim); }
+.gym-root .gym-coach-routine-draft > .gym-coach-note { font: 400 14px/20px var(--font-body); color: var(--gym-ink); }
 .gym-root .gym-coach-routine-draft ul { display: grid; gap: 16px; margin: 0; padding: 0; list-style: none; }
 .gym-root .gym-coach-routine-draft li { display: grid; gap: 4px; }
 .gym-root .gym-coach-routine-draft li span { font: 400 13px/18px var(--font-body); color: var(--gym-ink-dim); }

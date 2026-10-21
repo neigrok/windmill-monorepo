@@ -3,11 +3,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Button, Menu } from '../../../design-system/index.js';
 import { ImagePlus, Square } from 'lucide-react';
 import { CoachPhoto } from './CoachPhoto.jsx';
-import { COACH_HREF, NOTES_HREF, routineHref, THREADS_HREF, entryLabel, nameOfMovement, fmtKg, targetLoadOf } from '../log.js';
+import { COACH_HREF, NOTES_HREF, routineHref, THREADS_HREF } from '../log.js';
 import { ProposalPanel } from '../Proposals.jsx';
 import './coach.css';
 import { DELETE_VERB } from './threads.js';
-import { coachWorkout, COACH_PLACEHOLDER, COACH_TITLE, readLine, stepsLine } from './coach.js';
+import { coachWorkout, COACH_PLACEHOLDER, COACH_TITLE, draftEntryLine, readLine, stepsLine } from './coach.js';
 import { forgetCoachDraft, useCoachConversation } from './useCoachConversation.js';
 
 export function CoachRoom({ log, accountId, initialThread, onDelete }) {
@@ -22,6 +22,10 @@ export function CoachRoom({ log, accountId, initialThread, onDelete }) {
   }, [conversation.turns]);
 
   const newChat = () => {
+    if (conversation.confirmBusy) {
+      log.say('Wait for the routine to finish saving before starting a new chat.');
+      return;
+    }
     if (conversation.busy || conversation.pending || conversation.photoBusy || conversation.photo?.status === 'uploading') {
       log.say('Stop the current response or cancel the upload before starting a new chat.');
       return;
@@ -64,11 +68,10 @@ export function CoachRoom({ log, accountId, initialThread, onDelete }) {
             await conversation.older();
             requestAnimationFrame(() => { if (element) element.scrollTop += element.scrollHeight - height; });
           }}>{conversation.olderBusy ? 'Loading…' : 'Earlier messages'}</button>}
-        {conversation.confirmNote && <p className="gym-coach-note" role="status">{conversation.confirmNote}</p>}
         {conversation.olderNote && <p className="gym-coach-note" role="status">{conversation.olderNote}</p>}
         <ol className="gym-coach-thread">
           {conversation.turns.map((turn, index) => <CoachMessage key={`${turn.position ?? turn.requestId ?? index}-${turn.from}`}
-            turn={turn} log={log} accountId={accountId} thread={conversation.thread} onRetry={conversation.send} onConfirm={conversation.confirmRoutine} confirmBusy={conversation.confirmBusy} busy={Boolean(log.session) || conversation.busy || conversation.pending} />)}
+            turn={turn} log={log} accountId={accountId} thread={conversation.thread} onRetry={conversation.send} onConfirm={conversation.confirmRoutine} confirmBusy={conversation.confirmBusy} confirmNote={conversation.confirmNote} busy={Boolean(log.session) || conversation.busy || conversation.pending} />)}
         </ol>
       </div>
       {latest && <button type="button" className="gym-coach-latest" onClick={() => {
@@ -171,7 +174,7 @@ export function WorkoutInProgress({ log }) {
   </div>;
 }
 
-export function CoachMessage({ turn, log, accountId, thread, onRetry, onConfirm, confirmBusy, busy }) {
+export function CoachMessage({ turn, log, accountId, thread, onRetry, onConfirm, confirmBusy, confirmNote, busy }) {
   const [open, setOpen] = useState(false);
   const [notice, setNotice] = useState('');
   const noticeTimer = useRef(null);
@@ -204,7 +207,7 @@ export function CoachMessage({ turn, log, accountId, thread, onRetry, onConfirm,
   const read = readLine(receipt.read);
   const figureText = (value) => value?.split(/([+-]?\d+(?:\.\d+)?)/).map((part, index) => index % 2 ? <span className="gym-coach-figure" key={index}>{part}</span> : part);
   const readText = figureText(read);
-  const steps = stepsLine(receipt.steps);
+  const steps = stepsLine(receipt.steps, { drafted: Boolean(turn.routineDrafts?.length) });
   return <li ref={box} className={`gym-coach-turn ${turn.from === 'lifter' ? 'is-lifter' : 'is-coach'}${open ? ' is-menu-open' : ''}`}>
     {(turn.attachments ?? []).map((photo) => <CoachPhoto key={photo.id} accountId={accountId} thread={thread} photo={photo} />)}
     {turn.from !== 'lifter' && read && (steps ? <details className="gym-coach-trace">
@@ -234,22 +237,21 @@ export function CoachMessage({ turn, log, accountId, thread, onRetry, onConfirm,
     </>}
     {turn.from !== 'lifter' && <>
       {(receipt.proposals ?? []).map((id) => <ProposalPanel key={id} id={id} log={log} inConversation />)}
-      {(turn.routineDrafts ?? []).filter((draft) => draft.state === 'pending').map((draft) =>
-        <section key={draft.operationId} className="gym-coach-result gym-coach-routine-draft" aria-label={`Review ${draft.name}`}>
+      {(turn.routineDrafts ?? []).filter((draft) => draft.state === 'pending').map((draft) => {
+        const key = `${turn.requestId}:${draft.operationId}`;
+        const note = confirmNote?.key === key ? confirmNote : null;
+        return <section key={draft.operationId} className="gym-coach-result gym-coach-routine-draft" aria-label={`Review ${draft.name}`}>
           <p>Review routine</p>
           <h2>{draft.name}</h2>
           <ul>{draft.entries.map((entry, index) => {
-            const exercise = log.catalog.find((value) => value.id === entry.exerciseId);
-            const equipment = { barbell: 'Barbell', dumbbell: exercise?.loadCount === 1 ? 'One dumbbell' : 'Two dumbbells',
-              bodyweight: 'Bodyweight', machine: 'Machine', cable: 'Cable', kettlebell: 'Kettlebell' }[exercise?.equipment] ?? 'Equipment not available';
-            const basis = exercise?.equipment === 'dumbbell' ? 'each' : exercise?.equipment === 'bodyweight' ? 'added' : 'total';
-            const scheme = `${entryLabel(entry, fmtKg)}${entry.sets?.some((set) => targetLoadOf(set.weightKg) != null) ? ` kg ${basis}` : ''}`;
-            return <li key={`${entry.exerciseId}-${index}`}><strong>{nameOfMovement(log.catalog, entry.exerciseId)}</strong>
-              <span>{scheme} · {equipment}{entry.restSeconds ? ` · ${entry.restSeconds}s rest` : ''}</span></li>;
+            const line = draftEntryLine(entry, log.catalog);
+            return <li key={`${entry.exerciseId}-${index}`}><strong>{line.name}</strong><span>{line.detail}</span></li>;
           })}</ul>
-          <Button variant="secondary" disabled={Boolean(busy || confirmBusy || !turn.requestId)}
-            onClick={() => onConfirm?.(turn, draft)}>{confirmBusy === `${turn.requestId}:${draft.operationId}` ? 'Saving…' : 'Save routine'}</Button>
-        </section>)}
+          {note && <p className="gym-coach-note" role="status">{note.text}</p>}
+          {!note?.closed && <Button variant="secondary" disabled={Boolean(busy || confirmBusy || !turn.requestId)}
+            onClick={() => onConfirm?.(turn, draft)}>{confirmBusy === key ? 'Saving…' : 'Save routine'}</Button>}
+        </section>;
+      })}
       {(turn.results ?? []).filter((result) => result.kind === 'routine-created').map((result) =>
         <div key={result.operationId} className="gym-coach-result">
           <span>Routine created · {result.routineName}</span>

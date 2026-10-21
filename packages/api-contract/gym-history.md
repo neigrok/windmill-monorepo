@@ -7,7 +7,7 @@ Session reads, workout shares and statistics keep their own wire contracts. Web 
 The response contains:
 
 - `sessions`: `{id, startedAt, finishedAt, routineId?, routineName, setCount, workingSetCount, reps, tonnageKg, exerciseNames, movements, sets}`. `movements` contains `{exerciseId,sets,reps,tonnageKg}` totals using the same working-set rule. A set is `{id, exerciseId, exercise, setNumber, weightKg, reps, rpe?, completedAt}`. The safe history projection omits set notes, private Notes, Coach, planned targets and owner identity.
-- `summary`: `{sessions, sets, reps, tonnageKg}` for the complete filtered scope, before pagination. Sets, reps and external volume count working sets; volume clamps negative load to zero. `setCount` counts all sets in that workout.
+- `summary`: `{sessions, sets, reps, tonnageKg}` for the complete filtered scope, before pagination. Sets, reps and external volume count working sets; volume clamps negative load to zero and multiplies a dumbbell load by the dumbbells the movement holds ([load count](gym/domain/README.md)). `setCount` counts all sets in that workout.
 - `months`: `[{month:"2024-01", sessions}]`, month index in `timeZone` (IANA name, default UTC), newest first, for the complete filtered scope.
 - `exercises` and `routines`: `[{id, name, sessions}]` for the same complete filtered scope; count means workouts containing that identity, not sets. Exercise facets also carry `equipment` when known; snapshots freeze it with the safe facts. Readers suppress estimates for bodyweight equipment or unknown equipment, without inferring equipment from a name.
 - `next`: `{before, beforeId}` when another page exists, otherwise `null`.

@@ -6,7 +6,6 @@ import { precondition } from '../../../platform/domain-kit/values.js';
 import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { roundHalfAway, roundToQuantum } from '../../../../../packages/api-contract/sync/reference/core/values.js';
 import { Catalogue, Exercise } from './catalogue.js';
-import { SeedExercises } from './seedExercises.js';
 import { GymEstimate, Session, SessionRules, TrainingSet } from './training.js';
 import { GymUnits, WeightLadder } from './units.js';
 export { GymEstimate, SessionRules, SetRules } from './training.js';
@@ -68,7 +67,7 @@ export class TrainingLog {
   /** @param {Id<SessionValue>} sessionId */
   readout(sessionId) {
     const session = sessionId.entity.type === Session.type ? this.#drawnById.get(jcs(sessionId.json)) : null;
-    return session ? new SessionReadout(session, this.setsFor(sessionId), this.catalogue.exercises) : null;
+    return session ? new SessionReadout(session, this.setsFor(sessionId), this.catalogue) : null;
   }
 
   /** @param {Id<ExerciseValue>} exerciseId */
@@ -76,8 +75,8 @@ export class TrainingLog {
 }
 
 export class SessionReadout {
-  /** @param {SessionValue} session @param {readonly TrainingSetValue[]} sets @param {readonly ExerciseValue[]} exercises */
-  constructor(session, sets, exercises = SeedExercises.all) {
+  /** @param {SessionValue} session @param {readonly TrainingSetValue[]} sets @param {Catalogue} catalogue */
+  constructor(session, sets, catalogue) {
     const own = sets.filter((set) => set.sessionId.equals(session.id));
     const estimates = own.flatMap((set) => set.e1rm === null ? [] : [set.e1rm]);
     this.sessionId = session.id;
@@ -85,7 +84,7 @@ export class SessionReadout {
     this.durationMs = session.finishedAt === null ? null : Math.max(0, session.finishedAt.ms - session.startedAt.ms);
     this.workingSetCount = own.filter((set) => set.kind === 'working').length;
     this.movementCount = new Set(own.map((set) => jcs(set.exerciseId.json))).size;
-    this.volumeKg = own.reduce((sum, set) => sum + set.volumeFor(exercises.find((exercise) => exercise.id.equals(set.exerciseId)) ?? null), 0);
+    this.volumeKg = own.reduce((sum, set) => sum + set.volumeFor(catalogue.find(set.exerciseId)), 0);
     this.topE1rm = estimates.length === 0 ? null : Math.max(...estimates);
     Object.freeze(this);
   }

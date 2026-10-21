@@ -3,8 +3,8 @@ import { Button } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
 import { failureReason } from '../errors.js';
 import {
-  BACKFILL_HREF, backfillHref, FREE_SESSION, FROM_PICK, FROM_ROUTINE_MENU, isFinished, lastTrainedDayLabel, movementOf, nameOfMovement,
-  NEW_ROUTINE_ID, NO_ROUTINE, routineHref, routineSizeLabel, ROUTINES_HREF, sessionHref, shortDayLabel,
+  BACKFILL_HREF, backfillHref, FREE_SESSION, FROM_PICK, FROM_ROUTINE_MENU, isFinished, lastTrainedDayLabel, loadBasisLabel, movementOf,
+  nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, routineHref, routineSizeLabel, ROUTINES_HREF, sessionHref, shortDayLabel,
 } from '../log.js';
 import { MovementPicker } from '../logger/MovementPicker.jsx';
 import { mintId } from '../mint.js';
@@ -13,6 +13,7 @@ import { useDomainRead } from '../useDomainRead.js';
 import { useGymApi } from '../gymRuntime.js';
 import { Session, SessionRules, TrainingSet } from '../domain/training.js';
 import { sessionDocument } from '../domain/trainingHistory.js';
+import { KG } from '../units.js';
 import { UNDO_LABEL } from '../withheld.js';
 import {
   collapses, draftFromRoutine, freeDraft, importOf, inTheLogLine, isOverLimit,
@@ -29,10 +30,10 @@ const LOG_BACK = { href: '#/gym/log', label: 'The log' };
 const PICK_BACK = { href: BACKFILL_HREF, label: 'Past workout' };
 const ROUTINES_BACK = { href: ROUTINES_HREF, label: 'Routines' };
 
-// A row's two numbers: the cell each is typed into, and the set field it writes.
+// A row's two numbers: the cell each is typed into, the set field it writes, and its name read with the movement's load basis.
 const CELLS = [
-  { field: 'load', key: 'weightKg', spoken: 'load in kg' },
-  { field: 'reps', key: 'reps', spoken: 'reps' },
+  { field: 'load', key: 'weightKg', spoken: (basis) => `load in ${basis}` },
+  { field: 'reps', key: 'reps', spoken: () => 'reps' },
 ];
 
 // The beats: `Saved` stands before the session opens, a removed row collapses, carried numerals lift in turn.
@@ -431,6 +432,7 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
               key={movement.key}
               movement={movement}
               name={nameOfMovement(log.catalog, movement.exerciseId)}
+              basis={loadBasisLabel(movementOf(log.catalog, movement.exerciseId), 0, KG)}
               stepKg={movementOf(log.catalog, movement.exerciseId)?.stepKg ?? null}
               focused={focused?.key === movement.key}
               open={!collapses(movement) || expanded.has(movement.key)}
@@ -521,13 +523,13 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
   );
 }
 
-function Movement({ movement, name, stepKg, focused, open, lift, leaving, onFocus, onOpen, onWrite, onAddSet, onRemoveSet, onSkip }) {
+function Movement({ movement, name, basis, stepKg, focused, open, lift, leaving, onFocus, onOpen, onWrite, onAddSet, onRemoveSet, onSkip }) {
   return (
     <section className={focused ? 'gym-past-movement is-focused' : 'gym-past-movement'}>
       <div className="gym-past-line">
         <button type="button" className="gym-past-name" aria-expanded={open} onClick={onOpen}>
           <span className="gym-past-movement-name">{name}</span>
-          <span className="gym-past-scheme">{movementLine(movement)}</span>
+          <span className="gym-past-scheme">{movementLine(movement)}{basis !== KG && ` · ${basis}`}</span>
         </button>
         {!open && (
           <span className="gym-past-rail" aria-hidden="true">
@@ -548,7 +550,7 @@ function Movement({ movement, name, stepKg, focused, open, lift, leaving, onFocu
                     <EditableNumber
                       value={set[cell.key]}
                       field={cell.field}
-                      label={`${name}, set ${index + 1}, ${cell.spoken}`}
+                      label={`${name}, set ${index + 1}, ${cell.spoken(basis)}`}
                       stepKg={stepKg}
                       lift={lift?.field === cell.key && lift.carried.includes(set.key)
                         ? { stamp: lift.stamp, delay: lift.carried.indexOf(set.key) * LIFT_STAGGER_MS }

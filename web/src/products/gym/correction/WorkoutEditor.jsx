@@ -3,7 +3,8 @@ import { Button } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
 import { failureReason } from '../errors.js';
 import { useGymApi } from '../gymRuntime.js';
-import { dayLabel, fmtKg, groupByExercise, NO_ROUTINE, routineNameOf, sessionHref, shortDayLabel } from '../log.js';
+import { dayLabel, fmtKg, groupByExercise, loadBasisLabel, movementOf, NO_ROUTINE, routineNameOf, sessionHref, shortDayLabel } from '../log.js';
+import { KG } from '../units.js';
 import { mintId } from '../mint.js';
 import { workoutTotals } from '../logbook/history.js';
 import { correctionDraft, correctionScheme, correctionWrite } from './correction.js';
@@ -103,7 +104,7 @@ export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
             <label className="gym-workout-local">Start<input name="time" type="time" value={draft.time} onChange={(event) => setDraft({ ...draft, time: event.target.value })} /><span className="gym-workout-local-value" aria-hidden="true">{draft.time}</span></label>
           </div>
           <div className="gym-workout-sets">
-            <p className="gym-workout-unit">kg × reps</p>
+            <p className="gym-workout-unit">{loadBasisLabel(movementOf(catalog, selected), 0, KG)} × reps</p>
             <div className="gym-workout-movements">
               {groupByExercise(draft.sets).map(([exerciseId, group]) => <section className="gym-workout-movement" key={exerciseId}>
                 <button type="button" className="gym-workout-movement-head" aria-expanded={selected === exerciseId} onClick={() => setSelected(selected === exerciseId ? null : exerciseId)}>
@@ -113,7 +114,7 @@ export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
                 {selected === exerciseId && group.map((set, index) => <div key={set.id} className="gym-workout-set" data-set={set.id}>
                   <div className="gym-correction-row">
                     <span className="gym-set-rail" aria-label={`Set ${index + 1} of ${group.length}`}><i /></span>
-                    <input className="gym-num" style={{ '--gym-number-chars': Math.max(2, set.fields.weightKg.length) }} name="weightKg" inputMode="decimal" aria-label={`${names.get(exerciseId)} set ${index + 1} load in kg`} value={set.fields.weightKg} aria-invalid={failure?.setId === set.id && failure.field === 'weightKg'} onChange={(event) => updateSet(set.id, 'weightKg', event.target.value)} />
+                    <input className="gym-num" style={{ '--gym-number-chars': Math.max(2, set.fields.weightKg.length) }} name="weightKg" inputMode="decimal" aria-label={`${names.get(exerciseId)} set ${index + 1} load in ${loadBasisLabel(movementOf(catalog, exerciseId), 0, KG)}`} value={set.fields.weightKg} aria-invalid={failure?.setId === set.id && failure.field === 'weightKg'} onChange={(event) => updateSet(set.id, 'weightKg', event.target.value)} />
                     <span className="gym-number-times">×</span>
                     <input className="gym-num" style={{ '--gym-number-chars': Math.max(2, set.fields.reps.length) }} name="reps" inputMode="numeric" aria-label={`${names.get(exerciseId)} set ${index + 1} reps`} value={set.fields.reps} aria-invalid={failure?.setId === set.id && failure.field === 'reps'} onChange={(event) => updateSet(set.id, 'reps', event.target.value)} />
                     <button type="button" className="gym-workout-remove" aria-label={`Delete ${names.get(exerciseId)} set ${index + 1}`} onClick={() => setDraft({ ...draft, sets: draft.sets.filter((row) => row.id !== set.id) })}>×</button>
